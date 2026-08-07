@@ -39,7 +39,7 @@ import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './Tx
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
-import { duplicatePartTypes, hasTypedParts } from '@/domain/txSlices';
+import { duplicatePartTypes, duplicatePartTypesStrict, hasTypedParts } from '@/domain/txSlices';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
@@ -621,9 +621,10 @@ function detailScreenTitle(tx: SpaceTx, parts: readonly TxSplit[], partView: TxS
 
 /** drafted-until-complete (#126 r4): the staged split may Apply only
  *  when every part has a real category and no two parts carry the same
- *  kind of money. Module-level for S3776. */
+ *  kind of money — STRICT (r5): even two untyped 'expense' parts must
+ *  diverge before the split lands. Module-level for S3776. */
 const stagedSplitComplete = (stage: TxSplit[] | null, rowType: TxType): boolean =>
-  !!stage && stage.every((s) => s.catId !== UNCATEGORIZED_ID) && !duplicatePartTypes(stage, rowType);
+  !!stage && stage.every((s) => s.catId !== UNCATEGORIZED_ID) && !duplicatePartTypesStrict(stage, rowType);
 
 /** back to a whole transaction: one category, split gone — the settled
  *  Reimbursed slice keeps the gross partition when it exists.
@@ -735,6 +736,7 @@ function DetailSplitSheets({
             activeEvents={activeEvents}
             allowedCatIds={allowedCatIds}
             lockedKind={lockedKind}
+            strict
             onOpenValues={() => {
               setCompleteOpen(false);
               openValuesEditor();
@@ -844,6 +846,14 @@ function PartDetailBody({
   const partEvent = activeEvents.find((e) => e.id === part.eventId);
   const spread = part.cats?.length ? part.cats.map((c) => catName(cats.byId(c.catId), t)).join(' · ') : undefined;
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
+  // r5: the links that target THIS part, and what the part is net worth
+  const allTxs = useSpaceTransactions();
+  const partLinks = (tx.reimbursements ?? []).filter((r) => r.partId === part.id);
+  const partLinkedCents = partLinks.reduce((sum, r) => sum + r.amountCents, 0);
+  const creditTitleOf = (id: string) => {
+    const credit = allTxs?.find((row) => row.id === id);
+    return credit ? txTitle(credit) : id;
+  };
 
   /** per-part write-through — refused when it would leave two parts of
    *  the same kind of money (#126 r4 user rule) */
@@ -924,6 +934,51 @@ function PartDetailBody({
         <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
         <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
       </button>
+
+      {/* r5: the part's own note — parts are full transactions */}
+      <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface">
+        <textarea
+          data-testid="tx-part-notes"
+          defaultValue={part.notes ?? ''}
+          placeholder={t('tx.notesPlaceholder')}
+          rows={2}
+          onBlur={(e) => {
+            const next = e.target.value.trim() || undefined;
+            if (next !== part.notes) patchPart({ notes: next });
+          }}
+          className="w-full resize-none bg-transparent px-4 py-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+        />
+      </div>
+
+      {/* r5: the part's own reimbursements — links born here target THIS
+          part; the whole pair still shows on the container */}
+      <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+        <span>{t('reimb.section')}</span>
+        <button
+          data-testid="tx-part-reimb-link"
+          onClick={() =>
+            void navigate({ to: '/transactions/$txId/link-reimb', params: { txId: tx.id }, search: { part: part.id } })
+          }
+          className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+        >
+          {t('reimb.link')}
+        </button>
+      </div>
+      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-part-reimbs">
+        {partLinks.map((linkRow) => (
+          <div key={`${linkRow.txId}-${linkRow.partId}`} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 text-[13px] last:border-0">
+            <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1 truncate text-ink">{creditTitleOf(linkRow.txId)}</span>
+            <span className="m-num text-ink-2">{fmtCents(linkRow.amountCents, tx.currency, lang)}</span>
+          </div>
+        ))}
+        <div className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+          <span className="min-w-0 flex-1 text-ink-3">{t('reimb.net')}</span>
+          <span className="m-num font-semibold text-ink" data-testid="tx-part-net">
+            {fmtCents(sign * Math.max(0, Math.abs(part.amountCents) - partLinkedCents), tx.currency, lang, { sign: true })}
+          </span>
+        </div>
+      </div>
 
       {/* the sisters: every part one tap away (#126 r4) */}
       <div className="m-cap mt-5 mb-1 px-1">{t('split.title')}</div>

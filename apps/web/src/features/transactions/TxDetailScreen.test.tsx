@@ -580,12 +580,24 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
         { id: 'pp1', catId: 'telecom', amountCents: 4000 },
         { id: 'pp2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving', label: 'Device plan' },
       ],
+      // r5: a reimbursement that targets ONE part
+      reimbursements: [{ txId: 'rcredit', amountCents: 500, partId: 'pp2' }],
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'rcredit', {
+      accountId: 'demo_main',
+      date: '2020-02-02',
+      amountCents: 500,
+      currency: 'EUR',
+      merchant: 'Sam pays back',
+      catId: 'reimbursed',
+      txType: 'income',
+      needsReview: 0,
     });
 
-    // the list row unfolds instead of navigating — the parts show up
-    const row = await screen.findByTestId('tx-row-tx-parts', {}, { timeout: 5000 });
-    fireEvent.click(row);
-    await screen.findByTestId('tx-parts-tx-parts');
+    // r5: the container row is GONE — the sub-transactions stand as
+    // first-class rows, the shared rail linking them
+    await screen.findByTestId('tx-parts-tx-parts', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('tx-row-tx-parts')).toBeNull();
     expect(screen.getByTestId('tx-part-row-tx-parts-1').textContent).toContain('Device plan');
 
     // tapping a part opens ITS page: its share, its own type, its story
@@ -593,6 +605,19 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await screen.findByTestId('tx-part-amount');
     expect(screen.getByTestId('tx-part-amount').textContent).toContain('25.00');
     expect(screen.getByTestId('tx-part-kind-row').textContent).toContain('Saving');
+
+    // r5: its own reimbursements — the part-targeted link and the net
+    await waitFor(() => expect(screen.getByTestId('tx-part-reimbs').textContent).toContain('Sam pays back'), { timeout: 5000 });
+    expect(screen.getByTestId('tx-part-net').textContent).toContain('20.00');
+
+    // r5: its own note, saved into the part itself
+    const notes = screen.getByTestId('tx-part-notes') as HTMLTextAreaElement;
+    fireEvent.change(notes, { target: { value: 'Device 12 of 24' } });
+    fireEvent.blur(notes);
+    await waitFor(async () => {
+      const row = await db.transactions.get('tx-parts');
+      expect(row?.splits?.[1]?.notes).toBe('Device 12 of 24');
+    }, { timeout: 5000 });
     // its siblings are one tap away; itself sits inert
     expect(screen.getByTestId('tx-part-siblings').textContent).toContain('Telecom');
     fireEvent.click(screen.getByTestId('tx-part-sibling-0'));

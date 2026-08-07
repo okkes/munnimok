@@ -1165,6 +1165,7 @@ export const en = {
   'split.partN': 'split {n}',
   'review.splitParts': '{n} parts',
   'review.manageSplits': 'Manage splits',
+  'review.splitsCount': '{n} splits',
   'split.labelPlaceholder': 'Name this part',
   'split.done': 'Done',
   'split.action': 'Split',

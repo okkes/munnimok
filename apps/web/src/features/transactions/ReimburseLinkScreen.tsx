@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { UIEvent } from 'react';
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { useLang } from '@/i18n';
@@ -31,6 +31,8 @@ export function ReimburseLinkScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const { txId } = useParams({ strict: false }) as { txId: string };
+  // #126 r5: opened from a part page → the link targets that part
+  const { part: partId } = useSearch({ strict: false }) as { part?: string };
   const allTxs = useSpaceTransactions();
   const tx = useMemo(() => allTxs?.find((row) => row.id === txId), [allTxs, txId]);
   const { link, giveableCents } = useReimburseLinks(allTxs);
@@ -111,13 +113,14 @@ export function ReimburseLinkScreen() {
     if (!tx || !chosen) return;
     const cents = parseCents(amount) ?? 0;
     if (cents > 0) {
-      if (anchorIsExpense) link(tx, chosen, cents);
+      // the part target only makes sense on the EXPENSE side's split
+      if (anchorIsExpense) link(tx, chosen, cents, partId);
       else link(chosen, tx, cents);
     }
     setChosen(null);
     // REPLACE, not back: pressing back on the detail afterwards must not
-    // resurface a stale picker
-    void navigate({ to: '/transactions/$txId', params: { txId }, replace: true });
+    // resurface a stale picker — a part-born link returns to its part
+    void navigate({ to: '/transactions/$txId', params: { txId }, search: partId ? { part: partId } : {}, replace: true });
   };
 
   const rowFor = (row: SpaceTx, testId: string, hint?: string) => (

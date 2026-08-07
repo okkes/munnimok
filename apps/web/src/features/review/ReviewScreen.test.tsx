@@ -410,7 +410,73 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('deck-event-1'));
     await screen.findByTestId('deck-event-list');
     fireEvent.click(screen.getByTestId('deck-event-none'));
+
+    // r5: the part's own NOTE — typed in its sheet, worn on the row
+    fireEvent.click(screen.getByTestId('deck-notes-1'));
+    const noteInput = await screen.findByTestId('deck-notes-input');
+    fireEvent.change(noteInput, { target: { value: 'Half for Sam' } });
+    fireEvent.blur(noteInput);
+    fireEvent.click(screen.getByTestId('deck-notes-save'));
+    await waitFor(() => expect(screen.getByTestId('deck-notes-1').textContent).toContain('Half for Sam'));
   }, 15_000);
+
+  it('a values-born split refuses two parts of the SAME kind — even untyped (#126 r5)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '6,00' } });
+    fireEvent.blur(amount0);
+    fireEvent.click(await screen.findByTestId('split-remainder'));
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // both parts carry a category but the SAME kind of money — the
+    // strict rule names it and Confirm stays down
+    await screen.findByTestId('review-part-deck');
+    fireEvent.click(screen.getByTestId('deck-part-1'));
+    fireEvent.click(await screen.findByTestId('deck-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    await screen.findByTestId('deck-type-duplicate');
+    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
+
+    // one part becomes Set aside (◆ pulls saving) → kinds diverge →
+    // the warning clears and Confirm arms
+    fireEvent.click(screen.getByTestId('deck-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await waitFor(() => expect(screen.queryByTestId('deck-type-duplicate')).toBeNull());
+    await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
+  }, 15_000);
+
+  it('the pill fills the FOCUSED field even though its blur restores the stash first (#130 r2)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    fireEvent.click(screen.getByTestId('split-mode-pct'));
+    // the report's exact flow: type 50 into the SECOND row…
+    const amount1 = (await screen.findByTestId('split-amount-1')) as HTMLInputElement;
+    fireEvent.focus(amount1);
+    fireEvent.change(amount1, { target: { value: '50' } });
+    fireEvent.blur(amount1);
+    // …then FOCUS the first row (it empties, stash holds 100) and tap
+    // the pill: pointerdown arms the target, blur restores 100, click
+    // must still fill THIS row with the open 50 — not zero the other
+    const amount0 = screen.getByTestId('split-amount-0') as HTMLInputElement;
+    fireEvent.focus(amount0);
+    expect(amount0.value).toBe('');
+    const pill = await screen.findByTestId('split-remainder');
+    fireEvent.pointerDown(pill);
+    fireEvent.blur(amount0);
+    expect(amount0.value).toBe('100'); // the stash restore — the old trap
+    fireEvent.click(pill);
+    await waitFor(() => expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('50'));
+    expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('50');
+  });
 
   it('the left-to-assign pill fills the EMPTY row, not the last one (#130)', async () => {
     renderApp('/review');

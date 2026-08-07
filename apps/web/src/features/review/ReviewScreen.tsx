@@ -10,7 +10,7 @@ import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFo
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
-import { duplicatePartTypes, hasTypedParts } from '@/domain/txSlices';
+import { duplicatePartTypes, duplicatePartTypesStrict, hasTypedParts } from '@/domain/txSlices';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, autoSubFor, specialCatType } from '@/domain/categories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { Collapse } from '@/ui/Collapse';
@@ -215,6 +215,13 @@ function CardKindRows({
   );
 }
 
+/** which kind the deck's kind sheet opens on (S3776: out of the deck) */
+function deckKindFor(parts: readonly TxSplit[], kindFor: number | null): 'transfer' | 'standard' {
+  if (kindFor === null) return 'standard';
+  const slice = parts[kindFor];
+  return slice?.txType && kindOf(slice.txType) === 'transfer' ? 'transfer' : 'standard';
+}
+
 /** one slice's story lines (#126): the typed part's label/own type and
  *  a spread part's category list — shared by the card summary region
  *  and the stacked part cards */
@@ -338,6 +345,7 @@ export function ReviewPartDeck({
   activeEvents,
   allowedCatIds,
   lockedKind = false,
+  strict = false,
   onOpenValues,
   onSplits,
 }: Readonly<{
@@ -350,6 +358,9 @@ export function ReviewPartDeck({
   allowedCatIds?: readonly string[];
   /** R1: a stamped account types every row — parts included */
   lockedKind?: boolean;
+  /** r5: values-born splits answer to the STRICT same-kind rule — the
+   *  warning then names even two untyped 'expense' parts */
+  strict?: boolean;
   onOpenValues: () => void;
   onSplits: (next: TxSplit[]) => void;
 }>) {
@@ -361,32 +372,89 @@ export function ReviewPartDeck({
   const [kindFor, setKindFor] = useState<number | null>(null);
   const [counterFor, setCounterFor] = useState<number | null>(null);
   const [eventFor, setEventFor] = useState<number | null>(null);
+  const [notesFor, setNotesFor] = useState<number | null>(null);
+  // r5: a pick that would leave two parts with the SAME kind of money
+  // is refused on the spot — the flash says why
+  const [clash, setClash] = useState(false);
   const slices = splits ?? [];
   const parts = slices.filter((s) => s.catId !== REIMBURSED_ID);
   if (parts.length <= 1) return null;
 
   const patchPart = (index: number, patch: Partial<TxSplit>) => {
     const target = parts[index];
-    onSplits(slices.map((s) => (s === target ? { ...s, ...patch } : s)));
+    const next = slices.map((s) => (s === target ? { ...s, ...patch } : s));
+    // r5: a TYPE-affecting pick that would leave two parts carrying the
+    // same kind of money is refused on the spot; labels, notes and
+    // events always land (the Apply/Confirm gates still hold the whole)
+    const touchesType = 'txType' in patch || 'linkedAccountId' in patch || 'catId' in patch;
+    if (touchesType && duplicatePartTypes(next, rowType)) {
+      setClash(true);
+      return;
+    }
+    setClash(false);
+    onSplits(next);
   };
   const partLabel = (slice: TxSplit, i: number) => slice.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`;
   const openIdx = Math.min(expanded, parts.length - 1);
 
+  const active = parts[openIdx];
+  const activeCat = cats.byId(active.catId);
+  const activeColor = activeCat.color ?? cats.byId(activeCat.parentId ?? '').color;
+  // transfer-PRESENTING only with a real counterparty — a ◆ special
+  // part (saving/debt/invest without a link) reads as its own standard
+  // story, not as a bare Transfer. Flat consts so the JSX carries no
+  // branching (S3776).
+  const transferPart = !!active.linkedAccountId && !!active.txType && kindOf(active.txType) === 'transfer';
+  const activeKind: 'transfer' | 'standard' = transferPart ? 'transfer' : 'standard';
+  const activeCounterName = accounts?.find((a) => a.id === active.linkedAccountId)?.name ?? t('tx.counterNone');
+  const activeKindSub = transferPart ? activeCounterName : t(`tx.type.${active.txType ?? rowType}`);
+  const kindRowIcon = lockedKind ? 'lock-outline' : 'pencil-outline';
+  const activeEvent = activeEvents.find((event) => event.id === active.eventId);
+  const activeEventFace = activeEvent?.name ?? t('events.linkNone');
+  const activeNotesFace = active.notes ?? t('tx.notesPlaceholder');
+  const dupes = strict ? duplicatePartTypesStrict(slices, rowType) : duplicatePartTypes(slices, rowType);
+  const peeking = parts.map((slice, i) => ({ slice, i })).filter(({ i }) => i !== openIdx);
+  const deckDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
+  const pickedPartCatId = pickerFor === null ? undefined : parts[pickerFor]?.catId;
+
   return (
-    <div className="mt-3 flex flex-col gap-2" data-testid="review-part-deck">
-      {parts.map((slice, i) => {
-        const sliceCat = cats.byId(slice.catId);
-        const color = sliceCat.color ?? cats.byId(sliceCat.parentId ?? '').color;
-        if (i !== openIdx) {
-          // collapsed: a slim header — tap to bring this part on top
+    <div className="mt-3" data-testid="review-part-deck">
+      {/* r5 (user illustration): the section header owns the manage door */}
+      <div className="flex items-center justify-between px-1">
+        <span className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+          <Icon name="call-split" size={17} color="var(--m-accent-deep)" />
+          {t('split.title')}
+        </span>
+        <button
+          data-testid="review-manage-splits"
+          onClick={onOpenValues}
+          className="m-tap flex items-center gap-1.5 rounded-card border border-line bg-surface px-3 py-1.5 text-[12px] font-medium text-accent-deep"
+        >
+          <Icon name="tune" size={14} />
+          {t('review.manageSplits')}
+        </button>
+      </div>
+      <div className="mt-1 flex items-center gap-1.5 px-1 text-[11px] text-ink-4">
+        <Icon name="layers-outline" size={13} color="var(--m-ink-4)" />
+        {t('review.splitsCount', { n: parts.length })}
+      </div>
+
+      {/* the deck: the other parts peek from behind — tap one to bring
+          it on top; the active card carries every fact */}
+      <div className="mt-2">
+        {peeking.map(({ slice, i }, depth) => {
+          const sliceCat = cats.byId(slice.catId);
           return (
             <button
               key={slice.id ?? `p${i}`}
               data-testid={`deck-part-${i}`}
               onClick={() => setExpanded(i)}
-              className="m-tap flex w-full items-center gap-2.5 rounded-card border border-line bg-surface px-4 py-2.5 text-left"
+              style={{ marginLeft: (peeking.length - depth) * 8, marginRight: (peeking.length - depth) * 8 }}
+              className="m-tap -mb-1.5 flex w-full items-center gap-2.5 rounded-t-card border border-line bg-surface px-4 pt-2 pb-3.5 text-left opacity-90"
             >
-              <Icon name={sliceCat.icon} size={16} color={color ?? 'var(--m-ink-3)'} />
+              <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-bg-2 text-[11px] font-semibold text-ink-3">
+                {i + 1}
+              </span>
               <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
                 {partLabel(slice, i)}
                 <span className="text-[11px] font-normal text-ink-4"> · {catName(sliceCat, t)}</span>
@@ -394,96 +462,87 @@ export function ReviewPartDeck({
               <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>
             </button>
           );
-        }
-        // transfer-PRESENTING only with a real counterparty — a ◆
-        // special part (saving/debt/invest without a link) reads as its
-        // own standard story, not as a bare Transfer
-        const transferPart = !!slice.linkedAccountId && !!slice.txType && kindOf(slice.txType) === 'transfer';
-        const partEvent = activeEvents.find((event) => event.id === slice.eventId);
-        return (
-          <div
-            key={slice.id ?? `p${i}`}
-            data-testid={`deck-part-${i}`}
-            className="rounded-card border border-line bg-surface shadow-[0_6px_16px_rgba(0,0,0,0.08)]"
-          >
-            <div className="flex items-center gap-2 px-3 pt-3 pb-1">
-              <input
-                data-testid={`deck-label-${i}`}
-                value={slice.label ?? ''}
-                placeholder={partLabel(slice, i)}
-                onChange={(e) => patchPart(i, { label: e.target.value || undefined })}
-                className="h-9 min-w-0 flex-1 rounded-input border border-line bg-bg-2 px-3 text-[13px] text-ink outline-none placeholder:text-ink-4"
-              />
-              {/* r3: the value reads; Manage splits is the one door */}
-              <span data-testid={`deck-amount-${i}`} className="m-num text-[14px] font-semibold text-ink">
-                {fmtCents(slice.amountCents, tx.currency, lang)}
-              </span>
-            </div>
-            {/* r3: the normal Type row (not chips) — the part's kind,
-                locked when the account stamps its rows (R1) */}
-            <button
-              data-testid={`deck-kind-row-${i}`}
-              onClick={lockedKind ? undefined : () => setKindFor(i)}
-              className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
-            >
-              <Icon
-                name={TX_KIND_VISUAL[transferPart ? 'transfer' : 'standard'].icon}
-                size={18}
-                color={TX_KIND_VISUAL[transferPart ? 'transfer' : 'standard'].color}
-              />
-              <span className="min-w-0 flex-1 truncate">
-                {t(`tx.kind.${transferPart ? 'transfer' : 'standard'}`)}
-                <span className="text-[12px] font-normal text-ink-4">
-                  {' '}· {transferPart
-                    ? (accounts?.find((a) => a.id === slice.linkedAccountId)?.name ?? t('tx.counterNone'))
-                    : t(`tx.type.${slice.txType ?? rowType}`)}
-                </span>
-              </span>
-              <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
-              <Icon name={lockedKind ? 'lock-outline' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
-            </button>
-            <button
-              data-testid={`deck-cat-${i}`}
-              onClick={() => setPickerFor(i)}
-              className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] font-medium text-ink"
-            >
-              <Icon name={sliceCat.icon} size={18} color={color ?? 'var(--m-ink-3)'} />
-              <span className="min-w-0 flex-1 truncate">
-                {catName(sliceCat, t)}
-                {sliceCat.parentId && (
-                  <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(sliceCat.parentId), t)}</span>
-                )}
-              </span>
-              <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-            </button>
-            <button
-              data-testid={`deck-event-${i}`}
-              onClick={() => setEventFor(i)}
-              className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
-            >
-              <Icon name="party-popper" size={18} color="var(--m-ink-3)" />
-              <span className="min-w-0 flex-1 truncate">{partEvent?.name ?? t('events.linkNone')}</span>
-              <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
-              <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-            </button>
+        })}
+        <div
+          key={active.id ?? `p${openIdx}`}
+          data-testid={`deck-part-${openIdx}`}
+          className="relative rounded-card border-2 border-accent-deep bg-surface shadow-[0_8px_20px_rgba(0,0,0,0.10)]"
+        >
+          <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-deep text-[12px] font-semibold text-white">
+              {openIdx + 1}
+            </span>
+            <input
+              data-testid={`deck-label-${openIdx}`}
+              value={active.label ?? ''}
+              placeholder={partLabel(active, openIdx)}
+              onChange={(e) => patchPart(openIdx, { label: e.target.value || undefined })}
+              className="h-9 min-w-0 flex-1 rounded-input border border-line bg-bg-2 px-3 text-[13px] text-ink outline-none placeholder:text-ink-4"
+            />
+            <span data-testid={`deck-amount-${openIdx}`} className="m-num text-[14px] font-semibold text-ink">
+              {fmtCents(active.amountCents, tx.currency, lang)}
+            </span>
           </div>
-        );
-      })}
-      {/* #126 r4 (user rule): a split carries SEVERAL kinds of money —
-          duplicate part types hold the whole thing back */}
-      {duplicatePartTypes(slices, rowType) && (
-        <p className="rounded-card bg-negative-soft px-3 py-2 text-[12px] leading-relaxed text-negative" data-testid="deck-type-duplicate">
+          {/* the normal Type row — the part's kind, locked when the
+              account stamps its rows (R1) */}
+          <button
+            data-testid={`deck-kind-row-${openIdx}`}
+            onClick={lockedKind ? undefined : () => setKindFor(openIdx)}
+            className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
+          >
+            <Icon name={TX_KIND_VISUAL[activeKind].icon} size={18} color={TX_KIND_VISUAL[activeKind].color} />
+            <span className="min-w-0 flex-1 truncate">
+              {t(`tx.kind.${activeKind}`)}
+              <span className="text-[12px] font-normal text-ink-4"> · {activeKindSub}</span>
+            </span>
+            <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
+            <Icon name={kindRowIcon} size={13} color="var(--m-ink-4)" />
+          </button>
+          <button
+            data-testid={`deck-cat-${openIdx}`}
+            onClick={() => setPickerFor(openIdx)}
+            className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] font-medium text-ink"
+          >
+            <Icon name={activeCat.icon} size={18} color={activeColor ?? 'var(--m-ink-3)'} />
+            <span className="min-w-0 flex-1 truncate">
+              {catName(activeCat, t)}
+              {activeCat.parentId && (
+                <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(activeCat.parentId), t)}</span>
+              )}
+            </span>
+            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+          </button>
+          <button
+            data-testid={`deck-event-${openIdx}`}
+            onClick={() => setEventFor(openIdx)}
+            className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
+          >
+            <Icon name="party-popper" size={18} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1 truncate">{activeEventFace}</span>
+            <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
+            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+          </button>
+          {/* r5: the part's own note — parts are full transactions */}
+          <button
+            data-testid={`deck-notes-${openIdx}`}
+            onClick={() => setNotesFor(openIdx)}
+            className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
+          >
+            <Icon name="note-text-outline" size={18} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1 truncate">{activeNotesFace}</span>
+            <span className="text-[11px] text-ink-4">{t('tx.notes')}</span>
+            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+          </button>
+        </div>
+      </div>
+
+      {/* #126 (user rule): a split carries SEVERAL kinds of money —
+          same-kind picks are refused on the spot */}
+      {(clash || dupes) && (
+        <p className="mt-2 rounded-card bg-negative-soft px-3 py-2 text-[12px] leading-relaxed text-negative" data-testid="deck-type-duplicate">
           {t('split.typeDuplicate')}
         </p>
       )}
-      <button
-        data-testid="review-manage-splits"
-        onClick={onOpenValues}
-        className="m-tap flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-transparent px-4 py-2.5 text-[13px] font-medium text-accent-deep"
-      >
-        <Icon name="tune" size={15} />
-        {t('review.manageSplits')}
-      </button>
 
       {/* the part's kind through the normal kind picker (r3) — Standard
           drops any counterparty, Transfer walks into picking one */}
@@ -492,7 +551,7 @@ export function ReviewPartDeck({
         onOpenChange={(next) => {
           if (!next) setKindFor(null);
         }}
-        current={kindFor !== null && parts[kindFor]?.txType && kindOf(parts[kindFor].txType!) === 'transfer' ? 'transfer' : 'standard'}
+        current={deckKindFor(parts, kindFor)}
         allowAdjustment={false}
         onPick={(kind) => {
           if (kindFor === null) return;
@@ -511,9 +570,9 @@ export function ReviewPartDeck({
         onOpenChange={(next) => {
           if (!next) setPickerFor(null);
         }}
-        direction={tx.amountCents < 0 ? 'debit' : 'credit'}
+        direction={deckDirection}
         txType={rowType}
-        selectedId={pickerFor === null ? undefined : parts[pickerFor]?.catId}
+        selectedId={pickedPartCatId}
         onlyIds={allowedCatIds}
         onPick={(catId) => {
           if (pickerFor === null) return;
@@ -579,6 +638,35 @@ export function ReviewPartDeck({
               )}
             </button>
           ))}
+        </div>
+      </Sheet>
+      {/* the part's own note (r5) — saved as part of the same stage */}
+      <Sheet
+        open={notesFor !== null}
+        onOpenChange={(next) => {
+          if (!next) setNotesFor(null);
+        }}
+        title={t('tx.notes')}
+        size="form"
+        dragHandle
+      >
+        <div className="flex flex-col gap-3 pt-1">
+          <textarea
+            data-testid="deck-notes-input"
+            defaultValue={notesFor === null ? '' : (parts[notesFor]?.notes ?? '')}
+            placeholder={t('tx.notesPlaceholder')}
+            rows={4}
+            className="w-full resize-none rounded-input border border-line bg-surface px-4 py-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+            onBlur={(e) => {
+              if (notesFor !== null) patchPart(notesFor, { notes: e.target.value.trim() || undefined });
+            }}
+          />
+          <Button
+            data-testid="deck-notes-save"
+            onClick={() => setNotesFor(null)}
+          >
+            {t('action.save')}
+          </Button>
         </div>
       </Sheet>
     </div>
@@ -909,6 +997,9 @@ export function ReviewScreen() {
   // #126 v2: the one editor, two doors — the category chip opens the
   // classic per-slice categories; every split door opens pure values
   const [splitValuesMode, setSplitValuesMode] = useState(false);
+  // r5: a split born in the VALUES flow answers to the STRICT same-kind
+  // rule at confirm — classic multi-category (the chip flow) stays free
+  const [valuesStaged, setValuesStaged] = useState(false);
   const openSplitEditor = (values: boolean) => {
     setSplitValuesMode(values);
     setSplitOpen(true);
@@ -1088,6 +1179,7 @@ export function ReviewScreen() {
     setManualRecId(null);
     setEventPick(null);
     setDescExpanded(false);
+    setValuesStaged(false);
   });
   // select every similar item by default. Keyed on MEMBERSHIP, not array
   // identity: the native SQL backend re-emits unchanged rows every sync
@@ -1130,6 +1222,7 @@ export function ReviewScreen() {
   const confirm = async () => {
     captureLeaving();
     if (!tx || !draft || !draftReady(draft)) return;
+    if (valuesStaged && duplicatePartTypesStrict(draft.splits, draft.txType)) return;
     await writeConfirmation({
       tx,
       draft,
@@ -1348,6 +1441,7 @@ export function ReviewScreen() {
                 activeEvents={activeEvents}
                 allowedCatIds={recurringAllowedCats}
                 lockedKind={!!ownStamp}
+                strict={valuesStaged}
                 onOpenValues={() => openSplitEditor(true)}
                 onSplits={(next) => setStagedDraft(withSplits(draft, next))}
               />
@@ -1373,7 +1467,7 @@ export function ReviewScreen() {
                 variant="primary"
                 className="min-w-0 flex-1"
                 data-testid="review-confirm-btn"
-                disabled={!draft || !draftReady(draft)}
+                disabled={!draft || !draftReady(draft) || (valuesStaged && duplicatePartTypesStrict(draft.splits, draft.txType))}
                 onClick={() => void confirm()}
               >
                 <span className="truncate">
@@ -1399,8 +1493,15 @@ export function ReviewScreen() {
           txType={draft.txType}
           seedSingle
           seedCatId={draft.catId}
-          onApply={(splits) => setStagedDraft(withSplits(draft, splits ?? undefined))}
-          onApplySingle={(catId) => setStagedDraft(withCategory(withSplits(draft, undefined), catId, cats))}
+          onApply={(splits) => {
+            setStagedDraft(withSplits(draft, splits ?? undefined));
+            // a values-flow split answers to the strict same-kind rule
+            if (splitValuesMode) setValuesStaged(!!splits?.length);
+          }}
+          onApplySingle={(catId) => {
+            setStagedDraft(withCategory(withSplits(draft, undefined), catId, cats));
+            if (splitValuesMode) setValuesStaged(false);
+          }}
           reason={reasonLine}
           allowedCatIds={recurringAllowedCats}
           valuesOnly={splitValuesMode}

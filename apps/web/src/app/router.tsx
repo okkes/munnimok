@@ -113,6 +113,9 @@ const reimburseLinkRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: '$txId/link-reimb',
   component: ReimburseLinkScreen,
+  // #126 r5: a link opened from a part page targets that part
+  validateSearch: (search: Record<string, unknown>): { part?: string } =>
+    typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
 });
 const recurringRoute = createRoute({
   getParentRoute: () => appRoute,

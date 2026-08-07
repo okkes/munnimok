@@ -1167,6 +1167,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'split.partN': 'splitsing {n}',
   'review.splitParts': '{n} delen',
   'review.manageSplits': 'Splitsingen beheren',
+  'review.splitsCount': '{n} splitsingen',
   'split.labelPlaceholder': 'Geef dit deel een naam',
   'split.done': 'Klaar',
   'split.action': 'Splitsen',

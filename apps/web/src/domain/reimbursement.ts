@@ -38,14 +38,16 @@ export function clampReimbursement(
   return Math.min(requestedCents, remainingCents(expense), creditAmountCents);
 }
 
-/** add or replace the link for one credit tx (one link per credit) */
+/** add or replace the link for one credit tx — keyed per (credit, PART)
+ *  since #126 r5: the same credit can pay different parts back */
 export function withLink(
   reimbursements: TxReimbursement[] | undefined,
   txId: string,
   amountCents: number,
+  partId?: string,
 ): TxReimbursement[] {
-  const rest = (reimbursements ?? []).filter((r) => r.txId !== txId);
-  return amountCents > 0 ? [...rest, { txId, amountCents }] : rest;
+  const rest = (reimbursements ?? []).filter((r) => r.txId !== txId || r.partId !== partId);
+  return amountCents > 0 ? [...rest, { txId, amountCents, ...(partId ? { partId } : {}) }] : rest;
 }
 
 /**

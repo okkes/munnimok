@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { REIMBURSED_ID } from '@/domain/categories';
+import { hasTypedParts } from '@/domain/txSlices';
 import { txTitle } from '@/lib/text';
 import { EMPTY_FILTERS, FilterSheet, countActive } from './FilterSheet';
 import type { SheetFilters } from './FilterSheet';
@@ -19,13 +20,15 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { useScrollMemory } from '@/lib/scrollMemory';
 import { TxFormSheet } from './TxFormSheet';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
-/** the unfolded sub-transactions under a split row (#126 r4) — one line
- *  per part, straight to its own page. Module-level for S2004. */
-function TxPartSubRows({
+/** a split's parts standing IN the list (#126 r5): the container row is
+ *  gone — the sub-transactions rank as first-class rows, the shared
+ *  rail saying they belong together. Module-level for S2004. */
+function TxPartGroupRows({
   tx,
   parts,
   fmt,
@@ -40,25 +43,42 @@ function TxPartSubRows({
   const cats = useCategories();
   const sign = tx.amountCents < 0 ? -1 : 1;
   return (
-    <div className="mb-1 ml-9 border-l-2 border-line-2 pl-2" data-testid={`tx-parts-${tx.id}`}>
+    <div
+      className="relative my-0.5 border-l-2 border-accent-deep/40 pl-1"
+      data-testid={`tx-parts-${tx.id}`}
+    >
       {parts.map((part, i) => {
         const partCat = cats.byId(part.catId);
+        const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
         return (
           <button
             key={part.id ?? i}
             data-testid={`tx-part-row-${tx.id}-${i}`}
             onClick={() => onOpen(part.id)}
-            className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-2 py-2 text-left"
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-2 py-2 text-left"
           >
-            <Icon name={partCat.icon} size={15} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate text-[13px] text-ink">
-              {part.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`}
-              <span className="text-[11px] text-ink-4"> · {catName(partCat, t)}</span>
+            <span
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+              style={{ background: `color-mix(in srgb, ${partColor ?? 'var(--m-ink-4)'} 14%, transparent)` }}
+            >
+              <Icon name={partCat.icon} size={17} color={partColor ?? 'var(--m-ink-3)'} />
             </span>
-            <span className="m-num text-[12px] text-ink-2">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] font-medium text-ink">
+                {part.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`}
+              </span>
+              <span className="flex items-center gap-1.5 text-[12px] text-ink-3">
+                <span className="truncate">{catName(partCat, t)}</span>
+                {i === 0 && tx.needsReview === 1 && (
+                  <span className="shrink-0 rounded-full bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+                    {t('tx.unreviewed')}
+                  </span>
+                )}
+              </span>
+            </span>
+            <span className="m-num text-[14px] text-ink">
               {fmt(sign * Math.abs(part.amountCents), tx.currency, { date: tx.date })}
             </span>
-            <Icon name="chevron-right" size={13} color="var(--m-ink-4)" />
           </button>
         );
       })}
@@ -106,9 +126,10 @@ export function TransactionsScreen() {
   // when embedded as a master pane (§4.2) the open detail's row lights up
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const openTxId = /^\/transactions\/([^/]+)$/.exec(pathname)?.[1];
-  // #126 r4: which split row stands unfolded into its sub-transactions
-  const [expandedTx, setExpandedTx] = useState<string | null>(null);
-  const toggleExpanded = (id: string) => setExpandedTx((prev) => (prev === id ? null : id));
+  // the list remembers where you were (#131)
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useScrollMemory(scrollRef, 'transactions');
+  // #126 r5: a part row opens its own page
   const openPartPage = (txId: string, partId: string | undefined) =>
     void navigate({ to: '/transactions/$txId', params: { txId }, search: { part: partId } });
 
@@ -245,7 +266,7 @@ export function TransactionsScreen() {
         </div>
       </div>
       <FilterSheet open={filterOpen} onOpenChange={setFilterOpen} value={filters} onChange={setFilters} />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" data-testid="tx-list">
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" data-testid="tx-list">
         {txs && groups.length === 0 && (
           <EmptyState
             testId="tx-empty"
@@ -267,29 +288,32 @@ export function TransactionsScreen() {
             <div className="m-cap sticky top-0 z-10 -mx-1 mt-4 mb-1 bg-bg px-2 py-1">{fmtDay(date)}</div>
             <div className="rounded-card border border-line bg-surface px-3 py-1">
               {list.map((tx) => {
-                // #126 r4: a split row opens its SUB-transactions — tap
-                // the row to unfold the parts, tap a part for its page
+                // #126 r5: a real split doesn't show its container in the
+                // list — the sub-transactions stand as rows of their own,
+                // the shared rail linking them; each opens its own page
                 const rowParts = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-                const drillable = rowParts.length > 1;
-                const unfolded = drillable && expandedTx === tx.id;
-                return (
-                  <div key={tx.id}>
-                    <TxRow
+                if (rowParts.length > 1 && hasTypedParts(tx)) {
+                  return (
+                    <TxPartGroupRows
+                      key={tx.id}
                       tx={tx}
-                      highlight={query}
-                      selected={tx.id === openTxId}
-                      accountName={accountNames.get(tx.accountId)}
-                      givenCents={givenByCredit.get(tx.id) ?? 0}
-                      transferNote={peerNotes.get(tx.id)}
-                      onClick={() => {
-                        if (drillable) toggleExpanded(tx.id);
-                        else void navigate({ to: '/transactions/$txId', params: { txId: tx.id } });
-                      }}
+                      parts={rowParts}
+                      fmt={fmt}
+                      onOpen={(partId) => openPartPage(tx.id, partId)}
                     />
-                    {unfolded && (
-                      <TxPartSubRows tx={tx} parts={rowParts} fmt={fmt} onOpen={(partId) => openPartPage(tx.id, partId)} />
-                    )}
-                  </div>
+                  );
+                }
+                return (
+                  <TxRow
+                    key={tx.id}
+                    tx={tx}
+                    highlight={query}
+                    selected={tx.id === openTxId}
+                    accountName={accountNames.get(tx.accountId)}
+                    givenCents={givenByCredit.get(tx.id) ?? 0}
+                    transferNote={peerNotes.get(tx.id)}
+                    onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+                  />
                 );
               })}
             </div>

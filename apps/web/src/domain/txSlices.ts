@@ -101,6 +101,23 @@ export function duplicatePartTypes(
 }
 
 /**
+ * The STRICT version for the parts world (#126 r5, user rule: "we can't
+ * have two expense types"): in the split flows — completion deck,
+ * values-staged review drafts, part pages — even two UNTYPED parts
+ * (both inheriting 'expense') are refused. The lenient version above
+ * keeps classic multi-category confirmable everywhere else.
+ */
+export function duplicatePartTypesStrict(
+  splits: readonly TxSplit[] | undefined,
+  rowType: TxType,
+): boolean {
+  const parts = (splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
+  if (parts.length <= 1) return false;
+  const types = parts.map((s) => s.txType ?? rowType);
+  return new Set(types).size !== types.length;
+}
+
+/**
  * The presentation discriminator (v2.1): a split renders as PARTS (labels,
  * spine, type chips) only when some part actually tells a part story —
  * its own type, link, event, label or category spread. A plain

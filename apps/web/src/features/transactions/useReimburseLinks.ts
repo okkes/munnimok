@@ -57,19 +57,23 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
   };
 
   /** link `cents` of `credit` against `expense`, MERGING into any
-   *  existing link between the two (both directions call this) */
-  const link = (expense: SpaceTx, credit: SpaceTx, cents: number): void => {
+   *  existing link between the two (both directions call this); a
+   *  partId targets one PART of a split expense (#126 r5) */
+  const link = (expense: SpaceTx, credit: SpaceTx, cents: number, partId?: string): void => {
     const clamped = clampReimbursement(expense, giveableCents(credit), cents);
     if (clamped <= 0) return;
-    const prev = (expense.reimbursements ?? []).find((r) => r.txId === credit.id)?.amountCents ?? 0;
-    void transform(expense, expensePatch(expense, withLink(expense.reimbursements, credit.id, prev + clamped)), 'reimburse');
+    const prev =
+      (expense.reimbursements ?? []).find((r) => r.txId === credit.id && r.partId === partId)?.amountCents ?? 0;
+    void transform(expense, expensePatch(expense, withLink(expense.reimbursements, credit.id, prev + clamped, partId)), 'reimburse');
     void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) + clamped), null); // one line per gesture, not per side
   };
 
-  /** remove the link between the two (either side's unlink button) */
+  /** remove the link between the two (either side's unlink button) —
+   *  severs the WHOLE pair, part-targeted links included (#126 r5) */
   const unlink = (expense: SpaceTx, credit: SpaceTx): void => {
-    const removed = (expense.reimbursements ?? []).find((r) => r.txId === credit.id)?.amountCents ?? 0;
-    void transform(expense, expensePatch(expense, withLink(expense.reimbursements, credit.id, 0)), 'reimburse');
+    const links = expense.reimbursements ?? [];
+    const removed = links.filter((r) => r.txId === credit.id).reduce((sum, r) => sum + r.amountCents, 0);
+    void transform(expense, expensePatch(expense, links.filter((r) => r.txId !== credit.id)), 'reimburse');
     void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) - removed), null);
   };
 

@@ -157,6 +157,8 @@ export interface TxSplit {
    *  several categories. Magnitudes sum to the part's amountCents; catId
    *  stays the largest entry as the compat shadow. Absent = single cat. */
   cats?: TxSplitCat[];
+  /** the part's own note (#126 r5: parts are full transactions) */
+  notes?: string;
 }
 
 export interface TxSplitCat {
@@ -170,6 +172,9 @@ export interface TxReimbursement {
   /** the credit transaction that pays (part of) this expense back */
   txId: string;
   amountCents: number;
+  /** which PART of a split expense it pays back (#126 r5) — absent =
+   *  the whole transaction; container math is unchanged either way */
+  partId?: string;
 }
 
 export interface TransactionRow extends SyncEnvelope {
