@@ -506,15 +506,24 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('40');
   });
 
-  it('the detail split flow is drafted until complete, then lands in ONE write (#126 r4)', async () => {
+  it('the detail split flow is drafted until complete, then lands in ONE write (#126 r4/r7)', async () => {
     renderApp('/transactions/dm6');
+    // give the row its own note first — splitting must reset it (r7)
+    const containerNotes = await screen.findByTestId('tx-detail-notes');
+    fireEvent.change(containerNotes, { target: { value: 'pre-split note' } });
+    fireEvent.blur(containerNotes);
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => expect((await db.transactions.get('dm6'))?.notes).toBe('pre-split note'), { timeout: 5000 });
+
     // the classic editor keeps the plain category look — no labels
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
     await screen.findByTestId('split-editor');
     expect(screen.queryByTestId('split-label-0')).toBeNull();
 
-    // the split door, in the open on the detail: VALUES first
+    // the split door WARNS — a filled row resets when it splits (r7)
     fireEvent.click(await screen.findByTestId('tx-detail-split-row'));
+    fireEvent.click(await screen.findByTestId('split-reset-continue'));
     await screen.findByTestId('split-label-0');
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     fireEvent.focus(amount0);
@@ -528,34 +537,41 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
 
     // Done STAGES — the completion deck opens, NOTHING is written yet
     await screen.findByTestId('split-complete');
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB('munni_demo');
     expect((await db.transactions.get('dm6'))?.splits).toBeUndefined();
-    // part 2 is still Uncategorized — incomplete holds Apply
-    expect((screen.getByTestId('split-apply') as HTMLButtonElement).disabled).toBe(true);
 
-    // naming part 2 makes it a real PART — two 'expense' parts are fine
-    // now (r6): no warning, only the missing category still holds Apply
+    // r7: Apply stays TAPPABLE — the refused tap marks the uncategorized
+    // part on its number circle and writes nothing
+    expect((screen.getByTestId('split-apply') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('split-apply'));
+    await screen.findByTestId('deck-attention');
+    await screen.findByTestId('deck-attn-1');
+    expect((await db.transactions.get('dm6'))?.splits).toBeUndefined();
+
+    // naming part 2 makes it a real PART; Set aside (◆ pulls the saving
+    // type through the part editor) completes it — Apply lands the whole
+    // split in one write and RESETS the container's own story
     fireEvent.click(screen.getByTestId('deck-part-1'));
     fireEvent.change(await screen.findByTestId('deck-label-1'), { target: { value: 'Device plan' } });
-    expect(screen.queryByTestId('deck-type-duplicate')).toBeNull();
-    expect((screen.getByTestId('split-apply') as HTMLButtonElement).disabled).toBe(true);
-
-    // Set aside (◆ pulls the saving type) → complete → Apply arms and
-    // lands the whole split in one write
     fireEvent.click(await screen.findByTestId('deck-cat-1'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await waitFor(() => expect((screen.getByTestId('split-apply') as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.queryByTestId('deck-attn-1')).toBeNull());
     fireEvent.click(screen.getByTestId('split-apply'));
     await waitFor(async () => {
       const row = await db.transactions.get('dm6');
       expect(row?.splits).toHaveLength(2);
       expect(row?.splits?.[1]?.txType).toBe('saving');
       expect(row?.splits?.[1]?.label).toBe('Device plan');
+      expect(row?.notes ?? '').toBe(''); // the container's note reset (r7)
     }, { timeout: 5000 });
 
-    // the container steps back: no type row, and Manage splits stands
+    // the container steps back: no type row, no actions block, and
+    // Manage splits stands
     await waitFor(() => expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull());
+    expect(screen.queryByTestId('tx-detail-recurring-row')).toBeNull();
     await screen.findByTestId('tx-detail-manage-splits');
     db.close();
   }, 15_000);
@@ -634,28 +650,34 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('tx-part-sibling-0'));
     await waitFor(() => expect(screen.getByTestId('tx-part-amount').textContent).toContain('40.00'));
 
-    // the same-kind rule guards part edits too: pulling 'saving' onto
-    // this part would clash with the Device plan — refused, said plainly
+    // r7: NO kind restriction — pulling 'saving' onto this part lands
+    // even though the Device plan is saving too (the category card opens
+    // the part-scoped whole-transaction editor)
     fireEvent.click(screen.getByTestId('tx-part-category'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await screen.findByTestId('tx-part-type-clash');
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('tx-part-kind-row').textContent).toContain('Saving'));
 
-    // an ordinary pick lands and shows on the part's own card
+    // an ordinary pick lands too and clears the pulled type
     fireEvent.click(screen.getByTestId('tx-part-category'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('tx-part-category').textContent).toContain('Coffee'));
 
-    // r6: the part spreads its own €40.00 across TWO categories — the
-    // door seeds the current one owning the whole share, the pill puts
-    // the rest on the new row, and the write carries the cats spread
-    fireEvent.click(screen.getByTestId('tx-part-spread'));
+    // r6/r7: the part spreads its own €40.00 across TWO categories in
+    // the same editor — the pill puts the rest on the new row, and the
+    // write carries the cats spread
+    fireEvent.click(screen.getByTestId('tx-part-category'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-add'));
     fireEvent.click(await screen.findByTestId('part-cat-1'));
-    // the part page's own picker stays mounted in tests — the spread
-    // editor's picker is the LAST mounted instance of these testids
-    const telecomOptions = await screen.findAllByTestId('catpicker-telecom');
-    fireEvent.click(telecomOptions.at(-1)!);
+    fireEvent.click(await screen.findByTestId('catpicker-telecom'));
     const spreadAmount0 = screen.getByTestId('part-cat-amount-0') as HTMLInputElement;
     fireEvent.focus(spreadAmount0);
     fireEvent.change(spreadAmount0, { target: { value: '15,00' } });
@@ -672,6 +694,12 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       expect(row?.splits?.[0]?.catId).toBe('telecom');
     }, { timeout: 5000 });
     await waitFor(() => expect(screen.getByTestId('tx-part-category').textContent).toContain('·'));
+
+    // r7: the part links a recurring cost right here — detail parity
+    fireEvent.click(screen.getByTestId('tx-part-rec'));
+    await screen.findByTestId('tx-part-rec-list');
+    fireEvent.click(screen.getByTestId('tx-part-rec-none'));
+    expect(screen.getByTestId('tx-part-rec').textContent).toContain('None');
 
     // the part's event membership edits right here as well
     fireEvent.click(screen.getByTestId('tx-part-event'));

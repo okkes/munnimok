@@ -294,13 +294,17 @@
 .m-card-out { animation: m-card-out 0.22s ease-in forwards; }
 .m-card-in { animation: m-card-in 0.24s ease-out; }
 
-/* part deck (#126 r6): the tapped/stepped part drops out of the stack
-   onto the top — the swap the user asked to feel */
+/* part deck (#126 r6/r7): a real shuffle — the tapped part drops out of
+   the stack onto the top while the outgoing one slides back up into it */
 @keyframes m-deck-in {
   from { transform: translateY(-12px) scale(0.98); opacity: 0.5; }
   to { transform: none; opacity: 1; }
 }
 .m-deck-in { animation: m-deck-in 0.2s ease-out; }
+@keyframes m-deck-out {
+  to { transform: translateY(-16px) scale(0.95); opacity: 0; }
+}
+.m-deck-out { animation: m-deck-out 0.18s ease-in forwards; }
 
 /* detail pane arrival in the master-detail layout */
 @keyframes m-pane-in {

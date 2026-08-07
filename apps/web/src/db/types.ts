@@ -153,6 +153,9 @@ export interface TxSplit {
   transferPeerId?: string;
   /** per-part event membership ("this €30 of the dinner is the trip") */
   eventId?: string;
+  /** per-part recurring link (#126 r7: parts carry everything a whole
+   *  transaction carries — the €50 device-plan part ↔ its recurring) */
+  recurringId?: string;
   /** per-part category partition (splits v2.1): a part can spread across
    *  several categories. Magnitudes sum to the part's amountCents; catId
    *  stays the largest entry as the compat shadow. Absent = single cat. */

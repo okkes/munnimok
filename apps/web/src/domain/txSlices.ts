@@ -1,6 +1,4 @@
-import type { TransactionRow, TxSplit, TxType } from '@/db/types';
-import { REIMBURSED_ID } from './categories';
-import { kindOf } from './txKind';
+import type { TransactionRow, TxType } from '@/db/types';
 
 /**
  * The canonical slice fan-out (typed-splits v2, approved plan): every
@@ -18,6 +16,7 @@ export interface TxSliceView {
   /** the part's effective type: its own, else the row's */
   effType: TxType;
   eventId: string | undefined;
+  recurringId: string | undefined;
   linkedAccountId: string | undefined;
   transferPeerId: string | undefined;
   /** stable part id when the part carries one (typed parts do) */
@@ -30,7 +29,7 @@ export interface TxSliceView {
 
 type SliceSource = Pick<
   TransactionRow,
-  'amountCents' | 'catId' | 'txType' | 'eventId' | 'linkedAccountId' | 'transferPeerId' | 'splits'
+  'amountCents' | 'catId' | 'txType' | 'eventId' | 'recurringId' | 'linkedAccountId' | 'transferPeerId' | 'splits'
 >;
 
 export function txSliceViews(tx: SliceSource): TxSliceView[] {
@@ -42,6 +41,7 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
         catId: tx.catId,
         effType: tx.txType,
         eventId: tx.eventId,
+        recurringId: tx.recurringId,
         linkedAccountId: tx.linkedAccountId,
         transferPeerId: tx.transferPeerId,
         sliceId: undefined,
@@ -56,8 +56,10 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
     const base = {
       effType: part.txType ?? tx.txType,
       // a part without its own event still belongs to the row's (the
-      // row-level attachment predates per-part events and stays honest)
+      // row-level attachment predates per-part events and stays honest);
+      // recurring links inherit the same way (#126 r7)
       eventId: part.eventId ?? tx.eventId,
+      recurringId: part.recurringId ?? tx.recurringId,
       linkedAccountId: part.linkedAccountId,
       transferPeerId: part.transferPeerId,
       sliceId: part.id,
@@ -82,32 +84,9 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
 export const hasSliceOfType = (tx: SliceSource, txType: TxType): boolean =>
   txSliceViews(tx).some((view) => view.effType === txType);
 
-/**
- * Twin parts are refused, honest repeats are not (#126 r6, user
- * correction of the r5 blanket rule): a five-way expense split is
- * legitimate — each part is its own transaction, distinguished by its
- * categories, note and event. What stays refused is the SAME story told
- * twice: two transfer-family parts to the same counterparty (or both
- * bare), or the same special type twice — those are one part, split for
- * no reason. Standard (expense/income) parts repeat freely. The settled
- * Reimbursed slice is bookkeeping, not a part.
- */
-export function conflictingPartKinds(
-  splits: readonly TxSplit[] | undefined,
-  rowType: TxType,
-): boolean {
-  const parts = (splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-  if (parts.length <= 1) return false;
-  const seen = new Set<string>();
-  for (const part of parts) {
-    const effType = part.txType ?? rowType;
-    if (kindOf(effType) === 'standard') continue;
-    const key = `${effType}:${part.linkedAccountId ?? ''}`;
-    if (seen.has(key)) return true;
-    seen.add(key);
-  }
-  return false;
-}
+// conflictingPartKinds retired 2026-08-07 (#126 r7, user rule): NO
+// restriction on a split beyond the amounts summing — parts repeat any
+// kind freely; incompleteness surfaces as attention marks, not refusals.
 
 /**
  * The presentation discriminator (v2.1): a split renders as PARTS (labels,

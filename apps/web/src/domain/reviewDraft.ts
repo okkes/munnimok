@@ -1,6 +1,5 @@
 import { UNCATEGORIZED_ID, autoSubFor, stampMovementSub } from './categories';
 import { primaryCatId } from './splits';
-import { conflictingPartKinds } from './txSlices';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
 import { categoryConflictsWithType, typeForLinkedAccount } from './txType';
@@ -137,9 +136,9 @@ export const draftReady = (draft: ReviewDraft): boolean => {
   // adjustments are corrections — not spending; same placeholder story.
   // ('funding' only serves unmigrated rows since the type retired.)
   if (draft.txType === 'funding' || draft.txType === 'adjustment') return true;
+  // #126 r7 (user rule): no restriction on a split beyond the amounts —
+  // the ONLY hold-back left is an uncategorized part, and the deck marks
+  // it with an attention badge when Confirm is tried
   if (draft.catId === 'uncategorized') return false;
-  if (draft.splits?.some((slice) => slice.catId === 'uncategorized')) return false;
-  // #126 r6 (user rule refined): standard parts may repeat — only twin
-  // transfer/special parts (the same story told twice) never confirm
-  return !conflictingPartKinds(draft.splits, draft.txType);
+  return !draft.splits?.some((slice) => slice.catId === 'uncategorized');
 };

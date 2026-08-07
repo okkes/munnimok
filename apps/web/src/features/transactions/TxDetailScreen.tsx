@@ -17,7 +17,6 @@ import { logActivity } from '@/application/activity';
 import { countPreAnchorTx } from '@/application/loanBalance';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
-import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, humanizeBankKeys, txTitle } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -34,13 +33,13 @@ import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
-import { PartCatsSheet, catsPatch } from './PartCatsSheet';
+import { PartCatsSheet, partCatsApplyPatch } from './PartCatsSheet';
 import { TxFormSheet } from './TxFormSheet';
 import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
-import { conflictingPartKinds, hasTypedParts } from '@/domain/txSlices';
+import { hasTypedParts } from '@/domain/txSlices';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
@@ -620,12 +619,12 @@ function detailScreenTitle(tx: SpaceTx, parts: readonly TxSplit[], partView: TxS
   return partView.label ?? `${txTitle(tx)} – ${t('split.partN', { n: parts.indexOf(partView) + 1 })}`;
 }
 
-/** drafted-until-complete (#126 r4): the staged split may Apply only
- *  when every part has a real category and no two parts tell the same
- *  transfer/special story twice (r6: standard parts repeat freely).
+/** drafted-until-complete (#126 r4, relaxed r7): the staged split may
+ *  Apply once every part has a real category — the ONLY remaining hold;
+ *  a refused Apply marks the offenders (attention badges).
  *  Module-level for S3776. */
-const stagedSplitComplete = (stage: TxSplit[] | null, rowType: TxType): boolean =>
-  !!stage && stage.every((s) => s.catId !== UNCATEGORIZED_ID) && !conflictingPartKinds(stage, rowType);
+const stagedSplitComplete = (stage: TxSplit[] | null): boolean =>
+  !!stage && stage.every((s) => s.catId !== UNCATEGORIZED_ID);
 
 /** back to a whole transaction: one category, split gone — the settled
  *  Reimbursed slice keeps the gross partition when it exists.
@@ -670,8 +669,9 @@ function DetailSplitSheets({
   setCompleteOpen,
   activeEvents,
   lockedKind,
+  recurrings,
+  attention,
   openValuesEditor,
-  stageComplete,
   applyStagedSplit,
 }: Readonly<{
   tx: SpaceTx;
@@ -689,8 +689,11 @@ function DetailSplitSheets({
   setCompleteOpen: (open: boolean) => void;
   activeEvents: readonly { id: string; name: string; icon?: string }[];
   lockedKind: boolean;
+  /** r7: parts link recurring costs like whole transactions do */
+  recurrings: readonly { id: string; name: string }[];
+  /** r7: a refused Apply marks the parts that still need a category */
+  attention: boolean;
   openValuesEditor: () => void;
-  stageComplete: boolean;
   applyStagedSplit: () => void;
 }>) {
   const { t } = useLang();
@@ -737,13 +740,17 @@ function DetailSplitSheets({
             activeEvents={activeEvents}
             allowedCatIds={allowedCatIds}
             lockedKind={lockedKind}
+            recurrings={recurrings}
+            attention={attention}
             onOpenValues={() => {
               setCompleteOpen(false);
               openValuesEditor();
             }}
             onSplits={(next) => setSplitStage([...next])}
           />
-          <Button data-testid="split-apply" onClick={applyStagedSplit} disabled={!stageComplete}>
+          {/* r7: always tappable — a refused Apply marks the incomplete
+              parts instead of sitting silently disabled */}
+          <Button data-testid="split-apply" onClick={applyStagedSplit} disabled={!splitStage}>
             {t('split.applyAll')}
           </Button>
         </div>
@@ -826,11 +833,14 @@ function PartDetailBody({
   const accounts = useSpaceAccounts();
   const [kindOpen, setKindOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
-  // r6: the part's money spreading across several categories
+  // r7: the part links recurring costs like whole transactions do
+  const [recOpen, setRecOpen] = useState(false);
+  const recurrings = useRecurrings();
+  const activeRecs = (recurrings ?? []).filter((r) => r.active === 1);
+  // r6/r7: the category card opens the whole-transaction category
+  // editor, scoped to this part
   const [spreadOpen, setSpreadOpen] = useState(false);
-  const [typeClash, setTypeClash] = useState(false);
 
   const sign = tx.amountCents < 0 ? -1 : 1;
   const partCat = cats.byId(part.catId);
@@ -857,16 +867,11 @@ function PartDetailBody({
     return credit ? txTitle(credit) : id;
   };
 
-  /** per-part write-through — refused when it would leave two parts
-   *  telling the same transfer/special story twice (#126 r4/r6) */
+  /** per-part write-through — r7 (user rule): NO restriction on a split
+   *  beyond the amounts, every patch lands */
   const patchPart = (patch: Partial<TxSplit>): void => {
     const nextSplits = (tx.splits ?? []).map((s) => (s.id === part.id ? { ...s, ...patch } : s));
     const nonReimb = nextSplits.filter((s) => s.catId !== REIMBURSED_ID);
-    if (conflictingPartKinds(nonReimb, tx.txType)) {
-      setTypeClash(true);
-      return;
-    }
-    setTypeClash(false);
     void transform(tx, { splits: nextSplits, catId: primaryCatId(nonReimb) ?? tx.catId }, 'txCategory');
   };
 
@@ -904,41 +909,39 @@ function PartDetailBody({
           <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
           <Icon name={kindRowIcon} size={13} color="var(--m-ink-4)" />
         </button>
-        {typeClash && (
-          <p className="mx-4 mb-3 rounded-card bg-negative-soft px-3 py-2 text-[12px] leading-relaxed text-negative" data-testid="tx-part-type-clash">
-            {t('split.typeDuplicate')}
-          </p>
-        )}
       </div>
 
-      <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface">
-        <button
-          data-testid="tx-part-category"
-          onClick={spread ? () => setSpreadOpen(true) : () => setPickerOpen(true)}
-          className="m-tap flex w-full items-center gap-3 bg-transparent px-4 py-3.5 text-left"
-        >
-          <Icon name={partCat.icon} size={20} color={partColor ?? 'var(--m-ink-3)'} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[15px] text-ink">{spread ?? catName(partCat, t)}</span>
-            {!spread && partCat.parentId && (
-              <span className="block truncate text-[11px] text-ink-4">{catName(cats.byId(partCat.parentId), t)}</span>
-            )}
-          </span>
-          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-        </button>
-        {/* r6 (user request): a part is a full transaction — its money
-            may spread across SEVERAL categories of its own */}
-        {!transferPart && !spread && (
-          <button
-            data-testid="tx-part-spread"
-            onClick={() => setSpreadOpen(true)}
-            className="m-tap flex w-full items-center gap-2 bg-transparent px-4 pb-3 text-left text-[12px] font-medium text-accent-deep"
-          >
-            <Icon name="plus" size={13} />
-            {t('split.spreadDoor')}
-          </button>
-        )}
-      </div>
+      {/* the category card IS the door to the whole-transaction category
+          editor, scoped to this part (r7: same gears — multiple
+          categories, exact euros or percentages) */}
+      <button
+        data-testid="tx-part-category"
+        onClick={() => setSpreadOpen(true)}
+        className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+      >
+        <Icon name={partCat.icon} size={20} color={partColor ?? 'var(--m-ink-3)'} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] text-ink">{spread ?? catName(partCat, t)}</span>
+          {!spread && partCat.parentId && (
+            <span className="block truncate text-[11px] text-ink-4">{catName(cats.byId(partCat.parentId), t)}</span>
+          )}
+        </span>
+        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+      </button>
+
+      {/* r7: the part's recurring link — whole-transaction parity */}
+      <button
+        data-testid="tx-part-rec"
+        onClick={() => setRecOpen(true)}
+        className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left text-[14px] text-ink"
+      >
+        <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
+        <span className="min-w-0 flex-1 truncate">
+          {activeRecs.find((rec) => rec.id === part.recurringId)?.name ?? t('recurring.linkNone')}
+        </span>
+        <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
+        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+      </button>
 
       <button
         data-testid="tx-part-event"
@@ -1043,24 +1046,9 @@ function PartDetailBody({
           patchPart({ txType: 'transfer', linkedAccountId: picked.id, catId: autoSubFor('transfer', tx.amountCents) ?? part.catId })
         }
       />
-      <CategoryPicker
-        open={pickerOpen}
-        onOpenChange={(next) => {
-          if (!next) setPickerOpen(false);
-        }}
-        direction={partDirection}
-        txType={tx.txType}
-        selectedId={part.catId}
-        onlyIds={allowedCatIds}
-        onPick={(catId) => {
-          const pulled = specialCatType(catId);
-          const clearPulled = part.txType && !part.linkedAccountId ? { txType: undefined } : {};
-          // a deliberate single pick flattens any category spread — the
-          // stale cats array would otherwise keep telling the old story
-          patchPart({ catId, cats: undefined, ...(pulled ? { txType: pulled } : clearPulled) });
-        }}
-      />
-      {/* r6: several categories inside THIS part, scoped to its amount */}
+      {/* the part's categories (r6/r7) — the whole-transaction editor,
+          scoped to the part's amount; a single special pick pulls the
+          part's type exactly as it always did */}
       <PartCatsSheet
         open={spreadOpen}
         onOpenChange={setSpreadOpen}
@@ -1070,10 +1058,47 @@ function PartDetailBody({
         txType={tx.txType}
         allowedCatIds={allowedCatIds}
         onApply={(entries) => {
-          patchPart(catsPatch(entries));
+          patchPart(partCatsApplyPatch(part, entries));
           setSpreadOpen(false);
         }}
       />
+      {/* r7: the part's recurring link — the manual pick, parts edition */}
+      <Sheet
+        open={recOpen}
+        onOpenChange={setRecOpen}
+        title={t('recurring.linkTitle')}
+        size="form"
+        dragHandle
+      >
+        <div className="pt-1" data-testid="tx-part-rec-list">
+          <button
+            data-testid="tx-part-rec-none"
+            onClick={() => {
+              patchPart({ recurringId: undefined });
+              setRecOpen(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink-2"
+          >
+            <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
+            <span className="min-w-0 flex-1 truncate">{t('recurring.linkNone')}</span>
+          </button>
+          {activeRecs.map((rec) => (
+            <button
+              key={rec.id}
+              data-testid={`tx-part-rec-${rec.id}`}
+              onClick={() => {
+                patchPart({ recurringId: rec.id });
+                setRecOpen(false);
+              }}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
+            >
+              <Icon name="autorenew" size={18} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1 truncate">{rec.name}</span>
+              {part.recurringId === rec.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+            </button>
+          ))}
+        </div>
+      </Sheet>
       <Sheet
         open={eventOpen}
         onOpenChange={setEventOpen}
@@ -1136,6 +1161,10 @@ export function TxDetailScreen() {
   const [splitValuesMode, setSplitValuesMode] = useState(false);
   const [splitStage, setSplitStage] = useState<TxSplit[] | null>(null);
   const [completeOpen, setCompleteOpen] = useState(false);
+  // r7: a refused Apply marks incomplete parts; splitting a filled row
+  // warns that the container's own story resets
+  const [applyAttention, setApplyAttention] = useState(false);
+  const [splitResetOpen, setSplitResetOpen] = useState(false);
   const { part: partParam } = useSearch({ strict: false }) as { part?: string };
   const [recurringOpen, setRecurringOpen] = useState(false);
   // create-and-return doors (user request): snapshot of pre-existing ids
@@ -1280,12 +1309,21 @@ export function TxDetailScreen() {
   const settledSlices = (tx.splits ?? []).filter((s) => s.catId === REIMBURSED_ID);
   const multiPart = parts.length > 1;
   const activeEventsList = (events ?? []).filter((e) => e.archived !== 1);
+  const activeRecsList = (recurrings ?? []).filter((r) => r.active === 1);
   // the completion stage: values Done stages; Apply writes once whole
-  const stageComplete = stagedSplitComplete(splitStage, tx.txType);
+  const stageComplete = stagedSplitComplete(splitStage);
   const unsplitFallbackCat = primaryCatId(parts) ?? tx.catId ?? UNCATEGORIZED_ID;
   const openValuesEditor = () => {
     setSplitValuesMode(true);
     setSplitOpen(true);
+  };
+  // r7 (user rule): splitting RESETS the transaction's own story — a
+  // filled row gets a conscious warning before the split flow opens
+  const requestSplit = () => {
+    const hasStory =
+      !!tx.notes || !!tx.eventId || !!tx.recurringId || (!!tx.catId && tx.catId !== UNCATEGORIZED_ID);
+    if (hasStory) setSplitResetOpen(true);
+    else openValuesEditor();
   };
   const openClassicEditor = () => {
     setSplitValuesMode(false);
@@ -1296,12 +1334,24 @@ export function TxDetailScreen() {
   const openCategoriesEditor = multiPart ? openValuesEditor : openClassicEditor;
   const splitDoorMode = splitDoorModeFor(multiPart, categoryLocked);
   const applyStagedSplit = () => {
-    if (!splitStage || !stageComplete) return;
-    // the stage lands in ONE write — settled value rides along untouched
+    if (!splitStage) return;
+    if (!stageComplete) {
+      // r7: a refused Apply POINTS at the parts that hold it back
+      setApplyAttention(true);
+      return;
+    }
+    // the stage lands in ONE write — settled value rides along untouched.
+    // r7: the container's own story RESETS as the split lands (parts
+    // carry it now); explicit nulls — an undefined would drop from the
+    // op and leave stale values behind (LWW)
     void transform(tx, {
       splits: [...splitStage, ...settledSlices],
       catId: primaryCatId(splitStage) ?? tx.catId,
+      ...(tx.notes ? { notes: '' } : {}),
+      ...(tx.eventId ? { eventId: null as never } : {}),
+      ...(tx.recurringId ? { recurringId: null as never } : {}),
     });
+    setApplyAttention(false);
     setSplitStage(null);
     setCompleteOpen(false);
   };
@@ -1534,7 +1584,7 @@ export function TxDetailScreen() {
             onEdit={() => !categoryLocked && openCategoriesEditor()}
           />
           {/* the split door, in the open on the detail too (#126 r4) */}
-          <DetailSplitDoor mode={splitDoorMode} placement="row" onOpen={openValuesEditor} />
+          <DetailSplitDoor mode={splitDoorMode} placement="row" onOpen={requestSplit} />
           {bulkOffer && (
             <DetailBulkBar
               targets={bulkTargets}
@@ -1547,8 +1597,9 @@ export function TxDetailScreen() {
         </div>
         <DetailSplitDoor mode={splitDoorMode} placement="manage" onOpen={openValuesEditor} />
 
-        {/* block: actions — recurring + event links */}
-        {tx.txType === 'expense' && (
+        {/* block: actions — recurring + event links. A split container
+            carries none of its own (r7): the parts do */}
+        {tx.txType === 'expense' && !multiPart && (
           <>
             <div className="m-cap mt-5 mb-1 px-1">{t('tx.actionsSection')}</div>
             <div className="overflow-hidden rounded-card border border-line bg-surface">
@@ -1589,7 +1640,8 @@ export function TxDetailScreen() {
         {/* the sections below the details card follow the space's saved
             order/visibility (user request — same mechanics as Home) */}
         {resolveTxDetailBlocks(space)
-          .filter((entry) => !entry.hidden)
+          // r7: the container keeps no note of its own — the parts do
+          .filter((entry) => !entry.hidden && !(multiPart && entry.id === 'notes'))
           .map((entry) => {
             const section: Record<TxDetailBlockId, ReactNode> = {
               reimburse: <ReimburseSection tx={tx} />,
@@ -1704,10 +1756,30 @@ export function TxDetailScreen() {
         setCompleteOpen={setCompleteOpen}
         activeEvents={activeEventsList}
         lockedKind={!!ownStamp}
+        recurrings={activeRecsList}
+        attention={applyAttention}
         openValuesEditor={openValuesEditor}
-        stageComplete={stageComplete}
         applyStagedSplit={applyStagedSplit}
       />
+      {/* r7 (user rule): splitting resets the transaction's own story —
+          a conscious continue, never a silent drop */}
+      <Sheet open={splitResetOpen} onOpenChange={setSplitResetOpen} title={t('split.resetWarnTitle')} size="compact">
+        <div className="flex flex-col gap-3 pt-1">
+          <p className="text-[13px] leading-relaxed text-ink-2">{t('split.resetWarnBody')}</p>
+          <Button
+            data-testid="split-reset-continue"
+            onClick={() => {
+              setSplitResetOpen(false);
+              openValuesEditor();
+            }}
+          >
+            {t('split.resetContinue')}
+          </Button>
+          <Button variant="outline" data-testid="split-reset-cancel" onClick={() => setSplitResetOpen(false)}>
+            {t('action.cancel')}
+          </Button>
+        </div>
+      </Sheet>
       <RenameTitleSheet
         open={renameOpen}
         onOpenChange={setRenameOpen}

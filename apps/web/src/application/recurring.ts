@@ -143,6 +143,9 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
   let linked = 0;
   for (const tx of [...txs].sort((a, b) => a.date.localeCompare(b.date))) {
     if (tx.recurringId || tx.amountCents >= 0 || tx.txType !== 'expense') continue;
+    // #126 r7: a split container never takes a row-level recurring link —
+    // its parts carry their own (linked by hand from the part surfaces)
+    if ((tx.splits ?? []).filter((s) => s.catId !== 'reimbursed').length > 1) continue;
     const rec = byKey.get(merchantKey(tx.merchant));
     if (!rec || !recurringAmountMatches(rec, tx.amountCents)) continue;
     const cycle = cycleKeyOf(rec, tx.date);

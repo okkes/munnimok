@@ -390,10 +390,14 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('deck-cat-1');
     expect(screen.queryByTestId('deck-cat-0')).toBeNull();
 
-    // part 1 takes its own category right on the card; the new pick
-    // shows in place and Confirm arms once nothing is Uncategorized
+    // part 1 takes its categories through the whole-transaction editor
+    // (r7 parity): its category row IS the door — one row, pick, Done
     fireEvent.click(screen.getByTestId('deck-cat-1'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('deck-cat-1').textContent).toContain('Coffee'));
 
     // its label is editable in place and rides the staged draft
@@ -411,16 +415,16 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('deck-event-list');
     fireEvent.click(screen.getByTestId('deck-event-none'));
 
-    // r5: the part's own NOTE — typed in its sheet, worn on the row
-    fireEvent.click(screen.getByTestId('deck-notes-1'));
-    const noteInput = await screen.findByTestId('deck-notes-input');
-    fireEvent.change(noteInput, { target: { value: 'Half for Sam' } });
-    fireEvent.blur(noteInput);
-    fireEvent.click(screen.getByTestId('deck-notes-save'));
-    await waitFor(() => expect(screen.getByTestId('deck-notes-1').textContent).toContain('Half for Sam'));
+    // r7: the part links recurring costs right on the card — review
+    // parity; the deck carries NO notes row (review never had one)
+    fireEvent.click(screen.getByTestId('deck-rec-1'));
+    await screen.findByTestId('deck-rec-list');
+    fireEvent.click(screen.getByTestId('deck-rec-none'));
+    expect(screen.getByTestId('deck-rec-1').textContent).toContain('None');
+    expect(screen.queryByTestId('deck-notes-1')).toBeNull();
   }, 15_000);
 
-  it('standard parts repeat freely; the SAME special kind twice is refused on the spot (#126 r6)', async () => {
+  it('NO restrictions on a split: even the same special kind twice lands (#126 r7)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     fireEvent.click(await screen.findByTestId('review-split-row'));
@@ -434,23 +438,28 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // two EXPENSE parts, each with its own category: the r6 rule lets
-    // the split through — every part is a full transaction of its own
+    // part 1 → Set aside (◆ pulls saving through the part editor)
     await screen.findByTestId('review-part-deck');
     fireEvent.click(screen.getByTestId('deck-part-1'));
     fireEvent.click(await screen.findByTestId('deck-cat-1'));
-    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
-    await waitFor(() => expect(screen.queryByTestId('deck-type-duplicate')).toBeNull());
-    await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
-
-    // part 1 becomes Set aside (◆ pulls saving); the SAME pick on part 0
-    // would tell that story twice — refused on the spot, said plainly
-    fireEvent.click(screen.getByTestId('deck-cat-1'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('deck-kind-row-1').textContent).toContain('Saving'));
+
+    // the SAME pick on part 0: r7 allows the honest repeat — no warning
+    // exists anymore, and Confirm arms with both parts categorized
     fireEvent.click(screen.getByTestId('deck-part-0'));
     fireEvent.click(await screen.findByTestId('deck-cat-0'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await screen.findByTestId('deck-type-duplicate');
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('deck-kind-row-0').textContent).toContain('Saving'));
+    await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
   }, 15_000);
 
   it('a split holds MORE than two parts: pct rows seed the leftover, Done stays armed, the stepper walks the stack (#126 r6)', async () => {
@@ -478,23 +487,41 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // the deck holds all three; the stepper walks the stack both ways
+    // the deck holds all three; tapping a strip shuffles it on top
     await screen.findByTestId('review-part-deck');
     await screen.findByTestId('deck-label-0');
-    fireEvent.click(screen.getByTestId('deck-next'));
-    await screen.findByTestId('deck-label-1');
-    fireEvent.click(screen.getByTestId('deck-next'));
+    fireEvent.click(screen.getByTestId('deck-part-2'));
     await screen.findByTestId('deck-label-2');
-    fireEvent.click(screen.getByTestId('deck-prev'));
+    fireEvent.click(screen.getByTestId('deck-part-1'));
     await screen.findByTestId('deck-label-1');
 
-    // three parts — two of them plain expense — confirm fine under r6
+    // r7: Confirm stays TAPPABLE while parts are uncategorized — the tap
+    // writes nothing and marks the offenders on their number circles
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    await screen.findByTestId('deck-attention');
+    await screen.findByTestId('deck-attn-1');
+    await screen.findByTestId('deck-attn-2');
+    expect(screen.queryByTestId('deck-attn-0')).toBeNull(); // part 0 has its category
+    await screen.findByTestId('review-card'); // nothing was written
+
+    // categorizing clears each badge; three parts — two plain expense —
+    // confirm fine (r7: no kind restrictions)
     fireEvent.click(await screen.findByTestId('deck-cat-1'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
-    fireEvent.click(screen.getByTestId('deck-next'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.queryByTestId('deck-attn-1')).toBeNull());
+
+    fireEvent.click(screen.getByTestId('deck-part-2'));
     await screen.findByTestId('deck-label-2');
     fireEvent.click(screen.getByTestId('deck-cat-2'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
   }, 15_000);
 
@@ -511,11 +538,19 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // the active card's door: spread THIS part across categories — the
-    // editor opens seeded with the part's category owning its full share
+    // the category row IS the door to the part-scoped whole-transaction
+    // editor (r7) — seeded with the part's category owning its full share
     await screen.findByTestId('review-part-deck');
-    fireEvent.click(await screen.findByTestId('deck-spread-0'));
+    fireEvent.click(await screen.findByTestId('deck-cat-0'));
     await screen.findByTestId('part-cats-editor');
+
+    // euros ⇄ percentages, the pre-split editor's two gears (r7): a
+    // full-owning row converts round-trip without drift
+    fireEvent.click(screen.getByTestId('part-cat-mode-pct'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-amount-0') as HTMLInputElement).value).toBe('100'));
+    fireEvent.click(screen.getByTestId('part-cat-mode-amount'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-amount-0') as HTMLInputElement).value).toBe('6,00'));
+
     fireEvent.click(screen.getByTestId('part-cat-add'));
     fireEvent.click(await screen.findByTestId('part-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
@@ -531,6 +566,30 @@ describe('ReviewScreen (demo identity)', () => {
     // the card's category row now tells the whole spread
     await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toContain('Coffee'));
     expect(screen.getByTestId('deck-cat-0').textContent).toContain('·');
+  }, 15_000);
+
+  it('splitting a card with staged decisions warns first — cancel keeps them, continue resets (#126 r7)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    // stage a deliberate category pick through the classic chip flow
+    fireEvent.click(await screen.findByTestId('review-category-chip'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    fireEvent.click(screen.getByTestId('split-save'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
+
+    // the split door warns; cancel drops back to the untouched card
+    fireEvent.click(screen.getByTestId('review-split-row'));
+    await screen.findByTestId('split-reset-continue');
+    fireEvent.click(screen.getByTestId('split-reset-cancel'));
+    expect(screen.queryByTestId('split-label-0')).toBeNull();
+
+    // continue resets the staged pick and opens the VALUES editor
+    fireEvent.click(screen.getByTestId('review-split-row'));
+    fireEvent.click(await screen.findByTestId('split-reset-continue'));
+    await screen.findByTestId('split-label-0');
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
   }, 15_000);
 
   it('the pill fills the FOCUSED field even though its blur restores the stash first (#130 r2)', async () => {
