@@ -38,10 +38,11 @@ export const balanceTargetIndex = (values: readonly number[]): number => {
   return empty === -1 ? values.length - 1 : empty;
 };
 
-/** fill the still-open remainder into the balance target (never below zero) */
-export function balanceOpenRow(amountCents: number, splits: TxSplit[]): TxSplit[] {
+/** fill the still-open remainder into the balance target (never below
+ *  zero); a forced index — the field the user balanced FROM — wins */
+export function balanceOpenRow(amountCents: number, splits: TxSplit[], forcedIndex?: number): TxSplit[] {
   if (splits.length === 0) return splits;
-  const target = balanceTargetIndex(splits.map((s) => s.amountCents));
+  const target = forcedIndex ?? balanceTargetIndex(splits.map((s) => s.amountCents));
   const others = splits.reduce((sum, s, i) => (i === target ? sum : sum + s.amountCents), 0);
   const open = Math.max(0, Math.abs(amountCents) - others);
   return splits.map((s, i) => (i === target ? { ...s, amountCents: open } : s));

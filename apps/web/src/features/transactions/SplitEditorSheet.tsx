@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useData } from '@/app/data';
 import { useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
@@ -179,19 +179,23 @@ function PartHeader({
   );
 }
 
-/** the unassigned/overshoot pill — tap auto-balances the last row
- *  (out of the editor for S3776) */
+/** the unassigned/overshoot pill — tap fills the row being worked on
+ *  (out of the editor for S3776). onArm fires on pointerdown, BEFORE
+ *  the focused field's blur restores its stashed value — that's how the
+ *  pill knows which row the user meant (#130 round 2). */
 function RemainderPill({
   remainder,
   mode,
   currency,
+  onArm,
   onBalance,
-}: Readonly<{ remainder: number; mode: 'amount' | 'pct'; currency: string; onBalance: () => void }>) {
+}: Readonly<{ remainder: number; mode: 'amount' | 'pct'; currency: string; onArm: () => void; onBalance: () => void }>) {
   const { t, lang } = useLang();
   const shown = (cents: number) => (mode === 'pct' ? `${cents}%` : fmtCents(cents, currency, lang));
   return (
     <button
       data-testid="split-remainder"
+      onPointerDown={onArm}
       onClick={onBalance}
       className={`m-tap rounded-card border-none px-3 py-2 text-left text-[13px] ${
         remainder > 0 ? 'bg-warning-soft text-warning' : 'bg-negative-soft text-negative'
@@ -456,10 +460,10 @@ function patchRowsAt(rows: Row[], at: EntryAddress, patch: { catId?: string; amo
   });
 }
 
-/** part mode auto-balance: the remainder lands on the first EMPTY entry
- *  (the one being worked on, #130) — else the very last entry absorbs
- *  the correction, same "fix the tail" fallback the classic rows have */
-function absorbIntoOpenEntry(rows: Row[], remainder: number): Row[] {
+/** part mode auto-balance: the remainder lands on the FORCED entry (the
+ *  field the user tapped the pill from, #130 r2), else the first EMPTY
+ *  entry, else the very last absorbs the correction */
+function absorbIntoOpenEntry(rows: Row[], remainder: number, forced: EntryAddress | null): Row[] {
   // entries flattened row-major: the main entry then its spread entries
   const entries: { row: number; cat: number; cents: number }[] = [];
   rows.forEach((row, i) => {
@@ -467,7 +471,9 @@ function absorbIntoOpenEntry(rows: Row[], remainder: number): Row[] {
     row.extraCats.forEach((x, k) => entries.push({ row: i, cat: k + 1, cents: parseCents(x.amount) ?? 0 }));
   });
   if (entries.length === 0) return rows;
-  const target = entries[balanceTargetIndex(entries.map((e) => e.cents))];
+  const target =
+    entries.find((e) => forced !== null && e.row === forced.row && e.cat === forced.cat) ??
+    entries[balanceTargetIndex(entries.map((e) => e.cents))];
   const next = toText(Math.max(0, target.cents + remainder));
   return rows.map((row, i) => {
     if (i !== target.row) return row;
@@ -585,6 +591,12 @@ export function SplitEditorSheet({
   // register-style entry for the focused amount (lib/amountRegister) —
   // one field is focused at a time, so one mode is enough
   const [entryMode, setEntryMode] = useState<AmountEntryMode>('register');
+  // #130 r2: the pill's pointerdown runs BEFORE the focused field blurs
+  // (and restores its stash) — capture WHICH field the user meant here
+  const pendingBalanceTarget = useRef<EntryAddress | null>(null);
+  const armBalance = () => {
+    pendingBalanceTarget.current = focusStash?.at ?? null;
+  };
 
   const allTxs = useSpaceTransactions();
   const accounts = useSpaceAccounts();
@@ -745,24 +757,27 @@ export function SplitEditorSheet({
   };
 
   const autoBalance = () => {
+    // the field the pill was tapped FROM wins (#130 r2); else the first
+    // empty row; else the last as the correction slot
+    const forced = pendingBalanceTarget.current;
+    pendingBalanceTarget.current = null;
     if (mode === 'pct') {
-      // the still-open share lands on the row being worked on — the
-      // first empty one — not blindly on the last (#130)
       setRows((r) => {
         const values = r.map((row) => parsePct(row.amount));
-        const target = balanceTargetIndex(values);
+        const target = forced !== null && forced.cat === 0 ? forced.row : balanceTargetIndex(values);
         const open = 100 - values.reduce((sum, v, i) => (i === target ? sum : sum + v), 0);
         return r.map((row, i) => (i === target ? { ...row, amount: toPctText(Math.max(0, open)) } : row));
       });
       return;
     }
     if (partMode) {
-      setRows((r) => absorbIntoOpenEntry(r, remainder));
+      setRows((r) => absorbIntoOpenEntry(r, remainder, forced));
       return;
     }
     setRows((r) => {
       const abs = r.map((row) => ({ catId: row.catId, amountCents: parseCents(row.amount) ?? 0 }));
-      return balanceOpenRow(referenceCents, abs).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) }));
+      const forcedRow = forced !== null && forced.cat === 0 ? forced.row : undefined;
+      return balanceOpenRow(referenceCents, abs, forcedRow).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) }));
     });
   };
 
@@ -902,7 +917,7 @@ export function SplitEditorSheet({
           )}
 
           {remainder !== 0 && (
-            <RemainderPill remainder={remainder} mode={mode} currency={tx.currency} onBalance={autoBalance} />
+            <RemainderPill remainder={remainder} mode={mode} currency={tx.currency} onArm={armBalance} onBalance={autoBalance} />
           )}
 
           {/* "Done", not "Save": in review this only stages the draft — the
