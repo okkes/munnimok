@@ -1,5 +1,6 @@
 import { UNCATEGORIZED_ID, autoSubFor, stampMovementSub } from './categories';
 import { primaryCatId } from './splits';
+import { duplicatePartTypes } from './txSlices';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
 import { categoryConflictsWithType, typeForLinkedAccount } from './txType';
@@ -137,5 +138,8 @@ export const draftReady = (draft: ReviewDraft): boolean => {
   // ('funding' only serves unmigrated rows since the type retired.)
   if (draft.txType === 'funding' || draft.txType === 'adjustment') return true;
   if (draft.catId === 'uncategorized') return false;
-  return !draft.splits?.some((slice) => slice.catId === 'uncategorized');
+  if (draft.splits?.some((slice) => slice.catId === 'uncategorized')) return false;
+  // #126 r4 (user rule): a split exists to carry SEVERAL kinds of money —
+  // two parts of the same effective type never confirm
+  return !duplicatePartTypes(draft.splits, draft.txType);
 };

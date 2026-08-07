@@ -405,7 +405,35 @@ describe('ReviewScreen (demo identity)', () => {
     expect(kindRow.textContent).toContain('Standard');
     expect(kindRow.textContent).toContain('Type');
     expect(screen.queryByTestId('deck-kind-standard-1')).toBeNull();
+
+    // the part's event row opens its picker; None stages a clean part
+    fireEvent.click(screen.getByTestId('deck-event-1'));
+    await screen.findByTestId('deck-event-list');
+    fireEvent.click(screen.getByTestId('deck-event-none'));
   }, 15_000);
+
+  it('the left-to-assign pill fills the EMPTY row, not the last one (#130)', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    fireEvent.click(screen.getByTestId('split-mode-pct'));
+    // the report's shape: TOP row empty, second row 50
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '0' } });
+    fireEvent.blur(amount0);
+    const amount1 = (await screen.findByTestId('split-amount-1')) as HTMLInputElement;
+    fireEvent.focus(amount1);
+    fireEvent.change(amount1, { target: { value: '50' } });
+    fireEvent.blur(amount1);
+    fireEvent.click(await screen.findByTestId('split-remainder'));
+    // the open 50% lands on row 0 — row 1 keeps its value
+    await waitFor(() => expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('50'));
+    expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('50');
+    expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false);
+  });
 
   it('a lone 50% row holds Done — the partition must always add up (#126 r3)', async () => {
     renderApp('/review');

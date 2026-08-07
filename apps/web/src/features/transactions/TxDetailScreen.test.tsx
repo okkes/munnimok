@@ -506,53 +506,121 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('40');
   });
 
-  it('plain multi-category keeps the classic look; the parts door opens the part story with per-part category spreads (v2.1)', async () => {
+  it('the detail split flow is drafted until complete, then lands in ONE write (#126 r4)', async () => {
     renderApp('/transactions/dm6');
+    // the classic editor keeps the plain category look — no labels
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
     await screen.findByTestId('split-editor');
-    fireEvent.click(screen.getByTestId('split-add-row'));
-
-    // classic multi-category: NO labels, NO kind chips — the pre-parts
-    // look (user report: splitting hijacked the plain flow)
     expect(screen.queryByTestId('split-label-0')).toBeNull();
-    expect(screen.queryByTestId('split-kind-standard-0')).toBeNull();
 
-    // the explicit door tells the part story: cards with labels appear
-    fireEvent.click(screen.getByTestId('split-to-parts'));
+    // the split door, in the open on the detail: VALUES first
+    fireEvent.click(await screen.findByTestId('tx-detail-split-row'));
     await screen.findByTestId('split-label-0');
-    expect(screen.getByTestId('split-label-1')).toBeTruthy();
-    // pct is a classic concept — the chips hid behind the door
-    expect(screen.queryByTestId('split-mode-pct')).toBeNull();
-
-    // part 1 spreads across two categories: groceries 20 + coffee 10
-    fireEvent.change(screen.getByTestId('split-amount-0'), { target: { value: '20,00' } });
-    fireEvent.click(screen.getByTestId('split-addcat-0'));
-    fireEvent.click(await screen.findByTestId('split-cat-0-1'));
-    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
-    fireEvent.change(screen.getByTestId('split-amount-0-1'), { target: { value: '10,00' } });
-
-    // part 2 takes the rest
-    fireEvent.click(screen.getByTestId('split-cat-1'));
-    fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
-    fireEvent.change(screen.getByTestId('split-amount-1'), { target: { value: '22,40' } });
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '30,00' } });
+    fireEvent.blur(amount0);
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    // the fresh part seeds the open remainder — the sum stands
+    await waitFor(() => expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('22,40'));
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // the detail earns the spine and the spread subline
-    const catBlock = await screen.findByTestId('tx-detail-categories');
-    await waitFor(() => expect(catBlock.textContent).toContain('€30.00'));
-    expect(catBlock.textContent).toContain('Grocery · Coffee');
-    expect(catBlock.textContent).toContain('€22.40');
+    // Done STAGES — the completion deck opens, NOTHING is written yet
+    await screen.findByTestId('split-complete');
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    expect((await db.transactions.get('dm6'))?.splits).toBeUndefined();
+    // part 2 is still Uncategorized — incomplete holds Apply
+    expect((screen.getByTestId('split-apply') as HTMLButtonElement).disabled).toBe(true);
 
-    // reopening lands straight in part mode with the spread intact
-    fireEvent.click(screen.getByTestId('tx-detail-category-row'));
-    await screen.findByTestId('split-editor');
-    await screen.findByTestId('split-label-0');
-    await waitFor(() => expect((screen.getByTestId('split-amount-0-1') as HTMLInputElement).value).toBe('10,00'));
+    // naming part 2 makes it a real PART — and both still say 'expense',
+    // so the same-kind rule speaks up and keeps holding Apply
+    fireEvent.click(screen.getByTestId('deck-part-1'));
+    fireEvent.change(await screen.findByTestId('deck-label-1'), { target: { value: 'Device plan' } });
+    await screen.findByTestId('deck-type-duplicate');
 
-    // removing the spread entry folds the part back to one category
-    fireEvent.click(screen.getByTestId('split-remove-0-1'));
-    await waitFor(() => expect(screen.queryByTestId('split-amount-0-1')).toBeNull());
+    // Set aside (◆ pulls the saving type) → distinct → complete →
+    // Apply arms and lands the whole split in one write
+    fireEvent.click(await screen.findByTestId('deck-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await waitFor(() => expect(screen.queryByTestId('deck-type-duplicate')).toBeNull());
+    await waitFor(() => expect((screen.getByTestId('split-apply') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-apply'));
+    await waitFor(async () => {
+      const row = await db.transactions.get('dm6');
+      expect(row?.splits).toHaveLength(2);
+      expect(row?.splits?.[1]?.txType).toBe('saving');
+      expect(row?.splits?.[1]?.label).toBe('Device plan');
+    }, { timeout: 5000 });
+
+    // the container steps back: no type row, and Manage splits stands
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull());
+    await screen.findByTestId('tx-detail-manage-splits');
+    db.close();
+  }, 15_000);
+
+  it('a split row unfolds into its sub-transactions; each part is its own page (#126 r4)', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('screen-transactions');
+
+    // a stored, complete split: telecom expense + a typed device-plan part
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-parts'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-parts', {
+      accountId: 'demo_main',
+      date: '2020-02-01',
+      amountCents: -6500,
+      currency: 'EUR',
+      merchant: 'Vodafone',
+      catId: 'telecom',
+      txType: 'expense',
+      needsReview: 0,
+      splits: [
+        { id: 'pp1', catId: 'telecom', amountCents: 4000 },
+        { id: 'pp2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving', label: 'Device plan' },
+      ],
+    });
+
+    // the list row unfolds instead of navigating — the parts show up
+    const row = await screen.findByTestId('tx-row-tx-parts', {}, { timeout: 5000 });
+    fireEvent.click(row);
+    await screen.findByTestId('tx-parts-tx-parts');
+    expect(screen.getByTestId('tx-part-row-tx-parts-1').textContent).toContain('Device plan');
+
+    // tapping a part opens ITS page: its share, its own type, its story
+    fireEvent.click(screen.getByTestId('tx-part-row-tx-parts-1'));
+    await screen.findByTestId('tx-part-amount');
+    expect(screen.getByTestId('tx-part-amount').textContent).toContain('25.00');
+    expect(screen.getByTestId('tx-part-kind-row').textContent).toContain('Saving');
+    // its siblings are one tap away; itself sits inert
+    expect(screen.getByTestId('tx-part-siblings').textContent).toContain('Telecom');
+    fireEvent.click(screen.getByTestId('tx-part-sibling-0'));
+    await waitFor(() => expect(screen.getByTestId('tx-part-amount').textContent).toContain('40.00'));
+
+    // the same-kind rule guards part edits too: pulling 'saving' onto
+    // this part would clash with the Device plan — refused, said plainly
+    fireEvent.click(screen.getByTestId('tx-part-category'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await screen.findByTestId('tx-part-type-clash');
+
+    // an ordinary pick lands and shows on the part's own card
+    fireEvent.click(screen.getByTestId('tx-part-category'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    await waitFor(() => expect(screen.getByTestId('tx-part-category').textContent).toContain('Coffee'));
+
+    // the part's event membership edits right here as well
+    fireEvent.click(screen.getByTestId('tx-part-event'));
+    await screen.findByTestId('tx-part-event-list');
+    fireEvent.click(screen.getByTestId('tx-part-event-none'));
+
+    // the whole transaction stays one tap away and shows the container
+    fireEvent.click(screen.getByTestId('tx-part-whole'));
+    await screen.findByTestId('tx-detail-categories');
+    expect(screen.queryByTestId('tx-part-amount')).toBeNull();
+    // the container carries no type row — the parts do (#126 r4)
+    expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull();
+    db.close();
   }, 15_000);
 
   it('register-style amount entry: digits fill cents from the right (user request)', async () => {

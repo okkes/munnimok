@@ -101,6 +101,10 @@ const txDetailRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: '$txId',
   component: TxDetailScreen,
+  // #126 r4: a split's parts are addressable — ?part=<partId> shows one
+  // part as its own transaction page
+  validateSearch: (search: Record<string, unknown>): { part?: string } =>
+    typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
 });
 // full-screen counterpart picker (user redesign 2026-07-28) — a sibling
 // of the detail under /transactions, so it owns the detail pane on

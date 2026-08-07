@@ -7,7 +7,7 @@ import { evalAmountCents, fmtCents, parseCents } from '@/lib/money';
 import { nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
 import { txTitle } from '@/lib/text';
-import { balanceLastRow, pctRemainder, primaryCatId, resolveSplitsFor, splitRemainderCents, splitsArePct, validatePctSplits, validateSplits } from '@/domain/splits';
+import { balanceOpenRow, balanceTargetIndex, pctRemainder, primaryCatId, resolveSplitsFor, splitRemainderCents, splitsArePct, validatePctSplits, validateSplits } from '@/domain/splits';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
 import { kindOf } from '@/domain/txKind';
@@ -456,15 +456,23 @@ function patchRowsAt(rows: Row[], at: EntryAddress, patch: { catId?: string; amo
   });
 }
 
-/** part mode auto-balance: the tail entry of the LAST row absorbs the
- *  remainder — same "fix the tail" gesture the classic rows have */
-function absorbIntoTail(rows: Row[], remainder: number): Row[] {
-  const bump = (amount: string) => toText(Math.max(0, (parseCents(amount) ?? 0) + remainder));
+/** part mode auto-balance: the remainder lands on the first EMPTY entry
+ *  (the one being worked on, #130) — else the very last entry absorbs
+ *  the correction, same "fix the tail" fallback the classic rows have */
+function absorbIntoOpenEntry(rows: Row[], remainder: number): Row[] {
+  // entries flattened row-major: the main entry then its spread entries
+  const entries: { row: number; cat: number; cents: number }[] = [];
+  rows.forEach((row, i) => {
+    entries.push({ row: i, cat: 0, cents: parseCents(row.amount) ?? 0 });
+    row.extraCats.forEach((x, k) => entries.push({ row: i, cat: k + 1, cents: parseCents(x.amount) ?? 0 }));
+  });
+  if (entries.length === 0) return rows;
+  const target = entries[balanceTargetIndex(entries.map((e) => e.cents))];
+  const next = toText(Math.max(0, target.cents + remainder));
   return rows.map((row, i) => {
-    if (i !== rows.length - 1) return row;
-    if (row.extraCats.length === 0) return { ...row, amount: bump(row.amount) };
-    const last = row.extraCats.length - 1;
-    return { ...row, extraCats: row.extraCats.map((x, k) => (k === last ? { ...x, amount: bump(x.amount) } : x)) };
+    if (i !== target.row) return row;
+    if (target.cat === 0) return { ...row, amount: next };
+    return { ...row, extraCats: row.extraCats.map((x, k) => (k === target.cat - 1 ? { ...x, amount: next } : x)) };
   });
 }
 
@@ -738,19 +746,23 @@ export function SplitEditorSheet({
 
   const autoBalance = () => {
     if (mode === 'pct') {
+      // the still-open share lands on the row being worked on — the
+      // first empty one — not blindly on the last (#130)
       setRows((r) => {
-        const open = 100 - r.slice(0, -1).reduce((sum, row) => sum + parsePct(row.amount), 0);
-        return r.map((row, i) => (i === r.length - 1 ? { ...row, amount: toPctText(Math.max(0, open)) } : row));
+        const values = r.map((row) => parsePct(row.amount));
+        const target = balanceTargetIndex(values);
+        const open = 100 - values.reduce((sum, v, i) => (i === target ? sum : sum + v), 0);
+        return r.map((row, i) => (i === target ? { ...row, amount: toPctText(Math.max(0, open)) } : row));
       });
       return;
     }
     if (partMode) {
-      setRows((r) => absorbIntoTail(r, remainder));
+      setRows((r) => absorbIntoOpenEntry(r, remainder));
       return;
     }
     setRows((r) => {
       const abs = r.map((row) => ({ catId: row.catId, amountCents: parseCents(row.amount) ?? 0 }));
-      return balanceLastRow(referenceCents, abs).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) }));
+      return balanceOpenRow(referenceCents, abs).map((s, i) => ({ ...r[i], catId: s.catId, amount: toText(s.amountCents) }));
     });
   };
 
@@ -772,13 +784,6 @@ export function SplitEditorSheet({
   const addRow = () => setRows((r) => [...r, newRow(UNCATEGORIZED_ID, addRowSeed(mode, remainder))]);
   // v2.1: a part spreads across one more category, seeded the same way
   const addCatToRow = (index: number) => setRows((r) => appendExtraAt(r, index, addRowSeed(mode, remainder)));
-  // the explicit door out of plain categories into typed parts (v2.1);
-  // pct is a classic-slices concept, so the door lands on exact euros
-  const enterPartMode = () => {
-    if (mode === 'pct') switchMode('amount');
-    setPartMode(true);
-    if (rows.length === 1) addRow();
-  };
 
   /** Standard part: inherits the row's type, drops any counterparty —
    *  its old mint retires through the choke point at save */
@@ -885,18 +890,10 @@ export function SplitEditorSheet({
             {partMode || valuesOnly ? t('split.addPart') : t('split.addRow')}
           </button>
 
-          {/* the door into typed parts: labels, own kinds, per-part
-              category spreads (v2.1 — plain categories stay plain) */}
-          {!partMode && !valuesOnly && (
-            <button
-              data-testid="split-to-parts"
-              onClick={enterPartMode}
-              className="m-tap flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-[13px] font-medium text-accent-deep"
-            >
-              <Icon name="call-split" size={16} />
-              {t('split.toParts')}
-            </button>
-          )}
+          {/* r4: typed parts are born in the VALUES flow (Split row →
+              amounts → completion deck) — this editor stays the plain
+              category partition; stored part stories still reopen here
+              read-true via partMode */}
 
           {hasTypeConflict && (
             <p className="rounded-card bg-negative-soft px-3 py-2 text-[12px] leading-relaxed text-negative" data-testid="split-type-conflict">

@@ -1,4 +1,5 @@
-import type { TransactionRow, TxType } from '@/db/types';
+import type { TransactionRow, TxSplit, TxType } from '@/db/types';
+import { REIMBURSED_ID } from './categories';
 
 /**
  * The canonical slice fan-out (typed-splits v2, approved plan): every
@@ -79,6 +80,25 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
 /** does ANY part of this row carry the given effective type? (filters) */
 export const hasSliceOfType = (tx: SliceSource, txType: TxType): boolean =>
   txSliceViews(tx).some((view) => view.effType === txType);
+
+/**
+ * The point of a split is MULTIPLE kinds of money (#126 r4, user rule):
+ * two parts with the same effective type beat the purpose — same-type
+ * spreading is what the category spread within ONE part (or the classic
+ * flat multi-category partition) is for. The rule therefore bites only
+ * once the split tells a PART story (types/labels/links/events/spreads);
+ * plain multi-category stays untouched. The settled Reimbursed slice is
+ * bookkeeping, not a part.
+ */
+export function duplicatePartTypes(
+  splits: readonly TxSplit[] | undefined,
+  rowType: TxType,
+): boolean {
+  const parts = (splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
+  if (parts.length <= 1 || !hasTypedParts({ splits: parts as TxSplit[] })) return false;
+  const types = parts.map((s) => s.txType ?? rowType);
+  return new Set(types).size !== types.length;
+}
 
 /**
  * The presentation discriminator (v2.1): a split renders as PARTS (labels,

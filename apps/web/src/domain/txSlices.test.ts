@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasSliceOfType, hasTypedParts, txSliceViews } from './txSlices';
+import { duplicatePartTypes, hasSliceOfType, hasTypedParts, txSliceViews } from './txSlices';
 import type { TransactionRow } from '@/db/types';
 
 const row = (over: Partial<TransactionRow>): Parameters<typeof txSliceViews>[0] =>
@@ -82,6 +82,23 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
     expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 1, label: 'x' }] }))).toBe(true);
     expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 1, txType: 'saving' }] }))).toBe(true);
     expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 2, cats: [{ catId: 'g', amountCents: 1 }, { catId: 'h', amountCents: 1 }] }] }))).toBe(true);
+  });
+
+  it('duplicatePartTypes: a TYPED split is MULTIPLE kinds of money — same effective type twice fails (#126 r4)', () => {
+    // a labeled part tells a part story; its sibling inherits the same
+    // 'expense' → duplicate
+    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1, label: 'x' }, { catId: 'b', amountCents: 1 }], 'expense')).toBe(true);
+    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1, txType: 'saving' }, { catId: 'b', amountCents: 1, txType: 'saving' }], 'expense')).toBe(true);
+    // one standard + one typed part is the point of splitting
+    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1 }, { catId: 'b', amountCents: 1, txType: 'debtPayment' }], 'expense')).toBe(false);
+    // classic flat multi-category (no part stories) spreads ONE kind of
+    // money across categories — the rule leaves it alone
+    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1 }, { catId: 'b', amountCents: 1 }], 'expense')).toBe(false);
+    // the settled Reimbursed slice is bookkeeping, never a "part"
+    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1, label: 'x' }, { catId: 'reimbursed', amountCents: 1 }], 'expense')).toBe(false);
+    // unsplit and single-part rows can't collide
+    expect(duplicatePartTypes(undefined, 'expense')).toBe(false);
+    expect(duplicatePartTypes([{ catId: 'a', amountCents: 1, txType: 'saving' }], 'expense')).toBe(false);
   });
 
   it('hasSliceOfType answers filters per effective type', () => {

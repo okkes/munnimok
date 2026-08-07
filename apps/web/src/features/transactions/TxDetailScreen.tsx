@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@/db/useQuery';
-import { useNavigate, useParams } from '@tanstack/react-router';
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useLgViewport } from '@/lib/viewport';
-import { useSpaceTransaction, useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import { useSpaceAccounts, useSpaceTransaction, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { EventFormSheet } from '@/features/events/EventsScreen';
@@ -17,6 +17,7 @@ import { logActivity } from '@/application/activity';
 import { countPreAnchorTx } from '@/application/loanBalance';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
+import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, humanizeBankKeys, txTitle } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -25,7 +26,9 @@ import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
-import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, autoSubFor, specialCatType } from '@/domain/categories';
+import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
+import { primaryCatId } from '@/domain/splits';
+import { ReviewPartDeck } from '@/features/review/ReviewScreen';
 import { LoanPickSheet } from '@/features/debts/LoanPickSheet';
 import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
@@ -36,7 +39,7 @@ import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './Tx
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
-import { hasTypedParts } from '@/domain/txSlices';
+import { duplicatePartTypes, hasTypedParts } from '@/domain/txSlices';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
@@ -45,7 +48,7 @@ import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
-import type { AccountRow, TxType } from '@/db/types';
+import type { AccountRow, TxSplit, TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -470,6 +473,562 @@ function RenameTitleSheet({
   );
 }
 
+/** the container's type + counterparty rows — gone the moment a real
+ *  split exists (#126 r4: the parts carry those). Module-level for
+ *  S3776: the condition lives here, not in the screen. */
+function ContainerTypeRows({
+  hidden,
+  kind,
+  detailType,
+  locked,
+  onKind,
+  counterIban,
+  counterAccountName,
+  linkedAccountName,
+  onOpenAccount,
+  onEditCounter,
+}: Readonly<{
+  hidden: boolean;
+  kind: TxKind;
+  detailType: TxType | null;
+  locked: boolean;
+  onKind: () => void;
+  counterIban: string | undefined;
+  counterAccountName: string | undefined;
+  linkedAccountName: string | undefined;
+  onOpenAccount: () => void;
+  onEditCounter: () => void;
+}>) {
+  if (hidden) return null;
+  return (
+    <>
+      <div className="mx-4 h-px bg-line-2" />
+      <DetailKindRow kind={kind} detailType={detailType} locked={locked} onOpen={onKind} />
+      <div className="mx-4 h-px bg-line-2" />
+      <CounterpartyRow
+        counterIban={counterIban}
+        counterAccountName={counterAccountName}
+        linkedAccountName={linkedAccountName}
+        editable={kind === 'transfer'}
+        onOpenAccount={onOpenAccount}
+        onEdit={onEditCounter}
+      />
+    </>
+  );
+}
+
+/** which split door the detail shows (#126 r4): the visible Split row
+ *  on a whole transaction, Manage splits on a split one, nothing while
+ *  the category is reimbursement-locked. Module-level for S3776. */
+function splitDoorModeFor(multiPart: boolean, categoryLocked: boolean): 'row' | 'manage' | 'none' {
+  if (multiPart) return 'manage';
+  return categoryLocked ? 'none' : 'row';
+}
+
+/** the door itself, placed either inside the categories card (row) or
+ *  under it (manage) — renders only its own placement */
+function DetailSplitDoor({
+  mode,
+  placement,
+  onOpen,
+}: Readonly<{ mode: 'row' | 'manage' | 'none'; placement: 'row' | 'manage'; onOpen: () => void }>) {
+  const { t } = useLang();
+  if (mode !== placement) return null;
+  if (mode === 'row') {
+    return (
+      <button
+        data-testid="tx-detail-split-row"
+        onClick={onOpen}
+        className="m-tap flex w-full items-center gap-3 border-t border-line-2 bg-transparent px-4 py-3 text-left text-[14px] text-ink"
+      >
+        <Icon name="call-split" size={18} color="var(--m-ink-3)" />
+        <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
+        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+      </button>
+    );
+  }
+  return (
+    <button
+      data-testid="tx-detail-manage-splits"
+      onClick={onOpen}
+      className="m-tap mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-transparent px-4 py-2.5 text-[13px] font-medium text-accent-deep"
+    >
+      <Icon name="tune" size={15} />
+      {t('review.manageSplits')}
+    </button>
+  );
+}
+
+// ── small derivations, module-level so the screen stays readable to
+// Sonar (S3776) ──
+const catBulkTargets = (
+  allTxs: SpaceTx[] | undefined,
+  tx: SpaceTx,
+  offer: { catId: string } | null,
+): SpaceTx[] => (offer ? similarTo(allTxs, tx, (item) => item.catId !== offer.catId) : []);
+const titleBulkTargets = (
+  allTxs: SpaceTx[] | undefined,
+  tx: SpaceTx,
+  bulk: { title: string } | null,
+): SpaceTx[] => (bulk ? similarTo(allTxs, tx, (item) => (item.titleOverride ?? '') !== bulk.title) : []);
+const normalizedCounterIban = (tx: SpaceTx | undefined): string | undefined =>
+  tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
+const givenOutFor = (tx: SpaceTx | undefined, allTxs: readonly SpaceTx[] | undefined): number =>
+  tx && tx.amountCents > 0 ? givenCents(allTxs ?? [], tx.id) : 0;
+const findPartView = (parts: readonly TxSplit[], partParam: string | undefined): TxSplit | undefined =>
+  partParam ? parts.find((s) => s.id === partParam) : undefined;
+const valuesEditorValue = (
+  valuesMode: boolean,
+  stage: TxSplit[] | null,
+  multiPart: boolean,
+  parts: TxSplit[],
+): TxSplit[] | undefined => {
+  if (!valuesMode) return undefined;
+  return stage ?? (multiPart ? parts : undefined);
+};
+
+/** the app bar's pencil: rename on bank rows, full edit on manual ones,
+ *  nothing on a part page (the container owns both). Module-level for
+ *  S3776. */
+function detailTrailingAction(
+  isPart: boolean,
+  importRef: string | undefined,
+  t: TFunc,
+  onRename: () => void,
+  onEdit: () => void,
+): ReactNode {
+  if (isPart) return undefined;
+  if (importRef) {
+    return (
+      <IconButton label={t('tx.renameTitle')} testId="tx-detail-rename" onClick={onRename}>
+        <Icon name="pencil-outline" size={20} />
+      </IconButton>
+    );
+  }
+  return (
+    <IconButton label={t('action.edit')} testId="tx-detail-edit" onClick={onEdit}>
+      <Icon name="pencil-outline" size={20} />
+    </IconButton>
+  );
+}
+
+/** the app bar's name: the whole transaction's title, or the part's
+ *  own face on a part page. Module-level for S3776. */
+function detailScreenTitle(tx: SpaceTx, parts: readonly TxSplit[], partView: TxSplit | undefined, t: TFunc): string {
+  if (!partView) return txTitle(tx);
+  return partView.label ?? `${txTitle(tx)} – ${t('split.partN', { n: parts.indexOf(partView) + 1 })}`;
+}
+
+/** drafted-until-complete (#126 r4): the staged split may Apply only
+ *  when every part has a real category and no two parts carry the same
+ *  kind of money. Module-level for S3776. */
+const stagedSplitComplete = (stage: TxSplit[] | null, rowType: TxType): boolean =>
+  !!stage && stage.every((s) => s.catId !== UNCATEGORIZED_ID) && !duplicatePartTypes(stage, rowType);
+
+/** back to a whole transaction: one category, split gone — the settled
+ *  Reimbursed slice keeps the gross partition when it exists.
+ *  Module-level for S3776. */
+function writeUnsplit(
+  transform: ReturnType<typeof useTxTransform>,
+  tx: SpaceTx,
+  fallbackCatId: string,
+  settledSlices: readonly TxSplit[],
+  catId: string,
+): void {
+  const cat = catId !== UNCATEGORIZED_ID ? catId : fallbackCatId;
+  if (settledSlices.length > 0) {
+    const settled = settledSlices.reduce((sum, s) => sum + s.amountCents, 0);
+    const rest = Math.max(0, Math.abs(tx.amountCents) - settled);
+    void transform(tx, {
+      splits: [...(rest > 0 ? [{ catId: cat, amountCents: rest }] : []), ...settledSlices],
+      catId: cat,
+    });
+  } else {
+    void transform(tx, { splits: null as never, catId: cat });
+  }
+}
+
+/** the split flow's two sheets (#126 r4) — one editor, two doors: the
+ *  classic per-slice categories, or values-only whose Done only STAGES;
+ *  the completion deck's Apply is the ONE write. Module-level for
+ *  S3776. */
+function DetailSplitSheets({
+  tx,
+  splitOpen,
+  setSplitOpen,
+  valuesMode,
+  editorValue,
+  allowedCatIds,
+  setCategory,
+  unsplitTo,
+  unsplitFallbackCat,
+  splitStage,
+  setSplitStage,
+  completeOpen,
+  setCompleteOpen,
+  activeEvents,
+  lockedKind,
+  openValuesEditor,
+  stageComplete,
+  applyStagedSplit,
+}: Readonly<{
+  tx: SpaceTx;
+  splitOpen: boolean;
+  setSplitOpen: (open: boolean) => void;
+  valuesMode: boolean;
+  editorValue: TxSplit[] | undefined;
+  allowedCatIds?: readonly string[];
+  setCategory: (catId: string) => void;
+  unsplitTo: (catId: string) => void;
+  unsplitFallbackCat: string;
+  splitStage: TxSplit[] | null;
+  setSplitStage: (stage: TxSplit[] | null) => void;
+  completeOpen: boolean;
+  setCompleteOpen: (open: boolean) => void;
+  activeEvents: readonly { id: string; name: string; icon?: string }[];
+  lockedKind: boolean;
+  openValuesEditor: () => void;
+  stageComplete: boolean;
+  applyStagedSplit: () => void;
+}>) {
+  const { t } = useLang();
+  return (
+    <>
+      <SplitEditorSheet
+        open={splitOpen}
+        onOpenChange={setSplitOpen}
+        tx={tx}
+        seedSingle
+        allowedCatIds={allowedCatIds}
+        valuesOnly={valuesMode}
+        value={editorValue}
+        txType={valuesMode ? tx.txType : undefined}
+        onApplySingle={valuesMode ? unsplitTo : setCategory}
+        onApply={
+          valuesMode
+            ? (splits) => {
+                if (splits?.length) {
+                  setSplitStage(splits);
+                  setCompleteOpen(true);
+                } else {
+                  unsplitTo(unsplitFallbackCat);
+                }
+              }
+            : undefined
+        }
+      />
+      {/* drafted-until-complete (#126 r4): every part takes its category,
+          type and event here; Apply is the ONE write */}
+      <Sheet
+        open={completeOpen}
+        onOpenChange={(next) => {
+          if (!next) setCompleteOpen(false);
+        }}
+        title={t('split.completeTitle')}
+        size="tall"
+      >
+        <div className="flex flex-col gap-2 pt-1" data-testid="split-complete">
+          <ReviewPartDeck
+            splits={splitStage ?? undefined}
+            rowType={tx.txType}
+            tx={tx}
+            activeEvents={activeEvents}
+            allowedCatIds={allowedCatIds}
+            lockedKind={lockedKind}
+            onOpenValues={() => {
+              setCompleteOpen(false);
+              openValuesEditor();
+            }}
+            onSplits={(next) => setSplitStage([...next])}
+          />
+          <Button data-testid="split-apply" onClick={applyStagedSplit} disabled={!stageComplete}>
+            {t('split.applyAll')}
+          </Button>
+        </div>
+      </Sheet>
+    </>
+  );
+}
+
+/** the part page's sister list (#126 r4) — every part one tap away,
+ *  the current one inert. Module-level for S3776. */
+function PartSiblingRows({
+  tx,
+  parts,
+  currentId,
+  onOpen,
+}: Readonly<{
+  tx: SpaceTx;
+  parts: readonly TxSplit[];
+  currentId: string | undefined;
+  onOpen: (partId: string | undefined) => void;
+}>) {
+  const { t, lang } = useLang();
+  const cats = useCategories();
+  return (
+    <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-part-siblings">
+      {parts.map((slice, i) => {
+        const sliceCat = cats.byId(slice.catId);
+        const self = slice.id === currentId;
+        return (
+          <button
+            key={slice.id ?? i}
+            data-testid={`tx-part-sibling-${i}`}
+            disabled={self}
+            onClick={() => onOpen(slice.id)}
+            className={`m-tap flex w-full items-center gap-2.5 border-b border-line-2 px-4 py-2.5 text-left last:border-0 ${self ? 'bg-bg-2' : ''}`}
+          >
+            <Icon name={sliceCat.icon} size={16} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
+              {slice.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`}
+              <span className="text-[11px] font-normal text-ink-4"> · {catName(sliceCat, t)}</span>
+            </span>
+            <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>
+            {!self && <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** one part as its own transaction page (#126 r4): the sub-transaction
+ *  the list drilled into — its share as the headline, its OWN type,
+ *  category and event editable in place (write-through: the split is
+ *  already complete), its siblings one tap away, and the manage door
+ *  for the amounts. Container-only facts (notes, reimbursements,
+ *  receipts, delete) stay on the whole transaction. */
+function PartDetailBody({
+  tx,
+  part,
+  parts,
+  accountName,
+  ownStamp,
+  activeEvents,
+  allowedCatIds,
+  onManageSplits,
+}: Readonly<{
+  tx: SpaceTx;
+  part: TxSplit;
+  parts: readonly TxSplit[];
+  accountName: string | undefined;
+  ownStamp: boolean;
+  activeEvents: readonly { id: string; name: string; icon?: string }[];
+  allowedCatIds?: readonly string[];
+  onManageSplits: () => void;
+}>) {
+  const { t, lang } = useLang();
+  const cats = useCategories();
+  const transform = useTxTransform();
+  const navigate = useNavigate();
+  const accounts = useSpaceAccounts();
+  const [kindOpen, setKindOpen] = useState(false);
+  const [counterOpen, setCounterOpen] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [eventOpen, setEventOpen] = useState(false);
+  const [typeClash, setTypeClash] = useState(false);
+
+  const sign = tx.amountCents < 0 ? -1 : 1;
+  const partCat = cats.byId(part.catId);
+  const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
+  // transfer-PRESENTING only with a real counterparty: a ◆ special part
+  // (Set aside without a pot) is transfer-family by type yet reads as
+  // its own standard story ("Saving"), not as a bare Transfer
+  const transferPart = !!part.linkedAccountId && !!part.txType && kindOf(part.txType) === 'transfer';
+  // flat consts so the JSX carries no branching (S3776)
+  const partKind: 'transfer' | 'standard' = transferPart ? 'transfer' : 'standard';
+  const counterName = accounts?.find((a) => a.id === part.linkedAccountId)?.name ?? t('tx.counterNone');
+  const kindSub = transferPart ? counterName : t(`tx.type.${part.txType ?? tx.txType}`);
+  const kindRowIcon = ownStamp ? 'lock-outline' : 'pencil-outline';
+  const partDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
+  const partEvent = activeEvents.find((e) => e.id === part.eventId);
+  const spread = part.cats?.length ? part.cats.map((c) => catName(cats.byId(c.catId), t)).join(' · ') : undefined;
+  const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
+
+  /** per-part write-through — refused when it would leave two parts of
+   *  the same kind of money (#126 r4 user rule) */
+  const patchPart = (patch: Partial<TxSplit>): void => {
+    const nextSplits = (tx.splits ?? []).map((s) => (s.id === part.id ? { ...s, ...patch } : s));
+    const nonReimb = nextSplits.filter((s) => s.catId !== REIMBURSED_ID);
+    if (duplicatePartTypes(nonReimb, tx.txType)) {
+      setTypeClash(true);
+      return;
+    }
+    setTypeClash(false);
+    void transform(tx, { splits: nextSplits, catId: primaryCatId(nonReimb) ?? tx.catId }, 'txCategory');
+  };
+
+  return (
+    <>
+      <div className="flex flex-col items-center py-6 text-center">
+        <div className="m-num text-4xl text-ink" data-testid="tx-part-amount">
+          {fmtCents(sign * Math.abs(part.amountCents), tx.currency, lang, { sign: true })}
+        </div>
+        <div className="mt-1 text-sm text-ink-3">
+          {fmtDay.format(new Date(tx.date))}
+          {tx.time ? ` · ${tx.time}` : ''}
+        </div>
+        {/* whose money this is a piece of */}
+        <div className="mt-1 text-[12px] text-ink-4">{txTitle(tx)}</div>
+      </div>
+
+      <div className="overflow-hidden rounded-card border border-line bg-surface">
+        <div className="flex items-center gap-3 px-4 py-3.5 text-[15px] text-ink" data-testid="tx-part-account-row">
+          <Icon name="bank-outline" size={20} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1 truncate">{accountName ?? '—'}</span>
+          <span className="text-xs text-ink-4">{t('txform.account')}</span>
+        </div>
+        <div className="mx-4 h-px bg-line-2" />
+        <button
+          data-testid="tx-part-kind-row"
+          onClick={ownStamp ? undefined : () => setKindOpen(true)}
+          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+        >
+          <Icon name={TX_KIND_VISUAL[partKind].icon} size={18} color={TX_KIND_VISUAL[partKind].color} />
+          <span className="min-w-0 flex-1 truncate">
+            {t(`tx.kind.${partKind}`)}
+            <span className="text-[12px] font-normal text-ink-4"> · {kindSub}</span>
+          </span>
+          <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
+          <Icon name={kindRowIcon} size={13} color="var(--m-ink-4)" />
+        </button>
+        {typeClash && (
+          <p className="mx-4 mb-3 rounded-card bg-negative-soft px-3 py-2 text-[12px] leading-relaxed text-negative" data-testid="tx-part-type-clash">
+            {t('split.typeDuplicate')}
+          </p>
+        )}
+      </div>
+
+      <button
+        data-testid="tx-part-category"
+        onClick={() => setPickerOpen(true)}
+        className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+      >
+        <Icon name={partCat.icon} size={20} color={partColor ?? 'var(--m-ink-3)'} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] text-ink">{spread ?? catName(partCat, t)}</span>
+          {!spread && partCat.parentId && (
+            <span className="block truncate text-[11px] text-ink-4">{catName(cats.byId(partCat.parentId), t)}</span>
+          )}
+        </span>
+        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+      </button>
+
+      <button
+        data-testid="tx-part-event"
+        onClick={() => setEventOpen(true)}
+        className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left text-[14px] text-ink"
+      >
+        <Icon name="party-popper" size={18} color="var(--m-ink-3)" />
+        <span className="min-w-0 flex-1 truncate">{partEvent?.name ?? t('events.linkNone')}</span>
+        <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
+        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+      </button>
+
+      {/* the sisters: every part one tap away (#126 r4) */}
+      <div className="m-cap mt-5 mb-1 px-1">{t('split.title')}</div>
+      <PartSiblingRows
+        tx={tx}
+        parts={parts}
+        currentId={part.id}
+        onOpen={(partId) =>
+          void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: partId } })
+        }
+      />
+      <button
+        data-testid="tx-part-manage"
+        onClick={onManageSplits}
+        className="m-tap mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-transparent px-4 py-2.5 text-[13px] font-medium text-accent-deep"
+      >
+        <Icon name="tune" size={15} />
+        {t('review.manageSplits')}
+      </button>
+      <button
+        data-testid="tx-part-whole"
+        onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: {} })}
+        className="m-tap mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-line bg-surface px-4 py-2.5 text-[13px] font-medium text-ink"
+      >
+        <Icon name="receipt-text-outline" size={15} />
+        {t('tx.partWhole')}
+      </button>
+
+      <TxKindSheet
+        open={kindOpen}
+        onOpenChange={setKindOpen}
+        current={partKind}
+        allowAdjustment={false}
+        onPick={(nextKind) => {
+          if (nextKind === 'transfer') setCounterOpen(true);
+          else patchPart({ txType: undefined, linkedAccountId: undefined, transferPeerId: undefined });
+          setKindOpen(false);
+        }}
+      />
+      <CounterpartySheet
+        open={counterOpen}
+        onOpenChange={setCounterOpen}
+        excludeAccountId={tx.accountId}
+        currentLinkedId={part.linkedAccountId}
+        onChoose={(picked) =>
+          patchPart({ txType: 'transfer', linkedAccountId: picked.id, catId: autoSubFor('transfer', tx.amountCents) ?? part.catId })
+        }
+      />
+      <CategoryPicker
+        open={pickerOpen}
+        onOpenChange={(next) => {
+          if (!next) setPickerOpen(false);
+        }}
+        direction={partDirection}
+        txType={tx.txType}
+        selectedId={part.catId}
+        onlyIds={allowedCatIds}
+        onPick={(catId) => {
+          const pulled = specialCatType(catId);
+          const clearPulled = part.txType && !part.linkedAccountId ? { txType: undefined } : {};
+          // a deliberate single pick flattens any category spread — the
+          // stale cats array would otherwise keep telling the old story
+          patchPart({ catId, cats: undefined, ...(pulled ? { txType: pulled } : clearPulled) });
+        }}
+      />
+      <Sheet
+        open={eventOpen}
+        onOpenChange={setEventOpen}
+        title={t('events.linkTitle')}
+        size="form"
+        dragHandle
+      >
+        <div className="pt-1" data-testid="tx-part-event-list">
+          <button
+            data-testid="tx-part-event-none"
+            onClick={() => {
+              patchPart({ eventId: undefined });
+              setEventOpen(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink-2"
+          >
+            <Icon name="close-circle-outline" size={18} color="var(--m-ink-4)" />
+            <span className="min-w-0 flex-1 truncate">{t('events.linkNone')}</span>
+          </button>
+          {activeEvents.map((event) => (
+            <button
+              key={event.id}
+              data-testid={`tx-part-event-${event.id}`}
+              onClick={() => {
+                patchPart({ eventId: event.id });
+                setEventOpen(false);
+              }}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
+            >
+              <Icon name={event.icon ?? 'party-popper'} size={18} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1 truncate">{event.name}</span>
+              {part.eventId === event.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    </>
+  );
+}
+
 export function TxDetailScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -486,6 +1045,13 @@ export function TxDetailScreen() {
   const [typePickOpen, setTypePickOpen] = useState(false);
   const [loanCountBusy, setLoanCountBusy] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
+  // #126 r4: the values door + drafted-until-complete stage — splitting
+  // from the detail writes NOTHING until every part is complete, then
+  // lands in ONE write (no half-deployed splits, easy bulk updates)
+  const [splitValuesMode, setSplitValuesMode] = useState(false);
+  const [splitStage, setSplitStage] = useState<TxSplit[] | null>(null);
+  const [completeOpen, setCompleteOpen] = useState(false);
+  const { part: partParam } = useSearch({ strict: false }) as { part?: string };
   const [recurringOpen, setRecurringOpen] = useState(false);
   // create-and-return doors (user request): snapshot of pre-existing ids
   // so the freshly created row is identifiable and auto-links to this tx
@@ -531,7 +1097,7 @@ export function TxDetailScreen() {
   // read-time join (user request): the moment an account with this IBAN
   // exists locally — e.g. it was attached to a space later — every
   // transaction's counterparty upgrades from plain text to a live door
-  const counterIban = tx?.counterIban ? normalizeIban(tx.counterIban) : undefined;
+  const counterIban = normalizedCounterIban(tx);
   const counterAccount = useQuery(
     store,
     async () =>
@@ -547,7 +1113,7 @@ export function TxDetailScreen() {
   // what this credit refunded elsewhere — the expenses own the links,
   // so the credit's net worth is a derived fact
   const allTxs = useSpaceTransactions();
-  const givenOut = tx && tx.amountCents > 0 ? givenCents(allTxs ?? [], tx.id) : 0;
+  const givenOut = givenOutFor(tx, allTxs);
 
   // a settlement AFTER the bulk offer armed rewrote the attribution —
   // the offer's premise is stale, retire it (user rule)
@@ -622,6 +1188,43 @@ export function TxDetailScreen() {
   // reimbursement — the editor's picker enforces it
   const recurringAllowedCats = recurringCatConstraint(tx, recurrings);
 
+  // #126 r4: the split's parts (the settled Reimbursed slice is
+  // bookkeeping, not a part) — with a real split the container steps
+  // back and the parts carry the stories
+  const parts = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
+  const settledSlices = (tx.splits ?? []).filter((s) => s.catId === REIMBURSED_ID);
+  const multiPart = parts.length > 1;
+  const activeEventsList = (events ?? []).filter((e) => e.archived !== 1);
+  // the completion stage: values Done stages; Apply writes once whole
+  const stageComplete = stagedSplitComplete(splitStage, tx.txType);
+  const unsplitFallbackCat = primaryCatId(parts) ?? tx.catId ?? UNCATEGORIZED_ID;
+  const openValuesEditor = () => {
+    setSplitValuesMode(true);
+    setSplitOpen(true);
+  };
+  const openClassicEditor = () => {
+    setSplitValuesMode(false);
+    setSplitOpen(true);
+  };
+  // the categories pencil: a split container routes into the manage
+  // flow; a whole one keeps the classic per-slice editor
+  const openCategoriesEditor = multiPart ? openValuesEditor : openClassicEditor;
+  const splitDoorMode = splitDoorModeFor(multiPart, categoryLocked);
+  const applyStagedSplit = () => {
+    if (!splitStage || !stageComplete) return;
+    // the stage lands in ONE write — settled value rides along untouched
+    void transform(tx, {
+      splits: [...splitStage, ...settledSlices],
+      catId: primaryCatId(splitStage) ?? tx.catId,
+    });
+    setSplitStage(null);
+    setCompleteOpen(false);
+  };
+  const unsplitTo = (catId: string) => {
+    setSplitStage(null);
+    writeUnsplit(transform, tx, unsplitFallbackCat, settledSlices, catId);
+  };
+
   const setCategory = (catId: string) => {
     // R3: a marked special category carries the bare story — the type
     // follows the pick (Set aside → saving); ordinary cats keep the old
@@ -640,7 +1243,7 @@ export function TxDetailScreen() {
     setBulkSelected(new Set(similar.map((item) => item.id)));
   };
 
-  const bulkTargets = bulkOffer ? similarTo(allTxs, tx, (item) => item.catId !== bulkOffer.catId) : [];
+  const bulkTargets = catBulkTargets(allTxs, tx, bulkOffer);
 
   /** rename: '' clears the override (LWW needs the explicit value) */
   const renameTitle = (raw: string) => {
@@ -652,7 +1255,7 @@ export function TxDetailScreen() {
     setTitleSelected(new Set(similar.map((item) => item.id)));
   };
 
-  const titleTargets = titleBulk ? similarTo(allTxs, tx, (item) => (item.titleOverride ?? '') !== titleBulk.title) : [];
+  const titleTargets = titleBulkTargets(allTxs, tx, titleBulk);
 
   const applyTitleBulk = async () => {
     if (!titleBulk) return;
@@ -685,29 +1288,39 @@ export function TxDetailScreen() {
 
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
 
+  // #126 r4: ?part=<id> shows ONE part as its own transaction page
+  const partView = findPartView(parts, partParam);
+  const screenTitle = detailScreenTitle(tx, parts, partView, t);
+  const trailingAction = detailTrailingAction(!!partView, tx.importRef, t, () => setRenameOpen(true), () => setEditOpen(true));
+  // the values editor edits the STAGE when one exists, else the stored
+  // parts; classic mode stays uncontrolled
+  const editorValue = valuesEditorValue(splitValuesMode, splitStage, multiPart, parts);
+
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-tx-detail">
       <AppBar
-        title={txTitle(tx)}
+        title={screenTitle}
         leading={
           <DetailBackButton panes={panes} onClose={() => void navigate({ to: '/transactions', replace: true })} t={t} />
         }
-        trailing={
-          // manual rows edit everything via the form; bank rows are the
-          // bank's truth — but the display TITLE is the user's (rename)
-          tx.importRef ? (
-            <IconButton label={t('tx.renameTitle')} testId="tx-detail-rename" onClick={() => setRenameOpen(true)}>
-              <Icon name="pencil-outline" size={20} />
-            </IconButton>
-          ) : (
-            <IconButton label={t('action.edit')} testId="tx-detail-edit" onClick={() => setEditOpen(true)}>
-              <Icon name="pencil-outline" size={20} />
-            </IconButton>
-          )
-        }
+        trailing={trailingAction}
       />
       {!tx.importRef && <TxFormSheet open={editOpen} onOpenChange={setEditOpen} tx={tx} />}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+        {partView ? (
+          <PartDetailBody
+            key={partView.id}
+            tx={tx}
+            part={partView}
+            parts={parts}
+            accountName={account?.name}
+            ownStamp={!!ownStamp}
+            activeEvents={activeEventsList}
+            allowedCatIds={recurringAllowedCats}
+            onManageSplits={openValuesEditor}
+          />
+        ) : (
+          <>
         <div className="flex flex-col items-center py-6 text-center">
           {/* both directions show the net truth: expenses minus what came
               back, credits minus what they refunded elsewhere */}
@@ -786,16 +1399,17 @@ export function TxDetailScreen() {
             </span>
             <span className="text-xs text-ink-4">{t('txform.account')}</span>
           </div>
-          <div className="mx-4 h-px bg-line-2" />
-          <DetailKindRow kind={kind} detailType={kindDetailType} locked={!!ownStamp} onOpen={() => setTypePickOpen(true)} />
-          <div className="mx-4 h-px bg-line-2" />
-          <CounterpartyRow
+          <ContainerTypeRows
+            hidden={multiPart}
+            kind={kind}
+            detailType={kindDetailType}
+            locked={!!ownStamp}
+            onKind={() => setTypePickOpen(true)}
             counterIban={tx.counterIban}
             counterAccountName={counterAccount?.name}
             linkedAccountName={linkedAccount?.name}
-            editable={kind === 'transfer'}
             onOpenAccount={() => setCounterOpen(true)}
-            onEdit={() => setCounterPickOpen(true)}
+            onEditCounter={() => setCounterPickOpen(true)}
           />
           {pairState === 'peered' && (
             <TransferPeerRow
@@ -825,9 +1439,17 @@ export function TxDetailScreen() {
 
         {/* block: categories — ONE edit affordance for the whole block
             (user: a pencil per slice read wrong); rows stay tappable */}
-        <CategoriesHeader locked={categoryLocked} byRecurring={!!recurringAllowedCats} onEdit={() => setSplitOpen(true)} />
+        <CategoriesHeader locked={categoryLocked} byRecurring={!!recurringAllowedCats} onEdit={openCategoriesEditor} />
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-categories">
-          <CategorySlices tx={tx} cats={cats} fallbackCat={cat} fallbackColor={color} onEdit={() => !categoryLocked && setSplitOpen(true)} />
+          <CategorySlices
+            tx={tx}
+            cats={cats}
+            fallbackCat={cat}
+            fallbackColor={color}
+            onEdit={() => !categoryLocked && openCategoriesEditor()}
+          />
+          {/* the split door, in the open on the detail too (#126 r4) */}
+          <DetailSplitDoor mode={splitDoorMode} placement="row" onOpen={openValuesEditor} />
           {bulkOffer && (
             <DetailBulkBar
               targets={bulkTargets}
@@ -838,6 +1460,7 @@ export function TxDetailScreen() {
             />
           )}
         </div>
+        <DetailSplitDoor mode={splitDoorMode} placement="manage" onOpen={openValuesEditor} />
 
         {/* block: actions — recurring + event links */}
         {tx.txType === 'expense' && (
@@ -921,6 +1544,8 @@ export function TxDetailScreen() {
             {t('tx.deleteManual')}
           </button>
         )}
+          </>
+        )}
       </div>
 
       {/* the aligned danger confirm — no cooldown: one transaction is a
@@ -974,7 +1599,30 @@ export function TxDetailScreen() {
       {/* ONE category flow (review parity): a single row edits the plain
           category through setCategory (which arms the bulk offer);
           added rows store a split write-through */}
-      <SplitEditorSheet open={splitOpen} onOpenChange={setSplitOpen} tx={tx} seedSingle onApplySingle={setCategory} allowedCatIds={recurringAllowedCats} />
+      {/* one editor, two doors (#126 r4): the categories pencil keeps the
+          classic per-slice editor (write-through), every split door opens
+          the VALUES editor whose Done only STAGES — nothing is written
+          until the completion deck's Apply lands the whole split */}
+      <DetailSplitSheets
+        tx={tx}
+        splitOpen={splitOpen}
+        setSplitOpen={setSplitOpen}
+        valuesMode={splitValuesMode}
+        editorValue={editorValue}
+        allowedCatIds={recurringAllowedCats}
+        setCategory={setCategory}
+        unsplitTo={unsplitTo}
+        unsplitFallbackCat={unsplitFallbackCat}
+        splitStage={splitStage}
+        setSplitStage={setSplitStage}
+        completeOpen={completeOpen}
+        setCompleteOpen={setCompleteOpen}
+        activeEvents={activeEventsList}
+        lockedKind={!!ownStamp}
+        openValuesEditor={openValuesEditor}
+        stageComplete={stageComplete}
+        applyStagedSplit={applyStagedSplit}
+      />
       <RenameTitleSheet
         open={renameOpen}
         onOpenChange={setRenameOpen}

@@ -10,7 +10,7 @@ import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFo
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
-import { hasTypedParts } from '@/domain/txSlices';
+import { duplicatePartTypes, hasTypedParts } from '@/domain/txSlices';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, autoSubFor, specialCatType } from '@/domain/categories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { Collapse } from '@/ui/Collapse';
@@ -331,23 +331,27 @@ function CardCategoryRows({
  *  counterparty, category, event; the amount opens the values editor,
  *  since amounts are a partition), the rest collapse to slim headers a
  *  tap re-expands. A ghost card grows the split. */
-function ReviewPartDeck({
-  draft,
+export function ReviewPartDeck({
+  splits,
+  rowType,
   tx,
   activeEvents,
   allowedCatIds,
   lockedKind = false,
   onOpenValues,
-  onStage,
+  onSplits,
 }: Readonly<{
-  draft: ReviewDraft | null;
+  /** the split being told — a staged draft's or a stored row's */
+  splits: readonly TxSplit[] | undefined;
+  /** the container's type: what untyped parts inherit */
+  rowType: TxType;
   tx: SpaceTx;
   activeEvents: readonly { id: string; name: string; icon?: string }[];
   allowedCatIds?: readonly string[];
   /** R1: a stamped account types every row — parts included */
   lockedKind?: boolean;
   onOpenValues: () => void;
-  onStage: (next: ReviewDraft) => void;
+  onSplits: (next: TxSplit[]) => void;
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -357,13 +361,13 @@ function ReviewPartDeck({
   const [kindFor, setKindFor] = useState<number | null>(null);
   const [counterFor, setCounterFor] = useState<number | null>(null);
   const [eventFor, setEventFor] = useState<number | null>(null);
-  const slices = draft?.splits ?? [];
+  const slices = splits ?? [];
   const parts = slices.filter((s) => s.catId !== REIMBURSED_ID);
-  if (!draft || parts.length <= 1) return null;
+  if (parts.length <= 1) return null;
 
   const patchPart = (index: number, patch: Partial<TxSplit>) => {
     const target = parts[index];
-    onStage(withSplits(draft, slices.map((s) => (s === target ? { ...s, ...patch } : s))));
+    onSplits(slices.map((s) => (s === target ? { ...s, ...patch } : s)));
   };
   const partLabel = (slice: TxSplit, i: number) => slice.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`;
   const openIdx = Math.min(expanded, parts.length - 1);
@@ -391,7 +395,10 @@ function ReviewPartDeck({
             </button>
           );
         }
-        const transferPart = !!slice.txType && kindOf(slice.txType) === 'transfer';
+        // transfer-PRESENTING only with a real counterparty — a ◆
+        // special part (saving/debt/invest without a link) reads as its
+        // own standard story, not as a bare Transfer
+        const transferPart = !!slice.linkedAccountId && !!slice.txType && kindOf(slice.txType) === 'transfer';
         const partEvent = activeEvents.find((event) => event.id === slice.eventId);
         return (
           <div
@@ -429,7 +436,7 @@ function ReviewPartDeck({
                 <span className="text-[12px] font-normal text-ink-4">
                   {' '}· {transferPart
                     ? (accounts?.find((a) => a.id === slice.linkedAccountId)?.name ?? t('tx.counterNone'))
-                    : t(`tx.type.${slice.txType ?? draft.txType}`)}
+                    : t(`tx.type.${slice.txType ?? rowType}`)}
                 </span>
               </span>
               <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
@@ -462,6 +469,13 @@ function ReviewPartDeck({
           </div>
         );
       })}
+      {/* #126 r4 (user rule): a split carries SEVERAL kinds of money —
+          duplicate part types hold the whole thing back */}
+      {duplicatePartTypes(slices, rowType) && (
+        <p className="rounded-card bg-negative-soft px-3 py-2 text-[12px] leading-relaxed text-negative" data-testid="deck-type-duplicate">
+          {t('split.typeDuplicate')}
+        </p>
+      )}
       <button
         data-testid="review-manage-splits"
         onClick={onOpenValues}
@@ -498,7 +512,7 @@ function ReviewPartDeck({
           if (!next) setPickerFor(null);
         }}
         direction={tx.amountCents < 0 ? 'debit' : 'credit'}
-        txType={draft.txType}
+        txType={rowType}
         selectedId={pickerFor === null ? undefined : parts[pickerFor]?.catId}
         onlyIds={allowedCatIds}
         onPick={(catId) => {
@@ -1325,16 +1339,19 @@ export function ReviewScreen() {
             </div>
 
             {/* #126: the split stands as stacked cards under the main one */}
-            <ReviewPartDeck
-              key={tx.id}
-              draft={draft}
-              tx={tx}
-              activeEvents={activeEvents}
-              allowedCatIds={recurringAllowedCats}
-              lockedKind={!!ownStamp}
-              onOpenValues={() => openSplitEditor(true)}
-              onStage={setStagedDraft}
-            />
+            {draft && (
+              <ReviewPartDeck
+                key={tx.id}
+                splits={draft.splits}
+                rowType={draft.txType}
+                tx={tx}
+                activeEvents={activeEvents}
+                allowedCatIds={recurringAllowedCats}
+                lockedKind={!!ownStamp}
+                onOpenValues={() => openSplitEditor(true)}
+                onSplits={(next) => setStagedDraft(withSplits(draft, next))}
+              />
+            )}
 
             <BulkConfirmSection similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
             </div>
