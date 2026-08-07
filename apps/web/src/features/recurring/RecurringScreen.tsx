@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
@@ -186,7 +187,7 @@ export function RecurringScreen() {
           </>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div ref={(el) => attachScrollMemory(el, 'recurring')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* date-range filter: current range / next range / calendar year */}
         <div className="mt-1 flex rounded-xl bg-bg-2 p-0.5">
           {(
