@@ -10,3 +10,9 @@ import * as Sentry from '@sentry/react';
 export function reportError(scope: string, err: unknown): void {
   Sentry.captureException(err instanceof Error ? err : new Error(String(err)), { tags: { scope } });
 }
+
+/** a non-crash observation (#135: the memory watcher) — same gates as
+ *  reportError: zero-network identities never send, offline queues */
+export function reportWarning(scope: string, message: string, extra: Record<string, unknown>): void {
+  Sentry.captureMessage(message, { level: 'warning', tags: { scope }, extra });
+}

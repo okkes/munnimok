@@ -18,6 +18,8 @@ import { initDeepLinks } from '@/lib/platform';
 import { installViewportGuard } from '@/lib/viewportGuard';
 import { installKeyboardDismiss } from '@/lib/keyboardDismiss';
 import { installKeyboardReveal } from '@/lib/keyboardReveal';
+import { installMemWatch } from '@/lib/memWatch';
+import { reportWarning } from '@/lib/report';
 import { initPressFeedback } from '@/app/pressFeedback';
 import { ThemeProvider } from '@/app/theme';
 import { router } from '@/app/router';
@@ -92,6 +94,9 @@ initDeepLinks(); // native shell only: munni:// callbacks re-enter here
 installViewportGuard(); // iOS keyboard focus-scroll must never displace the shell
 installKeyboardDismiss(); // touch-scroll or Enter closes the mobile keyboard
 installKeyboardReveal(); // iOS: fields the keyboard swallowed scroll back into view (#129)
+// #135: sustained JS-heap growth pages GlitchTip once per session (the
+// zero-network gate in beforeSend keeps demo/offline identities silent)
+installMemWatch((message, extra) => reportWarning('memwatch', message, extra));
 
 // OIDC / bank-consent redirects land outside the hash router
 function AppEntry() {
