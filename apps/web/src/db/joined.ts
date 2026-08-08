@@ -308,6 +308,15 @@ export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTr
     plan && !Object.hasOwn(fields, 'transferPeerId') ? { ...fields, ...(plan.sourceFields as TxTransformFields) } : fields;
   if (partPlan) write = { ...write, splits: partPlan.splits };
 
+  // #133 phase 1: a write that changes WHAT the row is (category,
+  // counterparty or parts) without naming a type gets the compat txType
+  // DERIVED here — no surface asks for types anymore, while old devices
+  // and historical readers keep seeing coherent values
+  if (!Object.hasOwn(write, 'txType') && ['catId', 'linkedAccountId', 'splits'].some((key) => Object.hasOwn(write, key))) {
+    const derived = await deriveWriteTxType(repo, tx, write);
+    if (derived) write = { ...write, txType: derived };
+  }
+
   if (!tx.feedSpaceId) {
     await repo.upsert('transaction', tx.spaceId, tx.id, write);
   } else {
@@ -322,4 +331,35 @@ export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTr
 
   if (plan) await plan.execute(repo).catch(() => undefined);
   for (const p of partPlan?.plans ?? []) await p.execute(repo).catch(() => undefined);
+}
+
+/** #133: the derived compat txType for a choke write — computed from the
+ *  MERGED current row (overlay wins on feed rows) with the write's own
+ *  changes applied on top. Module-level for S3776. */
+async function deriveWriteTxType(repo: Repo, tx: TransformTx, write: TxTransformFields): Promise<TxType | undefined> {
+  const { deriveTxType } = await import('@/domain/txDerive');
+  const raw = await repo.store.get('transaction', tx.id);
+  if (!raw) return undefined;
+  const feed = !!tx.feedSpaceId;
+  const meta = feed ? await repo.store.get('txMeta', txMetaId(tx.spaceId, tx.id)) : undefined;
+  const current = <K extends keyof TxTransformFields>(key: K): TxTransformFields[K] => {
+    if (Object.hasOwn(write, key)) return write[key];
+    const stored = feed
+      ? ((meta as TxTransformFields | undefined)?.[key] ?? (raw as TxTransformFields)[key])
+      : (raw as TxTransformFields)[key];
+    return stored as TxTransformFields[K];
+  };
+  const linkedAccountId = current('linkedAccountId');
+  const linked = linkedAccountId ? await repo.store.get('account', linkedAccountId) : undefined;
+  const account = await repo.store.get('account', raw.accountId);
+  const parts = (current('splits') ?? []).filter((s) => s.catId !== 'reimbursed');
+  return deriveTxType({
+    catId: current('catId'),
+    linkedAccountId,
+    amountCents: raw.amountCents,
+    stamp: accountStamp(account?.type),
+    counterDefaultFor: linked?.defaultFor,
+    multiPart: parts.length > 1,
+    adjustment: raw.txType === 'adjustment',
+  });
 }

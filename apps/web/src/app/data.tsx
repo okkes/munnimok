@@ -294,6 +294,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // boot, idempotent — late-syncing debts from old devices heal)
         const { foldDebtsIntoAccounts } = await import('@/application/debts');
         await foldDebtsIntoAccounts(store, repo);
+        // #133 ruling 3: bare movement rows link onto lazy-minted
+        // DEFAULT accounts — balances move via the mirror lifecycle
+        const { migrateBareSpecialRows } = await import('@/application/categoryModel');
+        await migrateBareSpecialRows(store, repo);
         // transfers are ONE event with two legs — pair them within each
         // space's own books (never across: funding covers that case)
         const { linkTransferPairs } = await import('@/application/transferMatch');

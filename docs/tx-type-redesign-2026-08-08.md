@@ -1,8 +1,8 @@
 # Categories carry everything — the transaction-type retirement (#133)
 
-Status: **PLAN — awaiting approval** (user answers 2026-08-07 locked in below; no code yet).
-Supersedes the *user-facing* half of the kind model in `docs/tx-splitting-2026-08-04.md`
-(R1/R2 storage + mint engine stay; their surfaces change).
+Status: **APPROVED** (C1–C3 yes, 2026-08-08) — step A landed; B–F follow, C/D after the
+#126 arc settles. Supersedes the *user-facing* half of the kind model in
+`docs/tx-splitting-2026-08-04.md` (R1/R2 storage + mint engine stay; their surfaces change).
 
 ## The rulings (user, 2026-08-07)
 
@@ -35,13 +35,24 @@ Plus the counterparty rule that shapes every flow:
 
 ## The model
 
-**Stored `txType` becomes a derived compat field.** 52 non-test files read it today and
-every historical row + old device writes it, so it cannot vanish from storage or sync.
-Rule: the ONE write choke (`writeTxTransform`) derives it at write time —
-`deriveTxType(catId, linkedAccountId, accountStamp, sign)` — and no UI ever asks for it
-again. Old devices keep writing it directly; LWW merges stay coherent because new
-writes always send a value consistent with their category. Readers migrate to
-category-driven logic opportunistically (buckets already are, since arc B).
+**`txType` is REMOVED — in two phases** (user ruling 2026-08-08: "remove it"). The
+CONCEPT dies now; the stored FIELD dies one release later, because ~52 files, every
+historical row and every not-yet-updated device still speak it:
+
+- **Phase 1 (this arc):** no UI asks for or shows a type, and no reader depends on it —
+  readers go category/counterparty-driven (buckets already are, since arc B). The ONE
+  write choke (`writeTxTransform`) still WRITES a derived value —
+  `deriveTxType(adjustment > account stamp > split-container=sign > default-counter=its
+  family > any-counter=transfer > ◆ category > sign)` — purely so old app versions
+  syncing the same spaces keep rendering coherent rows. New code never reads it.
+- **Phase 2 (a later release, once fleets update):** the choke stops writing it; the
+  schema keeps ACCEPTING it from old rows/devices forever (read-tolerant, write-never).
+
+**Splits answer the "multiple types" question:** a split already has no single type —
+each PART derives its own meaning from its category + counterparty, and the container
+is a sign-only vessel. The one stored `txType` per row was already a fiction for splits
+(a "largest part" shadow); removal makes the model honest. Adjustment stops being a
+type too: it becomes a manual-row marker (C3's toggle) in step D.
 
 - `saving/debtPayment/investment`: category family or counterparty-derived, as today.
 - `transfer`: the transfer category (locked subs) — now reachable as a ◆ pick.
@@ -129,10 +140,8 @@ A. Derivation + default-account engine + migration (no UI change; `deriveTxType`
    + manual form + Adjustment. E. Pickers/filters/search/CSV. F. Polish: i18n ×3, tours,
    guide, demo, e2e repins.
 
-## Confirmations wanted before code
+## Confirmations (all answered YES, 2026-08-08)
 
-- C1. Default accounts appear in normal account lists/overview once minted (they hold
-  real balances) — yes?
-- C2. Picking a bank-fed counterparty relabels the row **Transfer** even when the user
-  arrived via "Set aside" — the explainer line is enough?
-- C3. The manual form keeps Adjustment as a small toggle under the category (not a grid)?
+- C1. Minted default accounts appear in normal account lists/overview.
+- C2. A bank-fed counterparty relabels the row Transfer, with the explainer at pick time.
+- C3. The manual form keeps Adjustment as a small toggle under the category.

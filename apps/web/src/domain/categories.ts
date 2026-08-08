@@ -247,6 +247,17 @@ export function stampMovementSub(stamp: TxType, amountCents: number): string | u
   if (!pair) return undefined;
   return amountCents >= 0 ? pair.in : pair.out;
 }
+
+/** MOVEMENT categories of the three counterparty families (#133): the
+ *  picks that mean money physically moved to/from a pot — the ones the
+ *  bare-row migration links onto default accounts. Interest/fees/etc.
+ *  are value stories, not movements, and never link. */
+const MOVEMENT_CAT_IDS = new Set([
+  'savingDeposit', 'savingWithdraw',
+  'loanRepayment', 'debtBorrowed',
+  'investBuy', 'investSell', 'investContribution', 'investWithdraw',
+]);
+export const isMovementCat = (catId: string | undefined): boolean => !!catId && MOVEMENT_CAT_IDS.has(catId);
 /**
  * Typed-splits v2 (2026-08-05, user): special categories carry system
  * meaning — buckets count them and movements force them — so every

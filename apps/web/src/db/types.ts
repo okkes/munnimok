@@ -65,6 +65,9 @@ export interface AccountRow extends SyncEnvelope {
   balanceAsOf?: string;
   /** when this account last heard from its source (ISO; bank fetch or statement import) */
   lastSyncedAt?: string;
+  /** #133: this account is the space's lazy-minted DEFAULT pot for a
+   *  counterparty family — "Set aside" without naming a pot lands here */
+  defaultFor?: 'saving' | 'debtPayment' | 'investment';
   /** newest transaction date an imported statement covered (yyyy-mm-dd):
    *  "you imported five minutes ago" and "the data ends three weeks ago"
    *  are different facts — this carries the second one */
