@@ -150,10 +150,22 @@ export function PartCatsSheet({
     setEntryMode(next.mode);
     patchEntry(index, { amount: next.text });
   };
-  const onFocus = (index: number) => {
-    setFocusStash({ index, amount: entries[index]?.amount ?? '' });
-    patchEntry(index, { amount: '' });
+  const onFocus = (index: number, el?: HTMLInputElement) => {
+    // the register arms right away; the empty-for-typing happens ONE
+    // FRAME LATER (#134): iOS WebKit stalls the caret when the value
+    // swaps in the same beat as focus. Stand down if focus moved on.
     setEntryMode('register');
+    const amount = entries[index]?.amount ?? '';
+    requestAnimationFrame(() => {
+      // another editable already took focus (spam-switch): stand down.
+      // (Synthetic test focus leaves activeElement on body — proceed.)
+      const active = document.activeElement;
+      if (el && active !== el && active instanceof HTMLElement && active.matches('input, textarea')) return;
+      // typing already replaced the value inside this frame: keep it
+      if (el && el.value !== amount) return;
+      setFocusStash({ index, amount });
+      patchEntry(index, { amount: '' });
+    });
   };
   const onBlur = (index: number) => {
     if (focusStash?.index === index && (entries[index]?.amount ?? '').trim() === '') {
@@ -245,7 +257,7 @@ export function PartCatsSheet({
                 data-testid={`part-cat-amount-${i}`}
                 value={entry.amount}
                 onChange={(e) => onAmount(i, e.target.value)}
-                onFocus={() => onFocus(i)}
+                onFocus={(e) => onFocus(i, e.currentTarget)}
                 onBlur={() => onBlur(i)}
                 inputMode="decimal"
                 className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"

@@ -253,7 +253,7 @@ function ValuesRow({
         data-testid={`split-amount-${index}`}
         value={row.amount}
         onChange={(e) => handlers.onAmount({ row: index, cat: 0 }, e.target.value)}
-        onFocus={() => handlers.onAmountFocus({ row: index, cat: 0 })}
+        onFocus={(e) => handlers.onAmountFocus({ row: index, cat: 0 }, e.currentTarget)}
         onBlur={() => handlers.onAmountBlur({ row: index, cat: 0 })}
         inputMode="decimal"
         className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
@@ -300,7 +300,7 @@ function EntryRow({
   accountName: (id: string) => string;
   onPickCat: (at: EntryAddress) => void;
   onAmount: (at: EntryAddress, amount: string) => void;
-  onAmountFocus: (at: EntryAddress) => void;
+  onAmountFocus: (at: EntryAddress, el?: HTMLInputElement) => void;
   onAmountBlur: (at: EntryAddress) => void;
   onRemove: (at: EntryAddress) => void;
 }>) {
@@ -327,7 +327,7 @@ function EntryRow({
         data-testid={`split-amount-${suffix}`}
         value={amount}
         onChange={(e) => onAmount(at, e.target.value)}
-        onFocus={() => onAmountFocus(at)}
+        onFocus={(e) => onAmountFocus(at, e.currentTarget)}
         onBlur={() => onAmountBlur(at)}
         inputMode="decimal"
         className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
@@ -353,7 +353,9 @@ interface EntryHandlers {
   accountName: (id: string) => string;
   onPickCat: (at: EntryAddress) => void;
   onAmount: (at: EntryAddress, amount: string) => void;
-  onAmountFocus: (at: EntryAddress) => void;
+  /** the element rides along so the deferred focus-empty (#134) can
+   *  stand down when focus already moved elsewhere */
+  onAmountFocus: (at: EntryAddress, el?: HTMLInputElement) => void;
   onAmountBlur: (at: EntryAddress) => void;
   onRemove: (at: EntryAddress) => void;
 }
@@ -836,11 +838,24 @@ export function SplitEditorSheet({
       setEntryMode(next.mode);
       patchEntry(at, { amount: next.text });
     },
-    onAmountFocus: (at) => {
-      setFocusStash({ at, amount: entryAmount(at) });
-      patchEntry(at, { amount: '' });
-      // the field just emptied — the register is armed
+    onAmountFocus: (at, el) => {
+      // the register is armed right away…
       setEntryMode('register');
+      // …but the empty-for-typing happens ONE FRAME LATER (#134): iOS
+      // WebKit stalls the caret for seconds when the input's value swaps
+      // in the same beat as focus. If focus already moved on (spam-
+      // switching fields), the deferred empty stands down.
+      const amount = entryAmount(at);
+      requestAnimationFrame(() => {
+        // another editable already took focus (spam-switch): stand down.
+        // (Synthetic test focus leaves activeElement on body — proceed.)
+        const active = document.activeElement;
+        if (el && active !== el && active instanceof HTMLElement && active.matches('input, textarea')) return;
+        // typing already replaced the value inside this frame: keep it
+        if (el && el.value !== amount) return;
+        setFocusStash({ at, amount });
+        patchEntry(at, { amount: '' });
+      });
     },
     onAmountBlur: blurEntry,
     onRemove: removeEntry,
