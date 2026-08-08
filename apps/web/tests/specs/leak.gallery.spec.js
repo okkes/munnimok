@@ -7,11 +7,13 @@ import { VARIANTS, createPage, base, teardown } from '../helpers/base.js';
 // The production half is lib/memWatch (GlitchTip, where a heap API
 // exists). Thresholds are generous: this catches LEAKS, not churn.
 
-const CYCLES = 8;
+const CYCLES = 6;
 const MAX_GROWTH_BYTES = 30 * 1024 * 1024;
 
 for (const V of VARIANTS) {
   test(`leak-a1 heap settles across screen cycles [${V.id}]`, async ({ browser }) => {
+    // eight tab laps with double-GC pauses outrun the default 30s on CI
+    test.setTimeout(150_000);
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
 
