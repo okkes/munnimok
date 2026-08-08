@@ -609,7 +609,8 @@ describe('ReviewScreen (demo identity)', () => {
     // must still fill THIS row with the open 50 — not zero the other
     const amount0 = screen.getByTestId('split-amount-0') as HTMLInputElement;
     fireEvent.focus(amount0);
-    expect(amount0.value).toBe('');
+    // the empty-for-typing lands one frame after focus (#134 iOS fix)
+    await waitFor(() => expect(amount0.value).toBe(''));
     const pill = await screen.findByTestId('split-remainder');
     fireEvent.pointerDown(pill);
     fireEvent.blur(amount0);
@@ -699,9 +700,10 @@ describe('ReviewScreen (demo identity)', () => {
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     expect(amount0.value).toBe('10,00');
 
-    // focus empties the field so typing replaces; blank blur restores
+    // focus empties the field so typing replaces (one frame later — the
+    // #134 iOS fix); blank blur restores
     fireEvent.focus(amount0);
-    expect(amount0.value).toBe('');
+    await waitFor(() => expect(amount0.value).toBe(''));
     fireEvent.blur(amount0);
     expect(amount0.value).toBe('10,00');
 

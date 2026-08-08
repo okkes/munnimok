@@ -34,6 +34,12 @@ export function txTitle(tx: { merchant: string; titleOverride?: string }): strin
   return tx.titleOverride?.trim() || cleanBankText(tx.merchant);
 }
 
+/** a stored label only counts when it says something — whitespace-only
+ *  values (legacy writes, #126 r8) fall back to the derived default */
+export function orDefaultLabel(label: string | undefined, fallback: string): string {
+  return label?.trim() ? label : fallback;
+}
+
 /**
  * Bank feeds carry structured keys like "invoice_number: 123" — humanize
  * the snake_case labels ("Invoice number: 123") without touching the

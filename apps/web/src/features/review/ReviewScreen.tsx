@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { useSpaceAccounts, useSpaceTransactions, useTxTransform } from '@/application/transactions';
@@ -33,7 +33,7 @@ import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
-import { cleanBankText, txTitle } from '@/lib/text';
+import { cleanBankText, orDefaultLabel, txTitle } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -226,6 +226,36 @@ function deckKindFor(parts: readonly TxSplit[], kindFor: number | null): 'transf
 /** the part a numbered picker/sheet is aimed at (S3776: out of the deck) */
 const partAt = (parts: readonly TxSplit[], index: number | null): TxSplit | undefined =>
   index === null ? undefined : parts[index];
+
+/** r8: the tapped card GROWS out of its slot to the front while the old
+ *  active SHRINKS back into its own slot — FLIP on the real elements,
+ *  nothing reorders. Module-level for S3776; animate/rects are optional
+ *  (jsdom has neither). */
+function playDeckFlip(
+  flip: { tappedRect: DOMRect; activeRect: DOMRect },
+  card: HTMLElement | null,
+  oldStrip: HTMLElement | undefined,
+): void {
+  const ease = 'cubic-bezier(0.32, 0.72, 0, 1)';
+  const travel = (el: HTMLElement | null | undefined, from: DOMRect) => {
+    if (!el) return;
+    const to = el.getBoundingClientRect();
+    if (!to.width || !to.height) return;
+    el.animate?.(
+      [
+        {
+          transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${from.width / to.width}, ${from.height / to.height})`,
+          transformOrigin: 'top left',
+          opacity: 0.85,
+        },
+        { transform: 'none', transformOrigin: 'top left', opacity: 1 },
+      ],
+      { duration: 220, easing: ease },
+    );
+  };
+  travel(card, flip.tappedRect);
+  travel(oldStrip, flip.activeRect);
+}
 
 /** does this draft stage a REAL split (2+ parts beyond the settled slice)? */
 const multiPartSplits = (draft: ReviewDraft | null): boolean =>
@@ -430,12 +460,21 @@ export function ReviewPartDeck({
   // r6/r7: which part is editing its categories (THE category door —
   // the same amounts/percentages editor whole transactions use)
   const [spreadFor, setSpreadFor] = useState<number | null>(null);
-  // r7 (user request): the outgoing card's markup kept as a ghost that
-  // slides back into the stack while the tapped one comes to the front
+  // r8 (user request): the WHOLE card travels — the tapped one rises out
+  // of its slot to the front while the old active shrinks back into its
+  // own slot; nothing else reorders. Classic FLIP on the real elements.
   const cardRef = useRef<HTMLDivElement | null>(null);
-  const [leavingCard, setLeavingCard] = useState<string | null>(null);
+  const stripRefs = useRef(new Map<number, HTMLElement>());
+  const flipRef = useRef<{ tappedRect: DOMRect; activeRect: DOMRect; prevIdx: number } | null>(null);
   const slices = splits ?? [];
   const parts = slices.filter((s) => s.catId !== REIMBURSED_ID);
+  const openIdx = Math.min(expanded, parts.length - 1);
+  useLayoutEffect(() => {
+    const flip = flipRef.current;
+    flipRef.current = null;
+    if (!flip) return;
+    playDeckFlip(flip, cardRef.current, stripRefs.current.get(flip.prevIdx));
+  }, [openIdx]);
   if (parts.length <= 1) return null;
 
   // r7 (user rule): NO restriction on a split beyond the amounts — every
@@ -444,14 +483,17 @@ export function ReviewPartDeck({
     const target = parts[index];
     onSplits(slices.map((s) => (s === target ? { ...s, ...patch } : s)));
   };
-  const partLabel = (slice: TxSplit, i: number) => slice.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`;
-  const openIdx = Math.min(expanded, parts.length - 1);
+  const partLabel = (slice: TxSplit, i: number) =>
+    orDefaultLabel(slice.label, `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`);
   const swapTo = (i: number) => {
     if (i === openIdx) return;
-    if (cardRef.current) {
-      // strip testids so the decorative ghost never doubles a live element
-      setLeavingCard(cardRef.current.innerHTML.replaceAll(/data-testid="[^"]*"/g, ''));
-      setTimeout(() => setLeavingCard(null), 220);
+    const strip = stripRefs.current.get(i);
+    if (strip && cardRef.current) {
+      flipRef.current = {
+        tappedRect: strip.getBoundingClientRect(),
+        activeRect: cardRef.current.getBoundingClientRect(),
+        prevIdx: openIdx,
+      };
     }
     setExpanded(i);
   };
@@ -500,6 +542,10 @@ export function ReviewPartDeck({
           return (
             <button
               key={slice.id ?? `p${i}`}
+              ref={(el) => {
+                if (el) stripRefs.current.set(i, el);
+                else stripRefs.current.delete(i);
+              }}
               data-testid={`deck-part-${i}`}
               onClick={() => swapTo(i)}
               className="m-tap -mb-1.5 flex w-full items-center gap-2.5 rounded-t-card border border-line bg-surface px-4 pt-2 pb-3.5 text-left opacity-90"
@@ -523,21 +569,11 @@ export function ReviewPartDeck({
             </button>
           );
         })}
-        <div className="relative">
-          {/* the outgoing card slides back into the stack (r7) — a
-              decorative snapshot of our own just-rendered markup */}
-          {leavingCard && (
-            <div
-              aria-hidden
-              className="m-deck-out pointer-events-none absolute inset-0 z-10 overflow-hidden rounded-card border-2 border-accent-deep bg-surface"
-              dangerouslySetInnerHTML={{ __html: leavingCard }} // NOSONAR
-            />
-          )}
         <div
           key={active.id ?? `p${openIdx}`}
           ref={cardRef}
           data-testid={`deck-part-${openIdx}`}
-          className="m-deck-in relative rounded-card border-2 border-accent-deep bg-surface shadow-[0_8px_20px_rgba(0,0,0,0.10)]"
+          className="relative rounded-card border-2 border-accent-deep bg-surface shadow-[0_8px_20px_rgba(0,0,0,0.10)]"
         >
           <div className="flex items-center gap-2 px-3 pt-3 pb-1">
             <span className="relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-accent-deep text-[12px] font-semibold text-white">
@@ -556,6 +592,12 @@ export function ReviewPartDeck({
               value={active.label ?? ''}
               placeholder={partLabel(active, openIdx)}
               onChange={(e) => patchPart(openIdx, { label: e.target.value || undefined })}
+              // r8 (user rule): a label must SAY something — whitespace-only
+              // settles back to the derived default on blur
+              onBlur={(e) => {
+                const trimmed = e.target.value.trim();
+                if (trimmed !== e.target.value) patchPart(openIdx, { label: trimmed || undefined });
+              }}
               className="h-9 min-w-0 flex-1 rounded-input border border-line bg-bg-2 px-3 text-[13px] text-ink outline-none placeholder:text-ink-4"
             />
             <span data-testid={`deck-amount-${openIdx}`} className="m-num text-[14px] font-semibold text-ink">
@@ -615,7 +657,6 @@ export function ReviewPartDeck({
             <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
             <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
           </button>
-        </div>
         </div>
       </div>
 

@@ -722,7 +722,8 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('split-add-row'));
 
     const amount = screen.getByTestId('split-amount-1') as HTMLInputElement;
-    fireEvent.focus(amount); // arms the register (and empties the field)
+    fireEvent.focus(amount); // arms the register; the empty lands a frame later (#134)
+    await waitFor(() => expect(amount.value).toBe(''));
     fireEvent.change(amount, { target: { value: '5' } });
     expect(amount.value).toBe('0,05');
     fireEvent.change(amount, { target: { value: '0,055' } });

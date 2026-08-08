@@ -208,7 +208,9 @@ function buildPseudoTx(
     date: form.date,
     amountCents: form.isExpense ? -abs : abs,
     currency: form.currency,
-    merchant: form.merchant,
+    // r8 (user rule): a title must SAY something — stored trimmed, and
+    // the save gate already refuses whitespace-only
+    merchant: form.merchant.trim(),
     catId: form.catId,
     txType: form.txType,
     needsReview: 0,
@@ -252,7 +254,7 @@ function manualTxFields(args: {
     date: args.date,
     amountCents: args.signed,
     currency: args.currency,
-    merchant: args.merchant,
+    merchant: args.merchant.trim(),
     catId: familySub ?? args.catId,
     txType: args.txType,
     needsReview: 0 as const,

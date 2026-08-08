@@ -18,6 +18,36 @@ describe('TransactionsScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
+  it('a filter that matches only SOME parts shows exactly those, aligned as normal rows (#126 r8)', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-partfilter'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'pf1', {
+      accountId: 'demo_main', date: '2020-03-01', amountCents: -3000, currency: 'EUR',
+      merchant: 'PartFilter Shop', catId: 'groceries', txType: 'expense', needsReview: 0,
+      splits: [
+        { id: 'pfa', catId: 'groceries', amountCents: 2000, label: 'Food half' },
+        { id: 'pfb', catId: 'uncategorized', amountCents: 1000, label: 'Mystery half' },
+      ],
+    });
+    // unfiltered: the band with both branches stands
+    await screen.findByTestId('tx-parts-pf1', {}, { timeout: 5000 });
+
+    // the Uncategorized quick filter matches ONE part — the band gives
+    // way to that part standing alone with the split glyph
+    fireEvent.click(screen.getByTestId('tx-filter-uncat'));
+    await screen.findByTestId('tx-part-solo-pf1-1');
+    expect(screen.getByTestId('tx-part-solo-pf1-1').textContent).toContain('Mystery half');
+    expect(screen.queryByTestId('tx-parts-pf1')).toBeNull();
+    expect(screen.queryByTestId('tx-part-solo-pf1-0')).toBeNull();
+
+    // filter off: the full band returns
+    fireEvent.click(screen.getByTestId('tx-filter-uncat'));
+    await screen.findByTestId('tx-parts-pf1');
+    db.close();
+  }, 15_000);
+
   it('search narrows the list to matching merchants', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');

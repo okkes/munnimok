@@ -34,9 +34,11 @@ function matchesQuery(tx: TransactionRow, q: string, amountQ: string | null): bo
 const anySlice = (tx: TransactionRow, hit: (view: ReturnType<typeof txSliceViews>[number]) => boolean): boolean =>
   txSliceViews(tx).some(hit);
 
-/** transfers carry no category by design — they never count as uncategorized */
+/** transfers carry no category by design — they never count as
+ *  uncategorized. Slice-aware (#126 r8): an unfinished PART keeps its
+ *  split findable under the quick filter. */
 const isUncategorized = (tx: TransactionRow): boolean =>
-  (tx.catId === 'uncategorized' || tx.catId == null) && tx.txType !== 'transfer';
+  anySlice(tx, (v) => (v.catId === 'uncategorized' || v.catId == null) && v.effType !== 'transfer');
 
 export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionRow[] {
   const q = filter.query?.trim().toLowerCase();
@@ -58,3 +60,28 @@ export const hasActiveFilter = (f: TxFilter): boolean =>
   Boolean(
     f.query?.trim() || f.accountIds?.size || f.onlyNeedsReview || f.catIds?.size || f.txTypes?.size || f.from || f.to,
   );
+
+/**
+ * #126 r8 (user request): a filtered list shows only the parts a filter
+ * actually matches — the split's OTHER pieces stay out of view. Returns
+ * the matching part indexes for the part-partitioning filters (category,
+ * type, uncategorized); every part matches when none of those are on.
+ * Query/date/account filters keep whole-row semantics — a merchant hit
+ * belongs to every part.
+ */
+export function matchingPartIndexes(
+  tx: Pick<TransactionRow, 'splits' | 'txType' | 'catId'>,
+  filter: Pick<TxFilter, 'catIds' | 'txTypes' | 'onlyUncategorized'>,
+): number[] {
+  const parts = (tx.splits ?? []).filter((s) => s.catId !== 'reimbursed');
+  const partitioning = Boolean(filter.catIds?.size || filter.txTypes?.size || filter.onlyUncategorized);
+  const all = parts.map((_, i) => i);
+  if (!partitioning) return all;
+  return all.filter((i) => {
+    const part = parts[i];
+    const partCatIds = part.cats?.length ? part.cats.map((c) => c.catId) : [part.catId];
+    if (filter.catIds?.size && !partCatIds.some((catId) => filter.catIds!.has(catId))) return false;
+    if (filter.txTypes?.size && !filter.txTypes.has(part.txType ?? tx.txType)) return false;
+    return !filter.onlyUncategorized || partCatIds.includes('uncategorized');
+  });
+}

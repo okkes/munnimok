@@ -18,7 +18,7 @@ import { countPreAnchorTx } from '@/application/loanBalance';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
-import { cleanBankText, humanizeBankKeys, txTitle } from '@/lib/text';
+import { cleanBankText, humanizeBankKeys, orDefaultLabel, txTitle } from '@/lib/text';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -616,7 +616,7 @@ function detailTrailingAction(
  *  own face on a part page. Module-level for S3776. */
 function detailScreenTitle(tx: SpaceTx, parts: readonly TxSplit[], partView: TxSplit | undefined, t: TFunc): string {
   if (!partView) return txTitle(tx);
-  return partView.label ?? `${txTitle(tx)} – ${t('split.partN', { n: parts.indexOf(partView) + 1 })}`;
+  return orDefaultLabel(partView.label, `${txTitle(tx)} – ${t('split.partN', { n: parts.indexOf(partView) + 1 })}`);
 }
 
 /** drafted-until-complete (#126 r4, relaxed r7): the staged split may
@@ -789,7 +789,7 @@ function PartSiblingRows({
           >
             <Icon name={sliceCat.icon} size={16} color="var(--m-ink-3)" />
             <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">
-              {slice.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`}
+              {orDefaultLabel(slice.label, `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`)}
               <span className="text-[11px] font-normal text-ink-4"> · {catName(sliceCat, t)}</span>
             </span>
             <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>

@@ -4,12 +4,12 @@ import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactio
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { REIMBURSED_ID } from '@/domain/categories';
 import { hasTypedParts } from '@/domain/txSlices';
-import { txTitle } from '@/lib/text';
+import { orDefaultLabel, txTitle } from '@/lib/text';
 import { EMPTY_FILTERS, FilterSheet, countActive } from './FilterSheet';
 import type { SheetFilters } from './FilterSheet';
 import { useLang } from '@/i18n';
 import type { TransactionRow } from '@/db/types';
-import { filterTxs } from '@/domain/txFilter';
+import { filterTxs, matchingPartIndexes } from '@/domain/txFilter';
 import { hasUnsettledReimbursement } from '@/domain/reimbursement';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -19,11 +19,44 @@ import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
+import { TxPartRow } from '@/ui/TxPartRow';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { useScrollMemory } from '@/lib/scrollMemory';
 import { TxFormSheet } from './TxFormSheet';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
+
+/** the parts a filter singled out, standing alone (#126 r8) —
+ *  module-level for S2004 */
+function TxPartSoloRows({
+  tx,
+  parts,
+  shownIdx,
+  fmt,
+  onOpen,
+}: Readonly<{
+  tx: TransactionRow;
+  parts: readonly NonNullable<TransactionRow['splits']>[number][];
+  shownIdx: readonly number[];
+  fmt: ReturnType<typeof useDisplayMoney>['fmt'];
+  onOpen: (partId: string | undefined) => void;
+}>) {
+  const sign = tx.amountCents < 0 ? -1 : 1;
+  return (
+    <>
+      {shownIdx.map((i) => (
+        <TxPartRow
+          key={parts[i].id ?? `${tx.id}-${i}`}
+          tx={tx}
+          part={parts[i]}
+          index={i}
+          amountText={fmt(sign * Math.abs(parts[i].amountCents), tx.currency, { date: tx.date })}
+          onClick={() => onOpen(parts[i].id)}
+        />
+      ))}
+    </>
+  );
+}
 
 /** a split's parts standing IN the list (#126 r5, restyled r6 to the
  *  user's inspiration): a compact header band names the original
@@ -75,43 +108,45 @@ function TxPartGroupRows({
           const partCat = cats.byId(part.catId);
           const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
           return (
-            <button
-              key={part.id ?? i}
-              data-testid={`tx-part-row-${tx.id}-${i}`}
-              onClick={() => onOpen(part.id)}
-              className="m-tap flex w-full items-center gap-3 border-none bg-transparent py-2 pr-2 pl-0 text-left"
-            >
+            <div key={part.id ?? i} className="flex w-full items-stretch">
               {/* the branch: a spine from the header curving into this
-                  row's icon (the arrows of the user's inspiration) */}
+                  row's icon — OUTSIDE the pressable row, so the press
+                  effect never drags the line along (#126 r8) */}
               <span aria-hidden className="relative w-7 shrink-0 self-stretch">
                 <span className="absolute top-[-8px] left-[13px] h-[26px] w-[12px] rounded-bl-[10px] border-b-2 border-l-2 border-accent-deep/35" />
                 {i < parts.length - 1 && (
                   <span className="absolute top-[-8px] bottom-[-8px] left-[13px] border-l-2 border-accent-deep/35" />
                 )}
               </span>
-              <span
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
-                style={{ background: `color-mix(in srgb, ${partColor ?? 'var(--m-ink-4)'} 14%, transparent)` }}
+              <button
+                data-testid={`tx-part-row-${tx.id}-${i}`}
+                onClick={() => onOpen(part.id)}
+                className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent py-2 pr-2 pl-0 text-left"
               >
-                <Icon name={partCat.icon} size={17} color={partColor ?? 'var(--m-ink-3)'} />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] font-medium text-ink">
-                  {part.label ?? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`}
+                <span
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+                  style={{ background: `color-mix(in srgb, ${partColor ?? 'var(--m-ink-4)'} 14%, transparent)` }}
+                >
+                  <Icon name={partCat.icon} size={17} color={partColor ?? 'var(--m-ink-3)'} />
                 </span>
-                <span className="flex items-center gap-1.5 text-[12px] text-ink-3">
-                  <span className="truncate">{catName(partCat, t)}</span>
-                  {i === 0 && tx.needsReview === 1 && (
-                    <span className="shrink-0 rounded-full bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
-                      {t('tx.unreviewed')}
-                    </span>
-                  )}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-medium text-ink">
+                    {orDefaultLabel(part.label, `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`)}
+                  </span>
+                  <span className="flex items-center gap-1.5 text-[12px] text-ink-3">
+                    <span className="truncate">{catName(partCat, t)}</span>
+                    {i === 0 && tx.needsReview === 1 && (
+                      <span className="shrink-0 rounded-full bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+                        {t('tx.unreviewed')}
+                      </span>
+                    )}
+                  </span>
                 </span>
-              </span>
-              <span className="m-num text-[14px] text-ink">
-                {fmt(sign * Math.abs(part.amountCents), tx.currency, { date: tx.date })}
-              </span>
-            </button>
+                <span className="m-num text-[14px] text-ink">
+                  {fmt(sign * Math.abs(part.amountCents), tx.currency, { date: tx.date })}
+                </span>
+              </button>
+            </div>
           );
         })}
     </div>
@@ -325,6 +360,22 @@ export function TransactionsScreen() {
                 // the shared rail linking them; each opens its own page
                 const rowParts = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
                 if (rowParts.length > 1 && hasTypedParts(tx)) {
+                  // r8 (user request): a filter that matches only SOME
+                  // parts shows exactly those, aligned like normal rows
+                  // with the split glyph — the band stays for full groups
+                  const shown = matchingPartIndexes(tx, { catIds, txTypes: filters.txTypes, onlyUncategorized: uncatOnly });
+                  if (shown.length < rowParts.length) {
+                    return (
+                      <TxPartSoloRows
+                        key={tx.id}
+                        tx={tx}
+                        parts={rowParts}
+                        shownIdx={shown}
+                        fmt={fmt}
+                        onOpen={(partId) => openPartPage(tx.id, partId)}
+                      />
+                    );
+                  }
                   return (
                     <TxPartGroupRows
                       key={tx.id}

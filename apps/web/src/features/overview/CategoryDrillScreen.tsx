@@ -13,8 +13,20 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
+import { TxPartRow } from '@/ui/TxPartRow';
+import { hasTypedParts } from '@/domain/txSlices';
+import { matchingPartIndexes } from '@/domain/txFilter';
+import type { TxSplit } from '@/db/types';
 
 const PERIOD_COUNT = 6;
+
+/** the part's cents belonging to the drilled category (spread-aware) */
+const partCatShare = (part: TxSplit, catSet: ReadonlySet<string>): number => {
+  if (part.cats?.length) {
+    return part.cats.filter((entry) => catSet.has(entry.catId)).reduce((sum, entry) => sum + entry.amountCents, 0);
+  }
+  return Math.abs(part.amountCents);
+};
 
 const KIND_ACCENT: Record<OverviewKind, string> = {
   income: 'var(--m-accent)',
@@ -141,6 +153,29 @@ export function CategoryDrillScreen() {
               // the full net amount stays visible small when they differ
               const slice = categoryContributionCents(kind, tx, catId, cats);
               const signed = tx.amountCents < 0 ? -slice : slice;
+              // #126 r8 (user request): a split shows only ITS matching
+              // parts here — normal-looking rows with the split glyph,
+              // each opening its own part page
+              const rowParts = (tx.splits ?? []).filter((s) => s.catId !== 'reimbursed');
+              if (rowParts.length > 1 && hasTypedParts(tx)) {
+                const drillCats = new Set([catId, ...cats.childrenOf(catId).map((c) => c.id)]);
+                const shown = matchingPartIndexes(tx, { catIds: drillCats });
+                return shown.map((i) => (
+                  <TxPartRow
+                    key={rowParts[i].id ?? `${tx.id}-${i}`}
+                    tx={tx}
+                    part={rowParts[i]}
+                    index={i}
+                    amountText={fmt(
+                      (tx.amountCents < 0 ? -1 : 1) * partCatShare(rowParts[i], drillCats),
+                      currency,
+                    )}
+                    onClick={() =>
+                      void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: rowParts[i].id } })
+                    }
+                  />
+                ));
+              }
               return (
                 <TxRow
                   key={tx.id}
