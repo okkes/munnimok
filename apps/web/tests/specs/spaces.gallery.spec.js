@@ -35,7 +35,9 @@ for (const V of VARIANTS) {
     await gotoSpaces(page);
     await page.click('[data-testid="space-row-demo_space"]');
     await page.click('[data-testid="tab-home"]');
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,080.55');
+    // 8,080.55 + the default loan pot's €25 repayment leg (#133: the demo
+    // split's bare Device-plan part links onto it at boot)
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,105.55');
     await shot(page, k('23-spaces-create'));
     await teardown(page, ctx, k('23-spaces-create'));
   });
