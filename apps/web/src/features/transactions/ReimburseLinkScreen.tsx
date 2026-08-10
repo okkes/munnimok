@@ -175,14 +175,14 @@ export function ReimburseLinkScreen() {
               <Icon name="lightbulb-outline" size={13} />
               {t('reimb.suggested')}
             </div>
-            <div className="mb-3 overflow-hidden rounded-card border border-accent/40 bg-surface px-3" data-testid="reimb-link-suggested">
+            <div className="mb-3 divide-y divide-line-2 overflow-hidden rounded-card border border-accent/40 bg-surface px-3" data-testid="reimb-link-suggested">
               {suggested.map(({ tx: row }) => rowFor(row, 'reimb-suggest', t('reimb.suggestedWhy')))}
             </div>
           </>
         )}
 
         <div className="m-cap mt-2 mb-1 px-1">{t(anchorIsExpense ? 'reimb.allCredits' : 'reimb.allExpenses')}</div>
-        <div className="overflow-hidden rounded-card border border-line bg-surface px-3" data-testid="reimb-link-list">
+        <div className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface px-3" data-testid="reimb-link-list">
           {listed.map((row) => rowFor(row, 'reimb-pick'))}
           {listed.length === 0 && <div className="px-1 py-4 text-center text-[12px] text-ink-4">—</div>}
         </div>

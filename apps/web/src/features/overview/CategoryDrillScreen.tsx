@@ -146,7 +146,7 @@ export function CategoryDrillScreen() {
           {t('overview.payments')} · {selected.txs.length}
         </div>
         {selected.txs.length > 0 ? (
-          <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="catdrill-list">
+          <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="catdrill-list">
             {selected.txs.map((tx) => {
               // the headline is what THIS category got (splits partition);
               // the full net amount stays visible small when they differ

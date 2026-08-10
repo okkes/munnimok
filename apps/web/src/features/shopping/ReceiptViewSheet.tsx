@@ -145,7 +145,7 @@ export function ReceiptViewSheet({
           {/* the transaction this receipt proves — hidden when the sheet
               was opened from that very transaction (self-reference) */}
           {linkedTx && linkedTx.id !== contextTxId && (
-            <div className="rounded-card border border-line bg-surface px-3" data-testid="receipt-linked-tx">
+            <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3" data-testid="receipt-linked-tx">
               <TxRow tx={linkedTx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: linkedTx.id } })} />
             </div>
           )}
@@ -155,7 +155,7 @@ export function ReceiptViewSheet({
                 {t('receipts.pickTx')}
               </Button>
               {picking && (
-                <div className="rounded-card border border-line bg-surface px-3" data-testid="receipt-candidates">
+                <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3" data-testid="receipt-candidates">
                   {candidates().map((tx) => (
                     <TxRow
                       key={tx.id}

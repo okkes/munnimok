@@ -1058,7 +1058,7 @@ export function HomeScreen() {
             {t('action.seeAll')}
           </button>
         </div>
-        <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="home-newtxs">
+        <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="home-newtxs">
           {newTxs.slice(0, 5).map((tx) => (
             <TxRow
               key={tx.id}

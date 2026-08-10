@@ -656,9 +656,9 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     // the sub-transactions stand as first-class rows branching off it
     await screen.findByTestId('tx-parts-tx-parts', {}, { timeout: 5000 });
     expect(screen.queryByTestId('tx-row-tx-parts')).toBeNull();
-    // r9: the group stands in its OWN bordered card — visibly separate
-    // from whatever row sits above it
-    expect(screen.getByTestId('tx-parts-tx-parts').className).toContain('border-accent-deep/20');
+    // #198: the subtle form — parts sit in an inset, each led by a
+    // small branch arrow (the accent band/border era is over)
+    expect(screen.getByTestId('tx-parts-tx-parts').querySelector('.mdi-subdirectory-arrow-right')).toBeTruthy();
     const head = screen.getByTestId('tx-parts-head-tx-parts');
     expect(head.textContent).toContain('Vodafone');
     expect(head.textContent).toContain('2 linked parts');

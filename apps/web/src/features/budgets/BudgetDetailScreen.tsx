@@ -219,7 +219,7 @@ export function BudgetDetailScreen() {
           {t('overview.payments')} · {list.length}
         </div>
         {list.length > 0 ? (
-          <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="budgetdetail-txs">
+          <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="budgetdetail-txs">
             {list.map((tx) => (
               <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
             ))}

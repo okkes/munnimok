@@ -296,7 +296,7 @@ export function EventDetailScreen() {
           )}
         </div>
         {filteredList.length > 0 ? (
-          <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="eventdetail-txs">
+          <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="eventdetail-txs">
             {filteredList.map((tx) => {
               // #143: a split shows its MEMBER parts as rows of their
               // own — each opens its part page

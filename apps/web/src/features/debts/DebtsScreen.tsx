@@ -75,7 +75,7 @@ function UnassignedPaymentsCard({
       </button>
       <Sheet open={open} onOpenChange={setOpen} title={t('debts.unassigned')} size="tall">
         <p className="pb-2 text-[12px] text-ink-3">{t('debts.unassignedHint')}</p>
-        <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="debts-unassigned-list">
+        <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="debts-unassigned-list">
           {bare.map((tx) => (
             <TxRow key={tx.id} tx={tx} showDate onClick={() => setAssignTx(tx)} />
           ))}
