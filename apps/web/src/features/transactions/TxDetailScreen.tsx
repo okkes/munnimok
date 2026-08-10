@@ -29,7 +29,6 @@ import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, spe
 import { primaryCatId } from '@/domain/splits';
 import { scaleSplitsTo } from '@/domain/txSlices';
 import { ReviewPartDeck } from '@/features/review/ReviewScreen';
-import { LoanPickSheet } from '@/features/debts/LoanPickSheet';
 import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
@@ -41,6 +40,7 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
+import { pairWithExistingRow } from '@/application/counterPair';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
@@ -1375,7 +1375,12 @@ export function TxDetailScreen() {
   // coherence rules (arc 2: the locked family sub files by sign); a
   // peered leg whose link moves away releases its old mirror first —
   // a stale transferPeerId would keep collapsing the pair in the list
-  const retype = (nextType: TxType, nextLinkedId: string | null, action: 'txLink' | 'txCategory') => {
+  const retype = async (
+    nextType: TxType,
+    nextLinkedId: string | null,
+    action: 'txLink' | 'txCategory',
+    peer?: { txId: string },
+  ) => {
     const fields = applyTypeChange({
       nextType,
       linkedAccountId: nextLinkedId,
@@ -1385,11 +1390,18 @@ export function TxDetailScreen() {
     });
     const unpeer = !!tx.transferPeerId && tx.linkedAccountId !== nextLinkedId;
     if (unpeer) void releasePeer();
-    void transform(
+    // #133 B: a picked-existing peer rides the SAME write — the mirror
+    // engine then mints nothing on this side
+    let peerField: { transferPeerId?: string | null } = {};
+    if (peer) peerField = { transferPeerId: peer.txId };
+    else if (unpeer) peerField = { transferPeerId: null };
+    await transform(
       tx,
-      { ...fields, linkedAccountId: nextLinkedId as never, ...(unpeer ? { transferPeerId: null as never } : {}) },
+      { ...fields, linkedAccountId: nextLinkedId as never, ...(peerField as Record<string, never>) },
       action,
     );
+    // …and the picked row gets the reciprocal (link back, peer back)
+    if (peer) await pairWithExistingRow(store, repo, tx, peer.txId);
   };
   // a credit that self-filed as Reimbursed keeps that category as long
   // as any link lives (user rule) — unlink first, then recategorize
@@ -1845,25 +1857,30 @@ export function TxDetailScreen() {
         testId="tx-delete"
       />
 
-      {/* the flat structure's loan question (Q1): picking one converts
-          to the transfer approach — the choke point mints the loan's leg */}
-      <LoanPickSheet
+      {/* the flat structure's loan question (Q1) is the counterparty
+          question now (#133 B): Default pinned on top mints the space's
+          loan pot; a manual loan offers the pick-existing fork */}
+      <CounterpartySheet
         open={loanPickOpen}
         onOpenChange={setLoanPickOpen}
-        onPick={(accountId) =>
-          void transform(tx, { linkedAccountId: accountId, txType: 'transfer', catId: autoSubFor('transfer', tx.amountCents) }, 'txLink')
-        }
-        onSkip={() => undefined}
+        excludeAccountId={tx.accountId}
+        currentLinkedId={tx.linkedAccountId}
+        defaultFamily="debtPayment"
+        anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
+        onChoose={(picked, peer) => void retype(typeForLinkedAccount(picked.type), picked.id, 'txLink', peer)}
       />
 
       {/* write-through: choosing a counterparty derives the transfer's
-          exact member; the kind sheet handles standard/adjustment */}
+          exact member; the kind sheet handles standard/adjustment.
+          #133 B: a manual pick forks — mint, or point at the existing
+          row (peer rides the same write) */}
       <CounterpartySheet
         open={counterPickOpen}
         onOpenChange={setCounterPickOpen}
         excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
-        onChoose={(picked) => retype(typeForLinkedAccount(picked.type), picked.id, 'txLink')}
+        anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
+        onChoose={(picked, peer) => void retype(typeForLinkedAccount(picked.type), picked.id, 'txLink', peer)}
       />
       <TxKindSheet
         open={typePickOpen}

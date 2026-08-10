@@ -284,9 +284,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
     fireEvent.click(await screen.findByTestId('split-save'));
 
-    // the optional loan question opens with the seeded loan on offer
+    // #133 B: the loan question IS the counterparty question now —
+    // Default pinned on top, the seeded loan as a normal candidate
     const loanId = 'lp_loan';
-    fireEvent.click(await screen.findByTestId(`loanpick-${loanId}`));
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId(`counter-pick-${loanId}`));
 
     // picking converts to the transfer approach: link + locked sub, and
     // the loan's own minted leg appears at the deterministic id
@@ -296,6 +298,72 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
       expect(tx?.linkedAccountId).toBe(loanId);
       expect(tx?.txType).toBe('transfer');
       expect((await db.transactions.get(mirrorTxId('dm6')))?.accountId).toBe(loanId);
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('#133 B: a manual counterparty forks — picking the existing row pairs both sides, mints nothing', async () => {
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    // seed AFTER boot — the demo rows exist only once the app seeded
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('fork-seed'), { trackOutbox: false });
+    await seedRepo.upsert('account', DEMO_SPACE_ID, 'ms1', {
+      name: 'Cash pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 10_000,
+    });
+    const dm6seed = await seed.transactions.get('dm6');
+    // the other leg already lives on the pot: same size, same day, +sign
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'dup1', {
+      accountId: 'ms1', date: dm6seed!.date, amountCents: -dm6seed!.amountCents, currency: 'EUR',
+      merchant: 'Moved in', catId: 'uncategorized', txType: 'income', needsReview: 0,
+    });
+    const potBalance = 10_000;
+    seed.close();
+
+    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
+    await screen.findByTestId('txkind-options');
+    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    fireEvent.click(await screen.findByTestId('counter-pick-ms1'));
+
+    // the fork: create the counterpart, or point at the existing row
+    // (the wrapper is inert — the TxRow button inside takes the tap)
+    await screen.findByTestId('counter-fork');
+    fireEvent.click((await screen.findByTestId('counter-dup-dup1')).querySelector('button')!);
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const src = await db.transactions.get('dm6');
+      const picked = await db.transactions.get('dup1');
+      expect(src?.linkedAccountId).toBe('ms1');
+      expect(src?.transferPeerId).toBe('dup1');
+      expect(picked?.linkedAccountId).toBe(src?.accountId);
+      expect(picked?.transferPeerId).toBe('dm6');
+      expect(picked?.catId).toBe('savingDeposit'); // the pot's stamp, by its sign
+    }, { timeout: 8000 });
+    // nothing minted, nothing moved: no mirror row, balance untouched
+    expect(await db.transactions.get(mirrorTxId('dm6'))).toBeUndefined();
+    expect((await db.accounts.get('ms1'))?.balanceCents).toBe(potBalance);
+    db.close();
+  }, 20_000);
+
+  it('#133 B: the Default row mints the family pot lazily and links onto it', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
+    fireEvent.click(await screen.findByTestId('split-save'));
+
+    // no loan exists — Default is the one-tap answer
+    fireEvent.click(await screen.findByTestId('counter-default'));
+
+    const db = new MunniDB('munni_demo');
+    const potId = `defaultacct_debtPayment_${DEMO_SPACE_ID}`;
+    await waitFor(async () => {
+      const pot = await db.accounts.get(potId);
+      expect(pot?.defaultFor).toBe('debtPayment');
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.linkedAccountId).toBe(potId);
+      expect((await db.transactions.get(mirrorTxId('dm6')))?.accountId).toBe(potId);
     }, { timeout: 8000 });
     db.close();
   }, 20_000);

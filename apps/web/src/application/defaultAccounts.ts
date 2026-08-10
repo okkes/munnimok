@@ -17,13 +17,13 @@ import { tr } from '@/i18n/tr';
  */
 export type DefaultFamily = 'saving' | 'debtPayment' | 'investment';
 
-const FAMILY_ACCOUNT_TYPE: Record<DefaultFamily, AccountType> = {
+export const FAMILY_ACCOUNT_TYPE: Record<DefaultFamily, AccountType> = {
   saving: 'savings',
   debtPayment: 'loan',
   investment: 'brokerage',
 };
 
-const NAME_KEYS: Record<DefaultFamily, 'acct.defaultSaving' | 'acct.defaultLoan' | 'acct.defaultInvest'> = {
+export const NAME_KEYS: Record<DefaultFamily, 'acct.defaultSaving' | 'acct.defaultLoan' | 'acct.defaultInvest'> = {
   saving: 'acct.defaultSaving',
   debtPayment: 'acct.defaultLoan',
   investment: 'acct.defaultInvest',
