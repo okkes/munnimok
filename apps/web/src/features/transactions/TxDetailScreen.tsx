@@ -52,6 +52,12 @@ import type { AccountRow, TxSplit, TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
+/** #200: the part id a container row navigates to — the settled
+ *  Reimbursed slice and id-less legacy parts return null and keep the
+ *  editor. Module-level for S3776. */
+const partTargetId = (multi: boolean, slice: TxSplit | null, canOpen: boolean): string | null =>
+  multi && canOpen && slice?.id && slice.catId !== REIMBURSED_ID ? slice.id : null;
+
 /** the categories block's rows: one per slice (or the single category).
  *  A single category opens the unified editor; on a container the rows
  *  ARE the parts — plain rows now (#200: the circles + vertical line
@@ -91,14 +97,12 @@ function CategorySlices({
         const spreadNames = slice?.cats?.length
           ? slice.cats.map((c) => catName(cats.byId(c.catId), t)).join(' · ')
           : undefined;
-        // #200: a container row opens ITS part page; the settled
-        // Reimbursed slice (and id-less legacy parts) keep the editor
-        const openPart = multi && slice?.id && slice.catId !== REIMBURSED_ID && onOpenPart;
+        const openPartId = partTargetId(multi, slice, !!onOpenPart);
         return (
           <button
             key={slice?.id ?? slice?.catId ?? 'single'}
             data-testid={i === 0 ? 'tx-detail-category-row' : `tx-detail-cat-${slice?.catId}`}
-            onClick={openPart ? () => onOpenPart(slice.id as string) : onEdit}
+            onClick={openPartId ? () => onOpenPart?.(openPartId) : onEdit}
             className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3.5 text-left last:border-0"
           >
             <Icon name={rowCat.icon} size={20} color={rowColor ?? 'var(--m-ink-3)'} />
@@ -115,7 +119,7 @@ function CategorySlices({
             </span>
             {i === 0 && tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
             {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
-            {openPart ? <Icon name="chevron-right" size={16} color="var(--m-ink-4)" /> : null}
+            {openPartId && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
           </button>
         );
       })}
