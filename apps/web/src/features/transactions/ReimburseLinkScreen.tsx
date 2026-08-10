@@ -15,8 +15,60 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
+import { TxPartRow } from '@/ui/TxPartRow';
+import { REIMBURSED_ID } from '@/domain/categories';
+import type { TxSplit } from '@/db/types';
 
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
+
+/** #197: what a split expense's PART still expects back — its magnitude
+ *  minus the links already targeting it */
+const partOpenCents = (row: SpaceTx, part: TxSplit): number =>
+  Math.max(
+    0,
+    Math.abs(part.amountCents) -
+      (row.reimbursements ?? []).filter((r) => r.partId === part.id).reduce((sum, r) => sum + r.amountCents, 0),
+  );
+
+/** #197: a split expense offers its PARTS to link against — the root
+ *  container is never a target. Module-level for S3776. */
+function ReimbPartRows({
+  row,
+  testId,
+  hint,
+  money,
+  onPick,
+}: Readonly<{
+  row: SpaceTx;
+  testId: string;
+  hint?: string;
+  money: (cents: number) => string;
+  onPick: (row: SpaceTx, part: TxSplit, openCents: number) => void;
+}>) {
+  const parts = (row.splits ?? []).map((part, idx) => ({ part, idx })).filter((e) => e.part.catId !== REIMBURSED_ID);
+  const sign = row.amountCents < 0 ? -1 : 1;
+  return (
+    <div key={`${testId}-${row.id}`}>
+      {parts.map((e, ordinal) => {
+        const open = partOpenCents(row, e.part);
+        if (open <= 0) return null;
+        return (
+          <div key={e.part.id ?? e.idx} data-testid={`${testId}-${row.id}-part-${e.idx}`}>
+            <TxPartRow
+              tx={row}
+              part={e.part}
+              index={ordinal}
+              showDate
+              amountText={money(sign * open)}
+              onClick={() => onPick(row, e.part, open)}
+            />
+          </div>
+        );
+      })}
+      {hint && <div className="-mt-1 px-1 pb-1.5 text-[11px] text-accent-deep">{hint}</div>}
+    </div>
+  );
+}
 
 /**
  * Full-screen counterpart picker for reimbursement links (user redesign
@@ -38,7 +90,9 @@ export function ReimburseLinkScreen() {
   const { link, giveableCents } = useReimburseLinks(allTxs);
 
   const [query, setQuery] = useState('');
-  const [chosen, setChosen] = useState<SpaceTx | null>(null);
+  // #197: picking a PART of a split expense carries its id — the link
+  // lands on that part, never on the root container
+  const [chosen, setChosen] = useState<{ row: SpaceTx; partId?: string } | null>(null);
   const [amount, setAmount] = useState('');
 
   // the search bar rides along: it scrolls away with the content and a
@@ -105,7 +159,15 @@ export function ReimburseLinkScreen() {
     const expected = reimbEarmarkCents(expense);
     const need = expected === null ? remainingCents(expense) : Math.min(remainingCents(expense), Math.max(0, expected - (expense.reimbursements ?? []).reduce((s, r) => s + r.amountCents, 0)));
     const prefill = clampReimbursement(expense, giveableCents(credit), Math.max(need, 0) || giveableCents(credit));
-    setChosen(row);
+    setChosen({ row });
+    setAmount(toText(prefill));
+  };
+
+  // #197: a part pick — the prefill is the PART's open value, clamped
+  // by what this credit can still give
+  const pickPart = (row: SpaceTx, part: TxSplit, openCents: number) => {
+    const prefill = clampReimbursement(row, giveableCents(tx!), Math.min(openCents, giveableCents(tx!)) || openCents);
+    setChosen({ row, partId: part.id });
     setAmount(toText(prefill));
   };
 
@@ -113,9 +175,11 @@ export function ReimburseLinkScreen() {
     if (!tx || !chosen) return;
     const cents = parseCents(amount) ?? 0;
     if (cents > 0) {
-      // the part target only makes sense on the EXPENSE side's split
-      if (anchorIsExpense) link(tx, chosen, cents, partId);
-      else link(chosen, tx, cents);
+      // the part target lives on the EXPENSE side's split — from the
+      // expense anchor it rides the ?part param, from the credit anchor
+      // the picked part itself (#197)
+      if (anchorIsExpense) link(tx, chosen.row, cents, partId);
+      else link(chosen.row, tx, cents, chosen.partId);
     }
     setChosen(null);
     // REPLACE, not back: pressing back on the detail afterwards must not
@@ -123,19 +187,37 @@ export function ReimburseLinkScreen() {
     void navigate({ to: '/transactions/$txId', params: { txId }, search: partId ? { part: partId } : {}, replace: true });
   };
 
-  const rowFor = (row: SpaceTx, testId: string, hint?: string) => (
-    <div key={`${testId}-${row.id}`} data-testid={`${testId}-${row.id}`}>
-      <TxRow
-        tx={row}
-        showDate
-        hideUnreviewed
-        highlight={query}
-        amountOverrideCents={row.amountCents > 0 ? openValueOf(row) : -openValueOf(row)}
-        onClick={() => pick(row)}
-      />
-      {hint && <div className="-mt-1 px-1 pb-1.5 text-[11px] text-accent-deep">{hint}</div>}
-    </div>
-  );
+  const rowFor = (row: SpaceTx, testId: string, hint?: string) => {
+    // #197: a split expense in the credit anchor's list offers its
+    // PARTS, never the root (the expense anchor lists credits — those
+    // link as wholes, credit-side parts aren't linkable entities)
+    const rowParts = (row.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
+    if (!anchorIsExpense && rowParts.length > 1) {
+      return (
+        <ReimbPartRows
+          key={`${testId}-${row.id}`}
+          row={row}
+          testId={testId}
+          hint={hint}
+          money={(cents) => fmtCents(cents, row.currency, lang)}
+          onPick={pickPart}
+        />
+      );
+    }
+    return (
+      <div key={`${testId}-${row.id}`} data-testid={`${testId}-${row.id}`}>
+        <TxRow
+          tx={row}
+          showDate
+          hideUnreviewed
+          highlight={query}
+          amountOverrideCents={row.amountCents > 0 ? openValueOf(row) : -openValueOf(row)}
+          onClick={() => pick(row)}
+        />
+        {hint && <div className="-mt-1 px-1 pb-1.5 text-[11px] text-accent-deep">{hint}</div>}
+      </div>
+    );
+  };
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-reimb-link">
@@ -189,7 +271,7 @@ export function ReimburseLinkScreen() {
       </div>
 
       {/* the amount sheet: how much of the pair actually links */}
-      <Sheet open={chosen !== null} onOpenChange={(next) => !next && setChosen(null)} title={chosen ? cleanBankText(chosen.merchant) : ''} size="form">
+      <Sheet open={chosen !== null} onOpenChange={(next) => !next && setChosen(null)} title={chosen ? cleanBankText(chosen.row.merchant) : ''} size="form">
         <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
           <input
             data-testid="reimb-amount"

@@ -421,6 +421,39 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('reimb-reverse').querySelector('[data-testid^="reimb-unlink-out-"]')!);
     await waitFor(() => expect(screen.getByTestId('tx-detail-amount').textContent).toContain('+€2,200.00'));
   }, 15_000);
+
+  it('#197: a split expense links per PART from the credit side — the root is never offered', async () => {
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-reimb-part'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'rsplit', {
+      accountId: 'demo_main', date: '2026-07-01', amountCents: -6000, currency: 'EUR',
+      merchant: 'Split Lunch', catId: 'restaurants', txType: 'expense', needsReview: 0,
+      splits: [
+        { id: 'rs1', catId: 'restaurants', amountCents: 4500 },
+        { id: 'rs2', catId: 'groceries', amountCents: 1500 },
+      ],
+    });
+
+    renderApp('/transactions/dm1');
+    fireEvent.click(await screen.findByTestId('reimb-add-out'));
+    const picker = await screen.findByTestId('reimb-link-list');
+    // the parts stand in for the container (suggested may repeat them —
+    // take the list's copy); the root has no whole row anywhere
+    await waitFor(() => expect(screen.queryAllByTestId('reimb-pick-rsplit-part-1').length).toBeGreaterThan(0), {
+      timeout: 5000,
+    });
+    expect(picker.querySelector('[data-testid="reimb-pick-rsplit"]')).toBeNull();
+    fireEvent.click(screen.getAllByTestId('reimb-pick-rsplit-part-1').at(-1)!.querySelector('button')!);
+    // the prefill is the PART's open value, not the container's
+    const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
+    expect(amountInput.value).toBe('15,00');
+    fireEvent.click(screen.getByTestId('reimb-save'));
+    await waitFor(async () => {
+      const row = await db.transactions.get('rsplit');
+      expect(row?.reimbursements).toEqual([{ txId: 'dm1', amountCents: 1500, partId: 'rs2' }]);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
 });
 
 describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
