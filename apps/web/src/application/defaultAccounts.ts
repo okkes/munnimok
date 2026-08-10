@@ -34,6 +34,15 @@ const DICTS = { en, nl, tr } as const;
 export const defaultAccountId = (spaceId: string, family: DefaultFamily): string =>
   `defaultacct_${family}_${spaceId}`;
 
+/** #133: the counterparty rule's first arm — a DEFAULT pick keeps the
+ *  family (the row wears the special category itself); any real account
+ *  follows the normal transfer/funding derivation instead */
+export const defaultPickFamily = (
+  family: DefaultFamily | null | undefined,
+  pickedId: string,
+  spaceId: string,
+): DefaultFamily | null => (family && pickedId === defaultAccountId(spaceId, family) ? family : null);
+
 /** the family's default pot, minted on first use (idempotent) */
 export async function ensureDefaultAccount(
   store: StorageBackend,

@@ -23,7 +23,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
-import { Sheet } from '@/ui/Sheet';
+import { Sheet, hasOpenSheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
 import { primaryCatId } from '@/domain/splits';
@@ -35,12 +35,14 @@ import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { PartCatsSheet, partCatsApplyPatch } from './PartCatsSheet';
 import { TxFormSheet } from './TxFormSheet';
-import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
+import { CounterpartySheet } from './TxKindSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
-import { kindOf, standardTypeFor } from '@/domain/txKind';
+import { kindOf } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { pairWithExistingRow } from '@/application/counterPair';
+import { defaultPickFamily } from '@/application/defaultAccounts';
+import type { DefaultFamily } from '@/application/defaultAccounts';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
@@ -223,33 +225,6 @@ async function healMissingMirror(
 ): Promise<void> {
   const mid = await mintMirrorForExistingLink(store, repo, tx, tx.linkedAccountId, tx.transferPeerId);
   if (mid) await writeTxTransform(repo, tx, { transferPeerId: mid });
-}
-
-/** kind before counterparty (user simplification): WHAT it is, then WHO
- *  the other side is. R1: a stamped account types every one of its rows
- *  — the row locks there (S3776: out of the screen) */
-function DetailKindRow({
-  kind,
-  detailType,
-  locked,
-  onOpen,
-}: Readonly<{ kind: TxKind; detailType: TxType | null; locked: boolean; onOpen: () => void }>) {
-  const { t } = useLang();
-  return (
-    <button
-      data-testid="tx-detail-kind-row"
-      onClick={locked ? undefined : onOpen}
-      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-    >
-      <Icon name={TX_KIND_VISUAL[kind].icon} size={20} color={TX_KIND_VISUAL[kind].color} />
-      <span className="min-w-0 flex-1 truncate">
-        {t(`tx.kind.${kind}`)}
-        {detailType && <span className="text-[12px] text-ink-4"> · {t(`tx.type.${detailType}`)}</span>}
-      </span>
-      <span className="text-xs text-ink-4">{t('tx.kindTitle')}</span>
-      <Icon name={locked ? 'lock-outline' : 'chevron-right'} size={locked ? 14 : 18} color="var(--m-ink-4)" />
-    </button>
-  );
 }
 
 /** where this transfer stands with its other leg (arc 1 pair UX) */
@@ -485,9 +460,6 @@ function RenameTitleSheet({
 function ContainerTypeRows({
   hidden,
   kind,
-  detailType,
-  locked,
-  onKind,
   counterIban,
   counterAccountName,
   linkedAccountName,
@@ -496,9 +468,6 @@ function ContainerTypeRows({
 }: Readonly<{
   hidden: boolean;
   kind: TxKind;
-  detailType: TxType | null;
-  locked: boolean;
-  onKind: () => void;
   counterIban: string | undefined;
   counterAccountName: string | undefined;
   linkedAccountName: string | undefined;
@@ -506,10 +475,10 @@ function ContainerTypeRows({
   onEditCounter: () => void;
 }>) {
   if (hidden) return null;
+  // #133 D: the kind row is gone — the counterparty stays as the one
+  // account-level fact (bank counterparty, or the linked own account)
   return (
     <>
-      <div className="mx-4 h-px bg-line-2" />
-      <DetailKindRow kind={kind} detailType={detailType} locked={locked} onOpen={onKind} />
       <div className="mx-4 h-px bg-line-2" />
       <CounterpartyRow
         counterIban={counterIban}
@@ -920,7 +889,9 @@ function PartDetailBody({
   const transform = useTxTransform();
   const navigate = useNavigate();
   const accounts = useSpaceAccounts();
-  const [kindOpen, setKindOpen] = useState(false);
+  const { spaceId } = useData();
+  // #133 D: which ◆ family the part's counterparty ask serves
+  const [counterFamily, setCounterFamily] = useState<DefaultFamily | null>(null);
   const [counterOpen, setCounterOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
   // r7: the part links recurring costs like whole transactions do
@@ -934,14 +905,8 @@ function PartDetailBody({
   const sign = tx.amountCents < 0 ? -1 : 1;
   const partCat = cats.byId(part.catId);
   const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
-  // transfer-PRESENTING only with a real counterparty: a ◆ special part
-  // (Set aside without a pot) is transfer-family by type yet reads as
-  // its own standard story ("Saving"), not as a bare Transfer
-  const transferPart = !!part.linkedAccountId && !!part.txType && kindOf(part.txType) === 'transfer';
   // flat consts so the JSX carries no branching (S3776)
-  const partKind: 'transfer' | 'standard' = transferPart ? 'transfer' : 'standard';
   const counterName = accounts?.find((a) => a.id === part.linkedAccountId)?.name ?? t('tx.counterNone');
-  const kindSub = transferPart ? counterName : t(`tx.type.${part.txType ?? tx.txType}`);
   const kindRowIcon = ownStamp ? 'lock-outline' : 'pencil-outline';
   const partDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
   const partEvent = activeEvents.find((e) => e.id === part.eventId);
@@ -984,20 +949,23 @@ function PartDetailBody({
           <span className="min-w-0 flex-1 truncate">{accountName ?? '—'}</span>
           <span className="text-xs text-ink-4">{t('txform.account')}</span>
         </div>
-        <div className="mx-4 h-px bg-line-2" />
-        <button
-          data-testid="tx-part-kind-row"
-          onClick={ownStamp ? undefined : () => setKindOpen(true)}
-          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-        >
-          <Icon name={TX_KIND_VISUAL[partKind].icon} size={18} color={TX_KIND_VISUAL[partKind].color} />
-          <span className="min-w-0 flex-1 truncate">
-            {t(`tx.kind.${partKind}`)}
-            <span className="text-[12px] font-normal text-ink-4"> · {kindSub}</span>
-          </span>
-          <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
-          <Icon name={kindRowIcon} size={13} color="var(--m-ink-4)" />
-        </button>
+        {/* #133 D: no Type row — a linked part shows its counterparty
+            as a fact row instead */}
+        {!!part.linkedAccountId && (
+          <>
+            <div className="mx-4 h-px bg-line-2" />
+            <button
+              data-testid="tx-part-counter-row"
+              onClick={ownStamp ? undefined : () => setCounterOpen(true)}
+              className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+            >
+              <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
+              <span className="min-w-0 flex-1 truncate">{counterName}</span>
+              <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
+              <Icon name={kindRowIcon} size={13} color="var(--m-ink-4)" />
+            </button>
+          </>
+        )}
       </div>
 
       {/* the category card IS the door to the whole-transaction category
@@ -1119,29 +1087,37 @@ function PartDetailBody({
         {t('tx.partWhole')}
       </button>
 
-      <TxKindSheet
-        open={kindOpen}
-        onOpenChange={setKindOpen}
-        current={partKind}
-        allowAdjustment={false}
-        onPick={(nextKind) => {
-          if (nextKind === 'transfer') setCounterOpen(true);
-          else patchPart({ txType: undefined, linkedAccountId: undefined, transferPeerId: undefined });
-          setKindOpen(false);
-        }}
-      />
       <CounterpartySheet
         open={counterOpen}
-        onOpenChange={setCounterOpen}
+        onOpenChange={(next) => {
+          setCounterOpen(next);
+          if (!next) setCounterFamily(null);
+        }}
         excludeAccountId={tx.accountId}
         currentLinkedId={part.linkedAccountId}
-        onChoose={(picked) =>
-          patchPart({ txType: 'transfer', linkedAccountId: picked.id, catId: autoSubFor('transfer', tx.amountCents) ?? part.catId })
-        }
+        defaultFamily={counterFamily ?? undefined}
+        onChoose={(picked) => {
+          // #133 D: a DEFAULT pick keeps the part's family + category;
+          // a real account is R2's transfer inversion
+          const family = defaultPickFamily(counterFamily, picked.id, spaceId);
+          patchPart(
+            family
+              ? { txType: family, linkedAccountId: picked.id }
+              : {
+                  txType: typeForLinkedAccount(picked.type),
+                  linkedAccountId: picked.id,
+                  ...(typeForLinkedAccount(picked.type) === 'transfer'
+                    ? { catId: autoSubFor('transfer', tx.amountCents) ?? part.catId }
+                    : {}),
+                },
+          );
+          setCounterFamily(null);
+        }}
       />
       {/* the part's categories (r6/r7) — the whole-transaction editor,
           scoped to the part's amount; a single special pick pulls the
-          part's type exactly as it always did */}
+          part's type exactly as it always did. #133 D: a ◆ pick asks
+          its counterparty right away */}
       <PartCatsSheet
         open={spreadOpen}
         onOpenChange={setSpreadOpen}
@@ -1151,7 +1127,13 @@ function PartDetailBody({
         txType={tx.txType}
         allowedCatIds={allowedCatIds}
         onApply={(entries) => {
-          patchPart(partCatsApplyPatch(part, entries));
+          const patch = partCatsApplyPatch(part, entries);
+          patchPart(patch);
+          const family = specialCatType(patch.catId);
+          if (family && family !== 'transfer' && family !== 'funding' && !part.linkedAccountId && !ownStamp) {
+            setCounterFamily(family as DefaultFamily);
+            setCounterOpen(true);
+          }
           setSpreadOpen(false);
         }}
       />
@@ -1245,7 +1227,8 @@ export function TxDetailScreen() {
   // counterparty and type each open their OWN picker (user: the combined
   // sheet surprised — tapping one showed the other's content too)
   const [counterPickOpen, setCounterPickOpen] = useState(false);
-  const [typePickOpen, setTypePickOpen] = useState(false);
+  // #133 D: which ◆ family the counterparty ask serves
+  const [counterFamily, setCounterFamily] = useState<DefaultFamily | null>(null);
   const [loanCountBusy, setLoanCountBusy] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   // #126 r4: the values door + drafted-until-complete stage — splitting
@@ -1287,7 +1270,9 @@ export function TxDetailScreen() {
   // list — but only when no sheet is open (sheets own their own Esc)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || document.querySelector('dialog[open], [role="dialog"]')) return;
+      // any open sheet owns Esc — mobile sheets included (they render no
+      // <dialog>, which the old selector-only guard missed)
+      if (e.key !== 'Escape' || hasOpenSheet() || document.querySelector('dialog[open], [role="dialog"]')) return;
       void navigate({ to: '/transactions' });
     };
     window.addEventListener('keydown', onKey);
@@ -1352,7 +1337,6 @@ export function TxDetailScreen() {
   const kind = kindOf(tx.txType);
   // R1: the row's own account stamps its type — the kind row locks
   const ownStamp = accountStamp(account?.type);
-  const kindDetailType = kindDetail(tx.txType);
   const pairState = transferPairState(tx, linkedAccount);
   // the OTHER leg's side of a release — its own row clears in the same
   // write. The peer is fetched from the STORE when the live snapshot
@@ -1476,9 +1460,13 @@ export function TxDetailScreen() {
     // first-declared-type rule
     const txType = specialCatType(catId) ?? cats.byId(catId).txTypes[0] ?? tx.txType;
     void transform(tx, { catId, txType, needsReview: 0 }, 'txCategory');
-    // the flat structure's loan question (Q1): a debt-family pick asks —
-    // optionally — WHICH loan; skipping keeps the default-loan bucket
-    if (specialCatType(catId) === 'debtPayment' && !tx.linkedAccountId && !ownStamp) setLoanPickOpen(true);
+    // #133 D: EVERY ◆ family pick asks its counterparty — Default
+    // pinned on top; dismissing keeps the bare story (Q1, generalized)
+    const family = specialCatType(catId);
+    if (family && family !== 'transfer' && family !== 'funding' && !tx.linkedAccountId && !ownStamp) {
+      setCounterFamily(family as DefaultFamily);
+      setLoanPickOpen(true);
+    }
     // bulk mechanism from the detail too (user request) — unlike review
     // it reaches EVERYTHING of this merchant, reviewed included. The
     // settlement category is never a bulk suggestion (user rule).
@@ -1671,9 +1659,6 @@ export function TxDetailScreen() {
           <ContainerTypeRows
             hidden={multiPart}
             kind={kind}
-            detailType={kindDetailType}
-            locked={!!ownStamp}
-            onKind={() => setTypePickOpen(true)}
             counterIban={tx.counterIban}
             counterAccountName={counterAccount?.name}
             linkedAccountName={linkedAccount?.name}
@@ -1857,17 +1842,25 @@ export function TxDetailScreen() {
         testId="tx-delete"
       />
 
-      {/* the flat structure's loan question (Q1) is the counterparty
-          question now (#133 B): Default pinned on top mints the space's
-          loan pot; a manual loan offers the pick-existing fork */}
+      {/* #133 B/D: every ◆ family pick lands here — Default pinned on
+          top mints the space's pot; a manual account offers the
+          pick-existing fork */}
       <CounterpartySheet
         open={loanPickOpen}
-        onOpenChange={setLoanPickOpen}
+        onOpenChange={(next) => {
+          setLoanPickOpen(next);
+          if (!next) setCounterFamily(null);
+        }}
         excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
-        defaultFamily="debtPayment"
+        defaultFamily={counterFamily ?? 'debtPayment'}
         anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
-        onChoose={(picked, peer) => void retype(typeForLinkedAccount(picked.type), picked.id, 'txLink', peer)}
+        onChoose={(picked, peer) => {
+          // a DEFAULT pick keeps the family (the row wears the special
+          // category); a real account is R2's transfer inversion
+          const family = defaultPickFamily(counterFamily ?? 'debtPayment', picked.id, spaceId);
+          void retype(family ?? typeForLinkedAccount(picked.type), picked.id, 'txLink', peer);
+        }}
       />
 
       {/* write-through: choosing a counterparty derives the transfer's
@@ -1881,22 +1874,6 @@ export function TxDetailScreen() {
         currentLinkedId={tx.linkedAccountId}
         anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
         onChoose={(picked, peer) => void retype(typeForLinkedAccount(picked.type), picked.id, 'txLink', peer)}
-      />
-      <TxKindSheet
-        open={typePickOpen}
-        onOpenChange={setTypePickOpen}
-        current={kind}
-        allowAdjustment={!tx.importRef && !tx.feedSpaceId}
-        onPick={(nextKind) => {
-          // transfer completes in the counterparty picker — nothing is
-          // written until the other side is chosen (an account, or the
-          // bare "no counter account" label)
-          if (nextKind === 'transfer') {
-            setCounterPickOpen(true);
-            return;
-          }
-          retype(nextKind === 'adjustment' ? 'adjustment' : standardTypeFor(tx.amountCents), null, 'txCategory');
-        }}
       />
       {/* ONE category flow (review parity): a single row edits the plain
           category through setCategory (which arms the bulk offer);

@@ -99,7 +99,8 @@ describe('TxDetailScreen (demo identity)', () => {
     expect(await screen.findByTestId('screen-tx-detail')).toBeTruthy();
     expect((await screen.findByTestId('tx-detail-amount')).textContent).toMatch(/€/);
     expect(screen.getByTestId('tx-detail-category-row')).toBeTruthy();
-    expect(screen.getByTestId('tx-detail-kind-row')).toBeTruthy();
+    // #133 D: the kind concept is gone from the detail
+    expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull();
   });
 
   it('a manual transaction deletes through the confirm sheet — no cooldown (user request)', async () => {
@@ -186,11 +187,9 @@ describe('counterparty account number on the detail screen', () => {
     // a standard expense keeps the row read-only (user simplification:
     // counterparty is a transfer concept — the IBAN stays visible)
     expect(row.disabled).toBe(true);
-    // choosing the Transfer kind walks into the mandatory counterparty pick
-    fireEvent.click(screen.getByTestId('tx-detail-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
-    expect(await screen.findByTestId('counter-accounts')).toBeTruthy();
+    // #133 D: no kind row — becoming a transfer happens through the
+    // category flow's counterparty ask, covered elsewhere
+    expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull();
   }, 15_000);
 
   it('a counterparty matching an own account becomes a door with account info', async () => {
@@ -218,15 +217,15 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
 
   it('a transfer to the savings account stays a Transfer and mints the pot leg', async () => {
     renderApp('/transactions/dm6');
-    // groceries expense → kind Transfer → pick the savings counterparty
-    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    // #133 D: Set aside (◆) asks its counterparty — the savings pot
+    // answers it; R2 inversion files THIS leg as the locked transfer
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click(await screen.findByTestId('split-save'));
+    await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    // R2 inversion: the linked leg is a plain transfer with the locked
-    // sub — the pot's own minted mirror carries the saving story
     await waitFor(() => {
-      expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Transfer');
       expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Transfer Out');
     });
     const db = new MunniDB('munni_demo');
@@ -252,10 +251,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
     fireEvent.click(await screen.findByTestId('split-save'));
 
-    // typed + the picked special sub, deliberately no account on the
-    // other side — the counterparty row stays a door
+    // #133 D: the ◆ pick opens the counterparty ask (Default pinned);
+    // walking away keeps the bare story — no account on the other side
+    await screen.findByTestId('counter-default');
+    fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => {
-      expect(screen.getByTestId('tx-detail-kind-row').textContent).toContain('Debt Payment');
       expect(screen.getByTestId('tx-detail-counter-add').textContent).toContain('No counter account');
     });
     const db = new MunniDB('munni_demo');
@@ -320,9 +320,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     const potBalance = 10_000;
     seed.close();
 
-    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click(await screen.findByTestId('split-save'));
+    await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-ms1'));
 
     // the fork: create the counterpart, or point at the existing row
@@ -368,30 +370,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     db.close();
   }, 20_000);
 
-  it('back to Standard: the sign resolves the type and the counterparty clears', async () => {
+  it('#133 D: the detail carries NO kind surface — categories and the counterparty ask are the whole story', async () => {
     renderApp('/transactions/dm6');
-    fireEvent.click(await screen.findByTestId('tx-detail-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
-    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    const db = new MunniDB('munni_demo');
-    await waitFor(async () => expect((await db.transactions.get('dm6'))?.txType).toBe('transfer'));
-
-    // standard on a negative amount = expense again, link gone
-    fireEvent.click(screen.getByTestId('tx-detail-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-standard'));
-    await waitFor(async () => {
-      const tx = await db.transactions.get('dm6');
-      expect(tx?.txType).toBe('expense');
-      expect(tx?.linkedAccountId).toBeFalsy();
-    });
-    // demo rows are hand-shaped (no importRef) → Adjustment is offered
-    fireEvent.click(screen.getByTestId('tx-detail-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-adjustment'));
-    await waitFor(async () => expect((await db.transactions.get('dm6'))?.txType).toBe('adjustment'));
-    db.close();
+    await screen.findByTestId('screen-tx-detail');
+    expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull();
+    expect(screen.queryByTestId('txkind-options')).toBeNull();
   }, 15_000);
 });
 
@@ -802,7 +785,10 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('tx-part-row-tx-parts-1'));
     await screen.findByTestId('tx-part-amount');
     expect(screen.getByTestId('tx-part-amount').textContent).toContain('25.00');
-    expect(screen.getByTestId('tx-part-kind-row').textContent).toContain('Saving');
+    // #133 D: no Type row on the part page; unlinked parts show no
+    // counterparty fact row either
+    expect(screen.queryByTestId('tx-part-kind-row')).toBeNull();
+    expect(screen.queryByTestId('tx-part-counter-row')).toBeNull();
 
     // r5: its own reimbursements — the part-targeted link and the net
     await waitFor(() => expect(screen.getByTestId('tx-part-reimbs').textContent).toContain('Sam pays back'), { timeout: 5000 });
@@ -832,7 +818,11 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('part-cat-save'));
-    await waitFor(() => expect(screen.getByTestId('tx-part-kind-row').textContent).toContain('Saving'));
+    // #133 D: the ◆ pick opens the part's counterparty ask — walking
+    // away keeps the bare story (Escape is sheet-owned now)
+    await screen.findByTestId('counter-default');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByTestId('tx-part-category').textContent).toContain('Set aside'));
 
     // an ordinary pick lands too and clears the pulled type
     fireEvent.click(screen.getByTestId('tx-part-category'));
