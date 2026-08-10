@@ -5,7 +5,7 @@ import { useQuery } from '@/db/useQuery';
 import { useSpaceHistoryTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { countsTowardLoan } from '@/application/loanBalance';
-import { autoSubFor } from '@/domain/categories';
+import { REIMBURSED_ID, autoSubFor } from '@/domain/categories';
 import { normalizeIban } from '@/domain/feedIds';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Button } from '@/ui/Button';
@@ -72,6 +72,9 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
     const scored: Scored[] = [];
     for (const tx of txs) {
       if (tx.deleted !== 0 || tx.linkedAccountId || tx.transferPeerId || tx.accountId === account.id) continue;
+      // #143: a split container never links wholesale — its parts carry
+      // their own loan legs (linked from their part pages)
+      if ((tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1) continue;
       const score = scoreCandidate(tx, ctx);
       if (score >= 2) scored.push({ tx, score, preAnchor: !countsTowardLoan(account, tx) });
     }

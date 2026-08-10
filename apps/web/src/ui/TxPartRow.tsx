@@ -30,6 +30,7 @@ export function TxPartRow({
   const partCat = cats.byId(part.catId);
   const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
   const label = orDefaultLabel(part.label, `${txTitle(tx)} – ${t('split.partN', { n: index + 1 })}`);
+  const positive = tx.amountCents > 0;
   return (
     <button
       data-testid={`tx-part-solo-${tx.id}-${index}`}
@@ -50,7 +51,9 @@ export function TxPartRow({
         </span>
         <span className="block truncate text-[12px] text-ink-3">{catName(partCat, t)}</span>
       </span>
-      <span className="m-num text-[14px] text-ink">{amountText}</span>
+      {/* #139: the amount wears exactly TxRow's face — weight and the
+          positive green included */}
+      <span className={`m-num text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>{amountText}</span>
     </button>
   );
 }

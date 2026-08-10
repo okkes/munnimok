@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { hasSliceOfType, hasTypedParts, txSliceViews } from './txSlices';
-import type { TransactionRow } from '@/db/types';
+import { hasSliceOfType, hasTypedParts, scaleSplitsTo, txSliceViews } from './txSlices';
+import type { TransactionRow, TxSplit } from '@/db/types';
 
 const row = (over: Partial<TransactionRow>): Parameters<typeof txSliceViews>[0] =>
   ({ amountCents: -8740, catId: 'groceries', txType: 'expense', ...over }) as never;
@@ -108,5 +108,59 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
     expect(hasSliceOfType(split, 'debtPayment')).toBe(true);
     expect(hasSliceOfType(split, 'saving')).toBe(false);
     expect(hasSliceOfType(row({}), 'expense')).toBe(true);
+  });
+});
+
+describe('scaleSplitsTo (#141: the split bulk copy)', () => {
+  const mint = () => {
+    let n = 0;
+    return () => `id-${++n}`;
+  };
+
+  it('resizes proportionally, sums exactly, mints fresh ids, drops per-transaction stories', () => {
+    const source: TxSplit[] = [
+      { id: 'a', catId: 'telecom', amountCents: 4000, label: 'Base', txType: 'expense' },
+      {
+        id: 'b', catId: 'savingDeposit', amountCents: 2500, txType: 'saving',
+        linkedAccountId: 'pot', transferPeerId: 'peer', eventId: 'ev', recurringId: 'rec', notes: 'x',
+      },
+    ];
+    const scaled = scaleSplitsTo(source, 13000, mint());
+    expect(scaled.map((s) => s.amountCents)).toEqual([8000, 5000]);
+    expect(scaled[0]).toMatchObject({ id: 'id-1', catId: 'telecom', label: 'Base', txType: 'expense' });
+    // the linked part travels as its category only — no account, no
+    // event, no recurring link, no type that leans on the link
+    expect(scaled[1].txType).toBeUndefined();
+    expect(scaled[1].linkedAccountId).toBeUndefined();
+    expect(scaled[1].transferPeerId).toBeUndefined();
+    expect(scaled[1].eventId).toBeUndefined();
+    expect(scaled[1].recurringId).toBeUndefined();
+    expect(scaled[1].notes).toBeUndefined();
+  });
+
+  it('scales category spreads inside a part; odd cents land by largest remainder', () => {
+    const source: TxSplit[] = [
+      { id: 'a', catId: 'telecom', amountCents: 40, cats: [{ catId: 'coffee', amountCents: 15 }, { catId: 'telecom', amountCents: 25 }] },
+      { id: 'b', catId: 'groceries', amountCents: 25 },
+    ];
+    const scaled = scaleSplitsTo(source, 100, () => 'x');
+    expect(scaled.map((s) => s.amountCents)).toEqual([62, 38]);
+    expect(scaled[0].cats).toEqual([
+      { catId: 'coffee', amountCents: 23 },
+      { catId: 'telecom', amountCents: 39 },
+    ]);
+  });
+
+  it('refuses degenerate copies: lone parts, zero weights, zero targets, settled slices', () => {
+    expect(scaleSplitsTo([{ catId: 'g', amountCents: 10 }], 100, () => 'x')).toEqual([]);
+    expect(scaleSplitsTo([{ catId: 'g', amountCents: 0 }, { catId: 'h', amountCents: 0 }], 100, () => 'x')).toEqual([]);
+    expect(scaleSplitsTo([{ catId: 'g', amountCents: 5 }, { catId: 'h', amountCents: 5 }], 0, () => 'x')).toEqual([]);
+    // a settled Reimbursed slice never travels
+    const withSettled: TxSplit[] = [
+      { catId: 'g', amountCents: 30 },
+      { catId: 'h', amountCents: 30 },
+      { catId: 'reimbursed', amountCents: 40 },
+    ];
+    expect(scaleSplitsTo(withSettled, 60, () => 'x').map((s) => s.catId)).toEqual(['g', 'h']);
   });
 });

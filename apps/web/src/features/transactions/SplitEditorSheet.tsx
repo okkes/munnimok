@@ -552,6 +552,7 @@ export function SplitEditorSheet({
   reason,
   allowedCatIds,
   valuesOnly = false,
+  onSaved,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -582,6 +583,9 @@ export function SplitEditorSheet({
   /** #126 v2 (review): the split as pure money — label + amount rows,
    *  exact or percentage; categories/kinds live on the part deck */
   valuesOnly?: boolean;
+  /** #141: fires after the sheet's OWN write stored a real split (classic
+   *  mode only — controlled mode reports through onApply instead) */
+  onSaved?: (stored: TxSplit[]) => void;
 }>) {
   const { t } = useLang();
   const transform = useTxTransform();
@@ -741,6 +745,7 @@ export function SplitEditorSheet({
         splits: withSettled,
         catId: primaryCatId(stored),
       });
+      onSaved?.(stored);
     }
     onOpenChange(false);
   };

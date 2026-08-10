@@ -3,7 +3,6 @@ import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { REIMBURSED_ID } from '@/domain/categories';
-import { hasTypedParts } from '@/domain/txSlices';
 import { orDefaultLabel, txTitle } from '@/lib/text';
 import { EMPTY_FILTERS, FilterSheet, countActive } from './FilterSheet';
 import type { SheetFilters } from './FilterSheet';
@@ -146,7 +145,8 @@ function TxPartGroupRows({
                     )}
                   </span>
                 </span>
-                <span className="m-num text-[14px] text-ink">
+                {/* #139: the amount wears exactly TxRow's face */}
+                <span className={`m-num text-[14px] font-semibold ${sign > 0 ? 'text-accent-deep' : 'text-ink'}`}>
                   {fmt(sign * Math.abs(part.amountCents), tx.currency, { date: tx.date })}
                 </span>
               </button>
@@ -363,7 +363,9 @@ export function TransactionsScreen() {
                 // list — the sub-transactions stand as rows of their own,
                 // the shared rail linking them; each opens its own page
                 const rowParts = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-                if (rowParts.length > 1 && hasTypedParts(tx)) {
+                // #149: EVERY multi-part row branches — a flat category
+                // spread is a split to the user, labels or not
+                if (rowParts.length > 1) {
                   // r8 (user request): a filter that matches only SOME
                   // parts shows exactly those, aligned like normal rows
                   // with the split glyph — the band stays for full groups

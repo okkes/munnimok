@@ -15,9 +15,28 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
+import { TxPartRow } from '@/ui/TxPartRow';
 import { EventFormSheet, eventPicture } from './EventsScreen';
 import { SplitEventSummary } from '@/features/splits/SplitEventSummary';
-import type { EventRow } from '@/db/types';
+import { REIMBURSED_ID } from '@/domain/categories';
+import type { EventRow, TransactionRow, TxSplit } from '@/db/types';
+
+// ── #143: a split's parts attach individually — never the container ──
+/** the pickable parts of one row, keeping their ORIGINAL splits index
+ *  (legacy flat spreads may lack part ids — the index is the address) */
+function partEntries(tx: TransactionRow): { part: TxSplit; idx: number }[] {
+  return (tx.splits ?? []).map((part, idx) => ({ part, idx })).filter((e) => e.part.catId !== REIMBURSED_ID);
+}
+const partPickKey = (txId: string, idx: number): string => `${txId}#${idx}`;
+/** every checkbox key the picker opens with: part keys for multi-part
+ *  rows (parts already attached elsewhere stay out), else the tx id */
+function suggestionKeysOf(txs: readonly TransactionRow[] | undefined): string[] {
+  return (txs ?? []).flatMap((tx) => {
+    const entries = partEntries(tx);
+    if (entries.length > 1) return entries.filter((e) => !e.part.eventId).map((e) => partPickKey(tx.id, e.idx));
+    return [tx.id];
+  });
+}
 
 /**
  * One event in full: what it cost (per day when dated), where the money
@@ -54,8 +73,14 @@ export function EventDetailScreen() {
 
   const view = useMemo(() => {
     if (!event || !txs) return undefined;
+    // #143: membership is per-slice — a row belongs when it (or any of
+    // its parts) carries the event
     const list = txs
-      .filter((tx) => tx.deleted === 0 && tx.eventId === event.id)
+      .filter(
+        (tx) =>
+          tx.deleted === 0 &&
+          (tx.eventId === event.id || (tx.splits ?? []).some((s) => s.catId !== REIMBURSED_ID && s.eventId === event.id)),
+      )
       .sort((a, b) => b.date.localeCompare(a.date));
     const spent = eventSpentCents(txs, event.id);
     return {
@@ -73,7 +98,7 @@ export function EventDetailScreen() {
   // on identity wiped the user's unticks mid-review (LoanMatchSheet's
   // seed-once lesson, resurfaced by typed-splits v2's longer boot).
   useEffect(() => {
-    if (pickOpen) setPicked(new Set(view?.suggestions.map((tx) => tx.id) ?? []));
+    if (pickOpen) setPicked(new Set(suggestionKeysOf(view?.suggestions)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pickOpen]);
 
@@ -91,8 +116,17 @@ export function EventDetailScreen() {
     try {
       let n = 0;
       for (const tx of view.suggestions) {
-        // one history line for the whole batch, not one per transaction
-        if (picked.has(tx.id)) {
+        // one history line for the whole batch, not one per transaction.
+        // #143: multi-part rows attach PART BY PART — the picked parts
+        // get the event in one splits write; the container stays bare
+        const entries = partEntries(tx);
+        if (entries.length > 1) {
+          const idxs = new Set(entries.filter((e) => picked.has(partPickKey(tx.id, e.idx))).map((e) => e.idx));
+          if (idxs.size === 0) continue;
+          const nextSplits = (tx.splits ?? []).map((s, i) => (idxs.has(i) ? { ...s, eventId: event.id } : s));
+          await transform(tx, { splits: nextSplits }, null);
+          n += idxs.size;
+        } else if (picked.has(tx.id)) {
           await transform(tx, { eventId: event.id }, null);
           n++;
         }
@@ -111,7 +145,19 @@ export function EventDetailScreen() {
     setPicked(next);
   };
 
-  const pickedTotal = view.suggestions.filter((tx) => picked.has(tx.id)).reduce((sum, tx) => sum + -tx.amountCents, 0);
+  const pickedTotal = view.suggestions.reduce((sum, tx) => {
+    const entries = partEntries(tx);
+    if (entries.length > 1) {
+      const sign = tx.amountCents < 0 ? -1 : 1;
+      return (
+        sum +
+        entries
+          .filter((e) => picked.has(partPickKey(tx.id, e.idx)))
+          .reduce((inner, e) => inner + -(sign * Math.abs(e.part.amountCents)), 0)
+      );
+    }
+    return sum + (picked.has(tx.id) ? -tx.amountCents : 0);
+  }, 0);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
@@ -251,9 +297,32 @@ export function EventDetailScreen() {
         </div>
         {filteredList.length > 0 ? (
           <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="eventdetail-txs">
-            {filteredList.map((tx) => (
-              <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
-            ))}
+            {filteredList.map((tx) => {
+              // #143: a split shows its MEMBER parts as rows of their
+              // own — each opens its part page
+              const entries = partEntries(tx);
+              if (entries.length > 1) {
+                const sign = tx.amountCents < 0 ? -1 : 1;
+                return entries
+                  .map((e, ordinal) => ({ ...e, ordinal }))
+                  .filter((e) => (e.part.eventId ?? tx.eventId) === event.id)
+                  .map((e) => (
+                    <TxPartRow
+                      key={partPickKey(tx.id, e.idx)}
+                      tx={tx}
+                      part={e.part}
+                      index={e.ordinal}
+                      amountText={money(sign * Math.abs(e.part.amountCents))}
+                      onClick={() =>
+                        void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: e.part.id } })
+                      }
+                    />
+                  ));
+              }
+              return (
+                <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
+              );
+            })}
           </div>
         ) : (
           <p className="px-1 text-[12px] text-ink-4" data-testid="eventdetail-empty">
@@ -265,7 +334,43 @@ export function EventDetailScreen() {
       {/* pick which suggestions belong to the event */}
       <Sheet open={pickOpen} onOpenChange={(open) => !open && setPickOpen(false)} title={t('events.pickTitle')} size="tall" dragHandle>
         <div className="max-h-[46vh] overflow-y-auto" data-testid="eventpick-list">
-          {view.suggestions.map((tx) => {
+          {view.suggestions.flatMap((tx) => {
+            // #143: a split offers its PARTS, one checkbox each — the
+            // container itself is never a pick
+            const entries = partEntries(tx);
+            if (entries.length > 1) {
+              const sign = tx.amountCents < 0 ? -1 : 1;
+              return entries
+                .map((e, ordinal) => ({ ...e, ordinal }))
+                .filter((e) => !e.part.eventId)
+                .map((e) => {
+                  const key = partPickKey(tx.id, e.idx);
+                  const partChecked = picked.has(key);
+                  return (
+                    <div key={key} className="flex items-center gap-2 border-b border-line-2 last:border-0">
+                      <button
+                        data-testid={`eventpick-${tx.id}-part-${e.idx}`}
+                        aria-label={tx.merchant}
+                        onClick={() => togglePick(key)}
+                        className={`m-tap ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
+                          partChecked ? 'border-accent bg-accent text-white' : 'border-line bg-surface'
+                        }`}
+                      >
+                        {partChecked && <Icon name="check" size={12} />}
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <TxPartRow
+                          tx={tx}
+                          part={e.part}
+                          index={e.ordinal}
+                          amountText={money(sign * Math.abs(e.part.amountCents))}
+                          onClick={() => togglePick(key)}
+                        />
+                      </div>
+                    </div>
+                  );
+                });
+            }
             const checked = picked.has(tx.id);
             return (
               <div key={tx.id} className="flex items-center gap-2 border-b border-line-2 last:border-0">

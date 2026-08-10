@@ -118,7 +118,10 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('FRONTED DINNER')).toBeTruthy(), { timeout: 5000 });
 
     fireEvent.click(screen.getByTestId('tx-filter-unsettled'));
-    await waitFor(() => expect(rows().length).toBe(1), { timeout: 5000 });
+    // #149: the fronted dinner is a flat two-part spread — it stands as
+    // the branch group now, not a plain row
+    await screen.findByTestId('tx-parts-open-1', {}, { timeout: 5000 });
+    await waitFor(() => expect(rows()).toHaveLength(0), { timeout: 5000 });
     expect(screen.getByText('FRONTED DINNER')).toBeTruthy();
     fireEvent.click(screen.getByTestId('tx-filter-unsettled'));
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));

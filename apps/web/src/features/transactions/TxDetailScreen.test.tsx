@@ -463,6 +463,41 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(() => expect(screen.queryByTestId('tx-detail-cat-restaurants')).toBeNull());
   });
 
+  it('#141: a landed split offers itself to same-merchant rows, resized per row', async () => {
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    // a splitless sibling of the same merchant, exactly half the size
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-splitbulk'), { trackOutbox: false });
+    const dm6 = await db.transactions.get('dm6');
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'sib-1', {
+      accountId: 'demo_main', date: '2020-04-01', amountCents: -2620, currency: 'EUR',
+      merchant: dm6?.merchant ?? '', catId: 'groceries', txType: 'expense', needsReview: 0,
+    });
+
+    fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    fireEvent.change(screen.getByTestId('split-amount-0'), { target: { value: '30,00' } });
+    fireEvent.click(screen.getByTestId('split-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
+    fireEvent.click(screen.getByTestId('split-remainder'));
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+
+    // the bulk bar arms with the splitless sibling; apply resizes the
+    // partition to the sibling's amount (30/22.40 of 52.40 → 15/11.20)
+    await screen.findByTestId('tx-detail-bulk-offer', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('tx-detail-bulk-apply'));
+    await waitFor(async () => {
+      const sib = await db.transactions.get('sib-1');
+      expect(sib?.splits?.map((s) => s.amountCents)).toEqual([1500, 1120]);
+      expect(sib?.splits?.[1]?.catId).toBe('restaurants');
+      expect(sib?.needsReview).toBe(0);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
   it('percentage mode balances to 100 and stores materialized euro amounts', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));

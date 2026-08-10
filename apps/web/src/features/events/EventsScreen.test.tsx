@@ -3,7 +3,11 @@ import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
-import { isoDaysAgo } from '@/db/seed';
+import { DEMO_SPACE_ID, isoDaysAgo } from '@/db/seed';
+import { HlcClock } from '@/sync/hlc';
+import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
+import { MunniDB } from '@/db/schema';
 
 async function createEvent(name: string, from?: string, to?: string, budget?: string) {
   fireEvent.click(await screen.findByTestId('events-add'));
@@ -86,6 +90,43 @@ describe('Events (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('eventdetail-suggest').textContent).toMatch(/1 /), { timeout: 8000 });
     expect(screen.getByTestId('eventdetail-cats')).toBeTruthy();
     expect(screen.getByTestId('eventdetail-txs')).toBeTruthy();
+  }, 45_000);
+
+  it('#143: a split offers its parts one by one — the container itself is never a pick', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-partpick'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'evsplit', {
+      accountId: 'demo_main', date: isoDaysAgo(170), amountCents: -6000, currency: 'EUR',
+      merchant: 'Split Dinner', catId: 'restaurants', txType: 'expense', needsReview: 0,
+      splits: [
+        { id: 'p1', catId: 'restaurants', amountCents: 4500 },
+        { id: 'p2', catId: 'groceries', amountCents: 1500 },
+      ],
+    });
+    const card = await createEvent('Parts trip', isoDaysAgo(180), isoDaysAgo(160));
+    fireEvent.click(card);
+    await screen.findByTestId('eventdetail-hero');
+    await screen.findByTestId('eventdetail-suggest', {}, { timeout: 15_000 });
+    fireEvent.click(screen.getByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+
+    // the parts pick individually; the container has no checkbox of its own
+    await screen.findByTestId('eventpick-evsplit-part-0');
+    expect(screen.queryByTestId('eventpick-evsplit')).toBeNull();
+    // leave the groceries part out of the event
+    fireEvent.click(screen.getByTestId('eventpick-evsplit-part-1'));
+    fireEvent.click(screen.getByTestId('eventpick-attach'));
+    await waitFor(async () => {
+      const rowNow = await db.transactions.get('evsplit');
+      expect(rowNow?.splits?.[0]?.eventId).toBeTruthy();
+      expect(rowNow?.splits?.[1]?.eventId).toBeUndefined();
+      expect(rowNow?.eventId ?? undefined).toBeUndefined(); // container stays bare
+    }, { timeout: 15_000 });
+    // the attached payments list shows the member part as its own row
+    await screen.findByTestId('tx-part-solo-evsplit-0', {}, { timeout: 8000 });
+    db.close();
   }, 45_000);
 
   it('tapping a breakdown category unfolds subs and filters the payments (user request)', async () => {

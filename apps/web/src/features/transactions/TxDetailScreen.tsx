@@ -27,6 +27,7 @@ import { Sheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
 import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
 import { primaryCatId } from '@/domain/splits';
+import { scaleSplitsTo } from '@/domain/txSlices';
 import { ReviewPartDeck } from '@/features/review/ReviewScreen';
 import { LoanPickSheet } from '@/features/debts/LoanPickSheet';
 import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
@@ -39,7 +40,6 @@ import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './Tx
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
-import { hasTypedParts } from '@/domain/txSlices';
 import { mintMirrorForExistingLink, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
@@ -71,7 +71,9 @@ function CategorySlices({
   const parts = tx.splits?.length ? tx.splits : [null];
   // v2.1: only a real part story (labels/kinds/spreads) earns the spine
   // presentation — plain multi-category keeps the classic slice list
-  const spine = parts.length > 1 && hasTypedParts(tx);
+  // #149: the spine draws for every multi-part row, labels or not —
+  // the list branches for all of them now, the detail must agree
+  const spine = parts.length > 1;
   return (
     <div className={spine ? "relative pl-4 before:absolute before:top-5 before:bottom-5 before:left-[7px] before:w-[2px] before:rounded-full before:bg-line before:content-['']" : ''}>
       {parts.map((slice, i) => {
@@ -561,11 +563,38 @@ function DetailSplitDoor({
 
 // ── small derivations, module-level so the screen stays readable to
 // Sonar (S3776) ──
+/** #143: a split container is never a bulk-recategorize target — its
+ *  parts own their categories (title renames stay container-legit) */
+const isMultiPartRow = (item: Pick<SpaceTx, 'splits'>): boolean =>
+  (item.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1;
 const catBulkTargets = (
   allTxs: SpaceTx[] | undefined,
   tx: SpaceTx,
   offer: { catId: string } | null,
-): SpaceTx[] => (offer ? similarTo(allTxs, tx, (item) => item.catId !== offer.catId) : []);
+): SpaceTx[] => (offer ? similarTo(allTxs, tx, (item) => !isMultiPartRow(item) && item.catId !== offer.catId) : []);
+/** #141: the rows a fresh split can copy onto — same merchant, still
+ *  splitless (a settled or already-split sibling never gets overwritten) */
+const splitBulkTargets = (allTxs: SpaceTx[] | undefined, tx: SpaceTx): SpaceTx[] =>
+  similarTo(allTxs, tx, (item) => (item.splits ?? []).length === 0);
+/** #141: the same split lands on every picked sibling, resized to its
+ *  amount (scaleSplitsTo drops per-transaction stories). Module-level
+ *  for S3776; returns how many rows it touched. */
+async function writeSplitBulk(
+  transform: ReturnType<typeof useTxTransform>,
+  mintId: () => string,
+  source: readonly TxSplit[],
+  picked: readonly SpaceTx[],
+): Promise<number> {
+  let n = 0;
+  for (const item of picked) {
+    const scaled = scaleSplitsTo(source, Math.abs(item.amountCents), mintId);
+    if (scaled.length < 2) continue;
+    // one history line for the whole batch (caller logs), review settled
+    await transform(item, { splits: scaled, catId: primaryCatId(scaled) ?? item.catId, needsReview: 0 }, null);
+    n++;
+  }
+  return n;
+}
 const titleBulkTargets = (
   allTxs: SpaceTx[] | undefined,
   tx: SpaceTx,
@@ -716,6 +745,7 @@ function DetailSplitSheets({
   attention,
   openValuesEditor,
   applyStagedSplit,
+  onSplitSaved,
 }: Readonly<{
   tx: SpaceTx;
   splitOpen: boolean;
@@ -738,6 +768,8 @@ function DetailSplitSheets({
   attention: boolean;
   openValuesEditor: () => void;
   applyStagedSplit: () => void;
+  /** #141: the classic editor's own save arms the sibling offer */
+  onSplitSaved: (stored: TxSplit[]) => void;
 }>) {
   const { t } = useLang();
   return (
@@ -750,6 +782,7 @@ function DetailSplitSheets({
         allowedCatIds={allowedCatIds}
         valuesOnly={valuesMode}
         value={editorValue}
+        onSaved={onSplitSaved}
         txType={valuesMode ? tx.txType : undefined}
         onApplySingle={valuesMode ? unsplitTo : setCategory}
         onApply={
@@ -1217,6 +1250,10 @@ export function TxDetailScreen() {
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [bulkOffer, setBulkOffer] = useState<{ catId: string; txType: TxType; count: number } | null>(null);
+  // #141: a landed split offers itself to the splitless siblings —
+  // mutually exclusive with the category offer (they share the bar)
+  const [splitBulk, setSplitBulk] = useState<TxSplit[] | null>(null);
+  const [splitSelected, setSplitSelected] = useState<ReadonlySet<string>>(new Set());
   // the reimbursement total at arm time: a settlement AFTER arming
   // rewrites the category attribution, so the stale offer must retire
   // (user rule: any category change — direct or indirect — re-evaluates)
@@ -1394,6 +1431,7 @@ export function TxDetailScreen() {
       ...(tx.eventId ? { eventId: null as never } : {}),
       ...(tx.recurringId ? { recurringId: null as never } : {}),
     });
+    armSplitBulk(splitStage); // #141: offer the partition to the siblings
     setApplyAttention(false);
     setSplitStage(null);
     setCompleteOpen(false);
@@ -1415,10 +1453,29 @@ export function TxDetailScreen() {
     // bulk mechanism from the detail too (user request) — unlike review
     // it reaches EVERYTHING of this merchant, reviewed included. The
     // settlement category is never a bulk suggestion (user rule).
-    const similar = catId === REIMBURSED_ID ? [] : similarTo(allTxs, tx, (item) => item.catId !== catId);
+    const similar =
+      catId === REIMBURSED_ID ? [] : similarTo(allTxs, tx, (item) => !isMultiPartRow(item) && item.catId !== catId);
     bulkArmedReimbRef.current = reimbNow;
+    setSplitBulk(null);
     setBulkOffer(similar.length > 0 ? { catId, txType, count: similar.length } : null);
     setBulkSelected(new Set(similar.map((item) => item.id)));
+  };
+
+  // #141: a stored split arms the sibling offer (both doors — the staged
+  // Apply and the classic editor's own save — land here)
+  const armSplitBulk = (stored: TxSplit[]) => {
+    const similar = splitBulkTargets(allTxs, tx);
+    setBulkOffer(null);
+    setSplitBulk(similar.length > 0 ? stored : null);
+    setSplitSelected(new Set(similar.map((item) => item.id)));
+  };
+  const splitTargets = splitBulk ? splitBulkTargets(allTxs, tx) : [];
+  const applySplitBulk = async () => {
+    if (!splitBulk) return;
+    const picked = splitTargets.filter((target) => splitSelected.has(target.id));
+    const n = await writeSplitBulk(transform, () => repo.newId(), splitBulk, picked);
+    if (n > 0) void logActivity(store, repo, spaceId, 'txCategory', `${txTitle(tx)} +${n}`);
+    setSplitBulk(null);
   };
 
   const bulkTargets = catBulkTargets(allTxs, tx, bulkOffer);
@@ -1648,6 +1705,17 @@ export function TxDetailScreen() {
               onDismiss={() => setBulkOffer(null)}
             />
           )}
+          {/* #141: the landed split offers itself to the splitless
+              siblings — same bar, resized per row on apply */}
+          {!bulkOffer && splitBulk && (
+            <DetailBulkBar
+              targets={splitTargets}
+              selected={splitSelected}
+              onChange={setSplitSelected}
+              onApply={() => void applySplitBulk()}
+              onDismiss={() => setSplitBulk(null)}
+            />
+          )}
         </div>
         <DetailSplitDoor mode={splitDoorMode} placement="manage" onOpen={openValuesEditor} />
 
@@ -1820,6 +1888,7 @@ export function TxDetailScreen() {
         attention={applyAttention}
         openValuesEditor={openValuesEditor}
         applyStagedSplit={applyStagedSplit}
+        onSplitSaved={armSplitBulk}
       />
       {/* r7 (user rule): splitting resets the transaction's own story —
           a conscious continue, never a silent drop */}

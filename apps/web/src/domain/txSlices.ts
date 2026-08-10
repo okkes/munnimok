@@ -1,4 +1,5 @@
-import type { TransactionRow, TxType } from '@/db/types';
+import type { TransactionRow, TxSplit, TxType } from '@/db/types';
+import { REIMBURSED_ID } from './categories';
 
 /**
  * The canonical slice fan-out (typed-splits v2, approved plan): every
@@ -100,3 +101,52 @@ export const hasTypedParts = (tx: Pick<TransactionRow, 'splits'>): boolean =>
     (s) => s.label !== undefined || s.txType !== undefined || s.linkedAccountId !== undefined
       || s.eventId !== undefined || !!s.cats?.length,
   );
+
+/** floor + largest remainder: `weights` partitioned onto `targetCents`,
+ *  summing exactly — the same fairness rule the pct editor uses */
+function largestRemainder(weights: readonly number[], weightTotal: number, targetCents: number): number[] {
+  const raw = weights.map((w) => (w * targetCents) / weightTotal);
+  const floors = raw.map(Math.floor);
+  let rest = targetCents - floors.reduce((a, b) => a + b, 0);
+  const order = raw.map((value, i) => ({ frac: value - Math.floor(value), i })).sort((a, b) => b.frac - a.frac);
+  for (const { i } of order) {
+    if (rest <= 0) break;
+    floors[i] += 1;
+    rest -= 1;
+  }
+  return floors;
+}
+
+/**
+ * #141: the same split, resized for a sibling — a proportional largest-
+ * remainder partition of the target's amount. Category spreads scale
+ * within each part; transaction-specific stories (linked accounts,
+ * events, recurring links, notes) never copy; ids mint fresh so two
+ * rows never share part identities.
+ */
+export function scaleSplitsTo(source: readonly TxSplit[], targetAbsCents: number, mintId: () => string): TxSplit[] {
+  const parts = source.filter((s) => s.catId !== REIMBURSED_ID);
+  const weightTotal = parts.reduce((sum, s) => sum + Math.abs(s.amountCents), 0);
+  if (parts.length < 2 || weightTotal <= 0 || targetAbsCents <= 0) return [];
+  const partition = largestRemainder(parts.map((s) => Math.abs(s.amountCents)), weightTotal, targetAbsCents);
+  return parts.map((s, i) => {
+    const cats = s.cats?.length ? scaleCatsTo(s.cats, partition[i]) : undefined;
+    return {
+      id: mintId(),
+      catId: s.catId,
+      amountCents: partition[i],
+      ...(s.label ? { label: s.label } : {}),
+      // a type that leans on a linked account is that transaction's own
+      // reality — the bare special types (saving, debtPayment…) travel
+      ...(s.txType && !s.linkedAccountId ? { txType: s.txType } : {}),
+      ...(cats ? { cats } : {}),
+    };
+  });
+}
+
+function scaleCatsTo(cats: NonNullable<TxSplit['cats']>, partCents: number): TxSplit['cats'] {
+  const total = cats.reduce((sum, c) => sum + Math.abs(c.amountCents), 0);
+  if (total <= 0) return undefined;
+  const partition = largestRemainder(cats.map((c) => Math.abs(c.amountCents)), total, partCents);
+  return cats.map((c, i) => ({ catId: c.catId, amountCents: partition[i] }));
+}

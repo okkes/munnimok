@@ -14,7 +14,6 @@ import { BarChart } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
-import { hasTypedParts } from '@/domain/txSlices';
 import { matchingPartIndexes } from '@/domain/txFilter';
 import type { TxSplit } from '@/db/types';
 
@@ -157,7 +156,8 @@ export function CategoryDrillScreen() {
               // parts here — normal-looking rows with the split glyph,
               // each opening its own part page
               const rowParts = (tx.splits ?? []).filter((s) => s.catId !== 'reimbursed');
-              if (rowParts.length > 1 && hasTypedParts(tx)) {
+              // #149: every multi-part row branches, labels or not
+              if (rowParts.length > 1) {
                 const drillCats = new Set([catId, ...cats.childrenOf(catId).map((c) => c.id)]);
                 const shown = matchingPartIndexes(tx, { catIds: drillCats });
                 return shown.map((i) => (
