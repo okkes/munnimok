@@ -33,49 +33,43 @@ describe('ReviewScreen (demo identity)', () => {
     expect(await screen.findByTestId('review-empty')).toBeTruthy();
   }, 15_000);
 
-  it('the card leads with the kind; a transfer pick walks straight into the counterparty', async () => {
+  it('#133 C: no kind row — a ◆ pick asks the counterparty, the fact row eases in on a link', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // kind row first (user simplification); the counterparty row is
-    // HIDDEN for standard rows and eases in when Transfer is picked
-    // (dynamic fields, user redesign 2026-07-28)
-    const kindRow = screen.getByTestId('review-kind-row');
-    expect(kindRow.textContent).toContain('Standard');
+    // the kind concept is gone from the card; no counterparty row while
+    // nothing is linked
+    expect(screen.queryByTestId('review-kind-row')).toBeNull();
     expect(screen.queryByTestId('review-counter-row')).toBeNull();
 
-    // the split sheet is pure categories now — no context rows
+    // the split sheet stays pure categories
     fireEvent.click(screen.getByTestId('review-category-chip'));
     await screen.findByTestId('split-editor');
     expect(screen.queryByTestId('split-counter-row')).toBeNull();
     expect(screen.queryByTestId('split-type-row')).toBeNull();
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('split-cat-0'));
+    await screen.findByTestId('speccat-savingDeposit'); // the diamond mark
+    fireEvent.click(screen.getByTestId('catpicker-savingDeposit'));
+    fireEvent.click(await screen.findByTestId('split-save'));
 
-    // picking Transfer opens the MANDATORY counterparty picker; choosing
-    // the savings account keeps the leg a plain TRANSFER (R2 inversion —
-    // the saving story lives on the pot's own ledger now)
-    fireEvent.click(kindRow);
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
-    await screen.findByTestId('counter-accounts');
-    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
-    await waitFor(() => {
-      expect(screen.getByTestId('review-kind-row').textContent).toContain('Transfer');
-      expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings');
-    });
-    expect((screen.getByTestId('review-counter-row') as HTMLButtonElement).disabled).toBe(false);
+    // the ◆ pick unfolds the counterparty question — Default pinned on
+    // top; picking the savings pot links it and the fact row appears
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
   }, 15_000);
 
-  it('a loan counterparty swaps the recurring row for the debt row', async () => {
+  it('#133 C: a loan-family pick creates its loan through the ask and the debt row takes over', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     expect(screen.getByTestId('review-recurring-row')).toBeTruthy();
 
-    // transfer → the Create door opens the FULL chooser (user redesign
-    // 2026-08-01: quick-create retired); manual loan built in place
-    fireEvent.click(screen.getByTestId('review-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    // Loan payment (◆) → the counterparty question → the Create door
+    // (full chooser); the manual loan built in place answers it
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
+    fireEvent.click(await screen.findByTestId('split-save'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-full-setup'));
     fireEvent.click(await screen.findByTestId('chooser-manual'));
@@ -85,46 +79,26 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '5000' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
 
-    // a payoff transfer is a debt payment, not a recurring cost (user
-    // request 2026-07-29): the debt row appears, recurring retires —
-    // and it names the loan account itself (v2: the account IS the debt)
+    // a payoff is a debt payment, not a recurring cost: the debt row
+    // appears and names the loan account itself
     await waitFor(() => expect(screen.getByTestId('review-debt-row')).toBeTruthy(), { timeout: 5000 });
     expect(screen.getByTestId('review-debt-row').textContent).toContain('Car loan');
     expect(screen.queryByTestId('review-recurring-row')).toBeNull();
   }, 15_000);
 
-  it('dismissing the counterparty picker rolls a user-picked transfer back', async () => {
+  it('#133 C: dismissing the counterparty ask keeps the bare ◆ story — no rollback, confirm armed', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    fireEvent.click(screen.getByTestId('review-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
-    // close the picker without choosing — an unlinked transfer is
-    // unrepresentable, so the kind returns to what it was
-    await screen.findByTestId('counter-accounts');
-    fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.getByTestId('review-kind-row').textContent).toContain('Standard'));
-  }, 15_000);
-
-  it('the marked special category carries the bare story (typed-splits v2)', async () => {
-    renderApp('/review');
-    await screen.findByTestId('review-card');
-
-    // the bare-type exit retired: "set aside without a tracked pot" is
-    // now the marked Set aside category, offered right in the unified
-    // editor on a standard row — picking it pulls the saving type along
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('split-cat-0'));
-    await screen.findByTestId('speccat-savingDeposit'); // the diamond mark
-    fireEvent.click(screen.getByTestId('catpicker-savingDeposit'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     fireEvent.click(await screen.findByTestId('split-save'));
-
-    // the kind row reads the pulled family type, the counter row states
-    // the missing account calmly (optional for the bare story), Confirm
-    // is armed — no ask-again dead end
+    // the ask opens; walking away is legal — the bare story stands and
+    // the boot migration folds it onto the default pot later
+    await screen.findByTestId('counter-default');
+    fireEvent.keyDown(window, { key: 'Escape' });
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
-    expect(screen.getByTestId('review-kind-row').textContent).toContain('Saving');
-    expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
+    expect(screen.queryByTestId('review-counter-row')).toBeNull();
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
   }, 15_000);
 
@@ -404,11 +378,10 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.change(screen.getByTestId('deck-label-1'), { target: { value: 'Office snacks' } });
     await waitFor(() => expect((screen.getByTestId('deck-label-1') as HTMLInputElement).value).toBe('Office snacks'));
 
-    // r3: the part wears the NORMAL type row (kind + caption), not chips
-    const kindRow = screen.getByTestId('deck-kind-row-1');
-    expect(kindRow.textContent).toContain('Standard');
-    expect(kindRow.textContent).toContain('Type');
-    expect(screen.queryByTestId('deck-kind-standard-1')).toBeNull();
+    // #133 C: no Type row on parts — and no counterparty fact row
+    // while the part links nothing
+    expect(screen.queryByTestId('deck-kind-row-1')).toBeNull();
+    expect(screen.queryByTestId('deck-counter-1')).toBeNull();
 
     // the part's event row opens its picker; None stages a clean part
     fireEvent.click(screen.getByTestId('deck-event-1'));
@@ -438,7 +411,9 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // part 1 → Set aside (◆ pulls saving through the part editor)
+    // part 1 → Set aside (◆ pulls saving through the part editor) —
+    // #133 C: the pick opens the per-part counterparty ask (Default
+    // pinned); walking away keeps the bare story
     await screen.findByTestId('review-part-deck');
     fireEvent.click(screen.getByTestId('deck-part-1'));
     fireEvent.click(await screen.findByTestId('deck-cat-1'));
@@ -447,7 +422,9 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('part-cat-save'));
-    await waitFor(() => expect(screen.getByTestId('deck-kind-row-1').textContent).toContain('Saving'));
+    await screen.findByTestId('counter-default');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByTestId('deck-cat-1').textContent).toContain('Set aside'));
 
     // the SAME pick on part 0: r7 allows the honest repeat — no warning
     // exists anymore, and Confirm arms with both parts categorized
@@ -455,10 +432,11 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('deck-cat-0'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-0'));
-    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click((await screen.findAllByTestId('catpicker-savingDeposit')).at(-1)!);
     await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('part-cat-save'));
-    await waitFor(() => expect(screen.getByTestId('deck-kind-row-0').textContent).toContain('Saving'));
+    fireEvent.keyDown(window, { key: 'Escape' }); // the ask again — still bare, still fine
+    await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toContain('Set aside'));
     await waitFor(() => expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false));
   }, 15_000);
 
@@ -753,18 +731,18 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
-    // flip the kind to Transfer with the savings counterparty — Coffee
-    // does not speak Saving, and the MACHINE has the right answer now:
-    // the locked sign-picked sub replaces the ask-again dead end
-    fireEvent.click(screen.getByTestId('review-kind-row'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
-    await screen.findByTestId('counter-accounts');
-    fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
-    expect(screen.getByTestId('review-kind-row').textContent).toContain('Transfer');
-    // R2: the linked leg files the locked Transfer sub and stays armed
+    // #133 C: re-pick Set aside (◆) and answer its ask with the savings
+    // pot — the linked leg is R2's inversion: the pot's own ledger tells
+    // the saving story, THIS leg files the locked Transfer sub
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click(screen.getByTestId('split-save'));
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out'));
+    // the counter name arrives via an async account read — wait for it
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
     // nothing was written mid-flight: the tx still holds its own type

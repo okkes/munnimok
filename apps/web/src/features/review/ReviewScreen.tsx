@@ -9,13 +9,13 @@ import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
-import { draftReady, initDraft, withCategory, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { hasTypedParts } from '@/domain/txSlices';
-import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
+import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
 import { Collapse } from '@/ui/Collapse';
-import type { TxKind } from '@/domain/txKind';
-import { accountStamp } from '@/domain/txType';
+import { accountStamp, typeForLinkedAccount } from '@/domain/txType';
+import type { DefaultFamily } from '@/application/defaultAccounts';
 import { normalizeIban } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
 import { hapticNotify } from '@/lib/platform';
@@ -45,7 +45,7 @@ import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
 import { PartCatsSheet, partCatsApplyPatch } from '@/features/transactions/PartCatsSheet';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
-import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from '@/features/transactions/TxKindSheet';
+import { CounterpartySheet } from '@/features/transactions/TxKindSheet';
 
 /** one grouped-context row inside the category editor (counterparty,
  *  type) — the card-row anatomy in the sheet's input skin */
@@ -141,86 +141,33 @@ function stageAsSettlement(draft: ReviewDraft, cats: ReturnType<typeof useCatego
   return withCategory(withType({ ...draft, linkedAccountId: undefined }, 'income', cats), RECEIVED_REIMBURSE_ID, cats);
 }
 
-/** a kind pick keeps the confirm armed the way transfers always did:
- *  the hidden 'uncategorized' builtin backs category-less kinds */
-function stageKind(
-  draft: ReviewDraft,
-  kind: TxKind,
-  amountCents: number,
-  cats: ReturnType<typeof useCategories>,
-): ReviewDraft {
-  const next = withKind(draft, kind, amountCents, cats);
-  if (kind !== 'standard' && !next.catId) return withCategory(next, 'uncategorized', cats);
-  return next;
-}
-
-/** the counterparty row's face: dimmed n/a, the account, or the bare
- *  label — counterless is legal now (arc 2's exit), so no warning cry */
-function counterRowLabel(kind: TxKind, name: string | undefined, t: ReturnType<typeof useLang>['t']): string {
-  if (kind !== 'transfer') return t('tx.counterNotApplicable');
-  return name ?? t('tx.counterNone');
-}
-
-/** the card's kind + counterparty rows (S3776: out of the main screen);
- *  the counterparty is a transfer concept — other kinds show it dimmed */
-function CardKindRows({
-  kind,
-  detail,
+/** #133 C: the kind row is GONE — categories carry the meaning. What
+ *  remains is the counterparty as a fact row, easing in only when the
+ *  draft actually links an account (S3776: out of the main screen). */
+function CardCounterRow({
+  show,
   counterName,
-  locked = false,
-  onKind,
   onCounter,
 }: Readonly<{
-  kind: TxKind;
-  detail: TxType | null;
+  show: boolean;
   counterName: string | undefined;
-  /** R1: a stamped account types every one of its rows — the kind is
-   *  not the user's to change, only the counterparty and category are */
-  locked?: boolean;
-  onKind: () => void;
   onCounter: () => void;
 }>) {
   const { t } = useLang();
-  const isTransfer = kind === 'transfer';
   return (
-    <>
+    <Collapse open={show}>
       <button
-        data-testid="review-kind-row"
-        onClick={locked ? undefined : onKind}
-        className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+        data-testid="review-counter-row"
+        onClick={onCounter}
+        className="m-tap m-fade flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
       >
-        <Icon name={TX_KIND_VISUAL[kind].icon} size={18} color={TX_KIND_VISUAL[kind].color} />
-        <span className="min-w-0 flex-1 truncate">
-          {t(`tx.kind.${kind}`)}
-          {detail && <span className="text-[12px] font-normal text-ink-4"> · {t(`tx.type.${detail}`)}</span>}
-        </span>
-        <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
-        <Icon name={locked ? 'lock-outline' : 'pencil-outline'} size={13} color="var(--m-ink-4)" />
+        <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
+        <span className="min-w-0 flex-1 truncate">{counterName ?? t('tx.counterNone')}</span>
+        <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
+        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
       </button>
-      {/* fields show only when they MEAN something: the counterparty
-          eases in when Transfer is picked instead of sitting disabled
-          on every card (user redesign 2026-07-28) */}
-      <Collapse open={isTransfer}>
-        <button
-          data-testid="review-counter-row"
-          onClick={onCounter}
-          className="m-tap m-fade flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-        >
-          <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-          <span className="min-w-0 flex-1 truncate">{counterRowLabel(kind, counterName, t)}</span>
-          <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
-          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-        </button>
-      </Collapse>
-    </>
+    </Collapse>
   );
-}
-
-/** which kind the deck's kind sheet opens on (S3776: out of the deck) */
-function deckKindFor(parts: readonly TxSplit[], kindFor: number | null): 'transfer' | 'standard' {
-  if (kindFor === null) return 'standard';
-  const slice = parts[kindFor];
-  return slice?.txType && kindOf(slice.txType) === 'transfer' ? 'transfer' : 'standard';
 }
 
 /** the part a numbered picker/sheet is aimed at (S3776: out of the deck) */
@@ -266,16 +213,13 @@ const multiPartSplits = (draft: ReviewDraft | null): boolean =>
 function deckActiveFaces(
   active: TxSplit,
   rowType: TxType,
-  lockedKind: boolean,
   accounts: readonly { id: string; name: string }[] | undefined,
   activeEvents: readonly { id: string; name: string; icon?: string }[],
   cats: ReturnType<typeof useCategories>,
   t: ReturnType<typeof useLang>['t'],
 ): {
   transferPart: boolean;
-  activeKind: 'transfer' | 'standard';
   activeKindSub: string;
-  kindRowIcon: string;
   activeEventFace: string;
   /** the part's categories joined — present only when spread (r6) */
   activeSpread?: string;
@@ -294,9 +238,7 @@ function deckActiveFaces(
     : undefined;
   return {
     transferPart,
-    activeKind: transferPart ? 'transfer' : 'standard',
     activeKindSub: transferPart ? counterName : t(`tx.type.${active.txType ?? rowType}`),
-    kindRowIcon: lockedKind ? 'lock-outline' : 'pencil-outline',
     activeEventFace: activeEvent?.name ?? t('events.linkNone'),
     activeSpread,
     catRowFace: activeSpread ?? catName(activeCat, t),
@@ -452,8 +394,10 @@ export function ReviewPartDeck({
   const cats = useCategories();
   const accounts = useSpaceAccounts();
   const [expanded, setExpanded] = useState(0);
-  const [kindFor, setKindFor] = useState<number | null>(null);
   const [counterFor, setCounterFor] = useState<number | null>(null);
+  // #133 C: a ◆ family pick in the part editor asks its counterparty —
+  // the family pins the Default row on top of the sheet
+  const [counterFamily, setCounterFamily] = useState<DefaultFamily | null>(null);
   const [eventFor, setEventFor] = useState<number | null>(null);
   // r7: which part is linking a recurring cost
   const [recFor, setRecFor] = useState<number | null>(null);
@@ -503,14 +447,11 @@ export function ReviewPartDeck({
   const activeColor = activeCat.color ?? cats.byId(activeCat.parentId ?? '').color;
   // every face of the active card computed flat in one module helper —
   // the deck's own JSX carries no branching (S3776)
-  const faces = deckActiveFaces(active, rowType, lockedKind, accounts, activeEvents, cats, t);
+  const faces = deckActiveFaces(active, rowType, accounts, activeEvents, cats, t);
   const activeRecFace = recurrings.find((rec) => rec.id === active.recurringId)?.name ?? t('recurring.linkNone');
   const peeking = parts.map((slice, i) => ({ slice, i })).filter(({ i }) => i !== openIdx);
   const deckDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
   const needsAttention = (slice: TxSplit) => attention && slice.catId === UNCATEGORIZED_ID;
-  const tapKindRow = () => {
-    if (!lockedKind) setKindFor(openIdx);
-  };
 
   return (
     <div className="mt-3" data-testid="review-part-deck">
@@ -604,21 +545,20 @@ export function ReviewPartDeck({
               {fmtCents(active.amountCents, tx.currency, lang)}
             </span>
           </div>
-          {/* the normal Type row — the part's kind, locked when the
-              account stamps its rows (R1) */}
-          <button
-            data-testid={`deck-kind-row-${openIdx}`}
-            onClick={tapKindRow}
-            className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
-          >
-            <Icon name={TX_KIND_VISUAL[faces.activeKind].icon} size={18} color={TX_KIND_VISUAL[faces.activeKind].color} />
-            <span className="min-w-0 flex-1 truncate">
-              {t(`tx.kind.${faces.activeKind}`)}
-              <span className="text-[12px] font-normal text-ink-4"> · {faces.activeKindSub}</span>
-            </span>
-            <span className="text-[11px] text-ink-4">{t('tx.kindTitle')}</span>
-            <Icon name={faces.kindRowIcon} size={13} color="var(--m-ink-4)" />
-          </button>
+          {/* #133 C: the Type row is gone — a linked part shows its
+              counterparty as a fact row instead */}
+          {!!active.linkedAccountId && (
+            <button
+              data-testid={`deck-counter-${openIdx}`}
+              onClick={() => setCounterFor(openIdx)}
+              className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
+            >
+              <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
+              <span className="min-w-0 flex-1 truncate">{faces.activeKindSub}</span>
+              <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
+              <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+            </button>
+          )}
           {/* the category row IS the door to the whole-transaction
               category editor, scoped to this part (r7: same gears —
               multiple categories, exact euros or percentages) */}
@@ -667,41 +607,30 @@ export function ReviewPartDeck({
         </p>
       )}
 
-      {/* the part's kind through the normal kind picker (r3) — Standard
-          drops any counterparty, Transfer walks into picking one */}
-      <TxKindSheet
-        open={kindFor !== null}
-        onOpenChange={(next) => {
-          if (!next) setKindFor(null);
-        }}
-        current={deckKindFor(parts, kindFor)}
-        allowAdjustment={false}
-        onPick={(kind) => {
-          if (kindFor === null) return;
-          if (kind === 'transfer') {
-            setCounterFor(kindFor);
-          } else {
-            patchPart(kindFor, { txType: undefined, linkedAccountId: undefined, transferPeerId: undefined });
-          }
-          setKindFor(null);
-        }}
-      />
-
       {/* the expanded part's counterparty — same door the editor uses */}
       <CounterpartySheet
         open={counterFor !== null}
         onOpenChange={(next) => {
-          if (!next) setCounterFor(null);
+          if (!next) {
+            setCounterFor(null);
+            setCounterFamily(null);
+          }
         }}
         excludeAccountId={tx.accountId}
         currentLinkedId={partAt(parts, counterFor)?.linkedAccountId}
+        defaultFamily={counterFamily ?? undefined}
         onChoose={(account) => {
           if (counterFor === null) return;
+          // #133 C: the counterparty resolves the part's story — a ◆
+          // family pick keeps its category, a plain pick files transfer
+          const family = typeForLinkedAccount(account.type);
+          const keepCat = counterFamily !== null || family !== 'transfer';
           patchPart(counterFor, {
-            txType: 'transfer',
+            txType: counterFamily ?? family,
             linkedAccountId: account.id,
-            catId: autoSubFor('transfer', tx.amountCents) ?? parts[counterFor].catId,
+            catId: keepCat ? parts[counterFor].catId : (autoSubFor('transfer', tx.amountCents) ?? parts[counterFor].catId),
           });
+          setCounterFamily(null);
         }}
       />
       {/* the expanded part's event — per-part membership (v2 model) */}
@@ -800,7 +729,18 @@ export function ReviewPartDeck({
         txType={rowType}
         allowedCatIds={allowedCatIds}
         onApply={(entries) => {
-          if (spreadFor !== null) patchPart(spreadFor, partCatsApplyPatch(partAt(parts, spreadFor), entries));
+          if (spreadFor !== null) {
+            const idx = spreadFor;
+            const patch = partCatsApplyPatch(partAt(parts, idx), entries);
+            patchPart(idx, patch);
+            // #133 C: a ◆ family pick asks its counterparty right away
+            // — Default pinned on top; dismissing keeps the part bare
+            const family = specialCatType(patch.catId);
+            if (family && family !== 'transfer' && family !== 'funding' && !parts[idx].linkedAccountId && !lockedKind) {
+              setCounterFamily(family as DefaultFamily);
+              setCounterFor(idx);
+            }
+          }
           setSpreadFor(null);
         }}
       />
@@ -1174,7 +1114,8 @@ export function ReviewScreen() {
   // kind + counterparty rows live ON the card now (user simplification);
   // a user-picked transfer REQUIRES a counterparty, so dismissing the
   // picker without choosing rolls the kind back to what it was
-  const [kindOpen, setKindOpen] = useState(false);
+  // #133 C: a ◆ family pick pins the Default row on the counter sheet
+  const [counterFamily, setCounterFamily] = useState<DefaultFamily | null>(null);
   const [counterOpen, setCounterOpen] = useState(false);
   const counterFallback = useRef<ReviewDraft | null>(null);
   const counterChosen = useRef(false);
@@ -1384,8 +1325,6 @@ export function ReviewScreen() {
   }, [chosenRec?.id, chosenRec?.catId]);
   const recurringAllowedCats = chosenRec?.catId ? [chosenRec.catId, EXPECTED_REIMBURSE_ID] : undefined;
 
-  const draftKind: TxKind = draft ? kindOf(draft.txType) : 'standard';
-  const draftKindDetail = draft ? kindDetail(draft.txType) : null;
   const showReason = !!tx && !stagedDraft && prediction?.catId === draft?.catId;
   const reasonLine =
     showReason && prediction ? t(REASON_KEYS[prediction.source], { n: prediction.evidence ?? 1 }) : null;
@@ -1532,12 +1471,9 @@ export function ReviewScreen() {
                   and event on the deck; the main card is just the money. */}
               <div data-testid="review-cats">
                 {!multiPart && (
-                  <CardKindRows
-                    kind={draftKind}
-                    detail={draftKindDetail}
+                  <CardCounterRow
+                    show={!!draft?.linkedAccountId}
                     counterName={draftCounter?.name}
-                    locked={!!ownStamp}
-                    onKind={() => setKindOpen(true)}
                     onCounter={() => {
                       counterFallback.current = null;
                       setCounterOpen(true);
@@ -1679,7 +1615,17 @@ export function ReviewScreen() {
             setStagedDraft(withSplits(draft, splits ?? undefined));
           }}
           onApplySingle={(catId) => {
-            setStagedDraft(withCategory(withSplits(draft, undefined), catId, cats));
+            const next = withCategory(withSplits(draft, undefined), catId, cats);
+            setStagedDraft(next);
+            // #133 C: a ◆ family pick unfolds the counterparty question
+            // right away — Default, a real account, or dismiss (bare is
+            // legal; the boot migration folds it onto the default later)
+            const family = specialCatType(catId);
+            if (family && family !== 'transfer' && family !== 'funding' && !next.linkedAccountId && !ownStamp) {
+              setCounterFamily(family as DefaultFamily);
+              counterFallback.current = null;
+              setCounterOpen(true);
+            }
           }}
           reason={reasonLine}
           allowedCatIds={recurringAllowedCats}
@@ -1700,24 +1646,6 @@ export function ReviewScreen() {
         </div>
       </Sheet>
       {tx && draft && (
-        <TxKindSheet
-          open={kindOpen}
-          onOpenChange={setKindOpen}
-          current={draftKind}
-          allowAdjustment={!tx.importRef && !tx.feedSpaceId}
-          onPick={(kind) => {
-            const next = stageKind(draft, kind, tx.amountCents, cats);
-            setStagedDraft(next);
-            // a transfer is not complete without its counterparty —
-            // open the picker right away, remember what to roll back to
-            if (kind === 'transfer' && !next.linkedAccountId) {
-              counterFallback.current = draft;
-              setCounterOpen(true);
-            }
-          }}
-        />
-      )}
-      {tx && draft && (
         <CounterpartySheet
           open={counterOpen}
           onOpenChange={(open) => {
@@ -1728,10 +1656,12 @@ export function ReviewScreen() {
               if (!counterChosen.current && counterFallback.current) setStagedDraft(counterFallback.current);
               counterFallback.current = null;
               counterChosen.current = false;
+              setCounterFamily(null);
             }
           }}
           excludeAccountId={tx.accountId}
           currentLinkedId={draft.linkedAccountId}
+          defaultFamily={counterFamily ?? undefined}
           onChoose={(account) => {
             counterChosen.current = true;
             setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));
