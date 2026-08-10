@@ -490,8 +490,9 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     expect(catBlock.textContent).toContain('€22.40');
     await screen.findByTestId('tx-detail-cat-restaurants');
 
-    // clear the split again
-    fireEvent.click(screen.getByTestId('tx-detail-category-row'));
+    // clear the split again — #200: on a container the rows navigate,
+    // so the editor door is Manage splits
+    fireEvent.click(screen.getByTestId('tx-detail-manage-splits'));
     fireEvent.click(await screen.findByTestId('split-clear'));
     await waitFor(() => expect(screen.queryByTestId('tx-detail-cat-restaurants')).toBeNull());
   });
@@ -587,8 +588,8 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await screen.findByTestId('tx-detail-bulk-offer', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('tx-detail-bulk-dismiss'));
 
-    // reopening restores percentage mode with the stored shares
-    fireEvent.click(screen.getByTestId('tx-detail-category-row'));
+    // reopening (via Manage splits — #200) restores percentage mode
+    fireEvent.click(screen.getByTestId('tx-detail-manage-splits'));
     await screen.findByTestId('split-editor');
     await waitFor(() => expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('60'));
     expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('40');
@@ -667,6 +668,11 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.queryByTestId('reimb-list')).toBeNull();
     expect(screen.queryByTestId('receipt-file')).toBeNull();
     expect(screen.queryByTestId('tx-detail-customize')).toBeNull();
+    // #200: no Edit pencil on a container, and a part row NAVIGATES to
+    // its page instead of opening the manage flow
+    expect(screen.queryByTestId('tx-detail-cats-edit')).toBeNull();
+    fireEvent.click(screen.getByTestId('tx-detail-category-row'));
+    await screen.findByTestId('tx-part-amount');
     db.close();
   }, 15_000);
 

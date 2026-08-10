@@ -52,30 +52,32 @@ import type { AccountRow, TxSplit, TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
-/** the categories block's rows: one per slice (or the single category),
- *  every pencil opening the ONE unified split editor (review parity) */
+/** the categories block's rows: one per slice (or the single category).
+ *  A single category opens the unified editor; on a container the rows
+ *  ARE the parts — plain rows now (#200: the circles + vertical line
+ *  are gone) and tapping one goes to that part's page, never to the
+ *  manage flow. */
 function CategorySlices({
   tx,
   cats,
   fallbackCat,
   fallbackColor,
   onEdit,
+  onOpenPart,
 }: Readonly<{
   tx: SpaceTx;
   cats: ReturnType<typeof useCategories>;
   fallbackCat: ReturnType<ReturnType<typeof useCategories>['byId']>;
   fallbackColor: string;
   onEdit: () => void;
+  /** #200: a real part row navigates to its page */
+  onOpenPart?: (partId: string) => void;
 }>) {
   const { t, lang } = useLang();
   const parts = tx.splits?.length ? tx.splits : [null];
-  // v2.1: only a real part story (labels/kinds/spreads) earns the spine
-  // presentation — plain multi-category keeps the classic slice list
-  // #149: the spine draws for every multi-part row, labels or not —
-  // the list branches for all of them now, the detail must agree
-  const spine = parts.length > 1;
+  const multi = parts.length > 1;
   return (
-    <div className={spine ? "relative pl-4 before:absolute before:top-5 before:bottom-5 before:left-[7px] before:w-[2px] before:rounded-full before:bg-line before:content-['']" : ''}>
+    <div>
       {parts.map((slice, i) => {
         const rowCat = slice ? cats.byId(slice.catId) : fallbackCat;
         const rowColor = slice ? (rowCat.color ?? cats.byId(rowCat.parentId ?? '').color) : fallbackColor;
@@ -83,30 +85,27 @@ function CategorySlices({
         // typed-splits v2: the part wears its OWN story — the copied-info
         // label ("<title> – split N" unless renamed) and, when its type
         // differs from the row's kind, a quiet type chip
-        const partLabel = slice?.label ?? (spine ? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}` : undefined);
+        const partLabel = slice?.label ?? (multi ? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}` : undefined);
         const partType = slice?.txType && slice.txType !== tx.txType ? slice.txType : undefined;
         // a spread part's subline lists ALL its categories (v2.1)
         const spreadNames = slice?.cats?.length
           ? slice.cats.map((c) => catName(cats.byId(c.catId), t)).join(' · ')
           : undefined;
+        // #200: a container row opens ITS part page; the settled
+        // Reimbursed slice (and id-less legacy parts) keep the editor
+        const openPart = multi && slice?.id && slice.catId !== REIMBURSED_ID && onOpenPart;
         return (
           <button
             key={slice?.id ?? slice?.catId ?? 'single'}
             data-testid={i === 0 ? 'tx-detail-category-row' : `tx-detail-cat-${slice?.catId}`}
-            onClick={onEdit}
-            className="m-tap relative flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3.5 text-left last:border-0"
+            onClick={openPart ? () => onOpenPart(slice.id as string) : onEdit}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3.5 text-left last:border-0"
           >
-            {spine && (
-              <span
-                className="absolute top-1/2 -left-[13px] h-2 w-2 -translate-y-1/2 rounded-full border-2 bg-surface"
-                style={{ borderColor: rowColor ?? 'var(--m-ink-4)' }}
-              />
-            )}
             <Icon name={rowCat.icon} size={20} color={rowColor ?? 'var(--m-ink-3)'} />
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[15px] text-ink">{spine ? partLabel : catName(rowCat, t)}</span>
+              <span className="block truncate text-[15px] text-ink">{multi ? partLabel : catName(rowCat, t)}</span>
               <span className="block truncate text-[11px] text-ink-4">
-                {spine ? (spreadNames ?? catName(rowCat, t)) : parentName}
+                {multi ? (spreadNames ?? catName(rowCat, t)) : parentName}
                 {partType && (
                   <span className="text-accent-deep" data-testid={`tx-detail-part-type-${slice?.id ?? i}`}>
                     {' '}· {t(`tx.type.${partType}`)}
@@ -116,6 +115,7 @@ function CategorySlices({
             </span>
             {i === 0 && tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
             {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
+            {openPart ? <Icon name="chevron-right" size={16} color="var(--m-ink-4)" /> : null}
           </button>
         );
       })}
@@ -1706,6 +1706,9 @@ export function TxDetailScreen() {
             fallbackCat={cat}
             fallbackColor={color}
             onEdit={() => !categoryLocked && openCategoriesEditor()}
+            onOpenPart={(id) =>
+              void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: id } })
+            }
           />
           {/* the split door, in the open on the detail too (#126 r4) */}
           <DetailSplitDoor mode={splitDoorMode} placement="row" onOpen={requestSplit} />
@@ -2128,12 +2131,15 @@ function CategoriesHeader({
           </span>
         )}
       </span>
-      {locked ? (
+      {locked && (
         <span className="flex items-center gap-1 text-[11px] text-ink-4" data-testid="tx-detail-cats-locked">
           <Icon name="lock-outline" size={12} />
           {t('reimb.categoryLocked')}
         </span>
-      ) : (
+      )}
+      {/* #200: on a container the Edit pencil is gone — Manage splits
+          below is the one door; a whole transaction keeps it */}
+      {!locked && !multiPart && (
         <button
           data-testid="tx-detail-cats-edit"
           aria-label={t('action.edit')}

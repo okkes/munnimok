@@ -188,8 +188,9 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="tx-detail-categories"]')).toContainText('8.99');
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Hobby');
     await shot(page, k('36-tx-split'));
-    // clearing restores a single category
-    await page.click('[data-testid="tx-detail-category-row"]');
+    // clearing restores a single category — #200: on a container the
+    // rows navigate to part pages, so the editor door is Manage splits
+    await page.click('[data-testid="tx-detail-manage-splits"]');
     await page.click('[data-testid="split-clear"]');
     await page.waitForTimeout(500);
     await expect(page.locator('[data-testid^="tx-detail-cat-"]')).toHaveCount(0);
