@@ -1084,6 +1084,10 @@ function PartDetailBody({
         </div>
       </div>
 
+      {/* #199: the parent's bank facts right here — a deliberate
+          duplicate, so no trip to the container is needed */}
+      <DetailFacts tx={tx} givenOut={givenOutFor(tx, allTxs)} />
+
       {/* the sisters: every part one tap away (#126 r4) */}
       <div className="m-cap mt-5 mb-1 px-1">{t('split.title')}</div>
       <PartSiblingRows

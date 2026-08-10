@@ -733,6 +733,8 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     // r5: its own reimbursements — the part-targeted link and the net
     await waitFor(() => expect(screen.getByTestId('tx-part-reimbs').textContent).toContain('Sam pays back'), { timeout: 5000 });
     expect(screen.getByTestId('tx-part-net').textContent).toContain('20.00');
+    // #199: the parent's Details card shows right on the part page
+    expect(screen.getByTestId('tx-detail-facts')).toBeTruthy();
 
     // r5: its own note, saved into the part itself
     const notes = screen.getByTestId('tx-part-notes') as HTMLTextAreaElement;
