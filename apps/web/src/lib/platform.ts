@@ -59,6 +59,16 @@ const capacitor = (): CapacitorGlobal | undefined =>
 
 export const isNativeApp = (): boolean => capacitor()?.isNativePlatform?.() === true;
 
+/** iOS/iPadOS WebKit on ANY surface — Safari tab, installed PWA, the
+ *  native shell. Mirrors react-modal-sheet's own platform test (#134)
+ *  so opt-outs fire exactly where its iOS-only behaviors would. */
+export const isIOS = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const platform =
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ?? navigator.platform;
+  return /^iP(hone|ad|od)/i.test(platform) || (/^Mac/i.test(platform) && navigator.maxTouchPoints > 1);
+};
+
 /**
  * Web/PWA: ask the browser not to evict IndexedDB. Native: a no-op —
  * WebView storage is app-scoped application data, never evicted.

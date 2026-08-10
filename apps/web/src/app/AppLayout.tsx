@@ -104,9 +104,10 @@ function useKeyboardOpen(): boolean {
       if (!isEditable(e.target)) return;
       setOpen(true);
       cancelReveal?.();
-      // inside a sheet on iOS Safari/PWA the sheet library owns the
-      // keyboard (it translates the sheet AND reveals the field) — a
-      // second reveal here fought it
+      // where the sheet library still owns the keyboard (non-iOS,
+      // non-resizing viewports) a second reveal here fought it. On iOS
+      // the library stands down entirely (#134) and THIS reveal is the
+      // one that pads the sheet's scroller and shows hidden fields.
       if (SHEET_OWNS_KEYBOARD && e.target.closest('.react-modal-sheet-container')) return;
       cancelReveal = scheduleKeyboardReveal(e.target);
     };

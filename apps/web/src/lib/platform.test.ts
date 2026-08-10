@@ -116,6 +116,33 @@ describe('platform seam', () => {
   });
 });
 
+describe('isIOS (#134)', () => {
+  const setNav = (platform: string, maxTouchPoints = 0, uaDataPlatform?: string) => {
+    Object.defineProperty(navigator, 'platform', { value: platform, configurable: true });
+    Object.defineProperty(navigator, 'maxTouchPoints', { value: maxTouchPoints, configurable: true });
+    Object.defineProperty(navigator, 'userAgentData', {
+      value: uaDataPlatform === undefined ? undefined : { platform: uaDataPlatform },
+      configurable: true,
+    });
+  };
+
+  it('spots iPhone/iPad platforms and iPadOS-as-Mac, nothing else', async () => {
+    const { isIOS } = await import('./platform');
+    setNav('iPhone');
+    expect(isIOS()).toBe(true);
+    setNav('iPad');
+    expect(isIOS()).toBe(true);
+    setNav('MacIntel', 5); // iPadOS masquerading as macOS
+    expect(isIOS()).toBe(true);
+    setNav('MacIntel', 0); // real macOS
+    expect(isIOS()).toBe(false);
+    setNav('Win32');
+    expect(isIOS()).toBe(false);
+    setNav('Linux armv81', 5, 'Android'); // userAgentData wins where present
+    expect(isIOS()).toBe(false);
+  });
+});
+
 describe('§5 niceties seam', () => {
   it('haptics + share are strict no-ops on the web', async () => {
     setCapacitor(undefined);

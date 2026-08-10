@@ -8,7 +8,7 @@ import { isMinaSheetGuarded } from '@/features/mina/lock';
 // disliked): at lg a sheet renders as a centered dialog — the familiar
 // desktop shape, with the page still visible around it
 import { useLgViewport as usePanelMode } from '@/lib/viewport';
-import { isNativeApp } from '@/lib/platform';
+import { isIOS, isNativeApp } from '@/lib/platform';
 import { Button } from './Button';
 
 /** the three sheet heights; per-pixel values stay out of call sites */
@@ -29,9 +29,73 @@ const IS_TEST = import.meta.env.MODE === 'test';
 //  - native shells: @capacitor/keyboard resize:"native" shrinks the webview
 const IS_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 const VIEWPORT_RESIZES = IS_ANDROID || isNativeApp();
+
+// ── #134: iOS keeps NATIVE tap-to-focus ─────────────────────────────
+// The library's iOS scroll lock intercepted every tap on an editable
+// (preventDefault + teleport the field -2000px + programmatic focus +
+// restore a frame later), and its keyboard avoidance smooth-scrolled
+// the tapped field to the sheet's top on EVERY focus hop. WebKit keeps
+// the caret invisible until all of that settles — the reported ~2s
+// stall, worst when switching between fields. iOS opts out of both:
+// the tap focuses natively (caret lands immediately), and AppLayout's
+// settled-viewport reveal — which pads the sheet's scroller and only
+// scrolls when a field is actually hidden — takes over inside sheets.
+// The document itself can't scroll (fixed app frame, html/body
+// overflow:hidden), so the lock's page-pinning bought nothing here.
+const ON_IOS = isIOS();
+
+// The one job the teleport DID do for us: focusing a field the
+// keyboard covers makes WebKit shove scrollTop onto overflow:hidden
+// ancestors (the sheet chrome — "scroll jail"), which shears the
+// sheet's content out of its frame. A non-scroller has no business
+// holding a scroll offset, so while an iOS sheet is open, every
+// editable focus sweeps the chain and zeroes shoved offsets — once in
+// the focus beat, once after the keyboard has landed.
+let jailGuardUsers = 0;
+let removeJailGuard: (() => void) | null = null;
+
+function unshoveFrom(el: HTMLElement | null): void {
+  for (let node = el; node && node !== document.body; node = node.parentElement) {
+    if (node.scrollTop !== 0) {
+      const overflowY = getComputedStyle(node).overflowY;
+      if (overflowY !== 'auto' && overflowY !== 'scroll') node.scrollTop = 0;
+    }
+  }
+}
+
+function pushJailGuard(): void {
+  jailGuardUsers++;
+  if (jailGuardUsers > 1) return;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const onFocusIn = (e: FocusEvent) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement) || !target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    requestAnimationFrame(() => unshoveFrom(target));
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      unshoveFrom(target);
+    }, 400);
+    timers.add(timer);
+  };
+  document.addEventListener('focusin', onFocusIn);
+  removeJailGuard = () => {
+    document.removeEventListener('focusin', onFocusIn);
+    for (const timer of timers) clearTimeout(timer);
+  };
+}
+
+function popJailGuard(): void {
+  jailGuardUsers = Math.max(0, jailGuardUsers - 1);
+  if (jailGuardUsers === 0) {
+    removeJailGuard?.();
+    removeJailGuard = null;
+  }
+}
+
 /** true where the sheet library's avoidKeyboard is active — the global
- *  keyboard reveal must stand down inside sheets there (AppLayout) */
-export const SHEET_OWNS_KEYBOARD = !VIEWPORT_RESIZES;
+ *  keyboard reveal must stand down inside sheets there (AppLayout).
+ *  No longer true on iOS (#134): there AppLayout owns the reveal. */
+export const SHEET_OWNS_KEYBOARD = !VIEWPORT_RESIZES && !ON_IOS;
 
 // ── sheet stack ──────────────────────────────────────────────────────────
 // Only the TOP sheet may dismiss. Without this, opening a picker sheet on
@@ -365,6 +429,13 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   // drag bar alone never gave (user request)
   const fixedHeight = requested === undefined ? undefined : Math.max(280, requested - depth * 28);
   const panel = usePanelMode();
+  // #134: while an iOS mobile sheet is open, undo WebKit scroll-jail
+  // shoves on every editable focus (see module block)
+  useEffect(() => {
+    if (!open || panel || !ON_IOS) return;
+    pushJailGuard();
+    return () => popJailGuard();
+  }, [open, panel]);
 
   // the whole test corpus was written against vaul's jsdom behavior: a
   // closed sheet STAYED MOUNTED (its exit transition never ran there),
@@ -468,7 +539,11 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
         if (ghost) ghost.style.pointerEvents = 'none';
       }}
       detent="content"
-      avoidKeyboard={!VIEWPORT_RESIZES}
+      // #134: on iOS BOTH library behaviors stand down (see the block
+      // at the top) — AppLayout reveals, the jail guard keeps chrome
+      // straight, and the fixed app frame already pins the page
+      avoidKeyboard={!VIEWPORT_RESIZES && !ON_IOS}
+      disableScrollLocking={ON_IOS}
       // dirty forms and the Mina tutorial refuse the drag-dismissal too:
       // the sheet snaps back, and the backdrop path asks "discard?"
       // (tutorial: root sheet only — nested pickers stay dismissible)
