@@ -1458,11 +1458,19 @@ export function TxDetailScreen() {
     // R3: a marked special category carries the bare story — the type
     // follows the pick (Set aside → saving); ordinary cats keep the old
     // first-declared-type rule
-    const txType = specialCatType(catId) ?? cats.byId(catId).txTypes[0] ?? tx.txType;
+    const family = specialCatType(catId);
+    // #133 E: the ◆ Transfer pick writes NOTHING yet — the mandatory
+    // counterparty pick does (retype files the locked sub); dismissing
+    // leaves the row untouched
+    if (family === 'transfer' && !ownStamp) {
+      setCounterFamily(null);
+      setLoanPickOpen(true);
+      return;
+    }
+    const txType = family ?? cats.byId(catId).txTypes[0] ?? tx.txType;
     void transform(tx, { catId, txType, needsReview: 0 }, 'txCategory');
     // #133 D: EVERY ◆ family pick asks its counterparty — Default
     // pinned on top; dismissing keeps the bare story (Q1, generalized)
-    const family = specialCatType(catId);
     if (family && family !== 'transfer' && family !== 'funding' && !tx.linkedAccountId && !ownStamp) {
       setCounterFamily(family as DefaultFamily);
       setLoanPickOpen(true);
@@ -1853,12 +1861,12 @@ export function TxDetailScreen() {
         }}
         excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
-        defaultFamily={counterFamily ?? 'debtPayment'}
+        defaultFamily={counterFamily ?? undefined}
         anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
         onChoose={(picked, peer) => {
           // a DEFAULT pick keeps the family (the row wears the special
           // category); a real account is R2's transfer inversion
-          const family = defaultPickFamily(counterFamily ?? 'debtPayment', picked.id, spaceId);
+          const family = defaultPickFamily(counterFamily, picked.id, spaceId);
           void retype(family ?? typeForLinkedAccount(picked.type), picked.id, 'txLink', peer);
         }}
       />

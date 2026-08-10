@@ -1615,12 +1615,21 @@ export function ReviewScreen() {
             setStagedDraft(withSplits(draft, splits ?? undefined));
           }}
           onApplySingle={(catId) => {
+            const family = specialCatType(catId);
+            // #133 E: the ◆ Transfer pick stages NOTHING yet — the
+            // mandatory counterparty answers it (dismiss = rollback,
+            // an unlinked transfer is unrepresentable)
+            if (family === 'transfer' && !ownStamp) {
+              counterFallback.current = draft;
+              setCounterFamily(null);
+              setCounterOpen(true);
+              return;
+            }
             const next = withCategory(withSplits(draft, undefined), catId, cats);
             setStagedDraft(next);
             // #133 C: a ◆ family pick unfolds the counterparty question
             // right away — Default, a real account, or dismiss (bare is
             // legal; the boot migration folds it onto the default later)
-            const family = specialCatType(catId);
             if (family && family !== 'transfer' && family !== 'funding' && !next.linkedAccountId && !ownStamp) {
               setCounterFamily(family as DefaultFamily);
               counterFallback.current = null;

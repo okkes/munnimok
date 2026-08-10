@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
-import { REIMBURSED_ID, isSpecialCategory, mainCatOf } from '@/domain/categories';
+import { REIMBURSED_ID, isSpecialCategory } from '@/domain/categories';
 import { kindOf } from '@/domain/txKind';
 import { useLang } from '@/i18n';
 import { Highlight } from '@/ui/Highlight';
@@ -50,14 +50,12 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
           .filter((c) => !direction || directionAllows(c.direction, direction))
           // the invariant: a transaction's category must speak its type.
           // R3 relax (typed-splits v2): STANDARD rows also see the marked
-          // special families — picking one pulls the type along (the
-          // transfer pair stays machine-only, and stamped rows never
-          // reach here with a standard type)
+          // special families — picking one pulls the type along. #133 E:
+          // the TRANSFER family joins them (kind rows are gone; the ◆
+          // Transfer pick opens the mandatory counterparty ask) — only
+          // stamped rows keep their narrowed lists
           .filter(
-            (c) =>
-              !txType ||
-              c.txTypes.includes(txType) ||
-              (kindOf(txType) === 'standard' && isSpecialCategory(c) && mainCatOf(c.id) !== 'transfer'),
+            (c) => !txType || c.txTypes.includes(txType) || (kindOf(txType) === 'standard' && isSpecialCategory(c)),
           )
           .filter((c) => !excludeIds?.includes(c.id))
           .filter((c) => !onlyIds || onlyIds.includes(c.id))
