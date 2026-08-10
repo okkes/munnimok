@@ -173,6 +173,7 @@ export function CategoryDrillScreen() {
                     onClick={() =>
                       void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: rowParts[i].id } })
                     }
+                    showDate
                   />
                 ));
               }

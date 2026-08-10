@@ -316,6 +316,7 @@ export function EventDetailScreen() {
                       onClick={() =>
                         void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: e.part.id } })
                       }
+                      showDate
                     />
                   ));
               }
@@ -365,6 +366,7 @@ export function EventDetailScreen() {
                           index={e.ordinal}
                           amountText={money(sign * Math.abs(e.part.amountCents))}
                           onClick={() => togglePick(key)}
+                          showDate
                         />
                       </div>
                     </div>

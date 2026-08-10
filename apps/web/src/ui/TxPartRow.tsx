@@ -1,4 +1,4 @@
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import type { TransactionRow, TxSplit } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { orDefaultLabel, txTitle } from '@/lib/text';
@@ -17,6 +17,7 @@ export function TxPartRow({
   index,
   amountText,
   onClick,
+  showDate = false,
 }: Readonly<{
   tx: TransactionRow;
   part: TxSplit;
@@ -24,8 +25,10 @@ export function TxPartRow({
   /** the formatted amount the list wants to show (share or slice) */
   amountText: string;
   onClick?: () => void;
+  /** lists without date group headers show it inline, like TxRow (#143) */
+  showDate?: boolean;
 }>) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const cats = useCategories();
   const partCat = cats.byId(part.catId);
   const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
@@ -49,7 +52,15 @@ export function TxPartRow({
           {/* the split glyph: this row is a piece of a larger payment */}
           <Icon name="call-split" size={12} color="var(--m-accent-deep)" />
         </span>
-        <span className="block truncate text-[12px] text-ink-3">{catName(partCat, t)}</span>
+        <span className="block truncate text-[12px] text-ink-3">
+          {showDate && (
+            <span className="text-ink-4">
+              {new Date(tx.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' })}
+              {' · '}
+            </span>
+          )}
+          {catName(partCat, t)}
+        </span>
       </span>
       {/* #139: the amount wears exactly TxRow's face — weight and the
           positive green included */}
