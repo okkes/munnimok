@@ -117,48 +117,30 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Naar spaarpot' } });
 
-    // the kind row sits on the form (user simplification); picking
-    // Transfer opens the mandatory counterparty picker right away
-    fireEvent.click(screen.getByTestId('txform-kind'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    // #133 D: no kind row — the always-there counterparty row IS the
+    // transfer door; picking the pot derives the type
+    fireEvent.click(screen.getByTestId('txform-counter'));
     await screen.findByTestId('counter-accounts');
-    // save is blocked while the counterparty is missing
-    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
-    // R2 inversion: the linked leg stays a plain Transfer — the saving
-    // story lives on the pot's own ledger (the minted mirror)
     await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings'));
-    expect(screen.getByTestId('txform-kind').textContent).toContain('Transfer');
     expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
 
-    // back to Standard: the counterparty row leaves with the kind
-    fireEvent.click(screen.getByTestId('txform-kind'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-standard'));
-    await waitFor(() => expect(screen.queryByTestId('txform-counter')).toBeNull());
-
-    // adjustment saves as a correction row (manual-only third kind)
-    fireEvent.click(screen.getByTestId('txform-kind'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-adjustment'));
-    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Adjustment'));
+    // the Adjustment toggle marks a correction; save writes the marker
+    fireEvent.click(screen.getByTestId('txform-adjustment'));
     fireEvent.click(screen.getByTestId('txform-save'));
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Naar spaarpot');
       expect(row?.txType).toBe('adjustment');
-      expect(row?.linkedAccountId).toBeFalsy();
+      expect(row?.adjustment).toBe(1);
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
 
   it('the Create door builds a missing counterparty through the full chooser', async () => {
     await openForm();
-    fireEvent.click(screen.getByTestId('txform-kind'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    fireEvent.click(screen.getByTestId('txform-counter'));
     await screen.findByTestId('counter-accounts');
 
     // one creation door now (user redesign 2026-08-01): the chooser's
@@ -172,7 +154,6 @@ describe('TxFormSheet (demo identity)', () => {
     // the fresh manual account IS the counterparty; the leg stays a
     // plain Transfer (R2 — the pot's ledger will carry the saving story)
     await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Vakantiepot'));
-    expect(screen.getByTestId('txform-kind').textContent).toContain('Transfer');
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -211,9 +192,8 @@ describe('TxFormSheet (demo identity)', () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '100,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Naar spaarpot' } });
-    fireEvent.click(screen.getByTestId('txform-kind'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    // #133 D: the counterparty row is the transfer door now
+    fireEvent.click(screen.getByTestId('txform-counter'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
     // the mirror checkbox retired (typed-splits v2): a MANUAL counter's
@@ -262,7 +242,8 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
     fireEvent.click(await screen.findByTestId('split-save'));
 
-    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Debt Payment'));
+    // #133 D: no kind row to read — the category chip carries the story
+    await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Repaid'));
     expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
     fireEvent.click(screen.getByTestId('txform-save'));
 

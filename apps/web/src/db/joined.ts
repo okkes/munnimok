@@ -401,6 +401,6 @@ async function deriveWriteTxType(repo: Repo, tx: TransformTx, write: TxTransform
     counterDefaultFor: linked?.defaultFor,
     counterFunding: (await spaceTypeOf(linked)) === 'funding',
     multiPart: parts.length > 1,
-    adjustment: raw.txType === 'adjustment',
+    adjustment: raw.adjustment === 1 || raw.txType === 'adjustment',
   });
 }

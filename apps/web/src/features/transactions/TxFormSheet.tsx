@@ -20,10 +20,8 @@ import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { primaryCatId } from '@/domain/splits';
-import { kindOf } from '@/domain/txKind';
 import { minaSuggestedTx } from '@/features/mina/steps';
-import type { TxKind } from '@/domain/txKind';
-import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
+import { CounterpartySheet } from './TxKindSheet';
 
 interface TxFormSheetProps {
   open: boolean;
@@ -42,20 +40,8 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const formFingerprint = (state: Record<string, unknown>): string =>
   JSON.stringify([
     state.amount, state.isExpense, state.merchant, state.date, state.accountId, state.catId,
-    state.kind, state.linkedAccountId, state.recurringId, state.splits,
+    state.adjustment, state.linkedAccountId, state.recurringId, state.splits,
   ]);
-
-/**
- * The kind resolves the stored technical type (user simplification):
- * standard by the sign toggle, transfer by the counterparty's account
- * type (plain 'transfer' while the mandatory pick is still open),
- * adjustment as itself.
- */
-const typeForKind = (kind: TxKind, isExpense: boolean, counterType: TxType | null): TxType => {
-  if (kind === 'adjustment') return 'adjustment';
-  if (kind === 'transfer') return counterType ?? 'transfer';
-  return isExpense ? 'expense' : 'income';
-};
 
 type BalanceAccount = { id: string; source: string; balanceCents: number };
 
@@ -96,58 +82,46 @@ function applyManualBalanceDeltas(
   }
 }
 
-/** the kind row + (transfers only) the mandatory counterparty row —
- *  the manual form's face of the simplified model (S3776: out of the
- *  main component) */
-function KindRows({
-  kind,
-  detailType,
+/** #133 D: the kind grid is gone — the counterparty row (always there,
+ *  None by default) and the small Adjustment toggle are what remains of
+ *  it on the manual form (S3776: out of the main component) */
+function CounterAdjustRows({
   counterName,
   locked = false,
-  onKind,
+  adjustment,
   onCounter,
+  onToggleAdjustment,
 }: Readonly<{
-  kind: TxKind;
-  detailType: TxType | null;
   counterName: string | undefined;
-  /** R1: a stamped account types every one of its rows — the kind is
-   *  not the user's to change here */
+  /** R1: a stamped account owns its rows' meaning */
   locked?: boolean;
-  onKind: () => void;
+  adjustment: boolean;
   onCounter: () => void;
+  onToggleAdjustment: () => void;
 }>) {
   const { t } = useLang();
   return (
     <>
-      {/* kind row (user simplification): standard / transfer / adjustment
-          — the third option exists exactly here, on hand-entered rows */}
       <button
-        data-testid="txform-kind"
-        onClick={locked ? undefined : onKind}
+        data-testid="txform-counter"
+        onClick={locked ? undefined : onCounter}
         className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
       >
-        <Icon name={TX_KIND_VISUAL[kind].icon} size={20} color={TX_KIND_VISUAL[kind].color} />
-        <span className="flex-1">
-          {t(`tx.kind.${kind}`)}
-          {detailType && <span className="text-[12px] text-ink-4"> · {t(`tx.type.${detailType}`)}</span>}
-        </span>
-        <span className="text-xs text-ink-4">{t('tx.kindTitle')}</span>
+        <Icon name="bank-transfer" size={20} color="var(--m-ink-3)" />
+        <span className="flex-1">{counterName ?? t('tx.counterNone')}</span>
+        <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
         <Icon name={locked ? 'lock-outline' : 'chevron-right'} size={locked ? 14 : 18} color="var(--m-ink-4)" />
       </button>
-      {kind === 'transfer' && (
-        <button
-          data-testid="txform-counter"
-          onClick={onCounter}
-          className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-        >
-          <Icon name="bank-transfer" size={20} color="var(--m-ink-3)" />
-          <span className={`flex-1 ${counterName ? '' : 'text-warning'}`}>
-            {counterName ?? t('tx.counterAccountPick')}
-          </span>
-          <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-          <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-        </button>
-      )}
+      {/* C3: corrections stay a manual-row tool — a quiet toggle */}
+      <button
+        data-testid="txform-adjustment"
+        onClick={onToggleAdjustment}
+        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-2.5 text-left text-[13px] text-ink-2"
+      >
+        <Icon name="tune-variant" size={18} color="var(--m-ink-3)" />
+        <span className="flex-1">{t('txform.adjustment')}</span>
+        <Icon name={adjustment ? 'checkbox-marked' : 'checkbox-blank-outline'} size={18} color={adjustment ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'} />
+      </button>
     </>
   );
 }
@@ -167,7 +141,7 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
       date: todayIso(),
       accountId: null,
       catId: suggested?.catId ?? UNCATEGORIZED_ID,
-      kind: (prefill ? 'transfer' : 'standard') as TxKind,
+      adjustment: false,
       linkedAccountId: prefill?.linkedAccountId ?? null,
       recurringId: null,
     };
@@ -179,7 +153,7 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
     date: tx.date,
     accountId: tx.accountId,
     catId: tx.catId ?? UNCATEGORIZED_ID,
-    kind: kindOf(tx.txType),
+    adjustment: tx.adjustment === 1 || tx.txType === 'adjustment',
     linkedAccountId: tx.linkedAccountId ?? null,
     recurringId: tx.recurringId ?? null,
   };
@@ -257,6 +231,9 @@ function manualTxFields(args: {
     merchant: args.merchant.trim(),
     catId: familySub ?? args.catId,
     txType: args.txType,
+    // #133 D (C3): the manual correction marker survives the type's
+    // retirement as its own stored flag
+    adjustment: (args.txType === 'adjustment' ? 1 : 0) as 0 | 1,
     needsReview: 0 as const,
     // splits staged in the unified editor travel with the write
     ...(args.stagedSplits?.length ? { splits: args.stagedSplits } : {}),
@@ -365,12 +342,6 @@ function AccountPickSheet({
  *  the wrong account (user redesign 2026-07-31) */
 const soleAccountId = (writable: readonly AccountRow[]): string | null => (writable.length === 1 ? writable[0].id : null);
 
-/** R2 (typed-splits v2): a transfer strictly needs its tracked counter
- *  account — except on a STAMPED account, where the row already carries
- *  its meaning and the counterparty is optional (Q2's hand-typed leg) */
-const counterUndecided = (kind: TxKind, linkedAccount: AccountRow | undefined, ownStamp: TxType | undefined): boolean =>
-  kind === 'transfer' && !linkedAccount && !ownStamp;
-
 /** the space's start date IF the picked date falls before it (arc 5) —
  *  such a row would vanish behind the display gate the moment it saved,
  *  so a truthy return blocks save and renders the way out */
@@ -418,12 +389,11 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // counterparty live INSIDE the category sheet now)
   const [splitOpen, setSplitOpen] = useState(false);
   const [stagedSplits, setStagedSplits] = useState<TxSplit[] | null>(null);
-  // the simplified kind (user redesign): standard / transfer / adjustment;
-  // a transfer saves with a counterparty OR a bare family label (arc 2)
-  const [kind, setKind] = useState<TxKind>('standard');
+  // #133 D: no kind — a counterparty makes it a transfer, the toggle
+  // marks manual corrections (C3)
+  const [adjustment, setAdjustment] = useState(false);
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
   const [recurringId, setRecurringId] = useState<string | null>(null);
-  const [kindOpen, setKindOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -453,7 +423,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     setDate(initial.date);
     setAccountId(initial.accountId);
     setCatId(initial.catId);
-    setKind(initial.kind);
+    setAdjustment(initial.adjustment);
     setLinkedAccountId(initial.linkedAccountId);
     setRecurringId(initial.recurringId);
     setStagedSplits(tx?.splits ?? null);
@@ -461,7 +431,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     // an EDITED form asks before dropping it; an untouched one closes
     baselineRef.current = formFingerprint({
       amount: initial.amount, isExpense: initial.isExpense, merchant: initial.merchant, date: initial.date,
-      accountId: initial.accountId, catId: initial.catId, kind: initial.kind,
+      accountId: initial.accountId, catId: initial.catId, adjustment: initial.adjustment,
       linkedAccountId: initial.linkedAccountId, recurringId: initial.recurringId,
       splits: tx?.splits ?? null,
     });
@@ -477,15 +447,15 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // special category pulls its type onto a standard row; otherwise the
   // kind resolves it (a tracked counterparty = plain transfer, R2)
   const ownStamp = accountStamp(selectedAccount?.type);
-  const effectiveType: TxType =
-    ownStamp ?? specialCatType(catId) ?? typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : null);
-  // the face follows the EFFECTIVE type: a stamp or a special-category
-  // pull shows its family even while the picked kind state lags
-  const shownKind = kindOf(effectiveType);
-  const counterMissing = counterUndecided(kind, linkedAccount, ownStamp);
+  // #133: the derivation order (adjustment > stamp > diamond category >
+  // counterparty > sign) — the same rule the choke uses
+  const standardType: TxType = isExpense ? 'expense' : 'income';
+  const linkedType = linkedAccount ? typeForLinkedAccount(linkedAccount.type) : undefined;
+  const effectiveType: TxType = adjustment
+    ? 'adjustment'
+    : (ownStamp ?? specialCatType(catId) ?? linkedType ?? standardType);
   const startGateBlocking = blockingStartDate(space, date);
-  const kindDetailType = kindDetail(effectiveType);
-  const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking });
+  const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing: false, beforeStart: !!startGateBlocking });
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
   // the editor needs a SpaceTx shape; a NEW manual tx builds it from the
@@ -571,7 +541,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onOpenChange={onOpenChange}
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
         size="tall"
-        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, kind, linkedAccountId, recurringId, splits: stagedSplits }) !== baselineRef.current}
+        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, adjustment, linkedAccountId, recurringId, splits: stagedSplits }) !== baselineRef.current}
       >
         {/* no manual account yet: explain WHY the form can't work and
             hand over a one-tap path to fix it (user UX request) */}
@@ -678,13 +648,12 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             </p>
           )}
 
-          <KindRows
-            kind={shownKind}
-            detailType={kindDetailType}
+          <CounterAdjustRows
             counterName={linkedAccount?.name}
             locked={!!ownStamp}
-            onKind={() => setKindOpen(true)}
+            adjustment={adjustment}
             onCounter={() => setCounterOpen(true)}
+            onToggleAdjustment={() => setAdjustment((v) => !v)}
           />
 
           {/* manual counter account: offer to write the other side too —
@@ -727,22 +696,6 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         )}
       </Sheet>
 
-      {/* stacked: the kind picker — a transfer immediately continues
-          into the mandatory counterparty pick */}
-      <TxKindSheet
-        open={kindOpen}
-        onOpenChange={setKindOpen}
-        current={kind}
-        allowAdjustment
-        onPick={(next) => {
-          setKind(next);
-          if (next === 'transfer') {
-            setCounterOpen(true);
-          } else {
-            setLinkedAccountId(null);
-          }
-        }}
-      />
       <CounterpartySheet
         open={counterOpen}
         onOpenChange={setCounterOpen}

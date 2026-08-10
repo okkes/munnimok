@@ -57,9 +57,8 @@ describe('TxDetailScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '75,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Pot in' } });
-    fireEvent.click(screen.getByTestId('txform-kind'));
-    await screen.findByTestId('txkind-options');
-    fireEvent.click(screen.getByTestId('txkind-transfer'));
+    // #133 D: the counterparty row is the transfer door now
+    fireEvent.click(screen.getByTestId('txform-counter'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
     // the mirror checkbox retired (typed-splits v2): the pot's leg is
@@ -708,11 +707,10 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       expect(row?.notes ?? '').toBe(''); // the container's note reset (r7)
     }, { timeout: 5000 });
 
-    // the container steps back: no type row, no actions block, and
-    // Manage splits stands
-    await waitFor(() => expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull());
-    expect(screen.queryByTestId('tx-detail-recurring-row')).toBeNull();
+    // the container steps back: the manage door is the arrival signal
+    // (#133 D: kind rows are gone everywhere, they anchor nothing now)
     await screen.findByTestId('tx-detail-manage-splits');
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-recurring-row')).toBeNull());
     // r9: the parts section says what it lists, and the container-only
     // blocks (reimbursements, receipt, customize) leave with the notes
     expect(screen.getByText('Split transactions')).toBeTruthy();

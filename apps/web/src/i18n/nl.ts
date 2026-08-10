@@ -1141,6 +1141,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'txform.merchant': 'Naam of winkel',
   'txform.date': 'Datum',
   'txform.account': 'Rekening',
+  'txform.adjustment': 'Saldocorrectie — telt in geen enkel budget of trend mee',
   'txform.category': 'Categorie',
   'cats.addCustom': 'Nieuwe categorie',
   'cats.editCustom': 'Categorie bewerken',

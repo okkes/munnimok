@@ -1141,6 +1141,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'txform.merchant': 'İsim veya satıcı',
   'txform.date': 'Tarih',
   'txform.account': 'Hesap',
+  'txform.adjustment': 'Bakiye düzeltmesi — hiçbir bütçe veya trende sayılmaz',
   'txform.category': 'Kategori',
   'cats.addCustom': 'Yeni kategori',
   'cats.editCustom': 'Kategoriyi düzenle',

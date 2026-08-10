@@ -224,6 +224,9 @@ export interface TransactionRow extends SyncEnvelope {
   /** loans v2 (2026-08-01): pre-anchor row deliberately counted into
    *  the linked manual loan's balance (one-shot marker) */
   loanCounted?: 1;
+  /** #133 D (C3): the manual correction marker — adjustment stopped
+   *  being a type; manual rows only */
+  adjustment?: 0 | 1;
 }
 
 /**

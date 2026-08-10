@@ -1139,6 +1139,7 @@ export const en = {
   'txform.merchant': 'Name or merchant',
   'txform.date': 'Date',
   'txform.account': 'Account',
+  'txform.adjustment': 'Balance correction — counts toward no budget or trend',
   'txform.category': 'Category',
   'cats.addCustom': 'New category',
   'cats.editCustom': 'Edit category',
