@@ -1,5 +1,6 @@
 import { txMetaId } from '@/domain/feedIds';
 import { accountStamp } from '@/domain/txType';
+import { deriveTxType } from '@/domain/txDerive';
 import type { StorageBackend } from './backend';
 import type { Repo } from './repo';
 import type { AccountLinkRow, AccountRow, AccountType, TransactionRow, TxMetaRow, TxType } from './types';
@@ -25,17 +26,16 @@ const TRANSFORM_DEFAULTS = (raw: TransactionRow): Pick<TransactionRow, 'catId' |
   needsReview: 1,
 });
 
-function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: string, feedSpaceId: string, stamp?: TxType): SpaceTx {
+function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: string, feedSpaceId: string): SpaceTx {
   const defaults = TRANSFORM_DEFAULTS(raw);
   return {
     ...raw,
     spaceId,
     feedSpaceId,
     catId: meta?.catId ?? defaults.catId,
-    // R1 (typed-splits v2): a special account's rows WEAR ITS TYPE — the
-    // stamp is live truth at the join, so server-side predictions and
-    // old opinions can never mistype a savings/loan/brokerage row
-    txType: stamp ?? meta?.txType ?? defaults.txType,
+    // legacy carry only — deriveViewTypes overwrites this for every
+    // consumer (#133 removal: the stored type is never read again)
+    txType: meta?.txType ?? defaults.txType,
     // reserved (pending) charges are not review material: the bank will
     // replace them with their booked twin
     needsReview: raw.pending === 1 ? 0 : (meta?.needsReview ?? defaults.needsReview),
@@ -66,16 +66,22 @@ export const linkEffectiveType = (link: AccountLinkRow, account: AccountRow): Ac
  *  and every attached one (absent = regular, rows type freely) — plus
  *  the set of FUNDING accounts, whose transactions this space never
  *  shows at all */
-async function accountFacts(
-  store: StorageBackend,
-  spaceId: string,
-  links: AccountLinkRow[],
-): Promise<{ stamps: Map<string, TxType>; funding: Set<string> }> {
+interface SpaceAccountFacts {
+  stamps: Map<string, TxType>;
+  funding: Set<string>;
+  /** #133 removal: what each account MEANS as a counterparty — feeds
+   *  the per-row type derivation at the join */
+  counter: Map<string, { defaultFor?: TxType; funding: boolean }>;
+}
+
+async function accountFacts(store: StorageBackend, spaceId: string, links: AccountLinkRow[]): Promise<SpaceAccountFacts> {
   const stamps = new Map<string, TxType>();
   const funding = new Set<string>();
+  const counter = new Map<string, { defaultFor?: TxType; funding: boolean }>();
   const put = (account: AccountRow | undefined, type?: AccountType) => {
     if (account?.deleted !== 0) return;
     const effective = type ?? account.type;
+    counter.set(account.id, { defaultFor: account.defaultFor, funding: effective === 'funding' });
     if (effective === 'funding') {
       funding.add(account.id);
       return;
@@ -88,14 +94,37 @@ async function accountFacts(
     const account = await store.get('account', link.accountId);
     put(account, account ? linkEffectiveType(link, account) : undefined);
   }
-  return { stamps, funding };
+  return { stamps, funding, counter };
 }
 
-/** the space's own (legacy merged) rows with the R1 stamp applied */
-const stampOwn = (row: TransactionRow, stamps: Map<string, TxType>): TransactionRow => {
-  const stamp = stamps.get(row.accountId);
-  return stamp && row.txType !== stamp ? { ...row, txType: stamp } : row;
-};
+/** #133 removal: the VIEW's txType is DERIVED, row and parts alike —
+ *  the stored value is legacy-only and no reader depends on it again.
+ *  The one exception: the adjustment marker (its own field now, with
+ *  the historical type value as fallback). */
+function deriveViewTypes(row: SpaceTx, facts: SpaceAccountFacts): SpaceTx {
+  const counterOf = (id: string | undefined) => (id ? facts.counter.get(id) : undefined);
+  const sign = row.amountCents < 0 ? -1 : 1;
+  const realParts = (row.splits ?? []).filter((s) => s.catId !== 'reimbursed');
+  const derive = (catId: string | undefined, linkedId: string | undefined, amountCents: number, multiPart: boolean, adjustment: boolean) =>
+    deriveTxType({
+      catId,
+      linkedAccountId: linkedId,
+      amountCents,
+      stamp: facts.stamps.get(row.accountId),
+      counterDefaultFor: counterOf(linkedId)?.defaultFor,
+      counterFunding: counterOf(linkedId)?.funding === true,
+      multiPart,
+      adjustment,
+    });
+  const adjustment = row.adjustment === 1 || row.txType === 'adjustment';
+  const txType = derive(row.catId, row.linkedAccountId, row.amountCents, realParts.length > 1, adjustment);
+  const splits = row.splits?.map((s) =>
+    s.catId === 'reimbursed'
+      ? s
+      : { ...s, txType: derive(s.catId, s.linkedAccountId, sign * Math.abs(s.amountCents), false, false) },
+  );
+  return { ...row, txType, ...(splits ? { splits } : {}) };
+}
 
 /** every transaction the space sees: legacy merged rows + joined feed rows */
 export async function visibleTransactions(store: StorageBackend, spaceId: string): Promise<SpaceTx[]> {
@@ -110,7 +139,7 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
   // Rows from before the start (sync races, a start date moved newer)
   // stay in the database but out of every screen.
   const startGate = space?.historyStartDate;
-  const { stamps, funding } = await accountFacts(store, spaceId, links);
+  const { stamps, funding, counter } = await accountFacts(store, spaceId, links);
   // #152: funding accounts complete the counterparty picture and nothing
   // more — their transactions never enter the space's lists
   const legacy = own.filter(
@@ -118,7 +147,8 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
   );
   const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
 
-  const out: SpaceTx[] = legacy.map((t) => stampOwn(t, stamps));
+  const facts = { stamps, funding, counter };
+  const out: SpaceTx[] = legacy.map((t) => deriveViewTypes({ ...t }, facts));
   for (const link of links) {
     if (funding.has(link.accountId)) continue;
     const feedTxs = (await store.bySpace('transaction', link.feedSpaceId)).filter(
@@ -127,7 +157,7 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
         t.accountId === link.accountId &&
         (!link.historyFrom || t.date >= link.historyFrom),
     );
-    for (const raw of feedTxs) out.push(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId, stamps.get(raw.accountId)));
+    for (const raw of feedTxs) out.push(deriveViewTypes(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId), facts));
   }
   return out;
 }
@@ -148,17 +178,18 @@ export async function historyTransactions(store: StorageBackend, spaceId: string
     spaceAccountLinks(store, spaceId),
     store.bySpace('txMeta', spaceId),
   ]);
-  const { stamps, funding } = await accountFacts(store, spaceId, links);
+  const { stamps, funding, counter } = await accountFacts(store, spaceId, links);
   const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
+  const facts = { stamps, funding, counter };
   const out: SpaceTx[] = own
     .filter((t) => t.deleted === 0 && !funding.has(t.accountId))
-    .map((t) => stampOwn(t, stamps));
+    .map((t) => deriveViewTypes({ ...t }, facts));
   for (const link of links) {
     if (funding.has(link.accountId)) continue;
     const feedTxs = (await store.bySpace('transaction', link.feedSpaceId)).filter(
       (t) => t.deleted === 0 && t.accountId === link.accountId,
     );
-    for (const raw of feedTxs) out.push(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId, stamps.get(raw.accountId)));
+    for (const raw of feedTxs) out.push(deriveViewTypes(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId), facts));
   }
   return out;
 }
@@ -339,15 +370,6 @@ export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTr
     plan && !Object.hasOwn(fields, 'transferPeerId') ? { ...fields, ...(plan.sourceFields as TxTransformFields) } : fields;
   if (partPlan) write = { ...write, splits: partPlan.splits };
 
-  // #133 phase 1: a write that changes WHAT the row is (category,
-  // counterparty or parts) without naming a type gets the compat txType
-  // DERIVED here — no surface asks for types anymore, while old devices
-  // and historical readers keep seeing coherent values
-  if (!Object.hasOwn(write, 'txType') && ['catId', 'linkedAccountId', 'splits'].some((key) => Object.hasOwn(write, key))) {
-    const derived = await deriveWriteTxType(repo, tx, write);
-    if (derived) write = { ...write, txType: derived };
-  }
-
   if (!tx.feedSpaceId) {
     await repo.upsert('transaction', tx.spaceId, tx.id, write);
   } else {
@@ -364,43 +386,3 @@ export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTr
   for (const p of partPlan?.plans ?? []) await p.execute(repo).catch(() => undefined);
 }
 
-/** #133: the derived compat txType for a choke write — computed from the
- *  MERGED current row (overlay wins on feed rows) with the write's own
- *  changes applied on top. Module-level for S3776. */
-async function deriveWriteTxType(repo: Repo, tx: TransformTx, write: TxTransformFields): Promise<TxType | undefined> {
-  const { deriveTxType } = await import('@/domain/txDerive');
-  const raw = await repo.store.get('transaction', tx.id);
-  if (!raw) return undefined;
-  const feed = !!tx.feedSpaceId;
-  const meta = feed ? await repo.store.get('txMeta', txMetaId(tx.spaceId, tx.id)) : undefined;
-  const current = <K extends keyof TxTransformFields>(key: K): TxTransformFields[K] => {
-    if (Object.hasOwn(write, key)) return write[key];
-    const stored = feed
-      ? ((meta as TxTransformFields | undefined)?.[key] ?? (raw as TxTransformFields)[key])
-      : (raw as TxTransformFields)[key];
-    return stored as TxTransformFields[K];
-  };
-  const linkedAccountId = current('linkedAccountId');
-  const linked = linkedAccountId ? await repo.store.get('account', linkedAccountId) : undefined;
-  const account = await repo.store.get('account', raw.accountId);
-  const parts = (current('splits') ?? []).filter((s) => s.catId !== 'reimbursed');
-  // #152: both sides resolve through the SPACE's lens — the attachment
-  // owns the type of attached accounts
-  const spaceTypeOf = async (row: AccountRow | undefined): Promise<AccountType | undefined> => {
-    if (!row) return undefined;
-    if (row.spaceId === tx.spaceId) return row.type;
-    const links = await spaceAccountLinks(repo.store, tx.spaceId);
-    const link = links.find((l) => l.accountId === row.id);
-    return link ? linkEffectiveType(link, row) : row.type;
-  };
-  return deriveTxType({
-    catId: current('catId'),
-    linkedAccountId,
-    amountCents: raw.amountCents,
-    stamp: accountStamp(await spaceTypeOf(account)),
-    counterDefaultFor: linked?.defaultFor,
-    counterFunding: (await spaceTypeOf(linked)) === 'funding',
-    multiPart: parts.length > 1,
-    adjustment: raw.adjustment === 1 || raw.txType === 'adjustment',
-  });
-}

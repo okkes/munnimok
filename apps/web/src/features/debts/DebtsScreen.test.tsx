@@ -232,8 +232,8 @@ describe('Debts (demo identity)', () => {
     // will carry the debt story
     fireEvent.click(screen.getByTestId('debtdetail-add-payment'));
     await screen.findByTestId('txform-save');
-    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Transfer'));
-    expect(screen.getByTestId('txform-counter').textContent).toContain('Car loan');
+    // #133 D: no kind row — the pre-staged counterparty IS the story
+    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Car loan'));
     expect((screen.getByTestId('txform-merchant') as HTMLInputElement).value).toBe('Car loan');
     db.close();
   }, 15_000);

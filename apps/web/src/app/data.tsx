@@ -267,17 +267,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // explicit reimbursed slice, once per identity (marker-gated;
       // ALL identities — demo/offline data migrates too)
       const bootChain = (async () => {
-        const { migrateReimbursementSlices, migrateUnlinkedTransferKinds, migrateSignContradictions, migrateFamilySubs, migrateRetiredDebtSubs, migrateFundingRows, migrateLinkedFamilyRows } = await import('@/application/catalogMaintenance');
+        const { migrateReimbursementSlices, migrateRetiredDebtSubs, migrateFundingRows } = await import('@/application/catalogMaintenance');
         await migrateReimbursementSlices(store, repo);
         // kind simplification: counterparty-less transfer-family rows
         // become plain income/expense by sign (marker-gated, all
         // identities; arc-2 bare labels wear their locked sub and skip)
-        await migrateUnlinkedTransferKinds(store, repo);
         // heal rows the pre-2026-07-28 bulk-apply typed against their sign
-        await migrateSignContradictions(store, repo);
         // arc 2 back-fill: placeholder-categorized transfer-family rows
         // file the sign-picked locked sub ("Set aside" over a blank line)
-        await migrateFamilySubs(store, repo);
         // retired debt subs (lendMoney/creditCardPayment) refile by sign
         await migrateRetiredDebtSubs(store, repo);
         // typed-splits v2: the funding TYPE retires into its category…
@@ -285,7 +282,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // …and linked family rows invert — regular leg = transfer with
         // the locked cat, the manual counter's mirror minted (no delta:
         // the old lane already moved the balance at link time)
-        await migrateLinkedFamilyRows(store, repo);
         // links the old import attached without a history gate pick up
         // their space's start date (imported rows ignored it entirely)
         const { migrateUngatedLinks } = await import('@/application/historyStart');

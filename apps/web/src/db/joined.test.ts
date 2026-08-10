@@ -113,29 +113,34 @@ describe('feature B join layer', () => {
     expect(metas[0].notes).toBe('weekly shop');
   });
 
-  it('derives the compat txType when a write changes what the row is (#133 phase 1)', async () => {
+  it('#133 removal: the VIEW derives every type at the join — stored values are never read', async () => {
     await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('account', SPACE, 'defpot', { name: 'Default savings', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'saving' });
     await repo.upsert('transaction', SPACE, 'derive1', {
       accountId: 'chk', date: '2026-07-03', amountCents: -1200, currency: 'EUR',
-      merchant: 'Shop', catId: 'groceries', txType: 'expense', needsReview: 0,
+      // the STORED type lies on purpose (sign-legal) — the view ignores it
+      merchant: 'Shop', catId: 'savingDeposit', txType: 'expense', needsReview: 0,
     });
-    const row = () => db.transactions.get('derive1');
-    const tx = { id: 'derive1', spaceId: SPACE, feedSpaceId: undefined, txType: 'expense', needsReview: 0, amountCents: -1200 } as never;
+    const store = new DexieBackend(db);
+    const view = async () => (await visibleTransactions(store, SPACE)).find((t) => t.id === 'derive1');
 
-    // a bare ◆ movement pick pulls its family — no caller txType needed
-    await writeTxTransform(repo, tx, { catId: 'savingDeposit' });
-    expect((await row())?.txType).toBe('saving');
-    // an ordinary pick signs back
-    await writeTxTransform(repo, tx, { catId: 'coffee' });
-    expect((await row())?.txType).toBe('expense');
-    // a caller-provided type is respected untouched (transition callers)
-    await writeTxTransform(repo, tx, { catId: 'savingDeposit', txType: 'expense' });
-    expect((await row())?.txType).toBe('expense');
-    // linking the DEFAULT pot keeps the category's own type (#133 rule);
-    // note: this also exercises the mirror plan riding the same write
+    // a bare ◆ movement row derives its family, whatever was stored
+    expect((await view())?.txType).toBe('saving');
+    // linking the DEFAULT pot keeps the family (the counterparty rule)
+    const tx = { id: 'derive1', spaceId: SPACE, feedSpaceId: undefined, txType: 'expense', needsReview: 0, amountCents: -1200 } as never;
     await writeTxTransform(repo, tx, { linkedAccountId: 'defpot' });
-    expect((await row())?.txType).toBe('saving');
+    expect((await view())?.txType).toBe('saving');
+    // an ordinary category signs; parts derive per part with the row sign
+    await writeTxTransform(repo, tx, { linkedAccountId: null as never, catId: 'coffee' });
+    expect((await view())?.txType).toBe('expense');
+    await writeTxTransform(repo, tx, {
+      splits: [
+        { id: 'p1', catId: 'groceries', amountCents: 700 },
+        { id: 'p2', catId: 'savingDeposit', amountCents: 500 },
+      ],
+    });
+    const parts = (await view())?.splits ?? [];
+    expect(parts.map((s) => s.txType)).toEqual(['expense', 'saving']);
   });
 
   it('#152: the attachment owns the type — stamp overlay and the funding blackout', async () => {
@@ -165,8 +170,10 @@ describe('feature B join layer', () => {
     const store = new DexieBackend(db);
     const tx = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'raw1')!;
     await writeTxTransform(repo, tx, { linkedAccountId: 'pot1' });
-    const meta = await store.get('txMeta', txMetaId(SPACE, 'raw1'));
-    expect(meta?.txType).toBe('funding');
+    // #133 removal: nothing writes the type anymore — the VIEW derives
+    // funding from the counterparty
+    const linked = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'raw1');
+    expect(linked?.txType).toBe('funding');
     // no mirror leg — the pot shows no transactions, so none are written
     const potRows = (await store.bySpace('transaction', SPACE)).filter(
       (t) => t.accountId === 'pot1' && t.deleted === 0,

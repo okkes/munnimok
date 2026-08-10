@@ -144,13 +144,16 @@ describe('TransactionsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('tx-filter-clear'));
     await waitFor(() => expect(rows().length).toBe(all));
 
-    // kind filter (user simplification): the Transfer kind selects the
-    // whole family, then its detail chips narrow to Saving only
+    // kind filter: the Transfer kind selects the whole family, then the
+    // detail chips narrow to plain transfers only. #133 removal: the
+    // demo's pot-linked rows honestly derive TRANSFER now (R2 — the
+    // saving story lives on the pot's own ledger), so Transfer is the
+    // chip with rows behind it
     fireEvent.click(screen.getByTestId('tx-filter-open'));
     fireEvent.click(await screen.findByTestId('filter-kind-transfer'));
     const detail = await screen.findByTestId('filter-transfer-detail');
     expect(detail.textContent).toContain('Saving');
-    fireEvent.click(screen.getByTestId('filter-type-transfer'));
+    fireEvent.click(screen.getByTestId('filter-type-saving'));
     fireEvent.click(screen.getByTestId('filter-type-debtPayment'));
     fireEvent.click(screen.getByTestId('filter-type-investment'));
     fireEvent.click(screen.getByTestId('filter-done'));
