@@ -463,15 +463,19 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(() => expect(screen.queryByTestId('tx-detail-cat-restaurants')).toBeNull());
   });
 
-  it('#141: a landed split offers itself to same-merchant rows, resized per row', async () => {
+  it('#141: an exact-euros split reaches ONLY same-amount siblings (r2 user rule)', async () => {
     renderApp('/transactions/dm6');
     await screen.findByTestId('screen-tx-detail');
-    // a splitless sibling of the same merchant, exactly half the size
+    // two splitless siblings: one the exact amount, one half of it
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-splitbulk'), { trackOutbox: false });
     const dm6 = await db.transactions.get('dm6');
-    await repo.upsert('transaction', DEMO_SPACE_ID, 'sib-1', {
-      accountId: 'demo_main', date: '2020-04-01', amountCents: -2620, currency: 'EUR',
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'sib-exact', {
+      accountId: 'demo_main', date: '2020-04-01', amountCents: -5240, currency: 'EUR',
+      merchant: dm6?.merchant ?? '', catId: 'groceries', txType: 'expense', needsReview: 0,
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'sib-half', {
+      accountId: 'demo_main', date: '2020-04-02', amountCents: -2620, currency: 'EUR',
       merchant: dm6?.merchant ?? '', catId: 'groceries', txType: 'expense', needsReview: 0,
     });
 
@@ -485,21 +489,34 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('split-save'));
 
-    // the bulk bar arms with the splitless sibling; apply resizes the
-    // partition to the sibling's amount (30/22.40 of 52.40 → 15/11.20)
+    // exact-euros split: the bar arms with the SAME-amount sibling only;
+    // apply copies the partition; the half-size sibling stays untouched
     await screen.findByTestId('tx-detail-bulk-offer', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('tx-detail-bulk-apply'));
     await waitFor(async () => {
-      const sib = await db.transactions.get('sib-1');
-      expect(sib?.splits?.map((s) => s.amountCents)).toEqual([1500, 1120]);
+      const sib = await db.transactions.get('sib-exact');
+      expect(sib?.splits?.map((s) => s.amountCents)).toEqual([3000, 2240]);
       expect(sib?.splits?.[1]?.catId).toBe('restaurants');
       expect(sib?.needsReview).toBe(0);
     }, { timeout: 5000 });
+    const half = await db.transactions.get('sib-half');
+    expect(half?.splits).toBeUndefined();
     db.close();
   }, 15_000);
 
   it('percentage mode balances to 100 and stores materialized euro amounts', async () => {
     renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    // #141 r2: a PERCENTAGE split scales, so the bulk offer reaches
+    // siblings of a DIFFERENT amount too — seed one to prove it arms
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-pctbulk'), { trackOutbox: false });
+    const dm6row = await db.transactions.get('dm6');
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'sib-other', {
+      accountId: 'demo_main', date: '2020-04-03', amountCents: -1234, currency: 'EUR',
+      merchant: dm6row?.merchant ?? '', catId: 'groceries', txType: 'expense', needsReview: 0,
+    });
+    db.close();
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
     await screen.findByTestId('split-editor');
     fireEvent.click(screen.getByTestId('split-add-row'));
@@ -533,6 +550,9 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     const catBlock = await screen.findByTestId('tx-detail-categories');
     await waitFor(() => expect(catBlock.textContent).toContain('€31.44'));
     expect(catBlock.textContent).toContain('€20.96');
+    // #141 r2: the pct split's bulk offer armed for the €12.34 sibling
+    await screen.findByTestId('tx-detail-bulk-offer', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('tx-detail-bulk-dismiss'));
 
     // reopening restores percentage mode with the stored shares
     fireEvent.click(screen.getByTestId('tx-detail-category-row'));

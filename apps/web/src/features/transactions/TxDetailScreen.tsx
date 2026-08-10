@@ -572,10 +572,19 @@ const catBulkTargets = (
   tx: SpaceTx,
   offer: { catId: string } | null,
 ): SpaceTx[] => (offer ? similarTo(allTxs, tx, (item) => !isMultiPartRow(item) && item.catId !== offer.catId) : []);
-/** #141: the rows a fresh split can copy onto — same merchant, still
- *  splitless (a settled or already-split sibling never gets overwritten) */
-const splitBulkTargets = (allTxs: SpaceTx[] | undefined, tx: SpaceTx): SpaceTx[] =>
-  similarTo(allTxs, tx, (item) => (item.splits ?? []).length === 0);
+/** #141 (r2, user rule): the rows a fresh split can copy onto — same
+ *  merchant, still splitless (a settled or already-split sibling never
+ *  gets overwritten). An exact-euros split reaches ONLY siblings of the
+ *  exact same amount; a percentage split scales, so it reaches any. */
+const splitBulkTargets = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, source: readonly TxSplit[]): SpaceTx[] => {
+  const pctSplit = source.some((s) => s.pct != null);
+  const totalCents = source.reduce((sum, s) => sum + Math.abs(s.amountCents), 0);
+  return similarTo(
+    allTxs,
+    tx,
+    (item) => (item.splits ?? []).length === 0 && (pctSplit || Math.abs(item.amountCents) === totalCents),
+  );
+};
 /** #141: the same split lands on every picked sibling, resized to its
  *  amount (scaleSplitsTo drops per-transaction stories). Module-level
  *  for S3776; returns how many rows it touched. */
@@ -1464,12 +1473,12 @@ export function TxDetailScreen() {
   // #141: a stored split arms the sibling offer (both doors — the staged
   // Apply and the classic editor's own save — land here)
   const armSplitBulk = (stored: TxSplit[]) => {
-    const similar = splitBulkTargets(allTxs, tx);
+    const similar = splitBulkTargets(allTxs, tx, stored);
     setBulkOffer(null);
     setSplitBulk(similar.length > 0 ? stored : null);
     setSplitSelected(new Set(similar.map((item) => item.id)));
   };
-  const splitTargets = splitBulk ? splitBulkTargets(allTxs, tx) : [];
+  const splitTargets = splitBulk ? splitBulkTargets(allTxs, tx, splitBulk) : [];
   const applySplitBulk = async () => {
     if (!splitBulk) return;
     const picked = splitTargets.filter((target) => splitSelected.has(target.id));
