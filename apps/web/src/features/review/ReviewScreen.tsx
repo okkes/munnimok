@@ -9,9 +9,8 @@ import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
-import { draftReady, initDraft, withCategory, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { draftReady, initDraft, withCategory, withCats, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
-import { hasTypedParts } from '@/domain/txSlices';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
 import { Collapse } from '@/ui/Collapse';
 import { accountStamp, typeForLinkedAccount } from '@/domain/txType';
@@ -24,7 +23,7 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType, RecurringRow, TxSplit, TxType } from '@/db/types';
+import type { AccountType, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
@@ -42,7 +41,7 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
-import { PartCatsSheet, partCatsApplyPatch } from '@/features/transactions/PartCatsSheet';
+import { CatsSheet, partCatsApplyPatch } from '@/features/transactions/PartCatsSheet';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
 import { CounterpartySheet } from '@/features/transactions/TxKindSheet';
@@ -93,14 +92,22 @@ async function writeConfirmation(args: {
   transform: ReturnType<typeof useTxTransform>;
 }): Promise<void> {
   const { draft } = args;
-  // draft-cleared fields on a tx that HAD them need an explicit null
+  // draft-cleared fields on a tx that HAD them need an explicit null —
+  // and a landed SPLIT always writes cats null: the explicit field
+  // version-stamps the container so its parts never read as legacy
+  // slices on a fresh device (#211)
   const splitsField = replacing('splits', draft.splits?.length ? draft.splits : undefined, !!args.tx.splits?.length);
+  const draftCatEntries = draft.cats?.length ? draft.cats : undefined;
+  const catsField = draft.splits?.length
+    ? { cats: null as never }
+    : replacing('cats', draftCatEntries, !!args.tx.cats?.length);
   const linkField = replacing('linkedAccountId', draft.linkedAccountId, !!args.tx.linkedAccountId);
   await args.transform(args.tx, {
     catId: draft.catId,
     txType: draft.txType,
     needsReview: 0,
     ...splitsField,
+    ...catsField,
     ...linkField,
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
     ...(args.eventId ? { eventId: args.eventId } : {}),
@@ -110,20 +117,35 @@ async function writeConfirmation(args: {
   }
 }
 
+/** #211: the sibling's copy of a category spread — % entries rescale to
+ *  its amount, exact euros only travel when the sum still fits (the
+ *  similar-rule pre-filters exact twins; this guards drift) */
+function catsForSibling(item: SpaceTx, entries: TxSplitCat[]): TxSplitCat[] | undefined {
+  if (entries.every((e) => e.pct != null)) {
+    const resolved = resolveSplitsFor(item.amountCents, entries.map((e) => ({ catId: e.catId, amountCents: 0, pct: e.pct })));
+    return resolved.map((s) => ({ catId: s.catId, amountCents: Math.abs(s.amountCents), ...(s.pct !== undefined ? { pct: s.pct } : {}) }));
+  }
+  const sum = entries.reduce((total, e) => total + e.amountCents, 0);
+  return sum === Math.abs(item.amountCents) ? entries.map((e) => ({ catId: e.catId, amountCents: e.amountCents })) : undefined;
+}
+
 /** the WHOLE decision rides to every selected sibling (user rule):
  *  category, type, counterparty, recurring, event. Absolute splits fit
  *  exact twins by the similar-rule, pct splits rescale per item — and
  *  sign-bound standard types re-derive by the sibling's OWN sign (the
  *  similar filter already keeps signs together; this guards any path
- *  that doesn't). */
+ *  that doesn't). A partition travels whole: parts clear a sibling's
+ *  spread and vice versa (#211 — the two never mix on one row). */
 function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined) {
   const splits = draft.splits?.length ? resolveSplitsFor(item.amountCents, draft.splits) : undefined;
+  const catEntries = !splits && draft.cats?.length ? catsForSibling(item, draft.cats) : undefined;
   const siblingType = kindOf(draft.txType) === 'standard' ? standardTypeFor(item.amountCents) : draft.txType;
   return {
     catId: draft.catId,
     txType: siblingType,
     needsReview: 0 as const,
-    ...(splits ? { splits } : {}),
+    ...(splits ? { splits, cats: null as never } : {}),
+    ...(catEntries ? { cats: catEntries, ...(item.splits?.length ? { splits: null as never } : {}) } : {}),
     ...(draft.linkedAccountId ? { linkedAccountId: draft.linkedAccountId } : {}),
     ...(recurringId ? { recurringId } : {}),
     ...(eventId ? { eventId } : {}),
@@ -257,7 +279,8 @@ function sliceStory(
   cats: ReturnType<typeof useCategories>,
   t: ReturnType<typeof useLang>['t'],
 ): { label?: string; type?: TxType; spread?: string } {
-  const typed = (splits?.length ?? 0) > 1 && hasTypedParts({ splits: splits as TxSplit[] });
+  // #211: splits mean parts, full stop — every real split wears labels
+  const typed = (splits?.length ?? 0) > 1;
   return {
     label: typed ? (slice.label ?? t('split.partN', { n: index + 1 })) : undefined,
     type: slice.txType && slice.txType !== rowType ? slice.txType : undefined,
@@ -292,66 +315,75 @@ function CardCategoryRows({
   const cats = useCategories();
   const slices = draft?.splits ?? [];
   const parts = slices.filter((s) => s.catId !== REIMBURSED_ID);
-  const settled = slices.filter((s) => s.catId === REIMBURSED_ID);
+  // #211: the row's own category spread — several categories, ONE
+  // transaction; the settled `reimbursed` entry renders wherever it lives
+  const spreadEntries = (draft?.cats ?? []).filter((e) => e.catId !== REIMBURSED_ID);
+  const settled = [...slices, ...(draft?.cats ?? [])].filter((s) => s.catId === REIMBURSED_ID);
   const multi = parts.length > 1;
   const single = parts.length === 1 ? parts[0] : null;
   const singleCat = single ? cats.byId(single.catId) : fallbackCat;
   const singleColor = single ? (singleCat.color ?? cats.byId(singleCat.parentId ?? '').color) : fallbackColor;
   const spread = single ? sliceStory(single, 0, slices, draft?.txType, cats, t).spread : undefined;
+  const catRow = (catId: string, amountCents: number, key: string) => (
+    <button
+      key={key}
+      data-testid={`review-cat-${catId}`}
+      onClick={onOpenCategories}
+      className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] font-medium text-ink"
+    >
+      <Icon
+        name={cats.byId(catId).icon}
+        size={18}
+        color={cats.byId(catId).color ?? cats.byId(cats.byId(catId).parentId ?? '').color ?? 'var(--m-ink-3)'}
+      />
+      <span className="min-w-0 flex-1 truncate">{catName(cats.byId(catId), t)}</span>
+      <span className="m-num text-[12px] text-ink-2">{fmtCents(amountCents, currency, lang)}</span>
+      <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+    </button>
+  );
   return (
     <>
       {/* multi-part (#126 r3): the main card says nothing the parts
           already say — the deck under it carries every story */}
-      {multi ? null : (
-        <>
-          <button
-            data-testid={single ? `review-cat-${single.catId}` : 'review-category-chip'}
-            onClick={onOpenCategories}
-            className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] font-medium text-ink"
-          >
-            <Icon name={singleCat.icon} size={18} color={singleColor ?? 'var(--m-ink-3)'} />
-            <span className="min-w-0 flex-1 truncate">
-              {single || draft?.catId ? (
-                <>
-                  {catName(singleCat, t)}
-                  {/* the parent gives the sub its context (user request) */}
-                  {singleCat.parentId && (
-                    <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(singleCat.parentId), t)}</span>
-                  )}
-                  {spread && <span className="block truncate text-[11px] font-normal text-ink-4">{spread}</span>}
-                </>
-              ) : (
-                t('review.pickPrompt')
-              )}
-            </span>
-            {single && <span className="m-num text-[12px] text-ink-2">{fmtCents(single.amountCents, currency, lang)}</span>}
-            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-          </button>
-          {/* the split door, in the open (#126) */}
-          <button
-            data-testid="review-split-row"
-            onClick={onOpenSplit}
-            className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-          >
-            <Icon name="call-split" size={18} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
-            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-          </button>
-        </>
-      )}
-      {settled.map((slice) => (
+      {!multi && spreadEntries.length > 1 && spreadEntries.map((entry, i) => catRow(entry.catId, entry.amountCents, `${entry.catId}-${i}`))}
+      {!multi && spreadEntries.length <= 1 && (
         <button
-          key={slice.id ?? slice.catId}
-          data-testid={`review-cat-${slice.catId}`}
+          data-testid={single ? `review-cat-${single.catId}` : 'review-category-chip'}
           onClick={onOpenCategories}
           className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] font-medium text-ink"
         >
-          <Icon name={cats.byId(slice.catId).icon} size={18} color="var(--m-ink-3)" />
-          <span className="min-w-0 flex-1 truncate">{catName(cats.byId(slice.catId), t)}</span>
-          <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, currency, lang)}</span>
+          <Icon name={singleCat.icon} size={18} color={singleColor ?? 'var(--m-ink-3)'} />
+          <span className="min-w-0 flex-1 truncate">
+            {single || draft?.catId ? (
+              <>
+                {catName(singleCat, t)}
+                {/* the parent gives the sub its context (user request) */}
+                {singleCat.parentId && (
+                  <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(singleCat.parentId), t)}</span>
+                )}
+                {spread && <span className="block truncate text-[11px] font-normal text-ink-4">{spread}</span>}
+              </>
+            ) : (
+              t('review.pickPrompt')
+            )}
+          </span>
+          {single && <span className="m-num text-[12px] text-ink-2">{fmtCents(single.amountCents, currency, lang)}</span>}
           <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
         </button>
-      ))}
+      )}
+      {/* the split door, in the open (#126) */}
+      {!multi && (
+        <button
+          data-testid="review-split-row"
+          onClick={onOpenSplit}
+          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+        >
+          <Icon name="call-split" size={18} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
+          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        </button>
+      )}
+      {settled.map((slice) => catRow(slice.catId, slice.amountCents, `settled-${slice.catId}`))}
     </>
   );
 }
@@ -718,12 +750,12 @@ export function ReviewPartDeck({
       {/* the part's categories (r6/r7) — the whole-transaction editor,
           scoped to the part's amount; a single special pick pulls the
           part's type exactly as it always did */}
-      <PartCatsSheet
+      <CatsSheet
         open={spreadFor !== null}
         onOpenChange={(next) => {
           if (!next) setSpreadFor(null);
         }}
-        part={partAt(parts, spreadFor)}
+        subject={partAt(parts, spreadFor)}
         currency={tx.currency}
         direction={deckDirection}
         txType={rowType}
@@ -1085,13 +1117,10 @@ export function ReviewScreen() {
   const recurringOps = useRecurringOps();
 
   const [splitOpen, setSplitOpen] = useState(false);
-  // #126 v2: the one editor, two doors — the category chip opens the
-  // classic per-slice categories; every split door opens pure values
-  const [splitValuesMode, setSplitValuesMode] = useState(false);
-  const openSplitEditor = (values: boolean) => {
-    setSplitValuesMode(values);
-    setSplitOpen(true);
-  };
+  // #211: two different features, two different sheets — the category
+  // chip opens the SPLIT-CATEGORIES editor (the row's own spread); the
+  // split doors open the split-TRANSACTION values editor (parts)
+  const [catsOpen, setCatsOpen] = useState(false);
   // r7: a refused Confirm marks the parts that still need a category
   const [partsAttention, setPartsAttention] = useState(false);
   // r7 (user rule): splitting RESETS the card's own decisions — staged
@@ -1102,14 +1131,14 @@ export function ReviewScreen() {
       setSplitResetOpen(true);
       return;
     }
-    openSplitEditor(true);
+    setSplitOpen(true);
   };
   const confirmSplitReset = () => {
     setStagedDraft(null);
     setEventPick(null);
     setManualRecId(null);
     setSplitResetOpen(false);
-    openSplitEditor(true);
+    setSplitOpen(true);
   };
   // kind + counterparty rows live ON the card now (user simplification);
   // a user-picked transfer REQUIRES a counterparty, so dismissing the
@@ -1255,13 +1284,17 @@ export function ReviewScreen() {
   );
 
   // bulk rule: plain confirm reaches every same-merchant item; absolute
-  // splits only fit exact twins (same amount), percentage splits scale
-  // to any amount so the whole merchant group stays eligible
+  // partitions (parts or a category spread, #211) only fit exact twins
+  // (same amount), percentage ones scale to any amount so the whole
+  // merchant group stays eligible
   const draftSplits = draft?.splits;
+  const draftCats = draft?.cats;
   const similar = useMemo(() => {
     if (!tx || !queue) return [] as SpaceTx[];
     const key = merchantKey(tx.merchant);
-    const mustMatchAmount = !!draftSplits?.length && !splitsArePct(draftSplits);
+    const mustMatchAmount =
+      (!!draftSplits?.length && !splitsArePct(draftSplits)) ||
+      (!!draftCats?.length && !draftCats.every((e) => e.pct != null));
     // skipped cards left the deck on purpose — bulk must not drag them
     // back in (user request: the count follows the visible queue)
     return queue.filter(
@@ -1275,7 +1308,7 @@ export function ReviewScreen() {
         merchantKey(item.merchant) === key &&
         (!mustMatchAmount || item.amountCents === tx.amountCents),
     );
-  }, [tx, queue, draftSplits, skipped]);
+  }, [tx, queue, draftSplits, draftCats, skipped]);
 
   // fresh card: reset the staged draft and offer the link. This runs
   // DURING render (previous-id ref pattern), not in an effect — a late
@@ -1319,7 +1352,8 @@ export function ReviewScreen() {
     // parts own their categories (and their own recurring links)
     if (multiPartSplits(draft)) return;
     if (draft.catId === chosenRec.catId || draft.catId === EXPECTED_REIMBURSE_ID) return;
-    setStagedDraft(withCategory(withSplits(draft, undefined), chosenRec.catId, cats));
+    // the recurring owns ONE category — a staged spread steps aside too
+    setStagedDraft(withCategory(withSplits({ ...draft, cats: undefined }, undefined), chosenRec.catId, cats));
     // once per selection — the pick itself is the trigger, not the draft
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chosenRec?.id, chosenRec?.catId]);
@@ -1328,6 +1362,52 @@ export function ReviewScreen() {
   const showReason = !!tx && !stagedDraft && prediction?.catId === draft?.catId;
   const reasonLine =
     showReason && prediction ? t(REASON_KEYS[prediction.source], { n: prediction.evidence ?? 1 }) : null;
+
+  // #211: the cats editor spreads the NET money — a settled `reimbursed`
+  // entry is bookkeeping, held aside and re-attached on stage
+  const spreadRowCount = draft?.cats?.filter((e) => e.catId !== REIMBURSED_ID).length ?? 0;
+  const settledCatEntry = draft?.cats?.find((e) => e.catId === REIMBURSED_ID);
+  const settledCatsCents = settledCatEntry?.amountCents ?? 0;
+  const draftNetCats = useMemo(() => {
+    const net = draft?.cats?.filter((e) => e.catId !== REIMBURSED_ID);
+    return net?.length ? net : undefined;
+  }, [draft?.cats]);
+
+  /** ONE category decides the card (the chip's single pick or a values
+   *  collapse): stages it with the ◆ machinery — Transfer stages nothing
+   *  until its mandatory counterparty answers; families ask right away */
+  const stageSingleCategory = (catId: string) => {
+    if (!draft) return;
+    const family = specialCatType(catId);
+    // #133 E: the ◆ Transfer pick stages NOTHING yet — the mandatory
+    // counterparty answers it (dismiss = rollback, an unlinked transfer
+    // is unrepresentable)
+    if (family === 'transfer' && !ownStamp) {
+      counterFallback.current = draft;
+      setCounterFamily(null);
+      setCounterOpen(true);
+      return;
+    }
+    // a settled row keeps its gross partition — rewritten to the pick
+    const settledCats = settledCatEntry
+      ? [
+          ...(Math.abs(tx?.amountCents ?? 0) - settledCatsCents > 0
+            ? [{ catId, amountCents: Math.abs(tx?.amountCents ?? 0) - settledCatsCents }]
+            : []),
+          settledCatEntry,
+        ]
+      : undefined;
+    const next = { ...withCategory(withSplits(draft, undefined), catId, cats), cats: settledCats };
+    setStagedDraft(next);
+    // #133 C: a ◆ family pick unfolds the counterparty question right
+    // away — Default, a real account, or dismiss (bare is legal; the
+    // boot migration folds it onto the default later)
+    if (family && family !== 'transfer' && family !== 'funding' && !next.linkedAccountId && !ownStamp) {
+      setCounterFamily(family as DefaultFamily);
+      counterFallback.current = null;
+      setCounterOpen(true);
+    }
+  };
 
   const confirm = async () => {
     if (!tx || !draft) return;
@@ -1485,7 +1565,7 @@ export function ReviewScreen() {
                   fallbackCat={cat}
                   fallbackColor={parentColor}
                   currency={tx.currency}
-                  onOpenCategories={() => openSplitEditor(false)}
+                  onOpenCategories={() => setCatsOpen(true)}
                   onOpenSplit={requestSplit}
                 />
 
@@ -1558,7 +1638,7 @@ export function ReviewScreen() {
                 lockedKind={!!ownStamp}
                 recurrings={activeRecs}
                 attention={partsAttention}
-                onOpenValues={() => openSplitEditor(true)}
+                onOpenValues={() => setSplitOpen(true)}
                 onSplits={(next) => setStagedDraft(withSplits(draft, next))}
               />
             )}
@@ -1590,7 +1670,9 @@ export function ReviewScreen() {
               >
                 <span className="truncate">
                   {/* multi-category: the list above already says it all */}
-                  {draft?.catId && !draft.splits?.length ? t('review.confirmAs', { name: catName(cat, t) }) : t('review.confirm')}
+                  {draft?.catId && !draft.splits?.length && spreadRowCount <= 1
+                    ? t('review.confirmAs', { name: catName(cat, t) })
+                    : t('review.confirm')}
                 </span>
               </Button>
             </div>
@@ -1598,47 +1680,55 @@ export function ReviewScreen() {
         )}
       </div>
 
-      {/* the quick picker is gone (user redesign): every category edit
-          goes through the unified split editor's per-row pickers */}
+      {/* #211: the split-TRANSACTION editor — pure money partition; the
+          parts complete their stories on the deck below the card */}
       {tx && draft && (
         <SplitEditorSheet
           open={splitOpen}
           onOpenChange={setSplitOpen}
           tx={tx}
           // empty value: the editor itself seeds "current category owns the
-          // full amount + one fresh row" — exactly the add-category start
+          // full amount + one fresh row" — exactly the add-part start
           value={draft.splits}
-          txType={draft.txType}
           seedSingle
           seedCatId={draft.catId}
           onApply={(splits) => {
             setStagedDraft(withSplits(draft, splits ?? undefined));
           }}
-          onApplySingle={(catId) => {
-            const family = specialCatType(catId);
-            // #133 E: the ◆ Transfer pick stages NOTHING yet — the
-            // mandatory counterparty answers it (dismiss = rollback,
-            // an unlinked transfer is unrepresentable)
-            if (family === 'transfer' && !ownStamp) {
-              counterFallback.current = draft;
-              setCounterFamily(null);
-              setCounterOpen(true);
+          onApplySingle={stageSingleCategory}
+        />
+      )}
+      {/* #211: the split-CATEGORIES editor — the chip's door. One entry
+          is a plain category pick (with its ◆ asks); several stage the
+          row's own spread. A settled `reimbursed` entry is bookkeeping:
+          held aside here, re-attached on stage. */}
+      {tx && draft && (
+        <CatsSheet
+          open={catsOpen}
+          onOpenChange={setCatsOpen}
+          subject={{
+            id: tx.id,
+            label: txTitle(tx),
+            catId: draft.catId,
+            cats: draftNetCats,
+            amountCents: Math.abs(tx.amountCents) - settledCatsCents,
+          }}
+          currency={tx.currency}
+          direction={tx.amountCents < 0 ? 'debit' : 'credit'}
+          txType={draft.txType}
+          allowedCatIds={recurringAllowedCats}
+          title={t('split.catsTitle')}
+          reason={reasonLine}
+          includePct
+          onApply={(entries) => {
+            if (entries.length === 1) {
+              stageSingleCategory(entries[0].catId);
               return;
             }
-            const next = withCategory(withSplits(draft, undefined), catId, cats);
-            setStagedDraft(next);
-            // #133 C: a ◆ family pick unfolds the counterparty question
-            // right away — Default, a real account, or dismiss (bare is
-            // legal; the boot migration folds it onto the default later)
-            if (family && family !== 'transfer' && family !== 'funding' && !next.linkedAccountId && !ownStamp) {
-              setCounterFamily(family as DefaultFamily);
-              counterFallback.current = null;
-              setCounterOpen(true);
-            }
+            const full = settledCatEntry ? [...entries, settledCatEntry] : entries;
+            const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
+            setStagedDraft({ ...withCats(draft, full), catId: primary.catId });
           }}
-          reason={reasonLine}
-          allowedCatIds={recurringAllowedCats}
-          valuesOnly={splitValuesMode}
         />
       )}
       {/* r7 (user rule): splitting resets the card's own decisions — a

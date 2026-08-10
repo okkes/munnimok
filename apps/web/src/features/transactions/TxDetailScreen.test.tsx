@@ -219,9 +219,9 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     // #133 D: Set aside (◆) asks its counterparty — the savings pot
     // answers it; R2 inversion files THIS leg as the locked transfer
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     await waitFor(() => {
@@ -245,10 +245,10 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     // the bare-type exit retired: pick the marked Repaid category in the
     // unified editor — the debt type follows, no counterparty demanded
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('speccat-loanRepayment'); // the diamond mark
     fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
     // #133 D: the ◆ pick opens the counterparty ask (Default pinned);
     // walking away keeps the bare story — no account on the other side
@@ -279,9 +279,9 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
 
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
     // #133 B: the loan question IS the counterparty question now —
     // Default pinned on top, the seeded loan as a normal candidate
@@ -306,6 +306,10 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await screen.findByTestId('screen-tx-detail');
     // seed AFTER boot — the demo rows exist only once the app seeded
     const seed = new MunniDB('munni_demo');
+    // …and after the boot chain SETTLED: the bare-row fold migration
+    // scans rows async — a mid-flight bare ◆ write would get folded
+    // onto the default pot, clobbering the pick this test makes
+    await waitFor(async () => expect(await seed.meta.get('txCategoryModel_v1')).toBeTruthy(), { timeout: 8000 });
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('fork-seed'), { trackOutbox: false });
     await seedRepo.upsert('account', DEMO_SPACE_ID, 'ms1', {
       name: 'Cash pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 10_000,
@@ -320,9 +324,9 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     seed.close();
 
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-ms1'));
 
@@ -363,9 +367,9 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     seed.close();
 
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     // generous waits: this file's writes + the boot chain contend under
     // full-suite load (the review-suite lesson)
     await screen.findByTestId('counter-default', {}, { timeout: 8000 });
@@ -387,9 +391,9 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
   it('#133 B: the Default row mints the family pot lazily and links onto it', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
     // no loan exists — Default is the one-tap answer
     fireEvent.click(await screen.findByTestId('counter-default'));
@@ -412,6 +416,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull();
     expect(screen.queryByTestId('txkind-options')).toBeNull();
   }, 15_000);
+
 });
 
 describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
@@ -444,17 +449,19 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€32.40');
     expect(screen.getByTestId('tx-detail-original-amount').textContent).toContain('-€52.40'); // details block owns the original now
 
-    // redesign: slices carry the GROSS truth and the settled value sits
-    // in an explicit `reimbursed` slice on BOTH sides
+    // redesign (+#211): the GROSS partition lives in the whole row's own
+    // `cats` — the settled value an explicit `reimbursed` entry on BOTH
+    // sides; `splits` stays reserved for real containers
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const expense = await db.transactions.get('dm6');
       const creditId = expense?.reimbursements?.[0]?.txId;
       const credit = creditId ? await db.transactions.get(creditId) : undefined;
-      expect(expense?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe(5240);
-      expect(expense?.splits?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(2000);
-      expect(credit?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe(credit?.amountCents ?? 0);
-      expect(credit?.splits?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(2000);
+      expect(expense?.cats?.reduce((s, x) => s + x.amountCents, 0)).toBe(5240);
+      expect(expense?.cats?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(2000);
+      expect(expense?.splits ?? undefined).toBeUndefined();
+      expect(credit?.cats?.reduce((s, x) => s + x.amountCents, 0)).toBe(credit?.amountCents ?? 0);
+      expect(credit?.cats?.find((s) => s.catId === 'reimbursed')?.amountCents).toBe(2000);
     });
 
     // unlink restores the original state
@@ -469,8 +476,8 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     // the freed value lands on Uncategorized, not the original category (user rule)
     await waitFor(async () => {
       const expense = await db.transactions.get('dm6');
-      expect(expense?.splits?.find((s) => s.catId === 'uncategorized')?.amountCents).toBe(2000);
-      expect(expense?.splits?.reduce((s, x) => s + x.amountCents, 0)).toBe(5240);
+      expect(expense?.cats?.find((s) => s.catId === 'uncategorized')?.amountCents).toBe(2000);
+      expect(expense?.cats?.reduce((s, x) => s + x.amountCents, 0)).toBe(5240);
     });
     db.close();
   });
@@ -515,6 +522,8 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     await repo.upsert('transaction', DEMO_SPACE_ID, 'rsplit', {
       accountId: 'demo_main', date: '2026-07-01', amountCents: -6000, currency: 'EUR',
       merchant: 'Split Lunch', catId: 'restaurants', txType: 'expense', needsReview: 0,
+      // #211: the explicit cats null marks these as PARTS for the boot fold
+      cats: null as never,
       splits: [
         { id: 'rs1', catId: 'restaurants', amountCents: 4500 },
         { id: 'rs2', catId: 'groceries', amountCents: 1500 },
@@ -550,39 +559,61 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('splits across two categories with auto-balance, then clears the split', async () => {
+  it('#211: split categories spread ONE transaction — no container, features stay, collapse restores', async () => {
     renderApp('/transactions/dm6');
-    // ONE unified flow (user request): the category row opens the split
-    // editor seeded with a single row; a second row is added explicitly
+    // the category row opens the split-CATEGORIES editor seeded with a
+    // single entry; a second is added explicitly
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
-    await screen.findByTestId('split-editor');
-    fireEvent.click(screen.getByTestId('split-add-row'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-add'));
 
-    // shrink the first row: a remainder appears and blocks saving
-    fireEvent.change(screen.getByTestId('split-amount-0'), { target: { value: '30,00' } });
-    const remainder = await screen.findByTestId('split-remainder');
+    // shrink the first entry: a remainder appears and blocks saving
+    fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '30,00' } });
+    const remainder = await screen.findByTestId('part-cat-remainder');
     expect(remainder.textContent).toContain('€22.40');
-    expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(true);
 
-    // give the second row a category, auto-balance the remainder, save
-    fireEvent.click(screen.getByTestId('split-cat-1'));
+    // give the second entry a category, auto-balance the remainder, save
+    fireEvent.click(screen.getByTestId('part-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
-    fireEvent.click(screen.getByTestId('split-remainder'));
-    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('part-cat-remainder'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
-    // the categories block shows one row per slice
+    // the categories block shows one row per entry — but the row is
+    // still ONE transaction: no container, the pencil and the whole-row
+    // features stay, the split door stays a DOOR (not Manage splits)
     const catBlock = await screen.findByTestId('tx-detail-categories');
     await waitFor(() => expect(catBlock.textContent).toContain('€30.00'));
     expect(catBlock.textContent).toContain('€22.40');
     await screen.findByTestId('tx-detail-cat-restaurants');
+    expect(screen.getByTestId('tx-detail-cats-edit')).toBeTruthy();
+    expect(screen.getByTestId('tx-detail-recurring-row')).toBeTruthy();
+    expect(screen.queryByTestId('tx-detail-manage-splits')).toBeNull();
 
-    // clear the split again — #200: on a container the rows navigate,
-    // so the editor door is Manage splits
-    fireEvent.click(screen.getByTestId('tx-detail-manage-splits'));
-    fireEvent.click(await screen.findByTestId('split-clear'));
+    // stored as the row's own cats — never a split container
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = await db.transactions.get('dm6');
+      expect(row?.cats).toEqual([
+        { catId: 'groceries', amountCents: 3000 },
+        { catId: 'restaurants', amountCents: 2240 },
+      ]);
+      expect(row?.splits ?? undefined).toBeUndefined();
+      expect(row?.catId).toBe('groceries');
+    }, { timeout: 5000 });
+
+    // collapsing back to one entry clears the spread
+    fireEvent.click(screen.getByTestId('tx-detail-cats-edit'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(await screen.findByTestId('part-cat-remove-1'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.queryByTestId('tx-detail-cat-restaurants')).toBeNull());
-  });
+    await waitFor(async () => {
+      expect((await db.transactions.get('dm6'))?.cats ?? undefined).toBeUndefined();
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
 
   it('#141: an exact-euros split reaches ONLY same-amount siblings (r2 user rule)', async () => {
     renderApp('/transactions/dm6');
@@ -601,27 +632,29 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     });
 
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
-    await screen.findByTestId('split-editor');
-    fireEvent.click(screen.getByTestId('split-add-row'));
-    fireEvent.change(screen.getByTestId('split-amount-0'), { target: { value: '30,00' } });
-    fireEvent.click(screen.getByTestId('split-cat-1'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-add'));
+    fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '30,00' } });
+    fireEvent.click(screen.getByTestId('part-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
-    fireEvent.click(screen.getByTestId('split-remainder'));
-    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('part-cat-remainder'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
-    // exact-euros split: the bar arms with the SAME-amount sibling only;
-    // apply copies the partition; the half-size sibling stays untouched
+    // exact-euros spread: the bar arms with the SAME-amount sibling only;
+    // apply copies the partition (#211: the sibling's own cats, never a
+    // container); the half-size sibling stays untouched
     await screen.findByTestId('tx-detail-bulk-offer', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('tx-detail-bulk-apply'));
     await waitFor(async () => {
       const sib = await db.transactions.get('sib-exact');
-      expect(sib?.splits?.map((s) => s.amountCents)).toEqual([3000, 2240]);
-      expect(sib?.splits?.[1]?.catId).toBe('restaurants');
+      expect(sib?.cats?.map((s) => s.amountCents)).toEqual([3000, 2240]);
+      expect(sib?.cats?.[1]?.catId).toBe('restaurants');
+      expect(sib?.splits ?? undefined).toBeUndefined();
       expect(sib?.needsReview).toBe(0);
     }, { timeout: 5000 });
     const half = await db.transactions.get('sib-half');
-    expect(half?.splits).toBeUndefined();
+    expect(half?.cats ?? undefined).toBeUndefined();
     db.close();
   }, 15_000);
 
@@ -639,47 +672,46 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     });
     db.close();
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
-    await screen.findByTestId('split-editor');
-    fireEvent.click(screen.getByTestId('split-add-row'));
-    // the gate (user request): the fresh row must be finished — category
-    // AND a value — before another may be added
-    expect((screen.getByTestId('split-add-row') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByTestId('split-cat-1'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-add'));
+    // the gate (user request): the fresh entry must be finished —
+    // category AND a value — before another may be added
+    expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('part-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
-    fireEvent.change(screen.getByTestId('split-amount-1'), { target: { value: '0,01' } });
+    fireEvent.change(screen.getByTestId('part-cat-amount-1'), { target: { value: '0,01' } });
 
-    // a third row can be added and removed again
-    fireEvent.click(screen.getByTestId('split-add-row'));
-    fireEvent.click(await screen.findByTestId('split-remove-2'));
+    // a third entry can be added and removed again
+    fireEvent.click(screen.getByTestId('part-cat-add'));
+    fireEvent.click(await screen.findByTestId('part-cat-remove-2'));
 
     // switch to % — the euro shape carries over (100 / 0)
-    fireEvent.click(screen.getByTestId('split-mode-pct'));
-    expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('100');
+    fireEvent.click(screen.getByTestId('part-cat-mode-pct'));
+    expect((screen.getByTestId('part-cat-amount-0') as HTMLInputElement).value).toBe('100');
 
-    // 60% leaves 40% open; auto-balance hands it to the last row
-    fireEvent.change(screen.getByTestId('split-amount-0'), { target: { value: '60' } });
-    const remainder = await screen.findByTestId('split-remainder');
+    // 60% leaves 40% open; auto-balance hands it to the open entry
+    fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '60' } });
+    const remainder = await screen.findByTestId('part-cat-remainder');
     expect(remainder.textContent).toContain('40%');
-    expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByTestId('split-cat-1'));
-    fireEvent.click(await screen.findByTestId('catpicker-restaurants'));
-    fireEvent.click(screen.getByTestId('split-remainder'));
-    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(screen.getByTestId('split-save'));
+    expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('part-cat-remainder'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
     // the detail shows euros: 60/40 of €52.40, exactly partitioned
     const catBlock = await screen.findByTestId('tx-detail-categories');
     await waitFor(() => expect(catBlock.textContent).toContain('€31.44'));
     expect(catBlock.textContent).toContain('€20.96');
-    // #141 r2: the pct split's bulk offer armed for the €12.34 sibling
+    // #141 r2: the pct spread's bulk offer armed for the €12.34 sibling
     await screen.findByTestId('tx-detail-bulk-offer', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('tx-detail-bulk-dismiss'));
 
-    // reopening (via Manage splits — #200) restores percentage mode
-    fireEvent.click(screen.getByTestId('tx-detail-manage-splits'));
-    await screen.findByTestId('split-editor');
-    await waitFor(() => expect((screen.getByTestId('split-amount-0') as HTMLInputElement).value).toBe('60'));
-    expect((screen.getByTestId('split-amount-1') as HTMLInputElement).value).toBe('40');
+    // reopening (the pencil — the row is still a whole transaction)
+    // restores percentage mode from the stored pct shape
+    fireEvent.click(screen.getByTestId('tx-detail-cats-edit'));
+    await screen.findByTestId('part-cats-editor');
+    await waitFor(() => expect((screen.getByTestId('part-cat-amount-0') as HTMLInputElement).value).toBe('60'));
+    expect((screen.getByTestId('part-cat-amount-1') as HTMLInputElement).value).toBe('40');
   });
 
   it('the detail split flow is drafted until complete, then lands in ONE write (#126 r4/r7)', async () => {
@@ -692,10 +724,12 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     const db = new MunniDB('munni_demo');
     await waitFor(async () => expect((await db.transactions.get('dm6'))?.notes).toBe('pre-split note'), { timeout: 5000 });
 
-    // the classic editor keeps the plain category look — no labels
+    // #211: the category row opens the CATS editor — pure categories,
+    // no part labels anywhere near it
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
-    await screen.findByTestId('split-editor');
+    await screen.findByTestId('part-cats-editor');
     expect(screen.queryByTestId('split-label-0')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' }); // back to the detail
 
     // the split door WARNS — a filled row resets when it splits (r7)
     fireEvent.click(await screen.findByTestId('tx-detail-split-row'));
@@ -729,11 +763,13 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('deck-part-1'));
     fireEvent.change(await screen.findByTestId('deck-label-1'), { target: { value: 'Device plan' } });
     fireEvent.click(await screen.findByTestId('deck-cat-1'));
-    await screen.findByTestId('part-cats-editor');
-    fireEvent.click(screen.getByTestId('part-cat-0'));
-    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
-    fireEvent.click(screen.getByTestId('part-cat-save'));
+    // the row-level cats editor stays mounted under IS_TEST — the deck's
+    // copy is the LAST one
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').length).toBeGreaterThan(0));
+    fireEvent.click(screen.getAllByTestId('part-cat-0').at(-1)!);
+    fireEvent.click((await screen.findAllByTestId('catpicker-savingDeposit')).at(-1)!);
+    await waitFor(() => expect((screen.getAllByTestId('part-cat-save').at(-1) as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
     await waitFor(() => expect(screen.queryByTestId('deck-attn-1')).toBeNull());
     fireEvent.click(screen.getByTestId('split-apply'));
     await waitFor(async () => {
@@ -960,10 +996,10 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
   it('register-style amount entry: digits fill cents from the right (user request)', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
-    await screen.findByTestId('split-editor');
-    fireEvent.click(screen.getByTestId('split-add-row'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-add'));
 
-    const amount = screen.getByTestId('split-amount-1') as HTMLInputElement;
+    const amount = screen.getByTestId('part-cat-amount-1') as HTMLInputElement;
     fireEvent.focus(amount); // arms the register; the empty lands a frame later (#134)
     await waitFor(() => expect(amount.value).toBe(''));
     fireEvent.change(amount, { target: { value: '5' } });
@@ -1000,9 +1036,9 @@ describe('bulk apply from the detail (user request)', () => {
 
     renderApp('/transactions/blk-a');
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-hobby'));
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
     // the offer names the ONE other BULKSHOP row (reviewed or not)
     const offer = await screen.findByTestId('tx-detail-bulk-offer');
@@ -1032,9 +1068,9 @@ describe('bulk apply from the detail (user request)', () => {
 
     renderApp('/transactions/sel-a');
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-hobby'));
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
     // open the selection sheet from the bar, uncheck one target
     fireEvent.click(await screen.findByTestId('tx-detail-bulk-expand'));

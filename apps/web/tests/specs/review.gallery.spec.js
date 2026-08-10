@@ -29,14 +29,14 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="review-confirm-btn"]'); // 1/3 confirmed
     await expect(page.locator('[data-testid="review-card"]')).toContainText('H&M Nederland');
     await shot(page, k('14-review-flow') + '--s1');
-    // recategorize H&M — the row opens the unified editor (user redesign);
-    // the pick is STAGED, confirm writes it
+    // recategorize H&M — the chip opens the split-categories editor
+    // (#211); the pick is STAGED, confirm writes it
     await page.click('[data-testid="review-category-chip"]');
-    await page.click('[data-testid="split-cat-0"]');
+    await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'gift');
     await page.click('[data-testid="catpicker-gift"]');
-    await page.click('[data-testid="split-save"]');
+    await page.click('[data-testid="part-cat-save"]');
     await expect(page.locator('[data-testid="review-category-chip"]')).toContainText('Gift');
     await shot(page, k('14-review-flow') + '--s2');
     await page.click('[data-testid="review-confirm-btn"]'); // Gift confirmed

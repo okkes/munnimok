@@ -50,39 +50,69 @@ export function partCatsApplyPatch(slice: TxSplit | undefined, entries: TxSplitC
   return slice?.txType && !slice.linkedAccountId ? { ...patch, txType: undefined } : patch;
 }
 
-const seedEntries = (part: TxSplit): CatEntry[] =>
-  (part.cats?.length ? part.cats : [{ catId: part.catId, amountCents: Math.abs(part.amountCents) }]).map((entry) => ({
+/** whose money the sheet spreads: a container PART or — #211 — the
+ *  whole transaction itself; both carry the same category anatomy */
+export interface CatsSubject {
+  /** stable identity for the reseed effect (part id / tx id) */
+  id?: string;
+  label?: string;
+  catId?: string;
+  cats?: TxSplitCat[];
+  /** the money being partitioned — for a row: NET of any settled value */
+  amountCents: number;
+}
+
+const seedEntries = (subject: CatsSubject, pctMode: boolean): CatEntry[] =>
+  (subject.cats?.length
+    ? subject.cats
+    : [{ catId: subject.catId ?? UNCATEGORIZED_ID, amountCents: Math.abs(subject.amountCents) }]
+  ).map((entry) => ({
     key: newKey(),
     catId: entry.catId,
-    amount: toText(entry.amountCents),
+    amount: pctMode && entry.pct !== undefined ? toPctText(entry.pct) : toText(entry.amountCents),
   }));
 
+/** a %-typed spread reopens in % — the stored pct is the user's shape */
+const seedsAsPct = (subject: CatsSubject): boolean =>
+  !!subject.cats?.length && subject.cats.every((entry) => entry.pct != null);
+
 /**
- * #126 r6/r7 (user request): a part is a full transaction — its money
- * spreads across categories with the SAME editor logic the whole
- * transaction had before splitting existed: category + amount rows,
- * exact euros or percentages, register-style entry, and the leftover
- * pill that fills the field it was tapped from (#130).
+ * #126 r6/r7 (user request): money spreads across categories with the
+ * SAME editor logic the whole transaction had before splitting existed:
+ * category + amount rows, exact euros or percentages, register-style
+ * entry, and the leftover pill that fills the field it was tapped from
+ * (#130). #211 made it THE split-categories editor — the row's own
+ * spread and a part's spread are the same gesture; the split-transaction
+ * editor is a different door entirely.
  */
-export function PartCatsSheet({
+export function CatsSheet({
   open,
   onOpenChange,
-  part,
+  subject,
   currency,
   direction,
   txType,
   allowedCatIds,
+  title,
+  reason,
+  includePct = false,
   onApply,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** the part whose money is being spread; undefined while closed */
-  part?: TxSplit;
+  /** whose money is being spread; undefined while closed */
+  subject?: CatsSubject;
   currency: string;
   direction: 'debit' | 'credit';
-  /** the container's type gates the picker, same as the split editor */
-  txType: TxType;
+  /** gates the picker; undefined = direction-only (the add form) */
+  txType?: TxType;
   allowedCatIds?: readonly string[];
+  /** row-level callers say "Split categories"; parts keep their title */
+  title?: string;
+  /** why the current category was suggested (review) — shown inline */
+  reason?: string | null;
+  /** row-level spreads keep their % shape for the #141 sibling offer */
+  includePct?: boolean;
   onApply: (entries: TxSplitCat[]) => void;
 }>) {
   const { t, lang } = useLang();
@@ -98,21 +128,27 @@ export function PartCatsSheet({
   // capture WHICH field the user meant here
   const pendingTarget = useRef<number | null>(null);
 
-  const refCents = Math.abs(part?.amountCents ?? 0);
+  const refCents = Math.abs(subject?.amountCents ?? 0);
   useEffect(() => {
-    if (!open || !part) return;
-    setMode('amount');
-    setEntries(seedEntries(part));
+    if (!open || !subject) return;
+    const pctMode = includePct && seedsAsPct(subject);
+    setMode(pctMode ? 'pct' : 'amount');
+    setEntries(seedEntries(subject, pctMode));
     // deliberately only on open: the sheet owns its rows while open
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, part?.id]);
+  }, [open, subject?.id]);
 
   const valueOf = (entry: CatEntry) => (mode === 'pct' ? parsePct(entry.amount) : (parseCents(entry.amount) ?? 0));
   const remainder = (mode === 'pct' ? 100 : refCents) - entries.reduce((sum, entry) => sum + valueOf(entry), 0);
   const unpicked = entries.some((entry) => entry.catId === UNCATEGORIZED_ID);
   const duplicate = new Set(entries.map((entry) => entry.catId)).size !== entries.length;
+  // ONE entry means "just this category" — it spans the whole by
+  // definition (the add form has no amount yet, review parity keeps
+  // the single pick one tap)
   const ready =
-    entries.length > 0 && remainder === 0 && !unpicked && !duplicate && entries.every((entry) => valueOf(entry) > 0);
+    entries.length === 1
+      ? !unpicked
+      : entries.length > 0 && remainder === 0 && !unpicked && !duplicate && entries.every((entry) => valueOf(entry) > 0);
   // finish the open entry first (split-editor rule): no new row while
   // one is still uncategorized or worth nothing
   const addBlocked = entries.some((entry) => entry.catId === UNCATEGORIZED_ID || valueOf(entry) <= 0);
@@ -202,12 +238,25 @@ export function PartCatsSheet({
 
   const apply = () => {
     if (!ready) return;
+    // the single entry spans the whole — its typed amount is decorative
+    if (entries.length === 1) {
+      onApply([{ catId: entries[0].catId, amountCents: refCents }]);
+      return;
+    }
     if (mode === 'pct') {
       const resolved = resolveSplitsFor(
         refCents,
         entries.map((entry) => ({ catId: entry.catId, amountCents: 0, pct: parsePct(entry.amount) })),
       );
-      onApply(resolved.map((slice) => ({ catId: slice.catId, amountCents: Math.abs(slice.amountCents) })));
+      onApply(
+        resolved.map((slice) => ({
+          catId: slice.catId,
+          amountCents: Math.abs(slice.amountCents),
+          // the % shape survives on row spreads (#141: pct scales to any
+          // sibling; exact euros reach only exact twins)
+          ...(includePct && slice.pct !== undefined ? { pct: slice.pct } : {}),
+        })),
+      );
       return;
     }
     onApply(entries.map((entry) => ({ catId: entry.catId, amountCents: parseCents(entry.amount) ?? 0 })));
@@ -222,11 +271,18 @@ export function PartCatsSheet({
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange} title={t('split.partCatsTitle')} size="tall">
+      <Sheet open={open} onOpenChange={onOpenChange} title={title ?? t('split.partCatsTitle')} size="tall">
         <div className="flex flex-col gap-2 pt-1" data-testid="part-cats-editor">
+          {/* the prediction's provenance, shown in the open (review) */}
+          {reason && (
+            <div className="flex items-center gap-1.5 rounded-xl bg-bg-2 px-3 py-2 text-[12px] text-ink-3" data-testid="split-reason">
+              <Icon name="lightbulb-outline" size={14} color="var(--m-ink-4)" />
+              {reason}
+            </div>
+          )}
           {/* whose money is being spread */}
           <div className="flex items-center justify-between gap-2 rounded-xl bg-bg-2 px-3 py-2 text-[12px] text-ink-3">
-            <span className="min-w-0 truncate">{part?.label ?? t('split.title')}</span>
+            <span className="min-w-0 truncate">{subject?.label ?? t('split.catsTitle')}</span>
             <span className="m-num shrink-0 font-semibold text-ink">{fmtCents(refCents, currency, lang)}</span>
           </div>
           {/* exact euros or percentages — the whole-transaction editor's

@@ -47,14 +47,14 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="tab-transactions"]');
     await page.click('[data-testid="tx-row-dm100"]');
     await page.click('[data-testid="tx-detail-category-row"]');
-    await page.waitForSelector('[data-testid="split-editor"]');
-    await page.click('[data-testid="split-cat-0"]');
+    await page.waitForSelector('[data-testid="part-cats-editor"]');
+    await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'bubble');
     const customOption = page.locator('[data-testid^="catpicker-"]:not([data-testid="catpicker-search"])').first();
     await customOption.click();
     await page.waitForTimeout(400);
-    await page.click('[data-testid="split-save"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Bubble Tea');
     await shot(page, k('30-cats-create'));

@@ -139,12 +139,13 @@ for (const V of VARIANTS) {
     await openFirstReviewTx(page); // dm100: hobby expense on demo_main
     // #133: no kind row — the Set aside (diamond) pick opens the
     // counterparty ask, Default pinned on top; the savings pot answers
+    // (#211: the pencil opens the split-CATEGORIES editor now)
     await page.click('[data-testid="tx-detail-cats-edit"]');
-    await page.click('[data-testid="split-cat-0"]');
+    await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'set aside');
     await page.click('[data-testid="catpicker-savingDeposit"]');
-    await page.click('[data-testid="split-save"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForSelector('[data-testid="counter-default"]');
     await page.click('[data-testid="counter-pick-demo_save"]');
     await page.waitForTimeout(500);
@@ -156,37 +157,41 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('35-tx-type-link'));
   });
 
-  test(`tx-a9 split a transaction across two categories [${V.id}]`, async ({ browser }) => {
+  test(`tx-a9 split categories across two categories [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await openFirstReviewTx(page); // dm100: -28.99
+    // #211: the category row opens the split-CATEGORIES editor — the
+    // row stays ONE transaction, never a split container
     await page.click('[data-testid="tx-detail-category-row"]');
-    await page.waitForSelector('[data-testid="split-editor"]');
-    await page.click('[data-testid="split-add-row"]');
-    // assign 20.00 to the first row; second row is open -> remainder shown
-    await page.fill('[data-testid="split-amount-0"]', '20,00');
-    await expect(page.locator('[data-testid="split-remainder"]')).toContainText('8.99');
-    await expect(page.locator('[data-testid="split-save"]')).toBeDisabled();
-    // pick a category for row 2 and auto-balance via the remainder chip
-    await page.click('[data-testid="split-cat-1"]');
+    await page.waitForSelector('[data-testid="part-cats-editor"]');
+    await page.click('[data-testid="part-cat-add"]');
+    // assign 20.00 to the first entry; second is open -> remainder shown
+    await page.fill('[data-testid="part-cat-amount-0"]', '20,00');
+    await expect(page.locator('[data-testid="part-cat-remainder"]')).toContainText('8.99');
+    await expect(page.locator('[data-testid="part-cat-save"]')).toBeDisabled();
+    // pick a category for entry 2 and auto-balance via the remainder chip
+    await page.click('[data-testid="part-cat-1"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'gift');
     await page.click('[data-testid="catpicker-gift"]');
     await page.waitForTimeout(700);
-    await page.click('[data-testid="split-remainder"]');
-    await expect(page.locator('[data-testid="split-amount-1"]')).toHaveValue('8,99');
+    await page.click('[data-testid="part-cat-remainder"]');
+    await expect(page.locator('[data-testid="part-cat-amount-1"]')).toHaveValue('8,99');
     await shot(page, k('36-tx-split') + '--s1');
-    await page.click('[data-testid="split-save"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
-    // breakdown visible; primary category = largest slice (Hobby, 20.00)
+    // breakdown visible; primary category = largest entry (Hobby, 20.00);
+    // the row keeps its pencil — it is NOT a container (#211)
     await expect(page.locator('[data-testid="tx-detail-categories"]')).toContainText('20.00');
     await expect(page.locator('[data-testid="tx-detail-categories"]')).toContainText('8.99');
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Hobby');
+    await expect(page.locator('[data-testid="tx-detail-cats-edit"]')).toBeVisible();
     await shot(page, k('36-tx-split'));
-    // clearing restores a single category — #200: on a container the
-    // rows navigate to part pages, so the editor door is Manage splits
-    await page.click('[data-testid="tx-detail-manage-splits"]');
-    await page.click('[data-testid="split-clear"]');
+    // collapsing back to one entry restores a single category
+    await page.click('[data-testid="tx-detail-cats-edit"]');
+    await page.click('[data-testid="part-cat-remove-1"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
     await expect(page.locator('[data-testid^="tx-detail-cat-"]')).toHaveCount(0);
     await teardown(page, ctx, k('36-tx-split'));

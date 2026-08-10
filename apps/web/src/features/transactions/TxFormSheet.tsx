@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
-import { UNCATEGORIZED_ID, autoSubFor, specialCatType, stampMovementSub } from '@/domain/categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType, stampMovementSub } from '@/domain/categories';
+import { scaleCatsTo } from '@/domain/txSlices';
 import { accountStamp, typeForLinkedAccount } from '@/domain/txType';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -12,14 +13,13 @@ import { useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
 import { focusEntryMode, nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
-import type { AccountRow, TransactionRow, TxSplit, TxType } from '@/db/types';
+import type { AccountRow, TransactionRow, TxSplitCat, TxType } from '@/db/types';
 import { typeDef } from '@/features/accounts/accountTypes';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
-import { SplitEditorSheet } from './SplitEditorSheet';
-import { primaryCatId } from '@/domain/splits';
+import { CatsSheet } from './PartCatsSheet';
 import { minaSuggestedTx } from '@/features/mina/steps';
 import { CounterpartySheet } from './TxKindSheet';
 
@@ -40,7 +40,7 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const formFingerprint = (state: Record<string, unknown>): string =>
   JSON.stringify([
     state.amount, state.isExpense, state.merchant, state.date, state.accountId, state.catId,
-    state.adjustment, state.linkedAccountId, state.recurringId, state.splits,
+    state.adjustment, state.linkedAccountId, state.recurringId, state.cats,
   ]);
 
 type BalanceAccount = { id: string; source: string; balanceCents: number };
@@ -159,36 +159,52 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
   };
 }
 
-/** the split editor needs a SpaceTx shape; a NEW manual tx builds one
- *  from the live form state (S3776: out of the component) */
-function buildPseudoTx(
-  tx: TransactionRow | undefined,
-  form: {
-    accountId: string;
-    date: string;
-    cents: number | null;
-    isExpense: boolean;
-    currency: string;
-    merchant: string;
-    catId: string;
-    txType: TxType;
-  },
-): never {
-  const abs = Math.abs(form.cents ?? 0);
-  return (tx ?? {
-    id: 'new',
-    spaceId: '',
-    accountId: form.accountId,
-    date: form.date,
-    amountCents: form.isExpense ? -abs : abs,
-    currency: form.currency,
-    // r8 (user rule): a title must SAY something — stored trimmed, and
-    // the save gate already refuses whitespace-only
-    merchant: form.merchant.trim(),
-    catId: form.catId,
-    txType: form.txType,
-    needsReview: 0,
-  }) as never;
+/** the form's category row (#211, S3776: out of the component): a
+ *  split CONTAINER owns no category — the row states the parts and
+ *  stays inert (the detail's manage flow edits them); a whole row
+ *  doors into the split-categories editor and names its spread */
+function FormCategoryRow({
+  tx,
+  cat,
+  cats,
+  stagedCats,
+  onOpen,
+}: Readonly<{
+  tx: TransactionRow | undefined;
+  cat: ReturnType<ReturnType<typeof useCategories>['byId']>;
+  cats: ReturnType<typeof useCategories>;
+  stagedCats: TxSplitCat[] | null;
+  onOpen: () => void;
+}>) {
+  const { t } = useLang();
+  if (tx?.splits?.length) {
+    return (
+      <div
+        data-testid="txform-category-parts"
+        className="flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink-3"
+      >
+        <Icon name="call-split" size={20} color="var(--m-ink-4)" />
+        <span className="flex-1">
+          {t('split.partsSection')} · {tx.splits.filter((s) => s.catId !== REIMBURSED_ID).length}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <button
+      data-testid="txform-category"
+      onClick={onOpen}
+      className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+    >
+      <Icon name={cat.icon} size={20} color={cat.color ?? cats.byId(cat.parentId).color} />
+      <span className="flex-1">
+        {stagedCats && stagedCats.length > 1
+          ? stagedCats.map((entry) => catName(cats.byId(entry.catId), t)).join(' · ')
+          : catName(cat, t)}
+      </span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
+  );
 }
 
 /** save gate: real merchant, positive amount, an account, a date not
@@ -216,13 +232,16 @@ function manualTxFields(args: {
   merchant: string;
   catId: string;
   txType: TxType;
-  stagedSplits: TxSplit[] | null;
+  stagedCats: TxSplitCat[] | null;
   linkedAccountId: string | null;
   recurringId: string | null;
 }): Partial<Omit<TransactionRow, 'id' | 'spaceId'>> {
   // arc 2 locked doors: an uncategorized transfer-family row files under
   // the family's sign-picked sub instead of the hidden placeholder
-  const familySub = args.catId === UNCATEGORIZED_ID && !args.stagedSplits?.length ? autoSubFor(args.txType, args.signed) : undefined;
+  const familySub = args.catId === UNCATEGORIZED_ID && !args.stagedCats?.length ? autoSubFor(args.txType, args.signed) : undefined;
+  // #211: a staged spread rides the write — rescaled if the amount moved
+  // after spreading (the partition must always sum to the gross)
+  const cats = args.stagedCats?.length ? rescaledCats(args.stagedCats, Math.abs(args.signed)) : undefined;
   return {
     accountId: args.accountId,
     date: args.date,
@@ -235,11 +254,19 @@ function manualTxFields(args: {
     // retirement as its own stored flag
     adjustment: (args.txType === 'adjustment' ? 1 : 0) as 0 | 1,
     needsReview: 0 as const,
-    // splits staged in the unified editor travel with the write
-    ...(args.stagedSplits?.length ? { splits: args.stagedSplits } : {}),
+    ...(cats || args.tx?.cats?.length ? { cats: cats ?? (null as never) } : {}),
     ...(args.linkedAccountId || args.tx?.linkedAccountId ? { linkedAccountId: args.linkedAccountId ?? (null as never) } : {}),
     ...(args.recurringId || args.tx?.recurringId ? { recurringId: args.recurringId ?? (null as never) } : {}),
   };
+}
+
+/** the spread scaled onto a (possibly edited) amount — identity when it
+ *  already sums; largest-remainder otherwise */
+function rescaledCats(entries: TxSplitCat[], targetAbs: number): TxSplitCat[] | undefined {
+  const sum = entries.reduce((total, e) => total + e.amountCents, 0);
+  if (sum === targetAbs) return entries;
+  const scaled = scaleCatsTo(entries, targetAbs);
+  return scaled?.length ? scaled : undefined;
 }
 
 const optionRow = (selected: boolean, onClick: () => void, content: React.ReactNode, testId: string) => (
@@ -400,10 +427,10 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const [accountId, setAccountId] = useState<string | null>(null);
   const [catId, setCatId] = useState<string>(UNCATEGORIZED_ID);
   const [pickerOpen, setPickerOpen] = useState(false);
-  // unified category editor (user request: same as review — type and
-  // counterparty live INSIDE the category sheet now)
-  const [splitOpen, setSplitOpen] = useState(false);
-  const [stagedSplits, setStagedSplits] = useState<TxSplit[] | null>(null);
+  // #211: the split-CATEGORIES editor (the same sheet as review/detail) —
+  // a spread stays ONE transaction; real splits are the detail's flow
+  const [catsSheetOpen, setCatsSheetOpen] = useState(false);
+  const [stagedCats, setStagedCats] = useState<TxSplitCat[] | null>(null);
   // #133 D: no kind — a counterparty makes it a transfer, the toggle
   // marks manual corrections (C3)
   const [adjustment, setAdjustment] = useState(false);
@@ -441,14 +468,14 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     setAdjustment(initial.adjustment);
     setLinkedAccountId(initial.linkedAccountId);
     setRecurringId(initial.recurringId);
-    setStagedSplits(tx?.splits ?? null);
+    setStagedCats(tx?.cats ?? null);
     // dirty baseline (user request 2026-08-01): a stray backdrop tap on
     // an EDITED form asks before dropping it; an untouched one closes
     baselineRef.current = formFingerprint({
       amount: initial.amount, isExpense: initial.isExpense, merchant: initial.merchant, date: initial.date,
       accountId: initial.accountId, catId: initial.catId, adjustment: initial.adjustment,
       linkedAccountId: initial.linkedAccountId, recurringId: initial.recurringId,
-      splits: tx?.splits ?? null,
+      cats: tx?.cats ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx?.id]);
@@ -467,18 +494,6 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing: false, beforeStart: !!startGateBlocking });
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
-  // the editor needs a SpaceTx shape; a NEW manual tx builds it from the
-  // live form state (controlled mode only reads amount/cat/currency)
-  const pseudoTx = buildPseudoTx(tx, {
-    accountId: effectiveAccount ?? '',
-    date,
-    cents,
-    isExpense,
-    currency: formCurrency,
-    merchant: merchant.trim(),
-    catId,
-    txType: effectiveType,
-  });
 
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
@@ -511,7 +526,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
           merchant: merchant.trim(),
           catId: forcedCat ?? catId,
           txType: effectiveType,
-          stagedSplits,
+          stagedCats,
           linkedAccountId,
           recurringId,
         }),
@@ -550,7 +565,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onOpenChange={onOpenChange}
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
         size="tall"
-        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, adjustment, linkedAccountId, recurringId, splits: stagedSplits }) !== baselineRef.current}
+        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, adjustment, linkedAccountId, recurringId, cats: stagedCats }) !== baselineRef.current}
       >
         {/* no manual account yet: explain WHY the form can't work and
             hand over a one-tap path to fix it (user UX request) */}
@@ -671,16 +686,10 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
               leg is always minted now — the special account's ledger IS
               the record (typed-splits v2) */}
 
-          {/* category row — opens the SAME unified editor as review */}
-          <button
-            data-testid="txform-category"
-            onClick={() => setSplitOpen(true)}
-            className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-          >
-            <Icon name={cat.icon} size={20} color={cat.color ?? cats.byId(cat.parentId).color} />
-            <span className="flex-1">{catName(cat, t)}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
+          {/* category row — the split-categories editor (#211). A split
+              CONTAINER owns no category of its own: the row states the
+              parts and stays inert (the detail's manage flow edits them) */}
+          <FormCategoryRow tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={() => setCatsSheetOpen(true)} />
 
           {/* recurring link (only when the space has recurring costs) */}
           {(recurrings?.length ?? 0) > 0 && (
@@ -734,24 +743,32 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         }}
       />
 
-      {/* the unified category editor (same component as review) — type
-          and counterparty ride along as context rows */}
-      <SplitEditorSheet
-        open={splitOpen}
-        onOpenChange={setSplitOpen}
-        tx={pseudoTx}
-        value={stagedSplits ?? undefined}
-        txType={effectiveType}
-        seedSingle
-        seedCatId={catId}
-        direction={isExpense ? 'debit' : 'credit'}
-        onApply={(splits) => {
-          setStagedSplits(splits);
-          if (splits?.length) setCatId(primaryCatId(splits) ?? catId);
+      {/* #211: the split-categories editor (same sheet as review/detail) —
+          the spread stays ONE transaction; the amount typed so far is the
+          money being partitioned */}
+      <CatsSheet
+        open={catsSheetOpen}
+        onOpenChange={setCatsSheetOpen}
+        subject={{
+          id: tx?.id ?? 'new',
+          label: merchant.trim() || undefined,
+          catId,
+          cats: stagedCats ?? undefined,
+          amountCents: Math.abs(cents ?? 0),
         }}
-        onApplySingle={(picked) => {
-          setStagedSplits(null);
-          setCatId(picked);
+        currency={formCurrency}
+        direction={isExpense ? 'debit' : 'credit'}
+        title={t('split.catsTitle')}
+        includePct
+        onApply={(entries) => {
+          if (entries.length === 1) {
+            setStagedCats(null);
+            setCatId(entries[0].catId);
+            return;
+          }
+          setStagedCats(entries);
+          const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
+          setCatId(primary.catId);
         }}
       />
 

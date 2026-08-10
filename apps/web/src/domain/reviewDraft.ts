@@ -3,7 +3,7 @@ import { primaryCatId } from './splits';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
 import { categoryConflictsWithType, typeForLinkedAccount } from './txType';
-import type { AccountType, TxSplit, TxType } from '@/db/types';
+import type { AccountType, TxSplit, TxSplitCat, TxType } from '@/db/types';
 
 /**
  * The review card's staged decision (review redesign, approved): every
@@ -17,6 +17,9 @@ export interface ReviewDraft {
   catId?: string;
   txType: TxType;
   linkedAccountId?: string;
+  /** #211: the row's own category spread — one transaction, several
+   *  categories; mutually exclusive with a staged split's parts */
+  cats?: TxSplitCat[];
   splits?: TxSplit[];
 }
 
@@ -29,7 +32,7 @@ const conflicts = (catalog: DraftCatalog, catId: string | undefined, txType: TxT
 
 /** the card's starting point: the transaction's own state + the prediction */
 export function initDraft(
-  tx: { catId?: string; txType: TxType; linkedAccountId?: string; splits?: TxSplit[] },
+  tx: { catId?: string; txType: TxType; linkedAccountId?: string; cats?: TxSplitCat[]; splits?: TxSplit[] },
   predictedCatId: string | undefined,
   catalog: DraftCatalog,
 ): ReviewDraft {
@@ -37,6 +40,7 @@ export function initDraft(
   const base: ReviewDraft = {
     txType: tx.txType,
     linkedAccountId: tx.linkedAccountId,
+    cats: tx.cats?.length ? tx.cats : undefined,
     splits: tx.splits?.length ? tx.splits : undefined,
   };
   return withCategory(base, existing ?? predictedCatId, catalog);
@@ -50,11 +54,13 @@ export function withCategory(draft: ReviewDraft, catId: string | undefined, cata
   return { ...draft, catId, txType };
 }
 
-/** picking a type clears a now-invalid category (and its splits) — ask again */
+/** picking a type clears a now-invalid category (and its partition —
+ *  parts or spread alike) — ask again */
 export function withType(draft: ReviewDraft, txType: TxType, catalog: DraftCatalog): ReviewDraft {
-  const splitConflict = draft.splits?.some((s) => conflicts(catalog, s.catId, txType)) ?? false;
-  if (splitConflict || conflicts(catalog, draft.catId, txType)) {
-    return { ...draft, txType, catId: undefined, splits: undefined };
+  const partitionConflict =
+    [...(draft.splits ?? []), ...(draft.cats ?? [])].some((s) => conflicts(catalog, s.catId, txType));
+  if (partitionConflict || conflicts(catalog, draft.catId, txType)) {
+    return { ...draft, txType, catId: undefined, cats: undefined, splits: undefined };
   }
   return { ...draft, txType };
 }
@@ -82,7 +88,7 @@ export function withKind(draft: ReviewDraft, kind: TxKind, amountCents: number, 
  * A deliberate category (splits included) is never touched.
  */
 export function withFamilyCategory(draft: ReviewDraft, amountCents: number): ReviewDraft {
-  if (draft.splits?.length) return draft;
+  if (draft.splits?.length || draft.cats?.length) return draft;
   const sub = autoSubFor(draft.txType, amountCents);
   if (!sub) return draft;
   if (draft.catId && draft.catId !== UNCATEGORIZED_ID) return draft;
@@ -118,10 +124,23 @@ export function withLinkedAccount(
   return amountCents === undefined ? next : withFamilyCategory(next, amountCents);
 }
 
-/** splits carry the category: the largest slice represents the whole */
+/** splits carry the category: the largest slice represents the whole.
+ *  A container owns no category spread (#211) — staging parts clears it. */
 export function withSplits(draft: ReviewDraft, splits: TxSplit[] | undefined): ReviewDraft {
   if (!splits?.length) return { ...draft, splits: undefined };
-  return { ...draft, splits, catId: primaryCatId(splits) };
+  return { ...draft, splits, cats: undefined, catId: primaryCatId(splits) };
+}
+
+/** #211: the row's own spread — several categories, ONE transaction.
+ *  One entry collapses back to the plain category; several keep the
+ *  spread with the largest entry as the compat shadow. Parts clear:
+ *  the two features never mix. */
+export function withCats(draft: ReviewDraft, entries: TxSplitCat[] | undefined): ReviewDraft {
+  if (!entries || entries.length <= 1) {
+    return { ...draft, cats: undefined, ...(entries?.length ? { catId: entries[0].catId } : {}) };
+  }
+  const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
+  return { ...draft, cats: entries, splits: undefined, catId: primary.catId };
 }
 
 /** Confirm is only offered once a REAL category is decided (user rule:
@@ -140,5 +159,5 @@ export const draftReady = (draft: ReviewDraft): boolean => {
   // the ONLY hold-back left is an uncategorized part, and the deck marks
   // it with an attention badge when Confirm is tried
   if (draft.catId === 'uncategorized') return false;
-  return !draft.splits?.some((slice) => slice.catId === 'uncategorized');
+  return ![...(draft.splits ?? []), ...(draft.cats ?? [])].some((slice) => slice.catId === 'uncategorized');
 };

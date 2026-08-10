@@ -23,7 +23,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     // expense (debit): the custom Padel main's Other sub (direction both)
     // is offered once the catalog's live query delivers the custom rows…
     fireEvent.click(screen.getByTestId('txform-category'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-groceries');
     await screen.findByTestId('catpicker-demo_cat_padel_other');
     // …while the demo credit-only sub "Side gig" is hidden
@@ -41,7 +41,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     // toggle BEFORE opening the editor: a fresh stack per direction
     fireEvent.click(screen.getByTestId('txform-income'));
     fireEvent.click(screen.getByTestId('txform-category'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-demo_cat_sidegig');
     // movement subs went direction-both in typed-splits v2 (they live on
     // either leg now) — groceries is the debit-only witness instead
@@ -55,7 +55,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     // debit picker without a type gate offers the saving family — marked
     await screen.findByTestId('speccat-savingDeposit');
     await screen.findByTestId('catpicker-groceries');
@@ -71,7 +71,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-groceries');
 
     // the create door is always at the list's end…
@@ -92,7 +92,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(await screen.findByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     fireEvent.click(screen.getByTestId('txform-category'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-alcohol');
     expect(screen.getByTestId('catpicker-tobacco')).toBeTruthy();
     // the expected-reimbursement expense left its hidden parent and is pickable

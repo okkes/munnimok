@@ -94,7 +94,8 @@ describe('TransactionsScreen (demo identity)', () => {
     expect(screen.getByText('MYSTERY SHOP')).toBeTruthy();
     fireEvent.click(screen.getByTestId('tx-filter-uncat'));
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
-  });
+    // coverage instrumentation pushes this flow past vitest's 5s default
+  }, 15_000);
 
   it('the unsettled-reimbursements chip shows only open expected/received value', async () => {
     renderApp('/transactions');
@@ -104,14 +105,16 @@ describe('TransactionsScreen (demo identity)', () => {
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-unsettled'), { trackOutbox: false });
     // open expectation → shows; fully settled → drops out of the filter
+    // #211: modern split seeds version-stamp with an explicit cats null —
+    // the boot fold must read them as PARTS, not legacy slices
     await repo.upsert('transaction', DEMO_SPACE_ID, 'open-1', {
       accountId: 'demo_main', date: '2026-06-22', amountCents: -8000, currency: 'EUR',
-      merchant: 'FRONTED DINNER', catId: 'eatingOut', txType: 'expense', needsReview: 0,
+      merchant: 'FRONTED DINNER', catId: 'eatingOut', txType: 'expense', needsReview: 0, cats: null as never,
       splits: [{ catId: 'eatingOut', amountCents: 3000 }, { catId: 'expenseReimburse', amountCents: 5000 }],
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'settled-1', {
       accountId: 'demo_main', date: '2026-06-23', amountCents: 5000, currency: 'EUR',
-      merchant: 'PAID BACK', catId: 'reimbursed', txType: 'income', needsReview: 0,
+      merchant: 'PAID BACK', catId: 'reimbursed', txType: 'income', needsReview: 0, cats: null as never,
       splits: [{ catId: 'reimbursed', amountCents: 5000 }],
     });
     db.close();

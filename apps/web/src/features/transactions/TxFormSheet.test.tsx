@@ -59,12 +59,12 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '12,34' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakker Bart' } });
 
-    // the category row opens the UNIFIED editor (same as review) —
-    // pick through its per-row picker, Done stages the single category
+    // the category row opens the split-categories editor (#211) —
+    // pick through its per-entry picker, Done stages the single category
     fireEvent.click(screen.getByTestId('txform-category'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Grocery'));
 
     fireEvent.click(screen.getByTestId('txform-save'));
@@ -234,13 +234,13 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Aflossing lening' } });
 
     // the bare-type exit retired: the flat structure's "Loan payment" is
-    // the marked Repaid category, picked in the unified editor — the
+    // the marked Repaid category, picked in the cats editor (#211) — the
     // debt type follows the pick, no counterparty demanded
     fireEvent.click(screen.getByTestId('txform-category'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('speccat-loanRepayment'); // the diamond mark
     fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
     // #133 D: no kind row to read — the category chip carries the story
     await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Repaid'));

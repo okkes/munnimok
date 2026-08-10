@@ -100,6 +100,8 @@ describe('Events (demo identity)', () => {
     await repo.upsert('transaction', DEMO_SPACE_ID, 'evsplit', {
       accountId: 'demo_main', date: isoDaysAgo(170), amountCents: -6000, currency: 'EUR',
       merchant: 'Split Dinner', catId: 'restaurants', txType: 'expense', needsReview: 0,
+      // #211: the explicit cats null marks these as PARTS for the boot fold
+      cats: null as never,
       splits: [
         { id: 'p1', catId: 'restaurants', amountCents: 4500 },
         { id: 'p2', catId: 'groceries', amountCents: 1500 },

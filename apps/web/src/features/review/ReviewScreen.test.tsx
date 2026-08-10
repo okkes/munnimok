@@ -42,15 +42,15 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.queryByTestId('review-kind-row')).toBeNull();
     expect(screen.queryByTestId('review-counter-row')).toBeNull();
 
-    // the split sheet stays pure categories
+    // #211: the chip opens the split-CATEGORIES editor — pure categories
     fireEvent.click(screen.getByTestId('review-category-chip'));
-    await screen.findByTestId('split-editor');
+    await screen.findByTestId('part-cats-editor');
     expect(screen.queryByTestId('split-counter-row')).toBeNull();
     expect(screen.queryByTestId('split-type-row')).toBeNull();
-    fireEvent.click(screen.getByTestId('split-cat-0'));
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     await screen.findByTestId('speccat-savingDeposit'); // the diamond mark
     fireEvent.click(screen.getByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
     // the ◆ pick unfolds the counterparty question — Default pinned on
     // top; picking the savings pot links it and the fact row appears
@@ -67,9 +67,9 @@ describe('ReviewScreen (demo identity)', () => {
     // Loan payment (◆) → the counterparty question → the Create door
     // (full chooser); the manual loan built in place answers it
     fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-full-setup'));
     fireEvent.click(await screen.findByTestId('chooser-manual'));
@@ -93,9 +93,9 @@ describe('ReviewScreen (demo identity)', () => {
 
     // pick the locked Transfer sub — the ask opens, NOTHING staged yet
     fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-transferOut'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await screen.findByTestId('counter-accounts');
     expect(screen.queryByTestId('counter-default')).toBeNull(); // no Default for transfers
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -105,9 +105,9 @@ describe('ReviewScreen (demo identity)', () => {
 
     // answering it stages the link + the locked sub in one motion
     fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out'));
@@ -118,9 +118,9 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('split-save'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     // the ask opens; walking away is legal — the bare story stands and
     // the boot migration folds it onto the default pot later
     await screen.findByTestId('counter-default');
@@ -137,12 +137,12 @@ describe('ReviewScreen (demo identity)', () => {
     const current = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
       .sort((a, b) => a.date.localeCompare(b.date))[0]; // oldest first (user rule)
 
-    // the row opens the unified editor (user redesign); a single row
+    // the row opens the split-categories editor (#211); a single entry
     // saves as a plain category
     fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     // staged, not yet written — the chip shows the choice
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((await db.transactions.get(current.id))?.catId).not.toBe('coffee');
@@ -577,12 +577,12 @@ describe('ReviewScreen (demo identity)', () => {
   it('splitting a card with staged decisions warns first — cancel keeps them, continue resets (#126 r7)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    // stage a deliberate category pick through the classic chip flow
+    // stage a deliberate category pick through the chip's cats editor
     fireEvent.click(await screen.findByTestId('review-category-chip'));
-    await screen.findByTestId('split-editor');
-    fireEvent.click(screen.getByTestId('split-cat-0'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
 
     // the split door warns; cancel drops back to the untouched card
@@ -696,14 +696,15 @@ describe('ReviewScreen (demo identity)', () => {
     // waitFor: under coverage instrumentation the expand re-render can lag the click
     await waitFor(() => expect(screen.getByTestId('review-description-text').className).not.toContain('line-clamp-2'));
 
-    // the category row opens the unified editor with ONE row (user
-    // redesign) — a second row is added explicitly
+    // #211: the category chip opens the split-CATEGORIES editor with ONE
+    // entry — a second is added explicitly; the row stays ONE transaction
     fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-add-row'));
-    // the fresh row is uncategorized + 0 — no THIRD row until it's done
-    await screen.findByTestId('split-amount-1');
-    expect((screen.getByTestId('split-add-row') as HTMLButtonElement).disabled).toBe(true);
-    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(await screen.findByTestId('part-cat-add'));
+    // the fresh entry is uncategorized + 0 — no THIRD until it's done
+    await screen.findByTestId('part-cat-amount-1');
+    expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
+    const amount0 = (await screen.findByTestId('part-cat-amount-0')) as HTMLInputElement;
     expect(amount0.value).toBe('10,00');
 
     // focus empties the field so typing replaces (one frame later — the
@@ -713,35 +714,37 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.blur(amount0);
     expect(amount0.value).toBe('10,00');
 
-    // 6,00 + auto-balanced 4,00 = a valid split
+    // 6,00 + auto-balanced 4,00 = a valid spread
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '6,00' } });
     fireEvent.blur(amount0);
-    fireEvent.click(await screen.findByTestId('split-remainder'));
-    // the fresh row starts Uncategorized — confirm refuses that (user
-    // rule), so the slice gets a real category before saving
-    fireEvent.click(screen.getByTestId('split-cat-1'));
+    fireEvent.click(await screen.findByTestId('part-cat-remainder'));
+    // the fresh entry starts Uncategorized — Done holds until it's real
+    fireEvent.click(screen.getByTestId('part-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
-    // draft model (review redesign): saving the split STAGES it — the
-    // parts stand as a DECK under the main card (#126 r3): the main
-    // card drops kind/recurring/event (each part carries its own) and
-    // the dashed door manages the whole split
-    await waitFor(() => expect(screen.getByTestId('review-part-deck')).toBeTruthy());
-    expect(screen.getAllByTestId(/^deck-part-/)).toHaveLength(2);
-    expect(screen.queryByTestId('review-kind-row')).toBeNull();
-    expect(screen.queryByTestId('review-recurring-row')).toBeNull();
-    expect(screen.queryByTestId('review-event-row')).toBeNull();
-    expect(screen.getByTestId('review-manage-splits')).toBeTruthy();
+    // draft model: the spread STAGES — the card lists one row per
+    // category, NO part deck (this is not a split transaction), and the
+    // row keeps its recurring/event affordances (it is still ONE event)
+    await waitFor(() => expect(screen.getByTestId('review-cat-coffee')).toBeTruthy());
+    expect(screen.getByTestId('review-cat-groceries')).toBeTruthy();
+    expect(screen.queryByTestId('review-part-deck')).toBeNull();
+    expect(screen.getByTestId('review-event-row')).toBeTruthy();
     expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE');
-    expect((await db.transactions.get('tx-split'))?.splits).toBeUndefined();
+    expect((await db.transactions.get('tx-split'))?.cats).toBeUndefined();
 
-    // Confirm lands the whole draft in one write
+    // Confirm lands the whole draft in one write — the row's own cats,
+    // never a split container
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     await waitFor(async () => {
       const row = await db.transactions.get('tx-split');
-      expect(row?.splits).toHaveLength(2);
+      expect(row?.cats).toEqual([
+        { catId: 'groceries', amountCents: 600 },
+        { catId: 'coffee', amountCents: 400 },
+      ]);
+      expect(row?.splits ?? undefined).toBeUndefined();
+      expect(row?.catId).toBe('groceries');
       expect(row?.needsReview).toBe(0);
     }, { timeout: 5000 });
     db.close();
@@ -751,11 +754,11 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // stage a deliberate category — the row opens the unified editor now
+    // stage a deliberate category — the chip's cats editor (#211)
     fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
@@ -763,9 +766,9 @@ describe('ReviewScreen (demo identity)', () => {
     // pot — the linked leg is R2's inversion: the pot's own ledger tells
     // the saving story, THIS leg files the locked Transfer sub
     fireEvent.click(screen.getByTestId('review-category-chip'));
-    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(screen.getByTestId('split-save'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out'));

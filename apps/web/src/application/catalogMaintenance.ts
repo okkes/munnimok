@@ -155,12 +155,17 @@ const isBareSlice = (s: TxSplit): boolean =>
 
 /** the fold's write fields — null when the split must stay a container.
  *  A single plain slice is "no split" (the shadow catId already says
- *  it), so only a real spread or settled bookkeeping materializes cats. */
+ *  it), so only a real spread or settled bookkeeping materializes cats.
+ *  A row that EVER saw a #211-aware write carries a `cats` field
+ *  version (split writers stamp an explicit null) — its splits are
+ *  REAL parts by definition and never fold, so a fresh device syncing
+ *  modern data can run this one-shot safely. */
 function catSpreadFold(
-  row: { cats?: TxSplitCat[]; splits?: TxSplit[]; deleted: number },
+  row: { cats?: TxSplitCat[]; splits?: TxSplit[]; deleted: number; fieldVersions?: Record<string, string> },
   grossAbs: number,
 ): { cats?: TxSplitCat[] } | null {
   if (row.deleted !== 0 || row.cats?.length) return null;
+  if (row.fieldVersions && 'cats' in row.fieldVersions) return null;
   const splits = row.splits;
   if (!splits?.length || !splits.every(isBareSlice)) return null;
   if (splits.reduce((total, s) => total + s.amountCents, 0) !== grossAbs) return null;

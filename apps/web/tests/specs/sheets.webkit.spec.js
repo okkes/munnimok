@@ -19,9 +19,9 @@ const V = VARIANTS[0];
 async function openSplitEditor(page) {
   await page.click('[data-testid="tab-transactions"]');
   await page.locator('[data-testid^="tx-row-"]').first().click();
-  // split editor is a `tall` (600px) sheet
+  // the split-categories editor is a `tall` (600px) sheet (#211)
   await page.click('[data-testid="tx-detail-cats-edit"]');
-  await expect(page.locator('[data-testid="split-cat-0"]')).toBeVisible();
+  await expect(page.locator('[data-testid="part-cat-0"]')).toBeVisible();
 }
 
 test(`sheet-w1 a tall sheet opens to its full height [${V.id}]`, async ({ browser }) => {
@@ -47,7 +47,7 @@ test(`sheet-w2 a stacked child keeps the depth step-down [${V.id}]`, async ({ br
   await base(page, V, { demo: true });
   await openSplitEditor(page);
 
-  await page.click('[data-testid="split-cat-0"]'); // stacks the category picker
+  await page.click('[data-testid="part-cat-0"]'); // stacks the category picker
   const sheets = page.locator('.react-modal-sheet-container');
   await expect(sheets).toHaveCount(2);
   // stacked sheets step down 28px per level (Sheet.tsx depth cue) — the
