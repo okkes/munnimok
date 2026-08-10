@@ -1,4 +1,4 @@
-import type { TransactionRow, TxReimbursement, TxSplit } from '@/db/types';
+import type { TransactionRow, TxReimbursement, TxSplit, TxSplitCat } from '@/db/types';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 
 /**
@@ -102,11 +102,40 @@ export function settledSplits(
 ): TxSplit[] {
   const primary = tx.catId ?? UNCATEGORIZED_ID;
   const grossAbs = Math.abs(tx.amountCents);
-  const target = Math.min(Math.max(0, reimbursedCents), grossAbs);
-
-  const slices: TxSplit[] = tx.splits?.length
+  const seeded: TxSplit[] = tx.splits?.length
     ? tx.splits.map((s) => ({ ...s }))
     : [{ catId: primary, amountCents: grossAbs }];
+  return settlePartition(seeded, primary, grossAbs, reimbursedCents, nameOf);
+}
+
+/**
+ * #211 twin for a WHOLE row: the settlement lives in the row's own
+ * category partition (`cats`) — same rules, same gross invariant. A
+ * stored pct never survives settlement (the shape is no longer the
+ * user's own spread), so entries come out as plain materialized cents.
+ */
+export function settledCats(
+  tx: Pick<TransactionRow, 'amountCents' | 'catId' | 'cats'>,
+  reimbursedCents: number,
+  nameOf: (catId: string) => string,
+): TxSplitCat[] {
+  const primary = tx.catId ?? UNCATEGORIZED_ID;
+  const grossAbs = Math.abs(tx.amountCents);
+  const seeded: TxSplitCat[] = tx.cats?.length
+    ? tx.cats.map((c) => ({ catId: c.catId, amountCents: c.amountCents }))
+    : [{ catId: primary, amountCents: grossAbs }];
+  return settlePartition(seeded, primary, grossAbs, reimbursedCents, nameOf);
+}
+
+/** the shared settlement rewrite over a flat category partition */
+function settlePartition<T extends { catId: string; amountCents: number }>(
+  slices: (T | { catId: string; amountCents: number })[],
+  primary: string,
+  grossAbs: number,
+  reimbursedCents: number,
+  nameOf: (catId: string) => string,
+): T[] {
+  const target = Math.min(Math.max(0, reimbursedCents), grossAbs);
   let reimbursed = slices.find((s) => s.catId === REIMBURSED_ID);
   if (!reimbursed) {
     reimbursed = { catId: REIMBURSED_ID, amountCents: 0 };
@@ -130,14 +159,15 @@ export function settledSplits(
   }
 
   const kept = slices.filter((s) => s.amountCents > 0);
-  return kept.length > 0 ? kept : [{ catId: primary, amountCents: 0 }];
+  return (kept.length > 0 ? kept : [{ catId: primary, amountCents: 0 }]) as T[];
 }
 
 /** move `delta` cents from the other slices into `reimbursed`, in the
  *  user-ruled order: expected/received → uncategorized → largest slice
  *  (ties alphabetically by name) */
-function consumeIntoReimbursed(slices: TxSplit[], reimbursed: TxSplit, delta: number, nameOf: (catId: string) => string): void {
-  const takeFrom = (slice: TxSplit | undefined) => {
+type FlatSlice = { catId: string; amountCents: number };
+function consumeIntoReimbursed(slices: FlatSlice[], reimbursed: FlatSlice, delta: number, nameOf: (catId: string) => string): void {
+  const takeFrom = (slice: FlatSlice | undefined) => {
     if (!slice || delta <= 0) return;
     const taken = Math.min(slice.amountCents, delta);
     slice.amountCents -= taken;
@@ -160,8 +190,10 @@ export function creditRemainingCents(tx: Pick<TransactionRow, 'amountCents'>, gi
 }
 
 /** still waiting on settlement (redesign): an expected/received slice
- *  with value left — settled rows carry only `reimbursed` and drop out */
-export function hasUnsettledReimbursement(tx: Pick<TransactionRow, 'amountCents' | 'catId' | 'splits'>): boolean {
-  if (tx.splits?.length) return tx.splits.some((s) => REIMB_CAT_IDS.includes(s.catId) && s.amountCents > 0);
+ *  with value left — settled rows carry only `reimbursed` and drop out.
+ *  #211: the partition lives in `splits` on containers, `cats` on rows. */
+export function hasUnsettledReimbursement(tx: Pick<TransactionRow, 'amountCents' | 'catId' | 'cats' | 'splits'>): boolean {
+  const partition = tx.splits?.length ? tx.splits : tx.cats;
+  if (partition?.length) return partition.some((s) => REIMB_CAT_IDS.includes(s.catId) && s.amountCents > 0);
   return !!tx.catId && REIMB_CAT_IDS.includes(tx.catId) && tx.amountCents !== 0;
 }

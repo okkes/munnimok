@@ -3,9 +3,11 @@ import {
   clampReimbursement,
   creditRemainingCents,
   givenCents,
+  hasUnsettledReimbursement,
   netAmountCents,
   netCreditCents,
   remainingCents,
+  settledCats,
   settledSplits,
   totalReimbursedCents,
   withLink,
@@ -161,5 +163,54 @@ describe('settledSplits (redesign: gross slices + explicit reimbursed)', () => {
       nameOf,
     );
     expect(by(out)).toEqual({ food: 6_000, reimbursed: 4_000 });
+  });
+
+  it('#211 settledCats: a WHOLE row settles inside its own category partition, same rules', () => {
+    // no spread yet: the primary category seeds the gross
+    const plain = settledCats({ amountCents: -10_000, catId: 'food', cats: undefined }, 3_000, nameOf);
+    expect(by(plain)).toEqual({ food: 7_000, reimbursed: 3_000 });
+    // an existing spread keeps its attribution; the largest entry pays
+    const spread = settledCats(
+      {
+        amountCents: -10_000,
+        catId: 'food',
+        cats: [
+          { catId: 'food', amountCents: 6_000, pct: 60 },
+          { catId: 'fun', amountCents: 4_000, pct: 40 },
+        ],
+      },
+      2_000,
+      nameOf,
+    );
+    expect(by(spread)).toEqual({ food: 4_000, fun: 4_000, reimbursed: 2_000 });
+    // settlement breaks the user's % shape — entries come out plain cents
+    expect(spread.every((c) => c.pct === undefined)).toBe(true);
+    // a removed settlement frees onto uncategorized, never the original
+    const freed = settledCats(
+      { amountCents: -10_000, catId: 'food', cats: [{ catId: 'food', amountCents: 7_000 }, { catId: 'reimbursed', amountCents: 3_000 }] },
+      0,
+      nameOf,
+    );
+    expect(by(freed)).toEqual({ food: 7_000, uncategorized: 3_000 });
+  });
+
+  it('#211 hasUnsettledReimbursement reads the partition wherever it lives', () => {
+    expect(hasUnsettledReimbursement({ amountCents: -100, catId: 'expenseReimburse', cats: undefined, splits: undefined })).toBe(true);
+    expect(
+      hasUnsettledReimbursement({
+        amountCents: -100,
+        catId: 'food',
+        cats: [{ catId: 'expenseReimburse', amountCents: 40 }, { catId: 'food', amountCents: 60 }],
+        splits: undefined,
+      }),
+    ).toBe(true);
+    expect(
+      hasUnsettledReimbursement({
+        amountCents: -100,
+        catId: 'food',
+        cats: [{ catId: 'food', amountCents: 60 }, { catId: 'reimbursed', amountCents: 40 }],
+        splits: undefined,
+      }),
+    ).toBe(false);
   });
 });

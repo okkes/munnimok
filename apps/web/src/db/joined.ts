@@ -41,6 +41,7 @@ function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: strin
     needsReview: raw.pending === 1 ? 0 : (meta?.needsReview ?? defaults.needsReview),
     notes: meta?.notes,
     titleOverride: meta?.titleOverride,
+    cats: meta?.cats,
     splits: meta?.splits,
     reimbursements: meta?.reimbursements,
     linkedAccountId: meta?.linkedAccountId,
@@ -216,7 +217,7 @@ export async function visibleAccounts(store: StorageBackend, spaceId: string): P
 export type TxTransformFields = Partial<
   Pick<
     TxMetaRow,
-    'catId' | 'txType' | 'needsReview' | 'notes' | 'titleOverride' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId' | 'loanCounted'
+    'catId' | 'txType' | 'needsReview' | 'notes' | 'titleOverride' | 'cats' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId' | 'loanCounted'
   >
 >;
 

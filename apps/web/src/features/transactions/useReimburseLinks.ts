@@ -5,6 +5,7 @@ import {
   clampReimbursement,
   creditRemainingCents,
   givenCents,
+  settledCats,
   settledSplits,
   totalReimbursedCents,
   withLink,
@@ -28,10 +29,21 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
 
   // settlement rewrites category attribution (redesign, docs/
   // reimbursement-redesign.md): slices keep the GROSS truth and the
-  // settled value moves into an explicit `reimbursed` slice on BOTH sides
+  // settled value moves into an explicit `reimbursed` slice on BOTH
+  // sides. #211: a CONTAINER settles among its parts (`splits`); a
+  // whole row settles inside its own category partition (`cats`) —
+  // legacy bare slices clear in the same write.
+  const settledFields = (tx: SpaceTx, settled: number, catId: string | undefined) => {
+    const container = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1;
+    if (container) return { splits: settledSplits(tx, settled, nameOf) };
+    return {
+      cats: settledCats({ ...tx, catId }, settled, nameOf),
+      ...(tx.splits?.length ? { splits: null as never } : {}),
+    };
+  };
   const expensePatch = (expense: SpaceTx, newLinks: TxReimbursement[]) => ({
     reimbursements: newLinks,
-    splits: settledSplits(expense, totalReimbursedCents({ reimbursements: newLinks }), nameOf),
+    ...settledFields(expense, totalReimbursedCents({ reimbursements: newLinks }), expense.catId),
   });
 
   // a settled credit deserves a real category instead of "Uncategorized"
@@ -42,7 +54,7 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
     const catId = selfFiles ? REIMBURSED_ID : credit.catId;
     return {
       ...(selfFiles ? { catId, txType: 'income' as const, needsReview: 0 as const } : {}),
-      splits: settledSplits({ ...credit, catId }, newGivenCents, nameOf),
+      ...settledFields(credit, newGivenCents, catId),
     };
   };
 

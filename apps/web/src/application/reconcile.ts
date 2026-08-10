@@ -30,6 +30,7 @@ const OPINION_FIELDS = [
   'needsReview',
   'notes',
   'titleOverride',
+  'cats',
   'splits',
   'reimbursements',
   'linkedAccountId',

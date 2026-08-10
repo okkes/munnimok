@@ -27,7 +27,9 @@ export function subtreeIds(parentId: string, cats: { id: string; parentId?: stri
 }
 
 const usesCat = (tx: TransactionRow, catIds: Set<string>): boolean =>
-  (tx.catId !== undefined && catIds.has(tx.catId)) || (tx.splits ?? []).some((s) => catIds.has(s.catId));
+  (tx.catId !== undefined && catIds.has(tx.catId))
+  || (tx.splits ?? []).some((s) => catIds.has(s.catId) || (s.cats ?? []).some((c) => catIds.has(c.catId)))
+  || (tx.cats ?? []).some((c) => catIds.has(c.catId));
 
 /** transactions that would conflict if the category subtree changed to `newType` */
 export function affectedByTypeChange(txs: TransactionRow[], catIds: Set<string>, newType: TxType): TransactionRow[] {
@@ -52,13 +54,21 @@ export function affectedByDelete(txs: TransactionRow[], catIds: Set<string>): Tr
 /**
  * Field patch that detaches a transaction from a broken category:
  * back to Uncategorized, flagged for review. Splits drop the broken
- * rows' category but keep the amounts (also uncategorized).
+ * rows' category but keep the amounts (also uncategorized) — part
+ * spreads and the row's own `cats` partition (#211) the same way.
  */
 export function detachCategoryPatch(tx: TransactionRow, catIds: Set<string>): Partial<TransactionRow> {
   const patch: Partial<TransactionRow> = { needsReview: 1 };
+  const detachCats = <T extends { catId: string }>(entries: T[]): T[] =>
+    entries.map((c) => (catIds.has(c.catId) ? { ...c, catId: UNCATEGORIZED_ID } : c));
   if (tx.catId !== undefined && catIds.has(tx.catId)) patch.catId = UNCATEGORIZED_ID;
-  if ((tx.splits ?? []).some((s) => catIds.has(s.catId))) {
-    patch.splits = tx.splits!.map((s) => (catIds.has(s.catId) ? { ...s, catId: UNCATEGORIZED_ID } : s));
+  if ((tx.splits ?? []).some((s) => catIds.has(s.catId) || (s.cats ?? []).some((c) => catIds.has(c.catId)))) {
+    patch.splits = tx.splits!.map((s) => ({
+      ...s,
+      ...(catIds.has(s.catId) ? { catId: UNCATEGORIZED_ID } : {}),
+      ...(s.cats?.length ? { cats: detachCats(s.cats) } : {}),
+    }));
   }
+  if ((tx.cats ?? []).some((c) => catIds.has(c.catId))) patch.cats = detachCats(tx.cats!);
   return patch;
 }

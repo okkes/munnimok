@@ -544,18 +544,21 @@ const catBulkTargets = (
   allTxs: SpaceTx[] | undefined,
   tx: SpaceTx,
   offer: { catId: string } | null,
-): SpaceTx[] => (offer ? similarTo(allTxs, tx, (item) => !isMultiPartRow(item) && item.catId !== offer.catId) : []);
+): SpaceTx[] =>
+  // #211: a sibling carrying its own category spread made a deliberate
+  // multi-category decision — a single-category bulk never steamrolls it
+  (offer ? similarTo(allTxs, tx, (item) => !isMultiPartRow(item) && !item.cats?.length && item.catId !== offer.catId) : []);
 /** #141 (r2, user rule): the rows a fresh split can copy onto — same
- *  merchant, still splitless (a settled or already-split sibling never
- *  gets overwritten). An exact-euros split reaches ONLY siblings of the
- *  exact same amount; a percentage split scales, so it reaches any. */
+ *  merchant, still splitless (a settled, spread or already-split sibling
+ *  never gets overwritten). An exact-euros split reaches ONLY siblings
+ *  of the exact same amount; a percentage split scales, so it reaches any. */
 const splitBulkTargets = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, source: readonly TxSplit[]): SpaceTx[] => {
   const pctSplit = source.some((s) => s.pct != null);
   const totalCents = source.reduce((sum, s) => sum + Math.abs(s.amountCents), 0);
   return similarTo(
     allTxs,
     tx,
-    (item) => (item.splits ?? []).length === 0 && (pctSplit || Math.abs(item.amountCents) === totalCents),
+    (item) => (item.splits ?? []).length === 0 && !item.cats?.length && (pctSplit || Math.abs(item.amountCents) === totalCents),
   );
 };
 /** #141: the same split lands on every picked sibling, resized to its

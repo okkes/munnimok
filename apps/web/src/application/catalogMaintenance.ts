@@ -2,7 +2,8 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { tombstonedIds } from '@/domain/catalogDoc';
-import { UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
+import type { TxSplit, TxSplitCat } from '@/db/types';
 import { givenCents, settledSplits, totalReimbursedCents } from '@/domain/reimbursement';
 import { standardTypeFor } from '@/domain/txKind';
 import { cachedCatalog } from '@/sync/catalogSync';
@@ -131,6 +132,59 @@ export async function migrateFundingRows(store: StorageBackend, repo: Repo): Pro
       txType: standardTypeFor(amount),
       catId: meta.catId && meta.catId !== UNCATEGORIZED_ID ? meta.catId : autoSubFor('funding', amount),
     });
+    touched++;
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
+ * #211 split categories: `splits` means PARTS from here on — a plain
+ * multi-category assignment lives in the row's own `cats` partition.
+ * One pass folds every legacy bare-slice split (no part story on any
+ * entry) into `cats`, raw rows and per-space overlays alike. Real
+ * splits — any entry with a label, type, link, event, recurring,
+ * note or spread — stay containers untouched. A partition that no
+ * longer sums to the gross amount (pre-redesign drift) also stays: the
+ * readers keep their legacy `splits` fallback for exactly that shape.
+ */
+const isBareSlice = (s: TxSplit): boolean =>
+  s.label === undefined && s.txType === undefined && s.linkedAccountId === undefined
+    && s.transferPeerId === undefined && s.eventId === undefined && s.recurringId === undefined
+    && s.notes === undefined && !s.cats?.length;
+
+/** the fold's write fields — null when the split must stay a container.
+ *  A single plain slice is "no split" (the shadow catId already says
+ *  it), so only a real spread or settled bookkeeping materializes cats. */
+function catSpreadFold(
+  row: { cats?: TxSplitCat[]; splits?: TxSplit[]; deleted: number },
+  grossAbs: number,
+): { cats?: TxSplitCat[] } | null {
+  if (row.deleted !== 0 || row.cats?.length) return null;
+  const splits = row.splits;
+  if (!splits?.length || !splits.every(isBareSlice)) return null;
+  if (splits.reduce((total, s) => total + s.amountCents, 0) !== grossAbs) return null;
+  const entries = splits.map((s) => ({ catId: s.catId, amountCents: s.amountCents, ...(s.pct !== undefined ? { pct: s.pct } : {}) }));
+  const spread = entries.length > 1 || entries.some((e) => e.catId === REIMBURSED_ID);
+  return spread ? { cats: entries } : {};
+}
+
+export async function migrateCatSpreads(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'txCatSpreads_v1';
+  if (await store.metaGet(markerKey)) return 0;
+
+  let touched = 0;
+  for (const tx of await store.allRows('transaction')) {
+    const fold = catSpreadFold(tx, Math.abs(tx.amountCents));
+    if (!fold) continue;
+    await repo.upsert('transaction', tx.spaceId, tx.id, { ...fold, splits: null as never });
+    touched++;
+  }
+  for (const meta of await store.allRows('txMeta')) {
+    const raw = await store.get('transaction', meta.txId);
+    const fold = raw ? catSpreadFold(meta, Math.abs(raw.amountCents)) : null;
+    if (!fold) continue;
+    await repo.upsert('txMeta', meta.spaceId, meta.id, { ...fold, splits: null as never });
     touched++;
   }
   await store.metaPut(markerKey, Date.now());

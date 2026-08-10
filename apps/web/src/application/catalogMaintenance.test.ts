@@ -5,7 +5,7 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { applyCatalogTombstones, migrateFundingRows, migrateReimbursementSlices } from './catalogMaintenance';
+import { applyCatalogTombstones, migrateCatSpreads, migrateFundingRows, migrateReimbursementSlices } from './catalogMaintenance';
 
 const SPACE = 's1';
 
@@ -172,4 +172,82 @@ describe('typed-splits v2 migrations (funding retirement + linked-family inversi
     expect(await migrateFundingRows(store, repo)).toBe(0); // marker gates the rerun
   });
 
+});
+
+describe('#211 cat-spread fold (splits mean PARTS now)', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  const fresh = () => {
+    const store = new DexieBackend(new MunniDB(`munni_211_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    return { store, repo: new Repo(store, new HlcClock('m211'), { trackOutbox: false }) };
+  };
+  const base = { accountId: 'a', currency: 'EUR', merchant: 'X', needsReview: 0 as const, txType: 'expense' as const };
+
+  it('folds bare multi-slices into row cats (pct kept), unwraps lone slices, leaves real parts and drifted sums', async () => {
+    const { store, repo } = fresh();
+    // bare multi-cat (classic editor output, minted ids) → cats
+    await repo.upsert('transaction', SPACE, 't-spread', {
+      ...base, date: '2026-01-01', amountCents: -10_000, catId: 'groceries',
+      splits: [
+        { id: 'a1', catId: 'groceries', amountCents: 6_000, pct: 60 },
+        { id: 'a2', catId: 'householdSupplies', amountCents: 4_000, pct: 40 },
+      ],
+    });
+    // settled whole row (1 slice + reimbursed bookkeeping) → cats
+    await repo.upsert('transaction', SPACE, 't-settled', {
+      ...base, date: '2026-01-02', amountCents: -5_000, catId: 'food',
+      reimbursements: [{ txId: 'c1', amountCents: 2_000 }],
+      splits: [{ catId: 'food', amountCents: 3_000 }, { catId: 'reimbursed', amountCents: 2_000 }],
+    });
+    // a lone bare slice is "no split" — unwrapped, no cats materialized
+    await repo.upsert('transaction', SPACE, 't-lone', {
+      ...base, date: '2026-01-03', amountCents: -700, catId: 'coffee',
+      splits: [{ catId: 'coffee', amountCents: 700 }],
+    });
+    // a REAL split (part story) stays a container untouched
+    await repo.upsert('transaction', SPACE, 't-parts', {
+      ...base, date: '2026-01-04', amountCents: -6_500, catId: 'telecom',
+      splits: [
+        { id: 'p1', catId: 'telecom', amountCents: 4_000 },
+        { id: 'p2', catId: 'loanRepayment', amountCents: 2_500, label: 'Device plan' },
+      ],
+    });
+    // legacy drift: bare slices that no longer sum to gross stay put
+    await repo.upsert('transaction', SPACE, 't-drift', {
+      ...base, date: '2026-01-05', amountCents: -1_000, catId: 'fun',
+      splits: [{ catId: 'fun', amountCents: 300 }, { catId: 'coffee', amountCents: 200 }],
+    });
+    // overlays fold the same way against the RAW row's gross
+    await repo.upsert('transaction', SPACE, 'raw-m', { ...base, date: '2026-01-06', amountCents: -900, catId: 'fun' });
+    await repo.upsert('txMeta', SPACE, 'meta-m', {
+      txId: 'raw-m', txType: 'expense', needsReview: 0,
+      splits: [{ catId: 'fun', amountCents: 400 }, { catId: 'coffee', amountCents: 500 }],
+    });
+
+    expect(await migrateCatSpreads(store, repo)).toBe(4);
+    expect(await store.get('transaction', 't-spread')).toMatchObject({
+      cats: [
+        { catId: 'groceries', amountCents: 6_000, pct: 60 },
+        { catId: 'householdSupplies', amountCents: 4_000, pct: 40 },
+      ],
+    });
+    expect((await store.get('transaction', 't-spread'))?.splits?.length ?? 0).toBe(0);
+    expect(await store.get('transaction', 't-settled')).toMatchObject({
+      cats: [{ catId: 'food', amountCents: 3_000 }, { catId: 'reimbursed', amountCents: 2_000 }],
+    });
+    const lone = await store.get('transaction', 't-lone');
+    expect(lone?.splits?.length ?? 0).toBe(0);
+    expect(lone?.cats?.length ?? 0).toBe(0);
+    expect((await store.get('transaction', 't-parts'))?.splits).toHaveLength(2);
+    expect((await store.get('transaction', 't-drift'))?.splits).toHaveLength(2);
+    expect((await store.get('transaction', 't-drift'))?.cats).toBeUndefined();
+    expect(await store.get('txMeta', 'meta-m')).toMatchObject({
+      cats: [{ catId: 'fun', amountCents: 400 }, { catId: 'coffee', amountCents: 500 }],
+    });
+    expect(await migrateCatSpreads(store, repo)).toBe(0); // marker gates the rerun
+  });
 });

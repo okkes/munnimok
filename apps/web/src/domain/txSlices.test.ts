@@ -98,6 +98,33 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
     expect(txSliceViews(row({ recurringId: 'rec-row' }))[0].recurringId).toBe('rec-row');
   });
 
+  it('#211: a row category spread fans one view per entry — the whole story riding each, fromParts false', () => {
+    const views = txSliceViews(
+      row({
+        eventId: 'trip',
+        recurringId: 'rec',
+        cats: [
+          { catId: 'groceries', amountCents: 6000 },
+          { catId: 'householdSupplies', amountCents: 2740 },
+        ],
+      }),
+    );
+    expect(views).toHaveLength(2);
+    expect(views[0]).toMatchObject({
+      amountCents: -6000, catId: 'groceries', effType: 'expense', eventId: 'trip', recurringId: 'rec', fromParts: false, count: 2,
+    });
+    expect(views[1]).toMatchObject({ amountCents: -2740, catId: 'householdSupplies', fromParts: false, index: 1 });
+    // a refund row's spread stays signed — positive entries
+    const refund = txSliceViews(row({ amountCents: 500, cats: [{ catId: 'a', amountCents: 300 }, { catId: 'b', amountCents: 200 }] }));
+    expect(refund.map((v) => v.amountCents)).toEqual([300, 200]);
+  });
+
+  it('#211: parts wear fromParts, whole rows do not; splits win when both exist (legacy shape)', () => {
+    expect(txSliceViews(row({}))[0].fromParts).toBe(false);
+    const split = txSliceViews(row({ splits: [{ catId: 'a', amountCents: 5000 }, { catId: 'b', amountCents: 3740 }] }));
+    expect(split.every((v) => v.fromParts)).toBe(true);
+  });
+
   it('hasSliceOfType answers filters per effective type', () => {
     const split = row({
       splits: [

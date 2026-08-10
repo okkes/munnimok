@@ -113,6 +113,22 @@ describe('feature B join layer', () => {
     expect(metas[0].notes).toBe('weekly shop');
   });
 
+  it('#211: the category spread is a space opinion — cats overlay onto feed rows and stay per space', async () => {
+    await seedFeed();
+    const [tx] = await visibleTransactions(new DexieBackend(db), SPACE);
+    const spread = [
+      { catId: 'groceries', amountCents: Math.abs(tx.amountCents) - 100 },
+      { catId: 'householdSupplies', amountCents: 100 },
+    ];
+    await writeTxTransform(repo, tx, { catId: 'groceries', cats: spread, needsReview: 0 });
+
+    const [again] = await visibleTransactions(new DexieBackend(db), SPACE);
+    expect(again.cats).toEqual(spread); // joinTx maps the overlay field
+    const metas = await db.txMeta.where('spaceId').equals(SPACE).toArray();
+    expect(metas[0].cats).toEqual(spread); // stored on the overlay, not the raw row
+    expect((await db.transactions.get('raw1'))?.cats).toBeUndefined();
+  });
+
   it('#133 removal: the VIEW derives every type at the join — stored values are never read', async () => {
     await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('account', SPACE, 'defpot', { name: 'Default savings', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'saving' });

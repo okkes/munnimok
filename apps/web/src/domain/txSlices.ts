@@ -24,33 +24,46 @@ export interface TxSliceView {
   sliceId: string | undefined;
   /** the user's stored label; display defaults are the caller's job */
   label: string | undefined;
+  /** true when the view is a container PART (#211): parts are magnitudes
+   *  and aggregate absolutely; a whole row — its category spread
+   *  included — contributes signed, so refunds keep reducing spend */
+  fromParts: boolean;
   index: number;
   count: number;
 }
 
 type SliceSource = Pick<
   TransactionRow,
-  'amountCents' | 'catId' | 'txType' | 'eventId' | 'recurringId' | 'linkedAccountId' | 'transferPeerId' | 'splits'
+  'amountCents' | 'catId' | 'cats' | 'txType' | 'eventId' | 'recurringId' | 'linkedAccountId' | 'transferPeerId' | 'splits'
 >;
 
 export function txSliceViews(tx: SliceSource): TxSliceView[] {
   const parts = tx.splits?.filter((s) => s.amountCents !== 0);
   if (!parts?.length) {
-    return [
-      {
-        amountCents: tx.amountCents,
-        catId: tx.catId,
-        effType: tx.txType,
-        eventId: tx.eventId,
-        recurringId: tx.recurringId,
-        linkedAccountId: tx.linkedAccountId,
-        transferPeerId: tx.transferPeerId,
-        sliceId: undefined,
-        label: undefined,
-        index: 0,
-        count: 1,
-      },
-    ];
+    const whole = {
+      effType: tx.txType,
+      eventId: tx.eventId,
+      recurringId: tx.recurringId,
+      linkedAccountId: tx.linkedAccountId,
+      transferPeerId: tx.transferPeerId,
+      sliceId: undefined,
+      label: undefined,
+      fromParts: false,
+    };
+    // #211 split categories: the row stays ONE transaction — every
+    // entry keeps the row's whole story, only the attribution fans
+    const rowCats = tx.cats?.filter((c) => c.amountCents !== 0);
+    if (rowCats?.length) {
+      const rowSign = tx.amountCents < 0 ? -1 : 1;
+      return rowCats.map((c, index) => ({
+        ...whole,
+        amountCents: rowSign * Math.abs(c.amountCents),
+        catId: c.catId,
+        index,
+        count: rowCats.length,
+      }));
+    }
+    return [{ ...whole, amountCents: tx.amountCents, catId: tx.catId, index: 0, count: 1 }];
   }
   const sign = tx.amountCents < 0 ? -1 : 1;
   const views = parts.flatMap((part) => {
@@ -65,6 +78,7 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
       transferPeerId: part.transferPeerId,
       sliceId: part.id,
       label: part.label,
+      fromParts: true,
     };
     // v2.1: a part spread across categories fans one view per category
     // entry — the part's story (type/link/event/label) rides on each
@@ -90,16 +104,17 @@ export const hasSliceOfType = (tx: SliceSource, txType: TxType): boolean =>
 // kind freely; incompleteness surfaces as attention marks, not refusals.
 
 /**
- * The presentation discriminator (v2.1): a split renders as PARTS (labels,
- * spine, type chips) only when some part actually tells a part story —
- * its own type, link, event, label or category spread. A plain
- * multi-category assignment keeps the classic slice look everywhere.
- * `id` deliberately doesn't count: the editor mints ids on every save.
+ * #211: `splits` means PARTS now — a plain multi-category assignment
+ * lives in the row's own `cats`. This predicate only serves the one-shot
+ * boot migration that folds legacy bare slices into `cats`: an entry
+ * with any part story (type, link, event, recurring, label, note or
+ * category spread) marks a REAL split that stays where it is.
+ * `id` deliberately doesn't count: the old editor minted ids on every save.
  */
 export const hasTypedParts = (tx: Pick<TransactionRow, 'splits'>): boolean =>
   !!tx.splits?.some(
     (s) => s.label !== undefined || s.txType !== undefined || s.linkedAccountId !== undefined
-      || s.eventId !== undefined || !!s.cats?.length,
+      || s.eventId !== undefined || s.recurringId !== undefined || s.notes !== undefined || !!s.cats?.length,
   );
 
 /** floor + largest remainder: `weights` partitioned onto `targetCents`,
@@ -144,7 +159,9 @@ export function scaleSplitsTo(source: readonly TxSplit[], targetAbsCents: number
   });
 }
 
-function scaleCatsTo(cats: NonNullable<TxSplit['cats']>, partCents: number): TxSplit['cats'] {
+/** a category partition, resized proportionally (largest remainder) —
+ *  shared by part spreads and the #141 sibling offer for row `cats` */
+export function scaleCatsTo(cats: NonNullable<TxSplit['cats']>, partCents: number): TxSplit['cats'] {
   const total = cats.reduce((sum, c) => sum + Math.abs(c.amountCents), 0);
   if (total <= 0) return undefined;
   const partition = largestRemainder(cats.map((c) => Math.abs(c.amountCents)), total, partCents);

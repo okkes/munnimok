@@ -240,21 +240,39 @@ export async function copyCategoryToSpace(
   }
 }
 
+/** rewrites a category-entry array through the id map; undefined when
+ *  nothing changed — shared by row `cats` (#211) and part spreads */
+const remapCatEntries = <T extends { catId: string }>(entries: T[] | undefined, idMap: Map<string, string>): T[] | undefined => {
+  if (!entries?.some((c) => idMap.has(c.catId))) return undefined;
+  return entries.map((c) => (idMap.has(c.catId) ? { ...c, catId: idMap.get(c.catId)! } : c));
+};
+
 /** rewrites a splits array through the id map; undefined when nothing changed */
 const remapSplits = (splits: TxSplit[] | undefined, idMap: Map<string, string>): TxSplit[] | undefined => {
-  if (!splits?.some((s) => idMap.has(s.catId))) return undefined;
-  return splits.map((s) => (idMap.has(s.catId) ? { ...s, catId: idMap.get(s.catId)! } : s));
+  if (!splits?.some((s) => idMap.has(s.catId) || (s.cats ?? []).some((c) => idMap.has(c.catId)))) return undefined;
+  return splits.map((s) => ({
+    ...s,
+    ...(idMap.has(s.catId) ? { catId: idMap.get(s.catId)! } : {}),
+    ...(s.cats?.length ? { cats: remapCatEntries(s.cats, idMap) ?? s.cats } : {}),
+  }));
 };
 
 /** rows that reference categories (transactions and overlays share the shape) */
-type CatHolder = Pick<TransactionRow, 'id' | 'catId' | 'splits'>;
+type CatHolder = Pick<TransactionRow, 'id' | 'catId' | 'cats' | 'splits'>;
+
+/** every category id one row references: its own, its `cats` entries and
+ *  each part's own + spread (#211) */
+const holderCatIds = (holder: CatHolder): (string | undefined)[] => [
+  holder.catId,
+  ...(holder.cats ?? []).map((c) => c.catId),
+  ...(holder.splits ?? []).flatMap((s) => [s.catId, ...(s.cats ?? []).map((c) => c.catId)]),
+];
 
 const collectUserScopedUse = (holders: CatHolder[], userScoped: (id?: string) => CategoryRow | undefined): Set<string> => {
   const used = new Set<string>();
   for (const holder of holders) {
-    if (userScoped(holder.catId)) used.add(holder.catId!);
-    for (const split of holder.splits ?? []) {
-      if (userScoped(split.catId)) used.add(split.catId);
+    for (const catId of holderCatIds(holder)) {
+      if (userScoped(catId)) used.add(catId!);
     }
   }
   return used;
@@ -312,10 +330,12 @@ async function rewriteReferences(
 ): Promise<void> {
   for (const holder of holders) {
     const catId = holder.catId ? idMap.get(holder.catId) : undefined;
+    const cats = remapCatEntries(holder.cats, idMap);
     const splits = remapSplits(holder.splits, idMap);
-    if (!catId && !splits) continue;
+    if (!catId && !cats && !splits) continue;
     await repo.upsert(entity, spaceId, holder.id, {
       ...(catId ? { catId } : {}),
+      ...(cats ? { cats } : {}),
       ...(splits ? { splits } : {}),
     });
   }

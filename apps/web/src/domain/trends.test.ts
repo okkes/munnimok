@@ -35,20 +35,34 @@ describe('categorySeries', () => {
     expect(categorySeries(txs, periods, catalog)).toEqual([2000, 600]);
   });
 
-  it('a main covers its subs; split parts count toward their own category', () => {
+  it('a main covers its subs; category spreads and parts count toward their own category (#211)', () => {
     const txs = [
       tx({ date: '2026-06-05', catId: 'groceries', amountCents: -1500 }),
       tx({ date: '2026-06-06', catId: 'gym', amountCents: -3000 }), // sport, not consumption
       tx({
+        // #211: the row's OWN spread — one transaction, two categories
         date: '2026-06-07',
         catId: 'consumptionOther',
         amountCents: -1000,
-        splits: [{ catId: 'alcohol', amountCents: 300 }], // consumption sub
+        cats: [
+          { catId: 'consumptionOther', amountCents: 700 },
+          { catId: 'alcohol', amountCents: 300 },
+        ],
+      }),
+      tx({
+        // a real split: only the consumption PART counts here
+        date: '2026-06-08',
+        catId: 'groceries',
+        amountCents: -900,
+        splits: [
+          { id: 'p1', catId: 'groceries', amountCents: 400 },
+          { id: 'p2', catId: 'gym', amountCents: 500, label: 'day pass' },
+        ],
       }),
     ];
-    // consumption = groceries 1500 + split part 300 + remainder 700
-    expect(categorySeries(txs, periods, catalog, 'consumption')).toEqual([0, 2500]);
-    expect(categorySeries(txs, periods, catalog, 'groceries')).toEqual([0, 1500]);
+    // consumption = groceries 1500 + spread 700+300 + part 400
+    expect(categorySeries(txs, periods, catalog, 'consumption')).toEqual([0, 2900]);
+    expect(categorySeries(txs, periods, catalog, 'groceries')).toEqual([0, 1900]);
   });
 });
 

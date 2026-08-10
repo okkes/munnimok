@@ -16,11 +16,14 @@ import { Pill } from './primitives';
  * "mixed" mark.
  */
 function txVisual(
-  tx: Pick<TransactionRow, 'catId' | 'splits'>,
+  tx: Pick<TransactionRow, 'catId' | 'cats' | 'splits'>,
   cats: ReturnType<typeof useCategories>,
   t: TFunc,
 ): { icon: string; color: string; label: string } {
-  const slices = (tx.splits ?? []).filter((s) => s.amountCents !== 0);
+  // #211: the row's own category spread and a container's parts wear the
+  // same face rules — several categories under one parent show the
+  // parent, across parents the neutral mixed mark
+  const slices = (tx.splits?.length ? tx.splits : (tx.cats ?? [])).filter((s) => s.amountCents !== 0);
   const distinctCatIds = [...new Set(slices.map((s) => s.catId))];
   if (distinctCatIds.length > 1) {
     const parents = [...new Set(distinctCatIds.map((id) => cats.byId(id).parentId ?? id))];
@@ -81,6 +84,9 @@ export function TxRow({
   const display = amountOverrideCents ?? net;
   const positive = display > 0;
   const reimbursed = net !== tx.amountCents;
+  // the 2px split bar: a container's parts, or the row's own category
+  // spread (#211) — one segment per slice in its category color
+  const segmentSlices = (tx.splits?.length ? tx.splits : tx.cats)?.filter((s) => s.amountCents !== 0);
 
   return (
     <button
@@ -137,11 +143,11 @@ export function TxRow({
             part in its category color — quiet until it matters. The
             testid prefix is deliberately NOT tx-row- : list tests count
             rows by that prefix, and the bar lives inside one. */}
-        {(tx.splits?.length ?? 0) > 1 && (
+        {(segmentSlices?.length ?? 0) > 1 && (
           <span className="mt-0.5 flex h-[2px] w-full gap-[1.5px] overflow-hidden rounded-full" data-testid={`tx-segments-${tx.id}`}>
-            {tx.splits!.filter((s) => s.amountCents !== 0).map((s, i) => (
+            {segmentSlices!.map((s, i) => (
               <span
-                key={s.id ?? i}
+                key={`${s.catId}-${i}`}
                 className="h-full rounded-full"
                 style={{
                   flex: Math.abs(s.amountCents),

@@ -89,7 +89,9 @@ export function budgetSpentCents(
     if (tx.date < period.start || tx.date > period.end) continue;
     for (const view of txSliceViews(tx)) {
       if (view.effType !== 'expense' || !family.has(view.catId ?? '')) continue;
-      total += view.count === 1 ? -view.amountCents : Math.abs(view.amountCents);
+      // whole-row views (a category spread included, #211) contribute
+      // SIGNED — refunds keep reducing spend; parts are magnitudes
+      total += view.fromParts ? Math.abs(view.amountCents) : -view.amountCents;
     }
   }
   return total;

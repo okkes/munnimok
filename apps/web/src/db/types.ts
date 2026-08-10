@@ -171,6 +171,10 @@ export interface TxSplitCat {
   catId: string;
   /** positive magnitude, same sign convention as the part */
   amountCents: number;
+  /** percentage entry (0–100), row-level spreads only (#211): kept when
+   *  the spread was typed in % so the #141 sibling offer can rescale;
+   *  amountCents stays materialized either way */
+  pct?: number;
 }
 
 /** money received back against an expense (owned by the expense side) */
@@ -196,6 +200,12 @@ export interface TransactionRow extends SyncEnvelope {
   titleOverride?: string;
   description?: string;
   catId?: string;
+  /** #211 split categories: the ROW's own multi-category partition —
+   *  magnitudes sum to |amountCents|, catId stays the largest entry as
+   *  the compat shadow. A row with `cats` is still ONE transaction.
+   *  `splits` is the OTHER feature (a container's parts) — the two
+   *  never mix: containers carry no cats of their own. */
+  cats?: TxSplitCat[];
   splits?: TxSplit[];
   txType: TxType;
   needsReview: 0 | 1;
@@ -248,6 +258,8 @@ export interface TxMetaRow extends SyncEnvelope {
   notes?: string;
   /** user-chosen display title; the bank's merchant stays untouched */
   titleOverride?: string;
+  /** #211: the space's multi-category partition of the raw row */
+  cats?: TxSplitCat[];
   splits?: TxSplit[];
   reimbursements?: TxReimbursement[];
   linkedAccountId?: string;

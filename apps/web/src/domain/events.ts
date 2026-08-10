@@ -11,7 +11,7 @@ function eventViews(tx: TransactionRow, eventId: string): TxSliceView[] {
   return txSliceViews(tx).filter((view) => view.eventId === eventId && view.effType === 'expense');
 }
 
-const viewSpent = (view: TxSliceView): number => (view.count === 1 ? -view.amountCents : Math.abs(view.amountCents));
+const viewSpent = (view: TxSliceView): number => (view.fromParts ? Math.abs(view.amountCents) : -view.amountCents);
 
 /** positive cents spent inside the event (expenses; refunds reduce) */
 export function eventSpentCents(txs: readonly TransactionRow[], eventId: string): number {

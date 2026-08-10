@@ -47,6 +47,16 @@ type BaseRow = (
   eventOf?: string,
 ) => string[];
 
+/** #211: a row's own category spread exports one honest row per entry,
+ *  the same shape a part spread gets — marked `cat` (it is not a part) */
+function pushCatRows(rows: string[][], tx: TransactionRow, catalog: Catalog, base: BaseRow): void {
+  for (const entry of tx.cats ?? []) {
+    const entryCat = catalog.byId(entry.catId);
+    const entryMain = entryCat.parentId ? catalog.byId(entryCat.parentId) : entryCat;
+    rows.push(base('cat', entryCat, entryMain, Math.sign(tx.amountCents) * Math.abs(entry.amountCents)));
+  }
+}
+
 /** split parts carry the expense sign of their parent, their OWN
  *  type/event (typed-splits v2), and the label rides the marker; a part
  *  spread across categories (v2.1) exports one honest row per entry */
@@ -106,6 +116,7 @@ export function toCsvRows(txs: readonly TransactionRow[], ctx: ExportContext): s
       ...(ctx.technical ? [tx.id, tx.accountId] : []),
     ];
     rows.push(base('', cat, main, tx.amountCents));
+    pushCatRows(rows, tx, ctx.catalog, base);
     pushPartRows(rows, tx, ctx.catalog, base);
   }
   return rows;

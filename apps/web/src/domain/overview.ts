@@ -86,7 +86,7 @@ function viewContribution(kind: OverviewKind, view: TxSliceView, tx: Transaction
  *  split row's parts answer per kind themselves. */
 export function contributionCents(kind: OverviewKind, tx: TransactionRow, accountsById?: Map<string, AccountRow>): number {
   return txSliceViews(tx)
-    .filter((view) => view.count === 1 || viewInKind(kind, view))
+    .filter((view) => !view.fromParts || viewInKind(kind, view))
     .reduce((sum, view) => sum + viewContribution(kind, view, tx, accountsById), 0);
 }
 
@@ -168,9 +168,10 @@ export function categoryContributionCents(
     if ((cat.parentId ?? cat.id) === REIMBURSEMENT_MAIN_ID) continue;
     if (cat.id !== catId && cat.parentId !== catId) continue;
     // typed parts answer to their OWN kind (a loan part never lands in
-    // the expense breakdown); the unsplit whole keeps the kind's math
-    if (view.count > 1 && !viewInKind(kind, view)) continue;
-    cents += view.count === 1 ? viewContribution(kind, view, tx, accountsById) : Math.abs(view.amountCents);
+    // the expense breakdown); whole rows — category spreads included
+    // (#211) — keep the kind's signed math
+    if (view.fromParts && !viewInKind(kind, view)) continue;
+    cents += view.fromParts ? Math.abs(view.amountCents) : viewContribution(kind, view, tx, accountsById);
   }
   return cents;
 }
@@ -225,8 +226,8 @@ export function categoryBreakdown(
   };
   for (const tx of txsForKind(kind, txs, accountsById, period)) {
     for (const view of txSliceViews(tx)) {
-      if (view.count > 1 && !viewInKind(kind, view)) continue; // parts answer per kind (v2)
-      add(view.catId, view.count === 1 ? viewContribution(kind, view, tx, accountsById) : Math.abs(view.amountCents));
+      if (view.fromParts && !viewInKind(kind, view)) continue; // parts answer per kind (v2)
+      add(view.catId, view.fromParts ? Math.abs(view.amountCents) : viewContribution(kind, view, tx, accountsById));
     }
   }
   return [...groups.values()]

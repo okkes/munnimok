@@ -69,6 +69,26 @@ function splitCatProblems(split: { amountCents?: unknown; cats?: unknown }): str
   return problems;
 }
 
+/** #211 split categories: the ROW's partition must be sound and sum to
+ *  the gross amount (settled `reimbursed` entries included — the gross
+ *  invariant of the reimbursement redesign). A lone entry is legal: a
+ *  fully settled row carries only its `reimbursed` entry. */
+function rowCatsProblems(row: Record<string, unknown>): string[] {
+  if (row.cats === undefined || row.cats === null) return [];
+  if (!Array.isArray(row.cats) || row.cats.length === 0) return ['row cats must hold at least one entry'];
+  const problems: string[] = [];
+  let sum = 0;
+  for (const cat of row.cats as { catId?: unknown; amountCents?: unknown }[]) {
+    if (typeof cat.catId !== 'string' || cat.catId.length === 0) problems.push('row cat without a category');
+    if (!isIntCents(cat.amountCents) || cat.amountCents < 0) problems.push('row cat amount must be non-negative integer cents');
+    else sum += cat.amountCents as number;
+  }
+  if (problems.length === 0 && isIntCents(row.amountCents) && sum !== Math.abs(row.amountCents)) {
+    problems.push('row cats must sum to the gross amount');
+  }
+  return problems;
+}
+
 function reimbursementProblems(links: { txId?: unknown; amountCents?: unknown }[]): string[] {
   const problems: string[] = [];
   for (const link of links) {
@@ -82,6 +102,7 @@ function transactionProblems(row: Record<string, unknown>): string[] {
   const reviewFlagOk = row.needsReview === undefined || row.needsReview === 0 || row.needsReview === 1;
   return [
     ...amountAndTypeProblems(row),
+    ...rowCatsProblems(row),
     ...splitProblems((row.splits as { catId?: unknown; amountCents?: unknown }[] | null | undefined) ?? []),
     ...reimbursementProblems((row.reimbursements as { txId?: unknown; amountCents?: unknown }[] | null | undefined) ?? []),
     ...(reviewFlagOk ? [] : ['needsReview must be 0 or 1']),
