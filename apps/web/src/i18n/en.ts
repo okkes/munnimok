@@ -1175,6 +1175,7 @@ export const en = {
   'acct.defaultLoan': 'Default loan',
   'acct.defaultInvest': 'Default investments',
   'split.partCatsTitle': 'Categories for this part',
+  'split.partsSection': 'Split transactions',
   'split.attentionNote': 'The marked parts still need a category.',
   'split.resetWarnTitle': 'Split this transaction?',
   'split.resetWarnBody': 'Splitting turns it into a container: its own category, recurring link, event and note are reset — the parts carry those from now on.',

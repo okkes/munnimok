@@ -62,7 +62,8 @@ function TxPartSoloRows({
  *  user's inspiration): a compact header band names the original
  *  transaction — split badge, part count, the FULL amount, a collapse
  *  chevron — and a curved branch line walks into each sub-transaction
- *  row below it. Module-level for S2004. */
+ *  row below it. r9: the whole group lives in its own bordered card so
+ *  it never reads as a tail of the row above. Module-level for S2004. */
 function TxPartGroupRows({
   tx,
   parts,
@@ -80,8 +81,11 @@ function TxPartGroupRows({
   const sign = tx.amountCents < 0 ? -1 : 1;
   const totalCents = sign * parts.reduce((sum, part) => sum + Math.abs(part.amountCents), 0);
   return (
-    <div className="my-1" data-testid={`tx-parts-${tx.id}`}>
-      <div className="flex items-center overflow-hidden rounded-card bg-accent-soft/45">
+    <div
+      className="my-2 overflow-hidden rounded-card border border-accent-deep/20 bg-accent-soft/15"
+      data-testid={`tx-parts-${tx.id}`}
+    >
+      <div className="flex items-center bg-accent-soft/45">
         <button
           data-testid={`tx-parts-head-${tx.id}`}
           onClick={() => onOpen(undefined)}

@@ -573,6 +573,12 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(() => expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull());
     expect(screen.queryByTestId('tx-detail-recurring-row')).toBeNull();
     await screen.findByTestId('tx-detail-manage-splits');
+    // r9: the parts section says what it lists, and the container-only
+    // blocks (reimbursements, receipt, customize) leave with the notes
+    expect(screen.getByText('Split transactions')).toBeTruthy();
+    expect(screen.queryByTestId('reimb-list')).toBeNull();
+    expect(screen.queryByTestId('receipt-file')).toBeNull();
+    expect(screen.queryByTestId('tx-detail-customize')).toBeNull();
     db.close();
   }, 15_000);
 
@@ -615,6 +621,9 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     // the sub-transactions stand as first-class rows branching off it
     await screen.findByTestId('tx-parts-tx-parts', {}, { timeout: 5000 });
     expect(screen.queryByTestId('tx-row-tx-parts')).toBeNull();
+    // r9: the group stands in its OWN bordered card — visibly separate
+    // from whatever row sits above it
+    expect(screen.getByTestId('tx-parts-tx-parts').className).toContain('border-accent-deep/20');
     const head = screen.getByTestId('tx-parts-head-tx-parts');
     expect(head.textContent).toContain('Vodafone');
     expect(head.textContent).toContain('2 linked parts');
@@ -712,6 +721,50 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.queryByTestId('tx-part-amount')).toBeNull();
     // the container carries no type row — the parts do (#126 r4)
     expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull();
+    db.close();
+  }, 15_000);
+
+  it('r9: the part label renames from its own page — save trims, reset settles to the default', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('screen-transactions');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-rename'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-parts', {
+      accountId: 'demo_main',
+      date: '2020-02-01',
+      amountCents: -6500,
+      currency: 'EUR',
+      merchant: 'Vodafone',
+      catId: 'telecom',
+      txType: 'expense',
+      needsReview: 0,
+      splits: [
+        { id: 'pp1', catId: 'telecom', amountCents: 4000 },
+        { id: 'pp2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving', label: 'Device plan' },
+      ],
+    });
+    await screen.findByTestId('tx-parts-tx-parts', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('tx-part-row-tx-parts-1'));
+    await screen.findByTestId('tx-part-amount');
+
+    // the app bar pencil opens the rename sheet primed with the label
+    fireEvent.click(screen.getByTestId('tx-part-rename'));
+    const input = (await screen.findByTestId('tx-rename-input')) as HTMLInputElement;
+    expect(input.value).toBe('Device plan');
+    fireEvent.change(input, { target: { value: '  Phone chunk  ' } });
+    fireEvent.click(screen.getByTestId('tx-rename-save'));
+    await waitFor(async () => {
+      const row = await db.transactions.get('tx-parts');
+      expect(row?.splits?.[1]?.label).toBe('Phone chunk');
+    }, { timeout: 5000 });
+
+    // reset clears the label — the page falls back to the derived name
+    fireEvent.click(screen.getByTestId('tx-part-rename'));
+    fireEvent.click(await screen.findByTestId('tx-rename-reset'));
+    await waitFor(async () => {
+      const row = await db.transactions.get('tx-parts');
+      expect(row?.splits?.[1]?.label).toBeUndefined();
+    }, { timeout: 5000 });
     db.close();
   }, 15_000);
 

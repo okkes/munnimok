@@ -588,8 +588,8 @@ const valuesEditorValue = (
 };
 
 /** the app bar's pencil: rename on bank rows, full edit on manual ones,
- *  nothing on a part page (the container owns both). Module-level for
- *  S3776. */
+ *  rename on a part page too (r9: the split's label is the user's).
+ *  Module-level for S3776. */
 function detailTrailingAction(
   isPart: boolean,
   importRef: string | undefined,
@@ -597,7 +597,13 @@ function detailTrailingAction(
   onRename: () => void,
   onEdit: () => void,
 ): ReactNode {
-  if (isPart) return undefined;
+  if (isPart) {
+    return (
+      <IconButton label={t('tx.renameTitle')} testId="tx-part-rename" onClick={onRename}>
+        <Icon name="pencil-outline" size={20} />
+      </IconButton>
+    );
+  }
   if (importRef) {
     return (
       <IconButton label={t('tx.renameTitle')} testId="tx-detail-rename" onClick={onRename}>
@@ -612,11 +618,48 @@ function detailTrailingAction(
   );
 }
 
+/** the derived "… – split N" name a part settles on without a label
+ *  of its own (r9 rename). Module-level for S3776. */
+const derivedPartLabel = (tx: SpaceTx, parts: readonly TxSplit[], partView: TxSplit | undefined, t: TFunc): string =>
+  partView ? `${txTitle(tx)} – ${t('split.partN', { n: parts.indexOf(partView) + 1 })}` : '';
+
 /** the app bar's name: the whole transaction's title, or the part's
  *  own face on a part page. Module-level for S3776. */
 function detailScreenTitle(tx: SpaceTx, parts: readonly TxSplit[], partView: TxSplit | undefined, t: TFunc): string {
   if (!partView) return txTitle(tx);
-  return orDefaultLabel(partView.label, `${txTitle(tx)} – ${t('split.partN', { n: parts.indexOf(partView) + 1 })}`);
+  return orDefaultLabel(partView.label, derivedPartLabel(tx, parts, partView, t));
+}
+
+/** r9: the part's label written from its own page — Save trims; ''
+ *  (or typing the default back) clears the label so the derived name
+ *  rules again. Module-level for S3776. */
+function writePartLabel(
+  transform: ReturnType<typeof useTxTransform>,
+  tx: SpaceTx,
+  partView: TxSplit | undefined,
+  defaultLabel: string,
+  raw: string,
+): void {
+  if (!partView) return;
+  const trimmed = raw.trim();
+  const label = trimmed && trimmed !== defaultLabel ? trimmed : undefined;
+  const nextSplits = (tx.splits ?? []).map((s) => (s.id === partView.id ? { ...s, label } : s));
+  void transform(tx, { splits: nextSplits });
+}
+
+/** the rename sheet serves BOTH the whole transaction and a part page
+ *  (r9): one place decides which story it edits. Module for S3776. */
+function renameSheetProps(
+  tx: SpaceTx,
+  partView: TxSplit | undefined,
+  partDefault: string,
+  savePart: (raw: string) => void,
+  saveTitle: (raw: string) => void,
+): { original: string; value: string; onSave: (raw: string) => void } {
+  if (partView) {
+    return { original: partDefault, value: orDefaultLabel(partView.label, partDefault), onSave: savePart };
+  }
+  return { original: cleanBankText(tx.merchant), value: txTitle(tx), onSave: saveTitle };
 }
 
 /** drafted-until-complete (#126 r4, relaxed r7): the staged split may
@@ -1425,6 +1468,11 @@ export function TxDetailScreen() {
 
   // #126 r4: ?part=<id> shows ONE part as its own transaction page
   const partView = findPartView(parts, partParam);
+  // r9: the part's label is editable from its page — the rename sheet
+  // doubles for it (derive + write + props live at module level, S3776)
+  const partDefault = derivedPartLabel(tx, parts, partView, t);
+  const savePartLabel = (raw: string): void => writePartLabel(transform, tx, partView, partDefault, raw);
+  const renameProps = renameSheetProps(tx, partView, partDefault, savePartLabel, renameTitle);
   const screenTitle = detailScreenTitle(tx, parts, partView, t);
   const trailingAction = detailTrailingAction(!!partView, tx.importRef, t, () => setRenameOpen(true), () => setEditOpen(true));
   // the values editor edits the STAGE when one exists, else the stored
@@ -1573,8 +1621,14 @@ export function TxDetailScreen() {
         </div>
 
         {/* block: categories — ONE edit affordance for the whole block
-            (user: a pencil per slice read wrong); rows stay tappable */}
-        <CategoriesHeader locked={categoryLocked} byRecurring={!!recurringAllowedCats} onEdit={openCategoriesEditor} />
+            (user: a pencil per slice read wrong); rows stay tappable.
+            r9: on a container the block lists PARTS, and says so */}
+        <CategoriesHeader
+          locked={categoryLocked}
+          byRecurring={!!recurringAllowedCats}
+          multiPart={multiPart}
+          onEdit={openCategoriesEditor}
+        />
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-detail-categories">
           <CategorySlices
             tx={tx}
@@ -1638,10 +1692,12 @@ export function TxDetailScreen() {
         <DetailFacts tx={tx} givenOut={givenOut} />
 
         {/* the sections below the details card follow the space's saved
-            order/visibility (user request — same mechanics as Home) */}
-        {resolveTxDetailBlocks(space)
-          // r7: the container keeps no note of its own — the parts do
-          .filter((entry) => !entry.hidden && !(multiPart && entry.id === 'notes'))
+            order/visibility (user request — same mechanics as Home).
+            r7/r9: a container carries NONE of them — notes, reimburse-
+            ments and receipts all live on the parts */}
+        {!multiPart &&
+          resolveTxDetailBlocks(space)
+          .filter((entry) => !entry.hidden)
           .map((entry) => {
             const section: Record<TxDetailBlockId, ReactNode> = {
               reimburse: <ReimburseSection tx={tx} />,
@@ -1661,14 +1717,18 @@ export function TxDetailScreen() {
             return <div key={entry.id}>{section[entry.id]}</div>;
           })}
 
-        <button
-          data-testid="tx-detail-customize"
-          onClick={() => void navigate({ to: '/tx-customize' })}
-          className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-2.5 text-[13px] font-medium text-ink-3"
-        >
-          <Icon name="tune-variant" size={16} />
-          {t('tx.customize')}
-        </button>
+        {/* r9: with no customizable blocks on a container, the door to
+            their settings would steer nothing visible here */}
+        {!multiPart && (
+          <button
+            data-testid="tx-detail-customize"
+            onClick={() => void navigate({ to: '/tx-customize' })}
+            className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-2.5 text-[13px] font-medium text-ink-3"
+          >
+            <Icon name="tune-variant" size={16} />
+            {t('tx.customize')}
+          </button>
+        )}
 
         {/* manual rows may leave again (user request); bank rows are the
             bank's truth and only ever tombstone via their feed */}
@@ -1780,13 +1840,7 @@ export function TxDetailScreen() {
           </Button>
         </div>
       </Sheet>
-      <RenameTitleSheet
-        open={renameOpen}
-        onOpenChange={setRenameOpen}
-        original={cleanBankText(tx.merchant)}
-        value={txTitle(tx)}
-        onSave={renameTitle}
-      />
+      <RenameTitleSheet open={renameOpen} onOpenChange={setRenameOpen} {...renameProps} />
 
       {/* the counterparty is one of the user's own accounts — show it */}
       <Sheet open={counterOpen && !!counterAccount} onOpenChange={setCounterOpen} title={counterAccount?.name ?? ''} size="compact">
@@ -1969,13 +2023,20 @@ function recurringCatConstraint(
 }
 
 /** the categories caption: one Edit for the block — or a lock while a
- *  reimbursement owns the attribution (user rule; S3776: extracted) */
-function CategoriesHeader({ locked, byRecurring, onEdit }: Readonly<{ locked: boolean; byRecurring?: boolean; onEdit: () => void }>) {
+ *  reimbursement owns the attribution (user rule; S3776: extracted).
+ *  r9: on a split container the rows are PARTS, so the caption says
+ *  "Split transactions", not "Categories". */
+function CategoriesHeader({
+  locked,
+  byRecurring,
+  multiPart,
+  onEdit,
+}: Readonly<{ locked: boolean; byRecurring?: boolean; multiPart?: boolean; onEdit: () => void }>) {
   const { t } = useLang();
   return (
     <div className="m-cap mt-5 mb-1 flex items-center justify-between px-1">
       <span>
-        {t('screen.categories')}
+        {t(multiPart ? 'split.partsSection' : 'screen.categories')}
         {/* informational, not a hard lock: Edit still opens the editor,
             whose picker only offers the recurring's category and
             expected reimbursement (user rule 2026-07-28) */}
