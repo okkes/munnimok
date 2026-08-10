@@ -2,7 +2,7 @@ import { txMetaId } from '@/domain/feedIds';
 import { accountStamp } from '@/domain/txType';
 import type { StorageBackend } from './backend';
 import type { Repo } from './repo';
-import type { AccountLinkRow, AccountRow, TransactionRow, TxMetaRow, TxType } from './types';
+import type { AccountLinkRow, AccountRow, AccountType, TransactionRow, TxMetaRow, TxType } from './types';
 
 /**
  * Feature B join layer: what a space "sees".
@@ -56,18 +56,39 @@ export async function spaceAccountLinks(store: StorageBackend, spaceId: string):
   return (await store.bySpace('accountLink', spaceId)).filter((l) => l.deleted === 0);
 }
 
-/** R1: accountId → the stamped type, for the space's own accounts and
- *  every attached one (absent = regular, rows type freely) */
-async function stampMap(store: StorageBackend, spaceId: string, links: AccountLinkRow[]): Promise<Map<string, TxType>> {
+/** #152: what the SPACE says an attached account is — the link's type
+ *  wins over the account row's own (global accounts carry no meaningful
+ *  type anymore; each space decides at attach time) */
+export const linkEffectiveType = (link: AccountLinkRow, account: AccountRow): AccountType =>
+  link.type ?? account.type;
+
+/** R1 + #152: accountId → the stamped type for the space's own accounts
+ *  and every attached one (absent = regular, rows type freely) — plus
+ *  the set of FUNDING accounts, whose transactions this space never
+ *  shows at all */
+async function accountFacts(
+  store: StorageBackend,
+  spaceId: string,
+  links: AccountLinkRow[],
+): Promise<{ stamps: Map<string, TxType>; funding: Set<string> }> {
   const stamps = new Map<string, TxType>();
-  const put = (account: AccountRow | undefined) => {
+  const funding = new Set<string>();
+  const put = (account: AccountRow | undefined, type?: AccountType) => {
     if (account?.deleted !== 0) return;
-    const stamp = accountStamp(account.type);
+    const effective = type ?? account.type;
+    if (effective === 'funding') {
+      funding.add(account.id);
+      return;
+    }
+    const stamp = accountStamp(effective);
     if (stamp) stamps.set(account.id, stamp);
   };
   for (const account of await store.bySpace('account', spaceId)) put(account);
-  for (const link of links) put(await store.get('account', link.accountId));
-  return stamps;
+  for (const link of links) {
+    const account = await store.get('account', link.accountId);
+    put(account, account ? linkEffectiveType(link, account) : undefined);
+  }
+  return { stamps, funding };
 }
 
 /** the space's own (legacy merged) rows with the R1 stamp applied */
@@ -89,12 +110,17 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
   // Rows from before the start (sync races, a start date moved newer)
   // stay in the database but out of every screen.
   const startGate = space?.historyStartDate;
-  const stamps = await stampMap(store, spaceId, links);
-  const legacy = own.filter((t) => t.deleted === 0 && (!startGate || t.date >= startGate));
+  const { stamps, funding } = await accountFacts(store, spaceId, links);
+  // #152: funding accounts complete the counterparty picture and nothing
+  // more — their transactions never enter the space's lists
+  const legacy = own.filter(
+    (t) => t.deleted === 0 && !funding.has(t.accountId) && (!startGate || t.date >= startGate),
+  );
   const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
 
   const out: SpaceTx[] = legacy.map((t) => stampOwn(t, stamps));
   for (const link of links) {
+    if (funding.has(link.accountId)) continue;
     const feedTxs = (await store.bySpace('transaction', link.feedSpaceId)).filter(
       (t) =>
         t.deleted === 0 &&
@@ -122,10 +148,13 @@ export async function historyTransactions(store: StorageBackend, spaceId: string
     spaceAccountLinks(store, spaceId),
     store.bySpace('txMeta', spaceId),
   ]);
-  const stamps = await stampMap(store, spaceId, links);
+  const { stamps, funding } = await accountFacts(store, spaceId, links);
   const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
-  const out: SpaceTx[] = own.filter((t) => t.deleted === 0).map((t) => stampOwn(t, stamps));
+  const out: SpaceTx[] = own
+    .filter((t) => t.deleted === 0 && !funding.has(t.accountId))
+    .map((t) => stampOwn(t, stamps));
   for (const link of links) {
+    if (funding.has(link.accountId)) continue;
     const feedTxs = (await store.bySpace('transaction', link.feedSpaceId)).filter(
       (t) => t.deleted === 0 && t.accountId === link.accountId,
     );
@@ -139,13 +168,15 @@ export interface SpaceAccount extends AccountRow {
   link?: AccountLinkRow;
 }
 
-/** every account the space sees: legacy in-space rows + attached feed accounts */
+/** every account the space sees: legacy in-space rows + attached feed
+ *  accounts — the attachment's TYPE opinion applied (#152: type is a
+ *  space-level fact for attached accounts) */
 export async function visibleAccounts(store: StorageBackend, spaceId: string): Promise<SpaceAccount[]> {
   const [own, links] = await Promise.all([store.bySpace('account', spaceId), spaceAccountLinks(store, spaceId)]);
   const out: SpaceAccount[] = own.filter((a) => a.deleted === 0);
   for (const link of links) {
     const account = await store.get('account', link.accountId);
-    if (account?.deleted === 0) out.push({ ...account, link });
+    if (account?.deleted === 0) out.push({ ...account, type: linkEffectiveType(link, account), link });
   }
   return out;
 }
@@ -353,12 +384,22 @@ async function deriveWriteTxType(repo: Repo, tx: TransformTx, write: TxTransform
   const linked = linkedAccountId ? await repo.store.get('account', linkedAccountId) : undefined;
   const account = await repo.store.get('account', raw.accountId);
   const parts = (current('splits') ?? []).filter((s) => s.catId !== 'reimbursed');
+  // #152: both sides resolve through the SPACE's lens — the attachment
+  // owns the type of attached accounts
+  const spaceTypeOf = async (row: AccountRow | undefined): Promise<AccountType | undefined> => {
+    if (!row) return undefined;
+    if (row.spaceId === tx.spaceId) return row.type;
+    const links = await spaceAccountLinks(repo.store, tx.spaceId);
+    const link = links.find((l) => l.accountId === row.id);
+    return link ? linkEffectiveType(link, row) : row.type;
+  };
   return deriveTxType({
     catId: current('catId'),
     linkedAccountId,
     amountCents: raw.amountCents,
-    stamp: accountStamp(account?.type),
+    stamp: accountStamp(await spaceTypeOf(account)),
     counterDefaultFor: linked?.defaultFor,
+    counterFunding: (await spaceTypeOf(linked)) === 'funding',
     multiPart: parts.length > 1,
     adjustment: raw.txType === 'adjustment',
   });

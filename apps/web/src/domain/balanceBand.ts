@@ -20,6 +20,9 @@ export const bandModeOf = (space: BandSpace | undefined): BalanceBandMode => spa
 
 /** can this account be toggled in/out of the given mode at all? */
 export function bandEligible(mode: BalanceBandMode, account: Pick<AccountRow, 'type'>): boolean {
+  // #152: a funding account is someone else's pot — its balance never
+  // counts toward this space's numbers, under any mode
+  if (account.type === 'funding') return false;
   if (mode === 'spendable') return false;
   if (mode === 'cash') return LIQUID_TYPES.has(account.type);
   return true;

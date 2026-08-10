@@ -4,6 +4,7 @@ import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDef
 import { attachAccount, detachAccount, fetchSpaceLinks } from '@/features/accounts/feedGateway';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
+import type { AccountType } from '@/db/types';
 
 /**
  * Attach/detach of feed accounts to spaces (redesign 2026-07-22): the
@@ -19,6 +20,9 @@ export async function attachFeedToSpace(
   feedSpaceId: string,
   accountId: string,
   historyFrom?: string,
+  /** #152: the SPACE-level type — each attachment decides what the
+   *  account is to its space; absent keeps the account row's value */
+  type?: AccountType,
 ): Promise<void> {
   // the override wins, then the space's history start, then the app
   // default — never silently unlimited (user bug report)
@@ -30,6 +34,7 @@ export async function attachFeedToSpace(
     accountId,
     historyFrom: from,
     archived: 0,
+    ...(type ? { type } : {}),
   });
   void logActivity(store, repo, spaceId, 'attach', (await store.get('account', accountId))?.name);
 }

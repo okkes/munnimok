@@ -39,11 +39,13 @@ export interface MirrorSource {
   loanCounted?: 1;
 }
 
-/** a counter account we mint on: the space's own MANUAL account */
+/** a counter account we mint on: the space's own MANUAL account —
+ *  never a funding pot (#152: funding shows no transactions at all, so
+ *  a minted leg would be invisible clutter; balances stay out too) */
 async function mintableCounter(store: StorageBackend, accountId: string | undefined): Promise<AccountRow | null> {
   if (!accountId) return null;
   const account = await store.get('account', accountId);
-  if (account?.deleted !== 0 || account.source !== 'manual') return null;
+  if (account?.deleted !== 0 || account.source !== 'manual' || account.type === 'funding') return null;
   return account;
 }
 

@@ -138,6 +138,42 @@ describe('feature B join layer', () => {
     expect((await row())?.txType).toBe('saving');
   });
 
+  it('#152: the attachment owns the type — stamp overlay and the funding blackout', async () => {
+    await seedFeed();
+    // this space says the checking feed is a SAVINGS pot: rows stamp
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { type: 'savings' });
+    const store = new DexieBackend(db);
+    const accounts = await visibleAccounts(store, SPACE);
+    expect(accounts.find((a) => a.id === 'acct1')?.type).toBe('savings');
+    const txs = await visibleTransactions(store, SPACE);
+    expect(txs.find((t) => t.id === 'raw1')?.txType).toBe('saving');
+
+    // another space calls the SAME account funding — it completes the
+    // picture and shows nothing
+    await repo.upsert('accountLink', OTHER_SPACE, accountLinkId(OTHER_SPACE, FEED), {
+      feedSpaceId: FEED, accountId: 'acct1', historyFrom: '2026-01-01', type: 'funding',
+    });
+    expect((await visibleAccounts(store, OTHER_SPACE)).find((a) => a.id === 'acct1')?.type).toBe('funding');
+    expect(await visibleTransactions(store, OTHER_SPACE)).toEqual([]);
+  });
+
+  it('#152: a funding counterparty derives the funding family; nothing mints into the pot', async () => {
+    await seedFeed();
+    await repo.upsert('account', SPACE, 'pot1', {
+      name: 'Family pot', type: 'funding', source: 'manual', currency: 'EUR', balanceCents: 0,
+    });
+    const store = new DexieBackend(db);
+    const tx = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'raw1')!;
+    await writeTxTransform(repo, tx, { linkedAccountId: 'pot1' });
+    const meta = await store.get('txMeta', txMetaId(SPACE, 'raw1'));
+    expect(meta?.txType).toBe('funding');
+    // no mirror leg — the pot shows no transactions, so none are written
+    const potRows = (await store.bySpace('transaction', SPACE)).filter(
+      (t) => t.accountId === 'pot1' && t.deleted === 0,
+    );
+    expect(potRows).toEqual([]);
+  });
+
   it('legacy merged rows keep working and writing in place (dual-read)', async () => {
     await repo.upsert('transaction', SPACE, 'legacy1', {
       accountId: 'oldAcct',

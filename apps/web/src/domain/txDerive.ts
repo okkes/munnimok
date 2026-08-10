@@ -30,6 +30,9 @@ export function deriveTxType(options: {
   stamp?: TxType;
   /** the linked account's defaultFor family, when it is a default */
   counterDefaultFor?: TxType;
+  /** #152: the counterparty is a FUNDING account in this space — money
+   *  to the shared pot derives the funding family, never transfer */
+  counterFunding?: boolean;
   /** the row is a split container (2+ real parts) */
   multiPart?: boolean;
   /** manual correction rows (C3) */
@@ -39,6 +42,7 @@ export function deriveTxType(options: {
   if (options.stamp) return options.stamp;
   if (options.multiPart) return standardTypeFor(options.amountCents);
   if (options.counterDefaultFor) return options.counterDefaultFor;
+  if (options.counterFunding) return 'funding';
   if (options.linkedAccountId) return 'transfer';
   return specialCatType(options.catId) ?? standardTypeFor(options.amountCents);
 }

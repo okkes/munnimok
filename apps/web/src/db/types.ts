@@ -49,7 +49,7 @@ export interface SpaceRow extends SyncEnvelope {
   balanceBandAccounts?: string[];
 }
 
-export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan';
+export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
 export type AccountSource = 'manual' | 'camt053' | 'gocardless';
 
 export interface AccountRow extends SyncEnvelope {
@@ -661,6 +661,10 @@ export interface AccountLinkRow extends SyncEnvelope {
   attachedByName?: string;
   /** transactions before this date stay hidden in this space */
   historyFrom?: string;
+  /** #152: the SPACE-LEVEL account type — the attachment's opinion; a
+   *  global account has no type of its own anymore, each space decides
+   *  at attach time (absent on old links = the account row's value) */
+  type?: AccountType;
   /** owner left the space: history stays, no new data flows */
   archived?: 0 | 1;
 }

@@ -42,8 +42,10 @@ export function accountStamp(accountType: AccountType | undefined): TxType | und
  * the family member — that made the checking side carry the story and
  * the special account's own ledger stay empty.
  */
-export function typeForLinkedAccount(_accountType: AccountType): TxType {
-  return 'transfer';
+export function typeForLinkedAccount(accountType: AccountType): TxType {
+  // #152: money to the shared funding pot IS funding — its category
+  // family follows the counterparty, like every other special account
+  return accountType === 'funding' ? 'funding' : 'transfer';
 }
 
 /** category supports a type only if it's one of its declared txTypes */

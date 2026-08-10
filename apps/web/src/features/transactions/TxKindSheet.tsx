@@ -6,7 +6,7 @@ import { typeDef } from '@/features/accounts/accountTypes';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { TX_KINDS, kindOf } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
-import { accountStamp } from '@/domain/txType';
+import { accountStamp, typeForLinkedAccount } from '@/domain/txType';
 import { counterDuplicates } from '@/domain/counterMatch';
 import { FAMILY_ACCOUNT_TYPE, NAME_KEYS, defaultAccountId, ensureDefaultAccount } from '@/application/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
@@ -202,9 +202,10 @@ export function CounterpartySheet({
               <Icon name={typeDef(account.type).icon} size={18} color="var(--m-ink-2)" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] text-ink">{account.name}</span>
-                {/* what the COUNTER ledger will record (its R1 stamp) */}
+                {/* what the COUNTER ledger will record (its R1 stamp;
+                    #152: a funding pot records funding, not transfer) */}
                 <span className="block text-[11px] text-ink-4">
-                  {t(`tx.type.${accountStamp(account.type) ?? 'transfer'}`)}
+                  {t(`tx.type.${accountStamp(account.type) ?? typeForLinkedAccount(account.type)}`)}
                   {debtByAccount.has(account.id) && (
                     <span className="text-accent-deep" data-testid={`counter-debt-${account.id}`}>
                       {' '}· {t('tx.paysDebt', { name: debtByAccount.get(account.id)!.name })}

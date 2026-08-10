@@ -10,7 +10,8 @@ import { SOURCE_KEYS } from '@/features/accounts/AttachSheet';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { useInstitutionLogos } from '@/features/accounts/useInstitutionLogos';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
-import type { AccountLinkRow, AccountRow } from '@/db/types';
+import { ACCOUNT_TYPES } from '@/features/accounts/accountTypes';
+import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -109,6 +110,8 @@ export function SpaceAccountsScreen() {
   const [attachOpen, setAttachOpen] = useState(false);
   const [picked, setPicked] = useState<AttachCandidate | null>(null);
   const [historyFrom, setHistoryFrom] = useState('');
+  // #152: the account's type is a SPACE-level decision, made here
+  const [attachType, setAttachType] = useState<AccountType>('checking');
   const [busy, setBusy] = useState(false);
   const [detachTarget, setDetachTarget] = useState<AttachedAccountEntry | null>(null);
   const [editing, setEditing] = useState<AccountRow | null>(null);
@@ -176,8 +179,9 @@ export function SpaceAccountsScreen() {
     if (!picked || busy) return;
     setBusy(true);
     try {
-      await attachFeedToSpace(store, repo, spaceId, picked.feedSpaceId, picked.accountId, historyFrom || undefined);
+      await attachFeedToSpace(store, repo, spaceId, picked.feedSpaceId, picked.accountId, historyFrom || undefined, attachType);
       setPicked(null);
+      setAttachType('checking');
       setAttachOpen(false);
     } catch {
       // offline or forbidden — the sheet simply stays open
@@ -387,6 +391,33 @@ export function SpaceAccountsScreen() {
 
           {picked && (
             <>
+              {/* #152: the type lives on the ATTACHMENT — this space
+                  decides what the account is to it */}
+              <p className="px-1 text-[13px] text-ink-2">{t('acct.attachTypeLabel')}</p>
+              <div className="grid grid-cols-2 gap-2" data-testid="space-attach-types">
+                {ACCOUNT_TYPES.map((def) => (
+                  <button
+                    key={def.type}
+                    data-testid={`space-attach-type-${def.type}`}
+                    onClick={() => setAttachType(def.type)}
+                    className={`m-tap flex items-center gap-2 rounded-card border px-3 py-2.5 text-left text-[13px] ${
+                      attachType === def.type ? 'border-accent bg-accent-soft/30 text-ink' : 'border-line bg-surface text-ink-2'
+                    }`}
+                  >
+                    <Icon name={def.icon} size={16} color={attachType === def.type ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
+                    <span className="min-w-0 truncate">{t(def.labelKey)}</span>
+                  </button>
+                ))}
+              </div>
+              {/* the conscious yes before a funding attachment (#152) */}
+              {attachType === 'funding' && (
+                <p
+                  className="rounded-card bg-accent-soft/30 px-3 py-2 text-[12px] leading-snug text-ink-2"
+                  data-testid="space-attach-funding-note"
+                >
+                  {t('acct.fundingAttachNote')}
+                </p>
+              )}
               <label className="flex items-center gap-3 text-[13px] text-ink-2">
                 {t('acct.historyFrom')}
                 <input

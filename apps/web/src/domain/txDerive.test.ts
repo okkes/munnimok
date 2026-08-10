@@ -25,3 +25,13 @@ describe('deriveTxType — the compat txType, computed instead of asked (#133)',
     expect(deriveTxType({ amountCents: 100 })).toBe('income');
   });
 });
+
+describe('deriveTxType — funding counterparty (#152)', () => {
+  it('a funding pot beats the generic transfer, loses to a default family', () => {
+    expect(deriveTxType({ amountCents: -100, linkedAccountId: 'pot', counterFunding: true })).toBe('funding');
+    expect(
+      deriveTxType({ amountCents: -100, linkedAccountId: 'pot', counterFunding: true, counterDefaultFor: 'saving' }),
+    ).toBe('saving');
+    expect(deriveTxType({ amountCents: -100, linkedAccountId: 'pot', counterFunding: false })).toBe('transfer');
+  });
+});
