@@ -342,6 +342,21 @@ function AccountPickSheet({
  *  the wrong account (user redesign 2026-07-31) */
 const soleAccountId = (writable: readonly AccountRow[]): string | null => (writable.length === 1 ? writable[0].id : null);
 
+/** #133: the form's effective type — the same derivation order the
+ *  choke uses (adjustment > stamp > diamond category > counterparty >
+ *  sign). Module-level for S3776. */
+function formEffectiveType(
+  adjustment: boolean,
+  ownStamp: TxType | undefined,
+  catId: string,
+  linkedAccount: AccountRow | undefined,
+  isExpense: boolean,
+): TxType {
+  if (adjustment) return 'adjustment';
+  const linkedType = linkedAccount ? typeForLinkedAccount(linkedAccount.type) : undefined;
+  return ownStamp ?? specialCatType(catId) ?? linkedType ?? (isExpense ? 'expense' : 'income');
+}
+
 /** the space's start date IF the picked date falls before it (arc 5) —
  *  such a row would vanish behind the display gate the moment it saved,
  *  so a truthy return blocks save and renders the way out */
@@ -447,13 +462,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // special category pulls its type onto a standard row; otherwise the
   // kind resolves it (a tracked counterparty = plain transfer, R2)
   const ownStamp = accountStamp(selectedAccount?.type);
-  // #133: the derivation order (adjustment > stamp > diamond category >
-  // counterparty > sign) — the same rule the choke uses
-  const standardType: TxType = isExpense ? 'expense' : 'income';
-  const linkedType = linkedAccount ? typeForLinkedAccount(linkedAccount.type) : undefined;
-  const effectiveType: TxType = adjustment
-    ? 'adjustment'
-    : (ownStamp ?? specialCatType(catId) ?? linkedType ?? standardType);
+  const effectiveType = formEffectiveType(adjustment, ownStamp, catId, linkedAccount, isExpense);
   const startGateBlocking = blockingStartDate(space, date);
   const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing: false, beforeStart: !!startGateBlocking });
 

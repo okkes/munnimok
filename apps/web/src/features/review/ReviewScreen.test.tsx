@@ -86,6 +86,34 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.queryByTestId('review-recurring-row')).toBeNull();
   }, 15_000);
 
+  it('#133 E: a ◆ Transfer pick stages nothing until the mandatory ask answers; dismissal rolls back', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const chipBefore = screen.getByTestId('review-category-chip').textContent;
+
+    // pick the locked Transfer sub — the ask opens, NOTHING staged yet
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-transferOut'));
+    fireEvent.click(await screen.findByTestId('split-save'));
+    await screen.findByTestId('counter-accounts');
+    expect(screen.queryByTestId('counter-default')).toBeNull(); // no Default for transfers
+    fireEvent.keyDown(window, { key: 'Escape' });
+    // dismissed: the card rolled back — an unlinked transfer is
+    // unrepresentable
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toBe(chipBefore));
+
+    // answering it stages the link + the locked sub in one motion
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
+    fireEvent.click(await screen.findByTestId('split-save'));
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out'));
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
+  }, 15_000);
+
   it('#133 C: dismissing the counterparty ask keeps the bare ◆ story — no rollback, confirm armed', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

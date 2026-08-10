@@ -137,10 +137,21 @@ describe('feature B join layer', () => {
       splits: [
         { id: 'p1', catId: 'groceries', amountCents: 700 },
         { id: 'p2', catId: 'savingDeposit', amountCents: 500 },
+        // a DEFAULT-linked part wears the family, not transfer
+        { id: 'p3', catId: 'savingDeposit', amountCents: 0, linkedAccountId: 'defpot' },
       ],
     });
     const parts = (await view())?.splits ?? [];
-    expect(parts.map((s) => s.txType)).toEqual(['expense', 'saving']);
+    expect(parts.map((s) => s.txType)).toEqual(['expense', 'saving', 'saving']);
+
+    // the adjustment marker outranks everything — flag and legacy alike
+    await repo.upsert('transaction', SPACE, 'adj1', {
+      accountId: 'chk', date: '2026-07-04', amountCents: -50, currency: 'EUR',
+      merchant: 'Fix', catId: 'groceries', txType: 'expense', needsReview: 0, adjustment: 1,
+    });
+    const store2 = new DexieBackend(db);
+    const adj = (await visibleTransactions(store2, SPACE)).find((t) => t.id === 'adj1');
+    expect(adj?.txType).toBe('adjustment');
   });
 
   it('#152: the attachment owns the type — stamp overlay and the funding blackout', async () => {

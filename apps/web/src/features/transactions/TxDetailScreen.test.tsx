@@ -347,6 +347,43 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     db.close();
   }, 20_000);
 
+  it('#133 B: the fork can also CREATE the counterpart — the mint, as always', async () => {
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('fork-mint'), { trackOutbox: false });
+    await seedRepo.upsert('account', DEMO_SPACE_ID, 'ms2', {
+      name: 'Second pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0,
+    });
+    const dm6seed = await seed.transactions.get('dm6');
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'dup2', {
+      accountId: 'ms2', date: dm6seed!.date, amountCents: -dm6seed!.amountCents, currency: 'EUR',
+      merchant: 'Maybe the leg', catId: 'uncategorized', txType: 'income', needsReview: 0,
+    });
+    seed.close();
+
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('split-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click(await screen.findByTestId('split-save'));
+    // generous waits: this file's writes + the boot chain contend under
+    // full-suite load (the review-suite lesson)
+    await screen.findByTestId('counter-default', {}, { timeout: 8000 });
+    fireEvent.click(await screen.findByTestId('counter-pick-ms2', {}, { timeout: 8000 }));
+    await screen.findByTestId('counter-fork', {}, { timeout: 8000 });
+    fireEvent.click(screen.getByTestId('counter-fork-create'));
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const src = await db.transactions.get('dm6');
+      expect(src?.linkedAccountId).toBe('ms2');
+      expect((await db.transactions.get(mirrorTxId('dm6')))?.accountId).toBe('ms2');
+    }, { timeout: 8000 });
+    // the candidate row stayed untouched — the mint was chosen instead
+    expect((await db.transactions.get('dup2'))?.linkedAccountId).toBeUndefined();
+    db.close();
+  }, 20_000);
+
   it('#133 B: the Default row mints the family pot lazily and links onto it', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
