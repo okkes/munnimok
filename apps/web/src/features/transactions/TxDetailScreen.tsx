@@ -137,9 +137,9 @@ function CategorySlices({
 /** the DETAILS block: the facts underneath the user's edits — the
  *  original amount (reimbursements shrank it), the bank's original
  *  title (renamed), and the raw bank data */
-function DetailFacts({ tx, givenOut }: Readonly<{ tx: SpaceTx; givenOut: number }>) {
+function DetailFacts({ tx, givenOut, originalCounter }: Readonly<{ tx: SpaceTx; givenOut: number; originalCounter?: string }>) {
   const { t, lang } = useLang();
-  if (!(totalReimbursedCents(tx) > 0 || givenOut > 0 || tx.titleOverride || tx.description)) return null;
+  if (!(totalReimbursedCents(tx) > 0 || givenOut > 0 || tx.titleOverride || tx.description || originalCounter)) return null;
   return (
     <>
       <div className="m-cap mt-5 mb-1 px-1">{t('tx.detailsSection')}</div>
@@ -150,6 +150,17 @@ function DetailFacts({ tx, givenOut }: Readonly<{ tx: SpaceTx; givenOut: number 
             <span className="min-w-0 flex-1 text-ink-3">{t('tx.originalAmount')}</span>
             <span className="m-num text-ink" data-testid="tx-detail-original-amount">
               {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
+            </span>
+          </div>
+        )}
+        {/* #152 r2: the bank's counterparty stays visible after the user
+            pointed the row at a different account */}
+        {originalCounter && (
+          <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3 text-[14px] last:border-0">
+            <Icon name="swap-horizontal" size={18} color="var(--m-ink-3)" />
+            <span className="shrink-0 text-ink-3">{t('tx.originalCounterparty')}</span>
+            <span className="m-num min-w-0 flex-1 truncate text-right font-mono text-[12px] text-ink" data-testid="tx-detail-original-counter">
+              {originalCounter}
             </span>
           </div>
         )}
@@ -569,8 +580,9 @@ const splitBulkTargets = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, source: re
 /** #211 + #141: the siblings a category SPREAD can copy onto — same
  *  merchant, still partitionless. Exact euros reach only exact twins;
  *  a %-typed spread scales to any amount. */
-/** the ◆ ask's family alias (#133 D) */
-type CounterFamily = DefaultFamily;
+/** the ◆ ask's family — the three default-pot families plus funding
+ *  (#152 r2: funding asks among the space's funding attachments) */
+type CounterFamily = DefaultFamily | 'funding';
 
 /** shared shape of the part page's ask plumbing (S3776: the two big
  *  sheet callbacks live at module level) */
@@ -610,9 +622,11 @@ function singleCatPartitionFields(
 }
 
 /** the part page's counterparty pick: a DEFAULT pick keeps the family;
- *  anything else is R2's inversion (#133 D) */
+ *  a funding pick keeps its funding story (#152 r2); anything else is
+ *  R2's inversion */
 function choosePartCounter(deps: PartAskDeps, picked: { id: string; type: AccountType }): void {
-  const family = defaultPickFamily(deps.counterFamily, picked.id, deps.spaceId);
+  const family =
+    deps.counterFamily === 'funding' ? null : defaultPickFamily(deps.counterFamily, picked.id, deps.spaceId);
   deps.patchPart(
     family
       ? { txType: family, linkedAccountId: picked.id }
@@ -729,9 +743,10 @@ function setRowCategory(
   const txType = family ?? deps.cats.byId(catId).txTypes[0] ?? tx.txType;
   void deps.transform(tx, { catId, txType, needsReview: 0, ...deps.singleCatFields(catId) }, 'txCategory');
   // #133 D: EVERY ◆ family pick asks its counterparty — Default
-  // pinned on top; dismissing keeps the bare story (Q1, generalized)
-  if (family && family !== 'transfer' && family !== 'funding' && !tx.linkedAccountId && !deps.ownStamp) {
-    deps.setCounterFamily(family as DefaultFamily);
+  // pinned on top; dismissing keeps the bare story (Q1, generalized).
+  // #152 r2: the ◆ Funding pick asks WHICH funding account.
+  if (family && family !== 'transfer' && !tx.linkedAccountId && !deps.ownStamp) {
+    deps.setCounterFamily(family === 'funding' ? 'funding' : (family as DefaultFamily));
     deps.setLoanPickOpen(true);
   }
   // bulk mechanism from the detail too (user request) — unlike review
@@ -776,13 +791,13 @@ function applyRowCats(
 }
 
 /** the part page's category apply: a ◆ family pick asks its
- *  counterparty right away (#133 D) */
+ *  counterparty right away (#133 D) — funding included (#152 r2) */
 function applyPartCats(deps: PartAskDeps, entries: TxSplitCat[]): void {
   const patch = partCatsApplyPatch(deps.part, entries);
   deps.patchPart(patch);
   const family = specialCatType(patch.catId);
-  if (family && family !== 'transfer' && family !== 'funding' && !deps.part.linkedAccountId && !deps.ownStamp) {
-    deps.setCounterFamily(family as DefaultFamily);
+  if (family && family !== 'transfer' && !deps.part.linkedAccountId && !deps.ownStamp) {
+    deps.setCounterFamily(family === 'funding' ? 'funding' : (family as DefaultFamily));
     deps.setCounterOpen(true);
   }
   deps.setSpreadOpen(false);
@@ -1348,7 +1363,8 @@ function PartDetailBody({
         }}
         excludeAccountId={tx.accountId}
         currentLinkedId={part.linkedAccountId}
-        defaultFamily={counterFamily ?? undefined}
+        defaultFamily={counterFamily === 'funding' ? undefined : (counterFamily ?? undefined)}
+        fundingOnly={counterFamily === 'funding'}
         onChoose={(picked) => choosePartCounter(partAskDeps, picked)}
       />
       {/* the part's categories (r6/r7) — the whole-transaction editor,
@@ -1570,7 +1586,8 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   // counterparty and type each open their OWN picker (user: the combined
   // sheet surprised — tapping one showed the other's content too)
   const [counterPickOpen, setCounterPickOpen] = useState(false);
-  // #133 D: which ◆ family the counterparty ask serves
+  // #133 D: which ◆ family the counterparty ask serves (#152 r2:
+  // funding asks among the space's funding attachments)
   const [counterFamily, setCounterFamily] = useState<CounterFamily | null>(null);
   const [loanCountBusy, setLoanCountBusy] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
@@ -1770,6 +1787,10 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const netCats = (tx.cats ?? []).filter((e) => e.catId !== REIMBURSED_ID);
   const netCatEntries = netCats.length ? netCats : undefined;
   const singleCatFields = (catId: string) => singleCatPartitionFields(tx, multiPart, settledPartitionCents, catId);
+  // #152 r2: the bank's counterparty, kept visible once the row points
+  // at a DIFFERENT account than the bank named
+  const originalCounter =
+    tx.counterIban && tx.linkedAccountId && counterAccount?.id !== tx.linkedAccountId ? tx.counterIban : undefined;
 
   const setCategory = (catId: string) =>
     setRowCategory(
@@ -2046,7 +2067,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         )}
 
         {/* block: details — the facts underneath the user's edits */}
-        <DetailFacts tx={tx} givenOut={givenOut} />
+        <DetailFacts tx={tx} givenOut={givenOut} originalCounter={originalCounter} />
 
         {/* the sections below the details card follow the space's saved
             order/visibility (user request — same mechanics as Home).
@@ -2125,12 +2146,15 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         }}
         excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
-        defaultFamily={counterFamily ?? undefined}
+        defaultFamily={counterFamily === 'funding' ? undefined : (counterFamily ?? undefined)}
+        fundingOnly={counterFamily === 'funding'}
         anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
         onChoose={(picked, peer) => {
           // a DEFAULT pick keeps the family (the row wears the special
-          // category); a real account is R2's transfer inversion
-          const family = defaultPickFamily(counterFamily, picked.id, spaceId);
+          // category); a real account is R2's transfer inversion — and a
+          // funding pick keeps its funding story (#152 r2)
+          const family =
+            counterFamily === 'funding' ? null : defaultPickFamily(counterFamily, picked.id, spaceId);
           void retype(family ?? typeForLinkedAccount(picked.type), picked.id, 'txLink', peer);
         }}
       />

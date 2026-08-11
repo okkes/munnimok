@@ -104,6 +104,7 @@ export function CounterpartySheet({
   currentLinkedId,
   onChoose,
   defaultFamily,
+  fundingOnly = false,
   anchor,
 }: Readonly<{
   open: boolean;
@@ -116,6 +117,9 @@ export function CounterpartySheet({
   onChoose: (account: { id: string; type: AccountType }, peer?: { txId: string }) => void;
   /** #133 B: a ◆ family ask pins the "Default — no setup" row on top */
   defaultFamily?: DefaultFamily;
+  /** #152 r2: the ◆ Funding ask — only accounts this space attached AS
+   *  funding qualify (no Default pot; the Create door still works) */
+  fundingOnly?: boolean;
   /** #133 B: the row being linked — enables the pick-existing fork on
    *  manual counterparties */
   anchor?: { id: string; amountCents: number; date: string };
@@ -135,9 +139,13 @@ export function CounterpartySheet({
 
   const candidates = useMemo(
     // the family defaults never list as ordinary rows — the pinned
-    // Default entry is their one face (approved design)
-    () => (allAccounts ?? []).filter((a) => a.id !== excludeAccountId && !a.archived && !a.defaultFor),
-    [allAccounts, excludeAccountId],
+    // Default entry is their one face (approved design). A funding ask
+    // (#152 r2) lists only the space's funding attachments.
+    () =>
+      (allAccounts ?? []).filter(
+        (a) => a.id !== excludeAccountId && !a.archived && !a.defaultFor && (!fundingOnly || a.type === 'funding'),
+      ),
+    [allAccounts, excludeAccountId, fundingOnly],
   );
 
   // a loan account is a DEBT's backing account (1:1, user design
@@ -173,7 +181,7 @@ export function CounterpartySheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.counterparty')} size="form">
-      <p className="pb-2 text-[12px] text-ink-3">{t('tx.counterAccountHint')}</p>
+      <p className="pb-2 text-[12px] text-ink-3">{t(fundingOnly ? 'tx.counterFundingHint' : 'tx.counterAccountHint')}</p>
       {/* the ◆ family ask leads with Default (#133 ruling 1) */}
       {defaultFamily && (
         <button

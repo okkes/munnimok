@@ -1734,6 +1734,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tx.unsettledFilter': 'Bekleyen geri ödemeler',
   'tx.counterAccount': 'Karşı taraf',
   'tx.counterAccountHint': 'Yalnızca bu alana bağlı hesaplar gösterilir.',
+  'tx.counterFundingHint': 'Bu paranın gittiği ortak kasa hesabını seçin — yalnızca ortak kasa olarak bağlanan hesaplar gösterilir.',
+  'tx.originalCounterparty': 'Orijinal karşı taraf',
   'tx.counterDefaultSub': 'Kurulum gerekmez — munni bunu alanın varsayılan hesabında tutar',
   'tx.counterBankBadge': 'Banka',
   'tx.counterForkCreate': 'Karşı kaydı oluştur',

@@ -1734,6 +1734,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tx.unsettledFilter': 'Openstaande vergoedingen',
   'tx.counterAccount': 'Tegenpartij',
   'tx.counterAccountHint': 'Alleen rekeningen die aan deze ruimte gekoppeld zijn, worden getoond.',
+  'tx.counterFundingHint': 'Kies de potrekening waar dit geld heen ging — alleen rekeningen die als pot gekoppeld zijn, worden getoond.',
+  'tx.originalCounterparty': 'Oorspronkelijke tegenpartij',
   'tx.counterDefaultSub': 'Geen instelling nodig — munni gebruikt de standaardrekening van deze ruimte',
   'tx.counterBankBadge': 'Bank',
   'tx.counterForkCreate': 'Maak de tegenboeking',

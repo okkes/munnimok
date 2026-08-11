@@ -417,6 +417,60 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     expect(screen.queryByTestId('txkind-options')).toBeNull();
   }, 15_000);
 
+  it('#152 r2: the ◆ Funding pick asks WHICH funding account — candidates filtered, pick keeps the story', async () => {
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    const seed = new MunniDB('munni_demo');
+    await waitFor(async () => expect(await seed.meta.get('txCategoryModel_v1')).toBeTruthy(), { timeout: 8000 });
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('fund-seed'), { trackOutbox: false });
+    await seedRepo.upsert('account', DEMO_SPACE_ID, 'fund1', {
+      name: 'Family pot', type: 'funding', source: 'manual', currency: 'EUR', balanceCents: 0,
+    });
+    seed.close();
+
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-fundingOut'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
+
+    // the ask lists ONLY funding attachments — no Default pot, none of
+    // the ordinary accounts
+    await screen.findByTestId('counter-pick-fund1', {}, { timeout: 8000 });
+    expect(screen.queryByTestId('counter-default')).toBeNull();
+    expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull();
+    fireEvent.click(screen.getByTestId('counter-pick-fund1'));
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.linkedAccountId).toBe('fund1');
+      expect(tx?.catId).toBe('fundingOut'); // the funding story stays
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('#152 r2: the original bank counterparty stays visible once the row points elsewhere', async () => {
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    const seed = new MunniDB('munni_demo');
+    await waitFor(async () => expect(await seed.meta.get('txCategoryModel_v1')).toBeTruthy(), { timeout: 8000 });
+    // the bank named a counterparty; nothing links yet — no facts row
+    await seed.transactions.update('dm6', { counterIban: 'NL02ABNA0123456789' });
+    seed.close();
+    await waitFor(() => expect(screen.queryByTestId('tx-detail-original-counter')).toBeNull());
+
+    // point the row at the savings pot — the original IBAN moves into
+    // the details section as a quiet fact
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => {
+      expect(screen.getByTestId('tx-detail-original-counter').textContent).toContain('NL02ABNA0123456789');
+    }, { timeout: 8000 });
+  }, 20_000);
 });
 
 describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {

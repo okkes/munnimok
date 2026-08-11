@@ -1732,6 +1732,8 @@ export const en = {
   'tx.unsettledFilter': 'Unsettled reimbursements',
   'tx.counterAccount': 'Counterparty',
   'tx.counterAccountHint': 'Only accounts attached to this space are shown.',
+  'tx.counterFundingHint': 'Pick the funding account this money went to — only accounts attached as funding are shown.',
+  'tx.originalCounterparty': 'Original counterparty',
   'tx.counterDefaultSub': 'No setup — munni keeps this in the space’s default account',
   'tx.counterBankBadge': 'Bank',
   'tx.counterForkCreate': 'Create its counterpart',

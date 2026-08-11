@@ -169,10 +169,13 @@ function stageAsSettlement(draft: ReviewDraft, cats: ReturnType<typeof useCatego
 function CardCounterRow({
   show,
   counterName,
+  originalIban,
   onCounter,
 }: Readonly<{
   show: boolean;
   counterName: string | undefined;
+  /** #152 r2: the bank's counterparty, kept visible under a re-pick */
+  originalIban?: string;
   onCounter: () => void;
 }>) {
   const { t } = useLang();
@@ -184,7 +187,14 @@ function CardCounterRow({
         className="m-tap m-fade flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
       >
         <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-        <span className="min-w-0 flex-1 truncate">{counterName ?? t('tx.counterNone')}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate">{counterName ?? t('tx.counterNone')}</span>
+          {originalIban && (
+            <span className="block truncate font-mono text-[11px] text-ink-4" data-testid="review-counter-original">
+              {originalIban}
+            </span>
+          )}
+        </span>
         <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
         <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
       </button>
@@ -428,8 +438,9 @@ export function ReviewPartDeck({
   const [expanded, setExpanded] = useState(0);
   const [counterFor, setCounterFor] = useState<number | null>(null);
   // #133 C: a ◆ family pick in the part editor asks its counterparty —
-  // the family pins the Default row on top of the sheet
-  const [counterFamily, setCounterFamily] = useState<DefaultFamily | null>(null);
+  // the family pins the Default row on top of the sheet. #152 r2: the
+  // ◆ Funding pick asks among funding attachments.
+  const [counterFamily, setCounterFamily] = useState<DefaultFamily | 'funding' | null>(null);
   const [eventFor, setEventFor] = useState<number | null>(null);
   // r7: which part is linking a recurring cost
   const [recFor, setRecFor] = useState<number | null>(null);
@@ -650,7 +661,8 @@ export function ReviewPartDeck({
         }}
         excludeAccountId={tx.accountId}
         currentLinkedId={partAt(parts, counterFor)?.linkedAccountId}
-        defaultFamily={counterFamily ?? undefined}
+        defaultFamily={counterFamily === 'funding' ? undefined : (counterFamily ?? undefined)}
+        fundingOnly={counterFamily === 'funding'}
         onChoose={(account) => {
           if (counterFor === null) return;
           // #133 C: the counterparty resolves the part's story — a ◆
@@ -766,10 +778,11 @@ export function ReviewPartDeck({
             const patch = partCatsApplyPatch(partAt(parts, idx), entries);
             patchPart(idx, patch);
             // #133 C: a ◆ family pick asks its counterparty right away
-            // — Default pinned on top; dismissing keeps the part bare
+            // — Default pinned on top; dismissing keeps the part bare.
+            // #152 r2: the Funding pick asks among funding attachments.
             const family = specialCatType(patch.catId);
-            if (family && family !== 'transfer' && family !== 'funding' && !parts[idx].linkedAccountId && !lockedKind) {
-              setCounterFamily(family as DefaultFamily);
+            if (family && family !== 'transfer' && !parts[idx].linkedAccountId && !lockedKind) {
+              setCounterFamily(family === 'funding' ? 'funding' : (family as DefaultFamily));
               setCounterFor(idx);
             }
           }
@@ -1143,8 +1156,9 @@ export function ReviewScreen() {
   // kind + counterparty rows live ON the card now (user simplification);
   // a user-picked transfer REQUIRES a counterparty, so dismissing the
   // picker without choosing rolls the kind back to what it was
-  // #133 C: a ◆ family pick pins the Default row on the counter sheet
-  const [counterFamily, setCounterFamily] = useState<DefaultFamily | null>(null);
+  // #133 C: a ◆ family pick pins the Default row on the counter sheet;
+  // #152 r2: the ◆ Funding pick asks among funding attachments instead
+  const [counterFamily, setCounterFamily] = useState<DefaultFamily | 'funding' | null>(null);
   const [counterOpen, setCounterOpen] = useState(false);
   const counterFallback = useRef<ReviewDraft | null>(null);
   const counterChosen = useRef(false);
@@ -1401,9 +1415,10 @@ export function ReviewScreen() {
     setStagedDraft(next);
     // #133 C: a ◆ family pick unfolds the counterparty question right
     // away — Default, a real account, or dismiss (bare is legal; the
-    // boot migration folds it onto the default later)
-    if (family && family !== 'transfer' && family !== 'funding' && !next.linkedAccountId && !ownStamp) {
-      setCounterFamily(family as DefaultFamily);
+    // boot migration folds it onto the default later). #152 r2: the
+    // Funding pick asks WHICH funding account — no Default pot there.
+    if (family && family !== 'transfer' && !next.linkedAccountId && !ownStamp) {
+      setCounterFamily(family === 'funding' ? 'funding' : (family as DefaultFamily));
       counterFallback.current = null;
       setCounterOpen(true);
     }
@@ -1554,6 +1569,11 @@ export function ReviewScreen() {
                   <CardCounterRow
                     show={!!draft?.linkedAccountId}
                     counterName={draftCounter?.name}
+                    originalIban={
+                      tx.counterIban && draft?.linkedAccountId && ownCounter?.id !== draft.linkedAccountId
+                        ? tx.counterIban
+                        : undefined
+                    }
                     onCounter={() => {
                       counterFallback.current = null;
                       setCounterOpen(true);
@@ -1760,7 +1780,8 @@ export function ReviewScreen() {
           }}
           excludeAccountId={tx.accountId}
           currentLinkedId={draft.linkedAccountId}
-          defaultFamily={counterFamily ?? undefined}
+          defaultFamily={counterFamily === 'funding' ? undefined : (counterFamily ?? undefined)}
+          fundingOnly={counterFamily === 'funding'}
           onChoose={(account) => {
             counterChosen.current = true;
             setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));

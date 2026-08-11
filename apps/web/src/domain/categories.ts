@@ -279,10 +279,12 @@ export const mainCatOf = (catId: string | undefined): string | undefined => {
 /**
  * R3 (typed-splits v2): the type a special-category pick pulls onto a
  * standard row — "Set aside" makes it a saving, "Repaid" a debt payment.
- * Funding cats stay standard (the pot has no type since 2026-08-05).
  * #133 E: the TRANSFER family answers too — with the kind rows gone,
  * picking a Transfer sub is the manual road into a transfer, and the
  * consumers route it into the mandatory counterparty ask.
+ * #152 r2: FUNDING answers as well — picking a funding category asks
+ * WHICH funding account (the consumers filter the ask to funding
+ * attachments; walking away keeps the bare funding story).
  */
 export const specialCatType = (catId: string | undefined): TxType | undefined => {
   switch (mainCatOf(catId)) {
@@ -294,6 +296,8 @@ export const specialCatType = (catId: string | undefined): TxType | undefined =>
       return 'investment';
     case 'transfer':
       return 'transfer';
+    case 'funding':
+      return 'funding';
     default:
       return undefined;
   }
