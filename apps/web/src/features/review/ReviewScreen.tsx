@@ -441,6 +441,9 @@ export function ReviewPartDeck({
   // the family pins the Default row on top of the sheet. #152 r2: the
   // ◆ Funding pick asks among funding attachments.
   const [counterFamily, setCounterFamily] = useState<DefaultFamily | 'funding' | null>(null);
+  // #133 r3: a ◆ Transfer pick on a PART stages nothing until its
+  // mandatory counterparty answers — the cats patch waits here
+  const pendingTransfer = useRef<{ idx: number; patch: Partial<TxSplit> } | null>(null);
   const [eventFor, setEventFor] = useState<number | null>(null);
   // r7: which part is linking a recurring cost
   const [recFor, setRecFor] = useState<number | null>(null);
@@ -657,6 +660,9 @@ export function ReviewPartDeck({
           if (!next) {
             setCounterFor(null);
             setCounterFamily(null);
+            // #133 r3: a dismissed transfer ask rolls the pick back —
+            // the stashed cats patch never lands
+            pendingTransfer.current = null;
           }
         }}
         excludeAccountId={tx.accountId}
@@ -665,9 +671,18 @@ export function ReviewPartDeck({
         fundingOnly={counterFamily === 'funding'}
         onChoose={(account) => {
           if (counterFor === null) return;
+          const family = typeForLinkedAccount(account.type);
+          // #133 r3: the stashed ◆ Transfer pick lands WITH its answer —
+          // the locked sub was the pick itself, the link completes it
+          const pending = pendingTransfer.current;
+          if (pending && pending.idx === counterFor) {
+            pendingTransfer.current = null;
+            patchPart(counterFor, { ...pending.patch, txType: family, linkedAccountId: account.id });
+            setCounterFamily(null);
+            return;
+          }
           // #133 C: the counterparty resolves the part's story — a ◆
           // family pick keeps its category, a plain pick files transfer
-          const family = typeForLinkedAccount(account.type);
           const keepCat = counterFamily !== null || family !== 'transfer';
           patchPart(counterFor, {
             txType: counterFamily ?? family,
@@ -776,11 +791,20 @@ export function ReviewPartDeck({
           if (spreadFor !== null) {
             const idx = spreadFor;
             const patch = partCatsApplyPatch(partAt(parts, idx), entries);
+            const family = specialCatType(patch.catId);
+            // #133 r3: a ◆ Transfer pick on a part stages NOTHING yet —
+            // the mandatory ask answers it; dismissing rolls back
+            if (family === 'transfer' && entries.length === 1 && !parts[idx].linkedAccountId && !lockedKind) {
+              pendingTransfer.current = { idx, patch };
+              setCounterFamily(null);
+              setCounterFor(idx);
+              setSpreadFor(null);
+              return;
+            }
             patchPart(idx, patch);
             // #133 C: a ◆ family pick asks its counterparty right away
             // — Default pinned on top; dismissing keeps the part bare.
             // #152 r2: the Funding pick asks among funding attachments.
-            const family = specialCatType(patch.catId);
             if (family && family !== 'transfer' && !parts[idx].linkedAccountId && !lockedKind) {
               setCounterFamily(family === 'funding' ? 'funding' : (family as DefaultFamily));
               setCounterFor(idx);

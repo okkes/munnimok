@@ -574,6 +574,44 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.getByTestId('deck-cat-0').textContent).toContain('·');
   }, 15_000);
 
+  it('#133 r3: a ◆ Transfer pick on a PART stages nothing until its mandatory ask answers; dismissal rolls back', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '6,00' } });
+    fireEvent.blur(amount0);
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+    await screen.findByTestId('review-part-deck');
+    const catBefore = screen.getByTestId('deck-cat-0').textContent;
+
+    // pick the locked Transfer sub on part 0 — the ask opens, NOTHING
+    // patched yet; walking away keeps the part exactly as it was
+    fireEvent.click(await screen.findByTestId('deck-cat-0'));
+    fireEvent.click((await screen.findAllByTestId('part-cat-0')).at(-1)!);
+    fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
+    fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
+    await screen.findByTestId('counter-accounts');
+    expect(screen.queryByTestId('counter-default')).toBeNull(); // no Default for transfers
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toBe(catBefore));
+
+    // answering it lands the locked sub + the link in ONE patch
+    fireEvent.click(screen.getByTestId('deck-cat-0'));
+    fireEvent.click(screen.getAllByTestId('part-cat-0').at(-1)!);
+    fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
+    fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
+    await screen.findByTestId('counter-accounts');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toContain('Transfer Out'));
+    // the part's counter fact row names the pot
+    await waitFor(() => expect(screen.getByTestId('deck-counter-0').textContent).toContain('Demo Savings'));
+  }, 15_000);
+
   it('splitting a card with staged decisions warns first — cancel keeps them, continue resets (#126 r7)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');

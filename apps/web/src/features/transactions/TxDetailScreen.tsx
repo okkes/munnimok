@@ -592,6 +592,7 @@ interface PartAskDeps {
   spaceId: string;
   ownStamp: boolean;
   counterFamily: CounterFamily | null;
+  pendingTransfer: { current: Partial<TxSplit> | null };
   patchPart: (patch: Partial<TxSplit>) => void;
   setCounterFamily: (f: CounterFamily | null) => void;
   setCounterOpen: (open: boolean) => void;
@@ -621,10 +622,18 @@ function singleCatPartitionFields(
   };
 }
 
-/** the part page's counterparty pick: a DEFAULT pick keeps the family;
- *  a funding pick keeps its funding story (#152 r2); anything else is
- *  R2's inversion */
+/** the part page's counterparty pick: a stashed ◆ Transfer lands with
+ *  its answer (#133 r3); a DEFAULT pick keeps the family; a funding
+ *  pick keeps its funding story (#152 r2); anything else is R2's
+ *  inversion */
 function choosePartCounter(deps: PartAskDeps, picked: { id: string; type: AccountType }): void {
+  const pending = deps.pendingTransfer.current;
+  if (pending) {
+    deps.pendingTransfer.current = null;
+    deps.patchPart({ ...pending, txType: typeForLinkedAccount(picked.type), linkedAccountId: picked.id });
+    deps.setCounterFamily(null);
+    return;
+  }
   const family =
     deps.counterFamily === 'funding' ? null : defaultPickFamily(deps.counterFamily, picked.id, deps.spaceId);
   deps.patchPart(
@@ -790,12 +799,20 @@ function applyRowCats(
   deps.armCatsBulk(entries);
 }
 
-/** the part page's category apply: a ◆ family pick asks its
- *  counterparty right away (#133 D) — funding included (#152 r2) */
+/** the part page's category apply: a ◆ Transfer pick stages NOTHING
+ *  until its mandatory ask answers (#133 r3); other ◆ families —
+ *  funding included (#152 r2) — apply and then ask */
 function applyPartCats(deps: PartAskDeps, entries: TxSplitCat[]): void {
   const patch = partCatsApplyPatch(deps.part, entries);
-  deps.patchPart(patch);
   const family = specialCatType(patch.catId);
+  if (family === 'transfer' && entries.length === 1 && !deps.part.linkedAccountId && !deps.ownStamp) {
+    deps.pendingTransfer.current = patch;
+    deps.setCounterFamily(null);
+    deps.setCounterOpen(true);
+    deps.setSpreadOpen(false);
+    return;
+  }
+  deps.patchPart(patch);
   if (family && family !== 'transfer' && !deps.part.linkedAccountId && !deps.ownStamp) {
     deps.setCounterFamily(family === 'funding' ? 'funding' : (family as DefaultFamily));
     deps.setCounterOpen(true);
@@ -1150,6 +1167,9 @@ function PartDetailBody({
   // funding asks among the space's funding attachments)
   const [counterFamily, setCounterFamily] = useState<CounterFamily | null>(null);
   const [counterOpen, setCounterOpen] = useState(false);
+  // #133 r3: a ◆ Transfer pick on the part stages nothing until its
+  // mandatory counterparty answers — the cats patch waits here
+  const pendingTransfer = useRef<Partial<TxSplit> | null>(null);
   const [eventOpen, setEventOpen] = useState(false);
   // r7: the part links recurring costs like whole transactions do
   const [recOpen, setRecOpen] = useState(false);
@@ -1191,6 +1211,7 @@ function PartDetailBody({
     spaceId,
     ownStamp,
     counterFamily,
+    pendingTransfer,
     patchPart,
     setCounterFamily,
     setCounterOpen,
@@ -1359,7 +1380,11 @@ function PartDetailBody({
         open={counterOpen}
         onOpenChange={(next) => {
           setCounterOpen(next);
-          if (!next) setCounterFamily(null);
+          if (!next) {
+            setCounterFamily(null);
+            // #133 r3: a dismissed transfer ask rolls the pick back
+            pendingTransfer.current = null;
+          }
         }}
         excludeAccountId={tx.accountId}
         currentLinkedId={part.linkedAccountId}
