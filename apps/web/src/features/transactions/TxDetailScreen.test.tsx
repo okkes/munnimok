@@ -4,7 +4,7 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
-import { mirrorTxId } from '@/domain/feedIds';
+import { catMirrorSourceId, mirrorTxId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
@@ -115,6 +115,35 @@ describe('TxDetailScreen (demo identity)', () => {
     await waitFor(() => expect(list.querySelector('[data-testid="tx-row-dm6"]')).toBeNull(), { timeout: 5000 });
   });
 
+  it('#133 r4: deleting a manual row retires its spread entries\' mints with their money', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-groceries'));
+    fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '40,00' } });
+    fireEvent.click(screen.getByTestId('part-cat-add'));
+    fireEvent.click(screen.getByTestId('part-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-1').textContent).toContain('Demo Savings'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+
+    const db = new MunniDB('munni_demo');
+    const mid = mirrorTxId(catMirrorSourceId('dm6', 'savingDeposit'));
+    await waitFor(async () => expect((await db.transactions.get(mid))?.deleted).toBe(0), { timeout: 8000 });
+    const potBefore = (await db.accounts.get('demo_save'))!.balanceCents;
+
+    fireEvent.click(await screen.findByTestId('tx-detail-delete'));
+    fireEvent.click(await screen.findByTestId('tx-delete-confirm'));
+    await waitFor(async () => {
+      expect((await db.transactions.get('dm6'))?.deleted).toBe(1);
+      expect((await db.transactions.get(mid))?.deleted).toBe(1); // the entry's mint goes along
+      expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBefore - 1240); // refunded
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
   it('a bogus tx id does not crash the screen', async () => {
     renderApp('/transactions/does-not-exist');
     // resolves to either the detail shell or a redirect back — must render something
@@ -214,31 +243,64 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('a transfer to the savings account stays a Transfer and mints the pot leg', async () => {
+  it('#133 r4: Set aside answered with the savings pot KEEPS its category; the pot leg mints', async () => {
     renderApp('/transactions/dm6');
-    // #133 D: Set aside (◆) asks its counterparty — the savings pot
-    // answers it; R2 inversion files THIS leg as the locked transfer
+    // the ◆ pick asks its counterparty ON THE SPOT (user: "instantly…
+    // before adding another category"); the pot answers it. The user's
+    // category stays the story — the link makes it a movement and the
+    // view derives transfer from the real counterparty.
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => {
-      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Transfer Out');
+      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Set aside');
     });
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
-      expect(tx?.txType).toBe('transfer');
       expect(tx?.linkedAccountId).toBe('demo_save');
-      expect(tx?.catId).toBe('transferOut');
+      expect(tx?.catId).toBe('savingDeposit'); // the pick survives the link
       // the deterministic mirror sits on the pot, stamped + movement-sub
       const mirror = await db.transactions.get(mirrorTxId('dm6'));
       expect(mirror).toMatchObject({ accountId: 'demo_save', amountCents: 5240, txType: 'saving', catId: 'savingDeposit', transferPeerId: 'dm6' });
     });
     db.close();
   }, 15_000);
+
+  it('#133 r4: a SPREAD mixes families — the ◆ entry answers its pot and mints an entry-sized leg', async () => {
+    renderApp('/transactions/dm6');
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    // entry 0 stays groceries at €40; the ask must NOT open for a plain pick
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-groceries'));
+    expect(screen.queryByTestId('part-cat-counter-0')).toBeNull();
+    fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '40,00' } });
+    // entry 1: Set aside €12,40 — the ask opens on the pick, the pot answers
+    fireEvent.click(screen.getByTestId('part-cat-add'));
+    fireEvent.click(screen.getByTestId('part-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-1').textContent).toContain('Demo Savings'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.cats?.map((c) => c.catId)).toEqual(['groceries', 'savingDeposit']);
+      expect(tx?.cats?.[1]?.linkedAccountId).toBe('demo_save');
+      expect(tx?.linkedAccountId).toBeFalsy(); // the entries own the links now
+      // the pot leg is the ENTRY's €12,40 — not the row's €52,40
+      const mirror = await db.transactions.get(mirrorTxId(catMirrorSourceId('dm6', 'savingDeposit')));
+      expect(mirror).toMatchObject({ accountId: 'demo_save', amountCents: 1240, txType: 'saving' });
+      expect(tx?.cats?.[1]?.transferPeerId).toBe(mirrorTxId(catMirrorSourceId('dm6', 'savingDeposit')));
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
 
   it('the marked special category carries the flat-loan story (typed-splits v2)', async () => {
     renderApp('/transactions/dm6');
@@ -248,12 +310,13 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('speccat-loanRepayment'); // the diamond mark
     fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
-    // #133 D: the ◆ pick opens the counterparty ask (Default pinned);
-    // walking away keeps the bare story — no account on the other side
+    // #133 r4: the ◆ pick opens the counterparty ask ON THE PICK
+    // (Default pinned); walking away keeps the bare story — Done then
+    // lands the category with no account on the other side
     await screen.findByTestId('counter-default');
     fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-counter-add').textContent).toContain('No counter account');
     });
@@ -281,21 +344,22 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
-    // #133 B: the loan question IS the counterparty question now —
-    // Default pinned on top, the seeded loan as a normal candidate
+    // #133 B/r4: the loan question IS the counterparty question, opened
+    // on the pick — Default pinned on top, the seeded loan a candidate
     const loanId = 'lp_loan';
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId(`counter-pick-${loanId}`));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Phone plan loan'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
-    // picking converts to the transfer approach: link + locked sub, and
+    // the pick keeps the Repaid story; the link carries the movement —
     // the loan's own minted leg appears at the deterministic id
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
       expect(tx?.linkedAccountId).toBe(loanId);
-      expect(tx?.txType).toBe('transfer');
+      expect(tx?.catId).toBe('loanRepayment');
       expect((await db.transactions.get(mirrorTxId('dm6')))?.accountId).toBe(loanId);
     }, { timeout: 8000 });
     db.close();
@@ -326,7 +390,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
+    // #133 r4: the ask opens on the pick itself
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-ms1'));
 
@@ -334,6 +398,9 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     // (the wrapper is inert — the TxRow button inside takes the tap)
     await screen.findByTestId('counter-fork');
     fireEvent.click((await screen.findByTestId('counter-dup-dup1')).querySelector('button')!);
+    // the picked row rides the entry; Done writes and pairs both sides
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Cash pot'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -369,13 +436,15 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
     // generous waits: this file's writes + the boot chain contend under
-    // full-suite load (the review-suite lesson)
+    // full-suite load (the review-suite lesson). #133 r4: the ask opens
+    // on the pick itself; Done lands the answered entry.
     await screen.findByTestId('counter-default', {}, { timeout: 8000 });
     fireEvent.click(await screen.findByTestId('counter-pick-ms2', {}, { timeout: 8000 }));
     await screen.findByTestId('counter-fork', {}, { timeout: 8000 });
     fireEvent.click(screen.getByTestId('counter-fork-create'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Second pot'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -393,10 +462,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
-    // no loan exists — Default is the one-tap answer
+    // no loan exists — Default is the one-tap answer to the pick's ask
     fireEvent.click(await screen.findByTestId('counter-default'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).not.toContain('Choose counterparty'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
     const potId = `defaultacct_debtPayment_${DEMO_SPACE_ID}`;
@@ -431,14 +501,15 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-fundingOut'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
-    // the ask lists ONLY funding attachments — no Default pot, none of
-    // the ordinary accounts
+    // the ask opens on the pick (#133 r4) and lists ONLY funding
+    // attachments — no Default pot, none of the ordinary accounts
     await screen.findByTestId('counter-pick-fund1', {}, { timeout: 8000 });
     expect(screen.queryByTestId('counter-default')).toBeNull();
     expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull();
     fireEvent.click(screen.getByTestId('counter-pick-fund1'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Family pot'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -464,9 +535,10 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-original-counter').textContent).toContain('NL02ABNA0123456789');
     }, { timeout: 8000 });

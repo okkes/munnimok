@@ -323,6 +323,7 @@ function CardCategoryRows({
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
+  const accounts = useSpaceAccounts();
   const slices = draft?.splits ?? [];
   const parts = slices.filter((s) => s.catId !== REIMBURSED_ID);
   // #211: the row's own category spread — several categories, ONE
@@ -334,7 +335,7 @@ function CardCategoryRows({
   const singleCat = single ? cats.byId(single.catId) : fallbackCat;
   const singleColor = single ? (singleCat.color ?? cats.byId(singleCat.parentId ?? '').color) : fallbackColor;
   const spread = single ? sliceStory(single, 0, slices, draft?.txType, cats, t).spread : undefined;
-  const catRow = (catId: string, amountCents: number, key: string) => (
+  const catRow = (catId: string, amountCents: number, key: string, counterName?: string) => (
     <button
       key={key}
       data-testid={`review-cat-${catId}`}
@@ -346,7 +347,15 @@ function CardCategoryRows({
         size={18}
         color={cats.byId(catId).color ?? cats.byId(cats.byId(catId).parentId ?? '').color ?? 'var(--m-ink-3)'}
       />
-      <span className="min-w-0 flex-1 truncate">{catName(cats.byId(catId), t)}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{catName(cats.byId(catId), t)}</span>
+        {/* #133 r4: the entry's own counterparty, staged in the editor */}
+        {counterName && (
+          <span className="block truncate text-[11px] font-normal text-ink-4" data-testid={`review-cat-counter-${catId}`}>
+            → {counterName}
+          </span>
+        )}
+      </span>
       <span className="m-num text-[12px] text-ink-2">{fmtCents(amountCents, currency, lang)}</span>
       <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
     </button>
@@ -355,7 +364,16 @@ function CardCategoryRows({
     <>
       {/* multi-part (#126 r3): the main card says nothing the parts
           already say — the deck under it carries every story */}
-      {!multi && spreadEntries.length > 1 && spreadEntries.map((entry, i) => catRow(entry.catId, entry.amountCents, `${entry.catId}-${i}`))}
+      {!multi &&
+        spreadEntries.length > 1 &&
+        spreadEntries.map((entry, i) =>
+          catRow(
+            entry.catId,
+            entry.amountCents,
+            `${entry.catId}-${i}`,
+            (accounts ?? []).find((a) => a.id === entry.linkedAccountId)?.name,
+          ),
+        )}
       {!multi && spreadEntries.length <= 1 && (
         <button
           data-testid={single ? `review-cat-${single.catId}` : 'review-category-chip'}
@@ -436,14 +454,9 @@ export function ReviewPartDeck({
   const cats = useCategories();
   const accounts = useSpaceAccounts();
   const [expanded, setExpanded] = useState(0);
+  // #133 r4: the ◆ asks live INSIDE the category editor now — this
+  // only serves the expanded part's existing-link re-pick (fact row)
   const [counterFor, setCounterFor] = useState<number | null>(null);
-  // #133 C: a ◆ family pick in the part editor asks its counterparty —
-  // the family pins the Default row on top of the sheet. #152 r2: the
-  // ◆ Funding pick asks among funding attachments.
-  const [counterFamily, setCounterFamily] = useState<DefaultFamily | 'funding' | null>(null);
-  // #133 r3: a ◆ Transfer pick on a PART stages nothing until its
-  // mandatory counterparty answers — the cats patch waits here
-  const pendingTransfer = useRef<{ idx: number; patch: Partial<TxSplit> } | null>(null);
   const [eventFor, setEventFor] = useState<number | null>(null);
   // r7: which part is linking a recurring cost
   const [recFor, setRecFor] = useState<number | null>(null);
@@ -653,43 +666,24 @@ export function ReviewPartDeck({
         </p>
       )}
 
-      {/* the expanded part's counterparty — same door the editor uses */}
+      {/* the expanded part's counterparty RE-PICK (#133 r4: the ◆ asks
+          moved inside the category editor) — R2's inversion, transfer
+          files the locked sub */}
       <CounterpartySheet
         open={counterFor !== null}
         onOpenChange={(next) => {
-          if (!next) {
-            setCounterFor(null);
-            setCounterFamily(null);
-            // #133 r3: a dismissed transfer ask rolls the pick back —
-            // the stashed cats patch never lands
-            pendingTransfer.current = null;
-          }
+          if (!next) setCounterFor(null);
         }}
         excludeAccountId={tx.accountId}
         currentLinkedId={partAt(parts, counterFor)?.linkedAccountId}
-        defaultFamily={counterFamily === 'funding' ? undefined : (counterFamily ?? undefined)}
-        fundingOnly={counterFamily === 'funding'}
         onChoose={(account) => {
           if (counterFor === null) return;
-          const family = typeForLinkedAccount(account.type);
-          // #133 r3: the stashed ◆ Transfer pick lands WITH its answer —
-          // the locked sub was the pick itself, the link completes it
-          const pending = pendingTransfer.current;
-          if (pending && pending.idx === counterFor) {
-            pendingTransfer.current = null;
-            patchPart(counterFor, { ...pending.patch, txType: family, linkedAccountId: account.id });
-            setCounterFamily(null);
-            return;
-          }
-          // #133 C: the counterparty resolves the part's story — a ◆
-          // family pick keeps its category, a plain pick files transfer
-          const keepCat = counterFamily !== null || family !== 'transfer';
+          const kind = typeForLinkedAccount(account.type);
           patchPart(counterFor, {
-            txType: counterFamily ?? family,
+            txType: kind,
             linkedAccountId: account.id,
-            catId: keepCat ? parts[counterFor].catId : (autoSubFor('transfer', tx.amountCents) ?? parts[counterFor].catId),
+            catId: kind !== 'transfer' ? parts[counterFor].catId : (autoSubFor('transfer', tx.amountCents) ?? parts[counterFor].catId),
           });
-          setCounterFamily(null);
         }}
       />
       {/* the expanded part's event — per-part membership (v2 model) */}
@@ -775,8 +769,8 @@ export function ReviewPartDeck({
         </div>
       </Sheet>
       {/* the part's categories (r6/r7) — the whole-transaction editor,
-          scoped to the part's amount; a single special pick pulls the
-          part's type exactly as it always did */}
+          scoped to the part's amount. #133 r4: every ◆ pick asks its
+          counterparty INSIDE the editor, per entry, on the spot */}
       <CatsSheet
         open={spreadFor !== null}
         onOpenChange={(next) => {
@@ -787,30 +781,10 @@ export function ReviewPartDeck({
         direction={deckDirection}
         txType={rowType}
         allowedCatIds={allowedCatIds}
+        excludeAccountId={tx.accountId}
+        askDisabled={lockedKind}
         onApply={(entries) => {
-          if (spreadFor !== null) {
-            const idx = spreadFor;
-            const patch = partCatsApplyPatch(partAt(parts, idx), entries);
-            const family = specialCatType(patch.catId);
-            // #133 r3: a ◆ Transfer pick on a part stages NOTHING yet —
-            // the mandatory ask answers it; dismissing rolls back
-            if (family === 'transfer' && entries.length === 1 && !parts[idx].linkedAccountId && !lockedKind) {
-              pendingTransfer.current = { idx, patch };
-              setCounterFamily(null);
-              setCounterFor(idx);
-              setSpreadFor(null);
-              return;
-            }
-            patchPart(idx, patch);
-            // #133 C: a ◆ family pick asks its counterparty right away
-            // — Default pinned on top; dismissing keeps the part bare.
-            // #152 r2: the Funding pick asks among funding attachments.
-            if (family && family !== 'transfer' && !parts[idx].linkedAccountId && !lockedKind) {
-              setCounterFamily(family === 'funding' ? 'funding' : (family as DefaultFamily));
-              setCounterFor(idx);
-            }
-          }
-          setSpreadFor(null);
+          if (spreadFor !== null) patchPart(spreadFor, partCatsApplyPatch(partAt(parts, spreadFor), entries));
         }}
       />
     </div>
@@ -1411,8 +1385,19 @@ export function ReviewScreen() {
     return net?.length ? net : undefined;
   }, [draft?.cats]);
 
-  /** ONE category decides the card (the chip's single pick or a values
-   *  collapse): stages it with the ◆ machinery — Transfer stages nothing
+  /** the settled row's gross partition, rewritten around a single pick */
+  const settledCatsFor = (catId: string) =>
+    settledCatEntry
+      ? [
+          ...(Math.abs(tx?.amountCents ?? 0) - settledCatsCents > 0
+            ? [{ catId, amountCents: Math.abs(tx?.amountCents ?? 0) - settledCatsCents }]
+            : []),
+          settledCatEntry,
+        ]
+      : undefined;
+
+  /** ONE category decides the card — the VALUES-collapse path (catId
+   *  only): stages it with the ◆ machinery — Transfer stages nothing
    *  until its mandatory counterparty answers; families ask right away */
   const stageSingleCategory = (catId: string) => {
     if (!draft) return;
@@ -1426,16 +1411,7 @@ export function ReviewScreen() {
       setCounterOpen(true);
       return;
     }
-    // a settled row keeps its gross partition — rewritten to the pick
-    const settledCats = settledCatEntry
-      ? [
-          ...(Math.abs(tx?.amountCents ?? 0) - settledCatsCents > 0
-            ? [{ catId, amountCents: Math.abs(tx?.amountCents ?? 0) - settledCatsCents }]
-            : []),
-          settledCatEntry,
-        ]
-      : undefined;
-    const next = { ...withCategory(withSplits(draft, undefined), catId, cats), cats: settledCats };
+    const next = { ...withCategory(withSplits(draft, undefined), catId, cats), cats: settledCatsFor(catId) };
     setStagedDraft(next);
     // #133 C: a ◆ family pick unfolds the counterparty question right
     // away — Default, a real account, or dismiss (bare is legal; the
@@ -1446,6 +1422,16 @@ export function ReviewScreen() {
       counterFallback.current = null;
       setCounterOpen(true);
     }
+  };
+
+  /** #133 r4: the cats EDITOR's single entry — its counterparty was
+   *  already answered inside the editor (or deliberately left bare), so
+   *  nothing asks afterwards; a linked entry stages its link at the row
+   *  level (a single partition keeps the whole-row story) */
+  const stageSingleEntry = (entry: TxSplitCat) => {
+    if (!draft) return;
+    const next = { ...withCategory(withSplits(draft, undefined), entry.catId, cats), cats: settledCatsFor(entry.catId) };
+    setStagedDraft(entry.linkedAccountId ? { ...next, linkedAccountId: entry.linkedAccountId } : next);
   };
 
   const confirm = async () => {
@@ -1743,9 +1729,12 @@ export function ReviewScreen() {
         />
       )}
       {/* #211: the split-CATEGORIES editor — the chip's door. One entry
-          is a plain category pick (with its ◆ asks); several stage the
-          row's own spread. A settled `reimbursed` entry is bookkeeping:
-          held aside here, re-attached on stage. */}
+          is a plain category pick; several stage the row's own spread.
+          #133 r4: every ◆ pick asks its counterparty INSIDE the editor,
+          per entry — the staged entries carry their links, and a spread
+          drops the row-level link (the entries own the stories now). A
+          settled `reimbursed` entry is bookkeeping: held aside here,
+          re-attached on stage. */}
       {tx && draft && (
         <CatsSheet
           open={catsOpen}
@@ -1756,6 +1745,8 @@ export function ReviewScreen() {
             catId: draft.catId,
             cats: draftNetCats,
             amountCents: Math.abs(tx.amountCents) - settledCatsCents,
+            linkedAccountId: draft.linkedAccountId,
+            transferPeerId: tx.transferPeerId,
           }}
           currency={tx.currency}
           direction={tx.amountCents < 0 ? 'debit' : 'credit'}
@@ -1764,14 +1755,16 @@ export function ReviewScreen() {
           title={t('split.catsTitle')}
           reason={reasonLine}
           includePct
+          excludeAccountId={tx.accountId}
+          askDisabled={!!ownStamp}
           onApply={(entries) => {
             if (entries.length === 1) {
-              stageSingleCategory(entries[0].catId);
+              stageSingleEntry(entries[0]);
               return;
             }
             const full = settledCatEntry ? [...entries, settledCatEntry] : entries;
             const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
-            setStagedDraft({ ...withCats(draft, full), catId: primary.catId });
+            setStagedDraft({ ...withCats(draft, full), catId: primary.catId, linkedAccountId: undefined });
           }}
         />
       )}

@@ -123,7 +123,9 @@ describe('feature B join layer', () => {
     await writeTxTransform(repo, tx, { catId: 'groceries', cats: spread, needsReview: 0 });
 
     const [again] = await visibleTransactions(new DexieBackend(db), SPACE);
-    expect(again.cats).toEqual(spread); // joinTx maps the overlay field
+    // joinTx maps the overlay field; the view enriches each entry with
+    // its derived type (#133 r4) — the STORED overlay stays untouched
+    expect(again.cats).toEqual(spread.map((c) => ({ ...c, txType: 'expense' })));
     const metas = await db.txMeta.where('spaceId').equals(SPACE).toArray();
     expect(metas[0].cats).toEqual(spread); // stored on the overlay, not the raw row
     expect((await db.transactions.get('raw1'))?.cats).toBeUndefined();
@@ -168,6 +170,27 @@ describe('feature B join layer', () => {
     const store2 = new DexieBackend(db);
     const adj = (await visibleTransactions(store2, SPACE)).find((t) => t.id === 'adj1');
     expect(adj?.txType).toBe('adjustment');
+  });
+
+  it('#133 r4: spread entries derive their OWN types from their counterparties; the headline follows the largest entry', async () => {
+    await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'defpot', { name: 'Default savings', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'saving' });
+    await repo.upsert('account', SPACE, 'fund', { name: 'Family pot', type: 'funding', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('transaction', SPACE, 'spread1', {
+      accountId: 'chk', date: '2026-07-05', amountCents: -10_000, currency: 'EUR',
+      merchant: 'Mixed', catId: 'savingDeposit', txType: 'expense', needsReview: 0,
+      cats: [
+        { catId: 'savingDeposit', amountCents: 6_000, linkedAccountId: 'defpot' },
+        { catId: 'fundingOut', amountCents: 3_000, linkedAccountId: 'fund' },
+        { catId: 'groceries', amountCents: 1_000 },
+      ],
+    });
+    const store = new DexieBackend(db);
+    const view = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'spread1');
+    // per entry: default pot → family, funding pot → funding, bare → sign
+    expect(view?.cats?.map((c) => c.txType)).toEqual(['saving', 'funding', 'expense']);
+    // the largest entry (€60 to the default pot) speaks for the row
+    expect(view?.txType).toBe('saving');
   });
 
   it('#152: the attachment owns the type — stamp overlay and the funding blackout', async () => {

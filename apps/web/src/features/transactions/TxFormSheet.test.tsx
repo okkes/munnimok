@@ -83,6 +83,45 @@ describe('TxFormSheet (demo identity)', () => {
     // coverage instrumentation pushes this flow past vitest's 5s default
   }, 15_000);
 
+  it('#133 r4: a staged spread with a linked ◆ entry mints the entry-sized leg on save', async () => {
+    await openForm();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Mixed Save' } });
+
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-groceries'));
+    fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '30,00' } });
+    fireEvent.click(screen.getByTestId('part-cat-add'));
+    // the ◆ pick asks its counterparty on the spot; the pot answers
+    fireEvent.click(screen.getByTestId('part-cat-1'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-1').textContent).toContain('Demo Savings'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    fireEvent.click(screen.getByTestId('txform-save'));
+
+    const { MunniDB } = await import('@/db/schema');
+    const { catMirrorSourceId, mirrorTxId } = await import('@/domain/feedIds');
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const row = (await db.transactions.toArray()).find((t) => t.merchant === 'Mixed Save');
+        expect(row).toBeTruthy();
+        expect(row!.cats?.map((c) => c.catId)).toEqual(['groceries', 'savingDeposit']);
+        const saveEntry = row!.cats!.find((c) => c.catId === 'savingDeposit')!;
+        expect(saveEntry.linkedAccountId).toBe('demo_save');
+        // the pot leg is the ENTRY's €20, minted for the form's raw write
+        const mid = mirrorTxId(catMirrorSourceId(row!.id, 'savingDeposit'));
+        expect(saveEntry.transferPeerId).toBe(mid);
+        expect(await db.transactions.get(mid)).toMatchObject({ accountId: 'demo_save', amountCents: 2000 });
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
   it('no manual account: the form explains itself and doors to accounts', async () => {
     const { renderAppAsUser, USER_TEST_DB } = await import('@/test/harness');
     indexedDB.deleteDatabase(USER_TEST_DB);

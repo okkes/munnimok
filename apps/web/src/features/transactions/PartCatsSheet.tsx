@@ -5,8 +5,11 @@ import { nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
 import { UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
 import { resolveSplitsFor } from '@/domain/splits';
+import { useSpaceAccounts } from '@/application/transactions';
+import type { DefaultFamily } from '@/application/defaultAccounts';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
+import { CounterpartySheet } from './TxKindSheet';
 import type { TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -18,7 +21,28 @@ interface CatEntry {
   key: string;
   catId: string;
   amount: string; // user-facing text in the mode's units, EU decimals
+  /** #133 r4: the entry's own counterparty, picked the moment its ◆
+   *  category lands (or seeded from storage) */
+  linkedAccountId?: string;
+  transferPeerId?: string;
 }
+
+/** #133 r4: does this category ask a counterparty, and which face of
+ *  the sheet answers it? Families pin the Default pot, funding filters
+ *  to funding attachments, transfer is the mandatory plain ask. */
+function counterAskFor(catId: string): { defaultFamily?: DefaultFamily; fundingOnly: boolean; mandatory: boolean } | null {
+  const family = specialCatType(catId);
+  if (!family) return null;
+  if (family === 'transfer') return { fundingOnly: false, mandatory: true };
+  if (family === 'funding') return { fundingOnly: true, mandatory: false };
+  return { defaultFamily: family as DefaultFamily, fundingOnly: false, mandatory: false };
+}
+
+/** the stored link fields an entry carries out of the editor */
+const entryLink = (entry: Pick<CatEntry, 'linkedAccountId' | 'transferPeerId'>): Partial<TxSplitCat> => ({
+  ...(entry.linkedAccountId ? { linkedAccountId: entry.linkedAccountId } : {}),
+  ...(entry.transferPeerId ? { transferPeerId: entry.transferPeerId } : {}),
+});
 
 let entryCounter = 0;
 const newKey = () => `pc${entryCounter++}`;
@@ -31,23 +55,31 @@ const parsePct = (text: string): number => {
 
 /** the part patch a finished spread becomes: one entry collapses back to
  *  a plain category, several keep the spread with the largest entry as
- *  the compat shadow (v2.1 storage rule) */
+ *  the compat shadow (v2.1 storage rule). #133 r4: a multi-entry spread
+ *  owns its counterparties PER ENTRY — the part-level link clears so no
+ *  entry inherits a story that isn't its own. */
 export function catsPatch(entries: TxSplitCat[]): Partial<TxSplit> {
   if (entries.length <= 1) return { catId: entries[0]?.catId ?? UNCATEGORIZED_ID, cats: undefined };
   const primary = entries.reduce((best, entry) => (entry.amountCents > best.amountCents ? entry : best), entries[0]);
-  return { catId: primary.catId, cats: entries };
+  return { catId: primary.catId, cats: entries, linkedAccountId: undefined, transferPeerId: undefined };
 }
 
 /** the full apply for a part's category edit: the cats patch plus the R3
  *  type pull — a single ◆ special pick pulls the part's own type, an
  *  ordinary single pick clears a stale pulled one (a counterparty-backed
- *  transfer type stays deliberate). Spreads never pull. */
+ *  transfer type stays deliberate). Spreads never pull. #133 r4: a
+ *  single entry's counterparty (answered inside the editor) lands as the
+ *  part's own link. */
 export function partCatsApplyPatch(slice: TxSplit | undefined, entries: TxSplitCat[]): Partial<TxSplit> {
   const patch = catsPatch(entries);
   if (entries.length !== 1) return patch;
-  const pulled = specialCatType(entries[0].catId);
-  if (pulled) return { ...patch, txType: pulled };
-  return slice?.txType && !slice.linkedAccountId ? { ...patch, txType: undefined } : patch;
+  const entry = entries[0];
+  const link = entry.linkedAccountId
+    ? { linkedAccountId: entry.linkedAccountId, transferPeerId: entry.transferPeerId }
+    : {};
+  const pulled = specialCatType(entry.catId);
+  if (pulled) return { ...patch, ...link, txType: pulled };
+  return slice?.txType && !slice.linkedAccountId ? { ...patch, ...link, txType: undefined } : { ...patch, ...link };
 }
 
 /** whose money the sheet spreads: a container PART or — #211 — the
@@ -60,16 +92,29 @@ export interface CatsSubject {
   cats?: TxSplitCat[];
   /** the money being partitioned — for a row: NET of any settled value */
   amountCents: number;
+  /** #133 r4: the owner's whole-story counterparty — seeds the single
+   *  entry so its link shows and travels through a re-spread */
+  linkedAccountId?: string;
+  transferPeerId?: string;
 }
 
 const seedEntries = (subject: CatsSubject, pctMode: boolean): CatEntry[] =>
   (subject.cats?.length
     ? subject.cats
-    : [{ catId: subject.catId ?? UNCATEGORIZED_ID, amountCents: Math.abs(subject.amountCents) }]
+    : [
+        {
+          catId: subject.catId ?? UNCATEGORIZED_ID,
+          amountCents: Math.abs(subject.amountCents),
+          linkedAccountId: subject.linkedAccountId,
+          transferPeerId: subject.transferPeerId,
+        },
+      ]
   ).map((entry) => ({
     key: newKey(),
     catId: entry.catId,
     amount: pctMode && entry.pct !== undefined ? toPctText(entry.pct) : toText(entry.amountCents),
+    linkedAccountId: entry.linkedAccountId,
+    transferPeerId: entry.transferPeerId,
   }));
 
 /** a %-typed spread reopens in % — the stored pct is the user's shape */
@@ -83,7 +128,9 @@ const seedsAsPct = (subject: CatsSubject): boolean =>
  * entry, and the leftover pill that fills the field it was tapped from
  * (#130). #211 made it THE split-categories editor — the row's own
  * spread and a part's spread are the same gesture; the split-transaction
- * editor is a different door entirely.
+ * editor is a different door entirely. #133 r4 (user): a ◆ pick asks its
+ * counterparty ON THE SPOT, per entry — a spread can mix a saving leg to
+ * one pot, a funding leg to another and plain spending side by side.
  */
 export function CatsSheet({
   open,
@@ -96,6 +143,9 @@ export function CatsSheet({
   title,
   reason,
   includePct = false,
+  excludeAccountId,
+  askDisabled = false,
+  anchor,
   onApply,
 }: Readonly<{
   open: boolean;
@@ -113,13 +163,26 @@ export function CatsSheet({
   reason?: string | null;
   /** row-level spreads keep their % shape for the #141 sibling offer */
   includePct?: boolean;
+  /** #133 r4: the owning account — its own rows never list as candidates */
+  excludeAccountId: string;
+  /** R1: a stamped account's rows never ask (the stamp owns the story) */
+  askDisabled?: boolean;
+  /** the row being spread — enables the pick-existing fork on manual
+   *  counterparties (row-level editors only; the entry's amount anchors) */
+  anchor?: { id: string; date: string };
   onApply: (entries: TxSplitCat[]) => void;
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
+  const accounts = useSpaceAccounts();
   const [entries, setEntries] = useState<CatEntry[]>([]);
   const [mode, setMode] = useState<'amount' | 'pct'>('amount');
   const [pickerFor, setPickerFor] = useState<number | null>(null);
+  // #133 r4: which entry's counterparty question is open, and — on a ◆
+  // Transfer pick — the category to roll back to if the ask is dismissed
+  // (an unlinked transfer is unrepresentable, same rule as whole rows)
+  const [counterFor, setCounterFor] = useState<number | null>(null);
+  const rollbackRef = useRef<{ index: number; catId: string; linkedAccountId?: string; transferPeerId?: string } | null>(null);
   // focusing empties the field so typing replaces; blurring an untouched
   // empty field restores the stashed value (split-editor behavior)
   const [focusStash, setFocusStash] = useState<{ index: number; amount: string } | null>(null);
@@ -134,21 +197,35 @@ export function CatsSheet({
     const pctMode = includePct && seedsAsPct(subject);
     setMode(pctMode ? 'pct' : 'amount');
     setEntries(seedEntries(subject, pctMode));
+    setCounterFor(null);
+    rollbackRef.current = null;
     // deliberately only on open: the sheet owns its rows while open
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, subject?.id]);
 
   const valueOf = (entry: CatEntry) => (mode === 'pct' ? parsePct(entry.amount) : (parseCents(entry.amount) ?? 0));
+  /** the entry's share in CENTS — anchors the pick-existing fork */
+  const centsOf = (entry: CatEntry) => {
+    if (entries.length === 1) return refCents; // spans the whole
+    if (mode === 'pct') return Math.round((parsePct(entry.amount) / 100) * refCents);
+    return parseCents(entry.amount) ?? 0;
+  };
   const remainder = (mode === 'pct' ? 100 : refCents) - entries.reduce((sum, entry) => sum + valueOf(entry), 0);
   const unpicked = entries.some((entry) => entry.catId === UNCATEGORIZED_ID);
   const duplicate = new Set(entries.map((entry) => entry.catId)).size !== entries.length;
+  // #133 r4 safety net: a Transfer entry without its counterparty is
+  // unrepresentable — the mandatory ask normally guarantees this
+  const transferUnlinked = entries.some(
+    (entry) => specialCatType(entry.catId) === 'transfer' && !entry.linkedAccountId && !askDisabled,
+  );
   // ONE entry means "just this category" — it spans the whole by
   // definition (the add form has no amount yet, review parity keeps
   // the single pick one tap)
   const ready =
-    entries.length === 1
+    (entries.length === 1
       ? !unpicked
-      : entries.length > 0 && remainder === 0 && !unpicked && !duplicate && entries.every((entry) => valueOf(entry) > 0);
+      : entries.length > 0 && remainder === 0 && !unpicked && !duplicate && entries.every((entry) => valueOf(entry) > 0)) &&
+    !transferUnlinked;
   // finish the open entry first (split-editor rule): no new row while
   // one is still uncategorized or worth nothing
   const addBlocked = entries.some((entry) => entry.catId === UNCATEGORIZED_ID || valueOf(entry) <= 0);
@@ -247,7 +324,7 @@ export function CatsSheet({
     };
     // the single entry spans the whole — its typed amount is decorative
     if (entries.length === 1) {
-      emit([{ catId: entries[0].catId, amountCents: refCents }]);
+      emit([{ catId: entries[0].catId, amountCents: refCents, ...entryLink(entries[0]) }]);
       return;
     }
     if (mode === 'pct') {
@@ -256,21 +333,24 @@ export function CatsSheet({
         entries.map((entry) => ({ catId: entry.catId, amountCents: 0, pct: parsePct(entry.amount) })),
       );
       emit(
-        resolved.map((slice) => ({
+        resolved.map((slice, i) => ({
           catId: slice.catId,
           amountCents: Math.abs(slice.amountCents),
           // the % shape survives on row spreads (#141: pct scales to any
           // sibling; exact euros reach only exact twins)
           ...(includePct && slice.pct !== undefined ? { pct: slice.pct } : {}),
+          ...entryLink(entries[i]),
         })),
       );
       return;
     }
-    emit(entries.map((entry) => ({ catId: entry.catId, amountCents: parseCents(entry.amount) ?? 0 })));
+    emit(entries.map((entry) => ({ catId: entry.catId, amountCents: parseCents(entry.amount) ?? 0, ...entryLink(entry) })));
   };
 
   const shownRemainder = mode === 'pct' ? `${remainder}%` : fmtCents(Math.abs(remainder), currency, lang);
   const pickedCatId = pickerFor === null ? undefined : entries[pickerFor]?.catId;
+  const counterEntry = counterFor === null ? undefined : entries[counterFor];
+  const counterAsk = counterEntry && !askDisabled ? counterAskFor(counterEntry.catId) : null;
   const excluded = entries
     .filter((_, i) => i !== pickerFor)
     .map((entry) => entry.catId)
@@ -302,41 +382,68 @@ export function CatsSheet({
               {t('split.modePct')}
             </Chip>
           </div>
-          {entries.map((entry, i) => (
-            <div key={entry.key} className="flex items-center gap-2">
-              <button
-                data-testid={`part-cat-${i}`}
-                onClick={() => setPickerFor(i)}
-                className="m-tap flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border border-line bg-surface px-3 text-left text-[14px] text-ink"
-              >
-                <Icon
-                  name={cats.byId(entry.catId).icon}
-                  size={17}
-                  color={cats.byId(cats.byId(entry.catId).parentId ?? '').color ?? cats.byId(entry.catId).color}
-                />
-                <span className="truncate">{catName(cats.byId(entry.catId), t)}</span>
-              </button>
-              <input
-                data-testid={`part-cat-amount-${i}`}
-                value={entry.amount}
-                onChange={(e) => onAmount(i, e.target.value)}
-                onFocus={(e) => onFocus(i, e.currentTarget)}
-                onBlur={() => onBlur(i)}
-                inputMode="decimal"
-                className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
-              />
-              {entries.length > 1 && (
-                <button
-                  aria-label={t('action.delete')}
-                  data-testid={`part-cat-remove-${i}`}
-                  onClick={() => removeEntry(i)}
-                  className="m-tap border-none bg-transparent text-ink-4"
-                >
-                  <Icon name="close" size={16} />
-                </button>
-              )}
-            </div>
-          ))}
+          {entries.map((entry, i) => {
+            // #133 r4: a ◆ entry answers its counterparty right under its
+            // own row — the ask opens on pick, this is the re-ask door
+            const ask = askDisabled ? null : counterAskFor(entry.catId);
+            const counterName = entry.linkedAccountId
+              ? ((accounts ?? []).find((a) => a.id === entry.linkedAccountId)?.name ?? t('tx.counterparty'))
+              : undefined;
+            return (
+              <div key={entry.key} className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <button
+                    data-testid={`part-cat-${i}`}
+                    onClick={() => setPickerFor(i)}
+                    className="m-tap flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border border-line bg-surface px-3 text-left text-[14px] text-ink"
+                  >
+                    <Icon
+                      name={cats.byId(entry.catId).icon}
+                      size={17}
+                      color={cats.byId(cats.byId(entry.catId).parentId ?? '').color ?? cats.byId(entry.catId).color}
+                    />
+                    <span className="truncate">{catName(cats.byId(entry.catId), t)}</span>
+                  </button>
+                  <input
+                    data-testid={`part-cat-amount-${i}`}
+                    value={entry.amount}
+                    onChange={(e) => onAmount(i, e.target.value)}
+                    onFocus={(e) => onFocus(i, e.currentTarget)}
+                    onBlur={() => onBlur(i)}
+                    inputMode="decimal"
+                    className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
+                  />
+                  {entries.length > 1 && (
+                    <button
+                      aria-label={t('action.delete')}
+                      data-testid={`part-cat-remove-${i}`}
+                      onClick={() => removeEntry(i)}
+                      className="m-tap border-none bg-transparent text-ink-4"
+                    >
+                      <Icon name="close" size={16} />
+                    </button>
+                  )}
+                </div>
+                {(ask || entry.linkedAccountId) && (
+                  <button
+                    data-testid={`part-cat-counter-${i}`}
+                    onClick={() => setCounterFor(i)}
+                    className="m-tap ml-3 flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-left text-[12px]"
+                  >
+                    <Icon
+                      name="bank-transfer"
+                      size={14}
+                      color={entry.linkedAccountId ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'}
+                    />
+                    <span className={`truncate ${entry.linkedAccountId ? 'text-ink-2' : 'text-ink-4'}`}>
+                      {counterName ?? t('split.chooseCounter')}
+                    </span>
+                    <Icon name="pencil-outline" size={11} color="var(--m-ink-4)" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
           <button
             data-testid="part-cat-add"
             onClick={addEntry}
@@ -378,7 +485,57 @@ export function CatsSheet({
         excludeIds={excluded}
         onlyIds={allowedCatIds}
         onPick={(catId) => {
-          if (pickerFor !== null) patchEntry(pickerFor, { catId });
+          if (pickerFor === null) return;
+          const prev = entries[pickerFor];
+          if (prev?.catId === catId) return;
+          // a NEW category starts a fresh story — the old entry's link
+          // never rides along; a ◆ pick asks its counterparty right away
+          // (#133 r4, user: "before adding another category")
+          patchEntry(pickerFor, { catId, linkedAccountId: undefined, transferPeerId: undefined });
+          const ask = askDisabled ? null : counterAskFor(catId);
+          if (ask) {
+            // ◆ Transfer is mandatory: dismissing the ask rolls the pick
+            // back; families and funding may stay bare (deliberate)
+            rollbackRef.current = ask.mandatory
+              ? { index: pickerFor, catId: prev?.catId ?? UNCATEGORIZED_ID, linkedAccountId: prev?.linkedAccountId, transferPeerId: prev?.transferPeerId }
+              : null;
+            setCounterFor(pickerFor);
+          }
+        }}
+      />
+      {/* #133 r4: the per-entry counterparty question — the same sheet
+          every surface uses, scoped to ONE entry's money */}
+      <CounterpartySheet
+        open={counterFor !== null}
+        onOpenChange={(next) => {
+          if (next) return;
+          const rollback = rollbackRef.current;
+          if (rollback) {
+            patchEntry(rollback.index, {
+              catId: rollback.catId,
+              linkedAccountId: rollback.linkedAccountId,
+              transferPeerId: rollback.transferPeerId,
+            });
+            rollbackRef.current = null;
+          }
+          setCounterFor(null);
+        }}
+        excludeAccountId={excludeAccountId}
+        currentLinkedId={counterEntry?.linkedAccountId}
+        defaultFamily={counterAsk?.defaultFamily}
+        fundingOnly={counterAsk?.fundingOnly ?? false}
+        anchor={
+          anchor && counterEntry
+            ? {
+                id: anchor.id,
+                amountCents: direction === 'debit' ? -centsOf(counterEntry) : centsOf(counterEntry),
+                date: anchor.date,
+              }
+            : undefined
+        }
+        onChoose={(account, peer) => {
+          if (counterFor !== null) patchEntry(counterFor, { linkedAccountId: account.id, transferPeerId: peer?.txId });
+          rollbackRef.current = null;
         }}
       />
     </>

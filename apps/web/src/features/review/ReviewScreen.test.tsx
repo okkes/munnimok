@@ -50,12 +50,14 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('part-cat-0'));
     await screen.findByTestId('speccat-savingDeposit'); // the diamond mark
     fireEvent.click(screen.getByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
 
-    // the ◆ pick unfolds the counterparty question — Default pinned on
-    // top; picking the savings pot links it and the fact row appears
+    // #133 r4: the ◆ pick asks its counterparty ON THE SPOT — Default
+    // pinned on top; the pot answers it and the entry's subrow names it
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    // Done stages category + link together; the fact row appears
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
   }, 15_000);
 
@@ -64,12 +66,11 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
     expect(screen.getByTestId('review-recurring-row')).toBeTruthy();
 
-    // Loan payment (◆) → the counterparty question → the Create door
-    // (full chooser); the manual loan built in place answers it
+    // Loan payment (◆) → the ask opens ON THE PICK (#133 r4) → the
+    // Create door (full chooser); the manual loan built in place answers
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-full-setup'));
     fireEvent.click(await screen.findByTestId('chooser-manual'));
@@ -78,6 +79,9 @@ describe('ReviewScreen (demo identity)', () => {
     // v2: a loan account's current value is required (it IS the debt)
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '5000' } });
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
+    // the fresh loan lands on the entry's subrow; Done stages both
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Car loan'), { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('part-cat-save'));
 
     // a payoff is a debt payment, not a recurring cost: the debt row
     // appears and names the loan account itself
@@ -91,25 +95,26 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
     const chipBefore = screen.getByTestId('review-category-chip').textContent;
 
-    // pick the locked Transfer sub — the ask opens, NOTHING staged yet
+    // pick the locked Transfer sub — the MANDATORY ask opens on the
+    // pick itself (#133 r4), NOTHING staged yet
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-transferOut'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await screen.findByTestId('counter-accounts');
     expect(screen.queryByTestId('counter-default')).toBeNull(); // no Default for transfers
     fireEvent.keyDown(window, { key: 'Escape' });
-    // dismissed: the card rolled back — an unlinked transfer is
-    // unrepresentable
+    // dismissed: the ENTRY rolled back — an unlinked transfer is
+    // unrepresentable; Done stages the untouched category
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toBe(chipBefore));
 
-    // answering it stages the link + the locked sub in one motion
+    // answering it: the entry carries the sub + link; Done stages both
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
-    await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
   }, 15_000);
@@ -120,11 +125,12 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
-    // the ask opens; walking away is legal — the bare story stands and
-    // the boot migration folds it onto the default pot later
+    // the ask opens on the pick (#133 r4); walking away is legal — the
+    // bare story stands and the boot migration folds it onto the
+    // default pot later
     await screen.findByTestId('counter-default');
     fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
     expect(screen.queryByTestId('review-counter-row')).toBeNull();
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
@@ -589,24 +595,25 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-part-deck');
     const catBefore = screen.getByTestId('deck-cat-0').textContent;
 
-    // pick the locked Transfer sub on part 0 — the ask opens, NOTHING
-    // patched yet; walking away keeps the part exactly as it was
+    // pick the locked Transfer sub on part 0 — the MANDATORY ask opens
+    // on the pick itself (#133 r4), NOTHING patched yet; walking away
+    // rolls the ENTRY back and Done keeps the part exactly as it was
     fireEvent.click(await screen.findByTestId('deck-cat-0'));
     fireEvent.click((await screen.findAllByTestId('part-cat-0')).at(-1)!);
     fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
-    fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
     await screen.findByTestId('counter-accounts');
     expect(screen.queryByTestId('counter-default')).toBeNull(); // no Default for transfers
     fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
     await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toBe(catBefore));
 
-    // answering it lands the locked sub + the link in ONE patch
+    // answering it: the entry carries the sub + link; Done lands both
     fireEvent.click(screen.getByTestId('deck-cat-0'));
     fireEvent.click(screen.getAllByTestId('part-cat-0').at(-1)!);
     fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
-    fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
-    await screen.findByTestId('counter-accounts');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cat-counter-0').at(-1)!.textContent).toContain('Demo Savings'));
+    fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
     await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toContain('Transfer Out'));
     // the part's counter fact row names the pot
     await waitFor(() => expect(screen.getByTestId('deck-counter-0').textContent).toContain('Demo Savings'));
@@ -788,7 +795,7 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('a type change that invalidates the category files the locked family sub (arc 2)', async () => {
+  it('#133 r4: a ◆ pick answered with a REAL pot keeps its family category — the link tells the movement', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
@@ -800,16 +807,18 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
-    // #133 C: re-pick Set aside (◆) and answer its ask with the savings
-    // pot — the linked leg is R2's inversion: the pot's own ledger tells
-    // the saving story, THIS leg files the locked Transfer sub
+    // re-pick Set aside (◆) — the ask opens on the pick; the savings
+    // pot answers it. The user's category STAYS the story ("we are not
+    // bound to transaction type anymore"); the link makes it a movement
+    // and the view derives transfer from the real counterparty.
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    fireEvent.click(screen.getByTestId('part-cat-save'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
     // the counter name arrives via an async account read — wait for it
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);

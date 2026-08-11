@@ -112,7 +112,9 @@ export function settledSplits(
  * #211 twin for a WHOLE row: the settlement lives in the row's own
  * category partition (`cats`) — same rules, same gross invariant. A
  * stored pct never survives settlement (the shape is no longer the
- * user's own spread), so entries come out as plain materialized cents.
+ * user's own spread), so entries come out as plain materialized cents —
+ * but an entry's counterparty (#133 r4) is its story and stays; the
+ * mirror engine resizes the pot leg if settlement consumed from it.
  */
 export function settledCats(
   tx: Pick<TransactionRow, 'amountCents' | 'catId' | 'cats'>,
@@ -122,7 +124,12 @@ export function settledCats(
   const primary = tx.catId ?? UNCATEGORIZED_ID;
   const grossAbs = Math.abs(tx.amountCents);
   const seeded: TxSplitCat[] = tx.cats?.length
-    ? tx.cats.map((c) => ({ catId: c.catId, amountCents: c.amountCents }))
+    ? tx.cats.map((c) => ({
+        catId: c.catId,
+        amountCents: c.amountCents,
+        ...(c.linkedAccountId ? { linkedAccountId: c.linkedAccountId } : {}),
+        ...(c.transferPeerId ? { transferPeerId: c.transferPeerId } : {}),
+      }))
     : [{ catId: primary, amountCents: grossAbs }];
   return settlePartition(seeded, primary, grossAbs, reimbursedCents, nameOf);
 }

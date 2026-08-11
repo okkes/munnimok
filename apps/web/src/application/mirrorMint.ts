@@ -1,11 +1,11 @@
-import { autoSubFor, stampMovementSub } from '@/domain/categories';
-import { mirrorTxId } from '@/domain/feedIds';
+import { REIMBURSED_ID, autoSubFor, stampMovementSub } from '@/domain/categories';
+import { catMirrorSourceId, mirrorTxId } from '@/domain/feedIds';
 import { accountStamp } from '@/domain/txType';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { countsTowardLoan } from './loanBalance';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import type { AccountRow } from '@/db/types';
+import type { AccountRow, TxSplitCat } from '@/db/types';
 
 /**
  * Mint-on-link (typed-splits v2, user 2026-08-05): linking a MANUAL
@@ -52,6 +52,33 @@ async function mintableCounter(store: StorageBackend, accountId: string | undefi
 const balanceMoves = (account: AccountRow, source: MirrorSource): boolean =>
   !isLiability(account.type) || countsTowardLoan(account, source);
 
+/** the resize step (#133 r4): OUR live mint tracks the source money —
+ *  a spread entry's edited amount moves the mirror and its balance by
+ *  the delta. Null when nothing needs to move. */
+async function planResizeStep(
+  store: StorageBackend,
+  source: MirrorSource,
+  linkedId: string,
+  mid: string,
+): Promise<((repo: Repo) => Promise<void>) | null> {
+  const account = await mintableCounter(store, linkedId);
+  const mirror = await store.get('transaction', mid);
+  const mirrorAmount = -source.amountCents;
+  if (!account || mirror?.deleted !== 0 || mirror.accountId !== account.id || mirror.amountCents === mirrorAmount) {
+    return null;
+  }
+  const delta = mirrorAmount - mirror.amountCents;
+  return async (repo) => {
+    await repo.upsert('transaction', account.spaceId, mid, { amountCents: mirrorAmount });
+    if (balanceMoves(account, source)) {
+      const fresh = await store.get('account', account.id);
+      if (fresh?.deleted === 0) {
+        await repo.upsert('account', fresh.spaceId, fresh.id, { balanceCents: fresh.balanceCents + delta });
+      }
+    }
+  };
+}
+
 /** what the source row's own write must carry (peer set on mint, cleared
  *  when the unlink removes our mint) */
 export interface MirrorPlan {
@@ -96,6 +123,13 @@ export async function planMirrorChange(
       });
       sourceFields.transferPeerId = null;
     }
+  }
+
+  // #133 r4 — RESIZE: same link, new money (a spread entry's amount
+  // edited). Only OUR mint moves; a picked/bank peer is a real row.
+  if (prevLinkedId && prevLinkedId === nextLinkedId && currentPeerId === mid) {
+    const resize = await planResizeStep(store, source, nextLinkedId, mid);
+    if (resize) steps.push(resize);
   }
 
   if (nextLinkedId && nextLinkedId !== prevLinkedId && !incomingPeer) {
@@ -164,6 +198,103 @@ export async function mintMirrorForExistingLink(
   if (typeof peer !== 'string') return null;
   await plan.execute(repo);
   return peer;
+}
+
+/** the money a category spread partitions — feeds each entry's mirror */
+export interface CatMirrorBase {
+  /** deterministic source-id base: the row id, or row:part for a part's spread */
+  baseId: string;
+  accountId: string;
+  /** the owning money's sign — entries store magnitudes */
+  sign: 1 | -1;
+  date: string;
+  time?: string;
+  currency: string;
+  merchant: string;
+}
+
+/**
+ * #133 r4: the per-ENTRY mirror lifecycle of a category spread. Diffed
+ * by category (the editor forbids duplicates within a spread, and the
+ * content-derived key converges across devices): a link gained mints the
+ * entry-sized counter leg, a link lost or an entry vanished retires it,
+ * an edited amount RESIZES our live mint, and a foreign transferPeerId
+ * (the pick-existing door) rides through untouched — nothing minted.
+ * Returns the entries with their peers applied plus the plans to run
+ * after the write; null when no mirror is involved at all.
+ */
+const catEntrySource = (base: CatMirrorBase, catId: string, magnitude: number): MirrorSource => ({
+  id: catMirrorSourceId(base.baseId, catId),
+  accountId: base.accountId,
+  amountCents: base.sign * Math.abs(magnitude),
+  date: base.date,
+  ...(base.time ? { time: base.time } : {}),
+  currency: base.currency,
+  merchant: base.merchant,
+});
+
+/** one surviving entry's plan (S3776): null when no mirror work is due */
+async function planCatEntryChange(
+  store: StorageBackend,
+  base: CatMirrorBase,
+  prev: TxSplitCat | undefined,
+  entry: TxSplitCat,
+): Promise<MirrorPlan | null> {
+  const magnitudeMoved = !!prev && prev.amountCents !== entry.amountCents;
+  const linkUnchanged = (prev?.linkedAccountId ?? undefined) === (entry.linkedAccountId ?? undefined);
+  if (linkUnchanged && (!entry.linkedAccountId || !magnitudeMoved)) return null;
+  const mid = mirrorTxId(catMirrorSourceId(base.baseId, entry.catId));
+  // a peer that isn't our own deterministic mint is a PICKED row (the
+  // pick-existing door): it rides through, and nothing is minted
+  const incoming = entry.transferPeerId && entry.transferPeerId !== mid ? entry.transferPeerId : undefined;
+  return planMirrorChange(
+    store,
+    catEntrySource(base, entry.catId, entry.amountCents),
+    prev?.linkedAccountId,
+    entry.linkedAccountId,
+    prev?.transferPeerId,
+    incoming,
+  ).catch(() => null);
+}
+
+export async function planCatEntryMirrors(
+  store: StorageBackend,
+  base: CatMirrorBase,
+  prevCats: readonly TxSplitCat[] | undefined,
+  nextCats: readonly TxSplitCat[] | null | undefined,
+): Promise<{ cats: TxSplitCat[]; plans: MirrorPlan[] } | null> {
+  const prevByCat = new Map((prevCats ?? []).filter((c) => c.catId !== REIMBURSED_ID).map((c) => [c.catId, c]));
+  const next = [...(nextCats ?? [])];
+  const plans: MirrorPlan[] = [];
+  let adjusted = false;
+
+  for (const [index, entry] of next.entries()) {
+    if (entry.catId === REIMBURSED_ID) continue;
+    const prev = prevByCat.get(entry.catId);
+    prevByCat.delete(entry.catId);
+    const plan = await planCatEntryChange(store, base, prev, entry);
+    if (!plan) continue;
+    if (Object.hasOwn(plan.sourceFields, 'transferPeerId')) {
+      next[index] = { ...entry, transferPeerId: (plan.sourceFields.transferPeerId ?? undefined) as string | undefined };
+      adjusted = true;
+    }
+    plans.push(plan);
+  }
+  // entries that vanished (or changed category — a different key) take
+  // their mints along
+  for (const gone of prevByCat.values()) {
+    if (!gone.linkedAccountId) continue;
+    const plan = await planMirrorChange(
+      store,
+      catEntrySource(base, gone.catId, gone.amountCents),
+      gone.linkedAccountId,
+      undefined,
+      gone.transferPeerId,
+      undefined,
+    ).catch(() => null);
+    if (plan) plans.push(plan);
+  }
+  return plans.length || adjusted ? { cats: next, plans } : null;
 }
 
 /**

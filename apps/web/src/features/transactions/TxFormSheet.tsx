@@ -269,6 +269,39 @@ function rescaledCats(entries: TxSplitCat[], targetAbs: number): TxSplitCat[] | 
   return scaled?.length ? scaled : undefined;
 }
 
+/** #133 r4: the spread's ◆ entries mint/retire/resize their entry-sized
+ *  legs — the form writes RAW rows, so the choke's cat differ runs here
+ *  and the entry peers are written back (S3776: out of save) */
+async function applyFormCatMirrors(
+  store: ReturnType<typeof useData>['store'],
+  repo: ReturnType<typeof useData>['repo'],
+  spaceId: string,
+  rowId: string,
+  base: { accountId: string; signed: number; date: string; currency: string; merchant: string },
+  prevCats: TxSplitCat[] | undefined,
+  fieldsCats: unknown,
+): Promise<void> {
+  const { planCatEntryMirrors } = await import('@/application/mirrorMint');
+  const outcome = await planCatEntryMirrors(
+    store,
+    {
+      baseId: rowId,
+      accountId: base.accountId,
+      sign: base.signed < 0 ? -1 : 1,
+      date: base.date,
+      currency: base.currency,
+      merchant: base.merchant,
+    },
+    prevCats,
+    (fieldsCats as TxSplitCat[] | null | undefined) ?? null,
+  ).catch(() => null);
+  if (!outcome) return;
+  if (Array.isArray(fieldsCats)) {
+    await repo.upsert('transaction', spaceId, rowId, { cats: outcome.cats });
+  }
+  for (const p of outcome.plans) await p.execute(repo);
+}
+
 const optionRow = (selected: boolean, onClick: () => void, content: React.ReactNode, testId: string) => (
   <button
     key={testId}
@@ -513,24 +546,31 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     // a retargeted or cleared counterparty retires the old mint — the
     // same engine as every other linkedAccountId writer (typed-splits v2)
     void (async () => {
-      await repo.upsert(
-        'transaction',
-        spaceId,
-        rowId,
-        manualTxFields({
-          tx,
-          accountId: effectiveAccount,
-          date,
-          signed,
-          currency: formCurrency,
-          merchant: merchant.trim(),
-          catId: forcedCat ?? catId,
-          txType: effectiveType,
-          stagedCats,
-          linkedAccountId,
-          recurringId,
-        }),
-      );
+      const fields = manualTxFields({
+        tx,
+        accountId: effectiveAccount,
+        date,
+        signed,
+        currency: formCurrency,
+        merchant: merchant.trim(),
+        catId: forcedCat ?? catId,
+        txType: effectiveType,
+        stagedCats,
+        linkedAccountId,
+        recurringId,
+      });
+      await repo.upsert('transaction', spaceId, rowId, fields);
+      if (Object.hasOwn(fields, 'cats')) {
+        await applyFormCatMirrors(
+          store,
+          repo,
+          spaceId,
+          rowId,
+          { accountId: effectiveAccount, signed, date, currency: formCurrency, merchant: merchant.trim() },
+          tx?.cats,
+          fields.cats,
+        );
+      }
       if (prevLinked !== nextLinked) {
         const { planMirrorChange } = await import('@/application/mirrorMint');
         const plan = await planMirrorChange(
@@ -745,7 +785,8 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
 
       {/* #211: the split-categories editor (same sheet as review/detail) —
           the spread stays ONE transaction; the amount typed so far is the
-          money being partitioned */}
+          money being partitioned. #133 r4: ◆ picks ask their counterparty
+          inside the editor, per entry */}
       <CatsSheet
         open={catsSheetOpen}
         onOpenChange={setCatsSheetOpen}
@@ -755,20 +796,29 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
           catId,
           cats: stagedCats ?? undefined,
           amountCents: Math.abs(cents ?? 0),
+          linkedAccountId: linkedAccountId ?? undefined,
         }}
         currency={formCurrency}
         direction={isExpense ? 'debit' : 'credit'}
         title={t('split.catsTitle')}
         includePct
+        excludeAccountId={effectiveAccount ?? ''}
+        askDisabled={!!ownStamp}
         onApply={(entries) => {
           if (entries.length === 1) {
             setStagedCats(null);
             setCatId(entries[0].catId);
+            // a single entry's link (answered in the editor) IS the
+            // row's counterparty
+            if (entries[0].linkedAccountId) setLinkedAccountId(entries[0].linkedAccountId);
             return;
           }
           setStagedCats(entries);
           const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
           setCatId(primary.catId);
+          // the entries own their counterparties now — the whole-row
+          // link moved into its entry when the spread was seeded
+          setLinkedAccountId(null);
         }}
       />
 

@@ -140,21 +140,23 @@ for (const V of VARIANTS) {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await openFirstReviewTx(page); // dm100: hobby expense on demo_main
-    // #133: no kind row — the Set aside (diamond) pick opens the
-    // counterparty ask, Default pinned on top; the savings pot answers
+    // #133 r4: no kind row — the Set aside (diamond) pick opens the
+    // counterparty ask ON THE PICK, Default pinned on top; the savings
+    // pot answers, the entry's subrow names it, Done lands both
     // (#211: the pencil opens the split-CATEGORIES editor now)
     await page.click('[data-testid="tx-detail-cats-edit"]');
     await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'set aside');
     await page.click('[data-testid="catpicker-savingDeposit"]');
-    await page.click('[data-testid="part-cat-save"]');
     await page.waitForSelector('[data-testid="counter-default"]');
     await page.click('[data-testid="counter-pick-demo_save"]');
+    await expect(page.locator('[data-testid="part-cat-counter-0"]')).toContainText('Demo Savings');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
-    // R2 inversion (typed-splits v2): the linked leg is a plain Transfer
-    // with the locked sub — the saving story lives on the pot's ledger
-    await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Transfer Out');
+    // #133 r4: the user's category STAYS the story — the link makes it
+    // a movement, and the pot's own ledger carries the saving leg
+    await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Set aside');
     await expect(page.locator('[data-testid="tx-detail-linked-account"]')).toBeVisible();
     await shot(page, k('35-tx-type-link'));
     await teardown(page, ctx, k('35-tx-type-link'));
