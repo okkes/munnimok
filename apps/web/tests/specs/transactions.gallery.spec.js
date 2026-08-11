@@ -31,14 +31,14 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await openFirstReviewTx(page);
     await page.click('[data-testid="tx-detail-category-row"]');
-    await page.waitForSelector('[data-testid="split-editor"]'); // ONE unified flow (user request)
-    await page.click('[data-testid="split-cat-0"]');
+    await page.waitForSelector('[data-testid="part-cats-editor"]'); // the split-categories editor (#211)
+    await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-videoGame"]');
     await page.waitForTimeout(500); // sheet slide-in
     await shot(page, k('10-tx-recat') + '--s1');
     await page.click('[data-testid="catpicker-videoGame"]');
     await page.waitForTimeout(400);
-    await page.click('[data-testid="split-save"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500); // sheet slide-out
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Video Game');
     // review badge cleared by explicit categorization
@@ -52,8 +52,8 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await openFirstReviewTx(page);
     await page.click('[data-testid="tx-detail-category-row"]');
-    await page.waitForSelector('[data-testid="split-editor"]');
-    await page.click('[data-testid="split-cat-0"]');
+    await page.waitForSelector('[data-testid="part-cats-editor"]');
+    await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'groc');
     await expect(page.locator('[data-testid="catpicker-groceries"]')).toBeVisible();
@@ -76,12 +76,12 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="txform-account"]');
     await page.click('[data-testid="txform-account-demo_main"]');
     await page.click('[data-testid="txform-category"]');
-    // unified editor (same as review): per-row picker, Done stages it
-    await page.click('[data-testid="split-cat-0"]');
+    // the split-categories editor (#211): per-entry picker, Done stages it
+    await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'dining');
     await page.click('[data-testid="catpicker-restaurants"]');
-    await page.click('[data-testid="split-save"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
     await shot(page, k('27-tx-create') + '--s1');
     await page.click('[data-testid="txform-save"]');
@@ -116,7 +116,10 @@ for (const V of VARIANTS) {
     // 2026-07-28): search + suggestions above the full candidate list
     await page.click('[data-testid="reimb-add"]');
     await page.waitForSelector('[data-testid="reimb-link-list"]');
-    await page.locator('[data-testid="reimb-link-list"] [data-testid^="tx-row-"]').first().click();
+    // pick a DETERMINISTIC big credit — the list is date-sorted and the
+    // demo's relative-dated rows drift past absolute-dated ones over
+    // time, so "the first row" rots with the calendar
+    await page.locator('[data-testid="reimb-link-list"] [data-testid^="tx-row-"]').filter({ hasText: 'Demo Corp' }).first().click();
     await expect(page.locator('[data-testid="reimb-amount"]')).toHaveValue('28,99'); // clamped prefill
     await page.fill('[data-testid="reimb-amount"]', '10,00');
     await page.click('[data-testid="reimb-save"]');

@@ -238,9 +238,16 @@ export function CatsSheet({
 
   const apply = () => {
     if (!ready) return;
+    // Done CLOSES the sheet (like every editor) — the callers only
+    // stage/write; in a real browser a lingering open sheet would
+    // shield everything underneath (the review-a2 CI catch)
+    const emit = (out: TxSplitCat[]) => {
+      onApply(out);
+      onOpenChange(false);
+    };
     // the single entry spans the whole — its typed amount is decorative
     if (entries.length === 1) {
-      onApply([{ catId: entries[0].catId, amountCents: refCents }]);
+      emit([{ catId: entries[0].catId, amountCents: refCents }]);
       return;
     }
     if (mode === 'pct') {
@@ -248,7 +255,7 @@ export function CatsSheet({
         refCents,
         entries.map((entry) => ({ catId: entry.catId, amountCents: 0, pct: parsePct(entry.amount) })),
       );
-      onApply(
+      emit(
         resolved.map((slice) => ({
           catId: slice.catId,
           amountCents: Math.abs(slice.amountCents),
@@ -259,7 +266,7 @@ export function CatsSheet({
       );
       return;
     }
-    onApply(entries.map((entry) => ({ catId: entry.catId, amountCents: parseCents(entry.amount) ?? 0 })));
+    emit(entries.map((entry) => ({ catId: entry.catId, amountCents: parseCents(entry.amount) ?? 0 })));
   };
 
   const shownRemainder = mode === 'pct' ? `${remainder}%` : fmtCents(Math.abs(remainder), currency, lang);
