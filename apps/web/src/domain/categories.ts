@@ -248,14 +248,18 @@ export function stampMovementSub(stamp: TxType, amountCents: number): string | u
   return amountCents >= 0 ? pair.in : pair.out;
 }
 
-/** MOVEMENT categories of the three counterparty families (#133): the
- *  picks that mean money physically moved to/from a pot — the ones the
- *  bare-row migration links onto default accounts. Interest/fees/etc.
- *  are value stories, not movements, and never link. */
+/** MOVEMENT categories of the counterparty families (#133, all six
+ *  since #221): the picks that mean money physically moved to/from
+ *  another account — the ones the bare-row fold links onto default
+ *  accounts. Interest/fees/etc. are value stories, not movements, and
+ *  never link. */
 const MOVEMENT_CAT_IDS = new Set([
   'savingDeposit', 'savingWithdraw',
   'loanRepayment', 'debtBorrowed',
   'investBuy', 'investSell', 'investContribution', 'investWithdraw',
+  'transferOut', 'transferIn',
+  'cashWithdraw', 'cashDeposit',
+  'fundingOut', 'fundingIn',
 ]);
 export const isMovementCat = (catId: string | undefined): boolean => !!catId && MOVEMENT_CAT_IDS.has(catId);
 /**

@@ -138,6 +138,22 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
         if (signed !== account.balanceCents) {
           changes.balanceCents = signed;
           changes.balanceAsOf = manualBalanceDate();
+          // #221: a DEFAULT account's ledger is system-managed — the one
+          // hand on it is this balance edit, and it leaves a record: an
+          // adjustment row for the delta, so the history stays coherent
+          if (account.defaultFor) {
+            void repo.upsert('transaction', account.spaceId, repo.newId(), {
+              accountId: account.id,
+              date: manualBalanceDate(),
+              amountCents: signed - account.balanceCents,
+              currency: account.currency,
+              merchant: t('cat.balanceAdjustment'),
+              txType: 'adjustment',
+              adjustment: 1,
+              catId: 'balanceAdjustment',
+              needsReview: 0,
+            });
+          }
         }
       }
     }
@@ -303,7 +319,9 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
           <Button data-testid="acctedit-save" onClick={save} disabled={!name.trim()}>
             {t('action.save')}
           </Button>
-          {manual && (
+          {/* #221: the default accounts are the space's fixtures — no
+              delete door; their balance stays adjustable above */}
+          {manual && !account?.defaultFor && (
             <Button variant="danger" data-testid="acctedit-delete" onClick={() => setConfirmRemove(true)}>
               {t('action.delete')}
             </Button>

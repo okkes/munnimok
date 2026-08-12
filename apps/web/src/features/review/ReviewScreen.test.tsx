@@ -117,20 +117,21 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.queryByTestId('review-recurring-row')).toBeNull();
   }, 15_000);
 
-  it('#133 E+r5: a ◆ Transfer pick stages nothing until the mandatory ask answers — and the ask lists REGULAR accounts only', async () => {
+  it('#133 E+r5: a ◆ Transfer pick stages nothing until the mandatory ask answers — pinned Default, REGULAR accounts only', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     const chipBefore = screen.getByTestId('review-category-chip').textContent;
 
     // pick the locked Transfer sub — the MANDATORY ask opens on the
-    // pick itself (#133 r4), NOTHING staged yet. #133 r5: the savings
-    // pot is OFF this list (that movement IS the saving category), and
-    // the demo has no other regular account — the list is empty
+    // pick itself (#133 r4), NOTHING staged yet. #221: the ask pins the
+    // space's Default bank account as the one-tap answer; #133 r5: the
+    // savings pot is OFF the real list (that movement IS the saving
+    // category), and the demo has no other regular account — empty
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-transferOut'));
     await screen.findByTestId('counter-accounts');
-    expect(screen.queryByTestId('counter-default')).toBeNull(); // no Default for transfers
+    expect((await screen.findByTestId('counter-default')).textContent).toContain('Default bank account');
     expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull(); // r5: not a transfer counter
     await screen.findByTestId('counter-empty');
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -157,21 +158,35 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-cat-counter-transferOut').textContent).toContain('Second checking'));
   }, 15_000);
 
-  it('#133 C: dismissing the counterparty ask keeps the bare ◆ story — no rollback, confirm armed', async () => {
+  it('#133 C/#221: dismissing the ask keeps the bare ◆ story — and Confirm links the DEFAULT in the same write', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     // the ask opens on the pick (#133 r4); walking away is legal — the
-    // bare story stands and the boot migration folds it onto the
-    // default pot later
+    // bare story stands, and Confirm settles it onto the default pot
     await screen.findByTestId('counter-default');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
     expect(screen.queryByTestId('review-counter-row')).toBeNull();
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
+
+    // #221: "confirms the category + default account" — the one write
+    // carries the default link, and the choke mints the pot's leg
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = await db.transactions
+        .filter((t) => t.catId === 'savingDeposit' && t.linkedAccountId === 'defaultacct_saving_demo_space' && t.needsReview === 0)
+        .first();
+      expect(row).toBeTruthy();
+      expect(row?.transferPeerId).toBeTruthy();
+      expect((await db.transactions.get(row!.transferPeerId!))?.accountId).toBe('defaultacct_saving_demo_space');
+    }, { timeout: 8000 });
+    db.close();
   }, 15_000);
 
   it('a picked category is staged and written on confirm', async () => {
@@ -636,14 +651,15 @@ describe('ReviewScreen (demo identity)', () => {
     const catBefore = screen.getByTestId('deck-cat-0').textContent;
 
     // pick the locked Transfer sub on part 0 — the MANDATORY ask opens
-    // on the pick itself (#133 r4), NOTHING patched yet; #133 r5: the
-    // savings pot is OFF the transfer list. Walking away rolls the
-    // ENTRY back and Done keeps the part exactly as it was
+    // on the pick itself (#133 r4), NOTHING patched yet; #221: the ask
+    // pins the Default bank account; #133 r5: the savings pot is OFF
+    // the transfer list. Walking away rolls the ENTRY back and Done
+    // keeps the part exactly as it was
     fireEvent.click(await screen.findByTestId('deck-cat-0'));
     fireEvent.click((await screen.findAllByTestId('part-cat-0')).at(-1)!);
     fireEvent.click((await screen.findAllByTestId('catpicker-transferOut')).at(-1)!);
     await screen.findByTestId('counter-accounts');
-    expect(screen.queryByTestId('counter-default')).toBeNull(); // no Default for transfers
+    expect((await screen.findByTestId('counter-default')).textContent).toContain('Default bank account');
     expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull(); // r5: not a transfer counter
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);

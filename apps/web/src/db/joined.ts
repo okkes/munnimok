@@ -1,6 +1,7 @@
 import { txMetaId } from '@/domain/feedIds';
 import { accountStamp } from '@/domain/txType';
 import { deriveTxType } from '@/domain/txDerive';
+import { FAMILY_TX_TYPE } from '@/domain/defaultAccounts';
 import type { StorageBackend } from './backend';
 import type { Repo } from './repo';
 import type { AccountLinkRow, AccountRow, AccountType, TransactionRow, TxMetaRow, TxSplitCat, TxType } from './types';
@@ -82,7 +83,12 @@ async function accountFacts(store: StorageBackend, spaceId: string, links: Accou
   const put = (account: AccountRow | undefined, type?: AccountType) => {
     if (account?.deleted !== 0) return;
     const effective = type ?? account.type;
-    counter.set(account.id, { defaultFor: account.defaultFor, funding: effective === 'funding' });
+    // #221: the default's family in deriveTxType's vocabulary — the cash
+    // wallet speaks for the transfer family (its ATM half)
+    counter.set(account.id, {
+      defaultFor: account.defaultFor ? FAMILY_TX_TYPE[account.defaultFor] : undefined,
+      funding: effective === 'funding',
+    });
     if (effective === 'funding') {
       funding.add(account.id);
       return;

@@ -11,7 +11,11 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 
 describe('TxDetailScreen (demo identity)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // #221: the boot chain runs the bare-row fold EVERY boot now — the
+    // previous spec's chain must settle before the db goes away, or its
+    // dying writes kill this spec's in-flight puts (the db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
@@ -117,6 +121,17 @@ describe('TxDetailScreen (demo identity)', () => {
 
   it('#133 r4: deleting a manual row retires its spread entries\' mints with their money', async () => {
     renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    // the pot's PRE-EDIT baseline — the delete must restore exactly this
+    // (capturing after the mint raced its two-step write: mirror row
+    // first, balance a tick later)
+    const db = new MunniDB('munni_demo');
+    const potBase = (await waitFor(async () => {
+      const pot = await db.accounts.get('demo_save');
+      expect(pot).toBeTruthy();
+      return pot!;
+    })).balanceCents;
+
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
@@ -129,17 +144,19 @@ describe('TxDetailScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('part-cat-counter-1').textContent).toContain('Demo Savings'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
-    const db = new MunniDB('munni_demo');
     const mid = mirrorTxId(catMirrorSourceId('dm6', 'savingDeposit'));
-    await waitFor(async () => expect((await db.transactions.get(mid))?.deleted).toBe(0), { timeout: 8000 });
-    const potBefore = (await db.accounts.get('demo_save'))!.balanceCents;
+    // settled = mirror row live AND its balance move landed
+    await waitFor(async () => {
+      expect((await db.transactions.get(mid))?.deleted).toBe(0);
+      expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBase + 1240);
+    }, { timeout: 8000 });
 
     fireEvent.click(await screen.findByTestId('tx-detail-delete'));
     fireEvent.click(await screen.findByTestId('tx-delete-confirm'));
     await waitFor(async () => {
       expect((await db.transactions.get('dm6'))?.deleted).toBe(1);
       expect((await db.transactions.get(mid))?.deleted).toBe(1); // the entry's mint goes along
-      expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBefore - 1240); // refunded
+      expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBase); // refunded
     }, { timeout: 8000 });
     db.close();
   }, 20_000);
@@ -149,6 +166,37 @@ describe('TxDetailScreen (demo identity)', () => {
     // resolves to either the detail shell or a redirect back — must render something
     await waitFor(() => expect(document.body.textContent).not.toBe(''));
   });
+
+  it('#221: a row on a DEFAULT account is read-only — no edit, no delete, no unpair; the peer door stays', async () => {
+    renderApp('/transactions/potleg1');
+    // the demo space is born with its default pot (eager mint); a minted
+    // leg on it is the subject — the shape the choke writes
+    const seed = new MunniDB('munni_demo');
+    await waitFor(async () => expect((await seed.accounts.get('defaultacct_saving_demo_space'))?.deleted).toBe(0), { timeout: 8000 });
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('ro-seed'), { trackOutbox: false });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'potleg1', {
+      accountId: 'defaultacct_saving_demo_space', date: '2026-07-20', amountCents: 20000, currency: 'EUR',
+      merchant: 'Savings transfer', txType: 'saving', catId: 'savingDeposit', needsReview: 0,
+      linkedAccountId: 'demo_main', transferPeerId: 'dm12',
+    });
+    seed.close();
+    await screen.findByTestId('tx-detail-amount', {}, { timeout: 8000 });
+    // the account fact resolves a beat after the row — the lock label
+    // is the signal that the default-ledger gates are up
+    await waitFor(() => expect(screen.getByTestId('tx-detail-cats-locked').textContent).toContain('Managed by munni'), { timeout: 8000 });
+
+    // the ledger is munni's: no pencil, no rename, no delete, no
+    // category editor, no notes/receipts/reimburse blocks
+    expect(screen.queryByTestId('tx-detail-edit')).toBeNull();
+    expect(screen.queryByTestId('tx-detail-rename')).toBeNull();
+    expect(screen.queryByTestId('tx-detail-delete')).toBeNull();
+    expect(screen.queryByTestId('tx-detail-cats-edit')).toBeNull();
+    expect(screen.queryByTestId('tx-detail-customize')).toBeNull();
+
+    // the pair row still navigates to the ORIGIN — but never releases
+    await screen.findByTestId('tx-detail-peer');
+    expect(screen.queryByTestId('tx-detail-unpair')).toBeNull();
+  }, 15_000);
 
   it('an expense attaches to a recurring cost and detaches again', async () => {
     renderApp('/transactions/dm6'); // dm6 is a demo expense
@@ -181,7 +229,11 @@ describe('TxDetailScreen (demo identity)', () => {
 });
 
 describe('counterparty account number on the detail screen', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // #221: the boot chain runs the bare-row fold EVERY boot now — the
+    // previous spec's chain must settle before the db goes away, or its
+    // dying writes kill this spec's in-flight puts (the db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
@@ -239,7 +291,11 @@ describe('counterparty account number on the detail screen', () => {
 });
 
 describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // #221: the boot chain runs the bare-row fold EVERY boot now — the
+    // previous spec's chain must settle before the db goes away, or its
+    // dying writes kill this spec's in-flight puts (the db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
@@ -382,10 +438,12 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await screen.findByTestId('screen-tx-detail');
     // seed AFTER boot — the demo rows exist only once the app seeded
     const seed = new MunniDB('munni_demo');
-    // …and after the boot chain SETTLED: the bare-row fold migration
-    // scans rows async — a mid-flight bare ◆ write would get folded
-    // onto the default pot, clobbering the pick this test makes
-    await waitFor(async () => expect(await seed.meta.get('txCategoryModel_v1')).toBeTruthy(), { timeout: 8000 });
+    // …and after the boot chain SETTLED (#221: the fold runs every boot
+    // with no marker — the chain promise is the settle signal): a
+    // mid-flight bare ◆ write would get folded onto the default pot,
+    // clobbering the pick this test makes
+    await waitFor(() => expect((globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain).toBeTruthy());
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('fork-seed'), { trackOutbox: false });
     await seedRepo.upsert('account', DEMO_SPACE_ID, 'ms1', {
       name: 'Cash pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 10_000,
@@ -469,7 +527,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     db.close();
   }, 20_000);
 
-  it('#133 B: the Default row mints the family pot lazily and links onto it', async () => {
+  it('#133 B/#221: the Default row links onto the space\'s own pot (eagerly minted at boot)', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
@@ -503,7 +561,8 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     renderApp('/transactions/dm6');
     await screen.findByTestId('screen-tx-detail');
     const seed = new MunniDB('munni_demo');
-    await waitFor(async () => expect(await seed.meta.get('txCategoryModel_v1')).toBeTruthy(), { timeout: 8000 });
+    await waitFor(() => expect((globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain).toBeTruthy());
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('fund-seed'), { trackOutbox: false });
     await seedRepo.upsert('account', DEMO_SPACE_ID, 'fund1', {
       name: 'Family pot', type: 'funding', source: 'manual', currency: 'EUR', balanceCents: 0,
@@ -515,9 +574,10 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-fundingOut'));
 
     // the ask opens on the pick (#133 r4) and lists ONLY funding
-    // attachments — no Default pot, none of the ordinary accounts
+    // attachments — #221: the Default shared pot pins on top, none of
+    // the ordinary accounts join the list
     await screen.findByTestId('counter-pick-fund1', {}, { timeout: 8000 });
-    expect(screen.queryByTestId('counter-default')).toBeNull();
+    expect(screen.getByTestId('counter-default').textContent).toContain('Default shared pot');
     expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull();
     fireEvent.click(screen.getByTestId('counter-pick-fund1'));
     await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Family pot'));
@@ -536,7 +596,8 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     renderApp('/transactions/dm6');
     await screen.findByTestId('screen-tx-detail');
     const seed = new MunniDB('munni_demo');
-    await waitFor(async () => expect(await seed.meta.get('txCategoryModel_v1')).toBeTruthy(), { timeout: 8000 });
+    await waitFor(() => expect((globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain).toBeTruthy());
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     // the bank named a counterparty; nothing links yet — no facts row
     await seed.transactions.update('dm6', { counterIban: 'NL02ABNA0123456789' });
     seed.close();
@@ -558,7 +619,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
 });
 
 describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // #221: the boot chain runs the bare-row fold EVERY boot now — the
+    // previous spec's chain must settle before the db goes away, or its
+    // dying writes kill this spec's in-flight puts (the db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
@@ -725,7 +790,11 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
 });
 
 describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // #221: the boot chain runs the bare-row fold EVERY boot now — the
+    // previous spec's chain must settle before the db goes away, or its
+    // dying writes kill this spec's in-flight puts (the db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
@@ -1191,7 +1260,11 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
 });
 
 describe('bulk apply from the detail (user request)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // #221: the boot chain runs the bare-row fold EVERY boot now — the
+    // previous spec's chain must settle before the db goes away, or its
+    // dying writes kill this spec's in-flight puts (the db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
@@ -1267,7 +1340,11 @@ describe('bulk apply from the detail (user request)', () => {
 });
 
 describe('title rename (user request)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // #221: the boot chain runs the bare-row fold EVERY boot now — the
+    // previous spec's chain must settle before the db goes away, or its
+    // dying writes kill this spec's in-flight puts (the db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
@@ -1307,7 +1384,11 @@ describe('title rename (user request)', () => {
 });
 
 describe('detail sections customize (user request)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // #221: the boot chain runs the bare-row fold EVERY boot now — the
+    // previous spec's chain must settle before the db goes away, or its
+    // dying writes kill this spec's in-flight puts (the db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');

@@ -82,7 +82,9 @@ export async function bootstrapUserSpaces(
 }
 
 /** self-heal: a bootstrap-created space still empty while the account's
- *  real spaces arrived (pre-fix duplicates) retires quietly */
+ *  real spaces arrived (pre-fix duplicates) retires quietly. #221: the
+ *  eagerly minted defaults don't count as content — and they leave with
+ *  the space instead of lingering as orphans. */
 async function retireEmptyBootstrapSpace(store: StorageBackend, repo: Repo): Promise<void> {
   const bootstrapId = (await store.metaGet(BOOTSTRAP_SPACE_KEY))?.value as string | undefined;
   if (!bootstrapId) return;
@@ -90,10 +92,14 @@ async function retireEmptyBootstrapSpace(store: StorageBackend, repo: Repo): Pro
   if (others === 0) return;
   const [txs, accounts, cats] = await Promise.all([
     store.countBySpace('transaction', bootstrapId),
-    store.countBySpace('account', bootstrapId),
+    store.bySpace('account', bootstrapId),
     store.countBySpace('category', bootstrapId),
   ]);
-  if (txs === 0 && accounts === 0 && cats === 0) {
+  const realAccounts = accounts.filter((a) => a.deleted === 0 && !a.defaultFor);
+  if (txs === 0 && realAccounts.length === 0 && cats === 0) {
+    for (const account of accounts.filter((a) => a.deleted === 0)) {
+      await repo.remove('account', bootstrapId, account.id);
+    }
     await repo.remove('space', bootstrapId, bootstrapId);
   }
   await store.metaDelete(BOOTSTRAP_SPACE_KEY);
@@ -298,8 +304,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // boot, idempotent — late-syncing debts from old devices heal)
         const { foldDebtsIntoAccounts } = await import('@/application/debts');
         await foldDebtsIntoAccounts(store, repo);
-        // #133 ruling 3: bare movement rows link onto lazy-minted
-        // DEFAULT accounts — balances move via the mirror lifecycle
+        // #221: every live space carries its six default accounts (every
+        // boot, idempotent — pre-#221 spaces and old-device deletes heal)
+        const { ensureAllDefaultAccounts } = await import('@/application/defaultAccounts');
+        await ensureAllDefaultAccounts(store, repo);
+        // #133 ruling 3 / #221: bare movement rows link onto the DEFAULT
+        // accounts — balances move via the mirror lifecycle. Every boot:
+        // the server keeps writing keyword-predicted movement categories
+        // (GcIngest) with no counterparty, so this heals continuously.
         const { migrateBareSpecialRows } = await import('@/application/categoryModel');
         await migrateBareSpecialRows(store, repo);
         // transfers are ONE event with two legs — pair them within each

@@ -12,11 +12,17 @@ export const DEBT_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set(['loan', 'mo
  * Debts-screen membership: the explicit toggle wins; absent, loans and
  * mortgages are in by nature while a credit card only joins when the
  * user gave it a debt story (mature-app ruling: a card paid off monthly
- * is an account with a balance, not a payoff journey).
+ * is an account with a balance, not a payoff journey). #221: the
+ * space's DEFAULT pot exists from birth — it joins only while it
+ * actually holds a debt (a dormant fixture is not a payoff journey).
  */
-export function isDebtTracked(account: Pick<AccountRow, 'type' | 'trackAsDebt' | 'interestPctYear' | 'originalCents' | 'paymentCents'>): boolean {
+export function isDebtTracked(
+  account: Pick<AccountRow, 'type' | 'trackAsDebt' | 'interestPctYear' | 'originalCents' | 'paymentCents'> &
+    Partial<Pick<AccountRow, 'defaultFor' | 'balanceCents'>>,
+): boolean {
   if (!DEBT_ACCOUNT_TYPES.has(account.type)) return false;
   if (account.trackAsDebt !== undefined) return account.trackAsDebt === 1;
+  if (account.defaultFor && (account.balanceCents ?? 0) === 0) return false;
   if (account.type !== 'credit') return true;
   return account.interestPctYear !== undefined || account.originalCents !== undefined || !!account.paymentCents;
 }

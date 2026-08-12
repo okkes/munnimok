@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
-import { useSpaceHistoryTransactions, useTxTransform } from '@/application/transactions';
+import { useSpaceAccounts, useSpaceHistoryTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
 import { countsTowardLoan } from '@/application/loanBalance';
 import { REIMBURSED_ID, autoSubFor } from '@/domain/categories';
@@ -54,6 +54,7 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
   const transform = useTxTransform();
   const { fmt } = useDisplayMoney();
   const txs = useSpaceHistoryTransactions();
+  const spaceAccounts = useSpaceAccounts();
   const account = useQuery(store, async () => (accountId ? store.get('account', accountId) : undefined), [accountId]);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [counted, setCounted] = useState<ReadonlySet<string>>(new Set());
@@ -61,6 +62,11 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
 
   const candidates = useMemo<Scored[]>(() => {
     if (!account || !txs) return [];
+    // #221: a link onto the space's DEFAULT pot is provisional — those
+    // rows stay candidates, and applying RELINKS them (the choke moves
+    // the minted leg from the pot to this loan)
+    const defaultIds = new Set((spaceAccounts ?? []).filter((a) => a.defaultFor).map((a) => a.id));
+    const provisional = (tx: SpaceTx) => !!tx.linkedAccountId && defaultIds.has(tx.linkedAccountId);
     const ctx = {
       iban: account.iban ? normalizeIban(account.iban) : null,
       tokens: account.name
@@ -71,7 +77,8 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
     };
     const scored: Scored[] = [];
     for (const tx of txs) {
-      if (tx.deleted !== 0 || tx.linkedAccountId || tx.transferPeerId || tx.accountId === account.id) continue;
+      if (tx.deleted !== 0 || tx.accountId === account.id) continue;
+      if ((tx.linkedAccountId || tx.transferPeerId) && !provisional(tx)) continue;
       // #143: a split container never links wholesale — its parts carry
       // their own loan legs (linked from their part pages)
       if ((tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1) continue;
@@ -80,7 +87,7 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
     }
     scored.sort((a, b) => b.score - a.score || b.tx.date.localeCompare(a.tx.date));
     return scored.slice(0, MAX_SHOWN);
-  }, [account, txs]);
+  }, [account, txs, spaceAccounts]);
 
   // strong matches arrive pre-checked ONCE per loan; live-query
   // re-emissions must never clobber the user's pruning (review finding)

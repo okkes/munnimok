@@ -134,6 +134,34 @@ describe('importCamtStatements', () => {
     expect(tx).toMatchObject({ catId: 'sport', needsReview: 0 });
   });
 
+  it('#221: a movement-category prediction imports LINKED to the space default — the counter leg minted', async () => {
+    await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    // the user filed this merchant as "Set aside" twice — history now
+    // predicts a movement category for its next arrival
+    for (const [id, date] of [['h1', '2026-05-01'], ['h2', '2026-06-01']] as const) {
+      await repo.upsert('transaction', 's1', id, {
+        accountId: 'acct-x',
+        date,
+        amountCents: -1500,
+        currency: 'EUR',
+        merchant: 'Albert Heijn 1350',
+        catId: 'savingDeposit',
+        txType: 'saving',
+        needsReview: 0,
+      });
+    }
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()]);
+    const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'REF-001')!;
+    expect(tx.catId).toBe('savingDeposit');
+    // the assignment is VALID from birth: linked to the default pot,
+    // the pot's leg minted through the choke, balance moved
+    expect(tx.linkedAccountId).toBe(`defaultacct_saving_s1`);
+    expect(tx.transferPeerId).toBeTruthy();
+    const mirror = await db.transactions.get(tx.transferPeerId!);
+    expect(mirror).toMatchObject({ accountId: 'defaultacct_saving_s1', amountCents: 4210 });
+    expect((await db.accounts.get('defaultacct_saving_s1'))?.balanceCents).toBe(4210);
+  });
+
   it('matches an existing account by IBAN (spacing/case-insensitive) and updates its balance', async () => {
     await repo.upsert('account', 's1', 'acct-existing', {
       name: 'Mijn ING',

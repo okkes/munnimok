@@ -31,6 +31,10 @@ describe('reviewDraft', () => {
     // counterparty mandatory — the placeholder confirms only linked
     expect(draftReady({ ...uncategorized, txType: 'transfer' as TxType })).toBe(false);
     expect(draftReady({ ...uncategorized, txType: 'transfer' as TxType, linkedAccountId: 'a-save' })).toBe(true);
+    // #221: a bare MOVEMENT category is one tap from done — Confirm
+    // links the space's default in the same write
+    expect(draftReady({ ...uncategorized, catId: 'cashWithdraw', txType: 'transfer' as TxType })).toBe(true);
+    expect(draftReady({ ...uncategorized, catId: 'transferOut', txType: 'transfer' as TxType })).toBe(true);
     // a split with an uncategorized slice blocks too
     const withUncatSlice = {
       ...initDraft(expenseTx, 'groceries', catalog),

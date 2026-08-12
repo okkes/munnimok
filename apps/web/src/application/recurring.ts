@@ -201,9 +201,10 @@ export function useRecurringReminders(): void {
       // loans saved without an interest rate get a WEEKLY nudge to fill
       // it in — 0% is an answer, an empty rate is a question (user rule
       // 2026-07-28); quick-add now, find out the rate later. Loans v2:
-      // the tracked liability ACCOUNTS are the debts now
+      // the tracked liability ACCOUNTS are the debts now. #221: the
+      // minted DEFAULT pot is munni's fixture, not a user loan — no nag.
       const loans = (await store.allRows('account')).filter(
-        (a) => a.deleted === 0 && a.archived !== 1 && a.interestPctYear === undefined && isDebtTracked(a),
+        (a) => a.deleted === 0 && a.archived !== 1 && !a.defaultFor && a.interestPctYear === undefined && isDebtTracked(a),
       );
       for (const loan of loans) {
         const key = `debtPctReminded_${loan.id}`;

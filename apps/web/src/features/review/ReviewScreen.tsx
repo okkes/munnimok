@@ -11,8 +11,10 @@ import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFo
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withCats, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
-import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
-import { accountStamp, counterTypesForFamily } from '@/domain/txType';
+import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, isMovementCat, specialCatType } from '@/domain/categories';
+import { accountStamp, counterTypesFor } from '@/domain/txType';
+import { defaultFamilyFor } from '@/domain/defaultAccounts';
+import { ensureDefaultAccount } from '@/application/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
 import { normalizeIban, partMirrorSourceId } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
@@ -89,6 +91,10 @@ async function writeConfirmation(args: {
   eventId: string | undefined;
   bulk: SpaceTx[];
   transform: ReturnType<typeof useTxTransform>;
+  /** #221: "confirms the category + default account" — a bare movement
+   *  draft links the space's default in the SAME write, so the choke
+   *  mints the counter leg right here */
+  defaultLinkId?: string;
 }): Promise<void> {
   const { draft } = args;
   // draft-cleared fields on a tx that HAD them need an explicit null —
@@ -100,7 +106,7 @@ async function writeConfirmation(args: {
   const catsField = draft.splits?.length
     ? { cats: null as never }
     : replacing('cats', draftCatEntries, !!args.tx.cats?.length);
-  const linkField = replacing('linkedAccountId', draft.linkedAccountId, !!args.tx.linkedAccountId);
+  const linkField = replacing('linkedAccountId', draft.linkedAccountId ?? args.defaultLinkId, !!args.tx.linkedAccountId);
   await args.transform(args.tx, {
     catId: draft.catId,
     txType: draft.txType,
@@ -112,7 +118,7 @@ async function writeConfirmation(args: {
     ...(args.eventId ? { eventId: args.eventId } : {}),
   }, null); // confirm logs its own richer 'review' line (with bulk count)
   for (const item of args.bulk) {
-    await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId), null);
+    await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId, args.defaultLinkId), null);
   }
 }
 
@@ -135,17 +141,18 @@ function catsForSibling(item: SpaceTx, entries: TxSplitCat[]): TxSplitCat[] | un
  *  similar filter already keeps signs together; this guards any path
  *  that doesn't). A partition travels whole: parts clear a sibling's
  *  spread and vice versa (#211 — the two never mix on one row). */
-function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined) {
+function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined, defaultLinkId?: string) {
   const splits = draft.splits?.length ? resolveSplitsFor(item.amountCents, draft.splits) : undefined;
   const catEntries = !splits && draft.cats?.length ? catsForSibling(item, draft.cats) : undefined;
   const siblingType = kindOf(draft.txType) === 'standard' ? standardTypeFor(item.amountCents) : draft.txType;
+  const linkedId = draft.linkedAccountId ?? defaultLinkId;
   return {
     catId: draft.catId,
     txType: siblingType,
     needsReview: 0 as const,
     ...(splits ? { splits, cats: null as never } : {}),
     ...(catEntries ? { cats: catEntries, ...(item.splits?.length ? { splits: null as never } : {}) } : {}),
-    ...(draft.linkedAccountId ? { linkedAccountId: draft.linkedAccountId } : {}),
+    ...(linkedId ? { linkedAccountId: linkedId } : {}),
     ...(recurringId ? { recurringId } : {}),
     ...(eventId ? { eventId } : {}),
   };
@@ -1027,14 +1034,14 @@ function RecurringPickSheet({
 const loanCounterOf = (counter: { type: string; name: string } | undefined): { name: string } | undefined =>
   counter && ['loan', 'mortgage'].includes(counter.type) ? { name: counter.name } : undefined;
 
-/** #133 r5: the card ask's two faces, out of the component (S3776) —
- *  families pin their Default pot; funding and the mandatory transfer
- *  ask pin nothing, and every armed ask narrows to its account types */
-type CardAskFamily = DefaultFamily | 'funding' | 'transfer';
-const askDefaultFamily = (family: CardAskFamily | null): DefaultFamily | undefined =>
-  family === 'funding' || family === 'transfer' ? undefined : (family ?? undefined);
-const askCounterTypes = (family: CardAskFamily | null): readonly AccountType[] | undefined =>
-  family ? counterTypesForFamily(family) : undefined;
+/** #133 r5/#221: the card ask derives from the PICKED category, out of
+ *  the component (S3776) — every ask pins its default (the ATM pair
+ *  pins the cash wallet, not the default bank account) and narrows to
+ *  the account types the category can mean (the bijection) */
+const askDefaultFamily = (catId: string | null): DefaultFamily | undefined =>
+  catId ? (defaultFamilyFor(catId) ?? undefined) : undefined;
+const askCounterTypes = (catId: string | null): readonly AccountType[] | undefined =>
+  (catId ? counterTypesFor(catId) : undefined) ?? undefined;
 
 /**
  * Review queue, rebuilt around the legacy mechanics with a calmer face:
@@ -1095,11 +1102,10 @@ export function ReviewScreen() {
   // kind + counterparty rows live ON the card now (user simplification);
   // a user-picked transfer REQUIRES a counterparty, so dismissing the
   // picker without choosing rolls the kind back to what it was
-  // #133 C: a ◆ family pick pins the Default row on the counter sheet;
-  // #152 r2: the ◆ Funding pick asks among funding attachments instead
-  // #133 r5: 'transfer' rides along so the mandatory ask lists only
-  // regular accounts (the special kinds ARE the family categories)
-  const [counterFamily, setCounterFamily] = useState<CardAskFamily | null>(null);
+  // #133 C/#221: the ask is keyed by the PICKED category — its default
+  // pin and its account types both derive from the bijection (the ATM
+  // pair asks among cash wallets and pins the space's own)
+  const [counterAskCat, setCounterAskCat] = useState<string | null>(null);
   const [counterOpen, setCounterOpen] = useState(false);
   const counterFallback = useRef<ReviewDraft | null>(null);
   const counterChosen = useRef(false);
@@ -1350,18 +1356,18 @@ export function ReviewScreen() {
     // is unrepresentable)
     if (family === 'transfer' && !ownStamp) {
       counterFallback.current = draft;
-      setCounterFamily('transfer');
+      setCounterAskCat(catId);
       setCounterOpen(true);
       return;
     }
     const next = { ...withCategory(withSplits(draft, undefined), catId, cats), cats: settledCatsFor(catId) };
     setStagedDraft(next);
     // #133 C: a ◆ family pick unfolds the counterparty question right
-    // away — Default, a real account, or dismiss (bare is legal; the
-    // boot migration folds it onto the default later). #152 r2: the
-    // Funding pick asks WHICH funding account — no Default pot there.
+    // away — the pinned Default, a real account, or dismiss (bare is
+    // legal; Confirm links the default, #221). #152 r2/#221: the
+    // Funding pick asks WHICH funding account, its shared pot pinned.
     if (family && family !== 'transfer' && !next.linkedAccountId && !ownStamp) {
-      setCounterFamily(family === 'funding' ? 'funding' : (family as DefaultFamily));
+      setCounterAskCat(catId);
       counterFallback.current = null;
       setCounterOpen(true);
     }
@@ -1390,6 +1396,16 @@ export function ReviewScreen() {
     // r7: a split container carries no recurring/event of its own — the
     // parts do (their links ride inside draft.splits)
     const container = !multiPartSplits(draft);
+    // #221: a bare movement confirm links the space's DEFAULT for the
+    // category's family in the same write — the choke mints the counter
+    // leg ("confirms the category + default account", user spec)
+    const bareMovementFamily =
+      !ownStamp && !draft.linkedAccountId && !draft.cats?.length && !draft.splits?.length && isMovementCat(draft.catId)
+        ? defaultFamilyFor(draft.catId)
+        : null;
+    const defaultLinkId = bareMovementFamily
+      ? await ensureDefaultAccount(store, repo, spaceId, bareMovementFamily)
+      : undefined;
     await writeConfirmation({
       tx,
       draft,
@@ -1397,6 +1413,7 @@ export function ReviewScreen() {
       eventId: container ? (eventPick ?? undefined) : undefined,
       bulk: similar.filter((s) => bulkSelected.has(s.id)),
       transform,
+      defaultLinkId,
     });
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
@@ -1713,13 +1730,13 @@ export function ReviewScreen() {
               if (!counterChosen.current && counterFallback.current) setStagedDraft(counterFallback.current);
               counterFallback.current = null;
               counterChosen.current = false;
-              setCounterFamily(null);
+              setCounterAskCat(null);
             }
           }}
           excludeAccountId={tx.accountId}
           currentLinkedId={draft.linkedAccountId}
-          defaultFamily={askDefaultFamily(counterFamily)}
-          counterTypes={askCounterTypes(counterFamily)}
+          defaultFamily={askDefaultFamily(counterAskCat)}
+          counterTypes={askCounterTypes(counterAskCat)}
           onChoose={(account) => {
             counterChosen.current = true;
             setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));

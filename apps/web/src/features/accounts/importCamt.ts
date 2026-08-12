@@ -5,7 +5,10 @@ import { predictTx, predictionSkipsReview } from '@/domain/predictCategory';
 import { cachedCatalog } from '@/sync/catalogSync';
 import type { MerchantMemory } from '@/domain/merchantMemory';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { UNCATEGORIZED_ID, isMovementCat } from '@/domain/categories';
+import { defaultFamilyFor } from '@/domain/defaultAccounts';
+import { ensureDefaultAccount } from '@/application/defaultAccounts';
+import { writeTxTransform } from '@/db/joined';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
@@ -109,11 +112,35 @@ async function uploaderName(store: StorageBackend): Promise<string | undefined> 
   return ((await store.metaGet('profile'))?.value as { name?: string } | undefined)?.name;
 }
 
+/**
+ * #221: a movement-category prediction is only VALID with a counterparty
+ * — link it to the space's default for that family through the write
+ * choke, so the mirror leg mints and a wrong guess later retires it
+ * (the ordinary link lifecycle, spec'd by the user).
+ */
+async function linkPredictedMovement(
+  ctx: EntryContext,
+  txId: string,
+  predicted: { catId: string; txType: TxType; needsReview: 0 | 1 },
+  feedId: string | undefined,
+): Promise<void> {
+  if (!isMovementCat(predicted.catId)) return;
+  const family = defaultFamilyFor(predicted.catId);
+  if (!family) return;
+  const targetId = await ensureDefaultAccount(ctx.store, ctx.repo, ctx.spaceId, family);
+  await writeTxTransform(
+    ctx.repo,
+    { id: txId, spaceId: ctx.spaceId, feedSpaceId: feedId, txType: predicted.txType, needsReview: predicted.needsReview },
+    { linkedAccountId: targetId },
+  ).catch(() => undefined);
+}
+
 /** returns true when the entry was new (imported), false when it already existed */
 async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][number]): Promise<boolean> {
   const txId = uuidv5(`tx:${ctx.iban}:${entry.ref}`, IMPORT_NS);
   if (await ctx.store.get('transaction', txId)) return false;
 
+  const predicted = predictEntry(ctx.memory, entry, ctx.keywordRules);
   await ctx.repo.upsert('transaction', ctx.spaceId, txId, {
     accountId: ctx.accountId,
     date: entry.date,
@@ -122,11 +149,12 @@ async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][
     merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
     description: entry.description,
     ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
-    ...predictEntry(ctx.memory, entry, ctx.keywordRules),
+    ...predicted,
     importRef: entry.ref,
     importBatchId: ctx.batchId,
     ...(ctx.importedBy ? { importedBy: ctx.importedBy } : {}),
   });
+  await linkPredictedMovement(ctx, txId, predicted, undefined);
   return true;
 }
 
@@ -343,9 +371,11 @@ async function importFeedEntry(
     ...(ctx.importedBy ? { importedBy: ctx.importedBy } : {}),
   });
 
+  const predicted = predictEntry(ctx.memory, entry, ctx.keywordRules);
   await ctx.repo.upsert('txMeta', ctx.spaceId, txMetaId(ctx.spaceId, txId), {
     txId,
-    ...predictEntry(ctx.memory, entry, ctx.keywordRules),
+    ...predicted,
   });
+  await linkPredictedMovement(ctx, txId, predicted, feedId);
   return true;
 }

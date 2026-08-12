@@ -482,8 +482,10 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   // tier rule: hand-typed rows belong on MANUAL accounts only — linked
   // feeds are the bank's and imported (camt/csv) accounts are the next
-  // upload's; manual entries there would duplicate or contradict them
-  const writable = useMemo(() => (accounts ?? []).filter((a) => a.source === 'manual'), [accounts]);
+  // upload's; manual entries there would duplicate or contradict them.
+  // #221: the DEFAULT accounts' ledgers are system-managed (mirror legs
+  // + balance adjustments) — never a hand-entry target.
+  const writable = useMemo(() => (accounts ?? []).filter((a) => a.source === 'manual' && !a.defaultFor), [accounts]);
   const recurrings = useRecurrings();
 
   // (re)fill when opened — keyed on the row's ID, not the object:

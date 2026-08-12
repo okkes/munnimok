@@ -1,49 +1,43 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import type { AccountType } from '@/db/types';
+import { DEFAULT_FAMILIES, FAMILY_ACCOUNT_TYPE, defaultAccountId } from '@/domain/defaultAccounts';
+import type { DefaultFamily } from '@/domain/defaultAccounts';
 import { getCurrentLang } from '@/i18n';
 import { en } from '@/i18n/en';
 import { nl } from '@/i18n/nl';
 import { tr } from '@/i18n/tr';
 
 /**
- * #133 (user ruling 1): the DEFAULT special accounts are LAZY — nothing
- * exists until the user (or the migration) first accepts "default" as a
- * counterparty; then the space's pot for that family is minted
- * automatically. Deterministic ids make two devices converge by LWW
- * instead of duplicating (the loans-v2 fold lesson). Transfer needs a
- * REAL account and funding stays counterparty-less — neither has a
- * default (rulings 4/5).
+ * #221 (user redesign): default accounts are EAGER — every space mints
+ * one per family at creation, existing spaces heal on every boot, and
+ * the user can never delete them. The id/family math lives in
+ * domain/defaultAccounts (re-exported here so existing importers keep
+ * one door); this module owns the minting.
  */
-export type DefaultFamily = 'saving' | 'debtPayment' | 'investment';
+export { DEFAULT_FAMILIES, FAMILY_ACCOUNT_TYPE, defaultAccountId, defaultPickFamily } from '@/domain/defaultAccounts';
+export type { DefaultFamily } from '@/domain/defaultAccounts';
 
-export const FAMILY_ACCOUNT_TYPE: Record<DefaultFamily, AccountType> = {
-  saving: 'savings',
-  debtPayment: 'loan',
-  investment: 'brokerage',
-};
+type NameKey =
+  | 'acct.defaultSaving'
+  | 'acct.defaultLoan'
+  | 'acct.defaultInvest'
+  | 'acct.defaultTransfer'
+  | 'acct.defaultCash'
+  | 'acct.defaultFunding';
 
-export const NAME_KEYS: Record<DefaultFamily, 'acct.defaultSaving' | 'acct.defaultLoan' | 'acct.defaultInvest'> = {
+export const NAME_KEYS: Record<DefaultFamily, NameKey> = {
   saving: 'acct.defaultSaving',
   debtPayment: 'acct.defaultLoan',
   investment: 'acct.defaultInvest',
+  transfer: 'acct.defaultTransfer',
+  cash: 'acct.defaultCash',
+  funding: 'acct.defaultFunding',
 };
 
 const DICTS = { en, nl, tr } as const;
 
-export const defaultAccountId = (spaceId: string, family: DefaultFamily): string =>
-  `defaultacct_${family}_${spaceId}`;
-
-/** #133: the counterparty rule's first arm — a DEFAULT pick keeps the
- *  family (the row wears the special category itself); any real account
- *  follows the normal transfer/funding derivation instead */
-export const defaultPickFamily = (
-  family: DefaultFamily | null | undefined,
-  pickedId: string,
-  spaceId: string,
-): DefaultFamily | null => (family && pickedId === defaultAccountId(spaceId, family) ? family : null);
-
-/** the family's default pot, minted on first use (idempotent) */
+/** the family's default account, minted idempotently (deterministic id:
+ *  two devices converge by LWW; an old-device delete heals back) */
 export async function ensureDefaultAccount(
   store: StorageBackend,
   repo: Repo,
@@ -64,4 +58,19 @@ export async function ensureDefaultAccount(
     defaultFor: family,
   });
   return id;
+}
+
+/** #221: the full set for ONE space — space creation calls this so the
+ *  defaults exist from birth */
+export async function ensureSpaceDefaultAccounts(store: StorageBackend, repo: Repo, spaceId: string): Promise<void> {
+  for (const family of DEFAULT_FAMILIES) await ensureDefaultAccount(store, repo, spaceId, family);
+}
+
+/** #221: every live space heals on boot — pre-existing spaces, joined
+ *  shared spaces, and any default an old device managed to delete.
+ *  Kind-less ghost rows are skipped (the Mina liveness test): their
+ *  minted defaults would haunt the global accounts overview. */
+export async function ensureAllDefaultAccounts(store: StorageBackend, repo: Repo): Promise<void> {
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0 && !!s.kind);
+  for (const space of spaces) await ensureSpaceDefaultAccounts(store, repo, space.id);
 }

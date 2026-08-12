@@ -47,6 +47,9 @@ function deviceLang(): Lang {
 }
 
 function readStoredLang(): Lang {
+  // headless callers (node-environment tests, workers) have no DOM
+  // storage — the device/default language answers there
+  if (typeof localStorage === 'undefined') return typeof navigator === 'undefined' ? 'en' : deviceLang();
   const stored = localStorage.getItem(LS_KEY);
   if (stored === 'en' || stored === 'nl' || stored === 'tr') return stored;
   // first launch: follow the device language when it maps to one we speak

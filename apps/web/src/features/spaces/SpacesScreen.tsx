@@ -82,7 +82,13 @@ export function SpacesScreen() {
         inviteLock: 1,
         ...(profile?.name ? { createdByName: profile.name } : {}),
       })
-      .then(() => setActiveSpace(id));
+      .then(async () => {
+        // #221: the six defaults exist from birth — a movement category
+        // always has a valid counterparty to point at
+        const { ensureSpaceDefaultAccounts } = await import('@/application/defaultAccounts');
+        await ensureSpaceDefaultAccounts(store, repo, id);
+        setActiveSpace(id);
+      });
     setCreateOpen(false);
     setName('');
   };

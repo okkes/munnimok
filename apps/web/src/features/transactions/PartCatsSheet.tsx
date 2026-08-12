@@ -4,6 +4,7 @@ import { fmtCents, parseCents } from '@/lib/money';
 import { nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
 import { UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
+import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { counterTypesFor, movementCatFor, movementCatsForCounter } from '@/domain/txType';
 import { kindOf } from '@/domain/txKind';
 import { catMirrorSourceId, mirrorTxId } from '@/domain/feedIds';
@@ -31,17 +32,20 @@ interface CatEntry {
 }
 
 /** #133 r4: does this category ask a counterparty, and which face of
- *  the sheet answers it? Families pin the Default pot; #133 r5: every
- *  ask lists only the account types its category can mean (the
- *  bijection — "Set aside" points at savings accounts, Transfer at
- *  regular ones). Transfer stays the mandatory ask. */
+ *  the sheet answers it? #221: EVERY ask pins its default — the transfer
+ *  family gets the default bank account, the ATM pair its cash wallet,
+ *  funding its shared pot. #133 r5: every ask lists only the account
+ *  types its category can mean (the bijection). Transfer stays the
+ *  mandatory ask (dismiss rolls back — bare transfer is
+ *  unrepresentable); the pinned default is its one-tap answer. */
 function counterAskFor(catId: string): { defaultFamily?: DefaultFamily; counterTypes?: readonly AccountType[]; mandatory: boolean } | null {
   const family = specialCatType(catId);
   if (!family) return null;
-  const counterTypes = counterTypesFor(catId);
-  if (family === 'transfer') return { counterTypes, mandatory: true };
-  if (family === 'funding') return { counterTypes, mandatory: false };
-  return { defaultFamily: family as DefaultFamily, counterTypes, mandatory: false };
+  return {
+    defaultFamily: defaultFamilyFor(catId) ?? undefined,
+    counterTypes: counterTypesFor(catId),
+    mandatory: family === 'transfer',
+  };
 }
 
 /** the stored link fields an entry carries out of the editor */

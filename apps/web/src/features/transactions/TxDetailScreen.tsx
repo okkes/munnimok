@@ -319,8 +319,10 @@ function transferPairState(
   return linkedAccount.source === 'manual' ? 'offerCreate' : 'awaiting';
 }
 
-/** the pair row: jump to the other leg, or release the link */
-function TransferPeerRow({ t, onOpen, onUnpair }: Readonly<{ t: TFunc; onOpen: () => void; onUnpair: () => void }>) {
+/** the pair row: jump to the other leg, or release the link — #221: a
+ *  default-ledger mirror keeps the jump but not the release (the link
+ *  belongs to the ORIGIN row) */
+function TransferPeerRow({ t, onOpen, onUnpair }: Readonly<{ t: TFunc; onOpen: () => void; onUnpair?: () => void }>) {
   return (
     <>
       <div className="mx-4 h-px bg-line-2" />
@@ -333,14 +335,16 @@ function TransferPeerRow({ t, onOpen, onUnpair }: Readonly<{ t: TFunc; onOpen: (
         >
           {t('tx.pairedCounterpart')}
         </button>
-        <button
-          aria-label={t('tx.unpair')}
-          data-testid="tx-detail-unpair"
-          onClick={onUnpair}
-          className="m-tap flex h-8 w-8 items-center justify-center border-none bg-transparent text-ink-4"
-        >
-          <Icon name="link-off" size={16} />
-        </button>
+        {onUnpair && (
+          <button
+            aria-label={t('tx.unpair')}
+            data-testid="tx-detail-unpair"
+            onClick={onUnpair}
+            className="m-tap flex h-8 w-8 items-center justify-center border-none bg-transparent text-ink-4"
+          >
+            <Icon name="link-off" size={16} />
+          </button>
+        )}
       </div>
     </>
   );
@@ -1433,7 +1437,9 @@ function DetailAccountBlock({
   loanCountBusy: boolean;
   setLoanCountBusy: (busy: boolean) => void;
   onOpenPeer: (peerId: string) => void;
-  onUnpair: () => void;
+  /** absent on a default-ledger row (#221): the pair releases from the
+   *  origin side only */
+  onUnpair?: () => void;
 }>) {
   const { t } = useLang();
   const { store, repo } = useData();
@@ -1644,9 +1650,13 @@ export function TxDetailScreen() { // NOSONAR(S3776)
     void releasePeerLeg(store, repo, spaceId, tx, allTxs);
     void transform(tx, { transferPeerId: null as never }, 'txLink');
   };
+  // #221: a DEFAULT account's ledger is system-managed — its rows (the
+  // minted mirror legs and balance adjustments) are read-only; they are
+  // managed from the ORIGIN transaction, or by adjusting the balance
+  const onDefaultLedger = !!account?.defaultFor;
   // a credit that self-filed as Reimbursed keeps that category as long
   // as any link lives (user rule) — unlink first, then recategorize
-  const categoryLocked = tx.catId === REIMBURSED_ID && givenOut > 0;
+  const categoryLocked = (tx.catId === REIMBURSED_ID && givenOut > 0) || onDefaultLedger;
   // the recurring OWNS the category (user rule 2026-07-28): a linked row
   // only picks between the recurring's category and expected
   // reimbursement — the editor's picker enforces it
@@ -1819,7 +1829,11 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const savePartLabel = (raw: string): void => writePartLabel(transform, tx, partView, partDefault, raw);
   const renameProps = renameSheetProps(tx, partView, partDefault, savePartLabel, renameTitle);
   const screenTitle = detailScreenTitle(tx, parts, partView, t);
-  const trailingAction = detailTrailingAction(!!partView, tx.importRef, t, () => setRenameOpen(true), () => setEditOpen(true));
+  // #221: a default-ledger row offers NO edit door at all — no pencil,
+  // no rename; the origin transaction (or the balance edit) is the hand
+  const trailingAction = onDefaultLedger
+    ? undefined
+    : detailTrailingAction(!!partView, tx.importRef, t, () => setRenameOpen(true), () => setEditOpen(true));
   // the values editor edits the STAGE when one exists, else the stored
   // parts; classic mode stays uncontrolled
   const editorValue = valuesEditorValue(splitStage, multiPart, parts);
@@ -1897,7 +1911,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
           loanCountBusy={loanCountBusy}
           setLoanCountBusy={setLoanCountBusy}
           onOpenPeer={(peerId) => void navigate({ to: '/transactions/$txId', params: { txId: peerId } })}
-          onUnpair={unpair}
+          onUnpair={onDefaultLedger ? undefined : unpair}
         />
 
         {/* block: categories — ONE edit affordance for the whole block
@@ -1905,6 +1919,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
             r9: on a container the block lists PARTS, and says so */}
         <CategoriesHeader
           locked={categoryLocked}
+          lockLabel={onDefaultLedger ? t('tx.defaultLedgerLocked') : undefined}
           byRecurring={!!recurringAllowedCats}
           multiPart={multiPart}
           onEdit={openCategoriesEditor}
@@ -2003,8 +2018,9 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         {/* the sections below the details card follow the space's saved
             order/visibility (user request — same mechanics as Home).
             r7/r9: a container carries NONE of them — notes, reimburse-
-            ments and receipts all live on the parts */}
-        {!multiPart &&
+            ments and receipts all live on the parts. #221: a default-
+            ledger row carries none either — read-only, no attachments */}
+        {!multiPart && !onDefaultLedger &&
           resolveTxDetailBlocks(space)
           .filter((entry) => !entry.hidden)
           .map((entry) => {
@@ -2028,7 +2044,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
 
         {/* r9: with no customizable blocks on a container, the door to
             their settings would steer nothing visible here */}
-        {!multiPart && (
+        {!multiPart && !onDefaultLedger && (
           <button
             data-testid="tx-detail-customize"
             onClick={() => void navigate({ to: '/tx-customize' })}
@@ -2040,8 +2056,10 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         )}
 
         {/* manual rows may leave again (user request); bank rows are the
-            bank's truth and only ever tombstone via their feed */}
-        {!tx.importRef && !tx.feedSpaceId && (
+            bank's truth and only ever tombstone via their feed. #221: a
+            default-ledger row leaves only with its ORIGIN (the link) or
+            by a counter-adjustment — never by hand */}
+        {!tx.importRef && !tx.feedSpaceId && !onDefaultLedger && (
           <button
             data-testid="tx-detail-delete"
             onClick={() => setConfirmDelete(true)}
@@ -2328,10 +2346,11 @@ function recurringCatConstraint(
  *  "Split transactions", not "Categories". */
 function CategoriesHeader({
   locked,
+  lockLabel,
   byRecurring,
   multiPart,
   onEdit,
-}: Readonly<{ locked: boolean; byRecurring?: boolean; multiPart?: boolean; onEdit: () => void }>) {
+}: Readonly<{ locked: boolean; lockLabel?: string; byRecurring?: boolean; multiPart?: boolean; onEdit: () => void }>) {
   const { t } = useLang();
   return (
     <div className="m-cap mt-5 mb-1 flex items-center justify-between px-1">
@@ -2349,7 +2368,7 @@ function CategoriesHeader({
       {locked && (
         <span className="flex items-center gap-1 text-[11px] text-ink-4" data-testid="tx-detail-cats-locked">
           <Icon name="lock-outline" size={12} />
-          {t('reimb.categoryLocked')}
+          {lockLabel ?? t('reimb.categoryLocked')}
         </span>
       )}
       {/* #200: on a container the Edit pencil is gone — Manage splits

@@ -260,6 +260,9 @@ export function MinaTutorial() {
           periodDay: 1,
           historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
         });
+        // #221: defaults exist from birth, this exit space included
+        const { ensureSpaceDefaultAccounts } = await import('@/application/defaultAccounts');
+        await ensureSpaceDefaultAccounts(store, repo, id);
         await setActiveSpace(id);
       } else if (!spaces.some((s) => s.id === spaceId)) {
         await setActiveSpace(spaces[0].id);

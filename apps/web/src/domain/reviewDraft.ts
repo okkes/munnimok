@@ -1,4 +1,4 @@
-import { UNCATEGORIZED_ID, autoSubFor, stampMovementSub } from './categories';
+import { UNCATEGORIZED_ID, autoSubFor, isMovementCat, stampMovementSub } from './categories';
 import { primaryCatId } from './splits';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
@@ -160,8 +160,10 @@ export function withCats(draft: ReviewDraft, entries: TxSplitCat[] | undefined):
 export const draftReady = (draft: ReviewDraft): boolean => {
   if (!draft.catId) return false;
   // R2 (typed-splits v2): a transfer strictly needs its tracked counter
-  // account — there is no bare exit anymore
-  if (draft.txType === 'transfer') return !!draft.linkedAccountId;
+  // account — except a MOVEMENT category (#221): Confirm links the
+  // space's default for its family in the same write, so a predicted
+  // "Cash withdraw" confirms in one tap
+  if (draft.txType === 'transfer') return !!draft.linkedAccountId || isMovementCat(draft.catId);
   // adjustments are corrections — not spending; same placeholder story.
   // ('funding' only serves unmigrated rows since the type retired.)
   if (draft.txType === 'funding' || draft.txType === 'adjustment') return true;

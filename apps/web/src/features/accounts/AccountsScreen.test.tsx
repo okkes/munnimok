@@ -443,6 +443,30 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('account-row-demo_save')).toBeNull());
   });
 
+  it('#221: a DEFAULT account offers no delete — and its balance edit leaves an adjustment row', async () => {
+    renderApp('/accounts');
+    // the demo space is born with its six defaults (eager mint)
+    fireEvent.click(await screen.findByTestId('account-row-defaultacct_saving_demo_space'));
+    await screen.findByTestId('acctedit-name');
+    expect(screen.queryByTestId('acctedit-delete')).toBeNull();
+
+    fireEvent.change(screen.getByTestId('acctedit-balance'), { target: { value: '25' } });
+    fireEvent.click(screen.getByTestId('acctedit-save'));
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      expect((await db.accounts.get('defaultacct_saving_demo_space'))?.balanceCents).toBe(2500);
+      const adjustment = await db.transactions
+        .filter((t) => t.accountId === 'defaultacct_saving_demo_space' && t.catId === 'balanceAdjustment')
+        .first();
+      // the delta, recorded with the adjustment category — the ledger
+      // stays coherent without a hand on it
+      expect(adjustment).toMatchObject({ amountCents: 2500, adjustment: 1, needsReview: 0, txType: 'adjustment' });
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
   it('imports a CAMT.053 file: preview, run, result, new account appears', async () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');

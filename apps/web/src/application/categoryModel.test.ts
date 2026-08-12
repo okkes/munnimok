@@ -69,8 +69,65 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
 
     expect((await store.get('transaction', 'interest1'))?.linkedAccountId).toBeUndefined();
     expect((await store.get('transaction', 'onpot1'))?.linkedAccountId).toBeUndefined();
-    // marker: the second run walks away
+    // #221: no marker — the fold runs every boot; idempotence comes from
+    // the rows being linked now
     expect(await migrateBareSpecialRows(store, repo)).toBe(0);
+  });
+
+  it('#221: bare transfer-family rows link too — the ATM pair onto the CASH wallet, plain transfer onto the bank default', async () => {
+    const { store, repo } = fresh();
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
+    await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
+    // the screenshot case: munni predicted Cash Withdraw, no counterparty
+    await repo.upsert('transaction', SPACE, 'atm1', {
+      accountId: 'main', date: '2026-07-10', amountCents: -100, currency: 'EUR',
+      merchant: 'Geldmaat', catId: 'cashWithdraw', txType: 'transfer', needsReview: 1,
+    });
+    await repo.upsert('transaction', SPACE, 'tout1', {
+      accountId: 'main', date: '2026-07-11', amountCents: -2500, currency: 'EUR',
+      merchant: 'Moved out', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+    });
+    await repo.upsert('transaction', SPACE, 'fund1', {
+      accountId: 'main', date: '2026-07-12', amountCents: -4000, currency: 'EUR',
+      merchant: 'To the pot', catId: 'fundingOut', txType: 'funding', needsReview: 0,
+    });
+
+    expect(await migrateBareSpecialRows(store, repo)).toBe(3);
+
+    const atm = await store.get('transaction', 'atm1');
+    expect(atm?.linkedAccountId).toBe(defaultAccountId(SPACE, 'cash'));
+    expect(atm?.needsReview).toBe(1); // healing is not reviewing
+    // the wallet's leg files by ITS counter's kind (the checking source)
+    const atmMirror = await store.get('transaction', atm!.transferPeerId!);
+    expect(atmMirror).toMatchObject({ accountId: defaultAccountId(SPACE, 'cash'), amountCents: 100, catId: 'transferIn' });
+    // the wallet's balance moved with the leg
+    expect((await store.get('account', defaultAccountId(SPACE, 'cash')))?.balanceCents).toBe(100);
+
+    expect((await store.get('transaction', 'tout1'))?.linkedAccountId).toBe(defaultAccountId(SPACE, 'transfer'));
+    // funding links its pot but mints NOTHING (#152: funding shows no rows)
+    const fund = await store.get('transaction', 'fund1');
+    expect(fund?.linkedAccountId).toBe(defaultAccountId(SPACE, 'funding'));
+    expect(fund?.transferPeerId).toBeUndefined();
+
+    // every-boot idempotence: nothing left to do
+    expect(await migrateBareSpecialRows(store, repo)).toBe(0);
+  });
+
+  it('#221: ensureSpaceDefaultAccounts mints all six, once', async () => {
+    const { store, repo } = fresh();
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
+    const { ensureSpaceDefaultAccounts } = await import('./defaultAccounts');
+    await ensureSpaceDefaultAccounts(store, repo, SPACE);
+    await ensureSpaceDefaultAccounts(store, repo, SPACE); // idempotent
+    const defaults = (await store.bySpace('account', SPACE)).filter((a) => a.deleted === 0 && a.defaultFor);
+    expect(defaults).toHaveLength(6);
+    const byFamily = new Map(defaults.map((a) => [a.defaultFor, a.type]));
+    expect(byFamily.get('saving')).toBe('savings');
+    expect(byFamily.get('debtPayment')).toBe('loan');
+    expect(byFamily.get('investment')).toBe('brokerage');
+    expect(byFamily.get('transfer')).toBe('checking');
+    expect(byFamily.get('cash')).toBe('cash');
+    expect(byFamily.get('funding')).toBe('funding');
   });
 
   it('migrates bare movement PARTS of a split through the part-mirror machinery', async () => {
