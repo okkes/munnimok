@@ -204,31 +204,33 @@ describe('counterparty account number on the detail screen', () => {
     db.close();
   };
 
-  it('an unknown counterparty IBAN shows as a bank fact; only a transfer kind edits it', async () => {
+  it('#220: an unknown counterparty IBAN is a read-only DETAILS fact — no transaction-level editor anywhere', async () => {
     renderApp('/home'); // seed first, then navigate via a fresh render
     await screen.findByTestId('screen-home');
     await seedTx('NL99ELDR0000000042', 'tx-cp1');
     cleanup();
     renderApp('/transactions/tx-cp1');
-    const row = (await screen.findByTestId('tx-detail-counterparty-edit')) as HTMLButtonElement;
+    const row = (await screen.findByTestId('tx-detail-original-counter')) as HTMLButtonElement;
     expect(row.textContent).toContain('NL99ELDR0000000042');
-    // a standard expense keeps the row read-only (user simplification:
-    // counterparty is a transfer concept — the IBAN stays visible)
+    // bank metadata: unrecognized counterparties are plain facts
     expect(row.disabled).toBe(true);
-    // #133 D: no kind row — becoming a transfer happens through the
-    // category flow's counterparty ask, covered elsewhere
+    // the old transaction-level counter row/editor is gone (#220)
+    expect(screen.queryByTestId('tx-detail-counterparty-row')).toBeNull();
+    expect(screen.queryByTestId('tx-detail-counterparty-edit')).toBeNull();
     expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull();
   }, 15_000);
 
-  it('a counterparty matching an own account becomes a door with account info', async () => {
+  it('#220: a counterparty matching an own account stays in DETAILS — tappable for the account info, never an editor', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
     // demo_save's IBAN, spaced differently — the join normalizes
     await seedTx('NL00DEMO0000000200', 'tx-cp2');
     cleanup();
     renderApp('/transactions/tx-cp2');
-    const row = await screen.findByTestId('tx-detail-counterparty-row');
-    expect(row.textContent).toContain('Demo Savings');
+    // the IBAN paints first; the account match resolves async
+    const row = (await screen.findByTestId('tx-detail-original-counter')) as HTMLButtonElement;
+    await waitFor(() => expect(screen.getByTestId('tx-detail-original-counter').textContent).toContain('Demo Savings'));
+    expect(row.disabled).toBe(false);
 
     fireEvent.click(row);
     const sheet = await screen.findByTestId('counterparty-sheet');
@@ -259,6 +261,9 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Set aside');
     });
+    // #138 (user): every category row carries its money — the single
+    // category spans the whole transaction
+    expect(screen.getByTestId('tx-detail-category-row').textContent).toMatch(/52\.40/);
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
@@ -321,9 +326,12 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await screen.findByTestId('counter-default');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
+    // #220: no transaction-level counter row exists anymore — the bare
+    // story reads from the category row (no "→ account" line under it)
     await waitFor(() => {
-      expect(screen.getByTestId('tx-detail-counter-add').textContent).toContain('No counter account');
+      expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Repaid');
     });
+    expect(screen.queryByTestId('tx-detail-cat-counter-0')).toBeNull();
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
@@ -680,6 +688,40 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
+
+  it('#197 r2 (user: "include the other side too"): a split CREDIT funds per PART — the link carries creditPartId', async () => {
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-reimb-cpart'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'csplit', {
+      accountId: 'demo_main', date: '2026-07-02', amountCents: 8000, currency: 'EUR',
+      merchant: 'Mixed refund', catId: 'reimburse', txType: 'income', needsReview: 0,
+      // #211: the explicit cats null marks these as PARTS for the boot fold
+      cats: null as never,
+      splits: [
+        { id: 'cs1', catId: 'reimburse', amountCents: 3000 },
+        { id: 'cs2', catId: 'incomeOther', amountCents: 5000 },
+      ],
+    });
+
+    renderApp('/transactions/dm6'); // −€52.40 groceries expense
+    fireEvent.click(await screen.findByTestId('reimb-add'));
+    const picker = await screen.findByTestId('reimb-link-list');
+    // the split credit's PARTS stand in for it — the root has no row
+    await waitFor(() => expect(screen.queryAllByTestId('reimb-pick-csplit-part-0').length).toBeGreaterThan(0), {
+      timeout: 5000,
+    });
+    expect(picker.querySelector('[data-testid="reimb-pick-csplit"]')).toBeNull();
+    fireEvent.click(screen.getAllByTestId('reimb-pick-csplit-part-0').at(-1)!.querySelector('button')!);
+    // the prefill is what THAT part can still fund (its reimb earmark)
+    const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
+    expect(amountInput.value).toBe('30,00');
+    fireEvent.click(screen.getByTestId('reimb-save'));
+    await waitFor(async () => {
+      const row = await db.transactions.get('dm6');
+      expect(row?.reimbursements).toEqual([{ txId: 'csplit', amountCents: 3000, creditPartId: 'cs1' }]);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
 });
 
 describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
@@ -1011,9 +1053,9 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(() => expect(screen.getByTestId('tx-part-amount').textContent).toContain('40.00'));
 
     // r7: NO kind restriction — pulling 'saving' onto this part lands
-    // even though the Device plan is saving too (the category card opens
-    // the part-scoped whole-transaction editor)
-    fireEvent.click(screen.getByTestId('tx-part-category'));
+    // even though the Device plan is saving too (#217: the category card
+    // is per-entry ROWS now; any row opens the part-scoped editor)
+    fireEvent.click(screen.getByTestId('tx-part-category-row'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
@@ -1037,7 +1079,7 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     // r6/r7: the part spreads its own €40.00 across TWO categories in
     // the same editor — the pill puts the rest on the new row, and the
     // write carries the cats spread
-    fireEvent.click(screen.getByTestId('tx-part-category'));
+    fireEvent.click(screen.getByTestId('tx-part-category-row'));
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-add'));
     fireEvent.click(await screen.findByTestId('part-cat-1'));
@@ -1057,7 +1099,11 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       ]);
       expect(row?.splits?.[0]?.catId).toBe('telecom');
     }, { timeout: 5000 });
-    await waitFor(() => expect(screen.getByTestId('tx-part-category').textContent).toContain('·'));
+    // #217/#138 (user): the part card lists EACH category as its own
+    // row, value included — no joined summary anymore
+    await waitFor(() => expect(screen.getByTestId('tx-part-cat-1').textContent).toContain('Telecom'));
+    expect(screen.getByTestId('tx-part-category-row').textContent).toMatch(/15\.00/);
+    expect(screen.getByTestId('tx-part-cat-1').textContent).toMatch(/25\.00/);
 
     // r7: the part links a recurring cost right here — detail parity
     fireEvent.click(screen.getByTestId('tx-part-rec'));

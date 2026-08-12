@@ -109,7 +109,10 @@ export function counterTypesForFamily(family: TxType): readonly AccountType[] | 
     case 'saving':
       return ['savings'];
     case 'debtPayment':
-      return ['loan', 'mortgage'];
+      // #218 (user): a credit card can take a debt payment too — the
+      // one counter kind that belongs to TWO families (transfer is the
+      // default; the counter-narrowed picker offers the debt reading)
+      return ['loan', 'mortgage', 'credit'];
     case 'investment':
       return ['brokerage'];
     case 'funding':
@@ -127,6 +130,18 @@ export function counterTypesFor(catId: string): readonly AccountType[] | undefin
   if (catId === 'cashWithdraw' || catId === 'cashDeposit') return ['cash'];
   const family = specialCatType(catId);
   return family ? counterTypesForFamily(family) : undefined;
+}
+
+/**
+ * #218 (user): with a counterparty already picked, the category list
+ * narrows to what that counter's kind can mean — usually one category,
+ * a credit card two (transfer OR debt payment). To pick anything else
+ * the counterparty detaches first. The set is the unstamped row's
+ * matrix cell filtered by the counter's own column.
+ */
+export function movementCatsForCounter(counterType: AccountType, direction: 'debit' | 'credit'): ReadonlySet<string> {
+  const cell = allowedSpecialCats(undefined, direction);
+  return new Set([...cell].filter((catId) => counterTypesFor(catId)?.includes(counterType)));
 }
 
 /** category supports a type only if it's one of its declared txTypes */

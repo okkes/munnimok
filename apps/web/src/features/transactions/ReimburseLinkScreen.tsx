@@ -7,7 +7,7 @@ import { useLang } from '@/i18n';
 import { fmtCents, parseCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { filterTxs } from '@/domain/txFilter';
-import { clampReimbursement, creditRemainingCents, givenCents, remainingCents } from '@/domain/reimbursement';
+import { clampReimbursement, creditPartGivenCents, creditRemainingCents, givenCents, remainingCents } from '@/domain/reimbursement';
 import { reimbEarmarkCents, suggestCounterparts } from '@/domain/reimburseMatch';
 import { useReimburseLinks } from './useReimburseLinks';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -30,19 +30,24 @@ const partOpenCents = (row: SpaceTx, part: TxSplit): number =>
       (row.reimbursements ?? []).filter((r) => r.partId === part.id).reduce((sum, r) => sum + r.amountCents, 0),
   );
 
-/** #197: a split expense offers its PARTS to link against — the root
- *  container is never a target. Module-level for S3776. */
+/** #197 (both directions): a split row offers its PARTS to link against
+ *  — the root container is never a target. The caller supplies the
+ *  side's own open-value math. Module-level for S3776. */
 function ReimbPartRows({
   row,
   testId,
   hint,
   money,
+  openOf,
   onPick,
 }: Readonly<{
   row: SpaceTx;
   testId: string;
   hint?: string;
   money: (cents: number) => string;
+  /** the part's linkable value on THIS side (expense: still expected;
+   *  credit: still giveable) */
+  openOf: (row: SpaceTx, part: TxSplit) => number;
   onPick: (row: SpaceTx, part: TxSplit, openCents: number) => void;
 }>) {
   const parts = (row.splits ?? []).map((part, idx) => ({ part, idx })).filter((e) => e.part.catId !== REIMBURSED_ID);
@@ -50,7 +55,7 @@ function ReimbPartRows({
   return (
     <div key={`${testId}-${row.id}`}>
       {parts.map((e, ordinal) => {
-        const open = partOpenCents(row, e.part);
+        const open = openOf(row, e.part);
         if (open <= 0) return null;
         return (
           <div key={e.part.id ?? e.idx} data-testid={`${testId}-${row.id}-part-${e.idx}`}>
@@ -90,9 +95,10 @@ export function ReimburseLinkScreen() {
   const { link, giveableCents } = useReimburseLinks(allTxs);
 
   const [query, setQuery] = useState('');
-  // #197: picking a PART of a split expense carries its id — the link
-  // lands on that part, never on the root container
-  const [chosen, setChosen] = useState<{ row: SpaceTx; partId?: string } | null>(null);
+  // #197: picking a PART carries its id — the link lands on that part,
+  // never on the root container (partId = expense side, creditPartId =
+  // the split credit's funding part)
+  const [chosen, setChosen] = useState<{ row: SpaceTx; partId?: string; creditPartId?: string } | null>(null);
   const [amount, setAmount] = useState('');
 
   // the search bar rides along: it scrolls away with the content and a
@@ -163,23 +169,41 @@ export function ReimburseLinkScreen() {
     setAmount(toText(prefill));
   };
 
-  // #197: a part pick — the prefill is the PART's open value, clamped
-  // by what this credit can still give
+  // #197: an EXPENSE part pick (credit anchor) — the prefill is the
+  // part's open value, clamped by what this credit can still give
   const pickPart = (row: SpaceTx, part: TxSplit, openCents: number) => {
     const prefill = clampReimbursement(row, giveableCents(tx!), Math.min(openCents, giveableCents(tx!)) || openCents);
     setChosen({ row, partId: part.id });
     setAmount(toText(prefill));
   };
 
+  // #197 (the other side): a CREDIT part pick (expense anchor) — the
+  // prefill is what that part can still fund, clamped by the expense
+  const pickCreditPart = (row: SpaceTx, part: TxSplit, openCents: number) => {
+    const prefill = clampReimbursement(tx!, openCents, Math.min(openCents, remainingCents(tx!)) || openCents);
+    setChosen({ row, creditPartId: part.id });
+    setAmount(toText(prefill));
+  };
+
+  // #197: what ONE part of a split credit can still give — its own
+  // magnitude minus the links naming it, never more than the whole
+  // credit has left
+  const creditPartOpen = (row: SpaceTx, part: TxSplit): number =>
+    Math.min(
+      giveableCents(row),
+      Math.max(0, Math.abs(part.amountCents) - (part.id ? creditPartGivenCents(allTxs ?? [], row.id, part.id) : 0)),
+    );
+
   const confirm = () => {
     if (!tx || !chosen) return;
     const cents = parseCents(amount) ?? 0;
     if (cents > 0) {
       // the part target lives on the EXPENSE side's split — from the
-      // expense anchor it rides the ?part param, from the credit anchor
-      // the picked part itself (#197)
-      if (anchorIsExpense) link(tx, chosen.row, cents, partId);
-      else link(chosen.row, tx, cents, chosen.partId);
+      // expense anchor it rides the ?part param; the CREDIT part rides
+      // the pick (expense anchor) or the ?part param (credit anchor's
+      // own part page, #197)
+      if (anchorIsExpense) link(tx, chosen.row, cents, partId, chosen.creditPartId);
+      else link(chosen.row, tx, cents, chosen.partId, partId);
     }
     setChosen(null);
     // REPLACE, not back: pressing back on the detail afterwards must not
@@ -188,11 +212,11 @@ export function ReimburseLinkScreen() {
   };
 
   const rowFor = (row: SpaceTx, testId: string, hint?: string) => {
-    // #197: a split expense in the credit anchor's list offers its
-    // PARTS, never the root (the expense anchor lists credits — those
-    // link as wholes, credit-side parts aren't linkable entities)
+    // #197 (both directions): a split row offers its PARTS, never the
+    // root — expenses their still-expected parts, credits their
+    // still-giveable ones
     const rowParts = (row.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-    if (!anchorIsExpense && rowParts.length > 1) {
+    if (rowParts.length > 1) {
       return (
         <ReimbPartRows
           key={`${testId}-${row.id}`}
@@ -200,7 +224,8 @@ export function ReimburseLinkScreen() {
           testId={testId}
           hint={hint}
           money={(cents) => fmtCents(cents, row.currency, lang)}
-          onPick={pickPart}
+          openOf={anchorIsExpense ? creditPartOpen : partOpenCents}
+          onPick={anchorIsExpense ? pickCreditPart : pickPart}
         />
       );
     }

@@ -196,6 +196,9 @@ export interface TxReimbursement {
   /** which PART of a split expense it pays back (#126 r5) — absent =
    *  the whole transaction; container math is unchanged either way */
   partId?: string;
+  /** #197: which PART of a split CREDIT funds it — absent = the whole
+   *  credit; whole-credit math is unchanged either way */
+  creditPartId?: string;
 }
 
 export interface TransactionRow extends SyncEnvelope {

@@ -12,10 +12,9 @@ import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withCats, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
-import { Collapse } from '@/ui/Collapse';
-import { accountStamp, counterTypesForFamily, familyForCounter, movementCatFor } from '@/domain/txType';
+import { accountStamp, counterTypesForFamily } from '@/domain/txType';
 import type { DefaultFamily } from '@/application/defaultAccounts';
-import { normalizeIban } from '@/domain/feedIds';
+import { normalizeIban, partMirrorSourceId } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
 import { hapticNotify } from '@/lib/platform';
 import { TxRow } from '@/ui/TxRow';
@@ -163,44 +162,10 @@ function stageAsSettlement(draft: ReviewDraft, cats: ReturnType<typeof useCatego
   return withCategory(withType({ ...draft, linkedAccountId: undefined }, 'income', cats), RECEIVED_REIMBURSE_ID, cats);
 }
 
-/** #133 C: the kind row is GONE — categories carry the meaning. What
- *  remains is the counterparty as a fact row, easing in only when the
- *  draft actually links an account (S3776: out of the main screen). */
-function CardCounterRow({
-  show,
-  counterName,
-  originalIban,
-  onCounter,
-}: Readonly<{
-  show: boolean;
-  counterName: string | undefined;
-  /** #152 r2: the bank's counterparty, kept visible under a re-pick */
-  originalIban?: string;
-  onCounter: () => void;
-}>) {
-  const { t } = useLang();
-  return (
-    <Collapse open={show}>
-      <button
-        data-testid="review-counter-row"
-        onClick={onCounter}
-        className="m-tap m-fade flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-      >
-        <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate">{counterName ?? t('tx.counterNone')}</span>
-          {originalIban && (
-            <span className="block truncate font-mono text-[11px] text-ink-4" data-testid="review-counter-original">
-              {originalIban}
-            </span>
-          )}
-        </span>
-        <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
-        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-      </button>
-    </Collapse>
-  );
-}
+// CardCounterRow retired (#219, user): the counterparty is a CATEGORY
+// fact now — the card's category rows carry "→ account"; the raw bank
+// counterparty is transaction metadata, shown on the detail's Details
+// block. No transaction-level counter row, no transaction-level editing.
 
 /** the part a numbered picker/sheet is aimed at (S3776: out of the deck) */
 const partAt = (parts: readonly TxSplit[], index: number | null): TxSplit | undefined =>
@@ -240,43 +205,9 @@ function playDeckFlip(
 const multiPartSplits = (draft: ReviewDraft | null): boolean =>
   (draft?.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1;
 
-/** every display fact of the ACTIVE deck card, flat (S3776: the deck's
- *  JSX carries no branching of its own) */
-function deckActiveFaces(
-  active: TxSplit,
-  rowType: TxType,
-  accounts: readonly { id: string; name: string }[] | undefined,
-  activeEvents: readonly { id: string; name: string; icon?: string }[],
-  cats: ReturnType<typeof useCategories>,
-  t: ReturnType<typeof useLang>['t'],
-): {
-  transferPart: boolean;
-  activeKindSub: string;
-  activeEventFace: string;
-  /** the part's categories joined — present only when spread (r6) */
-  activeSpread?: string;
-  catRowFace: string;
-  catRowSub?: string;
-} {
-  // transfer-PRESENTING only with a real counterparty — a ◆ special
-  // part (saving/debt/invest without a link) reads as its own standard
-  // story, not as a bare Transfer.
-  const transferPart = !!active.linkedAccountId && !!active.txType && kindOf(active.txType) === 'transfer';
-  const counterName = accounts?.find((a) => a.id === active.linkedAccountId)?.name ?? t('tx.counterNone');
-  const activeEvent = activeEvents.find((event) => event.id === active.eventId);
-  const activeCat = cats.byId(active.catId);
-  const activeSpread = active.cats?.length
-    ? active.cats.map((entry) => catName(cats.byId(entry.catId), t)).join(' · ')
-    : undefined;
-  return {
-    transferPart,
-    activeKindSub: transferPart ? counterName : t(`tx.type.${active.txType ?? rowType}`),
-    activeEventFace: activeEvent?.name ?? t('events.linkNone'),
-    activeSpread,
-    catRowFace: activeSpread ?? catName(activeCat, t),
-    catRowSub: !activeSpread && activeCat.parentId ? catName(cats.byId(activeCat.parentId), t) : undefined,
-  };
-}
+// deckActiveFaces retired (#217/#220): the expanded part renders one
+// row PER category entry now — the summary faces and the part-level
+// counter/kind sub have no reader left.
 
 /** one slice's story lines (#126): the typed part's label/own type and
  *  a spread part's category list — shared by the card summary region
@@ -464,9 +395,8 @@ export function ReviewPartDeck({
   const cats = useCategories();
   const accounts = useSpaceAccounts();
   const [expanded, setExpanded] = useState(0);
-  // #133 r4: the ◆ asks live INSIDE the category editor now — this
-  // only serves the expanded part's existing-link re-pick (fact row)
-  const [counterFor, setCounterFor] = useState<number | null>(null);
+  // #220: no part-level counter re-pick anymore — the category editor's
+  // entries own the links
   const [eventFor, setEventFor] = useState<number | null>(null);
   // r7: which part is linking a recurring cost
   const [recFor, setRecFor] = useState<number | null>(null);
@@ -512,11 +442,7 @@ export function ReviewPartDeck({
   };
 
   const active = parts[openIdx];
-  const activeCat = cats.byId(active.catId);
-  const activeColor = activeCat.color ?? cats.byId(activeCat.parentId ?? '').color;
-  // every face of the active card computed flat in one module helper —
-  // the deck's own JSX carries no branching (S3776)
-  const faces = deckActiveFaces(active, rowType, accounts, activeEvents, cats, t);
+  const activeEventFace = activeEvents.find((event) => event.id === active.eventId)?.name ?? t('events.linkNone');
   const activeRecFace = recurrings.find((rec) => rec.id === active.recurringId)?.name ?? t('recurring.linkNone');
   const peeking = parts.map((slice, i) => ({ slice, i })).filter(({ i }) => i !== openIdx);
   const deckDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
@@ -614,37 +540,47 @@ export function ReviewPartDeck({
               {fmtCents(active.amountCents, tx.currency, lang)}
             </span>
           </div>
-          {/* #133 C: the Type row is gone — a linked part shows its
-              counterparty as a fact row instead */}
-          {!!active.linkedAccountId && (
-            <button
-              data-testid={`deck-counter-${openIdx}`}
-              onClick={() => setCounterFor(openIdx)}
-              className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
-            >
-              <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-              <span className="min-w-0 flex-1 truncate">{faces.activeKindSub}</span>
-              <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
-              <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-            </button>
-          )}
-          {/* the category row IS the door to the whole-transaction
-              category editor, scoped to this part (r7: same gears —
-              multiple categories, exact euros or percentages) */}
-          <button
-            data-testid={`deck-cat-${openIdx}`}
-            onClick={() => setSpreadFor(openIdx)}
-            className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] font-medium text-ink"
-          >
-            <Icon name={activeCat.icon} size={18} color={activeColor ?? 'var(--m-ink-3)'} />
-            <span className="min-w-0 flex-1 truncate">
-              {faces.catRowFace}
-              {faces.catRowSub && (
-                <span className="text-[12px] font-normal text-ink-4"> · {faces.catRowSub}</span>
-              )}
-            </span>
-            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-          </button>
+          {/* #217 (user): a spread part shows EACH category as its own
+              row — same face as the unsplit card, value and "→ account"
+              included; every row doors into the same editor. #220: no
+              part-level counter row — the entries carry the links. */}
+          {(active.cats?.length ? active.cats : [null]).map((entry, entryIdx) => {
+            const rowCat = cats.byId(entry?.catId ?? active.catId);
+            const rowColor = rowCat.color ?? cats.byId(rowCat.parentId ?? '').color;
+            const rowCounter = accounts?.find(
+              (a) => a.id === (entry ? entry.linkedAccountId : active.linkedAccountId),
+            )?.name;
+            return (
+              <button
+                key={entry ? `${entry.catId}-${entryIdx}` : 'single'}
+                data-testid={entryIdx === 0 ? `deck-cat-${openIdx}` : `deck-cat-${openIdx}-${entryIdx}`}
+                onClick={() => setSpreadFor(openIdx)}
+                className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] font-medium text-ink"
+              >
+                <Icon name={rowCat.icon} size={18} color={rowColor ?? 'var(--m-ink-3)'} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">
+                    {catName(rowCat, t)}
+                    {!entry && rowCat.parentId && (
+                      <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(rowCat.parentId), t)}</span>
+                    )}
+                  </span>
+                  {rowCounter && (
+                    <span
+                      className="block truncate text-[11px] font-normal text-ink-4"
+                      data-testid={`deck-cat-counter-${openIdx}-${entryIdx}`}
+                    >
+                      → {rowCounter}
+                    </span>
+                  )}
+                </span>
+                <span className="m-num text-[12px] font-normal text-ink-2">
+                  {fmtCents(entry ? entry.amountCents : active.amountCents, tx.currency, lang)}
+                </span>
+                <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+              </button>
+            );
+          })}
           {/* r7: parts link recurring costs, exactly like the card does */}
           <button
             data-testid={`deck-rec-${openIdx}`}
@@ -662,7 +598,7 @@ export function ReviewPartDeck({
             className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
           >
             <Icon name="party-popper" size={18} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate">{faces.activeEventFace}</span>
+            <span className="min-w-0 flex-1 truncate">{activeEventFace}</span>
             <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
             <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
           </button>
@@ -676,25 +612,8 @@ export function ReviewPartDeck({
         </p>
       )}
 
-      {/* the expanded part's counterparty RE-PICK (#133 r4: the ◆ asks
-          moved inside the category editor) — #133 r5 bijection: the
-          picked account's kind names the family AND its movement sub */}
-      <CounterpartySheet
-        open={counterFor !== null}
-        onOpenChange={(next) => {
-          if (!next) setCounterFor(null);
-        }}
-        excludeAccountId={tx.accountId}
-        currentLinkedId={partAt(parts, counterFor)?.linkedAccountId}
-        onChoose={(account) => {
-          if (counterFor === null) return;
-          patchPart(counterFor, {
-            txType: familyForCounter(account.type),
-            linkedAccountId: account.id,
-            catId: movementCatFor(account.type, tx.amountCents),
-          });
-        }}
-      />
+      {/* #220 (user): the part-level counterparty re-pick door is gone —
+          the entries inside the category editor own the links now */}
       {/* the expanded part's event — per-part membership (v2 model) */}
       <Sheet
         open={eventFor !== null}
@@ -792,6 +711,10 @@ export function ReviewPartDeck({
         allowedCatIds={allowedCatIds}
         excludeAccountId={tx.accountId}
         askDisabled={lockedKind}
+        mirrorBaseId={(() => {
+          const partId = partAt(parts, spreadFor)?.id;
+          return partId ? partMirrorSourceId(tx.id, partId) : undefined;
+        })()}
         onApply={(entries) => {
           if (spreadFor !== null) patchPart(spreadFor, partCatsApplyPatch(partAt(parts, spreadFor), entries));
         }}
@@ -1447,11 +1370,12 @@ export function ReviewScreen() {
   /** #133 r4: the cats EDITOR's single entry — its counterparty was
    *  already answered inside the editor (or deliberately left bare), so
    *  nothing asks afterwards; a linked entry stages its link at the row
-   *  level (a single partition keeps the whole-row story) */
+   *  level. #218: a BARE entry now CLEARS the row link too — the editor
+   *  owns the whole story, and detach must actually detach. */
   const stageSingleEntry = (entry: TxSplitCat) => {
     if (!draft) return;
     const next = { ...withCategory(withSplits(draft, undefined), entry.catId, cats), cats: settledCatsFor(entry.catId) };
-    setStagedDraft(entry.linkedAccountId ? { ...next, linkedAccountId: entry.linkedAccountId } : next);
+    setStagedDraft({ ...next, linkedAccountId: entry.linkedAccountId });
   };
 
   const confirm = async () => {
@@ -1589,30 +1513,12 @@ export function ReviewScreen() {
               </div>
               <div className="mx-4 h-px bg-line-2" />
 
-              {/* kind first (user simplification): WHAT this transaction
-                  is, then the counterparty it involves — the split sheet
-                  is pure categories now. Multi-part (#126 r3): these
-                  rows vanish — each PART carries its own type, category
-                  and event on the deck; the main card is just the money. */}
+              {/* categories first (#219, user): the counterparty is a
+                  CATEGORY fact — the rows below carry "→ account"; no
+                  transaction-level counter row on the card anymore.
+                  Multi-part (#126 r3): these rows vanish — each PART
+                  carries its own story on the deck. */}
               <div data-testid="review-cats">
-                {!multiPart && (
-                  <CardCounterRow
-                    show={!!draft?.linkedAccountId}
-                    counterName={draftCounter?.name}
-                    originalIban={
-                      tx.counterIban && draft?.linkedAccountId && ownCounter?.id !== draft.linkedAccountId
-                        ? tx.counterIban
-                        : undefined
-                    }
-                    onCounter={() => {
-                      // the generic re-pick door: every kind listed, the
-                      // pick files by its kind (r5 bijection)
-                      counterFallback.current = null;
-                      setCounterFamily(null);
-                      setCounterOpen(true);
-                    }}
-                  />
-                )}
                 <CardCategoryRows
                   draft={draft}
                   fallbackCat={cat}
@@ -1649,19 +1555,10 @@ export function ReviewScreen() {
                 )}
               </div>
 
-              {/* contextual offers keep their chip shape under the rows */}
-              {ownCounter && draft?.linkedAccountId === ownCounter.id && (
-                <div className="px-4 pb-3">
-                  <Chip
-                    testId="review-own-transfer"
-                    selected
-                    onClick={() => setStagedDraft(withLinkedAccount(draft, null, cats))}
-                  >
-                    <Icon name="swap-horizontal" size={13} />
-                    {t('review.ownTransfer', { name: ownCounter.name })}
-                  </Chip>
-                </div>
-              )}
+              {/* contextual offers keep their chip shape under the rows.
+                  #219: the green "between your own accounts" chip is gone
+                  — the category row already names the link, and detaching
+                  lives in the category editor's ask (#218) */}
               {settleMatch && draft && (
                 <div className="px-4 pb-3">
                   <Chip
@@ -1780,6 +1677,7 @@ export function ReviewScreen() {
           includePct
           excludeAccountId={tx.accountId}
           askDisabled={!!ownStamp}
+          mirrorBaseId={tx.id}
           onApply={(entries) => {
             if (entries.length === 1) {
               stageSingleEntry(entries[0]);

@@ -29,26 +29,24 @@ import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType 
 import { primaryCatId } from '@/domain/splits';
 import { scaleCatsTo, scaleSplitsTo } from '@/domain/txSlices';
 import { ReviewPartDeck } from '@/features/review/ReviewScreen';
-import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
+import { mirrorTxId, normalizeIban, partMirrorSourceId } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { CatsSheet, partCatsApplyPatch } from './PartCatsSheet';
 import { TxFormSheet } from './TxFormSheet';
-import { CounterpartySheet } from './TxKindSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf } from '@/domain/txKind';
-import type { TxKind } from '@/domain/txKind';
 import { mintMirrorForExistingLink, planCatEntryMirrors, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { pairWithExistingRow } from '@/application/counterPair';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
-import { accountStamp, applyTypeChange, familyForCounter, movementCatFor } from '@/domain/txType';
+import { accountStamp } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
-import type { AccountRow, AccountType, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -69,6 +67,11 @@ function sliceCounterName(
   const counterId = slice ? slice.linkedAccountId : tx.linkedAccountId;
   return counterId ? accounts?.find((a) => a.id === counterId)?.name : undefined;
 }
+
+/** #138: every category row carries its money — the single category
+ *  spans the whole transaction (S3776: out of the map callback) */
+const sliceRowAmountCents = (slice: { amountCents: number } | null, tx: { amountCents: number }): number =>
+  slice ? slice.amountCents : Math.abs(tx.amountCents);
 
 /** the categories block's rows: one per slice (or the single category).
  *  A single category opens the unified editor; on a container the rows
@@ -143,7 +146,9 @@ function CategorySlices({
               )}
             </span>
             {i === 0 && tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
-            {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
+            <span className="m-num text-[13px] text-ink-2">
+              {fmtCents(sliceRowAmountCents(slice, tx), tx.currency, lang)}
+            </span>
             {openPartId && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
           </button>
         );
@@ -153,11 +158,26 @@ function CategorySlices({
 }
 
 /** the DETAILS block: the facts underneath the user's edits — the
- *  original amount (reimbursements shrank it), the bank's original
+ *  original amount (reimbursements shrank it), the bank's counterparty
+ *  (#220: ALWAYS shown here, read-only metadata — a tap opens the
+ *  matched account's info sheet, never an editor), the bank's original
  *  title (renamed), and the raw bank data */
-function DetailFacts({ tx, givenOut, originalCounter }: Readonly<{ tx: SpaceTx; givenOut: number; originalCounter?: string }>) {
+function DetailFacts({
+  tx,
+  givenOut,
+  counterAccountName,
+  onOpenCounterAccount,
+}: Readonly<{
+  tx: SpaceTx;
+  givenOut: number;
+  /** the space account the bank's counter-IBAN resolves to, if any */
+  counterAccountName?: string;
+  /** absent = the plain-metadata rendering (part pages) */
+  onOpenCounterAccount?: () => void;
+}>) {
   const { t, lang } = useLang();
-  if (!(totalReimbursedCents(tx) > 0 || givenOut > 0 || tx.titleOverride || tx.description || originalCounter)) return null;
+  if (!(totalReimbursedCents(tx) > 0 || givenOut > 0 || tx.titleOverride || tx.description || tx.counterIban)) return null;
+  const counterFace = counterAccountName ?? tx.counterIban;
   return (
     <>
       <div className="m-cap mt-5 mb-1 px-1">{t('tx.detailsSection')}</div>
@@ -171,16 +191,25 @@ function DetailFacts({ tx, givenOut, originalCounter }: Readonly<{ tx: SpaceTx; 
             </span>
           </div>
         )}
-        {/* #152 r2: the bank's counterparty stays visible after the user
-            pointed the row at a different account */}
-        {originalCounter && (
-          <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3 text-[14px] last:border-0">
+        {/* #220 (user): the counterparty the BANK named, always here as
+            metadata; recognizable ones open their account info sheet */}
+        {tx.counterIban && (
+          <button
+            data-testid="tx-detail-original-counter"
+            disabled={!counterAccountName || !onOpenCounterAccount}
+            onClick={onOpenCounterAccount}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left text-[14px] last:border-0"
+          >
             <Icon name="swap-horizontal" size={18} color="var(--m-ink-3)" />
-            <span className="shrink-0 text-ink-3">{t('tx.originalCounterparty')}</span>
-            <span className="m-num min-w-0 flex-1 truncate text-right font-mono text-[12px] text-ink" data-testid="tx-detail-original-counter">
-              {originalCounter}
+            <span className="shrink-0 text-ink-3">{t('tx.counterparty')}</span>
+            <span className="m-num min-w-0 flex-1 truncate text-right text-ink">
+              <span className={counterAccountName ? 'text-accent-deep' : 'font-mono text-[12px]'}>{counterFace}</span>
+              {counterAccountName && (
+                <span className="block truncate font-mono text-[11px] text-ink-4">{tx.counterIban}</span>
+              )}
             </span>
-          </div>
+            {counterAccountName && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
+          </button>
         )}
         {!!tx.titleOverride && (
           <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3 text-[14px] last:border-0">
@@ -504,43 +533,11 @@ function RenameTitleSheet({
   );
 }
 
-/** the container's type + counterparty rows — gone the moment a real
- *  split exists (#126 r4: the parts carry those). Module-level for
- *  S3776: the condition lives here, not in the screen. */
-function ContainerTypeRows({
-  hidden,
-  kind,
-  counterIban,
-  counterAccountName,
-  linkedAccountName,
-  onOpenAccount,
-  onEditCounter,
-}: Readonly<{
-  hidden: boolean;
-  kind: TxKind;
-  counterIban: string | undefined;
-  counterAccountName: string | undefined;
-  linkedAccountName: string | undefined;
-  onOpenAccount: () => void;
-  onEditCounter: () => void;
-}>) {
-  if (hidden) return null;
-  // #133 D: the kind row is gone — the counterparty stays as the one
-  // account-level fact (bank counterparty, or the linked own account)
-  return (
-    <>
-      <div className="mx-4 h-px bg-line-2" />
-      <CounterpartyRow
-        counterIban={counterIban}
-        counterAccountName={counterAccountName}
-        linkedAccountName={linkedAccountName}
-        editable={kind === 'transfer'}
-        onOpenAccount={onOpenAccount}
-        onEdit={onEditCounter}
-      />
-    </>
-  );
-}
+// ContainerTypeRows + CounterpartyRow retired (#220, user): the
+// transaction-level counterparty row modified the link — that story is
+// category-level now (the entries carry it, edited inside the category
+// editor). The bank's counterparty lives on the Details block as
+// read-only metadata, interactable only to VIEW a matched account.
 
 /** which split door the detail shows (#126 r4): the visible Split row
  *  on a whole transaction, Manage splits on a split one, nothing while
@@ -617,11 +614,6 @@ const splitBulkTargets = (allTxs: SpaceTx[] | undefined, tx: SpaceTx, source: re
 /** shared shape of the part page's counter plumbing (S3776: the sheet
  *  callback lives at module level). #133 r4: the ◆ asks moved INSIDE
  *  the category editor — this only serves the existing-link re-pick. */
-interface PartAskDeps {
-  part: TxSplit;
-  amountCents: number;
-  patchPart: (patch: Partial<TxSplit>) => void;
-}
 
 /** #211: ONE category on a whole row rewrites its partition — a spread
  *  clears (or, settled, re-forms around the pick); legacy splits clear.
@@ -646,17 +638,8 @@ function singleCatPartitionFields(
   };
 }
 
-/** the part page's counterparty RE-PICK (the fact row's door — #133 r4
- *  moved the ◆ asks inside the category editor): #133 r5 bijection —
- *  the picked account's KIND names the family and its movement sub; a
- *  part already wearing that exact sub keeps it (no-op write). */
-function choosePartCounter(deps: PartAskDeps, picked: { id: string; type: AccountType }): void {
-  deps.patchPart({
-    txType: familyForCounter(picked.type),
-    linkedAccountId: picked.id,
-    catId: movementCatFor(picked.type, deps.amountCents),
-  });
-}
+// choosePartCounter retired (#220, user): part-level counterparty
+// modification is gone — the category editor's entries own the links.
 
 /** the OTHER leg's side of a release — its own row clears in the same
  *  write. The peer is fetched from the STORE when the live snapshot
@@ -677,49 +660,9 @@ async function releasePeerLeg(
   if (peer) await writeTxTransform(repo, peer, { transferPeerId: null as never });
 }
 
-/** counter pick, bare label and kind pick all write through the same
- *  coherence rules (arc 2: the locked family sub files by sign); a
- *  peered leg whose link moves away releases its old mirror first —
- *  a stale transferPeerId would keep collapsing the pair in the list.
- *  Module-level for S3776. */
-async function retypeRow(
-  deps: {
-    store: ReturnType<typeof useData>['store'];
-    repo: ReturnType<typeof useData>['repo'];
-    spaceId: string;
-    tx: SpaceTx;
-    allTxs: SpaceTx[] | undefined;
-    cats: ReturnType<typeof useCategories>;
-    transform: ReturnType<typeof useTxTransform>;
-  },
-  nextType: TxType,
-  nextLinkedId: string | null,
-  action: 'txLink' | 'txCategory',
-  peer?: { txId: string },
-): Promise<void> {
-  const { tx } = deps;
-  const fields = applyTypeChange({
-    nextType,
-    linkedAccountId: nextLinkedId,
-    currentCatId: tx.catId,
-    catTxTypes: deps.cats.byId(tx.catId).txTypes,
-    amountCents: tx.amountCents,
-  });
-  const unpeer = !!tx.transferPeerId && tx.linkedAccountId !== nextLinkedId;
-  if (unpeer) void releasePeerLeg(deps.store, deps.repo, deps.spaceId, tx, deps.allTxs);
-  // #133 B: a picked-existing peer rides the SAME write — the mirror
-  // engine then mints nothing on this side
-  let peerField: { transferPeerId?: string | null } = {};
-  if (peer) peerField = { transferPeerId: peer.txId };
-  else if (unpeer) peerField = { transferPeerId: null };
-  await deps.transform(
-    tx,
-    { ...fields, linkedAccountId: nextLinkedId as never, ...(peerField as Record<string, never>) },
-    action,
-  );
-  // …and the picked row gets the reciprocal (link back, peer back)
-  if (peer) await pairWithExistingRow(deps.store, deps.repo, tx, peer.txId);
-}
+// retypeRow retired (#220, user): the transaction-level counterparty
+// door was its last caller — the category editor's entries write
+// through writeRowSingleEntry / the choke now.
 
 /** shared deps of the row-level single-entry writer (S3776) */
 interface RowEntryDeps {
@@ -749,11 +692,13 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: TxSplitCat): Promi
   const { tx } = deps;
   const family = specialCatType(entry.catId);
   const txType = family ?? deps.cats.byId(entry.catId).txTypes[0] ?? tx.txType;
-  const linkChanged = !!entry.linkedAccountId && entry.linkedAccountId !== tx.linkedAccountId;
+  // #218: the editor OWNS the link story — a BARE entry on a linked row
+  // is a detach (the choke retires our mint, the peer releases)
+  const linkChanged = (entry.linkedAccountId ?? undefined) !== (tx.linkedAccountId ?? undefined);
   const foreignPeer =
     linkChanged && entry.transferPeerId && entry.transferPeerId !== tx.transferPeerId ? entry.transferPeerId : undefined;
   // a re-link away from a peered leg releases the old pair first —
-  // exactly retypeRow's rule (a stale peer would keep collapsing)
+  // a stale peer would keep collapsing the pair in the list
   const unpeer = linkChanged && !!tx.transferPeerId;
   if (unpeer) void releasePeerLeg(deps.store, deps.repo, deps.spaceId, tx, deps.allTxs);
   let peerField: { transferPeerId?: string | null } = {};
@@ -766,7 +711,7 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: TxSplitCat): Promi
       txType,
       needsReview: 0,
       ...deps.singleCatFields(entry.catId),
-      ...(linkChanged ? { linkedAccountId: entry.linkedAccountId as never } : {}),
+      ...(linkChanged ? { linkedAccountId: (entry.linkedAccountId ?? null) as never } : {}),
       ...(peerField as Record<string, never>),
     },
     'txCategory',
@@ -1165,9 +1110,6 @@ function PartDetailBody({
   const transform = useTxTransform();
   const navigate = useNavigate();
   const accounts = useSpaceAccounts();
-  // #133 r4: the ◆ asks live INSIDE the category editor now — this
-  // sheet only serves the existing-link re-pick (the fact row)
-  const [counterOpen, setCounterOpen] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
   // r7: the part links recurring costs like whole transactions do
   const [recOpen, setRecOpen] = useState(false);
@@ -1178,30 +1120,24 @@ function PartDetailBody({
   const [spreadOpen, setSpreadOpen] = useState(false);
 
   const sign = tx.amountCents < 0 ? -1 : 1;
-  const partCat = cats.byId(part.catId);
-  const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
-  // flat consts so the JSX carries no branching (S3776)
-  const counterName = accounts?.find((a) => a.id === part.linkedAccountId)?.name ?? t('tx.counterNone');
-  const kindRowIcon = ownStamp ? 'lock-outline' : 'pencil-outline';
   const partDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
   const partEvent = activeEvents.find((e) => e.id === part.eventId);
-  // #133 r5: each entry names its settled counterparty inline
-  const spread = part.cats?.length
-    ? part.cats
-        .map((c) => {
-          const counter = c.linkedAccountId ? (accounts ?? []).find((a) => a.id === c.linkedAccountId)?.name : undefined;
-          return counter ? `${catName(cats.byId(c.catId), t)} → ${counter}` : catName(cats.byId(c.catId), t);
-        })
-        .join(' · ')
-    : undefined;
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
-  // r5: the links that target THIS part, and what the part is net worth
+  // r5: the links that target THIS part, and what the part is net worth.
+  // #197: a CREDIT container's part also FUNDS links that live on the
+  // expense rows — gather the ones naming this part.
   const allTxs = useSpaceTransactions();
   const partLinks = (tx.reimbursements ?? []).filter((r) => r.partId === part.id);
-  const partLinkedCents = partLinks.reduce((sum, r) => sum + r.amountCents, 0);
-  const creditTitleOf = (id: string) => {
-    const credit = allTxs?.find((row) => row.id === id);
-    return credit ? txTitle(credit) : id;
+  const givenLinks = (allTxs ?? []).flatMap((row) =>
+    (row.reimbursements ?? [])
+      .filter((r) => r.txId === tx.id && r.creditPartId === part.id)
+      .map((r) => ({ rowId: row.id, amountCents: r.amountCents })),
+  );
+  const partLinkedCents =
+    partLinks.reduce((sum, r) => sum + r.amountCents, 0) + givenLinks.reduce((sum, g) => sum + g.amountCents, 0);
+  const rowTitleOf = (id: string) => {
+    const row = allTxs?.find((item) => item.id === id);
+    return row ? txTitle(row) : id;
   };
 
   /** per-part write-through — r7 (user rule): NO restriction on a split
@@ -1211,7 +1147,6 @@ function PartDetailBody({
     const nonReimb = nextSplits.filter((s) => s.catId !== REIMBURSED_ID);
     void transform(tx, { splits: nextSplits, catId: primaryCatId(nonReimb) ?? tx.catId }, 'txCategory');
   };
-  const partAskDeps: PartAskDeps = { part, amountCents: tx.amountCents, patchPart };
 
   return (
     <>
@@ -1233,42 +1168,48 @@ function PartDetailBody({
           <span className="min-w-0 flex-1 truncate">{accountName ?? '—'}</span>
           <span className="text-xs text-ink-4">{t('txform.account')}</span>
         </div>
-        {/* #133 D: no Type row — a linked part shows its counterparty
-            as a fact row instead */}
-        {!!part.linkedAccountId && (
-          <>
-            <div className="mx-4 h-px bg-line-2" />
-            <button
-              data-testid="tx-part-counter-row"
-              onClick={ownStamp ? undefined : () => setCounterOpen(true)}
-              className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-            >
-              <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-              <span className="min-w-0 flex-1 truncate">{counterName}</span>
-              <span className="text-[11px] text-ink-4">{t('tx.counterparty')}</span>
-              <Icon name={kindRowIcon} size={13} color="var(--m-ink-4)" />
-            </button>
-          </>
-        )}
+        {/* #220: no part-level counterparty row — the category rows
+            below carry "→ account", edited inside the editor */}
       </div>
 
       {/* the category card IS the door to the whole-transaction category
-          editor, scoped to this part (r7: same gears — multiple
-          categories, exact euros or percentages) */}
-      <button
-        data-testid="tx-part-category"
-        onClick={() => setSpreadOpen(true)}
-        className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
-      >
-        <Icon name={partCat.icon} size={20} color={partColor ?? 'var(--m-ink-3)'} />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] text-ink">{spread ?? catName(partCat, t)}</span>
-          {!spread && partCat.parentId && (
-            <span className="block truncate text-[11px] text-ink-4">{catName(cats.byId(partCat.parentId), t)}</span>
-          )}
-        </span>
-        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-      </button>
+          editor, scoped to this part (r7: same gears). #217/#138 (user):
+          a spread shows EACH category row with its value and its
+          "→ account"; the single category carries the part's money */}
+      <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-part-category">
+        {(part.cats?.length ? part.cats : [null]).map((entry, i) => {
+          const rowCat = cats.byId(entry?.catId ?? part.catId);
+          const rowColor = rowCat.color ?? cats.byId(rowCat.parentId ?? '').color;
+          const rowCounter = accounts?.find(
+            (a) => a.id === (entry ? entry.linkedAccountId : part.linkedAccountId),
+          )?.name;
+          return (
+            <button
+              key={entry ? `${entry.catId}-${i}` : 'single'}
+              data-testid={i === 0 ? 'tx-part-category-row' : `tx-part-cat-${i}`}
+              onClick={() => setSpreadOpen(true)}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3.5 text-left last:border-0"
+            >
+              <Icon name={rowCat.icon} size={20} color={rowColor ?? 'var(--m-ink-3)'} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] text-ink">{catName(rowCat, t)}</span>
+                {!entry && rowCat.parentId && (
+                  <span className="block truncate text-[11px] text-ink-4">{catName(cats.byId(rowCat.parentId), t)}</span>
+                )}
+                {rowCounter && (
+                  <span className="block truncate text-[11px] text-ink-4" data-testid={`tx-part-cat-counter-${i}`}>
+                    → {rowCounter}
+                  </span>
+                )}
+              </span>
+              <span className="m-num text-[13px] text-ink-2">
+                {fmtCents(entry ? entry.amountCents : Math.abs(part.amountCents), tx.currency, lang)}
+              </span>
+              <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+            </button>
+          );
+        })}
+      </div>
 
       {/* r7: the part's recurring link — whole-transaction parity */}
       <button
@@ -1328,8 +1269,16 @@ function PartDetailBody({
         {partLinks.map((linkRow) => (
           <div key={`${linkRow.txId}-${linkRow.partId}`} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 text-[13px] last:border-0">
             <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate text-ink">{creditTitleOf(linkRow.txId)}</span>
+            <span className="min-w-0 flex-1 truncate text-ink">{rowTitleOf(linkRow.txId)}</span>
             <span className="m-num text-ink-2">{fmtCents(linkRow.amountCents, tx.currency, lang)}</span>
+          </div>
+        ))}
+        {/* #197: what this CREDIT part already funded elsewhere */}
+        {givenLinks.map((given) => (
+          <div key={`out-${given.rowId}`} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 text-[13px] last:border-0" data-testid={`tx-part-given-${given.rowId}`}>
+            <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
+            <span className="min-w-0 flex-1 truncate text-ink">{rowTitleOf(given.rowId)}</span>
+            <span className="m-num text-ink-2">{fmtCents(-given.amountCents, tx.currency, lang, { sign: true })}</span>
           </div>
         ))}
         <div className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
@@ -1371,13 +1320,6 @@ function PartDetailBody({
         {t('tx.partWhole')}
       </button>
 
-      <CounterpartySheet
-        open={counterOpen}
-        onOpenChange={setCounterOpen}
-        excludeAccountId={tx.accountId}
-        currentLinkedId={part.linkedAccountId}
-        onChoose={(picked) => choosePartCounter(partAskDeps, picked)}
-      />
       {/* the part's categories (r6/r7) — the whole-transaction editor,
           scoped to the part's amount. #133 r4: every ◆ pick asks its
           counterparty INSIDE the editor, per entry, on the spot */}
@@ -1391,6 +1333,7 @@ function PartDetailBody({
         allowedCatIds={allowedCatIds}
         excludeAccountId={tx.accountId}
         askDisabled={ownStamp}
+        mirrorBaseId={part.id ? partMirrorSourceId(tx.id, part.id) : undefined}
         onApply={(entries) => patchPart(partCatsApplyPatch(part, entries))}
       />
       {/* r7: the part's recurring link — the manual pick, parts edition */}
@@ -1477,28 +1420,18 @@ function DetailAccountBlock({
   tx,
   account,
   linkedAccount,
-  counterAccountName,
-  multiPart,
-  kind,
   pairState,
   loanCountBusy,
   setLoanCountBusy,
-  onOpenCounter,
-  onEditCounter,
   onOpenPeer,
   onUnpair,
 }: Readonly<{
   tx: SpaceTx;
   account: AccountRow | undefined;
   linkedAccount: AccountRow | undefined;
-  counterAccountName: string | undefined;
-  multiPart: boolean;
-  kind: ReturnType<typeof kindOf>;
   pairState: ReturnType<typeof transferPairState>;
   loanCountBusy: boolean;
   setLoanCountBusy: (busy: boolean) => void;
-  onOpenCounter: () => void;
-  onEditCounter: () => void;
   onOpenPeer: (peerId: string) => void;
   onUnpair: () => void;
 }>) {
@@ -1544,15 +1477,8 @@ function DetailAccountBlock({
         </span>
         <span className="text-xs text-ink-4">{t('txform.account')}</span>
       </div>
-      <ContainerTypeRows
-        hidden={multiPart}
-        kind={kind}
-        counterIban={tx.counterIban}
-        counterAccountName={counterAccountName}
-        linkedAccountName={linkedAccount?.name}
-        onOpenAccount={onOpenCounter}
-        onEditCounter={onEditCounter}
-      />
+      {/* #220: no counterparty row here — the category rows below tell
+          the story, the Details block keeps the bank's raw fact */}
       {pairState === 'peered' && (
         <TransferPeerRow
           t={t}
@@ -1595,11 +1521,9 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   // flow as categories, and the memory teaches future arrivals
   const [titleBulk, setTitleBulk] = useState<{ title: string } | null>(null);
   const [titleSelected, setTitleSelected] = useState<ReadonlySet<string>>(new Set());
-  // counterparty and type each open their OWN picker (user: the combined
-  // sheet surprised — tapping one showed the other's content too).
-  // #133 r4: the ◆ family/funding/transfer asks live INSIDE the
-  // category editor now — no separate ask state remains here.
-  const [counterPickOpen, setCounterPickOpen] = useState(false);
+  // #220: no transaction-level counterparty picker — the category
+  // editor's entries own the links; counterOpen below is the read-only
+  // account INFO sheet the Details row opens
   const [loanCountBusy, setLoanCountBusy] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   // #211: the split-categories editor — the pencil's door on whole rows
@@ -1708,7 +1632,6 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const cat = cats.byId(tx.catId);
   const parent = cat.parentId ? cats.byId(cat.parentId) : undefined;
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
-  const kind = kindOf(tx.txType);
   // R1: the row's own account stamps its type — the kind row locks
   const ownStamp = accountStamp(account?.type);
   const pairState = transferPairState(tx, linkedAccount);
@@ -1721,8 +1644,6 @@ export function TxDetailScreen() { // NOSONAR(S3776)
     void releasePeerLeg(store, repo, spaceId, tx, allTxs);
     void transform(tx, { transferPeerId: null as never }, 'txLink');
   };
-  const retype = (nextType: TxType, nextLinkedId: string | null, action: 'txLink' | 'txCategory', peer?: { txId: string }) =>
-    retypeRow({ store, repo, spaceId, tx, allTxs, cats, transform }, nextType, nextLinkedId, action, peer);
   // a credit that self-filed as Reimbursed keeps that category as long
   // as any link lives (user rule) — unlink first, then recategorize
   const categoryLocked = tx.catId === REIMBURSED_ID && givenOut > 0;
@@ -1797,10 +1718,8 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const netCats = (tx.cats ?? []).filter((e) => e.catId !== REIMBURSED_ID);
   const netCatEntries = netCats.length ? netCats : undefined;
   const singleCatFields = (catId: string) => singleCatPartitionFields(tx, multiPart, settledPartitionCents, catId);
-  // #152 r2: the bank's counterparty, kept visible once the row points
-  // at a DIFFERENT account than the bank named
-  const originalCounter =
-    tx.counterIban && tx.linkedAccountId && counterAccount?.id !== tx.linkedAccountId ? tx.counterIban : undefined;
+  // #220: the bank's counterparty is ALWAYS a Details fact now — no
+  // derivation gates; the row itself decides how it renders
 
   // #133 r4: the editor answered any ◆ ask already — this only writes
   const applySingleEntry = (entry: TxSplitCat) =>
@@ -1968,19 +1887,15 @@ export function TxDetailScreen() { // NOSONAR(S3776)
           </div>
         )}
 
-        {/* block: account · type · counterparty */}
+        {/* block: account + the transfer pair facts (#220: the
+            counterparty row left for the Details block) */}
         <DetailAccountBlock
           tx={tx}
           account={account}
           linkedAccount={linkedAccount}
-          counterAccountName={counterAccount?.name}
-          multiPart={multiPart}
-          kind={kind}
           pairState={pairState}
           loanCountBusy={loanCountBusy}
           setLoanCountBusy={setLoanCountBusy}
-          onOpenCounter={() => setCounterOpen(true)}
-          onEditCounter={() => setCounterPickOpen(true)}
           onOpenPeer={(peerId) => void navigate({ to: '/transactions/$txId', params: { txId: peerId } })}
           onUnpair={unpair}
         />
@@ -2078,7 +1993,12 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         )}
 
         {/* block: details — the facts underneath the user's edits */}
-        <DetailFacts tx={tx} givenOut={givenOut} originalCounter={originalCounter} />
+        <DetailFacts
+          tx={tx}
+          givenOut={givenOut}
+          counterAccountName={counterAccount?.name}
+          onOpenCounterAccount={() => setCounterOpen(true)}
+        />
 
         {/* the sections below the details card follow the space's saved
             order/visibility (user request — same mechanics as Home).
@@ -2146,19 +2066,8 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         testId="tx-delete"
       />
 
-      {/* write-through: choosing a counterparty names the FAMILY (#133
-          r5 bijection — a savings pick files the saving story); the
-          kind sheet handles standard/adjustment. #133 B: a manual pick
-          forks — mint, or point at the existing row (peer rides the
-          same write) */}
-      <CounterpartySheet
-        open={counterPickOpen}
-        onOpenChange={setCounterPickOpen}
-        excludeAccountId={tx.accountId}
-        currentLinkedId={tx.linkedAccountId}
-        anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
-        onChoose={(picked, peer) => void retype(familyForCounter(picked.type), picked.id, 'txLink', peer)}
-      />
+      {/* #220: the transaction-level counterparty picker is gone — the
+          category editor's entries own the links (r5 bijection) */}
       {/* #211: the split-TRANSACTION flow — the values editor whose Done
           only STAGES; nothing is written until the completion deck's
           Apply lands the whole split */}
@@ -2207,6 +2116,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         excludeAccountId={tx.accountId}
         askDisabled={!!ownStamp}
         anchor={{ id: tx.id, date: tx.date }}
+        mirrorBaseId={tx.id}
         onApply={(entries) =>
           applyRowCats({ tx, settledCents: settledPartitionCents, transform, applySingle: applySingleEntry, armCatsBulk }, entries)
         }
@@ -2459,51 +2369,3 @@ function CategoriesHeader({
   );
 }
 
-function CounterpartyRow({
-  counterIban,
-  counterAccountName,
-  linkedAccountName,
-  editable,
-  onOpenAccount,
-  onEdit,
-}: Readonly<{
-  counterIban?: string;
-  counterAccountName?: string;
-  linkedAccountName?: string;
-  /** transfers only (user simplification): other kinds show the bank's
-   *  counterparty as a plain fact, dimmed and untappable */
-  editable: boolean;
-  onOpenAccount: () => void;
-  onEdit: () => void;
-}>) {
-  const { t } = useLang();
-  const matched = !!counterAccountName;
-  const primary = counterAccountName ?? linkedAccountName;
-  const disabled = !matched && !editable;
-  return (
-    <button
-      data-testid={matched ? 'tx-detail-counterparty-row' : 'tx-detail-counterparty-edit'}
-      disabled={disabled}
-      onClick={matched ? onOpenAccount : onEdit}
-      className={`m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink ${disabled ? 'opacity-45' : ''}`}
-    >
-      <Icon name="swap-horizontal" size={20} color={primary ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
-      <span className="min-w-0 flex-1">
-        {primary ? (
-          <span className="block truncate">{primary}</span>
-        ) : (
-          <span className="block truncate text-ink-3" data-testid="tx-detail-counter-add">
-            {/* counterless transfers are legal (arc 2's bare exit): state
-                the fact calmly — the tap still doors into the picker */}
-            {counterIban ?? (editable ? t('tx.counterNone') : t('tx.counterNotApplicable'))}
-          </span>
-        )}
-        {counterIban && primary && (
-          <span className="block truncate font-mono text-[11px] text-ink-4">{counterIban}</span>
-        )}
-      </span>
-      <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-      {!disabled && <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />}
-    </button>
-  );
-}

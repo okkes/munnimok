@@ -4,7 +4,9 @@ import { fmtCents, parseCents } from '@/lib/money';
 import { nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
 import { UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
-import { counterTypesFor, movementCatFor } from '@/domain/txType';
+import { counterTypesFor, movementCatFor, movementCatsForCounter } from '@/domain/txType';
+import { kindOf } from '@/domain/txKind';
+import { catMirrorSourceId, mirrorTxId } from '@/domain/feedIds';
 import { resolveSplitsFor } from '@/domain/splits';
 import { useSpaceAccounts } from '@/application/transactions';
 import type { DefaultFamily } from '@/application/defaultAccounts';
@@ -47,6 +49,63 @@ const entryLink = (entry: Pick<CatEntry, 'linkedAccountId' | 'transferPeerId'>):
   ...(entry.linkedAccountId ? { linkedAccountId: entry.linkedAccountId } : {}),
   ...(entry.transferPeerId ? { transferPeerId: entry.transferPeerId } : {}),
 });
+
+/** #218: a pick the LINKED counter can also mean keeps the link (credit
+ *  card: transfer ⇄ debt payment) — OUR old-key mint's peer strips so
+ *  the choke re-keys the leg; a real picked/bank peer rides through.
+ *  Null = not a keep, the fresh-story path runs. (S3776) */
+function keepLinkPatch(
+  prev: CatEntry | undefined,
+  catId: string,
+  accounts: readonly { id: string; type: AccountType }[] | undefined,
+  mirrorBaseId: string | undefined,
+): Partial<CatEntry> | null {
+  const counterType = accounts?.find((a) => a.id === prev?.linkedAccountId)?.type;
+  if (!prev?.linkedAccountId || !counterType || !counterTypesFor(catId)?.includes(counterType)) return null;
+  const oldMid = mirrorBaseId ? mirrorTxId(catMirrorSourceId(mirrorBaseId, prev.catId)) : undefined;
+  return { catId, ...(oldMid && prev.transferPeerId === oldMid ? { transferPeerId: undefined } : {}) };
+}
+
+/** #218: with a counterparty on the entry the picker narrows to what
+ *  that counter can mean; undefined = no narrowing (S3776) */
+function counterNarrowFor(
+  accounts: readonly { id: string; type: AccountType }[] | undefined,
+  entry: CatEntry | undefined,
+  direction: 'debit' | 'credit',
+): string[] | undefined {
+  const type = accounts?.find((a) => a.id === entry?.linkedAccountId)?.type;
+  return type ? [...movementCatsForCounter(type, direction)] : undefined;
+}
+
+/** #218: an UNSTAMPED subject's derived transfer-kind type must not
+ *  gate the picker — the matrix and the counter narrowing govern.
+ *  Stamps and adjustments keep their deliberate narrow lists. (S3776) */
+const pickerTxTypeFor = (askDisabled: boolean, txType: TxType | undefined): TxType | undefined =>
+  !askDisabled && txType && kindOf(txType) === 'transfer' ? undefined : txType;
+
+/** which entries wear the counterparty line: linked ones always, ◆ ones
+ *  unless the stamp owns the story, fresh ones as the counter-first
+ *  door (never on recurring-narrowed editors) (S3776) */
+function showsCounterLine(entry: CatEntry, askDisabled: boolean, allowedCatIds: readonly string[] | undefined): boolean {
+  if (entry.linkedAccountId) return true;
+  if (askDisabled) return false;
+  if (entry.catId === UNCATEGORIZED_ID) return !allowedCatIds;
+  return counterAskFor(entry.catId) !== null;
+}
+
+/** #218: detaching frees the category choice; an unlinked TRANSFER is
+ *  unrepresentable, so that one resets to uncategorized (S3776) */
+const detachPatch = (catId: string | undefined): Partial<CatEntry> => ({
+  linkedAccountId: undefined,
+  transferPeerId: undefined,
+  ...(specialCatType(catId ?? '') === 'transfer' ? { catId: UNCATEGORIZED_ID } : {}),
+});
+
+/** #133 r5/#218: the answered account's KIND names the category —
+ *  counterparty-first fills a fresh entry, a matching ask is a no-op,
+ *  and a Create-door kind mismatch refiles honestly (S3776) */
+const answeredCatFor = (current: CatEntry | undefined, accountType: AccountType, sign: 1 | -1): string | undefined =>
+  current && (current.catId === UNCATEGORIZED_ID || specialCatType(current.catId)) ? movementCatFor(accountType, sign) : undefined;
 
 let entryCounter = 0;
 const newKey = () => `pc${entryCounter++}`;
@@ -150,6 +209,7 @@ export function CatsSheet({
   excludeAccountId,
   askDisabled = false,
   anchor,
+  mirrorBaseId,
   onApply,
 }: Readonly<{
   open: boolean;
@@ -174,6 +234,11 @@ export function CatsSheet({
   /** the row being spread — enables the pick-existing fork on manual
    *  counterparties (row-level editors only; the entry's amount anchors) */
   anchor?: { id: string; date: string };
+  /** #218: the id the subject's ENTRY mirrors are keyed on (tx id, or
+   *  txId:partId for a part) — lets a link-keeping category switch
+   *  strip OUR old-key mint's peer so the choke re-keys it; absent =
+   *  no live mints to worry about (fresh form rows, staged deck parts) */
+  mirrorBaseId?: string;
   onApply: (entries: TxSplitCat[]) => void;
 }>) {
   const { t, lang } = useLang();
@@ -356,8 +421,12 @@ export function CatsSheet({
   // matrix narrows the movement subs to the ones this row can mean
   const sourceType = (accounts ?? []).find((a) => a.id === excludeAccountId)?.type;
   const pickedCatId = pickerFor === null ? undefined : entries[pickerFor]?.catId;
-  const counterEntry = counterFor === null ? undefined : entries[counterFor];
-  const counterAsk = counterEntry && !askDisabled ? counterAskFor(counterEntry.catId) : null;
+  // #218 (user): with a counterparty already on the entry the picker
+  // narrows to what THAT counter can mean (credit card: transfer or
+  // debt payment) — anything else needs the detach door first
+  const pickerEntry = pickerFor === null ? undefined : entries[pickerFor];
+  const counterNarrowedIds = counterNarrowFor(accounts, pickerEntry, direction);
+  const pickerTxType = pickerTxTypeFor(askDisabled, txType);
   const excluded = entries
     .filter((_, i) => i !== pickerFor)
     .map((entry) => entry.catId)
@@ -390,15 +459,9 @@ export function CatsSheet({
             </Chip>
           </div>
           {entries.map((entry, i) => {
-            // #133 r4: a ◆ entry answers its counterparty right under its
-            // own row — the ask opens on pick, this is the re-ask door.
-            // #133 r5: a FRESH entry shows the line too — the
-            // counterparty-first door (pick the account, the one category
-            // the bijection allows files itself)
-            const ask = askDisabled ? null : counterAskFor(entry.catId);
-            // (a recurring-narrowed editor manages its categories — the
-            // account-first shortcut would side-step the allowlist)
-            const counterFirstDoor = !askDisabled && !allowedCatIds && entry.catId === UNCATEGORIZED_ID;
+            // #133 r4/r5: a ◆ entry answers its counterparty right under
+            // its own row (the re-ask door); a FRESH entry shows the
+            // line too — the counterparty-first door
             const counterName = entry.linkedAccountId
               ? ((accounts ?? []).find((a) => a.id === entry.linkedAccountId)?.name ?? t('tx.counterparty'))
               : undefined;
@@ -437,7 +500,7 @@ export function CatsSheet({
                     </button>
                   )}
                 </div>
-                {(ask || counterFirstDoor || entry.linkedAccountId) && (
+                {showsCounterLine(entry, askDisabled, allowedCatIds) && (
                   <button
                     data-testid={`part-cat-counter-${i}`}
                     onClick={() => setCounterFor(i)}
@@ -493,15 +556,21 @@ export function CatsSheet({
           if (!next) setPickerFor(null);
         }}
         direction={direction}
-        txType={txType}
+        txType={pickerTxType}
         sourceAccountType={sourceType}
         selectedId={pickedCatId}
         excludeIds={excluded}
-        onlyIds={allowedCatIds}
+        onlyIds={allowedCatIds ?? counterNarrowedIds}
         onPick={(catId) => {
           if (pickerFor === null) return;
           const prev = entries[pickerFor];
           if (prev?.catId === catId) return;
+          // #218: a pick the linked counter can also mean keeps the link
+          const kept = keepLinkPatch(prev, catId, accounts, mirrorBaseId);
+          if (kept) {
+            patchEntry(pickerFor, kept);
+            return;
+          }
           // a NEW category starts a fresh story — the old entry's link
           // never rides along; a ◆ pick asks its counterparty right away
           // (#133 r4, user: "before adding another category")
@@ -517,56 +586,99 @@ export function CatsSheet({
           }
         }}
       />
-      {/* #133 r4: the per-entry counterparty question — the same sheet
-          every surface uses, scoped to ONE entry's money */}
-      <CounterpartySheet
-        open={counterFor !== null}
-        onOpenChange={(next) => {
-          if (next) return;
-          const rollback = rollbackRef.current;
-          if (rollback) {
-            patchEntry(rollback.index, {
-              catId: rollback.catId,
-              linkedAccountId: rollback.linkedAccountId,
-              transferPeerId: rollback.transferPeerId,
-            });
-            rollbackRef.current = null;
-          }
-          setCounterFor(null);
-        }}
+      <EntryCounterAsk
+        counterFor={counterFor}
+        setCounterFor={setCounterFor}
+        entries={entries}
+        patchEntry={patchEntry}
+        rollbackRef={rollbackRef}
+        askDisabled={askDisabled}
         excludeAccountId={excludeAccountId}
-        currentLinkedId={counterEntry?.linkedAccountId}
-        defaultFamily={counterAsk?.defaultFamily}
-        counterTypes={counterAsk?.counterTypes}
-        anchor={
-          anchor && counterEntry
-            ? {
-                id: anchor.id,
-                amountCents: direction === 'debit' ? -centsOf(counterEntry) : centsOf(counterEntry),
-                date: anchor.date,
-              }
-            : undefined
-        }
-        onChoose={(account, peer) => {
-          if (counterFor === null) return;
-          // #133 r5: the answered account's KIND names the category —
-          // counterparty-first fills a fresh entry, a matching ask is a
-          // no-op, and the Create door building a different kind than
-          // the asking category refiles honestly (the bijection wins)
-          const current = entries[counterFor];
-          const sign = direction === 'debit' ? -1 : 1;
-          const derived =
-            current && (current.catId === UNCATEGORIZED_ID || specialCatType(current.catId))
-              ? movementCatFor(account.type, sign)
-              : undefined;
-          patchEntry(counterFor, {
-            ...(derived ? { catId: derived } : {}),
-            linkedAccountId: account.id,
-            transferPeerId: peer?.txId,
-          });
-          rollbackRef.current = null;
-        }}
+        direction={direction}
+        anchor={anchor}
+        centsOf={centsOf}
       />
     </>
+  );
+}
+
+/** #133 r4/#218: the per-entry counterparty question — the same sheet
+ *  every surface uses, scoped to ONE entry's money; open/dismiss/
+ *  answer/detach plumbing self-contained (S3776) */
+function EntryCounterAsk({
+  counterFor,
+  setCounterFor,
+  entries,
+  patchEntry,
+  rollbackRef,
+  askDisabled,
+  excludeAccountId,
+  direction,
+  anchor,
+  centsOf,
+}: Readonly<{
+  counterFor: number | null;
+  setCounterFor: (next: number | null) => void;
+  entries: CatEntry[];
+  patchEntry: (index: number, patch: Partial<CatEntry>) => void;
+  rollbackRef: { current: { index: number; catId: string; linkedAccountId?: string; transferPeerId?: string } | null };
+  askDisabled: boolean;
+  excludeAccountId: string;
+  direction: 'debit' | 'credit';
+  anchor?: { id: string; date: string };
+  centsOf: (entry: CatEntry) => number;
+}>) {
+  const counterEntry = counterFor === null ? undefined : entries[counterFor];
+  const counterAsk = counterEntry && !askDisabled ? counterAskFor(counterEntry.catId) : null;
+  return (
+    <CounterpartySheet
+      open={counterFor !== null}
+      onOpenChange={(next) => {
+        if (next) return;
+        const rollback = rollbackRef.current;
+        if (rollback) {
+          patchEntry(rollback.index, {
+            catId: rollback.catId,
+            linkedAccountId: rollback.linkedAccountId,
+            transferPeerId: rollback.transferPeerId,
+          });
+          rollbackRef.current = null;
+        }
+        setCounterFor(null);
+      }}
+      excludeAccountId={excludeAccountId}
+      currentLinkedId={counterEntry?.linkedAccountId}
+      defaultFamily={counterAsk?.defaultFamily}
+      counterTypes={counterAsk?.counterTypes}
+      onDetach={
+        counterEntry?.linkedAccountId
+          ? () => {
+              if (counterFor === null) return;
+              patchEntry(counterFor, detachPatch(entries[counterFor]?.catId));
+              rollbackRef.current = null;
+            }
+          : undefined
+      }
+      anchor={
+        anchor && counterEntry
+          ? {
+              id: anchor.id,
+              amountCents: direction === 'debit' ? -centsOf(counterEntry) : centsOf(counterEntry),
+              date: anchor.date,
+            }
+          : undefined
+      }
+      onChoose={(account, peer) => {
+        if (counterFor === null) return;
+        // #133 r5/#218: the answered account's kind names the category
+        const derived = answeredCatFor(entries[counterFor], account.type, direction === 'debit' ? -1 : 1);
+        patchEntry(counterFor, {
+          ...(derived ? { catId: derived } : {}),
+          linkedAccountId: account.id,
+          transferPeerId: peer?.txId,
+        });
+        rollbackRef.current = null;
+      }}
+    />
   );
 }

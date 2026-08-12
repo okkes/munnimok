@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   clampReimbursement,
+  creditPartGivenCents,
   creditRemainingCents,
   givenCents,
   hasUnsettledReimbursement,
@@ -16,6 +17,28 @@ import {
 const expense = (amountCents: number, reimbursements?: { txId: string; amountCents: number }[]) => ({
   amountCents,
   reimbursements,
+});
+
+describe('#197: credit-part links', () => {
+  it('withLink keys on (txId, partId, creditPartId) and stores the credit part', () => {
+    const links = withLink(undefined, 'c1', 1000, undefined, 'cp1');
+    expect(links).toEqual([{ txId: 'c1', amountCents: 1000, creditPartId: 'cp1' }]);
+    // a link to ANOTHER part of the same credit coexists…
+    const both = withLink(links, 'c1', 500, undefined, 'cp2');
+    expect(both).toHaveLength(2);
+    // …while re-linking the SAME part replaces its value
+    expect(withLink(both, 'c1', 700, undefined, 'cp1').find((l) => l.creditPartId === 'cp1')?.amountCents).toBe(700);
+  });
+
+  it('creditPartGivenCents counts only the links naming the part; whole-credit math is unchanged', () => {
+    const txs = [
+      { reimbursements: [{ txId: 'c1', amountCents: 1000, creditPartId: 'cp1' }] },
+      { reimbursements: [{ txId: 'c1', amountCents: 400 }] }, // whole-credit link
+      { reimbursements: [{ txId: 'c2', amountCents: 900, creditPartId: 'cp1' }] },
+    ];
+    expect(creditPartGivenCents(txs, 'c1', 'cp1')).toBe(1000);
+    expect(givenCents(txs, 'c1')).toBe(1400);
+  });
 });
 
 describe('reimbursement math', () => {

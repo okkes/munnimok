@@ -70,13 +70,20 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
 
   /** link `cents` of `credit` against `expense`, MERGING into any
    *  existing link between the two (both directions call this); a
-   *  partId targets one PART of a split expense (#126 r5) */
-  const link = (expense: SpaceTx, credit: SpaceTx, cents: number, partId?: string): void => {
+   *  partId targets one PART of a split expense (#126 r5), a
+   *  creditPartId one PART of a split credit (#197) */
+  const link = (expense: SpaceTx, credit: SpaceTx, cents: number, partId?: string, creditPartId?: string): void => {
     const clamped = clampReimbursement(expense, giveableCents(credit), cents);
     if (clamped <= 0) return;
     const prev =
-      (expense.reimbursements ?? []).find((r) => r.txId === credit.id && r.partId === partId)?.amountCents ?? 0;
-    void transform(expense, expensePatch(expense, withLink(expense.reimbursements, credit.id, prev + clamped, partId)), 'reimburse');
+      (expense.reimbursements ?? []).find(
+        (r) => r.txId === credit.id && r.partId === partId && r.creditPartId === creditPartId,
+      )?.amountCents ?? 0;
+    void transform(
+      expense,
+      expensePatch(expense, withLink(expense.reimbursements, credit.id, prev + clamped, partId, creditPartId)),
+      'reimburse',
+    );
     void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) + clamped), null); // one line per gesture, not per side
   };
 

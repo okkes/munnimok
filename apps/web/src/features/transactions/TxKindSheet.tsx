@@ -106,6 +106,7 @@ export function CounterpartySheet({
   defaultFamily,
   counterTypes,
   anchor,
+  onDetach,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -126,6 +127,10 @@ export function CounterpartySheet({
   /** #133 B: the row being linked — enables the pick-existing fork on
    *  manual counterparties */
   anchor?: { id: string; amountCents: number; date: string };
+  /** #218 (user): detach the current counterparty — offered only when
+   *  one is linked; the caller clears the link (and a transfer
+   *  category resets, since an unlinked transfer is unrepresentable) */
+  onDetach?: () => void;
 }>) {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -240,6 +245,21 @@ export function CounterpartySheet({
             </p>
           )}
         </div>
+      {/* #218 (user): the way OUT — detach the linked counterparty to
+          free the category choice again */}
+      {onDetach && currentLinkedId && (
+        <button
+          data-testid="counter-detach"
+          onClick={() => {
+            onDetach();
+            onOpenChange(false);
+          }}
+          className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-negative"
+        >
+          <Icon name="link-off" size={18} />
+          {t('tx.counterDetach')}
+        </button>
+      )}
       {/* the ONE creation door (user redesign 2026-08-01): the full
           chooser — bank connect, statement import (in place) or manual */}
       <button

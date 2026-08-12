@@ -33,12 +33,12 @@ describe('ReviewScreen (demo identity)', () => {
     expect(await screen.findByTestId('review-empty')).toBeTruthy();
   }, 15_000);
 
-  it('#133 C: no kind row — a ◆ pick asks the counterparty, the fact row eases in on a link', async () => {
+  it('#133 C: no kind row — a ◆ pick asks the counterparty; #219: the category line carries the link', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
 
-    // the kind concept is gone from the card; no counterparty row while
-    // nothing is linked
+    // the kind concept is gone from the card, and (#219) so is the
+    // transaction-level counterparty row — for good
     expect(screen.queryByTestId('review-kind-row')).toBeNull();
     expect(screen.queryByTestId('review-counter-row')).toBeNull();
 
@@ -62,11 +62,11 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
-    // Done stages category + link together; the fact row appears — and
-    // (r5) the counterparty shows WITH the category on the card
+    // Done stages category + link together; (#219) the counterparty
+    // shows WITH the category — no transaction-level row appears
     fireEvent.click(screen.getByTestId('part-cat-save'));
-    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
-    expect(screen.getByTestId('review-cat-counter-savingDeposit').textContent).toContain('Demo Savings');
+    await waitFor(() => expect(screen.getByTestId('review-cat-counter-savingDeposit').textContent).toContain('Demo Savings'));
+    expect(screen.queryByTestId('review-counter-row')).toBeNull();
   }, 15_000);
 
   it('#133 r5: counterparty-FIRST — a fresh entry names the pot and the one category the bijection allows fills itself', async () => {
@@ -153,7 +153,8 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Second checking'), { timeout: 5000 });
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out'));
-    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Second checking'));
+    // #219: the link reads from the category line, not a top row
+    await waitFor(() => expect(screen.getByTestId('review-cat-counter-transferOut').textContent).toContain('Second checking'));
   }, 15_000);
 
   it('#133 C: dismissing the counterparty ask keeps the bare ◆ story — no rollback, confirm armed', async () => {
@@ -612,9 +613,11 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
-    // the card's category row now tells the whole spread
-    await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toContain('Coffee'));
-    expect(screen.getByTestId('deck-cat-0').textContent).toContain('·');
+    // #217 (user): the deck shows EACH category as its own row — value
+    // included, "the same way as if there no split"
+    await waitFor(() => expect(screen.getByTestId('deck-cat-0-1').textContent).toContain('Coffee'));
+    expect(screen.getByTestId('deck-cat-0-1').textContent).toMatch(/4[.,]00/);
+    expect(screen.getByTestId('deck-cat-0').textContent).toMatch(/2[.,]00/);
   }, 15_000);
 
   it('#133 r3: a ◆ Transfer pick on a PART stages nothing until its mandatory ask answers; dismissal rolls back', async () => {
@@ -660,8 +663,10 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getAllByTestId('part-cat-counter-0').at(-1)!.textContent).toContain('Second checking'), { timeout: 5000 });
     fireEvent.click(screen.getAllByTestId('part-cat-save').at(-1)!);
     await waitFor(() => expect(screen.getByTestId('deck-cat-0').textContent).toContain('Transfer Out'));
-    // the part's counter fact row names the fresh account
-    await waitFor(() => expect(screen.getByTestId('deck-counter-0').textContent).toContain('Second checking'));
+    // #217/#220: the deck's category row carries the "→ account" line —
+    // the part-level counter fact row is gone
+    await waitFor(() => expect(screen.getByTestId('deck-cat-counter-0-0').textContent).toContain('Second checking'));
+    expect(screen.queryByTestId('deck-counter-0')).toBeNull();
   }, 15_000);
 
   it('splitting a card with staged decisions warns first — cancel keeps them, continue resets (#126 r7)', async () => {
@@ -864,8 +869,9 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside'));
-    // the counter name arrives via an async account read — wait for it
-    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
+    // #219: the counterparty shows WITH the category — no top row
+    await waitFor(() => expect(screen.getByTestId('review-cat-counter-savingDeposit').textContent).toContain('Demo Savings'));
+    expect(screen.queryByTestId('review-counter-row')).toBeNull();
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
     // nothing was written mid-flight: the tx still holds its own type
@@ -986,9 +992,11 @@ describe('ReviewScreen (own-account transfers)', () => {
       api: { 'GET /health': () => ({ status: 'ok', capabilities: {} }) },
     });
 
-    // the chip names my account and the draft is already a transfer
-    const chip = await screen.findByTestId('review-own-transfer');
-    expect(chip.textContent).toContain('Credit card');
+    // #219: no chip, no counter row — the category line tells the link
+    const counter = await screen.findByTestId('review-cat-counter-transferOut');
+    expect(counter.textContent).toContain('Credit card');
+    expect(screen.queryByTestId('review-own-transfer')).toBeNull();
+    expect(screen.queryByTestId('review-counter-row')).toBeNull();
 
     await waitFor(() =>
       expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false),
@@ -1003,7 +1011,7 @@ describe('ReviewScreen (own-account transfers)', () => {
     });
   }, 15_000);
 
-  it('one tap opts back out of the auto-transfer', async () => {
+  it('#218: the DETACH door opts back out of the auto-transfer — and frees the category choice', async () => {
     const { USER_TEST_DB, renderAppAsUser } = await import('@/test/harness');
     localStorage.clear();
     sessionStorage.clear();
@@ -1024,7 +1032,27 @@ describe('ReviewScreen (own-account transfers)', () => {
       api: { 'GET /health': () => ({ status: 'ok', capabilities: {} }) },
     });
 
-    fireEvent.click(await screen.findByTestId('review-own-transfer'));
-    await waitFor(() => expect(screen.queryByTestId('review-own-transfer')).toBeNull());
+    // the auto-link pre-applied; the editor's counter line is the door
+    await screen.findByTestId('review-cat-counter-transferOut');
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    await screen.findByTestId('part-cats-editor');
+    // #218: with the credit counter attached the picker narrows to what
+    // it can mean — transfer or debt payment, nothing else
+    fireEvent.click(screen.getByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-loanRepayment');
+    expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
+    // …and a pick the counter can ALSO mean keeps the link, no re-ask
+    fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-0').textContent).toContain('Repaid'));
+    expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Credit card');
+    // the way out: the ask's detach door — the link clears and the
+    // full picker is free again
+    fireEvent.click(screen.getByTestId('part-cat-counter-0'));
+    fireEvent.click(await screen.findByTestId('counter-detach'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-groceries'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Grocery'));
+    expect(screen.queryByTestId('review-cat-counter-transferOut')).toBeNull();
   }, 15_000);
 });

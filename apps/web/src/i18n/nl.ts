@@ -253,6 +253,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tx.awaitingCounterpart': 'Wacht op de tegenboeking',
   'tx.createCounterpart': 'Maak de tegenboeking aan op {name}',
   'tx.counterNoMatch': 'Nog geen andere rekeningen in deze ruimte.',
+  'tx.counterDetach': 'Tegenrekening verwijderen',
   'mina.start': 'Start de rondleiding',
   'mina.replay': 'Speel de Mina-tutorial opnieuw',
   'mina.minimize': 'Mina opzij zetten',

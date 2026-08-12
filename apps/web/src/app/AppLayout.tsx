@@ -13,6 +13,7 @@ import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
 import { padScrollportForKeyboard, restoreScrollportPad, revealInScroller } from '@/lib/viewport';
+import { wheelToHorizontal } from '@/lib/wheelScroll';
 import { SHEET_OWNS_KEYBOARD } from '@/ui/Sheet';
 import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
@@ -131,6 +132,15 @@ function useKeyboardOpen(): boolean {
   return open;
 }
 
+/** #153: wheel-only mice reach sideways strips — the one app-wide
+ *  listener (the decision logic lives in lib/wheelScroll) */
+function useWheelToHorizontal(): void {
+  useEffect(() => {
+    document.addEventListener('wheel', wheelToHorizontal, { passive: false });
+    return () => document.removeEventListener('wheel', wheelToHorizontal);
+  }, []);
+}
+
 /** headless: fires due-soon reminders once per app open (needs DataProvider) */
 function RecurringReminders() {
   useRecurringReminders();
@@ -206,6 +216,7 @@ export function AppLayout() {
   const hideNav = pathname.startsWith('/onboarding');
   // the mobile tab bar makes no sense floating on top of the keyboard
   const keyboardOpen = useKeyboardOpen();
+  useWheelToHorizontal(); // #153: wheel-only mice reach sideways strips
 
   return (
     <div className="flex h-full flex-row bg-bg text-ink">

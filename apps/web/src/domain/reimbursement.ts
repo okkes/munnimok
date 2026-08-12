@@ -45,9 +45,12 @@ export function withLink(
   txId: string,
   amountCents: number,
   partId?: string,
+  creditPartId?: string,
 ): TxReimbursement[] {
-  const rest = (reimbursements ?? []).filter((r) => r.txId !== txId || r.partId !== partId);
-  return amountCents > 0 ? [...rest, { txId, amountCents, ...(partId ? { partId } : {}) }] : rest;
+  const rest = (reimbursements ?? []).filter((r) => r.txId !== txId || r.partId !== partId || r.creditPartId !== creditPartId);
+  return amountCents > 0
+    ? [...rest, { txId, amountCents, ...(partId ? { partId } : {}), ...(creditPartId ? { creditPartId } : {}) }]
+    : rest;
 }
 
 /**
@@ -62,6 +65,22 @@ export function givenCents(
   for (const tx of allTxs) {
     for (const link of tx.reimbursements ?? []) {
       if (link.txId === creditId) sum += link.amountCents;
+    }
+  }
+  return sum;
+}
+
+/** #197: cents ONE part of a split credit has given away — links that
+ *  name the part explicitly (whole-credit links never count here) */
+export function creditPartGivenCents(
+  allTxs: readonly Pick<TransactionRow, 'reimbursements'>[],
+  creditId: string,
+  creditPartId: string,
+): number {
+  let sum = 0;
+  for (const tx of allTxs) {
+    for (const link of tx.reimbursements ?? []) {
+      if (link.txId === creditId && link.creditPartId === creditPartId) sum += link.amountCents;
     }
   }
   return sum;

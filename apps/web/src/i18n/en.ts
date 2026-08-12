@@ -251,6 +251,7 @@ export const en = {
   'tx.awaitingCounterpart': 'Awaiting counterpart',
   'tx.createCounterpart': 'Create the matching transaction on {name}',
   'tx.counterNoMatch': 'No other accounts in this space yet.',
+  'tx.counterDetach': 'Remove counterparty',
   'mina.start': 'Start the tour',
   'mina.replay': 'Replay the Mina tutorial',
   'mina.minimize': 'Tuck Mina away',

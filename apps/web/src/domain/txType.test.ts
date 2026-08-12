@@ -9,6 +9,7 @@ import {
   counterTypesForFamily,
   familyForCounter,
   movementCatFor,
+  movementCatsForCounter,
   typeForLinkedAccount,
 } from './txType';
 import type { AccountType, TxType } from '@/db/types';
@@ -125,8 +126,15 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
       expect(counterTypesFor('savingDeposit')).toEqual(['savings']);
       expect(counterTypesFor('savingWithdraw')).toEqual(['savings']);
     });
-    it('the debt movements point at loan-backing accounts', () => {
-      expect(counterTypesFor('loanRepayment')).toEqual(['loan', 'mortgage']);
+    it('the debt movements point at loan-backing accounts — credit cards included (#218)', () => {
+      expect(counterTypesFor('loanRepayment')).toEqual(['loan', 'mortgage', 'credit']);
+    });
+    it('#218: a credit counter can mean TWO things — transfer or debt payment', () => {
+      expect([...movementCatsForCounter('credit', 'debit')].sort()).toEqual(['loanRepayment', 'transferOut']);
+      expect([...movementCatsForCounter('credit', 'credit')].sort()).toEqual(['debtBorrowed', 'transferIn']);
+      // single-meaning counters narrow to exactly one category
+      expect([...movementCatsForCounter('savings', 'debit')]).toEqual(['savingDeposit']);
+      expect([...movementCatsForCounter('cash', 'debit')].sort()).toEqual(['cashWithdraw', 'transferOut']);
     });
     it('plain Transfer lists REGULAR accounts only — the special kinds ARE the family categories (user rule)', () => {
       expect(counterTypesFor('transferOut')).toEqual(['checking', 'cash', 'credit']);

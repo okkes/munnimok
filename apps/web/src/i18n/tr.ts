@@ -253,6 +253,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tx.awaitingCounterpart': 'Karşı işlem bekleniyor',
   'tx.createCounterpart': '{name} hesabına eşleşen işlemi oluştur',
   'tx.counterNoMatch': 'Bu alanda henüz başka hesap yok.',
+  'tx.counterDetach': 'Karşı hesabı kaldır',
   'mina.start': 'Tura başla',
   'mina.replay': 'Mina eğitimini yeniden oynat',
   'mina.minimize': 'Mina’yı kenara al',

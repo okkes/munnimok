@@ -811,13 +811,14 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         includePct
         excludeAccountId={effectiveAccount ?? ''}
         askDisabled={!!ownStamp}
+        mirrorBaseId={tx?.id}
         onApply={(entries) => {
           if (entries.length === 1) {
             setStagedCats(null);
             setCatId(entries[0].catId);
             // a single entry's link (answered in the editor) IS the
-            // row's counterparty
-            if (entries[0].linkedAccountId) setLinkedAccountId(entries[0].linkedAccountId);
+            // row's counterparty — #218: a BARE entry clears it too
+            setLinkedAccountId(entries[0].linkedAccountId ?? null);
             return;
           }
           setStagedCats(entries);
