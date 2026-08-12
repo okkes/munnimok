@@ -1992,7 +1992,7 @@ export const en = {
   'tour.tx.2t': 'Find anything',
   'tour.tx.2b': 'Search by merchant or note; the filter chips narrow by category, account or review state.',
   'tour.tx.3t': 'The detail does the work',
-  'tour.tx.3b': 'Open a transaction to change its categories — one, or several with Split categories. A special pick like Set aside or Funding asks its counterparty on the spot, per category. You can also split into parts, link reimbursements, attach a receipt, or tie it to an event or recurring cost.',
+  'tour.tx.3b': 'Open a transaction to change its categories — one, or several with Split categories. Only picks that fit the account and the money’s direction are offered; a special pick like Set aside asks its matching counterparty on the spot, per category — or pick the counterparty first and the category fills itself. You can also split into parts, link reimbursements, attach a receipt, or tie it to an event or recurring cost.',
   'tour.tx.4t': 'Add one by hand',
   'tour.tx.4b': 'Cash expenses and anything your bank doesn’t know about go in here.',
   'tour.rec.1t': 'Costs that keep coming',

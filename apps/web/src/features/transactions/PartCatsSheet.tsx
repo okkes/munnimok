@@ -4,13 +4,14 @@ import { fmtCents, parseCents } from '@/lib/money';
 import { nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
 import { UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
+import { counterTypesFor, movementCatFor } from '@/domain/txType';
 import { resolveSplitsFor } from '@/domain/splits';
 import { useSpaceAccounts } from '@/application/transactions';
 import type { DefaultFamily } from '@/application/defaultAccounts';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { CounterpartySheet } from './TxKindSheet';
-import type { TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountType, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
@@ -28,14 +29,17 @@ interface CatEntry {
 }
 
 /** #133 r4: does this category ask a counterparty, and which face of
- *  the sheet answers it? Families pin the Default pot, funding filters
- *  to funding attachments, transfer is the mandatory plain ask. */
-function counterAskFor(catId: string): { defaultFamily?: DefaultFamily; fundingOnly: boolean; mandatory: boolean } | null {
+ *  the sheet answers it? Families pin the Default pot; #133 r5: every
+ *  ask lists only the account types its category can mean (the
+ *  bijection — "Set aside" points at savings accounts, Transfer at
+ *  regular ones). Transfer stays the mandatory ask. */
+function counterAskFor(catId: string): { defaultFamily?: DefaultFamily; counterTypes?: readonly AccountType[]; mandatory: boolean } | null {
   const family = specialCatType(catId);
   if (!family) return null;
-  if (family === 'transfer') return { fundingOnly: false, mandatory: true };
-  if (family === 'funding') return { fundingOnly: true, mandatory: false };
-  return { defaultFamily: family as DefaultFamily, fundingOnly: false, mandatory: false };
+  const counterTypes = counterTypesFor(catId);
+  if (family === 'transfer') return { counterTypes, mandatory: true };
+  if (family === 'funding') return { counterTypes, mandatory: false };
+  return { defaultFamily: family as DefaultFamily, counterTypes, mandatory: false };
 }
 
 /** the stored link fields an entry carries out of the editor */
@@ -348,6 +352,9 @@ export function CatsSheet({
   };
 
   const shownRemainder = mode === 'pct' ? `${remainder}%` : fmtCents(Math.abs(remainder), currency, lang);
+  // #133 r5: the owning account's type is the picker's context — the
+  // matrix narrows the movement subs to the ones this row can mean
+  const sourceType = (accounts ?? []).find((a) => a.id === excludeAccountId)?.type;
   const pickedCatId = pickerFor === null ? undefined : entries[pickerFor]?.catId;
   const counterEntry = counterFor === null ? undefined : entries[counterFor];
   const counterAsk = counterEntry && !askDisabled ? counterAskFor(counterEntry.catId) : null;
@@ -384,8 +391,14 @@ export function CatsSheet({
           </div>
           {entries.map((entry, i) => {
             // #133 r4: a ◆ entry answers its counterparty right under its
-            // own row — the ask opens on pick, this is the re-ask door
+            // own row — the ask opens on pick, this is the re-ask door.
+            // #133 r5: a FRESH entry shows the line too — the
+            // counterparty-first door (pick the account, the one category
+            // the bijection allows files itself)
             const ask = askDisabled ? null : counterAskFor(entry.catId);
+            // (a recurring-narrowed editor manages its categories — the
+            // account-first shortcut would side-step the allowlist)
+            const counterFirstDoor = !askDisabled && !allowedCatIds && entry.catId === UNCATEGORIZED_ID;
             const counterName = entry.linkedAccountId
               ? ((accounts ?? []).find((a) => a.id === entry.linkedAccountId)?.name ?? t('tx.counterparty'))
               : undefined;
@@ -424,7 +437,7 @@ export function CatsSheet({
                     </button>
                   )}
                 </div>
-                {(ask || entry.linkedAccountId) && (
+                {(ask || counterFirstDoor || entry.linkedAccountId) && (
                   <button
                     data-testid={`part-cat-counter-${i}`}
                     onClick={() => setCounterFor(i)}
@@ -481,6 +494,7 @@ export function CatsSheet({
         }}
         direction={direction}
         txType={txType}
+        sourceAccountType={sourceType}
         selectedId={pickedCatId}
         excludeIds={excluded}
         onlyIds={allowedCatIds}
@@ -523,7 +537,7 @@ export function CatsSheet({
         excludeAccountId={excludeAccountId}
         currentLinkedId={counterEntry?.linkedAccountId}
         defaultFamily={counterAsk?.defaultFamily}
-        fundingOnly={counterAsk?.fundingOnly ?? false}
+        counterTypes={counterAsk?.counterTypes}
         anchor={
           anchor && counterEntry
             ? {
@@ -534,7 +548,22 @@ export function CatsSheet({
             : undefined
         }
         onChoose={(account, peer) => {
-          if (counterFor !== null) patchEntry(counterFor, { linkedAccountId: account.id, transferPeerId: peer?.txId });
+          if (counterFor === null) return;
+          // #133 r5: the answered account's KIND names the category —
+          // counterparty-first fills a fresh entry, a matching ask is a
+          // no-op, and the Create door building a different kind than
+          // the asking category refiles honestly (the bijection wins)
+          const current = entries[counterFor];
+          const sign = direction === 'debit' ? -1 : 1;
+          const derived =
+            current && (current.catId === UNCATEGORIZED_ID || specialCatType(current.catId))
+              ? movementCatFor(account.type, sign)
+              : undefined;
+          patchEntry(counterFor, {
+            ...(derived ? { catId: derived } : {}),
+            linkedAccountId: account.id,
+            transferPeerId: peer?.txId,
+          });
           rollbackRef.current = null;
         }}
       />

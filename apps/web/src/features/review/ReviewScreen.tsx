@@ -11,9 +11,9 @@ import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFo
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withCats, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
-import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
+import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
 import { Collapse } from '@/ui/Collapse';
-import { accountStamp, typeForLinkedAccount } from '@/domain/txType';
+import { accountStamp, counterTypesForFamily, familyForCounter, movementCatFor } from '@/domain/txType';
 import type { DefaultFamily } from '@/application/defaultAccounts';
 import { normalizeIban } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
@@ -390,6 +390,16 @@ function CardCategoryRows({
                   <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(singleCat.parentId), t)}</span>
                 )}
                 {spread && <span className="block truncate text-[11px] font-normal text-ink-4">{spread}</span>}
+                {/* #133 r5: the settled/staged counterparty shows WITH
+                    the category, not only inside the editor */}
+                {draft?.linkedAccountId && (accounts ?? []).some((a) => a.id === draft.linkedAccountId) && (
+                  <span
+                    className="block truncate text-[11px] font-normal text-ink-4"
+                    data-testid={`review-cat-counter-${single?.catId ?? draft.catId}`}
+                  >
+                    → {(accounts ?? []).find((a) => a.id === draft.linkedAccountId)?.name}
+                  </span>
+                )}
               </>
             ) : (
               t('review.pickPrompt')
@@ -667,8 +677,8 @@ export function ReviewPartDeck({
       )}
 
       {/* the expanded part's counterparty RE-PICK (#133 r4: the ◆ asks
-          moved inside the category editor) — R2's inversion, transfer
-          files the locked sub */}
+          moved inside the category editor) — #133 r5 bijection: the
+          picked account's kind names the family AND its movement sub */}
       <CounterpartySheet
         open={counterFor !== null}
         onOpenChange={(next) => {
@@ -678,11 +688,10 @@ export function ReviewPartDeck({
         currentLinkedId={partAt(parts, counterFor)?.linkedAccountId}
         onChoose={(account) => {
           if (counterFor === null) return;
-          const kind = typeForLinkedAccount(account.type);
           patchPart(counterFor, {
-            txType: kind,
+            txType: familyForCounter(account.type),
             linkedAccountId: account.id,
-            catId: kind !== 'transfer' ? parts[counterFor].catId : (autoSubFor('transfer', tx.amountCents) ?? parts[counterFor].catId),
+            catId: movementCatFor(account.type, tx.amountCents),
           });
         }}
       />
@@ -1095,6 +1104,15 @@ function RecurringPickSheet({
 const loanCounterOf = (counter: { type: string; name: string } | undefined): { name: string } | undefined =>
   counter && ['loan', 'mortgage'].includes(counter.type) ? { name: counter.name } : undefined;
 
+/** #133 r5: the card ask's two faces, out of the component (S3776) —
+ *  families pin their Default pot; funding and the mandatory transfer
+ *  ask pin nothing, and every armed ask narrows to its account types */
+type CardAskFamily = DefaultFamily | 'funding' | 'transfer';
+const askDefaultFamily = (family: CardAskFamily | null): DefaultFamily | undefined =>
+  family === 'funding' || family === 'transfer' ? undefined : (family ?? undefined);
+const askCounterTypes = (family: CardAskFamily | null): readonly AccountType[] | undefined =>
+  family ? counterTypesForFamily(family) : undefined;
+
 /**
  * Review queue, rebuilt around the legacy mechanics with a calmer face:
  * one card at a time, the prediction pre-applied WITH its reason, bulk
@@ -1156,7 +1174,9 @@ export function ReviewScreen() {
   // picker without choosing rolls the kind back to what it was
   // #133 C: a ◆ family pick pins the Default row on the counter sheet;
   // #152 r2: the ◆ Funding pick asks among funding attachments instead
-  const [counterFamily, setCounterFamily] = useState<DefaultFamily | 'funding' | null>(null);
+  // #133 r5: 'transfer' rides along so the mandatory ask lists only
+  // regular accounts (the special kinds ARE the family categories)
+  const [counterFamily, setCounterFamily] = useState<CardAskFamily | null>(null);
   const [counterOpen, setCounterOpen] = useState(false);
   const counterFallback = useRef<ReviewDraft | null>(null);
   const counterChosen = useRef(false);
@@ -1407,7 +1427,7 @@ export function ReviewScreen() {
     // is unrepresentable)
     if (family === 'transfer' && !ownStamp) {
       counterFallback.current = draft;
-      setCounterFamily(null);
+      setCounterFamily('transfer');
       setCounterOpen(true);
       return;
     }
@@ -1585,7 +1605,10 @@ export function ReviewScreen() {
                         : undefined
                     }
                     onCounter={() => {
+                      // the generic re-pick door: every kind listed, the
+                      // pick files by its kind (r5 bijection)
                       counterFallback.current = null;
+                      setCounterFamily(null);
                       setCounterOpen(true);
                     }}
                   />
@@ -1797,8 +1820,8 @@ export function ReviewScreen() {
           }}
           excludeAccountId={tx.accountId}
           currentLinkedId={draft.linkedAccountId}
-          defaultFamily={counterFamily === 'funding' ? undefined : (counterFamily ?? undefined)}
-          fundingOnly={counterFamily === 'funding'}
+          defaultFamily={askDefaultFamily(counterFamily)}
+          counterTypes={askCounterTypes(counterFamily)}
           onChoose={(account) => {
             counterChosen.current = true;
             setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));

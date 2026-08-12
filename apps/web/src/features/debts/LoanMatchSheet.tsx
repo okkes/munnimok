@@ -110,17 +110,18 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
       for (const { tx } of candidates) {
         if (!picked.has(tx.id)) continue;
         // a loan link IS a debt payment (review finding: leaving the
-        // spending category would double-count consumption). R2: the
-        // linked leg is a plain TRANSFER with the locked sub — the loan's
-        // own ledger gets the minted mirror (typed by its stamp) from the
-        // choke point, and the count-it marker rides the SAME write so a
-        // pre-anchor mint moves the balance exactly when opted in.
+        // spending category would double-count consumption). #133 r5
+        // bijection: the source leg files the DEBT story by its
+        // counter's kind — "Loan payment", not a blanket transfer; the
+        // loan's own ledger gets the minted mirror (typed by its stamp)
+        // from the choke point, and the count-it marker rides the SAME
+        // write so a pre-anchor mint moves the balance when opted in.
         await transform(
           tx,
           {
             linkedAccountId: accountId,
-            txType: 'transfer',
-            catId: autoSubFor('transfer', tx.amountCents),
+            txType: 'debtPayment',
+            catId: autoSubFor('debtPayment', tx.amountCents),
             ...(counted.has(tx.id) ? { loanCounted: 1 as const } : {}),
           },
           'txLink',

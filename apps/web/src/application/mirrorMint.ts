@@ -1,6 +1,6 @@
 import { REIMBURSED_ID, autoSubFor, stampMovementSub } from '@/domain/categories';
 import { catMirrorSourceId, mirrorTxId } from '@/domain/feedIds';
-import { accountStamp } from '@/domain/txType';
+import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { countsTowardLoan } from './loanBalance';
 import type { StorageBackend } from '@/db/backend';
@@ -140,6 +140,10 @@ export async function planMirrorChange(
     const alreadyMinted = existing?.deleted === 0 && existing.accountId === nextAccount?.id;
     if (nextAccount && (currentPeerId === undefined || currentPeerId === mid || sourceFields.transferPeerId === null)) {
       const stamp = accountStamp(nextAccount.type);
+      // #133 r5: an unstamped mirror files by ITS counter's kind — the
+      // source account (a savings row's leg on a manual regular account
+      // reads "Take out", not "Transfer in")
+      const sourceType = (await store.get('account', source.accountId))?.type;
       const mirrorAmount = -source.amountCents;
       steps.push(async (repo) => {
         if (!alreadyMinted) {
@@ -150,8 +154,10 @@ export async function planMirrorChange(
             amountCents: mirrorAmount,
             currency: source.currency,
             merchant: source.merchant,
-            txType: stamp ?? 'transfer',
-            catId: (stamp ? stampMovementSub(stamp, mirrorAmount) : undefined) ?? autoSubFor('transfer', mirrorAmount),
+            txType: stamp ?? (sourceType ? familyForCounter(sourceType) : 'transfer'),
+            catId:
+              (stamp ? stampMovementSub(stamp, mirrorAmount) : undefined) ??
+              (sourceType ? movementCatFor(sourceType, mirrorAmount) : autoSubFor('transfer', mirrorAmount)),
             needsReview: 0 as const,
             linkedAccountId: source.accountId,
             transferPeerId: source.id,

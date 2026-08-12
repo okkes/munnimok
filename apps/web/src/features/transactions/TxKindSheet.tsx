@@ -104,7 +104,7 @@ export function CounterpartySheet({
   currentLinkedId,
   onChoose,
   defaultFamily,
-  fundingOnly = false,
+  counterTypes,
   anchor,
 }: Readonly<{
   open: boolean;
@@ -117,9 +117,12 @@ export function CounterpartySheet({
   onChoose: (account: { id: string; type: AccountType }, peer?: { txId: string }) => void;
   /** #133 B: a ◆ family ask pins the "Default — no setup" row on top */
   defaultFamily?: DefaultFamily;
-  /** #152 r2: the ◆ Funding ask — only accounts this space attached AS
-   *  funding qualify (no Default pot; the Create door still works) */
-  fundingOnly?: boolean;
+  /** #133 r5: the account types this ask may offer — the asking
+   *  category's side of the bijection ("Set aside" lists savings
+   *  accounts only, plain Transfer only regular ones). undefined =
+   *  every tracked account qualifies (the generic doors, which file
+   *  the category from whatever kind gets picked). */
+  counterTypes?: readonly AccountType[];
   /** #133 B: the row being linked — enables the pick-existing fork on
    *  manual counterparties */
   anchor?: { id: string; amountCents: number; date: string };
@@ -139,13 +142,14 @@ export function CounterpartySheet({
 
   const candidates = useMemo(
     // the family defaults never list as ordinary rows — the pinned
-    // Default entry is their one face (approved design). A funding ask
-    // (#152 r2) lists only the space's funding attachments.
+    // Default entry is their one face (approved design). #133 r5: an
+    // asking category narrows the list to ITS account types — the
+    // counterparty must make sense for the category (user rule).
     () =>
       (allAccounts ?? []).filter(
-        (a) => a.id !== excludeAccountId && !a.archived && !a.defaultFor && (!fundingOnly || a.type === 'funding'),
+        (a) => a.id !== excludeAccountId && !a.archived && !a.defaultFor && (!counterTypes || counterTypes.includes(a.type)),
       ),
-    [allAccounts, excludeAccountId, fundingOnly],
+    [allAccounts, excludeAccountId, counterTypes],
   );
 
   // a loan account is a DEBT's backing account (1:1, user design
@@ -181,7 +185,9 @@ export function CounterpartySheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.counterparty')} size="form">
-      <p className="pb-2 text-[12px] text-ink-3">{t(fundingOnly ? 'tx.counterFundingHint' : 'tx.counterAccountHint')}</p>
+      <p className="pb-2 text-[12px] text-ink-3">
+        {t(counterTypes?.length === 1 && counterTypes[0] === 'funding' ? 'tx.counterFundingHint' : 'tx.counterAccountHint')}
+      </p>
       {/* the ◆ family ask leads with Default (#133 ruling 1) */}
       {defaultFamily && (
         <button

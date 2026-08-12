@@ -60,7 +60,7 @@ describe('linkAllCounterparties', () => {
     db.close();
   });
 
-  it('a savings counterparty makes a TRANSFER and mints the pot leg (typed-splits v2)', async () => {
+  it('#133 r5: a savings counterparty files the SAVING story on the source leg and mints the pot leg', async () => {
     const { db, repo } = await setup();
     await repo.upsert('transaction', 's1', 'tx-save', {
       accountId: 'acct-main', currency: 'EUR', needsReview: 0, date: '2026-07-01',
@@ -68,9 +68,10 @@ describe('linkAllCounterparties', () => {
     });
     await repo.upsert('account', 's1', 'acct-save', { name: 'Buffer', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, iban: 'NL02 SAVE 0000 0000 02' });
     await linkAllCounterparties(new DexieBackend(db), repo, 's1');
-    // R2 inversion: the source leg is a plain transfer with the locked sub
+    // the bijection: the counter's kind names the family — the source
+    // leg reads "Set aside", never a blanket Transfer out
     const source = await db.transactions.get('tx-save');
-    expect(source).toMatchObject({ linkedAccountId: 'acct-save', txType: 'transfer', catId: 'transferOut' });
+    expect(source).toMatchObject({ linkedAccountId: 'acct-save', txType: 'saving', catId: 'savingDeposit' });
     // …and the linked MANUAL pot got its mirror leg minted: the pot's own
     // ledger holds the saving story, and its balance moved with it
     expect(source?.transferPeerId).toBe(mirrorTxId('tx-save'));

@@ -267,7 +267,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // explicit reimbursed slice, once per identity (marker-gated;
       // ALL identities — demo/offline data migrates too)
       const bootChain = (async () => {
-        const { migrateReimbursementSlices, migrateRetiredDebtSubs, migrateFundingRows, migrateCatSpreads } = await import('@/application/catalogMaintenance');
+        const { migrateReimbursementSlices, migrateRetiredDebtSubs, migrateFundingRows, migrateCatSpreads, migrateCounterFiledTransfers } = await import('@/application/catalogMaintenance');
         await migrateReimbursementSlices(store, repo);
         // kind simplification: counterparty-less transfer-family rows
         // become plain income/expense by sign (marker-gated, all
@@ -283,6 +283,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // into the row's own `cats` partition (after the settled-slice
         // normalization above, so the gross invariant already holds)
         await migrateCatSpreads(store, repo);
+        // #133 r5: Transfer filed toward a SPECIAL counterparty refiles
+        // as the family's movement sub (the bijection) — rows, parts and
+        // spread entries alike; entry mirrors re-key through the choke
+        await migrateCounterFiledTransfers(store, repo);
         // …and linked family rows invert — regular leg = transfer with
         // the locked cat, the manual counter's mirror minted (no delta:
         // the old lane already moved the balance at link time)

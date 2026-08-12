@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { ALL_TX_TYPES, accountStamp, applyTypeChange, categoryConflictsWithType, typeForLinkedAccount } from './txType';
+import {
+  ALL_TX_TYPES,
+  accountStamp,
+  allowedSpecialCats,
+  applyTypeChange,
+  categoryConflictsWithType,
+  counterTypesFor,
+  counterTypesForFamily,
+  familyForCounter,
+  movementCatFor,
+  typeForLinkedAccount,
+} from './txType';
 import type { AccountType, TxType } from '@/db/types';
 
 describe('typeForLinkedAccount (R2 inversion, 2026-08-05)', () => {
@@ -27,6 +38,111 @@ describe('accountStamp (R1)', () => {
   });
   it('no account, no stamp', () => {
     expect(accountStamp(undefined)).toBeUndefined();
+  });
+});
+
+describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => {
+  describe('familyForCounter', () => {
+    const cases: [AccountType, TxType][] = [
+      ['savings', 'saving'],
+      ['loan', 'debtPayment'],
+      ['mortgage', 'debtPayment'],
+      ['brokerage', 'investment'],
+      ['funding', 'funding'],
+      ['checking', 'transfer'],
+      ['cash', 'transfer'],
+      ['credit', 'transfer'],
+    ];
+    it.each(cases)('%s counter -> %s', (accountType, family) => {
+      expect(familyForCounter(accountType)).toBe(family);
+    });
+  });
+
+  describe('movementCatFor — the write side', () => {
+    const out: [AccountType, string][] = [
+      ['savings', 'savingDeposit'],
+      ['loan', 'loanRepayment'],
+      ['mortgage', 'loanRepayment'],
+      ['brokerage', 'investBuy'],
+      ['funding', 'fundingOut'],
+      ['checking', 'transferOut'],
+      ['credit', 'transferOut'],
+      ['cash', 'cashWithdraw'],
+    ];
+    it.each(out)('money out to a %s account files %s', (accountType, catId) => {
+      expect(movementCatFor(accountType, -1200)).toBe(catId);
+    });
+    const inn: [AccountType, string][] = [
+      ['savings', 'savingWithdraw'],
+      ['loan', 'debtBorrowed'],
+      ['brokerage', 'investSell'],
+      ['funding', 'fundingIn'],
+      ['checking', 'transferIn'],
+      ['cash', 'cashDeposit'],
+    ];
+    it.each(inn)('money in from a %s account files %s', (accountType, catId) => {
+      expect(movementCatFor(accountType, 1200)).toBe(catId);
+    });
+  });
+
+  describe('allowedSpecialCats — what the picker may offer', () => {
+    it('a regular account offers exactly ONE sub per family and side', () => {
+      expect([...allowedSpecialCats('checking', 'debit')].sort()).toEqual(
+        ['cashWithdraw', 'fundingOut', 'investBuy', 'loanRepayment', 'savingDeposit', 'transferOut'].sort(),
+      );
+      expect([...allowedSpecialCats('checking', 'credit')].sort()).toEqual(
+        ['cashDeposit', 'fundingIn', 'investSell', 'debtBorrowed', 'savingWithdraw', 'transferIn'].sort(),
+      );
+    });
+    it('Take out, Interest and Fees never appear on a regular row (the user screenshot)', () => {
+      const debit = allowedSpecialCats('checking', 'debit');
+      for (const hidden of ['savingWithdraw', 'savingInterest', 'savingFees', 'debtInterest', 'debtFees', 'investDividend', 'investFees']) {
+        expect(debit.has(hidden)).toBe(false);
+      }
+    });
+    it('the savings ledger runs sign-inverted: money in = Set aside or Interest', () => {
+      expect([...allowedSpecialCats('savings', 'credit')].sort()).toEqual(['savingDeposit', 'savingInterest']);
+      expect([...allowedSpecialCats('savings', 'debit')].sort()).toEqual(['savingFees', 'savingWithdraw']);
+    });
+    it('the loan ledger: + is the repayment arriving, − grows the debt', () => {
+      expect([...allowedSpecialCats('loan', 'credit')]).toEqual(['loanRepayment']);
+      expect([...allowedSpecialCats('loan', 'debit')].sort()).toEqual(['debtBorrowed', 'debtFees', 'debtInterest']);
+    });
+    it('the brokerage ledger: contributions and dividends land, withdrawals and fees drain', () => {
+      expect([...allowedSpecialCats('brokerage', 'credit')].sort()).toEqual(['investContribution', 'investDividend']);
+      expect([...allowedSpecialCats('brokerage', 'debit')].sort()).toEqual(['investFees', 'investWithdraw']);
+    });
+    it('the generic Invest sub is in NO cell — hidden wherever context filters', () => {
+      for (const type of ['checking', 'savings', 'brokerage'] as AccountType[]) {
+        expect(allowedSpecialCats(type, 'debit').has('invest')).toBe(false);
+        expect(allowedSpecialCats(type, 'credit').has('invest')).toBe(false);
+      }
+    });
+  });
+
+  describe('counterTypesFor — which accounts an ask may list', () => {
+    it('Set aside points only at savings accounts', () => {
+      expect(counterTypesFor('savingDeposit')).toEqual(['savings']);
+      expect(counterTypesFor('savingWithdraw')).toEqual(['savings']);
+    });
+    it('the debt movements point at loan-backing accounts', () => {
+      expect(counterTypesFor('loanRepayment')).toEqual(['loan', 'mortgage']);
+    });
+    it('plain Transfer lists REGULAR accounts only — the special kinds ARE the family categories (user rule)', () => {
+      expect(counterTypesFor('transferOut')).toEqual(['checking', 'cash', 'credit']);
+      expect(counterTypesFor('transferIn')).toEqual(['checking', 'cash', 'credit']);
+    });
+    it('the ATM pair points at cash wallets; funding at funding attachments', () => {
+      expect(counterTypesFor('cashWithdraw')).toEqual(['cash']);
+      expect(counterTypesFor('fundingOut')).toEqual(['funding']);
+    });
+    it('a plain category asks nothing', () => {
+      expect(counterTypesFor('groceries')).toBeUndefined();
+    });
+    it('the family read agrees with the per-category read', () => {
+      expect(counterTypesForFamily('saving')).toEqual(counterTypesFor('savingDeposit'));
+      expect(counterTypesForFamily('investment')).toEqual(counterTypesFor('investBuy'));
+    });
   });
 });
 

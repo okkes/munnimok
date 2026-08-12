@@ -2,8 +2,10 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { tombstonedIds } from '@/domain/catalogDoc';
-import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
-import type { TxSplit, TxSplitCat } from '@/db/types';
+import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
+import { familyForCounter, movementCatFor } from '@/domain/txType';
+import { catMirrorSourceId, mirrorTxId, partMirrorSourceId } from '@/domain/feedIds';
+import type { AccountType, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { givenCents, settledSplits, totalReimbursedCents } from '@/domain/reimbursement';
 import { standardTypeFor } from '@/domain/txKind';
 import { cachedCatalog } from '@/sync/catalogSync';
@@ -191,6 +193,105 @@ export async function migrateCatSpreads(store: StorageBackend, repo: Repo): Prom
     if (!fold) continue;
     await repo.upsert('txMeta', meta.spaceId, meta.id, { ...fold, splits: null as never });
     touched++;
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
+ * #133 r5 (user): Transfer filed toward a SPECIAL counterparty is the
+ * family's story wearing the wrong name — "you cannot select transfer
+ * out [when the] counterparty is a saving account; you have to use the
+ * saving category instead". One marker-gated pass refiles every such
+ * row, part and spread entry by its counter's kind. Everything runs
+ * through the write choke: a refiled ENTRY drops our old-key mint's
+ * peer, so the cat-keyed mirror differ retires it and mints the same
+ * leg under the new key (net-zero balance); real picked/bank peers
+ * ride along untouched.
+ */
+const TRANSFER_SUBS = new Set(['transferOut', 'transferIn', 'cashWithdraw', 'cashDeposit']);
+
+type CounterRefile = (catId: string | undefined, linkedId: string | undefined, signedCents: number) => string | undefined;
+
+function refileEntries(
+  entries: readonly TxSplitCat[] | undefined,
+  baseId: string,
+  refiled: CounterRefile,
+  sign: 1 | -1,
+): TxSplitCat[] | null {
+  if (!entries?.length) return null;
+  let changed = false;
+  const next = entries.map((entry) => {
+    const cat = refiled(entry.catId, entry.linkedAccountId, sign * Math.abs(entry.amountCents));
+    if (!cat) return entry;
+    changed = true;
+    const oldMid = mirrorTxId(catMirrorSourceId(baseId, entry.catId));
+    return { ...entry, catId: cat, ...(entry.transferPeerId === oldMid ? { transferPeerId: undefined } : {}) };
+  });
+  return changed ? next : null;
+}
+
+function refileParts(
+  tx: { id: string; amountCents: number; splits?: TxSplit[] },
+  refiled: CounterRefile,
+): TxSplit[] | null {
+  let changed = false;
+  const sign: 1 | -1 = tx.amountCents < 0 ? -1 : 1;
+  const next = (tx.splits ?? []).map((part) => {
+    const partCat = refiled(part.catId, part.linkedAccountId, sign * Math.abs(part.amountCents));
+    // an id-less legacy slice never minted entry mirrors — nothing to re-key
+    const partCats = part.id ? refileEntries(part.cats, partMirrorSourceId(tx.id, part.id), refiled, sign) : null;
+    if (!partCat && !partCats) return part;
+    changed = true;
+    return {
+      ...part,
+      ...(partCat ? { catId: partCat, txType: specialCatType(partCat) } : {}),
+      ...(partCats ? { cats: partCats } : {}),
+    };
+  });
+  return changed ? next : null;
+}
+
+function counterRefileFields(
+  tx: { id: string; amountCents: number; catId?: string; linkedAccountId?: string; cats?: TxSplitCat[]; splits?: TxSplit[] },
+  refiled: CounterRefile,
+): { catId?: string; txType?: TxType; cats?: TxSplitCat[]; splits?: TxSplit[] } | null {
+  const fields: { catId?: string; txType?: TxType; cats?: TxSplitCat[]; splits?: TxSplit[] } = {};
+  const rowCat = refiled(tx.catId, tx.linkedAccountId, tx.amountCents);
+  if (rowCat) {
+    fields.catId = rowCat;
+    fields.txType = specialCatType(rowCat);
+  }
+  const cats = refileEntries(tx.cats, tx.id, refiled, tx.amountCents < 0 ? -1 : 1);
+  if (cats) fields.cats = cats;
+  const splits = tx.splits?.length ? refileParts(tx, refiled) : null;
+  if (splits) fields.splits = splits;
+  return Object.keys(fields).length ? fields : null;
+}
+
+export async function migrateCounterFiledTransfers(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'counterFamilyRefile_v1';
+  if (await store.metaGet(markerKey)) return 0;
+  const typeOf = new Map<string, AccountType>(
+    (await store.allRows('account')).filter((a) => a.deleted === 0).map((a) => [a.id, a.type]),
+  );
+  const refiled: CounterRefile = (catId, linkedId, signedCents) => {
+    if (!catId || !TRANSFER_SUBS.has(catId) || !linkedId) return undefined;
+    const counterType = typeOf.get(linkedId);
+    if (!counterType || familyForCounter(counterType) === 'transfer') return undefined;
+    return movementCatFor(counterType, signedCents);
+  };
+
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  for (const space of spaces) {
+    for (const tx of await visibleTransactions(store, space.id)) {
+      if (tx.deleted !== 0) continue;
+      const fields = counterRefileFields(tx, refiled);
+      if (!fields) continue;
+      await writeTxTransform(repo, tx, fields);
+      touched++;
+    }
   }
   await store.metaPut(markerKey, Date.now());
   return touched;

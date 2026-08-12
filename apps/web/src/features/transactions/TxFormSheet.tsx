@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
 import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType, stampMovementSub } from '@/domain/categories';
 import { scaleCatsTo } from '@/domain/txSlices';
-import { accountStamp, typeForLinkedAccount } from '@/domain/txType';
+import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
@@ -413,7 +413,8 @@ function formEffectiveType(
   isExpense: boolean,
 ): TxType {
   if (adjustment) return 'adjustment';
-  const linkedType = linkedAccount ? typeForLinkedAccount(linkedAccount.type) : undefined;
+  // #133 r5 bijection: the counter's KIND names the family
+  const linkedType = linkedAccount ? familyForCounter(linkedAccount.type) : undefined;
   return ownStamp ?? specialCatType(catId) ?? linkedType ?? (isExpense ? 'expense' : 'income');
 }
 
@@ -759,7 +760,13 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onOpenChange={setCounterOpen}
         excludeAccountId={effectiveAccount ?? ''}
         currentLinkedId={linkedAccountId ?? undefined}
-        onChoose={(picked) => setLinkedAccountId(picked.id)}
+        onChoose={(picked) => {
+          setLinkedAccountId(picked.id);
+          // #133 r5 bijection: a movement category follows the newly
+          // picked counter's kind (a plain category is not this rule's
+          // business; a placeholder files at save via the family sub)
+          if (specialCatType(catId)) setCatId(movementCatFor(picked.type, isExpense ? -1 : 1));
+        }}
       />
 
       {/* stacked: account picker */}

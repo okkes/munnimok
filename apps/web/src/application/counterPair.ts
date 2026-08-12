@@ -1,7 +1,7 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { writeTxTransform } from '@/db/joined';
-import { accountStamp } from '@/domain/txType';
+import { accountStamp, movementCatFor } from '@/domain/txType';
 import { autoSubFor, stampMovementSub } from '@/domain/categories';
 
 /**
@@ -24,10 +24,15 @@ export async function pairWithExistingRow(
   if (picked?.deleted !== 0) return;
   const account = await store.get('account', picked.accountId);
   const stamp = account?.deleted === 0 ? accountStamp(account.type) : undefined;
+  // #133 r5: an unstamped picked row files by ITS counter's kind (the
+  // source account) — the bijection holds on both sides of the pair
+  const sourceType = (await store.get('account', source.accountId))?.type;
   await writeTxTransform(repo, picked, {
     linkedAccountId: source.accountId,
     transferPeerId: source.id,
-    catId: (stamp ? stampMovementSub(stamp, picked.amountCents) : undefined) ?? autoSubFor('transfer', picked.amountCents),
+    catId:
+      (stamp ? stampMovementSub(stamp, picked.amountCents) : undefined) ??
+      (sourceType ? movementCatFor(sourceType, picked.amountCents) : autoSubFor('transfer', picked.amountCents)),
     needsReview: 0,
   });
 }

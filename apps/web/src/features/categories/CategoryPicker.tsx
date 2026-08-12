@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
-import { REIMBURSED_ID, isSpecialCategory } from '@/domain/categories';
+import { REIMBURSED_ID, isSpecialCategory, specialCatType } from '@/domain/categories';
+import { allowedSpecialCats } from '@/domain/txType';
 import { kindOf } from '@/domain/txKind';
 import { useLang } from '@/i18n';
 import { Highlight } from '@/ui/Highlight';
@@ -10,7 +11,7 @@ import { Sheet } from '@/ui/Sheet';
 import { catName, useCategories } from './useCategories';
 import { SpecialCatMark } from './SpecialCatMark';
 
-import type { TxType } from '@/db/types';
+import type { AccountType, TxType } from '@/db/types';
 
 interface CategoryPickerProps {
   open: boolean;
@@ -21,6 +22,12 @@ interface CategoryPickerProps {
   direction?: 'debit' | 'credit';
   /** the transaction's type — a category must support it to be pickable */
   txType?: TxType;
+  /** #133 r5: the row's own account type — with `direction` it runs the
+   *  movement matrix, so a regular account's outgoing row only sees
+   *  "Set aside" of the whole saving family (Interest/Fees live on the
+   *  pot's own ledger, where the matrix runs sign-inverted). Omitted =
+   *  no narrowing (pickers without row context). */
+  sourceAccountType?: AccountType;
   /** categories other rows of a split already own — hidden here (user
    *  rule 2026-07-28: never offer picking the same category twice) */
   excludeIds?: readonly string[];
@@ -31,7 +38,7 @@ interface CategoryPickerProps {
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, excludeIds, onlyIds }: Readonly<CategoryPickerProps>) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
   const cats = useCategories();
   const navigate = useNavigate();
@@ -39,6 +46,9 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
+    // #133 r5: with row context, movement-family subs narrow to the
+    // matrix cell (source account type × money side); null = no context
+    const allowedMovement = sourceAccountType && direction ? allowedSpecialCats(sourceAccountType, direction) : null;
     return cats.parents
       .map((parent) => ({
         parent,
@@ -57,12 +67,13 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
           .filter(
             (c) => !txType || c.txTypes.includes(txType) || (kindOf(txType) === 'standard' && isSpecialCategory(c)),
           )
+          .filter((c) => !allowedMovement || specialCatType(c.id) === undefined || allowedMovement.has(c.id))
           .filter((c) => !excludeIds?.includes(c.id))
           .filter((c) => !onlyIds || onlyIds.includes(c.id))
           .filter((c) => !q || catName(c, t).toLowerCase().includes(q)),
       }))
       .filter((g) => g.children.length > 0);
-  }, [cats, query, t, direction, txType, excludeIds, onlyIds]);
+  }, [cats, query, t, direction, txType, sourceAccountType, excludeIds, onlyIds]);
 
   const pick = (catId: string) => {
     onPick(catId);

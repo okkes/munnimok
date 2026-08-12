@@ -4,7 +4,7 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { kindOf } from '@/domain/txKind';
 import { autoSubFor, stampMovementSub } from '@/domain/categories';
-import { accountStamp } from '@/domain/txType';
+import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
 import { matchTransferPairs } from '@/domain/transferMatch';
 import type { TransferLeg } from '@/domain/transferMatch';
 
@@ -68,14 +68,17 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     paired.add(out.id);
     paired.add(twin.id);
     // the twin becomes the typed mirror: pointing back, settled, wearing
-    // its own account's STAMP with the forced movement sub (R1/Q8) — a
-    // regular counter account keeps the plain transfer pair
+    // its own account's STAMP with the forced movement sub (R1/Q8) — an
+    // unstamped twin files by ITS counter's kind (#133 r5 bijection)
     const stamp = accountStamp((await store.get('account', twin.accountId))?.type);
+    const outType = (await store.get('account', out.accountId))?.type;
     await writePair(store, repo, out, twin, {
-      txType: stamp ?? 'transfer',
+      txType: stamp ?? (outType ? familyForCounter(outType) : 'transfer'),
       linkedAccountId: out.accountId,
       needsReview: 0,
-      catId: (stamp ? stampMovementSub(stamp, twin.amountCents) : undefined) ?? autoSubFor('transfer', twin.amountCents),
+      catId:
+        (stamp ? stampMovementSub(stamp, twin.amountCents) : undefined) ??
+        (outType ? movementCatFor(outType, twin.amountCents) : autoSubFor('transfer', twin.amountCents)),
     });
     linked++;
   }
@@ -88,12 +91,25 @@ async function writePair(store: StorageBackend, repo: Repo, out: SpaceTx | undef
   // auto-fills from the other leg, and a STAMPED leg stores its stamp +
   // the forced movement sub (Q8) so the raw row reads true too. The
   // peer in the same write keeps the choke point from minting — pairing
-  // two REAL rows is the pick-existing case by construction.
+  // two REAL rows is the pick-existing case by construction. #133 r5:
+  // an UNSTAMPED leg whose counter is a special account files the
+  // family's movement sub — a checking↔savings pair reads "Set aside",
+  // never "Transfer out"; regular↔regular pairs stay untouched.
   const enrich = async (leg: SpaceTx, other: SpaceTx): Promise<Parameters<typeof writeTxTransform>[2]> => {
     const stamp = accountStamp((await store.get('account', leg.accountId))?.type);
+    if (stamp) {
+      return {
+        ...(leg.linkedAccountId ? {} : { linkedAccountId: other.accountId }),
+        txType: stamp,
+        catId: stampMovementSub(stamp, leg.amountCents),
+        needsReview: 0 as const,
+      };
+    }
+    const counterType = (await store.get('account', other.accountId))?.type;
+    const family = counterType ? familyForCounter(counterType) : 'transfer';
     return {
       ...(leg.linkedAccountId ? {} : { linkedAccountId: other.accountId }),
-      ...(stamp ? { txType: stamp, catId: stampMovementSub(stamp, leg.amountCents), needsReview: 0 as const } : {}),
+      ...(family !== 'transfer' && counterType ? { txType: family, catId: movementCatFor(counterType, leg.amountCents) } : {}),
     };
   };
   await writeTxTransform(repo, out, { ...(await enrich(out, inc)), transferPeerId: inc.id });

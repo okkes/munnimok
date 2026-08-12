@@ -68,12 +68,15 @@ describe('reviewDraft', () => {
     expect(flipped.catId).toBeUndefined();
   });
 
-  it('linking an account makes the leg a TRANSFER with the locked sub (R2 inversion)', () => {
+  it('#133 r5: linking an account names the FAMILY — a savings counter files Set aside, never Transfer out', () => {
     const staged = withCategory(initDraft(expenseTx, undefined, catalog), 'entertainment', catalog);
     const linked = withLinkedAccount(staged, { id: 'a-save', type: 'savings' }, catalog, -1000);
-    // the special meaning lives on the counter ledger now — the source
-    // leg is a plain transfer filed under the sign-picked locked sub
-    expect(linked).toMatchObject({ linkedAccountId: 'a-save', txType: 'transfer', catId: 'transferOut' });
+    // the bijection: the counter's kind IS the story — the invalidated
+    // spending category refiles under the family's sign-picked sub
+    expect(linked).toMatchObject({ linkedAccountId: 'a-save', txType: 'saving', catId: 'savingDeposit' });
+    // a regular counter stays the plain transfer pair
+    const regular = withLinkedAccount(staged, { id: 'a-chk', type: 'checking' }, catalog, -1000);
+    expect(regular).toMatchObject({ linkedAccountId: 'a-chk', txType: 'transfer', catId: 'transferOut' });
     // unlinking keeps the chosen type but frees the account
     expect(withLinkedAccount(linked, null, catalog).linkedAccountId).toBeUndefined();
   });
@@ -93,15 +96,17 @@ describe('withKind (simplified kinds)', () => {
   it('standard resolves by sign and drops the counterparty', async () => {
     const { withKind } = await import('./reviewDraft');
     const linked = withLinkedAccount(initDraft(expenseTx, 'groceries', catalog), { id: 'a-save', type: 'savings' }, catalog);
-    expect(linked.txType).toBe('transfer'); // R2: every tracked counterparty
+    expect(linked.txType).toBe('saving'); // #133 r5: the counter's kind names the family
     expect(withKind(linked, 'standard', -1000, catalog)).toMatchObject({ txType: 'expense', linkedAccountId: undefined });
     expect(withKind(linked, 'standard', 1000, catalog).txType).toBe('income');
   });
 
-  it('transfer keeps a linked counterparty; unlinked starts plain', async () => {
+  it('transfer keeps a linked counterparty (its derived family member survives); unlinked starts plain', async () => {
     const { withKind } = await import('./reviewDraft');
     const linked = withLinkedAccount(initDraft(expenseTx, 'groceries', catalog), { id: 'a-save', type: 'savings' }, catalog);
-    expect(withKind(linked, 'transfer', -1000, catalog).txType).toBe('transfer');
+    // the kind re-pick keeps the DERIVED member — a savings counter
+    // means the saving story (#133 r5), not a downgrade to plain
+    expect(withKind(linked, 'transfer', -1000, catalog).txType).toBe('saving');
     expect(withKind(initDraft(expenseTx, 'groceries', catalog), 'transfer', -1000, catalog)).toMatchObject({
       txType: 'transfer',
       // arc 2 locked doors: the invalidated spending category files under

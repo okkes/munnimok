@@ -1994,7 +1994,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.tx.2t': 'Her şeyi bul',
   'tour.tx.2b': 'Satıcıya veya nota göre ara; filtre çipleri kategori, hesap veya inceleme durumuna göre daraltır.',
   'tour.tx.3t': 'İşi detay yapar',
-  'tour.tx.3b': 'Bir işlemi açıp kategorilerini değiştir — tek tek ya da Kategorileri böl ile birkaç tane. Kenara ayır veya Fonlama gibi özel bir seçim, karşı hesabı anında sorar — her kategori için ayrı. Ayrıca parçalara bölebilir, geri ödemeleri bağlayabilir, fiş ekleyebilir ya da bir etkinliğe veya düzenli gidere bağlayabilirsin.',
+  'tour.tx.3b': 'Bir işlemi açıp kategorilerini değiştir — tek tek ya da Kategorileri böl ile birkaç tane. Yalnızca hesaba ve paranın yönüne uyan seçenekler sunulur; Kenara ayır gibi özel bir seçim, uygun karşı hesabı anında sorar — her kategori için ayrı. İstersen önce karşı hesabı seç, kategori kendiliğinden dolar. Ayrıca parçalara bölebilir, geri ödemeleri bağlayabilir, fiş ekleyebilir ya da bir etkinliğe veya düzenli gidere bağlayabilirsin.',
   'tour.tx.4t': 'Elle ekle',
   'tour.tx.4b': 'Nakit harcamalar ve bankanın bilmediği her şey buradan girilir.',
   'tour.rec.1t': 'Tekrar eden giderler',

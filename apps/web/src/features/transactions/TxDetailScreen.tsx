@@ -25,7 +25,7 @@ import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet, hasOpenSheet } from '@/ui/Sheet';
 import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
-import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
+import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
 import { primaryCatId } from '@/domain/splits';
 import { scaleCatsTo, scaleSplitsTo } from '@/domain/txSlices';
 import { ReviewPartDeck } from '@/features/review/ReviewScreen';
@@ -42,7 +42,7 @@ import type { TxKind } from '@/domain/txKind';
 import { mintMirrorForExistingLink, planCatEntryMirrors, removeMirrorForDeletedSource } from '@/application/mirrorMint';
 import { pairWithExistingRow } from '@/application/counterPair';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
-import { accountStamp, applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
+import { accountStamp, applyTypeChange, familyForCounter, movementCatFor } from '@/domain/txType';
 import { merchantKey } from '@/domain/merchantKey';
 import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
@@ -57,6 +57,18 @@ const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR'
  *  editor. Module-level for S3776. */
 const partTargetId = (multi: boolean, slice: TxSplit | null, canOpen: boolean): string | null =>
   multi && canOpen && slice?.id && slice.catId !== REIMBURSED_ID ? slice.id : null;
+
+/** #133 r5: the settled counterparty a category row names — the
+ *  entry's own link, or the whole row's on the single line (S3776:
+ *  out of the map callback) */
+function sliceCounterName(
+  accounts: readonly { id: string; name: string }[] | undefined,
+  slice: { linkedAccountId?: string } | null,
+  tx: { linkedAccountId?: string },
+): string | undefined {
+  const counterId = slice ? slice.linkedAccountId : tx.linkedAccountId;
+  return counterId ? accounts?.find((a) => a.id === counterId)?.name : undefined;
+}
 
 /** the categories block's rows: one per slice (or the single category).
  *  A single category opens the unified editor; on a container the rows
@@ -80,6 +92,7 @@ function CategorySlices({
   onOpenPart?: (partId: string) => void;
 }>) {
   const { t, lang } = useLang();
+  const accounts = useSpaceAccounts();
   // #211: a container renders its PARTS (navigable pages); a whole row
   // with its own category spread renders one plain row per entry — the
   // classic slice look, every row a door back into the cats editor
@@ -102,6 +115,8 @@ function CategorySlices({
         const spreadNames = slice?.cats?.length
           ? slice.cats.map((c) => catName(cats.byId(c.catId), t)).join(' · ')
           : undefined;
+        // #133 r5: the settled counterparty shows WITH its category
+        const counterName = sliceCounterName(accounts, slice, tx);
         const openPartId = partTargetId(multi, slice, !!onOpenPart);
         return (
           <button
@@ -121,6 +136,11 @@ function CategorySlices({
                   </span>
                 )}
               </span>
+              {counterName && (
+                <span className="block truncate text-[11px] text-ink-4" data-testid={`tx-detail-cat-counter-${i}`}>
+                  → {counterName}
+                </span>
+              )}
             </span>
             {i === 0 && tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
             {slice && <span className="m-num text-[13px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>}
@@ -627,14 +647,14 @@ function singleCatPartitionFields(
 }
 
 /** the part page's counterparty RE-PICK (the fact row's door — #133 r4
- *  moved the ◆ asks inside the category editor): R2's inversion — the
- *  pick makes it a movement, transfer files the locked sub */
+ *  moved the ◆ asks inside the category editor): #133 r5 bijection —
+ *  the picked account's KIND names the family and its movement sub; a
+ *  part already wearing that exact sub keeps it (no-op write). */
 function choosePartCounter(deps: PartAskDeps, picked: { id: string; type: AccountType }): void {
-  const kind = typeForLinkedAccount(picked.type);
   deps.patchPart({
-    txType: kind,
+    txType: familyForCounter(picked.type),
     linkedAccountId: picked.id,
-    ...(kind === 'transfer' ? { catId: autoSubFor('transfer', deps.amountCents) ?? deps.part.catId } : {}),
+    catId: movementCatFor(picked.type, deps.amountCents),
   });
 }
 
@@ -1165,7 +1185,15 @@ function PartDetailBody({
   const kindRowIcon = ownStamp ? 'lock-outline' : 'pencil-outline';
   const partDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
   const partEvent = activeEvents.find((e) => e.id === part.eventId);
-  const spread = part.cats?.length ? part.cats.map((c) => catName(cats.byId(c.catId), t)).join(' · ') : undefined;
+  // #133 r5: each entry names its settled counterparty inline
+  const spread = part.cats?.length
+    ? part.cats
+        .map((c) => {
+          const counter = c.linkedAccountId ? (accounts ?? []).find((a) => a.id === c.linkedAccountId)?.name : undefined;
+          return counter ? `${catName(cats.byId(c.catId), t)} → ${counter}` : catName(cats.byId(c.catId), t);
+        })
+        .join(' · ')
+    : undefined;
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
   // r5: the links that target THIS part, and what the part is net worth
   const allTxs = useSpaceTransactions();
@@ -2118,17 +2146,18 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         testId="tx-delete"
       />
 
-      {/* write-through: choosing a counterparty derives the transfer's
-          exact member; the kind sheet handles standard/adjustment.
-          #133 B: a manual pick forks — mint, or point at the existing
-          row (peer rides the same write) */}
+      {/* write-through: choosing a counterparty names the FAMILY (#133
+          r5 bijection — a savings pick files the saving story); the
+          kind sheet handles standard/adjustment. #133 B: a manual pick
+          forks — mint, or point at the existing row (peer rides the
+          same write) */}
       <CounterpartySheet
         open={counterPickOpen}
         onOpenChange={setCounterPickOpen}
         excludeAccountId={tx.accountId}
         currentLinkedId={tx.linkedAccountId}
         anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
-        onChoose={(picked, peer) => void retype(typeForLinkedAccount(picked.type), picked.id, 'txLink', peer)}
+        onChoose={(picked, peer) => void retype(familyForCounter(picked.type), picked.id, 'txLink', peer)}
       />
       {/* #211: the split-TRANSACTION flow — the values editor whose Done
           only STAGES; nothing is written until the completion deck's

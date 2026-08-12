@@ -300,6 +300,10 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
       expect(tx?.cats?.[1]?.transferPeerId).toBe(mirrorTxId(catMirrorSourceId('dm6', 'savingDeposit')));
     }, { timeout: 8000 });
     db.close();
+    // #133 r5: the SETTLED counterparty shows WITH its category row —
+    // the ◆ entry names the pot right on the detail, the plain one stays bare
+    await waitFor(() => expect(screen.getByTestId('tx-detail-cat-counter-1').textContent).toContain('Demo Savings'));
+    expect(screen.queryByTestId('tx-detail-cat-counter-0')).toBeNull();
   }, 20_000);
 
   it('the marked special category carries the flat-loan story (typed-splits v2)', async () => {

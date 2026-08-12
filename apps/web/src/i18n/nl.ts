@@ -1994,7 +1994,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.tx.2t': 'Vind alles terug',
   'tour.tx.2b': 'Zoek op winkel of notitie; de filterchips versmallen op categorie, rekening of reviewstatus.',
   'tour.tx.3t': 'Het detail doet het werk',
-  'tour.tx.3b': 'Open een transactie om de categorieën te wijzigen — één, of meerdere met Categorieën splitsen. Een speciale keuze zoals Opzij zetten of Financiering vraagt direct om de tegenrekening, per categorie. Je kunt ook in delen splitsen, terugbetalingen koppelen, een bonnetje toevoegen of koppelen aan een evenement of vaste last.',
+  'tour.tx.3b': 'Open een transactie om de categorieën te wijzigen — één, of meerdere met Categorieën splitsen. Alleen keuzes die bij de rekening en de geldrichting passen worden getoond; een speciale keuze zoals Opzij zetten vraagt direct om de passende tegenrekening, per categorie — of kies eerst de tegenrekening en de categorie vult zichzelf in. Je kunt ook in delen splitsen, terugbetalingen koppelen, een bonnetje toevoegen of koppelen aan een evenement of vaste last.',
   'tour.tx.4t': 'Handmatig toevoegen',
   'tour.tx.4b': 'Contante uitgaven en alles wat je bank niet kent, zet je hier zelf neer.',
   'tour.rec.1t': 'Kosten die terugkomen',

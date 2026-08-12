@@ -2,7 +2,7 @@ import { UNCATEGORIZED_ID, autoSubFor, stampMovementSub } from './categories';
 import { primaryCatId } from './splits';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
-import { categoryConflictsWithType, typeForLinkedAccount } from './txType';
+import { categoryConflictsWithType, familyForCounter, movementCatFor } from './txType';
 import type { AccountType, TxSplit, TxSplitCat, TxType } from '@/db/types';
 
 /**
@@ -99,11 +99,12 @@ export function withFamilyCategory(draft: ReviewDraft, amountCents: number): Rev
 // stories live on the marked special CATEGORIES of standard rows now —
 // picking one pulls the type through withCategory's coherence rules.
 
-/** the counter-account makes the leg a transfer (R2); a placeholder
- *  category files under the locked sub when the money's sign is known.
- *  A STAMPED row (R1) keeps its stamp instead — naming a counterparty
- *  makes it a movement, so the movement sub is FORCED from the special
- *  account's own side (Q8: + = set aside / repaid / contributed). */
+/** the counter-account names the FAMILY (#133 r5 bijection — a savings
+ *  counter means the saving story, not a blanket transfer); a
+ *  conflicting or placeholder category files under the family's
+ *  sign-picked sub. A STAMPED row (R1) keeps its stamp instead — naming
+ *  a counterparty makes it a movement, so the movement sub is FORCED
+ *  from the special account's own side (Q8: + = set aside / repaid). */
 export function withLinkedAccount(
   draft: ReviewDraft,
   account: { id: string; type: AccountType } | null,
@@ -120,8 +121,17 @@ export function withLinkedAccount(
       ...(amountCents === undefined ? {} : { catId: stampMovementSub(ownStamp, amountCents) }),
     };
   }
-  const next = withType({ ...draft, linkedAccountId: account.id }, typeForLinkedAccount(account.type), catalog);
-  return amountCents === undefined ? next : withFamilyCategory(next, amountCents);
+  const next = withType({ ...draft, linkedAccountId: account.id }, familyForCounter(account.type), catalog);
+  return amountCents === undefined ? next : withCounterCategory(next, account.type, amountCents);
+}
+
+/** withFamilyCategory's exact-bijection sibling: a placeholder category
+ *  files THE sub the counter's kind means (the ATM pair for cash
+ *  wallets); a deliberate surviving category is never touched. */
+function withCounterCategory(draft: ReviewDraft, accountType: AccountType, amountCents: number): ReviewDraft {
+  if (draft.splits?.length || draft.cats?.length) return draft;
+  if (draft.catId && draft.catId !== UNCATEGORIZED_ID) return draft;
+  return { ...draft, catId: movementCatFor(accountType, amountCents) };
 }
 
 /** splits carry the category: the largest slice represents the whole.

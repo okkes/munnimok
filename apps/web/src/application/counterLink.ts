@@ -2,7 +2,7 @@ import { visibleAccounts, visibleTransactions, writeTxTransform } from '@/db/joi
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { normalizeIban } from '@/domain/feedIds';
-import { applyTypeChange, typeForLinkedAccount } from '@/domain/txType';
+import { applyTypeChange, familyForCounter } from '@/domain/txType';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import { cachedCatalog } from '@/sync/catalogSync';
 
@@ -37,7 +37,9 @@ export async function linkAllCounterparties(store: StorageBackend, repo: Repo, s
     const account = byIban.get(normalizeIban(tx.counterIban));
     if (!account || account.id === tx.accountId) continue;
     const keepType = tx.txType !== 'expense' && tx.txType !== 'income';
-    const nextType = keepType ? tx.txType : typeForLinkedAccount(account.type);
+    // #133 r5: the counter's kind names the family — a savings IBAN
+    // match files the saving story, not a blanket transfer
+    const nextType = keepType ? tx.txType : familyForCounter(account.type);
     const fields = applyTypeChange({
       nextType,
       linkedAccountId: account.id,

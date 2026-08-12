@@ -115,6 +115,22 @@ describe('linkTransferPairs (application, per space)', () => {
     expect(await linkTransferPairs(store, repo)).toBe(0);
   });
 
+  it('#133 r5: the unstamped leg of a checking↔savings pair files Set aside — never Transfer out', async () => {
+    await repo.upsert('transaction', 'priv', 'out', {
+      accountId: 'checking', date: '2026-07-25', amountCents: -50000, currency: 'EUR',
+      merchant: 'To the pot', txType: 'transfer', catId: 'transferOut', linkedAccountId: 'pot', needsReview: 0,
+    });
+    await repo.upsert('transaction', 'priv', 'in', {
+      accountId: 'pot', date: '2026-07-26', amountCents: 50000, currency: 'EUR',
+      merchant: 'From checking', txType: 'saving', needsReview: 0,
+    });
+    expect(await linkTransferPairs(store, repo)).toBe(1);
+    // the bijection holds on BOTH legs: the checking side wears the
+    // family movement sub by its counter's kind, the pot its stamp
+    expect(await db.transactions.get('out')).toMatchObject({ transferPeerId: 'in', txType: 'saving', catId: 'savingDeposit' });
+    expect(await db.transactions.get('in')).toMatchObject({ txType: 'saving', catId: 'savingDeposit', linkedAccountId: 'checking' });
+  });
+
   it('a deliberate out-leg claims its RAW income twin and types the mirror', async () => {
     await repo.upsert('transaction', 'priv', 'out', {
       accountId: 'checking',

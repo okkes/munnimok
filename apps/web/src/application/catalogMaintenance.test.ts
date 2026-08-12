@@ -5,7 +5,8 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { applyCatalogTombstones, migrateCatSpreads, migrateFundingRows, migrateReimbursementSlices } from './catalogMaintenance';
+import { applyCatalogTombstones, migrateCatSpreads, migrateCounterFiledTransfers, migrateFundingRows, migrateReimbursementSlices } from './catalogMaintenance';
+import { catMirrorSourceId, mirrorTxId } from '@/domain/feedIds';
 
 const SPACE = 's1';
 
@@ -110,6 +111,79 @@ describe('reimbursement slice migration (redesign, answer d)', () => {
 
     // marker gates the rerun
     expect(await migrateReimbursementSlices(store, repo)).toBe(0);
+  });
+});
+
+describe('#133 r5 — Transfer filed toward a special counterparty refiles by the counter kind', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  async function seeded() {
+    const store = new DexieBackend(new MunniDB(`munni_cft_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('cft'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'chk2', { name: 'Checking 2', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'save', { name: 'Pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 1_200 });
+    return { store, repo };
+  }
+
+  it('a row-level Transfer out onto a savings counter becomes Set aside (type included); regular pairs stay', async () => {
+    const { store, repo } = await seeded();
+    await repo.upsert('transaction', SPACE, 'bad', {
+      accountId: 'chk', date: '2026-08-01', amountCents: -2_000, currency: 'EUR', merchant: 'Move',
+      catId: 'transferOut', txType: 'transfer', needsReview: 0, linkedAccountId: 'save',
+    });
+    await repo.upsert('transaction', SPACE, 'fine', {
+      accountId: 'chk', date: '2026-08-02', amountCents: -900, currency: 'EUR', merchant: 'Between',
+      catId: 'transferOut', txType: 'transfer', needsReview: 0, linkedAccountId: 'chk2',
+    });
+    await repo.upsert('transaction', SPACE, 'bare', {
+      accountId: 'chk', date: '2026-08-03', amountCents: -400, currency: 'EUR', merchant: 'Unlinked',
+      catId: 'transferOut', txType: 'transfer', needsReview: 0,
+    });
+
+    expect(await migrateCounterFiledTransfers(store, repo)).toBe(1);
+    expect(await store.get('transaction', 'bad')).toMatchObject({ catId: 'savingDeposit', txType: 'saving', linkedAccountId: 'save' });
+    expect(await store.get('transaction', 'fine')).toMatchObject({ catId: 'transferOut', txType: 'transfer' });
+    expect(await store.get('transaction', 'bare')).toMatchObject({ catId: 'transferOut' });
+    // marker gates the rerun
+    expect(await migrateCounterFiledTransfers(store, repo)).toBe(0);
+  });
+
+  it('a spread ENTRY re-keys its mint: the old-key mirror retires, the same leg mints under the new key', async () => {
+    const { store, repo } = await seeded();
+    const oldMid = mirrorTxId(catMirrorSourceId('spread', 'transferOut'));
+    const newMid = mirrorTxId(catMirrorSourceId('spread', 'savingDeposit'));
+    // the r4-era state: a transferOut entry linked to the pot, its
+    // entry-sized mint live on the savings ledger, balance moved
+    await repo.upsert('transaction', SPACE, 'spread', {
+      accountId: 'chk', date: '2026-08-01', amountCents: -5_000, currency: 'EUR', merchant: 'Mixed',
+      catId: 'groceries', txType: 'expense', needsReview: 0,
+      cats: [
+        { catId: 'groceries', amountCents: 3_800 },
+        { catId: 'transferOut', amountCents: 1_200, linkedAccountId: 'save', transferPeerId: oldMid },
+      ],
+    });
+    await repo.upsert('transaction', SPACE, oldMid, {
+      accountId: 'save', date: '2026-08-01', amountCents: 1_200, currency: 'EUR', merchant: 'Mixed',
+      catId: 'savingDeposit', txType: 'saving', needsReview: 0, linkedAccountId: 'chk', transferPeerId: catMirrorSourceId('spread', 'transferOut'),
+    });
+
+    expect(await migrateCounterFiledTransfers(store, repo)).toBe(1);
+
+    const row = await store.get('transaction', 'spread');
+    expect(row?.cats).toMatchObject([
+      { catId: 'groceries', amountCents: 3_800 },
+      { catId: 'savingDeposit', amountCents: 1_200, linkedAccountId: 'save', transferPeerId: newMid },
+    ]);
+    expect((await store.get('transaction', oldMid))?.deleted).toBe(1);
+    expect(await store.get('transaction', newMid)).toMatchObject({ accountId: 'save', amountCents: 1_200, catId: 'savingDeposit', deleted: 0 });
+    // retire refunded 1200, the fresh mint moved it back — net zero
+    expect((await store.get('account', 'save'))?.balanceCents).toBe(1_200);
   });
 });
 

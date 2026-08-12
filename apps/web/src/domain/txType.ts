@@ -1,4 +1,4 @@
-import { autoSubFor } from './categories';
+import { autoSubFor, specialCatType } from './categories';
 import type { AccountType, TxType } from '@/db/types';
 
 export const ALL_TX_TYPES: TxType[] = [
@@ -46,6 +46,87 @@ export function typeForLinkedAccount(accountType: AccountType): TxType {
   // #152: money to the shared funding pot IS funding — its category
   // family follows the counterparty, like every other special account
   return accountType === 'funding' ? 'funding' : 'transfer';
+}
+
+/**
+ * #133 r5 (user): a movement category, the counterparty's account type
+ * and the money's sign are the SAME fact. This is that bijection's
+ * spine: the FAMILY a counter account of this type means, seen from an
+ * unstamped row — savings counter = the saving story, loan = debt,
+ * brokerage = investment, funding = funding, any regular account = a
+ * plain transfer. R2's blanket "linked means transfer" retires here.
+ */
+export function familyForCounter(accountType: AccountType): TxType {
+  return accountStamp(accountType) ?? typeForLinkedAccount(accountType);
+}
+
+/**
+ * The ONE category an unstamped row files when linked to a counter of
+ * this type — the bijection's write side. Cash counters file the ATM
+ * pair; everything else is the family's sign-picked movement sub.
+ */
+export function movementCatFor(accountType: AccountType, amountCents: number): string {
+  if (accountType === 'cash') return amountCents < 0 ? 'cashWithdraw' : 'cashDeposit';
+  const sub = autoSubFor(familyForCounter(accountType), amountCents);
+  return sub ?? (amountCents < 0 ? 'transferOut' : 'transferIn');
+}
+
+/**
+ * #133 r5: the special subs a row in this context may PICK. Keyed by
+ * the row's own account type and the money's side: a regular account's
+ * outgoing row can only "Set aside" (never Take out — that money went
+ * TO the pot), and Interest/Fees exist only on the pot's own ledger,
+ * where the same matrix runs sign-inverted. Movement-family categories
+ * outside the set are hidden by context-aware pickers; every other
+ * category (reimbursement included) is not this matrix's business.
+ */
+export function allowedSpecialCats(sourceType: AccountType | undefined, direction: 'debit' | 'credit'): ReadonlySet<string> {
+  const out = direction === 'debit';
+  switch (sourceType === undefined ? undefined : accountStamp(sourceType)) {
+    case 'saving':
+      return new Set(out ? ['savingWithdraw', 'savingFees'] : ['savingDeposit', 'savingInterest']);
+    case 'debtPayment':
+      return new Set(out ? ['debtBorrowed', 'debtInterest', 'debtFees'] : ['loanRepayment']);
+    case 'investment':
+      return new Set(out ? ['investWithdraw', 'investFees'] : ['investContribution', 'investDividend']);
+    default:
+      return new Set(
+        out
+          ? ['savingDeposit', 'loanRepayment', 'investBuy', 'fundingOut', 'transferOut', 'cashWithdraw']
+          : ['savingWithdraw', 'debtBorrowed', 'investSell', 'fundingIn', 'transferIn', 'cashDeposit'],
+      );
+  }
+}
+
+/**
+ * The account types a movement FAMILY's counterparty ask may offer —
+ * the same bijection read the other way ("Set aside" can only point at
+ * a savings account; plain Transfer only at regular accounts, because
+ * the special kinds ARE the family categories).
+ */
+export function counterTypesForFamily(family: TxType): readonly AccountType[] | undefined {
+  switch (family) {
+    case 'saving':
+      return ['savings'];
+    case 'debtPayment':
+      return ['loan', 'mortgage'];
+    case 'investment':
+      return ['brokerage'];
+    case 'funding':
+      return ['funding'];
+    case 'transfer':
+      return ['checking', 'cash', 'credit'];
+    default:
+      return undefined;
+  }
+}
+
+/** the per-CATEGORY read of the same table — the ATM pair points at
+ *  cash wallets specifically; undefined = no counterparty applies */
+export function counterTypesFor(catId: string): readonly AccountType[] | undefined {
+  if (catId === 'cashWithdraw' || catId === 'cashDeposit') return ['cash'];
+  const family = specialCatType(catId);
+  return family ? counterTypesForFamily(family) : undefined;
 }
 
 /** category supports a type only if it's one of its declared txTypes */
