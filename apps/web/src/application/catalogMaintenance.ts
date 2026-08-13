@@ -4,7 +4,6 @@ import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { tombstonedIds } from '@/domain/catalogDoc';
 import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
 import { familyForCounter, movementCatFor } from '@/domain/txType';
-import { catMirrorSourceId, mirrorTxId, partMirrorSourceId } from '@/domain/feedIds';
 import type { AccountType, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { givenCents, settledSplits, totalReimbursedCents } from '@/domain/reimbursement';
 import { standardTypeFor } from '@/domain/txKind';
@@ -203,33 +202,13 @@ export async function migrateCatSpreads(store: StorageBackend, repo: Repo): Prom
  * family's story wearing the wrong name — "you cannot select transfer
  * out [when the] counterparty is a saving account; you have to use the
  * saving category instead". One marker-gated pass refiles every such
- * row, part and spread entry by its counter's kind. Everything runs
- * through the write choke: a refiled ENTRY drops our old-key mint's
- * peer, so the cat-keyed mirror differ retires it and mints the same
- * leg under the new key (net-zero balance); real picked/bank peers
- * ride along untouched.
+ * row and part by its counter's kind. (#228: spread entries carry no
+ * links anymore — migrateEntryCounters runs FIRST and relocates them,
+ * so rows and parts are the only places a link can live.)
  */
 const TRANSFER_SUBS = new Set(['transferOut', 'transferIn', 'cashWithdraw', 'cashDeposit']);
 
 type CounterRefile = (catId: string | undefined, linkedId: string | undefined, signedCents: number) => string | undefined;
-
-function refileEntries(
-  entries: readonly TxSplitCat[] | undefined,
-  baseId: string,
-  refiled: CounterRefile,
-  sign: 1 | -1,
-): TxSplitCat[] | null {
-  if (!entries?.length) return null;
-  let changed = false;
-  const next = entries.map((entry) => {
-    const cat = refiled(entry.catId, entry.linkedAccountId, sign * Math.abs(entry.amountCents));
-    if (!cat) return entry;
-    changed = true;
-    const oldMid = mirrorTxId(catMirrorSourceId(baseId, entry.catId));
-    return { ...entry, catId: cat, ...(entry.transferPeerId === oldMid ? { transferPeerId: undefined } : {}) };
-  });
-  return changed ? next : null;
-}
 
 function refileParts(
   tx: { id: string; amountCents: number; splits?: TxSplit[] },
@@ -239,15 +218,9 @@ function refileParts(
   const sign: 1 | -1 = tx.amountCents < 0 ? -1 : 1;
   const next = (tx.splits ?? []).map((part) => {
     const partCat = refiled(part.catId, part.linkedAccountId, sign * Math.abs(part.amountCents));
-    // an id-less legacy slice never minted entry mirrors — nothing to re-key
-    const partCats = part.id ? refileEntries(part.cats, partMirrorSourceId(tx.id, part.id), refiled, sign) : null;
-    if (!partCat && !partCats) return part;
+    if (!partCat) return part;
     changed = true;
-    return {
-      ...part,
-      ...(partCat ? { catId: partCat, txType: specialCatType(partCat) } : {}),
-      ...(partCats ? { cats: partCats } : {}),
-    };
+    return { ...part, catId: partCat, txType: specialCatType(partCat) };
   });
   return changed ? next : null;
 }
@@ -255,15 +228,13 @@ function refileParts(
 function counterRefileFields(
   tx: { id: string; amountCents: number; catId?: string; linkedAccountId?: string; cats?: TxSplitCat[]; splits?: TxSplit[] },
   refiled: CounterRefile,
-): { catId?: string; txType?: TxType; cats?: TxSplitCat[]; splits?: TxSplit[] } | null {
-  const fields: { catId?: string; txType?: TxType; cats?: TxSplitCat[]; splits?: TxSplit[] } = {};
+): { catId?: string; txType?: TxType; splits?: TxSplit[] } | null {
+  const fields: { catId?: string; txType?: TxType; splits?: TxSplit[] } = {};
   const rowCat = refiled(tx.catId, tx.linkedAccountId, tx.amountCents);
   if (rowCat) {
     fields.catId = rowCat;
     fields.txType = specialCatType(rowCat);
   }
-  const cats = refileEntries(tx.cats, tx.id, refiled, tx.amountCents < 0 ? -1 : 1);
-  if (cats) fields.cats = cats;
   const splits = tx.splits?.length ? refileParts(tx, refiled) : null;
   if (splits) fields.splits = splits;
   return Object.keys(fields).length ? fields : null;

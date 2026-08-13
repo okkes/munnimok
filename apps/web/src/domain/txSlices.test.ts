@@ -125,20 +125,21 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
     expect(split.every((v) => v.fromParts)).toBe(true);
   });
 
-  it('#133 r4: a spread entry\'s OWN counterparty and derived type override the row\'s — bare entries inherit', () => {
+  it('#228: spread entries carry the OWNER\'s one counterparty — the row\'s on row spreads, the part\'s on part spreads', () => {
     const views = txSliceViews(
       row({
+        linkedAccountId: 'row-acct',
         transferPeerId: 'row-peer',
         cats: [
-          { catId: 'groceries', amountCents: 6000, txType: 'expense' },
-          { catId: 'savingDeposit', amountCents: 2740, linkedAccountId: 'pot', transferPeerId: 'mint-1', txType: 'saving' },
+          { catId: 'savingDeposit', amountCents: 6000, txType: 'saving' },
+          { catId: 'reimbursed', amountCents: 2740 },
         ],
       }),
     );
-    expect(views[0]).toMatchObject({ effType: 'expense', linkedAccountId: undefined, transferPeerId: 'row-peer' });
-    expect(views[1]).toMatchObject({ effType: 'saving', linkedAccountId: 'pot', transferPeerId: 'mint-1' });
+    expect(views[0]).toMatchObject({ effType: 'saving', linkedAccountId: 'row-acct', transferPeerId: 'row-peer' });
+    expect(views[1]).toMatchObject({ linkedAccountId: 'row-acct' });
 
-    // a PART's spread entries do the same against the part's story
+    // a PART's spread entries ride the part's story the same way
     const partViews = txSliceViews(
       row({
         splits: [
@@ -146,14 +147,14 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
             id: 'p1', catId: 'a', amountCents: 8740, linkedAccountId: 'part-acct',
             cats: [
               { catId: 'a', amountCents: 5000 },
-              { catId: 'savingDeposit', amountCents: 3740, linkedAccountId: 'pot', txType: 'saving' },
+              { catId: 'b', amountCents: 3740 },
             ],
           },
         ],
       }),
     );
-    expect(partViews[0].linkedAccountId).toBe('part-acct'); // bare entry inherits the part
-    expect(partViews[1]).toMatchObject({ effType: 'saving', linkedAccountId: 'pot' });
+    expect(partViews[0].linkedAccountId).toBe('part-acct');
+    expect(partViews[1].linkedAccountId).toBe('part-acct');
   });
 
   it('hasSliceOfType answers filters per effective type', () => {

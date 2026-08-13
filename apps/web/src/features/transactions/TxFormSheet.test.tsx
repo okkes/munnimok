@@ -83,39 +83,55 @@ describe('TxFormSheet (demo identity)', () => {
     // coverage instrumentation pushes this flow past vitest's 5s default
   }, 15_000);
 
-  it('#133 r4: a staged spread with a linked ◆ entry mints the entry-sized leg on save', async () => {
+  it('#133 r5/#228: counterparty-FIRST — the lone uncategorized entry names the pot and the category fills itself', async () => {
+    await openForm();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
+    fireEvent.click(screen.getByTestId('txform-category'));
+    await screen.findByTestId('part-cats-editor');
+    // the fresh editor holds ONE uncategorized entry — it already wears
+    // the counterparty door (#228: the subject-level question)
+    fireEvent.click(await screen.findByTestId('part-cat-counter-0'));
+    // the bare door lists every tracked account (no category asked yet);
+    // a savings pick on an outgoing row can only mean Set aside
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-0').textContent).toContain('Set aside'));
+    expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings');
+  }, 15_000);
+
+  it('#228: a lone ◆ pick in the editor becomes the FORM\'s counterparty; save mints the row-key leg', async () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Mixed Save' } });
 
     fireEvent.click(screen.getByTestId('txform-category'));
+    // the ◆ pick asks its counterparty on the spot; the pot answers —
+    // the single entry spans the whole, so the ADD door shuts
     fireEvent.click(await screen.findByTestId('part-cat-0'));
-    fireEvent.click(await screen.findByTestId('catpicker-groceries'));
-    fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '30,00' } });
-    fireEvent.click(screen.getByTestId('part-cat-add'));
-    // the ◆ pick asks its counterparty on the spot; the pot answers
-    fireEvent.click(screen.getByTestId('part-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-1').textContent).toContain('Demo Savings'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('part-cat-one-special')).toBeTruthy();
     fireEvent.click(screen.getByTestId('part-cat-save'));
+    // the answer landed at the FORM level — the counterparty row says so
+    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings'));
     fireEvent.click(screen.getByTestId('txform-save'));
 
     const { MunniDB } = await import('@/db/schema');
-    const { catMirrorSourceId, mirrorTxId } = await import('@/domain/feedIds');
+    const { mirrorTxId } = await import('@/domain/feedIds');
     const db = new MunniDB('munni_demo');
     await waitFor(
       async () => {
         const row = (await db.transactions.toArray()).find((t) => t.merchant === 'Mixed Save');
         expect(row).toBeTruthy();
-        expect(row!.cats?.map((c) => c.catId)).toEqual(['groceries', 'savingDeposit']);
-        const saveEntry = row!.cats!.find((c) => c.catId === 'savingDeposit')!;
-        expect(saveEntry.linkedAccountId).toBe('demo_save');
-        // the pot leg is the ENTRY's €20, minted for the form's raw write
-        const mid = mirrorTxId(catMirrorSourceId(row!.id, 'savingDeposit'));
-        expect(saveEntry.transferPeerId).toBe(mid);
-        expect(await db.transactions.get(mid)).toMatchObject({ accountId: 'demo_save', amountCents: 2000 });
+        expect(row!.catId).toBe('savingDeposit');
+        expect(row!.linkedAccountId).toBe('demo_save');
+        expect(row!.cats ?? undefined).toBeUndefined();
+        // the pot leg rides the ROW's own key, sized to the whole €50
+        const mid = mirrorTxId(row!.id);
+        expect(row!.transferPeerId).toBe(mid);
+        expect(await db.transactions.get(mid)).toMatchObject({ accountId: 'demo_save', amountCents: 5000 });
       },
       { timeout: 5000 },
     );

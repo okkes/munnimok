@@ -7,7 +7,6 @@ import { UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { counterTypesFor, movementCatFor, movementCatsForCounter } from '@/domain/txType';
 import { kindOf } from '@/domain/txKind';
-import { catMirrorSourceId, mirrorTxId } from '@/domain/feedIds';
 import { resolveSplitsFor } from '@/domain/splits';
 import { useSpaceAccounts } from '@/application/transactions';
 import type { DefaultFamily } from '@/application/defaultAccounts';
@@ -20,13 +19,21 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
-/** one category's share of the part while editing */
+/** one category's share of the part while editing. The link fields are
+ *  SINGLE-entry transit only (#228): the one counterparty a (split)
+ *  transaction has rides the lone entry out to the caller, which lands
+ *  it at the row/part level — a multi-entry spread never carries any. */
 interface CatEntry {
   key: string;
   catId: string;
   amount: string; // user-facing text in the mode's units, EU decimals
-  /** #133 r4: the entry's own counterparty, picked the moment its ◆
-   *  category lands (or seeded from storage) */
+  linkedAccountId?: string;
+  transferPeerId?: string;
+}
+
+/** what the editor hands back: plain entries, plus — on the SINGLE
+ *  entry only — the subject-level counterparty decision (#228) */
+export interface CatsApplyEntry extends TxSplitCat {
   linkedAccountId?: string;
   transferPeerId?: string;
 }
@@ -48,26 +55,24 @@ function counterAskFor(catId: string): { defaultFamily?: DefaultFamily; counterT
   };
 }
 
-/** the stored link fields an entry carries out of the editor */
-const entryLink = (entry: Pick<CatEntry, 'linkedAccountId' | 'transferPeerId'>): Partial<TxSplitCat> => ({
+/** the link fields the SINGLE entry carries out of the editor */
+const entryLink = (entry: Pick<CatEntry, 'linkedAccountId' | 'transferPeerId'>): Partial<CatsApplyEntry> => ({
   ...(entry.linkedAccountId ? { linkedAccountId: entry.linkedAccountId } : {}),
   ...(entry.transferPeerId ? { transferPeerId: entry.transferPeerId } : {}),
 });
 
 /** #218: a pick the LINKED counter can also mean keeps the link (credit
- *  card: transfer ⇄ debt payment) — OUR old-key mint's peer strips so
- *  the choke re-keys the leg; a real picked/bank peer rides through.
- *  Null = not a keep, the fresh-story path runs. (S3776) */
+ *  card: transfer ⇄ debt payment). #228: the mirror key is the row/part
+ *  itself now, so the peer simply rides — the mirror files by ITS
+ *  counter's kind and needs no re-key. Null = not a keep. (S3776) */
 function keepLinkPatch(
   prev: CatEntry | undefined,
   catId: string,
   accounts: readonly { id: string; type: AccountType }[] | undefined,
-  mirrorBaseId: string | undefined,
 ): Partial<CatEntry> | null {
   const counterType = accounts?.find((a) => a.id === prev?.linkedAccountId)?.type;
   if (!prev?.linkedAccountId || !counterType || !counterTypesFor(catId)?.includes(counterType)) return null;
-  const oldMid = mirrorBaseId ? mirrorTxId(catMirrorSourceId(mirrorBaseId, prev.catId)) : undefined;
-  return { catId, ...(oldMid && prev.transferPeerId === oldMid ? { transferPeerId: undefined } : {}) };
+  return { catId };
 }
 
 /** #218: with a counterparty on the entry the picker narrows to what
@@ -87,22 +92,31 @@ function counterNarrowFor(
 const pickerTxTypeFor = (askDisabled: boolean, txType: TxType | undefined): TxType | undefined =>
   !askDisabled && txType && kindOf(txType) === 'transfer' ? undefined : txType;
 
-/** which entries wear the counterparty line: linked ones always, ◆ ones
- *  unless the stamp owns the story, fresh ones as the counter-first
- *  door (never on recurring-narrowed editors) (S3776) */
-function showsCounterLine(entry: CatEntry, askDisabled: boolean, allowedCatIds: readonly string[] | undefined): boolean {
+/** which entries wear the counterparty line — ONLY the lone entry (#228:
+ *  one counterparty per (split) transaction; a spread's categories are
+ *  regular and never link): linked always, ◆ unless the stamp owns the
+ *  story, a fresh one as the counter-first door (never on
+ *  recurring-narrowed editors) (S3776) */
+function showsCounterLine(
+  entry: CatEntry,
+  single: boolean,
+  askDisabled: boolean,
+  allowedCatIds: readonly string[] | undefined,
+): boolean {
+  if (!single) return false;
   if (entry.linkedAccountId) return true;
   if (askDisabled) return false;
   if (entry.catId === UNCATEGORIZED_ID) return !allowedCatIds;
   return counterAskFor(entry.catId) !== null;
 }
 
-/** #218: detaching frees the category choice; an unlinked TRANSFER is
- *  unrepresentable, so that one resets to uncategorized (S3776) */
+/** #218/#228 (user): detaching the counterparty RESETS the category —
+ *  a special category and its counter are one story, so removing the
+ *  account starts the question over (S3776) */
 const detachPatch = (catId: string | undefined): Partial<CatEntry> => ({
   linkedAccountId: undefined,
   transferPeerId: undefined,
-  ...(specialCatType(catId ?? '') === 'transfer' ? { catId: UNCATEGORIZED_ID } : {}),
+  ...(specialCatType(catId ?? '') ? { catId: UNCATEGORIZED_ID } : {}),
 });
 
 /** #133 r5/#218: the answered account's KIND names the category —
@@ -122,28 +136,31 @@ const parsePct = (text: string): number => {
 
 /** the part patch a finished spread becomes: one entry collapses back to
  *  a plain category, several keep the spread with the largest entry as
- *  the compat shadow (v2.1 storage rule). #133 r4: a multi-entry spread
- *  owns its counterparties PER ENTRY — the part-level link clears so no
- *  entry inherits a story that isn't its own. */
-export function catsPatch(entries: TxSplitCat[]): Partial<TxSplit> {
+ *  the compat shadow (v2.1 storage rule). #228: a spread's categories
+ *  are regular — the part-level link clears with it (the counterparty
+ *  belongs to a movement story, and the spread just ended it). */
+export function catsPatch(entries: CatsApplyEntry[]): Partial<TxSplit> {
   if (entries.length <= 1) return { catId: entries[0]?.catId ?? UNCATEGORIZED_ID, cats: undefined };
   const primary = entries.reduce((best, entry) => (entry.amountCents > best.amountCents ? entry : best), entries[0]);
-  return { catId: primary.catId, cats: entries, linkedAccountId: undefined, transferPeerId: undefined };
+  return {
+    catId: primary.catId,
+    cats: entries.map((entry) => ({ catId: entry.catId, amountCents: entry.amountCents, ...(entry.pct !== undefined ? { pct: entry.pct } : {}) })),
+    linkedAccountId: undefined,
+    transferPeerId: undefined,
+  };
 }
 
 /** the full apply for a part's category edit: the cats patch plus the R3
  *  type pull — a single ◆ special pick pulls the part's own type, an
  *  ordinary single pick clears a stale pulled one (a counterparty-backed
- *  transfer type stays deliberate). Spreads never pull. #133 r4: a
- *  single entry's counterparty (answered inside the editor) lands as the
- *  part's own link. */
-export function partCatsApplyPatch(slice: TxSplit | undefined, entries: TxSplitCat[]): Partial<TxSplit> {
+ *  transfer type stays deliberate). Spreads never pull. #228: the single
+ *  entry's counterparty (answered inside the editor) IS the part's own
+ *  link — a bare single pick clears a stale one. */
+export function partCatsApplyPatch(slice: TxSplit | undefined, entries: CatsApplyEntry[]): Partial<TxSplit> {
   const patch = catsPatch(entries);
   if (entries.length !== 1) return patch;
   const entry = entries[0];
-  const link = entry.linkedAccountId
-    ? { linkedAccountId: entry.linkedAccountId, transferPeerId: entry.transferPeerId }
-    : {};
+  const link = { linkedAccountId: entry.linkedAccountId, transferPeerId: entry.transferPeerId };
   const pulled = specialCatType(entry.catId);
   if (pulled) return { ...patch, ...link, txType: pulled };
   return slice?.txType && !slice.linkedAccountId ? { ...patch, ...link, txType: undefined } : { ...patch, ...link };
@@ -159,30 +176,26 @@ export interface CatsSubject {
   cats?: TxSplitCat[];
   /** the money being partitioned — for a row: NET of any settled value */
   amountCents: number;
-  /** #133 r4: the owner's whole-story counterparty — seeds the single
-   *  entry so its link shows and travels through a re-spread */
+  /** #228: the subject's ONE counterparty — seeds the lone entry so its
+   *  link shows; a spread never carries it */
   linkedAccountId?: string;
   transferPeerId?: string;
 }
 
-const seedEntries = (subject: CatsSubject, pctMode: boolean): CatEntry[] =>
-  (subject.cats?.length
+const seedEntries = (subject: CatsSubject, pctMode: boolean): CatEntry[] => {
+  const base: TxSplitCat[] = subject.cats?.length
     ? subject.cats
-    : [
-        {
-          catId: subject.catId ?? UNCATEGORIZED_ID,
-          amountCents: Math.abs(subject.amountCents),
-          linkedAccountId: subject.linkedAccountId,
-          transferPeerId: subject.transferPeerId,
-        },
-      ]
-  ).map((entry) => ({
+    : [{ catId: subject.catId ?? UNCATEGORIZED_ID, amountCents: Math.abs(subject.amountCents) }];
+  // #228: the subject's one counterparty belongs to the LONE entry only —
+  // a spread's rows never wear links
+  const single = base.length === 1;
+  return base.map((entry) => ({
     key: newKey(),
     catId: entry.catId,
     amount: pctMode && entry.pct !== undefined ? toPctText(entry.pct) : toText(entry.amountCents),
-    linkedAccountId: entry.linkedAccountId,
-    transferPeerId: entry.transferPeerId,
+    ...(single ? { linkedAccountId: subject.linkedAccountId, transferPeerId: subject.transferPeerId } : {}),
   }));
+};
 
 /** a %-typed spread reopens in % — the stored pct is the user's shape */
 const seedsAsPct = (subject: CatsSubject): boolean =>
@@ -195,9 +208,11 @@ const seedsAsPct = (subject: CatsSubject): boolean =>
  * entry, and the leftover pill that fills the field it was tapped from
  * (#130). #211 made it THE split-categories editor — the row's own
  * spread and a part's spread are the same gesture; the split-transaction
- * editor is a different door entirely. #133 r4 (user): a ◆ pick asks its
- * counterparty ON THE SPOT, per entry — a spread can mix a saving leg to
- * one pot, a funding leg to another and plain spending side by side.
+ * editor is a different door entirely. #228 (user): only ONE special
+ * category per (split) transaction, and it spans the whole — a lone ◆
+ * pick asks its counterparty on the spot (the subject-level answer);
+ * a spread offers regular and reimbursement categories only. Mixing a
+ * special with others means splitting the TRANSACTION instead.
  */
 export function CatsSheet({
   open,
@@ -213,7 +228,6 @@ export function CatsSheet({
   excludeAccountId,
   askDisabled = false,
   anchor,
-  mirrorBaseId,
   onApply,
 }: Readonly<{
   open: boolean;
@@ -236,14 +250,9 @@ export function CatsSheet({
   /** R1: a stamped account's rows never ask (the stamp owns the story) */
   askDisabled?: boolean;
   /** the row being spread — enables the pick-existing fork on manual
-   *  counterparties (row-level editors only; the entry's amount anchors) */
+   *  counterparties (row-level editors only; the lone entry anchors) */
   anchor?: { id: string; date: string };
-  /** #218: the id the subject's ENTRY mirrors are keyed on (tx id, or
-   *  txId:partId for a part) — lets a link-keeping category switch
-   *  strip OUR old-key mint's peer so the choke re-keys it; absent =
-   *  no live mints to worry about (fresh form rows, staged deck parts) */
-  mirrorBaseId?: string;
-  onApply: (entries: TxSplitCat[]) => void;
+  onApply: (entries: CatsApplyEntry[]) => void;
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -299,9 +308,13 @@ export function CatsSheet({
       ? !unpicked
       : entries.length > 0 && remainder === 0 && !unpicked && !duplicate && entries.every((entry) => valueOf(entry) > 0)) &&
     !transferUnlinked;
+  // #228 (user): a special category spans the whole (split) transaction
+  // — no rows can join it. Splitting the TRANSACTION is the way to
+  // combine it with anything else.
+  const specialClaims = entries.length === 1 && !!specialCatType(entries[0].catId);
   // finish the open entry first (split-editor rule): no new row while
   // one is still uncategorized or worth nothing
-  const addBlocked = entries.some((entry) => entry.catId === UNCATEGORIZED_ID || valueOf(entry) <= 0);
+  const addBlocked = specialClaims || entries.some((entry) => entry.catId === UNCATEGORIZED_ID || valueOf(entry) <= 0);
 
   const patchEntry = (index: number, patch: Partial<CatEntry>) =>
     setEntries((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
@@ -391,11 +404,12 @@ export function CatsSheet({
     // Done CLOSES the sheet (like every editor) — the callers only
     // stage/write; in a real browser a lingering open sheet would
     // shield everything underneath (the review-a2 CI catch)
-    const emit = (out: TxSplitCat[]) => {
+    const emit = (out: CatsApplyEntry[]) => {
       onApply(out);
       onOpenChange(false);
     };
-    // the single entry spans the whole — its typed amount is decorative
+    // the single entry spans the whole — its typed amount is decorative;
+    // #228: only the LONE entry carries the subject-level counterparty
     if (entries.length === 1) {
       emit([{ catId: entries[0].catId, amountCents: refCents, ...entryLink(entries[0]) }]);
       return;
@@ -406,18 +420,17 @@ export function CatsSheet({
         entries.map((entry) => ({ catId: entry.catId, amountCents: 0, pct: parsePct(entry.amount) })),
       );
       emit(
-        resolved.map((slice, i) => ({
+        resolved.map((slice) => ({
           catId: slice.catId,
           amountCents: Math.abs(slice.amountCents),
           // the % shape survives on row spreads (#141: pct scales to any
           // sibling; exact euros reach only exact twins)
           ...(includePct && slice.pct !== undefined ? { pct: slice.pct } : {}),
-          ...entryLink(entries[i]),
         })),
       );
       return;
     }
-    emit(entries.map((entry) => ({ catId: entry.catId, amountCents: parseCents(entry.amount) ?? 0, ...entryLink(entry) })));
+    emit(entries.map((entry) => ({ catId: entry.catId, amountCents: parseCents(entry.amount) ?? 0 })));
   };
 
   const shownRemainder = mode === 'pct' ? `${remainder}%` : fmtCents(Math.abs(remainder), currency, lang);
@@ -504,7 +517,7 @@ export function CatsSheet({
                     </button>
                   )}
                 </div>
-                {showsCounterLine(entry, askDisabled, allowedCatIds) && (
+                {showsCounterLine(entry, entries.length === 1, askDisabled, allowedCatIds) && (
                   <button
                     data-testid={`part-cat-counter-${i}`}
                     onClick={() => setCounterFor(i)}
@@ -533,6 +546,13 @@ export function CatsSheet({
             <Icon name="plus" size={16} />
             {t('split.addRow')}
           </button>
+          {/* #228: why the add door is shut — the special category owns
+              the whole (split) transaction */}
+          {specialClaims && (
+            <p className="px-1 text-[12px] leading-snug text-ink-4" data-testid="part-cat-one-special">
+              {t('split.oneSpecialHint')}
+            </p>
+          )}
           {remainder !== 0 && (
             <button
               data-testid="part-cat-remainder"
@@ -565,21 +585,22 @@ export function CatsSheet({
         selectedId={pickedCatId}
         excludeIds={excluded}
         onlyIds={allowedCatIds ?? counterNarrowedIds}
+        noSpecials={entries.length > 1}
         onPick={(catId) => {
           if (pickerFor === null) return;
           const prev = entries[pickerFor];
           if (prev?.catId === catId) return;
           // #218: a pick the linked counter can also mean keeps the link
-          const kept = keepLinkPatch(prev, catId, accounts, mirrorBaseId);
+          const kept = keepLinkPatch(prev, catId, accounts);
           if (kept) {
             patchEntry(pickerFor, kept);
             return;
           }
           // a NEW category starts a fresh story — the old entry's link
-          // never rides along; a ◆ pick asks its counterparty right away
-          // (#133 r4, user: "before adding another category")
+          // never rides along; a lone ◆ pick asks its counterparty right
+          // away — the subject-level question (#228)
           patchEntry(pickerFor, { catId, linkedAccountId: undefined, transferPeerId: undefined });
-          const ask = askDisabled ? null : counterAskFor(catId);
+          const ask = askDisabled || entries.length > 1 ? null : counterAskFor(catId);
           if (ask) {
             // ◆ Transfer is mandatory: dismissing the ask rolls the pick
             // back; families and funding may stay bare (deliberate)

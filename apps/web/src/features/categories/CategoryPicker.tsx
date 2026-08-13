@@ -35,10 +35,15 @@ interface CategoryPickerProps {
    *  transaction picks between the recurring's category and expected
    *  reimbursement, nothing else (user rule 2026-07-28) */
   onlyIds?: readonly string[];
+  /** #228 (user): a spread's rows offer no ◆ special-family categories —
+   *  one special per (split) transaction and it spans the whole, so a
+   *  multi-entry editor hides them (reimbursement, the one exception,
+   *  stays pickable) */
+  noSpecials?: boolean;
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds }: Readonly<CategoryPickerProps>) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
   const cats = useCategories();
   const navigate = useNavigate();
@@ -68,12 +73,13 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
             (c) => !txType || c.txTypes.includes(txType) || (kindOf(txType) === 'standard' && isSpecialCategory(c)),
           )
           .filter((c) => !allowedMovement || specialCatType(c.id) === undefined || allowedMovement.has(c.id))
+          .filter((c) => !noSpecials || specialCatType(c.id) === undefined)
           .filter((c) => !excludeIds?.includes(c.id))
           .filter((c) => !onlyIds || onlyIds.includes(c.id))
           .filter((c) => !q || catName(c, t).toLowerCase().includes(q)),
       }))
       .filter((g) => g.children.length > 0);
-  }, [cats, query, t, direction, txType, sourceAccountType, excludeIds, onlyIds]);
+  }, [cats, query, t, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials]);
 
   const pick = (catId: string) => {
     onPick(catId);

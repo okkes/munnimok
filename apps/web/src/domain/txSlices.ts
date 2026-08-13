@@ -51,9 +51,8 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
       fromParts: false,
     };
     // #211 split categories: the row stays ONE transaction — every
-    // entry keeps the row's whole story, only the attribution fans.
-    // #133 r4: an entry with its OWN counterparty overrides the row's
-    // (link, peer and the join-derived type travel per entry).
+    // entry keeps the row's whole story (its one counterparty included,
+    // #228), only the attribution fans.
     const rowCats = tx.cats?.filter((c) => c.amountCents !== 0);
     if (rowCats?.length) {
       const rowSign = tx.amountCents < 0 ? -1 : 1;
@@ -62,8 +61,6 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
         amountCents: rowSign * Math.abs(c.amountCents),
         catId: c.catId,
         effType: c.txType ?? whole.effType,
-        linkedAccountId: c.linkedAccountId ?? whole.linkedAccountId,
-        transferPeerId: c.transferPeerId ?? whole.transferPeerId,
         index,
         count: rowCats.length,
       }));
@@ -86,8 +83,8 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
       fromParts: true,
     };
     // v2.1: a part spread across categories fans one view per category
-    // entry — the part's story (type/link/event/label) rides on each,
-    // and an entry's OWN counterparty overrides the part's (#133 r4)
+    // entry — the part's story (type/link/event/label) rides on each
+    // (#228: the part's counterparty is the only one there is)
     const cats = part.cats?.filter((c) => c.amountCents !== 0);
     if (cats?.length) {
       return cats.map((c) => ({
@@ -95,8 +92,6 @@ export function txSliceViews(tx: SliceSource): TxSliceView[] {
         amountCents: sign * Math.abs(c.amountCents),
         catId: c.catId,
         effType: c.txType ?? base.effType,
-        linkedAccountId: c.linkedAccountId ?? base.linkedAccountId,
-        transferPeerId: c.transferPeerId ?? base.transferPeerId,
       }));
     }
     return [{ ...base, amountCents: sign * Math.abs(part.amountCents), catId: part.catId }];

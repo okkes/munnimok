@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
-import { catMirrorSourceId, mirrorTxId } from '@/domain/feedIds';
+import { mirrorTxId, partMirrorSourceId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
@@ -119,7 +119,7 @@ describe('TxDetailScreen (demo identity)', () => {
     await waitFor(() => expect(list.querySelector('[data-testid="tx-row-dm6"]')).toBeNull(), { timeout: 5000 });
   });
 
-  it('#133 r4: deleting a manual row retires its spread entries\' mints with their money', async () => {
+  it('#228: deleting a manual row retires its row-key mint with its money', async () => {
     renderApp('/transactions/dm6');
     await screen.findByTestId('screen-tx-detail');
     // the pot's PRE-EDIT baseline — the delete must restore exactly this
@@ -132,31 +132,112 @@ describe('TxDetailScreen (demo identity)', () => {
       return pot!;
     })).balanceCents;
 
+    // the lone ◆ pick claims the whole row: its answer is THE
+    // transaction-level counterparty, the mint rides the row's own key
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
-    fireEvent.click(await screen.findByTestId('catpicker-groceries'));
-    fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '40,00' } });
-    fireEvent.click(screen.getByTestId('part-cat-add'));
-    fireEvent.click(screen.getByTestId('part-cat-1'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-1').textContent).toContain('Demo Savings'));
+    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
-    const mid = mirrorTxId(catMirrorSourceId('dm6', 'savingDeposit'));
+    const mid = mirrorTxId('dm6');
     // settled = mirror row live AND its balance move landed
     await waitFor(async () => {
       expect((await db.transactions.get(mid))?.deleted).toBe(0);
-      expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBase + 1240);
+      expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBase + 5240);
     }, { timeout: 8000 });
 
     fireEvent.click(await screen.findByTestId('tx-detail-delete'));
     fireEvent.click(await screen.findByTestId('tx-delete-confirm'));
     await waitFor(async () => {
       expect((await db.transactions.get('dm6'))?.deleted).toBe(1);
-      expect((await db.transactions.get(mid))?.deleted).toBe(1); // the entry's mint goes along
+      expect((await db.transactions.get(mid))?.deleted).toBe(1); // the mint goes along
       expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBase); // refunded
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('#228: the counterparty PROPERTY row — a pick refiles the category by the account\'s kind, remove RESETS it', async () => {
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    const db = new MunniDB('munni_demo');
+    const potBase = (await waitFor(async () => {
+      const pot = await db.accounts.get('demo_save');
+      expect(pot).toBeTruthy();
+      return pot!;
+    })).balanceCents;
+
+    // the row is back on the transaction (user decision): honest "none"
+    const row = await screen.findByTestId('tx-detail-counter-row');
+    expect(row.textContent).toContain('No counter account');
+    fireEvent.click(row);
+    // groceries is regular — the generic door lists every tracked kind
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      // the bijection's re-pick rule: the savings pick means Set aside
+      expect(tx?.catId).toBe('savingDeposit');
+      expect(tx?.linkedAccountId).toBe('demo_save');
+      expect(tx?.transferPeerId).toBe(mirrorTxId('dm6'));
+      expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBase + 5240);
+    }, { timeout: 8000 });
+    await waitFor(() => expect(screen.getByTestId('tx-detail-counter-row').textContent).toContain('Demo Savings'));
+
+    // remove: the category resets WITH the link (one fact, user spec)
+    fireEvent.click(screen.getByTestId('tx-detail-counter-row'));
+    fireEvent.click(await screen.findByTestId('counter-detach'));
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.catId).toBe('uncategorized');
+      expect(tx?.linkedAccountId ?? undefined).toBeUndefined();
+      expect((await db.transactions.get(mirrorTxId('dm6')))?.deleted).toBe(1);
+      expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(potBase);
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('#228: a PART\'s counterparty row links the part itself — the part-key leg mints', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('screen-transactions');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-cnt'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-cnt', {
+      accountId: 'demo_main', date: '2020-03-01', amountCents: -6000, currency: 'EUR',
+      merchant: 'Two stories', catId: 'telecom', txType: 'expense', needsReview: 0,
+      splits: [
+        { id: 'cp1', catId: 'telecom', amountCents: 4000 },
+        { id: 'cp2', catId: 'savingDeposit', amountCents: 2000, txType: 'saving' },
+      ],
+    });
+    await screen.findByTestId('tx-parts-tx-cnt', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('tx-part-row-tx-cnt-1'));
+    // the part page carries its own property row
+    const row = await screen.findByTestId('tx-part-counter-row');
+    expect(row.textContent).toContain('No counter account');
+    fireEvent.click(row);
+    // the ◆ part narrows the ask to ITS kinds — the family default leads
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(async () => {
+      const stored = (await db.transactions.get('tx-cnt'))?.splits?.find((p) => p.id === 'cp2');
+      expect(stored?.linkedAccountId).toBe('demo_save');
+      const mid = mirrorTxId(partMirrorSourceId('tx-cnt', 'cp2'));
+      expect(stored?.transferPeerId).toBe(mid);
+      // the pot leg is the PART's €20
+      expect(await db.transactions.get(mid)).toMatchObject({ accountId: 'demo_save', amountCents: 2000 });
+    }, { timeout: 8000 });
+    await waitFor(() => expect(screen.getByTestId('tx-part-counter-row').textContent).toContain('Demo Savings'));
+
+    // remove: the PART's category resets with its link, the leg retires
+    fireEvent.click(screen.getByTestId('tx-part-counter-row'));
+    fireEvent.click(await screen.findByTestId('counter-detach'));
+    await waitFor(async () => {
+      const stored = (await db.transactions.get('tx-cnt'))?.splits?.find((p) => p.id === 'cp2');
+      expect(stored?.catId).toBe('uncategorized');
+      expect(stored?.linkedAccountId ?? undefined).toBeUndefined();
+      expect((await db.transactions.get(mirrorTxId(partMirrorSourceId('tx-cnt', 'cp2'))))?.deleted).toBe(1);
     }, { timeout: 8000 });
     db.close();
   }, 20_000);
@@ -332,7 +413,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     db.close();
   }, 15_000);
 
-  it('#133 r4: a SPREAD mixes families — the ◆ entry answers its pot and mints an entry-sized leg', async () => {
+  it('#228: a spread offers NO special categories, and a lone ◆ pick claims the whole transaction', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
     // entry 0 stays groceries at €40; the ask must NOT open for a plain pick
@@ -340,31 +421,51 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
     expect(screen.queryByTestId('part-cat-counter-0')).toBeNull();
     fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '40,00' } });
-    // entry 1: Set aside €12,40 — the ask opens on the pick, the pot answers
+    // entry 1: with TWO rows the picker hides the ◆ families entirely —
+    // one special per (split) transaction, and it spans the whole
     fireEvent.click(screen.getByTestId('part-cat-add'));
     fireEvent.click(screen.getByTestId('part-cat-1'));
-    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    await screen.findByTestId('counter-default');
-    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-1').textContent).toContain('Demo Savings'));
+    await screen.findByTestId('catpicker-sweets');
+    expect(screen.queryByTestId('catpicker-savingDeposit')).toBeNull();
+    expect(screen.queryByTestId('catpicker-transferOut')).toBeNull();
+    fireEvent.click(screen.getByTestId('catpicker-sweets'));
+    // no counter lines anywhere in a spread — entries never link (#228)
+    expect(screen.queryByTestId('part-cat-counter-1')).toBeNull();
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
-      expect(tx?.cats?.map((c) => c.catId)).toEqual(['groceries', 'savingDeposit']);
-      expect(tx?.cats?.[1]?.linkedAccountId).toBe('demo_save');
-      expect(tx?.linkedAccountId).toBeFalsy(); // the entries own the links now
-      // the pot leg is the ENTRY's €12,40 — not the row's €52,40
-      const mirror = await db.transactions.get(mirrorTxId(catMirrorSourceId('dm6', 'savingDeposit')));
-      expect(mirror).toMatchObject({ accountId: 'demo_save', amountCents: 1240, txType: 'saving' });
-      expect(tx?.cats?.[1]?.transferPeerId).toBe(mirrorTxId(catMirrorSourceId('dm6', 'savingDeposit')));
+      expect(tx?.cats?.map((c) => c.catId)).toEqual(['groceries', 'sweets']);
+      expect(tx?.linkedAccountId).toBeFalsy(); // a spread means no movement story
+    }, { timeout: 8000 });
+
+    // back to ONE entry: the ◆ pick asks on the spot and CLAIMS the
+    // whole — the add door shuts with the why
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    const editors = screen.getAllByTestId('part-cats-editor');
+    const editor = editors.at(-1)!;
+    fireEvent.click((await within(editor).findAllByTestId('part-cat-remove-1')).at(-1)!);
+    fireEvent.click(within(editor).getByTestId('part-cat-0'));
+    fireEvent.click((await screen.findAllByTestId('catpicker-savingDeposit')).at(-1)!);
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    await waitFor(() => expect(within(editor).getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    expect((within(editor).getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
+    expect(within(editor).getByTestId('part-cat-one-special')).toBeTruthy();
+    fireEvent.click(within(editor).getByTestId('part-cat-save'));
+
+    // the single special lands at the ROW: link + category, spread gone,
+    // the mirror under the row's own key
+    await waitFor(async () => {
+      const tx = await db.transactions.get('dm6');
+      expect(tx?.catId).toBe('savingDeposit');
+      expect(tx?.linkedAccountId).toBe('demo_save');
+      expect(tx?.cats ?? undefined).toBeUndefined();
+      const mirror = await db.transactions.get(mirrorTxId('dm6'));
+      expect(mirror).toMatchObject({ accountId: 'demo_save', amountCents: 5240, txType: 'saving' });
     }, { timeout: 8000 });
     db.close();
-    // #133 r5: the SETTLED counterparty shows WITH its category row —
-    // the ◆ entry names the pot right on the detail, the plain one stays bare
-    await waitFor(() => expect(screen.getByTestId('tx-detail-cat-counter-1').textContent).toContain('Demo Savings'));
-    expect(screen.queryByTestId('tx-detail-cat-counter-0')).toBeNull();
   }, 20_000);
 
   it('the marked special category carries the flat-loan story (typed-splits v2)', async () => {
@@ -1097,10 +1198,10 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('tx-part-row-tx-parts-1'));
     await screen.findByTestId('tx-part-amount');
     expect(screen.getByTestId('tx-part-amount').textContent).toContain('25.00');
-    // #133 D: no Type row on the part page; unlinked parts show no
-    // counterparty fact row either
+    // #133 D: no Type row on the part page; #228: the counterparty is
+    // the part's own PROPERTY row — present, honest about "none"
     expect(screen.queryByTestId('tx-part-kind-row')).toBeNull();
-    expect(screen.queryByTestId('tx-part-counter-row')).toBeNull();
+    expect(screen.getByTestId('tx-part-counter-row').textContent).toContain('No counter account');
 
     // r5: its own reimbursements — the part-targeted link and the net
     await waitFor(() => expect(screen.getByTestId('tx-part-reimbs').textContent).toContain('Sam pays back'), { timeout: 5000 });

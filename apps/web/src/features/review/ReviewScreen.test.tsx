@@ -69,24 +69,10 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.queryByTestId('review-counter-row')).toBeNull();
   }, 15_000);
 
-  it('#133 r5: counterparty-FIRST — a fresh entry names the pot and the one category the bijection allows fills itself', async () => {
-    renderApp('/review');
-    await screen.findByTestId('review-card');
-    fireEvent.click(screen.getByTestId('review-category-chip'));
-    await screen.findByTestId('part-cats-editor');
-    // settle entry 0 on a plain category, then grow the spread — the
-    // fresh row is uncategorized and already shows its counterparty door
-    fireEvent.click(screen.getByTestId('part-cat-0'));
-    fireEvent.click(await screen.findByTestId('catpicker-groceries'));
-    fireEvent.click(screen.getByTestId('part-cat-add'));
-    await screen.findByTestId('part-cat-counter-1');
-    fireEvent.click(screen.getByTestId('part-cat-counter-1'));
-    // the bare door lists every tracked account (no category asked yet);
-    // a savings pick on an outgoing row can only mean Set aside
-    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-1').textContent).toContain('Set aside'));
-    expect(screen.getByTestId('part-cat-counter-1').textContent).toContain('Demo Savings');
-  }, 15_000);
+  // the counterparty-FIRST door moved with the model (#228): only the
+  // LONE entry carries the subject-level counter question now, so the
+  // fresh-editor flow lives in TxFormSheet.test.tsx (the form opens on
+  // a single uncategorized entry — the door's natural home).
 
   it('#133 C: a loan-family pick creates its loan through the ask and the debt row takes over', async () => {
     renderApp('/review');

@@ -172,25 +172,41 @@ describe('feature B join layer', () => {
     expect(adj?.txType).toBe('adjustment');
   });
 
-  it('#133 r4: spread entries derive their OWN types from their counterparties; the headline follows the largest entry', async () => {
+  it('#228: spread entries derive with the ROW\'s one counterparty; the row link speaks for the whole', async () => {
     await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('account', SPACE, 'defpot', { name: 'Default savings', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'saving' });
-    await repo.upsert('account', SPACE, 'fund', { name: 'Family pot', type: 'funding', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    // the settled shape: a linked movement row whose spread holds the
+    // real entry + the settled bookkeeping entry (reimbursed passes
+    // through untouched — it is bookkeeping, not a story)
     await repo.upsert('transaction', SPACE, 'spread1', {
       accountId: 'chk', date: '2026-07-05', amountCents: -10_000, currency: 'EUR',
       merchant: 'Mixed', catId: 'savingDeposit', txType: 'expense', needsReview: 0,
+      linkedAccountId: 'defpot',
       cats: [
-        { catId: 'savingDeposit', amountCents: 6_000, linkedAccountId: 'defpot' },
-        { catId: 'fundingOut', amountCents: 3_000, linkedAccountId: 'fund' },
-        { catId: 'groceries', amountCents: 1_000 },
+        { catId: 'savingDeposit', amountCents: 6_000 },
+        { catId: 'reimbursed', amountCents: 4_000 },
+      ],
+    });
+    // a REGULAR spread without any link keeps deriving by sign per entry
+    await repo.upsert('transaction', SPACE, 'spread2', {
+      accountId: 'chk', date: '2026-07-06', amountCents: -5_000, currency: 'EUR',
+      merchant: 'Plain', catId: 'groceries', txType: 'expense', needsReview: 0,
+      cats: [
+        { catId: 'groceries', amountCents: 3_000 },
+        { catId: 'sweets', amountCents: 2_000 },
       ],
     });
     const store = new DexieBackend(db);
-    const view = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'spread1');
-    // per entry: default pot → family, funding pot → funding, bare → sign
-    expect(view?.cats?.map((c) => c.txType)).toEqual(['saving', 'funding', 'expense']);
-    // the largest entry (€60 to the default pot) speaks for the row
-    expect(view?.txType).toBe('saving');
+    const rows = await visibleTransactions(store, SPACE);
+    const settled = rows.find((t) => t.id === 'spread1');
+    // the real entry derives with the row's link (the default pot keeps
+    // the saving story); the settled entry rides untouched
+    expect(settled?.cats?.map((c) => c.txType)).toEqual(['saving', undefined]);
+    // the row's own link names the headline
+    expect(settled?.txType).toBe('saving');
+    const plain = rows.find((t) => t.id === 'spread2');
+    expect(plain?.cats?.map((c) => c.txType)).toEqual(['expense', 'expense']);
+    expect(plain?.txType).toBe('expense');
   });
 
   it('#152: the attachment owns the type — stamp overlay and the funding blackout', async () => {

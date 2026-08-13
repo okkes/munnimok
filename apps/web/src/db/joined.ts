@@ -123,22 +123,18 @@ function deriveViewTypes(row: SpaceTx, facts: SpaceAccountFacts): SpaceTx {
       multiPart,
       adjustment,
     });
-  // #133 r4: entries of a spread carry their OWN counterparties — each
-  // one derives its own type (an entry without one inherits the owner's
-  // link, which keeps pre-r4 spreads on linked rows reading unchanged)
+  // #228: entries of a spread carry no counterparties — every entry
+  // derives with the OWNER's link (the one counterparty the (split)
+  // transaction has), so a settled movement row's entries still read as
+  // their family
   const enrichCats = (cats: TxSplitCat[] | undefined, ownLinked: string | undefined): TxSplitCat[] | undefined =>
     cats?.map((c) =>
       c.catId === 'reimbursed'
         ? c
-        : { ...c, txType: derive(c.catId, c.linkedAccountId ?? ownLinked, sign * Math.abs(c.amountCents), false, false) },
+        : { ...c, txType: derive(c.catId, ownLinked, sign * Math.abs(c.amountCents), false, false) },
     );
   const adjustment = row.adjustment === 1 || row.txType === 'adjustment';
-  // the row's headline follows its largest entry (the catId compat
-  // shadow's twin): that entry's counterparty speaks for the whole
-  const realCats = (row.cats ?? []).filter((c) => c.catId !== 'reimbursed');
-  const primaryEntry =
-    realCats.length > 1 ? realCats.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), realCats[0]) : undefined;
-  const txType = derive(row.catId, primaryEntry?.linkedAccountId ?? row.linkedAccountId, row.amountCents, realParts.length > 1, adjustment);
+  const txType = derive(row.catId, row.linkedAccountId, row.amountCents, realParts.length > 1, adjustment);
   const cats = enrichCats(row.cats, row.linkedAccountId);
   const splits = row.splits?.map((s) =>
     s.catId === 'reimbursed'
@@ -294,46 +290,14 @@ async function planLinkChange(
   ).catch(() => null);
 }
 
-/** #133 r4: the money a write is spreading, as the cat-entry mirror
- *  engine wants it (sign split out — entries store magnitudes) */
-const catMirrorBase = (baseId: string, raw: TransactionRow) => ({
-  baseId,
-  accountId: raw.accountId,
-  sign: (raw.amountCents < 0 ? -1 : 1) as 1 | -1,
-  date: raw.date,
-  time: raw.time,
-  currency: raw.currency,
-  merchant: raw.merchant,
-});
-
-/**
- * #133 r4: a `cats` write plans the per-ENTRY mirror consequences — a
- * spread's ◆ entries each mint, resize or retire their own entry-sized
- * counter leg. Clearing the spread (cats null — a collapse or a split
- * landing) retires every entry mint it had.
- */
-async function planCatLinkChanges(
-  repo: Repo,
-  tx: TransformTx,
-  fields: TxTransformFields,
-): Promise<{ cats: TxSplitCat[]; plans: Array<{ execute: (repo: Repo) => Promise<void> }> } | null> {
-  const raw = await repo.store.get('transaction', tx.id);
-  if (!raw) return null;
-  const feed = !!tx.feedSpaceId;
-  const meta = feed ? await repo.store.get('txMeta', txMetaId(tx.spaceId, tx.id)) : undefined;
-  const prevCats = (feed ? meta?.cats : raw.cats) ?? undefined;
-  const { planCatEntryMirrors } = await import('@/application/mirrorMint');
-  return planCatEntryMirrors(repo.store, catMirrorBase(tx.id, raw), prevCats, fields.cats ?? null).catch(() => null);
-}
-
 /**
  * A splits write plans the PART-level mirror consequences (typed-splits
  * v2): each part that gained, moved or lost its counterparty mints or
  * retires its own counter leg — keyed on row+part identity, so a part's
  * mirror survives sibling edits — and a linked part whose amount moved
- * RESIZES it. A part's own category spread diffs per entry the same way
- * (#133 r4). Returns the splits with the parts' peers applied plus the
- * plans to run after the write.
+ * RESIZES it. Returns the splits with the parts' peers applied plus the
+ * plans to run after the write. (#228: parts are the smallest unit that
+ * carries a counterparty — their category spreads never link.)
  */
 async function planPartLinkChanges(
   repo: Repo,
@@ -348,13 +312,13 @@ async function planPartLinkChanges(
   const meta = feed ? await repo.store.get('txMeta', txMetaId(tx.spaceId, tx.id)) : undefined;
   const prevParts = (feed ? meta?.splits : raw.splits) ?? [];
   const prevById = new Map(prevParts.filter((p) => p.id).map((p) => [p.id!, p]));
-  const { planMirrorChange, planCatEntryMirrors } = await import('@/application/mirrorMint');
-  const { partMirrorSourceId } = await import('@/domain/feedIds');
+  const { planMirrorChange } = await import('@/application/mirrorMint');
+  const { partMirrorSourceId, mirrorTxId } = await import('@/domain/feedIds');
   const sign = raw.amountCents < 0 ? -1 : 1;
   const plans: Array<{ execute: (repo: Repo) => Promise<void> }> = [];
   const adjusted = [...nextParts];
 
-  const planFor: PartPlanner = async (partId, magnitude, prevLinked, nextLinked, currentPeer) =>
+  const planFor: PartPlanner = async (partId, magnitude, prevLinked, nextLinked, currentPeer, incomingPeer) =>
     planMirrorChange(
       repo.store,
       {
@@ -369,12 +333,11 @@ async function planPartLinkChanges(
       prevLinked,
       nextLinked,
       currentPeer,
-      undefined,
+      incomingPeer,
     ).catch(() => null);
-  const catPlanFor: PartCatPlanner = async (partId, prevCats, nextCats) =>
-    planCatEntryMirrors(repo.store, catMirrorBase(partMirrorSourceId(tx.id, partId), raw), prevCats, nextCats).catch(() => null);
+  const ownPartMid = (partId: string) => mirrorTxId(partMirrorSourceId(tx.id, partId));
 
-  await diffPartPlans(nextParts, prevById, planFor, catPlanFor, adjusted, plans);
+  await diffPartPlans(nextParts, prevById, planFor, ownPartMid, adjusted, plans);
   return plans.length || adjusted.some((p, i) => p !== nextParts[i]) ? { splits: adjusted, plans } : null;
 }
 
@@ -384,55 +347,48 @@ type PartPlanner = (
   prevLinked?: string,
   nextLinked?: string,
   currentPeer?: string,
+  incomingPeer?: string,
 ) => Promise<{ sourceFields: { transferPeerId?: string | null }; execute: (repo: Repo) => Promise<void> } | null>;
-
-type PartCatPlanner = (
-  partId: string,
-  prevCats: TxSplitCat[] | undefined,
-  nextCats: TxSplitCat[] | null | undefined,
-) => Promise<{ cats: TxSplitCat[]; plans: Array<{ execute: (repo: Repo) => Promise<void> }> } | null>;
 
 type PartRow = NonNullable<TxTransformFields['splits']>[number];
 type MirrorExec = { execute: (repo: Repo) => Promise<void> };
 
-/** one SURVIVING part's plans (S3776): the part-level link/resize move —
- *  its peer riding back — plus its own spread's entry diffs (#133 r4) */
+/** one SURVIVING part's plans (S3776): the part-level link/resize move,
+ *  its peer riding back. A part arriving with a FOREIGN transferPeerId
+ *  (the fold's relocated pick-existing link, #228) is a picked real row:
+ *  it rides through and nothing is minted. */
 async function planOnePartDiff(
   part: PartRow,
   prev: PartRow | undefined,
   planFor: PartPlanner,
-  catPlanFor: PartCatPlanner,
+  ownPartMid: (partId: string) => string,
 ): Promise<{ adjusted: PartRow; plans: MirrorExec[] }> {
   const plans: MirrorExec[] = [];
   let out = part;
   const linkMoved = (prev?.linkedAccountId ?? undefined) !== (part.linkedAccountId ?? undefined);
   const magnitudeMoved = !!prev && !!part.linkedAccountId && prev.amountCents !== part.amountCents;
   if (linkMoved || magnitudeMoved) {
-    const plan = await planFor(part.id!, part.amountCents, prev?.linkedAccountId, part.linkedAccountId, prev?.transferPeerId);
+    const incoming =
+      linkMoved && part.transferPeerId && part.transferPeerId !== ownPartMid(part.id!) ? part.transferPeerId : undefined;
+    const plan = await planFor(part.id!, part.amountCents, prev?.linkedAccountId, part.linkedAccountId, prev?.transferPeerId, incoming);
     if (plan) {
-      if (Object.hasOwn(plan.sourceFields, 'transferPeerId')) {
+      if (!incoming && Object.hasOwn(plan.sourceFields, 'transferPeerId')) {
         out = { ...out, transferPeerId: (plan.sourceFields.transferPeerId ?? undefined) as string | undefined };
       }
       plans.push(plan);
     }
-  }
-  const catOutcome = await catPlanFor(part.id!, prev?.cats, part.cats ?? null);
-  if (catOutcome) {
-    if (part.cats?.length) out = { ...out, cats: catOutcome.cats };
-    plans.push(...catOutcome.plans);
   }
   return { adjusted: out, plans };
 }
 
 /** walk the part diff: changed links plan their move (the part's peer
  *  rides back into the write), linked amount edits resize, vanished
- *  parts take their mints along — the part's own category spread diffs
- *  per entry the same way (#133 r4) */
+ *  parts take their mints along */
 async function diffPartPlans(
   nextParts: NonNullable<TxTransformFields['splits']>,
   prevById: Map<string, PartRow>,
   planFor: PartPlanner,
-  catPlanFor: PartCatPlanner,
+  ownPartMid: (partId: string) => string,
   adjusted: NonNullable<TxTransformFields['splits']>,
   plans: MirrorExec[],
 ): Promise<void> {
@@ -440,7 +396,7 @@ async function diffPartPlans(
     if (!part.id) continue;
     const prev = prevById.get(part.id);
     prevById.delete(part.id);
-    const diff = await planOnePartDiff(part, prev, planFor, catPlanFor);
+    const diff = await planOnePartDiff(part, prev, planFor, ownPartMid);
     adjusted[index] = diff.adjusted;
     plans.push(...diff.plans);
   }
@@ -450,8 +406,6 @@ async function diffPartPlans(
       const plan = await planFor(gone.id, gone.amountCents, gone.linkedAccountId, undefined, gone.transferPeerId);
       if (plan) plans.push(plan);
     }
-    const catOutcome = await catPlanFor(gone.id, gone.cats, null);
-    if (catOutcome) plans.push(...catOutcome.plans);
   }
 }
 
@@ -468,15 +422,10 @@ async function diffPartPlans(
 export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTransformFields): Promise<void> {
   const plan = Object.hasOwn(fields, 'linkedAccountId') ? await planLinkChange(repo, tx, fields) : null;
   const partPlan = Object.hasOwn(fields, 'splits') ? await planPartLinkChanges(repo, tx, fields) : null;
-  // #133 r4: a spread's ◆ entries mint/retire/resize their own legs
-  const catPlan = Object.hasOwn(fields, 'cats') ? await planCatLinkChanges(repo, tx, fields) : null;
   // a pick-existing peer in `fields` outranks the plan's own idea
   let write: TxTransformFields =
     plan && !Object.hasOwn(fields, 'transferPeerId') ? { ...fields, ...(plan.sourceFields as TxTransformFields) } : fields;
   if (partPlan) write = { ...write, splits: partPlan.splits };
-  // entry peers ride back in — but an explicit `cats: null` (a collapse
-  // or a landed split's version stamp) must stay null, never become []
-  if (catPlan && Array.isArray(fields.cats)) write = { ...write, cats: catPlan.cats };
 
   if (!tx.feedSpaceId) {
     await repo.upsert('transaction', tx.spaceId, tx.id, write);
@@ -492,6 +441,5 @@ export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTr
 
   if (plan) await plan.execute(repo).catch(() => undefined);
   for (const p of partPlan?.plans ?? []) await p.execute(repo).catch(() => undefined);
-  for (const p of catPlan?.plans ?? []) await p.execute(repo).catch(() => undefined);
 }
 

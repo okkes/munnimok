@@ -149,8 +149,13 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     cleanup();
     renderApp('/home');
     await screen.findByTestId('screen-home');
-    await waitFor(() => expect(screen.queryByTestId('help-btn-home')).toBeNull());
-    expect(screen.queryByTestId('install-hint')).toBeNull();
+    // the help button and the install hint read the SAME meta flag via
+    // separate live queries — under load one emission can trail the
+    // other, so both disappearances wait together
+    await waitFor(() => {
+      expect(screen.queryByTestId('help-btn-home')).toBeNull();
+      expect(screen.queryByTestId('install-hint')).toBeNull();
+    });
   }, 15_000);
 
   it('app lock setup: mismatch is rejected, matching PINs arm the lock, toggle disarms', async () => {

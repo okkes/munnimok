@@ -289,9 +289,16 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // into the row's own `cats` partition (after the settled-slice
         // normalization above, so the gross invariant already holds)
         await migrateCatSpreads(store, repo);
+        // #228: ONE counterparty per (split) transaction — entry-level
+        // links relocate to their row/part, and spreads mixing a special
+        // category become real splits. Every boot: an old offline device
+        // may sync the retired per-entry shape in at any time. BEFORE
+        // the r5 refile, so that one only ever meets row/part links.
+        const { migrateEntryCounters } = await import('@/application/categoryModel');
+        await migrateEntryCounters(store, repo);
         // #133 r5: Transfer filed toward a SPECIAL counterparty refiles
-        // as the family's movement sub (the bijection) — rows, parts and
-        // spread entries alike; entry mirrors re-key through the choke
+        // as the family's movement sub (the bijection) — rows and parts
+        // (the fold above already moved every entry-level link)
         await migrateCounterFiledTransfers(store, repo);
         // …and linked family rows invert — regular leg = transfer with
         // the locked cat, the manual counter's mirror minted (no delta:

@@ -269,38 +269,9 @@ function rescaledCats(entries: TxSplitCat[], targetAbs: number): TxSplitCat[] | 
   return scaled?.length ? scaled : undefined;
 }
 
-/** #133 r4: the spread's ◆ entries mint/retire/resize their entry-sized
- *  legs — the form writes RAW rows, so the choke's cat differ runs here
- *  and the entry peers are written back (S3776: out of save) */
-async function applyFormCatMirrors(
-  store: ReturnType<typeof useData>['store'],
-  repo: ReturnType<typeof useData>['repo'],
-  spaceId: string,
-  rowId: string,
-  base: { accountId: string; signed: number; date: string; currency: string; merchant: string },
-  prevCats: TxSplitCat[] | undefined,
-  fieldsCats: unknown,
-): Promise<void> {
-  const { planCatEntryMirrors } = await import('@/application/mirrorMint');
-  const outcome = await planCatEntryMirrors(
-    store,
-    {
-      baseId: rowId,
-      accountId: base.accountId,
-      sign: base.signed < 0 ? -1 : 1,
-      date: base.date,
-      currency: base.currency,
-      merchant: base.merchant,
-    },
-    prevCats,
-    (fieldsCats as TxSplitCat[] | null | undefined) ?? null,
-  ).catch(() => null);
-  if (!outcome) return;
-  if (Array.isArray(fieldsCats)) {
-    await repo.upsert('transaction', spaceId, rowId, { cats: outcome.cats });
-  }
-  for (const p of outcome.plans) await p.execute(repo);
-}
+// applyFormCatMirrors retired (#228): spread entries carry no links —
+// the form's one counterparty is its linkedAccountId state, and the
+// row-level planMirrorChange in save() is the whole mirror story.
 
 const optionRow = (selected: boolean, onClick: () => void, content: React.ReactNode, testId: string) => (
   <button
@@ -401,6 +372,10 @@ function AccountPickSheet({
  *  chooses explicitly — a silent first-account default booked rows on
  *  the wrong account (user redesign 2026-07-31) */
 const soleAccountId = (writable: readonly AccountRow[]): string | null => (writable.length === 1 ? writable[0].id : null);
+
+/** #228 (user): removing the counterparty resets a special category —
+ *  the movement story ends with its account (S3776: out of the form) */
+const detachedCatFor = (catId: string): string => (specialCatType(catId) ? UNCATEGORIZED_ID : catId);
 
 /** #133: the form's effective type — the same derivation order the
  *  choke uses (adjustment > stamp > diamond category > counterparty >
@@ -563,17 +538,6 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         recurringId,
       });
       await repo.upsert('transaction', spaceId, rowId, fields);
-      if (Object.hasOwn(fields, 'cats')) {
-        await applyFormCatMirrors(
-          store,
-          repo,
-          spaceId,
-          rowId,
-          { accountId: effectiveAccount, signed, date, currency: formCurrency, merchant: merchant.trim() },
-          tx?.cats,
-          fields.cats,
-        );
-      }
       if (prevLinked !== nextLinked) {
         const { planMirrorChange } = await import('@/application/mirrorMint');
         const plan = await planMirrorChange(
@@ -769,6 +733,11 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
           // business; a placeholder files at save via the family sub)
           if (specialCatType(catId)) setCatId(movementCatFor(picked.type, isExpense ? -1 : 1));
         }}
+        onDetach={() => {
+          // the sheet shows the door only while a counterparty is linked
+          setLinkedAccountId(null);
+          setCatId(detachedCatFor(catId));
+        }}
       />
 
       {/* stacked: account picker */}
@@ -794,8 +763,8 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
 
       {/* #211: the split-categories editor (same sheet as review/detail) —
           the spread stays ONE transaction; the amount typed so far is the
-          money being partitioned. #133 r4: ◆ picks ask their counterparty
-          inside the editor, per entry */}
+          money being partitioned. #228: a lone ◆ pick asks its
+          counterparty inside the editor — the form-level answer */}
       <CatsSheet
         open={catsSheetOpen}
         onOpenChange={setCatsSheetOpen}
@@ -813,7 +782,6 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         includePct
         excludeAccountId={effectiveAccount ?? ''}
         askDisabled={!!ownStamp}
-        mirrorBaseId={tx?.id}
         onApply={(entries) => {
           if (entries.length === 1) {
             setStagedCats(null);

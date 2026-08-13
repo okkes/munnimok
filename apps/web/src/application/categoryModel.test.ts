@@ -5,8 +5,9 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
+import { catMirrorSourceId, foldPartId, mirrorTxId } from '@/domain/feedIds';
 import { defaultAccountId, ensureDefaultAccount } from './defaultAccounts';
-import { migrateBareSpecialRows } from './categoryModel';
+import { migrateBareSpecialRows, migrateEntryCounters } from './categoryModel';
 
 const SPACE = 's1';
 
@@ -152,5 +153,156 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     expect(partMirror).toMatchObject({ accountId: defaultAccountId(SPACE, 'saving'), amountCents: 2500 });
     // the untouched part stays untouched
     expect(row?.splits?.find((s) => s.id === 'p1')?.linkedAccountId).toBeUndefined();
+  });
+});
+
+/** #228 (user): ONE counterparty per (split) transaction — the fold
+ *  that rewrites what the retired per-entry model stored */
+describe('#228: the entry-counter fold', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  async function seeded() {
+    const store = new DexieBackend(new MunniDB(`munni_fold228_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('fold228'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
+    await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
+    await repo.upsert('account', SPACE, 'pot', { name: 'Pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    return { store, repo };
+  }
+
+  /** the retired shape: an entry carrying its own link + own-key mint */
+  const legacyEntry = (catId: string, amountCents: number, over: object = {}) =>
+    ({ catId, amountCents, ...over }) as never;
+
+  it('relocates a lone linked entry onto the ROW — the old entry mint retires, the row mint takes over, balances hold', async () => {
+    const { store, repo } = await seeded();
+    const oldMid = mirrorTxId(catMirrorSourceId('r1', 'savingDeposit'));
+    // the r4 world already minted the entry-keyed leg and moved €40
+    await repo.upsert('transaction', SPACE, oldMid, {
+      accountId: 'pot', date: '2026-08-01', amountCents: 4000, currency: 'EUR',
+      merchant: 'Set aside', txType: 'saving', catId: 'savingDeposit', needsReview: 0,
+      linkedAccountId: 'main', transferPeerId: 'r1',
+    });
+    await repo.upsert('account', SPACE, 'pot', { balanceCents: 4000 });
+    await repo.upsert('transaction', SPACE, 'r1', {
+      accountId: 'main', date: '2026-08-01', amountCents: -4000, currency: 'EUR',
+      merchant: 'Set aside', txType: 'saving', needsReview: 0, catId: 'savingDeposit',
+      cats: [legacyEntry('savingDeposit', 4000, { linkedAccountId: 'pot', transferPeerId: oldMid })],
+    });
+
+    expect(await migrateEntryCounters(store, repo)).toBe(1);
+    const row = await store.get('transaction', 'r1');
+    expect(row?.linkedAccountId).toBe('pot');
+    expect(row?.cats ?? undefined).toBeUndefined();
+    // the mirror now lives under the ROW key; the old entry key is gone
+    expect(row?.transferPeerId).toBe(mirrorTxId('r1'));
+    expect((await store.get('transaction', oldMid))?.deleted).toBe(1);
+    expect(await store.get('transaction', mirrorTxId('r1'))).toMatchObject({ accountId: 'pot', amountCents: 4000 });
+    // retire refunded €40, the fresh row-key mint moved it again
+    expect((await store.get('account', 'pot'))?.balanceCents).toBe(4000);
+    // every-boot idempotence
+    expect(await migrateEntryCounters(store, repo)).toBe(0);
+  });
+
+  it('converts a mixed special spread into a REAL split — deterministic parts, links riding, mints re-keyed', async () => {
+    const { store, repo } = await seeded();
+    const oldMid = mirrorTxId(catMirrorSourceId('r2', 'savingDeposit'));
+    await repo.upsert('transaction', SPACE, oldMid, {
+      accountId: 'pot', date: '2026-08-02', amountCents: 4000, currency: 'EUR',
+      merchant: 'Mixed', txType: 'saving', catId: 'savingDeposit', needsReview: 0,
+      linkedAccountId: 'main', transferPeerId: 'r2',
+    });
+    await repo.upsert('account', SPACE, 'pot', { balanceCents: 4000 });
+    await repo.upsert('transaction', SPACE, 'r2', {
+      accountId: 'main', date: '2026-08-02', amountCents: -10_000, currency: 'EUR',
+      merchant: 'Mixed', txType: 'expense', needsReview: 0, catId: 'groceries',
+      cats: [
+        legacyEntry('groceries', 6000),
+        legacyEntry('savingDeposit', 4000, { linkedAccountId: 'pot', transferPeerId: oldMid }),
+      ],
+    });
+
+    expect(await migrateEntryCounters(store, repo)).toBe(1);
+    const row = await store.get('transaction', 'r2');
+    expect(row?.cats ?? undefined).toBeUndefined();
+    const parts = row?.splits ?? [];
+    expect(parts).toHaveLength(2);
+    // deterministic ids: two devices folding concurrently converge
+    const savePart = parts.find((p) => p.catId === 'savingDeposit');
+    expect(savePart?.id).toBe(foldPartId('r2', 'savingDeposit'));
+    expect(savePart?.linkedAccountId).toBe('pot');
+    expect(parts.find((p) => p.catId === 'groceries')?.id).toBe(foldPartId('r2', 'groceries'));
+    // the compat shadow follows the largest part
+    expect(row?.catId).toBe('groceries');
+    // the entry mint re-keyed to the PART: old key tombstoned, part key live
+    expect((await store.get('transaction', oldMid))?.deleted).toBe(1);
+    expect(savePart?.transferPeerId).toBeTruthy();
+    expect(await store.get('transaction', savePart!.transferPeerId!)).toMatchObject({ accountId: 'pot', amountCents: 4000 });
+    expect((await store.get('account', 'pot'))?.balanceCents).toBe(4000);
+    expect(await migrateEntryCounters(store, repo)).toBe(0);
+  });
+
+  it('keeps regular spreads untouched; settled shapes collapse around the lone real entry', async () => {
+    const { store, repo } = await seeded();
+    // a plain regular spread is the SUPPORTED shape — not a candidate
+    await repo.upsert('transaction', SPACE, 'ok1', {
+      accountId: 'main', date: '2026-08-03', amountCents: -5000, currency: 'EUR',
+      merchant: 'Groceries + sweets', txType: 'expense', needsReview: 0, catId: 'groceries',
+      cats: [legacyEntry('groceries', 3000), legacyEntry('sweets', 2000)],
+    });
+    // settled + linked single entry: the link moves up, the settled
+    // spread shape stays (gross invariant intact)
+    await repo.upsert('transaction', SPACE, 'r3', {
+      accountId: 'main', date: '2026-08-04', amountCents: -8000, currency: 'EUR',
+      merchant: 'Settled saver', txType: 'saving', needsReview: 0, catId: 'savingDeposit',
+      cats: [
+        legacyEntry('savingDeposit', 5000, { linkedAccountId: 'pot' }),
+        legacyEntry('reimbursed', 3000),
+      ],
+    });
+
+    expect(await migrateEntryCounters(store, repo)).toBe(1);
+    expect((await store.get('transaction', 'ok1'))?.cats).toHaveLength(2);
+    const row = await store.get('transaction', 'r3');
+    expect(row?.linkedAccountId).toBe('pot');
+    expect(row?.catId).toBe('savingDeposit');
+    expect(row?.cats).toHaveLength(2);
+    expect(row?.cats?.map((c) => c.catId)).toEqual(['savingDeposit', 'reimbursed']);
+    // no stray link fields survive on entries
+    expect(row?.cats?.some((c) => (c as { linkedAccountId?: string }).linkedAccountId)).toBe(false);
+  });
+
+  it('flattens a PART whose spread mixed a special — each entry its own part, the part story carried', async () => {
+    const { store, repo } = await seeded();
+    await repo.upsert('transaction', SPACE, 'r4', {
+      accountId: 'main', date: '2026-08-05', amountCents: -9000, currency: 'EUR',
+      merchant: 'Deep split', txType: 'expense', needsReview: 0, catId: 'telecom',
+      splits: [
+        { id: 'p1', catId: 'telecom', amountCents: 4000 },
+        {
+          id: 'p2', catId: 'groceries', amountCents: 5000, label: 'Mixed part', eventId: 'ev1',
+          cats: [
+            legacyEntry('groceries', 3000),
+            legacyEntry('savingDeposit', 2000, { linkedAccountId: 'pot' }),
+          ],
+        },
+      ],
+    });
+
+    expect(await migrateEntryCounters(store, repo)).toBe(1);
+    const parts = (await store.get('transaction', 'r4'))?.splits ?? [];
+    expect(parts.map((p) => p.catId).sort((a, b) => a.localeCompare(b))).toEqual(['groceries', 'savingDeposit', 'telecom']);
+    const savePart = parts.find((p) => p.catId === 'savingDeposit');
+    expect(savePart?.linkedAccountId).toBe('pot');
+    expect(savePart?.eventId).toBe('ev1'); // the part's event rides every successor
+    expect(parts.find((p) => p.catId === 'groceries')?.label).toBe('Mixed part');
+    // the part-key mint exists, sized to the ENTRY's money
+    expect(savePart?.transferPeerId).toBeTruthy();
+    expect(await store.get('transaction', savePart!.transferPeerId!)).toMatchObject({ accountId: 'pot', amountCents: 2000 });
+    expect((await store.get('account', 'pot'))?.balanceCents).toBe(2000);
   });
 });

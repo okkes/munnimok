@@ -35,12 +35,17 @@ export const mirrorTxId = (txId: string): string => uuidv5(`mirror:${txId}`, IMP
  *  never occur inside real ids (uuid charset), so the key is unambiguous */
 export const partMirrorSourceId = (txId: string, partId: string): string => `${txId}:${partId}`;
 
-/** #133 r4: a CATEGORY ENTRY's minted counter leg — keyed on the owning
- *  money (row id, or row:part for a part's spread) + the category. The
- *  editor forbids duplicate categories in one spread, and the key is
- *  CONTENT-derived: two devices spreading the same row independently
- *  converge on one mirror per entry instead of duplicating. */
+/** #133 r4 (retired by #228): a CATEGORY ENTRY's minted counter leg —
+ *  keyed on the owning money (row id, or row:part for a part's spread)
+ *  + the category. Entries carry no links anymore; this key only serves
+ *  the fold that retires or re-keys the old entry mints. */
 export const catMirrorSourceId = (baseId: string, catId: string): string => `${baseId}:cat:${catId}`;
+
+/** #228: the deterministic part a fold mints when an old mixed spread
+ *  becomes a real split — content-keyed (the editor forbade duplicate
+ *  categories per spread), so two devices folding the same row converge
+ *  on identical parts and identical part-mirror ids. */
+export const foldPartId = (baseId: string, catId: string): string => uuidv5(`part228:${baseId}:${catId}`, IMPORT_NS);
 
 /** attachment row id (one per account per space) */
 export const accountLinkId = (spaceId: string, feedId: string): string =>

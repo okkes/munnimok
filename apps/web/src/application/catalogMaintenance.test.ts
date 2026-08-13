@@ -154,10 +154,10 @@ describe('#133 r5 — Transfer filed toward a special counterparty refiles by th
     expect(await migrateCounterFiledTransfers(store, repo)).toBe(0);
   });
 
-  it('a spread ENTRY re-keys its mint: the old-key mirror retires, the same leg mints under the new key', async () => {
+  it('#228 chain: an r4 spread ENTRY becomes a PART first (the fold), then refiles by its counter\'s kind', async () => {
     const { store, repo } = await seeded();
+    const { migrateEntryCounters } = await import('./categoryModel');
     const oldMid = mirrorTxId(catMirrorSourceId('spread', 'transferOut'));
-    const newMid = mirrorTxId(catMirrorSourceId('spread', 'savingDeposit'));
     // the r4-era state: a transferOut entry linked to the pot, its
     // entry-sized mint live on the savings ledger, balance moved
     await repo.upsert('transaction', SPACE, 'spread', {
@@ -165,24 +165,28 @@ describe('#133 r5 — Transfer filed toward a special counterparty refiles by th
       catId: 'groceries', txType: 'expense', needsReview: 0,
       cats: [
         { catId: 'groceries', amountCents: 3_800 },
-        { catId: 'transferOut', amountCents: 1_200, linkedAccountId: 'save', transferPeerId: oldMid },
+        { catId: 'transferOut', amountCents: 1_200, linkedAccountId: 'save', transferPeerId: oldMid } as never,
       ],
     });
     await repo.upsert('transaction', SPACE, oldMid, {
       accountId: 'save', date: '2026-08-01', amountCents: 1_200, currency: 'EUR', merchant: 'Mixed',
-      catId: 'savingDeposit', txType: 'saving', needsReview: 0, linkedAccountId: 'chk', transferPeerId: catMirrorSourceId('spread', 'transferOut'),
+      catId: 'savingDeposit', txType: 'saving', needsReview: 0, linkedAccountId: 'chk', transferPeerId: 'spread',
     });
 
+    // boot order: the fold relocates entry links, THEN the refile renames
+    expect(await migrateEntryCounters(store, repo)).toBe(1);
     expect(await migrateCounterFiledTransfers(store, repo)).toBe(1);
 
     const row = await store.get('transaction', 'spread');
-    expect(row?.cats).toMatchObject([
-      { catId: 'groceries', amountCents: 3_800 },
-      { catId: 'savingDeposit', amountCents: 1_200, linkedAccountId: 'save', transferPeerId: newMid },
-    ]);
+    expect(row?.cats ?? undefined).toBeUndefined();
+    const savePart = row?.splits?.find((p) => p.catId === 'savingDeposit');
+    expect(savePart).toMatchObject({ catId: 'savingDeposit', amountCents: 1_200, linkedAccountId: 'save', txType: 'saving' });
+    expect(row?.splits?.find((p) => p.catId === 'groceries')).toMatchObject({ amountCents: 3_800 });
+    // the entry-keyed mint retired; the part-keyed leg carries the money
     expect((await store.get('transaction', oldMid))?.deleted).toBe(1);
-    expect(await store.get('transaction', newMid)).toMatchObject({ accountId: 'save', amountCents: 1_200, catId: 'savingDeposit', deleted: 0 });
-    // retire refunded 1200, the fresh mint moved it back — net zero
+    expect(savePart?.transferPeerId).toBeTruthy();
+    expect(await store.get('transaction', savePart!.transferPeerId!)).toMatchObject({ accountId: 'save', amountCents: 1_200, deleted: 0 });
+    // retire refunded 1200, the fresh part mint moved it back — net zero
     expect((await store.get('account', 'save'))?.balanceCents).toBe(1_200);
   });
 });

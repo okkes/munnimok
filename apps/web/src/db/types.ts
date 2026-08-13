@@ -183,16 +183,15 @@ export interface TxSplitCat {
    *  the spread was typed in % so the #141 sibling offer can rescale;
    *  amountCents stays materialized either way */
   pct?: number;
-  // ── #133 r4 (user 2026-08-11): every ◆ entry of a spread answers its
-  // OWN counterparty — one row can hold a saving leg to pot A, a funding
-  // leg to pot B and plain spending side by side ──
-  /** the entry's tracked counter account (mint-on-link, entry-sized) */
-  linkedAccountId?: string;
-  /** the entry's minted mirror (deterministic per row+category) or the
-   *  picked-existing row it pairs with */
-  transferPeerId?: string;
+  // ── #228 (user 2026-08-13): entries carry NO counterparty anymore.
+  // One counterparty per (split) transaction — the row's or part's own
+  // linkedAccountId/transferPeerId — and a special category claims the
+  // whole (split) transaction, so a spread only ever holds regular and
+  // reimbursement categories. Old per-entry links (the #133 r4 model)
+  // are relocated by the every-boot fold (migrateEntryCounters). ──
   /** VIEW enrichment only (like a part's): the join derives it from the
-   *  entry's category + counterparty; a stored value is never read */
+   *  entry's category + the owner's counterparty; a stored value is
+   *  never read */
   txType?: TxType;
 }
 

@@ -16,7 +16,7 @@ import { accountStamp, counterTypesFor } from '@/domain/txType';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { ensureDefaultAccount } from '@/application/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
-import { normalizeIban, partMirrorSourceId } from '@/domain/feedIds';
+import { normalizeIban } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
 import { hapticNotify } from '@/lib/platform';
 import { TxRow } from '@/ui/TxRow';
@@ -43,6 +43,7 @@ import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
 import { CatsSheet, partCatsApplyPatch } from '@/features/transactions/PartCatsSheet';
+import type { CatsApplyEntry } from '@/features/transactions/PartCatsSheet';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
 import { CounterpartySheet } from '@/features/transactions/TxKindSheet';
@@ -273,7 +274,7 @@ function CardCategoryRows({
   const singleCat = single ? cats.byId(single.catId) : fallbackCat;
   const singleColor = single ? (singleCat.color ?? cats.byId(singleCat.parentId ?? '').color) : fallbackColor;
   const spread = single ? sliceStory(single, 0, slices, draft?.txType, cats, t).spread : undefined;
-  const catRow = (catId: string, amountCents: number, key: string, counterName?: string) => (
+  const catRow = (catId: string, amountCents: number, key: string) => (
     <button
       key={key}
       data-testid={`review-cat-${catId}`}
@@ -287,12 +288,6 @@ function CardCategoryRows({
       />
       <span className="min-w-0 flex-1">
         <span className="block truncate">{catName(cats.byId(catId), t)}</span>
-        {/* #133 r4: the entry's own counterparty, staged in the editor */}
-        {counterName && (
-          <span className="block truncate text-[11px] font-normal text-ink-4" data-testid={`review-cat-counter-${catId}`}>
-            → {counterName}
-          </span>
-        )}
       </span>
       <span className="m-num text-[12px] text-ink-2">{fmtCents(amountCents, currency, lang)}</span>
       <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
@@ -301,17 +296,11 @@ function CardCategoryRows({
   return (
     <>
       {/* multi-part (#126 r3): the main card says nothing the parts
-          already say — the deck under it carries every story */}
+          already say — the deck under it carries every story. #228: a
+          spread's rows are regular categories — no counter sublines */}
       {!multi &&
         spreadEntries.length > 1 &&
-        spreadEntries.map((entry, i) =>
-          catRow(
-            entry.catId,
-            entry.amountCents,
-            `${entry.catId}-${i}`,
-            (accounts ?? []).find((a) => a.id === entry.linkedAccountId)?.name,
-          ),
-        )}
+        spreadEntries.map((entry, i) => catRow(entry.catId, entry.amountCents, `${entry.catId}-${i}`))}
       {!multi && spreadEntries.length <= 1 && (
         <button
           data-testid={single ? `review-cat-${single.catId}` : 'review-category-chip'}
@@ -548,15 +537,14 @@ export function ReviewPartDeck({
             </span>
           </div>
           {/* #217 (user): a spread part shows EACH category as its own
-              row — same face as the unsplit card, value and "→ account"
-              included; every row doors into the same editor. #220: no
-              part-level counter row — the entries carry the links. */}
+              row — same face as the unsplit card, value included; every
+              row doors into the same editor. #228: the counterparty is
+              the PART's one fact — its "→ account" rides the single
+              category row (a spread means regular categories, no link) */}
           {(active.cats?.length ? active.cats : [null]).map((entry, entryIdx) => {
             const rowCat = cats.byId(entry?.catId ?? active.catId);
             const rowColor = rowCat.color ?? cats.byId(rowCat.parentId ?? '').color;
-            const rowCounter = accounts?.find(
-              (a) => a.id === (entry ? entry.linkedAccountId : active.linkedAccountId),
-            )?.name;
+            const rowCounter = entry ? undefined : accounts?.find((a) => a.id === active.linkedAccountId)?.name;
             return (
               <button
                 key={entry ? `${entry.catId}-${entryIdx}` : 'single'}
@@ -704,8 +692,9 @@ export function ReviewPartDeck({
         </div>
       </Sheet>
       {/* the part's categories (r6/r7) — the whole-transaction editor,
-          scoped to the part's amount. #133 r4: every ◆ pick asks its
-          counterparty INSIDE the editor, per entry, on the spot */}
+          scoped to the part's amount. #228: a lone ◆ pick asks the
+          PART's counterparty inside the editor; a spread offers regular
+          categories only */}
       <CatsSheet
         open={spreadFor !== null}
         onOpenChange={(next) => {
@@ -718,10 +707,6 @@ export function ReviewPartDeck({
         allowedCatIds={allowedCatIds}
         excludeAccountId={tx.accountId}
         askDisabled={lockedKind}
-        mirrorBaseId={(() => {
-          const partId = partAt(parts, spreadFor)?.id;
-          return partId ? partMirrorSourceId(tx.id, partId) : undefined;
-        })()}
         onApply={(entries) => {
           if (spreadFor !== null) patchPart(spreadFor, partCatsApplyPatch(partAt(parts, spreadFor), entries));
         }}
@@ -1361,7 +1346,9 @@ export function ReviewScreen() {
       return;
     }
     const next = { ...withCategory(withSplits(draft, undefined), catId, cats), cats: settledCatsFor(catId) };
-    setStagedDraft(next);
+    // #228: a REGULAR pick ends any movement story — the counterparty
+    // clears with it (category and counter are one fact)
+    setStagedDraft(family || ownStamp ? next : { ...next, linkedAccountId: undefined });
     // #133 C: a ◆ family pick unfolds the counterparty question right
     // away — the pinned Default, a real account, or dismiss (bare is
     // legal; Confirm links the default, #221). #152 r2/#221: the
@@ -1373,12 +1360,12 @@ export function ReviewScreen() {
     }
   };
 
-  /** #133 r4: the cats EDITOR's single entry — its counterparty was
-   *  already answered inside the editor (or deliberately left bare), so
-   *  nothing asks afterwards; a linked entry stages its link at the row
-   *  level. #218: a BARE entry now CLEARS the row link too — the editor
-   *  owns the whole story, and detach must actually detach. */
-  const stageSingleEntry = (entry: TxSplitCat) => {
+  /** the cats EDITOR's single entry — its counterparty was already
+   *  answered inside the editor (or deliberately left bare), so nothing
+   *  asks afterwards; the entry's link IS the (split) transaction's one
+   *  counterparty (#228) and stages at the row level. #218: a BARE
+   *  entry CLEARS the row link too — the editor owns the whole story. */
+  const stageSingleEntry = (entry: CatsApplyEntry) => {
     if (!draft) return;
     const next = { ...withCategory(withSplits(draft, undefined), entry.catId, cats), cats: settledCatsFor(entry.catId) };
     setStagedDraft({ ...next, linkedAccountId: entry.linkedAccountId });
@@ -1666,12 +1653,11 @@ export function ReviewScreen() {
         />
       )}
       {/* #211: the split-CATEGORIES editor — the chip's door. One entry
-          is a plain category pick; several stage the row's own spread.
-          #133 r4: every ◆ pick asks its counterparty INSIDE the editor,
-          per entry — the staged entries carry their links, and a spread
-          drops the row-level link (the entries own the stories now). A
-          settled `reimbursed` entry is bookkeeping: held aside here,
-          re-attached on stage. */}
+          is a plain category pick (a lone ◆ pick asks its counterparty
+          inside the editor — the transaction-level answer, #228); a
+          spread stages regular categories and drops the row-level link
+          (a spread means no movement story). A settled `reimbursed`
+          entry is bookkeeping: held aside here, re-attached on stage. */}
       {tx && draft && (
         <CatsSheet
           open={catsOpen}
@@ -1694,7 +1680,6 @@ export function ReviewScreen() {
           includePct
           excludeAccountId={tx.accountId}
           askDisabled={!!ownStamp}
-          mirrorBaseId={tx.id}
           onApply={(entries) => {
             if (entries.length === 1) {
               stageSingleEntry(entries[0]);
