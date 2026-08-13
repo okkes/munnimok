@@ -8,20 +8,35 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.GoCardless;
 
-public sealed record CreateRequisitionRequest(string SpaceId, string InstitutionId, string RedirectUrl, string? AppScheme = null);
+public sealed record CreateRequisitionRequest(string SpaceId, string InstitutionId, string RedirectUrl, string? AppScheme = null, string? Provider = null);
 public sealed record CreateRequisitionResponse(string Reference, string Link);
 public sealed record CompleteResponse(string Status, int LinkedAccounts, int ImportedTransactions, string? AppScheme = null);
+/// <summary>#175: a configured provider the END USER may pick. KnownAccounts
+/// carries masked IBAN tails for Enable Banking — its restricted mode only
+/// serves portal-linked accounts, and every account munni ever fetched
+/// through EB is proof of such a link (the EB API itself cannot list them).</summary>
+public sealed record ProviderInfo(string Id, bool Active, IReadOnlyList<string>? KnownAccounts);
 
 public static partial class GcEndpoints
 {
     [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z]{2}$")]
     private static partial System.Text.RegularExpressions.Regex CountryCode();
 
-    private static async Task<IResult> ListInstitutionsAsync(string country, BankProviderRegistry registry, AppDbContext db, IMemoryCache cache)
+    /// <summary>#175: the caller's explicit provider pick, the admin's
+    /// active one when absent — an unknown id is a 400, never a silent
+    /// fallback to whatever registered first</summary>
+    private static async Task<IBankDataApi?> ResolveProviderAsync(string? provider, BankProviderRegistry registry, AppDbContext db)
+    {
+        if (provider is null) return await registry.ActiveAsync(db);
+        return registry.ConfiguredIds.Contains(provider) ? registry.For(provider) : null;
+    }
+
+    private static async Task<IResult> ListInstitutionsAsync(string country, string? provider, BankProviderRegistry registry, AppDbContext db, IMemoryCache cache)
     {
         if (!CountryCode().IsMatch(country))
             return Results.BadRequest(new { error = "country must be a 2-letter code" });
-        var api = await registry.ActiveAsync(db);
+        var api = await ResolveProviderAsync(provider, registry, db);
+        if (api is null) return Results.BadRequest(new { error = $"unknown provider '{provider}'" });
         IReadOnlyList<GcInstitution>? list;
         try
         {
@@ -102,13 +117,49 @@ public static partial class GcEndpoints
         return Results.File(row.Bytes, row.ContentType ?? "image/png");
     }
 
+    /// <summary>#175: the configured providers, for the user-facing choice.
+    /// The admin's active pick is the default; Enable Banking rides its
+    /// masked account tails so a user can tell whether THEIR account was
+    /// linked upfront on the EB portal (restricted mode serves only
+    /// portal-linked accounts — the EB API cannot list them, but every
+    /// account munni ever fetched through EB proves its link).</summary>
+    private static async Task<IResult> ListProvidersAsync(BankProviderRegistry registry, AppDbContext db)
+    {
+        var active = await registry.ActiveIdAsync(db);
+        List<string>? ebTails = null;
+        if (registry.ConfiguredIds.Contains(EnableBankingApi.Id))
+        {
+            var ibans = await db.GcLinkedAccounts
+                .Where(a => a.Provider == EnableBankingApi.Id && !a.Iban.StartsWith("GC:"))
+                .Select(a => a.Iban)
+                .Distinct()
+                .ToListAsync();
+            ebTails = ibans
+                .Where(i => i.Length >= 4)
+                .Select(i => i[^4..])
+                .Distinct()
+                .OrderBy(t => t)
+                .Take(12)
+                .ToList();
+        }
+        var providers = registry.ConfiguredIds
+            .Select(id => new ProviderInfo(id, id == active, id == EnableBankingApi.Id ? ebTails : null))
+            .OrderByDescending(p => p.Active)
+            .ToList();
+        return Results.Ok(new { providers });
+    }
+
     public static void MapGoCardless(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/gocardless").RequireAuthorization().WithSafeRouteParams();
 
-        // institution list, cached per active provider: it changes rarely
-        // and the vendors rate-limit
+        // institution list, cached per provider: it changes rarely and the
+        // vendors rate-limit. #175: an explicit provider query parameter
+        // lets the END USER pick; absent keeps the admin's active one.
         group.MapGet("/institutions", ListInstitutionsAsync);
+
+        // #175: the provider choice the connect sheet renders
+        group.MapGet("/providers", ListProvidersAsync);
 
         // the vendored logo bytes — anonymous (public artwork) so a plain
         // <img> tag can load it; fetched from the recorded URL exactly once
@@ -120,7 +171,10 @@ public static partial class GcEndpoints
             if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == request.SpaceId && m.UserId == userId))
                 return Results.Forbid();
 
-            var api = await registry.ActiveAsync(db); // the admin's pick decides NEW consents
+            // #175: the user's explicit pick wins; absent, the admin's
+            // active provider decides (the pre-#175 behavior)
+            var api = await ResolveProviderAsync(request.Provider, registry, db);
+            if (api is null) return Results.BadRequest(new { error = $"unknown provider '{request.Provider}'" });
             var reference = Guid.NewGuid();
             GcRequisitionCreated created;
             try
@@ -164,7 +218,7 @@ public static partial class GcEndpoints
             var spaceIds = await db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId).ToListAsync();
             var connections = await db.GcLinkedAccounts
                 .Where(a => spaceIds.Contains(a.SpaceId))
-                .Select(a => new { a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.LastFetchAt })
+                .Select(a => new { a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.LastFetchAt, a.Provider })
                 .ToListAsync();
             return Results.Ok(connections);
         });

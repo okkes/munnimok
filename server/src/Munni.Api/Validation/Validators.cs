@@ -140,6 +140,11 @@ public sealed class CreateRequisitionRequestValidator : AbstractValidator<Create
             .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri)
                          && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
             .WithMessage("redirectUrl must be an absolute http(s) URL");
+        // #175: the user's provider pick — a known name or nothing (the
+        // endpoint still checks it is CONFIGURED on this install)
+        RuleFor(r => r.Provider)
+            .Must(p => p is null or Banking.GoCardlessBankApi.Id or Banking.EnableBankingApi.Id)
+            .WithMessage("provider must be gocardless or enablebanking");
     }
 }
 

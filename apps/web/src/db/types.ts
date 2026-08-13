@@ -51,6 +51,9 @@ export interface SpaceRow extends SyncEnvelope {
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
 export type AccountSource = 'manual' | 'camt053' | 'gocardless';
+/** which open-banking provider fetches a 'gocardless'-sourced account —
+ *  absent on legacy rows means GoCardless (#176) */
+export type BankProvider = 'gocardless' | 'enablebanking';
 
 export interface AccountRow extends SyncEnvelope {
   id: string;
@@ -65,6 +68,9 @@ export interface AccountRow extends SyncEnvelope {
   balanceAsOf?: string;
   /** when this account last heard from its source (ISO; bank fetch or statement import) */
   lastSyncedAt?: string;
+  /** #176: the open-banking provider behind a 'gocardless' source —
+   *  stamped by the server ingest; absent = GoCardless (legacy rows) */
+  provider?: BankProvider;
   /** #133/#221: this account is the space's DEFAULT for a counterparty
    *  family — minted at space creation (undeletable, ledger system-
    *  managed), so "Set aside" or an ATM withdrawal without naming an

@@ -17,7 +17,7 @@ import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDef
 import { useQuery } from '@/db/useQuery';
 import { AddAccountChooser } from './AddAccountChooser';
 import { BankConnectSheet } from './BankConnect';
-import { useInstitutionLogos } from './useInstitutionLogos';
+import { institutionLogoUrl } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
@@ -45,10 +45,9 @@ function AccountRowButton({
   onOpen: (entry: GlobalAccount) => void;
 }) {
   const { t } = useLang();
-  const logos = useInstitutionLogos();
   const { account, feedSpaceId, sharedVia } = entry;
   // the user's own pick wins over the institution logo (user request)
-  const bankLogo = account.logo ?? (account.bankId ? logos.get(account.bankId) : undefined);
+  const bankLogo = account.logo ?? institutionLogoUrl(account.bankId);
   const active = sharedVia.filter((v) => !v.archived);
   const archivedOnly = sharedVia.length > 0 && active.length === 0;
   let feedSubtitle = t('acct.notAttached');

@@ -187,8 +187,14 @@ public sealed partial class GcIngest(AppDbContext db)
             r.SpaceId == feedSpaceId && r.Entity == "account" && r.EntityId == linked.AccountEntityId);
         if (!exists) fields["name"] = Json(details.Name ?? fallbackName);
         if (isRealIban) fields["iban"] = Json(linked.Iban);
-        // the institution id lets clients show the real bank logo
-        if (requisition is not null) fields["bankId"] = Json(requisition.InstitutionId);
+        // the institution id lets clients show the real bank logo; the
+        // provider names WHO fetches (#176: EB rows read "GoCardless"
+        // without it) — re-sent every fetch, so existing rows heal
+        if (requisition is not null)
+        {
+            fields["bankId"] = Json(requisition.InstitutionId);
+            fields["provider"] = Json(requisition.Provider);
+        }
         if (balance is not null)
         {
             fields["balanceCents"] = Json(ToCents(balance.BalanceAmount.Amount));

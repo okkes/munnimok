@@ -6,7 +6,7 @@ import { logActivity } from '@/application/activity';
 import { useData } from '@/app/data';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
-import type { AccountSource } from '@/db/types';
+import type { AccountRow, AccountSource } from '@/db/types';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
@@ -28,6 +28,14 @@ export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
   camt053: 'acct.sourceImport',
   gocardless: 'acct.sourceOpenBanking',
 };
+
+/** #176: the label honors WHICH open-banking provider fetches the row —
+ *  Enable Banking rows read "Enable Banking", not "GoCardless"; legacy
+ *  rows without the stamp are GoCardless by history */
+export const sourceKeyFor = (account: Pick<AccountRow, 'source' | 'provider'>): TranslationKey =>
+  account.source === 'gocardless' && account.provider === 'enablebanking'
+    ? 'acct.sourceOpenBankingEb'
+    : SOURCE_KEYS[account.source];
 
 /**
  * The global view of one of YOUR feed accounts: name/icon, source, the
@@ -205,7 +213,7 @@ export function AttachSheet({
       )}
       <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-source">
         <span className="text-ink-4">{t('acct.source')}</span>
-        <span className="text-ink-2">{t(SOURCE_KEYS[account.source])}</span>
+        <span className="text-ink-2">{t(sourceKeyFor(account))}</span>
       </div>
       {/* only what the account currently feeds — attaching moved to each
           space's own accounts screen (checkboxes retired, user request) */}

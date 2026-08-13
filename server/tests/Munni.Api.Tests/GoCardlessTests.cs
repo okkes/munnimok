@@ -116,6 +116,8 @@ public class GcIngestTests
         var accountData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(account!.DataJson)!;
         Assert.Equal(123456, accountData["balanceCents"].GetInt32());
         Assert.Equal("gocardless", accountData["source"].GetString());
+        // #176: the fetching provider rides along so clients label honestly
+        Assert.Equal("gocardless", accountData["provider"].GetString());
         Assert.True(accountData.ContainsKey("balanceAsOf"));
 
         // raw halves carry no opinion; <br> separators are sanitized
@@ -139,6 +141,27 @@ public class GcIngestTests
         Assert.Equal(1, unknownData["needsReview"].GetInt32());
 
         Assert.NotNull(await db.EntityRows.FindAsync("s1", "accountLink", ImportIds.AccountLinkId("s1", FeedId)));
+    }
+
+    [Fact]
+    public async Task EnableBankingRowsCarryTheirProviderStamp()
+    {
+        await using var db = await SeedDbAsync();
+        var requisition = await db.GcRequisitions.FindAsync(RequisitionId);
+        requisition!.Provider = "enablebanking";
+        await db.SaveChangesAsync();
+        var space = await db.Spaces.FindAsync("s1");
+
+        await new GcIngest(db).IngestAccountAsync(space!, Linked("s1"), Details, Balances, Transactions);
+        await db.SaveChangesAsync();
+
+        // #176: the row says WHO fetches — EB accounts stop reading as
+        // "GoCardless" in the apps (the stamp re-sends every fetch, so
+        // existing rows heal on their next sync)
+        var account = await db.EntityRows.FindAsync(FeedId, "account", ImportIds.AccountId("NL69INGB0123456789"));
+        var accountData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(account!.DataJson)!;
+        Assert.Equal("gocardless", accountData["source"].GetString()); // compat: source stays the open-banking marker
+        Assert.Equal("enablebanking", accountData["provider"].GetString());
     }
 
     [Fact]

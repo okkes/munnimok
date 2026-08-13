@@ -883,3 +883,142 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         Assert.False(health.GetProperty("secretLooksSwapped").GetBoolean());
     }
 }
+
+/// <summary>Scriptable second provider behind the agnostic surface (#175).</summary>
+public sealed class FakeEnableBankingBankApi : Munni.Api.Banking.IBankDataApi
+{
+    public int InstitutionCalls;
+    public string ProviderId => Munni.Api.Banking.EnableBankingApi.Id;
+
+    public Task<IReadOnlyList<GcInstitution>> GetInstitutionsAsync(string country, CancellationToken ct = default)
+    {
+        InstitutionCalls++;
+        return Task.FromResult<IReadOnlyList<GcInstitution>>([new GcInstitution("ASN Bank|NL", "ASN Bank", "ASNBNL21", "730", null)]);
+    }
+
+    public Task<GcRequisitionCreated> CreateRequisitionAsync(string institutionId, string redirect, string reference, CancellationToken ct = default) =>
+        Task.FromResult(new GcRequisitionCreated(reference, $"https://eb.example/authorize/{reference}", "CR"));
+
+    public Task<GcRequisitionStatus> CompleteAuthAsync(string requisitionId, string? authCode, CancellationToken ct = default) =>
+        Task.FromResult(new GcRequisitionStatus("eb-session-1", "LN", ["eb-acc-1"]));
+
+    public Task<GcAccountDetails> GetAccountDetailsAsync(string accountId, CancellationToken ct = default) =>
+        Task.FromResult(new GcAccountDetails("NL43ASNB8852368507", "Betaalrekening", "EUR"));
+
+    public Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string accountId, CancellationToken ct = default) =>
+        Task.FromResult<IReadOnlyList<GcBalance>>([new GcBalance(new GcAmount("10.00", "EUR"), "closingBooked")]);
+
+    public Task<GcTransactionsPage> GetTransactionsAsync(string accountId, DateOnly? from, CancellationToken ct = default) =>
+        Task.FromResult(new GcTransactionsPage([], [], null));
+}
+
+/// <summary>GoCardless AND Enable Banking configured — the #175 choice case.</summary>
+public class DualProviderApiFactory : GcApiFactory
+{
+    public FakeEnableBankingBankApi Eb { get; } = new();
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        base.ConfigureWebHost(builder);
+        builder.ConfigureServices(services =>
+        {
+            // second provider joins the registry (GC registered first stays
+            // the default active); a distinct store keeps this fixture's
+            // rows away from the shared gc-endpoint-tests database
+            services.AddScoped<Munni.Api.Banking.IBankDataApi>(_ => Eb);
+            foreach (var d in services
+                         .Where(d =>
+                             d.ServiceType == typeof(DbContextOptions<AppDbContext>) ||
+                             d.ServiceType == typeof(DbContextOptions) ||
+                             d.ServiceType.Name.Contains("IDbContextOptionsConfiguration"))
+                         .ToList())
+            {
+                services.Remove(d);
+            }
+            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("dual-provider-tests"));
+        });
+    }
+}
+
+public class BankProviderChoiceTests : IClassFixture<DualProviderApiFactory>
+{
+    private readonly DualProviderApiFactory _factory;
+
+    public BankProviderChoiceTests(DualProviderApiFactory factory) => _factory = factory;
+
+    private HttpClient ClientFor(string sub)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        return client;
+    }
+
+    [Fact]
+    public async Task Providers_list_both_with_the_active_default_first_and_masked_eb_tails()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            // EB-fetched accounts prove a portal link — their tails guide
+            // the pick; GC rows and wallet pseudo-refs stay out
+            db.GcLinkedAccounts.AddRange(
+                new GcLinkedAccount { GcAccountId = "eb-1", SpaceId = "sp", AccountEntityId = "e1", Iban = "NL43ASNB8852368507", Currency = "EUR", Provider = "enablebanking" },
+                new GcLinkedAccount { GcAccountId = "eb-2", SpaceId = "sp", AccountEntityId = "e2", Iban = "GC:wallet-1", Currency = "EUR", Provider = "enablebanking" },
+                new GcLinkedAccount { GcAccountId = "gc-9", SpaceId = "sp", AccountEntityId = "e3", Iban = "NL74INGB0001029507", Currency = "EUR", Provider = "gocardless" });
+            await db.SaveChangesAsync();
+        }
+
+        var body = await ClientFor("prov-list").GetFromJsonAsync<JsonElement>("/gocardless/providers");
+        var providers = body.GetProperty("providers").EnumerateArray().ToList();
+        Assert.Equal(2, providers.Count);
+        Assert.Equal("gocardless", providers[0].GetProperty("id").GetString()); // active default first
+        Assert.True(providers[0].GetProperty("active").GetBoolean());
+        var eb = providers[1];
+        Assert.Equal("enablebanking", eb.GetProperty("id").GetString());
+        Assert.False(eb.GetProperty("active").GetBoolean());
+        var tails = eb.GetProperty("knownAccounts").EnumerateArray().Select(t => t.GetString()).ToList();
+        Assert.Equal(["8507"], tails); // masked, deduped, pseudo-refs dropped
+    }
+
+    [Fact]
+    public async Task Institutions_follow_the_provider_parameter_and_refuse_unknown_ones()
+    {
+        var client = ClientFor("prov-inst");
+        var eb = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=fi&provider=enablebanking");
+        Assert.Equal("ASN Bank|NL", Assert.Single(eb!).Id);
+        Assert.Equal(1, _factory.Eb.InstitutionCalls);
+
+        // no parameter keeps the admin's active provider (GoCardless here)
+        var active = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=fi");
+        Assert.Equal("ING_NL", Assert.Single(active!).Id);
+
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/gocardless/institutions?country=fi&provider=plaid")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Requisitions_honor_the_users_provider_pick()
+    {
+        var client = ClientFor("prov-req");
+        var me = await client.GetFromJsonAsync<MeResponse>("/me");
+        var spaceId = "space_prov_req";
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = me!.UserId, Role = SpaceRoles.Owner });
+            await db.SaveChangesAsync();
+        }
+
+        var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
+            new CreateRequisitionRequest(spaceId, "ASN Bank|NL", "https://app/gc-callback", null, "enablebanking"))).Content
+            .ReadFromJsonAsync<CreateRequisitionResponse>();
+        Assert.Contains("eb.example", created!.Link); // the EB fake authored the journey
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var requisition = await db.GcRequisitions.FindAsync(Guid.Parse(created.Reference));
+            Assert.Equal("enablebanking", requisition!.Provider);
+        }
+    }
+}

@@ -1,48 +1,17 @@
-import { useEffect, useState } from 'react';
+import { config } from '@/app/config';
 import { readSessionIdentity } from '@/app/session';
-import { apiFetch, getApiCapabilities } from '@/lib/api';
 
 /**
- * institutionId → logo URL, for showing the real bank mark on account
- * rows. One fetch per page load (module cache); local-only identities
- * and offline sessions simply keep the generic icon.
+ * The vendored bank-mark URL for an account's institution (#176). Built
+ * straight from the bankId — the server keeps ONE logo store across
+ * providers, so an Enable Banking id resolves exactly like a GoCardless
+ * one (the old per-active-provider institutions fetch missed whichever
+ * provider was inactive, and its relative paths resolved against the WEB
+ * origin — both faces of the broken-image bug). 404s land in the <img>
+ * onError fallback. Local-only identities keep the generic icon and
+ * never touch the network.
  */
-let cache: Map<string, string> | null = null;
-let pending: Promise<Map<string, string>> | null = null;
-
-async function load(): Promise<Map<string, string>> {
-  if (cache) return cache;
-  pending ??= (async () => {
-    const map = new Map<string, string>();
-    try {
-      if (readSessionIdentity()?.kind !== 'user' || !(await getApiCapabilities()).gocardless) return map;
-      const res = await apiFetch('/gocardless/institutions?country=nl');
-      if (!res.ok) return map;
-      const list = (await res.json()) as { id: string; logo?: string }[];
-      for (const inst of list) if (inst.logo) map.set(inst.id, inst.logo);
-      cache = map;
-    } catch {
-      // offline / rate-limited — the generic icon is the fallback anyway
-    }
-    return map;
-  })();
-  return pending;
-}
-
-/** test seam */
-export function resetInstitutionLogoCache(): void {
-  cache = null;
-  pending = null;
-}
-
-export function useInstitutionLogos(): Map<string, string> {
-  const [logos, setLogos] = useState<Map<string, string>>(() => cache ?? new Map());
-  useEffect(() => {
-    let alive = true;
-    void load().then((map) => alive && setLogos(map));
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return logos;
+export function institutionLogoUrl(bankId: string | undefined): string | undefined {
+  if (!bankId || !config.apiUrl || readSessionIdentity()?.kind !== 'user') return undefined;
+  return `${config.apiUrl}/gocardless/institutions/${encodeURIComponent(bankId)}/logo`;
 }

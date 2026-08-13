@@ -443,6 +443,33 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('account-row-demo_save')).toBeNull());
   });
 
+  it('#176: an Enable Banking-fetched account says so — never "GoCardless"', async () => {
+    renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('eb-label'), { trackOutbox: false });
+    // the server's ingest stamps WHO fetches (#176) — the label follows
+    await repo.upsert('account', 'demo_space', 'eb-acc', {
+      name: 'ASN via EB',
+      type: 'checking',
+      source: 'gocardless',
+      provider: 'enablebanking',
+      currency: 'EUR',
+      balanceCents: 0,
+      iban: 'NL43ASNB8852368507',
+      bankId: 'ASN Bank|NL',
+    });
+    db.close();
+
+    fireEvent.click(await screen.findByTestId('account-row-eb-acc'));
+    await waitFor(() => expect(screen.getByTestId('acctedit-source').textContent).toContain('Enable Banking'));
+    expect(screen.getByTestId('acctedit-source').textContent).not.toContain('GoCardless');
+  }, 15_000);
+
   it('#221: a DEFAULT account offers no delete — and its balance edit leaves an adjustment row', async () => {
     renderApp('/accounts');
     // the demo space is born with its six defaults (eager mint)

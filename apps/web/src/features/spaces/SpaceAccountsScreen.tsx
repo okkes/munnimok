@@ -6,9 +6,9 @@ import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAttach';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
-import { SOURCE_KEYS } from '@/features/accounts/AttachSheet';
+import { sourceKeyFor } from '@/features/accounts/AttachSheet';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
-import { useInstitutionLogos } from '@/features/accounts/useInstitutionLogos';
+import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import { ACCOUNT_TYPES } from '@/features/accounts/accountTypes';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
@@ -81,7 +81,7 @@ function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined):
   return {
     key: link.id,
     name: account?.name ?? t('acct.bank'),
-    subtitle: [ibanTail(account?.iban), account ? t(SOURCE_KEYS[account.source]) : undefined].filter(Boolean).join(' · '),
+    subtitle: [ibanTail(account?.iban), account ? t(sourceKeyFor(account)) : undefined].filter(Boolean).join(' · '),
     archived: !!link.archived,
     stale: isStale(account),
     detach: { feedSpaceId: link.feedSpaceId, accountId: link.accountId },
@@ -119,7 +119,6 @@ export function SpaceAccountsScreen() {
   const [addOpen, setAddOpen] = useState(false);
   // the tap-through info sheet (user redesign ss13)
   const [info, setInfo] = useState<AttachedAccountEntry | null>(null);
-  const logos = useInstitutionLogos();
 
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
 
@@ -142,7 +141,7 @@ export function SpaceAccountsScreen() {
     const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
       key: account.id,
       name: account.name,
-      subtitle: [ibanTail(account.iban), t(SOURCE_KEYS[account.source])].filter(Boolean).join(' · '),
+      subtitle: [ibanTail(account.iban), t(sourceKeyFor(account))].filter(Boolean).join(' · '),
       archived: !!account.archived,
       stale: isStale(account),
       manual: account,
@@ -226,7 +225,7 @@ export function SpaceAccountsScreen() {
           {!!entries?.length && (
             <div className="flex flex-col gap-2.5" data-testid="space-accounts-list">
               {entries.map((entry) => {
-                const logo = entry.account?.logo ?? (entry.account?.bankId ? logos.get(entry.account.bankId) : undefined);
+                const logo = entry.account?.logo ?? institutionLogoUrl(entry.account?.bankId);
                 return (
                   <button
                     key={entry.key}
@@ -234,14 +233,23 @@ export function SpaceAccountsScreen() {
                     onClick={() => setInfo(entry)}
                     className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
                   >
-                    {/* the real bank mark where we have it (user request) */}
-                    {logo ? (
-                      <img src={logo} alt="" className="h-9 w-9 shrink-0 rounded-full object-contain" />
-                    ) : (
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-2">
-                        <Icon name="bank-outline" size={18} color="var(--m-ink-3)" />
-                      </span>
+                    {/* the real bank mark where we have it (user request);
+                        a 404 must not leave a broken square (#176) */}
+                    {logo && (
+                      <img
+                        src={logo}
+                        alt=""
+                        className="h-9 w-9 shrink-0 rounded-full object-contain"
+                        loading="lazy"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
                     )}
+                    <span className={`${logo ? 'hidden ' : ''}flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-2`}>
+                      <Icon name="bank-outline" size={18} color="var(--m-ink-3)" />
+                    </span>
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[15px] font-medium text-ink">{entry.name}</span>
                       <span className="block truncate text-[12px] text-ink-4">{entry.subtitle}</span>
@@ -310,7 +318,7 @@ export function SpaceAccountsScreen() {
           <div className="flex flex-col gap-3 pt-1" data-testid="space-account-info">
             <div className="flex items-center gap-2 text-[13px] text-ink-2">
               {info.account && <Icon name={SOURCE_ICONS[info.account.source]} size={16} color="var(--m-ink-3)" />}
-              {info.account ? t(SOURCE_KEYS[info.account.source]) : t('acct.bank')}
+              {info.account ? t(sourceKeyFor(info.account)) : t('acct.bank')}
               {info.manual && <span className="text-ink-4"> · {t('acct.provSpace')}</span>}
             </div>
             <div className="overflow-hidden rounded-card border border-line bg-surface">

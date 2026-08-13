@@ -72,6 +72,7 @@
     <p>Settings → Global settings → All accounts. Connect a bank (read-only PSD2 access — munni can never move money) or import statements (CAMT.053, ING CSV or a PayPal activity export — several files at once) for accounts your bank won't share; those are global, listed first. Manual cash/savings accounts live INSIDE a space — the overview lists them under their space, and creating one takes you to "This space's accounts" (the wallet icon; the bank icon is the global overview). Bank data lands once per account; each space picks its accounts with a start date AND decides what the account is to that space — checking, savings, a loan… or a funding account: a shared pot you send money to, whose transactions never show in the space and whose balance counts toward nothing. A freshly connected account attaches to the space you started from by itself.</p>
     <ul class="tips"><li>Every space is born with six default accounts — savings, loan, investments, bank, cash and a shared pot. They are munni\u2019s own fixtures: a movement category always has somewhere valid to point, so they can\u2019t be deleted. You CAN adjust their balance from the account editor — the correction is recorded as an adjustment row, so the ledger stays honest. Their transactions are managed by munni: the legs appear when you link, leave when you unlink, and never take hand-edits.</li>
 <li>New transactions arrive automatically several times a day.</li>
+<li>With two open-banking providers configured, connecting asks WHO first: GoCardless works with any bank, while Enable Banking only serves accounts linked upfront on its portal \u2014 the choice screen shows the masked account numbers already known to work there, and each connection remembers its provider.</li>
 <li>Reserved (not yet booked) card payments show with a badge and disappear when the real booking lands.</li>
 <li>Each account row shows when the bank last answered — a Reconnect hint appears when a consent has gone quiet.</li>
 <li>Imported accounts warn when their data has gone stale: an export from weeks ago imports fine but silently misses everything after it — the preview and the account row both tell you where the data ends.</li>
@@ -177,7 +178,7 @@
 <figure><img src="shots/58-sync-live--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
 <figure><img src="shots/38-offline--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure></div>
   </section>
-  <footer>Generated 2026-08-12 from the app's own test screenshots — always the current UI.</footer>
+  <footer>Generated 2026-08-13 from the app's own test screenshots — always the current UI.</footer>
 </main>
 </body>
 </html>

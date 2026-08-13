@@ -10,7 +10,7 @@ import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { SOURCE_KEYS } from './AttachSheet';
+import { sourceKeyFor } from './AttachSheet';
 import { isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { isCustomCadence, LoanCadenceControl } from './LoanCadenceControl';
 
@@ -313,7 +313,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
           {account && (
             <div className="flex items-center justify-between px-1 text-[12px]" data-testid="acctedit-source">
               <span className="text-ink-4">{t('acct.source')}</span>
-              <span className="text-ink-2">{t(SOURCE_KEYS[account.source])}</span>
+              <span className="text-ink-2">{t(sourceKeyFor(account))}</span>
             </div>
           )}
           <Button data-testid="acctedit-save" onClick={save} disabled={!name.trim()}>
