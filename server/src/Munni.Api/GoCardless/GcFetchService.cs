@@ -180,6 +180,23 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
     /// <summary>seconds between account fetches (staggering); tests shrink it</summary>
     internal TimeSpan AccountDelay { get; set; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>#240 r2: the feed space holds not one live transaction —
+    /// whatever the backfill fetched never landed.</summary>
+    internal static async Task<bool> FeedHasNoRowsAsync(AppDbContext db, GcLinkedAccount linked, CancellationToken ct) =>
+        !await db.EntityRows.AnyAsync(
+            r => r.SpaceId == ImportIds.FeedSpaceId(linked.Iban) && r.Entity == "transaction" && !r.Deleted, ct);
+
+    /// <summary>#240 r2: stamped as backfilled, yet the feed is empty — a
+    /// backfill that ingested nothing does not count. An hour between
+    /// retries keeps a genuinely empty account from hammering the bank
+    /// (GC's daily budget additionally lands in the 12h rate backoff).</summary>
+    internal static async Task<bool> EmptyBackfillAsync(AppDbContext db, GcLinkedAccount linked, CancellationToken ct)
+    {
+        if (linked.HistoryBackfilledAt is null || linked.LastFetchAt is null) return false;
+        if (DateTimeOffset.UtcNow - linked.LastFetchAt.Value < TimeSpan.FromHours(1)) return false;
+        return await FeedHasNoRowsAsync(db, linked, ct);
+    }
+
     internal async Task FetchAllAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
@@ -191,7 +208,13 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var linkedAccounts = await db.GcLinkedAccounts.ToListAsync(ct);
         foreach (var linked in linkedAccounts)
         {
-            if (!GcSchedule.IsDue(linked, DateTimeOffset.UtcNow)) continue;
+            // #240 r2: a "backfilled" account whose feed never received a
+            // single row keeps retrying the full window every tick until
+            // data actually exists (dropped rows on an old binary, an
+            // ASPSP answering empty, an erased feed) — the 429 backoff
+            // below still guards the provider budget
+            var emptyBackfill = await EmptyBackfillAsync(db, linked, ct);
+            if (!emptyBackfill && !GcSchedule.IsDue(linked, DateTimeOffset.UtcNow)) continue;
             if (_rateLimitedUntil.TryGetValue(linked.GcAccountId, out var until) && DateTimeOffset.UtcNow < until) continue;
             try
             {
@@ -287,10 +310,13 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         // no backfill marker → fetch the full window regardless of
         // LastFetchAt: accounts linked before the feed-space migration had
         // a LastFetchAt but their FEED space only ever received deltas.
+        // #240 r2: an EMPTY feed re-runs the full window too — a stamp
+        // whose fetch never landed a row must not shrink to 3-day deltas.
         // The window asks for TWO YEARS (user design 2026-08-01: yearly
         // recurring detection needs the tail); the provider clamps to
         // whatever the consent actually allows
-        var from = linked.HistoryBackfilledAt is null
+        var fullWindow = linked.HistoryBackfilledAt is null || await FeedHasNoRowsAsync(db, linked, ct);
+        var from = fullWindow
             ? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-GoCardlessApi.MaxHistoryDays))
             : DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-GoCardlessApi.MaxHistoryDays)).AddDays(-3));
         var page = await gc.GetTransactionsAsync(linked.GcAccountId, from, ct);

@@ -48,11 +48,9 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
             ["accountId"] = Json(linked.AccountEntityId),
         }, NextHlc(), $"gclink:{space.Id}:{feedSpace.Id}"));
 
-        var dropped = 0;
-        foreach (var tx in transactions)
-        {
-            if (!AddBookedOps(space.Id, feedSpace.Id, linked, tx, feedOps, spaceOps, NextHlc)) dropped++;
-        }
+        // Count both writes the ops and tallies what could be represented
+        var written = transactions.Count(tx => AddBookedOps(space.Id, feedSpace.Id, linked, tx, feedOps, spaceOps, NextHlc));
+        var dropped = transactions.Count - written;
         // #240: rows without a reference or date used to vanish without a
         // trace — an ASPSP omitting entry_reference lost its whole history
         // and nothing anywhere said so

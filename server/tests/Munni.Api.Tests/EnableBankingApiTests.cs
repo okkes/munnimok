@@ -61,6 +61,20 @@ public class EnableBankingApiTests
             {
                 body = """{"balances":[{"balance_amount":{"amount":"12.34","currency":"EUR"},"balance_type":"CLBD"}]}""";
             }
+            else if (path.Contains("acc-uid-clamp/transactions") && path.Contains("date_from"))
+            {
+                // #240 r2: PayPal answers an out-of-range date_from with an
+                // EMPTY 200 rather than an error
+                body = """{"transactions":[],"continuation_key":null}""";
+            }
+            else if (path.Contains("acc-uid-clamp/transactions"))
+            {
+                body = """
+                {"transactions":[
+                  {"entry_reference":"C1","transaction_amount":{"amount":"3.50","currency":"EUR"},"credit_debit_indicator":"DBIT","status":"BOOK","booking_date":"2026-08-01","creditor":{"name":"Coffee"}}
+                ],"continuation_key":null}
+                """;
+            }
             else if (path.Contains("acc-uid-pp/transactions"))
             {
                 // the PayPal shape (#240): no entry_reference, no booking_date
@@ -205,5 +219,19 @@ public class EnableBankingApiTests
         // a re-fetch maps to the SAME row identity — no duplicates
         var again = await api.GetTransactionsAsync("acc-uid-pp", null);
         Assert.Equal(row.TransactionId, Assert.Single(again.Booked).TransactionId);
+    }
+
+    [Fact]
+    public async Task An_empty_windowed_answer_retries_on_the_aspsps_default_window()
+    {
+        // #240 r2: the two-year ask came back 200-with-nothing — one retry
+        // without date_from picks up whatever window the ASPSP does serve
+        var (api, handler) = Create();
+        var page = await api.GetTransactionsAsync("acc-uid-clamp", new DateOnly(2024, 8, 14));
+
+        var row = Assert.Single(page.Booked);
+        Assert.Equal("C1", row.TransactionId);
+        Assert.Equal(2, handler.Paths.Count(p => p.Contains("acc-uid-clamp/transactions")));
+        Assert.Equal(1, handler.Paths.Count(p => p.Contains("acc-uid-clamp/transactions") && p.Contains("date_from")));
     }
 }

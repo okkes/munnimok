@@ -198,6 +198,19 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
 
     public async Task<GcTransactionsPage> GetTransactionsAsync(string accountId, DateOnly? from, CancellationToken ct = default)
     {
+        var (booked, pending) = await FetchTransactionPagesAsync(accountId, from, ct);
+        // #240 r2: some ASPSPs answer an out-of-range date_from with an
+        // EMPTY list instead of an error (PayPal's window is far shorter
+        // than the two-year ask) — retry once on the ASPSP's own default
+        // window rather than concluding the account has no history
+        if (from is not null && booked.Count == 0 && pending.Count == 0)
+            (booked, pending) = await FetchTransactionPagesAsync(accountId, null, ct);
+        return new GcTransactionsPage(booked, pending, null); // EB publishes no per-account budget headers
+    }
+
+    private async Task<(List<GcTransaction> Booked, List<GcTransaction> Pending)> FetchTransactionPagesAsync(
+        string accountId, DateOnly? from, CancellationToken ct)
+    {
         var booked = new List<GcTransaction>();
         var pending = new List<GcTransaction>();
         string? continuation = null;
@@ -220,7 +233,7 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
             continuation = result.ContinuationKey;
             if (continuation is null) break;
         }
-        return new GcTransactionsPage(booked, pending, null); // EB publishes no per-account budget headers
+        return (booked, pending);
     }
 
     private static GcTransaction MapTransaction(EbTransaction tx)

@@ -678,6 +678,60 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     }
 
     [Fact]
+    public async Task FetchService_retries_the_full_window_while_a_backfilled_feed_stays_empty()
+    {
+        // #240 r2: the PayPal shape — /complete "succeeded" and stamped
+        // HistoryBackfilledAt, yet the feed holds nothing (rows dropped by
+        // an old binary, or the ASPSP answered empty). The stamp must not
+        // shrink every future fetch to 3-day deltas: an empty feed keeps
+        // re-running the full window, outside the 03:00 gate, until rows land.
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var spaceId = $"space_heal_{suffix}";
+        var iban = "NL77INGB0000000777";
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = Guid.NewGuid(), UserId = Guid.NewGuid(), SpaceId = spaceId,
+                InstitutionId = "ING_NL", RequisitionId = $"req-heal-{suffix}", Status = "linked",
+            });
+            db.GcLinkedAccounts.Add(new GcLinkedAccount
+            {
+                GcAccountId = $"gc-heal-{suffix}", SpaceId = spaceId,
+                AccountEntityId = ImportIds.AccountId(iban),
+                Iban = iban, Currency = "EUR",
+                RequisitionId = db.GcRequisitions.Local.First().Id,
+                LastFetchAt = DateTimeOffset.UtcNow.AddHours(-2),
+                HistoryBackfilledAt = DateTimeOffset.UtcNow.AddHours(-2),
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = new GcFetchService(
+            _factory.Services.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<GcFetchService>.Instance)
+        { AccountDelay = TimeSpan.Zero };
+        var callsBefore = _factory.Gc.TransactionFroms.Count;
+        await service.FetchAllAsync(CancellationToken.None);
+
+        // fetched despite the stamp and the time of day — with the FULL window
+        Assert.Equal(callsBefore + 1, _factory.Gc.TransactionFroms.Count);
+        Assert.True(_factory.Gc.TransactionFroms[^1] <= DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-89)));
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var feedId = ImportIds.FeedSpaceId(iban);
+            Assert.True(await db.EntityRows.AnyAsync(r => r.SpaceId == feedId && r.Entity == "transaction"));
+        }
+
+        // rows exist now: the next tick is an ordinary skip (not due)
+        await service.FetchAllAsync(CancellationToken.None);
+        Assert.Equal(callsBefore + 1, _factory.Gc.TransactionFroms.Count);
+    }
+
+    [Fact]
     public async Task Pending_transactions_mirror_into_the_feed_and_vanish_when_no_longer_pending()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];

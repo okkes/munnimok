@@ -324,25 +324,7 @@ public static partial class GcEndpoints
             }
             else
             {
-                // a retried journey re-consented the same bank account, so
-                // the row moves to this newest consent with the freshest
-                // 90-day window — the older requisition ends up account-less
-                // and the idle cleanup frees its provider slot (user had
-                // NINE ING consents, unclear which one carried the account).
-                // Only within the SAME user: a shared family account linked
-                // by a second person keeps the first one's binding — each
-                // person's consent lives its own life (family-account case).
-                // #240: WALLETS (no IBAN) are the exception — personal by
-                // nature, so the newest consent always claims the binding
-                // (a stale foreign binding stranded PayPal as "shared with
-                // me" for its real owner).
-                var wallet = linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
-                var boundTo = await db.GcRequisitions.FindAsync(linked.RequisitionId);
-                if (boundTo is null || boundTo.UserId == requisition.UserId || wallet)
-                {
-                    linked.RequisitionId = requisition.Id;
-                    linked.SpaceId = requisition.SpaceId;
-                }
+                await RebindToNewestConsentAsync(db, linked, requisition);
             }
 
             IReadOnlyList<GcBalance> balances = [];
@@ -359,7 +341,13 @@ public static partial class GcEndpoints
                 // budget spent — the feed still gets created/attached so the
                 // link shows up everywhere; data follows on the next fetch
             }
-            imported += await ingest.IngestAccountAsync(space, linked, details, balances, page?.Booked ?? [], page?.Pending);
+            var accepted = await ingest.IngestAccountAsync(space, linked, details, balances, page?.Booked ?? [], page?.Pending);
+            imported += accepted;
+            // #240 r2: completions must leave a trace — "linked fine, zero
+            // rows" was invisible everywhere
+            if (logger?.IsEnabled(LogLevel.Information) == true)
+                logger.LogInformation("gc complete {Ref}: fetched {Booked} booked + {Pending} pending, accepted {Accepted}",
+                    linked.Iban, page?.Booked.Count ?? 0, page?.Pending?.Count ?? 0, accepted);
             if (page is not null)
             {
                 linked.LastFetchAt = DateTimeOffset.UtcNow;
@@ -368,6 +356,28 @@ public static partial class GcEndpoints
             linkedCount++;
         }
         return (linkedCount, imported, deferred);
+    }
+
+    /// <summary>
+    /// A retried journey re-consented the same bank account: the row moves
+    /// to the newest consent with the freshest 90-day window — the older
+    /// requisition ends up account-less and the idle cleanup frees its
+    /// provider slot (user had NINE ING consents, unclear which carried
+    /// the account). Only within the SAME user: a shared family account
+    /// linked by a second person keeps the first one's binding. #240:
+    /// WALLETS (no IBAN) are the exception — personal by nature, so the
+    /// newest consent always claims the binding (a stale foreign binding
+    /// stranded PayPal as "shared with me" for its real owner).
+    /// </summary>
+    private static async Task RebindToNewestConsentAsync(AppDbContext db, GcLinkedAccount linked, GcRequisition requisition)
+    {
+        var wallet = linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
+        var boundTo = await db.GcRequisitions.FindAsync(linked.RequisitionId);
+        if (boundTo is null || boundTo.UserId == requisition.UserId || wallet)
+        {
+            linked.RequisitionId = requisition.Id;
+            linked.SpaceId = requisition.SpaceId;
+        }
     }
 
     /// <summary>
