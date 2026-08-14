@@ -24,7 +24,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet, hasOpenSheet } from '@/ui/Sheet';
-import { givenCents, netAmountCents, netCreditCents, totalReimbursedCents } from '@/domain/reimbursement';
+import { givenCents, netAmountCents, netCreditCents, partNetCents, reimbursedInCats, totalReimbursedCents } from '@/domain/reimbursement';
 import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType, stampMovementSub } from '@/domain/categories';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { primaryCatId } from '@/domain/splits';
@@ -34,7 +34,7 @@ import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
-import { CatsSheet, partCatsApplyPatch } from './PartCatsSheet';
+import { CatsSheet, catsAroundSingle, partCatsApplyPatch } from './PartCatsSheet';
 import type { CatsApplyEntry } from './PartCatsSheet';
 import { CounterpartySheet } from './TxKindSheet';
 import { TxFormSheet } from './TxFormSheet';
@@ -59,25 +59,20 @@ const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR'
 const partTargetId = (multi: boolean, slice: TxSplit | null, canOpen: boolean): string | null =>
   multi && canOpen && slice?.id && slice.catId !== REIMBURSED_ID ? slice.id : null;
 
-/** #133 r5: the settled counterparty a category row names — a PART's
- *  own link, or the whole row's one counterparty (#228: entries carry
- *  none; the row's link speaks for its spread) (S3776: out of the map
- *  callback) */
-function sliceCounterName(
-  accounts: readonly { id: string; name: string }[] | undefined,
-  partsMode: boolean,
-  slice: { linkedAccountId?: string; catId?: string } | null,
-  tx: { linkedAccountId?: string },
-): string | undefined {
-  if (slice?.catId === REIMBURSED_ID) return undefined;
-  const counterId = partsMode ? slice?.linkedAccountId : tx.linkedAccountId;
-  return counterId ? accounts?.find((a) => a.id === counterId)?.name : undefined;
-}
+// sliceCounterName retired (#228 feedback): the counterparty has its own
+// property row on every surface now — no "→ account" under categories.
 
 /** #138: every category row carries its money — the single category
- *  spans the whole transaction (S3776: out of the map callback) */
-const sliceRowAmountCents = (slice: { amountCents: number } | null, tx: { amountCents: number }): number =>
-  slice ? slice.amountCents : Math.abs(tx.amountCents);
+ *  spans the whole transaction; a PART row shows what the part is
+ *  WORTH (its own settled bookkeeping nets it, #228) (S3776) */
+const sliceRowAmountCents = (
+  partsMode: boolean,
+  slice: { amountCents: number; cats?: TxSplitCat[] } | null,
+  tx: { amountCents: number },
+): number => {
+  if (!slice) return Math.abs(tx.amountCents);
+  return partsMode ? partNetCents(slice) : slice.amountCents;
+};
 
 /** the categories block's rows: one per slice (or the single category).
  *  A single category opens the unified editor; on a container the rows
@@ -101,7 +96,6 @@ function CategorySlices({
   onOpenPart?: (partId: string) => void;
 }>) {
   const { t, lang } = useLang();
-  const accounts = useSpaceAccounts();
   // #211: a container renders its PARTS (navigable pages); a whole row
   // with its own category spread renders one plain row per entry — the
   // classic slice look, every row a door back into the cats editor
@@ -120,12 +114,12 @@ function CategorySlices({
         // differs from the row's kind, a quiet type chip
         const partLabel = slice?.label ?? (multi ? `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}` : undefined);
         const partType = slice?.txType && slice.txType !== tx.txType ? slice.txType : undefined;
-        // a spread part's subline lists ALL its categories (v2.1)
-        const spreadNames = slice?.cats?.length
-          ? slice.cats.map((c) => catName(cats.byId(c.catId), t)).join(' · ')
+        // a spread part's subline lists its REAL categories (v2.1;
+        // #228: the settled bookkeeping is not a story to retell here)
+        const realSliceCats = slice?.cats?.filter((c) => c.catId !== REIMBURSED_ID);
+        const spreadNames = realSliceCats?.length
+          ? realSliceCats.map((c) => catName(cats.byId(c.catId), t)).join(' · ')
           : undefined;
-        // #133 r5: the settled counterparty shows WITH its category
-        const counterName = sliceCounterName(accounts, partsMode, slice, tx);
         const openPartId = partTargetId(multi, slice, !!onOpenPart);
         return (
           <button
@@ -145,15 +139,10 @@ function CategorySlices({
                   </span>
                 )}
               </span>
-              {counterName && (
-                <span className="block truncate text-[11px] text-ink-4" data-testid={`tx-detail-cat-counter-${i}`}>
-                  → {counterName}
-                </span>
-              )}
             </span>
             {i === 0 && tx.needsReview === 1 && <Pill tone="warning">{t('tx.unreviewed')}</Pill>}
             <span className="m-num text-[13px] text-ink-2">
-              {fmtCents(sliceRowAmountCents(slice, tx), tx.currency, lang)}
+              {fmtCents(sliceRowAmountCents(partsMode, slice, tx), tx.currency, lang)}
             </span>
             {openPartId && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
           </button>
@@ -936,16 +925,16 @@ function writeUnsplit(
   transform: ReturnType<typeof useTxTransform>,
   tx: SpaceTx,
   fallbackCatId: string,
-  settledSlices: readonly TxSplit[],
+  settledCents: number,
   catId: string,
 ): void {
   const cat = catId !== UNCATEGORIZED_ID ? catId : fallbackCatId;
-  if (settledSlices.length > 0) {
-    // #211: a whole row's gross partition lives in its own cats now
-    const settled = settledSlices.reduce((sum, s) => sum + s.amountCents, 0);
-    const rest = Math.max(0, Math.abs(tx.amountCents) - settled);
+  if (settledCents > 0) {
+    // #211: a whole row's gross partition lives in its own cats now —
+    // #228: the parts' settled bookkeeping folds back into the row's
+    const rest = Math.max(0, Math.abs(tx.amountCents) - settledCents);
     void transform(tx, {
-      cats: [...(rest > 0 ? [{ catId: cat, amountCents: rest }] : []), { catId: REIMBURSED_ID, amountCents: settled }],
+      cats: [...(rest > 0 ? [{ catId: cat, amountCents: rest }] : []), { catId: REIMBURSED_ID, amountCents: settledCents }],
       splits: null as never,
       catId: cat,
     });
@@ -1085,7 +1074,8 @@ function PartSiblingRows({
               {orDefaultLabel(slice.label, `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`)}
               <span className="text-[11px] font-normal text-ink-4"> · {catName(sliceCat, t)}</span>
             </span>
-            <span className="m-num text-[12px] text-ink-2">{fmtCents(slice.amountCents, tx.currency, lang)}</span>
+            {/* #228: siblings list what each part is worth (net) */}
+            <span className="m-num text-[12px] text-ink-2">{fmtCents(partNetCents(slice), tx.currency, lang)}</span>
             {!self && <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />}
           </button>
         );
@@ -1165,8 +1155,11 @@ function PartDetailBody({
   };
 
   // #228: the part's one counterparty — pick refiles the category by the
-  // account's kind (the bijection's re-pick rule), remove resets it
+  // account's kind (the bijection's re-pick rule), remove resets it.
+  // Settled `reimbursed` bookkeeping always survives a category rewrite.
   const partCounter = accounts?.find((a) => a.id === part.linkedAccountId);
+  const partRealCats = (part.cats ?? []).filter((c) => c.catId !== REIMBURSED_ID);
+  const partSettledCats = (part.cats ?? []).filter((c) => c.catId === REIMBURSED_ID);
   const applyPartCounter = (picked: { id: string; type: AccountRow['type'] }): void => {
     const derived = movementCatFor(picked.type, sign * Math.abs(part.amountCents));
     patchPart({
@@ -1174,17 +1167,25 @@ function PartDetailBody({
       txType: specialCatType(derived),
       linkedAccountId: picked.id,
       transferPeerId: undefined,
-      cats: undefined,
+      cats: catsAroundSingle(part, derived),
     });
   };
   const removePartCounter = (): void =>
-    patchPart({ catId: UNCATEGORIZED_ID, txType: undefined, linkedAccountId: undefined, transferPeerId: undefined });
+    patchPart({
+      catId: UNCATEGORIZED_ID,
+      txType: undefined,
+      linkedAccountId: undefined,
+      transferPeerId: undefined,
+      cats: catsAroundSingle(part, UNCATEGORIZED_ID),
+    });
 
   return (
     <>
       <div className="flex flex-col items-center py-6 text-center">
+        {/* #228: the part's headline is what it is WORTH — its own
+            settled bookkeeping nets it, exactly like a whole row */}
         <div className="m-num text-4xl text-ink" data-testid="tx-part-amount">
-          {fmtCents(sign * Math.abs(part.amountCents), tx.currency, lang, { sign: true })}
+          {fmtCents(sign * partNetCents(part), tx.currency, lang, { sign: true })}
         </div>
         <div className="mt-1 text-sm text-ink-3">
           {fmtDay.format(new Date(tx.date))}
@@ -1221,14 +1222,13 @@ function PartDetailBody({
 
       {/* the category card IS the door to the whole-transaction category
           editor, scoped to this part (r7: same gears). #217/#138 (user):
-          a spread shows EACH category row with its value; the single
-          category carries the part's money and its "→ account" (#228:
-          the part's one counterparty) */}
+          a spread shows EACH category row with its value. #228 feedback:
+          no counter subline here — the property row above owns it; the
+          part's settled bookkeeping renders as its own quiet row */}
       <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-part-category">
-        {(part.cats?.length ? part.cats : [null]).map((entry, i) => {
+        {(partRealCats.length ? partRealCats : [null]).map((entry, i) => {
           const rowCat = cats.byId(entry?.catId ?? part.catId);
           const rowColor = rowCat.color ?? cats.byId(rowCat.parentId ?? '').color;
-          const rowCounter = entry ? undefined : partCounter?.name;
           return (
             <button
               key={entry ? `${entry.catId}-${i}` : 'single'}
@@ -1242,19 +1242,26 @@ function PartDetailBody({
                 {!entry && rowCat.parentId && (
                   <span className="block truncate text-[11px] text-ink-4">{catName(cats.byId(rowCat.parentId), t)}</span>
                 )}
-                {rowCounter && (
-                  <span className="block truncate text-[11px] text-ink-4" data-testid={`tx-part-cat-counter-${i}`}>
-                    → {rowCounter}
-                  </span>
-                )}
               </span>
               <span className="m-num text-[13px] text-ink-2">
-                {fmtCents(entry ? entry.amountCents : Math.abs(part.amountCents), tx.currency, lang)}
+                {fmtCents(entry ? entry.amountCents : partNetCents(part), tx.currency, lang)}
               </span>
               <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
             </button>
           );
         })}
+        {partSettledCats.map((entry, i) => (
+          <button
+            key={`settled-${entry.catId}-${entry.amountCents}`}
+            data-testid={`tx-part-cat-settled-${i}`}
+            onClick={() => setSpreadOpen(true)}
+            className="m-tap flex w-full items-center gap-3 border-t border-line-2 bg-transparent px-4 py-3.5 text-left opacity-60"
+          >
+            <Icon name={cats.byId(entry.catId).icon} size={20} color="var(--m-ink-4)" />
+            <span className="min-w-0 flex-1 truncate text-[15px] text-ink-2">{catName(cats.byId(entry.catId), t)}</span>
+            <span className="m-num text-[13px] text-ink-3">{fmtCents(entry.amountCents, tx.currency, lang)}</span>
+          </button>
+        ))}
       </div>
 
       {/* r7: the part's recurring link — whole-transaction parity */}
@@ -1312,6 +1319,16 @@ function PartDetailBody({
         </button>
       </div>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-part-reimbs">
+        {/* #228: the part's own statement — original − links = net; the
+            headline above already wears the net */}
+        {partLinkedCents > 0 && (
+          <div className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 text-[13px]">
+            <span className="min-w-0 flex-1 text-ink-3">{t('tx.originalAmount')}</span>
+            <span className="m-num text-ink-2" data-testid="tx-part-original">
+              {fmtCents(sign * Math.abs(part.amountCents), tx.currency, lang, { sign: true })}
+            </span>
+          </div>
+        )}
         {partLinks.map((linkRow) => (
           <div key={`${linkRow.txId}-${linkRow.partId}`} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 text-[13px] last:border-0">
             <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
@@ -1793,9 +1810,14 @@ export function TxDetailScreen() { // NOSONAR(S3776)
     setSplitStage(null);
     setCompleteOpen(false);
   };
+  // the settled value a container holds: legacy pseudo-slices plus the
+  // parts' own bookkeeping (#228: the settle lives ON the parts)
+  const partsSettledCents =
+    settledSlices.reduce((sum, s) => sum + s.amountCents, 0) +
+    parts.reduce((sum, part) => sum + reimbursedInCats(part.cats), 0);
   const unsplitTo = (catId: string) => {
     setSplitStage(null);
-    writeUnsplit(transform, tx, unsplitFallbackCat, settledSlices, catId);
+    writeUnsplit(transform, tx, unsplitFallbackCat, partsSettledCents, catId);
   };
 
   // #211: ONE category on a whole row rewrites its partition — a spread
@@ -1803,8 +1825,6 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const settledPartitionCents =
     settledSlices.reduce((sum, s) => sum + s.amountCents, 0) +
     (tx.cats ?? []).filter((e) => e.catId === REIMBURSED_ID).reduce((sum, e) => sum + e.amountCents, 0);
-  const netCats = (tx.cats ?? []).filter((e) => e.catId !== REIMBURSED_ID);
-  const netCatEntries = netCats.length ? netCats : undefined;
   const singleCatFields = (catId: string) => singleCatPartitionFields(tx, multiPart, settledPartitionCents, catId);
   // #220: the bank's counterparty is ALWAYS a Details fact now — no
   // derivation gates; the row itself decides how it renders
@@ -2230,8 +2250,10 @@ export function TxDetailScreen() { // NOSONAR(S3776)
           id: tx.id,
           label: txTitle(tx),
           catId: tx.catId,
-          cats: netCatEntries,
-          amountCents: Math.abs(tx.amountCents) - settledPartitionCents,
+          // #228 feedback: the FULL partition rides in — the sheet pins
+          // the settled bookkeeping read-only and nets the gross itself
+          cats: tx.cats?.length ? tx.cats : undefined,
+          amountCents: Math.abs(tx.amountCents),
           linkedAccountId: tx.linkedAccountId,
           transferPeerId: tx.transferPeerId,
         }}

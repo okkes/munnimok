@@ -83,19 +83,17 @@ describe('TxFormSheet (demo identity)', () => {
     // coverage instrumentation pushes this flow past vitest's 5s default
   }, 15_000);
 
-  it('#133 r5/#228: counterparty-FIRST — the lone uncategorized entry names the pot and the category fills itself', async () => {
+  it('#228 feedback: counterparty-FIRST on the form\'s own row — the pick fills the special category', async () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
-    fireEvent.click(screen.getByTestId('txform-category'));
-    await screen.findByTestId('part-cats-editor');
-    // the fresh editor holds ONE uncategorized entry — it already wears
-    // the counterparty door (#228: the subject-level question)
-    fireEvent.click(await screen.findByTestId('part-cat-counter-0'));
+    // the form's Counterparty row is the counter-first door now (#228
+    // feedback: the editor shows no counter line anymore)
+    fireEvent.click(screen.getByTestId('txform-counter'));
     // the bare door lists every tracked account (no category asked yet);
     // a savings pick on an outgoing row can only mean Set aside
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-0').textContent).toContain('Set aside'));
-    expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings');
+    await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Set aside'));
+    expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings');
   }, 15_000);
 
   it('#228: a lone ◆ pick in the editor becomes the FORM\'s counterparty; save mints the row-key leg', async () => {
@@ -110,7 +108,7 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'));
     expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId('part-cat-one-special')).toBeTruthy();
     fireEvent.click(screen.getByTestId('part-cat-save'));

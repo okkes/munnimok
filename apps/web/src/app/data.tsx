@@ -269,12 +269,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // best-effort — installed PWAs are exempt, native storage is app-scoped
       if (identity.kind !== 'demo') void ensurePersistentStorage();
       if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
-      // reimbursement redesign: legacy NET slices become gross + an
-      // explicit reimbursed slice, once per identity (marker-gated;
-      // ALL identities — demo/offline data migrates too)
+      // boot maintenance chain: marker-gated one-shots plus the
+      // every-boot heals (ALL identities — demo/offline data too)
       const bootChain = (async () => {
-        const { migrateReimbursementSlices, migrateRetiredDebtSubs, migrateFundingRows, migrateCatSpreads, migrateCounterFiledTransfers } = await import('@/application/catalogMaintenance');
-        await migrateReimbursementSlices(store, repo);
+        const { normalizeReimbursements, migrateRetiredDebtSubs, migrateFundingRows, migrateCatSpreads, migrateCounterFiledTransfers } = await import('@/application/catalogMaintenance');
         // kind simplification: counterparty-less transfer-family rows
         // become plain income/expense by sign (marker-gated, all
         // identities; arc-2 bare labels wear their locked sub and skip)
@@ -300,6 +298,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // as the family's movement sub (the bijection) — rows and parts
         // (the fold above already moved every entry-level link)
         await migrateCounterFiledTransfers(store, repo);
+        // #228: reimbursement on a SPLIT transaction stays on the split.
+        // Every boot: links name their parts, each part settles inside
+        // its own cats, the retired container-level pseudo-part shape
+        // (it drained the WRONG sibling) strips and heals.
+        await normalizeReimbursements(store, repo);
         // …and linked family rows invert — regular leg = transfer with
         // the locked cat, the manual counter's mirror minted (no delta:
         // the old lane already moved the balance at link time)

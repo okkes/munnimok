@@ -5,8 +5,9 @@ import {
   clampReimbursement,
   creditRemainingCents,
   givenCents,
-  settledCats,
-  settledSplits,
+  isReimbContainer,
+  reimbCentsByPart,
+  reimbSettleFields,
   totalReimbursedCents,
   withLink,
 } from '@/domain/reimbursement';
@@ -18,8 +19,8 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 /**
  * The one place reimbursement links are written — shared by the
  * detail-screen section and the full-screen picker so MERGE semantics
- * (old + new, both directions) and the gross-splits invariant can never
- * drift apart.
+ * (old + new, both directions) and the gross invariant can never drift
+ * apart.
  */
 export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
   const transform = useTxTransform();
@@ -30,31 +31,46 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
   // settlement rewrites category attribution (redesign, docs/
   // reimbursement-redesign.md): slices keep the GROSS truth and the
   // settled value moves into an explicit `reimbursed` slice on BOTH
-  // sides. #211: a CONTAINER settles among its parts (`splits`); a
-  // whole row settles inside its own category partition (`cats`) —
-  // legacy bare slices clear in the same write.
-  const settledFields = (tx: SpaceTx, settled: number, catId: string | undefined) => {
-    const container = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1;
-    if (container) return { splits: settledSplits(tx, settled, nameOf) };
-    return {
-      cats: settledCats({ ...tx, catId }, settled, nameOf),
-      ...(tx.splits?.length ? { splits: null as never } : {}),
-    };
-  };
+  // sides. #228 (user): a container's settle lives on the PART each
+  // link names — inside the part's own `cats` — never as a pseudo-part
+  // in the container's `splits`; the parent is impacted through value
+  // math only. A whole row settles inside its own `cats`.
   const expensePatch = (expense: SpaceTx, newLinks: TxReimbursement[]) => ({
     reimbursements: newLinks,
-    ...settledFields(expense, totalReimbursedCents({ reimbursements: newLinks }), expense.catId),
+    ...(reimbSettleFields(
+      expense,
+      totalReimbursedCents({ reimbursements: newLinks }),
+      reimbCentsByPart(newLinks, 'partId', expense.splits),
+      nameOf,
+    ) as Record<string, never>),
   });
+
+  /** every link naming `creditId`, with `expenseId`'s links replaced by
+   *  its NEXT state — the write below lands both sides in one gesture,
+   *  so the live snapshot is one beat behind */
+  const givenView = (creditId: string, expenseId: string, expenseLinks: TxReimbursement[]) => {
+    const naming = (allTxs ?? [])
+      .flatMap((row) => (row.id === expenseId ? expenseLinks : (row.reimbursements ?? [])))
+      .filter((link) => link.txId === creditId);
+    return {
+      total: naming.reduce((sum, link) => sum + link.amountCents, 0),
+      byPart: (splits: SpaceTx['splits']) => reimbCentsByPart(naming, 'creditPartId', splits),
+    };
+  };
 
   // a settled credit deserves a real category instead of "Uncategorized"
   // (user remark): the moment it is linked it self-files as Reimbursed,
-  // unless the user already picked something deliberately
-  const creditPatch = (credit: SpaceTx, newGivenCents: number) => {
-    const selfFiles = (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1) && newGivenCents > 0;
+  // unless the user already picked something deliberately. A split
+  // credit never self-files — its parts own their categories.
+  const creditPatch = (credit: SpaceTx, view: ReturnType<typeof givenView>) => {
+    const selfFiles =
+      !isReimbContainer(credit) &&
+      (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1) &&
+      view.total > 0;
     const catId = selfFiles ? REIMBURSED_ID : credit.catId;
     return {
+      ...(reimbSettleFields({ ...credit, catId }, view.total, view.byPart(credit.splits), nameOf) as Record<string, never>),
       ...(selfFiles ? { catId, txType: 'income' as const, needsReview: 0 as const } : {}),
-      ...settledFields(credit, newGivenCents, catId),
     };
   };
 
@@ -79,21 +95,18 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
       (expense.reimbursements ?? []).find(
         (r) => r.txId === credit.id && r.partId === partId && r.creditPartId === creditPartId,
       )?.amountCents ?? 0;
-    void transform(
-      expense,
-      expensePatch(expense, withLink(expense.reimbursements, credit.id, prev + clamped, partId, creditPartId)),
-      'reimburse',
-    );
-    void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) + clamped), null); // one line per gesture, not per side
+    const nextLinks = withLink(expense.reimbursements, credit.id, prev + clamped, partId, creditPartId);
+    void transform(expense, expensePatch(expense, nextLinks), 'reimburse');
+    void transform(credit, creditPatch(credit, givenView(credit.id, expense.id, nextLinks)), null); // one line per gesture, not per side
   };
 
   /** remove the link between the two (either side's unlink button) —
    *  severs the WHOLE pair, part-targeted links included (#126 r5) */
   const unlink = (expense: SpaceTx, credit: SpaceTx): void => {
     const links = expense.reimbursements ?? [];
-    const removed = links.filter((r) => r.txId === credit.id).reduce((sum, r) => sum + r.amountCents, 0);
-    void transform(expense, expensePatch(expense, links.filter((r) => r.txId !== credit.id)), 'reimburse');
-    void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) - removed), null);
+    const nextLinks = links.filter((r) => r.txId !== credit.id);
+    void transform(expense, expensePatch(expense, nextLinks), 'reimburse');
+    void transform(credit, creditPatch(credit, givenView(credit.id, expense.id, nextLinks)), null);
   };
 
   return { link, unlink, giveableCents };

@@ -139,7 +139,7 @@ describe('TxDetailScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const mid = mirrorTxId('dm6');
@@ -393,7 +393,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Set aside');
@@ -419,7 +419,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     // entry 0 stays groceries at €40; the ask must NOT open for a plain pick
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-groceries'));
-    expect(screen.queryByTestId('part-cat-counter-0')).toBeNull();
+    expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe(''); // no ask, no link for a plain pick
     fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '40,00' } });
     // entry 1: with TWO rows the picker hides the ◆ families entirely —
     // one special per (split) transaction, and it spans the whole
@@ -429,8 +429,8 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     expect(screen.queryByTestId('catpicker-savingDeposit')).toBeNull();
     expect(screen.queryByTestId('catpicker-transferOut')).toBeNull();
     fireEvent.click(screen.getByTestId('catpicker-sweets'));
-    // no counter lines anywhere in a spread — entries never link (#228)
-    expect(screen.queryByTestId('part-cat-counter-1')).toBeNull();
+    // a spread never links — the editor carries no subject counter
+    expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('');
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
@@ -450,7 +450,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click((await screen.findAllByTestId('catpicker-savingDeposit')).at(-1)!);
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(within(editor).getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'));
     expect((within(editor).getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
     expect(within(editor).getByTestId('part-cat-one-special')).toBeTruthy();
     fireEvent.click(within(editor).getByTestId('part-cat-save'));
@@ -483,11 +483,12 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await screen.findByTestId('counter-default');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
-    // #220: no transaction-level counter row exists anymore — the bare
-    // story reads from the category row (no "→ account" line under it)
+    // #228 feedback: the property row shows the bare state; no
+    // "→ account" line under the category anywhere
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Repaid');
     });
+    expect(screen.getByTestId('tx-detail-counter-row').textContent).toContain('No counter account');
     expect(screen.queryByTestId('tx-detail-cat-counter-0')).toBeNull();
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -519,7 +520,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     const loanId = 'lp_loan';
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId(`counter-pick-${loanId}`));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Phone plan loan'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe(loanId));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
     // the pick keeps the Repaid story; the link carries the movement —
@@ -570,7 +571,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await screen.findByTestId('counter-fork');
     fireEvent.click((await screen.findByTestId('counter-dup-dup1')).querySelector('button')!);
     // the picked row rides the entry; Done writes and pairs both sides
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Cash pot'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('ms1'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
@@ -614,7 +615,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('counter-pick-ms2', {}, { timeout: 8000 }));
     await screen.findByTestId('counter-fork', {}, { timeout: 8000 });
     fireEvent.click(screen.getByTestId('counter-fork-create'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Second pot'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('ms2'), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
@@ -636,7 +637,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
 
     // no loan exists — Default is the one-tap answer to the pick's ask
     fireEvent.click(await screen.findByTestId('counter-default'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).not.toContain('Choose counterparty'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBeTruthy());
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
@@ -681,7 +682,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     expect(screen.getByTestId('counter-default').textContent).toContain('Default shared pot');
     expect(screen.queryByTestId('counter-pick-demo_save')).toBeNull();
     fireEvent.click(screen.getByTestId('counter-pick-fund1'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Family pot'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('fund1'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
 
     const db = new MunniDB('munni_demo');
@@ -711,7 +712,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('part-cat-counter-0').textContent).toContain('Demo Savings'));
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-original-counter').textContent).toContain('NL02ABNA0123456789');
@@ -851,6 +852,14 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(async () => {
       const row = await db.transactions.get('rsplit');
       expect(row?.reimbursements).toEqual([{ txId: 'dm1', amountCents: 1500, partId: 'rs2' }]);
+      // #228 (user): the settle lives ON THE PART — its own cats carry
+      // the bookkeeping; the sibling and the part amounts stay untouched
+      // and no `reimbursed` pseudo-part ever joins the container
+      const parts = row?.splits ?? [];
+      expect(parts.map((p) => p.catId)).toEqual(['restaurants', 'groceries']);
+      expect(parts.map((p) => p.amountCents)).toEqual([4500, 1500]);
+      expect(parts[0].cats ?? undefined).toBeFalsy();
+      expect(parts[1].cats).toMatchObject([{ catId: 'reimbursed', amountCents: 1500 }]);
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
@@ -885,9 +894,109 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     await waitFor(async () => {
       const row = await db.transactions.get('dm6');
       expect(row?.reimbursements).toEqual([{ txId: 'csplit', amountCents: 3000, creditPartId: 'cs1' }]);
+      // #228 (user): the CREDIT side settles on its funding part too —
+      // no pseudo-part, sibling amounts untouched
+      const credit = await db.transactions.get('csplit');
+      const parts = credit?.splits ?? [];
+      expect(parts.map((p) => p.catId)).toEqual(['reimburse', 'incomeOther']);
+      expect(parts.map((p) => p.amountCents)).toEqual([3000, 5000]);
+      expect(parts[0].cats).toMatchObject([{ catId: 'reimbursed', amountCents: 3000 }]);
+      expect(parts[1].cats ?? undefined).toBeFalsy();
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
+
+  it('#228 feedback (user ss): the settled entry pins READ-ONLY in the editor, and a special still claims the whole', async () => {
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-settled-sx'), { trackOutbox: false });
+    // a settled Set-aside expense: −52.40 with €20.00 reimbursed
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'sx1', {
+      accountId: 'demo_main', date: '2026-07-03', amountCents: -5240, currency: 'EUR',
+      merchant: 'Vueling', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      reimbursements: [{ txId: 'dm1', amountCents: 2000 }],
+      cats: [{ catId: 'savingDeposit', amountCents: 3240 }, { catId: 'reimbursed', amountCents: 2000 }],
+    });
+
+    renderApp('/transactions/sx1');
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    await screen.findByTestId('part-cats-editor');
+    // the settled bookkeeping stands FIRST, pinned and untouchable —
+    // only the reimbursement link can remove it
+    expect(screen.getByTestId('part-cat-settled-0').textContent).toContain('Reimbursed');
+    expect(screen.getByTestId('part-cat-settled-0').querySelector('input')).toBeNull();
+    // ONE editable entry partitions the NET (32,40)
+    expect(screen.getByTestId('part-cat-0').textContent).toContain('Set aside');
+    expect(screen.queryByTestId('part-cat-1')).toBeNull();
+    expect((screen.getByTestId('part-cat-amount-0') as HTMLInputElement).value).toBe('32,40');
+    // the ss exploit is CLOSED: the lone special still claims the whole
+    // — no rows can join it around the settled bookkeeping
+    expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('part-cat-one-special')).toBeTruthy();
+
+    // a REGULAR pick frees the add door (regular + reimbursement is the
+    // one legal mix); the picker offers NO specials in the spread
+    fireEvent.click(screen.getByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-groceries'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-add'));
+    fireEvent.click(await screen.findByTestId('part-cat-1'));
+    await screen.findByTestId('catpicker-sweets');
+    expect(screen.queryByTestId('catpicker-savingDeposit')).toBeNull();
+    fireEvent.click(screen.getByTestId('catpicker-sweets'));
+    fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '20,00' } });
+    fireEvent.change(screen.getByTestId('part-cat-amount-1'), { target: { value: '12,40' } });
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+
+    // the spread lands with the settled entry RE-ATTACHED, untouched
+    await waitFor(async () => {
+      const row = await db.transactions.get('sx1');
+      expect(row?.cats?.map((c) => [c.catId, c.amountCents])).toEqual([
+        ['groceries', 2000],
+        ['sweets', 1240],
+        ['reimbursed', 2000],
+      ]);
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('#228 (user ss): a settled PART wears its NET — headline, Original row, and the sibling list', async () => {
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-part-net'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'psplit', {
+      accountId: 'demo_main', date: '2026-07-04', amountCents: 240_000, currency: 'EUR',
+      merchant: 'Demo Corp BV', catId: 'salary', txType: 'income', needsReview: 0,
+      cats: null as never,
+      splits: [
+        { id: 'pp1', catId: 'salary', amountCents: 120_000, cats: [{ catId: 'salary', amountCents: 119_580 }, { catId: 'reimbursed', amountCents: 420 }] },
+        { id: 'pp2', catId: 'incomeOther', amountCents: 120_000 },
+      ],
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'pkoffie', {
+      accountId: 'demo_main', date: '2026-07-05', amountCents: -420, currency: 'EUR',
+      merchant: 'Koffie', catId: 'reimbursed', txType: 'expense', needsReview: 0,
+      reimbursements: [{ txId: 'psplit', amountCents: 420, creditPartId: 'pp1' }],
+      cats: [{ catId: 'reimbursed', amountCents: 420 }],
+    });
+
+    renderApp('/transactions/psplit');
+    // the container's part row already wears the NET…
+    await waitFor(() => expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('1,195.80'));
+    fireEvent.click(screen.getByTestId('tx-detail-category-row'));
+    // …and the part page's headline is what the part is WORTH (its
+    // settled bookkeeping nets it) — the gross moved into Original
+    await waitFor(() => expect(screen.getByTestId('tx-part-amount').textContent).toContain('1,195.80'));
+    // the statement rows wait on the live links query
+    await waitFor(() => expect(screen.getByTestId('tx-part-original').textContent).toContain('1,200.00'));
+    expect(screen.getByTestId('tx-part-net').textContent).toContain('1,195.80');
+    // the siblings list nets too — and the untouched one keeps its face
+    const siblings = screen.getByTestId('tx-part-siblings');
+    expect(siblings.textContent).toContain('1,195.80');
+    expect(siblings.textContent).toContain('1,200.00');
+    // the settled bookkeeping renders as its own quiet row on the
+    // category card — never a counter subline
+    expect(screen.getByTestId('tx-part-cat-settled-0').textContent).toContain('Reimbursed');
+    db.close();
+  }, 20_000);
 });
 
 describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
@@ -1158,7 +1267,9 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       needsReview: 0,
       splits: [
         { id: 'pp1', catId: 'telecom', amountCents: 4000 },
-        { id: 'pp2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving', label: 'Device plan' },
+        // linked, not bare — the #221 every-boot fold would otherwise
+        // default-link this movement part mid-spec and race the writes
+        { id: 'pp2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving', label: 'Device plan', linkedAccountId: 'demo_save' },
       ],
       // r5: a reimbursement that targets ONE part
       reimbursements: [{ txId: 'rcredit', amountCents: 500, partId: 'pp2' }],
@@ -1173,10 +1284,15 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       txType: 'income',
       needsReview: 0,
     });
+    // #228: the boot normalizer settles the part-targeted link into the
+    // PART's own cats — let it finish, or its splits write races the
+    // note write below (the boot-chain trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
 
     // r5/r6: the container row is GONE — a compact header band names the
-    // original transaction with the FULL amount and the part count, and
-    // the sub-transactions stand as first-class rows branching off it
+    // original transaction with the NET amount (#228: the reimbursed
+    // part shrank the whole) and the part count, and the
+    // sub-transactions stand as first-class rows branching off it
     await screen.findByTestId('tx-parts-tx-parts', {}, { timeout: 5000 });
     expect(screen.queryByTestId('tx-row-tx-parts')).toBeNull();
     // #198: the subtle form — parts sit in an inset, each led by a
@@ -1185,7 +1301,7 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     const head = screen.getByTestId('tx-parts-head-tx-parts');
     expect(head.textContent).toContain('Vodafone');
     expect(head.textContent).toContain('2 linked parts');
-    expect(head.textContent).toMatch(/65\.00/);
+    await waitFor(() => expect(screen.getByTestId('tx-parts-head-tx-parts').textContent).toMatch(/60\.00/));
     expect(screen.getByTestId('tx-part-row-tx-parts-1').textContent).toContain('Device plan');
 
     // r6: the chevron folds the parts under the band and back out
@@ -1194,14 +1310,16 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('tx-parts-toggle-tx-parts'));
     await screen.findByTestId('tx-part-row-tx-parts-1');
 
-    // tapping a part opens ITS page: its share, its own type, its story
+    // tapping a part opens ITS page: what it is WORTH (#228: the €5.00
+    // reimbursement nets the €25.00 device part), its own type, its story
     fireEvent.click(screen.getByTestId('tx-part-row-tx-parts-1'));
     await screen.findByTestId('tx-part-amount');
-    expect(screen.getByTestId('tx-part-amount').textContent).toContain('25.00');
+    expect(screen.getByTestId('tx-part-amount').textContent).toContain('20.00');
     // #133 D: no Type row on the part page; #228: the counterparty is
     // the part's own PROPERTY row — present, honest about "none"
     expect(screen.queryByTestId('tx-part-kind-row')).toBeNull();
-    expect(screen.getByTestId('tx-part-counter-row').textContent).toContain('No counter account');
+    // the face waits on the accounts live query
+    await waitFor(() => expect(screen.getByTestId('tx-part-counter-row').textContent).toContain('Demo Savings'));
 
     // r5: its own reimbursements — the part-targeted link and the net
     await waitFor(() => expect(screen.getByTestId('tx-part-reimbs').textContent).toContain('Sam pays back'), { timeout: 5000 });
@@ -1311,7 +1429,9 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       needsReview: 0,
       splits: [
         { id: 'pp1', catId: 'telecom', amountCents: 4000 },
-        { id: 'pp2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving', label: 'Device plan' },
+        // linked, not bare — the #221 every-boot fold would otherwise
+        // default-link this movement part mid-spec and race the writes
+        { id: 'pp2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving', label: 'Device plan', linkedAccountId: 'demo_save' },
       ],
     });
     await screen.findByTestId('tx-parts-tx-parts', {}, { timeout: 5000 });

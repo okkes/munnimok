@@ -5,7 +5,7 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { applyCatalogTombstones, migrateCatSpreads, migrateCounterFiledTransfers, migrateFundingRows, migrateReimbursementSlices } from './catalogMaintenance';
+import { applyCatalogTombstones, migrateCatSpreads, migrateCounterFiledTransfers, migrateFundingRows, normalizeReimbursements } from './catalogMaintenance';
 import { catMirrorSourceId, mirrorTxId } from '@/domain/feedIds';
 
 const SPACE = 's1';
@@ -62,7 +62,7 @@ describe('catalog tombstone pass (AC3)', () => {
   });
 });
 
-describe('reimbursement slice migration (redesign, answer d)', () => {
+describe('#228: the every-boot reimbursement normalizer', () => {
   const stores: DexieBackend[] = [];
   afterEach(async () => {
     for (const s of stores.splice(0)) await s.destroy();
@@ -94,23 +94,71 @@ describe('reimbursement slice migration (redesign, answer d)', () => {
     return { store, repo };
   }
 
-  it('rewrites legacy NET slices to gross + reimbursed on both sides, once', async () => {
+  it('rewrites legacy NET slices into the cats model on both sides, idempotently', async () => {
     const { store, repo } = await seeded();
-    expect(await migrateReimbursementSlices(store, repo)).toBe(2);
+    expect(await normalizeReimbursements(store, repo)).toBe(2);
 
-    // #133 removal: view rows carry DERIVED part types, and a migration
-    // writing view splits back stores them along — match on the essence
+    // the settle bookkeeping lives in `cats` now; legacy splits clear
     const exp = await store.get('transaction', 'exp');
-    expect(exp?.splits).toMatchObject([
+    expect(exp?.cats).toMatchObject([
       { catId: 'groceries', amountCents: 6_000 },
       { catId: 'reimbursed', amountCents: 4_000 },
     ]);
+    expect(exp?.splits ?? undefined).toBeFalsy();
     const cred = await store.get('transaction', 'cred');
-    expect(cred?.splits).toMatchObject([{ catId: 'reimbursed', amountCents: 4_000 }]);
-    expect((await store.get('transaction', 'plain'))?.splits).toBeUndefined();
+    expect(cred?.cats).toMatchObject([{ catId: 'reimbursed', amountCents: 4_000 }]);
+    expect(cred?.splits ?? undefined).toBeFalsy();
+    expect((await store.get('transaction', 'plain'))?.cats).toBeUndefined();
 
-    // marker gates the rerun
-    expect(await migrateReimbursementSlices(store, repo)).toBe(0);
+    // every boot, no marker — the second run simply finds nothing to do
+    expect(await normalizeReimbursements(store, repo)).toBe(0);
+  });
+
+  it('heals the retired container-level settle: pseudo-part strips, the drained sibling restores, the link NAMES its part', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_rbn_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('rbn'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    // the user's ss: a +2400 split credit gave 4.20 — the old consume
+    // drained split 2 and grew a reimbursed pseudo-part on the container
+    await repo.upsert('transaction', SPACE, 'salary', {
+      accountId: 'a', date: '2026-07-24', amountCents: 240_000, currency: 'EUR', merchant: 'Demo Corp BV',
+      catId: 'salary', txType: 'income', needsReview: 0,
+      splits: [
+        { id: 'p1', catId: 'salary', amountCents: 120_000 },
+        { id: 'p2', catId: 'incomeOther', amountCents: 119_580 },
+        { catId: 'reimbursed', amountCents: 420 },
+      ],
+    });
+    // the koffie expense's link never named a credit part (legacy shape)
+    await repo.upsert('transaction', SPACE, 'koffie', {
+      accountId: 'a', date: '2026-07-25', amountCents: -420, currency: 'EUR', merchant: 'Koffie',
+      catId: 'eatingOut', txType: 'expense', needsReview: 0,
+      reimbursements: [{ txId: 'salary', amountCents: 420 }],
+    });
+
+    expect(await normalizeReimbursements(store, repo)).toBeGreaterThan(0);
+
+    // the link now names the largest open credit part deterministically
+    const koffie = await store.get('transaction', 'koffie');
+    expect(koffie?.reimbursements?.[0]?.creditPartId).toBe('p1');
+    // …and the koffie expense settled in its own cats
+    expect(koffie?.cats).toMatchObject([{ catId: 'reimbursed', amountCents: 420 }]);
+
+    const salary = await store.get('transaction', 'salary');
+    const parts = (salary?.splits ?? []).filter((s) => s.catId !== 'reimbursed');
+    expect(parts).toHaveLength(2);
+    // the pseudo-part is gone and split 2's drained amount is restored
+    expect(parts.map((p) => p.amountCents)).toEqual([120_000, 120_000]);
+    // the named part carries the settle inside its OWN cats
+    expect(parts[0].cats).toMatchObject([
+      { catId: 'salary', amountCents: 119_580 },
+      { catId: 'reimbursed', amountCents: 420 },
+    ]);
+    expect(parts[1].cats ?? undefined).toBeFalsy();
+
+    // convergent: a second boot rewrites nothing
+    expect(await normalizeReimbursements(store, repo)).toBe(0);
   });
 });
 

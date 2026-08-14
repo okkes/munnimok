@@ -729,9 +729,12 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onChoose={(picked) => {
           setLinkedAccountId(picked.id);
           // #133 r5 bijection: a movement category follows the newly
-          // picked counter's kind (a plain category is not this rule's
-          // business; a placeholder files at save via the family sub)
-          if (specialCatType(catId)) setCatId(movementCatFor(picked.type, isExpense ? -1 : 1));
+          // picked counter's kind. #228 feedback: counter-FIRST — an
+          // uncategorized row fills its special category right away
+          // (a deliberate plain category is not this rule's business)
+          if (specialCatType(catId) || catId === UNCATEGORIZED_ID) {
+            setCatId(movementCatFor(picked.type, isExpense ? -1 : 1));
+          }
         }}
         onDetach={() => {
           // the sheet shows the door only while a counterparty is linked

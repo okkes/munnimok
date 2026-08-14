@@ -9,7 +9,7 @@ import type { SheetFilters } from './FilterSheet';
 import { useLang } from '@/i18n';
 import type { TransactionRow } from '@/db/types';
 import { filterTxs, matchingPartIndexes } from '@/domain/txFilter';
-import { hasUnsettledReimbursement } from '@/domain/reimbursement';
+import { hasUnsettledReimbursement, partNetCents } from '@/domain/reimbursement';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -49,7 +49,7 @@ function TxPartSoloRows({
           tx={tx}
           part={parts[i]}
           index={i}
-          amountText={fmt(sign * Math.abs(parts[i].amountCents), tx.currency, { date: tx.date })}
+          amountText={fmt(sign * partNetCents(parts[i]), tx.currency, { date: tx.date })}
           onClick={() => onOpen(parts[i].id)}
         />
       ))}
@@ -78,7 +78,9 @@ function TxPartGroupRows({
   const cats = useCategories();
   const [collapsed, setCollapsed] = useState(false);
   const sign = tx.amountCents < 0 ? -1 : 1;
-  const totalCents = sign * parts.reduce((sum, part) => sum + Math.abs(part.amountCents), 0);
+  // #228: the header says what the whole is WORTH — part nets, so a
+  // reimbursed part shrinks the group exactly like a settled whole row
+  const totalCents = sign * parts.reduce((sum, part) => sum + partNetCents(part), 0);
   const headCat = cats.byId(tx.catId);
   const headColor = headCat.color ?? cats.byId(headCat.parentId ?? '').color ?? 'var(--m-ink-3)';
   return (
@@ -142,9 +144,9 @@ function TxPartGroupRows({
                     )}
                   </span>
                 </span>
-                {/* #139: the amount wears exactly TxRow's face */}
+                {/* #139: the amount wears exactly TxRow's face (#228: net) */}
                 <span className={`m-num text-[14px] font-semibold ${sign > 0 ? 'text-accent-deep' : 'text-ink'}`}>
-                  {fmt(sign * Math.abs(part.amountCents), tx.currency, { date: tx.date })}
+                  {fmt(sign * partNetCents(part), tx.currency, { date: tx.date })}
                 </span>
               </button>
             );

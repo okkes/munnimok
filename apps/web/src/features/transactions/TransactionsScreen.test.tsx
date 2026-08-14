@@ -12,7 +12,11 @@ import { MunniDB } from '@/db/schema';
 const rows = () => screen.getByTestId('tx-list').querySelectorAll('[data-testid^="tx-row-"]');
 
 describe('TransactionsScreen (demo identity)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // the previous spec's boot chain must settle before the db goes
+    // away, or its dying writes race this spec's seeds (the db.close
+    // trap — the heavier every-boot chain widened the window)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
@@ -82,9 +86,13 @@ describe('TransactionsScreen (demo identity)', () => {
       accountId: 'demo_main', date: '2026-06-20', amountCents: -1250, currency: 'EUR',
       merchant: 'MYSTERY SHOP', catId: 'uncategorized', txType: 'expense', needsReview: 0,
     });
+    // #133: the view DERIVES the type — a categoryless row reads as a
+    // transfer through its LINK (the stored txType is legacy-only), so
+    // the exclusion needs the link to be explicit here
     await repo.upsert('transaction', DEMO_SPACE_ID, 'uncat-2', {
       accountId: 'demo_main', date: '2026-06-21', amountCents: -5000, currency: 'EUR',
       merchant: 'OWN SAVINGS', catId: 'uncategorized', txType: 'transfer', needsReview: 0,
+      linkedAccountId: 'demo_save',
     });
     db.close();
     await waitFor(() => expect(screen.queryByText('MYSTERY SHOP')).toBeTruthy(), { timeout: 5000 });

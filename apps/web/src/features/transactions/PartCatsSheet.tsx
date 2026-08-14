@@ -3,7 +3,7 @@ import { useLang } from '@/i18n';
 import { fmtCents, parseCents } from '@/lib/money';
 import { nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
-import { UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType } from '@/domain/categories';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { counterTypesFor, movementCatFor, movementCatsForCounter } from '@/domain/txType';
 import { kindOf } from '@/domain/txKind';
@@ -92,23 +92,10 @@ function counterNarrowFor(
 const pickerTxTypeFor = (askDisabled: boolean, txType: TxType | undefined): TxType | undefined =>
   !askDisabled && txType && kindOf(txType) === 'transfer' ? undefined : txType;
 
-/** which entries wear the counterparty line — ONLY the lone entry (#228:
- *  one counterparty per (split) transaction; a spread's categories are
- *  regular and never link): linked always, ◆ unless the stamp owns the
- *  story, a fresh one as the counter-first door (never on
- *  recurring-narrowed editors) (S3776) */
-function showsCounterLine(
-  entry: CatEntry,
-  single: boolean,
-  askDisabled: boolean,
-  allowedCatIds: readonly string[] | undefined,
-): boolean {
-  if (!single) return false;
-  if (entry.linkedAccountId) return true;
-  if (askDisabled) return false;
-  if (entry.catId === UNCATEGORIZED_ID) return !allowedCatIds;
-  return counterAskFor(entry.catId) !== null;
-}
+// showsCounterLine retired (#228 feedback): the counterparty wears its
+// own property row on every surface (detail, part page, review card) —
+// the editor no longer displays it under the category. The pick-time
+// ASK on a lone ◆ pick stays: it IS the subject-level answer.
 
 /** #218/#228 (user): detaching the counterparty RESETS the category —
  *  a special category and its counter are one story, so removing the
@@ -138,17 +125,44 @@ const parsePct = (text: string): number => {
  *  a plain category, several keep the spread with the largest entry as
  *  the compat shadow (v2.1 storage rule). #228: a spread's categories
  *  are regular — the part-level link clears with it (the counterparty
- *  belongs to a movement story, and the spread just ended it). */
-export function catsPatch(entries: CatsApplyEntry[]): Partial<TxSplit> {
-  if (entries.length <= 1) return { catId: entries[0]?.catId ?? UNCATEGORIZED_ID, cats: undefined };
+ *  belongs to a movement story, and the spread just ended it). Settled
+ *  `reimbursed` bookkeeping the subject carried always re-attaches —
+ *  only the reimbursement link itself can remove it. */
+export function catsPatch(entries: CatsApplyEntry[], settled: readonly TxSplitCat[] = []): Partial<TxSplit> {
+  if (entries.length <= 1) {
+    const catId = entries[0]?.catId ?? UNCATEGORIZED_ID;
+    return {
+      catId,
+      cats: settled.length ? [{ catId, amountCents: entries[0]?.amountCents ?? 0 }, ...settled] : undefined,
+    };
+  }
   const primary = entries.reduce((best, entry) => (entry.amountCents > best.amountCents ? entry : best), entries[0]);
   return {
     catId: primary.catId,
-    cats: entries.map((entry) => ({ catId: entry.catId, amountCents: entry.amountCents, ...(entry.pct !== undefined ? { pct: entry.pct } : {}) })),
+    cats: [
+      ...entries.map((entry) => ({ catId: entry.catId, amountCents: entry.amountCents, ...(entry.pct !== undefined ? { pct: entry.pct } : {}) })),
+      ...settled,
+    ],
     linkedAccountId: undefined,
     transferPeerId: undefined,
   };
 }
+
+/** the subject's settled `reimbursed` entries — bookkeeping the editor
+ *  pins read-only and every apply re-attaches (#228 feedback) */
+export const settledEntriesOf = (cats: readonly TxSplitCat[] | undefined): TxSplitCat[] =>
+  (cats ?? []).filter((c) => c.catId === REIMBURSED_ID).map((c) => ({ catId: c.catId, amountCents: c.amountCents }));
+
+/** rewrite a subject's partition around ONE category, keeping the
+ *  settled bookkeeping (#228: the counterparty doors pick/reset the
+ *  category — the reimbursement's slice is never theirs to drop) */
+export const catsAroundSingle = (
+  subject: { amountCents: number; cats?: TxSplitCat[] },
+  catId: string,
+): TxSplitCat[] | undefined => {
+  const settled = settledEntriesOf(subject.cats);
+  return settled.length ? [{ catId, amountCents: subjectNetCents(subject) }, ...settled] : undefined;
+};
 
 /** the full apply for a part's category edit: the cats patch plus the R3
  *  type pull — a single ◆ special pick pulls the part's own type, an
@@ -157,7 +171,7 @@ export function catsPatch(entries: CatsApplyEntry[]): Partial<TxSplit> {
  *  entry's counterparty (answered inside the editor) IS the part's own
  *  link — a bare single pick clears a stale one. */
 export function partCatsApplyPatch(slice: TxSplit | undefined, entries: CatsApplyEntry[]): Partial<TxSplit> {
-  const patch = catsPatch(entries);
+  const patch = catsPatch(entries, settledEntriesOf(slice?.cats));
   if (entries.length !== 1) return patch;
   const entry = entries[0];
   const link = { linkedAccountId: entry.linkedAccountId, transferPeerId: entry.transferPeerId };
@@ -173,8 +187,11 @@ export interface CatsSubject {
   id?: string;
   label?: string;
   catId?: string;
+  /** the FULL partition — settled `reimbursed` entries included; the
+   *  sheet pins those read-only and edits only the real ones */
   cats?: TxSplitCat[];
-  /** the money being partitioned — for a row: NET of any settled value */
+  /** the subject's GROSS money — the sheet nets any settled value the
+   *  partition carries before balancing */
   amountCents: number;
   /** #228: the subject's ONE counterparty — seeds the lone entry so its
    *  link shows; a spread never carries it */
@@ -183,9 +200,10 @@ export interface CatsSubject {
 }
 
 const seedEntries = (subject: CatsSubject, pctMode: boolean): CatEntry[] => {
-  const base: TxSplitCat[] = subject.cats?.length
-    ? subject.cats
-    : [{ catId: subject.catId ?? UNCATEGORIZED_ID, amountCents: Math.abs(subject.amountCents) }];
+  const real = (subject.cats ?? []).filter((c) => c.catId !== REIMBURSED_ID);
+  const base: TxSplitCat[] = real.length
+    ? real
+    : [{ catId: subject.catId ?? UNCATEGORIZED_ID, amountCents: subjectNetCents(subject) }];
   // #228: the subject's one counterparty belongs to the LONE entry only —
   // a spread's rows never wear links
   const single = base.length === 1;
@@ -196,6 +214,14 @@ const seedEntries = (subject: CatsSubject, pctMode: boolean): CatEntry[] => {
     ...(single ? { linkedAccountId: subject.linkedAccountId, transferPeerId: subject.transferPeerId } : {}),
   }));
 };
+
+/** what the editor actually partitions: the gross minus the settled
+ *  bookkeeping (that slice belongs to the reimbursement link alone) */
+const subjectNetCents = (subject: Pick<CatsSubject, 'amountCents' | 'cats'>): number =>
+  Math.max(
+    0,
+    Math.abs(subject.amountCents) - settledEntriesOf(subject.cats).reduce((sum, c) => sum + c.amountCents, 0),
+  );
 
 /** a %-typed spread reopens in % — the stored pct is the user's shape */
 const seedsAsPct = (subject: CatsSubject): boolean =>
@@ -273,7 +299,11 @@ export function CatsSheet({
   // capture WHICH field the user meant here
   const pendingTarget = useRef<number | null>(null);
 
-  const refCents = Math.abs(subject?.amountCents ?? 0);
+  // #228 feedback: the settled `reimbursed` bookkeeping is pinned, read-
+  // only — the user removes the reimbursement LINK to get rid of it; the
+  // editable entries partition what is left
+  const settled = settledEntriesOf(subject?.cats);
+  const refCents = subject ? subjectNetCents(subject) : 0;
   useEffect(() => {
     if (!open || !subject) return;
     const pctMode = includePct && seedsAsPct(subject);
@@ -452,7 +482,14 @@ export function CatsSheet({
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange} title={title ?? t('split.partCatsTitle')} size="tall">
-        <div className="flex flex-col gap-2 pt-1" data-testid="part-cats-editor">
+        {/* data-counter: the lone entry's answered counterparty — the
+            ask writes invisible state (#228: no counter line), and the
+            tests need a deterministic signal that the answer landed */}
+        <div
+          className="flex flex-col gap-2 pt-1"
+          data-testid="part-cats-editor"
+          data-counter={(entries.length === 1 ? entries[0].linkedAccountId : undefined) ?? ''}
+        >
           {/* the prediction's provenance, shown in the open (review) */}
           {reason && (
             <div className="flex items-center gap-1.5 rounded-xl bg-bg-2 px-3 py-2 text-[12px] text-ink-3" data-testid="split-reason">
@@ -475,68 +512,60 @@ export function CatsSheet({
               {t('split.modePct')}
             </Chip>
           </div>
-          {entries.map((entry, i) => {
-            // #133 r4/r5: a ◆ entry answers its counterparty right under
-            // its own row (the re-ask door); a FRESH entry shows the
-            // line too — the counterparty-first door
-            const counterName = entry.linkedAccountId
-              ? ((accounts ?? []).find((a) => a.id === entry.linkedAccountId)?.name ?? t('tx.counterparty'))
-              : undefined;
-            return (
-              <div key={entry.key} className="flex flex-col">
-                <div className="flex items-center gap-2">
-                  <button
-                    data-testid={`part-cat-${i}`}
-                    onClick={() => setPickerFor(i)}
-                    className="m-tap flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border border-line bg-surface px-3 text-left text-[14px] text-ink"
-                  >
-                    <Icon
-                      name={cats.byId(entry.catId).icon}
-                      size={17}
-                      color={cats.byId(cats.byId(entry.catId).parentId ?? '').color ?? cats.byId(entry.catId).color}
-                    />
-                    <span className="truncate">{catName(cats.byId(entry.catId), t)}</span>
-                  </button>
-                  <input
-                    data-testid={`part-cat-amount-${i}`}
-                    value={entry.amount}
-                    onChange={(e) => onAmount(i, e.target.value)}
-                    onFocus={(e) => onFocus(i, e.currentTarget)}
-                    onBlur={() => onBlur(i)}
-                    inputMode="decimal"
-                    className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
-                  />
-                  {entries.length > 1 && (
-                    <button
-                      aria-label={t('action.delete')}
-                      data-testid={`part-cat-remove-${i}`}
-                      onClick={() => removeEntry(i)}
-                      className="m-tap border-none bg-transparent text-ink-4"
-                    >
-                      <Icon name="close" size={16} />
-                    </button>
-                  )}
-                </div>
-                {showsCounterLine(entry, entries.length === 1, askDisabled, allowedCatIds) && (
-                  <button
-                    data-testid={`part-cat-counter-${i}`}
-                    onClick={() => setCounterFor(i)}
-                    className="m-tap ml-3 flex items-center gap-1.5 border-none bg-transparent px-1 py-1 text-left text-[12px]"
-                  >
-                    <Icon
-                      name="bank-transfer"
-                      size={14}
-                      color={entry.linkedAccountId ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'}
-                    />
-                    <span className={`truncate ${entry.linkedAccountId ? 'text-ink-2' : 'text-ink-4'}`}>
-                      {counterName ?? t('split.chooseCounter')}
-                    </span>
-                    <Icon name="pencil-outline" size={11} color="var(--m-ink-4)" />
-                  </button>
-                )}
+          {/* #228 feedback: the settled bookkeeping stands FIRST, pinned
+              and untouchable — removing the reimbursement link is the
+              only way to remove it */}
+          {settled.map((entry, i) => (
+            <div
+              key={`settled-${entry.catId}-${entry.amountCents}`}
+              data-testid={`part-cat-settled-${i}`}
+              className="flex items-center gap-2 opacity-60"
+            >
+              <div className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border border-line bg-bg-2 px-3 text-[14px] text-ink-2">
+                <Icon name={cats.byId(entry.catId).icon} size={17} color="var(--m-ink-4)" />
+                <span className="min-w-0 flex-1 truncate">{catName(cats.byId(entry.catId), t)}</span>
+                <Icon name="lock-outline" size={13} color="var(--m-ink-4)" />
               </div>
-            );
-          })}
+              <div className="m-num flex h-11 w-24 items-center justify-end rounded-input border border-line bg-bg-2 px-3 text-right text-[14px] text-ink-3">
+                {toText(entry.amountCents)}
+              </div>
+            </div>
+          ))}
+          {entries.map((entry, i) => (
+            <div key={entry.key} className="flex items-center gap-2">
+              <button
+                data-testid={`part-cat-${i}`}
+                onClick={() => setPickerFor(i)}
+                className="m-tap flex h-11 min-w-0 flex-1 items-center gap-2 rounded-input border border-line bg-surface px-3 text-left text-[14px] text-ink"
+              >
+                <Icon
+                  name={cats.byId(entry.catId).icon}
+                  size={17}
+                  color={cats.byId(cats.byId(entry.catId).parentId ?? '').color ?? cats.byId(entry.catId).color}
+                />
+                <span className="truncate">{catName(cats.byId(entry.catId), t)}</span>
+              </button>
+              <input
+                data-testid={`part-cat-amount-${i}`}
+                value={entry.amount}
+                onChange={(e) => onAmount(i, e.target.value)}
+                onFocus={(e) => onFocus(i, e.currentTarget)}
+                onBlur={() => onBlur(i)}
+                inputMode="decimal"
+                className="h-11 w-24 rounded-input border border-line bg-surface px-3 text-right text-[14px] text-ink outline-none"
+              />
+              {entries.length > 1 && (
+                <button
+                  aria-label={t('action.delete')}
+                  data-testid={`part-cat-remove-${i}`}
+                  onClick={() => removeEntry(i)}
+                  className="m-tap border-none bg-transparent text-ink-4"
+                >
+                  <Icon name="close" size={16} />
+                </button>
+              )}
+            </div>
+          ))}
           <button
             data-testid="part-cat-add"
             onClick={addEntry}

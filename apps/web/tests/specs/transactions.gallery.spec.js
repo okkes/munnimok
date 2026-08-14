@@ -151,7 +151,8 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="catpicker-savingDeposit"]');
     await page.waitForSelector('[data-testid="counter-default"]');
     await page.click('[data-testid="counter-pick-demo_save"]');
-    await expect(page.locator('[data-testid="part-cat-counter-0"]')).toContainText('Demo Savings');
+    // #228 feedback: no counter line under the entry — the ask closes
+    await expect(page.locator('[data-testid="counter-accounts"]')).toHaveCount(0);
     await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
     // #133 r4: the user's category STAYS the story — the link makes it

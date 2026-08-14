@@ -55,9 +55,12 @@ function splitProblems(
   return problems;
 }
 
-/** v2.1 category spread: entries must be sound and sum to the part */
+/** v2.1 category spread: entries must be sound and sum to the part.
+ *  #228: a lone entry is legal — the part settles inside its own cats
+ *  (reimbursement stays ON the split), and a fully settled part carries
+ *  only its `reimbursed` entry, exactly like a whole row. */
 function splitCatProblems(split: { amountCents?: unknown; cats?: unknown }): string[] {
-  if (!Array.isArray(split.cats) || split.cats.length < 2) return ['split cats must hold at least two entries'];
+  if (!Array.isArray(split.cats) || split.cats.length === 0) return ['split cats must hold at least one entry'];
   const problems: string[] = [];
   let sum = 0;
   for (const cat of split.cats as { catId?: unknown; amountCents?: unknown }[]) {

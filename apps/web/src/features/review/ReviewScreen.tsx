@@ -9,10 +9,11 @@ import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
-import { draftReady, initDraft, withCategory, withCats, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
+import { draftReady, initDraft, withCategory, withCats, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, isMovementCat, specialCatType } from '@/domain/categories';
-import { accountStamp, counterTypesFor } from '@/domain/txType';
+import { accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
+import { partNetCents } from '@/domain/reimbursement';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { ensureDefaultAccount } from '@/application/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
@@ -23,7 +24,7 @@ import { TxRow } from '@/ui/TxRow';
 import { fetchSettlementCandidates } from '@/features/splits/settlementCandidates';
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
-import type { ReviewDraft } from '@/domain/reviewDraft';
+import type { DraftCatalog, ReviewDraft } from '@/domain/reviewDraft';
 import type { AccountType, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
@@ -42,7 +43,7 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SplitEditorSheet } from '@/features/transactions/SplitEditorSheet';
-import { CatsSheet, partCatsApplyPatch } from '@/features/transactions/PartCatsSheet';
+import { CatsSheet, catsAroundSingle, partCatsApplyPatch } from '@/features/transactions/PartCatsSheet';
 import type { CatsApplyEntry } from '@/features/transactions/PartCatsSheet';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
@@ -56,6 +57,36 @@ const REASON_KEYS = {
   'history-amount': 'review.reasonAmount',
   keyword: 'review.reasonKeyword',
 } as const;
+
+/** #228 feedback: the card Counterparty row's two doors — tap opens the
+ *  ask (narrowed by the staged category), detach resets the pick (the
+ *  counterparty and the category are one fact). Module-level for S3776. */
+function buildCounterRowDoors(args: {
+  draft: ReviewDraft | null;
+  locked: boolean;
+  amountCents: number | undefined;
+  cats: DraftCatalog;
+  setCounterAskCat: (v: string | null) => void;
+  counterFallback: { current: ReviewDraft | null };
+  setCounterOpen: (v: boolean) => void;
+  counterChosen: { current: boolean };
+  setStagedDraft: (d: ReviewDraft) => void;
+}): { onEdit?: () => void; onDetach?: () => void } {
+  const { draft } = args;
+  if (!draft || args.locked) return {};
+  const onEdit = () => {
+    args.setCounterAskCat(draft.catId && specialCatType(draft.catId) ? draft.catId : null);
+    args.counterFallback.current = null;
+    args.setCounterOpen(true);
+  };
+  const onDetach = draft.linkedAccountId
+    ? () => {
+        args.counterChosen.current = true;
+        args.setStagedDraft({ ...withKind(draft, 'standard', args.amountCents ?? 0, args.cats), catId: undefined });
+      }
+    : undefined;
+  return { onEdit, onDetach };
+}
 
 /** render-time reset when the card underneath changes (prev-id ref pattern) */
 function useFreshCardReset(txId: string | undefined, reset: () => void) {
@@ -250,6 +281,7 @@ function CardCategoryRows({
   currency,
   onOpenCategories,
   onOpenSplit,
+  onEditCounter,
 }: Readonly<{
   draft: ReviewDraft | null;
   fallbackCat: ReturnType<ReturnType<typeof useCategories>['byId']>;
@@ -259,6 +291,9 @@ function CardCategoryRows({
   onOpenCategories: () => void;
   /** the values-only split editor (#126 v2 — pure money partition) */
   onOpenSplit: () => void;
+  /** #228 feedback: the card's own Counterparty row — counter-first
+   *  stages the special category; absent = the row hides */
+  onEditCounter?: () => void;
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -317,16 +352,6 @@ function CardCategoryRows({
                   <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(singleCat.parentId), t)}</span>
                 )}
                 {spread && <span className="block truncate text-[11px] font-normal text-ink-4">{spread}</span>}
-                {/* #133 r5: the settled/staged counterparty shows WITH
-                    the category, not only inside the editor */}
-                {draft?.linkedAccountId && (accounts ?? []).some((a) => a.id === draft.linkedAccountId) && (
-                  <span
-                    className="block truncate text-[11px] font-normal text-ink-4"
-                    data-testid={`review-cat-counter-${single?.catId ?? draft.catId}`}
-                  >
-                    → {(accounts ?? []).find((a) => a.id === draft.linkedAccountId)?.name}
-                  </span>
-                )}
               </>
             ) : (
               t('review.pickPrompt')
@@ -345,6 +370,23 @@ function CardCategoryRows({
         >
           <Icon name="call-split" size={18} color="var(--m-ink-3)" />
           <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
+          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        </button>
+      )}
+      {/* #228 feedback (user ss): the counterparty is the card's own
+          row — counter-first picks the special category automatically,
+          removal resets the category (same doors as the detail screen) */}
+      {!multi && onEditCounter && (
+        <button
+          data-testid="review-counter-row"
+          onClick={onEditCounter}
+          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+        >
+          <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
+          <span className={`min-w-0 flex-1 truncate ${draft?.linkedAccountId ? '' : 'text-ink-4'}`}>
+            {(accounts ?? []).find((a) => a.id === draft?.linkedAccountId)?.name ?? t('tx.counterNone')}
+          </span>
+          <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
           <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
         </button>
       )}
@@ -391,8 +433,9 @@ export function ReviewPartDeck({
   const cats = useCategories();
   const accounts = useSpaceAccounts();
   const [expanded, setExpanded] = useState(0);
-  // #220: no part-level counter re-pick anymore — the category editor's
-  // entries own the links
+  // #228 feedback: the part card's own Counterparty row — which part's
+  // counter door is open (counter-first picks its category)
+  const [counterForIdx, setCounterForIdx] = useState<number | null>(null);
   const [eventFor, setEventFor] = useState<number | null>(null);
   // r7: which part is linking a recurring cost
   const [recFor, setRecFor] = useState<number | null>(null);
@@ -422,6 +465,7 @@ export function ReviewPartDeck({
     const target = parts[index];
     onSplits(slices.map((s) => (s === target ? { ...s, ...patch } : s)));
   };
+  const counterPart = counterForIdx === null ? undefined : parts[counterForIdx];
   const partLabel = (slice: TxSplit, i: number) =>
     orDefaultLabel(slice.label, `${txTitle(tx)} – ${t('split.partN', { n: i + 1 })}`);
   const swapTo = (i: number) => {
@@ -438,6 +482,8 @@ export function ReviewPartDeck({
   };
 
   const active = parts[openIdx];
+  // #228: settled bookkeeping is not an editable category row here
+  const activeRealCats = (active.cats ?? []).filter((c) => c.catId !== REIMBURSED_ID);
   const activeEventFace = activeEvents.find((event) => event.id === active.eventId)?.name ?? t('events.linkNone');
   const activeRecFace = recurrings.find((rec) => rec.id === active.recurringId)?.name ?? t('recurring.linkNone');
   const peeking = parts.map((slice, i) => ({ slice, i })).filter(({ i }) => i !== openIdx);
@@ -538,13 +584,11 @@ export function ReviewPartDeck({
           </div>
           {/* #217 (user): a spread part shows EACH category as its own
               row — same face as the unsplit card, value included; every
-              row doors into the same editor. #228: the counterparty is
-              the PART's one fact — its "→ account" rides the single
-              category row (a spread means regular categories, no link) */}
-          {(active.cats?.length ? active.cats : [null]).map((entry, entryIdx) => {
+              row doors into the same editor. #228 feedback: no counter
+              subline — the part's Counterparty row below owns it */}
+          {(activeRealCats.length ? activeRealCats : [null]).map((entry, entryIdx) => {
             const rowCat = cats.byId(entry?.catId ?? active.catId);
             const rowColor = rowCat.color ?? cats.byId(rowCat.parentId ?? '').color;
-            const rowCounter = entry ? undefined : accounts?.find((a) => a.id === active.linkedAccountId)?.name;
             return (
               <button
                 key={entry ? `${entry.catId}-${entryIdx}` : 'single'}
@@ -560,22 +604,30 @@ export function ReviewPartDeck({
                       <span className="text-[12px] font-normal text-ink-4"> · {catName(cats.byId(rowCat.parentId), t)}</span>
                     )}
                   </span>
-                  {rowCounter && (
-                    <span
-                      className="block truncate text-[11px] font-normal text-ink-4"
-                      data-testid={`deck-cat-counter-${openIdx}-${entryIdx}`}
-                    >
-                      → {rowCounter}
-                    </span>
-                  )}
                 </span>
                 <span className="m-num text-[12px] font-normal text-ink-2">
-                  {fmtCents(entry ? entry.amountCents : active.amountCents, tx.currency, lang)}
+                  {fmtCents(entry ? entry.amountCents : partNetCents(active), tx.currency, lang)}
                 </span>
                 <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
               </button>
             );
           })}
+          {/* #228 feedback: the part's own Counterparty row — the same
+              counter-first door the card and the detail screen carry */}
+          {!lockedKind && (
+            <button
+              data-testid={`deck-counter-${openIdx}`}
+              onClick={() => setCounterForIdx(openIdx)}
+              className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
+            >
+              <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
+              <span className={`min-w-0 flex-1 truncate ${active.linkedAccountId ? '' : 'text-ink-4'}`}>
+                {accounts?.find((a) => a.id === active.linkedAccountId)?.name ?? t('tx.counterNone')}
+              </span>
+              <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
+              <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+            </button>
+          )}
           {/* r7: parts link recurring costs, exactly like the card does */}
           <button
             data-testid={`deck-rec-${openIdx}`}
@@ -607,8 +659,48 @@ export function ReviewPartDeck({
         </p>
       )}
 
-      {/* #220 (user): the part-level counterparty re-pick door is gone —
-          the entries inside the category editor own the links now */}
+      {/* #228 feedback: the part card's counterparty door — pick refiles
+          the part's category by the account's kind (counter-first),
+          remove resets it; settled bookkeeping always survives */}
+      <CounterpartySheet
+        open={counterForIdx !== null}
+        onOpenChange={(next) => {
+          if (!next) setCounterForIdx(null);
+        }}
+        excludeAccountId={tx.accountId}
+        currentLinkedId={counterPart?.linkedAccountId}
+        defaultFamily={
+          counterPart && specialCatType(counterPart.catId) ? (defaultFamilyFor(counterPart.catId) ?? undefined) : undefined
+        }
+        counterTypes={counterPart && specialCatType(counterPart.catId) ? counterTypesFor(counterPart.catId) : undefined}
+        onChoose={(account) => {
+          if (counterForIdx === null) return;
+          const part = parts[counterForIdx];
+          const derived = movementCatFor(account.type, (tx.amountCents < 0 ? -1 : 1) * Math.abs(part.amountCents));
+          patchPart(counterForIdx, {
+            catId: derived,
+            txType: specialCatType(derived),
+            linkedAccountId: account.id,
+            transferPeerId: undefined,
+            cats: catsAroundSingle(part, derived),
+          });
+        }}
+        onDetach={
+          counterPart?.linkedAccountId
+            ? () => {
+                if (counterForIdx === null) return;
+                const part = parts[counterForIdx];
+                patchPart(counterForIdx, {
+                  catId: UNCATEGORIZED_ID,
+                  txType: undefined,
+                  linkedAccountId: undefined,
+                  transferPeerId: undefined,
+                  cats: catsAroundSingle(part, UNCATEGORIZED_ID),
+                });
+              }
+            : undefined
+        }
+      />
       {/* the expanded part's event — per-part membership (v2 model) */}
       <Sheet
         open={eventFor !== null}
@@ -1305,6 +1397,18 @@ export function ReviewScreen() {
   }, [chosenRec?.id, chosenRec?.catId]);
   const recurringAllowedCats = chosenRec?.catId ? [chosenRec.catId, EXPECTED_REIMBURSE_ID] : undefined;
 
+  const counterRowDoors = buildCounterRowDoors({
+    draft,
+    locked: draft?.txType === 'adjustment' || !!recurringAllowedCats,
+    amountCents: tx?.amountCents,
+    cats,
+    setCounterAskCat,
+    counterFallback,
+    setCounterOpen,
+    counterChosen,
+    setStagedDraft,
+  });
+
   const showReason = !!tx && !stagedDraft && prediction?.catId === draft?.catId;
   const reasonLine =
     showReason && prediction ? t(REASON_KEYS[prediction.source], { n: prediction.evidence ?? 1 }) : null;
@@ -1314,10 +1418,6 @@ export function ReviewScreen() {
   const spreadRowCount = draft?.cats?.filter((e) => e.catId !== REIMBURSED_ID).length ?? 0;
   const settledCatEntry = draft?.cats?.find((e) => e.catId === REIMBURSED_ID);
   const settledCatsCents = settledCatEntry?.amountCents ?? 0;
-  const draftNetCats = useMemo(() => {
-    const net = draft?.cats?.filter((e) => e.catId !== REIMBURSED_ID);
-    return net?.length ? net : undefined;
-  }, [draft?.cats]);
 
   /** the settled row's gross partition, rewritten around a single pick */
   const settledCatsFor = (catId: string) =>
@@ -1517,9 +1617,11 @@ export function ReviewScreen() {
               </div>
               <div className="mx-4 h-px bg-line-2" />
 
-              {/* categories first (#219, user): the counterparty is a
-                  CATEGORY fact — the rows below carry "→ account"; no
-                  transaction-level counter row on the card anymore.
+              {/* categories first (#219), and — #228 feedback — the
+                  counterparty back as the card's OWN row: counter-first
+                  stages the special category, removal resets it. The
+                  recurring-owned card keeps its category, so no counter
+                  door there; adjustments carry no counterparty at all.
                   Multi-part (#126 r3): these rows vanish — each PART
                   carries its own story on the deck. */}
               <div data-testid="review-cats">
@@ -1530,6 +1632,7 @@ export function ReviewScreen() {
                   currency={tx.currency}
                   onOpenCategories={() => setCatsOpen(true)}
                   onOpenSplit={requestSplit}
+                  onEditCounter={counterRowDoors.onEdit}
                 />
 
                 {!multiPart && (
@@ -1666,8 +1769,10 @@ export function ReviewScreen() {
             id: tx.id,
             label: txTitle(tx),
             catId: draft.catId,
-            cats: draftNetCats,
-            amountCents: Math.abs(tx.amountCents) - settledCatsCents,
+            // #228 feedback: the FULL partition rides in — the sheet
+            // pins settled bookkeeping read-only and nets the gross
+            cats: draft.cats?.length ? draft.cats : undefined,
+            amountCents: Math.abs(tx.amountCents),
             linkedAccountId: draft.linkedAccountId,
             transferPeerId: tx.transferPeerId,
           }}
@@ -1726,6 +1831,9 @@ export function ReviewScreen() {
             counterChosen.current = true;
             setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));
           }}
+          // #228 feedback: the card row's remove door — the counterparty
+          // and the category are one fact, so removal resets the pick
+          onDetach={counterRowDoors.onDetach}
         />
       )}
       {tx && (
