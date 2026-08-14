@@ -16,7 +16,7 @@ namespace Munni.Api.GoCardless;
 /// the client-side importer, so cross-source imports collapse into the
 /// same rows.
 /// </summary>
-public sealed partial class GcIngest(AppDbContext db)
+public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
 {
     public async Task<int> IngestAccountAsync(
         Space space,
@@ -48,7 +48,17 @@ public sealed partial class GcIngest(AppDbContext db)
             ["accountId"] = Json(linked.AccountEntityId),
         }, NextHlc(), $"gclink:{space.Id}:{feedSpace.Id}"));
 
-        foreach (var tx in transactions) AddBookedOps(space.Id, feedSpace.Id, linked, tx, feedOps, spaceOps, NextHlc);
+        var dropped = 0;
+        foreach (var tx in transactions)
+        {
+            if (!AddBookedOps(space.Id, feedSpace.Id, linked, tx, feedOps, spaceOps, NextHlc)) dropped++;
+        }
+        // #240: rows without a reference or date used to vanish without a
+        // trace — an ASPSP omitting entry_reference lost its whole history
+        // and nothing anywhere said so
+        if (dropped > 0)
+            logger?.LogWarning("gc ingest {Ref}: {Dropped} of {Total} booked rows lack a reference/date and were dropped",
+                linked.Iban, dropped, transactions.Count);
 
         await MirrorPendingAsync(linked, feedSpace.Id, pending ?? [], feedOps, NextHlc);
 
@@ -60,8 +70,9 @@ public sealed partial class GcIngest(AppDbContext db)
         return accepted;
     }
 
-    /// <summary>One booked bank transaction → raw feed op + the target space's predicted overlay.</summary>
-    private static void AddBookedOps(
+    /// <summary>One booked bank transaction → raw feed op + the target space's predicted overlay.
+    /// False = the row lacks an identity or date and cannot be represented.</summary>
+    private static bool AddBookedOps(
         string spaceId,
         string feedSpaceId,
         GcLinkedAccount linked,
@@ -71,7 +82,7 @@ public sealed partial class GcIngest(AppDbContext db)
         Func<string> nextHlc)
     {
         var reference = tx.TransactionId ?? tx.InternalTransactionId;
-        if (reference is null || tx.BookingDate is null) return;
+        if (reference is null || tx.BookingDate is null) return false;
         var cents = ToCents(tx.TransactionAmount.Amount);
         var direction = cents < 0 ? "debit" : "credit";
         var counterparty = CleanBankText(cents < 0 ? tx.CreditorName : tx.DebtorName);
@@ -107,6 +118,7 @@ public sealed partial class GcIngest(AppDbContext db)
             ["needsReview"] = Json(predicted is null ? 1 : 0),
         };
         spaceOps.Add(NewOp(spaceId, "txMeta", ImportIds.TxMetaId(spaceId, entityId), metaFields, nextHlc(), $"gcmeta:{spaceId}:{entityId}"));
+        return true;
     }
 
     /// <summary>
@@ -216,8 +228,20 @@ public sealed partial class GcIngest(AppDbContext db)
             ?? throw new InvalidOperationException($"requisition {linked.RequisitionId} missing");
         var ownerId = requisition.UserId;
 
-        if (await db.FeedSpaces.FindAsync(feedId) is null)
+        var feed = await db.FeedSpaces.FindAsync(feedId);
+        if (feed is null)
             db.FeedSpaces.Add(new FeedSpace { Id = feedId, OwnerUserId = ownerId, AccountRef = ImportIds.Normalize(linked.Iban) });
+        else if (linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase) && feed.OwnerUserId != ownerId)
+        {
+            // #240: a WALLET (no IBAN) is personal by nature — there is no
+            // joint-PayPal the way there is a joint bank account, so the
+            // consent that fetches it owns its feed. A stale binding (an
+            // old identity's requisition) left the feed "shared with me"
+            // for its real owner: /me/feeds omitted it, edit and
+            // attach-to-space locked. IBAN feeds keep first-owner rules —
+            // the family-account case stays protected.
+            feed.OwnerUserId = ownerId;
+        }
 
         var feedSpace = await db.Spaces.FindAsync(feedId);
         if (feedSpace is null)

@@ -139,7 +139,11 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
             foreach (var (local, linked) in CoveredPairs(requisition, localByRemoteId, byAccountId))
             {
                 var boundTo = localById.GetValueOrDefault(linked.RequisitionId);
-                if (boundTo is not null && boundTo.UserId != local.UserId) continue; // someone else's binding
+                // #240: wallet bindings (no IBAN — personal by nature) always
+                // move to the newest covering consent; only real IBAN
+                // accounts protect a foreign (family) binding
+                var wallet = linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
+                if (boundTo is not null && boundTo.UserId != local.UserId && !wallet) continue; // someone else's binding
                 linked.RequisitionId = local.Id;
                 linked.SpaceId = local.SpaceId;
             }
@@ -255,7 +259,7 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var space = await db.Spaces.FindAsync([requisition.SpaceId], ct);
         if (space is null) return;
 
-        var (linkedCount, imported, deferred) = await GcEndpoints.IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts);
+        var (linkedCount, imported, deferred) = await GcEndpoints.IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts, logger);
         if (deferred == 0) requisition.Status = "linked";
         else if (requisition.Status == "created") requisition.Status = "approved";
         await db.SaveChangesAsync(ct);
@@ -291,7 +295,7 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
             : DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-GoCardlessApi.MaxHistoryDays)).AddDays(-3));
         var page = await gc.GetTransactionsAsync(linked.GcAccountId, from, ct);
 
-        var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, page.Booked, page.Pending);
+        var accepted = await new GcIngest(db, logger).IngestAccountAsync(space, linked, details, balances, page.Booked, page.Pending);
         linked.LastFetchAt = DateTimeOffset.UtcNow;
         linked.HistoryBackfilledAt ??= DateTimeOffset.UtcNow;
         if (page.Rate is { } rate)

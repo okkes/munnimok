@@ -61,6 +61,16 @@ public class EnableBankingApiTests
             {
                 body = """{"balances":[{"balance_amount":{"amount":"12.34","currency":"EUR"},"balance_type":"CLBD"}]}""";
             }
+            else if (path.Contains("acc-uid-pp/transactions"))
+            {
+                // the PayPal shape (#240): no entry_reference, no booking_date
+                // — only a value date and the remittance text
+                body = """
+                {"transactions":[
+                  {"transaction_amount":{"amount":"7.99","currency":"EUR"},"credit_debit_indicator":"DBIT","status":"BOOK","value_date":"2026-07-14","remittance_information":["1051635911097/PAYPAL"],"creditor":{"name":"PayPal Europe S.a.r.l. et Cie S.C.A"}}
+                ],"continuation_key":null}
+                """;
+            }
             else if (path.Contains("/transactions") && !path.Contains("continuation_key"))
             {
                 Assert.Contains("date_from=2026-01-15", path);
@@ -172,8 +182,28 @@ public class EnableBankingApiTests
 
         var pending = Assert.Single(page.Pending);
         Assert.Equal("E2", pending.TransactionId);
-        Assert.Null(pending.BookingDate); // value date only — ingest falls back
+        Assert.Equal("2026-07-06", pending.BookingDate); // #240: the mapper backfills from the value date
 
         Assert.Equal(2, handler.Paths.Count(p => p.Contains("/transactions")));
+    }
+
+    [Fact]
+    public async Task Paypal_style_rows_without_reference_or_booking_date_map_deterministically()
+    {
+        // #240: the ingest keys rows on the reference and drops date-less
+        // ones — an ASPSP omitting both silently lost its whole history.
+        // The mapper now falls back to the value date and derives a
+        // deterministic synthetic identity from the stable facts.
+        var (api, _) = Create();
+        var page = await api.GetTransactionsAsync("acc-uid-pp", null);
+
+        var row = Assert.Single(page.Booked); // BOOK status — not dropped
+        Assert.Equal("2026-07-14", row.BookingDate); // value-date fallback
+        Assert.Equal("-7.99", row.TransactionAmount.Amount);
+        Assert.StartsWith("eb:", row.TransactionId);
+
+        // a re-fetch maps to the SAME row identity — no duplicates
+        var again = await api.GetTransactionsAsync("acc-uid-pp", null);
+        Assert.Equal(row.TransactionId, Assert.Single(again.Booked).TransactionId);
     }
 }

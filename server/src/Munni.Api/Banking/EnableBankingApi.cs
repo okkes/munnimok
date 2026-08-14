@@ -231,17 +231,41 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
         var amount = debit && !tx.TransactionAmount.Amount.StartsWith('-')
             ? "-" + tx.TransactionAmount.Amount
             : tx.TransactionAmount.Amount;
+        // #240: some ASPSPs (PayPal among them) omit entry_reference and/or
+        // booking_date. The ingest keys row identity on the reference and
+        // drops date-less rows — which silently lost EVERY transaction of
+        // such an account. Fall back to the value date, and derive a
+        // deterministic reference from the transaction's stable facts so
+        // every re-fetch maps to the same row.
+        var bookingDate = tx.BookingDate ?? tx.ValueDate;
+        var remittance = tx.RemittanceInformation is { Count: > 0 } lines ? string.Join(' ', lines) : null;
+        var reference = string.IsNullOrWhiteSpace(tx.EntryReference)
+            ? SyntheticReference(bookingDate, amount, tx, remittance)
+            : tx.EntryReference;
         return new GcTransaction(
-            tx.EntryReference,
+            reference,
             null,
-            tx.BookingDate,
+            bookingDate,
             tx.ValueDate,
             new GcAmount(amount, tx.TransactionAmount.Currency),
             tx.Creditor?.Name,
             tx.Debtor?.Name,
-            tx.RemittanceInformation is { Count: > 0 } remittance ? string.Join(' ', remittance) : null,
+            remittance,
             new GcAccountReference(tx.CreditorAccount?.Iban),
             new GcAccountReference(tx.DebtorAccount?.Iban));
+    }
+
+    /// <summary>
+    /// Row identity when the ASPSP publishes none: a hash of the stable
+    /// facts. Two truly identical same-day twins would collapse into one
+    /// row — accepted over losing the whole account's history (#240).
+    /// </summary>
+    private static string SyntheticReference(string? date, string amount, EbTransaction tx, string? remittance)
+    {
+        var seed = string.Join('|', date, amount, tx.TransactionAmount.Currency,
+            tx.Creditor?.Name, tx.Debtor?.Name, tx.CreditorAccount?.Iban, tx.DebtorAccount?.Iban, remittance);
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(seed));
+        return "eb:" + Convert.ToHexString(hash)[..24].ToLowerInvariant();
     }
 
 }

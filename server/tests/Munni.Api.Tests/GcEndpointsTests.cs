@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Munni.Api.Accounts;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
 using Munni.Api.Logos;
@@ -277,6 +278,76 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             Assert.NotNull(account);
             Assert.Contains("\"name\":\"Paypal\"", account!.DataJson); // institution-derived
             Assert.DoesNotContain("\"iban\"", account.DataJson); // no fake IBAN surfaces
+        }
+        finally
+        {
+            _factory.Gc.Details = new GcAccountDetails("NL69INGB0123456789", "Betaalrekening", "EUR");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
+        }
+    }
+
+    [Fact]
+    public async Task Wallet_feed_ownership_follows_the_newest_consent_while_iban_feeds_keep_the_family_guard()
+    {
+        // #240: a WALLET (no IBAN) is personal — a stale binding to an old
+        // identity's requisition stranded PayPal in "shared with me" for
+        // its real owner. A fresh consent covering the wallet claims the
+        // feed; IBAN accounts keep first-owner rules (family accounts).
+        var (clientA, userA, spaceA) = await MemberAsync("wallet-old");
+        var (clientB, userB, spaceB) = await MemberAsync("wallet-new");
+        try
+        {
+            _factory.Gc.Details = new GcAccountDetails(null, null, "EUR", "Okkes D");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-own", "LN", ["gc-wallet-own"]);
+            var createdA = await (await clientA.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceA, "PAYPAL_PPLXLULL", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            await clientA.PostAsync($"/gocardless/requisitions/{createdA!.Reference}/complete", null);
+
+            string feedId;
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var linked = await db.GcLinkedAccounts.FindAsync("gc-wallet-own");
+                feedId = ImportIds.FeedSpaceId(linked!.Iban);
+                Assert.Equal(userA, (await db.FeedSpaces.FindAsync(feedId))!.OwnerUserId);
+            }
+            Assert.Contains((await clientA.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds"))!, f => f.FeedSpaceId == feedId);
+
+            // the real owner consents from their (new) identity: the wallet
+            // binding AND the feed move to them
+            var createdB = await (await clientB.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceB, "PAYPAL_PPLXLULL", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            await clientB.PostAsync($"/gocardless/requisitions/{createdB!.Reference}/complete", null);
+
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                Assert.Equal(userB, (await db.FeedSpaces.FindAsync(feedId))!.OwnerUserId);
+            }
+            Assert.Contains((await clientB.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds"))!, f => f.FeedSpaceId == feedId);
+            Assert.DoesNotContain((await clientA.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds"))!, f => f.FeedSpaceId == feedId);
+
+            // contrast: an IBAN account consented by a second person keeps
+            // the FIRST owner's feed — the shared family account
+            _factory.Gc.Details = new GcAccountDetails("NL11RABO0101010101", "Gedeeld", "EUR");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-fam", "LN", ["gc-acc-fam"]);
+            var famA = await (await clientA.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceA, "RABOBANK_RABONL2U", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            await clientA.PostAsync($"/gocardless/requisitions/{famA!.Reference}/complete", null);
+            var famB = await (await clientB.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceB, "RABOBANK_RABONL2U", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            await clientB.PostAsync($"/gocardless/requisitions/{famB!.Reference}/complete", null);
+
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var famFeed = ImportIds.FeedSpaceId((await db.GcLinkedAccounts.FindAsync("gc-acc-fam"))!.Iban);
+                Assert.Equal(userA, (await db.FeedSpaces.FindAsync(famFeed))!.OwnerUserId);
+            }
         }
         finally
         {

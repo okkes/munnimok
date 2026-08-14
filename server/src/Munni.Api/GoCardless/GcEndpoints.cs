@@ -223,7 +223,7 @@ public static partial class GcEndpoints
         });
     }
 
-    private static async Task<IResult> CompleteRequisition(Guid reference, string? code, BankProviderRegistry registry, AppDbContext db, HttpContext http)
+    private static async Task<IResult> CompleteRequisition(Guid reference, string? code, BankProviderRegistry registry, AppDbContext db, HttpContext http, ILogger<GcIngest> logger)
     {
             var userId = http.TryGetUserId();
             var requisition = await db.GcRequisitions.FindAsync(reference);
@@ -257,7 +257,7 @@ public static partial class GcEndpoints
             var space = await db.Spaces.FindAsync(requisition.SpaceId);
             if (space is null) return Results.NotFound();
 
-            var (linkedCount, imported, deferred) = await IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts);
+            var (linkedCount, imported, deferred) = await IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts, logger);
             // 'approved' = consented at the bank but not fully ingested —
             // the scheduled healer finishes it when the quota resets
             requisition.Status = deferred == 0 ? "linked" : "approved";
@@ -287,9 +287,9 @@ public static partial class GcEndpoints
     /// full window.
     /// </summary>
     internal static async Task<(int Linked, int Imported, int Deferred)> IngestApprovedAccountsAsync(
-        IBankDataApi gc, AppDbContext db, GcRequisition requisition, Space space, IReadOnlyList<string> accounts)
+        IBankDataApi gc, AppDbContext db, GcRequisition requisition, Space space, IReadOnlyList<string> accounts, ILogger? logger = null)
     {
-        var ingest = new GcIngest(db);
+        var ingest = new GcIngest(db, logger);
         var linkedCount = 0;
         var imported = 0;
         var deferred = 0;
@@ -331,9 +331,14 @@ public static partial class GcEndpoints
                 // NINE ING consents, unclear which one carried the account).
                 // Only within the SAME user: a shared family account linked
                 // by a second person keeps the first one's binding — each
-                // person's consent lives its own life (family-account case)
+                // person's consent lives its own life (family-account case).
+                // #240: WALLETS (no IBAN) are the exception — personal by
+                // nature, so the newest consent always claims the binding
+                // (a stale foreign binding stranded PayPal as "shared with
+                // me" for its real owner).
+                var wallet = linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
                 var boundTo = await db.GcRequisitions.FindAsync(linked.RequisitionId);
-                if (boundTo is null || boundTo.UserId == requisition.UserId)
+                if (boundTo is null || boundTo.UserId == requisition.UserId || wallet)
                 {
                     linked.RequisitionId = requisition.Id;
                     linked.SpaceId = requisition.SpaceId;
