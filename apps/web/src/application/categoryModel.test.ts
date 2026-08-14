@@ -75,7 +75,7 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     expect(await migrateBareSpecialRows(store, repo)).toBe(0);
   });
 
-  it('#221: bare transfer-family rows link too — the ATM pair onto the CASH wallet, plain transfer onto the bank default', async () => {
+  it('#221: bare movement rows link — the ATM pair onto the CASH wallet; #228 r3: a clueless transfer stands down instead', async () => {
     const { store, repo } = fresh();
     await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
     await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
@@ -104,13 +104,94 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     // the wallet's balance moved with the leg
     expect((await store.get('account', defaultAccountId(SPACE, 'cash')))?.balanceCents).toBe(100);
 
-    expect((await store.get('transaction', 'tout1'))?.linkedAccountId).toBe(defaultAccountId(SPACE, 'transfer'));
+    // #228 r3 (user rule): "Moved out" names no tracked account — the
+    // transfer stands down to Uncategorized and goes back to review;
+    // the transfer default is never minted for it
+    const tout = await store.get('transaction', 'tout1');
+    expect(tout).toMatchObject({ catId: 'uncategorized', txType: 'expense', needsReview: 1 });
+    expect(tout?.linkedAccountId).toBeUndefined();
+    expect(await store.get('account', defaultAccountId(SPACE, 'transfer'))).toBeUndefined();
     // funding links its pot but mints NOTHING (#152: funding shows no rows)
     const fund = await store.get('transaction', 'fund1');
     expect(fund?.linkedAccountId).toBe(defaultAccountId(SPACE, 'funding'));
     expect(fund?.transferPeerId).toBeUndefined();
 
     // every-boot idempotence: nothing left to do
+    expect(await migrateBareSpecialRows(store, repo)).toBe(0);
+  });
+
+  it('#228 r3: a bare transfer whose text names a tracked account links IT — the bijection refiles the category', async () => {
+    const { store, repo } = fresh();
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
+    await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
+    // the user's PayPal case: a camt-imported PayPal account exists in the space
+    await repo.upsert('account', SPACE, 'pp', { name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0 });
+    // and a manual savings pot with a distinctive name
+    await repo.upsert('account', SPACE, 'vak', { name: 'Vakantiepot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('transaction', SPACE, 'pp1', {
+      accountId: 'main', date: '2026-07-14', amountCents: -799, currency: 'EUR',
+      merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      description: 'Incasso · Naam: PayPal Europe S.a.r.l. et Cie S.C.A Omschrijving: 1051635911097/PAYPAL',
+      counterIban: 'LU89751000135104200E',
+    });
+    await repo.upsert('transaction', SPACE, 'vak1', {
+      accountId: 'main', date: '2026-07-15', amountCents: -12_000, currency: 'EUR',
+      merchant: 'Overboeking naar Vakantiepot', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+    });
+
+    expect(await migrateBareSpecialRows(store, repo)).toBe(2);
+
+    // the PayPal feed account is bank-fed: linked, no mirror minted —
+    // the real PayPal-side row pairs later
+    const pp = await store.get('transaction', 'pp1');
+    expect(pp?.linkedAccountId).toBe('pp');
+    expect(pp?.catId).toBe('transferOut');
+    expect(pp?.transferPeerId).toBeUndefined();
+    // the savings pot is manual: the link mints its leg and the category
+    // refiles by the counter's kind (transfer → set aside)
+    const vak = await store.get('transaction', 'vak1');
+    expect(vak?.linkedAccountId).toBe('vak');
+    expect(vak?.catId).toBe('savingDeposit');
+    expect(vak?.transferPeerId).toBeTruthy();
+    expect((await store.get('account', 'vak'))?.balanceCents).toBe(12_000);
+
+    expect(await migrateBareSpecialRows(store, repo)).toBe(0);
+  });
+
+  it('#228 r3: bare transfer PARTS resolve the same way — matched parts link, clueless parts go uncategorized and the container returns to review', async () => {
+    const { store, repo } = fresh();
+    await repo.upsert('space', SPACE, SPACE, { name: 'Home', currency: 'EUR' });
+    await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'pp', { name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('transaction', SPACE, 'split1', {
+      accountId: 'main', date: '2026-07-16', amountCents: -3000, currency: 'EUR',
+      merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      splits: [
+        { id: 'p1', catId: 'transferOut', amountCents: 2000, txType: 'transfer' },
+        { id: 'p2', catId: 'groceries', amountCents: 1000 },
+      ],
+    });
+    await repo.upsert('transaction', SPACE, 'split2', {
+      accountId: 'main', date: '2026-07-17', amountCents: -3000, currency: 'EUR',
+      merchant: 'Verzamelbetaling', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      splits: [
+        { id: 'q1', catId: 'transferOut', amountCents: 2000, txType: 'transfer' },
+        { id: 'q2', catId: 'groceries', amountCents: 1000 },
+      ],
+    });
+
+    expect(await migrateBareSpecialRows(store, repo)).toBe(2);
+
+    const matched = await store.get('transaction', 'split1');
+    expect(matched?.splits?.[0]).toMatchObject({ id: 'p1', catId: 'transferOut', linkedAccountId: 'pp' });
+    expect(matched?.needsReview).toBe(0);
+    // no clue: the part stands down and the human decides again
+    const clueless = await store.get('transaction', 'split2');
+    expect(clueless?.splits?.[0]).toMatchObject({ id: 'q1', catId: 'uncategorized' });
+    expect(clueless?.splits?.[0]?.linkedAccountId).toBeUndefined();
+    expect(clueless?.splits?.[0]?.txType).toBeUndefined();
+    expect(clueless?.needsReview).toBe(1);
+
     expect(await migrateBareSpecialRows(store, repo)).toBe(0);
   });
 

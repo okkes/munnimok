@@ -162,6 +162,48 @@ describe('importCamtStatements', () => {
     expect((await db.accounts.get('defaultacct_saving_s1'))?.balanceCents).toBe(4210);
   });
 
+  const teachTransfer = async () => {
+    await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    // the user filed PayPal Europe as Transfer Out twice — history now
+    // predicts the transfer family for its next arrival
+    for (const [id, date] of [['h1', '2026-05-01'], ['h2', '2026-06-01']] as const) {
+      await repo.upsert('transaction', 's1', id, {
+        accountId: 'acct-x', date, amountCents: -799, currency: 'EUR',
+        merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      });
+    }
+  };
+
+  const paypalStatement = () =>
+    statement({
+      entries: [{
+        amountCents: -799, currency: 'EUR', date: '2026-07-14',
+        counterpartyName: 'PayPal Europe S.a.r.l. et Cie S.C.A',
+        description: 'Incasso 1051635911097/PAYPAL', ref: 'PP-1',
+      }],
+    });
+
+  it('#228 r3: a transfer prediction imports linked to the account the text NAMES — never the default', async () => {
+    await teachTransfer();
+    await repo.upsert('account', 's1', 'pp', { name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0 });
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [paypalStatement()]);
+    const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'PP-1')!;
+    // the clue-matcher found the PayPal account — the taught skip-review holds
+    expect(tx).toMatchObject({ catId: 'transferOut', linkedAccountId: 'pp', needsReview: 0 });
+    // bank-fed counter: nothing minted, the real PayPal-side row pairs later
+    expect(tx.transferPeerId).toBeUndefined();
+  });
+
+  it('#228 r3: the same prediction with NO nameable account stands down to uncategorized + review', async () => {
+    await teachTransfer();
+    await importCamtStatements(repo, new DexieBackend(db), 's1', [paypalStatement()]);
+    const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'PP-1')!;
+    expect(tx).toMatchObject({ catId: 'uncategorized', txType: 'expense', needsReview: 1 });
+    expect(tx.linkedAccountId).toBeUndefined();
+    // the transfer default is a manual pick only — never minted for predictions
+    expect(await db.accounts.get('defaultacct_transfer_s1')).toBeUndefined();
+  });
+
   it('matches an existing account by IBAN (spacing/case-insensitive) and updates its balance', async () => {
     await repo.upsert('account', 's1', 'acct-existing', {
       name: 'Mijn ING',

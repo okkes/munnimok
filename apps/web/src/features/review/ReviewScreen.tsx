@@ -19,6 +19,8 @@ import { ensureDefaultAccount } from '@/application/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
 import { normalizeIban } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
+import { matchCounterAccount } from '@/domain/counterClue';
+import type { ClueAccount, ClueTx } from '@/domain/counterClue';
 import { hapticNotify } from '@/lib/platform';
 import { TxRow } from '@/ui/TxRow';
 import { fetchSettlementCandidates } from '@/features/splits/settlementCandidates';
@@ -821,6 +823,27 @@ function applyOwnCounterDefault(
   return linked.catId ? linked : withCategory(linked, 'uncategorized', cats);
 }
 
+/** #228 r3 (user rule): an AUTOMATIC transfer prediction must name a
+ * real counterparty or stand down. The bank text names one of the
+ * space's tracked accounts → pre-link it (the bijection files the
+ * category from the account's kind); no clue → the card opens
+ * Uncategorized and review asks the human. Only the untouched baseline
+ * passes through here — a user-staged draft is never rewritten. */
+export function resolveTransferPrediction(
+  draft: ReviewDraft | null,
+  tx: (ClueTx & { accountId: string; amountCents: number }) | undefined,
+  accounts: readonly ClueAccount[] | undefined,
+  cats: DraftCatalog,
+  ownStamp?: TxType,
+): ReviewDraft | null {
+  if (!draft || !tx || ownStamp) return draft;
+  if (draft.linkedAccountId || draft.splits?.length || draft.cats?.length) return draft;
+  if (defaultFamilyFor(draft.catId) !== 'transfer') return draft;
+  const match = matchCounterAccount(tx, accounts ?? [], tx.accountId);
+  if (match) return withLinkedAccount(draft, { id: match.id, type: match.type }, cats, tx.amountCents, ownStamp);
+  return { ...withType({ ...draft, linkedAccountId: undefined }, standardTypeFor(tx.amountCents), cats), catId: UNCATEGORIZED_ID };
+}
+
 /** the bulk sheet's read-only transaction peek: (almost) the detail
  * screen's facts — amount, date, category, type, account, counterparty,
  * bank text — without any of its edit affordances (user request) */
@@ -1271,7 +1294,15 @@ export function ReviewScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tx?.id, ownCounter, prediction?.catId, cats, ownStamp],
   );
-  const draft = stagedDraft ?? ownTransferDraft;
+  // #228 r3: a predicted transfer resolves against the space's accounts
+  // — clue-matched counterparty, or Uncategorized when nothing matches
+  const spaceAccounts = useSpaceAccounts();
+  const resolvedDraft = useMemo(
+    () => resolveTransferPrediction(ownTransferDraft, tx, spaceAccounts, cats, ownStamp),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [ownTransferDraft, tx?.id, spaceAccounts, cats, ownStamp],
+  );
+  const draft = stagedDraft ?? resolvedDraft;
   const draftCounter = useQuery(
     store,
     async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
@@ -1485,12 +1516,15 @@ export function ReviewScreen() {
     const container = !multiPartSplits(draft);
     // #221: a bare movement confirm links the space's DEFAULT for the
     // category's family in the same write — the choke mints the counter
-    // leg ("confirms the category + default account", user spec)
+    // leg ("confirms the category + default account", user spec).
+    // #228 r3 (user rule): the TRANSFER family lost that fallback — an
+    // automatic transfer either clue-matched a real account upstream or
+    // stood down to Uncategorized; its default is a manual pick only.
     const bareMovementFamily =
       !ownStamp && !draft.linkedAccountId && !draft.cats?.length && !draft.splits?.length && isMovementCat(draft.catId)
         ? defaultFamilyFor(draft.catId)
         : null;
-    const defaultLinkId = bareMovementFamily
+    const defaultLinkId = bareMovementFamily && bareMovementFamily !== 'transfer'
       ? await ensureDefaultAccount(store, repo, spaceId, bareMovementFamily)
       : undefined;
     await writeConfirmation({

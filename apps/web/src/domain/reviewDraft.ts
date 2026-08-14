@@ -1,4 +1,5 @@
 import { UNCATEGORIZED_ID, autoSubFor, isMovementCat, stampMovementSub } from './categories';
+import { defaultFamilyFor } from './defaultAccounts';
 import { primaryCatId } from './splits';
 import { standardTypeFor } from './txKind';
 import type { TxKind } from './txKind';
@@ -162,8 +163,11 @@ export const draftReady = (draft: ReviewDraft): boolean => {
   // R2 (typed-splits v2): a transfer strictly needs its tracked counter
   // account — except a MOVEMENT category (#221): Confirm links the
   // space's default for its family in the same write, so a predicted
-  // "Cash withdraw" confirms in one tap
-  if (draft.txType === 'transfer') return !!draft.linkedAccountId || isMovementCat(draft.catId);
+  // "Cash withdraw" confirms in one tap. #228 r3 (user rule): the
+  // TRANSFER family lost that fallback — a bare transfer never confirms.
+  if (draft.txType === 'transfer') {
+    return !!draft.linkedAccountId || (isMovementCat(draft.catId) && defaultFamilyFor(draft.catId) !== 'transfer');
+  }
   // adjustments are corrections — not spending; same placeholder story.
   // ('funding' only serves unmigrated rows since the type retired.)
   if (draft.txType === 'funding' || draft.txType === 'adjustment') return true;

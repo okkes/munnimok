@@ -185,6 +185,68 @@ describe('ReviewScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  const seedR3 = async (over: { id: string; merchant: string; description?: string; counterIban?: string; withPaypalAccount?: boolean }) => {
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('r3-seed'), { trackOutbox: false });
+    if (over.withPaypalAccount) {
+      await seedRepo.upsert('account', DEMO_SPACE_ID, 'demo_pp', {
+        name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0,
+      });
+    }
+    // a server-style prediction: Transfer Out stamped, no counterparty,
+    // oldest date so the review queue leads with it
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, over.id, {
+      accountId: 'demo_main', date: '2026-01-05', amountCents: -799, currency: 'EUR',
+      merchant: over.merchant, description: over.description, counterIban: over.counterIban,
+      catId: 'transferOut', txType: 'transfer', needsReview: 1,
+    });
+    seed.close();
+  };
+
+  it('#228 r3: a predicted transfer whose text names a tracked account opens LINKED to it — and confirms without the default', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    await seedR3({
+      id: 'tx-r3a',
+      merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A',
+      description: 'Incasso · Naam: PayPal Europe S.a.r.l. et Cie S.C.A Omschrijving: 1051635911097/PAYPAL',
+      counterIban: 'LU89751000135104200E',
+      withPaypalAccount: true,
+    });
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    // the clue-matcher pointed the transfer at the PayPal account
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('PayPal'), { timeout: 5000 });
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Transfer Out');
+    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = await db.transactions.get('tx-r3a');
+      expect(row).toMatchObject({ catId: 'transferOut', linkedAccountId: 'demo_pp', needsReview: 0 });
+    }, { timeout: 8000 });
+    db.close();
+  }, 15_000);
+
+  it('#228 r3: a predicted transfer with NO nameable account stands down to Uncategorized — the default is not an answer', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    await seedR3({ id: 'tx-r3b', merchant: 'Verzamelbetaling batch 42' });
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    // the card stands down: no transfer without a real counterparty
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Uncategorized'), { timeout: 5000 });
+    expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
+    // and Confirm waits for a human decision — the old one-tap default
+    // link for bare transfers is gone (#228 r3)
+    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
+  }, 15_000);
+
   it('a picked category is staged and written on confirm', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
@@ -1070,4 +1132,42 @@ describe('ReviewScreen (own-account transfers)', () => {
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Grocery'));
   }, 15_000);
+});
+
+describe('resolveTransferPrediction (unit)', () => {
+  const TYPES: Record<string, string[]> = { transferOut: ['transfer'], savingDeposit: ['saving'], groceries: ['expense'] };
+  const catalog = { byId: (id: string | undefined) => ({ txTypes: (TYPES[id ?? ''] ?? []) as never }) };
+  const paypal = { id: 'a-pp', name: 'PayPal o.doker@live.nl', type: 'checking' as const };
+  const tx = {
+    accountId: 'a-main', amountCents: -799,
+    merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A',
+    description: 'Incasso 1051635911097/PAYPAL', counterIban: 'LU89751000135104200E',
+  };
+
+  it('links the clue-matched account and keeps the transfer story', async () => {
+    const { resolveTransferPrediction } = await import('./ReviewScreen');
+    const draft = { catId: 'transferOut', txType: 'transfer' as const };
+    const resolved = resolveTransferPrediction(draft, tx, [paypal], catalog);
+    expect(resolved).toMatchObject({ linkedAccountId: 'a-pp', catId: 'transferOut', txType: 'transfer' });
+  });
+
+  it('stands a clueless transfer down to Uncategorized with a sign-true type', async () => {
+    const { resolveTransferPrediction } = await import('./ReviewScreen');
+    const draft = { catId: 'transferOut', txType: 'transfer' as const };
+    const resolved = resolveTransferPrediction(draft, { ...tx, merchant: 'Onbekend', description: undefined, counterIban: undefined }, [paypal], catalog);
+    expect(resolved).toMatchObject({ catId: 'uncategorized', txType: 'expense' });
+    expect(resolved?.linkedAccountId).toBeUndefined();
+  });
+
+  it('never rewrites linked, partitioned, stamped or non-transfer drafts', async () => {
+    const { resolveTransferPrediction } = await import('./ReviewScreen');
+    const linked = { catId: 'transferOut', txType: 'transfer' as const, linkedAccountId: 'a-x' };
+    expect(resolveTransferPrediction(linked, tx, [paypal], catalog)).toBe(linked);
+    const split = { catId: 'transferOut', txType: 'transfer' as const, splits: [{ catId: 'groceries', amountCents: 799 }] };
+    expect(resolveTransferPrediction(split, tx, [paypal], catalog)).toBe(split);
+    const saving = { catId: 'savingDeposit', txType: 'saving' as const };
+    expect(resolveTransferPrediction(saving, tx, [paypal], catalog)).toBe(saving);
+    const stamped = { catId: 'transferOut', txType: 'transfer' as const };
+    expect(resolveTransferPrediction(stamped, tx, [paypal], catalog, 'saving')).toBe(stamped);
+  });
 });

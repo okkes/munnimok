@@ -34,7 +34,10 @@ describe('reviewDraft', () => {
     // #221: a bare MOVEMENT category is one tap from done — Confirm
     // links the space's default in the same write
     expect(draftReady({ ...uncategorized, catId: 'cashWithdraw', txType: 'transfer' as TxType })).toBe(true);
-    expect(draftReady({ ...uncategorized, catId: 'transferOut', txType: 'transfer' as TxType })).toBe(true);
+    // #228 r3 (user rule): the TRANSFER family lost that fallback — a
+    // bare transfer never confirms; it needs a real counterparty
+    expect(draftReady({ ...uncategorized, catId: 'transferOut', txType: 'transfer' as TxType })).toBe(false);
+    expect(draftReady({ ...uncategorized, catId: 'transferOut', txType: 'transfer' as TxType, linkedAccountId: 'a-chk' })).toBe(true);
     // a split with an uncategorized slice blocks too
     const withUncatSlice = {
       ...initDraft(expenseTx, 'groceries', catalog),
