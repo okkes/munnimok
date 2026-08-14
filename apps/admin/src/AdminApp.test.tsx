@@ -54,7 +54,6 @@ const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /admin/ping': () => ({}),
   'GET /admin/users': () => ({ body: USERS }),
   'GET /admin/gocardless/requisitions': () => ({ body: REQUISITIONS }),
-  'GET /admin/bank-provider': () => ({ body: { active: 'gocardless', configured: ['gocardless', 'enablebanking'] } }),
   'GET /admin/quota': () => ({ body: QUOTA }),
   'GET /health': () => ({ body: HEALTH }),
 });
@@ -216,23 +215,13 @@ describe('AdminApp (test-auth mode)', () => {
     expect(screen.queryByText(/Delete selected/)).toBeNull(); // selection cleared
   });
 
-  it('the bank-provider picker on Overview shows the active one and switches it', async () => {
-    let active = 'gocardless';
-    const calls = scriptFetch({
-      ...HAPPY_ROUTES(),
-      'GET /admin/bank-provider': () => ({ body: { active, configured: ['gocardless', 'enablebanking'] } }),
-      'PUT /admin/bank-provider': (init) => {
-        active = (JSON.parse(String(init?.body)) as { provider: string }).provider;
-        return { body: { active } };
-      },
-    });
+  it('the bank-provider picker is gone from Overview (#175: the end user picks at connect)', async () => {
+    const calls = scriptFetch(HAPPY_ROUTES());
     renderAdmin();
-    const gc = (await screen.findByTestId('admin-provider-gocardless')) as HTMLInputElement;
-    expect(gc.checked).toBe(true);
-    fireEvent.click(screen.getByTestId('admin-provider-enablebanking'));
-    await waitFor(() => expect((screen.getByTestId('admin-provider-enablebanking') as HTMLInputElement).checked).toBe(true));
-    expect(calls).toContain('PUT /admin/bank-provider');
-    expect(active).toBe('enablebanking');
+    await screen.findByTestId('overview-tiles');
+    expect(screen.queryByTestId('admin-bank-provider')).toBeNull();
+    expect(screen.queryByText(/Bank-data provider/)).toBeNull();
+    expect(calls.some((c) => c.includes('/admin/bank-provider'))).toBe(false);
   });
 
   it('typing a sub persists it and sends it as X-User-Sub', async () => {

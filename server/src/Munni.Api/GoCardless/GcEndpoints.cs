@@ -15,19 +15,19 @@ public sealed record CompleteResponse(string Status, int LinkedAccounts, int Imp
 /// carries masked IBAN tails for Enable Banking — its restricted mode only
 /// serves portal-linked accounts, and every account munni ever fetched
 /// through EB is proof of such a link (the EB API itself cannot list them).</summary>
-public sealed record ProviderInfo(string Id, bool Active, IReadOnlyList<string>? KnownAccounts);
+public sealed record ProviderInfo(string Id, IReadOnlyList<string>? KnownAccounts);
 
 public static partial class GcEndpoints
 {
     [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z]{2}$")]
     private static partial System.Text.RegularExpressions.Regex CountryCode();
 
-    /// <summary>#175: the caller's explicit provider pick, the admin's
-    /// active one when absent — an unknown id is a 400, never a silent
-    /// fallback to whatever registered first</summary>
-    private static async Task<IBankDataApi?> ResolveProviderAsync(string? provider, BankProviderRegistry registry, AppDbContext db)
+    /// <summary>#175: the caller's explicit provider pick, the registry
+    /// default (first configured — GoCardless) when absent; an unknown
+    /// id is a 400, never a silent fallback</summary>
+    private static IBankDataApi? ResolveProvider(string? provider, BankProviderRegistry registry)
     {
-        if (provider is null) return await registry.ActiveAsync(db);
+        if (provider is null) return registry.For(null);
         return registry.ConfiguredIds.Contains(provider) ? registry.For(provider) : null;
     }
 
@@ -35,7 +35,7 @@ public static partial class GcEndpoints
     {
         if (!CountryCode().IsMatch(country))
             return Results.BadRequest(new { error = "country must be a 2-letter code" });
-        var api = await ResolveProviderAsync(provider, registry, db);
+        var api = ResolveProvider(provider, registry);
         if (api is null) return Results.BadRequest(new { error = $"unknown provider '{provider}'" });
         IReadOnlyList<GcInstitution>? list;
         try
@@ -117,15 +117,15 @@ public static partial class GcEndpoints
         return Results.File(row.Bytes, row.ContentType ?? "image/png");
     }
 
-    /// <summary>#175: the configured providers, for the user-facing choice.
-    /// The admin's active pick is the default; Enable Banking rides its
-    /// masked account tails so a user can tell whether THEIR account was
-    /// linked upfront on the EB portal (restricted mode serves only
+    /// <summary>#175: the configured providers, for the user-facing choice
+    /// (both are first-class — the admin toggle retired; registration
+    /// order puts GoCardless first as the default). Enable Banking rides
+    /// its masked account tails so a user can tell whether THEIR account
+    /// was linked upfront on the EB portal (restricted mode serves only
     /// portal-linked accounts — the EB API cannot list them, but every
     /// account munni ever fetched through EB proves its link).</summary>
     private static async Task<IResult> ListProvidersAsync(BankProviderRegistry registry, AppDbContext db)
     {
-        var active = await registry.ActiveIdAsync(db);
         List<string>? ebTails = null;
         if (registry.ConfiguredIds.Contains(EnableBankingApi.Id))
         {
@@ -143,8 +143,7 @@ public static partial class GcEndpoints
                 .ToList();
         }
         var providers = registry.ConfiguredIds
-            .Select(id => new ProviderInfo(id, id == active, id == EnableBankingApi.Id ? ebTails : null))
-            .OrderByDescending(p => p.Active)
+            .Select(id => new ProviderInfo(id, id == EnableBankingApi.Id ? ebTails : null))
             .ToList();
         return Results.Ok(new { providers });
     }
@@ -171,9 +170,9 @@ public static partial class GcEndpoints
             if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == request.SpaceId && m.UserId == userId))
                 return Results.Forbid();
 
-            // #175: the user's explicit pick wins; absent, the admin's
-            // active provider decides (the pre-#175 behavior)
-            var api = await ResolveProviderAsync(request.Provider, registry, db);
+            // #175: the user's explicit pick wins; absent, the registry
+            // default (older clients without the chooser)
+            var api = ResolveProvider(request.Provider, registry);
             if (api is null) return Results.BadRequest(new { error = $"unknown provider '{request.Provider}'" });
             var reference = Guid.NewGuid();
             GcRequisitionCreated created;

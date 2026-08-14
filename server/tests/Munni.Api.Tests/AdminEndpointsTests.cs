@@ -126,24 +126,17 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/users")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/gocardless/requisitions")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await user.DeleteAsync("/admin/gocardless/requisitions/req-x")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/bank-provider")).StatusCode);
     }
 
     [Fact]
-    public async Task AdminPicksTheBankProviderForNewConsents()
+    public async Task BankProviderToggleIsGone()
     {
+        // #175: the END USER picks the provider at connect time — the
+        // admin's "active provider" endpoints retired outright
         var admin = ClientFor("the-admin");
-        var state = await admin.GetFromJsonAsync<System.Text.Json.JsonElement>("/admin/bank-provider");
-        Assert.Equal("gocardless", state.GetProperty("active").GetString());
-        Assert.Contains("gocardless", state.GetProperty("configured").EnumerateArray().Select(e => e.GetString()));
-
-        // an unconfigured provider is refused loudly
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await admin.PutAsJsonAsync("/admin/bank-provider", new { provider = "enablebanking" })).StatusCode);
-        // re-picking the configured one round-trips
-        Assert.True((await admin.PutAsJsonAsync("/admin/bank-provider", new { provider = "gocardless" })).IsSuccessStatusCode);
-        var after = await admin.GetFromJsonAsync<System.Text.Json.JsonElement>("/admin/bank-provider");
-        Assert.Equal("gocardless", after.GetProperty("active").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/admin/bank-provider")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await admin.PutAsJsonAsync("/admin/bank-provider", new { provider = "gocardless" })).StatusCode);
     }
 
     [Fact]

@@ -954,7 +954,7 @@ public class BankProviderChoiceTests : IClassFixture<DualProviderApiFactory>
     }
 
     [Fact]
-    public async Task Providers_list_both_with_the_active_default_first_and_masked_eb_tails()
+    public async Task Providers_list_both_with_the_default_first_and_masked_eb_tails()
     {
         using (var scope = _factory.Services.CreateScope())
         {
@@ -971,11 +971,12 @@ public class BankProviderChoiceTests : IClassFixture<DualProviderApiFactory>
         var body = await ClientFor("prov-list").GetFromJsonAsync<JsonElement>("/gocardless/providers");
         var providers = body.GetProperty("providers").EnumerateArray().ToList();
         Assert.Equal(2, providers.Count);
-        Assert.Equal("gocardless", providers[0].GetProperty("id").GetString()); // active default first
-        Assert.True(providers[0].GetProperty("active").GetBoolean());
+        // #175: no admin-picked "active" anymore — registration order puts
+        // the default (GoCardless) first, and no active flag rides the wire
+        Assert.Equal("gocardless", providers[0].GetProperty("id").GetString());
+        Assert.False(providers[0].TryGetProperty("active", out _));
         var eb = providers[1];
         Assert.Equal("enablebanking", eb.GetProperty("id").GetString());
-        Assert.False(eb.GetProperty("active").GetBoolean());
         var tails = eb.GetProperty("knownAccounts").EnumerateArray().Select(t => t.GetString()).ToList();
         Assert.Equal(["8507"], tails); // masked, deduped, pseudo-refs dropped
     }
@@ -988,7 +989,7 @@ public class BankProviderChoiceTests : IClassFixture<DualProviderApiFactory>
         Assert.Equal("ASN Bank|NL", Assert.Single(eb!).Id);
         Assert.Equal(1, _factory.Eb.InstitutionCalls);
 
-        // no parameter keeps the admin's active provider (GoCardless here)
+        // no parameter keeps the default provider (GoCardless — first configured)
         var active = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=fi");
         Assert.Equal("ING_NL", Assert.Single(active!).Id);
 

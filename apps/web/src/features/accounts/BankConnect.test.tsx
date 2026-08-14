@@ -78,8 +78,8 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
         'GET /me/feeds': () => [],
         'GET /gocardless/providers': () => ({
           providers: [
-            { id: 'gocardless', active: true },
-            { id: 'enablebanking', active: false, knownAccounts: ['8507', '9507'] },
+            { id: 'gocardless' },
+            { id: 'enablebanking', knownAccounts: ['8507', '9507'] },
           ],
         }),
         'GET /gocardless/institutions': (_body, url) => {
@@ -125,7 +125,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true } }),
         'GET /me/feeds': () => [],
-        'GET /gocardless/providers': () => ({ providers: [{ id: 'gocardless', active: true }] }),
+        'GET /gocardless/providers': () => ({ providers: [{ id: 'gocardless' }] }),
         'GET /gocardless/institutions': () => [ING],
       },
     });

@@ -47,16 +47,6 @@ const STATUS_LABEL: Record<string, string> = {
   GA: 'authorizing', UA: 'authorizing', GC: 'consenting', SA: 'selecting',
 };
 
-const PROVIDER_LABEL: Record<string, string> = {
-  gocardless: 'GoCardless (Bank Account Data)',
-  enablebanking: 'Enable Banking',
-};
-
-interface BankProviderState {
-  active: string;
-  configured: string[];
-}
-
 type Screen = 'overview' | 'users' | 'connections' | 'catalog';
 
 /** the operator-published catalog document (admin-catalog design AC2) */
@@ -134,7 +124,6 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   const [sub, setSub] = useState(() => localStorage.getItem('munni_admin_sub') ?? '');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requisitions, setRequisitions] = useState<AdminRequisition[] | null>(null);
-  const [provider, setProvider] = useState<BankProviderState | null>(null);
   const [quota, setQuota] = useState<ProviderQuota[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
@@ -162,16 +151,14 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     const ping = await call('/admin/ping').catch(() => null);
     setDenied(!ping?.ok);
     if (!ping?.ok) return;
-    const [usersRes, reqRes, providerRes, quotaRes, healthRes] = await Promise.all([
+    const [usersRes, reqRes, quotaRes, healthRes] = await Promise.all([
       call('/admin/users'),
       call('/admin/gocardless/requisitions'),
-      call('/admin/bank-provider'),
       call('/admin/quota'),
       fetch(`${config.apiUrl}/health`).catch(() => null),
     ]);
     if (usersRes.ok) setUsers((await usersRes.json()) as AdminUser[]);
     if (reqRes.ok) setRequisitions((await reqRes.json()) as AdminRequisition[]);
-    if (providerRes.ok) setProvider((await providerRes.json()) as BankProviderState);
     if (quotaRes.ok) setQuota((await quotaRes.json()) as ProviderQuota[]);
     if (healthRes?.ok) setHealth((await healthRes.json()) as HealthInfo);
     const catalogRes = await call('/catalog').catch(() => null);
@@ -195,7 +182,8 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     setBusy(false);
   };
 
-  const pickProvider = (id: string) => act(() => call('/admin/bank-provider', { method: 'PUT', body: JSON.stringify({ provider: id }) }));
+  // pickProvider retired (#175): both providers are offered to the END
+  // USER at connect time — there is no admin-selected "active" one.
   const publishCatalog = (categories: CatalogCategory[], keywords: CatalogKeywordRule[], stores: CatalogStoreRule[]) =>
     act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords, stores }) }));
   const promote = (userSub: string) => act(() => call(`/admin/admins/${encodeURIComponent(userSub)}`, { method: 'POST' }));
@@ -259,15 +247,7 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
           </p>
         )}
         {!denied && screen === 'overview' && (
-          <OverviewScreen
-            users={users}
-            requisitions={requisitions}
-            quota={quota}
-            health={health}
-            provider={provider}
-            busy={busy}
-            onPickProvider={pickProvider}
-          />
+          <OverviewScreen users={users} requisitions={requisitions} quota={quota} health={health} />
         )}
         {!denied && screen === 'catalog' && catalog && (
           <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
@@ -314,17 +294,11 @@ function OverviewScreen({
   requisitions,
   quota,
   health,
-  provider,
-  busy,
-  onPickProvider,
 }: Readonly<{
   users: AdminUser[];
   requisitions: AdminRequisition[] | null;
   quota: ProviderQuota[];
   health: HealthInfo | null;
-  provider: BankProviderState | null;
-  busy: boolean;
-  onPickProvider: (id: string) => void;
 }>) {
   const linked = (requisitions ?? []).filter((r) => r.status === 'LN');
   const expiring = (requisitions ?? []).filter(expiresSoon);
@@ -378,28 +352,8 @@ function OverviewScreen({
         </table>
       </section>
 
-      {provider && (
-        <section className="card">
-          <h2>Bank-data provider</h2>
-          <p className="hint">New bank consents use the selected provider; existing accounts keep the one that created them.</p>
-          <div data-testid="admin-bank-provider">
-            {provider.configured.map((id) => (
-              <label key={id} className="radio">
-                <input
-                  type="radio"
-                  name="bank-provider"
-                  data-testid={`admin-provider-${id}`}
-                  checked={provider.active === id}
-                  disabled={busy}
-                  onChange={() => onPickProvider(id)}
-                />
-                {PROVIDER_LABEL[id] ?? id}
-              </label>
-            ))}
-          </div>
-        </section>
-      )}
-
+      {/* the Bank-data provider toggle retired (#175): the END USER
+          picks the provider at connect time now — both are first-class */}
       {health && (
         <section className="card">
           <h2>Server</h2>

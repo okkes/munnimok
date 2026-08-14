@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
-using Munni.Api.Banking;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
 using Munni.Api.Validation;
@@ -19,7 +18,6 @@ public sealed record AdminUserDiagnosisDto(
     List<AdminFeedDto> OwnedFeeds,
     List<AdminAttachmentDto> Attachments,
     List<AdminGcLinkDto> GcLinks);
-public sealed record BankProviderChoice(string Provider);
 public sealed record AdminGrantDto(string Sub, string GrantedBySub, DateTimeOffset GrantedAtUtc, bool Bootstrap);
 public sealed record ProviderQuotaDto(string Provider, string Scope, int? Limit, int? Remaining, DateTimeOffset? ResetAtUtc, DateTimeOffset CapturedAtUtc);
 public sealed record AdminRequisitionDto(
@@ -47,8 +45,6 @@ public static class AdminEndpoints
             await IsAdminAsync(http, db, config)
                 ? Results.Ok(new { admin = true, gocardless = goCardlessEnabled, banking = bankingEnabled })
                 : Results.Forbid());
-
-        if (bankingEnabled) MapBankProvider(group);
 
         group.MapGet("/users", ListUsers);
         // operator-initiated removal, same pipeline as the user's own
@@ -221,24 +217,9 @@ public static class AdminEndpoints
         return Results.Ok();
     }
 
-    /// <summary>which provider serves NEW bank consents (user request) —
-    /// existing accounts keep the provider that created them</summary>
-    private static void MapBankProvider(IEndpointRouteBuilder group)
-    {
-        group.MapGet("/bank-provider", async (HttpContext http, AppDbContext db, IConfiguration config, BankProviderRegistry registry) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            return Results.Ok(new { active = await registry.ActiveIdAsync(db), configured = registry.ConfiguredIds });
-        });
-
-        group.MapPut("/bank-provider", async (BankProviderChoice choice, HttpContext http, AppDbContext db, IConfiguration config, BankProviderRegistry registry) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            return await registry.SetActiveAsync(db, choice.Provider)
-                ? Results.Ok(new { active = choice.Provider })
-                : Results.BadRequest(new { error = "provider not configured" });
-        });
-    }
+    // /admin/bank-provider retired (#175): the END USER picks the
+    // provider at connect time, so there is no admin-selected "active"
+    // provider anymore — existing accounts keep the one that created them.
 
     /// <summary>grant/revoke admin from the console (AD2): the env list
     /// stays as un-demotable bootstrap; grants live in the database</summary>

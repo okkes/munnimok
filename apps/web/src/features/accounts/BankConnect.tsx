@@ -18,10 +18,10 @@ interface Institution {
   logo?: string;
 }
 
-/** #175: one configured bank-data provider, as the server reports it */
+/** #175: one configured bank-data provider, as the server reports it
+ *  (server order — GoCardless first as the default) */
 interface ProviderOption {
   id: string;
-  active: boolean;
   /** masked IBAN tails known to work through Enable Banking */
   knownAccounts?: string[] | null;
 }
@@ -52,7 +52,7 @@ export function BankConnectSheet({ open, onOpenChange }: Readonly<{ open: boolea
   const { t } = useLang();
   const { spaceId } = useData();
   // #175: '' = no explicit pick (single provider / older server) — the
-  // admin's active provider decides, exactly the pre-#175 behavior
+  // server's default provider (GoCardless when configured) serves
   const [providers, setProviders] = useState<ProviderOption[] | null>(null);
   const [chosenProvider, setChosenProvider] = useState<string | null>(null);
   const [institutions, setInstitutions] = useState<Institution[] | null>(null);

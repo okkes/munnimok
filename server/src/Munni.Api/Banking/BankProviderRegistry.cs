@@ -1,5 +1,4 @@
 using Munni.Api.Admin;
-using Munni.Api.Data;
 using Munni.Api.GoCardless;
 
 namespace Munni.Api.Banking;
@@ -42,15 +41,15 @@ public static class BankingSetup
 }
 
 /// <summary>
-/// The configured bank-data providers and which one is ACTIVE for new
-/// connections (admin-selectable, stored in AppSettings). Existing
-/// linked accounts always keep fetching through the provider that
-/// created them — switching only affects new consents.
+/// The configured bank-data providers. #175 (user): BOTH providers are
+/// offered to the end user at connect time, so the admin's "active
+/// provider" toggle retired — the DEFAULT (registration order, i.e.
+/// GoCardless when configured) only serves clients that don't name one.
+/// Existing linked accounts always keep fetching through the provider
+/// that created them.
 /// </summary>
 public sealed class BankProviderRegistry
 {
-    public const string SettingKey = "bankProvider";
-
     private readonly Dictionary<string, IBankDataApi> _byId;
 
     public BankProviderRegistry(IEnumerable<IBankDataApi> providers)
@@ -61,25 +60,7 @@ public sealed class BankProviderRegistry
     public bool Any => _byId.Count > 0;
     public IReadOnlyCollection<string> ConfiguredIds => _byId.Keys;
 
-    /// <summary>the provider that created a row — unknown/legacy falls back to the first configured</summary>
+    /// <summary>the provider that created a row — unknown/legacy falls back to the default (first configured)</summary>
     public IBankDataApi For(string? providerId) =>
         providerId is not null && _byId.TryGetValue(providerId, out var api) ? api : _byId.Values.First();
-
-    public async Task<IBankDataApi> ActiveAsync(AppDbContext db)
-    {
-        var setting = await db.AppSettings.FindAsync(SettingKey);
-        return For(setting?.Value);
-    }
-
-    public async Task<string> ActiveIdAsync(AppDbContext db) => (await ActiveAsync(db)).ProviderId;
-
-    public async Task<bool> SetActiveAsync(AppDbContext db, string providerId)
-    {
-        if (!_byId.ContainsKey(providerId)) return false;
-        var setting = await db.AppSettings.FindAsync(SettingKey);
-        if (setting is null) db.AppSettings.Add(new AppSetting { Key = SettingKey, Value = providerId });
-        else setting.Value = providerId;
-        await db.SaveChangesAsync();
-        return true;
-    }
 }
