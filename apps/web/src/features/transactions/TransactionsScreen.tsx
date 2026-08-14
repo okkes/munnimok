@@ -10,6 +10,7 @@ import { useLang } from '@/i18n';
 import type { TransactionRow } from '@/db/types';
 import { filterTxs, matchingPartIndexes } from '@/domain/txFilter';
 import { hasUnsettledReimbursement, partNetCents } from '@/domain/reimbursement';
+import { kindOf } from '@/domain/txKind';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -157,6 +158,25 @@ function TxPartGroupRows({
   );
 }
 
+/** the collapsed pair's note (S3776: out of the memo). Opposite-sign
+ *  pairs read from the surviving negative leg; a same-sign wallet pair's
+ *  surviving purchase reads the FUNDING direction from its hidden
+ *  transfer leg (#237, user decision "a") — "Bank → PayPal". */
+function peerNoteFor(
+  item: TransactionRow,
+  byId: Map<string, TransactionRow>,
+  accountNames: Map<string, string>,
+): string | undefined {
+  if (!item.transferPeerId) return undefined;
+  const peer = byId.get(item.transferPeerId);
+  if (!peer) return undefined;
+  const sameSign = Math.sign(peer.amountCents) === Math.sign(item.amountCents);
+  if (!sameSign && item.amountCents > 0) return undefined;
+  const from = accountNames.get(sameSign ? peer.accountId : item.accountId);
+  const to = accountNames.get(sameSign ? item.accountId : peer.accountId);
+  return from && to ? `${from} → ${to}` : undefined;
+}
+
 function groupByDate(txs: TransactionRow[]): [string, TransactionRow[]][] {
   const groups = new Map<string, TransactionRow[]>();
   for (const tx of txs) {
@@ -247,26 +267,34 @@ export function TransactionsScreen() {
     if (unsettledOnly) matched = matched.filter(hasUnsettledReimbursement);
     // paired transfers are ONE event (arc 1): the incoming leg hides when
     // its outgoing peer is listed too — unless an account filter is on
-    // (a per-account view needs its own leg for the running story)
+    // (a per-account view needs its own leg for the running story).
+    // #237 (user decision "a"): a SAME-SIGN wallet pair hides its
+    // TRANSFER leg instead — the real purchase stays, counted once.
     if (filters.accountIds.size === 0) {
-      const ids = new Set(matched.map((item) => item.id));
-      matched = matched.filter((item) => !(item.transferPeerId && item.amountCents > 0 && ids.has(item.transferPeerId)));
+      const byId = new Map(matched.map((item) => [item.id, item]));
+      matched = matched.filter((item) => {
+        const peer = item.transferPeerId ? byId.get(item.transferPeerId) : undefined;
+        if (!peer) return true;
+        if (Math.sign(peer.amountCents) === Math.sign(item.amountCents)) {
+          return !(kindOf(item.txType) === 'transfer' && kindOf(peer.txType) !== 'transfer');
+        }
+        return item.amountCents <= 0;
+      });
     }
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
   }, [allTxs, query, filters, uncatOnly, unsettledOnly, catIds]);
 
-  // the collapsed row says where the money went: "Checking → Savings"
+  // the collapsed row says where the money went: "Checking → Savings".
+  // #237: a same-sign wallet pair's surviving purchase reads the funding
+  // direction from its hidden transfer leg — "Bank → PayPal"
   const peerNotes = useMemo(() => {
     if (filters.accountIds.size > 0) return new Map<string, string>();
     const byId = new Map((allTxs ?? []).map((item) => [item.id, item]));
     const map = new Map<string, string>();
     for (const item of txs ?? []) {
-      if (!item.transferPeerId || item.amountCents > 0) continue;
-      const peer = byId.get(item.transferPeerId);
-      const from = accountNames.get(item.accountId);
-      const to = peer && accountNames.get(peer.accountId);
-      if (from && to) map.set(item.id, `${from} → ${to}`);
+      const note = peerNoteFor(item, byId, accountNames);
+      if (note) map.set(item.id, note);
     }
     return map;
   }, [txs, allTxs, accountNames, filters.accountIds]);

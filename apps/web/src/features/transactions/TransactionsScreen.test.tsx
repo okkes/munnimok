@@ -174,4 +174,33 @@ describe('TransactionsScreen (demo identity)', () => {
     });
     // coverage instrumentation pushes this flow past vitest's 5s default
   }, 15_000);
+
+  it('#237 (a): a same-sign wallet pair collapses to the PURCHASE, wearing the funding note', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-wallet'), { trackOutbox: false });
+    await repo.upsert('account', DEMO_SPACE_ID, 'wl', {
+      name: 'Wallet PayPal', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0,
+    });
+    // the paired wallet story: the bank top-up is the transfer leg, the
+    // purchase keeps its category — both debits
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'wbank', {
+      accountId: 'demo_main', date: '2020-04-01', amountCents: -799, currency: 'EUR',
+      merchant: 'PayPal top-up', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      linkedAccountId: 'wl', transferPeerId: 'wpur',
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'wpur', {
+      accountId: 'wl', date: '2020-04-01', amountCents: -799, currency: 'EUR',
+      merchant: 'Vueling Wallet', catId: 'holiday', txType: 'expense', needsReview: 0,
+      transferPeerId: 'wbank',
+    });
+
+    // the purchase stands, the funding leg hides behind it — one event
+    await screen.findByTestId('tx-row-wpur', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('tx-row-wbank')).toBeNull();
+    // …and the surviving row says where the money came from
+    expect(screen.getByTestId('tx-row-wpur').textContent).toContain('→ Wallet PayPal');
+    db.close();
+  }, 15_000);
 });

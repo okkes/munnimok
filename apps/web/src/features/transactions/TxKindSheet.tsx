@@ -7,10 +7,10 @@ import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { TX_KINDS, kindOf } from '@/domain/txKind';
 import type { TxKind } from '@/domain/txKind';
 import { accountStamp, typeForLinkedAccount } from '@/domain/txType';
-import { counterDuplicates } from '@/domain/counterMatch';
+import { counterDuplicates, counterOpenRows, counterSameSignCandidates } from '@/domain/counterMatch';
 import { FAMILY_ACCOUNT_TYPE, NAME_KEYS, defaultAccountId, ensureDefaultAccount } from '@/application/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
-import type { AccountType, TxType } from '@/db/types';
+import type { AccountType, TransactionRow, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { Icon } from '@/ui/Icon';
@@ -141,9 +141,9 @@ export function CounterpartySheet({
   // 2026-08-01: the field confused, and Create covers the missing-
   // account case properly)
   const [chooserOpen, setChooserOpen] = useState(false);
-  // #133 B: the manual-account fork — create the counterpart, or pick
-  // the row that is already there
-  const [forkFor, setForkFor] = useState<{ id: string; type: AccountType; name: string } | null>(null);
+  // #133 B, widened by #237: the counter-match fork — pick the row that
+  // is already there, or explicitly create/await the counterpart
+  const [forkFor, setForkFor] = useState<CounterForkTarget | null>(null);
 
   const candidates = useMemo(
     // the family defaults never list as ordinary rows — the pinned
@@ -176,17 +176,17 @@ export function CounterpartySheet({
     choose({ id, type: FAMILY_ACCOUNT_TYPE[defaultFamily] });
   };
 
-  // a manual account with plausible existing counterparts forks; every
-  // other pick chooses straight away (bank rows pair by feed, and an
-  // empty account has nothing to point at)
+  // #237 (user): no more silent mints. A MANUAL counter always opens the
+  // match sheet — pick the row that is already there, or explicitly
+  // create the leg. A bank-fed counter opens it only when it has
+  // something to offer (opposite twins, or the wallet's same-sign rows);
+  // otherwise the link simply awaits the feed. Funding pots and rows
+  // that don't exist yet (no anchor: the create form) choose directly.
   const tap = (account: { id: string; type: AccountType; name: string; source?: string }) => {
-    const duplicates =
-      anchor && account.source === 'manual' ? counterDuplicates(allTxs ?? [], account.id, anchor) : [];
-    if (duplicates.length > 0) setForkFor({ id: account.id, type: account.type, name: account.name });
+    const target = counterForkTarget(account, anchor, allTxs ?? []);
+    if (target) setForkFor(target);
     else choose({ id: account.id, type: account.type });
   };
-
-  const forkDuplicates = forkFor && anchor ? counterDuplicates(allTxs ?? [], forkFor.id, anchor) : [];
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.counterparty')} size="form">
@@ -280,39 +280,166 @@ export function CounterpartySheet({
         onOpenChange={setChooserOpen}
         onCreated={(account) => choose(account)}
       />
-      {/* #133 B: the manual fork — the mint, or the row already there */}
-      <Sheet
-        open={forkFor !== null}
-        onOpenChange={(next) => {
-          if (!next) setForkFor(null);
-        }}
-        title={forkFor?.name ?? ''}
-        size="form"
-      >
-        {forkFor && (
-          <div className="flex flex-col pt-1" data-testid="counter-fork">
+      {/* #133 B / #237: the counter-match fork — pick, create or await */}
+      {anchor && (
+        <CounterMatchSheet
+          open={forkFor !== null}
+          onOpenChange={(next) => {
+            if (!next) setForkFor(null);
+          }}
+          target={forkFor}
+          anchor={anchor}
+          rows={allTxs ?? []}
+          onCreate={forkFor?.createAllowed ? () => choose({ id: forkFor.id, type: forkFor.type }) : undefined}
+          onWait={forkFor?.bankFed ? () => choose({ id: forkFor.id, type: forkFor.type }) : undefined}
+          onPick={(txId) => {
+            if (forkFor) choose({ id: forkFor.id, type: forkFor.type }, { txId });
+          }}
+        />
+      )}
+    </Sheet>
+  );
+}
+
+/** what the counter-match fork is aimed at (#237) */
+export interface CounterForkTarget {
+  id: string;
+  type: AccountType;
+  name: string;
+  createAllowed: boolean;
+  bankFed: boolean;
+}
+
+/** #237 (user rule): the fork opens for every MANUAL counter (silent
+ *  mints retire — creating the leg is an explicit choice), and for a
+ *  bank-fed counter that has rows to point at. Null = choose directly:
+ *  funding pots (nothing ever shows there), bank-fed counters with
+ *  nothing to offer (the feed delivers), or no anchor (the row being
+ *  created does not exist yet). */
+export function counterForkTarget(
+  account: { id: string; type: AccountType; name: string; source?: string },
+  anchor: { id: string; amountCents: number; date: string } | undefined,
+  rows: readonly TransactionRow[],
+): CounterForkTarget | null {
+  if (!anchor) return null;
+  const bankFed = (account.source ?? 'manual') !== 'manual';
+  const createAllowed = !bankFed && account.type !== 'funding';
+  if (bankFed) {
+    const offerable =
+      counterDuplicates(rows, account.id, anchor).length > 0 ||
+      counterSameSignCandidates(rows, account.id, anchor).length > 0;
+    if (!offerable) return null;
+  } else if (!createAllowed) {
+    return null; // funding: no rows to point at, nothing to mint
+  }
+  return { id: account.id, type: account.type, name: account.name, createAllowed, bankFed };
+}
+
+/**
+ * #237: the counter-match sheet — the one place a counterpart gets
+ * chosen. Near twins first (opposite sign), the wallet's same-sign rows
+ * when no twin exists (user decision "a": both halves of one purchase
+ * can be debits), a browse-all door behind them, and the explicit
+ * create/await exits. Reused by the CounterpartySheet fork and the
+ * detail screen's pair doors.
+ */
+export function CounterMatchSheet({
+  open,
+  onOpenChange,
+  target,
+  anchor,
+  rows,
+  onCreate,
+  onWait,
+  onPick,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  target: { id: string; name: string } | null;
+  anchor: { id: string; amountCents: number; date: string };
+  rows: readonly TransactionRow[];
+  /** the explicit mint door — manual, non-funding counters only */
+  onCreate?: () => void;
+  /** bank-fed: link now, the feed delivers the other side later */
+  onWait?: () => void;
+  onPick: (txId: string) => void;
+}>) {
+  const { t } = useLang();
+  const [showAll, setShowAll] = useState(false);
+  const near = target ? counterDuplicates(rows, target.id, anchor) : [];
+  const sameSign = target && near.length === 0 ? counterSameSignCandidates(rows, target.id, anchor) : [];
+  const listed = new Set([...near, ...sameSign].map((row) => row.id));
+  const all = target && showAll ? counterOpenRows(rows, target.id, anchor.id).filter((row) => !listed.has(row.id)) : [];
+  const pick = (txId: string) => {
+    onPick(txId);
+    setShowAll(false);
+    onOpenChange(false);
+  };
+  const door = (testId: string, icon: string, title: string, sub: string, onTap: () => void) => (
+    <button
+      data-testid={testId}
+      onClick={() => {
+        onTap();
+        setShowAll(false);
+        onOpenChange(false);
+      }}
+      className="m-tap mb-2 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+    >
+      <Icon name={icon} size={18} color="var(--m-accent-deep)" />
+      <span className="min-w-0 flex-1">
+        <span className="block text-[14px] font-medium text-ink">{title}</span>
+        <span className="block text-[11px] leading-snug text-ink-4">{sub}</span>
+      </span>
+    </button>
+  );
+  const rowList = (items: readonly TransactionRow[], prefix: string) => (
+    <div className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface px-3">
+      {items.map((row) => (
+        <div key={row.id} data-testid={`${prefix}-${row.id}`}>
+          <TxRow tx={row} showDate hideUnreviewed onClick={() => pick(row.id)} />
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <Sheet open={open} onOpenChange={onOpenChange} title={target?.name ?? ''} size="form">
+      {target && (
+        <div className="flex flex-col pt-1" data-testid="counter-fork">
+          {onCreate && door('counter-fork-create', 'plus-circle-outline', t('tx.counterForkCreate'), t('tx.counterForkCreateSub'), onCreate)}
+          {onWait && door('counter-fork-wait', 'clock-outline', t('tx.counterForkWait'), t('tx.counterForkWaitSub'), onWait)}
+          {near.length > 0 && (
+            <>
+              <div className="m-cap mt-2 mb-1 px-1">{t('tx.counterForkPickHint')}</div>
+              {rowList(near, 'counter-dup')}
+            </>
+          )}
+          {sameSign.length > 0 && (
+            <>
+              <div className="m-cap mt-2 mb-1 px-1">{t('tx.counterForkPickHint')}</div>
+              <p className="px-1 pb-1 text-[12px] leading-snug text-ink-4" data-testid="counter-samesign-hint">
+                {t('tx.counterSameSignHint')}
+              </p>
+              {rowList(sameSign, 'counter-dup')}
+            </>
+          )}
+          {!showAll && (
             <button
-              data-testid="counter-fork-create"
-              onClick={() => choose({ id: forkFor.id, type: forkFor.type })}
-              className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
+              data-testid="counter-fork-showall"
+              onClick={() => setShowAll(true)}
+              className="m-tap mt-2 w-full border-none bg-transparent px-1 py-2 text-left text-[13px] font-medium text-accent-deep"
             >
-              <Icon name="plus-circle-outline" size={18} color="var(--m-accent-deep)" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[14px] font-medium text-ink">{t('tx.counterForkCreate')}</span>
-                <span className="block text-[11px] leading-snug text-ink-4">{t('tx.counterForkCreateSub')}</span>
-              </span>
+              {t('tx.counterForkShowAll')}
             </button>
-            <div className="m-cap mt-4 mb-1 px-1">{t('tx.counterForkPickHint')}</div>
-            <div className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface px-3">
-              {forkDuplicates.map((row) => (
-                <div key={row.id} data-testid={`counter-dup-${row.id}`}>
-                  <TxRow tx={row} showDate hideUnreviewed onClick={() => choose({ id: forkFor.id, type: forkFor.type }, { txId: row.id })} />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </Sheet>
+          )}
+          {showAll && (all.length > 0 ? (
+            <div className="mt-2">{rowList(all, 'counter-open')}</div>
+          ) : (
+            <p className="px-1 pt-2 text-[13px] text-ink-4" data-testid="counter-fork-empty">
+              {t('tx.counterForkNoRows')}
+            </p>
+          ))}
+        </div>
+      )}
     </Sheet>
   );
 }

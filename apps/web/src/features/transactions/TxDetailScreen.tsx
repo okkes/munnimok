@@ -36,7 +36,7 @@ import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { CatsSheet, catsAroundSingle, partCatsApplyPatch } from './PartCatsSheet';
 import type { CatsApplyEntry } from './PartCatsSheet';
-import { CounterpartySheet } from './TxKindSheet';
+import { CounterMatchSheet, CounterpartySheet } from './TxKindSheet';
 import { TxFormSheet } from './TxFormSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf } from '@/domain/txKind';
@@ -294,23 +294,33 @@ async function deleteManualTxRow(
 }
 
 /** the create-counter heal door (S3776: out of the screen): mint the
- *  manual counter's missing leg for a pre-engine link, then peer to it */
+ *  manual counter's missing leg for a pre-engine link, then peer to it.
+ *  #237: an already-minted but UNPAIRED leg (an old unlink left it
+ *  orphaned) gets its reciprocal back too — the door used to no-op. */
 async function healMissingMirror(
   store: ReturnType<typeof useData>['store'],
   repo: ReturnType<typeof useData>['repo'],
   tx: SpaceTx,
 ): Promise<void> {
   const mid = await mintMirrorForExistingLink(store, repo, tx, tx.linkedAccountId, tx.transferPeerId);
-  if (mid) await writeTxTransform(repo, tx, { transferPeerId: mid });
+  if (!mid) return;
+  await writeTxTransform(repo, tx, { transferPeerId: mid });
+  const mirror = await store.get('transaction', mid);
+  if (mirror?.deleted === 0 && !mirror.transferPeerId) {
+    await writeTxTransform(repo, mirror, { transferPeerId: tx.id });
+  }
 }
 
-/** where this transfer stands with its other leg (arc 1 pair UX) */
+/** where this transfer stands with its other leg (arc 1 pair UX).
+ *  #237: ANY peered row shows its pair — the wallet story's purchase
+ *  leg keeps its own category and type, so the old transfer-kind gate
+ *  would have hidden the pairing from the side that matters most. */
 function transferPairState(
   tx: Pick<SpaceTx, 'txType' | 'linkedAccountId' | 'transferPeerId'>,
   linkedAccount: { source: string } | undefined,
 ): 'peered' | 'awaiting' | 'offerCreate' | null {
-  if (kindOf(tx.txType) !== 'transfer' || !tx.linkedAccountId) return null;
   if (tx.transferPeerId) return 'peered';
+  if (kindOf(tx.txType) !== 'transfer' || !tx.linkedAccountId) return null;
   if (!linkedAccount) return null;
   // manual counter: the other side can be created right here; a feed
   // counter's real row arrives with the bank — the matcher claims it
@@ -1502,6 +1512,7 @@ function DetailAccountBlock({
   onOpenPeer,
   onUnpair,
   onEditCounter,
+  onPickCounterpart,
 }: Readonly<{
   tx: SpaceTx;
   account: AccountRow | undefined;
@@ -1516,6 +1527,9 @@ function DetailAccountBlock({
   /** #228: opens the transaction-level counterparty picker; absent =
    *  the row is read-only here (default ledgers, containers hide it) */
   onEditCounter?: () => void;
+  /** #237: opens the counter-match sheet — point the pair at a row that
+   *  already exists on the counter account */
+  onPickCounterpart?: () => void;
 }>) {
   const { t } = useLang();
   const { store, repo } = useData();
@@ -1591,16 +1605,40 @@ function DetailAccountBlock({
       {pairState === 'awaiting' && (
         <div className="px-4 pb-3">
           <Pill testId="tx-detail-awaiting">{t('tx.awaitingCounterpart')}</Pill>
+          {/* #237 (user): the wallet's other side may never arrive from
+              the feed — point at the row that is already there */}
+          {onPickCounterpart && (
+            <button
+              data-testid="tx-detail-pick-counter"
+              onClick={onPickCounterpart}
+              className="m-tap mt-1 block w-full border-none bg-transparent p-0 text-left text-[13px] font-medium text-accent-deep"
+            >
+              {t('tx.pickCounterpart', { name: linkedAccount?.name ?? '' })}
+            </button>
+          )}
         </div>
       )}
       {pairState === 'offerCreate' && (
-        <button
-          data-testid="tx-detail-create-counter"
-          onClick={() => void healMissingMirror(store, repo, tx).catch(() => undefined)}
-          className="m-tap w-full border-none bg-transparent px-4 pb-3 text-left text-[13px] font-medium text-accent-deep"
-        >
-          {t('tx.createCounterpart', { name: linkedAccount?.name ?? '' })}
-        </button>
+        <div className="px-4 pb-3">
+          {/* #237: creating is one option — pointing at the existing row
+              is the other, and neither happens silently anymore */}
+          <button
+            data-testid="tx-detail-create-counter"
+            onClick={() => void healMissingMirror(store, repo, tx).catch(() => undefined)}
+            className="m-tap block w-full border-none bg-transparent p-0 text-left text-[13px] font-medium text-accent-deep"
+          >
+            {t('tx.createCounterpart', { name: linkedAccount?.name ?? '' })}
+          </button>
+          {onPickCounterpart && (
+            <button
+              data-testid="tx-detail-pick-counter"
+              onClick={onPickCounterpart}
+              className="m-tap mt-1 block w-full border-none bg-transparent p-0 text-left text-[13px] font-medium text-accent-deep"
+            >
+              {t('tx.pickCounterpart', { name: linkedAccount?.name ?? '' })}
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -1625,6 +1663,10 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   // this opens its picker; counterOpen below stays the read-only
   // account INFO sheet the Details row opens
   const [counterPickOpen, setCounterPickOpen] = useState(false);
+  // #237: the unlink confirms + the counter-match sheet (declared with
+  // the other hooks — the `!tx` return below must never reorder them)
+  const [unpairConfirm, setUnpairConfirm] = useState<null | 'mint' | 'default'>(null);
+  const [matchOpen, setMatchOpen] = useState(false);
   const [loanCountBusy, setLoanCountBusy] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   // #211: the split-categories editor — the pencil's door on whole rows
@@ -1741,9 +1783,40 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   // hasn't emitted it yet (a slow liveQuery beat left the peer's
   // transferPeerId dangling — CI-only flake)
   // unpairing releases BOTH legs — one activity entry covers the action
-  const unpair = () => {
+  const releasePair = () => {
     void releasePeerLeg(store, repo, spaceId, tx, allTxs);
     void transform(tx, { transferPeerId: null as never }, 'txLink');
+  };
+  // #237 (user): unlinking asks first when there is something at stake —
+  // a DEFAULT counter resets the whole story, munni's own generated leg
+  // can be removed or kept; a picked/bank pair just releases
+  const unpair = () => {
+    // the deterministic id decides, not the (async) account row — a tap
+    // racing the query must never route a default to the wrong question
+    if (tx.linkedAccountId?.startsWith('defaultacct_')) setUnpairConfirm('default');
+    else if (tx.transferPeerId === mirrorTxId(tx.id)) setUnpairConfirm('mint');
+    else releasePair();
+  };
+  // #237 (user): the unpair question decides the GENERATED row's fate —
+  // the source keeps its counterparty either way (that story ends via
+  // "Remove counterparty"), so the create/pick doors return after.
+  // Keep: the leg becomes an ordinary row on its account, its balance
+  // effect stays; Remove: the leg tombstones and its balance refunds.
+  const keepGeneratedLeg = async () => {
+    const mirror = await store.get('transaction', tx.transferPeerId!);
+    if (mirror?.deleted === 0) {
+      await writeTxTransform(repo, mirror, { linkedAccountId: null as never, transferPeerId: null as never });
+    }
+    await transform(tx, { transferPeerId: null as never }, 'txLink');
+  };
+  const removeGeneratedLeg = async () => {
+    await removeMirrorForDeletedSource(store, repo, tx, tx.linkedAccountId);
+    await transform(tx, { transferPeerId: null as never }, 'txLink');
+  };
+  // #237: point the pair at a row that already exists on the counter side
+  const pairWithPicked = async (pickedTxId: string) => {
+    await transform(tx, { transferPeerId: pickedTxId }, 'txLink');
+    await pairWithExistingRow(store, repo, tx, pickedTxId);
   };
   // #221: a DEFAULT account's ledger is system-managed — its rows (the
   // minted mirror legs and balance adjustments) are read-only; they are
@@ -2030,6 +2103,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
               ? undefined
               : () => setCounterPickOpen(true)
           }
+          onPickCounterpart={onDefaultLedger ? undefined : () => setMatchOpen(true)}
         />
 
         {/* block: categories — ONE edit affordance for the whole block
@@ -2216,6 +2290,70 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         onChoose={(picked, peer) => applyCounterPick(picked, peer)}
         onDetach={tx.linkedAccountId ? removeCounter : undefined}
       />
+      {/* #237: point the existing link at the row already on the counter
+          side — same-sign wallet rows included (user decision "a") */}
+      {linkedAccount && (
+        <CounterMatchSheet
+          open={matchOpen}
+          onOpenChange={setMatchOpen}
+          target={{ id: linkedAccount.id, name: linkedAccount.name }}
+          anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
+          rows={allTxs ?? []}
+          onPick={(pickedTxId) => void pairWithPicked(pickedTxId)}
+        />
+      )}
+      {/* #237 (user): unlinking a DEFAULT counter resets the story — say
+          so before doing it */}
+      <DangerConfirmSheet
+        open={unpairConfirm === 'default'}
+        onOpenChange={(next) => {
+          if (!next) setUnpairConfirm(null);
+        }}
+        title={t('tx.unlinkDefaultTitle')}
+        body={t('tx.unlinkDefaultBody')}
+        confirmLabel={t('tx.unlinkContinue')}
+        cooldown={0}
+        onConfirm={() => {
+          setUnpairConfirm(null);
+          removeCounter();
+        }}
+        testId="tx-unlink-default"
+      />
+      {/* #237 (user): munni generated the other leg — removing the link
+          asks what happens to it */}
+      <Sheet
+        open={unpairConfirm === 'mint'}
+        onOpenChange={(next) => {
+          if (!next) setUnpairConfirm(null);
+        }}
+        title={t('tx.unpairMintTitle')}
+        size="form"
+      >
+        <div className="flex flex-col gap-3 pt-1" data-testid="tx-unpair-mint">
+          <p className="text-[14px] leading-relaxed text-ink-2">
+            {t('tx.unpairMintBody', { name: linkedAccount?.name ?? '' })}
+          </p>
+          <Button
+            data-testid="tx-unpair-remove"
+            onClick={() => {
+              setUnpairConfirm(null);
+              void removeGeneratedLeg();
+            }}
+          >
+            {t('tx.unpairRemove')}
+          </Button>
+          <Button
+            variant="ghost"
+            data-testid="tx-unpair-keep"
+            onClick={() => {
+              setUnpairConfirm(null);
+              void keepGeneratedLeg();
+            }}
+          >
+            {t('tx.unpairKeep')}
+          </Button>
+        </div>
+      </Sheet>
       {/* #211: the split-TRANSACTION flow — the values editor whose Done
           only STAGES; nothing is written until the completion deck's
           Apply lands the whole split */}

@@ -13,15 +13,24 @@ import { autoSubFor, stampMovementSub } from '@/domain/categories';
  * side ever mints. Balances stay untouched: the picked row was already
  * part of its account's declared reality ("nothing is minted, nothing
  * moves").
+ *
+ * #237 (user decision "a"): a SAME-SIGN pick is the wallet story — the
+ * source (the bank top-up) is the transfer leg, the picked row IS the
+ * real purchase and keeps its own category and type. Only the pairing
+ * rides onto it; the overviews keep counting the purchase, once.
  */
 export async function pairWithExistingRow(
   store: StorageBackend,
   repo: Repo,
-  source: { id: string; accountId: string },
+  source: { id: string; accountId: string; amountCents?: number },
   pickedTxId: string,
 ): Promise<void> {
   const picked = await store.get('transaction', pickedTxId);
   if (picked?.deleted !== 0) return;
+  if (source.amountCents !== undefined && Math.sign(picked.amountCents) === Math.sign(source.amountCents)) {
+    await writeTxTransform(repo, picked, { transferPeerId: source.id });
+    return;
+  }
   const account = await store.get('account', picked.accountId);
   const stamp = account?.deleted === 0 ? accountStamp(account.type) : undefined;
   // #133 r5: an unstamped picked row files by ITS counter's kind (the

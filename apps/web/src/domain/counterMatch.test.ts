@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { counterDuplicates } from './counterMatch';
+import { counterDuplicates, counterOpenRows, counterSameSignCandidates } from './counterMatch';
 import type { TransactionRow } from '@/db/types';
 
 const base = (over: Partial<TransactionRow>): TransactionRow =>
@@ -40,5 +40,29 @@ describe('counterDuplicates (#133 B pick-existing)', () => {
       'exact-close', 'exact-far', 'near-amount',
     ]);
     expect(counterDuplicates(rows, 'counter', anchor, 2)).toHaveLength(2);
+  });
+});
+
+describe('#237: the wallet story + the browse-all door', () => {
+  it('counterSameSignCandidates offers SAME-sign near rows — the wallet purchase behind a bank debit', () => {
+    const rows: TransactionRow[] = [
+      base({ id: 'purchase', amountCents: -5240 }),
+      base({ id: 'opposite' }),
+      base({ id: 'linked-out', amountCents: -5240, linkedAccountId: 'x' }),
+      base({ id: 'far', amountCents: -9000 }),
+    ];
+    expect(counterSameSignCandidates(rows, 'counter', anchor).map((row) => row.id)).toEqual(['purchase']);
+  });
+
+  it('counterOpenRows lists every open row newest first — linked, peered and containers filtered out', () => {
+    const rows: TransactionRow[] = [
+      base({ id: 'old', date: '2026-01-05', amountCents: -100 }),
+      base({ id: 'new', date: '2026-03-01', amountCents: 900 }),
+      base({ id: 'linked', linkedAccountId: 'x' }),
+      base({ id: 'peered', transferPeerId: 'p' }),
+      base({ id: 'container', splits: [{ catId: 'a', amountCents: 100 }, { catId: 'b', amountCents: 5140 }] }),
+      base({ id: anchor.id }),
+    ];
+    expect(counterOpenRows(rows, 'counter', anchor.id).map((row) => row.id)).toEqual(['new', 'old']);
   });
 });
