@@ -34,6 +34,7 @@ import { recurringAmountMatches } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
+import { pairWithExistingRow } from '@/application/counterPair';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText, orDefaultLabel, txTitle } from '@/lib/text';
@@ -117,6 +118,27 @@ function replacing<K extends string, T>(key: K, next: T | undefined, had: boolea
   return had ? ({ [key]: null } as unknown as Partial<Record<K, T>>) : {};
 }
 
+/** #237 r2: the picked rows' reciprocals land AFTER the confirm write —
+ *  the row-level pick and each part's pick pair their existing row
+ *  (#133 B, per pick). Module-level for S3776. */
+async function pairReviewPicks(
+  deps: { store: ReturnType<typeof useData>['store']; repo: ReturnType<typeof useData>['repo']; spaceId: string },
+  tx: SpaceTx,
+  pickedPeerTxId: string | undefined,
+  partPeers: readonly TxSplit[],
+): Promise<void> {
+  if (pickedPeerTxId) await pairWithExistingRow(deps.store, deps.repo, deps.spaceId, tx, pickedPeerTxId);
+  for (const part of partPeers) {
+    await pairWithExistingRow(
+      deps.store,
+      deps.repo,
+      deps.spaceId,
+      { id: tx.id, accountId: tx.accountId, amountCents: (tx.amountCents < 0 ? -1 : 1) * Math.abs(part.amountCents) },
+      part.transferPeerId!,
+    );
+  }
+}
+
 /** one confirm: the whole DRAFT lands in one write (+ the bulk selection) */
 async function writeConfirmation(args: {
   tx: SpaceTx;
@@ -129,6 +151,8 @@ async function writeConfirmation(args: {
    *  draft links the space's default in the SAME write, so the choke
    *  mints the counter leg right here */
   defaultLinkId?: string;
+  /** #237 r2: the EXISTING row the user pointed at (pick-existing) */
+  pairPeerId?: string;
 }): Promise<void> {
   const { draft } = args;
   // draft-cleared fields on a tx that HAD them need an explicit null —
@@ -148,6 +172,9 @@ async function writeConfirmation(args: {
     ...splitsField,
     ...catsField,
     ...linkField,
+    // #237 r2: a pick-existing peer rides the SAME write — the choke
+    // sees the incoming peer and mints nothing
+    ...(args.pairPeerId ? { transferPeerId: args.pairPeerId } : {}),
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
     ...(args.eventId ? { eventId: args.eventId } : {}),
   }, null); // confirm logs its own richer 'review' line (with bulk count)
@@ -176,7 +203,12 @@ function catsForSibling(item: SpaceTx, entries: TxSplitCat[]): TxSplitCat[] | un
  *  that doesn't). A partition travels whole: parts clear a sibling's
  *  spread and vice versa (#211 — the two never mix on one row). */
 function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined, defaultLinkId?: string) {
-  const splits = draft.splits?.length ? resolveSplitsFor(item.amountCents, draft.splits) : undefined;
+  // #237 r2: a pointed-at EXISTING row is specific to ONE part — a
+  // sibling's copy must never point at the same row (bulk is disabled
+  // while a pick stands; this guards every other path)
+  const splits = draft.splits?.length
+    ? resolveSplitsFor(item.amountCents, draft.splits).map((s) => ({ ...s, transferPeerId: undefined }))
+    : undefined;
   const catEntries = !splits && draft.cats?.length ? catsForSibling(item, draft.cats) : undefined;
   const siblingType = kindOf(draft.txType) === 'standard' ? standardTypeFor(item.amountCents) : draft.txType;
   const linkedId = draft.linkedAccountId ?? defaultLinkId;
@@ -414,6 +446,7 @@ export function ReviewPartDeck({
   attention = false,
   onOpenValues,
   onSplits,
+  onPickExisting,
 }: Readonly<{
   /** the split being told — a staged draft's or a stored row's */
   splits: readonly TxSplit[] | undefined;
@@ -430,6 +463,9 @@ export function ReviewPartDeck({
   attention?: boolean;
   onOpenValues: () => void;
   onSplits: (next: TxSplit[]) => void;
+  /** #237 r2 (review): a part pointed at an EXISTING row — the screen
+   *  may warn (bulk update turns off) before `stage` runs */
+  onPickExisting?: (stage: () => void) => void;
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -675,17 +711,28 @@ export function ReviewPartDeck({
           counterPart && specialCatType(counterPart.catId) ? (defaultFamilyFor(counterPart.catId) ?? undefined) : undefined
         }
         counterTypes={counterPart && specialCatType(counterPart.catId) ? counterTypesFor(counterPart.catId) : undefined}
-        onChoose={(account) => {
+        // #237 r2 (user): each split part gets the fork too — the anchor
+        // carries the PART's signed money so twins match per part
+        anchor={
+          counterPart
+            ? { id: tx.id, amountCents: (tx.amountCents < 0 ? -1 : 1) * Math.abs(counterPart.amountCents), date: tx.date }
+            : undefined
+        }
+        onChoose={(account, peer) => {
           if (counterForIdx === null) return;
-          const part = parts[counterForIdx];
+          const index = counterForIdx;
+          const part = parts[index];
           const derived = movementCatFor(account.type, (tx.amountCents < 0 ? -1 : 1) * Math.abs(part.amountCents));
-          patchPart(counterForIdx, {
-            catId: derived,
-            txType: specialCatType(derived),
-            linkedAccountId: account.id,
-            transferPeerId: undefined,
-            cats: catsAroundSingle(part, derived),
-          });
+          const stage = () =>
+            patchPart(index, {
+              catId: derived,
+              txType: specialCatType(derived),
+              linkedAccountId: account.id,
+              transferPeerId: peer?.txId,
+              cats: catsAroundSingle(part, derived),
+            });
+          if (peer && onPickExisting) onPickExisting(stage);
+          else stage();
         }}
         onDetach={
           counterPart?.linkedAccountId
@@ -1209,6 +1256,11 @@ export function ReviewScreen() {
   const [counterOpen, setCounterOpen] = useState(false);
   const counterFallback = useRef<ReviewDraft | null>(null);
   const counterChosen = useRef(false);
+  // #237 r2: a pick pointed at an EXISTING row — specific to this card,
+  // so the bulk offer stands down while it does. The warning asks first
+  // when similar transactions were about to ride along.
+  const [pickedPeer, setPickedPeer] = useState<{ txId: string; linkedId: string } | null>(null);
+  const [pickWarn, setPickWarn] = useState<{ n: number; stage: () => void } | null>(null);
   // per-visit only (user ruling): mid-review side steps happen in sheets
   // that keep the screen mounted, so state survives those — but leaving
   // review and coming back later starts the deck from the top again
@@ -1391,7 +1443,14 @@ export function ReviewScreen() {
     setDescExpanded(false);
     setPartsAttention(false);
     setSplitResetOpen(false);
+    setPickedPeer(null);
+    setPickWarn(null);
   });
+  // the pick is bound to ITS counter account — re-picking or detaching
+  // the counterparty (or the editor clearing the link) drops it
+  useEffect(() => {
+    if (pickedPeer && draft?.linkedAccountId !== pickedPeer.linkedId) setPickedPeer(null);
+  }, [draft?.linkedAccountId, pickedPeer]);
   // select every similar item by default. Keyed on MEMBERSHIP, not array
   // identity: the native SQL backend re-emits unchanged rows every sync
   // cycle, and an identity-keyed reset kept re-arming boxes the user had
@@ -1527,18 +1586,25 @@ export function ReviewScreen() {
     const defaultLinkId = bareMovementFamily && bareMovementFamily !== 'transfer'
       ? await ensureDefaultAccount(store, repo, spaceId, bareMovementFamily)
       : undefined;
+    // #237 r2: a pick-existing (row-level or on any part) is specific to
+    // THIS transaction — the bulk apply stands down entirely
+    const partPeers = (draft.splits ?? []).filter((s) => s.transferPeerId && s.catId !== REIMBURSED_ID);
+    const pickSpecific = !!pickedPeer || partPeers.length > 0;
+    const bulk = pickSpecific ? [] : similar.filter((s) => bulkSelected.has(s.id));
     await writeConfirmation({
       tx,
       draft,
       recurringId: container && !isLoanCounter ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined,
       eventId: container ? (eventPick ?? undefined) : undefined,
-      bulk: similar.filter((s) => bulkSelected.has(s.id)),
+      bulk,
       transform,
       defaultLinkId,
+      pairPeerId: pickedPeer?.txId,
     });
+    await pairReviewPicks({ store, repo, spaceId }, tx, pickedPeer?.txId, partPeers);
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
-    const bulkN = similar.filter((s) => bulkSelected.has(s.id)).length;
+    const bulkN = bulk.length;
     void logActivity(store, repo, spaceId, 'review', bulkN ? `${txTitle(tx)} +${bulkN}` : txTitle(tx));
     hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
   };
@@ -1731,10 +1797,18 @@ export function ReviewScreen() {
                 attention={partsAttention}
                 onOpenValues={() => setSplitOpen(true)}
                 onSplits={(next) => setStagedDraft(withSplits(draft, next))}
+                onPickExisting={(stage) => {
+                  if (similar.length > 0) setPickWarn({ n: similar.length, stage });
+                  else stage();
+                }}
               />
             )}
 
-            <BulkConfirmSection similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
+            {/* #237 r2: a standing pick-existing silences the bulk offer —
+                it points at ONE row, siblings can't ride along */}
+            {!pickedPeer && !(draft?.splits ?? []).some((s) => s.transferPeerId) && (
+              <BulkConfirmSection similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
+            )}
             </div>
 
             {/* mobile: pinned to the thumb at the bottom; lg: attached to the card */}
@@ -1843,6 +1917,36 @@ export function ReviewScreen() {
           </Button>
         </div>
       </Sheet>
+      {/* #237 r2 (user): pointing at an EXISTING counter transaction
+          turns the pending bulk update off — the other siblings'
+          counterparts can't be predicted; creating new legs bulk-applies
+          fine. The sheet asks before the pick lands. */}
+      <Sheet
+        open={pickWarn !== null}
+        onOpenChange={(next) => {
+          if (!next) setPickWarn(null);
+        }}
+        title={t('review.pickBulkTitle')}
+        size="form"
+      >
+        <p className="pb-4 text-[13px] leading-relaxed text-ink-2" data-testid="review-pick-warn">
+          {t('review.pickBulkBody', { n: pickWarn?.n ?? 0 })}
+        </p>
+        <div className="flex flex-col gap-2">
+          <Button
+            data-testid="review-pick-continue"
+            onClick={() => {
+              pickWarn?.stage();
+              setPickWarn(null);
+            }}
+          >
+            {t('review.pickBulkGo')}
+          </Button>
+          <Button variant="outline" data-testid="review-pick-cancel" onClick={() => setPickWarn(null)}>
+            {t('action.cancel')}
+          </Button>
+        </div>
+      </Sheet>
       {tx && draft && (
         <CounterpartySheet
           open={counterOpen}
@@ -1861,9 +1965,20 @@ export function ReviewScreen() {
           currentLinkedId={draft.linkedAccountId}
           defaultFamily={askDefaultFamily(counterAskCat)}
           counterTypes={askCounterTypes(counterAskCat)}
-          onChoose={(account) => {
+          // #237 r2 (user): review gets the same fork as the detail —
+          // create the counter leg (bulk update still applies), link and
+          // wait for the bank, or point at an EXISTING row
+          anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
+          onChoose={(account, peer) => {
             counterChosen.current = true;
-            setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));
+            const stage = () => {
+              setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));
+              setPickedPeer(peer ? { txId: peer.txId, linkedId: account.id } : null);
+            };
+            // pointing at ONE existing row is specific to this card — a
+            // pending bulk offer can't ride along, so it asks first
+            if (peer && similar.length > 0) setPickWarn({ n: similar.length, stage });
+            else stage();
           }}
           // #228 feedback: the card row's remove door — the counterparty
           // and the category are one fact, so removal resets the pick

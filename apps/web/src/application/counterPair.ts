@@ -1,6 +1,6 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import { writeTxTransform } from '@/db/joined';
+import { visibleTransactions, writeTxTransform, type SpaceTx } from '@/db/joined';
 import { accountStamp, movementCatFor } from '@/domain/txType';
 import { autoSubFor, stampMovementSub } from '@/domain/categories';
 
@@ -18,14 +18,26 @@ import { autoSubFor, stampMovementSub } from '@/domain/categories';
  * source (the bank top-up) is the transfer leg, the picked row IS the
  * real purchase and keeps its own category and type. Only the pairing
  * rides onto it; the overviews keep counting the purchase, once.
+ *
+ * #237 r2: the picked row MUST be resolved as the space sees it (the
+ * joined view). A bare `store.get` returns the RAW feed-space row,
+ * and writeTxTransform then writes the reciprocal onto the raw row —
+ * which every reader ignores (the overlay owns transferPeerId on feed
+ * rows). That silent void made every bank-fed pick a one-way pair:
+ * the source pointed at the purchase, the purchase knew nothing, and
+ * the match sheet kept offering it (user screenshots, 2026-08-16).
  */
 export async function pairWithExistingRow(
   store: StorageBackend,
   repo: Repo,
+  spaceId: string,
   source: { id: string; accountId: string; amountCents?: number },
   pickedTxId: string,
+  rows?: SpaceTx[],
 ): Promise<void> {
-  const picked = await store.get('transaction', pickedTxId);
+  const picked =
+    (rows ?? []).find((row) => row.id === pickedTxId) ??
+    (await visibleTransactions(store, spaceId)).find((row) => row.id === pickedTxId);
   if (picked?.deleted !== 0) return;
   if (source.amountCents !== undefined && Math.sign(picked.amountCents) === Math.sign(source.amountCents)) {
     await writeTxTransform(repo, picked, { transferPeerId: source.id });

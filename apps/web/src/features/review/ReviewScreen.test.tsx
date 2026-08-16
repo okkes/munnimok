@@ -70,6 +70,59 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.queryByTestId('review-cat-counter-savingDeposit')).toBeNull();
   }, 15_000);
 
+  it('#237 r2: review can point at an EXISTING row — the bulk offer warns, stands down, and the pair lands both ways', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revpick'), { trackOutbox: false });
+    // two same-merchant cards (the bulk offer's fuel), dated OLDEST so
+    // they lead the queue; the pickable twin lives on the savings pot
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rv1', {
+      accountId: 'demo_main', date: '2026-01-02', amountCents: -500, currency: 'EUR',
+      merchant: 'Coffee Corner', needsReview: 1,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rv2', {
+      accountId: 'demo_main', date: '2026-01-03', amountCents: -500, currency: 'EUR',
+      merchant: 'Coffee Corner', needsReview: 1,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rvc', {
+      accountId: 'demo_save', date: '2026-01-02', amountCents: 500, currency: 'EUR',
+      merchant: 'Pot side', catId: 'uncategorized', needsReview: 0,
+    });
+    seed.close();
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    await screen.findByTestId('review-bulk'); // the sibling offer is up
+
+    fireEvent.click(screen.getByTestId('review-counter-row'));
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    // the fork offers the pot's twin; picking it while a bulk offer
+    // stands asks first — "the other counterparts can't be predicted"
+    fireEvent.click((await screen.findByTestId('counter-dup-rvc')).querySelector('button')!);
+    await screen.findByTestId('review-pick-warn');
+    fireEvent.click(screen.getByTestId('review-pick-continue'));
+
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
+    // the pick silenced the bulk section — it points at ONE row
+    expect(screen.queryByTestId('review-bulk')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const source = await db.transactions.get('rv1');
+      expect(source?.needsReview).toBe(0);
+      expect(source?.linkedAccountId).toBe('demo_save');
+      expect(source?.transferPeerId).toBe('rvc');
+      // the reciprocal landed; nothing was minted
+      expect((await db.transactions.get('rvc'))?.transferPeerId).toBe('rv1');
+      // …and the sibling did NOT ride along (bulk stood down)
+      expect((await db.transactions.get('rv2'))?.needsReview).toBe(1);
+    }, { timeout: 8000 });
+    db.close();
+  }, 25_000);
+
   it('#228 feedback: counter-FIRST from the card row — the pick fills the special category by itself', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
@@ -77,6 +130,8 @@ describe('ReviewScreen (demo identity)', () => {
     // category will be selected automatically" (user, issue comment)
     fireEvent.click(screen.getByTestId('review-counter-row'));
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    // #237 r2: review forks like the detail now — create is explicit
+    fireEvent.click(await screen.findByTestId('counter-fork-create'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
     expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside');
   }, 15_000);

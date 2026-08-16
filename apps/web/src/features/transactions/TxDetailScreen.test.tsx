@@ -4,7 +4,7 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
-import { mirrorTxId, partMirrorSourceId } from '@/domain/feedIds';
+import { accountLinkId, mirrorTxId, partMirrorSourceId, txMetaId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
@@ -1819,6 +1819,138 @@ describe('detail sections customize (user request)', () => {
     renderApp('/transactions/wp1');
     await screen.findByTestId('screen-tx-detail');
     await screen.findByTestId('tx-detail-peer');
+    db.close();
+  }, 25_000);
+
+  it('#237 r2: picking a FEED-JOINED row writes the reciprocal into the OVERLAY, never the raw row', async () => {
+    // the user's one-way pair: pairWithExistingRow resolved the picked
+    // row via store.get → the RAW feed row → writeTxTransform wrote the
+    // reciprocal onto data every reader ignores. The purchase kept
+    // reading "no counterpart" and the sheet kept offering it.
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('feedpair'), { trackOutbox: false });
+    const FEED = 'feed_wl_237';
+    // the bank-fed wallet lives in its own FEED space, joined via the link
+    await seedRepo.upsert('account', FEED, 'wlacct', {
+      name: 'PayPal feed', type: 'checking', source: 'gocardless', currency: 'EUR', balanceCents: 0,
+    });
+    await seedRepo.upsert('accountLink', DEMO_SPACE_ID, accountLinkId(DEMO_SPACE_ID, FEED), {
+      feedSpaceId: FEED, accountId: 'wlacct',
+    });
+    // the raw purchase, as the ingest writes it (no opinion fields)
+    await seedRepo.upsert('transaction', FEED, 'fp1', {
+      accountId: 'wlacct', date: '2026-07-14', amountCents: -799, currency: 'EUR', merchant: 'Axosoft, LLC',
+    });
+    // the bank top-up, already linked to the wallet — Awaiting counterpart
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'bankf', {
+      accountId: 'demo_main', date: '2026-07-14', amountCents: -799, currency: 'EUR',
+      merchant: 'PayPal top-up', catId: 'transferOut', txType: 'transfer', needsReview: 0, linkedAccountId: 'wlacct',
+    });
+    seed.close();
+    cleanup();
+    renderApp('/transactions/bankf');
+    await screen.findByTestId('screen-tx-detail');
+    await screen.findByTestId('tx-detail-awaiting');
+    fireEvent.click(await screen.findByTestId('tx-detail-pick-counter'));
+    await screen.findByTestId('counter-samesign-hint');
+    fireEvent.click((await screen.findByTestId('counter-dup-fp1')).querySelector('button')!);
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      expect((await db.transactions.get('bankf'))?.transferPeerId).toBe('fp1');
+      // THE fix: the reciprocal lands in the space's overlay…
+      expect((await db.txMeta.get(txMetaId(DEMO_SPACE_ID, 'fp1')))?.transferPeerId).toBe('bankf');
+      // …and the raw feed row stays raw (per-space transformation rule)
+      expect((await db.transactions.get('fp1'))?.transferPeerId).toBeFalsy();
+    }, { timeout: 8000 });
+
+    // the joined purchase now RENDERS as peered — the rich card carries
+    // the other leg's face — and its pick door is gone
+    cleanup();
+    renderApp('/transactions/fp1');
+    await screen.findByTestId('screen-tx-detail');
+    const peerRow = await screen.findByTestId('tx-detail-peer');
+    await waitFor(() => expect(peerRow.textContent).toContain('PayPal top-up'));
+    expect(peerRow.textContent).toContain('2026-07-14');
+    db.close();
+  }, 25_000);
+
+  it('#237 r2: re-picking on the SAME counter account still pairs (linkChanged=false path)', async () => {
+    // the user's screenshot flow: the row already links Paypal, the
+    // property row re-opens the ask and points at a row — the pick used
+    // to write NOTHING because only link changes carried the peer
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('samepick'), { trackOutbox: false });
+    await seedRepo.upsert('account', DEMO_SPACE_ID, 'wl3', {
+      name: 'Wallet 3', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rp1', {
+      accountId: 'demo_main', date: '2026-07-22', amountCents: -4367, currency: 'EUR',
+      merchant: 'PayPal Europe', catId: 'transferOut', txType: 'transfer', needsReview: 0, linkedAccountId: 'wl3',
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rp2', {
+      accountId: 'wl3', date: '2026-07-21', amountCents: -4356, currency: 'EUR',
+      merchant: 'Axosoft, LLC', catId: 'consumption', txType: 'expense', needsReview: 0,
+    });
+    seed.close();
+    cleanup();
+    renderApp('/transactions/rp1');
+    await screen.findByTestId('screen-tx-detail');
+    await waitFor(() =>
+      expect(screen.getByTestId('tx-detail-linked-account').textContent).toContain('Wallet 3'), { timeout: 8000 });
+    // the PROPERTY row re-opens the ask on the already-linked account
+    fireEvent.click(screen.getByTestId('tx-detail-counter-row'));
+    fireEvent.click(await screen.findByTestId('counter-pick-wl3'));
+    await screen.findByTestId('counter-samesign-hint');
+    fireEvent.click((await screen.findByTestId('counter-dup-rp2')).querySelector('button')!);
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      expect((await db.transactions.get('rp1'))?.transferPeerId).toBe('rp2');
+      expect((await db.transactions.get('rp2'))?.transferPeerId).toBe('rp1');
+      // the purchase keeps its own story (decision "a")
+      expect((await db.transactions.get('rp2'))?.catId).toBe('consumption');
+    }, { timeout: 8000 });
+    db.close();
+  }, 25_000);
+
+  it('#237 r2: a ONE-WAY pair renders from the pointed side, heals its reciprocal, and stops being offered', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('oneway'), { trackOutbox: false });
+    await seedRepo.upsert('account', DEMO_SPACE_ID, 'wl4', {
+      name: 'Wallet 4', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0,
+    });
+    // the stored one-way state the old bug left behind: the bank leg
+    // points at the purchase, the purchase knows nothing
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'owb', {
+      accountId: 'demo_main', date: '2026-07-17', amountCents: -4356, currency: 'EUR',
+      merchant: 'PayPal Europe', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      linkedAccountId: 'wl4', transferPeerId: 'owp',
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'owp', {
+      accountId: 'wl4', date: '2026-07-16', amountCents: -4356, currency: 'EUR',
+      merchant: 'Axosoft, LLC', catId: 'consumption', txType: 'expense', needsReview: 0,
+    });
+    seed.close();
+    cleanup();
+    // opening the POINTED side shows the pair (reverse read) and heals it
+    renderApp('/transactions/owp');
+    await screen.findByTestId('screen-tx-detail');
+    const peerRow = await screen.findByTestId('tx-detail-peer');
+    expect(peerRow.textContent).toContain('PayPal Europe');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      expect((await db.transactions.get('owp'))?.transferPeerId).toBe('owb');
+    }, { timeout: 8000 });
     db.close();
   }, 25_000);
 });

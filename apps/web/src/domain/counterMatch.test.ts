@@ -65,4 +65,24 @@ describe('#237: the wallet story + the browse-all door', () => {
     ];
     expect(counterOpenRows(rows, 'counter', anchor.id).map((row) => row.id)).toEqual(['new', 'old']);
   });
+
+  it('#237 r2: a row some OTHER row (or split part) points at is never offered — one-way pairs are spoken for', () => {
+    // the user's screenshot: the sheet offered a transaction that was
+    // already the other half of a one-way pair (its own reciprocal was
+    // missing) — being POINTED AT must disqualify it everywhere
+    const rows: TransactionRow[] = [
+      base({ id: 'free', amountCents: -5240 }),
+      base({ id: 'taken', amountCents: -5240 }),
+      base({ id: 'taken-by-part', amountCents: -5240 }),
+      // the pointing rows live on ANOTHER account (the bank side)
+      base({ id: 'bank-leg', accountId: 'bank', amountCents: -5240, transferPeerId: 'taken' }),
+      base({
+        id: 'bank-container', accountId: 'bank', amountCents: -5240,
+        splits: [{ id: 'p1', catId: 'a', amountCents: 5240, transferPeerId: 'taken-by-part' } as never],
+      }),
+    ];
+    expect(counterSameSignCandidates(rows, 'counter', anchor).map((row) => row.id)).toEqual(['free']);
+    expect(counterOpenRows(rows, 'counter', anchor.id).map((row) => row.id)).toEqual(['free']);
+    expect(counterDuplicates(rows, 'counter', { ...anchor, amountCents: 5240 }).map((row) => row.id)).toEqual(['free']);
+  });
 });

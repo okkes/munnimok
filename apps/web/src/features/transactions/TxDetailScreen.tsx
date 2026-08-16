@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
@@ -314,12 +314,16 @@ async function healMissingMirror(
 /** where this transfer stands with its other leg (arc 1 pair UX).
  *  #237: ANY peered row shows its pair — the wallet story's purchase
  *  leg keeps its own category and type, so the old transfer-kind gate
- *  would have hidden the pairing from the side that matters most. */
+ *  would have hidden the pairing from the side that matters most.
+ *  #237 r2: the peer id is the EFFECTIVE one — a one-way pair (the
+ *  other row points here, this one holds nothing yet) still reads as
+ *  peered while the heal writes the reciprocal. */
 function transferPairState(
-  tx: Pick<SpaceTx, 'txType' | 'linkedAccountId' | 'transferPeerId'>,
+  tx: Pick<SpaceTx, 'txType' | 'linkedAccountId'>,
+  effectivePeerId: string | undefined,
   linkedAccount: { source: string } | undefined,
 ): 'peered' | 'awaiting' | 'offerCreate' | null {
-  if (tx.transferPeerId) return 'peered';
+  if (effectivePeerId) return 'peered';
   if (kindOf(tx.txType) !== 'transfer' || !tx.linkedAccountId) return null;
   if (!linkedAccount) return null;
   // manual counter: the other side can be created right here; a feed
@@ -329,19 +333,56 @@ function transferPairState(
 
 /** the pair row: jump to the other leg, or release the link — #221: a
  *  default-ledger mirror keeps the jump but not the release (the link
- *  belongs to the ORIGIN row) */
-function TransferPeerRow({ t, onOpen, onUnpair }: Readonly<{ t: TFunc; onOpen: () => void; onUnpair?: () => void }>) {
+ *  belongs to the ORIGIN row).
+ *  #237 (user): the row reads like a reimbursement record now — who the
+ *  other leg is, when, on which account and for how much — and the tap
+ *  goes STRAIGHT to that transaction (no sheet in between). */
+function TransferPeerRow({
+  t,
+  lang,
+  peer,
+  accountName,
+  onOpen,
+  onUnpair,
+}: Readonly<{
+  t: TFunc;
+  lang: ReturnType<typeof useLang>['lang'];
+  peer: SpaceTx | undefined;
+  accountName: string | undefined;
+  onOpen: () => void;
+  onUnpair?: () => void;
+}>) {
   return (
     <>
       <div className="mx-4 h-px bg-line-2" />
-      <div className="flex w-full items-center gap-3 px-4 py-3 text-[15px]">
+      <div className="flex w-full items-center gap-3 px-4 py-3">
         <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
         <button
           data-testid="tx-detail-peer"
           onClick={onOpen}
-          className="m-tap min-w-0 flex-1 border-none bg-transparent p-0 text-left text-[14px] font-medium text-accent-deep"
+          className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
         >
-          {t('tx.pairedCounterpart')}
+          {peer ? (
+            <>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[10px] font-semibold tracking-wide text-accent-deep uppercase">
+                  {t('tx.pairedCounterpart')}
+                </span>
+                <span className="block truncate text-[14px] text-ink">{txTitle(peer)}</span>
+                <span className="block truncate text-[11px] text-ink-4">
+                  {peer.date}
+                  {accountName ? ` · ${accountName}` : ''}
+                </span>
+              </span>
+              <span className="m-num shrink-0 text-[14px] font-semibold text-ink">
+                {fmtCents(peer.amountCents, peer.currency, lang, { sign: true })}
+              </span>
+            </>
+          ) : (
+            // the other leg lives outside this space's view — the jump
+            // still works, there is just nothing to preview
+            <span className="text-[14px] font-medium text-accent-deep">{t('tx.pairedCounterpart')}</span>
+          )}
         </button>
         {onUnpair && (
           <button
@@ -707,11 +748,15 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
   // #218: the editor OWNS the link story — a BARE entry on a linked row
   // is a detach (the choke retires our mint, the peer releases)
   const linkChanged = (entry.linkedAccountId ?? undefined) !== (tx.linkedAccountId ?? undefined);
+  // #237 r2: a pick can arrive on the SAME account the row already
+  // links (re-picking Paypal to point at a row) — the peer must land
+  // regardless of linkChanged, or the pick writes nothing at all
   const foreignPeer =
-    linkChanged && entry.transferPeerId && entry.transferPeerId !== tx.transferPeerId ? entry.transferPeerId : undefined;
-  // a re-link away from a peered leg releases the old pair first —
-  // a stale peer would keep collapsing the pair in the list
-  const unpeer = linkChanged && !!tx.transferPeerId;
+    entry.transferPeerId && entry.transferPeerId !== tx.transferPeerId ? entry.transferPeerId : undefined;
+  // a re-link away from a peered leg — or a re-pick onto a new peer —
+  // releases the old pair first: a stale peer would keep collapsing
+  // the pair in the list
+  const unpeer = (linkChanged || !!foreignPeer) && !!tx.transferPeerId;
   if (unpeer) void releasePeerLeg(deps.store, deps.repo, deps.spaceId, tx, deps.allTxs);
   let peerField: { transferPeerId?: string | null } = {};
   if (foreignPeer) peerField = { transferPeerId: foreignPeer };
@@ -729,7 +774,7 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
     'txCategory',
   );
   // …and the picked row gets the reciprocal (#133 B's fork, per entry)
-  if (foreignPeer) await pairWithExistingRow(deps.store, deps.repo, tx, foreignPeer);
+  if (foreignPeer) await pairWithExistingRow(deps.store, deps.repo, deps.spaceId, tx, foreignPeer, deps.allTxs);
   // bulk mechanism from the detail too (user request) — unlike review
   // it reaches EVERYTHING of this merchant, reviewed included. The
   // settlement category is never a bulk suggestion (user rule).
@@ -1339,20 +1384,32 @@ function PartDetailBody({
             </span>
           </div>
         )}
+        {/* #237 (user): reimbursement rows go STRAIGHT to the linked
+            transaction — no sheet in between, on parts too */}
         {partLinks.map((linkRow) => (
-          <div key={`${linkRow.txId}-${linkRow.partId}`} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 text-[13px] last:border-0">
+          <button
+            key={`${linkRow.txId}-${linkRow.partId}`}
+            data-testid={`tx-part-reimb-${linkRow.txId}`}
+            onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: linkRow.txId } })}
+            className="m-tap flex w-full items-center gap-3 border-x-0 border-t-0 border-b border-line-2 bg-transparent px-4 py-2.5 text-left text-[13px] last:border-0"
+          >
             <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
             <span className="min-w-0 flex-1 truncate text-ink">{rowTitleOf(linkRow.txId)}</span>
             <span className="m-num text-ink-2">{fmtCents(linkRow.amountCents, tx.currency, lang)}</span>
-          </div>
+          </button>
         ))}
         {/* #197: what this CREDIT part already funded elsewhere */}
         {givenLinks.map((given) => (
-          <div key={`out-${given.rowId}`} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 text-[13px] last:border-0" data-testid={`tx-part-given-${given.rowId}`}>
+          <button
+            key={`out-${given.rowId}`}
+            data-testid={`tx-part-given-${given.rowId}`}
+            onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: given.rowId } })}
+            className="m-tap flex w-full items-center gap-3 border-x-0 border-t-0 border-b border-line-2 bg-transparent px-4 py-2.5 text-left text-[13px] last:border-0"
+          >
             <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
             <span className="min-w-0 flex-1 truncate text-ink">{rowTitleOf(given.rowId)}</span>
             <span className="m-num text-ink-2">{fmtCents(-given.amountCents, tx.currency, lang, { sign: true })}</span>
-          </div>
+          </button>
         ))}
         <div className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
           <span className="min-w-0 flex-1 text-ink-3">{t('reimb.net')}</span>
@@ -1507,6 +1564,9 @@ function DetailAccountBlock({
   account,
   linkedAccount,
   pairState,
+  peer,
+  peerAccountName,
+  effectivePeerId,
   loanCountBusy,
   setLoanCountBusy,
   onOpenPeer,
@@ -1518,6 +1578,11 @@ function DetailAccountBlock({
   account: AccountRow | undefined;
   linkedAccount: AccountRow | undefined;
   pairState: ReturnType<typeof transferPairState>;
+  /** #237 r2: the other leg as the space sees it (feeds the rich row) */
+  peer: SpaceTx | undefined;
+  peerAccountName: string | undefined;
+  /** own transferPeerId, or the row-level reverse pointer of a one-way pair */
+  effectivePeerId: string | undefined;
   loanCountBusy: boolean;
   setLoanCountBusy: (busy: boolean) => void;
   onOpenPeer: (peerId: string) => void;
@@ -1531,7 +1596,7 @@ function DetailAccountBlock({
    *  already exists on the counter account */
   onPickCounterpart?: () => void;
 }>) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { store, repo } = useData();
   const counterRow = !!linkedAccount || !!onEditCounter;
   return (
@@ -1596,8 +1661,11 @@ function DetailAccountBlock({
       {pairState === 'peered' && (
         <TransferPeerRow
           t={t}
+          lang={lang}
+          peer={peer}
+          accountName={peerAccountName}
           onOpen={() => {
-            if (tx.transferPeerId) onOpenPeer(tx.transferPeerId);
+            if (effectivePeerId) onOpenPeer(effectivePeerId);
           }}
           onUnpair={onUnpair}
         />
@@ -1752,6 +1820,52 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const allTxs = useSpaceTransactions();
   const givenOut = givenOutFor(tx, allTxs);
 
+  // #237 r2: pairs can exist ONE-WAY in stored data (the reciprocal
+  // write used to land on the raw feed row — a void every reader
+  // ignores). The screen reads the pair from EITHER direction: the
+  // row's own peer, a row pointing here, or a split PART pointing here.
+  const reversePeer = useMemo(
+    () =>
+      tx && !tx.transferPeerId
+        ? allTxs?.find(
+            (row) =>
+              row.id !== tx.id &&
+              row.deleted === 0 &&
+              (row.transferPeerId === tx.id || !!row.splits?.some((s) => s.transferPeerId === tx.id)),
+          )
+        : undefined,
+    [tx, allTxs],
+  );
+  const effectivePeerId = tx?.transferPeerId ?? reversePeer?.id;
+  const peerRow = useMemo(
+    () => (effectivePeerId ? allTxs?.find((row) => row.id === effectivePeerId && row.deleted === 0) : undefined),
+    [allTxs, effectivePeerId],
+  );
+  const peerAccount = useQuery(
+    store,
+    async () => (peerRow ? store.get('account', peerRow.accountId) : undefined),
+    [peerRow?.accountId],
+  );
+  // …and HEALS the missing reciprocal, once per pairing, so every other
+  // surface (lists, match-sheet exclusion, the other detail) recovers.
+  // The key latch keeps the heal from re-arming a pair mid-unpair.
+  const healedPairRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!tx || !allTxs) return;
+    const key = `${tx.id}:${tx.transferPeerId ?? ''}:${reversePeer?.id ?? ''}`;
+    if (healedPairRef.current === key) return;
+    healedPairRef.current = key;
+    if (tx.transferPeerId) {
+      const peer = allTxs.find((row) => row.id === tx.transferPeerId && row.deleted === 0);
+      if (peer && !peer.transferPeerId && !peer.splits?.some((s) => s.transferPeerId === tx.id)) {
+        void writeTxTransform(repo, peer, { transferPeerId: tx.id });
+      }
+    } else if (reversePeer?.transferPeerId === tx.id) {
+      // row-level pointer only — a PART's pair belongs to the part
+      void writeTxTransform(repo, tx, { transferPeerId: reversePeer.id });
+    }
+  }, [tx, allTxs, reversePeer, repo]);
+
   // a settlement AFTER the bulk offer armed rewrote the attribution —
   // the offer's premise is stale, retire it (user rule)
   const reimbNow = tx ? totalReimbursedCents(tx) + givenOut : 0;
@@ -1777,15 +1891,28 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const color = cat.color ?? parent?.color ?? 'var(--m-ink-3)';
   // R1: the row's own account stamps its type — the kind row locks
   const ownStamp = accountStamp(account?.type);
-  const pairState = transferPairState(tx, linkedAccount);
+  const pairState = transferPairState(tx, effectivePeerId, linkedAccount);
   // the OTHER leg's side of a release — its own row clears in the same
   // write. The peer is fetched from the STORE when the live snapshot
   // hasn't emitted it yet (a slow liveQuery beat left the peer's
   // transferPeerId dangling — CI-only flake)
-  // unpairing releases BOTH legs — one activity entry covers the action
+  // unpairing releases BOTH legs — one activity entry covers the action.
+  // #237 r2: a reverse-only pair (a row or a part points HERE) releases
+  // from this side too — the pointing side is what clears.
   const releasePair = () => {
-    void releasePeerLeg(store, repo, spaceId, tx, allTxs);
-    void transform(tx, { transferPeerId: null as never }, 'txLink');
+    if (tx.transferPeerId) {
+      void releasePeerLeg(store, repo, spaceId, tx, allTxs);
+      void transform(tx, { transferPeerId: null as never }, 'txLink');
+      return;
+    }
+    if (!reversePeer) return;
+    if (reversePeer.transferPeerId === tx.id) {
+      void writeTxTransform(repo, reversePeer, { transferPeerId: null as never });
+    } else if (reversePeer.splits?.some((s) => s.transferPeerId === tx.id)) {
+      void writeTxTransform(repo, reversePeer, {
+        splits: reversePeer.splits.map((s) => (s.transferPeerId === tx.id ? { ...s, transferPeerId: undefined } : s)),
+      });
+    }
   };
   // #237 (user): unlinking asks first when there is something at stake —
   // a DEFAULT counter resets the whole story, munni's own generated leg
@@ -1816,7 +1943,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   // #237: point the pair at a row that already exists on the counter side
   const pairWithPicked = async (pickedTxId: string) => {
     await transform(tx, { transferPeerId: pickedTxId }, 'txLink');
-    await pairWithExistingRow(store, repo, tx, pickedTxId);
+    await pairWithExistingRow(store, repo, spaceId, tx, pickedTxId, allTxs);
   };
   // #221: a DEFAULT account's ledger is system-managed — its rows (the
   // minted mirror legs and balance adjustments) are read-only; they are
@@ -2094,6 +2221,9 @@ export function TxDetailScreen() { // NOSONAR(S3776)
           account={account}
           linkedAccount={linkedAccount}
           pairState={pairState}
+          peer={peerRow}
+          peerAccountName={peerAccount?.deleted === 0 ? peerAccount.name : undefined}
+          effectivePeerId={effectivePeerId}
           loanCountBusy={loanCountBusy}
           setLoanCountBusy={setLoanCountBusy}
           onOpenPeer={(peerId) => void navigate({ to: '/transactions/$txId', params: { txId: peerId } })}

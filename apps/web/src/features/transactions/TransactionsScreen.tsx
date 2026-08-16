@@ -161,14 +161,17 @@ function TxPartGroupRows({
 /** the collapsed pair's note (S3776: out of the memo). Opposite-sign
  *  pairs read from the surviving negative leg; a same-sign wallet pair's
  *  surviving purchase reads the FUNDING direction from its hidden
- *  transfer leg (#237, user decision "a") — "Bank → PayPal". */
+ *  transfer leg (#237, user decision "a") — "Bank → PayPal".
+ *  #237 r2: a ONE-WAY pair (only the other row carries the pointer)
+ *  reads through the reverse index, so the surviving leg still says
+ *  where the money came from. */
 function peerNoteFor(
   item: TransactionRow,
   byId: Map<string, TransactionRow>,
+  reverse: Map<string, TransactionRow>,
   accountNames: Map<string, string>,
 ): string | undefined {
-  if (!item.transferPeerId) return undefined;
-  const peer = byId.get(item.transferPeerId);
+  const peer = (item.transferPeerId ? byId.get(item.transferPeerId) : undefined) ?? reverse.get(item.id);
   if (!peer) return undefined;
   const sameSign = Math.sign(peer.amountCents) === Math.sign(item.amountCents);
   if (!sameSign && item.amountCents > 0) return undefined;
@@ -272,8 +275,14 @@ export function TransactionsScreen() {
     // TRANSFER leg instead — the real purchase stays, counted once.
     if (filters.accountIds.size === 0) {
       const byId = new Map(matched.map((item) => [item.id, item]));
+      // #237 r2: one-way pairs collapse too — the pointed-at row reads
+      // its peer through the reverse index
+      const reverse = new Map<string, TransactionRow>();
+      for (const row of matched) {
+        if (row.transferPeerId && byId.has(row.transferPeerId)) reverse.set(row.transferPeerId, row);
+      }
       matched = matched.filter((item) => {
-        const peer = item.transferPeerId ? byId.get(item.transferPeerId) : undefined;
+        const peer = (item.transferPeerId ? byId.get(item.transferPeerId) : undefined) ?? reverse.get(item.id);
         if (!peer) return true;
         if (Math.sign(peer.amountCents) === Math.sign(item.amountCents)) {
           return !(kindOf(item.txType) === 'transfer' && kindOf(peer.txType) !== 'transfer');
@@ -291,9 +300,13 @@ export function TransactionsScreen() {
   const peerNotes = useMemo(() => {
     if (filters.accountIds.size > 0) return new Map<string, string>();
     const byId = new Map((allTxs ?? []).map((item) => [item.id, item]));
+    const reverse = new Map<string, TransactionRow>();
+    for (const row of allTxs ?? []) {
+      if (row.transferPeerId) reverse.set(row.transferPeerId, row);
+    }
     const map = new Map<string, string>();
     for (const item of txs ?? []) {
-      const note = peerNoteFor(item, byId, accountNames);
+      const note = peerNoteFor(item, byId, reverse, accountNames);
       if (note) map.set(item.id, note);
     }
     return map;

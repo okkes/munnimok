@@ -79,6 +79,8 @@
 <li>Connected the bank after importing statements? munni offers a reconcile pass: the bank is the truth, your edits move over, and you review every mismatched row before it is removed.</li>
 <li>Each upload is a batch on the account sheet — see who uploaded what, and roll a bad upload back out.</li>
 <li>In a shared space, connecting or importing asks a conscious yes first — bank data becomes visible to every member; manual accounts stay quiet.</li>
+<li>Two people connecting the SAME bank account both own it fully — the account number proves it is the same one. Each keeps their own bank consent, either can rename, attach or delete their view, and when one disconnects, the other\u2019s consent quietly takes over the fetching. "Shared with me" is only for accounts you reach through someone else\u2019s space.</li>
+<li>An account whose bank answered with zero transactions on the last sync says so right on its row — "synced fine" and "synced empty" are different facts.</li>
 <li>A transfer can create its counterparty on the spot through the one Create door: bank connect, statement import (it attaches to the space you are in) or a manual account.</li>
 <li>A loan IS an account now: create it once (loan, mortgage or credit card) and it appears on the Debts screen by itself — transfers to it are the payments, and munni nudges weekly until the interest rate is filled in (0% counts). Credit cards join the debts view only when you give them a debt story or flip "Track as debt" on the account.</li>
 <li>Leave a loan’s payment fields empty and the plan — amount, rhythm, payoff date — is estimated from the payments themselves; debt payments without a counter account gather under “Unassigned payments” until you file them.</li>
@@ -99,7 +101,8 @@
 <li>Splitting CATEGORIES is not splitting the transaction: the category chip spreads one payment across several categories — exact euros or percentages — and the row stays ONE transaction, listed once with a thin color bar. A spread holds regular categories (and reimbursements): a ◆ special category spans the whole transaction — one special, one counterparty per transaction — so mixing €60 groceries with €40 Set aside means splitting the TRANSACTION, where each part carries its own counterparty.</li>
 <li>The Split transaction row is the other gear: the amounts partition into parts that stack like cards in a deck; tap a peeking card and it shuffles to the front to take its categories, counterparty, recurring cost and event right there.</li>
 <li>Parts are full transactions and nothing restricts them beyond the amounts adding up — five expense parts, two savings, any mix is a real split. Splitting a filled transaction asks first: the row becomes a pure container and its own category, recurring link, event and note reset — the parts carry those from then on. Confirm stays tappable while parts are incomplete; tapping it marks exactly which parts still need a category.</li>
-<li>Missing a category, recurring cost or event? Create it right from the picker — the card keeps your place.</li></ul>
+<li>Missing a category, recurring cost or event? Create it right from the picker — the card keeps your place.</li>
+<li>Naming a counterparty in review forks like the detail screen: explicitly create the counter leg (the "apply to similar" offer still covers the whole merchant — new legs are predictable), or point at a row that already exists. Pointing at an existing row is specific to that one card, so a standing bulk offer asks first and then stands down — the other siblings\u2019 counterparts can\u2019t be guessed.</li></ul>
     <div class="shots"><figure><img src="shots/13-review-banner--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
 <figure><img src="shots/14-review-flow--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
 <figure><img src="shots/15-review-done--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure></div>
@@ -115,7 +118,7 @@
 <li>Amount fields also type like a register: 5 means 0,05, then 55 is 0,55, then 550 is 5,50 — or type the comma yourself, both work.</li>
 <li>Labeling a row "Loan payment" asks where it went: the space\u2019s default loan account with one tap, or a real loan \u2014 and a manual account ALWAYS asks first — point at the row that is already there, or explicitly create the other leg; nothing is written silently. Unlinking later asks what happens to a leg munni generated (keep it as an ordinary transaction, or remove it with its balance effect), and unlinking from a default account warns that it resets the category and counterparty. Money parked on a default stays movable: a real loan\u2019s "Found these payments" offers default-linked rows too, and relinking moves the leg over.</li>
 <li>The default accounts\u2019 own rows are read-only \u2014 munni writes them when you link and removes them when you unlink; manage the story from the origin transaction, or adjust the default\u2019s balance from the account editor.</li>
-<li>A transfer between two of your accounts shows as ONE row ("Checking → Savings"); filtering by account brings each leg back. Wallet feeds (PayPal-style) often show BOTH halves of one purchase as payments — point the bank debit at the wallet purchase (the Awaiting-counterpart door offers the matching rows) and the pair collapses to the purchase, categorized and counted once, wearing where the money came from.</li>
+<li>A transfer between two of your accounts shows as ONE row ("Checking → Savings"); filtering by account brings each leg back. Wallet feeds (PayPal-style) often show BOTH halves of one purchase as payments — point the bank debit at the wallet purchase (the Awaiting-counterpart door offers the matching rows) and the pair collapses to the purchase, categorized and counted once, wearing where the money came from. The Counterpart-transaction row wears the other leg\u2019s face — who, when, on which account, for how much — and tapping it jumps straight there; a row already spoken for by another pairing is never offered again. Reimbursement rows jump straight to their linked transaction too — no sheet in between, on split parts included.</li>
 <li>Recategorizing offers a bulk apply — tap the bar to pick exactly which transactions it touches. Splitting offers the same: the split lands on the picked same-name rows, resized to each amount.</li>
 <li>Rename a transaction via the pencil — munni remembers and auto-renames future arrivals; the bank original stays under Details.</li>
 <li>Linking a reimbursement opens its own screen: search by name or amount, or take the suggestion — munni spots likely matches by timing, wording and size.</li></ul>
@@ -178,7 +181,7 @@
 <figure><img src="shots/58-sync-live--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
 <figure><img src="shots/38-offline--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure></div>
   </section>
-  <footer>Generated 2026-08-14 from the app's own test screenshots — always the current UI.</footer>
+  <footer>Generated 2026-08-16 from the app's own test screenshots — always the current UI.</footer>
 </main>
 </body>
 </html>

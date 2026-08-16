@@ -1,14 +1,35 @@
 import type { TransactionRow } from '@/db/types';
 import { REIMBURSED_ID } from './categories';
 
+/** every row (and split part) some OTHER row already points at — a
+ *  pointed-at row is spoken for even when its own reciprocal is missing
+ *  (#237 r2: one-way pairs kept being offered as "available") */
+export function pointedAtIds(rows: readonly TransactionRow[]): ReadonlySet<string> {
+  const pointed = new Set<string>();
+  for (const row of rows) {
+    if (row.deleted !== 0) continue;
+    if (row.transferPeerId) pointed.add(row.transferPeerId);
+    for (const part of row.splits ?? []) {
+      if (part.transferPeerId) pointed.add(part.transferPeerId);
+    }
+  }
+  return pointed;
+}
+
 /** a row that could still become someone's other leg: not linked, not
- *  paired, never a split container (#237: the user's search filter) */
-const openRow = (row: TransactionRow, counterAccountId: string, anchorId: string): boolean =>
+ *  paired (in EITHER direction), never a split container (#237) */
+const openRow = (
+  row: TransactionRow,
+  counterAccountId: string,
+  anchorId: string,
+  pointed: ReadonlySet<string>,
+): boolean =>
   row.deleted === 0 &&
   row.id !== anchorId &&
   row.accountId === counterAccountId &&
   !row.linkedAccountId &&
   !row.transferPeerId &&
+  !pointed.has(row.id) &&
   (row.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length <= 1;
 
 function nearMatches(
@@ -21,8 +42,9 @@ function nearMatches(
   const anchorAbs = Math.abs(anchor.amountCents);
   const anchorTime = Date.parse(anchor.date);
   const tolerance = Math.max(100, Math.round(anchorAbs * 0.02));
+  const pointed = pointedAtIds(rows);
   return rows
-    .filter((row) => openRow(row, counterAccountId, anchor.id) && Math.sign(row.amountCents) === sign)
+    .filter((row) => openRow(row, counterAccountId, anchor.id, pointed) && Math.sign(row.amountCents) === sign)
     .map((row) => ({
       row,
       amountDiff: Math.abs(Math.abs(row.amountCents) - anchorAbs),
@@ -68,9 +90,9 @@ export function counterSameSignCandidates(
 
 /**
  * #237: the fork's "show all" list — every row on the counter account
- * that could still be pointed at (open: unlinked, unpaired, not a split
- * container), newest first. The near candidates above are its head;
- * this is the browse view behind them.
+ * that could still be pointed at (open: unlinked, unpaired either way,
+ * not a split container), newest first. The near candidates above are
+ * its head; this is the browse view behind them.
  */
 export function counterOpenRows(
   rows: readonly TransactionRow[],
@@ -78,8 +100,9 @@ export function counterOpenRows(
   anchorId: string,
   limit = 30,
 ): TransactionRow[] {
+  const pointed = pointedAtIds(rows);
   return rows
-    .filter((row) => openRow(row, counterAccountId, anchorId))
+    .filter((row) => openRow(row, counterAccountId, anchorId, pointed))
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, limit);
 }
