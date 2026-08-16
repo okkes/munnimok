@@ -146,12 +146,15 @@ describe('RecurringScreen (demo identity)', () => {
     await screen.findByTestId('screen-recurring');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-gate'), { trackOutbox: false });
     // the space starts on the 1st of THIS month — all four charges that
-    // make the pattern are display-gated; detection must still see them
+    // make the pattern are display-gated; detection must still see them.
+    // Charges ride TODAY's day-of-month (like the Netflix seed): a fixed
+    // day-1 cadence went 15+ days overdue mid-month and detection rightly
+    // dropped it as lapsed — a run-day flake, not the gate under test.
     await repo.upsert('space', DEMO_SPACE_ID, DEMO_SPACE_ID, { historyStartDate: monthsAgo(0, 1) });
     for (let i = 1; i <= 4; i++) {
       await repo.upsert('transaction', DEMO_SPACE_ID, `gym_${i}`, {
         accountId: 'demo_main',
-        date: monthsAgo(i, 1),
+        date: monthsAgo(i, Math.min(new Date().getDate(), 28)),
         amountCents: -2999,
         currency: 'EUR',
         merchant: 'BASIC-FIT',
