@@ -50,3 +50,25 @@ public class SpaceAccountLink
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
+
+/// <summary>
+/// #240 (user ruling 2026-08-15): CO-ownership. Anyone who completes
+/// their OWN bank consent covering an account owns it exactly like the
+/// first connector — the IBAN proves it is the same account. "Shared
+/// with me" is only for accounts reached through someone else's
+/// attachment. The row remembers WHICH consent proved it, so a leaving
+/// owner's fetch binding can hand over to a survivor's consent.
+/// </summary>
+public class FeedOwner
+{
+    public required string FeedSpaceId { get; set; }
+    public Guid UserId { get; set; }
+
+    /// <summary>the consent that proved ownership (fetch hand-off)</summary>
+    public Guid? RequisitionId { get; set; }
+
+    /// <summary>the provider's account id under THAT consent (EB ids are per-session)</summary>
+    public string? GcAccountId { get; set; }
+
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}

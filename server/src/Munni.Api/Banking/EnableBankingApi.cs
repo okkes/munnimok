@@ -187,6 +187,7 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
         [property: JsonPropertyName("status")] string? Status,
         [property: JsonPropertyName("booking_date")] string? BookingDate,
         [property: JsonPropertyName("value_date")] string? ValueDate,
+        [property: JsonPropertyName("transaction_date")] string? TransactionDate,
         [property: JsonPropertyName("remittance_information")] List<string>? RemittanceInformation,
         [property: JsonPropertyName("creditor")] EbParty? Creditor,
         [property: JsonPropertyName("debtor")] EbParty? Debtor,
@@ -247,10 +248,12 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
         // #240: some ASPSPs (PayPal among them) omit entry_reference and/or
         // booking_date. The ingest keys row identity on the reference and
         // drops date-less rows — which silently lost EVERY transaction of
-        // such an account. Fall back to the value date, and derive a
-        // deterministic reference from the transaction's stable facts so
-        // every re-fetch maps to the same row.
-        var bookingDate = tx.BookingDate ?? tx.ValueDate;
+        // such an account. Fall back through EVERY date EB publishes
+        // (r3: transaction_date included — wallet rows may carry only
+        // that one), and derive a deterministic reference from the
+        // transaction's stable facts so every re-fetch maps to the same
+        // row.
+        var bookingDate = tx.BookingDate ?? tx.ValueDate ?? tx.TransactionDate;
         var remittance = tx.RemittanceInformation is { Count: > 0 } lines ? string.Join(' ', lines) : null;
         var reference = string.IsNullOrWhiteSpace(tx.EntryReference)
             ? SyntheticReference(bookingDate, amount, tx, remittance)

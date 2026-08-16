@@ -80,6 +80,12 @@ export interface AccountRow extends SyncEnvelope {
    *  "you imported five minutes ago" and "the data ends three weeks ago"
    *  are different facts — this carries the second one */
   dataThroughDate?: string;
+  /** #240 r3: what the last bank fetch actually carried — raw rows the
+   *  provider answered with, and how many could not be stored (no
+   *  reference/date). 0 received = "the bank returned nothing", which
+   *  used to be indistinguishable from a healthy sync. */
+  lastFetchReceived?: number;
+  lastFetchDropped?: number;
   iban?: string;
   bankId?: string;
   color?: string;

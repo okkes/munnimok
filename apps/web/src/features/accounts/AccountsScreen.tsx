@@ -97,6 +97,18 @@ function AccountRowButton({
             {t('acct.dataThrough', { when: fmtTimeAgo(account.dataThroughDate!, lang) })}
           </span>
         )}
+        {/* #240 r3: "synced fine, zero rows" must say so — an empty
+            answer from the bank is a fact, not a healthy silence */}
+        {account.source === 'gocardless' && account.lastFetchReceived === 0 && (
+          <span className="block truncate text-[11px] text-warning" data-testid={`account-syncempty-${account.id}`}>
+            {t('acct.syncEmpty')}
+          </span>
+        )}
+        {(account.lastFetchDropped ?? 0) > 0 && (
+          <span className="block truncate text-[11px] text-warning" data-testid={`account-syncdropped-${account.id}`}>
+            {t('acct.syncDropped', { n: account.lastFetchDropped ?? 0 })}
+          </span>
+        )}
       </span>
       {archivedOnly && <Icon name="archive-outline" size={16} color="var(--m-warning)" />}
       <span className="m-num text-[15px] font-semibold text-ink">

@@ -19,6 +19,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
     public DbSet<PushSubscriptionRow> PushSubscriptions => Set<PushSubscriptionRow>();
     public DbSet<FeedSpace> FeedSpaces => Set<FeedSpace>();
+    public DbSet<FeedOwner> FeedOwners => Set<FeedOwner>();
     public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
     public DbSet<GcPendingTx> GcPendingTxs => Set<GcPendingTx>();
     public DbSet<GcInstitutionLogo> GcInstitutionLogos => Set<GcInstitutionLogo>();
@@ -85,6 +86,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.OwnerUserId);
+        });
+        modelBuilder.Entity<FeedOwner>(e =>
+        {
+            e.HasKey(x => new { x.FeedSpaceId, x.UserId });
+            e.HasIndex(x => x.UserId);
         });
         modelBuilder.Entity<SpaceAccountLink>(e =>
         {

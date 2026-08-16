@@ -357,6 +357,146 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     }
 
     [Fact]
+    public async Task A_second_users_own_consent_makes_them_co_owner_of_the_same_iban()
+    {
+        // #240 r3 (user ruling): whoever can connect the same bank account
+        // OWNS it — the IBAN proves it is the same one. "Shared with me"
+        // is only for accounts reached through someone else's attachment.
+        var (clientA, userA, spaceA) = await MemberAsync("co-a");
+        var (clientB, userB, spaceB) = await MemberAsync("co-b");
+        try
+        {
+            _factory.Gc.Details = new GcAccountDetails("NL55INGB0000005555", "Gezamenlijk", "EUR");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-co", "LN", ["gc-acc-co"]);
+            var createdA = await (await clientA.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceA, "ING_NL", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            await clientA.PostAsync($"/gocardless/requisitions/{createdA!.Reference}/complete", null);
+            var createdB = await (await clientB.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceB, "ING_NL", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            await clientB.PostAsync($"/gocardless/requisitions/{createdB!.Reference}/complete", null);
+
+            var feedId = ImportIds.FeedSpaceId("NL55INGB0000005555");
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                // the first connector keeps the primary slot…
+                Assert.Equal(userA, (await db.FeedSpaces.FindAsync(feedId))!.OwnerUserId);
+                // …and B is recorded as an owner too, with THEIR consent
+                var co = await db.FeedOwners.SingleAsync(o => o.FeedSpaceId == feedId);
+                Assert.Equal(userB, co.UserId);
+                Assert.Equal("gc-acc-co", co.GcAccountId);
+                // B's attachment into B's space is stamped as B's — the
+                // old feed-owner stamp poisoned every "who else uses it"
+                // check and left undeletable orphans behind
+                var linkB = await db.SpaceAccountLinks.SingleAsync(l => l.SpaceId == spaceB && l.FeedSpaceId == feedId);
+                Assert.Equal(userB, linkB.AttachedBy);
+            }
+            // both sort it under "mine" — never under "shared with me"
+            Assert.Contains((await clientA.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds"))!, f => f.FeedSpaceId == feedId);
+            Assert.Contains((await clientB.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds"))!, f => f.FeedSpaceId == feedId);
+        }
+        finally
+        {
+            _factory.Gc.Details = new GcAccountDetails("NL69INGB0123456789", "Betaalrekening", "EUR");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
+        }
+    }
+
+    [Fact]
+    public async Task The_first_owners_delete_hands_the_fetch_binding_to_a_surviving_co_owner()
+    {
+        var (clientA, _, spaceA) = await MemberAsync("hand-a");
+        var (clientB, userB, spaceB) = await MemberAsync("hand-b");
+        try
+        {
+            _factory.Gc.Details = new GcAccountDetails("NL66INGB0000006666", "Gezamenlijk", "EUR");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-hand", "LN", ["gc-acc-hand"]);
+            var createdA = await (await clientA.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceA, "ING_NL", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            await clientA.PostAsync($"/gocardless/requisitions/{createdA!.Reference}/complete", null);
+            var createdB = await (await clientB.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceB, "ING_NL", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            await clientB.PostAsync($"/gocardless/requisitions/{createdB!.Reference}/complete", null);
+
+            var feedId = ImportIds.FeedSpaceId("NL66INGB0000006666");
+            // A deletes their account — B co-owns it, so the feed lives on
+            // and the FETCH BINDING hands over to B's consent
+            var response = await clientA.DeleteAsync($"/me/feeds/{feedId}");
+            Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
+            Assert.False((await response.Content.ReadFromJsonAsync<FeedDeletionResult>())!.Erased);
+
+            using (var scope = _factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                // B is promoted to primary owner, the co-owner row collapses
+                Assert.Equal(userB, (await db.FeedSpaces.FindAsync(feedId))!.OwnerUserId);
+                Assert.False(await db.FeedOwners.AnyAsync(o => o.FeedSpaceId == feedId));
+                // the linked account row survives, re-bound to B's consent,
+                // with null stamps so the next tick backfills the full window
+                var linked = await db.GcLinkedAccounts.FindAsync("gc-acc-hand");
+                var boundTo = await db.GcRequisitions.FindAsync(linked!.RequisitionId);
+                Assert.Equal(userB, boundTo!.UserId);
+                Assert.Null(linked.LastFetchAt);
+                Assert.Null(linked.HistoryBackfilledAt);
+            }
+            Assert.Contains((await clientB.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds"))!, f => f.FeedSpaceId == feedId);
+            Assert.DoesNotContain((await clientA.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds"))!, f => f.FeedSpaceId == feedId);
+        }
+        finally
+        {
+            _factory.Gc.Details = new GcAccountDetails("NL69INGB0123456789", "Betaalrekening", "EUR");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
+        }
+    }
+
+    [Fact]
+    public async Task The_janitor_drops_attachments_whose_mirror_the_space_tombstoned()
+    {
+        // #240 r3, the user's orphan: an account "shared with me", archived,
+        // attached to NO space, undeletable — a server-side attachment row
+        // survived its own tombstoned mirror and kept the feed reachable
+        var (client, _, spaceId) = await MemberAsync("orphan");
+        var iban = "NL88INGB0000008888";
+        var feedId = ImportIds.FeedSpaceId(iban);
+        var ghost = Guid.NewGuid(); // a long-gone identity owns the feed
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.FeedSpaces.Add(new FeedSpace { Id = feedId, OwnerUserId = ghost, AccountRef = iban });
+            db.Spaces.Add(new Space { Id = feedId });
+            db.SpaceAccountLinks.Add(new SpaceAccountLink
+            {
+                Id = Guid.NewGuid(), SpaceId = spaceId, FeedSpaceId = feedId,
+                AccountId = ImportIds.AccountId(iban), AttachedBy = ghost,
+            });
+            // the space already said no: the accountLink mirror is tombstoned
+            db.EntityRows.Add(new EntityRow
+            {
+                SpaceId = spaceId, Entity = "accountLink",
+                EntityId = ImportIds.AccountLinkId(spaceId, feedId),
+                DataJson = "{}", FieldVersionsJson = "{}", Deleted = true,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // reachable before (the orphan keeps re-syncing to the device)…
+        Assert.Contains(feedId, (await client.GetFromJsonAsync<List<string>>("/me/spaces"))!);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Equal(1, await FeedJanitor.RemoveDeadAttachmentsAsync(db));
+        }
+
+        // …unreachable after: /me/spaces stops listing it, the client purges
+        Assert.DoesNotContain(feedId, (await client.GetFromJsonAsync<List<string>>("/me/spaces"))!);
+    }
+
+    [Fact]
     public async Task Complete_works_without_a_session_but_a_foreign_session_is_refused()
     {
         // installed-PWA journeys can return from the bank in a plain browser
@@ -724,6 +864,13 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var feedId = ImportIds.FeedSpaceId(iban);
             Assert.True(await db.EntityRows.AnyAsync(r => r.SpaceId == feedId && r.Entity == "transaction"));
+            // #240 r3: the fetch outcome is visible — the linked row AND
+            // the feed account row carry what the bank actually answered
+            var linked = await db.GcLinkedAccounts.FirstAsync(a => a.Iban == iban);
+            Assert.Equal(1, linked.LastFetchReceived);
+            Assert.Equal(0, linked.LastFetchDropped);
+            var accountRow = await db.EntityRows.FindAsync(feedId, "account", ImportIds.AccountId(iban));
+            Assert.Contains("\"lastFetchReceived\":1", accountRow!.DataJson);
         }
 
         // rows exist now: the next tick is an ordinary skip (not due)

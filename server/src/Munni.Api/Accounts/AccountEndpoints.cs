@@ -91,6 +91,14 @@ public static class AccountEndpoints
         var feeds = await db.FeedSpaces.Where(f => f.OwnerUserId == me)
             .Select(f => new MyFeedDto(f.Id, f.AccountRef))
             .ToListAsync();
+        // #240: co-owned feeds are MINE too — the client sorts everything
+        // in this list under "assets", never "shared with me"
+        var coOwnedIds = db.FeedOwners.Where(o => o.UserId == me).Select(o => o.FeedSpaceId);
+        var known = feeds.Select(f => f.FeedSpaceId).ToHashSet();
+        var coOwned = await db.FeedSpaces.Where(f => coOwnedIds.Contains(f.Id))
+            .Select(f => new MyFeedDto(f.Id, f.AccountRef))
+            .ToListAsync();
+        feeds.AddRange(coOwned.Where(f => !known.Contains(f.FeedSpaceId)));
         return Results.Ok(feeds);
     }
 

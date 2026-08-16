@@ -62,6 +62,14 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // #240 r3: attachments whose mirror the space tombstoned are dead
+        // weight that keeps orphaned feeds re-syncing to devices — drop
+        // them daily (provider-independent, so it runs before the GC gate)
+        var removedLinks = await Accounts.FeedJanitor.RemoveDeadAttachmentsAsync(db, null, ct);
+        if (removedLinks > 0 && logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("feed janitor: removed {Count} dead attachment(s)", removedLinks);
+
         // slot cleanup is a GoCardless-specific concern (their free tier
         // counts connections) — skip entirely when GC isn't configured
         var gc = scope.ServiceProvider.GetService<IGoCardlessApi>();
@@ -333,7 +341,8 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         }
         await db.SaveChangesAsync(ct);
         if (logger.IsEnabled(LogLevel.Information))
-            logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
+            logger.LogInformation("gc fetch {Iban}: {Received} received, {Accepted} new ops, {Dropped} dropped",
+                linked.Iban, linked.LastFetchReceived ?? 0, accepted, linked.LastFetchDropped ?? 0);
 
         // wake the members' devices: SSE for open apps, push notification +
         // preload for closed ones. Raw rows land in the FEED space; the

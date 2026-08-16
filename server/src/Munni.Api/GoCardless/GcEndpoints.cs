@@ -341,7 +341,10 @@ public static partial class GcEndpoints
                 // budget spent — the feed still gets created/attached so the
                 // link shows up everywhere; data follows on the next fetch
             }
-            var accepted = await ingest.IngestAccountAsync(space, linked, details, balances, page?.Booked ?? [], page?.Pending);
+            // #240: the completion acts AS this requisition's user — the
+            // attachment and (co-)ownership must land on THEM, not on
+            // whoever's consent the row happens to be bound to
+            var accepted = await ingest.IngestAccountAsync(space, linked, details, balances, page?.Booked ?? [], page?.Pending, requisition);
             imported += accepted;
             // #240 r2: completions must leave a trace — "linked fine, zero
             // rows" was invisible everywhere

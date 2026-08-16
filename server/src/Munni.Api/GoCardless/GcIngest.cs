@@ -24,15 +24,35 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
         GcAccountDetails details,
         IReadOnlyList<GcBalance> balances,
         IReadOnlyList<GcTransaction> transactions,
-        IReadOnlyList<GcTransaction>? pending = null)
+        IReadOnlyList<GcTransaction>? pending = null,
+        GcRequisition? actingConsent = null)
     {
-        var feedSpace = await EnsureFeedAsync(linked, space.Id);
+        var feedSpace = await EnsureFeedAsync(linked, space.Id, actingConsent);
 
         var accountOps = new List<SyncOpDto>();
         var feedOps = new List<SyncOpDto>();
         var spaceOps = new List<SyncOpDto>();
         var counter = 0;
         string NextHlc() => ServerHlc.Now(counter++);
+
+        // Count both writes the ops and tallies what could be represented
+        var written = transactions.Count(tx => AddBookedOps(space.Id, feedSpace.Id, linked, tx, feedOps, spaceOps, NextHlc));
+        var dropped = transactions.Count - written;
+        // #240: rows without a reference or date used to vanish without a
+        // trace — an ASPSP omitting entry_reference lost its whole history
+        // and nothing anywhere said so
+        if (dropped > 0)
+            logger?.LogWarning("gc ingest {Ref}: {Dropped} of {Total} booked rows lack a reference/date and were dropped",
+                linked.Iban, dropped, transactions.Count);
+
+        var pendingWritten = await MirrorPendingAsync(linked, feedSpace.Id, pending ?? [], feedOps, NextHlc);
+        var pendingDropped = (pending?.Count ?? 0) - pendingWritten;
+
+        // #240 r3: the fetch outcome is a FACT of the account row now —
+        // "the bank answered with nothing" must be visible in the app,
+        // not only in a server log nobody can reach
+        linked.LastFetchReceived = transactions.Count + (pending?.Count ?? 0);
+        linked.LastFetchDropped = dropped + pendingDropped;
 
         // account row in the feed (create or refresh balance — raw bank truth)
         var accountFields = await BuildAccountFieldsAsync(feedSpace.Id, linked, details, balances);
@@ -47,18 +67,6 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
             ["feedSpaceId"] = Json(feedSpace.Id),
             ["accountId"] = Json(linked.AccountEntityId),
         }, NextHlc(), $"gclink:{space.Id}:{feedSpace.Id}"));
-
-        // Count both writes the ops and tallies what could be represented
-        var written = transactions.Count(tx => AddBookedOps(space.Id, feedSpace.Id, linked, tx, feedOps, spaceOps, NextHlc));
-        var dropped = transactions.Count - written;
-        // #240: rows without a reference or date used to vanish without a
-        // trace — an ASPSP omitting entry_reference lost its whole history
-        // and nothing anywhere said so
-        if (dropped > 0)
-            logger?.LogWarning("gc ingest {Ref}: {Dropped} of {Total} booked rows lack a reference/date and were dropped",
-                linked.Iban, dropped, transactions.Count);
-
-        await MirrorPendingAsync(linked, feedSpace.Id, pending ?? [], feedOps, NextHlc);
 
         var writer = new SyncWriter(db);
         await writer.ApplyAsync(feedSpace, null, accountOps);
@@ -125,7 +133,7 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
     /// review — the booked twin replaces them later. Rows that left the
     /// bank's pending list get tombstoned.
     /// </summary>
-    private async Task MirrorPendingAsync(
+    private async Task<int> MirrorPendingAsync(
         GcLinkedAccount linked,
         string feedSpaceId,
         IReadOnlyList<GcTransaction> pending,
@@ -169,6 +177,7 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
         var trackedIds = tracked.Select(p => p.EntityId).ToHashSet();
         foreach (var id in currentPending.Where(id => !trackedIds.Contains(id)))
             db.GcPendingTxs.Add(new GcPendingTx { GcAccountId = linked.GcAccountId, EntityId = id });
+        return currentPending.Count;
     }
 
     /// <summary>The feed account row's fields: raw bank truth plus the logo hint.</summary>
@@ -212,33 +221,61 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
         }
         // every device shows when this account last heard from the bank
         fields["lastSyncedAt"] = Json(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+        // #240 r3: what that fetch actually carried — "the bank answered
+        // with nothing" and "rows could not be stored" become visible
+        // facts on the account row instead of invisible server logs
+        if (linked.LastFetchReceived is { } received) fields["lastFetchReceived"] = Json(received);
+        if (linked.LastFetchDropped is { } droppedRows) fields["lastFetchDropped"] = Json(droppedRows);
         return fields;
     }
 
     /// <summary>
     /// Feed registry + owner membership + server-side attachment for a
     /// GoCardless-linked account (the owning flow that may create feeds).
+    /// #240: the ACTING consent decides who is acting — a completion runs
+    /// as the consenting user, a scheduled fetch as the bound consent's
+    /// user. A second user's own consent covering an existing IBAN feed
+    /// makes them a CO-owner (user ruling: connecting the same bank
+    /// account IS full ownership; the IBAN proves it is the same one).
     /// </summary>
-    private async Task<Space> EnsureFeedAsync(GcLinkedAccount linked, string targetSpaceId)
+    private async Task<Space> EnsureFeedAsync(GcLinkedAccount linked, string targetSpaceId, GcRequisition? actingConsent = null)
     {
         var feedId = ImportIds.FeedSpaceId(linked.Iban);
-        var requisition = await db.GcRequisitions.FindAsync(linked.RequisitionId)
+        var requisition = actingConsent
+            ?? await db.GcRequisitions.FindAsync(linked.RequisitionId)
             ?? throw new InvalidOperationException($"requisition {linked.RequisitionId} missing");
         var ownerId = requisition.UserId;
+        var wallet = linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
 
         var feed = await db.FeedSpaces.FindAsync(feedId);
         if (feed is null)
+        {
             db.FeedSpaces.Add(new FeedSpace { Id = feedId, OwnerUserId = ownerId, AccountRef = ImportIds.Normalize(linked.Iban) });
-        else if (linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase) && feed.OwnerUserId != ownerId)
+        }
+        else if (wallet && feed.OwnerUserId != ownerId)
         {
             // #240: a WALLET (no IBAN) is personal by nature — there is no
             // joint-PayPal the way there is a joint bank account, so the
             // consent that fetches it owns its feed. A stale binding (an
             // old identity's requisition) left the feed "shared with me"
             // for its real owner: /me/feeds omitted it, edit and
-            // attach-to-space locked. IBAN feeds keep first-owner rules —
-            // the family-account case stays protected.
+            // attach-to-space locked.
             feed.OwnerUserId = ownerId;
+        }
+        else if (!wallet && feed.OwnerUserId != ownerId
+                 && !await db.FeedOwners.AnyAsync(o => o.FeedSpaceId == feedId && o.UserId == ownerId))
+        {
+            // #240 r3: an IBAN feed someone else connected first — this
+            // user's OWN consent covers the same account, so they own it
+            // too. The recorded consent lets the fetch binding hand over
+            // if the first owner ever deletes theirs.
+            db.FeedOwners.Add(new FeedOwner
+            {
+                FeedSpaceId = feedId,
+                UserId = ownerId,
+                RequisitionId = requisition.Id,
+                GcAccountId = linked.GcAccountId,
+            });
         }
 
         var feedSpace = await db.Spaces.FindAsync(feedId);
@@ -258,6 +295,9 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
                 SpaceId = targetSpaceId,
                 FeedSpaceId = feedId,
                 AccountId = linked.AccountEntityId,
+                // the ACTING user attached this — stamping the feed owner
+                // here used to poison "who else uses it" checks and left
+                // undeletable orphans behind (#240 r3)
                 AttachedBy = ownerId,
             });
         }

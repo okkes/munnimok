@@ -20,8 +20,12 @@ public static class FeedAccess
         return spaceId.Length == 36 && spaceId[14] == '5';
     }
 
+    /// <summary>#240: ownership is the recorded first owner OR any
+    /// co-owner (their own consent covered the account) — both edit,
+    /// attach and delete like the account is theirs, because it is.</summary>
     public static async Task<bool> IsFeedOwner(AppDbContext db, Guid userId, string feedSpaceId) =>
-        await db.FeedSpaces.AnyAsync(f => f.Id == feedSpaceId && f.OwnerUserId == userId);
+        await db.FeedSpaces.AnyAsync(f => f.Id == feedSpaceId && f.OwnerUserId == userId)
+        || await db.FeedOwners.AnyAsync(o => o.FeedSpaceId == feedSpaceId && o.UserId == userId);
 
     /// <summary>
     /// Read access + cursor cap. Returns null when the user may not read;
@@ -45,12 +49,13 @@ public static class FeedAccess
     public static async Task<List<string>> ReachableFeedsAsync(AppDbContext db, Guid userId)
     {
         var owned = await db.FeedSpaces.Where(f => f.OwnerUserId == userId).Select(f => f.Id).ToListAsync();
+        var coOwned = await db.FeedOwners.Where(o => o.UserId == userId).Select(o => o.FeedSpaceId).ToListAsync();
         var mySpaceIds = db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId);
         var attached = await db.SpaceAccountLinks
             .Where(l => mySpaceIds.Contains(l.SpaceId))
             .Select(l => l.FeedSpaceId)
             .Distinct()
             .ToListAsync();
-        return owned.Union(attached).ToList();
+        return owned.Union(coOwned).Union(attached).ToList();
     }
 }

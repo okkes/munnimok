@@ -85,6 +85,16 @@ public class EnableBankingApiTests
                 ],"continuation_key":null}
                 """;
             }
+            else if (path.Contains("acc-uid-txdate/transactions"))
+            {
+                // #240 r3: the deepest wallet shape — no entry_reference,
+                // no booking_date, no value_date; only transaction_date
+                body = """
+                {"transactions":[
+                  {"transaction_amount":{"amount":"25.99","currency":"EUR"},"credit_debit_indicator":"DBIT","status":"BOOK","transaction_date":"2026-08-11","creditor":{"name":"Google"}}
+                ],"continuation_key":null}
+                """;
+            }
             else if (path.Contains("/transactions") && !path.Contains("continuation_key"))
             {
                 Assert.Contains("date_from=2026-01-15", path);
@@ -233,5 +243,20 @@ public class EnableBankingApiTests
         Assert.Equal("C1", row.TransactionId);
         Assert.Equal(2, handler.Paths.Count(p => p.Contains("acc-uid-clamp/transactions")));
         Assert.Equal(1, handler.Paths.Count(p => p.Contains("acc-uid-clamp/transactions") && p.Contains("date_from")));
+    }
+
+    [Fact]
+    public async Task A_row_dated_only_by_transaction_date_still_lands()
+    {
+        // #240 r3: wallet rows can omit booking AND value dates — the last
+        // date EB publishes must carry them, or the whole account reads as
+        // empty forever (every row silently dropped at ingest)
+        var (api, _) = Create();
+        var page = await api.GetTransactionsAsync("acc-uid-txdate", null);
+
+        var row = Assert.Single(page.Booked);
+        Assert.Equal("2026-08-11", row.BookingDate); // transaction_date fallback
+        Assert.Equal("-25.99", row.TransactionAmount.Amount);
+        Assert.StartsWith("eb:", row.TransactionId); // synthetic identity holds
     }
 }

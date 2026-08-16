@@ -46,6 +46,12 @@ public class GcLinkedAccount
     public int? DailySuccessLimit { get; set; }
     public int? SuccessRemaining { get; set; }
     public DateTimeOffset? RateResetAt { get; set; }
+    /// <summary>#240 r3: what the LAST fetch actually carried — raw rows
+    /// the provider answered with, and how many could not be represented
+    /// (no reference/date). Mirrored onto the feed account row so the
+    /// app can say "the bank returned nothing" instead of staying mute.</summary>
+    public int? LastFetchReceived { get; set; }
+    public int? LastFetchDropped { get; set; }
 }
 
 /// <summary>
