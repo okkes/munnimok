@@ -16,6 +16,21 @@ describe('Home balance band (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
+  it('#180: the FAB opens the quick-add sheet; the tx door hosts the form in place', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    fireEvent.click(screen.getByTestId('home-fab'));
+    await screen.findByTestId('home-quick-sheet');
+    // the six doors, in the user's stated order
+    for (const id of ['tx', 'import', 'category', 'account', 'friend', 'space']) {
+      expect(screen.getByTestId(`home-quick-${id}`)).toBeTruthy();
+    }
+    // the manual-transaction door opens the form right here
+    fireEvent.click(screen.getByTestId('home-quick-tx'));
+    await screen.findByTestId('txform-save');
+    expect(screen.getByTestId('txform-merchant')).toBeTruthy();
+  }, 15_000);
+
   it('modes switch the meaning; account toggles bend the sum; all persisted per space', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');

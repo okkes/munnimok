@@ -108,6 +108,12 @@ const blockerKeyFor = (form: FormState): 'form.needName' | 'form.needAmount' | '
 /** stable reseed key: the record's identity, 'new' for drafts (S3776) */
 const seedKeyOf = (initial: FormState | null): string | null => (initial === null ? null : (initial.id ?? 'new'));
 
+/** #195 field rings, computed off the component (S3776) */
+function recformRings(attempted: boolean, form: FormState | null) {
+  if (!attempted || form === null) return { nameBad: false, amountBad: false, dateBad: false };
+  return { nameBad: !form.name.trim(), amountBad: !form.amount, dateBad: !form.firstDue };
+}
+
 /** custom cadences anchor on the first due date; presets keep the
  *  no-auto-`since` rule so a cost added mid-period still counts for the
  *  whole current period (and accepted suggestions own their history) */
@@ -194,9 +200,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   const dirty = form !== null && JSON.stringify(form) !== baselineRef.current;
   const blockerKey = form === null ? null : blockerKeyFor(form);
   // #195 rings, precomputed once (S3776: the JSX kept re-branching)
-  const nameBad = attempted && !form?.name.trim();
-  const amountBad = attempted && !form?.amount;
-  const dateBad = attempted && !form?.firstDue;
+  const { nameBad, amountBad, dateBad } = recformRings(attempted, form);
 
   const save = async () => {
     if (form === null || blockerKeyFor(form) !== null) return;

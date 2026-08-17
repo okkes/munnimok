@@ -32,6 +32,16 @@ import { Sheet } from '@/ui/Sheet';
 /** any manual-form field carrying text keeps the discard ask armed (S3776) */
 const anyManualFieldFilled = (fields: readonly string[]): boolean => fields.some((field) => field !== '');
 
+/** the loan-handoff prefill's payment as typed text (S3776) */
+const prefillPaymentText = (cents: number | undefined): string => (cents ? (cents / 100).toFixed(2) : '');
+const prefillPayDayText = (day: number | undefined): string => (day ? String(day) : '');
+
+/** #195 field rings, computed off the component (S3776) */
+function chooserRings(attempted: boolean, nameMissing: boolean, balanceMissing: boolean) {
+  if (!attempted) return { nameBad: false, balanceBad: false };
+  return { nameBad: nameMissing, balanceBad: balanceMissing };
+}
+
 export function AddAccountChooser({
   open,
   onOpenChange,
@@ -104,10 +114,10 @@ export function AddAccountChooser({
   const [iban, setIban] = useState('');
   const [original, setOriginal] = useState('');
   const [apr, setApr] = useState('');
-  const [payment, setPayment] = useState(prefill?.paymentCents ? (prefill.paymentCents / 100).toFixed(2) : '');
+  const [payment, setPayment] = useState(prefillPaymentText(prefill?.paymentCents));
   // #190: the plan's due day — like recurring, it says which period a
   // payment belongs to
-  const [payDay, setPayDay] = useState(prefill?.paymentDay ? String(prefill.paymentDay) : '');
+  const [payDay, setPayDay] = useState(prefillPayDayText(prefill?.paymentDay));
   const [payEvery, setPayEvery] = useState<RecurringEvery>(prefill?.paymentEvery ?? 'month');
   const [payEveryN, setPayEveryN] = useState(1);
   const [payCustom, setPayCustom] = useState(isCustomCadence(prefill?.paymentEvery, 1));
@@ -173,8 +183,7 @@ export function AddAccountChooser({
   const balanceMissing = balanceRequired && parseCents(balance) === null;
   const saveDisabled = nameMissing || balanceMissing;
   // #195 rings, precomputed once (S3776: the JSX kept re-branching)
-  const nameBad = attempted && nameMissing;
-  const balanceBad = attempted && balanceMissing;
+  const { nameBad, balanceBad } = chooserRings(attempted, nameMissing, balanceMissing);
 
   /** the debt story a LIABILITY account carries (loans v2) — blank
    *  fields stay off the row entirely */
