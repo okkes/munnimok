@@ -11,6 +11,7 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { sourceKeyFor } from './AttachSheet';
+import { AccountTypeRow } from './AccountTypeRow';
 import { isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
 
@@ -227,6 +228,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
             <span className="flex-1">{t('acct.changeIcon')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
+          {/* #212: the type, visible and changeable (destructive) */}
+          {account && <AccountTypeRow account={account} />}
           {liability && (
             <>
               {/* the debt story (loans v2): the account IS the loan */}

@@ -1,6 +1,12 @@
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
-import type { AccountRow } from '@/db/types';
+import { visibleTransactions, writeTxTransform } from '@/db/joined';
+import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { accountStamp } from '@/domain/txType';
+import { standardTypeFor } from '@/domain/txKind';
+import type { StorageBackend } from '@/db/backend';
+import type { Repo } from '@/db/repo';
+import type { AccountRow, AccountType } from '@/db/types';
 
 /**
  * Global financial accounts (user decision: accounts are NOT
@@ -103,4 +109,38 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
       .sort((a, b) => a.spaceName.localeCompare(b.spaceName));
     return { mine, spaceScoped, sharedWithMe };
   }, [myFeedIds]);
+}
+
+/**
+ * #212 (user): changing an account's TYPE is destructive by design —
+ * the type drives the stamping rules, so every transaction on the
+ * account goes back to review with a fresh interpretation (category
+ * cleared, type re-derived from the new stamp), "as if the account is
+ * added for the first time". Physical facts survive: balances, links
+ * and pairs describe money that actually moved and are not the type's
+ * business. Writes go through the transform choke per space, so
+ * per-space overlays (feed rows) and plain rows both land correctly.
+ */
+export async function changeAccountType(
+  store: StorageBackend,
+  repo: Repo,
+  account: AccountRow,
+  nextType: AccountType,
+): Promise<number> {
+  await repo.upsert('account', account.spaceId, account.id, { type: nextType });
+  const stamp = accountStamp(nextType);
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  let touched = 0;
+  for (const space of spaces) {
+    const rows = (await visibleTransactions(store, space.id)).filter((r) => r.accountId === account.id && r.deleted === 0);
+    for (const row of rows) {
+      await writeTxTransform(repo, row, {
+        catId: UNCATEGORIZED_ID,
+        txType: stamp ?? standardTypeFor(row.amountCents),
+        needsReview: 1,
+      });
+      touched++;
+    }
+  }
+  return touched;
 }

@@ -59,24 +59,40 @@ function AccountRowButton({
       onClick={() => onOpen(entry)}
       className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
     >
-      {bankLogo ? (
-        <img
-          src={bankLogo}
-          alt=""
-          className="h-7 w-7 shrink-0 rounded-lg object-contain"
-          loading="lazy"
-          data-testid={`account-logo-${account.id}`}
-          onError={(e) => {
-            e.currentTarget.style.display = 'none';
-            e.currentTarget.nextElementSibling?.classList.remove('hidden');
-          }}
-        />
-      ) : null}
-      <span className={bankLogo ? 'hidden' : ''}>
-        <Icon name={typeDef(account.type).icon} size={22} color={account.color ?? 'var(--m-ink-3)'} />
+      {/* #212: the TYPE icon rides as a corner badge when a bank logo
+          owns the tile — the type stays readable at a glance */}
+      <span className="relative shrink-0">
+        {bankLogo ? (
+          <img
+            src={bankLogo}
+            alt=""
+            className="h-7 w-7 rounded-lg object-contain"
+            loading="lazy"
+            data-testid={`account-logo-${account.id}`}
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              e.currentTarget.nextElementSibling?.classList.remove('hidden');
+            }}
+          />
+        ) : null}
+        <span className={bankLogo ? 'hidden' : ''}>
+          <Icon name={typeDef(account.type).icon} size={22} color={account.color ?? 'var(--m-ink-3)'} />
+        </span>
+        {bankLogo && (
+          <span
+            data-testid={`account-typebadge-${account.id}`}
+            className="absolute -right-1.5 -bottom-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-bg-2 ring-2 ring-surface"
+          >
+            <Icon name={typeDef(account.type).icon} size={10} color="var(--m-ink-2)" />
+          </span>
+        )}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] text-ink">{account.name}</span>
+        {/* #212: the type, named — after creation it was invisible */}
+        <span className="block truncate text-[11px] text-ink-4" data-testid={`account-type-${account.id}`}>
+          {t(typeDef(account.type).labelKey)}
+        </span>
         {feedSpaceId ? (
           <span className="block truncate text-[11px] text-ink-4" data-testid={`account-via-${account.id}`}>
             {feedSubtitle}
