@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 
@@ -98,4 +98,37 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     // the expected-reimbursement expense left its hidden parent and is pickable
     expect(screen.getByTestId('catpicker-expenseReimburse')).toBeTruthy();
   });
+
+  it('#245/#246: the ◆ chip narrows to specials; the search rides the scroll', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-groceries');
+
+    // the ◆ lens: plain categories out, marked rows stay
+    fireEvent.click(screen.getByTestId('catpicker-special-filter'));
+    await waitFor(() => expect(screen.queryByTestId('catpicker-groceries')).toBeNull());
+    expect(document.querySelector('[data-testid^="speccat-"]')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('catpicker-special-filter'));
+    await screen.findByTestId('catpicker-groceries');
+
+    // #245: browsing DOWN slips the search away; deliberate upward
+    // travel (one field's worth) brings it back
+    const list = screen.getByTestId('catpicker-list');
+    Object.defineProperty(list, 'scrollHeight', { value: 1400, configurable: true });
+    Object.defineProperty(list, 'clientHeight', { value: 400, configurable: true });
+    const wrapper = screen.getByTestId('catpicker-search').closest('div')!.parentElement as HTMLElement;
+    list.scrollTop = 400;
+    fireEvent.scroll(list);
+    await waitFor(() => expect(wrapper.style.pointerEvents).toBe('none'));
+    list.scrollTop = 370;
+    fireEvent.scroll(list);
+    list.scrollTop = 320;
+    fireEvent.scroll(list);
+    await waitFor(() => expect(wrapper.style.pointerEvents).toBe(''));
+  }, 15_000);
 });
