@@ -17,6 +17,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -49,6 +50,8 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   const [target, setTarget] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
 
   useEffect(() => {
     setName(editing?.name ?? '');
@@ -57,6 +60,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     setTarget(editing?.targetCents ? (editing.targetCents / 100).toFixed(2) : '');
     setTargetDate(editing?.targetDate ?? '');
     setConfirmDelete(false);
+    setAttempted(false);
   }, [initial, editing]);
 
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -81,7 +85,9 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   };
 
   const targetCents = parseCents(target);
-  const valid = name.trim().length > 0 && targetCents !== null && targetCents > 0;
+  const nameMissing = name.trim().length === 0;
+  const amountMissing = targetCents === null || targetCents <= 0;
+  const valid = !nameMissing && !amountMissing;
 
   const save = async () => {
     if (!valid || targetCents === null) return;
@@ -188,7 +194,8 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('goals.namePlaceholder')}
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          aria-invalid={attempted && nameMissing}
+          className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && nameMissing)}`}
         />
         <div className="m-cap px-1">{t('goals.target')}</div>
         <input
@@ -200,7 +207,8 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
           value={target}
           onChange={(e) => setTarget(e.target.value)}
           placeholder="0.00"
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
+          aria-invalid={attempted && amountMissing}
+          className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && amountMissing)}`}
         />
         <label className="flex items-center gap-3 text-[13px] text-ink-2">
           {t('goals.targetDate')}
@@ -212,7 +220,21 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
             className="h-10 min-w-0 flex-1 appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
           />
         </label>
-        <Button data-testid="goalform-save" onClick={() => void save()} disabled={!valid}>
+        <FormBlockerNote
+          show={attempted && !valid}
+          text={nameMissing ? t('form.needName') : t('form.needAmount')}
+          testId="goalform-save-blocker"
+        />
+        <Button
+          data-testid="goalform-save"
+          onClick={() => {
+            if (!valid) {
+              setAttempted(true);
+              return;
+            }
+            void save();
+          }}
+        >
           {editing ? t('action.save') : t('action.create')}
         </Button>
         {editing && (

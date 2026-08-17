@@ -15,6 +15,7 @@ import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { CounterpartySheet } from './TxKindSheet';
 import type { AccountType, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -308,12 +309,15 @@ export function CatsSheet({
   // editable entries partition what is left
   const settled = settledEntriesOf(subject?.cats);
   const refCents = subject ? subjectNetCents(subject) : 0;
+  // #195: tappable — an invalid tap arms the aria/error state
+  const [attempted, setAttempted] = useState(false);
   useEffect(() => {
     if (!open || !subject) return;
     const pctMode = includePct && seedsAsPct(subject);
     setMode(pctMode ? 'pct' : 'amount');
     setEntries(seedEntries(subject, pctMode));
     setCounterFor(null);
+    setAttempted(false);
     rollbackRef.current = null;
     // deliberately only on open: the sheet owns its rows while open
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -607,7 +611,21 @@ export function CatsSheet({
                 : t('split.over', { amount: shownRemainder })}
             </button>
           )}
-          <Button data-testid="part-cat-save" onClick={apply} disabled={!ready}>
+          {/* the remainder pill above already explains an unbalanced
+              partition — the note covers the pill-less blocks (unpicked,
+              duplicate, zero row, unlinked transfer) */}
+          <FormBlockerNote show={attempted && !ready && remainder === 0} text={t('form.fixErrors')} testId="part-cat-save-blocker" />
+          <Button
+            data-testid="part-cat-save"
+            aria-invalid={attempted && !ready}
+            onClick={() => {
+              if (!ready) {
+                setAttempted(true);
+                return;
+              }
+              apply();
+            }}
+          >
             {t('split.done')}
           </Button>
         </div>

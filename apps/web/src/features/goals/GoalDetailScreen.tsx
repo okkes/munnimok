@@ -11,6 +11,7 @@ import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { HeroCard, ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -37,6 +38,8 @@ export function GoalDetailScreen() {
   const [fundOpen, setFundOpen] = useState<'fund' | 'withdraw' | null>(null);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
 
   const goal = goals?.find((g) => g.id === goalId);
   // deleted here or on another device: leave the orphaned detail
@@ -52,6 +55,9 @@ export function GoalDetailScreen() {
   const pace = paceCentsPerMonth(goal, localToday());
   const reached = goal.allocatedCents >= goal.targetCents;
 
+  const fundCents = parseCents(amount);
+  const fundBad = fundCents === null || fundCents <= 0;
+
   const submitFunding = async () => {
     const cents = parseCents(amount);
     if (!fundOpen || cents === null || cents <= 0) return;
@@ -59,6 +65,7 @@ export function GoalDetailScreen() {
     setFundOpen(null);
     setAmount('');
     setNote('');
+    setAttempted(false);
   };
 
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
@@ -144,7 +151,11 @@ export function GoalDetailScreen() {
       {/* fund / withdraw */}
       <Sheet
         open={fundOpen !== null}
-        onOpenChange={(open) => !open && setFundOpen(null)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setFundOpen(null);
+          setAttempted(false);
+        }}
         title={t(fundOpen === 'withdraw' ? 'goals.withdraw' : 'goals.fund')}
         size="form"
       >
@@ -158,7 +169,8 @@ export function GoalDetailScreen() {
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
             placeholder="0.00"
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={attempted && fundBad}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && fundBad)}`}
           />
           <input
             data-testid="goalfund-note"
@@ -167,7 +179,17 @@ export function GoalDetailScreen() {
             placeholder={t('goals.notePlaceholder')}
             className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
           />
-          <Button data-testid="goalfund-save" onClick={() => void submitFunding()} disabled={!parseCents(amount)}>
+          <FormBlockerNote show={attempted && fundBad} text={t('form.needAmount')} testId="goalfund-save-blocker" />
+          <Button
+            data-testid="goalfund-save"
+            onClick={() => {
+              if (fundBad) {
+                setAttempted(true);
+                return;
+              }
+              void submitFunding();
+            }}
+          >
             {t(fundOpen === 'withdraw' ? 'goals.withdraw' : 'goals.fund')}
           </Button>
         </div>

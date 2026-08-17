@@ -55,8 +55,11 @@ describe('LoginScreen', () => {
     fireEvent.click(screen.getByTestId('offline-continue'));
     expect(await screen.findByTestId('screen-offline-profiles')).toBeTruthy();
     const name = await screen.findByTestId('offline-name');
-    expect((screen.getByTestId('offline-create') as HTMLButtonElement).disabled).toBe(true);
+    // #195: stays tappable — a nameless tap names the blocker instead
+    fireEvent.click(screen.getByTestId('offline-create'));
+    expect(await screen.findByTestId('offline-create-blocker')).toBeTruthy();
     fireEvent.change(name, { target: { value: 'Okkes' } });
+    await waitFor(() => expect(screen.queryByTestId('offline-create-blocker')).toBeNull());
     fireEvent.click(screen.getByTestId('offline-create'));
 
     // offline users get the same first-run setup (user ruling): name is

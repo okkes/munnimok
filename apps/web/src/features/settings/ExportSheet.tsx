@@ -9,6 +9,7 @@ import { periodHistory } from '@/domain/periods';
 import { catName } from '@/features/categories/useCategories';
 import { localToday } from '@/application/recurring';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
@@ -40,6 +41,13 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
   const [format, setFormat] = useState<Format>('csv');
   const [technical, setTechnical] = useState(false);
   const [empty, setEmpty] = useState(false);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
+  const dateBad = range === 'custom' && (!from || !to);
+  const close = (next: boolean) => {
+    if (!next) setAttempted(false);
+    onOpenChange(next);
+  };
 
   const bounds = async (): Promise<{ from: string; to: string } | null> => {
     const today = localToday();
@@ -86,7 +94,7 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
         transactions: txs,
       }));
       await download(`munni-${rangeLabel}-${today}.json`, JSON.stringify(payload, null, 2), 'application/json');
-      onOpenChange(false);
+      close(false);
       return;
     }
 
@@ -108,7 +116,7 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
       rows.push(...(rows.length === 0 ? spaceRows : spaceRows.slice(1)));
     }
     await download(`munni-${rangeLabel}-${today}.csv`, serializeCsv(rows, delimiterForLang(lang)), 'text/csv;charset=utf-8');
-    onOpenChange(false);
+    close(false);
   };
 
   const rangeChip = (value: Range, label: string) => (
@@ -118,7 +126,7 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
   );
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('settings.exportData')} size="tall">
+    <Sheet open={open} onOpenChange={close} title={t('settings.exportData')} size="tall">
       <div className="flex flex-col gap-3 pt-1" data-testid="export-sheet">
         <p className="text-[13px] leading-relaxed text-ink-2">{t('export.note')}</p>
 
@@ -146,14 +154,16 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
               type="date"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
+              aria-invalid={attempted && !from}
+              className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none${blockerRing(attempted && !from)}`}
             />
             <input
               data-testid="export-to"
               type="date"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
+              aria-invalid={attempted && !to}
+              className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none${blockerRing(attempted && !to)}`}
             />
           </div>
         )}
@@ -190,7 +200,17 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
             {t('export.empty')}
           </p>
         )}
-        <Button data-testid="export-run" onClick={() => void run()} disabled={range === 'custom' && (!from || !to)}>
+        <FormBlockerNote show={attempted && dateBad} text={t('form.needDate')} testId="export-run-blocker" />
+        <Button
+          data-testid="export-run"
+          onClick={() => {
+            if (dateBad) {
+              setAttempted(true);
+              return;
+            }
+            void run();
+          }}
+        >
           {t('export.download')}
         </Button>
       </div>

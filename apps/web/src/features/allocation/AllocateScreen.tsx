@@ -29,6 +29,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -61,6 +62,8 @@ export function AllocateScreen() {
   const [topicEdit, setTopicEdit] = useState<TopicRow | 'new' | null>(null);
   const [topicName, setTopicName] = useState('');
   const [topicCats, setTopicCats] = useState<ReadonlySet<string>>(new Set());
+  // #195: tappable — an invalid tap names the blocker
+  const [topicAttempted, setTopicAttempted] = useState(false);
 
   const history = useMemo(
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, WINDOW),
@@ -303,6 +306,7 @@ export function AllocateScreen() {
     setTopicEdit(topic);
     setTopicName(topic === 'new' ? '' : topic.name);
     setTopicCats(new Set(topic === 'new' ? [] : topic.catIds));
+    setTopicAttempted(false);
   };
   const saveTopic = async () => {
     if (!topicName.trim() || topicCats.size === 0) return;
@@ -455,7 +459,8 @@ export function AllocateScreen() {
             value={topicName}
             onChange={(e) => setTopicName(e.target.value)}
             placeholder={t('alloc.topicName')}
-            className="h-11 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={topicAttempted && !topicName.trim()}
+            className={`h-11 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4${blockerRing(topicAttempted && !topicName.trim())}`}
           />
           <div className="overflow-hidden rounded-card border border-line bg-surface">
             {rows.map((cat) => {
@@ -483,7 +488,21 @@ export function AllocateScreen() {
               );
             })}
           </div>
-          <Button data-testid="alloc-topic-save" onClick={() => void saveTopic()} disabled={!topicName.trim() || topicCats.size === 0}>
+          <FormBlockerNote
+            show={topicAttempted && (!topicName.trim() || topicCats.size === 0)}
+            text={topicName.trim() ? t('form.needCategory') : t('form.needName')}
+            testId="alloc-topic-save-blocker"
+          />
+          <Button
+            data-testid="alloc-topic-save"
+            onClick={() => {
+              if (!topicName.trim() || topicCats.size === 0) {
+                setTopicAttempted(true);
+                return;
+              }
+              void saveTopic();
+            }}
+          >
             {t('split.done')}
           </Button>
           {topicEdit !== 'new' && topicEdit !== null && (

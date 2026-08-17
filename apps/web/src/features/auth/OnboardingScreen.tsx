@@ -13,6 +13,7 @@ import { AVATARS, Avatar } from '@/features/profile/ProfileScreen';
 import { offlineProfileName, updateOfflineProfile } from './offlineProfiles';
 import { biometricAvailable, hashPin, randomSalt, registerBiometric, validPin, writeLockConfig } from '@/features/lock/lock';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Chip } from '@/ui/primitives';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
@@ -56,6 +57,9 @@ export function OnboardingScreen() {
   const [lockPin, setLockPin] = useState('');
   const [lockPin2, setLockPin2] = useState('');
   const [lockError, setLockError] = useState<string | null>(null);
+  // #195: tappable — an invalid tap names the blocker (one flag per step)
+  const [attempted, setAttempted] = useState(false);
+  const [lockAttempted, setLockAttempted] = useState(false);
 
   useEffect(() => {
     void biometricAvailable().then(setBioAvailable);
@@ -151,6 +155,7 @@ export function OnboardingScreen() {
     setPredictionCountry(country);
     // cleared here: leaving the app mid-flow must not loop onboarding
     await store.metaDelete('needsOnboarding');
+    setAttempted(false);
     setStep(2);
   };
 
@@ -222,7 +227,8 @@ export function OnboardingScreen() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t('profile.displayName')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={attempted && !name.trim()}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
             />
             {/* the WHY, kept short (user request): offline nobody else
                 ever sees the name; online it's the face others see */}
@@ -255,7 +261,17 @@ export function OnboardingScreen() {
               {t('onboarding.countryInfo')}
             </p>
 
-            <Button data-testid="onboarding-save" onClick={() => void applyProfile()} disabled={!name.trim()}>
+            <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="onboarding-save-blocker" />
+            <Button
+              data-testid="onboarding-save"
+              onClick={() => {
+                if (!name.trim()) {
+                  setAttempted(true);
+                  return;
+                }
+                void applyProfile();
+              }}
+            >
               {t('login.continue')}
             </Button>
           </div>
@@ -280,7 +296,8 @@ export function OnboardingScreen() {
                 setLockError(null);
               }}
               placeholder={t('lock.pinLabel')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={lockAttempted && !lockPin}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !lockPin)}`}
             />
             <input
               data-testid="onboarding-lock-pin2"
@@ -292,14 +309,29 @@ export function OnboardingScreen() {
                 setLockError(null);
               }}
               placeholder={t('lock.pinConfirm')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={lockAttempted && !lockPin2}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !lockPin2)}`}
             />
             {lockError && (
               <p className="text-[12px] text-negative" data-testid="onboarding-lock-error">
                 {lockError}
               </p>
             )}
-            <Button data-testid="onboarding-lock-enable" onClick={() => void enableLock()} disabled={!lockPin || !lockPin2}>
+            <FormBlockerNote
+              show={lockAttempted && (!lockPin || !lockPin2)}
+              text={t('form.needFields')}
+              testId="onboarding-lock-enable-blocker"
+            />
+            <Button
+              data-testid="onboarding-lock-enable"
+              onClick={() => {
+                if (!lockPin || !lockPin2) {
+                  setLockAttempted(true);
+                  return;
+                }
+                void enableLock();
+              }}
+            >
               <Icon name={bioAvailable ? 'fingerprint' : 'lock-outline'} size={18} />
               {t('lock.setup')}
             </Button>

@@ -1083,11 +1083,14 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     await screen.findByTestId('part-cats-editor');
     fireEvent.click(screen.getByTestId('part-cat-add'));
 
-    // shrink the first entry: a remainder appears and blocks saving
+    // shrink the first entry: a remainder appears and blocks saving —
+    // Done stays tappable but refuses while the remainder stands (#195)
     fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '30,00' } });
     const remainder = await screen.findByTestId('part-cat-remainder');
     expect(remainder.textContent).toContain('€22.40');
-    expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    expect(screen.getByTestId('part-cats-editor')).toBeTruthy(); // still open, nothing saved
+    expect(screen.getByTestId('part-cat-save').getAttribute('aria-invalid')).toBe('true');
 
     // give the second entry a category, auto-balance the remainder, save
     fireEvent.click(screen.getByTestId('part-cat-1'));
@@ -1205,11 +1208,13 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.click(screen.getByTestId('part-cat-mode-pct'));
     expect((screen.getByTestId('part-cat-amount-0') as HTMLInputElement).value).toBe('100');
 
-    // 60% leaves 40% open; auto-balance hands it to the open entry
+    // 60% leaves 40% open; auto-balance hands it to the open entry —
+    // an eager Done refuses in place until it balances (#195)
     fireEvent.change(screen.getByTestId('part-cat-amount-0'), { target: { value: '60' } });
     const remainder = await screen.findByTestId('part-cat-remainder');
     expect(remainder.textContent).toContain('40%');
-    expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    expect(screen.getByTestId('part-cat-save').getAttribute('aria-invalid')).toBe('true');
     fireEvent.click(screen.getByTestId('part-cat-remainder'));
     await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(screen.getByTestId('part-cat-save'));

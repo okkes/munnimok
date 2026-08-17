@@ -6,6 +6,7 @@ import { LANG_NAMES, LANGS, useLang } from '@/i18n';
 import { logtoConfigured } from '@/app/config';
 import { useSession } from '@/app/session';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
@@ -155,6 +156,8 @@ export function LoginScreen() {
   // back button — manual pushState + popstate, since /login is one route
   const [offlineView, setOfflineView] = useState<'intro' | 'profiles' | null>(null);
   const [profileName, setProfileName] = useState('');
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   // Mina's heads-up before minting a SECOND world (arc 8)
   const [profilesAsk, setProfilesAsk] = useState(false);
   const profiles = listOfflineProfiles();
@@ -173,6 +176,7 @@ export function LoginScreen() {
 
   const openProfiles = () => {
     window.history.pushState({ munniLogin: 'offline-profiles' }, '');
+    setAttempted(false);
     setOfflineView('profiles');
   };
 
@@ -314,15 +318,28 @@ export function LoginScreen() {
             </div>
           )}
           {/* the add row stays available — "Add another profile" (arc 8) */}
+          <FormBlockerNote show={attempted && !profileName.trim()} text={t('form.needName')} testId="offline-create-blocker" className="pb-2" />
           <div className="flex gap-2">
             <input
               data-testid="offline-name"
               value={profileName}
               onChange={(e) => setProfileName(e.target.value)}
               placeholder={t('login.namePlaceholder')}
-              className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={attempted && !profileName.trim()}
+              className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !profileName.trim())}`}
             />
-            <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
+            <Button
+              size="sm"
+              className="h-11"
+              data-testid="offline-create"
+              onClick={() => {
+                if (!profileName.trim()) {
+                  setAttempted(true);
+                  return;
+                }
+                createOffline();
+              }}
+            >
               {t(profiles.length ? 'offline.addAnother' : 'offline.addProfile')}
             </Button>
           </div>

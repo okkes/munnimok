@@ -9,6 +9,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
@@ -286,6 +287,8 @@ export function ManageCategoriesScreen() {
   // every main folds into a drop row, a ghost follows the finger on a
   // vertical rail, edges auto-scroll, release asks for confirmation
   const [nameError, setNameError] = useState<CategoryNameConflict | null>(null);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   // a drag consumes the trailing click — it must not open the edit sheet
   // live "a drag owns the pointer" flag for the touch blocker (state is
   // too slow: the blocker runs inside native touchmove dispatch)
@@ -313,6 +316,7 @@ export function ManageCategoriesScreen() {
     setColor(COLORS[0]);
     setTxType('expense');
     setNameError(null); // #247: a stale conflict must not flash into a fresh form
+    setAttempted(false);
     setMode({ kind: 'newMain' });
   };
   // #180: the home FAB's "new category" arrives with the create intent
@@ -324,6 +328,7 @@ export function ManageCategoriesScreen() {
     setName('');
     setIcon(ICONS[0]);
     setNameError(null); // #247
+    setAttempted(false);
     setMode({ kind: 'newSub', parentId });
   };
   const openEdit = (cat: Cat) => {
@@ -335,6 +340,7 @@ export function ManageCategoriesScreen() {
     setTxType(row.txType);
     setMoveTo(null);
     setNameError(null); // #247
+    setAttempted(false);
     setMode(row.isParent === 1 ? { kind: 'editMain', row } : { kind: 'editSub', row });
   };
 
@@ -749,6 +755,7 @@ export function ManageCategoriesScreen() {
           // #247 (user): the error outlived the sheet — a click-away
           // flashed the OLD conflict while the exit animation ran
           setNameError(null);
+          setAttempted(false);
         }}
         title={formTitle}
         size="tall"
@@ -756,7 +763,17 @@ export function ManageCategoriesScreen() {
         // icon grid once the keyboard/safe-area shifted the scrollport)
         footer={
           <div className="flex flex-col gap-2">
-            <Button data-testid="catform-save" onClick={() => void save()} disabled={!name.trim()}>
+            <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="catform-save-blocker" />
+            <Button
+              data-testid="catform-save"
+              onClick={() => {
+                if (!name.trim()) {
+                  setAttempted(true);
+                  return;
+                }
+                void save();
+              }}
+            >
               {editing ? t('action.save') : t('action.add')}
             </Button>
             {editing && (
@@ -783,7 +800,8 @@ export function ManageCategoriesScreen() {
               setNameError(null);
             }}
             placeholder={t('cats.name')}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={attempted && !name.trim()}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
           />
           {nameError && (
             <p className="text-[12px] text-negative" data-testid="catform-name-error">

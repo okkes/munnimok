@@ -18,6 +18,7 @@ import { useQuery } from '@/db/useQuery';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { useDiscardGuard } from '@/ui/DiscardGuard';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Flag } from '@/ui/Flag';
 import { Sheet } from '@/ui/Sheet';
@@ -166,6 +167,8 @@ export function ProfileScreen() {
   const [displayCurrencyOpen, setDisplayCurrencyOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTyped, setDeleteTyped] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -279,6 +282,7 @@ export function ProfileScreen() {
     setPredictionCountry(country);
     // #164: a save makes the draft the new baseline — leaving is clean
     baselineRef.current = JSON.stringify([name, picture ?? null, country ?? null, displayCurrency ?? null]);
+    setAttempted(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -362,7 +366,8 @@ export function ProfileScreen() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('profile.displayName')}
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          aria-invalid={attempted && !name.trim()}
+          className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
 
         {/* country of use — changeable later (user request); tunes the
@@ -442,7 +447,18 @@ export function ProfileScreen() {
           </div>
         </Sheet>
 
-        <Button className="mt-4 w-full" data-testid="profile-save" onClick={() => void save()} disabled={!name.trim()}>
+        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="profile-save-blocker" className="mt-4" />
+        <Button
+          className="mt-4 w-full"
+          data-testid="profile-save"
+          onClick={() => {
+            if (!name.trim()) {
+              setAttempted(true);
+              return;
+            }
+            void save();
+          }}
+        >
           {saved ? t('profile.saved') : t('action.save')}
         </Button>
 

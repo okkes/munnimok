@@ -13,6 +13,7 @@ import type { RecurringEvery, RecurringKind, RecurringRow } from '@/db/types';
 import { BrandIconPicker } from './BrandIconPicker';
 import { KIND_ICON } from './RecurringVisual';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -96,6 +97,14 @@ export const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
   merchantKey: s.merchantKey,
 });
 
+// #195: the first failing requirement names the blocker
+const blockerKeyFor = (form: FormState): 'form.needName' | 'form.needAmount' | 'form.needDate' | null => {
+  if (!form.name.trim()) return 'form.needName';
+  if (!form.amount) return 'form.needAmount';
+  if (form.custom && !form.firstDue) return 'form.needDate';
+  return null;
+};
+
 interface RecurringFormSheetProps {
   /** non-null opens the sheet with this draft; the sheet owns edits from there */
   initial: FormState | null;
@@ -133,6 +142,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   // free-typed drafts so the '1' can be deleted while editing; clamped on blur
   const [dueDayText, setDueDayText] = useState('1');
   const [everyNText, setEveryNText] = useState('1');
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
 
   // seed on open or when the underlying RECORD changes — never on object
   // identity: callers rebuild `initial` per render (formFromTx in review),
@@ -148,6 +159,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
     setDueDayText(String(initial?.dueDay ?? 1));
     setEveryNText(String(initial?.everyN ?? 1));
     setConfirmDelete(false);
+    setAttempted(false);
     // dirty baseline (user request 2026-08-01): edited forms ask before
     // a stray dismissal drops them
     baselineRef.current = JSON.stringify(initial);
@@ -155,6 +167,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   }, [seedKey]);
   const baselineRef = useRef('');
   const dirty = form !== null && JSON.stringify(form) !== baselineRef.current;
+  const blockerKey = form === null ? null : blockerKeyFor(form);
 
   const save = async () => {
     if (!form?.name.trim()) return;
@@ -236,7 +249,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder={t('recurring.name')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={attempted && !form.name.trim()}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !form.name.trim())}`}
             />
             <div className="flex gap-2">
               <Chip testId="recform-kind-fixed" selected={form.kind === 'fixed'} onClick={() => setForm({ ...form, kind: 'fixed' })}>
@@ -276,7 +290,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               value={form.amount}
               onChange={(e) => setForm({ ...form, amount: e.target.value })}
               placeholder="0.00"
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={attempted && !form.amount}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !form.amount)}`}
             />
 
             <div className="m-cap px-1">{t('recurring.iconTitle')}</div>
@@ -353,7 +368,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
                     type="date"
                     value={form.firstDue}
                     onChange={(e) => setForm({ ...form, firstDue: e.target.value })}
-                    className="h-10 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none"
+                    aria-invalid={attempted && !form.firstDue}
+                    className={`h-10 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none${blockerRing(attempted && !form.firstDue)}`}
                   />
                 </label>
               </div>
@@ -434,10 +450,16 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               </button>
             )}
 
+            <FormBlockerNote show={attempted && blockerKey !== null} text={blockerKey ? t(blockerKey) : ''} testId="recform-save-blocker" />
             <Button
               data-testid="recform-save"
-              onClick={() => void save()}
-              disabled={!form.name.trim() || !form.amount || (form.custom && !form.firstDue)}
+              onClick={() => {
+                if (blockerKey !== null) {
+                  setAttempted(true);
+                  return;
+                }
+                void save();
+              }}
             >
               {form.id ? t('action.save') : t('action.add')}
             </Button>

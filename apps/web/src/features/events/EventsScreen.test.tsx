@@ -63,6 +63,27 @@ describe('Events (demo identity)', () => {
     expect(card.textContent).toMatch(/€0[.,]00/);
   }, 15_000);
 
+  it('#195: a nameless save is refused with the blocker; typing clears it', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    await screen.findByTestId('events-empty');
+
+    fireEvent.click(await screen.findByTestId('events-add'));
+    await screen.findByTestId('eventform-name');
+    // the save stays tappable — the invalid tap names what's missing
+    expect((screen.getByTestId('eventform-save') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('eventform-save'));
+    expect(await screen.findByTestId('eventform-save-blocker')).toBeTruthy();
+    expect(screen.getByTestId('eventform-name').getAttribute('aria-invalid')).toBe('true');
+    // nothing saved
+    expect(document.querySelector('[data-testid^="event-card-"]')).toBeNull();
+
+    // fixing the input clears the blocker live — no second tap needed
+    fireEvent.change(screen.getByTestId('eventform-name'), { target: { value: 'Ski trip' } });
+    await waitFor(() => expect(screen.queryByTestId('eventform-save-blocker')).toBeNull());
+    expect(screen.getByTestId('eventform-name').getAttribute('aria-invalid')).toBe('false');
+  }, 15_000);
+
   it('detail suggests txs in the date range and attach-all adopts them', async () => {
     renderApp('/events');
     await screen.findByTestId('screen-events');

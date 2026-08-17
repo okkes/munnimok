@@ -455,10 +455,11 @@ describe('RecurringScreen editing (demo identity)', () => {
     fireEvent.blur(screen.getByTestId('recform-everyn'));
     fireEvent.change(screen.getByTestId('recform-every-unit'), { target: { value: 'week' } });
 
-    // no first-due date yet → the save button refuses
-    expect((screen.getByTestId('recform-save') as HTMLButtonElement).disabled).toBe(true);
+    // no first-due date yet → the save tap refuses with the blocker (#195)
+    fireEvent.click(screen.getByTestId('recform-save'));
+    expect(await screen.findByTestId('recform-save-blocker')).toBeTruthy();
     fireEvent.change(screen.getByTestId('recform-firstdue'), { target: { value: iso(new Date()) } });
-    expect((screen.getByTestId('recform-save') as HTMLButtonElement).disabled).toBe(false);
+    await waitFor(() => expect(screen.queryByTestId('recform-save-blocker')).toBeNull());
     fireEvent.click(screen.getByTestId('recform-save'));
 
     // the list row says the rhythm instead of a monthly due day

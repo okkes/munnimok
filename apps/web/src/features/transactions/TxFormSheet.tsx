@@ -19,6 +19,7 @@ import type { AccountRow, RecurringRow, TransactionRow, TxSplitCat, TxType } fro
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { typeDef } from '@/features/accounts/accountTypes';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { CatsSheet } from './PartCatsSheet';
@@ -406,13 +407,14 @@ const blockingStartDate = (space: { historyStartDate?: string } | undefined, dat
   space?.historyStartDate && date && date < space.historyStartDate ? space.historyStartDate : undefined;
 
 /** the account field on the form: picked account, or the pick prompt */
-function AccountFieldRow({ account, onOpen }: Readonly<{ account: AccountRow | undefined; onOpen: () => void }>) {
+function AccountFieldRow({ account, onOpen, bad = false }: Readonly<{ account: AccountRow | undefined; onOpen: () => void; bad?: boolean }>) {
   const { t } = useLang();
   return (
     <button
       data-testid="txform-account"
       onClick={onOpen}
-      className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+      aria-invalid={bad}
+      className={`m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink${blockerRing(bad)}`}
     >
       <Icon name={account ? typeDef(account.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />
       <span className={`min-w-0 flex-1 truncate ${account ? '' : 'text-warning'}`}>{account?.name ?? t('txform.pickAccount')}</span>
@@ -453,6 +455,8 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const [counterOpen, setCounterOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   const baselineRef = useRef('');
 
   const allAccounts = useSpaceAccounts();
@@ -485,6 +489,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     setLinkedAccountId(initial.linkedAccountId);
     setRecurringId(initial.recurringId);
     setStagedCats(tx?.cats ?? null);
+    setAttempted(false);
     // dirty baseline (user request 2026-08-01): a stray backdrop tap on
     // an EDITED form asks before dropping it; an untouched one closes
     baselineRef.current = formFingerprint({
@@ -508,6 +513,15 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const effectiveType = formEffectiveType(adjustment, ownStamp, catId, linkedAccount, isExpense);
   const startGateBlocking = blockingStartDate(space, date);
   const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing: false, beforeStart: !!startGateBlocking });
+  const blockerText = (() => {
+    if (!attempted || valid) return '';
+    if (!merchant.trim()) return t('form.needName');
+    if (cents === null || cents === 0) return t('form.needAmount');
+    if (!effectiveAccount) return t('form.needAccount');
+    // the start-gate card already explains itself — just point at it
+    if (startGateBlocking) return t('form.fixErrors');
+    return t('form.needFields');
+  })();
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
 
@@ -637,7 +651,8 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
               }}
               inputMode="decimal"
               placeholder={`${t('txform.amount')} (EUR)`}
-              className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={attempted && (cents === null || cents === 0)}
+              className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && (cents === null || cents === 0))}`}
             />
           </div>
 
@@ -646,7 +661,8 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             value={merchant}
             onChange={(e) => setMerchant(e.target.value)}
             placeholder={t('txform.merchant')}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={attempted && !merchant.trim()}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !merchant.trim())}`}
           />
 
           {/* the webview's own picker indicator sat misaligned (user
@@ -685,7 +701,9 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
 
           {/* account — a full field + picker sheet (the chip strip felt
               odd, user 2026-07-31); open-banking accounts are not offered */}
-          {writable.length > 0 && <AccountFieldRow account={selectedAccount} onOpen={() => setAccountOpen(true)} />}
+          {writable.length > 0 && (
+            <AccountFieldRow account={selectedAccount} onOpen={() => setAccountOpen(true)} bad={attempted && !effectiveAccount} />
+          )}
           {writable.length === 0 && (
             <p className="px-1 text-[12px] text-ink-4" data-testid="txform-no-manual-account">
               {t('txform.manualOnly')}
@@ -727,7 +745,17 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             </button>
           )}
 
-          <Button data-testid="txform-save" onClick={save} disabled={!valid}>
+          <FormBlockerNote show={!!blockerText} text={blockerText} testId="txform-save-blocker" />
+          <Button
+            data-testid="txform-save"
+            onClick={() => {
+              if (!valid) {
+                setAttempted(true);
+                return;
+              }
+              save();
+            }}
+          >
             {tx ? t('action.save') : t('action.add')}
           </Button>
         </div>

@@ -14,6 +14,7 @@ import { evalAmountCents, parseCents } from '@/lib/money';
 import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
 import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Chip } from '@/ui/primitives';
 import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
 import { Icon } from '@/ui/Icon';
@@ -108,6 +109,8 @@ export function AddAccountChooser({
   const [payEveryN, setPayEveryN] = useState(1);
   const [payCustom, setPayCustom] = useState(isCustomCadence(prefill?.paymentEvery, 1));
   const [note, setNote] = useState('');
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   // the action a shared-space warning is holding back (connect/import)
   const pendingRef = useRef<(() => void) | null>(null);
   const effectiveCurrency = currency ?? space?.currency ?? 'EUR';
@@ -129,6 +132,7 @@ export function AddAccountChooser({
       setPayEveryN(1);
       setPayCustom(false);
       setNote('');
+      setAttempted(false);
       pendingRef.current = null;
     }
   };
@@ -162,7 +166,9 @@ export function AddAccountChooser({
   // a loan/mortgage exists to track what's owed — its current value is
   // the whole point and can't default to zero (v2: "current required")
   const balanceRequired = newType === 'loan' || newType === 'mortgage';
-  const saveDisabled = !name.trim() || (balanceRequired && parseCents(balance) === null);
+  const nameMissing = !name.trim();
+  const balanceMissing = balanceRequired && parseCents(balance) === null;
+  const saveDisabled = nameMissing || balanceMissing;
 
   /** the debt story a LIABILITY account carries (loans v2) — blank
    *  fields stay off the row entirely */
@@ -315,7 +321,8 @@ export function AddAccountChooser({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('acct.accountName')}
-                className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+                aria-invalid={attempted && nameMissing}
+                className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && nameMissing)}`}
               />
               <div className="flex gap-2">
                 <div className="flex overflow-hidden rounded-input border border-line">
@@ -344,7 +351,8 @@ export function AddAccountChooser({
                   // starting value (user ss: "Initial balance" next to
                   // "Original amount" read as the same thing twice)
                   placeholder={`${t(isLiability(newType) ? 'debts.current' : 'acct.initialBalance')} (${effectiveCurrency})`}
-                  className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+                  aria-invalid={attempted && balanceMissing}
+                  className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && balanceMissing)}`}
                 />
               </div>
               <div className="m-cap px-1">{t('space.currency')}</div>
@@ -444,7 +452,21 @@ export function AddAccountChooser({
                   />
                 </>
               )}
-              <Button data-testid="chooser-acctform-save" onClick={createManual} disabled={saveDisabled}>
+              <FormBlockerNote
+                show={attempted && saveDisabled}
+                text={nameMissing ? t('form.needName') : t('form.needAmount')}
+                testId="chooser-acctform-save-blocker"
+              />
+              <Button
+                data-testid="chooser-acctform-save"
+                onClick={() => {
+                  if (saveDisabled) {
+                    setAttempted(true);
+                    return;
+                  }
+                  createManual();
+                }}
+              >
                 {t('action.add')}
               </Button>
             </>

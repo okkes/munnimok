@@ -10,6 +10,7 @@ import { useSession } from '@/app/session';
 import { TIPS_DISABLED_KEY, useTipsDisabled } from '@/features/help/tipsPref';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Pill, Row } from '@/ui/primitives';
@@ -150,6 +151,8 @@ export function GlobalSettingsScreen() {
   const [lockTimeout, setLockTimeout] = useState(60);
   const [lockBioAvailable, setLockBioAvailable] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
+  // #195: tappable — an invalid tap names the blocker
+  const [lockAttempted, setLockAttempted] = useState(false);
   useEffect(() => {
     if (identity?.kind !== 'user') return;
     void getApiCapabilities().then((caps) => {
@@ -170,6 +173,7 @@ export function GlobalSettingsScreen() {
     setLockPin2('');
     setLockTimeout(60);
     setLockError(null);
+    setLockAttempted(false);
     setLockBioAvailable(await biometricAvailable());
     setLockSheetOpen(true);
   };
@@ -368,7 +372,8 @@ export function GlobalSettingsScreen() {
             value={lockPin}
             onChange={(e) => setLockPin(e.target.value.replaceAll(/\D/g, ''))}
             placeholder={t('lock.pinLabel')}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={lockAttempted && !validPin(lockPin)}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !validPin(lockPin))}`}
           />
           <input
             data-testid="lock-setup-pin2"
@@ -402,7 +407,17 @@ export function GlobalSettingsScreen() {
               {lockError}
             </p>
           )}
-          <Button data-testid="lock-setup-save" onClick={() => void saveLock()} disabled={!validPin(lockPin)}>
+          <FormBlockerNote show={lockAttempted && !validPin(lockPin)} text={t('form.needFields')} testId="lock-setup-save-blocker" />
+          <Button
+            data-testid="lock-setup-save"
+            onClick={() => {
+              if (!validPin(lockPin)) {
+                setLockAttempted(true);
+                return;
+              }
+              void saveLock();
+            }}
+          >
             {t('action.save')}
           </Button>
         </div>

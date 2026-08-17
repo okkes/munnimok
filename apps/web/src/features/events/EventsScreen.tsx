@@ -16,6 +16,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -60,6 +61,8 @@ export function EventFormSheet({
   const [estimate, setEstimate] = useState('');
   const [note, setNote] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
   // #160: desktop-only webcam tile beside the upload tile
   const webcamDoor = useWebcamDoor();
@@ -76,6 +79,7 @@ export function EventFormSheet({
     setEstimate(editing?.budgetCents ? (editing.budgetCents / 100).toFixed(2) : '');
     setNote(editing?.note ?? '');
     setConfirmDelete(false);
+    setAttempted(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
 
@@ -182,7 +186,8 @@ export function EventFormSheet({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('events.namePlaceholder')}
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          aria-invalid={attempted && !name.trim()}
+          className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
         <div className="flex items-end gap-2">
           <label className="relative min-w-0 flex-1 text-[12px] text-ink-3">
@@ -240,7 +245,17 @@ export function EventFormSheet({
             {t(editing.archived === 1 ? 'events.unarchive' : 'events.archive')}
           </button>
         )}
-        <Button data-testid="eventform-save" onClick={() => void save()} disabled={!name.trim()}>
+        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="eventform-save-blocker" />
+        <Button
+          data-testid="eventform-save"
+          onClick={() => {
+            if (!name.trim()) {
+              setAttempted(true);
+              return;
+            }
+            void save();
+          }}
+        >
           {editing ? t('action.save') : t('action.create')}
         </Button>
         {editing && (

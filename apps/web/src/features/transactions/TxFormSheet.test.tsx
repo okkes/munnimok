@@ -22,19 +22,24 @@ describe('TxFormSheet (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('save stays disabled until amount and merchant are valid', async () => {
+  it('save stays tappable — an invalid tap names the blocker until the form is whole (#195)', async () => {
     await openForm();
     const save = screen.getByTestId('txform-save') as HTMLButtonElement;
-    expect(save.disabled).toBe(true);
+    expect(save.disabled).toBe(false); // never disabled for validity
+    fireEvent.click(save);
+    // first failing requirement: the merchant name
+    expect(await screen.findByTestId('txform-save-blocker')).toBeTruthy();
+    expect(screen.getByTestId('txform-merchant').getAttribute('aria-invalid')).toBe('true');
 
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakker' } });
-    expect(save.disabled).toBe(true); // still no amount
+    expect(screen.getByTestId('txform-save-blocker')).toBeTruthy(); // still no amount
+    expect(screen.getByTestId('txform-merchant').getAttribute('aria-invalid')).toBe('false');
 
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '0' } });
-    expect(save.disabled).toBe(true); // zero is not a transaction
+    expect(screen.getByTestId('txform-save-blocker')).toBeTruthy(); // zero is not a transaction
 
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '4,50' } });
-    await waitFor(() => expect(save.disabled).toBe(false));
+    await waitFor(() => expect(screen.queryByTestId('txform-save-blocker')).toBeNull());
   });
 
   it('register-style amount entry: bare digits fill cents from the right (user request)', async () => {
@@ -323,10 +328,13 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Bakker' } });
     const save = screen.getByTestId('txform-save') as HTMLButtonElement;
     expect((await screen.findByTestId('txform-account')).textContent).toContain('Pick an account');
-    expect(save.disabled).toBe(true); // valid amount+merchant, but no account
+    // valid amount+merchant, but no account: the tap names it (#195)
+    fireEvent.click(save);
+    expect(await screen.findByTestId('txform-save-blocker')).toBeTruthy();
+    expect(screen.getByTestId('txform-account').getAttribute('aria-invalid')).toBe('true');
     fireEvent.click(screen.getByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
-    await waitFor(() => expect(save.disabled).toBe(false));
+    await waitFor(() => expect(screen.queryByTestId('txform-save-blocker')).toBeNull());
   });
 
   it('a date before the space start is refused; one tap moves the start (arc 5)', async () => {
@@ -356,9 +364,11 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Oud bonnetje' } });
     fireEvent.change(screen.getByTestId('txform-date'), { target: { value: '2026-05-15' } });
 
-    // refused with the way out, not a dead end
+    // refused with the way out, not a dead end — the save tap points at
+    // the start-gate card's own explanation (#195)
     await screen.findByTestId('txform-before-start');
-    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('txform-save'));
+    expect(await screen.findByTestId('txform-save-blocker')).toBeTruthy();
     fireEvent.click(screen.getByTestId('txform-move-start'));
 
     // the space start moved to the row's date — the error clears, save arms
@@ -371,7 +381,7 @@ describe('TxFormSheet (demo identity)', () => {
       expect((await db.accountLinks.get(linkId))?.historyFrom).toBe('2026-05-15');
     }, { timeout: 5000 });
     await waitFor(() => expect(screen.queryByTestId('txform-before-start')).toBeNull());
-    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByTestId('txform-save-blocker')).toBeNull();
     db.close();
   }, 15_000);
 

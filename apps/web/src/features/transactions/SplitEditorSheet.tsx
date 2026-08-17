@@ -10,6 +10,7 @@ import { balanceTargetIndex, pctRemainder, resolveSplitsFor, splitRemainderCents
 import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import type { TxSplit, TxType } from '@/db/types';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -255,10 +256,13 @@ export function SplitEditorSheet({
     pendingBalanceTarget.current = focusStash?.index ?? null;
   };
 
+  // #195: tappable — an invalid tap arms the aria/error state
+  const [attempted, setAttempted] = useState(false);
   const source = value;
   const referenceCents = tx.amountCents;
   useEffect(() => {
     if (!open) return;
+    setAttempted(false);
     if (source?.length) {
       // #216: settled `reimbursed` slices carry no pct by design — they
       // must not flip a %-shaped partition back to amount mode
@@ -494,7 +498,20 @@ export function SplitEditorSheet({
             opacity, and iOS kept painting the OLD enabled button at the
             old spot as a dark ghost band (user ss r6). */}
         <div className="flex flex-col gap-2" style={{ transform: 'translateZ(0)' }}>
-          <Button data-testid="split-save" onClick={save} disabled={!!error}>
+          {/* the remainder pill above already explains an unbalanced split —
+              the note steps in only for pill-less errors (e.g. a zero row) */}
+          <FormBlockerNote show={attempted && !!error && remainder === 0} text={t('form.fixErrors')} testId="split-save-blocker" />
+          <Button
+            data-testid="split-save"
+            aria-invalid={attempted && !!error}
+            onClick={() => {
+              if (error) {
+                setAttempted(true);
+                return;
+              }
+              save();
+            }}
+          >
             {t('split.done')}
           </Button>
           {!!source?.length && (

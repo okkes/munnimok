@@ -50,9 +50,12 @@ describe('Debts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('chooser-accttype-loan'));
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Student loan' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-original'), { target: { value: '12000' } });
-    // save refuses until the CURRENT value anchors the loan
-    expect((screen.getByTestId('chooser-acctform-save') as HTMLButtonElement).disabled).toBe(true);
+    // save refuses until the CURRENT value anchors the loan — the tap
+    // names the missing amount instead of a dead button (#195)
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
+    expect(await screen.findByTestId('chooser-acctform-save-blocker')).toBeTruthy();
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '10000' } });
+    await waitFor(() => expect(screen.queryByTestId('chooser-acctform-save-blocker')).toBeNull());
     fireEvent.change(screen.getByTestId('chooser-acctform-iban'), { target: { value: 'NL77LOAN0000000077' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-apr'), { target: { value: '12' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-payment'), { target: { value: '120' } });

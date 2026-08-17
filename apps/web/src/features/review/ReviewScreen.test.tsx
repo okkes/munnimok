@@ -926,11 +926,14 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '50' } });
     fireEvent.blur(amount0);
-    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(true));
+    // #195: Done stays tappable — the lone 50% tap refuses in place
+    fireEvent.click(screen.getByTestId('split-save'));
+    expect(screen.getByTestId('split-editor')).toBeTruthy(); // still open
+    expect(screen.getByTestId('split-save').getAttribute('aria-invalid')).toBe('true');
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '100' } });
     fireEvent.blur(amount0);
-    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    await waitFor(() => expect(screen.getByTestId('split-save').getAttribute('aria-invalid')).toBe('false'));
   });
 
   it('splitting stays on the card; amounts clear on focus and restore on blur', async () => {
