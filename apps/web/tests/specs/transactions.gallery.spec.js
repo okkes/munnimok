@@ -177,7 +177,11 @@ for (const V of VARIANTS) {
     // assign 20.00 to the first entry; second is open -> remainder shown
     await page.fill('[data-testid="part-cat-amount-0"]', '20,00');
     await expect(page.locator('[data-testid="part-cat-remainder"]')).toContainText('8.99');
-    await expect(page.locator('[data-testid="part-cat-save"]')).toBeDisabled();
+    // #195: Done stays tappable — an unbalanced tap refuses and the
+    // remainder pill is the visible explanation
+    await page.click('[data-testid="part-cat-save"]');
+    await expect(page.locator('[data-testid="part-cats-editor"]')).toBeVisible();
+    await expect(page.locator('[data-testid="part-cat-save"]')).toHaveAttribute('aria-invalid', 'true');
     // pick a category for entry 2 and auto-balance via the remainder chip
     await page.click('[data-testid="part-cat-1"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
