@@ -6,6 +6,7 @@ import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { apiFetch } from '@/lib/api';
 import { downscaleImage } from '@/lib/image';
+import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { COUNTRIES } from '@/domain/countries';
 import { setPredictionCountry } from '@/domain/predictCategory';
 import { AVATARS, Avatar } from '@/features/profile/ProfileScreen';
@@ -19,6 +20,7 @@ import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
 import { Sheet } from '@/ui/Sheet';
 import { SearchField } from '@/ui/SearchField';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 const countryLabel = (code: string, lang: Lang) => {
   const c = COUNTRIES.find((x) => x.code === code);
@@ -45,6 +47,9 @@ export function OnboardingScreen() {
   const [countryOpen, setCountryOpen] = useState(false);
   const [query, setQuery] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  // #160: desktop-only webcam door beside the avatar upload
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
   // step 1 = profile, step 2 = app lock; bank step retired (user ruling)
   const [step, setStep] = useState<1 | 2>(1);
   const [bioAvailable, setBioAvailable] = useState(false);
@@ -83,6 +88,17 @@ export function OnboardingScreen() {
   const onUpload = async (file: File | undefined) => {
     if (!file) return;
     setPicture(await downscaleImage(file));
+  };
+
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
+      return;
+    }
+    fileRef.current?.click();
   };
 
   /** same shape as the settings flow: PIN is the fallback, biometrics
@@ -179,11 +195,23 @@ export function OnboardingScreen() {
                 ))}
                 <button
                   data-testid="onboarding-avatar-upload"
-                  onClick={() => fileRef.current?.click()}
+                  onClick={pickPhoto}
                   className="m-tap flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-line bg-surface"
                 >
                   <Icon name="camera-plus-outline" size={17} color="var(--m-ink-3)" />
                 </button>
+                {/* #160: desktop webcam snapshot — mirrors the upload dot */}
+                {webcamDoor && (
+                  <button
+                    data-testid="onboarding-avatar-webcam"
+                    aria-label={t('webcam.use')}
+                    title={t('webcam.use')}
+                    onClick={() => setWebcamOpen(true)}
+                    className="m-tap flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-line bg-surface"
+                  >
+                    <Icon name="camera-outline" size={17} color="var(--m-ink-3)" />
+                  </button>
+                )}
                 <input ref={fileRef} type="file" accept="image/*" hidden data-testid="onboarding-avatar-file" onChange={(e) => void onUpload(e.target.files?.[0])} />
               </div>
             </div>
@@ -282,6 +310,9 @@ export function OnboardingScreen() {
           </div>
         )}
       </div>
+
+      {/* #160: snapshot feeds the same downscale path as the file input */}
+      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onUpload(file)} />
 
       <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall" dragHandle>
         <SearchField

@@ -51,6 +51,8 @@ describe('ProfileScreen (demo identity)', () => {
   it('an uploaded photo replaces the preset, survives a save and renders as an image', async () => {
     const first = renderApp('/profile');
     await screen.findByTestId('profile-photo-upload');
+    // #160: the webcam door is desktop-only — absent on the phone viewport
+    expect(screen.queryByTestId('profile-photo-webcam')).toBeNull();
 
     const file = new File(['x'], 'me.png', { type: 'image/png' });
     fireEvent.change(screen.getByTestId('profile-photo-input'), { target: { files: [file] } });

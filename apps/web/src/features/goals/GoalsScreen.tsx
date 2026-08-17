@@ -1,4 +1,5 @@
 import { downscaleImage } from '@/lib/image';
+import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
@@ -19,6 +20,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 export const GOAL_ICONS = ['home-outline', 'car-outline', 'airplane', 'shield-check-outline', 'laptop', 'ring', 'sail-boat', 'school-outline'] as const;
 
@@ -58,10 +60,24 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   }, [initial, editing]);
 
   const uploadRef = useRef<HTMLInputElement>(null);
+  // #160: desktop-only webcam tile beside the upload tile
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
   const onUpload = async (file: File | undefined) => {
     if (!file) return;
     // wide enough for the hero, small enough to sync as a field
     setPicture(await downscaleImage(file, 1080, 0.72));
+  };
+
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
+      return;
+    }
+    uploadRef.current?.click();
   };
 
   const targetCents = parseCents(target);
@@ -99,6 +115,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
       targetDate !== (editing?.targetDate ?? ''));
 
   return (
+    <>
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('goals.edit') : t('goals.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* optional cover, same mechanics as events (user request) */}
@@ -115,12 +132,23 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
           </button>
           <button
             data-testid="goalform-upload"
-            onClick={() => uploadRef.current?.click()}
+            onClick={pickPhoto}
             className="m-tap flex h-14 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
           >
             <Icon name="image-plus" size={16} />
             {t('events.uploadPicture')}
           </button>
+          {/* #160: desktop webcam snapshot — mirrors the upload tile */}
+          {webcamDoor && (
+            <button
+              data-testid="goalform-webcam"
+              onClick={() => setWebcamOpen(true)}
+              className="m-tap flex h-14 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
+            >
+              <Icon name="camera-outline" size={16} />
+              {t('webcam.use')}
+            </button>
+          )}
           {GOAL_PICTURES.map((candidate) => (
             <button
               key={candidate}
@@ -194,6 +222,9 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
         )}
       </div>
     </Sheet>
+    {/* #160: snapshot feeds the same downscale path as the file input */}
+    <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onUpload(file)} />
+    </>
   );
 }
 

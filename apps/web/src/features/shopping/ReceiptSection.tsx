@@ -12,6 +12,7 @@ import { isNativeApp, takeNativePhoto } from '@/lib/platform';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 import { ReceiptViewSheet } from './ReceiptViewSheet';
 
 const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
@@ -44,6 +45,10 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const [viewOpen, setViewOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [busy, setBusy] = useState(false);
+  // #160: desktop-only webcam rung under the upload button (hooks stay
+  // above the `entry === undefined` early return)
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
 
   const candidates = useMemo(() => rankForTx(tx, unmatched ?? []).slice(0, 6), [tx, unmatched]);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
@@ -145,6 +150,13 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
             <Icon name={panes ? 'upload-outline' : 'camera-outline'} size={16} />
             {panes ? t('receipt.upload') : t('receipt.takePhoto')}
           </Button>
+          {/* #160: desktop webcam snapshot — same attach path as a file */}
+          {webcamDoor && (
+            <Button variant="outline" className="w-full" data-testid="receipt-webcam" disabled={busy} onClick={() => setWebcamOpen(true)}>
+              <Icon name="camera-outline" size={16} />
+              {t('webcam.use')}
+            </Button>
+          )}
           <button
             data-testid="receipt-connections"
             onClick={() => void navigate({ to: '/shopping' })}
@@ -154,6 +166,9 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
           </button>
         </div>
       </Sheet>
+
+      {/* #160: snapshot rides the same attach pipeline as a picked file */}
+      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onFile(file)} />
 
       <ReceiptViewSheet entry={viewOpen ? entry : null} currency={tx.currency} onClose={() => setViewOpen(false)} contextTxId={tx.id} />
     </>
