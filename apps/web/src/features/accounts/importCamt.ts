@@ -341,7 +341,8 @@ async function refreshExistingAttachment(
 ): Promise<boolean> {
   const linkId = accountLinkId(spaceId, feedId);
   const existingLink = await store.get('accountLink', linkId);
-  if (existingLink?.deleted !== 0 || existingLink.archived) return false;
+  if (existingLink?.deleted !== 0) return false;
+  if (existingLink.archived) return false;
   const historyFrom =
     existingLink.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
   await feeds.attach(spaceId, feedId, accountId, historyFrom);

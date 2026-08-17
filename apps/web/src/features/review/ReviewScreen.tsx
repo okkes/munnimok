@@ -157,6 +157,16 @@ function counterTxFaceFor(
 const partSignedCents = (containerCents: number, partAbsCents: number): number =>
   (containerCents < 0 ? -1 : 1) * partAbsCents;
 
+/** #161: does the card hold USER-staged work a split would reset? A
+ *  memory-offered event is not a user decision (S3776: out of the
+ *  component) */
+const hasUserStaging = (
+  staged: ReviewDraft | null,
+  eventTouched: boolean,
+  eventPick: string | null,
+  manualRecId: string | null,
+): boolean => staged !== null || (eventTouched && eventPick !== null) || manualRecId !== null;
+
 /** #237 r3: the card's Counter-transaction row descriptor — undefined
  *  hides the row (no counterparty, or a funding pot: nothing ever
  *  shows there); a STORED pair renders tap-less (S3776: out of the
@@ -1356,9 +1366,7 @@ export function ReviewScreen() {
   // edits get a conscious warning before the split flow opens
   const [splitResetOpen, setSplitResetOpen] = useState(false);
   const requestSplit = () => {
-    // #161: a memory-offered event is not a user decision — only the
-    // user's own staging warrants the reset warning
-    if (stagedDraft !== null || (eventTouched.current && eventPick !== null) || manualRecId !== null) {
+    if (hasUserStaging(stagedDraft, eventTouched.current, eventPick, manualRecId)) {
       setSplitResetOpen(true);
       return;
     }
