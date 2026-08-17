@@ -157,6 +157,24 @@ function counterTxFaceFor(
 const partSignedCents = (containerCents: number, partAbsCents: number): number =>
   (containerCents < 0 ? -1 : 1) * partAbsCents;
 
+/** #237 r3: the card's Counter-transaction row descriptor — undefined
+ *  hides the row (no counterparty, or a funding pot: nothing ever
+ *  shows there); a STORED pair renders tap-less (S3776: out of the
+ *  component) */
+function counterTxDescriptor(
+  tx: SpaceTx | undefined,
+  counterAcct: { type: AccountType } | undefined,
+  peer: SpaceTx | undefined,
+  bankFed: boolean,
+  lang: ReturnType<typeof useLang>['lang'],
+  t: ReturnType<typeof useLang>['t'],
+  onEdit: () => void,
+): { face: string; onEdit?: () => void } | undefined {
+  if (!tx || !counterAcct || counterAcct.type === 'funding') return undefined;
+  const face = counterTxFaceFor(peer, bankFed, tx.currency, lang, t);
+  return tx.transferPeerId ? { face } : { face, onEdit };
+}
+
 /** #161: the remembered pct SPREAD applied onto an untouched draft —
  *  a resolved transfer, an own-counter default or the row's own
  *  partition must never be fragmented by it (S3776: out of the
@@ -1496,12 +1514,7 @@ export function ReviewScreen() {
     () => (standingPeerId ? allTxs?.find((r) => r.id === standingPeerId) : undefined),
     [standingPeerId, allTxs],
   );
-  const counterTxRow = (() => {
-    if (!tx || !counterAcct || counterAcct.type === 'funding') return undefined;
-    const face = counterTxFaceFor(peerFaceRow, counterBankFed, tx.currency, lang, t);
-    // a STORED pair is a fact, not a draft — the row shows it, tap-less
-    return tx.transferPeerId ? { face } : { face, onEdit: () => setCounterTxOpen(true) };
-  })();
+  const counterTxRow = counterTxDescriptor(tx, counterAcct, peerFaceRow, counterBankFed, lang, t, () => setCounterTxOpen(true));
   const events = useEvents();
   const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
   const pickedEvent = activeEvents.find((e) => e.id === eventPick);
