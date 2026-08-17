@@ -220,6 +220,9 @@ export interface FeedGateway {
   attach(spaceId: string, feedSpaceId: string, accountId: string, historyFrom?: string): Promise<void>;
 }
 
+/** #184: rows land one by one — the UI narrates `done` of the total */
+export type ImportProgress = (done: number) => void;
+
 /** Match statements to existing accounts by IBAN (creating where needed) and import entries idempotently. */
 export async function importCamtStatements(
   repo: Repo,
@@ -227,12 +230,13 @@ export async function importCamtStatements(
   spaceId: string,
   statements: ParsedStatement[],
   feeds?: FeedGateway,
+  onProgress?: ImportProgress,
 ): Promise<ImportResult> {
   // demo/offline identities never sync: raw+transformation stay merged
   // in the current space exactly as before (dual-read handles both)
   return feeds
-    ? importIntoFeeds(repo, store, spaceId, statements, feeds)
-    : importMerged(repo, store, spaceId, statements);
+    ? importIntoFeeds(repo, store, spaceId, statements, feeds, onProgress)
+    : importMerged(repo, store, spaceId, statements, onProgress);
 }
 
 /** header-only exports (real ING files include one) parse to a ref-less
@@ -276,6 +280,7 @@ async function importMerged(
   store: StorageBackend,
   spaceId: string,
   statements: ParsedStatement[],
+  onProgress?: ImportProgress,
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
   const importedBy = await uploaderName(store);
@@ -310,6 +315,7 @@ async function importMerged(
       } else {
         skipped++;
       }
+      onProgress?.(imported + skipped);
     }
 
     accounts.push({
@@ -366,6 +372,7 @@ async function importIntoFeeds(
   spaceId: string,
   statements: ParsedStatement[],
   feeds: FeedGateway,
+  onProgress?: ImportProgress,
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
   const importedBy = await uploaderName(store);
@@ -400,6 +407,7 @@ async function importIntoFeeds(
       } else {
         skipped++;
       }
+      onProgress?.(imported + skipped);
     }
 
     const attached = await refreshExistingAttachment(repo, store, feeds, spaceId, feedId, accountId);

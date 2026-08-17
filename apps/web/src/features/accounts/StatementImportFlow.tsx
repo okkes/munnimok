@@ -17,9 +17,21 @@ import { importCamtStatements, statementCoverageEnd } from './importCamt';
 import type { ImportResult } from './importCamt';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
+import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
 
 const daysSince = (iso: string): number => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+
+/** #226 (user): the tested banks, searchable like the connect flow —
+ *  the pick guides the file dialog (parsing still sniffs the content).
+ *  Brand names stay brand names in every language. */
+const IMPORT_BANKS = [
+  { id: 'asn', name: 'ASN Bank', icon: 'file-xml-box', accept: '.xml,text/xml,application/xml', subKey: 'import.bankXmlSub' },
+  { id: 'ing', name: 'ING', icon: 'file-delimited-outline', accept: '.csv,text/csv', subKey: 'import.bankCsvSub' },
+  { id: 'paypal', name: 'PayPal', icon: 'file-delimited-outline', accept: '.csv,text/csv', subKey: 'import.bankCsvSub' },
+] as const;
+
+const ANY_ACCEPT = '.xml,.csv,text/xml,application/xml,text/csv';
 
 /**
  * The whole statement-import journey as one reusable flow (extracted
@@ -53,6 +65,11 @@ export function StatementImportFlow({
   const [importError, setImportError] = useState(false);
   const [runFailed, setRunFailed] = useState(false);
   const [importing, setImporting] = useState(false);
+  // #226: the searchable bank list narrows; the pick tunes the dialog
+  const [bankQuery, setBankQuery] = useState('');
+  const [accept, setAccept] = useState<string>(ANY_ACCEPT);
+  // #184 (user): long imports say how far they are, not just "busy"
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   const activeSpace = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   // IBAN matching spans every account the device knows (both pools)
@@ -85,11 +102,19 @@ export function StatementImportFlow({
   const runImport = async () => {
     if (!importPreview?.length || importing) return; // double-taps fired PARALLEL imports (user report 2026-07-25)
     setImporting(true);
+    // #184: rows land one by one — the count updates every ~1% so an
+    // 8000-row statement narrates instead of spinning mutely
+    const total = importPreview.reduce((sum, stmt) => sum + stmt.entries.length, 0);
+    const step = Math.max(1, Math.floor(total / 100));
+    setProgress({ done: 0, total });
+    const onProgress = (done: number) => {
+      if (done === total || done % step === 0) setProgress({ done, total });
+    };
     // syncing identities import into feed spaces (shared-accounts model);
     // demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
     try {
-      setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds));
+      setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds, onProgress));
     } catch (err) {
       // a failed run (feed registration, server away) must SAY so —
       // a silently unchanged screen reads as "the app is broken"
@@ -101,6 +126,7 @@ export function StatementImportFlow({
       return;
     } finally {
       setImporting(false);
+      setProgress(null);
     }
     setRunFailed(false);
     void logActivity(store, repo, spaceId, 'importRun', `${importPreview.length}`);
@@ -128,43 +154,65 @@ export function StatementImportFlow({
       <input
         ref={fileRef}
         type="file"
-        accept=".xml,.csv,text/xml,application/xml,text/csv"
+        accept={accept}
         multiple
         hidden
         data-testid="accounts-import-input"
         onChange={(e) => void onFilePicked(e.target.files)}
       />
 
-      {/* which export is this? each row explains how to get the file */}
-      <Sheet open={open} onOpenChange={onOpenChange} title={t('import.pickFormat')} size="form">
+      {/* #226 (user): which BANK is this export from? — searchable like
+          the connect flow; the universal CAMT.053 door stays separate */}
+      <Sheet open={open} onOpenChange={onOpenChange} title={t('import.pickFormat')} size="tall">
         <div className="flex flex-col gap-2 pt-1" data-testid="import-format-pick">
           {note && (
             <p className="pb-1 text-[12px] leading-snug text-ink-3" data-testid="import-global-note">
               {note}
             </p>
           )}
-          {(
-            [
-              ['import-format-camt', 'file-xml-box', 'import.formatCamt', 'import.formatCamtSub'],
-              ['import-format-ing', 'file-delimited-outline', 'import.formatIng', 'import.formatIngSub'],
-            ] as const
-          ).map(([testId, icon, titleKey, subKey]) => (
+          <SearchField
+            testId="import-bank-search"
+            value={bankQuery}
+            onChange={setBankQuery}
+            placeholder={t('import.bankSearchPlaceholder')}
+            height="h-10"
+            textSize="text-[13px]"
+          />
+          {IMPORT_BANKS.filter((bank) => bank.name.toLowerCase().includes(bankQuery.trim().toLowerCase())).map((bank) => (
             <button
-              key={testId}
-              data-testid={testId}
+              key={bank.id}
+              data-testid={`import-bank-${bank.id}`}
               onClick={() => {
+                setAccept(bank.accept);
                 onOpenChange(false);
-                fileRef.current?.click();
+                // the accept change must land in the DOM before the dialog
+                requestAnimationFrame(() => fileRef.current?.click());
               }}
               className="m-tap flex items-start gap-3 rounded-card border border-line bg-surface p-4 text-left"
             >
-              <Icon name={icon} size={22} color="var(--m-accent)" />
+              <Icon name={bank.icon} size={22} color="var(--m-accent)" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[14px] font-semibold text-ink">{t(titleKey)}</span>
-                <span className="block pt-0.5 text-[12px] leading-snug text-ink-3">{t(subKey)}</span>
+                <span className="block text-[14px] font-semibold text-ink">{bank.name}</span>
+                <span className="block pt-0.5 text-[12px] leading-snug text-ink-3">{t(bank.subKey)}</span>
               </span>
             </button>
           ))}
+          <div className="m-cap mt-1 px-1">{t('import.universalCap')}</div>
+          <button
+            data-testid="import-format-camt"
+            onClick={() => {
+              setAccept(ANY_ACCEPT);
+              onOpenChange(false);
+              requestAnimationFrame(() => fileRef.current?.click());
+            }}
+            className="m-tap flex items-start gap-3 rounded-card border border-dashed border-line bg-surface p-4 text-left"
+          >
+            <Icon name="file-xml-box" size={22} color="var(--m-accent)" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-semibold text-ink">{t('import.formatCamt')}</span>
+              <span className="block pt-0.5 text-[12px] leading-snug text-ink-3">{t('import.formatCamtSub')}</span>
+            </span>
+          </button>
           {/* #177 (user): a long export helps — history powers pattern
               detection while the space start date keeps the view clean */}
           <p className="flex items-start gap-1.5 px-1 text-[12px] leading-snug text-ink-4" data-testid="import-history-tip">
@@ -250,13 +298,15 @@ export function StatementImportFlow({
             })}
             <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length || importing}>
               {importing ? (
-                // big statements take a while — say so instead of freezing
-                // on a dead button (user ss 2026-08-01)
+                // big statements take a while — #184: narrate the count,
+                // not just a spinner (user ss 2026-08-01 + #184)
                 <span className="inline-flex items-center gap-2" data-testid="import-running">
                   <span className="inline-flex animate-spin">
                     <Icon name="loading" size={16} />
                   </span>
-                  {t('import.importing')}
+                  {progress && progress.total > 0
+                    ? t('import.progressCount', { done: progress.done, total: progress.total })
+                    : t('import.importing')}
                 </span>
               ) : (
                 t('import.doImport')
