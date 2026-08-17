@@ -73,6 +73,41 @@ describe('SettingsScreen (demo identity)', () => {
     db.close();
   });
 
+  it('the private lock is an owner toggle in the Setup group now (#162)', async () => {
+    renderApp('/settings');
+    await screen.findByTestId('screen-settings');
+    expect(await screen.findByTestId('settings-space-private-row')).toBeTruthy();
+    // demo space predates the lock: unlocked until the owner arms it
+    const toggle = screen.getByTestId('settings-space-private-toggle') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    fireEvent.click(toggle);
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const spaces = await db.spaces.toArray();
+        expect(spaces.some((s) => s.deleted === 0 && s.inviteLock === 1)).toBe(true);
+      },
+      { timeout: 5000 },
+    );
+    // the controlled checkbox must SHOW the write before the next tap —
+    // clicking mid-liveQuery-emission would re-toggle from stale state
+    await waitFor(
+      () => expect((screen.getByTestId('settings-space-private-toggle') as HTMLInputElement).checked).toBe(true),
+      { timeout: 5000 },
+    );
+    fireEvent.click(screen.getByTestId('settings-space-private-toggle'));
+    await waitFor(
+      async () => {
+        const spaces = await db.spaces.toArray();
+        expect(spaces.some((s) => s.deleted === 0 && s.inviteLock === 1)).toBe(false);
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
   it('demo sign-out returns to the login screen and wipes the demo db', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');

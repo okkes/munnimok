@@ -288,6 +288,28 @@ export function SettingsScreen() {
                     }}
                   />
                 ))}
+              {/* #162: the private lock lives with the space's other
+                  settings now — owner-only, applies immediately (LWW) */}
+              {group.capKey === 'settings.groupSetup' && myRole === 'owner' && activeSpace && (
+                <Row
+                  testId="settings-space-private-row"
+                  icon="lock-outline"
+                  title={t('space.inviteLockLabel')}
+                  sub={t('space.inviteLockSub')}
+                  trailing={
+                    <input
+                      type="checkbox"
+                      data-testid="settings-space-private-toggle"
+                      checked={activeSpace.inviteLock === 1}
+                      onChange={(e) => {
+                        void repo.upsert('space', activeSpace.id, activeSpace.id, { inviteLock: e.target.checked ? 1 : 0 });
+                        void logActivity(store, repo, activeSpace.id, 'spaceEdit', activeSpace.name);
+                      }}
+                      className="h-4 w-4 accent-[var(--m-accent)]"
+                    />
+                  }
+                />
+              )}
             </div>
           </div>
         ))}

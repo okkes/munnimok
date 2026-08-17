@@ -11,6 +11,7 @@ export interface PushPayload {
   count?: number;
   fromName?: string;
   spaceName?: string;
+  role?: string;
 }
 
 interface PushTexts {
@@ -21,6 +22,9 @@ interface PushTexts {
   friendAccept: string;
   spaceInvite: string;
   spaceJoin: string;
+  memberRemoved: string;
+  memberRole: string;
+  roles: Record<string, string>;
   someone: string;
   aSpace: string;
 }
@@ -34,6 +38,9 @@ const TEXTS: Record<string, PushTexts> = {
     friendAccept: '{name} accepted your friend request',
     spaceInvite: '{name} invited you to "{space}"',
     spaceJoin: '{name} joined "{space}"',
+    memberRemoved: 'You were removed from "{space}" by {name}',
+    memberRole: 'Your role in "{space}" is now {role}',
+    roles: { owner: 'owner', contributor: 'contributor', reader: 'reader' },
     someone: 'Someone',
     aSpace: 'a space',
   },
@@ -45,6 +52,9 @@ const TEXTS: Record<string, PushTexts> = {
     friendAccept: '{name} heeft je vriendschapsverzoek geaccepteerd',
     spaceInvite: '{name} heeft je uitgenodigd voor "{space}"',
     spaceJoin: '{name} doet nu mee in "{space}"',
+    memberRemoved: '{name} heeft je verwijderd uit "{space}"',
+    memberRole: 'Je rol in "{space}" is nu {role}',
+    roles: { owner: 'eigenaar', contributor: 'bijdrager', reader: 'lezer' },
     someone: 'Iemand',
     aSpace: 'een ruimte',
   },
@@ -56,6 +66,9 @@ const TEXTS: Record<string, PushTexts> = {
     friendAccept: '{name} arkadaşlık isteğini kabul etti',
     spaceInvite: '{name} seni "{space}" alanına davet etti',
     spaceJoin: '{name} "{space}" alanına katıldı',
+    memberRemoved: '{name} seni "{space}" alanından çıkardı',
+    memberRole: '"{space}" alanındaki rolün artık {role}',
+    roles: { owner: 'sahip', contributor: 'katkıda bulunan', reader: 'okuyucu' },
     someone: 'Birisi',
     aSpace: 'bir alan',
   },
@@ -85,6 +98,13 @@ function socialBody(payload: PushPayload, texts: PushTexts): { body: string; url
       return { body: texts.spaceInvite.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'space-invite' };
     case 'space-join':
       return { body: texts.spaceJoin.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'space-join' };
+    // #172/#173: membership changes reach the AFFECTED member's devices
+    case 'member-removed':
+      return { body: texts.memberRemoved.replace('{name}', name).replace('{space}', space), url: './#/spaces', tag: 'member-removed' };
+    case 'member-role': {
+      const role = texts.roles[payload.role ?? ''] ?? payload.role ?? '';
+      return { body: texts.memberRole.replace('{space}', space).replace('{role}', role), url: './#/spaces', tag: 'member-role' };
+    }
     default:
       return null;
   }

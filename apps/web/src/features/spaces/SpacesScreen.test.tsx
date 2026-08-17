@@ -160,27 +160,58 @@ describe('SpacesScreen (demo identity)', () => {
     expect(pill.textContent).toContain('1');
   }, 15_000);
 
-  it('the owner toggle lifts and re-arms the private lock (arc 4)', async () => {
+  it('a create handoff opens the sheet on arrival (#180)', async () => {
+    const { setSpacesCreateIntent } = await import('./spacesHandoff');
+    setSpacesCreateIntent();
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    // the create sheet is open without touching the + button
+    expect(await screen.findByTestId('space-create-name')).toBeTruthy();
+  });
+
+  it('Create stays enabled; an empty-name click shows the blocker (#195)', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    fireEvent.click(screen.getByTestId('spaces-add'));
+    const name = await screen.findByTestId('space-create-name');
+    fireEvent.change(name, { target: { value: '   ' } });
+    const save = screen.getByTestId('space-create-save') as HTMLButtonElement;
+    expect(save.disabled).toBe(false); // never disabled for validity
+    fireEvent.click(save);
+    expect(await screen.findByTestId('space-create-blocker')).toBeTruthy();
+    expect(name.getAttribute('aria-invalid')).toBe('true');
+    // a real name clears the block and creates
+    fireEvent.change(name, { target: { value: 'Blocked no more' } });
+    fireEvent.click(save);
+    await waitFor(() => expect(screen.getByText('Blocked no more')).toBeTruthy(), { timeout: 5000 });
+  }, 15_000);
+
+  it('back with unsaved edits asks first; Stay keeps editing, Leave discards (#164)', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
     const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
 
     fireEvent.click(screen.getByTestId(`space-edit-${id}`));
-    await screen.findByTestId('screen-space-settings');
-    // demo space predates the lock: unlocked until the owner arms it
-    const toggle = (await screen.findByTestId('space-invite-lock')) as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
-    fireEvent.click(toggle);
+    const input = (await screen.findByTestId('space-edit-name')) as HTMLInputElement;
+    // wait for the seed — dirty compares against it
+    await waitFor(() => expect(input.value).not.toBe(''));
+    fireEvent.change(input, { target: { value: 'Dirty name' } });
 
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB('munni_demo');
-    await waitFor(async () => expect((await db.spaces.get(id))?.inviteLock).toBe(1), { timeout: 5000 });
-    // the controlled checkbox must SHOW the write before the next tap —
-    // clicking mid-liveQuery-emission would re-toggle from stale state
-    await waitFor(() => expect((screen.getByTestId('space-invite-lock') as HTMLInputElement).checked).toBe(true), { timeout: 5000 });
-    fireEvent.click(screen.getByTestId('space-invite-lock'));
-    await waitFor(async () => expect((await db.spaces.get(id))?.inviteLock).toBe(0), { timeout: 5000 });
-    db.close();
+    fireEvent.click(screen.getByTestId('spacesettings-back'));
+    expect(await screen.findByTestId('screen-discard')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('screen-discard-stay'));
+    // still on the settings screen, edits intact
+    expect(screen.getByTestId('screen-space-settings')).toBeTruthy();
+    expect((screen.getByTestId('space-edit-name') as HTMLInputElement).value).toBe('Dirty name');
+
+    fireEvent.click(screen.getByTestId('spacesettings-back'));
+    fireEvent.click(await screen.findByTestId('screen-discard-leave'));
+    await screen.findByTestId('screen-spaces');
+    // the rename was discarded (the list re-queries after the remount)
+    await waitFor(
+      () => expect(screen.getByTestId(`space-row-${id}`).textContent).not.toContain('Dirty name'),
+      { timeout: 5000 },
+    );
   }, 15_000);
 
   it('renames a space from the edit sheet', async () => {
@@ -210,6 +241,8 @@ describe('SpacesScreen (demo identity)', () => {
     expect(screen.queryByTestId('space-currency-TRY')).toBeNull();
     expect(screen.queryByTestId('space-period-week')).toBeNull();
     expect(screen.queryByTestId('space-history-start')).toBeNull();
+    // #162: the private lock moved to the Settings tab
+    expect(screen.queryByTestId('space-invite-lock')).toBeNull();
     fireEvent.click(screen.getByTestId('space-edit-save'));
 
     const { MunniDB } = await import('@/db/schema');
@@ -298,13 +331,14 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('settings-space-accounts-row'));
     const section = await screen.findByTestId('space-accounts');
     await waitFor(() => expect(section.textContent).toContain('Demo Savings'), { timeout: 5000 });
-    // provenance moved into the tap-through info sheet (redesign ss13)
+    // #206: a manual (space-owned) row opens the EDITOR directly — the
+    // tap-through info sheet is for feed-fed rows only now
     const row = [...section.querySelectorAll('[data-testid^="space-account-"]')].find((el) =>
       el.textContent?.includes('Demo Savings'),
     ) as HTMLElement;
     fireEvent.click(row);
-    const infoSheet = await screen.findByTestId('space-account-info');
-    expect(infoSheet.textContent).toContain('created in this space');
+    expect(await screen.findByTestId('acctedit-name')).toBeTruthy();
+    expect(screen.queryByTestId('space-account-info')).toBeNull();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.getByTestId('space-accounts-manage')).toBeTruthy();
   }, 10_000);

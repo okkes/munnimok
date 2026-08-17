@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/app/session';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
@@ -6,8 +6,11 @@ import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { FriendProfileSheet } from './FriendProfileSheet';
+import { takeFriendsAddIntent } from './friendsHandoff';
 
 interface FriendDto {
   userId: string;
@@ -20,6 +23,8 @@ interface RequestDto {
   fromName: string | null;
   toUserId: string;
   toName: string | null;
+  /** #169: set when accepting also joins the sender's space */
+  spaceName?: string | null;
 }
 interface FriendsResponse {
   friends: FriendDto[];
@@ -32,16 +37,23 @@ const short = (id: string) => `${id.slice(0, 8)}…`;
 function PersonRow({
   name,
   sub,
+  note,
   picture,
+  onClick,
+  testId,
   children,
 }: {
   name: string;
   sub?: string;
+  /** extra accent line (e.g. "accepting also joins {space}") */
+  note?: string;
   picture?: string | null;
+  onClick?: () => void;
+  testId?: string;
   children?: React.ReactNode;
 }) {
-  return (
-    <div className="flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0">
+  const body = (
+    <>
       {picture ? (
         <Avatar picture={picture} size={36} />
       ) : (
@@ -52,8 +64,26 @@ function PersonRow({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[14px] font-medium text-ink">{name}</span>
         {sub && <span className="block truncate font-mono text-[11px] text-ink-4">{sub}</span>}
+        {note && <span className="block truncate text-[11px] text-accent-deep">{note}</span>}
       </span>
       {children}
+    </>
+  );
+  const rowCls = 'flex items-center gap-3 border-b border-line-2 px-4 py-3 last:border-0';
+  // rows with row-level controls (accept/decline) stay divs — nested
+  // buttons are invalid; tappable rows carry no inner buttons
+  if (onClick) {
+    // no border-none here: the divider IS a border (preflight keeps the
+    // button's own border at zero width anyway)
+    return (
+      <button data-testid={testId} onClick={onClick} className={`m-tap w-full bg-transparent text-left ${rowCls}`}>
+        {body}
+      </button>
+    );
+  }
+  return (
+    <div data-testid={testId} className={rowCls}>
+      {body}
     </div>
   );
 }
@@ -68,8 +98,18 @@ export function FriendsScreen() {
   const [data, setData] = useState<FriendsResponse | null>(null);
   const [addId, setAddId] = useState('');
   const [copied, setCopied] = useState(false);
+  // #195: Add stays enabled — an empty click says why instead
+  const [attempted, setAttempted] = useState(false);
+  // #165: tapping a friend opens their profile sheet
+  const [profile, setProfile] = useState<FriendDto | null>(null);
   // removing a friend is destructive enough for a second look
   const [confirmRemove, setConfirmRemove] = useState<{ userId: string; name: string } | null>(null);
+  // #180: arriving with an "add a friend" intent focuses the id input
+  const addRef = useRef<HTMLInputElement>(null);
+  const [focusAdd] = useState(() => takeFriendsAddIntent());
+  useEffect(() => {
+    if (focusAdd) addRef.current?.focus();
+  }, [focusAdd]);
 
   const reload = useCallback(async () => {
     const res = await apiFetch('/friends');
@@ -90,7 +130,11 @@ export function FriendsScreen() {
 
   const sendRequest = async () => {
     const id = addId.trim();
-    if (!id) return;
+    if (!id) {
+      setAttempted(true);
+      return;
+    }
+    setAttempted(false);
     await apiFetch('/friends/requests', { method: 'POST', body: JSON.stringify({ toUserId: id }) });
     setAddId('');
     await reload();
@@ -139,15 +183,18 @@ export function FriendsScreen() {
 
         {/* add by id */}
         <div className="m-cap mt-5 mb-1 px-1">{t('friends.addById')}</div>
+        <FormBlockerNote show={attempted && !addId.trim()} text={t('form.needId')} testId="friends-add-blocker" className="mb-1 px-1" />
         <div className="flex gap-2">
           <input
+            ref={addRef}
             data-testid="friends-add-input"
             value={addId}
             onChange={(e) => setAddId(e.target.value)}
             placeholder={t('friends.idPlaceholder')}
-            className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={attempted && !addId.trim()}
+            className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !addId.trim())}`}
           />
-          <Button size="sm" className="h-11" data-testid="friends-add-send" onClick={() => void sendRequest()} disabled={!addId.trim()}>
+          <Button size="sm" className="h-11" data-testid="friends-add-send" onClick={() => void sendRequest()}>
             {t('action.add')}
           </Button>
         </div>
@@ -158,7 +205,13 @@ export function FriendsScreen() {
             <div className="m-cap mt-5 mb-1 px-1">{t('friends.pendingReceived')}</div>
             <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="friends-received">
               {data!.receivedPending.map((r) => (
-                <PersonRow key={r.id} name={r.fromName ?? short(r.fromUserId)} sub={short(r.fromUserId)}>
+                <PersonRow
+                  key={r.id}
+                  name={r.fromName ?? short(r.fromUserId)}
+                  sub={short(r.fromUserId)}
+                  // #169: the request rode in from a space — say what accepting means
+                  note={r.spaceName ? t('invite.viaSpace', { space: r.spaceName }) : undefined}
+                >
                   <Button size="sm" data-testid={`friends-accept-${r.id}`} onClick={() => void accept(r.id)}>
                     {t('friends.accept')}
                   </Button>
@@ -185,19 +238,20 @@ export function FriendsScreen() {
           </>
         )}
 
-        {/* friends */}
+        {/* friends — the row opens the profile sheet (#165); removal
+            lives there now, not on the list */}
         <div className="m-cap mt-5 mb-1 px-1">{t('settings.friends')}</div>
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="friends-list">
           {(data?.friends ?? []).map((f) => (
-            <PersonRow key={f.userId} name={f.displayName ?? short(f.userId)} sub={short(f.userId)} picture={f.picture}>
-              <button
-                aria-label={t('action.delete')}
-                data-testid={`friends-remove-${f.userId}`}
-                onClick={() => setConfirmRemove({ userId: f.userId, name: f.displayName ?? short(f.userId) })}
-                className="m-tap border-none bg-transparent text-ink-4"
-              >
-                <Icon name="account-remove-outline" size={18} />
-              </button>
+            <PersonRow
+              key={f.userId}
+              testId={`friends-row-${f.userId}`}
+              name={f.displayName ?? short(f.userId)}
+              sub={short(f.userId)}
+              picture={f.picture}
+              onClick={() => setProfile(f)}
+            >
+              <Icon name="chevron-right" size={17} color="var(--m-ink-4)" />
             </PersonRow>
           ))}
           {data?.friends.length === 0 && (
@@ -206,6 +260,14 @@ export function FriendsScreen() {
         </div>
       </div>
       )}
+
+      {/* #165: the tapped friend, up close — remove routes to the same
+          confirm the list's trash button used to open */}
+      <FriendProfileSheet
+        friend={profile}
+        onOpenChange={(open) => !open && setProfile(null)}
+        onRemove={(f) => setConfirmRemove({ userId: f.userId, name: f.displayName ?? short(f.userId) })}
+      />
 
       {/* deleting a friend needs a second, explicit yes */}
       <Sheet
@@ -228,6 +290,7 @@ export function FriendsScreen() {
             onClick={() => {
               if (confirmRemove) void removeFriend(confirmRemove.userId);
               setConfirmRemove(null);
+              setProfile(null); // the removed friend's profile closes too
             }}
           >
             {t('action.delete')}

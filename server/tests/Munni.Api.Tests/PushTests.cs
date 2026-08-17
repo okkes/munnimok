@@ -177,6 +177,65 @@ public class PushTests : IClassFixture<SyncApiFactory>
     }
 
     [Fact]
+    public async Task Member_removal_and_role_change_notify_the_affected_member()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var sender = new FakeSender();
+        using var factory = _factory.WithWebHostBuilder(b =>
+            b.ConfigureServices(s => s.AddSingleton<IPushSender>(sender)));
+
+        HttpClient ClientOf(string sub)
+        {
+            var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+            return client;
+        }
+        var alice = ClientOf($"mem-a-{suffix}");
+        var bob = ClientOf($"mem-b-{suffix}");
+        await alice.PutAsJsonAsync("/me", new UpdateMeRequest("Alice"));
+        await bob.PutAsJsonAsync("/me", new UpdateMeRequest("Bob"));
+        var aliceId = (await alice.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        var bobId = (await bob.GetFromJsonAsync<MeResponse>("/me"))!.UserId;
+        await bob.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"https://p/{suffix}/bobm", "p", "a"));
+
+        var spaceId = $"space_mem_{suffix}";
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Spaces.Add(new Space { Id = spaceId });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = aliceId, Role = SpaceRoles.Owner });
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = bobId, Role = SpaceRoles.Contributor });
+            await db.SaveChangesAsync();
+        }
+
+        // #172: a role change reaches the AFFECTED member with the new role
+        Assert.True((await alice.PutAsJsonAsync($"/spaces/{spaceId}/members/{bobId}/role",
+            new ChangeRoleRequest("reader", "Mem Space"))).IsSuccessStatusCode);
+        Assert.Contains(sender.Sent, s => s.UserId == bobId
+            && s.Payload.Contains("\"type\":\"member-role\"")
+            && s.Payload.Contains("\"role\":\"reader\"")
+            && s.Payload.Contains("Mem Space"));
+
+        // #172/#173: a kick reaches the victim, naming the actor
+        Assert.True((await alice.DeleteAsync($"/spaces/{spaceId}/members/{bobId}?spaceName=Mem%20Space")).IsSuccessStatusCode);
+        Assert.Contains(sender.Sent, s => s.UserId == bobId
+            && s.Payload.Contains("\"type\":\"member-removed\"")
+            && s.Payload.Contains("Alice")
+            && s.Payload.Contains("Mem Space"));
+
+        // a self-leave stays silent (leaveSpace goes through the same endpoint)
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = bobId, Role = SpaceRoles.Contributor });
+            await db.SaveChangesAsync();
+        }
+        var removedBefore = sender.Sent.Count(s => s.Payload.Contains("\"type\":\"member-removed\""));
+        Assert.True((await bob.DeleteAsync($"/spaces/{spaceId}/members/{bobId}")).IsSuccessStatusCode);
+        Assert.Equal(removedBefore, sender.Sent.Count(s => s.Payload.Contains("\"type\":\"member-removed\"")));
+    }
+
+    [Fact]
     public async Task Remove_friend_declines_pending_requests_and_is_idempotent()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];

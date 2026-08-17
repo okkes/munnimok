@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
 const ME = '11111111-1111-1111-1111-111111111111';
@@ -49,12 +49,59 @@ describe('FriendsScreen', () => {
     await waitFor(() => expect(screen.queryByTestId('friends-received')).toBeNull());
     expect(screen.getByTestId('friends-list').textContent).toContain('Cara');
 
-    // removing Bob asks first, then shrinks the list
-    fireEvent.click(screen.getByTestId(`friends-remove-${BOB}`));
+    // #165: the row opens the profile sheet with the FULL id; removal
+    // moved there (the list has no trash button anymore)
+    expect(screen.queryByTestId(`friends-remove-${BOB}`)).toBeNull();
+    fireEvent.click(screen.getByTestId(`friends-row-${BOB}`));
+    expect((await screen.findByTestId('friend-profile-id')).textContent).toBe(BOB);
+    fireEvent.click(screen.getByTestId('friend-profile-remove'));
     expect((await screen.findByTestId('friends-remove-text')).textContent).toContain('Bob');
     fireEvent.click(screen.getByTestId('friends-remove-confirm'));
     await waitFor(() => expect(screen.getByTestId('friends-list').textContent).not.toContain('Bob'));
     expect(calls).toEqual(['accept', 'remove']);
+  }, 15_000);
+
+  it('the profile sheet copies the full id and zooms a real picture (#165)', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    renderAppAsUser('/friends', {
+      api: {
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /friends': () => ({
+          friends: [{ userId: BOB, displayName: 'Bob', picture: 'data:image/png;base64,x' }],
+          sentPending: [],
+          receivedPending: [],
+        }),
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId(`friends-row-${BOB}`));
+    await screen.findByTestId('friend-profile-sheet');
+    fireEvent.click(await screen.findByTestId('friend-profile-copy'));
+    expect(writeText).toHaveBeenCalledWith(BOB);
+
+    // tapping the avatar opens the fullscreen viewer; any click closes it
+    fireEvent.click(screen.getByTestId('friend-profile-avatar'));
+    fireEvent.click(await screen.findByTestId('friend-picture-viewer'));
+    await waitFor(() => expect(screen.queryByTestId('friend-picture-viewer')).toBeNull());
+  }, 15_000);
+
+  it('a space-carrying request explains that accepting also joins (#169)', async () => {
+    renderAppAsUser('/friends', {
+      api: {
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /friends': () => ({
+          friends: [],
+          sentPending: [],
+          receivedPending: [
+            { id: 'r1', fromUserId: CARA, fromName: 'Cara', toUserId: ME, toName: null, spaceName: 'Big Family' },
+          ],
+        }),
+      },
+    });
+
+    const received = await screen.findByTestId('friends-received');
+    await waitFor(() => expect(received.textContent).toContain('Accepting also joins Big Family'));
   }, 15_000);
 
   it('sends a friend request from the id box', async () => {
@@ -72,10 +119,31 @@ describe('FriendsScreen', () => {
       },
     });
 
+    // #195: an empty click never disables the button — it says why
+    const send = (await screen.findByTestId('friends-add-send')) as HTMLButtonElement;
+    expect(send.disabled).toBe(false);
+    fireEvent.click(send);
+    expect(await screen.findByTestId('friends-add-blocker')).toBeTruthy();
+    expect(requests).toEqual([]); // nothing was sent
+
     fireEvent.change(await screen.findByTestId('friends-add-input'), { target: { value: ` ${BOB} ` } });
     fireEvent.click(screen.getByTestId('friends-add-send'));
     await screen.findByTestId('friends-sent');
-    expect(requests).toEqual([{ toUserId: BOB }]); // trimmed
+    expect(requests).toEqual([{ toUserId: BOB }]); // trimmed, no space piggyback
     expect((screen.getByTestId('friends-add-input') as HTMLInputElement).value).toBe('');
+    expect(screen.queryByTestId('friends-add-blocker')).toBeNull(); // cleared on success
+  }, 15_000);
+
+  it('an add-friend handoff focuses the id input on arrival (#180)', async () => {
+    const { setFriendsAddIntent } = await import('./friendsHandoff');
+    setFriendsAddIntent();
+    renderAppAsUser('/friends', {
+      api: {
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /friends': () => ({ friends: [], sentPending: [], receivedPending: [] }),
+      },
+    });
+    const input = await screen.findByTestId('friends-add-input');
+    await waitFor(() => expect(document.activeElement).toBe(input));
   }, 15_000);
 });

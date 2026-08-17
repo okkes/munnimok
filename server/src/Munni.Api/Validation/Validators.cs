@@ -46,6 +46,11 @@ public sealed class SendFriendRequestValidator : AbstractValidator<SendFriendReq
     public SendFriendRequestValidator()
     {
         RuleFor(r => r.ToUserId).NotEmpty();
+        // #169: the optional space piggyback (ownership is checked in the handler)
+        RuleFor(r => r.SpaceId).MaximumLength(64);
+        RuleFor(r => r.Role).Must(role => SpaceRoles.Assignable.Contains(role!)).When(r => !string.IsNullOrEmpty(r.Role))
+            .WithMessage("role must be owner, contributor or reader");
+        RuleFor(r => r.SpaceName).MaximumLength(200);
     }
 }
 
@@ -67,6 +72,8 @@ public sealed class ChangeRoleRequestValidator : AbstractValidator<ChangeRoleReq
     public ChangeRoleRequestValidator()
     {
         RuleFor(r => r.Role).NotEmpty().Must(SpaceRoles.Assignable.Contains).WithMessage("role must be owner, contributor or reader");
+        // #172: the client sends the space's name along for the push text
+        RuleFor(r => r.SpaceName).MaximumLength(200);
     }
 }
 

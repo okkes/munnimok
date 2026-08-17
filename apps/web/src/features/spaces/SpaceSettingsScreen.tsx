@@ -11,8 +11,10 @@ import { useSession } from '@/app/session';
 import { leaveSpace, useMyRole } from './SpaceSharing';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
+import { useDiscardGuard } from '@/ui/DiscardGuard';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
@@ -55,6 +57,8 @@ export function SpaceSettingsScreen() {
   // role in this space; local-only identities are always owner
   const myRole = useMyRole(spaceId, syncing);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
+  // #195: the save button stays enabled — an invalid click says why
+  const [attempted, setAttempted] = useState(false);
 
   // initialize the form once per space DURING render (not an effect): the
   // inputs must never be interactable before initialization, or a fast
@@ -69,6 +73,16 @@ export function SpaceSettingsScreen() {
   }
 
   const readOnly = myRole === 'reader';
+
+  // #164: dirty vs a freshly derived seed (EditAccountSheet pattern) —
+  // tapping back with edits pending asks instead of dropping them
+  const seedNow = space
+    ? { name: space.name, icon: space.icon ?? SPACE_ICONS[0], color: space.color ?? SPACE_COLORS[0], picture: space.picture ?? '' }
+    : null;
+  const dirty =
+    seedNow !== null &&
+    (name !== seedNow.name || icon !== seedNow.icon || color !== seedNow.color || picture !== seedNow.picture);
+  const { guardedBack, sheet: discardSheet } = useDiscardGuard(dirty, goBack);
 
   // one downscale path for all three photo doors (input, native, webcam)
   const applyPhoto = (file: File): void => {
@@ -89,7 +103,11 @@ export function SpaceSettingsScreen() {
   };
 
   const save = async () => {
-    if (!space || !name.trim() || readOnly) return;
+    if (!space || readOnly) return;
+    if (!name.trim()) {
+      setAttempted(true);
+      return;
+    }
     // private names stay unique (user rule) — renaming counts too
     if (space.kind !== 'shared') {
       const clash = (await store.allRows('space')).some(
@@ -100,6 +118,7 @@ export function SpaceSettingsScreen() {
         return;
       }
     }
+    setAttempted(false);
     void repo.upsert('space', space.id, space.id, {
       name: name.trim(),
       icon,
@@ -155,7 +174,7 @@ export function SpaceSettingsScreen() {
       <AppBar
         title={space?.name ?? t('space.settings')}
         leading={
-          <IconButton label={t('action.back')} testId="spacesettings-back" onClick={() => goBack()}>
+          <IconButton label={t('action.back')} testId="spacesettings-back" onClick={() => guardedBack()}>
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
@@ -175,7 +194,8 @@ export function SpaceSettingsScreen() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               disabled={readOnly}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none disabled:opacity-60"
+              aria-invalid={attempted && !name.trim()}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none disabled:opacity-60${blockerRing(attempted && !name.trim())}`}
             />
 
             <div className="m-cap px-1">{t('space.icon')}</div>
@@ -262,35 +282,16 @@ export function SpaceSettingsScreen() {
             />
 
             {!readOnly && (
-              <Button data-testid="space-edit-save" onClick={() => void save()} disabled={!name.trim()}>
-                {t('action.save')}
-              </Button>
-            )}
-
-            {/* the private lock (arc 4): spaces are born locked; lifting
-                it is this explicit owner act — applies immediately (LWW),
-                nothing else batches with it */}
-            {myRole === 'owner' && (
               <>
-                <div className="m-cap mt-4 px-1">{t('space.sharingTitle')}</div>
-                <div className="rounded-card border border-line bg-surface px-4 py-3">
-                  <label className="flex items-center gap-3 text-[14px] font-medium text-ink">
-                    <input
-                      type="checkbox"
-                      data-testid="space-invite-lock"
-                      checked={space.inviteLock === 1}
-                      onChange={(e) => {
-                        void repo.upsert('space', space.id, space.id, { inviteLock: e.target.checked ? 1 : 0 });
-                        void logActivity(store, repo, space.id, 'spaceEdit', space.name);
-                      }}
-                      className="h-4 w-4 accent-[var(--m-accent)]"
-                    />
-                    {t('space.inviteLockLabel')}
-                  </label>
-                  <p className="mt-1 pl-7 text-[12px] leading-snug text-ink-3">{t('space.inviteLockSub')}</p>
-                </div>
+                <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="space-edit-blocker" />
+                <Button data-testid="space-edit-save" onClick={() => void save()}>
+                  {t('action.save')}
+                </Button>
               </>
             )}
+
+            {/* the private lock moved to the Settings tab (#162) — this
+                screen keeps only the space's identity */}
 
             {/* danger zone last: deleting is the one action that must never sit
                 between things people actually come here for */}
@@ -321,6 +322,8 @@ export function SpaceSettingsScreen() {
           </div>
         )}
       </div>
+      {/* #164: the back button's "discard changes?" ask */}
+      {discardSheet}
       {/* #160: snapshot feeds the same downscale path as the file input */}
       <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={applyPhoto} />
       {/* aligned destructive confirm (user request): sheet + cooldown,

@@ -9,8 +9,11 @@ import { apiFetch } from '@/lib/api';
 import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { InviteFriendSheet, RolePicker } from './InviteFriendSheet';
+import { MemberSheet } from './MemberSheet';
 
 export type SpaceRole = 'owner' | 'contributor' | 'reader';
 
@@ -27,6 +30,8 @@ interface MemberDto {
   displayName: string | null;
   role: SpaceRole;
   picture?: string | null;
+  /** #172: membership creation time; null on pre-column rows */
+  joinedAt?: string | null;
 }
 interface FriendDto {
   userId: string;
@@ -41,7 +46,6 @@ interface OutgoingInviteDto {
 }
 
 const short = (id: string) => `${id.slice(0, 8)}…`;
-const ROLES: SpaceRole[] = ['owner', 'contributor', 'reader'];
 const roleKey = (role: string): TranslationKey => `space.role.${role}` as TranslationKey;
 
 /**
@@ -170,10 +174,19 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   const [me, setMe] = useState<string | null>(null);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [friendId, setFriendId] = useState('');
+  // #169: the new person's role in THIS space, picked up front
+  const [newFriendRole, setNewFriendRole] = useState<SpaceRole>('contributor');
+  // #195: Send stays enabled — an empty click says why instead
+  const [addAttempted, setAddAttempted] = useState(false);
   const [friendRequestSent, setFriendRequestSent] = useState(false);
   const [inviteSentTo, setInviteSentTo] = useState<string | null>(null);
+  // #170/#171: the invite-a-friend sheet (search + role, replaces the badges)
+  const [inviteOpen, setInviteOpen] = useState(false);
+  // #172: the tapped member's sheet — held by ID so reloads keep it fresh
+  // and a kicked member's sheet closes on its own
+  const [memberSheetId, setMemberSheetId] = useState<string | null>(null);
   // removing someone is disruptive (they lose the shared accounts too) —
-  // the X only opens a confirm sheet, the sheet does the removal
+  // the door only opens a confirm sheet, the sheet does the removal
   const [kickTarget, setKickTarget] = useState<MemberDto | null>(null);
 
   const reload = useCallback(async () => {
@@ -203,25 +216,29 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   const pendingIds = new Set(outgoing.map((i) => i.toUserId));
   const invitable = friends.filter((f) => !memberIds.has(f.userId) && !pendingIds.has(f.userId));
 
-  const invite = async (friend: FriendDto) => {
-    const res = await apiFetch(`/spaces/${spaceId}/invites`, {
-      method: 'POST',
-      body: JSON.stringify({ toUserId: friend.userId, role: 'contributor', spaceName }),
-    }).catch(() => null);
-    if (res?.ok) {
-      setInviteSentTo(friend.displayName ?? short(friend.userId));
-      void logActivity(store, repo, spaceId, 'memberInvite', friend.displayName ?? short(friend.userId));
-    }
-    // inviting someone makes this a shared space: its categories become
-    // space-scoped and user-scoped categories stop leaking into it — so
-    // the user-scoped ones its transactions already use are adopted
-    // (copied in + references rewritten) BEFORE the flip
+  // inviting someone makes this a shared space: its categories become
+  // space-scoped and user-scoped categories stop leaking into it — so
+  // the user-scoped ones its transactions already use are adopted
+  // (copied in + references rewritten) BEFORE the flip
+  const ensureShared = async () => {
     const space = await store.get('space', spaceId);
     if (space && space.kind !== 'shared') {
       await adoptUserCategoriesOnShare(store, repo, spaceId);
       await repo.upsert('space', spaceId, spaceId, { kind: 'shared' });
       void logActivity(store, repo, spaceId, 'spaceShare', spaceName);
     }
+  };
+  // #171: the role travels with the invite — picked in the sheet up front
+  const invite = async (friend: FriendDto, role: SpaceRole) => {
+    const res = await apiFetch(`/spaces/${spaceId}/invites`, {
+      method: 'POST',
+      body: JSON.stringify({ toUserId: friend.userId, role, spaceName }),
+    }).catch(() => null);
+    if (res?.ok) {
+      setInviteSentTo(friend.displayName ?? short(friend.userId));
+      void logActivity(store, repo, spaceId, 'memberInvite', friend.displayName ?? short(friend.userId));
+    }
+    await ensureShared();
     await reload();
   };
   const revokeInvite = async (inviteId: string) => {
@@ -229,25 +246,40 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     setInviteSentTo(null);
     await reload();
   };
+  // #169: one shot — the friend request carries this space and the
+  // picked role, so accepting it also joins them here
   const addFriend = async () => {
     const toUserId = friendId.trim();
-    if (!toUserId) return;
-    await apiFetch('/friends/requests', { method: 'POST', body: JSON.stringify({ toUserId }) }).catch(() => null);
+    if (!toUserId) {
+      setAddAttempted(true);
+      return;
+    }
+    setAddAttempted(false);
+    const res = await apiFetch('/friends/requests', {
+      method: 'POST',
+      body: JSON.stringify({ toUserId, spaceId, role: newFriendRole, spaceName }),
+    }).catch(() => null);
+    if (res?.ok) {
+      void logActivity(store, repo, spaceId, 'memberInvite', short(toUserId));
+      await ensureShared();
+    }
     setFriendId('');
+    setNewFriendRole('contributor');
     setFriendRequestSent(true);
-    // if they had already requested me, the server auto-accepts and the
-    // reload makes them immediately invitable
+    // if they had already requested me, the server auto-accepts (the
+    // space intent becomes a regular invite) and the reload shows it
     await reload();
   };
   const kick = async (userId: string) => {
     const name = members.find((m) => m.userId === userId)?.displayName ?? short(userId);
-    await apiFetch(`/spaces/${spaceId}/members/${userId}`, { method: 'DELETE' });
+    // the space's name rides along for the victim's push text (#172)
+    await apiFetch(`/spaces/${spaceId}/members/${userId}?spaceName=${encodeURIComponent(spaceName)}`, { method: 'DELETE' });
     void logActivity(store, repo, spaceId, 'memberRemove', name);
     setKickTarget(null);
     await reload();
   };
   const changeRole = async (userId: string, role: SpaceRole) => {
-    await apiFetch(`/spaces/${spaceId}/members/${userId}/role`, { method: 'PUT', body: JSON.stringify({ role }) });
+    await apiFetch(`/spaces/${spaceId}/members/${userId}/role`, { method: 'PUT', body: JSON.stringify({ role, spaceName }) });
     void logActivity(store, repo, spaceId, 'memberRole', members.find((m) => m.userId === userId)?.displayName ?? short(userId));
     await reload();
   };
@@ -259,42 +291,24 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
     <div className="mt-2" data-testid="space-members">
       <div className="m-cap mb-1 px-1">{t('space.members')}</div>
       <div className="overflow-hidden rounded-card border border-line bg-surface">
+        {/* #172: the row opens the member's sheet — role control and
+            removal live there now (read-only info for non-owners) */}
         {members.map((m) => (
-          <div key={m.userId} className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0">
+          <button
+            key={m.userId}
+            data-testid={`member-row-${m.userId}`}
+            onClick={() => setMemberSheetId(m.userId)}
+            className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-2.5 text-left last:border-0"
+          >
             <Avatar picture={m.picture} size={24} />
             <span className="min-w-0 flex-1 truncate text-[14px] text-ink">
               {m.displayName ?? short(m.userId)}
             </span>
-            {isOwner && m.userId !== me ? (
-              // owners assign roles; picking "owner" transfers ownership
-              <select
-                data-testid={`space-role-${m.userId}`}
-                value={m.role}
-                onChange={(e) => void changeRole(m.userId, e.target.value as SpaceRole)}
-                className="rounded-md border border-line bg-surface px-1.5 py-1 text-[11px] text-ink-2"
-              >
-                {ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {t(roleKey(role))}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <span className="text-[11px] text-ink-4" data-testid={`space-rolelabel-${m.userId}`}>
-                {t(roleKey(m.role))}
-              </span>
-            )}
-            {isOwner && m.userId !== me && (
-              <button
-                aria-label={t('action.delete')}
-                data-testid={`space-kick-${m.userId}`}
-                onClick={() => setKickTarget(m)}
-                className="m-tap border-none bg-transparent text-ink-4"
-              >
-                <Icon name="close" size={16} />
-              </button>
-            )}
-          </div>
+            <span className="text-[11px] text-ink-4" data-testid={`space-rolelabel-${m.userId}`}>
+              {t(roleKey(m.role))}
+            </span>
+            <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
+          </button>
         ))}
       </div>
       {isOwner && outgoing.length > 0 && (
@@ -340,29 +354,23 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
               {t('space.spaceInviteSent', { name: inviteSentTo })}
             </p>
           )}
-          {invitable.length > 0 && (
-            <div className="mb-2 flex flex-wrap gap-2">
-              {invitable.map((f) => (
-                <button
-                  key={f.userId}
-                  data-testid={`space-invite-${f.userId}`}
-                  onClick={() => void invite(f)}
-                  className="m-tap rounded-full border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-2"
-                >
-                  + {f.displayName ?? short(f.userId)}
-                </button>
-              ))}
-            </div>
-          )}
+          {/* #170: one door — the sheet searches friends and asks the
+              role up front (the instant-invite badges died with it) */}
+          <Button variant="outline" className="w-full" data-testid="space-invite-open" onClick={() => setInviteOpen(true)}>
+            {t('space.addMember')}
+          </Button>
           {/* global friends stay the invite guard — but adding a new friend
               must not require leaving the invite flow (user decision) */}
+          <div className="m-cap mt-3 mb-1 px-1">{t('friends.addById')}</div>
+          <FormBlockerNote show={addAttempted && !friendId.trim()} text={t('form.needId')} testId="space-addfriend-blocker" className="mb-1 px-1" />
           <div className="flex gap-2">
             <input
               data-testid="space-addfriend-input"
               value={friendId}
               onChange={(e) => setFriendId(e.target.value)}
               placeholder={t('friends.idPlaceholder')}
-              className="h-10 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 font-mono text-[12px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={addAttempted && !friendId.trim()}
+              className={`h-10 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 font-mono text-[12px] text-ink outline-none placeholder:text-ink-4${blockerRing(addAttempted && !friendId.trim())}`}
             />
             <Button
               size="sm"
@@ -370,14 +378,20 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
               className="h-10"
               data-testid="space-addfriend-send"
               onClick={() => void addFriend()}
-              disabled={!friendId.trim()}
             >
               {t('friends.sendRequest')}
             </Button>
           </div>
+          {/* #169: their role here, decided before they even accept */}
+          <div className="mt-2">
+            <RolePicker value={newFriendRole} onChange={setNewFriendRole} testIdPrefix="space-addfriend-role" />
+          </div>
+          <p className="mt-1.5 px-1 text-[12px] text-ink-3" data-testid="space-addfriend-autonote">
+            {t('invite.autoAddNote', { space: spaceName })}
+          </p>
           {friendRequestSent && (
-            <p className="mt-1.5 px-1 text-[12px] text-ink-3" data-testid="space-addfriend-sent">
-              {t('space.friendRequestSent')}
+            <p className="mt-1.5 px-1 text-[12px] text-accent-deep" data-testid="space-addfriend-sent">
+              {t('invite.requestSent')}
             </p>
           )}
         </>
@@ -395,7 +409,26 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
           </Button>
         </div>
       )}
-      {/* removal double-check (user request): the X never removes directly */}
+      {/* #170/#171: search + role, then send */}
+      <InviteFriendSheet
+        open={inviteOpen}
+        onOpenChange={setInviteOpen}
+        friends={invitable}
+        onInvite={async (friend, role) => {
+          await invite(friend, role);
+          setInviteOpen(false);
+        }}
+      />
+      {/* #172: the tapped member — resolved live so a kick closes it */}
+      <MemberSheet
+        member={members.find((m) => m.userId === memberSheetId) ?? null}
+        meIsOwner={isOwner}
+        isSelf={memberSheetId === me}
+        onOpenChange={(next) => !next && setMemberSheetId(null)}
+        onChangeRole={(userId, role) => void changeRole(userId, role)}
+        onKick={(m) => setKickTarget(m)}
+      />
+      {/* removal double-check (user request): the door never removes directly */}
       <Sheet open={kickTarget !== null} onOpenChange={(next) => !next && setKickTarget(null)} title={t('space.kickTitle')} size="compact">
         <div className="flex flex-col gap-4 pt-1">
           <p className="text-[14px] text-ink-2" data-testid="space-kick-body">

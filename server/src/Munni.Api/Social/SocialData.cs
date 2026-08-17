@@ -8,6 +8,11 @@ public class Friendship
     public Guid UserBId { get; set; }
     public Guid RequestedBy { get; set; }
     public required string Status { get; set; } // pending | accepted
+    // #169: a request sent from a space's invite flow piggybacks the
+    // space — accepting the friendship also creates the membership
+    public string? SpaceId { get; set; }
+    public string? SpaceRole { get; set; }
+    public string? SpaceName { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

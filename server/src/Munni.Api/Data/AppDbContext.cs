@@ -319,6 +319,8 @@ public class SpaceMember
     public required string SpaceId { get; set; }
     public Guid UserId { get; set; }
     public required string Role { get; set; } // owner | member
+    /// <summary>#172 "member since" — null on rows created before the column existed</summary>
+    public DateTimeOffset? JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public class SyncOpRow

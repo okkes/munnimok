@@ -10,14 +10,15 @@ namespace Munni.Api.Social;
 public sealed record MeResponse(Guid UserId, string? DisplayName, string? Picture, string? Country = null, string? DisplayCurrency = null);
 public sealed record UpdateMeRequest(string DisplayName, string? Picture = null, string? Country = null, string? DisplayCurrency = null);
 public sealed record FriendDto(Guid UserId, string? DisplayName, string? Picture = null);
-public sealed record FriendRequestDto(Guid Id, Guid FromUserId, string? FromName, Guid ToUserId, string? ToName);
+public sealed record FriendRequestDto(Guid Id, Guid FromUserId, string? FromName, Guid ToUserId, string? ToName, string? SpaceName = null);
 public sealed record FriendsResponse(List<FriendDto> Friends, List<FriendRequestDto> SentPending, List<FriendRequestDto> ReceivedPending);
-public sealed record SendFriendRequest(Guid ToUserId);
+// #169: a request may piggyback a space — accepting also joins it
+public sealed record SendFriendRequest(Guid ToUserId, string? SpaceId = null, string? Role = null, string? SpaceName = null);
 public sealed record SendSpaceInvite(Guid ToUserId, string Role, string? SpaceName);
-public sealed record ChangeRoleRequest(string Role);
+public sealed record ChangeRoleRequest(string Role, string? SpaceName = null);
 public sealed record SpaceInviteDto(Guid Id, string SpaceId, string? SpaceName, Guid FromUserId, string? FromName, string Role);
 public sealed record OutgoingInviteDto(Guid Id, Guid ToUserId, string? ToName, string Role);
-public sealed record MemberDto(Guid UserId, string? DisplayName, string Role, string? Picture = null);
+public sealed record MemberDto(Guid UserId, string? DisplayName, string Role, string? Picture = null, DateTimeOffset? JoinedAt = null);
 
 public static class SocialEndpoints
 {
@@ -142,7 +143,7 @@ public static class SocialEndpoints
             var other = f.UserAId == me ? f.UserBId : f.UserAId;
             var (from, to) = f.RequestedBy == me ? (me, other) : (other, me);
             return new FriendRequestDto(f.Id, from, from == me ? null : names.GetValueOrDefault(from), to,
-                to == me ? null : names.GetValueOrDefault(to));
+                to == me ? null : names.GetValueOrDefault(to), f.SpaceName);
         }
 
         return Results.Ok(new FriendsResponse(
@@ -158,6 +159,14 @@ public static class SocialEndpoints
         var me = http.GetUserId();
         if (request.ToUserId == me) return Results.BadRequest();
         if (await db.Users.FindAsync([request.ToUserId], ct) is null) return Results.NotFound();
+        // #169: a piggybacked space demands the sender owns it — the same
+        // gate a direct space invite passes through
+        var role = SpaceRoles.Assignable.Contains(request.Role ?? "") ? request.Role! : SpaceRoles.Contributor;
+        if (request.SpaceId is not null)
+        {
+            var membership = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == request.SpaceId && m.UserId == me, ct);
+            if (membership is null || !SpaceRoles.IsOwner(membership.Role)) return Results.Forbid();
+        }
 
         var (a, b) = me < request.ToUserId ? (me, request.ToUserId) : (request.ToUserId, me);
         var existing = await db.Friendships.FirstOrDefaultAsync(f => f.UserAId == a && f.UserBId == b, ct);
@@ -169,15 +178,49 @@ public static class SocialEndpoints
                 existing.Status = StatusAccepted;
                 await db.SaveChangesAsync(ct);
                 await push.NotifyFriendAcceptedAsync(request.ToUserId, await NameOf(db, me, ct), ct);
+                // already friends now — the space intent survives as a
+                // regular pending invite (joining still needs their yes)
+                if (request.SpaceId is not null)
+                    await AddSpaceInviteIfMissingAsync(db, push, request.SpaceId, me, request.ToUserId, role, request.SpaceName, ct);
             }
         }
         else
         {
-            db.Friendships.Add(new Friendship { Id = Guid.NewGuid(), UserAId = a, UserBId = b, RequestedBy = me, Status = StatusPending });
+            db.Friendships.Add(new Friendship
+            {
+                Id = Guid.NewGuid(),
+                UserAId = a,
+                UserBId = b,
+                RequestedBy = me,
+                Status = StatusPending,
+                SpaceId = request.SpaceId,
+                SpaceRole = request.SpaceId is null ? null : role,
+                SpaceName = request.SpaceId is null ? null : request.SpaceName,
+            });
             await db.SaveChangesAsync(ct);
             await push.NotifyFriendRequestAsync(request.ToUserId, await NameOf(db, me, ct), ct);
         }
         return Results.Ok();
+    }
+
+    /// <summary>#169 fallback when the pair turned out to be friends already.</summary>
+    private static async Task AddSpaceInviteIfMissingAsync(
+        AppDbContext db, PushNotifier push, string spaceId, Guid fromUserId, Guid toUserId, string role, string? spaceName, CancellationToken ct)
+    {
+        if (await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == toUserId, ct)) return;
+        if (await db.SpaceInvites.AnyAsync(i => i.SpaceId == spaceId && i.ToUserId == toUserId && i.Status == StatusPending, ct)) return;
+        db.SpaceInvites.Add(new SpaceInvite
+        {
+            Id = Guid.NewGuid(),
+            SpaceId = spaceId,
+            FromUserId = fromUserId,
+            ToUserId = toUserId,
+            Role = role,
+            Status = StatusPending,
+            SpaceName = spaceName,
+        });
+        await db.SaveChangesAsync(ct);
+        await push.NotifySpaceInviteAsync(toUserId, await NameOf(db, fromUserId, ct), spaceName, ct);
     }
 
     private static async Task<IResult> AcceptFriendRequest(Guid id, AppDbContext db, PushNotifier push, HttpContext http, CancellationToken ct)
@@ -186,8 +229,25 @@ public static class SocialEndpoints
         var f = await db.Friendships.FindAsync([id], ct);
         if (f is null || (f.UserAId != me && f.UserBId != me) || f.RequestedBy == me) return Results.NotFound();
         f.Status = StatusAccepted;
+        // #169: the request rode in from a space's invite flow — accepting
+        // creates the membership too, exactly like accepting a space invite
+        var joinsSpace = f.SpaceId is not null
+            && !await db.SpaceMembers.AnyAsync(m => m.SpaceId == f.SpaceId && m.UserId == me, ct);
+        if (joinsSpace)
+        {
+            var role = SpaceRoles.Assignable.Contains(f.SpaceRole ?? "") ? f.SpaceRole! : SpaceRoles.Contributor;
+            db.SpaceMembers.Add(new SpaceMember { SpaceId = f.SpaceId!, UserId = me, Role = role });
+            // rejoining member with a still-connected bank: their archived
+            // account attachments in this space reconnect automatically
+            await Accounts.AccountEndpoints.ReviveLinksOnJoinAsync(db, f.SpaceId!, me);
+        }
         await db.SaveChangesAsync(ct);
-        await push.NotifyFriendAcceptedAsync(f.RequestedBy, await NameOf(db, me, ct), ct);
+        var myName = await NameOf(db, me, ct);
+        await push.NotifyFriendAcceptedAsync(f.RequestedBy, myName, ct);
+        if (joinsSpace)
+        {
+            await push.NotifySpaceJoinAsync(f.RequestedBy, myName, f.SpaceName, ct);
+        }
         return Results.Ok();
     }
 
@@ -308,17 +368,18 @@ public static class SocialEndpoints
             m.UserId,
             users.GetValueOrDefault(m.UserId)?.DisplayName,
             SpaceRoles.Normalize(m.Role),
-            users.GetValueOrDefault(m.UserId)?.Picture)).ToList());
+            users.GetValueOrDefault(m.UserId)?.Picture,
+            m.JoinedAt)).ToList());
     }
 
     /// <summary>Owner-only. Also how ownership is transferred (promote to owner).</summary>
-    private static async Task<IResult> ChangeMemberRole(string spaceId, Guid userId, ChangeRoleRequest request, AppDbContext db, HttpContext http)
+    private static async Task<IResult> ChangeMemberRole(string spaceId, Guid userId, ChangeRoleRequest request, AppDbContext db, PushNotifier push, HttpContext http, CancellationToken ct)
     {
         var me = http.GetUserId();
-        var myRole = (await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me))?.Role;
+        var myRole = (await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me, ct))?.Role;
         if (myRole is null || !SpaceRoles.IsOwner(myRole)) return Results.Forbid();
 
-        var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId);
+        var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId, ct);
         if (member is null) return Results.NotFound();
 
         // an owner may not demote themself while they are the only owner
@@ -326,17 +387,22 @@ public static class SocialEndpoints
             return Results.BadRequest(new { error = "last owner" });
 
         member.Role = request.Role;
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync(ct);
+        // #172: the affected member hears about it on their own devices
+        if (userId != me)
+        {
+            await push.NotifyMemberRoleChangedAsync(userId, request.SpaceName, request.Role, ct);
+        }
         return Results.Ok();
     }
 
-    private static async Task<IResult> RemoveMember(string spaceId, Guid userId, AppDbContext db, HttpContext http)
+    private static async Task<IResult> RemoveMember(string spaceId, Guid userId, string? spaceName, AppDbContext db, PushNotifier push, HttpContext http, CancellationToken ct)
     {
         var me = http.GetUserId();
-        var myRole = (await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me))?.Role;
+        var myRole = (await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == me, ct))?.Role;
         var removingSelf = userId == me;
         if (myRole is null || (!removingSelf && !SpaceRoles.IsOwner(myRole))) return Results.Forbid();
-        var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId);
+        var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId, ct);
         if (member is not null)
         {
             db.SpaceMembers.Remove(member);
@@ -351,10 +417,19 @@ public static class SocialEndpoints
                 var successor = await db.SpaceMembers
                     .Where(m => m.SpaceId == spaceId && m.UserId != userId)
                     .OrderBy(m => m.UserId)
-                    .FirstOrDefaultAsync();
+                    .FirstOrDefaultAsync(ct);
                 if (successor is not null) successor.Role = SpaceRoles.Owner;
             }
-            await db.SaveChangesAsync();
+            await db.SaveChangesAsync(ct);
+            // #172/#173: being removed reaches the victim's devices as a
+            // notification carrying who did it; a self-leave stays silent.
+            // spaceName rides the query (spaces have no server-side name);
+            // capped like the invite validator caps it.
+            if (!removingSelf)
+            {
+                var cappedName = spaceName is { Length: > 200 } ? spaceName[..200] : spaceName;
+                await push.NotifyMemberRemovedAsync(userId, cappedName, await NameOf(db, me, ct), ct);
+            }
         }
         return Results.Ok();
     }

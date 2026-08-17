@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
+import { takeSpacesCreateIntent } from './spacesHandoff';
 import { useAttentionMap } from '@/application/spaceAttention';
 import { DEFAULT_HISTORY_MONTHS, SPACE_COLORS, SPACE_ICONS, isoMonthsAgo } from './spaceDefaults';
 import { PERIOD_KEYS, PeriodControls } from './PeriodSettingsScreen';
@@ -14,6 +15,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -33,6 +35,8 @@ export function SpacesScreen() {
   const [createOpen, setCreateOpen] = useState(false);
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState(false);
+  // #195: Create stays enabled — an invalid click says why instead
+  const [attempted, setAttempted] = useState(false);
   // the full create form (arc 4): identity + the three defaults, each
   // editable through the SAME controls their settings screens use —
   // everything except the name has a default, "type a name, press
@@ -60,7 +64,10 @@ export function SpacesScreen() {
     (spaces ?? []).some((s) => s.kind !== 'shared' && s.name.trim().toLowerCase() === candidate.trim().toLowerCase());
 
   const createSpace = async () => {
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      setAttempted(true);
+      return;
+    }
     if (privateNameTaken(name)) {
       setNameError(true);
       return;
@@ -101,6 +108,7 @@ export function SpacesScreen() {
     // still edits and presses Create themselves
     setName(minaSuggestedSpaceName() ?? '');
     setNameError(false);
+    setAttempted(false);
     setIcon(SPACE_ICONS[0]);
     setColor(SPACE_COLORS[0]);
     setPeriodType('month');
@@ -110,6 +118,15 @@ export function SpacesScreen() {
     setInviteLock(true); // #147: every new form starts private again
     setCreateOpen(true);
   };
+
+  // #180: arriving from a create handoff (home FAB) opens the sheet the
+  // moment the screen mounts — read-once, like the accounts handoff
+  const [pendingCreate] = useState(() => takeSpacesCreateIntent());
+  useEffect(() => {
+    if (pendingCreate) openCreate();
+    // mount-only: the intent must fire exactly once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** "Monthly · day 1" / "Weekly · Mon" — the period row's face */
   const periodSummary = () => {
@@ -229,7 +246,8 @@ export function SpacesScreen() {
               setNameError(false);
             }}
             placeholder={t('space.nameThisSpace')}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={attempted && !name.trim()}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
           />
           {nameError && (
             <p className="text-[12px] text-negative" data-testid="space-create-name-taken">
@@ -293,7 +311,8 @@ export function SpacesScreen() {
             </label>
             <p className="mt-1 pl-7 text-[12px] leading-snug text-ink-3">{t('space.inviteLockSub')}</p>
           </div>
-          <Button data-testid="space-create-save" onClick={() => void createSpace()} disabled={!name.trim()}>
+          <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="space-create-blocker" />
+          <Button data-testid="space-create-save" onClick={() => void createSpace()}>
             {t('space.create')}
           </Button>
         </div>
