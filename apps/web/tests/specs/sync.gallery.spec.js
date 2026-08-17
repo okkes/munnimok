@@ -313,7 +313,9 @@ for (const V of VARIANTS) {
     await alice.page.waitForTimeout(1500); // server attach + link mirror
     await gotoGlobalSettings(alice.page);
     await alice.page.click('[data-testid="settings-accounts-row"]');
-    await expect(alice.page.locator('[data-testid^="account-via-"]').first()).toContainText('Feed Home', { timeout: 10000 });
+    // #227: the "via <space>" subtitle is gone — the attachment now
+    // echoes as an inert row under the space's own section instead
+    await expect(alice.page.locator('[data-testid^="account-echo-"]').first()).toBeVisible({ timeout: 10000 });
     await shot(alice.page, k('61-feed-share') + '--s1');
     await alice.page.waitForTimeout(4000); // push feed rows + overlay
 

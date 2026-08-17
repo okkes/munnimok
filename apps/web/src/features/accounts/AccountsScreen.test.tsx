@@ -20,8 +20,9 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('feed accounts show their attachments and open the attach sheet', async () => {
     // seed a feed-shaped account (its spaceId has no space row) attached
-    // to the demo space via a link mirror — the global overview must show
-    // "via <space>" and tapping opens attach management, not the editor
+    // to the demo space via a link mirror — the global overview echoes it
+    // under the space section and tapping opens attach management, not
+    // the editor
     const first = renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');
     const { MunniDB } = await import('@/db/schema');
@@ -38,6 +39,16 @@ describe('AccountsScreen (demo identity)', () => {
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
       lastSyncedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      dataThroughDate: '2026-06-07',
+    });
+    // a RAW row in the feed space — the newest-transaction fact (#205)
+    await repo.upsert('transaction', 'feed-1', 'feedtx-1', {
+      accountId: 'feedacct-1',
+      date: '2026-06-10',
+      amountCents: -1200,
+      currency: 'EUR',
+      merchant: 'SHELL',
+      txType: 'expense',
     });
     await repo.upsert('accountLink', 'demo_space', 'link-1', {
       feedSpaceId: 'feed-1',
@@ -49,7 +60,11 @@ describe('AccountsScreen (demo identity)', () => {
 
     renderApp('/accounts');
     const row = await screen.findByTestId('account-row-feedacct-1');
-    expect(screen.getByTestId('account-via-feedacct-1').textContent).toContain('Demo');
+    // #227: no "via space" subtitle — the row says the IBAN instead…
+    expect(screen.getByTestId('account-via-feedacct-1').textContent).toContain('NL69INGB0123456789');
+    expect(screen.getByTestId('account-via-feedacct-1').textContent).not.toContain('Demo');
+    // …and the attachment echoes as an inert row inside the space section
+    expect(await screen.findByTestId('account-echo-demo_space-feedacct-1')).toBeTruthy();
     // when the bank last answered (user request)
     expect(screen.getByTestId('account-synced-feedacct-1').textContent).toContain('minutes ago');
 
@@ -59,6 +74,9 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.getByTestId('attach-space-demo_space')).toBeTruthy();
     expect(screen.getByTestId('attach-detach-demo_space')).toBeTruthy();
     expect(screen.queryByTestId('acctedit-name')).toBeNull(); // not the editor
+    // #205: where the data ends + the newest transaction on the account
+    expect(screen.getByTestId('attach-datathrough').textContent).toContain('2026-06-07');
+    await waitFor(() => expect(screen.getByTestId('attach-newest-tx').textContent).toContain('2026-06-10'));
   });
 
   it('an icon pick shows up while the attach sheet stays open', async () => {
@@ -136,9 +154,10 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.queryByTestId('attach-offer')).toBeNull();
   }, 15_000);
 
-  it('space accounts screen attaches one of my feed accounts with a start date', async () => {
+  it('space accounts screen attaches one of my feed accounts — the space decides the history start (#207)', async () => {
     // redesign: attaching happens on the space's own accounts screen —
-    // pick an existing account, choose the history start, import
+    // pick an existing account and attach; the history start is no
+    // longer asked per attach (#207), the space's own default governs
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
@@ -174,10 +193,13 @@ describe('AccountsScreen (demo identity)', () => {
 
     fireEvent.click(await screen.findByTestId('space-accounts-attach'));
     fireEvent.click(await screen.findByTestId('space-attach-pick-feedacct-1'));
-    fireEvent.change(await screen.findByTestId('space-attach-history'), { target: { value: '2026-01-01' } });
+    // #207: the per-attach date field is gone for good
+    expect(screen.queryByTestId('space-attach-history')).toBeNull();
     fireEvent.click(screen.getByTestId('space-attach-save'));
-    // the chosen start date reaches the server…
-    await waitFor(() => expect(attachBody?.historyFrom).toBe('2026-01-01'), { timeout: 5000 });
+    // the space's default history start reaches the server (no
+    // historyStartDate on the space → the app default applies)
+    const { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } = await import('@/features/spaces/spaceDefaults');
+    await waitFor(() => expect(attachBody?.historyFrom).toBe(isoMonthsAgo(DEFAULT_HISTORY_MONTHS)), { timeout: 5000 });
     // …and the synced mirror renders the attachment as a tappable row
     await waitFor(() => expect(screen.getByTestId('space-accounts-list').textContent).toContain('ING Betaal'), { timeout: 5000 });
   }, 15_000);
@@ -318,6 +340,54 @@ describe('AccountsScreen (demo identity)', () => {
     db2.close();
   }, 15_000);
 
+  it('#205: the space info sheet shows where the data ends and the newest transaction', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+      dataThroughDate: '2026-06-07',
+    });
+    // the newest movement is a RAW row in the feed space (#205: raw
+    // rows, not the per-space view — that one under-reports)
+    await repo.upsert('transaction', 'feed-1', 'feedtx-1', {
+      accountId: 'feedacct-1',
+      date: '2026-06-10',
+      amountCents: -1200,
+      currency: 'EUR',
+      merchant: 'SHELL',
+      txType: 'expense',
+    });
+    await repo.upsert('accountLink', 's-user', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1', type: 'checking' });
+    db.close();
+
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('space-account-link-1'));
+    const sheet = await screen.findByTestId('space-account-info');
+    expect(sheet.textContent).toContain('Data through');
+    expect(sheet.textContent).toContain('2026-06-07');
+    expect(sheet.textContent).toContain('Latest transaction');
+    await waitFor(() => expect(screen.getByTestId('space-account-info').textContent).toContain('2026-06-10'), { timeout: 5000 });
+  }, 15_000);
+
   it('global sheet lists only attached spaces and detaches from there too', async () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
@@ -404,6 +474,52 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('account-row-feedacct-1')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
+  it('#185: a slow feed delete narrates its server stage in the busy note', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    db.close();
+
+    let release: (() => void) | undefined;
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        // a hanging server: the delete resolves only when the test says so
+        'DELETE /me/feeds/feed-1': () =>
+          new Promise((resolve) => {
+            release = () => resolve({ erased: true });
+          }),
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('account-row-feedacct-1'));
+    fireEvent.click(await screen.findByTestId('attach-delete'));
+    fireEvent.click(await screen.findByTestId('attach-delete-confirm'));
+    // a dismissal attempt mid-flight says WHICH stage runs, not just
+    // "still running" — the server call is the slow one
+    fireEvent.keyDown(window, { key: 'Escape' });
+    const note = await screen.findByTestId('sheet-busy-note');
+    expect(note.textContent).toContain('Removing bank connection');
+    // let the server answer — the delete completes and the row leaves
+    release?.();
+    await waitFor(() => expect(screen.queryByTestId('account-row-feedacct-1')).toBeNull(), { timeout: 5000 });
+  }, 15_000);
+
   it('adds a manual cash account via the space door (manual is space-scoped now)', async () => {
     renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');
@@ -463,10 +579,10 @@ describe('AccountsScreen (demo identity)', () => {
       id = rows[0]?.id ?? '';
     }, { timeout: 5000 });
 
-    // the row opens the info sheet; Edit inside it reaches the SAME
-    // edit sheet as the global screen (redesign ss13)
+    // #206: a manual row opens the edit sheet DIRECTLY — the info sheet
+    // said nothing the editor doesn't (user ss); feed rows keep it
     fireEvent.click(await screen.findByTestId(`space-account-${id}`));
-    fireEvent.click(await screen.findByTestId('space-account-sheet-edit'));
+    expect(screen.queryByTestId('space-account-info')).toBeNull();
     fireEvent.change(await screen.findByTestId('acctedit-name'), { target: { value: 'Amex Gold' } });
     fireEvent.click(screen.getByTestId('acctedit-save'));
     await waitFor(async () => {
@@ -520,6 +636,8 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#221: a DEFAULT account offers no delete — and its balance edit leaves an adjustment row', async () => {
     renderApp('/accounts');
+    // #227: the six defaults sit folded behind the section's toggle
+    fireEvent.click(await screen.findByTestId('accounts-defaults-toggle-demo_space'));
     // the demo space is born with its six defaults (eager mint)
     fireEvent.click(await screen.findByTestId('account-row-defaultacct_saving_demo_space'));
     await screen.findByTestId('acctedit-name');
@@ -540,6 +658,29 @@ describe('AccountsScreen (demo identity)', () => {
       expect(adjustment).toMatchObject({ amountCents: 2500, adjustment: 1, needsReview: 0, txType: 'adjustment' });
     }, { timeout: 5000 });
     db.close();
+  }, 15_000);
+
+  it('#227: the default pots sit folded — closed by default, the toggle reveals them', async () => {
+    renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    // folded: no default row in the DOM; the quiet toggle counts them
+    expect(screen.queryByTestId('account-row-defaultacct_saving_demo_space')).toBeNull();
+    const toggle = await screen.findByTestId('accounts-defaults-toggle-demo_space');
+    expect(toggle.textContent).toContain('Show default accounts (');
+    fireEvent.click(toggle);
+    expect(await screen.findByTestId('account-row-defaultacct_saving_demo_space')).toBeTruthy();
+    expect(screen.getByTestId('accounts-defaults-toggle-demo_space').textContent).toContain('Hide default accounts');
+    fireEvent.click(screen.getByTestId('accounts-defaults-toggle-demo_space'));
+    await waitFor(() => expect(screen.queryByTestId('account-row-defaultacct_saving_demo_space')).toBeNull());
+  }, 15_000);
+
+  it('#179: a pending add-account intent opens the manual chooser on arrival', async () => {
+    const { setSpaceAddAccountIntent } = await import('@/features/spaces/spaceAccountsHandoff');
+    setSpaceAddAccountIntent();
+    renderApp('/spaces/demo_space/accounts');
+    await screen.findByTestId('screen-space-accounts');
+    // the chooser opened by itself, straight on its manual type grid
+    expect(await screen.findByTestId('chooser-accttype-cash')).toBeTruthy();
   }, 15_000);
 
   it('imports a CAMT.053 file: preview, run, result, new account appears', async () => {

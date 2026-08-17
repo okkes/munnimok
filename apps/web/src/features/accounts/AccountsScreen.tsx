@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useGlobalAccounts } from '@/application/accounts';
-import type { GlobalAccount } from '@/application/accounts';
+import type { GlobalAccount, SpaceScopedAccounts } from '@/application/accounts';
 import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { linkAllCounterparties } from '@/application/counterLink';
@@ -56,9 +56,6 @@ function AccountRowButton({
   // #248 (user): no auto-attach nag — the unattached state is a quiet
   // per-row badge instead (rendered below)
   const unattached = sharedVia.length === 0;
-  let feedSubtitle: string | null = null;
-  if (active.length > 0) feedSubtitle = `${t('acct.sharedVia')} ${active.map((v) => v.spaceName).join(', ')}`;
-  else if (archivedOnly) feedSubtitle = t('acct.archivedEverywhere');
   return (
     <button
       data-testid={`account-row-${account.id}`}
@@ -104,21 +101,30 @@ function AccountRowButton({
             {t(typeDef(account.type).labelKey)}
           </span>
         )}
-        {feedSpaceId ? (
+        {/* #227: the "via space x, y" story moved into each space's own
+            section (echo rows) — the top rows say the IBAN instead */}
+        {feedSpaceId && unattached && (
           <span className="block truncate text-[11px] text-ink-4" data-testid={`account-via-${account.id}`}>
-            {unattached ? (
-              <span
-                className="inline-block rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink-2"
-                data-testid={`account-unattached-${account.id}`}
-              >
-                {t('acct.notAttached')}
-              </span>
-            ) : (
-              feedSubtitle
-            )}
+            <span
+              className="inline-block rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink-2"
+              data-testid={`account-unattached-${account.id}`}
+            >
+              {t('acct.notAttached')}
+            </span>
           </span>
-        ) : (
-          account.iban && <span className="block truncate font-mono text-[11px] text-ink-4 select-text">{account.iban}</span>
+        )}
+        {feedSpaceId && archivedOnly && (
+          <span className="block truncate text-[11px] text-ink-4" data-testid={`account-via-${account.id}`}>
+            {t('acct.archivedEverywhere')}
+          </span>
+        )}
+        {feedSpaceId && active.length > 0 && account.iban && (
+          <span className="block truncate font-mono text-[11px] text-ink-4 select-text" data-testid={`account-via-${account.id}`}>
+            {account.iban}
+          </span>
+        )}
+        {!feedSpaceId && account.iban && (
+          <span className="block truncate font-mono text-[11px] text-ink-4 select-text">{account.iban}</span>
         )}
         {/* when the account last heard from its bank/statement (user request) */}
         {account.lastSyncedAt && (
@@ -173,7 +179,8 @@ function AccountSection({
       <div className="m-cap mt-5 mb-1 px-1">{title}</div>
       <div className="overflow-hidden rounded-card border border-line bg-surface">
         {list.map((entry, i) => (
-          <div key={entry.account.id}>
+          // the DOM id is the echo rows' jump target (#227)
+          <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
             {i > 0 && <div className="mx-4 h-px bg-line-2" />}
             <AccountRowButton entry={entry} lang={lang} showType={showType} onOpen={onOpen} />
           </div>
@@ -194,18 +201,17 @@ function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: Retu
         {list.map(({ account, sharedVia }, i) => {
           const active = sharedVia.filter((v) => !v.archived);
           const first = active[0] ?? sharedVia[0];
+          // #227: no "via space x, y" — who shared it, plus the IBAN
+          const subtitle = [first?.attachedByName, account.iban].filter(Boolean).join(' · ');
           return (
-            <div key={account.id}>
+            <div key={account.id} id={`acct-row-${account.id}`}>
               {i > 0 && <div className="mx-4 h-px bg-line-2" />}
               <div className="flex items-center gap-3 px-4 py-3.5" data-testid={`shared-account-${account.id}`}>
                 {/* #212 r2: no type at the global level — plain bank tile */}
                 <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] text-ink">{account.name}</span>
-                  <span className="block truncate text-[11px] text-ink-4">
-                    {first?.attachedByName ? `${first.attachedByName} · ` : ''}
-                    {t('acct.sharedVia')} {(active.length ? active : sharedVia).map((v) => v.spaceName).join(', ')}
-                  </span>
+                  {subtitle && <span className="block truncate text-[11px] text-ink-4">{subtitle}</span>}
                 </span>
                 {active.length === 0 && (
                   <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink-2">
@@ -224,6 +230,102 @@ function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: Retu
   );
 }
 
+/** #227: an inert mirror of a bank-fed account inside the space that
+ *  sees it — tapping jumps up to the REAL row, which lives in the top
+ *  section (the screen's scroller owns the smooth scroll) */
+function EchoRow({
+  spaceId,
+  entry,
+  lang,
+}: {
+  spaceId: string;
+  entry: GlobalAccount;
+  lang: ReturnType<typeof useLang>['lang'];
+}) {
+  const { t } = useLang();
+  const { account } = entry;
+  return (
+    <button
+      data-testid={`account-echo-${spaceId}-${account.id}`}
+      onClick={() =>
+        document.getElementById(`acct-row-${account.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      }
+      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left opacity-60"
+    >
+      <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] text-ink">{account.name}</span>
+        <span className="block truncate text-[11px] text-ink-4">{t('acct.echoHint')}</span>
+      </span>
+      <span className="m-num text-[15px] font-semibold text-ink">
+        {fmtCents(account.balanceCents, account.currency, lang)}
+      </span>
+    </button>
+  );
+}
+
+/** #227: one space's section — real rows first, bank-fed echoes next,
+ *  and the default pots folded behind a quiet toggle (closed by default:
+ *  six system rows per space drowned the accounts people actually made) */
+function SpaceSection({
+  segment,
+  echoes,
+  lang,
+  onOpen,
+}: {
+  segment: SpaceScopedAccounts;
+  echoes: GlobalAccount[];
+  lang: ReturnType<typeof useLang>['lang'];
+  onOpen: (entry: GlobalAccount) => void;
+}) {
+  const { t } = useLang();
+  const [showDefaults, setShowDefaults] = useState(false);
+  const visible = segment.accounts.filter((e) => !e.account.archived);
+  const regular = visible.filter((e) => !e.account.defaultFor);
+  const defaults = visible.filter((e) => !!e.account.defaultFor);
+  if (visible.length === 0 && echoes.length === 0) return null;
+  const aboveEchoes = regular.length > 0;
+  const aboveToggle = aboveEchoes || echoes.length > 0;
+  return (
+    <div data-testid={`accounts-space-${segment.spaceId}`}>
+      <div className="m-cap mt-5 mb-1 px-1">{`${segment.spaceName} · ${t('acct.spaceScopedCap')}`}</div>
+      <div className="overflow-hidden rounded-card border border-line bg-surface">
+        {regular.map((entry, i) => (
+          <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
+            {i > 0 && <div className="mx-4 h-px bg-line-2" />}
+            <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
+          </div>
+        ))}
+        {echoes.map((entry, i) => (
+          <div key={entry.account.id}>
+            {(aboveEchoes || i > 0) && <div className="mx-4 h-px bg-line-2" />}
+            <EchoRow spaceId={segment.spaceId} entry={entry} lang={lang} />
+          </div>
+        ))}
+        {defaults.length > 0 && (
+          <>
+            {aboveToggle && <div className="mx-4 h-px bg-line-2" />}
+            <button
+              data-testid={`accounts-defaults-toggle-${segment.spaceId}`}
+              onClick={() => setShowDefaults((v) => !v)}
+              className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-4 py-3 text-left text-[12px] font-medium text-ink-4"
+            >
+              <Icon name={showDefaults ? 'chevron-up' : 'chevron-down'} size={14} />
+              {showDefaults ? t('acct.hideDefaults') : t('acct.showDefaults', { n: defaults.length })}
+            </button>
+            {showDefaults &&
+              defaults.map((entry) => (
+                <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
+                  <div className="mx-4 h-px bg-line-2" />
+                  <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
+                </div>
+              ))}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function AccountsScreen() {
   const { t, lang } = useLang();
@@ -261,6 +363,8 @@ export function AccountsScreen() {
   // spaces and feeds, plus what others share with me via shared spaces
   const global = useGlobalAccounts(myFeedIds);
   const mine = useMemo(() => (global?.mine ?? []).filter((e) => !e.account.archived), [global]);
+  // #227: bank-fed accounts echo (inert) inside each space they feed
+  const echoPool = useMemo(() => [...mine, ...(global?.sharedWithMe ?? [])], [mine, global]);
   // reconcile pairing spans BOTH pools: a manual/imported row inside a
   // space can be the twin of a global bank connection
   const suggestionPool = useMemo(
@@ -407,15 +511,13 @@ export function AccountsScreen() {
             <AccountSection title={t('acct.globalCap')} list={mine} lang={lang} onOpen={openEntry} />
             <SharedWithMeSection list={global?.sharedWithMe ?? []} lang={lang} />
             {(global?.spaceScoped ?? []).map((segment) => (
-              <div key={segment.spaceId} data-testid={`accounts-space-${segment.spaceId}`}>
-                <AccountSection
-                  title={`${segment.spaceName} · ${t('acct.spaceScopedCap')}`}
-                  list={segment.accounts.filter((e) => !e.account.archived)}
-                  lang={lang}
-                  showType
-                  onOpen={openEntry}
-                />
-              </div>
+              <SpaceSection
+                key={segment.spaceId}
+                segment={segment}
+                echoes={echoPool.filter((e) => e.sharedVia.some((v) => v.spaceId === segment.spaceId && !v.archived))}
+                lang={lang}
+                onOpen={openEntry}
+              />
             ))}
           </>
         )}

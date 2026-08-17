@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import type { GlobalAccount } from '@/application/accounts';
+import { newestTxDate } from '@/application/accounts';
 import { detachFeedFromSpace } from '@/application/accountAttach';
 import { logActivity } from '@/application/activity';
 import { useData } from '@/app/data';
@@ -66,6 +67,9 @@ export function AttachSheet({
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
+  // #185: a big account deletes in visible stages — server first, then
+  // the local purge; the confirm sheet's busy note names the current one
+  const [deleteStage, setDeleteStage] = useState<'server' | 'local'>('server');
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   // LIVE link rows, not the entry snapshot: the checkboxes must flip the
@@ -83,6 +87,8 @@ export function AttachSheet({
   const liveAccount = useQuery(store, async () => (accountId ? await store.get('account', accountId) : undefined), [
     accountId,
   ]);
+  // #205: the newest transaction on the account, from raw rows
+  const newestTx = useQuery(store, async () => (accountId ? newestTxDate(store, accountId) : undefined), [accountId]);
 
   // master plan IB: batches derive from the stamped rows — no extra table
   const batches =
@@ -156,12 +162,14 @@ export function AttachSheet({
     if (deleteBusy) return;
     setDeleteBusy(true);
     setDeleteFailed(false);
+    setDeleteStage('server');
     try {
       // server first: consent revocation + cascade (or partial removal
       // when someone else still covers the account — server ruling)
       await deleteFeedAccount(feedSpaceId);
       // my synced mirrors tombstone through the normal outbox path; the
       // feed's local rows are purged directly — it is no longer ours
+      setDeleteStage('local');
       for (const link of liveLinks ?? []) {
         await repo.remove('accountLink', link.spaceId, link.id);
       }
@@ -231,6 +239,17 @@ export function AttachSheet({
       <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-source">
         <span className="text-ink-4">{t('acct.source')}</span>
         <span className="text-ink-2">{t(sourceKeyFor(account))}</span>
+      </div>
+      {/* #205: where the DATA ends vs when the sync ran — two facts */}
+      {account.dataThroughDate && (
+        <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-datathrough">
+          <span className="text-ink-4">{t('acct.dataThroughLabel')}</span>
+          <span className="font-mono text-ink-2">{account.dataThroughDate}</span>
+        </div>
+      )}
+      <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-newest-tx">
+        <span className="text-ink-4">{t('acct.newestTx')}</span>
+        <span className="font-mono text-ink-2">{newestTx ?? '—'}</span>
       </div>
       {/* only what the account currently feeds — attaching moved to each
           space's own accounts screen (checkboxes retired, user request) */}
@@ -344,6 +363,7 @@ export function AttachSheet({
         title={t('acct.deleteConfirmTitle')}
         body={t('acct.deleteConfirmBody')}
         busy={deleteBusy}
+        busyText={deleteStage === 'local' ? t('acct.deleteStageLocal') : t('acct.deleteStageServer')}
         error={deleteFailed ? t('acct.deleteFailed') : null}
         onConfirm={() => void deleteAccount()}
         testId="attach-delete"

@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
+import { newestTxDate } from '@/application/accounts';
 import { isDebtTracked } from '@/domain/debts';
 import { parseCents } from '@/lib/money';
 import type { AccountRow, RecurringEvery } from '@/db/types';
@@ -94,6 +96,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
 
   const manual = account?.source === 'manual';
   const liability = !!account && isLiability(account.type);
+  // #205: the newest transaction on the account, for the About section
+  const newest = useQuery(store, async () => (account ? newestTxDate(store, account.id) : undefined), [account?.id]);
 
   // dirty vs the row-derived seed: an untouched sheet closes freely, an
   // edited one asks (user request 2026-08-01); the logo saves on pick
@@ -181,40 +185,18 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     <>
       <Sheet open={!!account} onOpenChange={(open) => !open && onClose()} title={t('acct.editAccount')} size={liability ? 'tall' : 'form'} dirty={dirty}>
         <div className="flex flex-col gap-3 pt-1">
-          <input
-            data-testid="acctedit-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
-          />
-          {manual && (
-            <div className="flex gap-2">
-              <div className="flex overflow-hidden rounded-input border border-line">
-                <button
-                  data-testid="acctedit-neg"
-                  onClick={() => setNegative(true)}
-                  className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
-                >
-                  −
-                </button>
-                <button
-                  data-testid="acctedit-pos"
-                  onClick={() => setNegative(false)}
-                  className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
-                >
-                  +
-                </button>
-              </div>
-              <input
-                data-testid="acctedit-balance"
-                value={balance}
-                onChange={(e) => setBalance(e.target.value)}
-                inputMode="decimal"
-                placeholder={`${t('acct.balanceNow')} (${account?.currency ?? 'EUR'})`}
-                className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-              />
-            </div>
-          )}
+          {/* #208: labeled sections, the overview's caption style — the
+              form reads as Basics / Balance / loan story / About */}
+          <div className="m-cap px-1">{t('acct.sectionBasics')}</div>
+          <label className="text-[12px] text-ink-3">
+            {t('acct.accountName')}
+            <input
+              data-testid="acctedit-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+            />
+          </label>
           <button
             data-testid="acctedit-change-icon"
             onClick={() => setLogoOpen(true)}
@@ -230,6 +212,42 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
           </button>
           {/* #212: the type, visible and changeable (destructive) */}
           {account && <AccountTypeRow account={account} />}
+          {manual && (
+            <>
+              <div className="m-cap px-1 pt-1">{t('acct.sectionBalance')}</div>
+              <div className="flex gap-2">
+                <div className="flex overflow-hidden rounded-input border border-line">
+                  <button
+                    data-testid="acctedit-neg"
+                    onClick={() => setNegative(true)}
+                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
+                  >
+                    −
+                  </button>
+                  <button
+                    data-testid="acctedit-pos"
+                    onClick={() => setNegative(false)}
+                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
+                  >
+                    +
+                  </button>
+                </div>
+                <input
+                  data-testid="acctedit-balance"
+                  value={balance}
+                  onChange={(e) => setBalance(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={`${t('acct.balanceNow')} (${account?.currency ?? 'EUR'})`}
+                  className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+                />
+              </div>
+              {account?.balanceAsOf && (
+                <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="acctedit-balance-asof">
+                  {t('acct.balanceAsOf', { date: account.balanceAsOf })}
+                </p>
+              )}
+            </>
+          )}
           {liability && (
             <>
               {/* the debt story (loans v2): the account IS the loan */}
@@ -240,7 +258,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   value={iban}
                   onChange={(e) => setIban(e.target.value)}
                   placeholder={t('debts.iban')}
-                  className="h-11 w-full rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4"
+                  className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4"
                 />
               )}
               <div className="flex gap-2">
@@ -255,7 +273,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                     value={original}
                     onChange={(e) => setOriginal(e.target.value)}
                     placeholder="0.00"
-                    className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
                 </label>
                 <label className="min-w-0 flex-1 text-[12px] text-ink-3">
@@ -269,7 +287,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                     value={apr}
                     onChange={(e) => setApr(e.target.value)}
                     placeholder="0.0"
-                    className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
                 </label>
               </div>
@@ -285,7 +303,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                     value={payment}
                     onChange={(e) => setPayment(e.target.value)}
                     placeholder="0.00"
-                    className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
                 </label>
                 {/* #190: the plan's due day, like recurring */}
@@ -300,7 +318,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                     value={payDay}
                     onChange={(e) => setPayDay(e.target.value)}
                     placeholder="—"
-                    className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
                 </label>
               </div>
@@ -337,10 +355,26 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
             </>
           )}
           {account && (
-            <div className="flex items-center justify-between px-1 text-[12px]" data-testid="acctedit-source">
-              <span className="text-ink-4">{t('acct.source')}</span>
-              <span className="text-ink-2">{t(sourceKeyFor(account))}</span>
-            </div>
+            <>
+              <div className="m-cap px-1 pt-1">{t('acct.sectionAbout')}</div>
+              <div className="overflow-hidden rounded-card border border-line bg-surface">
+                <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-source">
+                  <span className="text-ink-3">{t('acct.source')}</span>
+                  <span className="text-ink-2">{t(sourceKeyFor(account))}</span>
+                </div>
+                {/* #205: where the data ends and the last real movement */}
+                {account.dataThroughDate && (
+                  <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-datathrough">
+                    <span className="text-ink-3">{t('acct.dataThroughLabel')}</span>
+                    <span className="font-mono text-[12px] text-ink">{account.dataThroughDate}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-newest-tx">
+                  <span className="text-ink-3">{t('acct.newestTx')}</span>
+                  <span className="font-mono text-[12px] text-ink">{newest ?? '—'}</span>
+                </div>
+              </div>
+            </>
           )}
           <Button data-testid="acctedit-save" onClick={save} disabled={!name.trim()}>
             {t('action.save')}

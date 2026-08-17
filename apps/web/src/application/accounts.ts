@@ -117,6 +117,21 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
 }
 
 /**
+ * #205: the newest transaction date on an account, read from RAW rows
+ * across every locally known space — a feed account's rows live in the
+ * feed space with per-space overlays elsewhere, so visibleTransactions
+ * (member spaces only, gated) would under-report the account-level fact.
+ */
+export async function newestTxDate(store: StorageBackend, accountId: string): Promise<string | undefined> {
+  let newest: string | undefined;
+  for (const tx of await store.allRows('transaction')) {
+    if (tx.deleted !== 0 || tx.accountId !== accountId) continue;
+    if (!newest || tx.date > newest) newest = tx.date;
+  }
+  return newest;
+}
+
+/**
  * #212 (user): changing an account's TYPE is destructive by design —
  * the type drives the stamping rules, so every transaction on the
  * account goes back to review with a fresh interpretation (category

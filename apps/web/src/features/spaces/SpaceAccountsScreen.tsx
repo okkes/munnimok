@@ -5,6 +5,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAttach';
+import { newestTxDate } from '@/application/accounts';
 import { logActivity } from '@/application/activity';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { sourceKeyFor } from '@/features/accounts/AttachSheet';
@@ -14,6 +15,7 @@ import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import { AccountTypeRow } from '@/features/accounts/AccountTypeRow';
 import { ACCOUNT_TYPES, typeDef } from '@/features/accounts/accountTypes';
 import { setAccountOpenHandoff } from '@/features/accounts/openHandoff';
+import { takeSpaceAddAccountIntent } from './spaceAccountsHandoff';
 import { linkEffectiveType } from '@/db/joined';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
@@ -107,8 +109,9 @@ function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined):
  * The financial accounts this space sees (redesign 2026-07-22): the
  * list shows last-sync freshness, every feed attachment detaches HERE
  * (danger sheet + cooldown), and "+ attach" offers the user's not-yet-
- * attached accounts with a history start date — account CREATION stays
- * behind the manage door inside that sheet.
+ * attached accounts (#207: the history start is the space's own fact,
+ * not a per-attach ask) — account CREATION stays behind the manage
+ * door inside that sheet.
  */
 export function SpaceAccountsScreen() {
   const { t, lang } = useLang();
@@ -122,16 +125,24 @@ export function SpaceAccountsScreen() {
 
   const [attachOpen, setAttachOpen] = useState(false);
   const [picked, setPicked] = useState<AttachCandidate | null>(null);
-  const [historyFrom, setHistoryFrom] = useState('');
   // #152: the account's type is a SPACE-level decision, made here
   const [attachType, setAttachType] = useState<AccountType>('checking');
   const [busy, setBusy] = useState(false);
   const [detachTarget, setDetachTarget] = useState<AttachedAccountEntry | null>(null);
   const [editing, setEditing] = useState<AccountRow | null>(null);
-  // AE1: creation goes through the shared chooser now
-  const [addOpen, setAddOpen] = useState(false);
-  // the tap-through info sheet (user redesign ss13)
+  // AE1: creation goes through the shared chooser now. #179: arriving
+  // with a pending add intent opens it right away (read-once at mount)
+  const [addOpen, setAddOpen] = useState(() => takeSpaceAddAccountIntent());
+  // the tap-through info sheet (user redesign ss13) — feed rows only
+  // since #206: manual rows go straight to the editor
   const [info, setInfo] = useState<AttachedAccountEntry | null>(null);
+  // #205: the newest transaction on the shown account, from raw rows
+  const infoAccountId = info?.account?.id;
+  const infoNewestTx = useQuery(
+    store,
+    async () => (infoAccountId ? newestTxDate(store, infoAccountId) : undefined),
+    [infoAccountId],
+  );
 
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
 
@@ -193,7 +204,9 @@ export function SpaceAccountsScreen() {
     if (!picked || busy) return;
     setBusy(true);
     try {
-      await attachFeedToSpace(store, repo, spaceId, picked.feedSpaceId, picked.accountId, historyFrom || undefined, attachType);
+      // #207: no per-attach history date — the space's own history start
+      // (else the app default) decides inside attachFeedToSpace
+      await attachFeedToSpace(store, repo, spaceId, picked.feedSpaceId, picked.accountId, undefined, attachType);
       setPicked(null);
       setAttachType('checking');
       setAttachOpen(false);
@@ -245,7 +258,9 @@ export function SpaceAccountsScreen() {
                   <button
                     key={entry.key}
                     data-testid={`space-account-${entry.key}`}
-                    onClick={() => setInfo(entry)}
+                    // #206: a space-owned (manual) row edits directly — its
+                    // info sheet had nothing the editor doesn't say better
+                    onClick={() => (entry.manual ? setEditing(entry.manual) : setInfo(entry))}
                     className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
                   >
                     {/* the real bank mark where we have it (user request);
@@ -292,7 +307,6 @@ export function SpaceAccountsScreen() {
               data-testid="space-accounts-attach"
               onClick={() => {
                 setPicked(null);
-                setHistoryFrom('');
                 setAttachOpen(true);
               }}
             >
@@ -334,7 +348,6 @@ export function SpaceAccountsScreen() {
             <div className="flex items-center gap-2 text-[13px] text-ink-2">
               {info.account && <Icon name={SOURCE_ICONS[info.account.source]} size={16} color="var(--m-ink-3)" />}
               {info.account ? t(sourceKeyFor(info.account)) : t('acct.bank')}
-              {info.manual && <span className="text-ink-4"> · {t('acct.provSpace')}</span>}
             </div>
             {/* #239 (user): this SPACE's own name for the account — the
                 global name stays untouched; clearing falls back to it */}
@@ -371,6 +384,11 @@ export function SpaceAccountsScreen() {
                 info.link ? ([t('acct.historyFrom'), info.link.historyFrom ?? t('acct.historyFromAll')] as const) : null,
                 info.link && linkProvenance(t, info.link, mySub) ? ([t('acct.attachedBy'), linkProvenance(t, info.link, mySub)!] as const) : null,
                 syncLine(t, lang, info.account) ? ([t('acct.lastSyncedLabel'), syncLine(t, lang, info.account)!] as const) : null,
+                // #205: where the DATA ends (imports stamp it) and the
+                // newest transaction actually on the account — different
+                // facts from "last synced"
+                info.account?.dataThroughDate ? ([t('acct.dataThroughLabel'), info.account.dataThroughDate] as const) : null,
+                [t('acct.newestTx'), infoNewestTx ?? '—'] as const,
               ]
                 .filter((row): row is readonly [string, string] => row !== null)
                 .map(([label, value]) => (
@@ -381,18 +399,6 @@ export function SpaceAccountsScreen() {
                 ))}
             </div>
             {info.stale && <Pill tone="warning">{t('acct.reconnectHint')}</Pill>}
-            {info.manual && (
-              <Button
-                variant="outline"
-                data-testid="space-account-sheet-edit"
-                onClick={() => {
-                  setEditing(info.manual ?? null);
-                  setInfo(null);
-                }}
-              >
-                <Icon name="pencil-outline" size={16} /> {t('action.edit')}
-              </Button>
-            )}
             {/* #239 r2 (user): straight to the account in the global
                 overview — its sheet opens on arrival */}
             {info.link && info.account && (
@@ -428,7 +434,8 @@ export function SpaceAccountsScreen() {
           screen (user ss 2026-07-31: they were view-only here) */}
       <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
 
-      {/* pick an existing account, choose the history start, attach */}
+      {/* pick an existing account, choose its type here, attach (#207:
+          the history start is the space's own, no per-attach ask) */}
       <Sheet open={attachOpen} onOpenChange={setAttachOpen} title={t('acct.attachToSpace')} size="tall">
         <div className="flex flex-col gap-3 pt-1">
           {(candidates ?? []).length > 0 ? (
@@ -485,17 +492,8 @@ export function SpaceAccountsScreen() {
                   {t('acct.fundingAttachNote')}
                 </p>
               )}
-              <label className="flex items-center gap-3 text-[13px] text-ink-2">
-                {t('acct.historyFrom')}
-                <input
-                  data-testid="space-attach-history"
-                  type="date"
-                  value={historyFrom}
-                  onChange={(e) => setHistoryFrom(e.target.value)}
-                  className="h-10 flex-1 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none"
-                />
-              </label>
-              <p className="px-1 text-[11px] leading-snug text-ink-4">{t('acct.historyFromHint')}</p>
+              {/* #207: no history-date ask — the space's own history
+                  start governs; the info sheet still shows the fact */}
             </>
           )}
           <Button data-testid="space-attach-save" disabled={!picked || busy} onClick={() => void attach()}>

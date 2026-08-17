@@ -702,7 +702,10 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
             scrollClassName="px-5"
             scrollStyle={{ height: 'auto', flex: '1 1 auto', minHeight: 0 }}
           >
-            <div className={footer ? 'pb-2' : 'pb-[max(20px,env(safe-area-inset-bottom))]'}>{children}</div>
+            <div className={footer ? 'pb-2' : 'pb-[max(20px,env(safe-area-inset-bottom))]'}>
+              {busyBanner}
+              {children}
+            </div>
           </ModalSheet.Content>
           {/* pinned footer: OUTSIDE the scrollport, so it can never
               drift over the content (the sticky-in-scroll version did,
