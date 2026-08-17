@@ -169,6 +169,11 @@ const stageWithBulkWarning = (
   else stage();
 };
 
+/** #237 r3: the match sheet's create/await doors — manual counters get
+ *  Create, bank-fed ones Wait; both just reset the pick (S3776) */
+const resetPickDoor = (bankFed: boolean, wantBank: boolean, clear: () => void): (() => void) | undefined =>
+  bankFed === wantBank ? clear : undefined;
+
 /** #161: does the card hold USER-staged work a split would reset? A
  *  memory-offered event is not a user decision (S3776: out of the
  *  component) */
@@ -2168,8 +2173,8 @@ export function ReviewScreen() {
           target={{ id: counterAcct.id, name: counterAcct.name }}
           anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
           rows={allTxs ?? []}
-          onCreate={!counterBankFed ? () => setPickedPeer(null) : undefined}
-          onWait={counterBankFed ? () => setPickedPeer(null) : undefined}
+          onCreate={resetPickDoor(counterBankFed, false, () => setPickedPeer(null))}
+          onWait={resetPickDoor(counterBankFed, true, () => setPickedPeer(null))}
           onPick={(pickedId) => {
             const linkedId = counterAcct.id;
             stageWithBulkWarning(similar.length, () => setPickedPeer({ txId: pickedId, linkedId }), setPickWarn);
