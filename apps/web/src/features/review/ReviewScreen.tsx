@@ -1299,7 +1299,9 @@ export function ReviewScreen() {
   // edits get a conscious warning before the split flow opens
   const [splitResetOpen, setSplitResetOpen] = useState(false);
   const requestSplit = () => {
-    if (stagedDraft !== null || eventPick !== null || manualRecId !== null) {
+    // #161: a memory-offered event is not a user decision — only the
+    // user's own staging warrants the reset warning
+    if (stagedDraft !== null || (eventTouched.current && eventPick !== null) || manualRecId !== null) {
       setSplitResetOpen(true);
       return;
     }
@@ -1307,6 +1309,7 @@ export function ReviewScreen() {
   };
   const confirmSplitReset = () => {
     setStagedDraft(null);
+    eventTouched.current = true; // a conscious reset — the offer stays down
     setEventPick(null);
     setManualRecId(null);
     setSplitResetOpen(false);
@@ -1356,6 +1359,8 @@ export function ReviewScreen() {
   // events join the review card (user redesign): staged, written on confirm
   const [eventPick, setEventPick] = useState<string | null>(null);
   const [eventPickOpen, setEventPickOpen] = useState(false);
+  // #161: the user's own event gesture outranks the memory's offer
+  const eventTouched = useRef(false);
   // create-and-return doors: snapshot ids, diff on close, auto-attach
   const [recCreating, setRecCreating] = useState(false);
   const [eventCreating, setEventCreating] = useState(false);
@@ -1423,7 +1428,25 @@ export function ReviewScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [ownTransferDraft, tx?.id, spaceAccounts, cats, ownStamp],
   );
-  const draft = stagedDraft ?? resolvedDraft;
+  // #161: the remembered pct SPREAD rides in when the memory's category
+  // stood — a resolved transfer, an own-counter default or the row's own
+  // partition must never be fragmented by it
+  const spreadDraft = useMemo(() => {
+    if (!tx || !resolvedDraft || !prediction?.cats) return resolvedDraft;
+    if (
+      resolvedDraft.catId !== prediction.catId ||
+      resolvedDraft.linkedAccountId ||
+      resolvedDraft.cats?.length ||
+      resolvedDraft.splits?.length
+    )
+      return resolvedDraft;
+    const resolved = resolveSplitsFor(tx.amountCents, prediction.cats.map((e) => ({ catId: e.catId, amountCents: 0, pct: e.pct })));
+    const entries = resolved.map((s) => ({ catId: s.catId, amountCents: Math.abs(s.amountCents), ...(s.pct !== undefined ? { pct: s.pct } : {}) }));
+    const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
+    return { ...withCats(resolvedDraft, entries), catId: primary.catId };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedDraft, prediction, tx?.id]);
+  const draft = stagedDraft ?? spreadDraft;
   const draftCounter = useQuery(
     store,
     async () => (draft?.linkedAccountId ? store.get('account', draft.linkedAccountId) : undefined),
@@ -1456,6 +1479,17 @@ export function ReviewScreen() {
   const events = useEvents();
   const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
   const pickedEvent = activeEvents.find((e) => e.id === eventPick);
+  // #161: the memory's event offer — only an ACTIVE event of THIS space
+  // qualifies, and only until the user touches the event row themselves
+  const predictedEventId = useMemo(
+    () => (prediction?.eventId && activeEvents.some((e) => e.id === prediction.eventId) ? prediction.eventId : null),
+    [prediction, activeEvents],
+  );
+  useEffect(() => {
+    if (!eventTouched.current) setEventPick(predictedEventId);
+    // per-card offer: the prediction lands whenever it resolves
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [predictedEventId, tx?.id]);
   const cat = cats.byId(draft?.catId);
   const parentColor = cat.parentId ? cats.byId(cat.parentId).color : cat.color;
   // #126 r3: with a real split the parts carry the stories — the main
@@ -1533,6 +1567,7 @@ export function ReviewScreen() {
     setPickedPeer(null);
     setPickWarn(null);
     setCounterTxOpen(false);
+    eventTouched.current = false;
   });
   // the pick is bound to ITS counter account — re-picking or detaching
   // the counterparty (or the editor clearing the link) drops it
@@ -2131,6 +2166,7 @@ export function ReviewScreen() {
             <button
               data-testid="review-event-none"
               onClick={() => {
+                eventTouched.current = true;
                 setEventPick(null);
                 setEventPickOpen(false);
               }}
@@ -2145,6 +2181,7 @@ export function ReviewScreen() {
                 key={event.id}
                 data-testid={`review-event-${event.id}`}
                 onClick={() => {
+                  eventTouched.current = true;
                   setEventPick(event.id);
                   setEventPickOpen(false);
                 }}
@@ -2172,7 +2209,10 @@ export function ReviewScreen() {
       {eventCreating && (
         <EventFormSheet
           initial="new"
-          onSaved={(id) => setEventPick(id)}
+          onSaved={(id) => {
+            eventTouched.current = true;
+            setEventPick(id);
+          }}
           onClose={() => setEventCreating(false)}
         />
       )}

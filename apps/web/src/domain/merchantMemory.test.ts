@@ -49,11 +49,32 @@ describe('merchant memory', () => {
     expect(hit?.evidence).toBe(1);
   });
 
-  it('the latest opinion wins over an older majority (user corrections stick)', () => {
+  it('#161 (user rule): one deviation never beats the standing habit', () => {
+    const memory = buildMerchantMemory([
+      confirmed({ date: '2026-05-05' }),
+      confirmed({ date: '2026-05-12' }),
+      confirmed({ date: '2026-05-19' }),
+      confirmed({ date: '2026-06-20', catId: 'restaurants' }), // one dinner out
+    ]);
+    // "almost always groceries" survives the single dinner…
+    expect(predictFromMemory(memory, 'Albert Heijn', -2000)?.catId).toBe('groceries');
+  });
+
+  it('#161: a habit that genuinely shifts flips the winner (recency-weighted votes)', () => {
+    const memory = buildMerchantMemory([
+      confirmed({ date: '2025-09-05' }),
+      confirmed({ date: '2025-10-12' }),
+      confirmed({ date: '2025-11-19' }),
+      // …but repeated RECENT choices take the lead over an old majority
+      confirmed({ date: '2026-06-01', catId: 'restaurants' }),
+      confirmed({ date: '2026-06-15', catId: 'restaurants' }),
+    ]);
+    expect(predictFromMemory(memory, 'Albert Heijn', -2000)?.catId).toBe('restaurants');
+  });
+
+  it('#161: a lone correction to a lone old entry still sticks', () => {
     const memory = buildMerchantMemory([
       confirmed({ date: '2026-01-05' }),
-      confirmed({ date: '2026-01-12' }),
-      confirmed({ date: '2026-01-19' }),
       confirmed({ date: '2026-06-20', catId: 'sport' }), // deliberate re-categorization
     ]);
     expect(predictFromMemory(memory, 'Albert Heijn', -2000)?.catId).toBe('sport');
@@ -74,6 +95,9 @@ describe('merchant memory', () => {
   });
 });
 
+/** #161: predictTx reads the layered shape — own space first */
+const layered = (own: ReturnType<typeof buildMerchantMemory>) => ({ own, others: buildMerchantMemory([]) });
+
 describe('predictTx layering', () => {
   it('history beats keywords, keywords cover cold start', () => {
     const memory = buildMerchantMemory([
@@ -81,20 +105,57 @@ describe('predictTx layering', () => {
       confirmed({ merchant: 'Albert Heijn', catId: 'sport', txType: 'expense', date: '2026-06-10' }),
     ]);
     // "albert heijn" is also a groceries KEYWORD — history must win
-    const history = predictTx({ memory, merchant: 'Albert Heijn 1470', amountCents: -1500 });
+    const history = predictTx({ memory: layered(memory), merchant: 'Albert Heijn 1470', amountCents: -1500 });
     expect(history?.catId).toBe('sport');
     expect(history?.source).toBe('history');
     expect(predictionSkipsReview(history)).toBe(true);
 
-    const cold = predictTx({ memory: buildMerchantMemory([]), merchant: 'Albert Heijn', amountCents: -1500 });
+    const cold = predictTx({ memory: layered(buildMerchantMemory([])), merchant: 'Albert Heijn', amountCents: -1500 });
     expect(cold?.source).toBe('keyword');
     expect(predictionSkipsReview(cold)).toBe(false); // keyword guesses go to review
   });
 
   it('single-occurrence history predicts but does not skip review', () => {
     const memory = buildMerchantMemory([confirmed({ merchant: 'Padelbaan Zuid', catId: 'sport' })]);
-    const p = predictTx({ memory, merchant: 'Padelbaan Zuid', amountCents: -1200 });
+    const p = predictTx({ memory: layered(memory), merchant: 'Padelbaan Zuid', amountCents: -1200 });
     expect(p?.catId).toBe('sport');
     expect(predictionSkipsReview(p)).toBe(false);
+  });
+
+  it('#161: the OWN space answers first; other spaces only fill silence', () => {
+    const own = buildMerchantMemory([confirmed({ catId: 'groceries' })]);
+    const others = buildMerchantMemory([
+      confirmed({ catId: 'movie', date: '2026-07-01' }),
+      confirmed({ catId: 'movie', date: '2026-07-08' }),
+      confirmed({ merchant: 'Cinema City', catId: 'movie', date: '2026-07-01' }),
+    ]);
+    // own history wins even against a heavier other-space majority
+    expect(predictTx({ memory: { own, others }, merchant: 'Albert Heijn', amountCents: -1500 })?.catId).toBe('groceries');
+    // a merchant the own space never saw falls through to the others
+    expect(predictTx({ memory: { own, others }, merchant: 'Cinema City', amountCents: -1500 })?.catId).toBe('movie');
+  });
+
+  it('#161: a dominant pct spread and a recent event ride the prediction', () => {
+    const spread = [
+      { catId: 'groceries', amountCents: 0, pct: 60 },
+      { catId: 'alcohol', amountCents: 0, pct: 40 },
+    ];
+    const memory = buildMerchantMemory([
+      confirmed({ date: '2026-06-01', cats: spread, eventId: 'ev1' }),
+      confirmed({ date: '2026-06-08', cats: spread, eventId: 'ev1' }),
+    ]);
+    const p = predictTx({ memory: layered(memory), merchant: 'Albert Heijn', amountCents: -3000 });
+    expect(p?.cats).toEqual([
+      { catId: 'groceries', pct: 60 },
+      { catId: 'alcohol', pct: 40 },
+    ]);
+    expect(p?.eventId).toBe('ev1');
+    // one occasional split (1 of 3) must NOT fragment future charges
+    const occasional = buildMerchantMemory([
+      confirmed({ date: '2026-06-01' }),
+      confirmed({ date: '2026-06-08' }),
+      confirmed({ date: '2026-06-15', cats: spread }),
+    ]);
+    expect(predictTx({ memory: layered(occasional), merchant: 'Albert Heijn', amountCents: -3000 })?.cats).toBeUndefined();
   });
 });

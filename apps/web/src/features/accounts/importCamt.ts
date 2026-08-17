@@ -3,7 +3,7 @@ import { accountLinkId, feedSpaceId, txMetaId } from '@/domain/feedIds';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { predictTx, predictionSkipsReview } from '@/domain/predictCategory';
 import { cachedCatalog } from '@/sync/catalogSync';
-import type { MerchantMemory } from '@/domain/merchantMemory';
+import type { SpaceMemory } from '@/application/prediction';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
 import { UNCATEGORIZED_ID, isMovementCat } from '@/domain/categories';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
@@ -78,7 +78,7 @@ async function createStatementAccount(
 
 /** predicted transformation of one statement entry (history first, keywords after) */
 function predictEntry(
-  memory: MerchantMemory,
+  memory: SpaceMemory,
   entry: ParsedStatement['entries'][number],
   keywordRules?: readonly { catId: string; keywords: string[] }[],
 ): { catId: string; txType: TxType; needsReview: 0 | 1 } {
@@ -106,7 +106,7 @@ interface EntryContext {
   spaceId: string;
   accountId: string;
   iban: string;
-  memory: MerchantMemory;
+  memory: SpaceMemory;
   keywordRules?: readonly { catId: string; keywords: string[] }[];
   /** #228 r3: the space's tracked accounts — the transfer clue-matcher's pool */
   counterCandidates: readonly ClueAccount[];
