@@ -26,7 +26,7 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('29-cats-manage'));
   });
 
-  test(`cats-a2 create custom sub with direction, use it on a transaction [${V.id}]`, async ({ browser }) => {
+  test(`cats-a2 create custom sub (direction follows the parent, #244), use it on a transaction [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await goToManageCats(page);
@@ -34,7 +34,8 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="cats-addsub-consumption"]');
     await page.waitForSelector('[data-testid="catform-name"]');
     await page.fill('[data-testid="catform-name"]', 'Bubble Tea');
-    await page.click('[data-testid="catform-direction-debit"]');
+    // #244: no direction question — the sub follows its parent's nature
+    await expect(page.locator('[data-testid="catform-direction-debit"]')).toHaveCount(0);
     await page.click('[data-testid="catform-icon-coffee-outline"]');
     await page.waitForTimeout(400);
     await shot(page, k('30-cats-create') + '--s1');
@@ -88,21 +89,22 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('31-cats-edit'));
   });
 
-  test(`cats-a4 create custom MAIN with type + color; delete cascades [${V.id}]`, async ({ browser }) => {
+  test(`cats-a4 create custom MAIN (always expense, #244) with color; delete cascades [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await goToManageCats(page);
     await page.click('[data-testid="cats-add"]');
     await page.waitForSelector('[data-testid="catform-name"]');
     await page.fill('[data-testid="catform-name"]', 'Music');
-    await page.click('[data-testid="catform-type-income"]');
+    // #244: no type question — the form SAYS a new parent tracks spending
+    await expect(page.locator('[data-testid="catform-expense-note"]')).toBeVisible();
     await page.click('[data-testid="catform-color-9B59B6"]');
     await page.click('[data-testid="catform-icon-music"]');
     await shot(page, k('56-cats-main') + '--s1');
     await page.click('[data-testid="catform-save"]');
     await page.waitForTimeout(500);
     // group header with type badge + locked Other sub
-    await expect(page.locator('[data-cat-group]', { hasText: 'Music' })).toContainText('Income');
+    await expect(page.locator('[data-cat-group]', { hasText: 'Music' })).toContainText('Expense');
     await shot(page, k('56-cats-main'));
 
     // delete the main again — Edit lives in the header's hold menu now
