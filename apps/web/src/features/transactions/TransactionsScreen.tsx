@@ -113,8 +113,10 @@ function TxPartGroupRows({
           <Icon name={collapsed ? 'chevron-down' : 'chevron-up'} size={15} />
         </button>
       </div>
+      {/* #198 r2 (user): hairlines separate TRANSACTIONS, not the parts
+          of one — the inset alone already groups them */}
       {!collapsed && (
-        <div className="mb-2 divide-y divide-line-2 rounded-card bg-bg px-2">
+        <div className="mb-2 rounded-card bg-bg px-2">
           {parts.map((part, i) => {
             const partCat = cats.byId(part.catId);
             const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;
@@ -197,6 +199,8 @@ export function TransactionsScreen() {
   const [query, setQuery] = useState('');
   const [uncatOnly, setUncatOnly] = useState(false);
   const [unsettledOnly, setUnsettledOnly] = useState(false);
+  // #243 (user): see the linked legs on their own — pairs uncollapsed
+  const [counterOnly, setCounterOnly] = useState(false);
   const [filters, setFilters] = useState<SheetFilters>(EMPTY_FILTERS);
   const [filterOpen, setFilterOpen] = useState(false);
   const cats = useCategories();
@@ -268,12 +272,17 @@ export function TransactionsScreen() {
     });
     // quick filter (redesign): expected/received value still open
     if (unsettledOnly) matched = matched.filter(hasUnsettledReimbursement);
+    // #243 (user): the counter lens shows ONLY linked transactions —
+    // every leg of every pair, nothing collapsed
+    if (counterOnly) {
+      matched = matched.filter((item) => item.transferPeerId ?? item.linkedAccountId);
+    }
     // paired transfers are ONE event (arc 1): the incoming leg hides when
     // its outgoing peer is listed too — unless an account filter is on
     // (a per-account view needs its own leg for the running story).
     // #237 (user decision "a"): a SAME-SIGN wallet pair hides its
     // TRANSFER leg instead — the real purchase stays, counted once.
-    if (filters.accountIds.size === 0) {
+    if (filters.accountIds.size === 0 && !counterOnly) {
       const byId = new Map(matched.map((item) => [item.id, item]));
       // #237 r2: one-way pairs collapse too — the pointed-at row reads
       // its peer through the reverse index
@@ -292,7 +301,7 @@ export function TransactionsScreen() {
     }
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
-  }, [allTxs, query, filters, uncatOnly, unsettledOnly, catIds]);
+  }, [allTxs, query, filters, uncatOnly, unsettledOnly, counterOnly, catIds]);
 
   // the collapsed row says where the money went: "Checking → Savings".
   // #237: a same-sign wallet pair's surviving purchase reads the funding
@@ -321,7 +330,7 @@ export function TransactionsScreen() {
 
   const groups = groupByDate(txs ?? []);
   const activeCount = countActive(filters);
-  const filtering = !!query || uncatOnly || unsettledOnly || !!catIds || activeCount > 0;
+  const filtering = !!query || uncatOnly || unsettledOnly || counterOnly || !!catIds || activeCount > 0;
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-transactions">
@@ -364,6 +373,11 @@ export function TransactionsScreen() {
           </Chip>
           <Chip testId="tx-filter-unsettled" selected={unsettledOnly} onClick={() => setUnsettledOnly((v) => !v)}>
             {t('tx.unsettledFilter')}
+          </Chip>
+          {/* #243 (user): the linked legs on their own, pairs uncollapsed */}
+          <Chip testId="tx-filter-counter" selected={counterOnly} onClick={() => setCounterOnly((v) => !v)}>
+            <Icon name="swap-horizontal" size={14} />
+            {t('tx.counterFilter')}
           </Chip>
           {activeCount > 0 && (
             <button
