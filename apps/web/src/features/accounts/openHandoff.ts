@@ -17,19 +17,3 @@ export const takeAccountOpenHandoff = (): string | null => {
   return id;
 };
 
-/**
- * #204 r2: the global overview's attach offer routes into the SPACE's
- * explicit attach flow (the user picks type + history there) — this
- * flag opens that sheet on arrival. Read-once, like the id handoff.
- */
-let attachIntent = false;
-
-export const setSpaceAttachIntent = (): void => {
-  attachIntent = true;
-};
-
-export const takeSpaceAttachIntent = (): boolean => {
-  const intent = attachIntent;
-  attachIntent = false;
-  return intent;
-};

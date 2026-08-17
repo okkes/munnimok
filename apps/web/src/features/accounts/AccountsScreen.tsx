@@ -12,8 +12,7 @@ import { EditAccountSheet } from './EditAccountSheet';
 import { ReconcileSheet } from './ReconcileSheet';
 import { StatementImportFlow } from './StatementImportFlow';
 import { normalizeIban } from '@/domain/feedIds';
-import { useNavigate } from '@tanstack/react-router';
-import { setSpaceAttachIntent, takeAccountOpenHandoff } from './openHandoff';
+import { takeAccountOpenHandoff } from './openHandoff';
 import { useQuery } from '@/db/useQuery';
 import { AddAccountChooser } from './AddAccountChooser';
 import { BankConnectSheet } from './BankConnect';
@@ -54,7 +53,10 @@ function AccountRowButton({
   const bankLogo = account.logo ?? institutionLogoUrl(account.bankId);
   const active = sharedVia.filter((v) => !v.archived);
   const archivedOnly = sharedVia.length > 0 && active.length === 0;
-  let feedSubtitle = t('acct.notAttached');
+  // #248 (user): no auto-attach nag — the unattached state is a quiet
+  // per-row badge instead (rendered below)
+  const unattached = sharedVia.length === 0;
+  let feedSubtitle: string | null = null;
   if (active.length > 0) feedSubtitle = `${t('acct.sharedVia')} ${active.map((v) => v.spaceName).join(', ')}`;
   else if (archivedOnly) feedSubtitle = t('acct.archivedEverywhere');
   return (
@@ -104,7 +106,16 @@ function AccountRowButton({
         )}
         {feedSpaceId ? (
           <span className="block truncate text-[11px] text-ink-4" data-testid={`account-via-${account.id}`}>
-            {feedSubtitle}
+            {unattached ? (
+              <span
+                className="inline-block rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink-2"
+                data-testid={`account-unattached-${account.id}`}
+              >
+                {t('acct.notAttached')}
+              </span>
+            ) : (
+              feedSubtitle
+            )}
           </span>
         ) : (
           account.iban && <span className="block truncate font-mono text-[11px] text-ink-4 select-text">{account.iban}</span>
@@ -217,7 +228,6 @@ function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: Retu
 export function AccountsScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
-  const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<AccountRow | null>(null);
   // the whole import journey lives in StatementImportFlow (extracted
@@ -304,36 +314,6 @@ export function AccountsScreen() {
     return out;
   }, [suggestionPool, sourcesByAccount]);
 
-  // AE2: feed accounts attached to NO space (fresh bank connect, or a
-  // consent flow that broke mid-return) get a one-tap attach offer for
-  // the active space — the user never hunts for the attach button for
-  // the account they literally just created
-  const activeSpace = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const offerDismissed = useQuery(
-    store,
-    async () => ((await store.metaGet('attachOfferDismissed'))?.value as string[] | undefined) ?? [],
-    [],
-  );
-  const unattached = useMemo(
-    () =>
-      mine.flatMap((e) =>
-        e.feedSpaceId && !e.sharedVia.some((v) => !v.archived) && !(offerDismissed ?? []).includes(e.account.id)
-          ? [{ accountId: e.account.id, feedSpaceId: e.feedSpaceId }]
-          : [],
-      ),
-    [mine, offerDismissed],
-  );
-  // #204 r2 (user): the offer never attaches by itself anymore — it
-  // routes into the space's explicit attach flow, where the user picks
-  // each account's type and history start
-  const acceptAttachOffer = () => {
-    setSpaceAttachIntent();
-    void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
-  };
-  const dismissAttachOffer = async () => {
-    await store.metaPut('attachOfferDismissed', [...(offerDismissed ?? []), ...unattached.map((e) => e.accountId)]);
-  };
-
   const openEntry = (entry: GlobalAccount) => {
     if (entry.feedSpaceId) setAttaching(entry); // bank feed: manage attachments
     else setEditing(entry.account); // manual/legacy row: EditAccountSheet
@@ -380,20 +360,8 @@ export function AccountsScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {identity?.kind === 'user' && unattached.length > 0 && activeSpace && (
-          <div className="mt-3 rounded-card border border-accent/40 bg-accent-soft px-4 py-3" data-testid="attach-offer">
-            <p className="text-[13px] font-medium text-ink">{t('acct.attachOfferTitle', { n: unattached.length })}</p>
-            <p className="mt-0.5 text-[12px] text-ink-2">{t('acct.attachOfferBody', { space: activeSpace.name })}</p>
-            <div className="mt-2 flex gap-2">
-              <Button size="sm" data-testid="attach-offer-accept" onClick={acceptAttachOffer}>
-                {t('acct.attachOfferAccept', { space: activeSpace.name })}
-              </Button>
-              <Button size="sm" variant="outline" data-testid="attach-offer-dismiss" onClick={() => void dismissAttachOffer()}>
-                {t('acct.attachOfferLater')}
-              </Button>
-            </div>
-          </div>
-        )}
+        {/* #248 (user): the green auto-attach offer is gone — each
+            unattached account wears its own quiet badge instead */}
         {global && mine.length === 0 && global.sharedWithMe.length === 0 && global.spaceScoped.length === 0 ? (
           <EmptyState
             testId="accounts-empty"

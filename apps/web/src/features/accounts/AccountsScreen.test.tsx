@@ -102,7 +102,7 @@ describe('AccountsScreen (demo identity)', () => {
     fetchMock.mockRestore();
   }, 15_000);
 
-  it('AE2 → #204 r2: the attach offer routes into the EXPLICIT flow — the user picks type and history', async () => {
+  it('#248: no attach nag — an unattached account wears a quiet badge on its own row', async () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
@@ -111,58 +111,7 @@ describe('AccountsScreen (demo identity)', () => {
     const db = new MunniDB(USER_TEST_DB);
     const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     // fresh bank connect: the account exists in its feed space, but NO
-    // accountLink row anywhere — the server never attaches anymore
-    await repo.upsert('account', 'feed-1', 'feedacct-1', {
-      name: 'ING Betaal',
-      type: 'checking',
-      source: 'gocardless',
-      currency: 'EUR',
-      balanceCents: 5000,
-      iban: 'NL69INGB0123456789',
-    });
-    db.close();
-
-    let attachBody: { historyFrom?: string } | undefined;
-    renderAppAsUser('/accounts', {
-      spaces: [{ id: 's-user', name: 'Personal' }],
-      api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
-        'GET /me/spaces': () => ['s-user', 'feed-1'],
-        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
-        'POST /spaces/s-user/accounts': (body) => {
-          attachBody = body as { historyFrom?: string };
-          return {};
-        },
-      },
-    });
-
-    const offer = await screen.findByTestId('attach-offer', {}, { timeout: 5000 });
-    expect(offer.textContent).toContain('Personal');
-    // accept lands on the space's accounts screen with the attach sheet
-    // ALREADY open — no silent one-tap attach anymore
-    fireEvent.click(screen.getByTestId('attach-offer-accept'));
-    fireEvent.click(await screen.findByTestId('space-attach-pick-feedacct-1', {}, { timeout: 5000 }));
-    // the TYPE is the user's pick here (#212 r2: it lands on the link)
-    fireEvent.click(await screen.findByTestId('space-attach-type-savings'));
-    fireEvent.change(await screen.findByTestId('space-attach-history'), { target: { value: '2026-01-01' } });
-    fireEvent.click(screen.getByTestId('space-attach-save'));
-    await waitFor(() => expect(attachBody?.historyFrom).toBe('2026-01-01'), { timeout: 5000 });
-    const db2 = new MunniDB(USER_TEST_DB);
-    await waitFor(async () => {
-      const links = await db2.accountLinks.toArray();
-      expect(links.find((l) => l.accountId === 'feedacct-1')?.type).toBe('savings');
-    }, { timeout: 5000 });
-    db2.close();
-  }, 15_000);
-
-  it('AE2: "not now" dismisses the offer and it stays dismissed', async () => {
-    indexedDB.deleteDatabase(USER_TEST_DB);
-    const { MunniDB } = await import('@/db/schema');
-    const { Repo } = await import('@/db/repo');
-    const { DexieBackend } = await import('@/db/backend');
-    const { HlcClock } = await import('@/sync/hlc');
-    const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    // accountLink row anywhere — the server never attaches (#204 r2)
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
@@ -182,13 +131,9 @@ describe('AccountsScreen (demo identity)', () => {
       },
     });
 
-    fireEvent.click(await screen.findByTestId('attach-offer-dismiss', {}, { timeout: 5000 }));
-    await waitFor(() => expect(screen.queryByTestId('attach-offer')).toBeNull());
-    // the dismissal is remembered on the device, not just this render
-    const db2 = new MunniDB(USER_TEST_DB);
-    const dismissed = (await db2.meta.get('attachOfferDismissed'))?.value as string[] | undefined;
-    expect(dismissed).toContain('feedacct-1');
-    db2.close();
+    // the badge says it plainly; the green offer card is gone for good
+    await screen.findByTestId('account-unattached-feedacct-1', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('attach-offer')).toBeNull();
   }, 15_000);
 
   it('space accounts screen attaches one of my feed accounts with a start date', async () => {

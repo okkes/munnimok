@@ -98,7 +98,12 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
         const list = scopedBySpace.get(account.spaceId) ?? [];
         list.push(entry);
         scopedBySpace.set(account.spaceId, list);
-      } else if (!myFeedIds || myFeedIds.has(account.spaceId)) {
+      } else if (!myFeedIds || myFeedIds.has(account.spaceId) || entry.sharedVia.length === 0) {
+        // #182: a feed with ZERO links can only be MY OWN — someone
+        // else's account reaches this device through an attachment or
+        // not at all. Mid-import the ownership fetch is stale and a
+        // just-registered feed used to land under "shared with me"
+        // wearing a false "Archived" pill until the refresh.
         mine.push(entry);
       } else {
         sharedWithMe.push(entry);
