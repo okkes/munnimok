@@ -11,7 +11,8 @@ namespace Munni.Api.GoCardless;
 /// Turns GoCardless account/transaction data into sync ops — the server
 /// acting as one more device, in the shared-accounts shape: raw facts go
 /// once into the account's FEED space, the requisition's target space
-/// gets the predicted overlay (txMeta) plus the attachment mirror.
+/// gets the predicted overlay (txMeta). Attaching to a space is the
+/// user's explicit step (#204 r2) — ingest never writes links.
 /// Deterministic op/entity ids make every ingest idempotent and match
 /// the client-side importer, so cross-source imports collapse into the
 /// same rows.
@@ -27,7 +28,7 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
         IReadOnlyList<GcTransaction>? pending = null,
         GcRequisition? actingConsent = null)
     {
-        var feedSpace = await EnsureFeedAsync(linked, space.Id, actingConsent);
+        var feedSpace = await EnsureFeedAsync(linked, actingConsent);
 
         var accountOps = new List<SyncOpDto>();
         var feedOps = new List<SyncOpDto>();
@@ -61,12 +62,11 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
         // dedupe the later ones away)
         accountOps.Add(NewOp(feedSpace.Id, "account", linked.AccountEntityId, accountFields, NextHlc(), $"acct:{linked.GcAccountId}:{DateTime.UtcNow:yyyy-MM-ddTHH:mm}"));
 
-        // attachment mirror so offline devices render the link
-        spaceOps.Add(NewOp(space.Id, "accountLink", ImportIds.AccountLinkId(space.Id, feedSpace.Id), new Dictionary<string, JsonElement>
-        {
-            ["feedSpaceId"] = Json(feedSpace.Id),
-            ["accountId"] = Json(linked.AccountEntityId),
-        }, NextHlc(), $"gclink:{space.Id}:{feedSpace.Id}"));
+        // #204 r2 (user): connecting NEVER attaches — the account exists
+        // globally (the feed + its raw rows); joining a space is the
+        // user's explicit step, where they also pick the type and the
+        // history gate. The requisition's space stays the RETURN context
+        // and the home of the prediction overlays, nothing more.
 
         var writer = new SyncWriter(db);
         await writer.ApplyAsync(feedSpace, null, accountOps);
@@ -244,7 +244,7 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
     /// makes them a CO-owner (user ruling: connecting the same bank
     /// account IS full ownership; the IBAN proves it is the same one).
     /// </summary>
-    private async Task<Space> EnsureFeedAsync(GcLinkedAccount linked, string targetSpaceId, GcRequisition? actingConsent = null)
+    private async Task<Space> EnsureFeedAsync(GcLinkedAccount linked, GcRequisition? actingConsent = null)
     {
         var feedId = ImportIds.FeedSpaceId(linked.Iban);
         var requisition = actingConsent
@@ -293,20 +293,9 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
         if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == feedId && m.UserId == ownerId))
             db.SpaceMembers.Add(new SpaceMember { SpaceId = feedId, UserId = ownerId, Role = Social.SpaceRoles.Owner });
 
-        if (!await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == targetSpaceId && l.FeedSpaceId == feedId && l.AccountId == linked.AccountEntityId))
-        {
-            db.SpaceAccountLinks.Add(new SpaceAccountLink
-            {
-                Id = Guid.NewGuid(),
-                SpaceId = targetSpaceId,
-                FeedSpaceId = feedId,
-                AccountId = linked.AccountEntityId,
-                // the ACTING user attached this — stamping the feed owner
-                // here used to poison "who else uses it" checks and left
-                // undeletable orphans behind (#240 r3)
-                AttachedBy = ownerId,
-            });
-        }
+        // #204 r2 (user): no SpaceAccountLink here — connecting creates
+        // the GLOBAL account only; the explicit attach endpoint writes
+        // the link when the user picks the space, type and history gate
         await db.SaveChangesAsync();
         return feedSpace;
     }

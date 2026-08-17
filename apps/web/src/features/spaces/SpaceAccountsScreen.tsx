@@ -13,7 +13,7 @@ import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import { AccountTypeRow } from '@/features/accounts/AccountTypeRow';
 import { ACCOUNT_TYPES, typeDef } from '@/features/accounts/accountTypes';
-import { setAccountOpenHandoff } from '@/features/accounts/openHandoff';
+import { setAccountOpenHandoff, takeSpaceAttachIntent } from '@/features/accounts/openHandoff';
 import { linkEffectiveType } from '@/db/joined';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
@@ -120,7 +120,8 @@ export function SpaceAccountsScreen() {
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const syncing = identity?.kind === 'user';
 
-  const [attachOpen, setAttachOpen] = useState(false);
+  // #204 r2: the global overview's offer lands here with the sheet open
+  const [attachOpen, setAttachOpen] = useState(() => takeSpaceAttachIntent());
   const [picked, setPicked] = useState<AttachCandidate | null>(null);
   const [historyFrom, setHistoryFrom] = useState('');
   // #152: the account's type is a SPACE-level decision, made here

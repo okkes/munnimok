@@ -392,6 +392,13 @@ function GcCallbackShell({
         // installed app — say out loud that closing the tab is fine
         <p className="max-w-[280px] text-[13px] text-ink-3">{t('gc.closeTabHint')}</p>
       )}
+      {state === 'done' && (
+        // #204 r2 (user): connecting creates the GLOBAL account only —
+        // say so, and point at the explicit attach step that follows
+        <p className="max-w-[280px] text-[12px] text-ink-4" data-testid="gc-unattached-note">
+          {t('gc.notAttachedNote')}
+        </p>
+      )}
       {state !== 'working' && (
         <a
           href={appScheme ? appScheme + '://gc-callback?done=1' : `${window.location.origin}/#/accounts`}

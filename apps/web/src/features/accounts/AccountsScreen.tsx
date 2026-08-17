@@ -12,9 +12,8 @@ import { EditAccountSheet } from './EditAccountSheet';
 import { ReconcileSheet } from './ReconcileSheet';
 import { StatementImportFlow } from './StatementImportFlow';
 import { normalizeIban } from '@/domain/feedIds';
-import { attachFeedToSpace } from '@/application/accountAttach';
-import { takeAccountOpenHandoff } from './openHandoff';
-import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
+import { useNavigate } from '@tanstack/react-router';
+import { setSpaceAttachIntent, takeAccountOpenHandoff } from './openHandoff';
 import { useQuery } from '@/db/useQuery';
 import { AddAccountChooser } from './AddAccountChooser';
 import { BankConnectSheet } from './BankConnect';
@@ -218,6 +217,7 @@ function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: Retu
 export function AccountsScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
+  const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<AccountRow | null>(null);
   // the whole import journey lives in StatementImportFlow (extracted
@@ -323,11 +323,12 @@ export function AccountsScreen() {
       ),
     [mine, offerDismissed],
   );
-  const acceptAttachOffer = async () => {
-    const historyFrom = activeSpace?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
-    for (const entry of unattached) {
-      await attachFeedToSpace(store, repo, spaceId, entry.feedSpaceId, entry.accountId, historyFrom).catch(() => undefined);
-    }
+  // #204 r2 (user): the offer never attaches by itself anymore — it
+  // routes into the space's explicit attach flow, where the user picks
+  // each account's type and history start
+  const acceptAttachOffer = () => {
+    setSpaceAttachIntent();
+    void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
   };
   const dismissAttachOffer = async () => {
     await store.metaPut('attachOfferDismissed', [...(offerDismissed ?? []), ...unattached.map((e) => e.accountId)]);
@@ -384,7 +385,7 @@ export function AccountsScreen() {
             <p className="text-[13px] font-medium text-ink">{t('acct.attachOfferTitle', { n: unattached.length })}</p>
             <p className="mt-0.5 text-[12px] text-ink-2">{t('acct.attachOfferBody', { space: activeSpace.name })}</p>
             <div className="mt-2 flex gap-2">
-              <Button size="sm" data-testid="attach-offer-accept" onClick={() => void acceptAttachOffer()}>
+              <Button size="sm" data-testid="attach-offer-accept" onClick={acceptAttachOffer}>
                 {t('acct.attachOfferAccept', { space: activeSpace.name })}
               </Button>
               <Button size="sm" variant="outline" data-testid="attach-offer-dismiss" onClick={() => void dismissAttachOffer()}>

@@ -387,11 +387,10 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
                 var co = await db.FeedOwners.SingleAsync(o => o.FeedSpaceId == feedId);
                 Assert.Equal(userB, co.UserId);
                 Assert.Equal("gc-acc-co", co.GcAccountId);
-                // B's attachment into B's space is stamped as B's — the
-                // old feed-owner stamp poisoned every "who else uses it"
-                // check and left undeletable orphans behind
-                var linkB = await db.SpaceAccountLinks.SingleAsync(l => l.SpaceId == spaceB && l.FeedSpaceId == feedId);
-                Assert.Equal(userB, linkB.AttachedBy);
+                // #204 r2: neither consent attached anything — the account
+                // exists globally; each user attaches explicitly (that
+                // endpoint stamps the ACTING user, the #240 r3 rule)
+                Assert.False(await db.SpaceAccountLinks.AnyAsync(l => l.FeedSpaceId == feedId));
             }
             // both sort it under "mine" — never under "shared with me"
             Assert.Contains((await clientA.GetFromJsonAsync<List<MyFeedDto>>("/me/feeds"))!, f => f.FeedSpaceId == feedId);
@@ -585,8 +584,10 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
                 var linked = await db.GcLinkedAccounts.FindAsync("gc-heal-1");
                 Assert.NotNull(linked);
                 var feedId = ImportIds.FeedSpaceId(linked!.Iban);
-                // attached to the target space — floating no more
-                Assert.True(await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == spaceId && l.FeedSpaceId == feedId));
+                // the healed account exists globally; #204 r2: attaching
+                // stays the user's explicit step, healing included
+                Assert.NotNull(await db.FeedSpaces.FindAsync(feedId));
+                Assert.False(await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == spaceId && l.FeedSpaceId == feedId));
             }
         }
         finally
@@ -707,7 +708,9 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             var linked = await db.GcLinkedAccounts.FindAsync("gc-heal-2");
             Assert.Null(linked!.LastFetchAt); // first scheduled fetch backfills the full window
             var feedId = ImportIds.FeedSpaceId(linked.Iban);
-            Assert.True(await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == spaceId && l.FeedSpaceId == feedId));
+            // #204 r2: connected, global, deliberately unattached
+            Assert.NotNull(await db.FeedSpaces.FindAsync(feedId));
+            Assert.False(await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == spaceId && l.FeedSpaceId == feedId));
         }
         finally
         {

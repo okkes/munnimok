@@ -106,10 +106,11 @@ public class GcIngestTests
         await db.SaveChangesAsync();
         Assert.Equal(3, accepted); // new RAW transactions only
 
-        // the feed exists: registry entry, owner membership, attachment to s1
+        // the feed exists: registry entry + owner membership — and NO
+        // attachment (#204 r2: joining a space is the user's explicit step)
         Assert.NotNull(await db.FeedSpaces.FindAsync(FeedId));
         Assert.True(await db.SpaceMembers.AnyAsync(m => m.SpaceId == FeedId && m.UserId == OwnerId));
-        Assert.True(await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == "s1" && l.FeedSpaceId == FeedId && !l.Archived));
+        Assert.False(await db.SpaceAccountLinks.AnyAsync());
 
         // account row lives in the FEED with the dated raw balance
         var account = await db.EntityRows.FindAsync(FeedId, "account", ImportIds.AccountId("NL69INGB0123456789"));
@@ -140,7 +141,9 @@ public class GcIngestTests
         Assert.Equal("uncategorized", unknownData["catId"].GetString());
         Assert.Equal(1, unknownData["needsReview"].GetInt32());
 
-        Assert.NotNull(await db.EntityRows.FindAsync("s1", "accountLink", ImportIds.AccountLinkId("s1", FeedId)));
+        // #204 r2: no synced link mirror either — the space renders the
+        // attachment only after the user's explicit attach writes it
+        Assert.Null(await db.EntityRows.FindAsync("s1", "accountLink", ImportIds.AccountLinkId("s1", FeedId)));
     }
 
     [Fact]
@@ -180,7 +183,7 @@ public class GcIngestTests
         Assert.Equal(0, secondRun); // deterministic op ids: nothing re-imports
         Assert.Equal(3, await db.EntityRows.CountAsync(r => r.SpaceId == FeedId && r.Entity == "transaction"));
         Assert.Equal(3, await db.EntityRows.CountAsync(r => r.SpaceId == "s1" && r.Entity == "txMeta"));
-        Assert.Equal(1, await db.SpaceAccountLinks.CountAsync());
+        Assert.Equal(0, await db.SpaceAccountLinks.CountAsync()); // #204 r2: never attached by ingest
     }
 
     [Fact]

@@ -102,7 +102,7 @@ describe('AccountsScreen (demo identity)', () => {
     fetchMock.mockRestore();
   }, 15_000);
 
-  it('AE2: a feed account attached to no space gets the one-tap attach offer; accept wires it to the active space', async () => {
+  it('AE2 → #204 r2: the attach offer routes into the EXPLICIT flow — the user picks type and history', async () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
@@ -111,7 +111,7 @@ describe('AccountsScreen (demo identity)', () => {
     const db = new MunniDB(USER_TEST_DB);
     const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     // fresh bank connect: the account exists in its feed space, but NO
-    // accountLink row anywhere — exactly the "attached nowhere" state
+    // accountLink row anywhere — the server never attaches anymore
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
@@ -138,11 +138,21 @@ describe('AccountsScreen (demo identity)', () => {
 
     const offer = await screen.findByTestId('attach-offer', {}, { timeout: 5000 });
     expect(offer.textContent).toContain('Personal');
+    // accept lands on the space's accounts screen with the attach sheet
+    // ALREADY open — no silent one-tap attach anymore
     fireEvent.click(screen.getByTestId('attach-offer-accept'));
-    // the attach reaches the server with the default history window…
-    await waitFor(() => expect(attachBody?.historyFrom).toMatch(/^\d{4}-\d{2}-\d{2}$/), { timeout: 5000 });
-    // …and once the link mirror lands the offer resolves itself
-    await waitFor(() => expect(screen.queryByTestId('attach-offer')).toBeNull(), { timeout: 5000 });
+    fireEvent.click(await screen.findByTestId('space-attach-pick-feedacct-1', {}, { timeout: 5000 }));
+    // the TYPE is the user's pick here (#212 r2: it lands on the link)
+    fireEvent.click(await screen.findByTestId('space-attach-type-savings'));
+    fireEvent.change(await screen.findByTestId('space-attach-history'), { target: { value: '2026-01-01' } });
+    fireEvent.click(screen.getByTestId('space-attach-save'));
+    await waitFor(() => expect(attachBody?.historyFrom).toBe('2026-01-01'), { timeout: 5000 });
+    const db2 = new MunniDB(USER_TEST_DB);
+    await waitFor(async () => {
+      const links = await db2.accountLinks.toArray();
+      expect(links.find((l) => l.accountId === 'feedacct-1')?.type).toBe('savings');
+    }, { timeout: 5000 });
+    db2.close();
   }, 15_000);
 
   it('AE2: "not now" dismisses the offer and it stays dismissed', async () => {
