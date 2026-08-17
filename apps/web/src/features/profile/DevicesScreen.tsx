@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -26,6 +26,20 @@ const PLATFORM_ICONS: Record<string, string> = {
   web: 'laptop',
 };
 
+/** #158: best-effort browser name for THIS device only — the server keeps
+ *  no UA column, so other rows stay apart via the twin numbering instead.
+ *  Order matters: Edge/Opera UAs also carry "Chrome", Chrome carries
+ *  "Safari". Brand names are proper nouns — never translated. */
+export function browserLabel(): string | null {
+  const ua = navigator.userAgent;
+  if (ua.includes('Firefox/')) return 'Firefox';
+  if (ua.includes('Edg/')) return 'Edge';
+  if (ua.includes('OPR/')) return 'Opera';
+  if (ua.includes('Chrome/')) return 'Chrome';
+  if (ua.includes('Safari/')) return 'Safari';
+  return null;
+}
+
 /**
  * Logged-in devices (docs/logged-in-devices-plan.md, approved answers):
  * every device this account is signed in on — auto-named but renamable,
@@ -47,11 +61,31 @@ export function DevicesScreen() {
   }, []);
   useEffect(() => void reload(), [reload]);
 
-  const platformLabel = (device: DeviceDto) => {
-    if (device.platform === 'android') return t('devices.android');
-    if (device.platform === 'ios') return t('devices.ios');
-    return t('devices.web');
-  };
+  const platformLabel = useCallback(
+    (device: DeviceDto) => {
+      if (device.platform === 'android') return t('devices.android');
+      if (device.platform === 'ios') return t('devices.ios');
+      return t('devices.web');
+    },
+    [t],
+  );
+
+  // #158: twins ("Browser", "Browser") get " (2)", " (3)" by CreatedAt age —
+  // the oldest keeps the bare name, so labels stay put as devices arrive
+  const displayNames = useMemo(() => {
+    const counts = new Map<string, number>();
+    const names = new Map<string, string>();
+    for (const device of [...(devices ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
+      const base = device.name ?? platformLabel(device);
+      const n = (counts.get(base) ?? 0) + 1;
+      counts.set(base, n);
+      names.set(device.id, n === 1 ? base : `${base} (${n})`);
+    }
+    return names;
+  }, [devices, platformLabel]);
+
+  // computed once per render: the UA never changes mid-session
+  const myBrowser = browserLabel();
 
   const saveRename = async () => {
     if (!renaming || !name.trim()) return;
@@ -94,7 +128,7 @@ export function DevicesScreen() {
                 <Icon name={PLATFORM_ICONS[device.platform ?? 'web'] ?? 'laptop'} size={20} color="var(--m-ink-3)" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-2 text-[14px] text-ink">
-                    <span className="truncate">{device.name ?? platformLabel(device)}</span>
+                    <span className="truncate">{displayNames.get(device.id) ?? device.name ?? platformLabel(device)}</span>
                     {mine && (
                       <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-deep" data-testid="device-this">
                         {t('devices.thisDevice')}
@@ -102,6 +136,11 @@ export function DevicesScreen() {
                     )}
                   </span>
                   <span className="block text-[11px] text-ink-4">
+                    {/* #158: only this device knows its own browser — the
+                        server has no UA to say it for the others */}
+                    {mine && (device.platform ?? 'web') === 'web' && myBrowser && (
+                      <span data-testid="device-browser">{myBrowser} · </span>
+                    )}
                     {device.revoked ? t('devices.revoked') : t('devices.seen', { when: fmtTimeAgo(device.lastSeenAt, lang) })}
                   </span>
                 </span>

@@ -21,8 +21,8 @@ import { minaSuggestedSpaceName } from '@/features/mina/steps';
 
 /**
  * Spaces: separate bookkeeping areas, shared with other people or not.
- * The cog opens the space's settings SCREEN (/spaces/$spaceId); only
- * space creation stays a sheet (one decision).
+ * The palette (#178) opens the space's settings SCREEN (/spaces/$spaceId);
+ * only space creation stays a sheet (one decision).
  */
 export function SpacesScreen() {
   const { t, lang } = useLang();
@@ -43,6 +43,9 @@ export function SpacesScreen() {
   const [periodDay, setPeriodDay] = useState(1);
   const [currency, setCurrency] = useState('EUR');
   const [historyStart, setHistoryStart] = useState(isoMonthsAgo(DEFAULT_HISTORY_MONTHS));
+  // #147 (user): private mode is a creation-time CHOICE — checked by
+  // default, so "type a name, press Create" still births a locked space
+  const [inviteLock, setInviteLock] = useState(true);
   const [periodOpen, setPeriodOpen] = useState(false);
   const [currencyOpen, setCurrencyOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -77,9 +80,9 @@ export function SpacesScreen() {
         // persisted, not just displayed — attaching an account must see
         // the same default the settings screen shows (user bug report)
         historyStartDate: historyStart,
-        // private by birth (arc 4): invites stay disabled until the
-        // owner explicitly unlocks in space settings
-        inviteLock: 1,
+        // #147 (user): the create form decides the lock — still private
+        // unless the checkbox was explicitly unticked
+        inviteLock: inviteLock ? 1 : 0,
         ...(profile?.name ? { createdByName: profile.name } : {}),
       })
       .then(async () => {
@@ -104,6 +107,7 @@ export function SpacesScreen() {
     setPeriodDay(1);
     setCurrency('EUR');
     setHistoryStart(isoMonthsAgo(DEFAULT_HISTORY_MONTHS));
+    setInviteLock(true); // #147: every new form starts private again
     setCreateOpen(true);
   };
 
@@ -199,7 +203,10 @@ export function SpacesScreen() {
                     onClick={() => void navigate({ to: '/spaces/$spaceId', params: { spaceId: space.id } })}
                     className="m-tap flex h-11 w-11 shrink-0 items-center justify-center border-none bg-transparent text-ink-4"
                   >
-                    <Icon name="cog-outline" size={19} />
+                    {/* #178 (user): the screen edits the space's LOOK
+                        (name/symbol/color/picture) — a palette says that,
+                        a cog promised machinery it doesn't have */}
+                    <Icon name="palette-outline" size={19} />
                   </button>
                 </div>
               </div>
@@ -271,10 +278,21 @@ export function SpacesScreen() {
             </button>
           ))}
 
-          {/* private by birth: the lock lifts in space settings, not here */}
-          <p className="flex items-center gap-1.5 px-1 text-[11px] leading-snug text-ink-4" data-testid="space-create-lock-note">
-            <Icon name="lock-outline" size={13} /> {t('space.createLockNote')}
-          </p>
+          {/* #147 (user): the private lock is decided here, not decreed —
+              same control (and copy) the space's settings keep afterwards */}
+          <div className="rounded-input border border-line bg-surface px-4 py-3">
+            <label className="flex items-center gap-3 text-[14px] font-medium text-ink">
+              <input
+                type="checkbox"
+                data-testid="space-create-lock"
+                checked={inviteLock}
+                onChange={(e) => setInviteLock(e.target.checked)}
+                className="h-4 w-4 accent-[var(--m-accent)]"
+              />
+              {t('space.inviteLockLabel')}
+            </label>
+            <p className="mt-1 pl-7 text-[12px] leading-snug text-ink-3">{t('space.inviteLockSub')}</p>
+          </div>
           <Button data-testid="space-create-save" onClick={() => void createSpace()} disabled={!name.trim()}>
             {t('space.create')}
           </Button>
@@ -284,6 +302,11 @@ export function SpacesScreen() {
       {/* stacked: the three default editors, mirroring their settings twins */}
       <Sheet open={periodOpen} onOpenChange={setPeriodOpen} title={t('space.periodTitle')} size="form">
         <div className="flex flex-col gap-3 pt-1">
+          {/* #137 (user): bare controls read as a riddle — the sheet
+              explains itself with the settings screen's exact words */}
+          <p className="rounded-card bg-bg-2 px-4 py-3 text-[13px] leading-relaxed text-ink-2" data-testid="space-create-period-explain">
+            {t('period.explain')}
+          </p>
           <PeriodControls
             periodType={periodType}
             periodDay={periodDay}

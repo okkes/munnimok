@@ -40,8 +40,9 @@ describe('SpacesScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('spaces-add'));
     fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Side hustle' } });
-    // arc 4: the private-lock note sits on the form; defaults carry the rest
-    expect(screen.getByTestId('space-create-lock-note')).toBeTruthy();
+    // #147: the private lock is a real choice now — ticked by default,
+    // so the bare "name + Create" path still births a locked space
+    expect((screen.getByTestId('space-create-lock') as HTMLInputElement).checked).toBe(true);
     fireEvent.click(screen.getByTestId('space-create-save'));
 
     // new space appears and becomes active
@@ -63,6 +64,28 @@ describe('SpacesScreen (demo identity)', () => {
     await waitFor(() => expect(activeRow()!.getAttribute('data-testid')).toBe(first));
   });
 
+  it('unticking the private checkbox births the space open (#147)', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+
+    fireEvent.click(screen.getByTestId('spaces-add'));
+    fireEvent.change(await screen.findByTestId('space-create-name'), { target: { value: 'Open club' } });
+    fireEvent.click(screen.getByTestId('space-create-lock'));
+    expect((screen.getByTestId('space-create-lock') as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByTestId('space-create-save'));
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const made = (await db.spaces.toArray()).find((s) => s.name === 'Open club');
+        expect(made?.inviteLock).toBe(0);
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
   it('the full create form customizes period, currency, history and look (arc 4)', async () => {
     renderApp('/spaces');
     await screen.findByTestId('screen-spaces');
@@ -73,6 +96,8 @@ describe('SpacesScreen (demo identity)', () => {
 
     // period: weekly, starting Wednesday — the settings screen's controls
     fireEvent.click(screen.getByTestId('space-create-period'));
+    // #137: the period sheet explains itself like its settings twin
+    expect(await screen.findByTestId('space-create-period-explain')).toBeTruthy();
     fireEvent.click(await screen.findByTestId('space-period-week'));
     fireEvent.click(screen.getByTestId('space-weekday-3'));
     fireEvent.keyDown(document, { key: 'Escape' });
@@ -208,6 +233,35 @@ describe('SpacesScreen (demo identity)', () => {
       { timeout: 5000 },
     );
   });
+
+  it('a set picture puts the symbol and color pickers to sleep (#146)', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+
+    // seed the picture directly — the file input needs a real image decoder
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('pic'), { trackOutbox: false });
+    await repo.upsert('space', id, id, { picture: 'data:image/png;base64,x' });
+    db.close();
+
+    fireEvent.click(screen.getByTestId(`space-edit-${id}`));
+    await screen.findByTestId('screen-space-settings');
+    // the note says WHY; both pickers refuse taps while the picture rules
+    expect(await screen.findByTestId('space-icon-picture-note')).toBeTruthy();
+    expect((screen.getByTestId('space-icon-briefcase-outline') as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByTestId('space-color-3498DB') as HTMLButtonElement).disabled).toBe(true);
+    // clearing the picture wakes them up again
+    fireEvent.click(screen.getByTestId('space-photo-clear'));
+    await waitFor(() => expect(screen.queryByTestId('space-icon-picture-note')).toBeNull());
+    expect((screen.getByTestId('space-icon-briefcase-outline') as HTMLButtonElement).disabled).toBe(false);
+  }, 15_000);
 
   it('refuses deleting the active or only space, allows deleting another', async () => {
     renderApp('/spaces');

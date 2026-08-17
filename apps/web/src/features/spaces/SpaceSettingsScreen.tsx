@@ -3,6 +3,7 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { downscaleImage } from '@/lib/image';
+import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { apiFetch } from '@/lib/api';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -13,6 +14,7 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { Icon } from '@/ui/Icon';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 import { SPACE_COLORS, SPACE_ICONS } from './spaceDefaults';
 
@@ -47,6 +49,9 @@ export function SpaceSettingsScreen() {
   // leaving needs someone to stay behind — mirror the members screen rule
   const [memberCount, setMemberCount] = useState(0);
   const fileRef = useRef<HTMLInputElement>(null);
+  // #160: desktop-only webcam door beside the upload tile
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
   // role in this space; local-only identities are always owner
   const myRole = useMyRole(spaceId, syncing);
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
@@ -64,6 +69,24 @@ export function SpaceSettingsScreen() {
   }
 
   const readOnly = myRole === 'reader';
+
+  // one downscale path for all three photo doors (input, native, webcam)
+  const applyPhoto = (file: File): void => {
+    void downscaleImage(file, 128).then(setPicture).catch(() => undefined);
+  };
+
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => {
+        if (file) applyPhoto(file);
+      });
+      return;
+    }
+    fileRef.current?.click();
+  };
 
   const save = async () => {
     if (!space || !name.trim() || readOnly) return;
@@ -164,7 +187,7 @@ export function SpaceSettingsScreen() {
               data-testid="space-photo-input"
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) void downscaleImage(file, 128).then(setPicture).catch(() => undefined);
+                if (file) applyPhoto(file);
               }}
             />
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -186,8 +209,20 @@ export function SpaceSettingsScreen() {
                 <button
                   data-testid="space-photo-upload"
                   disabled={readOnly}
-                  onClick={() => fileRef.current?.click()}
+                  onClick={pickPhoto}
                   title={t('profile.photoUpload')}
+                  className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
+                >
+                  <Icon name="camera-outline" size={17} />
+                </button>
+              )}
+              {/* #160: desktop webcam snapshot — mirrors the upload tile */}
+              {webcamDoor && (
+                <button
+                  data-testid="space-photo-webcam"
+                  disabled={readOnly}
+                  onClick={() => setWebcamOpen(true)}
+                  title={t('webcam.use')}
                   className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
                 >
                   <Icon name="camera-outline" size={17} />
@@ -197,7 +232,9 @@ export function SpaceSettingsScreen() {
                 <button
                   key={name_}
                   data-testid={`space-icon-${name_}`}
-                  disabled={readOnly}
+                  // #146 (user): a picture wins over symbol+color everywhere —
+                  // while one is set, picking them would change nothing visible
+                  disabled={readOnly || picture !== ''}
                   onClick={() => setIcon(name_)}
                   className={`m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
                     icon === name_ ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
@@ -207,13 +244,19 @@ export function SpaceSettingsScreen() {
                 </button>
               ))}
             </div>
+            {/* #146: say WHY the pickers sleep, not just gray them out */}
+            {picture !== '' && (
+              <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="space-icon-picture-note">
+                {t('space.picStompsIcon')}
+              </p>
+            )}
 
             <div className="m-cap px-1">{t('space.color')}</div>
             <ColorPicker
               colors={SPACE_COLORS}
               value={color}
               onChange={setColor}
-              disabled={readOnly}
+              disabled={readOnly || picture !== ''}
               testIdPrefix="space-color"
               customLabel={t('color.custom')}
             />
@@ -278,6 +321,8 @@ export function SpaceSettingsScreen() {
           </div>
         )}
       </div>
+      {/* #160: snapshot feeds the same downscale path as the file input */}
+      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={applyPhoto} />
       {/* aligned destructive confirm (user request): sheet + cooldown,
           same shape as account/store/user deletion */}
       <DangerConfirmSheet

@@ -100,6 +100,8 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     expect(screen.queryByTestId('settings-friends-row')).toBeNull();
     expect(screen.queryByTestId('settings-connections-row')).toBeNull();
     expect(screen.queryByTestId('settings-admin-row')).toBeNull();
+    // #159: devices are sync machinery — nothing to list without an account
+    expect(screen.queryByTestId('settings-devices-row')).toBeNull();
   });
 
   it('theme segments pin light/dark and AUTO returns to device tracking', async () => {
@@ -116,6 +118,25 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     // system mode = stored key removed; jsdom's matchMedia default resolves light
     expect(localStorage.getItem('munni_theme')).toBeNull();
     expect(screen.getByTestId('settings-theme-auto').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('tapping the appearance row cycles light → dark → follow-device (#157)', async () => {
+    renderApp('/settings/global');
+    await screen.findByTestId('screen-settings-global');
+    // fresh storage = follow-device; the first tap pins light
+    fireEvent.click(screen.getByTestId('settings-theme-toggle'));
+    expect(localStorage.getItem('munni_theme')).toBe('light');
+    expect(document.documentElement.dataset.theme).toBe('light');
+    fireEvent.click(screen.getByTestId('settings-theme-toggle'));
+    expect(localStorage.getItem('munni_theme')).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    fireEvent.click(screen.getByTestId('settings-theme-toggle'));
+    expect(localStorage.getItem('munni_theme')).toBeNull(); // back to follow-device
+    // the segments stay the precise control: a direct pick must not ALSO
+    // advance the row's cycle past what was picked
+    fireEvent.click(screen.getByTestId('settings-theme-dark'));
+    expect(localStorage.getItem('munni_theme')).toBe('dark');
+    expect(screen.getByTestId('settings-theme-dark').getAttribute('aria-pressed')).toBe('true');
   });
 
   it('language sheet switches the UI language and persists it', async () => {
@@ -234,6 +255,8 @@ describe('Settings screens (user identity, scripted server)', () => {
 
     await screen.findByTestId('screen-settings-global');
     expect(await screen.findByTestId('settings-friends-row')).toBeTruthy();
+    // #159: the devices door moved here from the profile
+    expect(screen.getByTestId('settings-devices-row')).toBeTruthy();
     fireEvent.click(await screen.findByTestId('settings-connections-row'));
     await waitFor(() => expect(screen.getByText('NL69INGB0123456789')).toBeTruthy());
   }, 15_000);

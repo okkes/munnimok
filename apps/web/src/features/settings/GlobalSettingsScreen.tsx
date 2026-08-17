@@ -4,6 +4,7 @@ import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
+import type { ThemeMode } from '@/app/theme';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { TIPS_DISABLED_KEY, useTipsDisabled } from '@/features/help/tipsPref';
@@ -61,10 +62,21 @@ function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
   );
 }
 
+/** #157: the appearance row taps through this cycle — a fixed order so
+ *  repeated taps visit every mode and land back where they started */
+export const NEXT_THEME_MODE: Record<ThemeMode, ThemeMode> = { light: 'dark', dark: 'system', system: 'light' };
+
 /** three-state appearance control: light / dark / follow device */
 function ThemeModeSwitch() {
   const { t } = useLang();
   const { mode, setMode } = useTheme();
+  // #157: the row AROUND this switch cycles on tap (trailing renders
+  // inside the row's button) — a precise segment pick must not bubble
+  // up and ALSO advance the cycle
+  const pick = (next: ThemeMode) => (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    setMode(next);
+  };
   const segCls = (active: boolean) =>
     `m-tap flex items-center justify-center px-2.5 py-1 ${
       active ? 'bg-accent-soft text-accent-deep' : 'text-ink-3'
@@ -78,7 +90,7 @@ function ThemeModeSwitch() {
         data-testid="settings-theme-light"
         aria-label={t('settings.themeLight')}
         aria-pressed={mode === 'light'}
-        onClick={() => setMode('light')}
+        onClick={pick('light')}
         className={segCls(mode === 'light')}
       >
         <Icon name="weather-sunny" size={15} />
@@ -88,7 +100,7 @@ function ThemeModeSwitch() {
         data-testid="settings-theme-dark"
         aria-label={t('settings.themeDark')}
         aria-pressed={mode === 'dark'}
-        onClick={() => setMode('dark')}
+        onClick={pick('dark')}
         className={`${segCls(mode === 'dark')} border-x border-line-2`}
       >
         <Icon name="weather-night" size={15} />
@@ -98,7 +110,7 @@ function ThemeModeSwitch() {
         data-testid="settings-theme-auto"
         aria-label={t('settings.followDevice')}
         aria-pressed={mode === 'system'}
-        onClick={() => setMode('system')}
+        onClick={pick('system')}
         className={`${segCls(mode === 'system')} font-mono text-[11px] font-semibold`}
       >
         AUTO
@@ -115,7 +127,7 @@ function ThemeModeSwitch() {
 
 export function GlobalSettingsScreen() {
   const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
-  const { theme, mode: themeMode } = useTheme();
+  const { theme, mode: themeMode, setMode: setThemeMode } = useTheme();
   const { store } = useData();
   const tipsOff = useTipsDisabled();
   const [langSheetOpen, setLangSheetOpen] = useState(false);
@@ -228,6 +240,17 @@ export function GlobalSettingsScreen() {
           {gcAvailable && (
             <Row testId="settings-connections-row" icon="bank-transfer" title={t('gc.connections')} onClick={openConnections} />
           )}
+          {/* #159 (user): devices are an app-wide concern — moved here from
+              the profile, which keeps only identity-level acts */}
+          {identity?.kind === 'user' && (
+            <Row
+              testId="settings-devices-row"
+              icon="devices"
+              title={t('devices.title')}
+              sub={t('devices.rowSub')}
+              onClick={() => void navigate({ to: '/devices' })}
+            />
+          )}
           <Row
             testId="settings-language-row"
             icon="translate"
@@ -285,6 +308,9 @@ export function GlobalSettingsScreen() {
             sub={themeMode === 'system' ? t('settings.followDevice') : undefined}
             chevron={false}
             trailing={<ThemeModeSwitch />}
+            // #157 (user): the row itself is the quick cycle — the
+            // segments stay the precise control (their clicks don't bubble)
+            onClick={() => setThemeMode(NEXT_THEME_MODE[themeMode])}
           />
           <Row
             testId="settings-tips-toggle"

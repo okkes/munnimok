@@ -95,7 +95,9 @@ export function fmtCents(cents: number, currency: string, lang: Lang, opts?: { s
     LOCALE[lang],
     noCurrency
       ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
-      : { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 },
+      : // #150 (user): bare symbol — the default spelled USD as "US$1.00"
+        // under en-IE; the disambiguation prefix reads as noise in-app
+        { style: 'currency', currency, currencyDisplay: 'narrowSymbol', minimumFractionDigits: 2, maximumFractionDigits: 2 },
   ).format(cents / 100);
   if (opts?.sign && cents > 0) return `+${formatted}`;
   return formatted;

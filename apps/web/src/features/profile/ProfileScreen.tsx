@@ -10,6 +10,7 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 import { downscaleImage, isDataImage } from '@/lib/image';
+import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { COUNTRIES, CURRENCIES } from '@/domain/countries';
 import { setPredictionCountry } from '@/domain/predictCategory';
 import { MANUAL_RATES_META_KEY, readManualRates } from '@/lib/rates';
@@ -19,6 +20,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Flag } from '@/ui/Flag';
 import { Sheet } from '@/ui/Sheet';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 /** avatar presets: "icon|color" */
 export const AVATARS = [
@@ -169,6 +171,9 @@ export function ProfileScreen() {
   const [deleteError, setDeleteError] = useState(false);
   const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // #160: desktop-only webcam door beside the upload button
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
   const navigate = useNavigate();
   const logout = useSession((s) => s.logout);
 
@@ -209,6 +214,17 @@ export function ProfileScreen() {
     } catch {
       // unreadable file — keep the current avatar
     }
+  };
+
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => void onPhotoPicked(file ?? undefined));
+      return;
+    }
+    fileRef.current?.click();
   };
 
   // load current values per identity kind
@@ -305,16 +321,25 @@ export function ProfileScreen() {
           data-testid="profile-photo-input"
           onChange={(e) => void onPhotoPicked(e.target.files?.[0])}
         />
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-2 w-full"
-          data-testid="profile-photo-upload"
-          onClick={() => fileRef.current?.click()}
-        >
-          <Icon name="camera-outline" size={16} />
-          {isDataImage(picture) ? t('profile.photoReplace') : t('profile.photoUpload')}
-        </Button>
+        <div className="mt-2 flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            data-testid="profile-photo-upload"
+            onClick={pickPhoto}
+          >
+            <Icon name="camera-outline" size={16} />
+            {isDataImage(picture) ? t('profile.photoReplace') : t('profile.photoUpload')}
+          </Button>
+          {/* #160: desktop webcam snapshot beside the upload */}
+          {webcamDoor && (
+            <Button variant="outline" size="sm" data-testid="profile-photo-webcam" onClick={() => setWebcamOpen(true)}>
+              <Icon name="camera-outline" size={16} />
+              {t('webcam.use')}
+            </Button>
+          )}
+        </div>
 
         <div className="m-cap mt-5 mb-1 px-1">{t('profile.displayName')}</div>
         <input
@@ -432,18 +457,8 @@ export function ProfileScreen() {
 
         {/* identity-level danger zone (user request: these belong to the
             PROFILE, not app settings) — always last on the screen */}
-        {/* logged-in devices (approved plan): see + disconnect them */}
-        {identity?.kind === 'user' && (
-          <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">
-            <Row
-              testId="profile-devices"
-              icon="devices"
-              title={t('devices.title')}
-              sub={t('devices.rowSub')}
-              onClick={() => void navigate({ to: '/devices' })}
-            />
-          </div>
-        )}
+        {/* logged-in devices moved to Global settings (#159): they are an
+            app-wide concern, not an identity act */}
         {identity?.kind === 'user' && (
           <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">
             <Row
@@ -486,6 +501,9 @@ export function ProfileScreen() {
           </div>
         )}
       </div>
+
+      {/* #160: snapshot feeds the same downscale path as the file input */}
+      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onPhotoPicked(file)} />
 
       <DangerConfirmSheet
         open={deleteProfileOpen}

@@ -57,4 +57,31 @@ describe('DevicesScreen (logged-in devices)', () => {
     fireEvent.click(screen.getByTestId(`device-revoke-${otherDevice.id}`));
     await screen.findByTestId('device-revoke-confirm-body', {}, { timeout: 5000 });
   }, 20_000);
+
+  it('numbers same-label twins by age and names this browser (#158)', async () => {
+    // deterministic UA — happy-dom's default names no real browser
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    });
+    renderAppAsUser('/devices', {
+      api: {
+        'GET /me/devices': () => [
+          // two unnamed web devices → same base label "Browser"
+          { ...otherDevice, id: 'older-web', platform: 'web', createdAt: '2026-06-01T10:00:00Z' },
+          { ...otherDevice, id: getDeviceId(), platform: 'web', createdAt: '2026-07-05T10:00:00Z' },
+        ],
+      },
+    });
+
+    await screen.findByTestId('screen-devices', {}, { timeout: 5000 });
+    await waitFor(() => expect(screen.getByTestId('device-row-older-web')).toBeTruthy(), { timeout: 5000 });
+
+    // the oldest keeps the bare label; the newer twin wears " (2)"
+    expect(screen.getByTestId('device-row-older-web').textContent).not.toContain('(2)');
+    expect(screen.getByTestId(`device-row-${getDeviceId()}`).textContent).toContain('Browser (2)');
+    // only this device knows its own browser (server keeps no UA)
+    expect(screen.getByTestId('device-browser').textContent).toContain('Chrome');
+    expect(screen.getByTestId('device-browser').closest(`[data-testid="device-row-${getDeviceId()}"]`)).toBeTruthy();
+  }, 20_000);
 });
