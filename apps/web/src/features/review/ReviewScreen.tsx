@@ -1529,10 +1529,12 @@ export function ReviewScreen() {
   // re-points a stored pair)
   const counterAcct = spaceAccounts?.find((a) => a.id === draft?.linkedAccountId);
   const counterBankFed = (counterAcct?.source ?? 'manual') !== 'manual';
-  const standingPeerId = tx?.transferPeerId ?? pickedPeer?.txId;
   const peerFaceRow = useMemo(
-    () => (standingPeerId ? allTxs?.find((r) => r.id === standingPeerId) : undefined),
-    [standingPeerId, allTxs],
+    () => {
+      const standingPeerId = tx?.transferPeerId ?? pickedPeer?.txId;
+      return standingPeerId ? allTxs?.find((r) => r.id === standingPeerId) : undefined;
+    },
+    [tx?.transferPeerId, pickedPeer, allTxs],
   );
   const counterTxRow = counterTxDescriptor(tx, counterAcct, peerFaceRow, counterBankFed, lang, t, () => setCounterTxOpen(true));
   const events = useEvents();
@@ -2157,8 +2159,9 @@ export function ReviewScreen() {
       )}
       {/* #237 r3: the card row's counter-transaction match sheet —
           suggestions first, the rest scrollable; create/await resets
-          the pick; a pick with a standing bulk offer warns first */}
-      {tx && draft?.linkedAccountId && counterAcct && (
+          the pick; a pick with a standing bulk offer warns first.
+          (counterAcct non-null already means the draft carries a link) */}
+      {tx && counterAcct && (
         <CounterMatchSheet
           open={counterTxOpen}
           onOpenChange={setCounterTxOpen}
@@ -2168,7 +2171,7 @@ export function ReviewScreen() {
           onCreate={!counterBankFed ? () => setPickedPeer(null) : undefined}
           onWait={counterBankFed ? () => setPickedPeer(null) : undefined}
           onPick={(pickedId) => {
-            const linkedId = draft.linkedAccountId!;
+            const linkedId = counterAcct.id;
             stageWithBulkWarning(similar.length, () => setPickedPeer({ txId: pickedId, linkedId }), setPickWarn);
           }}
         />
