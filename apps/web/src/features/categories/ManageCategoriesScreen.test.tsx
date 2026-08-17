@@ -49,11 +49,13 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     expect(screen.queryByTestId('cats-group-menu')).toBeNull();
   });
 
-  it('creates a custom MAIN category with type, color and a locked Other sub', async () => {
+  it('creates a custom MAIN category — always expense-typed (#244), with color and a locked Other sub', async () => {
     await openScreen();
     fireEvent.click(screen.getByTestId('cats-add'));
     fireEvent.change(await screen.findByTestId('catform-name'), { target: { value: 'Music lessons' } });
-    fireEvent.click(screen.getByTestId('catform-type-income'));
+    // #244: no type question — the form SAYS a new parent tracks spending
+    expect(screen.getByTestId('catform-expense-note')).toBeTruthy();
+    expect(screen.queryByTestId('catform-type-income')).toBeNull();
     fireEvent.click(screen.getByTestId('catform-color-3498DB'));
     fireEvent.click(screen.getByTestId('catform-icon-laptop'));
     fireEvent.click(screen.getByTestId('catform-save'));
@@ -62,7 +64,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     // (generous timeout: coverage instrumentation slows the live query)
     await waitFor(() => expect(screen.getByText('Music lessons')).toBeTruthy(), { timeout: 5000 });
     const header = screen.getByText('Music lessons').closest('button')!;
-    expect(header.textContent).toContain('Income');
+    expect(header.textContent).toContain('Expense');
     fireEvent.click(header); // groups start collapsed — unfold the new main
     // …and the auto "Other" sub exists but is not editable (it lands in a
     // second write — wait for its own live-query emission)
@@ -93,13 +95,14 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     await screen.findByTestId('managecat-petFood', {}, { timeout: 5000 });
   }, 15_000);
 
-  it('creates a sub with a direction under a builtin parent (type inherited)', async () => {
+  it('creates a sub under a builtin parent — type AND direction follow the parent (#244)', async () => {
     await openScreen();
     expandGroup('sport');
     fireEvent.click(screen.getByTestId('cats-addsub-sport'));
     expect((await screen.findByTestId('catform-inherited-type')).textContent).toBe('Expense');
     fireEvent.change(screen.getByTestId('catform-name'), { target: { value: 'Padel' } });
-    fireEvent.click(screen.getByTestId('catform-direction-debit'));
+    // #244: the direction question is gone from the form
+    expect(screen.queryByTestId('catform-direction-debit')).toBeNull();
     fireEvent.click(screen.getByTestId('catform-icon-dumbbell'));
     fireEvent.click(screen.getByTestId('catform-save'));
 

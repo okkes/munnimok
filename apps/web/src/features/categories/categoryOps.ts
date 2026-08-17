@@ -53,6 +53,14 @@ const parentTypeOf = async (store: StorageBackend, parentId: string): Promise<Tx
   return custom?.txType ?? 'expense';
 };
 
+/** #244 (user): direction left the user's hands — a sub simply follows
+ *  its parent's nature. Income subs are credit, expense subs debit;
+ *  anything else (legacy custom mains of other types) stays open. */
+export const directionForType = (txType: TxType): CatDirection => {
+  if (txType === 'income') return 'credit';
+  return txType === 'expense' ? 'debit' : 'both';
+};
+
 async function detachAll(repo: Repo, affected: TransactionRow[], catIds: Set<string>): Promise<void> {
   for (const tx of affected) {
     await repo.upsert('transaction', tx.spaceId, tx.id, detachCategoryPatch(tx, catIds));
@@ -124,7 +132,12 @@ export async function prepareCategoryEdit(
     commit: async () => {
       if (impact.detachIds.size > 0) await detachAll(repo, impact.affected, impact.detachIds);
       const patch: Partial<CategoryRow> = { ...changes };
-      if (impact.movedType) patch.txType = impact.movedType;
+      // #244: a moved sub follows its NEW parent's nature — type and
+      // direction both re-derive (the user never states either)
+      if (impact.movedType) {
+        patch.txType = impact.movedType;
+        patch.direction = directionForType(impact.movedType);
+      }
       await repo.upsert('category', row.spaceId, row.id, patch);
       // keep stored txType on subs consistent with the parent
       if (row.isParent === 1 && changes.txType && changes.txType !== row.txType) {
@@ -182,21 +195,23 @@ export async function createMainCategory(
   return id;
 }
 
-/** Create a custom sub under any parent (type inherited from the parent). */
+/** Create a custom sub under any parent (type AND direction inherited
+ *  from the parent — #244: the user never states a direction). */
 export async function createSubCategory(
   store: StorageBackend,
   repo: Repo,
   spaceId: string,
-  input: { parentId: string; name: string; icon: string; direction: CatDirection },
+  input: { parentId: string; name: string; icon: string },
 ): Promise<string> {
   const id = repo.newId();
+  const txType = await parentTypeOf(store, input.parentId);
   await repo.upsert('category', spaceId, id, {
     parentId: input.parentId,
     name: input.name,
     icon: input.icon,
     color: '',
-    txType: await parentTypeOf(store, input.parentId),
-    direction: input.direction,
+    txType,
+    direction: directionForType(txType),
     sortOrder: 999,
     builtin: 0,
   });

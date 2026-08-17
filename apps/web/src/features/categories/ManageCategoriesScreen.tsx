@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
-import { ALL_TX_TYPES } from '@/domain/txType';
-import type { CategoryRow, CatDirection, TxType } from '@/db/types';
+import type { CategoryRow, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -12,7 +11,6 @@ import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
-import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import {
   copyCategoryToSpace,
@@ -51,7 +49,6 @@ const COLORS = [
   '#F39C12', '#16A085', '#2980B9', '#E91E63', '#795548', '#607D8B',
 ];
 
-const DIRECTIONS: CatDirection[] = ['debit', 'credit', 'both'];
 
 type FormMode =
   | { kind: 'newMain' }
@@ -142,12 +139,9 @@ function SubCatRow({
         className={`m-tap relative isolate flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[14px] text-ink disabled:pointer-events-none ${hold.holding ? 'm-holding' : ''}`}
       >
         <Icon name={cat.icon} size={19} color={parentColor} />
+        {/* #244: direction left the user's vocabulary — the parent's
+            nature (expense / income badge on the group) says it all */}
         <span className="min-w-0 flex-1 truncate">{catName(cat, t)}</span>
-        {cat.direction && cat.direction !== 'both' && (
-          <span title={t(cat.direction === 'debit' ? 'cats.legendDebit' : 'cats.legendCredit')}>
-            <Icon name={cat.direction === 'debit' ? 'arrow-up-thin' : 'arrow-down-thin'} size={15} color="var(--m-ink-4)" />
-          </span>
-        )}
         {canHold && (
           <>
             <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-deep">
@@ -250,7 +244,6 @@ export function ManageCategoriesScreen() {
   const [iconQuery, setIconQuery] = useState('');
   const [color, setColor] = useState(COLORS[0]);
   const [txType, setTxType] = useState<TxType>('expense');
-  const [direction, setDirection] = useState<CatDirection>('both');
   const [moveTo, setMoveTo] = useState<string | null>(null);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
   // hold on a custom sub opens its action sheet (accessible alternative)
@@ -318,17 +311,15 @@ export function ManageCategoriesScreen() {
   const openNewSub = (parentId: string) => {
     setName('');
     setIcon(ICONS[0]);
-    setDirection('both');
     setMode({ kind: 'newSub', parentId });
   };
   const openEdit = (cat: Cat) => {
     const row = rowById(cat.id);
-    if (!row || cat.isOther) return; // "Other" subs are fixed (direction locked to both)
+    if (!row || cat.isOther) return; // "Other" subs are fixed
     setName(row.name ?? '');
     setIcon(row.icon);
     setColor(row.color || COLORS[0]);
     setTxType(row.txType);
-    setDirection(row.direction ?? 'both');
     setMoveTo(null);
     setMode(row.isParent === 1 ? { kind: 'editMain', row } : { kind: 'editSub', row });
   };
@@ -372,18 +363,20 @@ export function ManageCategoriesScreen() {
       return;
     }
     if (mode.kind === 'newMain') {
-      await createMainCategory(repo, spaceId, { name: name.trim(), icon, color, txType, otherName: t('cats.other') });
+      // #244 (user): every new parent IS an expense group — the form
+      // says so instead of asking
+      await createMainCategory(repo, spaceId, { name: name.trim(), icon, color, txType: 'expense', otherName: t('cats.other') });
       void logActivity(store, repo, spaceId, 'catAdd', name.trim());
       setMode(null);
     } else if (mode.kind === 'newSub') {
-      await createSubCategory(store, repo, spaceId, { parentId: mode.parentId, name: name.trim(), icon, direction });
+      await createSubCategory(store, repo, spaceId, { parentId: mode.parentId, name: name.trim(), icon });
       void logActivity(store, repo, spaceId, 'catAdd', name.trim());
       setMode(null);
     } else {
       const changes: CategoryChanges =
         mode.kind === 'editMain'
           ? { name: name.trim(), icon, color, txType }
-          : { name: name.trim(), icon, direction, ...(moveTo ? { parentId: moveTo } : {}) };
+          : { name: name.trim(), icon, ...(moveTo ? { parentId: moveTo } : {}) };
       await runGuarded(await prepareCategoryEdit(store, repo, mode.row, changes), 'edit', name.trim());
     }
   };
@@ -540,12 +533,6 @@ export function ManageCategoriesScreen() {
             {t(NAME_ERROR_KEYS[dragError])}
           </p>
         )}
-        {/* one-line legend: the arrows carry meaning nowhere else explained */}
-        <p className="mt-2 flex items-center gap-1 px-1 text-[11px] text-ink-4">
-          <Icon name="arrow-up-thin" size={13} /> {t('cats.legendDebit')}
-          <span className="px-0.5">·</span>
-          <Icon name="arrow-down-thin" size={13} /> {t('cats.legendCredit')}
-        </p>
         {cats.sharedScope && (personalCats?.length ?? 0) > 0 && (
           <button
             data-testid="cats-copy-open"
@@ -784,17 +771,16 @@ export function ManageCategoriesScreen() {
             </p>
           )}
 
-          {/* main: transaction type + color */}
+          {/* main: color. #244 (user): the type question is gone — a new
+              parent IS an expense group (Housing, Transport, …); income
+              lives under the special Income category. Say it plainly. */}
           {isMainForm && (
             <>
-              <div className="m-cap px-1">{t('cats.type')}</div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {ALL_TX_TYPES.map((type) => (
-                  <Chip key={type} testId={`catform-type-${type}`} selected={txType === type} onClick={() => setTxType(type)}>
-                    {t(`tx.type.${type}`)}
-                  </Chip>
-                ))}
-              </div>
+              {mode?.kind === 'newMain' && (
+                <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] leading-relaxed text-ink-3" data-testid="catform-expense-note">
+                  {t('cats.newMainExpenseNote')}
+                </p>
+              )}
               <div className="m-cap px-1">{t('cats.color')}</div>
               <ColorPicker
                 colors={COLORS}
@@ -806,23 +792,10 @@ export function ManageCategoriesScreen() {
             </>
           )}
 
-          {/* sub: direction (+ move when editing) */}
+          {/* sub: move when editing (#244: the direction question is
+              gone — a sub simply follows its parent's nature) */}
           {!isMainForm && (
             <>
-              <div className="m-cap px-1">{t('cats.direction')}</div>
-              <div className="flex gap-2">
-                {DIRECTIONS.map((d) => (
-                  <Chip
-                    key={d}
-                    className="flex-1"
-                    testId={`catform-direction-${d}`}
-                    selected={direction === d}
-                    onClick={() => setDirection(d)}
-                  >
-                    {t(`cats.direction.${d}`)}
-                  </Chip>
-                ))}
-              </div>
               {mode?.kind === 'editSub' && (
                 <>
                   <div className="m-cap px-1">{t('cats.moveTarget')}</div>
