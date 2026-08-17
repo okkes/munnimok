@@ -212,6 +212,9 @@ export const LOCKED_MAIN_IDS: ReadonlySet<string> = new Set([
   'debt',
   'investment',
   'funding',
+  // #261 (user): Adjustment is munni's own bookkeeping too — balance edits
+  // mint its rows; nobody grafts user subs under it
+  'adjustment',
 ]);
 
 /** the machine-picked sub per transfer-family type: debit = money out */

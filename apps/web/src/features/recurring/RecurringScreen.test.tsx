@@ -218,7 +218,16 @@ describe('RecurringScreen (demo identity)', () => {
     expect((screen.getByTestId('recform-amount') as HTMLInputElement).value).toBe('13.99');
 
     fireEvent.click(screen.getByTestId('recform-save'));
-    // accepted suggestion reconciles: past charges get linked (one per month)
+    // #257: saving an ACCEPTED suggestion opens the occurrence review with
+    // the reconciler's own picks pre-checked (one per month) — nothing is
+    // linked until the user applies
+    await screen.findByTestId('recmatch-list', {}, { timeout: 5000 });
+    await waitFor(() => {
+      const checked = document.querySelectorAll('[data-testid^="recmatch-pick-"]:checked');
+      expect(checked).toHaveLength(4);
+    });
+    expect(await db.transactions.filter((t) => !!t.recurringId).count()).toBe(0);
+    fireEvent.click(screen.getByTestId('recmatch-apply'));
     await waitFor(
       async () => {
         const linked = await db.transactions.filter((t) => !!t.recurringId).count();
@@ -343,6 +352,48 @@ describe('RecurringScreen editing (demo identity)', () => {
     fireEvent.click(screen.getByTestId('recform-delete'));
     await screen.findByTestId('screen-recurring', {}, { timeout: 5000 });
     await waitFor(() => expect(screen.queryByText('Gym')).toBeNull(), { timeout: 5000 });
+  }, 15_000);
+
+  it('#167/#168: future ranges show only the total; the year views plot the chart with toggleable lines', async () => {
+    const first = renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-167'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_167', {
+      name: 'Gym 167',
+      kind: 'fixed',
+      amountCents: 2_500,
+      every: 'month',
+      dueDay: Math.min(new Date().getDate(), 28),
+      active: 1,
+    });
+    db.close();
+    first.unmount();
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    await screen.findByText('Gym 167', {}, { timeout: 5000 });
+
+    // current period: the full trio (total / paid / remaining) speaks
+    expect(screen.getByTestId('recurring-summary').textContent).toContain('Paid');
+    expect(screen.queryByTestId('recurring-chart')).toBeNull();
+
+    // next period (#167): payments cannot exist yet — only the total shows
+    fireEvent.click(screen.getByTestId('recurring-view-next'));
+    await screen.findByTestId('recurring-summary-future');
+    expect(screen.getByTestId('recurring-summary').textContent).not.toContain('Paid');
+
+    // the year view (#168): the chart card arrives with both lines on
+    fireEvent.click(screen.getByTestId('recurring-view-year'));
+    await screen.findByTestId('recurring-chart');
+    expect(screen.getByTestId('recurring-chart-svg')).toBeTruthy();
+    // switching both lines off leaves the honest empty note
+    fireEvent.click(screen.getByTestId('recurring-chart-est'));
+    fireEvent.click(screen.getByTestId('recurring-chart-act'));
+    await waitFor(() => expect(screen.queryByTestId('recurring-chart-svg')).toBeNull());
+    // next year is future too: total-only summary, chart still available
+    fireEvent.click(screen.getByTestId('recurring-view-nextyear'));
+    await screen.findByTestId('recurring-summary-future');
+    expect(screen.getByTestId('recurring-chart')).toBeTruthy();
   }, 15_000);
 
   it('#188/#189: a recurring lives only in ranges it OCCURS in; pre-start occurrences neither list nor count', async () => {

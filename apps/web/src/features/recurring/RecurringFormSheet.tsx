@@ -105,6 +105,10 @@ interface RecurringFormSheetProps {
   /** create-and-return hosts (review, tx detail) get the saved row's id
    *  HERE — sniffing the live-query list after close is a lost race */
   onSaved?: (id: string) => void;
+  /** #257: an accepted SUGGESTION hands off to the occurrence review
+   *  (pick which charges belong) instead of blind auto-reconcile; hosts
+   *  without one keep the old reconcile behavior */
+  onAccepted?: (id: string) => void;
 }
 
 /**
@@ -112,7 +116,7 @@ interface RecurringFormSheetProps {
  * tab (add), the detail screen (edit) and the suggestions screen
  * (accept). Owns its pickers and persistence.
  */
-export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Readonly<RecurringFormSheetProps>) {
+export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAccepted }: Readonly<RecurringFormSheetProps>) {
   const { t, lang } = useLang();
   const ops = useRecurringOps();
   const navigate = useNavigate();
@@ -196,8 +200,13 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
     }
     onSaved?.(savedId);
     onClose();
-    // an accepted suggestion should immediately own its past payments
-    if (fromSuggestion) await ops.reconcile();
+    // an accepted suggestion should immediately own its past payments —
+    // #257: hosts with an occurrence review take over (the user picks
+    // which charges belong); others keep the blind reconcile
+    if (fromSuggestion) {
+      if (onAccepted) onAccepted(savedId);
+      else await ops.reconcile();
+    }
   };
 
   const removeCurrent = async () => {

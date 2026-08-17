@@ -6,6 +6,7 @@ import {
   cycleMonths,
   effectiveAmountCents,
   isDueWithin,
+  monthlyRecurringSeries,
   nextDueDate,
   occurrencesBetween,
   summarize,
@@ -154,6 +155,31 @@ describe('recurring amounts and summaries', () => {
   it('a whole year multiplies monthly costs by twelve', () => {
     const computed = computeRange([rec({})], new Map(), '2026-01-01', '2026-12-31', '2026-07-08');
     expect(computed[0].expectedCents).toBe(12 * 1399);
+  });
+
+  it('#168: the year chart buckets estimate and payments per month', () => {
+    const linked = new Map([
+      ['r1', [
+        { date: '2026-02-07', amountCents: -1399 },
+        { date: '2026-03-09', amountCents: -1499 },
+      ]],
+    ]);
+    const { expected, paid } = monthlyRecurringSeries([rec({})], linked, 2026, '2026-07-08');
+    expect(expected).toHaveLength(12);
+    expect(paid).toHaveLength(12);
+    // a monthly estimate lands in every month…
+    expect(expected.every((c) => c === 1399)).toBe(true);
+    // …while payments live only where they happened (abs cents)
+    expect(paid[1]).toBe(1399);
+    expect(paid[2]).toBe(1499);
+    expect(paid[0]).toBe(0);
+    // inactive rows contribute nothing
+    const off = monthlyRecurringSeries([rec({ active: 0 })], linked, 2026, '2026-07-08');
+    expect(off.expected.every((c) => c === 0)).toBe(true);
+    // the floor mutes pre-start months (#189 semantics carried over)
+    const floored = monthlyRecurringSeries([rec({})], new Map(), 2026, '2026-07-08', '2026-06-01');
+    expect(floored.expected.slice(0, 5).every((c) => c === 0)).toBe(true);
+    expect(floored.expected[5]).toBe(1399);
   });
 });
 

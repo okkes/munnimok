@@ -6,7 +6,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSpaceAccounts, useSpaceHistoryTransactions, useSpaceTransactions } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
-import { computeRange, summarize } from '@/domain/recurring';
+import { computeRange, monthlyRecurringSeries, summarize } from '@/domain/recurring';
 import type { RecurringComputed } from '@/domain/recurring';
 import { detectPriceChange, yearlyCents } from '@/domain/recurringPrice';
 import { detectRecurring } from '@/domain/detectRecurring';
@@ -19,7 +19,8 @@ import { RecurringVisual, cadenceLabel } from './RecurringVisual';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
-import { Pill, ProgressBar } from '@/ui/primitives';
+import { Chip, Pill, ProgressBar } from '@/ui/primitives';
+import { MultiLine } from '@/ui/charts/MultiLine';
 
 export function RecurringScreen() {
   const { t, lang } = useLang();
@@ -194,6 +195,34 @@ export function RecurringScreen() {
     );
 
   const progress = summary.totalCents > 0 ? Math.min(1, summary.paidCents / summary.totalCents) : 0;
+  // #167: a future range has no payments — only its total is a fact
+  const futureView = view === 'next' || view === 'nextyear';
+
+  // #168 (user): the year views plot the months — estimate vs actual,
+  // each line toggleable on its own
+  const [showEstimate, setShowEstimate] = useState(true);
+  const [showActual, setShowActual] = useState(true);
+  const yearView = view === 'year' || view === 'nextyear';
+  const chartYear = view === 'nextyear' ? thisYear + 1 : thisYear;
+  const monthly = useMemo(
+    () => (yearView ? monthlyRecurringSeries(recs ?? [], linkedByRec, chartYear, today, space?.historyStartDate) : null),
+    [yearView, recs, linkedByRec, chartYear, today, space?.historyStartDate],
+  );
+  const chartSeries = useMemo(() => {
+    if (!monthly) return [];
+    const list: { values: number[]; color: string; dashed?: boolean }[] = [];
+    // cents → euros keeps the shared scale honest across both lines
+    if (showEstimate) list.push({ values: monthly.expected.map((c) => c / 100), color: 'var(--m-ink-4)', dashed: true });
+    if (showActual) list.push({ values: monthly.paid.map((c) => c / 100), color: 'var(--m-accent)' });
+    return list;
+  }, [monthly, showEstimate, showActual]);
+  const monthLabels = useMemo(
+    () =>
+      Array.from({ length: 12 }, (_, i) =>
+        i % 2 === 0 ? new Date(chartYear, i, 1).toLocaleDateString(LOCALES[lang], { month: 'short' }) : '',
+      ),
+    [chartYear, lang],
+  );
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-recurring">
@@ -257,9 +286,18 @@ export function RecurringScreen() {
         )}
 
         {/* summary card — 'all' is not a date range, so the range-bound
-            numbers stand down and only the honest annual figure stays */}
+            numbers stand down and only the honest annual figure stays.
+            #167 (user): FUTURE ranges have no payments yet — paid and
+            remaining would always parrot 0 and the total, so they and
+            the progress bar stand down; only the total speaks. */}
         <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="recurring-summary">
-          {view !== 'all' && (
+          {view !== 'all' && futureView && (
+            <div data-testid="recurring-summary-future">
+              <div className="text-[10px] font-semibold tracking-wide text-ink-4 uppercase">{t('recurring.total')}</div>
+              <div className="mt-0.5 font-mono text-[15px] font-semibold text-ink">{money(summary.totalCents)}</div>
+            </div>
+          )}
+          {view !== 'all' && !futureView && (
             <>
               <div className="grid grid-cols-3 gap-3">
                 {(
@@ -298,6 +336,28 @@ export function RecurringScreen() {
             </div>
           )}
         </div>
+
+        {/* #168: the year's monthly line chart — estimate and actual,
+            each togglable; the card hides only when both are off */}
+        {yearView && monthly && (
+          <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="recurring-chart">
+            <div className="mb-2 flex gap-2">
+              <Chip testId="recurring-chart-est" selected={showEstimate} onClick={() => setShowEstimate((v) => !v)}>
+                <span aria-hidden className="inline-block h-[2px] w-[14px] rounded bg-current opacity-70" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px)' }} />
+                {t('recurring.chartEstimate')}
+              </Chip>
+              <Chip testId="recurring-chart-act" selected={showActual} onClick={() => setShowActual((v) => !v)}>
+                <span aria-hidden className="inline-block h-[2px] w-[14px] rounded bg-current" />
+                {t('recurring.chartActual')}
+              </Chip>
+            </div>
+            {chartSeries.length > 0 ? (
+              <MultiLine series={chartSeries} labels={monthLabels} height={120} testId="recurring-chart-svg" />
+            ) : (
+              <p className="py-6 text-center text-[12px] text-ink-4">{t('recurring.chartAllOff')}</p>
+            )}
+          </div>
+        )}
 
         {section('recurring.fixed', fixed)}
         {section('recurring.subs', subs)}

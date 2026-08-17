@@ -27,6 +27,7 @@ import type { TFunc } from '@/i18n';
 import { MDI_NAMES } from '@/generated/mdiNames';
 import { categoryNameConflict } from '@/domain/categoryNames';
 import { LOCKED_MAIN_IDS } from '@/domain/categories';
+import { SpecialCatMark } from './SpecialCatMark';
 import type { CategoryNameConflict, NamedCategory } from '@/domain/categoryNames';
 
 const NAME_ERROR_KEYS = {
@@ -142,6 +143,8 @@ function SubCatRow({
         <Icon name={cat.icon} size={19} color={parentColor} />
         {/* #244: direction left the user's vocabulary — the parent's
             nature (expense / income badge on the group) says it all */}
+        {/* #261: the ◆ shows here too — managing must tell special apart */}
+        <SpecialCatMark cat={cat} color={parentColor} />
         <span className="min-w-0 flex-1 truncate">{catName(cat, t)}</span>
         {canHold && (
           <>
@@ -205,6 +208,7 @@ function GroupHeader({
       >
         <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={20} />
         <Icon name={parent.icon} size={20} />
+        <SpecialCatMark cat={parent} color={parent.color} />
         <span className="min-w-0 flex-1 truncate">{catName(parent, t)}</span>
         <span className="rounded-md bg-bg-2 px-2 py-0.5 text-[10px] font-semibold text-ink-3">
           {t(`tx.type.${parent.txTypes[0]}`)}
@@ -988,18 +992,22 @@ export function ManageCategoriesScreen() {
                 {t('action.edit')}
               </button>
             )}
-            <button
-              data-testid={`cats-menu-addsub-${groupMenu.id}`}
-              onClick={() => {
-                const id = groupMenu.id;
-                setGroupMenu(null);
-                openNewSub(id);
-              }}
-              className="m-tap flex w-full items-center gap-3 bg-transparent px-2 py-3.5 text-left text-[15px] text-ink"
-            >
-              <Icon name="plus" size={20} color="var(--m-ink-3)" />
-              {t('cats.addSub')}
-            </button>
+            {/* #261: locked system mains (incl. Adjustment) refuse user
+                subs through EVERY door — this menu had slipped the gate */}
+            {!LOCKED_MAIN_IDS.has(groupMenu.id) && (
+              <button
+                data-testid={`cats-menu-addsub-${groupMenu.id}`}
+                onClick={() => {
+                  const id = groupMenu.id;
+                  setGroupMenu(null);
+                  openNewSub(id);
+                }}
+                className="m-tap flex w-full items-center gap-3 bg-transparent px-2 py-3.5 text-left text-[15px] text-ink"
+              >
+                <Icon name="plus" size={20} color="var(--m-ink-3)" />
+                {t('cats.addSub')}
+              </button>
+            )}
           </div>
         )}
       </Sheet>

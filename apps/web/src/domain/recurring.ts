@@ -194,6 +194,28 @@ export interface RecurringSummary {
   luxuryCents: number;
 }
 
+/** #168: the year chart's twelve months — expected (estimate) vs paid
+ *  (actual), summed over the active recurrings per calendar month. */
+export function monthlyRecurringSeries(
+  recs: readonly RecurringRow[],
+  linkedByRec: ReadonlyMap<string, readonly LinkedTx[]>,
+  year: number,
+  today: string,
+  floor?: string,
+): { expected: number[]; paid: number[] } {
+  const active = recs.filter((r) => r.active === 1);
+  const expected: number[] = [];
+  const paid: number[] = [];
+  for (let m = 1; m <= 12; m += 1) {
+    const mm = String(m).padStart(2, '0');
+    const lastDay = new Date(year, m, 0).getDate();
+    const rows = computeRange(active, linkedByRec, `${year}-${mm}-01`, `${year}-${mm}-${String(lastDay).padStart(2, '0')}`, today, floor);
+    expected.push(rows.reduce((s, c) => s + c.expectedCents, 0));
+    paid.push(rows.reduce((s, c) => s + c.paidCents, 0));
+  }
+  return { expected, paid };
+}
+
 export function summarize(computed: readonly RecurringComputed[]): RecurringSummary {
   let totalCents = 0;
   let paidCents = 0;

@@ -8,6 +8,7 @@ import { looksLikeDebtCreditor } from '@/domain/detectDebts';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromSuggestion } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
+import { RecurringMatchSheet } from './RecurringMatchSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -35,6 +36,9 @@ export function RecurringSuggestionsScreen() {
   const ops = useRecurringOps();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
+  // #257: the accepted suggestion hands its saved id to the occurrence
+  // review — the user picks which charges belong before links are written
+  const [matchRecId, setMatchRecId] = useState<string | null>(null);
 
   const today = localToday();
   const currency = space?.currency ?? 'EUR';
@@ -132,7 +136,8 @@ export function RecurringSuggestionsScreen() {
         )}
       </div>
 
-      <RecurringFormSheet initial={formInitial} onClose={() => setFormInitial(null)} />
+      <RecurringFormSheet initial={formInitial} onClose={() => setFormInitial(null)} onAccepted={setMatchRecId} />
+      <RecurringMatchSheet recId={matchRecId} onClose={() => setMatchRecId(null)} />
     </div>
   );
 }

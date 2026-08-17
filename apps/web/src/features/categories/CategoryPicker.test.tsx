@@ -3,6 +3,11 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
+import { DEMO_SPACE_ID } from '@/db/seed';
+import { HlcClock } from '@/sync/hlc';
+import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
+import { MunniDB } from '@/db/schema';
 
 describe('CategoryPicker direction filtering (via add-transaction form)', () => {
   beforeEach(() => {
@@ -98,6 +103,72 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     // the expected-reimbursement expense left its hidden parent and is pickable
     expect(screen.getByTestId('catpicker-expenseReimburse')).toBeTruthy();
   });
+
+  it('#214: a query hitting a PARENT name keeps the whole group; #187: the match never splits the word', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-groceries');
+
+    // "padel" matches only the custom PARENT — its Other sub must survive
+    fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'padel' } });
+    await screen.findByTestId('catpicker-demo_cat_padel_other');
+    expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
+
+    // #187: the highlighted fragment stays inside one inline run — the
+    // <mark> must not sit as a direct child of the gapped flex row
+    fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'ocer' } });
+    const row = await screen.findByTestId('catpicker-groceries');
+    const mark = row.querySelector('mark');
+    expect(mark).toBeTruthy();
+    expect(mark!.parentElement!.className).not.toContain('gap-');
+  }, 15_000);
+
+  it('#256: a brokerage account’s manual form offers only the investment story', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-256'), { trackOutbox: false });
+    await repo.upsert('account', DEMO_SPACE_ID, 'brok_256', {
+      name: 'DEGIRO manual',
+      type: 'brokerage',
+      source: 'manual',
+      balanceCents: 0,
+      currency: 'EUR',
+    });
+    db.close();
+
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-brok_256'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    // the brokerage ledger speaks investment: Bought is offered…
+    await screen.findByTestId('catpicker-investBuy');
+    // …while everyday expense categories and Adjustment stay out
+    expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
+    expect(screen.queryByTestId('catpicker-balanceAdjustment')).toBeNull();
+  }, 15_000);
+
+  it('#261: Adjustment never rides the standard-row escape into an expense picker', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-groceries');
+    // the ◆ transfer-family escape stays (Set aside is pickable)…
+    expect(screen.getByTestId('catpicker-savingDeposit')).toBeTruthy();
+    // …but the locked Adjustment family does not tag along
+    expect(screen.queryByTestId('catpicker-balanceAdjustment')).toBeNull();
+  }, 15_000);
 
   it('#245/#246: the ◆ chip narrows to specials; the search rides the scroll', async () => {
     renderApp('/transactions');

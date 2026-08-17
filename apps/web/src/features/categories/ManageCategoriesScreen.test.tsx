@@ -35,6 +35,20 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     expect(row.textContent).not.toContain('Custom');
   });
 
+  it('#261: Adjustment is a locked special — ◆-marked, no add-sub door through either entrance', async () => {
+    await openScreen();
+    // the ◆ wears on the locked main's header row
+    await screen.findByTestId('cats-group-adjustment');
+    expect(screen.getByTestId('speccat-adjustment')).toBeTruthy();
+    // the + door is absent…
+    expect(screen.queryByTestId('cats-addsub-adjustment')).toBeNull();
+    // …and the hold menu hides its add-sub entry too (it slipped the gate)
+    await openGroupMenu('adjustment');
+    expect(screen.queryByTestId('cats-menu-addsub-adjustment')).toBeNull();
+    // an open main keeps both doors for contrast
+    expect(screen.getByTestId('cats-togglemain-adjustment')).toBeTruthy();
+  });
+
   it('a quick tap cancels the hold: no menu, the group just toggles', async () => {
     await openScreen();
     const header = screen.getByTestId('cats-group-consumption');

@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { UIEvent } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
-import { REIMBURSED_ID, isSpecialCategory, specialCatType } from '@/domain/categories';
+import { REIMBURSED_ID, isSpecialCategory, mainCatOf, specialCatType } from '@/domain/categories';
 import { allowedSpecialCats } from '@/domain/txType';
 import { kindOf } from '@/domain/txKind';
 import { useLang } from '@/i18n';
@@ -60,7 +60,11 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
     // matrix cell (source account type × money side); null = no context
     const allowedMovement = sourceAccountType && direction ? allowedSpecialCats(sourceAccountType, direction) : null;
     return cats.parents
-      .map((parent) => ({
+      .map((parent) => {
+        // #214 (user): a query that hits the PARENT's name keeps the whole
+        // group — every surviving sub shows under the matched header
+        const parentMatch = !!q && catName(parent, t).toLowerCase().includes(q);
+        return {
         parent,
         children: cats
           .childrenOf(parent.id)
@@ -75,15 +79,21 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
           // Transfer pick opens the mandatory counterparty ask) — only
           // stamped rows keep their narrowed lists
           .filter(
-            (c) => !txType || c.txTypes.includes(txType) || (kindOf(txType) === 'standard' && isSpecialCategory(c)),
+            (c) =>
+              !txType ||
+              c.txTypes.includes(txType) ||
+              // #261: the Adjustment family is locked/special but never rides
+              // the standard-row escape — its rows are system-minted only
+              (kindOf(txType) === 'standard' && isSpecialCategory(c) && mainCatOf(c.id) !== 'adjustment'),
           )
           .filter((c) => !allowedMovement || specialCatType(c.id) === undefined || allowedMovement.has(c.id))
           .filter((c) => !noSpecials || specialCatType(c.id) === undefined)
           .filter((c) => !specialOnly || isSpecialCategory(c))
           .filter((c) => !excludeIds?.includes(c.id))
           .filter((c) => !onlyIds || onlyIds.includes(c.id))
-          .filter((c) => !q || catName(c, t).toLowerCase().includes(q)),
-      }))
+          .filter((c) => !q || parentMatch || catName(c, t).toLowerCase().includes(q)),
+        };
+      })
       .filter((g) => g.children.length > 0);
   }, [cats, query, t, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, specialOnly]);
 
@@ -137,7 +147,12 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         <div key={parent.id}>
           <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1" style={{ color: parent.color }}>
             <Icon name={parent.icon} size={14} />
-            {catName(parent, t)}
+            {/* #187: Highlight emits <mark> fragments — inside a gapped flex
+                row they'd each become flex items and the gap would split the
+                word; the extra span keeps them one inline run */}
+            <span className="min-w-0 truncate">
+              <Highlight text={catName(parent, t)} query={query} />
+            </span>
           </div>
           {children.map((cat) => (
             <button
@@ -147,9 +162,12 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
               className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-1 py-2.5 text-left text-[14px] text-ink"
             >
               <Icon name={cat.icon} size={19} color={cat.color ?? parent.color} />
-              <span className="flex flex-1 items-center gap-1.5">
+              <span className="flex min-w-0 flex-1 items-center gap-1.5">
                 <SpecialCatMark cat={cat} color={cat.color ?? parent.color} />
-                <Highlight text={catName(cat, t)} query={query} />
+                {/* #187: same one-flex-item wrap as the header above */}
+                <span className="min-w-0 truncate">
+                  <Highlight text={catName(cat, t)} query={query} />
+                </span>
               </span>
               {selectedId === cat.id && <Icon name="check" size={18} color="var(--m-accent)" />}
             </button>

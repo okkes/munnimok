@@ -20,7 +20,6 @@ import { typeDef } from '@/features/accounts/accountTypes';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { CatsSheet } from './PartCatsSheet';
 import { minaSuggestedTx } from '@/features/mina/steps';
 import { CounterpartySheet } from './TxKindSheet';
@@ -441,7 +440,6 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const [date, setDate] = useState(todayIso());
   const [accountId, setAccountId] = useState<string | null>(null);
   const [catId, setCatId] = useState<string>(UNCATEGORIZED_ID);
-  const [pickerOpen, setPickerOpen] = useState(false);
   // #211: the split-CATEGORIES editor (the same sheet as review/detail) —
   // a spread stays ONE transaction; real splits are the detail's flow
   const [catsSheetOpen, setCatsSheetOpen] = useState(false);
@@ -788,6 +786,9 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         }}
         currency={formCurrency}
         direction={isExpense ? 'debit' : 'credit'}
+        // #256 (user ss): the form's resolved type gates the picker like the
+        // detail screen's does — a brokerage row stops offering Groceries
+        txType={effectiveType}
         title={t('split.catsTitle')}
         includePct
         excludeAccountId={effectiveAccount ?? ''}
@@ -810,17 +811,6 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         }}
       />
 
-      <CategoryPicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        selectedId={catId}
-        onPick={setCatId}
-        direction={isExpense ? 'debit' : 'credit'}
-        // #252 (user ss): the form knows its account — the movement
-        // matrix narrows here too (a bank row never sees Bought/Sold or
-        // the loan's Interest/Fees)
-        sourceAccountType={(accounts ?? []).find((a) => a.id === effectiveAccount)?.type}
-      />
     </>
   );
 }
