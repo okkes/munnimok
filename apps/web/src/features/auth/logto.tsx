@@ -6,6 +6,14 @@ import * as Sentry from '@sentry/react';
 import { config, logtoConfigured, publicOrigin } from '@/app/config';
 import { NATIVE_CALLBACK_KEY, isNativeApp } from '@/lib/platform';
 import { setAccessTokenGetter, setOidcSignIn, setOidcSignOut, signalAuthReady } from '@/app/authToken';
+import {
+  attemptSilentReentry,
+  clearReentryMark,
+  clearSessionExpired,
+  isInvalidGrantError,
+  isSessionExpired,
+  markSessionExpired,
+} from '@/app/sessionExpiry';
 import { useSession } from '@/app/session';
 import { Logo } from '@/ui/Logo';
 
@@ -44,7 +52,7 @@ export function LogtoAppProvider({ children }: { children: ReactNode }) {
 
 /** exposes Logto access tokens + signIn/signOut to non-React code */
 function TokenBridge() {
-  const { getAccessToken, isAuthenticated, isLoading, signIn, signOut } = useLogto();
+  const { error, getAccessToken, isAuthenticated, isLoading, signIn, signOut } = useLogto();
   useEffect(() => {
     setOidcSignOut((uri) => signOut(uri));
     // the 401 self-heal (data.tsx) re-enters the OIDC flow from outside React
@@ -55,11 +63,35 @@ function TokenBridge() {
     };
   }, [signIn, signOut]);
   useEffect(() => {
+    // #222: the SDK swallows refresh failures into the SHARED context
+    // error — `invalid_grant` is Logto's verdict that the refresh grant
+    // is spent (rotation raced across tabs, or revoked): tokens never
+    // mint again without a fresh sign-in. Name the state, report it
+    // once, and — near app open — silently re-enter the OIDC flow (the
+    // IdP session cookie usually survives, so the round-trip re-mints
+    // tokens without the user typing anything). Never during the
+    // callback exchange: its errors have their own wipe handling.
+    if (!error || isCallbackPath() || !isInvalidGrantError(error)) return;
+    if (markSessionExpired()) {
+      void import('@/lib/report').then(({ reportError }) =>
+        reportError('auth', new Error('refresh grant dead: invalid_grant on token refresh')),
+      );
+      void attemptSilentReentry(() => signIn(callbackUri()));
+    }
+  }, [error, signIn]);
+  useEffect(() => {
     if (isLoading) return; // session still restoring — keep sync waiting
     if (isAuthenticated) {
       setAccessTokenGetter(async () => {
+        // a spent grant never mints again — stop hammering the IdP
+        if (isSessionExpired()) return undefined;
         try {
-          return (await getAccessToken(config.logto.resource || undefined)) ?? undefined;
+          const token = (await getAccessToken(config.logto.resource || undefined)) ?? undefined;
+          if (token) {
+            clearSessionExpired();
+            clearReentryMark();
+          }
+          return token;
         } catch {
           return undefined;
         }

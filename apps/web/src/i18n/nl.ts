@@ -1380,6 +1380,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'sync.reasonUnreachable': 'munni is momenteel niet beschikbaar — alles blijft op dit apparaat werken en we verbinden automatisch opnieuw.',
   'sync.reasonClientOutdated': 'deze app is te oud voor de server — werk de app bij om weer te synchroniseren. Alles blijft op dit apparaat werken.',
   'sync.reasonServerOutdated': 'de server moet eerst worden bijgewerkt voordat deze app kan synchroniseren. Alles blijft op dit apparaat werken.',
+  'sync.reasonSessionExpired': 'Je sessie is verlopen — meld je opnieuw aan om te verbinden. Alles blijft op dit apparaat werken.',
+  'sync.signInAgain': 'Aanmelden',
   'color.custom': 'Eigen kleur',
   'color.saturation': 'Verzadiging',
   'color.lightness': 'Helderheid',

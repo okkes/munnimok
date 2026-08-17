@@ -31,6 +31,13 @@ describe('resolveOfflineReason', () => {
     expect(resolveOfflineReason(true, false, 'error', 'server-outdated')).toBe('server-outdated');
     expect(resolveOfflineReason(false, true, 'error', 'client-outdated')).toBeNull(); // still silent without an engine
   });
+
+  it('#222: a spent session outranks even that — "unreachable" sent users chasing the wrong problem', () => {
+    expect(resolveOfflineReason(true, true, 'error', null, true)).toBe('session-expired');
+    expect(resolveOfflineReason(true, true, 'idle', 'client-outdated', true)).toBe('session-expired');
+    expect(resolveOfflineReason(true, false, 'offline', null, true)).toBe('session-expired');
+    expect(resolveOfflineReason(false, true, 'error', null, true)).toBeNull(); // still silent without an engine
+  });
 });
 
 describe('offline banner + home indicator', () => {
@@ -62,5 +69,22 @@ describe('offline banner + home indicator', () => {
     await screen.findByTestId('screen-home');
     expect(await screen.findByTestId('home-offline-indicator')).toBeTruthy();
     expect(screen.queryByTestId('offline-banner')).toBeNull();
+  });
+
+  it('#222: an expired session says so and offers sign-in — never "unreachable"', async () => {
+    const { markSessionExpired, resetSessionExpiryForTests } = await import('./sessionExpiry');
+    resetSessionExpiryForTests();
+    markSessionExpired();
+    try {
+      renderAppAsUser('/home');
+      await screen.findByTestId('screen-home');
+      const banner = await screen.findByTestId('offline-banner');
+      // beforeEach forces onLine=false: the expired verdict still outranks
+      expect(banner.getAttribute('data-reason')).toBe('session-expired');
+      expect(banner.textContent).toContain('session has expired');
+      expect(screen.getByTestId('offline-banner-signin')).toBeTruthy();
+    } finally {
+      resetSessionExpiryForTests();
+    }
   });
 });

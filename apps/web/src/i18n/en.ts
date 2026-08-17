@@ -1378,6 +1378,8 @@ export const en = {
   'sync.reasonUnreachable': 'munni isn’t available right now — everything keeps working on this device, and we reconnect automatically.',
   'sync.reasonClientOutdated': 'this app is too old for the server — update the app to sync again. Everything keeps working on this device.',
   'sync.reasonServerOutdated': 'the server must be updated before this app can sync. Everything keeps working on this device.',
+  'sync.reasonSessionExpired': 'Your session has expired — sign in again to reconnect. Everything keeps working on this device.',
+  'sync.signInAgain': 'Sign in',
   'color.custom': 'Custom color',
   'color.saturation': 'Saturation',
   'color.lightness': 'Lightness',

@@ -36,9 +36,19 @@ export function waitForAuthReady(): Promise<void> {
 // Serializing concurrent callers onto one in-flight fetch removes the race.
 let inflight: Promise<string | undefined> | null = null;
 
+// #222: the single-flight only guards THIS context. An installed PWA
+// window and a browser tab share the same localStorage refresh token and
+// refresh independently — the loser presents the already-rotated token
+// and Logto revokes the whole grant family (the "have to log out to get
+// the connection back" state). A Web Lock serializes the refresh across
+// every context of the origin; where unsupported, behavior is unchanged.
+const withCrossTabLock = (fn: TokenGetter): Promise<string | undefined> =>
+  typeof navigator !== 'undefined' && navigator.locks ? navigator.locks.request('munni:oidc-token', fn) : fn();
+
 export async function getAccessToken(): Promise<string | undefined> {
   if (!getter) return undefined;
-  inflight ??= getter().finally(() => {
+  const current = getter;
+  inflight ??= withCrossTabLock(current).finally(() => {
     inflight = null;
   });
   return inflight;

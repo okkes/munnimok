@@ -1380,6 +1380,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'sync.reasonUnreachable': 'munni şu anda kullanılamıyor — her şey bu cihazda çalışmaya devam ediyor ve otomatik olarak yeniden bağlanıyoruz.',
   'sync.reasonClientOutdated': 'bu uygulama sunucu için çok eski — tekrar eşitlemek için uygulamayı güncelleyin. Her şey bu cihazda çalışmaya devam ediyor.',
   'sync.reasonServerOutdated': 'bu uygulamanın eşitleyebilmesi için önce sunucunun güncellenmesi gerekiyor. Her şey bu cihazda çalışmaya devam ediyor.',
+  'sync.reasonSessionExpired': 'Oturumun süresi doldu — yeniden bağlanmak için tekrar giriş yap. Her şey bu cihazda çalışmaya devam eder.',
+  'sync.signInAgain': 'Giriş yap',
   'color.custom': 'Özel renk',
   'color.saturation': 'Doygunluk',
   'color.lightness': 'Açıklık',
