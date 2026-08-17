@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -31,7 +31,7 @@ export function EventAttachScreen() {
   const txs = useSpaceTransactions();
   const transform = useTxTransform();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
+  const [picked, setPicked] = useState<ReadonlySet<string> | null>(null);
   const [attaching, setAttaching] = useState(false);
 
   const event = events?.find((e) => e.id === eventId);
@@ -46,22 +46,19 @@ export function EventAttachScreen() {
     () => (event && txs ? suggestableTxs(txs, event.id, event.from, event.to) : undefined),
     [event, txs],
   );
-  // everything starts selected — excluding is the review. Seeded ONCE
-  // when the suggestions first arrive: background emissions (sync, the
-  // boot chain) re-emit fresh arrays and re-seeding wiped unticks
-  // mid-review (the LoanMatchSheet lesson)
-  const seeded = useRef(false);
-  useEffect(() => {
-    if (seeded.current || !suggestions) return;
-    seeded.current = true;
-    setPicked(new Set(suggestionKeysOf(suggestions)));
-  }, [suggestions]);
+  // everything starts selected — excluding is the review. Adopted at
+  // RENDER time the moment suggestions exist (null = not seeded yet):
+  // the rows and their checks land in the SAME commit, so no tap can
+  // slip in between; later emissions never re-seed (the LoanMatchSheet
+  // seed-once lesson)
+  if (picked === null && suggestions) setPicked(new Set(suggestionKeysOf(suggestions)));
+  const pickedSet: ReadonlySet<string> = picked ?? new Set<string>();
 
   if (!event) return <div className="h-full" data-testid="screen-event-attach" />;
 
   const allKeys = suggestionKeysOf(suggestions);
   const togglePick = (id: string) => {
-    const next = new Set(picked);
+    const next = new Set(pickedSet);
     if (next.has(id)) next.delete(id);
     else next.add(id);
     setPicked(next);
@@ -76,18 +73,20 @@ export function EventAttachScreen() {
         // get the event in one splits write; the container stays bare
         const entries = partEntries(tx);
         if (entries.length > 1) {
-          const idxs = new Set(entries.filter((e) => picked.has(partPickKey(tx.id, e.idx))).map((e) => e.idx));
+          const idxs = new Set(entries.filter((e) => pickedSet.has(partPickKey(tx.id, e.idx))).map((e) => e.idx));
           if (idxs.size === 0) continue;
           const nextSplits = (tx.splits ?? []).map((s, i) => (idxs.has(i) ? { ...s, eventId: event.id } : s));
           await transform(tx, { splits: nextSplits }, null);
           n += idxs.size;
-        } else if (picked.has(tx.id)) {
+        } else if (pickedSet.has(tx.id)) {
           await transform(tx, { eventId: event.id }, null);
           n++;
         }
       }
       if (n > 0) void logActivity(store, repo, spaceId, 'txLink', `${event.name} +${n}`);
-      window.history.back();
+      // replace, not back: the attach step vanishes from history — the
+      // browser back on the detail then leaves the event, not re-picks
+      void navigate({ to: '/events/$eventId', params: { eventId: event.id }, replace: true });
     } finally {
       setAttaching(false);
     }
@@ -100,11 +99,11 @@ export function EventAttachScreen() {
       return (
         sum +
         entries
-          .filter((e) => picked.has(partPickKey(tx.id, e.idx)))
+          .filter((e) => pickedSet.has(partPickKey(tx.id, e.idx)))
           .reduce((inner, e) => inner + -(sign * Math.abs(e.part.amountCents)), 0)
       );
     }
-    return sum + (picked.has(tx.id) ? -tx.amountCents : 0);
+    return sum + (pickedSet.has(tx.id) ? -tx.amountCents : 0);
   }, 0);
 
   return (
@@ -151,7 +150,7 @@ export function EventAttachScreen() {
                 .filter((e) => !e.part.eventId)
                 .map((e) => {
                   const key = partPickKey(tx.id, e.idx);
-                  const partChecked = picked.has(key);
+                  const partChecked = pickedSet.has(key);
                   return (
                     <div key={key} className="flex items-center gap-2">
                       <button
@@ -178,7 +177,7 @@ export function EventAttachScreen() {
                   );
                 });
             }
-            const checked = picked.has(tx.id);
+            const checked = pickedSet.has(tx.id);
             return (
               <div key={tx.id} className="flex items-center gap-2">
                 <button
@@ -205,8 +204,8 @@ export function EventAttachScreen() {
         </div>
       </div>
       <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-[max(16px,env(safe-area-inset-bottom))]">
-        <Button className="w-full" data-testid="eventpick-attach" disabled={attaching || picked.size === 0} onClick={() => void attachPicked()}>
-          {t('events.attachPicked', { n: picked.size, amount: money(pickedTotal) })}
+        <Button className="w-full" data-testid="eventpick-attach" disabled={attaching || pickedSet.size === 0} onClick={() => void attachPicked()}>
+          {t('events.attachPicked', { n: pickedSet.size, amount: money(pickedTotal) })}
         </Button>
       </div>
     </div>

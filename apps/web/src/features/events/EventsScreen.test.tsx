@@ -84,6 +84,7 @@ describe('Events (demo identity)', () => {
     fireEvent.click(screen.getByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
     fireEvent.click(await screen.findByTestId('eventpick-dm2')); // exclude the rent
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach'));
     await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/€[1-9]/), { timeout: 15_000 });
     // the excluded transaction keeps the banner alive with exactly one left
@@ -119,6 +120,7 @@ describe('Events (demo identity)', () => {
     expect(screen.queryByTestId('eventpick-evsplit')).toBeNull();
     // leave the groceries part out of the event
     fireEvent.click(screen.getByTestId('eventpick-evsplit-part-1'));
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach'));
     await waitFor(async () => {
       const rowNow = await db.transactions.get('evsplit');
@@ -138,6 +140,7 @@ describe('Events (demo identity)', () => {
     fireEvent.click(card);
     fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
     await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
     // attach-all writes one tx at a time — sample the count only once the
@@ -169,6 +172,7 @@ describe('Events (demo identity)', () => {
     fireEvent.click(card);
     fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
     const txList = await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
 
