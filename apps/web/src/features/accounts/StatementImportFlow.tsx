@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
@@ -44,6 +45,7 @@ export function StatementImportFlow({
 }>) {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
+  const navigate = useNavigate();
   const identity = useSession((s) => s.identity);
   const fileRef = useRef<HTMLInputElement>(null);
   const [importPreview, setImportPreview] = useState<ParsedStatement[] | null>(null);
@@ -263,6 +265,26 @@ export function StatementImportFlow({
                 </p>
               );
             })()}
+            {/* #204 (user): the account is global and NOT attached — say
+                so plainly and door into the explicit attach flow, where
+                the type and the history gate are the user's choices */}
+            {importResult.accounts.some((a) => a.attached === false) && (
+              <div className="w-full rounded-card border border-accent/40 bg-accent-soft/30 px-4 py-3 text-left" data-testid="import-unattached-note">
+                <p className="text-[13px] font-medium text-ink">{t('import.notAttachedTitle')}</p>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-ink-3">{t('import.notAttachedBody')}</p>
+                <Button
+                  size="sm"
+                  className="mt-2 w-full"
+                  data-testid="import-goto-attach"
+                  onClick={() => {
+                    closeImport();
+                    void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
+                  }}
+                >
+                  {t('import.gotoAttach')}
+                </Button>
+              </div>
+            )}
             <Button variant="outline" data-testid="import-close" onClick={closeImport}>
               {t('action.done')}
             </Button>

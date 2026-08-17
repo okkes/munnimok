@@ -26,6 +26,10 @@ export interface ImportPlanAccount {
   accountId: string;
   accountName: string;
   isNew: boolean;
+  /** #204: whether THIS space already carries the account — imports
+   *  never attach by themselves; absent on the merged (offline) path,
+   *  where the account lives in the space by construction */
+  attached?: boolean;
   txCount: number;
 }
 
@@ -368,27 +372,31 @@ async function importIntoFeeds(
       }
     }
 
-    // attach to the space the user imported from (server first — the
-    // synced link row is the offline mirror of that authoritative fact).
-    // The link CARRIES the history gate (bug: it used to attach without
-    // one, so imported rows ignored the space's start date entirely);
-    // an existing link keeps whatever gate the user already chose.
+    // #204 (user): importing NEVER attaches by itself anymore — the
+    // account is global, and joining a space is an explicit step where
+    // the user also picks the type and the history gate. Only an
+    // account this space ALREADY attached refreshes its link (a
+    // re-import must not silently detach anything).
     const linkId = accountLinkId(spaceId, feedId);
     const existingLink = await store.get('accountLink', linkId);
-    const historyFrom =
-      existingLink?.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
-    await feeds.attach(spaceId, feedId, accountId, historyFrom);
-    await repo.upsert('accountLink', spaceId, linkId, {
-      feedSpaceId: feedId,
-      accountId,
-      historyFrom,
-    });
+    const attached = !!existingLink && existingLink.deleted === 0 && !existingLink.archived;
+    if (attached) {
+      const historyFrom =
+        existingLink.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
+      await feeds.attach(spaceId, feedId, accountId, historyFrom);
+      await repo.upsert('accountLink', spaceId, linkId, {
+        feedSpaceId: feedId,
+        accountId,
+        historyFrom,
+      });
+    }
 
     accounts.push({
       iban: stmt.iban,
       accountId,
       accountName: account?.name ?? `Bank · ${iban.slice(-4)}`,
       isNew: !account,
+      attached,
       txCount,
     });
   }

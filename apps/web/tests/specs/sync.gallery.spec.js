@@ -295,15 +295,24 @@ for (const V of VARIANTS) {
     await alice.page.click('[data-testid="space-create-save"]');
     await alice.page.waitForTimeout(3000); // push
 
-    // alice imports a statement — the feed registers on the server and
-    // auto-attaches to the active space
+    // alice imports a statement — the feed registers on the server but
+    // #204: nothing attaches by itself; the result offers the explicit
+    // attach flow where alice picks the account, type and history
     await gotoGlobalSettings(alice.page);
     await alice.page.click('[data-testid="settings-accounts-row"]');
     await alice.page.setInputFiles('[data-testid="accounts-import-input"]', CAMT_FIXTURE);
     await alice.page.waitForSelector('[data-testid="import-preview"]');
     await alice.page.click('[data-testid="import-run"]');
     await alice.page.waitForSelector('[data-testid="import-result"]');
-    await alice.page.click('[data-testid="import-close"]');
+    await expect(alice.page.locator('[data-testid="import-unattached-note"]')).toBeVisible();
+    await alice.page.click('[data-testid="import-goto-attach"]');
+    await alice.page.waitForSelector('[data-testid="screen-space-accounts"]', { timeout: 10000 });
+    await alice.page.click('[data-testid="space-accounts-attach"]');
+    await alice.page.locator('[data-testid^="space-attach-pick-"]').first().click({ timeout: 10000 });
+    await alice.page.click('[data-testid="space-attach-save"]');
+    await alice.page.waitForTimeout(1500); // server attach + link mirror
+    await gotoGlobalSettings(alice.page);
+    await alice.page.click('[data-testid="settings-accounts-row"]');
     await expect(alice.page.locator('[data-testid^="account-via-"]').first()).toContainText('Feed Home', { timeout: 10000 });
     await shot(alice.page, k('61-feed-share') + '--s1');
     await alice.page.waitForTimeout(4000); // push feed rows + overlay

@@ -4,7 +4,7 @@ import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
-import { feedSpaceId } from '@/domain/feedIds';
+import { accountLinkId, feedSpaceId } from '@/domain/feedIds';
 import { visibleTransactions } from '@/db/joined';
 import type { CamtStatement } from '@/lib/camt053/parse';
 import { importCamtStatements, statementCoverageEnd } from './importCamt';
@@ -270,7 +270,7 @@ describe('importCamtStatements', () => {
     expect((await db.accounts.get('acct-manual'))!).toMatchObject({ balanceCents: 9000, balanceAsOf: '2026-07-01' });
   });
 
-  it('with a feed gateway: raw goes to the feed, overlay + link to the space (idempotent)', async () => {
+  it('with a feed gateway: raw goes to the feed, overlay stays staged — NO attach happens (#204, idempotent)', async () => {
     const registered: string[] = [];
     const attached: string[] = [];
     const gateway = {
@@ -285,6 +285,8 @@ describe('importCamtStatements', () => {
 
     const result = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect(result.imported).toBe(3);
+    // #204: the account is global and belongs to no space yet
+    expect(result.accounts[0].attached).toBe(false);
     const feedId = registered[0];
     expect(feedId).toBe(feedSpaceId('NL69INGB0123456789'));
 
@@ -294,31 +296,31 @@ describe('importCamtStatements', () => {
     expect(raw.every((tx) => tx.catId === undefined && tx.needsReview === undefined)).toBe(true);
     expect(await db.transactions.where('spaceId').equals('s1').count()).toBe(0);
 
-    // the space holds the predicted overlay + the attachment mirror
+    // the space holds the predicted overlay, ready for the day it
+    // attaches — but NO attachment mirror and no server attach (#204)
     const metas = await db.txMeta.where('spaceId').equals('s1').toArray();
     expect(metas).toHaveLength(3);
     expect(metas.some((m) => m.catId !== undefined)).toBe(true); // salary/groceries predicted
-    expect(await db.accountLinks.where('spaceId').equals('s1').count()).toBe(1);
-    expect(attached).toHaveLength(1);
+    expect(await db.accountLinks.where('spaceId').equals('s1').count()).toBe(0);
+    expect(attached).toHaveLength(0);
 
     // the account row sits in the feed with the dated balance
     const account = (await db.accounts.toArray())[0];
     expect(account.spaceId).toBe(feedId);
     expect(account.balanceCents).toBe(123456);
 
-    // …and the join layer serves it all back to the space
-    const visible = await visibleTransactions(new DexieBackend(db), 's1');
-    expect(visible).toHaveLength(3);
-    expect(visible.every((tx) => tx.feedSpaceId === feedId)).toBe(true);
+    // …and the space sees NOTHING until the user attaches explicitly
+    expect(await visibleTransactions(new DexieBackend(db), 's1')).toHaveLength(0);
 
-    // re-import: everything skips, nothing duplicates
+    // re-import: everything skips, nothing duplicates, still unattached
     const again = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect(again).toMatchObject({ imported: 0, skipped: 3 });
     expect(await db.transactions.count()).toBe(3);
     expect(await db.txMeta.count()).toBe(3);
+    expect(attached).toHaveLength(0);
   });
 
-  it('the import attach carries the space start date as the history gate (user bug: it attached ungated)', async () => {
+  it('an EXISTING attachment refreshes through re-imports with its own history gate (#204: only then)', async () => {
     const attachedFrom: (string | undefined)[] = [];
     const gateway = {
       register: async (id: string) => id,
@@ -330,16 +332,24 @@ describe('importCamtStatements', () => {
       name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1, historyStartDate: '2026-07-01',
     });
 
+    // first import: global only, nothing attached
+    const first = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
+    expect(attachedFrom).toHaveLength(0);
+    const feedId = feedSpaceId('NL69INGB0123456789');
+
+    // the user attaches explicitly (the space accounts flow) with a gate
+    await repo.upsert('accountLink', 's1', accountLinkId('s1', feedId), {
+      feedSpaceId: feedId, accountId: first.accounts[0].accountId, historyFrom: '2026-07-01',
+    });
+    // …from then on a re-import refreshes the SAME attachment
     await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
-    const link = (await db.accountLinks.where('spaceId').equals('s1').toArray())[0];
-    expect(link.historyFrom).toBe('2026-07-01');
     expect(attachedFrom[0]).toBe('2026-07-01');
     // the gate holds: June rows stay stored but out of sight
     const visible = await visibleTransactions(new DexieBackend(db), 's1');
     expect(visible.map((tx) => tx.date)).toEqual(['2026-07-05']);
 
-    // a user-customized gate survives a re-import untouched
-    await repo.upsert('accountLink', 's1', link.id, { historyFrom: '2026-06-01' });
+    // a user-customized gate survives the next re-import untouched
+    await repo.upsert('accountLink', 's1', accountLinkId('s1', feedId), { historyFrom: '2026-06-01' });
     await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
     expect((await db.accountLinks.where('spaceId').equals('s1').toArray())[0].historyFrom).toBe('2026-06-01');
     expect(attachedFrom[1]).toBe('2026-06-01');
