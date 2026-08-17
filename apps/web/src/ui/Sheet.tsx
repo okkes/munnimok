@@ -404,8 +404,22 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   // the flow while it runs, and unsaved edits get a conscious "discard?"
   // before the form is dropped (both 2026-08-01 user requests)
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // #253 (user): a DRAG on a dirty sheet completes — the sheet hides,
+  // the "discard?" ask shows, and Keep editing slides it back up. This
+  // flag is the hidden-while-asking state; a ref mirror keeps the
+  // lib's late animation callbacks from re-arming the ask.
+  const [hiddenForDiscard, setHiddenForDiscard] = useState(false);
+  const hiddenRef = useRef(false);
+  const setHidden = (value: boolean) => {
+    hiddenRef.current = value;
+    setHiddenForDiscard(value);
+  };
   useEffect(() => {
-    if (!open) setConfirmDiscard(false);
+    if (!open) {
+      setConfirmDiscard(false);
+      hiddenRef.current = false;
+      setHiddenForDiscard(false);
+    }
   }, [open]);
   const requestDismiss = () => {
     // the tutorial locks only the ROOT sheet (the lesson's form) — a
@@ -490,10 +504,26 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   // the "discard changes?" ask — its own stacked sheet, so the parent
   // recedes and the choice is explicit (never window.confirm)
   const discardConfirm = dirty ? (
-    <Sheet open={confirmDiscard} onOpenChange={setConfirmDiscard} title={t('sheet.discardTitle')} size="compact">
+    <Sheet
+      open={confirmDiscard}
+      onOpenChange={(next) => {
+        setConfirmDiscard(next);
+        // dismissing the ask itself (backdrop/drag) keeps the edits —
+        // the hidden form slides back up (#253)
+        if (!next) setHidden(false);
+      }}
+      title={t('sheet.discardTitle')}
+      size="compact"
+    >
       <div className="flex flex-col gap-3 pt-1">
         <p className="text-[13px] leading-relaxed text-ink-2">{t('sheet.discardBody')}</p>
-        <Button data-testid="sheet-keep-editing" onClick={() => setConfirmDiscard(false)}>
+        <Button
+          data-testid="sheet-keep-editing"
+          onClick={() => {
+            setConfirmDiscard(false);
+            setHidden(false);
+          }}
+        >
           {t('sheet.keepEditing')}
         </Button>
         <Button
@@ -501,6 +531,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
           data-testid="sheet-discard"
           onClick={() => {
             setConfirmDiscard(false);
+            setHidden(false);
             onOpenChange(false);
           }}
         >
@@ -525,10 +556,21 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
     <>
     <ModalSheet
       ref={sheetRef}
-      isOpen={IS_TEST ? everOpen : open}
+      isOpen={IS_TEST ? everOpen : open && !hiddenForDiscard}
       onClose={() => {
         syncCoveredStyles(); // a settled dismissal ends the drag
-        if (!isLocked && !(isMinaSheetGuarded() && depth === 0) && !dirty) onOpenChange(false);
+        if (!open) return; // a programmatic close is already handled
+        if (isLocked || (isMinaSheetGuarded() && depth === 0)) return;
+        if (dirty) {
+          // #253 (user): the drag COMPLETES — the sheet hides and the
+          // "discard?" ask takes over; Keep editing brings it back
+          if (!hiddenRef.current) {
+            setHidden(true);
+            setConfirmDiscard(true);
+          }
+          return;
+        }
+        onOpenChange(false);
       }}
       onCloseStart={() => {
         syncCoveredStyles();
@@ -544,10 +586,11 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
       // straight, and the fixed app frame already pins the page
       avoidKeyboard={!VIEWPORT_RESIZES && !ON_IOS}
       disableScrollLocking={ON_IOS}
-      // dirty forms and the Mina tutorial refuse the drag-dismissal too:
-      // the sheet snaps back, and the backdrop path asks "discard?"
-      // (tutorial: root sheet only — nested pickers stay dismissible)
-      disableDismiss={isLocked || !!dirty || (isMinaSheetGuarded() && depth === 0)}
+      // the Mina tutorial refuses the drag-dismissal (root sheet only —
+      // nested pickers stay dismissible). #253: dirty forms no longer
+      // refuse it — the drag completes, the sheet hides, and the
+      // "discard?" ask decides whether it comes back.
+      disableDismiss={isLocked || (isMinaSheetGuarded() && depth === 0)}
       prefersReducedMotion={IS_TEST}
       unstyled
       // z-50 like the old drawer: the Mina tutorial overlay must still be
