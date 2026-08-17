@@ -10,6 +10,7 @@ import { computeRange, summarize } from '@/domain/recurring';
 import type { RecurringComputed } from '@/domain/recurring';
 import { detectPriceChange, yearlyCents } from '@/domain/recurringPrice';
 import { detectRecurring } from '@/domain/detectRecurring';
+import { looksLikeDebtCreditor } from '@/domain/detectDebts';
 import { nextPeriod, periodHistory } from '@/domain/periods';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, emptyForm } from './RecurringFormSheet';
@@ -94,7 +95,10 @@ export function RecurringScreen() {
       ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : [])),
       ...(spaceAccounts ?? []).flatMap((a) => (a.merchantKey ? [a.merchantKey] : [])),
     ]);
-    return detectRecurring(historyTxs, { excludeKeys: exclude, today }).length;
+    // #192 r2: known-lender patterns surface on the DEBTS screen — the
+    // banner must promise only what this inbox actually shows
+    return detectRecurring(historyTxs, { excludeKeys: exclude, today }).filter((s) => !looksLikeDebtCreditor(s.name))
+      .length;
   }, [historyTxs, recs, spaceAccounts, dismissed, today]);
 
   // #188 (user ss): a recurring shows only in ranges it actually

@@ -239,7 +239,7 @@ describe('RecurringScreen (demo identity)', () => {
     db.close();
   }, 20_000);
 
-  it('#192: a DUO pattern reads as a LOAN — the debts banner sees it, tracking hands off prefilled', async () => {
+  it('#192 r2: a DUO pattern lives on the DEBTS screen — tracked in place, gone from the recurring inbox', async () => {
     const db = new MunniDB('munni_demo');
     renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
@@ -254,23 +254,53 @@ describe('RecurringScreen (demo identity)', () => {
     }
     cleanup();
 
-    // the DEBTS screen surfaces the loan-like pattern with its own banner
+    // the recurring inbox stays quiet about it: no DUO card there
+    renderApp('/recurring/suggestions');
+    await screen.findByTestId('screen-recurring-suggestions');
+    await waitFor(
+      () => {
+        const settled =
+          document.querySelector('[data-testid^="recsuggest-card-"]') ?? screen.queryByTestId('recsuggest-empty');
+        expect(settled).toBeTruthy();
+      },
+      { timeout: 5000 },
+    );
+    expect(screen.queryByTestId('recsuggest-card-dienst uitvoering onderwijs')).toBeNull();
+    cleanup();
+
+    // the DEBTS screen carries the suggestion card itself
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
-    fireEvent.click(await screen.findByTestId('debts-suggestions-banner', {}, { timeout: 5000 }));
-    await screen.findByTestId('screen-recurring-suggestions');
-
-    // the card wears the loan face and leads with the loan door
     const key = 'dienst uitvoering onderwijs';
-    await screen.findByTestId(`recsuggest-loanhint-${key}`);
-    fireEvent.click(screen.getByTestId(`recurring-loan-${key}`));
+    await screen.findByTestId(`debts-suggestion-${key}`, {}, { timeout: 5000 });
 
-    // lands on debts with the chooser prefilled — the pattern IS the plan
-    await screen.findByTestId('screen-debts');
+    // tracking opens the loan chooser RIGHT HERE, prefilled — no detour
+    fireEvent.click(screen.getByTestId(`debts-loan-track-${key}`));
     fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
     await waitFor(() => expect((screen.getByTestId('chooser-acctform-name') as HTMLInputElement).value).toBe('Dienst Uitvoering Onderwijs'));
     expect((screen.getByTestId('chooser-acctform-payment') as HTMLInputElement).value).toBe('104.00');
     expect((screen.getByTestId('chooser-acctform-payday') as HTMLInputElement).value).toBe(String(Math.min(new Date().getDate(), 28)));
+    expect(screen.getByTestId('screen-debts')).toBeTruthy();
+    db.close();
+  }, 20_000);
+
+  it('#192 r2: dismissing a loan suggestion on the debts screen retires it for good', async () => {
+    const db = new MunniDB('munni_demo');
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-duo2'), { trackOutbox: false });
+    for (let i = 0; i < 4; i++) {
+      await repo.upsert('transaction', DEMO_SPACE_ID, `duo_${i}`, {
+        accountId: 'demo_main', date: monthsAgo(i, Math.min(new Date().getDate(), 28)),
+        amountCents: -10_400, currency: 'EUR', merchant: 'Dienst Uitvoering Onderwijs',
+        catId: 'extraOther', txType: 'expense', needsReview: 0,
+      });
+    }
+    const key = 'dienst uitvoering onderwijs';
+    await screen.findByTestId(`debts-suggestion-${key}`, {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId(`debts-loan-dismiss-${key}`));
+    await waitFor(() => expect(screen.queryByTestId(`debts-suggestion-${key}`)).toBeNull());
+    expect(await db.recurringDismissals.count()).toBe(1);
     db.close();
   }, 20_000);
 });

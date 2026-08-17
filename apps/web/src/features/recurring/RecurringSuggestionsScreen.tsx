@@ -1,12 +1,10 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useSpaceAccounts, useSpaceHistoryTransactions } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { detectRecurring } from '@/domain/detectRecurring';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import { looksLikeDebtCreditor } from '@/domain/detectDebts';
-import { setDebtHandoff } from '@/features/debts/handoff';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromSuggestion } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
@@ -26,7 +24,6 @@ import { useQuery } from '@/db/useQuery';
 export function RecurringSuggestionsScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
-  const navigate = useNavigate();
   const recs = useRecurrings();
   const accounts = useSpaceAccounts();
   const dismissed = useDismissedKeys();
@@ -55,22 +52,10 @@ export function RecurringSuggestionsScreen() {
       ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : [])),
       ...(accounts ?? []).flatMap((a) => (a.merchantKey ? [a.merchantKey] : [])),
     ]);
-    return detectRecurring(txs, { excludeKeys: exclude, today });
+    // #192 r2 (user): known-lender patterns belong to the DEBTS screen —
+    // the recurring inbox keeps only genuine subscriptions
+    return detectRecurring(txs, { excludeKeys: exclude, today }).filter((s) => !looksLikeDebtCreditor(s.name));
   }, [txs, recs, accounts, dismissed, today]);
-
-  // #192 (user, DUO): a pattern whose creditor is a known lender is
-  // offered as a LOAN first — accepting hands off into loan creation
-  // with the pattern as the payment plan
-  const trackAsLoan = (s: RecurringSuggestion) => {
-    setDebtHandoff({
-      name: s.name,
-      paymentCents: s.amountCents,
-      paymentEvery: s.every,
-      paymentDay: s.every !== 'week' ? s.dueDay : undefined,
-      merchantKey: s.merchantKey,
-    });
-    void navigate({ to: '/debts' });
-  };
 
   const txById = useMemo(() => new Map((txs ?? []).map((tx) => [tx.id, tx])), [txs]);
   const evidenceFor = (s: RecurringSuggestion) =>
@@ -92,25 +77,16 @@ export function RecurringSuggestionsScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {suggestions.map((s) => {
-          // #192: a known lender's pattern wears the loan face and leads
-          // with the loan door (the recurring one stays a tap away)
-          const loanLike = looksLikeDebtCreditor(s.name);
-          return (
+        {suggestions.map((s) => (
           <div key={s.merchantKey} className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid={`recsuggest-card-${s.merchantKey}`}>
             <div className="flex items-center gap-3 px-4 pt-3.5">
-              <Tile icon={loanLike ? 'hand-coin-outline' : 'autorenew'} />
+              <Tile icon="autorenew" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[15px] font-semibold text-ink">{s.name}</span>
                 <span className="block text-[11px] text-ink-3">
                   {t(s.every === 'year' ? 'recurring.patternYearly' : 'recurring.patternMonthly')} ·{' '}
                   {t('recurring.confidence', { n: s.confidence })}
                 </span>
-                {loanLike && (
-                  <span className="mt-0.5 block text-[11px] font-medium text-accent-deep" data-testid={`recsuggest-loanhint-${s.merchantKey}`}>
-                    {t('recurring.loanPattern')}
-                  </span>
-                )}
               </span>
               <span className="font-mono text-[15px] font-semibold text-ink">{money(s.amountCents)}</span>
             </div>
@@ -126,36 +102,27 @@ export function RecurringSuggestionsScreen() {
               ))}
             </div>
 
-            <div className="flex flex-col gap-2 border-t border-line-2 p-3">
-              {loanLike && (
-                <Button data-testid={`recurring-loan-${s.merchantKey}`} size="sm" onClick={() => trackAsLoan(s)}>
-                  {t('recurring.trackLoan')}
-                </Button>
-              )}
-              <div className="flex gap-2">
-                <Button
-                  data-testid={`recurring-accept-${s.merchantKey}`}
-                  className="flex-1"
-                  size="sm"
-                  variant={loanLike ? 'outline' : 'primary'}
-                  onClick={() => setFormInitial(formFromSuggestion(s))}
-                >
-                  {t('recurring.addThis')}
-                </Button>
-                <Button
-                  data-testid={`recurring-dismiss-${s.merchantKey}`}
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => void ops.dismissSuggestion(s.merchantKey)}
-                >
-                  {t('recurring.notRecurring')}
-                </Button>
-              </div>
+            <div className="flex gap-2 border-t border-line-2 p-3">
+              <Button
+                data-testid={`recurring-accept-${s.merchantKey}`}
+                className="flex-1"
+                size="sm"
+                onClick={() => setFormInitial(formFromSuggestion(s))}
+              >
+                {t('recurring.addThis')}
+              </Button>
+              <Button
+                data-testid={`recurring-dismiss-${s.merchantKey}`}
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => void ops.dismissSuggestion(s.merchantKey)}
+              >
+                {t('recurring.notRecurring')}
+              </Button>
             </div>
           </div>
-          );
-        })}
+        ))}
 
         {suggestions.length === 0 && (
           <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="recsuggest-empty">
