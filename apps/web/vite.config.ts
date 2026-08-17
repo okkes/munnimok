@@ -68,10 +68,13 @@ export default defineConfig(({ mode }) => {
       }),
       {
         // iOS home-screen installs read apple-touch-icon, not (reliably)
-        // the manifest icons — inject the channel's leaf
+        // the manifest icons — inject the channel's leaf. #230: the same
+        // leaf becomes the browser-tab favicon (there was NO icon link at
+        // all — tabs showed the generic globe).
         name: 'munni:apple-touch-icon',
         transformIndexHtml: () => [
           { tag: 'link', attrs: { rel: 'apple-touch-icon', sizes: '192x192', href: icon(192) }, injectTo: 'head' as const },
+          { tag: 'link', attrs: { rel: 'icon', type: 'image/png', sizes: '192x192', href: icon(192) }, injectTo: 'head' as const },
         ],
       },
       {
