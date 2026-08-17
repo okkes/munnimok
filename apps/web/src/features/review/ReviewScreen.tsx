@@ -157,6 +157,18 @@ function counterTxFaceFor(
 const partSignedCents = (containerCents: number, partAbsCents: number): number =>
   (containerCents < 0 ? -1 : 1) * partAbsCents;
 
+/** #237 r2: pointing at ONE existing row is specific to its card — a
+ *  standing bulk offer asks first, then stands down (S3776: out of the
+ *  component) */
+const stageWithBulkWarning = (
+  similarCount: number,
+  stage: () => void,
+  warn: (ask: { n: number; stage: () => void }) => void,
+): void => {
+  if (similarCount > 0) warn({ n: similarCount, stage });
+  else stage();
+};
+
 /** #161: does the card hold USER-staged work a split would reset? A
  *  memory-offered event is not a user decision (S3776: out of the
  *  component) */
@@ -1967,10 +1979,7 @@ export function ReviewScreen() {
                 attention={partsAttention}
                 onOpenValues={() => setSplitOpen(true)}
                 onSplits={(next) => setStagedDraft(withSplits(draft, next))}
-                onPickExisting={(stage) => {
-                  if (similar.length > 0) setPickWarn({ n: similar.length, stage });
-                  else stage();
-                }}
+                onPickExisting={(stage) => stageWithBulkWarning(similar.length, stage, setPickWarn)}
               />
             )}
 
@@ -2160,11 +2169,7 @@ export function ReviewScreen() {
           onWait={counterBankFed ? () => setPickedPeer(null) : undefined}
           onPick={(pickedId) => {
             const linkedId = draft.linkedAccountId!;
-            const stage = () => setPickedPeer({ txId: pickedId, linkedId });
-            // pointing at ONE existing row is specific to this card — a
-            // pending bulk offer can't ride along, so it asks first
-            if (similar.length > 0) setPickWarn({ n: similar.length, stage });
-            else stage();
+            stageWithBulkWarning(similar.length, () => setPickedPeer({ txId: pickedId, linkedId }), setPickWarn);
           }}
         />
       )}
