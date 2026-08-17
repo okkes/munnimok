@@ -1423,6 +1423,7 @@ export const en = {
   'cashflow.paydaySource': 'Payday estimated from {merchant}.',
   'recurring.perYear': '{amount}/yr',
   'recurring.perYearTotal': 'All active recurring costs add up to ≈ {amount} a year.',
+  'recurring.viewAll': 'All',
   'recurring.yearlyRate': 'Per year',
   'recurring.priceHistory': '{from} → {to} since {date}',
   'recurring.priceDelta': 'That is {amount} a year.',

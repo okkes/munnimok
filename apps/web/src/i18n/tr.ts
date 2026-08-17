@@ -1425,6 +1425,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'cashflow.paydaySource': 'Maaş günü {merchant} üzerinden tahmin edildi.',
   'recurring.perYear': '{amount}/yıl',
   'recurring.perYearTotal': 'Tüm aktif düzenli giderler yılda ≈ {amount} ediyor.',
+  'recurring.viewAll': 'Tümü',
   'recurring.yearlyRate': 'Yıllık',
   'recurring.priceHistory': '{date} tarihinden beri {from} → {to}',
   'recurring.priceDelta': 'Bu yılda {amount} demek.',

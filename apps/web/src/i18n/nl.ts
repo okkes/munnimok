@@ -1425,6 +1425,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'cashflow.paydaySource': 'Betaaldag geschat op basis van {merchant}.',
   'recurring.perYear': '{amount}/jr',
   'recurring.perYearTotal': 'Alle actieve vaste lasten samen ≈ {amount} per jaar.',
+  'recurring.viewAll': 'Alles',
   'recurring.yearlyRate': 'Per jaar',
   'recurring.priceHistory': '{from} → {to} sinds {date}',
   'recurring.priceDelta': 'Dat is {amount} per jaar.',

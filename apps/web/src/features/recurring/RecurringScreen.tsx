@@ -30,7 +30,8 @@ export function RecurringScreen() {
   const ops = useRecurringOps();
   const navigate = useNavigate();
 
-  const [view, setView] = useState<'period' | 'next' | 'year'>('period');
+  // #188 (user): this year, next year and All join the range filter
+  const [view, setView] = useState<'period' | 'next' | 'year' | 'nextyear' | 'all'>('period');
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
 
   // pick up freshly imported payments the moment the screen opens
@@ -53,9 +54,13 @@ export function RecurringScreen() {
     () => nextPeriod(space?.periodType ?? 'month', space?.periodDay || 1),
     [space?.periodType, space?.periodDay],
   );
+  const thisYear = Number(today.slice(0, 4));
   let range = period;
   if (view === 'next') range = upcoming;
-  else if (view === 'year') range = { start: `${today.slice(0, 4)}-01-01`, end: `${today.slice(0, 4)}-12-31` };
+  // 'all' borrows this year's range for the paid math; its LIST skips
+  // the occurrence filter below (every recurring shows, user #188)
+  else if (view === 'year' || view === 'all') range = { start: `${thisYear}-01-01`, end: `${thisYear}-12-31` };
+  else if (view === 'nextyear') range = { start: `${thisYear + 1}-01-01`, end: `${thisYear + 1}-12-31` };
 
   const linkedByRec = useMemo(() => {
     const map = new Map<string, { date: string; amountCents: number }[]>();
@@ -68,9 +73,12 @@ export function RecurringScreen() {
     return map;
   }, [txs]);
 
+  // #189: occurrences before the space's start date are unknowable —
+  // their payments are older than the space shows, so they must not
+  // read as "not paid yet"
   const computed = useMemo(
-    () => computeRange(recs ?? [], linkedByRec, range.start, range.end, today),
-    [recs, linkedByRec, range.start, range.end, today],
+    () => computeRange(recs ?? [], linkedByRec, range.start, range.end, today, space?.historyStartDate),
+    [recs, linkedByRec, range.start, range.end, today, space?.historyStartDate],
   );
   const summary = summarize(computed.filter((c) => c.rec.active === 1));
 
@@ -83,8 +91,12 @@ export function RecurringScreen() {
     return detectRecurring(historyTxs, { excludeKeys: exclude, today }).length;
   }, [historyTxs, recs, dismissed, today]);
 
-  const fixed = computed.filter((c) => c.rec.kind === 'fixed' && c.rec.active === 1);
-  const subs = computed.filter((c) => c.rec.kind === 'subscription' && c.rec.active === 1);
+  // #188 (user ss): a recurring shows only in ranges it actually
+  // OCCURS in — a yearly due Jan 2027 belongs to "next year" alone.
+  // 'all' lists everything; a stray in-range payment keeps a row too.
+  const occursHere = (c: RecurringComputed) => view === 'all' || c.occurrences > 0 || c.paidCents > 0;
+  const fixed = computed.filter((c) => c.rec.kind === 'fixed' && c.rec.active === 1 && occursHere(c));
+  const subs = computed.filter((c) => c.rec.kind === 'subscription' && c.rec.active === 1 && occursHere(c));
   const inactive = computed.filter((c) => c.rec.active !== 1);
   const empty = (recs?.length ?? 0) === 0 && suggestionCount === 0;
 
@@ -188,20 +200,23 @@ export function RecurringScreen() {
         }
       />
       <div ref={(el) => attachScrollMemory(el, 'recurring')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {/* date-range filter: current range / next range / calendar year */}
-        <div className="mt-1 flex rounded-xl bg-bg-2 p-0.5">
+        {/* date-range filter (#188): current range / next range / this
+            year / next year / all — five tabs scroll when tight */}
+        <div className="mt-1 flex overflow-x-auto rounded-xl bg-bg-2 p-0.5">
           {(
             [
               ['period', rangeLabelFor(period)],
               ['next', rangeLabelFor(upcoming)],
-              ['year', today.slice(0, 4)],
+              ['year', String(thisYear)],
+              ['nextyear', String(thisYear + 1)],
+              ['all', t('recurring.viewAll')],
             ] as const
           ).map(([v, label]) => (
             <button
               key={v}
               data-testid={`recurring-view-${v}`}
               onClick={() => setView(v)}
-              className={`m-tap flex-1 rounded-[10px] border-none py-2 text-[12px] whitespace-nowrap ${
+              className={`m-tap min-w-fit flex-1 rounded-[10px] border-none px-2.5 py-2 text-[12px] whitespace-nowrap ${
                 view === v ? 'bg-surface font-semibold text-ink shadow-sm' : 'bg-transparent text-ink-3'
               }`}
             >
@@ -231,39 +246,44 @@ export function RecurringScreen() {
           </button>
         )}
 
-        {/* summary card */}
+        {/* summary card — 'all' is not a date range, so the range-bound
+            numbers stand down and only the honest annual figure stays */}
         <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="recurring-summary">
-          <div className="grid grid-cols-3 gap-3">
-            {(
-              [
-                ['recurring.total', summary.totalCents, 'var(--m-ink)'],
-                ['recurring.paid', summary.paidCents, 'var(--m-accent-deep)'],
-                ['recurring.remaining', summary.remainingCents, summary.remainingCents > 0 ? 'var(--m-warning)' : 'var(--m-accent-deep)'],
-              ] as const
-            ).map(([key, cents, color]) => (
-              <div key={key}>
-                <div className="text-[10px] font-semibold tracking-wide text-ink-4 uppercase">{t(key)}</div>
-                <div className="mt-0.5 font-mono text-[15px] font-semibold" style={{ color }}>
-                  {money(cents)}
-                </div>
+          {view !== 'all' && (
+            <>
+              <div className="grid grid-cols-3 gap-3">
+                {(
+                  [
+                    ['recurring.total', summary.totalCents, 'var(--m-ink)'],
+                    ['recurring.paid', summary.paidCents, 'var(--m-accent-deep)'],
+                    ['recurring.remaining', summary.remainingCents, summary.remainingCents > 0 ? 'var(--m-warning)' : 'var(--m-accent-deep)'],
+                  ] as const
+                ).map(([key, cents, color]) => (
+                  <div key={key}>
+                    <div className="text-[10px] font-semibold tracking-wide text-ink-4 uppercase">{t(key)}</div>
+                    <div className="mt-0.5 font-mono text-[15px] font-semibold" style={{ color }}>
+                      {money(cents)}
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          <ProgressBar className="mt-3" value={progress} />
+              <ProgressBar className="mt-3" value={progress} />
+            </>
+          )}
           {/* subscription intelligence S1: the honest annual figure */}
-          <div className="mt-3 text-[11px] text-ink-3" data-testid="recurring-year-total">
+          <div className={`${view === 'all' ? '' : 'mt-3 '}text-[11px] text-ink-3`} data-testid="recurring-year-total">
             {t('recurring.perYearTotal', {
               amount: money((recs ?? []).filter((r) => r.active === 1).reduce((sum, r) => sum + yearlyCents(r), 0)),
             })}
           </div>
-          {summary.luxuryCents > 0 && (
+          {view !== 'all' && summary.luxuryCents > 0 && (
             <div className="mt-3 flex items-center gap-1.5 text-[11px] text-ink-3" data-testid="recurring-luxury-line">
               <Pill tone="accent" caps>
                 {t('recurring.luxury')}
               </Pill>
               {t('recurring.luxuryNote', {
                 period: money(summary.luxuryCents),
-                year: money(view === 'year' ? summary.luxuryCents : summary.luxuryCents * 12),
+                year: money(view === 'year' || view === 'nextyear' ? summary.luxuryCents : summary.luxuryCents * 12),
               })}
             </div>
           )}

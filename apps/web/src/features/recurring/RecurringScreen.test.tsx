@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import { resetApiCapabilitiesCache } from '@/lib/api';
@@ -279,6 +279,53 @@ describe('RecurringScreen editing (demo identity)', () => {
     await screen.findByTestId('screen-recurring', {}, { timeout: 5000 });
     await waitFor(() => expect(screen.queryByText('Gym')).toBeNull(), { timeout: 5000 });
   }, 15_000);
+
+  it('#188/#189: a recurring lives only in ranges it OCCURS in; pre-start occurrences neither list nor count', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seedDb = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(seedDb), new HlcClock('seed-188'), { trackOutbox: false });
+    const Y = new Date().getFullYear();
+    // the space started June 1st — March happened before its memory
+    await repo.upsert('space', DEMO_SPACE_ID, DEMO_SPACE_ID, { historyStartDate: `${Y}-06-01` });
+    const base = { kind: 'fixed' as const, active: 1 as const, every: 'year' as const, dueDay: 15 };
+    // starts NEXT January — belongs to "next year" alone (the user's Goudse)
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'future-ins', { ...base, name: 'Goudse insurance', amountCents: 20_000, dueMonth: 1, since: `${Y + 1}-01-01` });
+    // yearly each March — this year's occurrence is OLDER than the space
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'spring-tax', { ...base, name: 'Spring tax', amountCents: 12_000, dueMonth: 3, since: `${Y - 3}-03-10` });
+    // a plain monthly lives everywhere
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'gym-188', { ...base, every: 'month', name: 'Gym 188', amountCents: 2_500, dueDay: Math.min(new Date().getDate(), 28) });
+    seedDb.close();
+    cleanup();
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+
+    // current period: only the monthly occurs here
+    await screen.findByText('Gym 188', {}, { timeout: 5000 });
+    expect(screen.queryByText('Goudse insurance')).toBeNull();
+    expect(screen.queryByText('Spring tax')).toBeNull();
+
+    // this year: March sits before the space start — still hidden (#189),
+    // and its €120 must not read as "remaining"
+    fireEvent.click(screen.getByTestId('recurring-view-year'));
+    await waitFor(() => expect(screen.getByTestId('recurring-summary').textContent).not.toMatch(/120/));
+    expect(screen.queryByText('Spring tax')).toBeNull();
+    expect(screen.queryByText('Goudse insurance')).toBeNull();
+
+    // next year: both yearly costs occur — they belong here
+    fireEvent.click(screen.getByTestId('recurring-view-nextyear'));
+    await screen.findByText('Goudse insurance', {}, { timeout: 5000 });
+    await screen.findByText('Spring tax');
+
+    // All: everything, with only the honest annual figure (no range math)
+    fireEvent.click(screen.getByTestId('recurring-view-all'));
+    await screen.findByText('Goudse insurance');
+    await screen.findByText('Spring tax');
+    await screen.findByText('Gym 188');
+    expect(screen.getByTestId('recurring-year-total')).toBeTruthy();
+    expect(screen.queryByTestId('recurring-luxury-line')).toBeNull();
+  }, 20_000);
 
   it('custom cadence: every 2 weeks needs an anchor date and shows its rhythm', async () => {
     renderApp('/recurring');

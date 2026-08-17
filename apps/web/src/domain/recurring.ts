@@ -156,18 +156,23 @@ export interface RecurringComputed {
   effectiveCents: number;
 }
 
-/** per-recurring numbers for a date range (a budget period or a year) */
+/** per-recurring numbers for a date range (a budget period or a year).
+ *  #189 (user): `floor` is the space's start date — an occurrence before
+ *  it is unknowable (its payment is older than the space shows), so it
+ *  neither counts as expected nor reads as "not paid yet". */
 export function computeRange(
   recs: readonly RecurringRow[],
   linkedByRec: ReadonlyMap<string, readonly LinkedTx[]>,
   from: string,
   to: string,
   today: string,
+  floor?: string,
 ): RecurringComputed[] {
   return recs.map((rec) => {
     const linked = [...(linkedByRec.get(rec.id) ?? [])].sort((a, b) => a.date.localeCompare(b.date));
     const effectiveCents = effectiveAmountCents(rec);
-    const occurrences = rec.active === 1 ? occurrencesBetween(rec, from, to).length : 0;
+    const occurrences =
+      rec.active === 1 ? occurrencesBetween(rec, from, to).filter((d) => !floor || d >= floor).length : 0;
     const inRange = linked.filter((t) => t.date >= from && t.date <= to);
     const paidCents = inRange.reduce((s, t) => s + Math.abs(t.amountCents), 0);
     return {
