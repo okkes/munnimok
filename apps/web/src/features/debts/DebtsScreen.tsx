@@ -6,10 +6,12 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useLoanStatuses } from '@/application/debts';
 import type { LoanStatus } from '@/application/debts';
-import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import { useSpaceAccounts, useSpaceHistoryTransactions, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
-import { localToday } from '@/application/recurring';
+import { localToday, useDismissedKeys, useRecurrings } from '@/application/recurring';
 import { monthlyPaymentCents, paymentsPerYear, projectPayoff } from '@/domain/debts';
+import { detectRecurring } from '@/domain/detectRecurring';
+import { looksLikeDebtCreditor } from '@/domain/detectDebts';
 import type { AccountRow, RecurringEvery } from '@/db/types';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
@@ -131,6 +133,22 @@ export function DebtsScreen() {
     () => (txs ?? []).filter((tx) => tx.deleted === 0 && tx.txType === 'debtPayment' && !tx.linkedAccountId),
     [txs],
   );
+  // #192 (user, DUO): detection runs here too — a payment pattern whose
+  // creditor is a known lender surfaces as a loan suggestion
+  const historyTxs = useSpaceHistoryTransactions();
+  const recs = useRecurrings();
+  const dismissed = useDismissedKeys();
+  const spaceAccounts = useSpaceAccounts();
+  const loanSuggestionCount = useMemo(() => {
+    if (!historyTxs || !recs || !dismissed) return 0;
+    const exclude = new Set([
+      ...dismissed,
+      ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : [])),
+      ...(spaceAccounts ?? []).flatMap((a) => (a.merchantKey ? [a.merchantKey] : [])),
+    ]);
+    return detectRecurring(historyTxs, { excludeKeys: exclude, today: localToday() })
+      .filter((s) => looksLikeDebtCreditor(s.name)).length;
+  }, [historyTxs, recs, spaceAccounts, dismissed]);
 
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
@@ -202,6 +220,26 @@ export function DebtsScreen() {
       />
       <div ref={(el) => attachScrollMemory(el, 'debts')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="debts" />
+        {/* #192: the detection inbox, seen from the debts side */}
+        {loanSuggestionCount > 0 && (
+          <button
+            data-testid="debts-suggestions-banner"
+            onClick={() => void navigate({ to: '/recurring/suggestions' })}
+            className="m-tap mb-3 flex w-full items-center gap-3 rounded-card border border-accent bg-accent-soft/40 px-4 py-3 text-left"
+          >
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface">
+              <Icon name="hand-coin-outline" size={17} color="var(--m-accent-deep)" />
+              <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-white">
+                {loanSuggestionCount}
+              </span>
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[14px] font-medium text-ink">{t('debts.detectedTitle')}</span>
+              <span className="block text-[11px] text-ink-3">{t('debts.detectedSub', { n: loanSuggestionCount })}</span>
+            </span>
+            <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+          </button>
+        )}
         {active.length > 0 && (
           <div className="grid grid-cols-2 gap-3 rounded-card border border-line bg-surface p-4" data-testid="debts-overview">
             <div>

@@ -4,7 +4,7 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { useSpaceHistoryTransactions, useSpaceTransactions } from '@/application/transactions';
+import { useSpaceAccounts, useSpaceHistoryTransactions, useSpaceTransactions } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { computeRange, summarize } from '@/domain/recurring';
 import type { RecurringComputed } from '@/domain/recurring';
@@ -85,11 +85,17 @@ export function RecurringScreen() {
   // detection reads the FULL stored history (user design 2026-08-01):
   // yearly patterns live in the pre-start tail the display gate hides
   const historyTxs = useSpaceHistoryTransactions();
+  const spaceAccounts = useSpaceAccounts();
   const suggestionCount = useMemo(() => {
     if (!historyTxs || !recs || !dismissed) return 0;
-    const exclude = new Set([...dismissed, ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : []))]);
+    // #192: loans own their merchant keys like recurring rows do
+    const exclude = new Set([
+      ...dismissed,
+      ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : [])),
+      ...(spaceAccounts ?? []).flatMap((a) => (a.merchantKey ? [a.merchantKey] : [])),
+    ]);
     return detectRecurring(historyTxs, { excludeKeys: exclude, today }).length;
-  }, [historyTxs, recs, dismissed, today]);
+  }, [historyTxs, recs, spaceAccounts, dismissed, today]);
 
   // #188 (user ss): a recurring shows only in ranges it actually
   // OCCURS in — a yearly due Jan 2027 belongs to "next year" alone.

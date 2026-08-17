@@ -238,6 +238,41 @@ describe('RecurringScreen (demo identity)', () => {
     expect(screen.getByTestId('recdetail-stats').textContent).toContain('Per year');
     db.close();
   }, 20_000);
+
+  it('#192: a DUO pattern reads as a LOAN — the debts banner sees it, tracking hands off prefilled', async () => {
+    const db = new MunniDB('munni_demo');
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    // four steady monthly DUO charges — a textbook student-loan pattern
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-duo'), { trackOutbox: false });
+    for (let i = 0; i < 4; i++) {
+      await repo.upsert('transaction', DEMO_SPACE_ID, `duo_${i}`, {
+        accountId: 'demo_main', date: monthsAgo(i, Math.min(new Date().getDate(), 28)),
+        amountCents: -10_400, currency: 'EUR', merchant: 'Dienst Uitvoering Onderwijs',
+        catId: 'extraOther', txType: 'expense', needsReview: 0,
+      });
+    }
+    cleanup();
+
+    // the DEBTS screen surfaces the loan-like pattern with its own banner
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    fireEvent.click(await screen.findByTestId('debts-suggestions-banner', {}, { timeout: 5000 }));
+    await screen.findByTestId('screen-recurring-suggestions');
+
+    // the card wears the loan face and leads with the loan door
+    const key = 'dienst uitvoering onderwijs';
+    await screen.findByTestId(`recsuggest-loanhint-${key}`);
+    fireEvent.click(screen.getByTestId(`recurring-loan-${key}`));
+
+    // lands on debts with the chooser prefilled — the pattern IS the plan
+    await screen.findByTestId('screen-debts');
+    fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+    await waitFor(() => expect((screen.getByTestId('chooser-acctform-name') as HTMLInputElement).value).toBe('Dienst Uitvoering Onderwijs'));
+    expect((screen.getByTestId('chooser-acctform-payment') as HTMLInputElement).value).toBe('104.00');
+    expect((screen.getByTestId('chooser-acctform-payday') as HTMLInputElement).value).toBe(String(Math.min(new Date().getDate(), 28)));
+    db.close();
+  }, 20_000);
 });
 
 describe('RecurringScreen editing (demo identity)', () => {
