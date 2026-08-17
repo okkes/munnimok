@@ -50,7 +50,7 @@ import { CatsSheet, catsAroundSingle, partCatsApplyPatch } from '@/features/tran
 import type { CatsApplyEntry } from '@/features/transactions/PartCatsSheet';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
-import { CounterpartySheet } from '@/features/transactions/TxKindSheet';
+import { CounterMatchSheet, CounterpartySheet } from '@/features/transactions/TxKindSheet';
 
 /** one grouped-context row inside the category editor (counterparty,
  *  type) — the card-row anatomy in the sheet's input skin */
@@ -316,6 +316,7 @@ function CardCategoryRows({
   onOpenCategories,
   onOpenSplit,
   onEditCounter,
+  counterTx,
 }: Readonly<{
   draft: ReviewDraft | null;
   fallbackCat: ReturnType<ReturnType<typeof useCategories>['byId']>;
@@ -328,6 +329,10 @@ function CardCategoryRows({
   /** #228 feedback: the card's own Counterparty row — counter-first
    *  stages the special category; absent = the row hides */
   onEditCounter?: () => void;
+  /** #237 r3 (user): the card's own Counter-transaction row — appears
+   *  once a counterparty stands; face = the picked row or the default
+   *  (create / await the feed). No onEdit = read-only (a stored pair). */
+  counterTx?: { face: string; onEdit?: () => void };
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -424,6 +429,23 @@ function CardCategoryRows({
           <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
         </button>
       )}
+      {/* #237 r3 (user): the counter TRANSACTION is the card's own row —
+          the fork sheet after the counterparty pick is gone; this row
+          opens the match sheet (pick an existing leg, or reset to the
+          create/await default) */}
+      {!multi && counterTx && (
+        <button
+          data-testid="review-countertx-row"
+          onClick={counterTx.onEdit}
+          disabled={!counterTx.onEdit}
+          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+        >
+          <Icon name="swap-horizontal" size={18} color="var(--m-ink-3)" />
+          <span className="min-w-0 flex-1 truncate">{counterTx.face}</span>
+          <span className="text-[11px] text-ink-4">{t('tx.counterTxRow')}</span>
+          {counterTx.onEdit && <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />}
+        </button>
+      )}
       {settled.map((slice) => catRow(slice.catId, slice.amountCents, `settled-${slice.catId}`))}
     </>
   );
@@ -470,10 +492,13 @@ export function ReviewPartDeck({
   const { t, lang } = useLang();
   const cats = useCategories();
   const accounts = useSpaceAccounts();
+  const allTxs = useSpaceTransactions();
   const [expanded, setExpanded] = useState(0);
   // #228 feedback: the part card's own Counterparty row — which part's
   // counter door is open (counter-first picks its category)
   const [counterForIdx, setCounterForIdx] = useState<number | null>(null);
+  // #237 r3: which part's Counter-transaction row is picking its leg
+  const [counterTxForIdx, setCounterTxForIdx] = useState<number | null>(null);
   const [eventFor, setEventFor] = useState<number | null>(null);
   // r7: which part is linking a recurring cost
   const [recFor, setRecFor] = useState<number | null>(null);
@@ -666,6 +691,29 @@ export function ReviewPartDeck({
               <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
             </button>
           )}
+          {/* #237 r3: the part's Counter-transaction row — same story as
+              the card's (pick the existing leg, or the create/await
+              default), sized to the PART's money */}
+          {(() => {
+            const partCounterAcct = accounts?.find((a) => a.id === active.linkedAccountId);
+            if (!partCounterAcct || partCounterAcct.type === 'funding') return null;
+            const peerRow = active.transferPeerId ? allTxs?.find((r) => r.id === active.transferPeerId) : undefined;
+            const face = peerRow
+              ? `${txTitle(peerRow)} · ${fmtCents(peerRow.amountCents, tx.currency, lang)}`
+              : t((partCounterAcct.source ?? 'manual') !== 'manual' ? 'review.counterAwaitFeed' : 'review.counterWillCreate');
+            return (
+              <button
+                data-testid={`deck-countertx-${openIdx}`}
+                onClick={() => setCounterTxForIdx(openIdx)}
+                className="m-tap flex w-full items-center gap-2.5 border-t border-line-2 bg-transparent px-3 py-2.5 text-left text-[14px] text-ink"
+              >
+                <Icon name="swap-horizontal" size={18} color="var(--m-ink-3)" />
+                <span className="min-w-0 flex-1 truncate">{face}</span>
+                <span className="text-[11px] text-ink-4">{t('tx.counterTxRow')}</span>
+                <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+              </button>
+            );
+          })()}
           {/* r7: parts link recurring costs, exactly like the card does */}
           <button
             data-testid={`deck-rec-${openIdx}`}
@@ -711,28 +759,22 @@ export function ReviewPartDeck({
           counterPart && specialCatType(counterPart.catId) ? (defaultFamilyFor(counterPart.catId) ?? undefined) : undefined
         }
         counterTypes={counterPart && specialCatType(counterPart.catId) ? counterTypesFor(counterPart.catId) : undefined}
-        // #237 r2 (user): each split part gets the fork too — the anchor
-        // carries the PART's signed money so twins match per part
-        anchor={
-          counterPart
-            ? { id: tx.id, amountCents: (tx.amountCents < 0 ? -1 : 1) * Math.abs(counterPart.amountCents), date: tx.date }
-            : undefined
-        }
-        onChoose={(account, peer) => {
+        // #237 r3 (user): no fork after the counterparty pick — the
+        // part's Counter-transaction row below owns the leg question
+        onChoose={(account) => {
           if (counterForIdx === null) return;
           const index = counterForIdx;
           const part = parts[index];
           const derived = movementCatFor(account.type, (tx.amountCents < 0 ? -1 : 1) * Math.abs(part.amountCents));
-          const stage = () =>
-            patchPart(index, {
-              catId: derived,
-              txType: specialCatType(derived),
-              linkedAccountId: account.id,
-              transferPeerId: peer?.txId,
-              cats: catsAroundSingle(part, derived),
-            });
-          if (peer && onPickExisting) onPickExisting(stage);
-          else stage();
+          patchPart(index, {
+            catId: derived,
+            txType: specialCatType(derived),
+            linkedAccountId: account.id,
+            // a (re-)pick resets any standing leg pick — it was bound
+            // to the previous counter account
+            transferPeerId: undefined,
+            cats: catsAroundSingle(part, derived),
+          });
         }}
         onDetach={
           counterPart?.linkedAccountId
@@ -750,6 +792,40 @@ export function ReviewPartDeck({
             : undefined
         }
       />
+      {/* #237 r3: the part's counter-transaction match sheet — suggested
+          legs first, the rest scrollable; create/await resets the pick */}
+      {(() => {
+        const matchPart = counterTxForIdx === null ? undefined : parts[counterTxForIdx];
+        const matchAcct = accounts?.find((a) => a.id === matchPart?.linkedAccountId);
+        const matchBankFed = (matchAcct?.source ?? 'manual') !== 'manual';
+        const clearPick = () => {
+          if (counterTxForIdx !== null) patchPart(counterTxForIdx, { transferPeerId: undefined });
+        };
+        return (
+          <CounterMatchSheet
+            open={counterTxForIdx !== null}
+            onOpenChange={(next) => {
+              if (!next) setCounterTxForIdx(null);
+            }}
+            target={matchAcct ? { id: matchAcct.id, name: matchAcct.name } : null}
+            anchor={{
+              id: tx.id,
+              amountCents: matchPart ? (tx.amountCents < 0 ? -1 : 1) * Math.abs(matchPart.amountCents) : tx.amountCents,
+              date: tx.date,
+            }}
+            rows={allTxs ?? []}
+            onCreate={!matchBankFed ? clearPick : undefined}
+            onWait={matchBankFed ? clearPick : undefined}
+            onPick={(pickedId) => {
+              if (counterTxForIdx === null) return;
+              const index = counterTxForIdx;
+              const stage = () => patchPart(index, { transferPeerId: pickedId });
+              if (onPickExisting) onPickExisting(stage);
+              else stage();
+            }}
+          />
+        );
+      })()}
       {/* the expanded part's event — per-part membership (v2 model) */}
       <Sheet
         open={eventFor !== null}
@@ -1261,6 +1337,9 @@ export function ReviewScreen() {
   // when similar transactions were about to ride along.
   const [pickedPeer, setPickedPeer] = useState<{ txId: string; linkedId: string } | null>(null);
   const [pickWarn, setPickWarn] = useState<{ n: number; stage: () => void } | null>(null);
+  // #237 r3: the card's Counter-transaction row opens the match sheet
+  // directly — the fork after the counterparty pick is gone
+  const [counterTxOpen, setCounterTxOpen] = useState(false);
   // per-visit only (user ruling): mid-review side steps happen in sheets
   // that keep the screen mounted, so state survives those — but leaving
   // review and coming back later starts the deck from the top again
@@ -1366,6 +1445,25 @@ export function ReviewScreen() {
   // cost (user request 2026-07-29)
   const payingDebt = loanCounterOf(draftCounter);
   const isLoanCounter = payingDebt !== undefined;
+  // #237 r3: the Counter-transaction row's ingredients — the SPACE's
+  // view of the counter account, and the face of whatever leg stands
+  // (a stored pair reads first and locks the row; review never
+  // re-points a stored pair)
+  const counterAcct = spaceAccounts?.find((a) => a.id === draft?.linkedAccountId);
+  const counterBankFed = (counterAcct?.source ?? 'manual') !== 'manual';
+  const standingPeerId = tx?.transferPeerId ?? pickedPeer?.txId;
+  const peerFaceRow = useMemo(
+    () => (standingPeerId ? allTxs?.find((r) => r.id === standingPeerId) : undefined),
+    [standingPeerId, allTxs],
+  );
+  const counterTxRow = (() => {
+    if (!tx || !counterAcct || counterAcct.type === 'funding') return undefined;
+    const face = peerFaceRow
+      ? `${txTitle(peerFaceRow)} · ${fmtCents(peerFaceRow.amountCents, tx.currency, lang)}`
+      : t(counterBankFed ? 'review.counterAwaitFeed' : 'review.counterWillCreate');
+    // a STORED pair is a fact, not a draft — the row shows it, tap-less
+    return tx.transferPeerId ? { face } : { face, onEdit: () => setCounterTxOpen(true) };
+  })();
   const events = useEvents();
   const activeEvents = useMemo(() => (events ?? []).filter((e) => e.archived !== 1), [events]);
   const pickedEvent = activeEvents.find((e) => e.id === eventPick);
@@ -1445,6 +1543,7 @@ export function ReviewScreen() {
     setSplitResetOpen(false);
     setPickedPeer(null);
     setPickWarn(null);
+    setCounterTxOpen(false);
   });
   // the pick is bound to ITS counter account — re-picking or detaching
   // the counterparty (or the editor clearing the link) drops it
@@ -1733,6 +1832,7 @@ export function ReviewScreen() {
                   onOpenCategories={() => setCatsOpen(true)}
                   onOpenSplit={requestSplit}
                   onEditCounter={counterRowDoors.onEdit}
+                  counterTx={counterTxRow}
                 />
 
                 {!multiPart && (
@@ -1965,24 +2065,37 @@ export function ReviewScreen() {
           currentLinkedId={draft.linkedAccountId}
           defaultFamily={askDefaultFamily(counterAskCat)}
           counterTypes={askCounterTypes(counterAskCat)}
-          // #237 r2 (user): review gets the same fork as the detail —
-          // create the counter leg (bulk update still applies), link and
-          // wait for the bank, or point at an EXISTING row
-          anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
-          onChoose={(account, peer) => {
+          // #237 r3 (user): ONE tap — no fork sheet after the pick; the
+          // card's Counter-transaction row owns the leg question now
+          onChoose={(account) => {
             counterChosen.current = true;
-            const stage = () => {
-              setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));
-              setPickedPeer(peer ? { txId: peer.txId, linkedId: account.id } : null);
-            };
-            // pointing at ONE existing row is specific to this card — a
-            // pending bulk offer can't ride along, so it asks first
-            if (peer && similar.length > 0) setPickWarn({ n: similar.length, stage });
-            else stage();
+            setStagedDraft(withLinkedAccount(draft, account, cats, tx?.amountCents, ownStamp));
           }}
           // #228 feedback: the card row's remove door — the counterparty
           // and the category are one fact, so removal resets the pick
           onDetach={counterRowDoors.onDetach}
+        />
+      )}
+      {/* #237 r3: the card row's counter-transaction match sheet —
+          suggestions first, the rest scrollable; create/await resets
+          the pick; a pick with a standing bulk offer warns first */}
+      {tx && draft?.linkedAccountId && counterAcct && (
+        <CounterMatchSheet
+          open={counterTxOpen}
+          onOpenChange={setCounterTxOpen}
+          target={{ id: counterAcct.id, name: counterAcct.name }}
+          anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
+          rows={allTxs ?? []}
+          onCreate={!counterBankFed ? () => setPickedPeer(null) : undefined}
+          onWait={counterBankFed ? () => setPickedPeer(null) : undefined}
+          onPick={(pickedId) => {
+            const linkedId = draft.linkedAccountId!;
+            const stage = () => setPickedPeer({ txId: pickedId, linkedId });
+            // pointing at ONE existing row is specific to this card — a
+            // pending bulk offer can't ride along, so it asks first
+            if (similar.length > 0) setPickWarn({ n: similar.length, stage });
+            else stage();
+          }}
         />
       )}
       {tx && (

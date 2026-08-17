@@ -337,11 +337,12 @@ export function counterForkTarget(
 
 /**
  * #237: the counter-match sheet — the one place a counterpart gets
- * chosen. Near twins first (opposite sign), the wallet's same-sign rows
- * when no twin exists (user decision "a": both halves of one purchase
- * can be debits), a browse-all door behind them, and the explicit
- * create/await exits. Reused by the CounterpartySheet fork and the
- * detail screen's pair doors.
+ * chosen. r3 (user): reimbursement-style — 1–3 suggestions on top (near
+ * twins; the wallet's same-sign rows when no twin exists, user decision
+ * "a"), the REST of the account's open rows always scrollable below,
+ * and the explicit create/await exits. Reused by the CounterpartySheet
+ * fork, the review card's Counter-transaction row and the detail
+ * screen's pair doors.
  */
 export function CounterMatchSheet({
   open,
@@ -365,14 +366,14 @@ export function CounterMatchSheet({
   onPick: (txId: string) => void;
 }>) {
   const { t } = useLang();
-  const [showAll, setShowAll] = useState(false);
   const near = target ? counterDuplicates(rows, target.id, anchor) : [];
   const sameSign = target && near.length === 0 ? counterSameSignCandidates(rows, target.id, anchor) : [];
-  const listed = new Set([...near, ...sameSign].map((row) => row.id));
-  const all = target && showAll ? counterOpenRows(rows, target.id, anchor.id).filter((row) => !listed.has(row.id)) : [];
+  // 1–3 suggestions (user sizing) — everything else scrolls below
+  const suggested = [...near, ...sameSign].slice(0, 3);
+  const listed = new Set(suggested.map((row) => row.id));
+  const rest = target ? counterOpenRows(rows, target.id, anchor.id, 50).filter((row) => !listed.has(row.id)) : [];
   const pick = (txId: string) => {
     onPick(txId);
-    setShowAll(false);
     onOpenChange(false);
   };
   const door = (testId: string, icon: string, title: string, sub: string, onTap: () => void) => (
@@ -380,7 +381,6 @@ export function CounterMatchSheet({
       data-testid={testId}
       onClick={() => {
         onTap();
-        setShowAll(false);
         onOpenChange(false);
       }}
       className="m-tap mb-2 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
@@ -392,8 +392,10 @@ export function CounterMatchSheet({
       </span>
     </button>
   );
-  const rowList = (items: readonly TransactionRow[], prefix: string) => (
-    <div className="divide-y divide-line-2 overflow-hidden rounded-card border border-line bg-surface px-3">
+  const rowList = (items: readonly TransactionRow[], prefix: string, accent = false) => (
+    <div
+      className={`divide-y divide-line-2 overflow-hidden rounded-card border bg-surface px-3 ${accent ? 'border-accent/40' : 'border-line'}`}
+    >
       {items.map((row) => (
         <div key={row.id} data-testid={`${prefix}-${row.id}`}>
           <TxRow tx={row} showDate hideUnreviewed onClick={() => pick(row.id)} />
@@ -402,42 +404,39 @@ export function CounterMatchSheet({
     </div>
   );
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={target?.name ?? ''} size="form">
+    <Sheet open={open} onOpenChange={onOpenChange} title={target?.name ?? ''} size="tall">
       {target && (
         <div className="flex flex-col pt-1" data-testid="counter-fork">
           {onCreate && door('counter-fork-create', 'plus-circle-outline', t('tx.counterForkCreate'), t('tx.counterForkCreateSub'), onCreate)}
           {onWait && door('counter-fork-wait', 'clock-outline', t('tx.counterForkWait'), t('tx.counterForkWaitSub'), onWait)}
-          {near.length > 0 && (
+          {suggested.length > 0 && (
             <>
-              <div className="m-cap mt-2 mb-1 px-1">{t('tx.counterForkPickHint')}</div>
-              {rowList(near, 'counter-dup')}
+              <div className="m-cap mt-2 mb-1 flex items-center gap-1.5 px-1 text-accent-deep">
+                <Icon name="lightbulb-outline" size={13} />
+                {t('tx.counterForkPickHint')}
+              </div>
+              {sameSign.length > 0 && (
+                <p className="px-1 pb-1 text-[12px] leading-snug text-ink-4" data-testid="counter-samesign-hint">
+                  {t('tx.counterSameSignHint')}
+                </p>
+              )}
+              {rowList(suggested, 'counter-dup', true)}
             </>
           )}
-          {sameSign.length > 0 && (
+          {rest.length > 0 && (
             <>
-              <div className="m-cap mt-2 mb-1 px-1">{t('tx.counterForkPickHint')}</div>
-              <p className="px-1 pb-1 text-[12px] leading-snug text-ink-4" data-testid="counter-samesign-hint">
-                {t('tx.counterSameSignHint')}
-              </p>
-              {rowList(sameSign, 'counter-dup')}
+              <div className="m-cap mt-3 mb-1 px-1">{t('tx.counterAllRows')}</div>
+              {/* fixed px so the browse list scrolls INSIDE the sheet (sheet rules) */}
+              <div className="max-h-[280px] overflow-y-auto overscroll-contain" data-testid="counter-all-list">
+                {rowList(rest, 'counter-open')}
+              </div>
             </>
           )}
-          {!showAll && (
-            <button
-              data-testid="counter-fork-showall"
-              onClick={() => setShowAll(true)}
-              className="m-tap mt-2 w-full border-none bg-transparent px-1 py-2 text-left text-[13px] font-medium text-accent-deep"
-            >
-              {t('tx.counterForkShowAll')}
-            </button>
-          )}
-          {showAll && (all.length > 0 ? (
-            <div className="mt-2">{rowList(all, 'counter-open')}</div>
-          ) : (
+          {suggested.length === 0 && rest.length === 0 && (
             <p className="px-1 pt-2 text-[13px] text-ink-4" data-testid="counter-fork-empty">
               {t('tx.counterForkNoRows')}
             </p>
-          ))}
+          )}
         </div>
       )}
     </Sheet>

@@ -70,7 +70,7 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.queryByTestId('review-cat-counter-savingDeposit')).toBeNull();
   }, 15_000);
 
-  it('#237 r2: review can point at an EXISTING row — the bulk offer warns, stands down, and the pair lands both ways', async () => {
+  it('#237 r3: the card Counter-transaction row points at an EXISTING row — the bulk offer warns, stands down, and the pair lands both ways', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
@@ -97,14 +97,21 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-bulk'); // the sibling offer is up
 
     fireEvent.click(screen.getByTestId('review-counter-row'));
+    // #237 r3: ONE tap — the sheet closes, no fork; the card's own
+    // Counter-transaction row appears with the create default
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    // the fork offers the pot's twin; picking it while a bulk offer
-    // stands asks first — "the other counterparts can't be predicted"
+    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
+    const counterTxRow = await screen.findByTestId('review-countertx-row');
+    expect(counterTxRow.textContent).toContain('created on confirm');
+    fireEvent.click(counterTxRow);
+    // the match sheet suggests the pot's twin; picking it while a bulk
+    // offer stands asks first — "the other counterparts can't be predicted"
     fireEvent.click((await screen.findByTestId('counter-dup-rvc')).querySelector('button')!);
     await screen.findByTestId('review-pick-warn');
     fireEvent.click(screen.getByTestId('review-pick-continue'));
 
-    await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
+    // the row now wears the picked leg's face
+    await waitFor(() => expect(screen.getByTestId('review-countertx-row').textContent).toContain('Pot side'));
     // the pick silenced the bulk section — it points at ONE row
     expect(screen.queryByTestId('review-bulk')).toBeNull();
 
@@ -129,11 +136,12 @@ describe('ReviewScreen (demo identity)', () => {
     // "the user can also first modify the counterparty and the special
     // category will be selected automatically" (user, issue comment)
     fireEvent.click(screen.getByTestId('review-counter-row'));
+    // #237 r3: no fork — one tap picks, the Counter-transaction row
+    // carries the create default on the card itself
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    // #237 r2: review forks like the detail now — create is explicit
-    fireEvent.click(await screen.findByTestId('counter-fork-create'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
     expect(screen.getByTestId('review-category-chip').textContent).toContain('Set aside');
+    expect(screen.getByTestId('review-countertx-row').textContent).toContain('created on confirm');
   }, 15_000);
 
   it('#133 C: a loan-family pick creates its loan through the ask and the debt row takes over', async () => {
