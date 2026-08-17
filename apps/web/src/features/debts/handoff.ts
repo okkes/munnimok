@@ -13,6 +13,8 @@ export interface DebtHandoff {
   name?: string;
   paymentCents?: number;
   paymentEvery?: RecurringEvery;
+  /** #190: the recurring's due day becomes the plan's due day */
+  paymentDay?: number;
   merchantKey?: string;
 }
 

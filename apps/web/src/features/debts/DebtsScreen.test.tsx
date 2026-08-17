@@ -111,15 +111,20 @@ describe('Debts (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('acctedit-name') as HTMLInputElement).value).toBe('Student loan'));
     expect((screen.getByTestId('acctedit-balance') as HTMLInputElement).value).toBe('10000.00');
     fireEvent.change(screen.getByTestId('acctedit-payment'), { target: { value: '1000' } });
+    // #190: the plan's due day, like recurring
+    fireEvent.change(screen.getByTestId('acctedit-payday'), { target: { value: '28' } });
     fireEvent.click(screen.getByTestId('acctedit-save'));
     // the write is the truth (the sheet lingers through its close animation)
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const account = (await db.accounts.toArray()).find((a) => a.name === 'Student loan');
       expect(account?.paymentCents).toBe(100_000);
+      expect(account?.paymentDay).toBe(28);
     }, { timeout: 5000 });
     db.close();
     await waitFor(() => expect(screen.getByTestId('debtdetail-projection')).toBeTruthy());
+    // the detail's plan line says the due day (#190)
+    expect(document.body.textContent).toContain('Due day 28');
 
     // delete (confirm sheet) — the orphaned detail hands back to the list
     fireEvent.click(screen.getByTestId('debtdetail-edit'));

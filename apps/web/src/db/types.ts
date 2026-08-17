@@ -106,6 +106,9 @@ export interface AccountRow extends SyncEnvelope {
    *  monthly, estimates from payments fill the gap */
   paymentEvery?: RecurringEvery;
   paymentEveryN?: number;
+  /** #190: due day of month 1..31 (like recurring) — says which period a
+   *  payment belongs to; weekly cadences carry none */
+  paymentDay?: number;
   /** auto-link payments by merchant (the recurring→loan handoff) */
   merchantKey?: string;
   /** debts-screen membership: absent = by type (loan/mortgage in, credit

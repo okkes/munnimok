@@ -124,7 +124,11 @@ export function DebtDetailScreen() {
           meta={
             <>
               {account.paymentCents && (
-                <span>{t(paymentLabelKey(account.paymentEvery), { amount: money(account.paymentCents) })}</span>
+                <span>
+                  {t(paymentLabelKey(account.paymentEvery), { amount: money(account.paymentCents) })}
+                  {/* #190: the plan's due day says which period a payment belongs to */}
+                  {account.paymentDay ? ` · ${t('recurring.dueDay2', { day: account.paymentDay })}` : ''}
+                </span>
               )}
               {estimate && (
                 <span data-testid="debtdetail-estimate">

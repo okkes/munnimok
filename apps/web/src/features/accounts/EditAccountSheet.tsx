@@ -12,7 +12,7 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { sourceKeyFor } from './AttachSheet';
 import { isLiability, manualBalanceDate, typeDef } from './accountTypes';
-import { isCustomCadence, LoanCadenceControl } from './LoanCadenceControl';
+import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
 
 /** an emptied field must CLEAR the row (null); undefined would drop from
  *  the op and leave the stale value standing */
@@ -29,6 +29,7 @@ const seedFrom = (account: AccountRow) => ({
   original: account.originalCents ? (account.originalCents / 100).toFixed(2) : '',
   apr: account.interestPctYear === undefined ? '' : String(account.interestPctYear),
   payment: account.paymentCents ? (account.paymentCents / 100).toFixed(2) : '',
+  payDay: account.paymentDay ? String(account.paymentDay) : '',
   payEvery: account.paymentEvery ?? ('month' as RecurringEvery),
   payEveryN: Math.max(1, account.paymentEveryN ?? 1),
   payCustom: isCustomCadence(account.paymentEvery, account.paymentEveryN),
@@ -61,6 +62,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const [original, setOriginal] = useState('');
   const [apr, setApr] = useState('');
   const [payment, setPayment] = useState('');
+  const [payDay, setPayDay] = useState('');
   const [payEvery, setPayEvery] = useState<RecurringEvery>('month');
   const [payEveryN, setPayEveryN] = useState(1);
   const [payCustom, setPayCustom] = useState(false);
@@ -80,6 +82,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     setOriginal(seed.original);
     setApr(seed.apr);
     setPayment(seed.payment);
+    setPayDay(seed.payDay);
     setPayEvery(seed.payEvery);
     setPayEveryN(seed.payEveryN);
     setPayCustom(seed.payCustom);
@@ -104,6 +107,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
           original !== seedNow.original ||
           apr !== seedNow.apr ||
           payment !== seedNow.payment ||
+          payDay !== seedNow.payDay ||
           payEvery !== seedNow.payEvery ||
           payEveryN !== seedNow.payEveryN ||
           note !== seedNow.note ||
@@ -123,6 +127,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
       paymentCents: orClear(hasPayment ? paymentCents : undefined) as never,
       paymentEvery: orClear(hasPayment ? payEvery : undefined) as never,
       paymentEveryN: orClear(hasPayment && payEveryN > 1 ? payEveryN : undefined) as never,
+      // #190: the due day rides the plan; weekly plans carry none
+      paymentDay: orClear(hasPayment && payEvery !== 'week' ? parsedDueDay(payDay) : undefined) as never,
       note: orClear(note.trim() || undefined) as never,
       trackAsDebt: track ? 1 : 0,
     };
@@ -264,20 +270,37 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   />
                 </label>
               </div>
-              <label className="text-[12px] text-ink-3">
-                {t('debts.payment')}
-                <input
-                  data-testid="acctedit-payment"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  min="0"
-                  value={payment}
-                  onChange={(e) => setPayment(e.target.value)}
-                  placeholder="0.00"
-                  className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-                />
-              </label>
+              <div className="flex gap-2">
+                <label className="min-w-0 flex-[2] text-[12px] text-ink-3">
+                  {t('debts.payment')}
+                  <input
+                    data-testid="acctedit-payment"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    value={payment}
+                    onChange={(e) => setPayment(e.target.value)}
+                    placeholder="0.00"
+                    className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                  />
+                </label>
+                {/* #190: the plan's due day, like recurring */}
+                <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+                  {t('debts.dueDay')}
+                  <input
+                    data-testid="acctedit-payday"
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    max="31"
+                    value={payDay}
+                    onChange={(e) => setPayDay(e.target.value)}
+                    placeholder="—"
+                    className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                  />
+                </label>
+              </div>
               <LoanCadenceControl
                 value={{ every: payEvery, everyN: payEveryN }}
                 custom={payCustom}

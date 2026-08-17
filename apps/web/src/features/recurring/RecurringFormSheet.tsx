@@ -469,6 +469,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
               name: form.name.trim() || undefined,
               paymentCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
               paymentEvery: form.every,
+              // #190: the due day rides along into the payment plan
+              paymentDay: form.every !== 'week' ? form.dueDay || undefined : undefined,
               merchantKey: form.merchantKey ?? undefined,
             });
             setDebtIntent(false);

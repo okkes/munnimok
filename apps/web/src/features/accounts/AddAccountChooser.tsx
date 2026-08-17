@@ -15,7 +15,7 @@ import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
 import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/primitives';
-import { isCustomCadence, LoanCadenceControl } from './LoanCadenceControl';
+import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 
@@ -66,7 +66,7 @@ export function AddAccountChooser({
    *  scenes — the generic space-scoped copy read like a stranger here */
   loanFlavor?: boolean;
   /** the recurring→loan handoff seeds the liability form */
-  prefill?: { name?: string; paymentCents?: number; paymentEvery?: RecurringEvery; merchantKey?: string };
+  prefill?: { name?: string; paymentCents?: number; paymentEvery?: RecurringEvery; paymentDay?: number; merchantKey?: string };
 }>) {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
@@ -101,6 +101,9 @@ export function AddAccountChooser({
   const [original, setOriginal] = useState('');
   const [apr, setApr] = useState('');
   const [payment, setPayment] = useState(prefill?.paymentCents ? (prefill.paymentCents / 100).toFixed(2) : '');
+  // #190: the plan's due day — like recurring, it says which period a
+  // payment belongs to
+  const [payDay, setPayDay] = useState(prefill?.paymentDay ? String(prefill.paymentDay) : '');
   const [payEvery, setPayEvery] = useState<RecurringEvery>(prefill?.paymentEvery ?? 'month');
   const [payEveryN, setPayEveryN] = useState(1);
   const [payCustom, setPayCustom] = useState(isCustomCadence(prefill?.paymentEvery, 1));
@@ -173,7 +176,13 @@ export function AddAccountChooser({
       // 0% is a real answer; only the EMPTY field means "remind me"
       ...(Number.isFinite(aprNumber) && aprNumber >= 0 ? { interestPctYear: aprNumber } : {}),
       ...(paymentCents && paymentCents > 0
-        ? { paymentCents, paymentEvery: payEvery, ...(payEveryN > 1 ? { paymentEveryN: payEveryN } : {}) }
+        ? {
+            paymentCents,
+            paymentEvery: payEvery,
+            ...(payEveryN > 1 ? { paymentEveryN: payEveryN } : {}),
+            // #190: weekly plans have no day-of-month
+            ...(payEvery !== 'week' && parsedDueDay(payDay) ? { paymentDay: parsedDueDay(payDay) } : {}),
+          }
         : {}),
       ...(note.trim() ? { note: note.trim() } : {}),
       ...(prefill?.merchantKey ? { merchantKey: prefill.merchantKey } : {}),
@@ -386,18 +395,35 @@ export function AddAccountChooser({
                       />
                     </label>
                   </div>
-                  <label className="text-[12px] text-ink-3">
-                    {t('debts.payment')}
-                    <input
-                      data-testid="chooser-acctform-payment"
-                      inputMode="decimal"
-                      value={payment}
-                      onChange={(e) => setPayment(e.target.value)}
-                      onBlur={() => evalField(payment, setPayment)}
-                      placeholder="0.00"
-                      className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-                    />
-                  </label>
+                  <div className="flex gap-2">
+                    <label className="min-w-0 flex-[2] text-[12px] text-ink-3">
+                      {t('debts.payment')}
+                      <input
+                        data-testid="chooser-acctform-payment"
+                        inputMode="decimal"
+                        value={payment}
+                        onChange={(e) => setPayment(e.target.value)}
+                        onBlur={() => evalField(payment, setPayment)}
+                        placeholder="0.00"
+                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                      />
+                    </label>
+                    {/* #190: the plan's due day, like recurring */}
+                    <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+                      {t('debts.dueDay')}
+                      <input
+                        data-testid="chooser-acctform-payday"
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        max="31"
+                        value={payDay}
+                        onChange={(e) => setPayDay(e.target.value)}
+                        placeholder="—"
+                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                      />
+                    </label>
+                  </div>
                   <LoanCadenceControl
                     value={{ every: payEvery, everyN: payEveryN }}
                     custom={payCustom}
