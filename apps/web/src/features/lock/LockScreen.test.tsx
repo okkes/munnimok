@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test/harness';
 import { useSession } from '@/app/session';
 import { LockScreen } from './LockScreen';
@@ -15,7 +15,7 @@ describe('LockScreen (PIN keypad — no platform authenticator in tests)', () =>
     localStorage.clear();
     useSession.getState().login({ kind: 'demo' }); // lock config is identity-scoped
     writeLockConfig({ enabled: true, pinSalt: 's', pinHash: await hashPin('1234', 's'), timeoutSec: 60 });
-    useLock.setState({ locked: true });
+    useLock.setState({ locked: true, promptSpent: false });
   });
 
   it('typing the right PIN on the keypad unlocks without a confirm button', async () => {
@@ -50,5 +50,66 @@ describe('LockScreen (PIN keypad — no platform authenticator in tests)', () =>
     renderWithProviders(<LockScreen />);
     await screen.findByTestId('lock-dots');
     expect(screen.queryByTestId('lock-unlock')).toBeNull();
+  });
+
+  it('#202: the passkey auto-prompt fires once per LOCK CYCLE — remounts stay quiet', async () => {
+    writeLockConfig({
+      enabled: true, pinSalt: 's', pinHash: await hashPin('1234', 's'), timeoutSec: 0,
+      biometricKind: 'webauthn', credentialId: 'AAAA',
+    });
+    const get = vi.fn(async () => null); // user dismisses the sheet
+    vi.stubGlobal('navigator', { ...navigator, credentials: { get } });
+    try {
+      renderWithProviders(<LockScreen />);
+      await screen.findByTestId('lock-dots');
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+
+      // the OS sheet backgrounded the page → re-lock → REMOUNT: no re-prompt
+      cleanup();
+      renderWithProviders(<LockScreen />);
+      await screen.findByTestId('lock-dots');
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(get).toHaveBeenCalledTimes(1);
+
+      // the pad's own fingerprint key stays an EXPLICIT re-prompt
+      fireEvent.click(screen.getByTestId('lock-unlock'));
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+      // the next lock cycle gets its fresh auto-prompt again
+      useLock.setState({ locked: false });
+      useLock.getState().lock();
+      cleanup();
+      renderWithProviders(<LockScreen />);
+      await screen.findByTestId('lock-dots');
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('#202: typing the PIN dismisses the in-flight passkey sheet (abort)', async () => {
+    writeLockConfig({
+      enabled: true, pinSalt: 's', pinHash: await hashPin('1234', 's'), timeoutSec: 0,
+      biometricKind: 'webauthn', credentialId: 'AAAA',
+    });
+    let seenSignal: AbortSignal | undefined;
+    const get = vi.fn(async (options: { signal?: AbortSignal }) => {
+      seenSignal = options.signal;
+      return new Promise(() => undefined); // the OS sheet hangs open
+    });
+    vi.stubGlobal('navigator', { ...navigator, credentials: { get } });
+    try {
+      renderWithProviders(<LockScreen />);
+      await screen.findByTestId('lock-dots');
+      await waitFor(() => expect(seenSignal).toBeTruthy());
+      expect(seenSignal!.aborted).toBe(false);
+      tap('1');
+      expect(seenSignal!.aborted).toBe(true);
+      // …and the PIN still unlocks on its own
+      tap('2', '3', '4');
+      await waitFor(() => expect(useLock.getState().locked).toBe(false));
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -150,16 +150,20 @@ async function registerWebauthn(): Promise<string | null> {
   }
 }
 
-/** OS-level user verification along the config's biometric path */
+/** OS-level user verification along the config's biometric path.
+ *  #202: the signal lets the PIN pad dismiss an in-flight passkey sheet
+ *  the moment the user starts typing — they chose the other factor. */
 export async function verifyBiometric(
   config: Pick<LockConfig, 'credentialId' | 'biometricKind'>,
   reason = 'munni',
+  signal?: AbortSignal,
 ): Promise<boolean> {
   const kind = effectiveBiometricKind(config);
   if (kind === 'native') return nativeBiometricVerify(reason);
   if (kind !== 'webauthn' || !config.credentialId) return false;
   try {
     const assertion = await navigator.credentials.get({
+      signal,
       publicKey: {
         challenge: crypto.getRandomValues(new Uint8Array(32)),
         allowCredentials: [{ type: 'public-key', id: fromB64url(config.credentialId) }],
@@ -176,14 +180,21 @@ export async function verifyBiometric(
 // ── lock state ──────────────────────────────────────────────────────────
 interface LockState {
   locked: boolean;
+  /** #202: the auto passkey prompt fires ONCE per lock cycle — remounts
+   *  (the OS sheet backgrounding the page re-locks with timeout 0) used
+   *  to re-prompt forever while the user was trying to type the PIN */
+  promptSpent: boolean;
   lock: () => void;
   unlock: () => void;
+  spendPrompt: () => void;
 }
 
 export const useLock = create<LockState>((set) => ({
   locked: readLockConfig() !== null, // enabled -> start locked
-  lock: () => set({ locked: true }),
+  promptSpent: false,
+  lock: () => set({ locked: true, promptSpent: false }),
   unlock: () => set({ locked: false }),
+  spendPrompt: () => set({ promptSpent: true }),
 }));
 
 /** pure decision: should the app lock after `elapsedMs` out of sight? */

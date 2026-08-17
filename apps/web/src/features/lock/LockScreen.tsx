@@ -54,27 +54,38 @@ function Key({
 export function LockScreen() {
   const { t } = useLang();
   const unlock = useLock((s) => s.unlock);
+  // #202: once per LOCK CYCLE, not once per mount — the OS passkey sheet
+  // backgrounds the page, the visibility watcher re-locks (timeout 0) and
+  // the remounted screen used to prompt again, endlessly, while the user
+  // was trying to type the PIN
+  const promptSpent = useLock((s) => s.promptSpent);
+  const spendPrompt = useLock((s) => s.spendPrompt);
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
-  const attempted = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
   const config = readLockConfig();
   const hasBiometric = !!config && effectiveBiometricKind(config) !== null;
 
   const tryBiometric = async () => {
     if (!config || effectiveBiometricKind(config) === null) return;
-    if (await verifyBiometric(config, t('lock.sub'))) unlock();
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    if (await verifyBiometric(config, t('lock.sub'), controller.signal)) unlock();
   };
 
-  // auto-prompt once on mount
+  // auto-prompt once per lock cycle
   useEffect(() => {
-    if (attempted.current) return;
-    attempted.current = true;
+    if (promptSpent) return;
+    spendPrompt();
     void tryBiometric();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pressDigit = useCallback(
     (digit: string) => {
+      // typing the PIN IS the decision — dismiss any open passkey sheet
+      abortRef.current?.abort();
       setError(false);
       setPin((prev) => {
         const next = (prev + digit).slice(0, MAX_PIN);
