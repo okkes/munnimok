@@ -85,14 +85,18 @@ export function evalAmountCents(input: string): number | null {
   }
 }
 
-/** Format integer minor units as a localized currency string. */
+/** Format integer minor units as a localized currency string.
+ *  #254: 'XXX' is ISO-4217's "no currency" — wallets (PayPal) without a
+ *  bound currency carried it into the UI as a literal "XXX 12.34".
+ *  Render the bare amount instead: the number is real, the unit unknown. */
 export function fmtCents(cents: number, currency: string, lang: Lang, opts?: { sign?: boolean }): string {
-  const formatted = new Intl.NumberFormat(LOCALE[lang], {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100);
+  const noCurrency = !currency || currency === 'XXX';
+  const formatted = new Intl.NumberFormat(
+    LOCALE[lang],
+    noCurrency
+      ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+      : { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 },
+  ).format(cents / 100);
   if (opts?.sign && cents > 0) return `+${formatted}`;
   return formatted;
 }
