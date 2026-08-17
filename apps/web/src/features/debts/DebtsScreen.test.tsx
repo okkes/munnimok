@@ -122,9 +122,9 @@ describe('Debts (demo identity)', () => {
       expect(account?.paymentDay).toBe(28);
     }, { timeout: 5000 });
     db.close();
-    await waitFor(() => expect(screen.getByTestId('debtdetail-projection')).toBeTruthy());
-    // the detail's plan line says the due day (#190)
-    expect(document.body.textContent).toContain('Due day 28');
+    // the detail's plan line says the due day (#190) — the live query
+    // re-emits AFTER the write, so the text is awaited, never assumed
+    await waitFor(() => expect(document.body.textContent).toContain('Due day 28'), { timeout: 5000 });
 
     // delete (confirm sheet) — the orphaned detail hands back to the list
     fireEvent.click(screen.getByTestId('debtdetail-edit'));
