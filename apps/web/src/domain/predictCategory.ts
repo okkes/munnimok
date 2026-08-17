@@ -105,23 +105,26 @@ function signSafeType(txType: TxType, amountCents: number): TxType {
   return amountCents >= 0 ? 'income' : 'expense';
 }
 
+/** #161: the memory's answer, own space first (S3776: out of predictTx) */
+function memoryPrediction(memory: LayeredMemory, input: PredictInput): TxPrediction | null {
+  const hit =
+    predictFromMemory(memory.own, input.merchant, input.amountCents) ??
+    predictFromMemory(memory.others, input.merchant, input.amountCents);
+  if (!hit) return null;
+  return {
+    catId: hit.catId,
+    txType: signSafeType(hit.txType, input.amountCents),
+    source: hit.amountMatch ? 'history-amount' : 'history',
+    evidence: hit.evidence,
+    ...(hit.cats ? { cats: hit.cats } : {}),
+    ...(hit.eventId ? { eventId: hit.eventId } : {}),
+  };
+}
+
 export function predictTx(input: PredictInput): TxPrediction | null {
   if (input.memory) {
-    // #161 (user rule): the space's own history first; only when it has
-    // nothing for this merchant do the user's other spaces answer
-    const hit =
-      predictFromMemory(input.memory.own, input.merchant, input.amountCents) ??
-      predictFromMemory(input.memory.others, input.merchant, input.amountCents);
-    if (hit) {
-      return {
-        catId: hit.catId,
-        txType: signSafeType(hit.txType, input.amountCents),
-        source: hit.amountMatch ? 'history-amount' : 'history',
-        evidence: hit.evidence,
-        ...(hit.cats ? { cats: hit.cats } : {}),
-        ...(hit.eventId ? { eventId: hit.eventId } : {}),
-      };
-    }
+    const remembered = memoryPrediction(input.memory, input);
+    if (remembered) return remembered;
   }
   const direction = input.amountCents >= 0 ? 'credit' : 'debit';
   const catId = predictCategory(

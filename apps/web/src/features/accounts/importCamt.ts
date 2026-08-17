@@ -325,10 +325,39 @@ async function importMerged(
 }
 
 /**
+ * #204 (user): importing NEVER attaches by itself — the account is
+ * global, and joining a space is an explicit step where the user also
+ * picks the type and the history gate. Only an account this space
+ * ALREADY attached refreshes its link (a re-import must not silently
+ * detach anything). Returns whether the space carries the account.
+ */
+async function refreshExistingAttachment(
+  repo: Repo,
+  store: StorageBackend,
+  feeds: FeedGateway,
+  spaceId: string,
+  feedId: string,
+  accountId: string,
+): Promise<boolean> {
+  const linkId = accountLinkId(spaceId, feedId);
+  const existingLink = await store.get('accountLink', linkId);
+  if (!existingLink || existingLink.deleted !== 0 || existingLink.archived) return false;
+  const historyFrom =
+    existingLink.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
+  await feeds.attach(spaceId, feedId, accountId, historyFrom);
+  await repo.upsert('accountLink', spaceId, linkId, {
+    feedSpaceId: feedId,
+    accountId,
+    historyFrom,
+  });
+  return true;
+}
+
+/**
  * Feed shape (shared-accounts design): raw facts go ONCE into the
  * account's feed space, the current space gets the transformation
- * overlay (txMeta with the predicted category) plus an accountLink, and
- * the server records the attachment so members derive read access.
+ * overlay (txMeta with the predicted category) — and an accountLink
+ * only when the space already attached the account (#204).
  */
 async function importIntoFeeds(
   repo: Repo,
@@ -372,24 +401,7 @@ async function importIntoFeeds(
       }
     }
 
-    // #204 (user): importing NEVER attaches by itself anymore — the
-    // account is global, and joining a space is an explicit step where
-    // the user also picks the type and the history gate. Only an
-    // account this space ALREADY attached refreshes its link (a
-    // re-import must not silently detach anything).
-    const linkId = accountLinkId(spaceId, feedId);
-    const existingLink = await store.get('accountLink', linkId);
-    const attached = !!existingLink && existingLink.deleted === 0 && !existingLink.archived;
-    if (attached) {
-      const historyFrom =
-        existingLink.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
-      await feeds.attach(spaceId, feedId, accountId, historyFrom);
-      await repo.upsert('accountLink', spaceId, linkId, {
-        feedSpaceId: feedId,
-        accountId,
-        historyFrom,
-      });
-    }
+    const attached = await refreshExistingAttachment(repo, store, feeds, spaceId, feedId, accountId);
 
     accounts.push({
       iban: stmt.iban,

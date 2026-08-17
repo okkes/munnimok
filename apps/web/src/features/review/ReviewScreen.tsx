@@ -30,6 +30,7 @@ import type { DraftCatalog, ReviewDraft } from '@/domain/reviewDraft';
 import type { AccountType, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
+import type { TxPrediction } from '@/domain/predictCategory';
 import { recurringAmountMatches } from '@/domain/recurring';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -137,6 +138,46 @@ async function pairReviewPicks(
       part.transferPeerId!,
     );
   }
+}
+
+/** #237 r3: the Counter-transaction row's face — the picked leg's
+ *  story, or the default (created on confirm / arrives with the feed) */
+function counterTxFaceFor(
+  peer: SpaceTx | undefined,
+  bankFed: boolean,
+  currency: string,
+  lang: ReturnType<typeof useLang>['lang'],
+  t: ReturnType<typeof useLang>['t'],
+): string {
+  if (peer) return `${txTitle(peer)} · ${fmtCents(peer.amountCents, currency, lang)}`;
+  return t(bankFed ? 'review.counterAwaitFeed' : 'review.counterWillCreate');
+}
+
+/** a part's signed money in its container's direction */
+const partSignedCents = (containerCents: number, partAbsCents: number): number =>
+  (containerCents < 0 ? -1 : 1) * partAbsCents;
+
+/** #161: the remembered pct SPREAD applied onto an untouched draft —
+ *  a resolved transfer, an own-counter default or the row's own
+ *  partition must never be fragmented by it (S3776: out of the
+ *  component) */
+function applyPredictedSpread(
+  resolvedDraft: ReviewDraft | null,
+  prediction: TxPrediction | null,
+  tx: SpaceTx | undefined,
+): ReviewDraft | null {
+  if (!tx || !resolvedDraft || !prediction?.cats) return resolvedDraft;
+  if (
+    resolvedDraft.catId !== prediction.catId ||
+    resolvedDraft.linkedAccountId ||
+    resolvedDraft.cats?.length ||
+    resolvedDraft.splits?.length
+  )
+    return resolvedDraft;
+  const resolved = resolveSplitsFor(tx.amountCents, prediction.cats.map((e) => ({ catId: e.catId, amountCents: 0, pct: e.pct })));
+  const entries = resolved.map((s) => ({ catId: s.catId, amountCents: Math.abs(s.amountCents), ...(s.pct !== undefined ? { pct: s.pct } : {}) }));
+  const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
+  return { ...withCats(resolvedDraft, entries), catId: primary.catId };
 }
 
 /** one confirm: the whole DRAFT lands in one write (+ the bulk selection) */
@@ -698,9 +739,7 @@ export function ReviewPartDeck({
             const partCounterAcct = accounts?.find((a) => a.id === active.linkedAccountId);
             if (!partCounterAcct || partCounterAcct.type === 'funding') return null;
             const peerRow = active.transferPeerId ? allTxs?.find((r) => r.id === active.transferPeerId) : undefined;
-            const face = peerRow
-              ? `${txTitle(peerRow)} · ${fmtCents(peerRow.amountCents, tx.currency, lang)}`
-              : t((partCounterAcct.source ?? 'manual') !== 'manual' ? 'review.counterAwaitFeed' : 'review.counterWillCreate');
+            const face = counterTxFaceFor(peerRow, (partCounterAcct.source ?? 'manual') !== 'manual', tx.currency, lang, t);
             return (
               <button
                 data-testid={`deck-countertx-${openIdx}`}
@@ -810,7 +849,7 @@ export function ReviewPartDeck({
             target={matchAcct ? { id: matchAcct.id, name: matchAcct.name } : null}
             anchor={{
               id: tx.id,
-              amountCents: matchPart ? (tx.amountCents < 0 ? -1 : 1) * Math.abs(matchPart.amountCents) : tx.amountCents,
+              amountCents: matchPart ? partSignedCents(tx.amountCents, Math.abs(matchPart.amountCents)) : tx.amountCents,
               date: tx.date,
             }}
             rows={allTxs ?? []}
@@ -1429,23 +1468,12 @@ export function ReviewScreen() {
     [ownTransferDraft, tx?.id, spaceAccounts, cats, ownStamp],
   );
   // #161: the remembered pct SPREAD rides in when the memory's category
-  // stood — a resolved transfer, an own-counter default or the row's own
-  // partition must never be fragmented by it
-  const spreadDraft = useMemo(() => {
-    if (!tx || !resolvedDraft || !prediction?.cats) return resolvedDraft;
-    if (
-      resolvedDraft.catId !== prediction.catId ||
-      resolvedDraft.linkedAccountId ||
-      resolvedDraft.cats?.length ||
-      resolvedDraft.splits?.length
-    )
-      return resolvedDraft;
-    const resolved = resolveSplitsFor(tx.amountCents, prediction.cats.map((e) => ({ catId: e.catId, amountCents: 0, pct: e.pct })));
-    const entries = resolved.map((s) => ({ catId: s.catId, amountCents: Math.abs(s.amountCents), ...(s.pct !== undefined ? { pct: s.pct } : {}) }));
-    const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
-    return { ...withCats(resolvedDraft, entries), catId: primary.catId };
+  // stood (the guard rules live in applyPredictedSpread)
+  const spreadDraft = useMemo(
+    () => applyPredictedSpread(resolvedDraft, prediction, tx),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resolvedDraft, prediction, tx?.id]);
+    [resolvedDraft, prediction, tx?.id],
+  );
   const draft = stagedDraft ?? spreadDraft;
   const draftCounter = useQuery(
     store,
@@ -1470,9 +1498,7 @@ export function ReviewScreen() {
   );
   const counterTxRow = (() => {
     if (!tx || !counterAcct || counterAcct.type === 'funding') return undefined;
-    const face = peerFaceRow
-      ? `${txTitle(peerFaceRow)} · ${fmtCents(peerFaceRow.amountCents, tx.currency, lang)}`
-      : t(counterBankFed ? 'review.counterAwaitFeed' : 'review.counterWillCreate');
+    const face = counterTxFaceFor(peerFaceRow, counterBankFed, tx.currency, lang, t);
     // a STORED pair is a fact, not a draft — the row shows it, tap-less
     return tx.transferPeerId ? { face } : { face, onEdit: () => setCounterTxOpen(true) };
   })();

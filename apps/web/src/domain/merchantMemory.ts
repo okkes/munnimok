@@ -70,6 +70,23 @@ const teachableSpread = (cats: TxSplitCat[] | undefined): { catId: string; pct: 
   return cats.map((c) => ({ catId: c.catId, pct: c.pct! }));
 };
 
+/** one confirmed row's votes land on its stat (S3776: out of the loop) */
+function absorbRow(entry: MerchantStats, row: MemoryInput, weight: number): void {
+  entry.count += 1;
+  entry.weight += weight;
+  if (row.date >= entry.lastDate) {
+    entry.lastDate = row.date;
+    entry.txType = row.txType; // the latest opinion also owns the type
+  }
+  if (entry.amounts.length < 8) entry.amounts.push(Math.abs(row.amountCents));
+  const spread = teachableSpread(row.cats);
+  if (spread) {
+    entry.spreadCount += 1;
+    if (!entry.lastSpread || row.date >= entry.lastDate) entry.lastSpread = spread;
+  }
+  if (row.eventId) entry.eventVotes.set(row.eventId, (entry.eventVotes.get(row.eventId) ?? 0) + weight);
+}
+
 export function buildMerchantMemory(rows: readonly MemoryInput[], today?: string): MerchantMemory {
   const now = today ?? rows.reduce((max, r) => (r.date > max ? r.date : max), '1970-01-01');
   const memory: MerchantMemory = new Map();
@@ -84,20 +101,7 @@ export function buildMerchantMemory(rows: readonly MemoryInput[], today?: string
       entry = { catId: row.catId, txType: row.txType, sign, count: 0, weight: 0, lastDate: row.date, amounts: [], spreadCount: 0, eventVotes: new Map() };
       stats.push(entry);
     }
-    const weight = decayedWeight(row.date, now);
-    entry.count += 1;
-    entry.weight += weight;
-    if (row.date >= entry.lastDate) {
-      entry.lastDate = row.date;
-      entry.txType = row.txType; // the latest opinion also owns the type
-    }
-    if (entry.amounts.length < 8) entry.amounts.push(Math.abs(row.amountCents));
-    const spread = teachableSpread(row.cats);
-    if (spread) {
-      entry.spreadCount += 1;
-      if (!entry.lastSpread || row.date >= entry.lastDate) entry.lastSpread = spread;
-    }
-    if (row.eventId) entry.eventVotes.set(row.eventId, (entry.eventVotes.get(row.eventId) ?? 0) + weight);
+    absorbRow(entry, row, decayedWeight(row.date, now));
     memory.set(key, stats);
   }
   return memory;
@@ -147,7 +151,7 @@ export function predictFromMemory(memory: MerchantMemory, merchant: string, amou
   const abs = Math.abs(amountCents);
   const amountHits = sameSide.filter((s) => s.amounts.some((a) => closeAmounts(a, abs)));
   if (amountHits.length > 0) {
-    const best = amountHits.reduce((a, b) => (b.weight > a.weight ? b : a));
+    const best = amountHits.reduce((a, b) => (b.weight > a.weight ? b : a), amountHits[0]);
     return hitFrom(best, true);
   }
 
