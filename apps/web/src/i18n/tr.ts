@@ -951,6 +951,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'onboarding.currencyAuto': 'Para birimi otomatik seçildi:',
   'acct.financialAccounts': 'Tüm hesaplar',
   'acct.globalCap': 'Bağlı ve içe aktarılan',
+  'acct.globalName': 'Genel ad',
+  'acct.openGlobal': 'Tüm hesaplarda görüntüle',
   'acct.bank': 'Banka Hesabı',
   'acct.funding': 'Fonlama hesabı',
   'acct.attachTypeLabel': 'Bu hesap bu alan için nedir?',

@@ -13,6 +13,7 @@ import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import { AccountTypeRow } from '@/features/accounts/AccountTypeRow';
 import { ACCOUNT_TYPES, typeDef } from '@/features/accounts/accountTypes';
+import { setAccountOpenHandoff } from '@/features/accounts/openHandoff';
 import { linkEffectiveType } from '@/db/joined';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
@@ -362,6 +363,8 @@ export function SpaceAccountsScreen() {
             {info.link && info.account && <AccountTypeRow account={info.account} link={info.link} />}
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {[
+                // #239 r2 (user): the GLOBAL name, next to the space's own
+                info.link && info.account ? ([t('acct.globalName'), info.account.name] as const) : null,
                 info.account?.iban ? ([t('accounts.ibanLabel'), info.account.iban] as const) : null,
                 // #177 (user "what does the - mean"): an absent gate SAYS
                 // it shows the full history instead of a bare dash
@@ -388,6 +391,21 @@ export function SpaceAccountsScreen() {
                 }}
               >
                 <Icon name="pencil-outline" size={16} /> {t('action.edit')}
+              </Button>
+            )}
+            {/* #239 r2 (user): straight to the account in the global
+                overview — its sheet opens on arrival */}
+            {info.link && info.account && (
+              <Button
+                variant="outline"
+                data-testid="space-account-goto-global"
+                onClick={() => {
+                  setAccountOpenHandoff(info.account!.id);
+                  setInfo(null);
+                  void navigate({ to: '/accounts' });
+                }}
+              >
+                <Icon name="bank-outline" size={16} /> {t('acct.openGlobal')}
               </Button>
             )}
             {info.detach && (

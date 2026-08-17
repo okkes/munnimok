@@ -13,6 +13,7 @@ import { ReconcileSheet } from './ReconcileSheet';
 import { StatementImportFlow } from './StatementImportFlow';
 import { normalizeIban } from '@/domain/feedIds';
 import { attachFeedToSpace } from '@/application/accountAttach';
+import { takeAccountOpenHandoff } from './openHandoff';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { useQuery } from '@/db/useQuery';
 import { AddAccountChooser } from './AddAccountChooser';
@@ -336,6 +337,21 @@ export function AccountsScreen() {
     if (entry.feedSpaceId) setAttaching(entry); // bank feed: manage attachments
     else setEditing(entry.account); // manual/legacy row: EditAccountSheet
   };
+
+  // #239 r2 (user): arriving from a space's info sheet with a target —
+  // open that account's sheet the moment the list knows it
+  const [openTarget, setOpenTarget] = useState<string | null>(() => takeAccountOpenHandoff());
+  useEffect(() => {
+    if (!openTarget || !global) return;
+    const entry = [...global.mine, ...global.sharedWithMe, ...global.spaceScoped.flatMap((s) => s.accounts)].find(
+      (e) => e.account.id === openTarget,
+    );
+    if (!entry) return;
+    setOpenTarget(null);
+    openEntry(entry);
+    // openEntry is stable in behavior; the effect keys on data arrival
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTarget, global]);
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-accounts">

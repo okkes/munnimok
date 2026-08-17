@@ -949,6 +949,8 @@ export const en = {
   'onboarding.currencyAuto': 'Currency auto-selected:',
   'acct.financialAccounts': 'All accounts',
   'acct.globalCap': 'Connected & imported',
+  'acct.globalName': 'Global name',
+  'acct.openGlobal': 'View in all accounts',
   'acct.bank': 'Bank Account',
   'acct.funding': 'Funding account',
   'acct.attachTypeLabel': 'What is this account to this space?',

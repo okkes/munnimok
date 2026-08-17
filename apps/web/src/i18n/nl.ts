@@ -951,6 +951,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'onboarding.currencyAuto': 'Valuta automatisch geselecteerd:',
   'acct.financialAccounts': 'Alle rekeningen',
   'acct.globalCap': 'Gekoppeld & geïmporteerd',
+  'acct.globalName': 'Globale naam',
+  'acct.openGlobal': 'Bekijk in alle rekeningen',
   'acct.bank': 'Betaalrekening',
   'acct.funding': 'Fundingrekening',
   'acct.attachTypeLabel': 'Wat is deze rekening voor deze ruimte?',

@@ -270,6 +270,54 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('space-account-link-1')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
+  it('#239 r2: the info sheet names the GLOBAL name and doors into the all-accounts sheet', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    // the space calls it by its OWN name — the global one must still show
+    await repo.upsert('accountLink', 's-user', 'link-1', {
+      feedSpaceId: 'feed-1',
+      accountId: 'feedacct-1',
+      type: 'checking',
+      displayName: 'Huishouden',
+    });
+    db.close();
+
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('space-account-link-1'));
+    const sheet = await screen.findByTestId('space-account-info');
+    // the space's name leads; the global name stands as its own fact
+    expect(sheet.textContent).toContain('Global name');
+    expect(sheet.textContent).toContain('ING Betaal');
+
+    // the quick link lands on the overview WITH the account's sheet open
+    fireEvent.click(screen.getByTestId('space-account-goto-global'));
+    await screen.findByTestId('screen-accounts');
+    await screen.findByTestId('attach-source');
+    expect((await screen.findByTestId('attach-name') as HTMLInputElement).value).toBe('ING Betaal');
+  }, 15_000);
+
   it('#212 r2: the space info sheet types a LINKED account — this space alone, global row untouched', async () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
