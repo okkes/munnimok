@@ -372,6 +372,26 @@ describe('#228: reimbursement stays ON the split (user ss)', () => {
     expect(largestOpenPartId(splits, new Map([['p2', 7_000]]))).toBe('p1');
   });
 
+  it('#235 (user order): loose cents land on the expecting part first, then uncategorized, then size', () => {
+    // the SMALLEST part expects reimbursement — it still takes the link
+    const splits = [
+      { id: 'p1', catId: 'fun', amountCents: 7_000 },
+      { id: 'p2', catId: 'expenseReimburse', amountCents: 1_500 },
+      { id: 'p3', catId: 'uncategorized', amountCents: 1_500 },
+    ];
+    expect(largestOpenPartId(splits, new Map())).toBe('p2');
+    // the expecting part fully settled → uncategorized is next
+    expect(largestOpenPartId(splits, new Map([['p2', 1_500]]))).toBe('p3');
+    // both consumed → the largest open regular part
+    expect(largestOpenPartId(splits, new Map([['p2', 1_500], ['p3', 1_500]]))).toBe('p1');
+    // a part whose SPREAD holds a live expected slice counts as expecting
+    const spread = [
+      { id: 'q1', catId: 'fun', amountCents: 7_000 },
+      { id: 'q2', catId: 'food', amountCents: 2_000, cats: [{ catId: 'food', amountCents: 500 }, { catId: 'expenseReimburse', amountCents: 1_500 }] },
+    ];
+    expect(largestOpenPartId(spread, new Map())).toBe('q2');
+  });
+
   it('reimbSettleFields: whole rows collapse a bare single partition and clear legacy splits', () => {
     const cleared = reimbSettleFields(
       { amountCents: -10_000, catId: 'food', cats: [{ catId: 'food', amountCents: 6_000 }, { catId: 'reimbursed', amountCents: 4_000 }], splits: [{ catId: 'food', amountCents: 6_000 }, { catId: 'reimbursed', amountCents: 4_000 }] },

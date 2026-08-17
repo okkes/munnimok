@@ -355,18 +355,33 @@ export function reimbCentsByPart(
   return map;
 }
 
-/** the part a legacy container-level link deterministically lands on:
- *  the largest still-open one (gross minus what links already name it
- *  for), ties by array order — both devices pick the same part */
+/** #235 (user order): where a container-level link's cents land — the
+ *  part still EXPECTING reimbursement first, then an uncategorized one,
+ *  then the largest open part. A drained part is last resort only. */
+const partPreference = (part: TxSplit): number => {
+  const holds = (pred: (catId: string) => boolean): boolean =>
+    part.cats?.length ? part.cats.some((c) => pred(c.catId) && c.amountCents > 0) : pred(part.catId);
+  if (holds((id) => REIMB_CAT_IDS.includes(id))) return 0;
+  if (holds((id) => id === UNCATEGORIZED_ID)) return 1;
+  return 2;
+};
+
+/** the part a container-level link deterministically lands on: the
+ *  user-ruled preference order (#235 — expected/received reimbursement
+ *  → uncategorized → largest open), sized by what is still open (gross
+ *  minus what links already name it for), ties by array order — both
+ *  devices pick the same part */
 export function largestOpenPartId(
   splits: readonly TxSplit[] | undefined,
   centsByPartId: ReadonlyMap<string, number>,
 ): string | undefined {
-  let best: { id: string; open: number } | undefined;
+  let best: { id: string; open: number; pref: number } | undefined;
   for (const part of (splits ?? []).filter((s) => s.catId !== REIMBURSED_ID)) {
     if (!part.id) continue;
     const open = part.amountCents - (centsByPartId.get(part.id) ?? 0);
-    if (!best || open > best.open) best = { id: part.id, open };
+    // a fully-settled part takes no more, whatever it holds
+    const pref = open > 0 ? partPreference(part) : 3;
+    if (!best || pref < best.pref || (pref === best.pref && open > best.open)) best = { id: part.id, open, pref };
   }
   return best?.id;
 }
