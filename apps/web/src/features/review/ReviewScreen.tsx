@@ -560,7 +560,7 @@ export function ReviewPartDeck({
   /** R1: a stamped account types every row — parts included */
   lockedKind?: boolean;
   /** r7: parts link recurring costs like whole transactions do */
-  recurrings: readonly { id: string; name: string }[];
+  recurrings: readonly Pick<RecurringRow, 'id' | 'name' | 'logo' | 'icon' | 'kind'>[];
   /** r7: a refused Confirm/Apply marks the parts that still need work */
   attention?: boolean;
   onOpenValues: () => void;
@@ -993,7 +993,8 @@ export function ReviewPartDeck({
               }}
               className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
             >
-              <Icon name="autorenew" size={18} color="var(--m-accent-deep)" />
+              {/* #258 (user): the cost's own face, not a generic icon */}
+              <RecurringVisual rec={rec} size={18} />
               <span className="min-w-0 flex-1 truncate">{rec.name}</span>
               {recFor !== null && parts[recFor]?.recurringId === rec.id && (
                 <Icon name="check" size={17} color="var(--m-accent-deep)" />

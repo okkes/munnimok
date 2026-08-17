@@ -49,7 +49,7 @@ import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
-import type { AccountRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountRow, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -1034,7 +1034,7 @@ function DetailSplitSheets({
   activeEvents: readonly { id: string; name: string; icon?: string }[];
   lockedKind: boolean;
   /** r7: parts link recurring costs like whole transactions do */
-  recurrings: readonly { id: string; name: string }[];
+  recurrings: readonly Pick<RecurringRow, 'id' | 'name' | 'logo' | 'icon' | 'kind'>[];
   /** r7: a refused Apply marks the parts that still need a category */
   attention: boolean;
   openValuesEditor: () => void;
@@ -1511,7 +1511,8 @@ function PartDetailBody({
               }}
               className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-1 py-3 text-left text-[14px] text-ink"
             >
-              <Icon name="autorenew" size={18} color="var(--m-accent-deep)" />
+              {/* #258 (user): the cost's own face, not a generic icon */}
+              <RecurringVisual rec={rec} size={18} />
               <span className="min-w-0 flex-1 truncate">{rec.name}</span>
               {part.recurringId === rec.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
             </button>

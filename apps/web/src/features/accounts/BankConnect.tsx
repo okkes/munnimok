@@ -10,6 +10,7 @@ import { apiFetch } from '@/lib/api';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { SearchField } from '@/ui/SearchField';
 
 interface Institution {
   id: string;
@@ -214,12 +215,12 @@ export function BankConnectSheet({ open, onOpenChange }: Readonly<{ open: boolea
         </div>
       )}
       {!needsChoice && (
-        <input
-          data-testid="gc-bank-search"
+        <SearchField
+          testId="gc-bank-search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
           placeholder={t('acct.bankSearch')}
-          className="mb-2 h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          className="mb-2"
         />
       )}
       {!needsChoice && !institutions && !failed && <div className="py-6 text-center text-sm text-ink-3">…</div>}

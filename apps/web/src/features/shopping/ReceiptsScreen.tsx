@@ -10,6 +10,7 @@ import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Chip } from '@/ui/primitives';
 import { Icon } from '@/ui/Icon';
+import { SearchField } from '@/ui/SearchField';
 import { ReceiptViewSheet } from './ReceiptViewSheet';
 
 const SOURCE_ICON: Record<string, string> = {
@@ -143,12 +144,12 @@ export function ReceiptsScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        <input
-          data-testid="receipts-search"
+        <SearchField
+          testId="receipts-search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
           placeholder={t('receipts.searchPlaceholder')}
-          className="mb-2 h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          className="mb-2"
         />
         {(unlinkedCount > 0 || (connLinks ?? []).length > 0) && (
           <div className="mb-2 flex flex-wrap gap-1.5">

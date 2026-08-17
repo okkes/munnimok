@@ -14,6 +14,7 @@ import { Button } from '@/ui/Button';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
+import { SearchField } from '@/ui/SearchField';
 import { BUDGET_ICONS } from './budgetUi';
 
 /**
@@ -236,12 +237,13 @@ export function BudgetFormScreen() {
           <div className="m-cap px-1">
             {t('screen.categories')} · {catIds.length}
           </div>
-          <input
-            data-testid="budgetform-cat-search"
+          <SearchField
+            testId="budgetform-cat-search"
             value={catQuery}
-            onChange={(e) => setCatQuery(e.target.value)}
+            onChange={setCatQuery}
             placeholder={t('cats.searchPlaceholder')}
-            className="h-10 w-full rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+            height="h-10"
+            textSize="text-[14px]"
           />
           <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="budgetform-cats">
             {expenseParents.map((parent) => {

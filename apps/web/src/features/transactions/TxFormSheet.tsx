@@ -14,7 +14,8 @@ import { useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
 import { focusEntryMode, nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
-import type { AccountRow, TransactionRow, TxSplitCat, TxType } from '@/db/types';
+import type { AccountRow, RecurringRow, TransactionRow, TxSplitCat, TxType } from '@/db/types';
+import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { typeDef } from '@/features/accounts/accountTypes';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -296,7 +297,7 @@ function RecurringPickSheet({
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  recurrings: readonly { id: string; name: string }[];
+  recurrings: readonly Pick<RecurringRow, 'id' | 'name' | 'logo' | 'icon' | 'kind'>[];
   recurringId: string | null;
   onPick: (id: string | null) => void;
 }>) {
@@ -314,7 +315,11 @@ function RecurringPickSheet({
           optionRow(
             recurringId === r.id,
             () => onPick(r.id),
-            <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{r.name}</span>,
+            // #258 (user): the cost's own face, not a generic row
+            <span className="flex min-w-0 flex-1 items-center gap-2.5">
+              <RecurringVisual rec={r} size={16} active={false} />
+              <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{r.name}</span>
+            </span>,
             `txform-recurring-${r.id}`,
           ),
         )}

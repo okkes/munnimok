@@ -13,6 +13,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { SearchField } from '@/ui/SearchField';
 
 export const ASSET_CLASSES: { id: AssetClass; labelKey: TranslationKey; icon: string }[] = [
   { id: 'stock', labelKey: 'pf.classStock', icon: 'chart-line' },
@@ -110,12 +111,12 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
       <div className="flex flex-col gap-3 pt-1">
         {quotesAvailable() && (
           <>
-            <input
-              data-testid="pf-search"
+            <SearchField
+              testId="pf-search"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
               placeholder={t('pf.searchPlaceholder')}
-              className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+              textSize="text-[14px]"
             />
             {hits && (hits.stocks.length > 0 || hits.coins.length > 0) && (
               <div className="max-h-44 overflow-y-auto rounded-card border border-line bg-surface" data-testid="pf-search-hits">

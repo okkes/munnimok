@@ -12,6 +12,7 @@ import { ColorPicker } from '@/ui/ColorPicker';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { SearchField } from '@/ui/SearchField';
 import {
   copyCategoryToSpace,
   createMainCategory,
@@ -826,12 +827,13 @@ export function ManageCategoriesScreen() {
 
           {/* icon picker: a curated grid by default; searching opens the
               whole self-hosted font (7k+ glyphs, fully offline) */}
-          <input
-            data-testid="catform-icon-search"
+          <SearchField
+            testId="catform-icon-search"
             value={iconQuery}
-            onChange={(e) => setIconQuery(e.target.value)}
+            onChange={setIconQuery}
             placeholder={t('cats.iconSearch')}
-            className="h-10 w-full rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none placeholder:text-ink-4"
+            height="h-10"
+            textSize="text-[13px]"
           />
           <div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto">
             {(iconQuery.trim()

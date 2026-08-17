@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import type { UIEvent } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
 import { REIMBURSED_ID, isSpecialCategory, specialCatType } from '@/domain/categories';
@@ -7,7 +8,9 @@ import { kindOf } from '@/domain/txKind';
 import { useLang } from '@/i18n';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { SearchField } from '@/ui/SearchField';
 import { catName, useCategories } from './useCategories';
 import { SpecialCatMark } from './SpecialCatMark';
 
@@ -48,6 +51,8 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
   const cats = useCategories();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
+  // #246 (user): one tap to see only the ◆ special categories
+  const [specialOnly, setSpecialOnly] = useState(false);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -74,12 +79,13 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
           )
           .filter((c) => !allowedMovement || specialCatType(c.id) === undefined || allowedMovement.has(c.id))
           .filter((c) => !noSpecials || specialCatType(c.id) === undefined)
+          .filter((c) => !specialOnly || isSpecialCategory(c))
           .filter((c) => !excludeIds?.includes(c.id))
           .filter((c) => !onlyIds || onlyIds.includes(c.id))
           .filter((c) => !q || catName(c, t).toLowerCase().includes(q)),
       }))
       .filter((g) => g.children.length > 0);
-  }, [cats, query, t, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials]);
+  }, [cats, query, t, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, specialOnly]);
 
   const pick = (catId: string) => {
     onPick(catId);
@@ -87,15 +93,46 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
     setQuery('');
   };
 
+  // #245 (user): the search rides along exactly like the reimbursement
+  // picker's — it scrolls away with the content and a deliberate upward
+  // scroll (one field's worth of travel) brings it back
+  const [searchShown, setSearchShown] = useState(true);
+  const lastScrollTop = useRef(0);
+  const upTravel = useRef(0);
+  const SEARCH_H = 56;
+  const onListScroll = (e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    const top = el.scrollTop;
+    const delta = lastScrollTop.current - top; // > 0 → upward
+    lastScrollTop.current = top;
+    const maxTop = el.scrollHeight - el.clientHeight;
+    if (top < 0 || top > maxTop - SEARCH_H) {
+      upTravel.current = 0;
+      return;
+    }
+    if (delta > 0) upTravel.current += delta;
+    else if (delta < 0) upTravel.current = 0;
+    setSearchShown(upTravel.current >= SEARCH_H || top < SEARCH_H);
+  };
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} size="tall" dragHandle>
-      <input
-        data-testid="catpicker-search"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder={t('cats.searchPlaceholder')}
-        className="mb-2 h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-      />
+      <div
+        className="transition-all duration-200 ease-out"
+        style={searchShown ? undefined : { transform: 'translateY(-110%)', opacity: 0, pointerEvents: 'none', height: 0, marginBottom: 0 }}
+      >
+        <SearchField testId="catpicker-search" value={query} onChange={setQuery} placeholder={t('cats.searchPlaceholder')} />
+        {/* #246: the ◆ lens — hidden where specials are off the table */}
+        {!noSpecials && (
+          <div className="mt-2 flex gap-2">
+            <Chip testId="catpicker-special-filter" selected={specialOnly} onClick={() => setSpecialOnly((v) => !v)}>
+              <span aria-hidden className="inline-block h-[7px] w-[7px] rotate-45 rounded-[1.5px] bg-current" />
+              {t('cats.special')}
+            </Chip>
+          </div>
+        )}
+      </div>
+      <div className="mt-2 max-h-[440px] overflow-y-auto overscroll-contain" data-testid="catpicker-list" onScroll={onListScroll}>
       {groups.map(({ parent, children }) => (
         <div key={parent.id}>
           <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1" style={{ color: parent.color }}>
@@ -140,6 +177,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
           <Icon name="plus" size={15} />
           {t('cats.createCustom')}
         </button>
+      </div>
       </div>
     </Sheet>
   );

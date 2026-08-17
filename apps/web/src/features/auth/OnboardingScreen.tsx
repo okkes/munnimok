@@ -18,6 +18,7 @@ import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
 import { Sheet } from '@/ui/Sheet';
+import { SearchField } from '@/ui/SearchField';
 
 const countryLabel = (code: string, lang: Lang) => {
   const c = COUNTRIES.find((x) => x.code === code);
@@ -283,12 +284,12 @@ export function OnboardingScreen() {
       </div>
 
       <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall" dragHandle>
-        <input
-          data-testid="onboarding-country-search"
+        <SearchField
+          testId="onboarding-country-search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
           placeholder={t('onboarding.countrySearch')}
-          className="mb-2 h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          className="mb-2"
         />
         {filtered.map((c) => (
           <button

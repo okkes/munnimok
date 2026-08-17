@@ -16,6 +16,7 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
+import { SearchField } from '@/ui/SearchField';
 import { REIMBURSED_ID } from '@/domain/categories';
 import type { TxSplit } from '@/db/types';
 
@@ -266,12 +267,11 @@ export function ReimburseLinkScreen() {
           className="sticky top-0 z-10 -mx-5 bg-bg px-5 pt-1 pb-2 transition-all duration-200 ease-out"
           style={searchShown ? undefined : { transform: 'translateY(-110%)', opacity: 0, pointerEvents: 'none' }}
         >
-          <input
-            data-testid="reimb-link-search"
+          <SearchField
+            testId="reimb-link-search"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={setQuery}
             placeholder={t('tx.searchPlaceholder')}
-            className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
         </div>
 

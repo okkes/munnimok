@@ -20,6 +20,7 @@ import { Icon } from '@/ui/Icon';
 import { Chip, Pill } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
+import { SearchField } from '@/ui/SearchField';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { useScrollMemory } from '@/lib/scrollMemory';
 import { TxFormSheet } from './TxFormSheet';
@@ -349,13 +350,7 @@ export function TransactionsScreen() {
       <TxFormSheet open={addOpen} onOpenChange={setAddOpen} />
       {/* search + filters */}
       <div className="shrink-0 px-5 pb-1">
-        <input
-          data-testid="tx-search"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder={t('tx.searchPlaceholder')}
-          className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-        />
+        <SearchField testId="tx-search" value={query} onChange={setQuery} placeholder={t('tx.searchPlaceholder')} />
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
           {/* accounts/types/categories/dates live in the filter sheet —
               chips per account stopped scaling once feeds multiplied */}
