@@ -26,9 +26,8 @@ describe('Home balance band (demo identity)', () => {
     fireEvent.click(screen.getByTestId('home-balance-band'));
     await screen.findByTestId('band-mode-row');
 
-    // excluding the savings account bends the sum
-    fireEvent.click(await screen.findByTestId('band-acct-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('home-total-balance').textContent).toContain('3,420.55'));
+    // #142 (user): net worth is PREMADE — no per-account checkboxes
+    expect(screen.queryByTestId('band-acct-demo_save')).toBeNull();
 
     // custom mode starts empty and counts only picked accounts
     fireEvent.click(screen.getByTestId('band-mode-custom'));
@@ -37,11 +36,12 @@ describe('Home balance band (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('band-acct-demo_main'));
     await waitFor(() => expect(screen.getByTestId('home-total-balance').textContent).toContain('3,420.55'));
 
-    // cash mode ignores the earlier net-worth exclusion list? No — the
-    // exclusion list is shared by the sum modes, so savings stays out
+    // #142: total cash is premade too — the full liquid formula, no
+    // checkboxes, unaffected by any stored exclusions
     fireEvent.click(screen.getByTestId('band-mode-cash'));
     await waitFor(() => expect(screen.getByTestId('band-mode-label').textContent).toContain('Total cash'));
-    await waitFor(() => expect(screen.getByTestId('home-total-balance').textContent).toContain('3,420.55'));
+    await waitFor(() => expect(screen.getByTestId('home-total-balance').textContent).toContain('11,570.55'));
+    expect(screen.queryByTestId('band-acct-demo_main')).toBeNull();
   }, 15_000);
 
   it('unused features collapse into ONE Explore block instead of a pile of teaser cards (#121)', async () => {

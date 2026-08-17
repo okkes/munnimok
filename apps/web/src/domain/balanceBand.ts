@@ -18,7 +18,12 @@ type BandSpace = Pick<SpaceRow, 'balanceBandMode' | 'balanceBandExclude' | 'bala
 
 export const bandModeOf = (space: BandSpace | undefined): BalanceBandMode => space?.balanceBandMode ?? 'networth';
 
-/** can this account be toggled in/out of the given mode at all? */
+/** #142 (user): the premade modes are premade — only "Picked accounts"
+ *  takes per-account modification; net worth / total cash / safe-to-
+ *  spend are fixed formulas */
+export const bandEditable = (mode: BalanceBandMode): boolean => mode === 'custom';
+
+/** does this account belong to the mode's FORMULA? (sum membership) */
 export function bandEligible(mode: BalanceBandMode, account: Pick<AccountRow, 'type'>): boolean {
   // #152: a funding account is someone else's pot — its balance never
   // counts toward this space's numbers, under any mode
@@ -28,9 +33,11 @@ export function bandEligible(mode: BalanceBandMode, account: Pick<AccountRow, 't
   return true;
 }
 
-/** does the account count toward the band under this mode + config? */
+/** does the account count toward the band under this mode + config?
+ *  #142: the premade sums ignore any stored exclusions — the formula is
+ *  the formula; only custom reads its hand-picked list */
 export function bandIncludes(mode: BalanceBandMode, account: Pick<AccountRow, 'id' | 'type'>, space: BandSpace | undefined): boolean {
   if (!bandEligible(mode, account)) return false;
   if (mode === 'custom') return (space?.balanceBandAccounts ?? []).includes(account.id);
-  return !(space?.balanceBandExclude ?? []).includes(account.id);
+  return true;
 }

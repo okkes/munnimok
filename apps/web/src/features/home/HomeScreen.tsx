@@ -25,7 +25,7 @@ import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { useCategories } from '@/features/categories/useCategories';
 import { safeToSpend } from '@/domain/cashflow';
-import { BAND_MODES, bandEligible, bandIncludes, bandModeOf } from '@/domain/balanceBand';
+import { BAND_MODES, bandEditable, bandEligible, bandIncludes, bandModeOf } from '@/domain/balanceBand';
 import { minIso, netWorthSeries } from '@/domain/trends';
 import { Line } from '@/ui/charts/Line';
 import { cleanBankText } from '@/lib/text';
@@ -287,17 +287,16 @@ export function HomeScreen() {
   }, [accounts, allTxs, recurrings, allocations, cats, period]);
   const [forecastOpen, setForecastOpen] = useState(false);
 
-  // the include/exclude toggle: custom keeps its own include list, the
-  // sum modes keep an exclusion list (absent = everything counts)
+  // #142 (user): only "Picked accounts" takes toggles — its include list
   const toggleBandAccount = async (accountId: string) => {
+    if (!bandEditable(bandMode)) return;
     // read the row FRESH: two quick toggles from the render-stale space
     // object dropped the first write (review finding)
     const live = await store.get('space', spaceId);
     if (!live) return;
-    const key = bandMode === 'custom' ? 'balanceBandAccounts' : 'balanceBandExclude';
-    const current = live[key] ?? [];
+    const current = live.balanceBandAccounts ?? [];
     const next = current.includes(accountId) ? current.filter((id) => id !== accountId) : [...current, accountId];
-    await repo.upsert('space', spaceId, spaceId, { [key]: next });
+    await repo.upsert('space', spaceId, spaceId, { balanceBandAccounts: next });
   };
 
   // spendable rides the forecast (ledger currency, no conversion lens);
@@ -404,13 +403,12 @@ export function HomeScreen() {
                   </div>
                   <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
                     {(accounts ?? []).map((a) => {
-                      const eligible = bandEligible(bandMode, a);
                       const included = bandIncludes(bandMode, a, space);
                       return (
-                        <div key={a.id} className={`flex items-center gap-2 text-[13px] ${eligible && !included ? 'opacity-45' : 'opacity-90'}`}>
-                          {/* per-account say in the sum (user request) —
-                              spendable is a formula and takes no toggles */}
-                          {eligible && (
+                        <div key={a.id} className={`flex items-center gap-2 text-[13px] ${included ? 'opacity-90' : 'opacity-45'}`}>
+                          {/* #142 (user): the premade modes are read-only —
+                              only Picked accounts offers the checkboxes */}
+                          {bandEditable(bandMode) && bandEligible(bandMode, a) && (
                             <input
                               data-testid={`band-acct-${a.id}`}
                               type="checkbox"
