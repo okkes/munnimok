@@ -327,6 +327,8 @@ export function HomeScreen() {
   };
   const layout = resolveHomeBlocks(space);
   const visibleBlocks = layout.filter((entry) => !entry.hidden);
+  // #155: the split earns its keep only with enough content to fill it
+  const twoColumns = visibleBlocks.length >= 4;
 
   // #121 v2: the unused/teaser states, resolved in one place (module fn)
   const teaserOf = buildTeaserMap({
@@ -361,8 +363,10 @@ export function HomeScreen() {
         {/* desktop ruling (§4.4) + D4: strict two-column split — the
             balance heads the left column (a 1040px band saying one number
             wasted the width), the nudges head the right; on mobile the
-            grid dissolves and the DOM order is balance → nudges → blocks */}
-        <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6">
+            grid dissolves and the DOM order is balance → nudges → blocks.
+            #155 (user ss): with only a couple of blocks the split read
+            as broken — sparse homes keep ONE centered column instead */}
+        <div className={twoColumns ? 'lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6' : 'lg:mx-auto lg:max-w-[640px]'}>
           {/* slim balance band: one line; accounts fold out on tap. The
               fold-out lives BESIDE the header button (nested buttons are
               invalid HTML — the quick lens toggle needs its own) */}
@@ -449,15 +453,17 @@ export function HomeScreen() {
           </div>
 
           <div className="min-w-0 lg:col-start-1 lg:row-start-2">
-            {visibleBlocks.slice(0, Math.ceil(visibleBlocks.length / 2)).map((entry) => (
+            {(twoColumns ? visibleBlocks.slice(0, Math.ceil(visibleBlocks.length / 2)) : visibleBlocks).map((entry) => (
               <div key={entry.id}>{blockRenderers[entry.id]()}</div>
             ))}
           </div>
-          <div className="min-w-0 lg:col-start-2 lg:row-start-2">
-            {visibleBlocks.slice(Math.ceil(visibleBlocks.length / 2)).map((entry) => (
-              <div key={entry.id}>{blockRenderers[entry.id]()}</div>
-            ))}
-          </div>
+          {twoColumns && (
+            <div className="min-w-0 lg:col-start-2 lg:row-start-2">
+              {visibleBlocks.slice(Math.ceil(visibleBlocks.length / 2)).map((entry) => (
+                <div key={entry.id}>{blockRenderers[entry.id]()}</div>
+              ))}
+            </div>
+          )}
         </div>
 
         <button
@@ -473,6 +479,9 @@ export function HomeScreen() {
       {/* quick display-currency picker (band fold-out shortcut) — the
           full setting with the offline manual rates lives on Profile */}
       <Sheet open={lensOpen} onOpenChange={setLensOpen} title={t('profile.displayCurrency')} size="form" dragHandle>
+        {/* #150 (user): the lens needs its one-line story — same copy the
+            full setting on Profile carries */}
+        <p className="pb-2 text-[12px] leading-relaxed text-ink-3">{t('profile.displayCurrencyInfo')}</p>
         <div className="flex flex-col pt-1">
           <button
             data-testid="band-lens-off"

@@ -1274,7 +1274,7 @@ function PartDetailBody({
             {partCounter?.name ?? t('tx.counterNone')}
           </span>
           <span className="text-xs text-ink-4">{t('tx.counterAccount')}</span>
-          {!ownStamp && <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />}
+          {!ownStamp && <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />}
         </button>
       </div>
 
@@ -1694,7 +1694,7 @@ function DetailAccountBlock({
               )}
             </span>
             <span className="text-xs text-ink-4">{t('tx.counterAccount')}</span>
-            {onEditCounter && <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />}
+            {onEditCounter && <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />}
           </div>
         </>
       )}
@@ -2350,7 +2350,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
                     : t('recurring.linkTitle')}
                 </span>
                 {!tx.recurringId && <span className="text-xs text-ink-4">{t('recurring.linkNone')}</span>}
-                <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+                <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
               </button>
               <div className="mx-4 h-px bg-line-2" />
               <button
@@ -2363,7 +2363,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
                   {tx.eventId ? (events?.find((e) => e.id === tx.eventId)?.name ?? t('events.linkTitle')) : t('events.linkTitle')}
                 </span>
                 {!tx.eventId && <span className="text-xs text-ink-4">{t('events.linkNone')}</span>}
-                <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+                <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
               </button>
             </div>
           </>
