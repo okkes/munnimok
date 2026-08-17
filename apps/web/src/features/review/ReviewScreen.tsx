@@ -8,6 +8,7 @@ import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { EventFormSheet } from '@/features/events/EventsScreen';
 import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFormSheet';
+import type { FormState as RecurringFormState } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withCats, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
@@ -154,6 +155,14 @@ function counterTxFaceFor(
 }
 
 /** a part's signed money in its container's direction */
+/** #251: a part's quick-created recurring starts from the PART — its
+ *  label and amount, not the container's (shared with the detail's
+ *  part page, which carries the same doors) */
+export const partRecurringPrefill = (tx: SpaceTx, part: TxSplit | undefined): RecurringFormState => {
+  const base = formFromTx({ ...tx, amountCents: part?.amountCents ?? tx.amountCents });
+  return part?.label ? { ...base, name: part.label } : base;
+};
+
 const partSignedCents = (containerCents: number, partAbsCents: number): number =>
   (containerCents < 0 ? -1 : 1) * partAbsCents;
 
@@ -588,6 +597,10 @@ export function ReviewPartDeck({
   const [eventFor, setEventFor] = useState<number | null>(null);
   // r7: which part is linking a recurring cost
   const [recFor, setRecFor] = useState<number | null>(null);
+  // #251: quick creation, parts edition — the same doors the whole-card
+  // pickers carry (create a recurring/event right from the picker)
+  const [recCreateFor, setRecCreateFor] = useState<number | null>(null);
+  const [eventCreateFor, setEventCreateFor] = useState<number | null>(null);
   // r6/r7: which part is editing its categories (THE category door —
   // the same amounts/percentages editor whole transactions use)
   const [spreadFor, setSpreadFor] = useState<number | null>(null);
@@ -949,6 +962,18 @@ export function ReviewPartDeck({
               )}
             </button>
           ))}
+          {/* #251: the quick-create door the whole-card picker has */}
+          <button
+            data-testid="deck-event-create"
+            onClick={() => {
+              setEventCreateFor(eventFor);
+              setEventFor(null);
+            }}
+            className="m-tap flex w-full items-center gap-3 px-1 py-3 text-left text-[14px] font-medium text-accent-deep"
+          >
+            <Icon name="plus" size={18} />
+            {t('events.new')}
+          </button>
         </div>
       </Sheet>
       {/* r7: the part's recurring link — the manual pick, parts edition */}
@@ -990,8 +1015,36 @@ export function ReviewPartDeck({
               )}
             </button>
           ))}
+          {/* #251: the quick-create door the whole-card picker has */}
+          <button
+            data-testid="deck-rec-create"
+            onClick={() => {
+              setRecCreateFor(recFor);
+              setRecFor(null);
+            }}
+            className="m-tap flex w-full items-center gap-3 px-1 py-3 text-left text-[14px] font-medium text-accent-deep"
+          >
+            <Icon name="plus" size={18} />
+            {t('recurring.add')}
+          </button>
         </div>
       </Sheet>
+      {/* #251: create-and-link, parts edition — the form lands prefilled
+          from the PART and the created id files onto that part alone */}
+      {recCreateFor !== null && (
+        <RecurringFormSheet
+          initial={partRecurringPrefill(tx, parts[recCreateFor])}
+          onSaved={(id) => patchPart(recCreateFor, { recurringId: id })}
+          onClose={() => setRecCreateFor(null)}
+        />
+      )}
+      {eventCreateFor !== null && (
+        <EventFormSheet
+          initial="new"
+          onSaved={(id) => patchPart(eventCreateFor, { eventId: id })}
+          onClose={() => setEventCreateFor(null)}
+        />
+      )}
       {/* the part's categories (r6/r7) — the whole-transaction editor,
           scoped to the part's amount. #228: a lone ◆ pick asks the
           PART's counterparty inside the editor; a spread offers regular

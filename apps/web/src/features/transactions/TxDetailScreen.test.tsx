@@ -1416,15 +1416,18 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.getByTestId('tx-part-category-row').textContent).toMatch(/15\.00/);
     expect(screen.getByTestId('tx-part-cat-1').textContent).toMatch(/25\.00/);
 
-    // r7: the part links a recurring cost right here — detail parity
+    // r7: the part links a recurring cost right here — detail parity.
+    // #251: the picker carries the quick-create door too
     fireEvent.click(screen.getByTestId('tx-part-rec'));
     await screen.findByTestId('tx-part-rec-list');
+    expect(screen.getByTestId('tx-part-rec-create')).toBeTruthy();
     fireEvent.click(screen.getByTestId('tx-part-rec-none'));
     expect(screen.getByTestId('tx-part-rec').textContent).toContain('None');
 
     // the part's event membership edits right here as well
     fireEvent.click(screen.getByTestId('tx-part-event'));
     await screen.findByTestId('tx-part-event-list');
+    expect(screen.getByTestId('tx-part-event-create')).toBeTruthy();
     fireEvent.click(screen.getByTestId('tx-part-event-none'));
 
     // the whole transaction stays one tap away and shows the container

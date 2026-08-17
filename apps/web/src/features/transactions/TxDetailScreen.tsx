@@ -29,7 +29,7 @@ import { EXPECTED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, specialCatType,
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { primaryCatId } from '@/domain/splits';
 import { scaleCatsTo, scaleSplitsTo } from '@/domain/txSlices';
-import { ReviewPartDeck } from '@/features/review/ReviewScreen';
+import { ReviewPartDeck, partRecurringPrefill } from '@/features/review/ReviewScreen';
 import { mirrorTxId, normalizeIban } from '@/domain/feedIds';
 import { ReceiptSection } from '@/features/shopping/ReceiptSection';
 import { ReimburseSection } from './ReimburseSection';
@@ -1172,6 +1172,9 @@ function PartDetailBody({
   const [eventOpen, setEventOpen] = useState(false);
   // r7: the part links recurring costs like whole transactions do
   const [recOpen, setRecOpen] = useState(false);
+  // #251: quick creation, parts edition — same doors as the whole tx
+  const [recCreating, setRecCreating] = useState(false);
+  const [eventCreating, setEventCreating] = useState(false);
   const recurrings = useRecurrings();
   const activeRecs = (recurrings ?? []).filter((r) => r.active === 1);
   // r6/r7: the category card opens the whole-transaction category
@@ -1513,6 +1516,18 @@ function PartDetailBody({
               {part.recurringId === rec.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
             </button>
           ))}
+          {/* #251: the quick-create door the whole-tx picker has */}
+          <button
+            data-testid="tx-part-rec-create"
+            onClick={() => {
+              setRecCreating(true);
+              setRecOpen(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 px-1 py-3 text-left text-[14px] font-medium text-accent-deep"
+          >
+            <Icon name="plus" size={18} />
+            {t('recurring.add')}
+          </button>
         </div>
       </Sheet>
       <Sheet
@@ -1549,8 +1564,32 @@ function PartDetailBody({
               {part.eventId === event.id && <Icon name="check" size={17} color="var(--m-accent-deep)" />}
             </button>
           ))}
+          {/* #251: the quick-create door the whole-tx picker has */}
+          <button
+            data-testid="tx-part-event-create"
+            onClick={() => {
+              setEventCreating(true);
+              setEventOpen(false);
+            }}
+            className="m-tap flex w-full items-center gap-3 px-1 py-3 text-left text-[14px] font-medium text-accent-deep"
+          >
+            <Icon name="plus" size={18} />
+            {t('events.new')}
+          </button>
         </div>
       </Sheet>
+      {/* #251: create-and-link, parts edition — prefilled from the PART,
+          the created id files onto this part alone */}
+      {recCreating && (
+        <RecurringFormSheet
+          initial={partRecurringPrefill(tx, part)}
+          onSaved={(id) => patchPart({ recurringId: id })}
+          onClose={() => setRecCreating(false)}
+        />
+      )}
+      {eventCreating && (
+        <EventFormSheet initial="new" onSaved={(id) => patchPart({ eventId: id })} onClose={() => setEventCreating(false)} />
+      )}
     </>
   );
 }

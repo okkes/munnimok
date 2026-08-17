@@ -591,18 +591,52 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.queryByTestId('deck-kind-row-1')).toBeNull();
     expect(screen.getByTestId('deck-counter-1').textContent).toContain('No counter account');
 
-    // the part's event row opens its picker; None stages a clean part
+    // the part's event row opens its picker; None stages a clean part.
+    // #251: the quick-create door is here too (whole-card parity)
     fireEvent.click(screen.getByTestId('deck-event-1'));
     await screen.findByTestId('deck-event-list');
+    expect(screen.getByTestId('deck-event-create')).toBeTruthy();
     fireEvent.click(screen.getByTestId('deck-event-none'));
 
     // r7: the part links recurring costs right on the card — review
     // parity; the deck carries NO notes row (review never had one)
     fireEvent.click(screen.getByTestId('deck-rec-1'));
     await screen.findByTestId('deck-rec-list');
+    expect(screen.getByTestId('deck-rec-create')).toBeTruthy();
     fireEvent.click(screen.getByTestId('deck-rec-none'));
     expect(screen.getByTestId('deck-rec-1').textContent).toContain('None');
     expect(screen.queryByTestId('deck-notes-1')).toBeNull();
+  }, 15_000);
+
+  it('#251: creating a recurring from a part links THAT part, prefilled from the part', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // a 6/4 split, part 1 labeled — the label must seed the form's name
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    fireEvent.click(screen.getByTestId('split-add-row'));
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '6,00' } });
+    fireEvent.blur(amount0);
+    fireEvent.click(await screen.findByTestId('split-remainder'));
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+    await screen.findByTestId('review-part-deck');
+    fireEvent.click(screen.getByTestId('deck-part-1'));
+    fireEvent.change(await screen.findByTestId('deck-label-1'), { target: { value: 'Gym half' } });
+
+    // the create door opens the recurring form, prefilled from the part
+    fireEvent.click(screen.getByTestId('deck-rec-1'));
+    await screen.findByTestId('deck-rec-list');
+    fireEvent.click(screen.getByTestId('deck-rec-create'));
+    const name = (await screen.findByTestId('recform-name')) as HTMLInputElement;
+    await waitFor(() => expect(name.value).toBe('Gym half'));
+    fireEvent.click(screen.getByTestId('recform-save'));
+
+    // the created cost is linked on the part row — create-and-return
+    await waitFor(() => expect(screen.getByTestId('deck-rec-1').textContent).toContain('Gym half'));
   }, 15_000);
 
   it('NO restrictions on a split: even the same special kind twice lands (#126 r7)', async () => {
