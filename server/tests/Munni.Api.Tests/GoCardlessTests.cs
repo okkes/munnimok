@@ -194,12 +194,18 @@ public class GcIngestTests
         await db.SaveChangesAsync();
 
         // the user renames the account on their phone; the next fetch runs
-        // LATER, so before the fix its fresh server HLC won the name field
+        // LATER, so before the fix its fresh server HLC won the name field.
+        // #212 r2: type is seed-only for the same reason — the client's
+        // stored reading must survive every refresh
         var accountId = ImportIds.AccountId("NL69INGB0123456789");
         var feedSpace = await db.Spaces.FindAsync(FeedId);
         var rename = new SyncOpDto(
             "rename-op-1", FeedId, "account", accountId,
-            new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement("My spending") },
+            new Dictionary<string, JsonElement>
+            {
+                ["name"] = JsonSerializer.SerializeToElement("My spending"),
+                ["type"] = JsonSerializer.SerializeToElement("savings"),
+            },
             ServerHlc.Now().Replace(ServerHlc.DeviceId, "phone"));
         await new SyncWriter(db).ApplyAsync(feedSpace!, null, [rename]);
         await db.SaveChangesAsync();
@@ -215,6 +221,7 @@ public class GcIngestTests
         var row = await db.EntityRows.FindAsync(FeedId, "account", accountId);
         var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(row!.DataJson)!;
         Assert.Equal("My spending", data["name"].GetString()); // rename survives the refresh
+        Assert.Equal("savings", data["type"].GetString()); // #212 r2: so does the type
         Assert.Equal(123456, data["balanceCents"].GetInt32()); // raw facts still refreshed
     }
 }

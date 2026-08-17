@@ -29,7 +29,7 @@ import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
 
-import { typeDef, isLiability } from './accountTypes';
+import { typeDef } from './accountTypes';
 
 /** whole days between a yyyy-mm-dd date and now; 0 when absent */
 const daysSince = (date?: string | null): number =>
@@ -38,10 +38,14 @@ const daysSince = (date?: string | null): number =>
 function AccountRowButton({
   entry,
   lang,
+  showType,
   onOpen,
 }: {
   entry: GlobalAccount;
   lang: ReturnType<typeof useLang>['lang'];
+  /** #212 r2: only SPACE-owned rows name a type — a global account is
+   *  just an account; each space gives it its own reading at attach */
+  showType?: boolean;
   onOpen: (entry: GlobalAccount) => void;
 }) {
   const { t } = useLang();
@@ -60,7 +64,7 @@ function AccountRowButton({
       className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left"
     >
       {/* #212: the TYPE icon rides as a corner badge when a bank logo
-          owns the tile — the type stays readable at a glance */}
+          owns the tile — space-owned rows only (r2) */}
       <span className="relative shrink-0">
         {bankLogo ? (
           <img
@@ -76,9 +80,13 @@ function AccountRowButton({
           />
         ) : null}
         <span className={bankLogo ? 'hidden' : ''}>
-          <Icon name={typeDef(account.type).icon} size={22} color={account.color ?? 'var(--m-ink-3)'} />
+          <Icon
+            name={showType ? typeDef(account.type).icon : 'bank-outline'}
+            size={22}
+            color={account.color ?? 'var(--m-ink-3)'}
+          />
         </span>
-        {bankLogo && (
+        {bankLogo && showType && (
           <span
             data-testid={`account-typebadge-${account.id}`}
             className="absolute -right-1.5 -bottom-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-bg-2 ring-2 ring-surface"
@@ -89,10 +97,11 @@ function AccountRowButton({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15px] text-ink">{account.name}</span>
-        {/* #212: the type, named — after creation it was invisible */}
-        <span className="block truncate text-[11px] text-ink-4" data-testid={`account-type-${account.id}`}>
-          {t(typeDef(account.type).labelKey)}
-        </span>
+        {showType && (
+          <span className="block truncate text-[11px] text-ink-4" data-testid={`account-type-${account.id}`}>
+            {t(typeDef(account.type).labelKey)}
+          </span>
+        )}
         {feedSpaceId ? (
           <span className="block truncate text-[11px] text-ink-4" data-testid={`account-via-${account.id}`}>
             {feedSubtitle}
@@ -138,11 +147,13 @@ function AccountSection({
   title,
   list,
   lang,
+  showType,
   onOpen,
 }: {
   title: string;
   list: GlobalAccount[];
   lang: ReturnType<typeof useLang>['lang'];
+  showType?: boolean;
   onOpen: (entry: GlobalAccount) => void;
 }) {
   if (list.length === 0) return null;
@@ -153,7 +164,7 @@ function AccountSection({
         {list.map((entry, i) => (
           <div key={entry.account.id}>
             {i > 0 && <div className="mx-4 h-px bg-line-2" />}
-            <AccountRowButton entry={entry} lang={lang} onOpen={onOpen} />
+            <AccountRowButton entry={entry} lang={lang} showType={showType} onOpen={onOpen} />
           </div>
         ))}
       </div>
@@ -176,7 +187,8 @@ function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: Retu
             <div key={account.id}>
               {i > 0 && <div className="mx-4 h-px bg-line-2" />}
               <div className="flex items-center gap-3 px-4 py-3.5" data-testid={`shared-account-${account.id}`}>
-                <Icon name={typeDef(account.type).icon} size={22} color="var(--m-ink-3)" />
+                {/* #212 r2: no type at the global level — plain bank tile */}
+                <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[15px] text-ink">{account.name}</span>
                   <span className="block truncate text-[11px] text-ink-4">
@@ -238,8 +250,6 @@ export function AccountsScreen() {
   // spaces and feeds, plus what others share with me via shared spaces
   const global = useGlobalAccounts(myFeedIds);
   const mine = useMemo(() => (global?.mine ?? []).filter((e) => !e.account.archived), [global]);
-  const assets = mine.filter((e) => !isLiability(e.account.type));
-  const liabilities = mine.filter((e) => isLiability(e.account.type));
   // reconcile pairing spans BOTH pools: a manual/imported row inside a
   // space can be the twin of a global bank connection
   const suggestionPool = useMemo(
@@ -406,9 +416,10 @@ export function AccountsScreen() {
             ))}
             {/* GLOBAL first (user ruling 2026-07-28): bank connections
                 and statement imports are user-level; manual accounts
-                live inside their space and list under it below */}
-            <AccountSection title={t('acct.assets')} list={assets} lang={lang} onOpen={openEntry} />
-            <AccountSection title={t('acct.liabilities')} list={liabilities} lang={lang} onOpen={openEntry} />
+                live inside their space and list under it below.
+                #212 r2: one plain section — a global account has no
+                type of its own, so no assets/liabilities split here */}
+            <AccountSection title={t('acct.globalCap')} list={mine} lang={lang} onOpen={openEntry} />
             <SharedWithMeSection list={global?.sharedWithMe ?? []} lang={lang} />
             {(global?.spaceScoped ?? []).map((segment) => (
               <div key={segment.spaceId} data-testid={`accounts-space-${segment.spaceId}`}>
@@ -416,6 +427,7 @@ export function AccountsScreen() {
                   title={`${segment.spaceName} · ${t('acct.spaceScopedCap')}`}
                   list={segment.accounts.filter((e) => !e.account.archived)}
                   lang={lang}
+                  showType
                   onOpen={openEntry}
                 />
               </div>

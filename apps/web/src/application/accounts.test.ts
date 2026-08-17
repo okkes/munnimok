@@ -5,7 +5,9 @@ import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
-import { changeAccountType } from './accounts';
+import { accountLinkId } from '@/domain/feedIds';
+import { visibleTransactions } from '@/db/joined';
+import { changeAccountType, changeLinkedAccountType } from './accounts';
 
 const SPACE = 's1';
 
@@ -52,5 +54,37 @@ describe('#212: the destructive type change', () => {
     const account = (await store.get('account', 'pot'))!;
     await changeAccountType(store, repo, account, 'checking');
     expect(await store.get('transaction', 's1r')).toMatchObject({ catId: 'uncategorized', txType: 'expense', needsReview: 1 });
+  });
+
+  it('#212 r2: a LINKED account re-types for THIS space alone — the other space keeps its reading', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_typ_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('typ3'), { trackOutbox: false });
+    // two member spaces, one bank feed (feeds carry NO space row)
+    const spaceBase = { name: 'P', kind: 'personal' as const, currency: 'EUR', periodType: 'month' as const };
+    await repo.upsert('space', 's1', 's1', spaceBase);
+    await repo.upsert('space', 's2', 's2', { ...spaceBase, name: 'Q' });
+    await repo.upsert('account', 'feed1', 'bankacct', { name: 'Bank', type: 'checking', currency: 'EUR', balanceCents: 0, source: 'gocardless' });
+    await repo.upsert('transaction', 'feed1', 'raw1', { accountId: 'bankacct', date: '2026-02-01', amountCents: -1_500, currency: 'EUR', merchant: 'AH', txType: 'expense', needsReview: 0 });
+    const linkA = accountLinkId('s1', 'feed1');
+    const linkB = accountLinkId('s2', 'feed1');
+    await repo.upsert('accountLink', 's1', linkA, { feedSpaceId: 'feed1', accountId: 'bankacct', type: 'checking', archived: 0 });
+    await repo.upsert('accountLink', 's2', linkB, { feedSpaceId: 'feed1', accountId: 'bankacct', type: 'checking', archived: 0 });
+
+    const link = (await store.get('accountLink', linkA))!;
+    const touched = await changeLinkedAccountType(store, repo, 's1', link, 'savings');
+    expect(touched).toBe(1);
+
+    // the SPACE's fact moved; the global row keeps its plain value
+    expect((await store.get('accountLink', linkA))?.type).toBe('savings');
+    expect((await store.get('accountLink', linkB))?.type).toBe('checking');
+    expect((await store.get('account', 'bankacct'))?.type).toBe('checking');
+    // s1 reads the row as saving, back in review; s2 keeps its own
+    // checking reading (raw rows carry no opinion — each space's meta
+    // overlay does, and only s1's was rewritten)
+    const inA = (await visibleTransactions(store, 's1')).find((r) => r.id === 'raw1');
+    expect(inA).toMatchObject({ catId: 'uncategorized', txType: 'saving', needsReview: 1 });
+    const inB = (await visibleTransactions(store, 's2')).find((r) => r.id === 'raw1');
+    expect(inB?.txType).toBe('expense');
   });
 });

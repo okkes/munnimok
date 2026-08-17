@@ -314,6 +314,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // links that sync in AFTER a device's first boot heal too
         const { healGatelessLinks } = await import('@/application/historyStart');
         await healGatelessLinks(store, repo);
+        // #212 r2: the SPACE owns an attached account's type — typeless
+        // links freeze today's effective reading so the server's per-
+        // fetch 'checking' re-assert can't flip a space's books
+        const { healUntypedLinks } = await import('@/application/accountAttach');
+        await healUntypedLinks(store, repo);
         // loans v2: debt rows fold into their liability account (every
         // boot, idempotent — late-syncing debts from old devices heal)
         const { foldDebtsIntoAccounts } = await import('@/application/debts');

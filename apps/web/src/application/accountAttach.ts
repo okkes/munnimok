@@ -67,6 +67,29 @@ export async function reconcileSpaceLinks(store: StorageBackend, repo: Repo, spa
   return mirrored;
 }
 
+/**
+ * #212 r2: the SPACE owns an attached account's type. Links minted
+ * before the rule (or by the server's connect mirror op) carry none
+ * and read the global row live — a field the bank fetch re-asserts to
+ * 'checking' on every run. Freeze today's effective reading onto the
+ * link (every boot, idempotent) so the space's fact stops depending on
+ * a field the server keeps rewriting.
+ */
+export async function healUntypedLinks(store: StorageBackend, repo: Repo): Promise<number> {
+  let touched = 0;
+  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
+  for (const space of spaces) {
+    for (const link of (await store.bySpace('accountLink', space.id)).filter((l) => l.deleted === 0)) {
+      if (link.type) continue;
+      const account = await store.get('account', link.accountId);
+      if (!account || account.deleted !== 0) continue;
+      await repo.upsert('accountLink', space.id, link.id, { type: account.type });
+      touched++;
+    }
+  }
+  return touched;
+}
+
 export async function detachFeedFromSpace(
   store: StorageBackend,
   repo: Repo,

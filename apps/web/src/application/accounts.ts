@@ -6,7 +6,7 @@ import { accountStamp } from '@/domain/txType';
 import { standardTypeFor } from '@/domain/txKind';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import type { AccountRow, AccountType } from '@/db/types';
+import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 
 /**
  * Global financial accounts (user decision: accounts are NOT
@@ -141,6 +141,37 @@ export async function changeAccountType(
       });
       touched++;
     }
+  }
+  return touched;
+}
+
+/**
+ * #212 r2 (user): for an ATTACHED account the type is the SPACE's fact
+ * — it lives on the accountLink and each space reads its own. Changing
+ * it is destructive within that space alone: this space's rows on the
+ * account return to review under the new stamp; other spaces' readings
+ * and the physical facts (balances, links, pairs) stand untouched.
+ */
+export async function changeLinkedAccountType(
+  store: StorageBackend,
+  repo: Repo,
+  spaceId: string,
+  link: AccountLinkRow,
+  nextType: AccountType,
+): Promise<number> {
+  await repo.upsert('accountLink', spaceId, link.id, { type: nextType });
+  const stamp = accountStamp(nextType);
+  const rows = (await visibleTransactions(store, spaceId)).filter(
+    (r) => r.accountId === link.accountId && r.deleted === 0,
+  );
+  let touched = 0;
+  for (const row of rows) {
+    await writeTxTransform(repo, row, {
+      catId: UNCATEGORIZED_ID,
+      txType: stamp ?? standardTypeFor(row.amountCents),
+      needsReview: 1,
+    });
+    touched++;
   }
   return touched;
 }

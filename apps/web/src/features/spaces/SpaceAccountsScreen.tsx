@@ -11,7 +11,9 @@ import { sourceKeyFor } from '@/features/accounts/AttachSheet';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
-import { ACCOUNT_TYPES } from '@/features/accounts/accountTypes';
+import { AccountTypeRow } from '@/features/accounts/AccountTypeRow';
+import { ACCOUNT_TYPES, typeDef } from '@/features/accounts/accountTypes';
+import { linkEffectiveType } from '@/db/joined';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
 import { fmtTimeAgo } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -83,7 +85,15 @@ function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined):
     key: link.id,
     // #239: the space's own name wins here — the global one stays global
     name: link.displayName || (account?.name ?? t('acct.bank')),
-    subtitle: [ibanTail(account?.iban), account ? t(sourceKeyFor(account)) : undefined].filter(Boolean).join(' · '),
+    // #212 r2: the SPACE's type leads the subtitle — import/linked rows
+    // were the ones missing their type here (user ss)
+    subtitle: [
+      account ? t(typeDef(linkEffectiveType(link, account)).labelKey) : undefined,
+      ibanTail(account?.iban),
+      account ? t(sourceKeyFor(account)) : undefined,
+    ]
+      .filter(Boolean)
+      .join(' · '),
     archived: !!link.archived,
     stale: isStale(account),
     detach: { feedSpaceId: link.feedSpaceId, accountId: link.accountId },
@@ -143,7 +153,9 @@ export function SpaceAccountsScreen() {
     const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
       key: account.id,
       name: account.name,
-      subtitle: [ibanTail(account.iban), t(sourceKeyFor(account))].filter(Boolean).join(' · '),
+      subtitle: [t(typeDef(account.type).labelKey), ibanTail(account.iban), t(sourceKeyFor(account))]
+        .filter(Boolean)
+        .join(' · '),
       archived: !!account.archived,
       stale: isStale(account),
       manual: account,
@@ -344,6 +356,10 @@ export function SpaceAccountsScreen() {
                 />
               </label>
             )}
+            {/* #212 r2 (user): the TYPE is this space's own fact for an
+                attached account — import/linked rows were missing it
+                here entirely; changing re-reviews THIS space only */}
+            {info.link && info.account && <AccountTypeRow account={info.account} link={info.link} />}
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {[
                 info.account?.iban ? ([t('accounts.ibanLabel'), info.account.iban] as const) : null,

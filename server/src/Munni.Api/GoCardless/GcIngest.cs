@@ -195,16 +195,22 @@ public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
             : InstitutionDisplayName(requisition?.InstitutionId) ?? details.OwnerName ?? "Wallet";
         var fields = new Dictionary<string, JsonElement>
         {
-            ["type"] = Json("checking"),
             ["source"] = Json("gocardless"),
             ["currency"] = Json(details.Currency ?? linked.Currency),
         };
         // the bank's display name seeds the row once; after that the field
         // belongs to the user (re-asserting it each fetch stamped a fresh
-        // server HLC and silently clobbered renames made in the app)
+        // server HLC and silently clobbered renames made in the app).
+        // #212 r2: type is seed-only for the same reason — the SPACE owns
+        // the account's type (accountLink.type); re-sending 'checking'
+        // every fetch kept overwriting the global fallback clients read
         var exists = await db.EntityRows.AnyAsync(r =>
             r.SpaceId == feedSpaceId && r.Entity == "account" && r.EntityId == linked.AccountEntityId);
-        if (!exists) fields["name"] = Json(details.Name ?? fallbackName);
+        if (!exists)
+        {
+            fields["name"] = Json(details.Name ?? fallbackName);
+            fields["type"] = Json("checking");
+        }
         if (isRealIban) fields["iban"] = Json(linked.Iban);
         // the institution id lets clients show the real bank logo; the
         // provider names WHO fetches (#176: EB rows read "GoCardless"

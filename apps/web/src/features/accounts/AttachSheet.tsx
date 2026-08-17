@@ -13,7 +13,6 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { deleteFeedAccount } from './feedGateway';
-import { AccountTypeRow } from './AccountTypeRow';
 
 interface ImportBatchView {
   id: string;
@@ -225,11 +224,9 @@ export function AttachSheet({
           </button>
         </div>
       )}
-      {/* #212: the type, visible for everyone — changeable by whoever
-          may edit the account (destructive: rows re-review) */}
-      <div className="mb-2">
-        <AccountTypeRow account={account} readOnly={!canEdit} />
-      </div>
+      {/* #212 r2 (user): NO type here — a global account is just an
+          account; each space decides what it is at attach time and can
+          change it on its own accounts sheet */}
       <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-source">
         <span className="text-ink-4">{t('acct.source')}</span>
         <span className="text-ink-2">{t(sourceKeyFor(account))}</span>

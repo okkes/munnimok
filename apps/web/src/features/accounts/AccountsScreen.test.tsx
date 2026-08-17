@@ -270,6 +270,51 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByTestId('space-account-link-1')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
+  it('#212 r2: the space info sheet types a LINKED account — this space alone, global row untouched', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    await repo.upsert('accountLink', 's-user', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1', type: 'checking' });
+    db.close();
+
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
+      },
+    });
+
+    // the linked row's info sheet carries the SPACE's type row now
+    fireEvent.click(await screen.findByTestId('space-account-link-1'));
+    await screen.findByTestId('space-account-info');
+    fireEvent.click(await screen.findByTestId('account-type-row'));
+    fireEvent.click(await screen.findByTestId('account-type-pick-savings'));
+    fireEvent.click(await screen.findByTestId('account-type-confirm-confirm'));
+
+    // the fact lands on the LINK; the global account row keeps its own
+    const db2 = new MunniDB(USER_TEST_DB);
+    await waitFor(async () => {
+      expect((await db2.accountLinks.get('link-1'))?.type).toBe('savings');
+    }, { timeout: 5000 });
+    expect((await db2.accounts.get('feedacct-1'))?.type).toBe('checking');
+    db2.close();
+  }, 15_000);
+
   it('global sheet lists only attached spaces and detaches from there too', async () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');

@@ -5,7 +5,7 @@ import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { accountLinkId } from '@/domain/feedIds';
-import { reconcileSpaceLinks } from './accountAttach';
+import { healUntypedLinks, reconcileSpaceLinks } from './accountAttach';
 import { fetchSpaceLinks } from '@/features/accounts/feedGateway';
 
 vi.mock('@/features/accounts/feedGateway', () => ({
@@ -68,5 +68,24 @@ describe('reconcileSpaceLinks', () => {
     const { store, repo } = await makeStore();
     expect(await reconcileSpaceLinks(store, repo, SPACE)).toBe(0);
     expect((await store.bySpace('accountLink', SPACE)).filter((l) => l.deleted === 0)).toHaveLength(0);
+  });
+
+  it('#212 r2: a typeless link freezes the account’s current reading — typed links stand', async () => {
+    const { store, repo } = await makeStore();
+    await repo.upsert('account', 'feedA', 'accA', { name: 'Bank', type: 'checking', currency: 'EUR', balanceCents: 0, source: 'gocardless' });
+    await repo.upsert('account', 'feedB', 'accB', { name: 'Spaar', type: 'savings', currency: 'EUR', balanceCents: 0, source: 'gocardless' });
+    // a server-minted link (no type) and a deliberately typed one
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feedA'), {
+      feedSpaceId: 'feedA', accountId: 'accA', historyFrom: '2026-01-01', archived: 0,
+    });
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feedB'), {
+      feedSpaceId: 'feedB', accountId: 'accB', historyFrom: '2026-01-01', archived: 0, type: 'brokerage',
+    });
+
+    expect(await healUntypedLinks(store, repo)).toBe(1);
+    expect((await store.get('accountLink', accountLinkId(SPACE, 'feedA')))?.type).toBe('checking');
+    expect((await store.get('accountLink', accountLinkId(SPACE, 'feedB')))?.type).toBe('brokerage');
+    // idempotent: the next boot writes nothing
+    expect(await healUntypedLinks(store, repo)).toBe(0);
   });
 });
