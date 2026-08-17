@@ -112,14 +112,15 @@ async function completeOnboardingIfShown(page, userSub) {
   }
   if (winner !== 'onboarding') return;
   // something can remount the tree once during a cold boot and wipe the
-  // typed name (CI snapshots showed the field empty + Continue disabled
-  // AFTER a successful fill) — so fill-until-armed, then walk the steps,
-  // retrying the whole passage if the screen snaps back
+  // typed name (CI snapshots showed the field empty AFTER a successful
+  // fill) — so fill until the FIELD HOLDS the value (#195 keeps the
+  // Continue button always enabled, so its state says nothing anymore),
+  // then walk the steps, retrying the passage if the screen snaps back
   const name = page.locator('[data-testid="onboarding-name"]');
   const save = page.locator('[data-testid="onboarding-save"]');
   for (let attempt = 0; attempt < 6; attempt++) {
     try {
-      for (let i = 0; i < 30 && !(await save.isEnabled().catch(() => false)); i++) {
+      for (let i = 0; i < 30 && (await name.inputValue().catch(() => '')) !== 'E2E User'; i++) {
         await name.fill('E2E User').catch(() => undefined);
         await page.waitForTimeout(500);
       }
