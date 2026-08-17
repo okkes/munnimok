@@ -16,6 +16,7 @@ import { setPredictionCountry } from '@/domain/predictCategory';
 import { MANUAL_RATES_META_KEY, readManualRates } from '@/lib/rates';
 import { useQuery } from '@/db/useQuery';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { useDiscardGuard } from '@/ui/DiscardGuard';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Flag } from '@/ui/Flag';
@@ -238,11 +239,22 @@ export function ProfileScreen() {
       if (loaded.userId) setUserId(loaded.userId);
       if (loaded.country) setCountry(loaded.country);
       setDisplayCurrency(loaded.displayCurrency);
+      // #164: the loaded snapshot is the discard-guard baseline
+      baselineRef.current = JSON.stringify([
+        loaded.name,
+        loaded.picture ?? null,
+        loaded.country ?? null,
+        loaded.displayCurrency ?? null,
+      ]);
     })();
     return () => {
       cancelled = true;
     };
   }, [identity, store]);
+  const baselineRef = useRef<string | null>(null);
+  const draftPrint = JSON.stringify([name, picture ?? null, country ?? null, displayCurrency ?? null]);
+  const profileDirty = baselineRef.current !== null && draftPrint !== baselineRef.current;
+  const { guardedBack, sheet: discardSheet } = useDiscardGuard(profileDirty, () => window.history.back());
 
   const save = async () => {
     if (!name.trim()) return;
@@ -265,6 +277,8 @@ export function ProfileScreen() {
       displayCurrency: displayCurrency ?? undefined,
     } satisfies LocalProfile);
     setPredictionCountry(country);
+    // #164: a save makes the draft the new baseline — leaving is clean
+    baselineRef.current = JSON.stringify([name, picture ?? null, country ?? null, displayCurrency ?? null]);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -281,11 +295,12 @@ export function ProfileScreen() {
       <AppBar
         title={t('profile.title')}
         leading={
-          <IconButton label={t('action.back')} testId="profile-back" onClick={() => window.history.back()}>
+          <IconButton label={t('action.back')} testId="profile-back" onClick={guardedBack}>
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
       />
+      {discardSheet}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col items-center gap-1.5 py-5">
           <Avatar picture={picture} size={72} />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
@@ -10,6 +10,8 @@ import { LOCKED_MAIN_IDS } from '@/domain/categories';
 import type { BudgetCarryMode, BudgetEvery, BudgetRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { useDiscardGuard } from '@/ui/DiscardGuard';
+import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Button } from '@/ui/Button';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
@@ -96,6 +98,22 @@ export function BudgetFormScreen() {
 
   const amountCents = Math.round(Number.parseFloat(amount.replace(',', '.')) * 100);
   const valid = name.trim().length > 0 && Number.isFinite(amountCents) && amountCents > 0 && catIds.length > 0 && !!anchor;
+  // #195: the save stays tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
+  const blockerText = (() => {
+    if (!attempted || valid) return '';
+    if (!name.trim()) return t('form.needName');
+    if (!Number.isFinite(amountCents) || amountCents <= 0) return t('form.needAmount');
+    if (catIds.length === 0) return t('form.needCategory');
+    return t('form.needFields');
+  })();
+  // #164: edits guard the back arrow — the draft is dirty once any field
+  // moved away from the seeded state (creation counts from blank)
+  const draftPrint = JSON.stringify([name, icon, amount, every, anchor, catIds, carryOver, carryMode, carryPeriods, carryCap, notifyAtPct]);
+  const baselineRef = useRef<string | null>(null);
+  if (baselineRef.current === null && (!budgetId || loaded)) baselineRef.current = draftPrint;
+  const formDirty = baselineRef.current !== null && draftPrint !== baselineRef.current;
+  const { guardedBack, sheet: discardSheet } = useDiscardGuard(formDirty, () => window.history.back());
 
   const save = async () => {
     if (!valid) return;
@@ -165,11 +183,12 @@ export function BudgetFormScreen() {
       <AppBar
         title={editing ? t('budgets.edit') : t('budgets.new')}
         leading={
-          <IconButton label={t('action.back')} testId="budgetform-back" onClick={() => window.history.back()}>
+          <IconButton label={t('action.back')} testId="budgetform-back" onClick={guardedBack}>
             <Icon name="arrow-left" size={22} />
           </IconButton>
         }
       />
+      {discardSheet}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col gap-3 pt-1">
           {/* icon row */}
@@ -344,7 +363,17 @@ export function BudgetFormScreen() {
             ))}
           </div>
 
-          <Button data-testid="budgetform-save" onClick={() => void save()} disabled={!valid}>
+          <FormBlockerNote show={!!blockerText} text={blockerText} testId="budgetform-blocker" />
+          <Button
+            data-testid="budgetform-save"
+            onClick={() => {
+              if (!valid) {
+                setAttempted(true);
+                return;
+              }
+              void save();
+            }}
+          >
             {editing ? t('action.save') : t('action.create')}
           </Button>
           {editing && (

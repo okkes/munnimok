@@ -19,6 +19,7 @@ import { getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
 import { LOGTO_WIPE_KEY } from '@/lib/authState';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
+import { useEvicted } from './evicted';
 
 const ACTIVE_SPACE_KEY = 'activeSpaceId';
 /** id of a personal space this device created during bootstrap (self-heal marker) */
@@ -400,6 +401,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     },
     [state],
   );
+
+  // #173 (user): an eviction of the ACTIVE space hops to a surviving one
+  // right away — before this, screens just read undefined until the next
+  // full boot silently preselected spaces[0]
+  const evicted = useEvicted((s) => s.evicted);
+  useEffect(() => {
+    if (!evicted || !state || evicted.spaceId !== state.spaceId) return;
+    void (async () => {
+      const next = (await liveSpaces(state.store)).find((s) => s.id !== evicted.spaceId);
+      if (next) {
+        useEvicted.getState().markSwitched(next.name);
+        await setActiveSpace(next.id);
+      }
+    })();
+  }, [evicted, state, setActiveSpace]);
 
   const value = useMemo(() => (state ? { ...state, setActiveSpace } : null), [state, setActiveSpace]);
 

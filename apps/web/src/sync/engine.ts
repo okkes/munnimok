@@ -1,5 +1,6 @@
 import { getApiCapabilities, getProtocolIssue, resetApiCapabilitiesCache } from '@/lib/api';
 import { reportError } from '@/lib/report';
+import { reportEviction } from '@/app/evicted';
 import type { StorageBackend } from '@/db/backend';
 import type { OutboxRow } from '@/db/types';
 import type { Repo } from '@/db/repo';
@@ -232,6 +233,11 @@ export class SyncEngine {
       if (latestSeq !== since) await this.store.metaPut(cursorKey(spaceId), latestSeq);
     } catch (err) {
       if (err instanceof SyncHttpError && err.status === 403) {
+        // #173: a 403 on a MEMBER space is an eviction — tell the app
+        // before the purge erases the name (feed sweeps stay silent:
+        // they route through purgeOrphanFeeds, not this catch)
+        const name = (await this.store.get('space', spaceId))?.name;
+        if (name) reportEviction({ spaceId, spaceName: name });
         await this.purgeSpace(spaceId);
         return;
       }

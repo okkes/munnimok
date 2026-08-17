@@ -143,10 +143,12 @@ describe('TxFormSheet (demo identity)', () => {
     renderAppAsUser('/transactions', { spaces: [{ id: 's-user', name: 'Personal' }] });
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
-    // the empty state replaces the form and the CTA lands on accounts
+    // #179 (user): the CTA lands on the SPACE's own accounts screen with
+    // the add chooser opening on arrival — not the global overview
     expect(await screen.findByTestId('txform-no-accounts')).toBeTruthy();
     fireEvent.click(screen.getByTestId('txform-add-account'));
-    expect(await screen.findByTestId('screen-accounts')).toBeTruthy();
+    expect(await screen.findByTestId('screen-space-accounts')).toBeTruthy();
+    expect(await screen.findByTestId('chooser-manual-form', {}, { timeout: 5000 })).toBeTruthy();
   }, 15_000);
 
   it('a manual expense adjusts the account balance live (user bug: it froze)', async () => {

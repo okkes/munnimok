@@ -23,6 +23,7 @@ import {
 import type { CategoryChanges, PendingCommit } from './categoryOps';
 import { catName, useCategories } from './useCategories';
 import type { Cat } from './useCategories';
+import { takeCategoriesCreateIntent } from './categoriesHandoff';
 import type { TFunc } from '@/i18n';
 import { MDI_NAMES } from '@/generated/mdiNames';
 import { categoryNameConflict } from '@/domain/categoryNames';
@@ -314,6 +315,11 @@ export function ManageCategoriesScreen() {
     setNameError(null); // #247: a stale conflict must not flash into a fresh form
     setMode({ kind: 'newMain' });
   };
+  // #180: the home FAB's "new category" arrives with the create intent
+  useEffect(() => {
+    if (takeCategoriesCreateIntent()) openNewMain();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const openNewSub = (parentId: string) => {
     setName('');
     setIcon(ICONS[0]);

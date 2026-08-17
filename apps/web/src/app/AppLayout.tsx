@@ -15,7 +15,9 @@ import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
 import { clearTxFilters } from '@/features/transactions/txFilters';
 import { padScrollportForKeyboard, restoreScrollportPad, revealInScroller } from '@/lib/viewport';
 import { wheelToHorizontal } from '@/lib/wheelScroll';
-import { SHEET_OWNS_KEYBOARD } from '@/ui/Sheet';
+import { SHEET_OWNS_KEYBOARD, Sheet } from '@/ui/Sheet';
+import { Button } from '@/ui/Button';
+import { useEvicted } from './evicted';
 import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
@@ -180,6 +182,30 @@ function BudgetAlerts() {
   return null;
 }
 
+/** #173 (user): kicked out of the active space — the takeover sheet says
+ *  what happened and where the app landed instead of silently vanishing
+ *  the data underfoot. Not-active evictions get the phone push only. */
+function EvictedNotice() {
+  const { t } = useLang();
+  const evicted = useEvicted((s) => s.evicted);
+  const clear = useEvicted((s) => s.clear);
+  return (
+    <Sheet open={evicted !== null} onOpenChange={(next) => !next && clear()} title={t('space.kickedTitle')} size="compact">
+      {evicted && (
+        <div className="flex flex-col gap-3 pt-1" data-testid="space-kicked-sheet">
+          <p className="text-[14px] leading-relaxed text-ink-2">
+            {t('space.kickedBody', { space: evicted.spaceName })}
+            {evicted.switchedToName ? ` ${t('space.kickedSwitched', { to: evicted.switchedToName })}` : ''}
+          </p>
+          <Button data-testid="space-kicked-ok" onClick={clear}>
+            {t('action.done')}
+          </Button>
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
 /** unmistakable "this is the demo" marker (user request): a pill next to
  *  the desktop brand, and a slim strip above the mobile tab bar */
 function DemoBadge() {
@@ -267,6 +293,7 @@ export function AppLayout() {
             </HelpProvider>
             <DemoBanner />
             <OfflineBanner />
+            <EvictedNotice />
             <RecurringReminders />
             <StoreKeepAlive />
             <BudgetAlerts />

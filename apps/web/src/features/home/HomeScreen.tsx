@@ -53,6 +53,12 @@ import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { presetTxFilters } from '@/features/transactions/txFilters';
+import { TxFormSheet } from '@/features/transactions/TxFormSheet';
+import { StatementImportFlow } from '@/features/accounts/StatementImportFlow';
+import { setCategoriesCreateIntent } from '@/features/categories/categoriesHandoff';
+import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
+import { setFriendsAddIntent } from '@/features/friends/friendsHandoff';
+import { setSpacesCreateIntent } from '@/features/spaces/spacesHandoff';
 
 const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary; signed?: boolean }> = {
   income: { icon: 'cash-plus', color: 'var(--m-accent)', field: 'incomeCents' },
@@ -163,6 +169,10 @@ export function HomeScreen() {
   const identity = useSession((s) => s.identity);
   const topSplit = useTopSplit();
   const [accountsOpen, setAccountsOpen] = useState(false);
+  // #180: the quick-add speed dial + its two in-place hosts
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickTxOpen, setQuickTxOpen] = useState(false);
+  const [quickImportOpen, setQuickImportOpen] = useState(false);
 
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
@@ -345,7 +355,7 @@ export function HomeScreen() {
   });
 
   return (
-    <div className="m-fade flex h-full flex-col" data-testid="screen-home">
+    <div className="m-fade relative flex h-full flex-col" data-testid="screen-home">
       {/* ≤3 trailing actions (redesign §2H): customize moved to the end of
           the block list, where the blocks actually live */}
       <AppBar
@@ -360,6 +370,58 @@ export function HomeScreen() {
           </>
         }
       />
+      {/* #180 (user): the quick-add speed dial — one floating door to the
+          six most common creations, in the user's stated order */}
+      <button
+        data-testid="home-fab"
+        aria-label={t('home.quickAdd')}
+        onClick={() => setQuickOpen(true)}
+        className="m-tap absolute right-4 bottom-4 z-30 flex h-14 w-14 items-center justify-center rounded-full border-none bg-brand text-on-brand shadow-[0_4px_16px_rgba(0,0,0,0.25)]"
+      >
+        <Icon name="plus" size={26} />
+      </button>
+      <Sheet open={quickOpen} onOpenChange={setQuickOpen} title={t('home.quickAdd')} size="form">
+        <div className="flex flex-col pt-1" data-testid="home-quick-sheet">
+          {(
+            [
+              ['tx', 'receipt-text-plus-outline', () => setQuickTxOpen(true)],
+              ['import', 'file-upload-outline', () => setQuickImportOpen(true)],
+              ['category', 'shape-plus-outline', () => {
+                setCategoriesCreateIntent();
+                void navigate({ to: '/categories' });
+              }],
+              ['account', 'bank-plus', () => {
+                setSpaceAddAccountIntent();
+                void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
+              }],
+              ['friend', 'account-plus-outline', () => {
+                setFriendsAddIntent();
+                void navigate({ to: '/friends' });
+              }],
+              ['space', 'home-plus-outline', () => {
+                setSpacesCreateIntent();
+                void navigate({ to: '/spaces' });
+              }],
+            ] as const
+          ).map(([id, icon, go]) => (
+            <button
+              key={id}
+              data-testid={`home-quick-${id}`}
+              onClick={() => {
+                setQuickOpen(false);
+                go();
+              }}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-1 py-3.5 text-left text-[15px] text-ink last:border-0"
+            >
+              <Icon name={icon} size={20} color="var(--m-accent-deep)" />
+              {t(`home.quick.${id}`)}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+      {/* the FAB's in-place hosts — sheets are siblings (#241 rule) */}
+      <TxFormSheet open={quickTxOpen} onOpenChange={setQuickTxOpen} />
+      <StatementImportFlow open={quickImportOpen} onOpenChange={setQuickImportOpen} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* desktop ruling (§4.4) + D4: strict two-column split — the
             balance heads the left column (a 1040px band saying one number

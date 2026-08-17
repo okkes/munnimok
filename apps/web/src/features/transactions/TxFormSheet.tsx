@@ -8,6 +8,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
+import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
 import { applyHistoryMove } from '@/application/historyStart';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
@@ -576,7 +577,10 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onOpenChange={onOpenChange}
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
         size="tall"
-        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, adjustment, linkedAccountId, recurringId, cats: stagedCats }) !== baselineRef.current}
+        // #179: until the seed effect stamps a baseline, the form cannot
+        // be dirty — the ref-in-effect pattern left '' behind on a blank
+        // new form (no state change → no re-render → false discard ask)
+        dirty={open && baselineRef.current !== '' && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, adjustment, linkedAccountId, recurringId, cats: stagedCats }) !== baselineRef.current}
       >
         {/* no manual account yet: explain WHY the form can't work and
             hand over a one-tap path to fix it (user UX request) */}
@@ -590,7 +594,11 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
               data-testid="txform-add-account"
               onClick={() => {
                 onOpenChange(false);
-                void navigate({ to: '/accounts' });
+                // #179 (user): straight to the SPACE's accounts screen
+                // with the add sheet opening on arrival — the global
+                // overview hid manual creation two taps deep
+                setSpaceAddAccountIntent();
+                void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
               }}
             >
               {t('txform.noAccountsCta')}
