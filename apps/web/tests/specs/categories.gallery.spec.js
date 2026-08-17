@@ -52,7 +52,9 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'bubble');
-    const customOption = page.locator('[data-testid^="catpicker-"]:not([data-testid="catpicker-search"])').first();
+    // #234/#246: the search wears a clear × and a ◆ chip that share the
+    // catpicker- prefix — pick inside the LIST, where rows live
+    const customOption = page.locator('[data-testid="catpicker-list"] [data-testid^="catpicker-"]:not([data-testid="catpicker-list"]):not([data-testid="catpicker-create-custom"])').first();
     await customOption.click();
     await page.waitForTimeout(400);
     await page.click('[data-testid="part-cat-save"]');
