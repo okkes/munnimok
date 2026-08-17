@@ -69,7 +69,7 @@
 
   <section id="banks">
     <h2>Connecting your bank</h2>
-    <p>Settings → Global settings → All accounts. Connect a bank (read-only PSD2 access — munni can never move money) or import statements (CAMT.053, ING CSV or a PayPal activity export — several files at once) for accounts your bank won't share; those are global, listed first. Manual cash/savings accounts live INSIDE a space — the overview lists them under their space, and creating one takes you to "This space's accounts" (the wallet icon; the bank icon is the global overview). Bank data lands once per account; each space picks its accounts with a start date AND decides what the account is to that space — checking, savings, a loan… or a funding account: a shared pot you send money to, whose transactions never show in the space and whose balance counts toward nothing. A freshly connected account attaches to the space you started from by itself.</p>
+    <p>Settings → Global settings → All accounts. Connect a bank (read-only PSD2 access — munni can never move money) or import statements (CAMT.053, ING CSV or a PayPal activity export — several files at once) for accounts your bank won't share; those are global, listed first. Manual cash/savings accounts live INSIDE a space — the overview lists them under their space, and creating one takes you to "This space's accounts" (the wallet icon; the bank icon is the global overview). Bank data lands once per account; each space picks its accounts with a start date AND decides what the account is to that space — checking, savings, a loan… or a funding account: a shared pot you send money to, whose transactions never show in the space and whose balance counts toward nothing. A freshly connected account attaches to the space you started from by itself — an IMPORTED one stays global until you attach it yourself: the import result offers the attach step, where you pick the account type and how far back its history shows.</p>
     <ul class="tips"><li>Every space is born with six default accounts — savings, loan, investments, bank, cash and a shared pot. They are munni\u2019s own fixtures: a movement category always has somewhere valid to point, so they can\u2019t be deleted. You CAN adjust their balance from the account editor — the correction is recorded as an adjustment row, so the ledger stays honest. Their transactions are managed by munni: the legs appear when you link, leave when you unlink, and never take hand-edits.</li>
 <li>New transactions arrive automatically several times a day.</li>
 <li>With two open-banking providers configured, connecting asks WHO first: GoCardless works with any bank, while Enable Banking only serves accounts linked upfront on its portal \u2014 the choice screen shows the masked account numbers already known to work there, and each connection remembers its provider.</li>
@@ -81,11 +81,14 @@
 <li>In a shared space, connecting or importing asks a conscious yes first — bank data becomes visible to every member; manual accounts stay quiet.</li>
 <li>Two people connecting the SAME bank account both own it fully — the account number proves it is the same one. Each keeps their own bank consent, either can rename, attach or delete their view, and when one disconnects, the other\u2019s consent quietly takes over the fetching. "Shared with me" is only for accounts you reach through someone else\u2019s space.</li>
 <li>An account whose bank answered with zero transactions on the last sync says so right on its row — "synced fine" and "synced empty" are different facts.</li>
-<li>A transfer can create its counterparty on the spot through the one Create door: bank connect, statement import (it attaches to the space you are in) or a manual account.</li>
-<li>A loan IS an account now: create it once (loan, mortgage or credit card) and it appears on the Debts screen by itself — transfers to it are the payments, and munni nudges weekly until the interest rate is filled in (0% counts). Credit cards join the debts view only when you give them a debt story or flip "Track as debt" on the account.</li>
+<li>A transfer can create its counterparty on the spot through the one Create door: bank connect, statement import or a manual account — imported accounts land global and join the space through the explicit attach step.</li>
+<li>A loan IS an account now: create it once (loan, mortgage or credit card) and it appears on the Debts screen by itself — transfers to it are the payments, and munni nudges weekly until the interest rate is filled in (0% counts). The plan takes a due day like a recurring cost, and "Left to pay" is the loan\u2019s anchor value. Credit cards join the debts view only when you give them a debt story or flip "Track as debt" on the account.</li>
 <li>Leave a loan’s payment fields empty and the plan — amount, rhythm, payoff date — is estimated from the payments themselves; debt payments without a counter account gather under “Unassigned payments” until you file them.</li>
 <li>A recurring cost owns a category: linked transactions file under it automatically, with expected reimbursement as the one allowed override.</li>
-<li>Recurring-cost detection reads your full bank history — charges older than the space’s start date count as pattern evidence (that’s how yearly subscriptions get spotted) while your lists stay clean; accepting a suggestion links only the visible payments.</li></ul>
+<li>Recurring-cost detection reads your full bank history — charges older than the space’s start date count as pattern evidence (that’s how yearly subscriptions get spotted) while your lists stay clean; accepting a suggestion links only the visible payments.</li>
+<li>Detection knows lenders too: a payment pattern to a known one (DUO, for a start) wears the loan face in the inbox and on the Debts screen — "Track as loan" hands the pattern straight into loan creation as the payment plan.</li>
+<li>Every account row names its type now, with a small type badge on bank logos — and the account sheets carry an "Account type" row. Changing the type is deliberately destructive: every transaction on the account returns to review under the new reading, as if freshly added; balances and links stay.</li>
+<li>A space can call an attached account by its OWN name — rename it in the space\u2019s accounts sheet without touching the global name; renaming globally asks whether the space names follow.</li></ul>
     <div class="shots"><figure><img src="shots/16-accounts-list--en-light-mobile.png" alt="Connecting your bank" loading="lazy"></figure>
 <figure><img src="shots/19-import-preview--en-light-mobile.png" alt="Connecting your bank" loading="lazy"></figure>
 <figure><img src="shots/20-import-run--en-light-mobile.png" alt="Connecting your bank" loading="lazy"></figure></div>
@@ -102,7 +105,9 @@
 <li>The Split transaction row is the other gear: the amounts partition into parts that stack like cards in a deck; tap a peeking card and it shuffles to the front to take its categories, counterparty, recurring cost and event right there.</li>
 <li>Parts are full transactions and nothing restricts them beyond the amounts adding up — five expense parts, two savings, any mix is a real split. Splitting a filled transaction asks first: the row becomes a pure container and its own category, recurring link, event and note reset — the parts carry those from then on. Confirm stays tappable while parts are incomplete; tapping it marks exactly which parts still need a category.</li>
 <li>Missing a category, recurring cost or event? Create it right from the picker — the card keeps your place.</li>
-<li>Naming a counterparty in review forks like the detail screen: explicitly create the counter leg (the "apply to similar" offer still covers the whole merchant — new legs are predictable), or point at a row that already exists. Pointing at an existing row is specific to that one card, so a standing bulk offer asks first and then stands down — the other siblings\u2019 counterparts can\u2019t be guessed.</li></ul>
+<li>Naming a counterparty is ONE tap — and the card (and each split part) then carries its own Counter-transaction row: by default the leg is created on confirm (manual counterparties) or arrives with the bank feed. Tap the row to point at an existing transaction instead — one to three suggested matches first, every other open row scrollable below. Creating keeps the "apply to similar" offer armed; picking an existing row is specific to that one card, so a standing bulk offer asks first and then stands down.</li>
+<li>The card remembers more than categories now: a percentage spread you keep confirming for a merchant arrives pre-staged, and the event its recent charges joined is offered on the event row — until you touch it yourself.</li>
+<li>A loan counterparty needs no extra line: the Counterparty row IS the debt (they are one and the same account).</li></ul>
     <div class="shots"><figure><img src="shots/13-review-banner--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
 <figure><img src="shots/14-review-flow--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure>
 <figure><img src="shots/15-review-done--en-light-mobile.png" alt="Reviewing transactions" loading="lazy"></figure></div>
@@ -121,7 +126,8 @@
 <li>A transfer between two of your accounts shows as ONE row ("Checking → Savings"); filtering by account brings each leg back. Wallet feeds (PayPal-style) often show BOTH halves of one purchase as payments — point the bank debit at the wallet purchase (the Awaiting-counterpart door offers the matching rows) and the pair collapses to the purchase, categorized and counted once, wearing where the money came from. The Counterpart-transaction row wears the other leg\u2019s face — who, when, on which account, for how much — and tapping it jumps straight there; a row already spoken for by another pairing is never offered again. Reimbursement rows jump straight to their linked transaction too — no sheet in between, on split parts included.</li>
 <li>Recategorizing offers a bulk apply — tap the bar to pick exactly which transactions it touches. Splitting offers the same: the split lands on the picked same-name rows, resized to each amount.</li>
 <li>Rename a transaction via the pencil — munni remembers and auto-renames future arrivals; the bank original stays under Details.</li>
-<li>Linking a reimbursement opens its own screen: search by name or amount, or take the suggestion — munni spots likely matches by timing, wording and size.</li></ul>
+<li>Linking a reimbursement opens its own screen: search by name or amount, or take the suggestion — munni spots likely matches by timing, wording and size.</li>
+<li>On a split, a reimbursement linked from the whole settles the part still EXPECTING it first, then an uncategorized one, then the largest — the expected-reimbursement slice is what shrinks, not your biggest category.</li></ul>
     <div class="shots"><figure><img src="shots/09-tx-detail--en-light-mobile.png" alt="Transaction details" loading="lazy"></figure>
 <figure><img src="shots/36-tx-split--en-light-mobile.png" alt="Transaction details" loading="lazy"></figure>
 <figure><img src="shots/34-tx-reimburse--en-light-mobile.png" alt="Transaction details" loading="lazy"></figure>
@@ -155,8 +161,10 @@
   <section id="categories">
     <h2>Categories &amp; budgets</h2>
     <p>The built-in catalog covers most spending; create your own main or sub categories when it doesn't. Budgets track a limit per category per period, and the overview drills from totals into categories into transactions.</p>
-    <ul class="tips"><li>munni learns from you: confirm a merchant twice and it skips review next time — across all your spaces.</li>
-<li>Can’t find a category while reviewing? The picker offers "create your own" right there.</li></ul>
+    <ul class="tips"><li>munni learns from you: confirm a merchant twice and it skips review next time. Every confirmation votes with a recency-weighted say — one dinner out never beats years of groceries, while a habit that truly shifts takes the lead after a few repeats — and the space\u2019s OWN history always answers before your other spaces do.</li>
+<li>Can’t find a category while reviewing? The picker offers "create your own" right there.</li>
+<li>Direction is no longer a question: a subcategory simply follows its parent\u2019s nature. A NEW parent category always tracks spending — income lives under the special ◆ Income category, the one special parent open to your own subcategories.</li>
+<li>Investment tells five stories now: Invested and Withdrawn move money between your accounts and the brokerage, while Bought, Sold and Fees (plus Dividends) live on the brokerage\u2019s own ledger. Debt on a regular account is just Repaid or Borrowed — Interest charged and Fees exist only on the loan\u2019s own ledger.</li></ul>
     <div class="shots"><figure><img src="shots/29-cats-manage--en-light-mobile.png" alt="Categories &amp; budgets" loading="lazy"></figure>
 <figure><img src="shots/30-cats-create--en-light-mobile.png" alt="Categories &amp; budgets" loading="lazy"></figure>
 <figure><img src="shots/60-overview-expense--en-light-mobile.png" alt="Categories &amp; budgets" loading="lazy"></figure></div>
@@ -166,6 +174,7 @@
     <h2>Trends, forecast &amp; export</h2>
     <p>Settings → Trends charts your spending per category over the months, income against expenses, and your net worth over time. Home's "Safe to spend" block tells you what is really free until payday — tap it for the full breakdown. And under Global settings → Export data your transactions leave as CSV or a JSON backup, straight from the device.</p>
     <ul class="tips"><li>Subscriptions show their yearly cost, and a sustained price change badges itself with the yearly damage.</li>
+<li>Recurring costs live only in the tabs they actually occur in — this month, next month, this year, next year — so a yearly insurance due in January 2027 waits under next year; the All tab shows the whole stable, including many-year cadences. An occurrence older than the space\u2019s start date neither lists nor counts as unpaid: its payment is simply older than the space can see.</li>
 <li>The net-worth Home block is opt-in via Customize Home.</li></ul>
     <div class="shots"><figure><img src="shots/63-trends-categories--en-light-mobile.png" alt="Trends, forecast &amp; export" loading="lazy"></figure>
 <figure><img src="shots/65-trends-networth--en-light-mobile.png" alt="Trends, forecast &amp; export" loading="lazy"></figure></div>
@@ -181,7 +190,7 @@
 <figure><img src="shots/58-sync-live--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
 <figure><img src="shots/38-offline--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure></div>
   </section>
-  <footer>Generated 2026-08-16 from the app's own test screenshots — always the current UI.</footer>
+  <footer>Generated 2026-08-17 from the app's own test screenshots — always the current UI.</footer>
 </main>
 </body>
 </html>
