@@ -182,6 +182,9 @@ describe('Debts (demo identity)', () => {
   it('bare debt payments gather in the virtual card and assign to a loan', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
+    // the #221 bare-row fold default-links bare movement rows — drain
+    // the boot chain BEFORE seeding so deliberately-bare rows stay bare
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const card = await createLoan('Car loan', '5000');
     // v2: the card id IS the loan account's id
     const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
@@ -246,6 +249,9 @@ describe('Debts (demo identity)', () => {
   it('found-payments links history to the loan; pre-anchor rows count only on request', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
+    // drain the boot chain first: its late bare-row fold raced the
+    // apply below and its default link could win by LWW (house trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const card = await createLoan('Car loan', '5000');
     const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
 
