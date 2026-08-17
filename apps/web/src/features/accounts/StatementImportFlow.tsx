@@ -162,6 +162,12 @@ export function StatementImportFlow({
               </span>
             </button>
           ))}
+          {/* #177 (user): a long export helps — history powers pattern
+              detection while the space start date keeps the view clean */}
+          <p className="flex items-start gap-1.5 px-1 text-[12px] leading-snug text-ink-4" data-testid="import-history-tip">
+            <Icon name="lightbulb-outline" size={14} color="var(--m-accent-deep)" />
+            {t('import.longHistoryTip')}
+          </p>
         </div>
       </Sheet>
 

@@ -347,7 +347,9 @@ export function SpaceAccountsScreen() {
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {[
                 info.account?.iban ? ([t('accounts.ibanLabel'), info.account.iban] as const) : null,
-                info.link ? ([t('acct.historyFrom'), info.link.historyFrom ?? '—'] as const) : null,
+                // #177 (user "what does the - mean"): an absent gate SAYS
+                // it shows the full history instead of a bare dash
+                info.link ? ([t('acct.historyFrom'), info.link.historyFrom ?? t('acct.historyFromAll')] as const) : null,
                 info.link && linkProvenance(t, info.link, mySub) ? ([t('acct.attachedBy'), linkProvenance(t, info.link, mySub)!] as const) : null,
                 syncLine(t, lang, info.account) ? ([t('acct.lastSyncedLabel'), syncLine(t, lang, info.account)!] as const) : null,
               ]

@@ -1114,6 +1114,8 @@ export const en = {
   'import.notAttachedTitle': 'Not attached to a space yet',
   'import.notAttachedBody': 'The imported account is global. Attach it to a space yourself — you choose the account type and how far back its history shows.',
   'import.gotoAttach': 'Attach to this space…',
+  'import.longHistoryTip': 'Export as far back as your bank allows — the long history powers pattern detection, and your space start date keeps the view clean.',
+  'acct.historyFromAll': 'Full history',
   'import.preStart': '{n} transactions are older than this space’s start date — they stay stored but hidden.',
   'import.pickFormat': 'What are you importing?',
   'import.formatCamt': 'Universal bank export (CAMT.053)',

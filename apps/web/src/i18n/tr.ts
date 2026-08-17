@@ -1116,6 +1116,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'import.notAttachedTitle': 'Henüz bir alana bağlı değil',
   'import.notAttachedBody': 'Aktarılan hesap geneldir. Alana kendiniz bağlayın — hesap türünü ve geçmişin ne kadar geriye gideceğini siz seçersiniz.',
   'import.gotoAttach': 'Bu alana bağla…',
+  'import.longHistoryTip': 'Bankanızın izin verdiği kadar geriye giden bir dışa aktarım yükleyin — uzun geçmiş desen algılamayı besler, alanın başlangıç tarihi görünümü temiz tutar.',
+  'acct.historyFromAll': 'Tüm geçmiş',
   'import.preStart': '{n} işlem bu alanın başlangıç tarihinden eski — kayıtlı kalır ama gizli.',
   'import.pickFormat': 'Ne içe aktarıyorsun?',
   'import.formatCamt': 'Evrensel banka dışa aktarımı (CAMT.053)',

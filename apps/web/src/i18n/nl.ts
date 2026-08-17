@@ -1116,6 +1116,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'import.notAttachedTitle': 'Nog niet aan een space gekoppeld',
   'import.notAttachedBody': 'De geïmporteerde rekening is globaal. Koppel hem zelf aan een space — jij kiest het rekeningtype en hoe ver de historie teruggaat.',
   'import.gotoAttach': 'Aan deze space koppelen…',
+  'import.longHistoryTip': 'Exporteer zo ver terug als je bank toestaat — de lange historie voedt patroonherkenning, en de startdatum van je space houdt het beeld schoon.',
+  'acct.historyFromAll': 'Volledige historie',
   'import.preStart': '{n} transacties zijn ouder dan de startdatum van deze ruimte — ze blijven opgeslagen maar verborgen.',
   'import.pickFormat': 'Wat importeer je?',
   'import.formatCamt': 'Universele bankexport (CAMT.053)',
