@@ -196,6 +196,7 @@ export function AttachSheet({
     .filter((row) => !!row.via);
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange} title={account.name} size="tall" dragHandle>
       {canEdit && (
         <div className="mb-3 flex flex-col gap-2">
@@ -347,37 +348,43 @@ export function AttachSheet({
         onConfirm={() => void deleteAccount()}
         testId="attach-delete"
       />
-      <BrandIconPicker
-        open={logoOpen}
-        onOpenChange={setLogoOpen}
-        initialQuery={account.name}
-        onPick={({ logo }) => {
-          void repo.upsert('account', account.spaceId, account.id, { logo: logo ?? (null as never) });
-          void logActivity(store, repo, spaceId, 'accountEdit', account.name);
-          setLogoOpen(false);
-        }}
-      />
-      {/* #239: the global rename found space-level names — follow or keep? */}
-      <Sheet
-        open={renameAsk !== null}
-        onOpenChange={(next) => {
-          if (!next) setRenameAsk(null);
-        }}
-        title={t('acct.renameSpacesTitle')}
-        size="compact"
-      >
-        <p className="pb-4 text-[13px] leading-relaxed text-ink-2" data-testid="attach-rename-ask">
-          {t('acct.renameSpacesBody', { name: renameAsk ?? '' })}
-        </p>
-        <div className="flex flex-col gap-2">
-          <Button data-testid="attach-rename-everywhere" onClick={renameEverywhere}>
-            {t('acct.renameSpacesGo')}
-          </Button>
-          <Button variant="outline" data-testid="attach-rename-keep" onClick={() => setRenameAsk(null)}>
-            {t('acct.renameSpacesKeep')}
-          </Button>
-        </div>
-      </Sheet>
     </Sheet>
+    {/* #241 (user ss): SIBLINGS, not children — a sheet nested inside
+        another sheet's children portals FIRST and paints BELOW its
+        parent (both live at z-50; body order decides). Beside the
+        parent, the later sibling lands later in <body> and stacks on
+        top — the EditAccountSheet pattern. */}
+    <BrandIconPicker
+      open={logoOpen}
+      onOpenChange={setLogoOpen}
+      initialQuery={account.name}
+      onPick={({ logo }) => {
+        void repo.upsert('account', account.spaceId, account.id, { logo: logo ?? (null as never) });
+        void logActivity(store, repo, spaceId, 'accountEdit', account.name);
+        setLogoOpen(false);
+      }}
+    />
+    {/* #239: the global rename found space-level names — follow or keep? */}
+    <Sheet
+      open={renameAsk !== null}
+      onOpenChange={(next) => {
+        if (!next) setRenameAsk(null);
+      }}
+      title={t('acct.renameSpacesTitle')}
+      size="compact"
+    >
+      <p className="pb-4 text-[13px] leading-relaxed text-ink-2" data-testid="attach-rename-ask">
+        {t('acct.renameSpacesBody', { name: renameAsk ?? '' })}
+      </p>
+      <div className="flex flex-col gap-2">
+        <Button data-testid="attach-rename-everywhere" onClick={renameEverywhere}>
+          {t('acct.renameSpacesGo')}
+        </Button>
+        <Button variant="outline" data-testid="attach-rename-keep" onClick={() => setRenameAsk(null)}>
+          {t('acct.renameSpacesKeep')}
+        </Button>
+      </div>
+    </Sheet>
+    </>
   );
 }

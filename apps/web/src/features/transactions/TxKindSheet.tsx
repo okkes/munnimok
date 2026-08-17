@@ -189,6 +189,7 @@ export function CounterpartySheet({
   };
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.counterparty')} size="form">
       <p className="pb-2 text-[12px] text-ink-3">
         {t(counterTypes?.length === 1 && counterTypes[0] === 'funding' ? 'tx.counterFundingHint' : 'tx.counterAccountHint')}
@@ -275,29 +276,32 @@ export function CounterpartySheet({
       <p className="px-1 pt-2 text-[12px] leading-snug text-ink-4" data-testid="counter-special-hint">
         {t('tx.counterSpecialHint')}
       </p>
-      <AddAccountChooser
-        open={chooserOpen}
-        onOpenChange={setChooserOpen}
-        onCreated={(account) => choose(account)}
-      />
-      {/* #133 B / #237: the counter-match fork — pick, create or await */}
-      {anchor && (
-        <CounterMatchSheet
-          open={forkFor !== null}
-          onOpenChange={(next) => {
-            if (!next) setForkFor(null);
-          }}
-          target={forkFor}
-          anchor={anchor}
-          rows={allTxs ?? []}
-          onCreate={forkFor?.createAllowed ? () => choose({ id: forkFor.id, type: forkFor.type }) : undefined}
-          onWait={forkFor?.bankFed ? () => choose({ id: forkFor.id, type: forkFor.type }) : undefined}
-          onPick={(txId) => {
-            if (forkFor) choose({ id: forkFor.id, type: forkFor.type }, { txId });
-          }}
-        />
-      )}
     </Sheet>
+    {/* #241: SIBLINGS, not children — nested sheets portal before their
+        parent and paint below it (flat z-50, body order decides) */}
+    <AddAccountChooser
+      open={chooserOpen}
+      onOpenChange={setChooserOpen}
+      onCreated={(account) => choose(account)}
+    />
+    {/* #133 B / #237: the counter-match fork — pick, create or await */}
+    {anchor && (
+      <CounterMatchSheet
+        open={forkFor !== null}
+        onOpenChange={(next) => {
+          if (!next) setForkFor(null);
+        }}
+        target={forkFor}
+        anchor={anchor}
+        rows={allTxs ?? []}
+        onCreate={forkFor?.createAllowed ? () => choose({ id: forkFor.id, type: forkFor.type }) : undefined}
+        onWait={forkFor?.bankFed ? () => choose({ id: forkFor.id, type: forkFor.type }) : undefined}
+        onPick={(txId) => {
+          if (forkFor) choose({ id: forkFor.id, type: forkFor.type }, { txId });
+        }}
+      />
+    )}
+    </>
   );
 }
 
