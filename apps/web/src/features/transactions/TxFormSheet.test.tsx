@@ -339,6 +339,12 @@ describe('TxFormSheet (demo identity)', () => {
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('hs'), { trackOutbox: false });
     await repo.upsert('space', 'demo_space', 'demo_space', { historyStartDate: '2026-06-01' });
+    // #259: an attached feed's gate must follow the move too
+    const { accountLinkId } = await import('@/domain/feedIds');
+    const linkId = accountLinkId('demo_space', 'feed_hs');
+    await repo.upsert('accountLink', 'demo_space', linkId, {
+      feedSpaceId: 'feed_hs', accountId: 'a-feed-hs', historyFrom: '2026-06-01', archived: 0,
+    });
 
     fireEvent.click(screen.getByTestId('tx-add'));
     await screen.findByTestId('txform-save');
@@ -356,6 +362,11 @@ describe('TxFormSheet (demo identity)', () => {
     // the space start moved to the row's date — the error clears, save arms
     await waitFor(async () => {
       expect((await db.spaces.get('demo_space'))?.historyStartDate).toBe('2026-05-15');
+    }, { timeout: 5000 });
+    // …and the attachment's own gate moved WITH it (the bare space write
+    // used to leave links behind — the other-device leak)
+    await waitFor(async () => {
+      expect((await db.accountLinks.get(linkId))?.historyFrom).toBe('2026-05-15');
     }, { timeout: 5000 });
     await waitFor(() => expect(screen.queryByTestId('txform-before-start')).toBeNull());
     expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);

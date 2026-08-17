@@ -173,11 +173,13 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
   const out: SpaceTx[] = legacy.map((t) => deriveViewTypes({ ...t }, facts));
   for (const link of links) {
     if (funding.has(link.accountId)) continue;
+    // #259: a link's own gate wins; a link WITHOUT one (the server's
+    // connect-time mirror op carries none) falls back to the space's
+    // start date — the setting must govern on every device, not only
+    // the one whose heal happened to run against a populated database
+    const gate = link.historyFrom ?? startGate;
     const feedTxs = (await store.bySpace('transaction', link.feedSpaceId)).filter(
-      (t) =>
-        t.deleted === 0 &&
-        t.accountId === link.accountId &&
-        (!link.historyFrom || t.date >= link.historyFrom),
+      (t) => t.deleted === 0 && t.accountId === link.accountId && (!gate || t.date >= gate),
     );
     for (const raw of feedTxs) out.push(deriveViewTypes(joinTx(raw, metaByTx.get(raw.id), spaceId, link.feedSpaceId), facts));
   }

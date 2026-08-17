@@ -61,14 +61,16 @@ export async function historyMoveImpact(store: StorageBackend, spaceId: string, 
 }
 
 /**
- * One-shot heal (marker-gated): links attached by the OLD import flow
- * carried no history gate at all, so imported rows ignored the space's
- * start date. Back-fill every gateless link from its space's date; the
- * import path writes the gate itself from here on.
+ * #259: every attach path writes a gate ("never silently unlimited"),
+ * so a gateless link is always an accident — the server's connect-time
+ * mirror op carries none, and the old one-shot heal burned its device-
+ * local marker against an EMPTY database before the first sync ever
+ * delivered the links. The sweep is idempotent and runs every boot: a
+ * gateless link in a space that has a start date takes the space's
+ * date, whenever it arrived. (Display already falls back at read time —
+ * this makes the stored fact honest too.)
  */
-export async function migrateUngatedLinks(store: StorageBackend, repo: Repo): Promise<number> {
-  const markerKey = 'linkHistoryFrom_v1';
-  if (await store.metaGet(markerKey)) return 0;
+export async function healGatelessLinks(store: StorageBackend, repo: Repo): Promise<number> {
   let touched = 0;
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
   for (const space of spaces) {
@@ -79,7 +81,6 @@ export async function migrateUngatedLinks(store: StorageBackend, repo: Repo): Pr
       touched++;
     }
   }
-  await store.metaPut(markerKey, Date.now());
   return touched;
 }
 

@@ -8,6 +8,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
+import { applyHistoryMove } from '@/application/historyStart';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
@@ -661,8 +662,9 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
                 variant="outline"
                 data-testid="txform-move-start"
                 onClick={() => {
-                  void repo.upsert('space', spaceId, spaceId, { historyStartDate: date });
-                  void logActivity(store, repo, spaceId, 'spaceEdit', space?.name ?? '');
+                  // #259: the full move — every attachment's gate follows
+                  // the space date (a bare space write left links behind)
+                  void applyHistoryMove(store, repo, spaceId, date);
                 }}
               >
                 {t('txform.moveStart')}

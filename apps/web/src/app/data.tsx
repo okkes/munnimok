@@ -309,10 +309,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // …and linked family rows invert — regular leg = transfer with
         // the locked cat, the manual counter's mirror minted (no delta:
         // the old lane already moved the balance at link time)
-        // links the old import attached without a history gate pick up
-        // their space's start date (imported rows ignored it entirely)
-        const { migrateUngatedLinks } = await import('@/application/historyStart');
-        await migrateUngatedLinks(store, repo);
+        // #259: gateless links (the server's connect mirror op carries
+        // no historyFrom) take the space's start date — every boot, so
+        // links that sync in AFTER a device's first boot heal too
+        const { healGatelessLinks } = await import('@/application/historyStart');
+        await healGatelessLinks(store, repo);
         // loans v2: debt rows fold into their liability account (every
         // boot, idempotent — late-syncing debts from old devices heal)
         const { foldDebtsIntoAccounts } = await import('@/application/debts');
