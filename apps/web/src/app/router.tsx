@@ -38,6 +38,7 @@ import { BudgetFormScreen } from '@/features/budgets/BudgetFormScreen';
 import { BudgetDetailScreen } from '@/features/budgets/BudgetDetailScreen';
 import { EventsScreen } from '@/features/events/EventsScreen';
 import { EventDetailScreen } from '@/features/events/EventDetailScreen';
+import { EventAttachScreen } from '@/features/events/EventAttachScreen';
 import { GoalsScreen } from '@/features/goals/GoalsScreen';
 import { GoalDetailScreen } from '@/features/goals/GoalDetailScreen';
 import { DebtsScreen } from '@/features/debts/DebtsScreen';
@@ -199,6 +200,8 @@ const budgetDetailRoute = createRoute({ getParentRoute: () => budgetsRoute, path
 const budgetEditRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId/edit', component: BudgetFormScreen });
 const eventsRoute = createRoute({ getParentRoute: () => appRoute, path: '/events', component: EventsScreen });
 const eventDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId', component: EventDetailScreen });
+// #144: attaching is a full screen, not a sheet
+const eventAttachRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId/attach', component: EventAttachScreen });
 const goalsRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals', component: GoalsScreen });
 const goalDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals/$goalId', component: GoalDetailScreen });
 const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts', component: DebtsScreen });
@@ -260,6 +263,7 @@ export const routeTree = rootRoute.addChildren([
     budgetEditRoute,
     eventsRoute,
     eventDetailRoute,
+    eventAttachRoute,
     goalsRoute,
     goalDetailRoute,
     debtsRoute,

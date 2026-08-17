@@ -9,6 +9,7 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { eventSpentCents } from '@/domain/events';
 import type { EventRow } from '@/db/types';
 import { downscaleImage } from '@/lib/image';
+import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -18,6 +19,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 /** bundled, offline-ready defaults (public/events/*.jpg, Unsplash license) */
 export const EVENT_PICTURES = [
@@ -59,6 +61,9 @@ export function EventFormSheet({
   const [note, setNote] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
+  // #160: desktop-only webcam tile beside the upload tile
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
 
   // seed keyed on the record's ID, never object identity (the iOS
   // reseed class: re-emitted rows must not wipe mid-typing edits)
@@ -78,6 +83,17 @@ export function EventFormSheet({
     if (!file) return;
     // wide enough for the hero, small enough to sync as a field
     setPicture(await downscaleImage(file, 1080, 0.72));
+  };
+
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
+      return;
+    }
+    uploadRef.current?.click();
   };
 
   const save = async () => {
@@ -117,18 +133,30 @@ export function EventFormSheet({
       note !== (editing?.note ?? ''));
 
   return (
+    <>
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('events.edit') : t('events.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* the picture defines the event — pick a bundled one or upload */}
         <div className="flex gap-2 overflow-x-auto pb-1" data-testid="eventform-pictures">
           <button
             data-testid="eventform-upload"
-            onClick={() => uploadRef.current?.click()}
+            onClick={pickPhoto}
             className="m-tap flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
           >
             <Icon name="image-plus" size={18} />
             {t('events.uploadPicture')}
           </button>
+          {/* #160: desktop webcam snapshot — mirrors the upload tile */}
+          {webcamDoor && (
+            <button
+              data-testid="eventform-webcam"
+              onClick={() => setWebcamOpen(true)}
+              className="m-tap flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
+            >
+              <Icon name="camera-outline" size={18} />
+              {t('webcam.use')}
+            </button>
+          )}
           {EVENT_PICTURES.map((candidate) => (
             <button
               key={candidate}
@@ -222,6 +250,9 @@ export function EventFormSheet({
         )}
       </div>
     </Sheet>
+    {/* #160: snapshot feeds the same downscale path as the file input */}
+    <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onUpload(file)} />
+    </>
   );
 }
 
