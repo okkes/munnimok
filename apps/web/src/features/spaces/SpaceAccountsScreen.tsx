@@ -5,6 +5,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAttach';
+import { logActivity } from '@/application/activity';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
 import { sourceKeyFor } from '@/features/accounts/AttachSheet';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
@@ -80,7 +81,8 @@ function linkProvenance(t: T, link: AccountLinkRow, mySub?: string): string | un
 function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined): AttachedAccountEntry {
   return {
     key: link.id,
-    name: account?.name ?? t('acct.bank'),
+    // #239: the space's own name wins here — the global one stays global
+    name: link.displayName || (account?.name ?? t('acct.bank')),
     subtitle: [ibanTail(account?.iban), account ? t(sourceKeyFor(account)) : undefined].filter(Boolean).join(' · '),
     archived: !!link.archived,
     stale: isStale(account),
@@ -321,6 +323,27 @@ export function SpaceAccountsScreen() {
               {info.account ? t(sourceKeyFor(info.account)) : t('acct.bank')}
               {info.manual && <span className="text-ink-4"> · {t('acct.provSpace')}</span>}
             </div>
+            {/* #239 (user): this SPACE's own name for the account — the
+                global name stays untouched; clearing falls back to it */}
+            {info.link && (
+              <label className="flex items-center gap-3 text-[13px] text-ink-2">
+                {t('acct.spaceName')}
+                <input
+                  data-testid="space-account-rename"
+                  defaultValue={info.link.displayName ?? ''}
+                  placeholder={info.account?.name ?? ''}
+                  onBlur={(e) => {
+                    const trimmed = e.target.value.trim();
+                    if (trimmed === (info.link!.displayName ?? '')) return;
+                    void repo.upsert('accountLink', spaceId, info.link!.id, {
+                      displayName: (trimmed || null) as never,
+                    });
+                    void logActivity(store, repo, spaceId, 'accountEdit', trimmed || (info.account?.name ?? ''));
+                  }}
+                  className="h-10 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none placeholder:text-ink-4"
+                />
+              </label>
+            )}
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {[
                 info.account?.iban ? ([t('accounts.ibanLabel'), info.account.iban] as const) : null,

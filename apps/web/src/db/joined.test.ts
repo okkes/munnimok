@@ -228,6 +228,22 @@ describe('feature B join layer', () => {
     expect(await visibleTransactions(store, OTHER_SPACE)).toEqual([]);
   });
 
+  it('#239: a space-level display name wins in its space and NOWHERE else', async () => {
+    await seedFeed();
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { displayName: 'Our groceries card' });
+    await repo.upsert('accountLink', OTHER_SPACE, accountLinkId(OTHER_SPACE, FEED), {
+      feedSpaceId: FEED, accountId: 'acct1', historyFrom: '2026-01-01',
+    });
+    const store = new DexieBackend(db);
+    expect((await visibleAccounts(store, SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Our groceries card');
+    // the other space (and the global row) keep the global name
+    expect((await visibleAccounts(store, OTHER_SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Bank · 6789');
+    expect((await store.get('account', 'acct1'))?.name).toBe('Bank · 6789');
+    // clearing the override falls back to the global name
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { displayName: null as never });
+    expect((await visibleAccounts(store, SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Bank · 6789');
+  });
+
   it('#152: a funding counterparty derives the funding family; nothing mints into the pot', async () => {
     await seedFeed();
     await repo.upsert('account', SPACE, 'pot1', {

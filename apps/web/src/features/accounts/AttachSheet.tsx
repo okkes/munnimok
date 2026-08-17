@@ -62,6 +62,8 @@ export function AttachSheet({
   const [detachSpaceId, setDetachSpaceId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [logoOpen, setLogoOpen] = useState(false);
+  // #239: a global rename with space-level names standing asks first
+  const [renameAsk, setRenameAsk] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
@@ -137,7 +139,18 @@ export function AttachSheet({
     if (trimmed && trimmed !== account.name) {
       void repo.upsert('account', account.spaceId, account.id, { name: trimmed });
       void logActivity(store, repo, spaceId, 'accountEdit', trimmed);
+      // #239 (user): spaces may hold their OWN name for this account —
+      // a global rename asks whether those follow or stay
+      if ((liveLinks ?? []).some((l) => l.displayName)) setRenameAsk(trimmed);
     }
+  };
+
+  // #239: replace every space's own name with the fresh global one
+  const renameEverywhere = () => {
+    for (const link of liveLinks ?? []) {
+      if (link.displayName) void repo.upsert('accountLink', link.spaceId, link.id, { displayName: null as never });
+    }
+    setRenameAsk(null);
   };
 
   const deleteAccount = async () => {
@@ -347,6 +360,27 @@ export function AttachSheet({
           setLogoOpen(false);
         }}
       />
+      {/* #239: the global rename found space-level names — follow or keep? */}
+      <Sheet
+        open={renameAsk !== null}
+        onOpenChange={(next) => {
+          if (!next) setRenameAsk(null);
+        }}
+        title={t('acct.renameSpacesTitle')}
+        size="compact"
+      >
+        <p className="pb-4 text-[13px] leading-relaxed text-ink-2" data-testid="attach-rename-ask">
+          {t('acct.renameSpacesBody', { name: renameAsk ?? '' })}
+        </p>
+        <div className="flex flex-col gap-2">
+          <Button data-testid="attach-rename-everywhere" onClick={renameEverywhere}>
+            {t('acct.renameSpacesGo')}
+          </Button>
+          <Button variant="outline" data-testid="attach-rename-keep" onClick={() => setRenameAsk(null)}>
+            {t('acct.renameSpacesKeep')}
+          </Button>
+        </div>
+      </Sheet>
     </Sheet>
   );
 }

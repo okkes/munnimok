@@ -710,6 +710,9 @@ export interface AccountLinkRow extends SyncEnvelope {
    *  global account has no type of its own anymore, each space decides
    *  at attach time (absent on old links = the account row's value) */
   type?: AccountType;
+  /** #239: the SPACE-LEVEL display name — this space's own name for the
+   *  account; absent = the global account name shows */
+  displayName?: string;
   /** owner left the space: history stays, no new data flows */
   archived?: 0 | 1;
 }

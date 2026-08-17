@@ -223,13 +223,16 @@ export interface SpaceAccount extends AccountRow {
 
 /** every account the space sees: legacy in-space rows + attached feed
  *  accounts — the attachment's TYPE opinion applied (#152: type is a
- *  space-level fact for attached accounts) */
+ *  space-level fact for attached accounts) and its NAME opinion too
+ *  (#239: a space may call the account by its own name) */
 export async function visibleAccounts(store: StorageBackend, spaceId: string): Promise<SpaceAccount[]> {
   const [own, links] = await Promise.all([store.bySpace('account', spaceId), spaceAccountLinks(store, spaceId)]);
   const out: SpaceAccount[] = own.filter((a) => a.deleted === 0);
   for (const link of links) {
     const account = await store.get('account', link.accountId);
-    if (account?.deleted === 0) out.push({ ...account, type: linkEffectiveType(link, account), link });
+    if (account?.deleted === 0) {
+      out.push({ ...account, name: link.displayName || account.name, type: linkEffectiveType(link, account), link });
+    }
   }
   return out;
 }
