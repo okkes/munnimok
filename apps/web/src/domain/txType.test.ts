@@ -64,7 +64,8 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
       ['savings', 'savingDeposit'],
       ['loan', 'loanRepayment'],
       ['mortgage', 'loanRepayment'],
-      ['brokerage', 'investBuy'],
+      // #252: the movement pair — Bought/Sold are brokerage-internal now
+      ['brokerage', 'investContribution'],
       ['funding', 'fundingOut'],
       ['checking', 'transferOut'],
       ['credit', 'transferOut'],
@@ -76,7 +77,7 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
     const inn: [AccountType, string][] = [
       ['savings', 'savingWithdraw'],
       ['loan', 'debtBorrowed'],
-      ['brokerage', 'investSell'],
+      ['brokerage', 'investWithdraw'],
       ['funding', 'fundingIn'],
       ['checking', 'transferIn'],
       ['cash', 'cashDeposit'],
@@ -87,17 +88,17 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
   });
 
   describe('allowedSpecialCats — what the picker may offer', () => {
-    it('a regular account offers exactly ONE sub per family and side', () => {
+    it('a regular account offers exactly ONE sub per family and side (#252: the movement pair, never Bought/Sold)', () => {
       expect([...allowedSpecialCats('checking', 'debit')].sort()).toEqual(
-        ['cashWithdraw', 'fundingOut', 'investBuy', 'loanRepayment', 'savingDeposit', 'transferOut'].sort(),
+        ['cashWithdraw', 'fundingOut', 'investContribution', 'loanRepayment', 'savingDeposit', 'transferOut'].sort(),
       );
       expect([...allowedSpecialCats('checking', 'credit')].sort()).toEqual(
-        ['cashDeposit', 'fundingIn', 'investSell', 'debtBorrowed', 'savingWithdraw', 'transferIn'].sort(),
+        ['cashDeposit', 'fundingIn', 'investWithdraw', 'debtBorrowed', 'savingWithdraw', 'transferIn'].sort(),
       );
     });
-    it('Take out, Interest and Fees never appear on a regular row (the user screenshot)', () => {
+    it('Take out, Interest, Fees and the broker-internal picks never appear on a regular row (#252 user ss)', () => {
       const debit = allowedSpecialCats('checking', 'debit');
-      for (const hidden of ['savingWithdraw', 'savingInterest', 'savingFees', 'debtInterest', 'debtFees', 'investDividend', 'investFees']) {
+      for (const hidden of ['savingWithdraw', 'savingInterest', 'savingFees', 'debtInterest', 'debtFees', 'investDividend', 'investFees', 'investBuy', 'investSell']) {
         expect(debit.has(hidden)).toBe(false);
       }
     });
@@ -109,9 +110,9 @@ describe('#133 r5 — the bijection: category ⟺ counter kind ⟺ sign', () => 
       expect([...allowedSpecialCats('loan', 'credit')]).toEqual(['loanRepayment']);
       expect([...allowedSpecialCats('loan', 'debit')].sort()).toEqual(['debtBorrowed', 'debtFees', 'debtInterest']);
     });
-    it('the brokerage ledger: contributions and dividends land, withdrawals and fees drain', () => {
-      expect([...allowedSpecialCats('brokerage', 'credit')].sort()).toEqual(['investContribution', 'investDividend']);
-      expect([...allowedSpecialCats('brokerage', 'debit')].sort()).toEqual(['investFees', 'investWithdraw']);
+    it('the brokerage ledger (#252): Invested/Sold/Dividends land, Withdrawn/Bought/Fees drain', () => {
+      expect([...allowedSpecialCats('brokerage', 'credit')].sort()).toEqual(['investContribution', 'investDividend', 'investSell']);
+      expect([...allowedSpecialCats('brokerage', 'debit')].sort()).toEqual(['investBuy', 'investFees', 'investWithdraw']);
     });
     it('the generic Invest sub is in NO cell — hidden wherever context filters', () => {
       for (const type of ['checking', 'savings', 'brokerage'] as AccountType[]) {

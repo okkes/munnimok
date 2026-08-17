@@ -88,12 +88,17 @@ export function allowedSpecialCats(sourceType: AccountType | undefined, directio
     case 'debtPayment':
       return new Set(out ? ['debtBorrowed', 'debtInterest', 'debtFees'] : ['loanRepayment']);
     case 'investment':
-      return new Set(out ? ['investWithdraw', 'investFees'] : ['investContribution', 'investDividend']);
+      // #252 (user, five-category model): the brokerage's own ledger
+      // adds Bought (−) and Sold (+) — stocks traded with money already
+      // inside — next to the movement pair and the value stories
+      return new Set(out ? ['investWithdraw', 'investBuy', 'investFees'] : ['investContribution', 'investSell', 'investDividend']);
     default:
+      // #252: bank/cash/credit rows see ONLY the movement pair of each
+      // family — Invested/Withdrawn, never Bought/Sold (brokerage-only)
       return new Set(
         out
-          ? ['savingDeposit', 'loanRepayment', 'investBuy', 'fundingOut', 'transferOut', 'cashWithdraw']
-          : ['savingWithdraw', 'debtBorrowed', 'investSell', 'fundingIn', 'transferIn', 'cashDeposit'],
+          ? ['savingDeposit', 'loanRepayment', 'investContribution', 'fundingOut', 'transferOut', 'cashWithdraw']
+          : ['savingWithdraw', 'debtBorrowed', 'investWithdraw', 'fundingIn', 'transferIn', 'cashDeposit'],
       );
   }
 }

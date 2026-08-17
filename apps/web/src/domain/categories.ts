@@ -164,14 +164,15 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   // transfer caused — the lender's interest and fees both grow the debt (−)
   {"id":"debtInterest","parentId":"debt","nameKey":"cat.debtInterest","icon":"percent-outline","txTypes":["debtPayment"],"direction":"debit"},
   {"id":"debtFees","parentId":"debt","nameKey":"cat.debtFees","icon":"cash-minus","txTypes":["debtPayment"],"direction":"debit"},
+  // #252 (user 2026-08-16, the five-category model): the MOVEMENT pair
+  // is Invested/Withdrawn (both legs, like saving deposit/withdraw);
+  // Bought/Sold/Fees are the brokerage's OWN ledger stories (stocks
+  // bought with money already inside, no transfer caused).
   {"id":"investment","nameKey":"cat.investment","icon":"chart-timeline-variant","color":"#673AB7","isParent":true,"txTypes":["investment"],"direction":"both"},
   {"id":"invest","parentId":"investment","nameKey":"cat.invest","icon":"chart-areaspline","txTypes":["investment"],"direction":"both"},
   {"id":"investBuy","parentId":"investment","nameKey":"cat.investBuy","icon":"trending-up","txTypes":["investment"],"direction":"debit"},
   {"id":"investSell","parentId":"investment","nameKey":"cat.investSell","icon":"trending-down","txTypes":["investment"],"direction":"credit"},
   {"id":"investContribution","parentId":"investment","nameKey":"cat.investContribution","icon":"bank-plus","txTypes":["investment"],"direction":"both"},
-  // typed-splits v2 (2026-08-05, approved table): the movement's way out
-  // ('both': − on the investment account, + on the receiving leg) and the
-  // no-transfer rows — dividends land (+), broker fees drain (−)
   {"id":"investWithdraw","parentId":"investment","nameKey":"cat.investWithdraw","icon":"bank-remove","txTypes":["investment"],"direction":"both"},
   {"id":"investDividend","parentId":"investment","nameKey":"cat.investDividend","icon":"cash-plus","positive":true,"txTypes":["investment"],"direction":"credit"},
   {"id":"investFees","parentId":"investment","nameKey":"cat.investFees","icon":"cash-minus","txTypes":["investment"],"direction":"debit"},
@@ -218,7 +219,9 @@ const FAMILY_AUTO_SUB: Partial<Record<TxType, { debit: string; credit: string }>
   saving: { debit: 'savingDeposit', credit: 'savingWithdraw' },
   transfer: { debit: 'transferOut', credit: 'transferIn' },
   debtPayment: { debit: 'loanRepayment', credit: 'debtBorrowed' },
-  investment: { debit: 'investBuy', credit: 'investSell' },
+  // #252: the unstamped legs file the MOVEMENT pair — Bought/Sold are
+  // brokerage-internal and never auto-file off the brokerage
+  investment: { debit: 'investContribution', credit: 'investWithdraw' },
   funding: { debit: 'fundingOut', credit: 'fundingIn' },
 };
 
@@ -256,7 +259,9 @@ export function stampMovementSub(stamp: TxType, amountCents: number): string | u
 const MOVEMENT_CAT_IDS = new Set([
   'savingDeposit', 'savingWithdraw',
   'loanRepayment', 'debtBorrowed',
-  'investBuy', 'investSell', 'investContribution', 'investWithdraw',
+  // #252: Bought/Sold left this set — stocks bought with money already
+  // inside the brokerage move nothing between accounts
+  'investContribution', 'investWithdraw',
   'transferOut', 'transferIn',
   'cashWithdraw', 'cashDeposit',
   'fundingOut', 'fundingIn',

@@ -272,7 +272,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // boot maintenance chain: marker-gated one-shots plus the
       // every-boot heals (ALL identities — demo/offline data too)
       const bootChain = (async () => {
-        const { normalizeReimbursements, migrateRetiredDebtSubs, migrateFundingRows, migrateCatSpreads, migrateCounterFiledTransfers } = await import('@/application/catalogMaintenance');
+        const { normalizeReimbursements, migrateRetiredDebtSubs, migrateFundingRows, migrateCatSpreads, migrateCounterFiledTransfers, migrateInvestMovementSubs } = await import('@/application/catalogMaintenance');
         // kind simplification: counterparty-less transfer-family rows
         // become plain income/expense by sign (marker-gated, all
         // identities; arc-2 bare labels wear their locked sub and skip)
@@ -281,6 +281,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // file the sign-picked locked sub ("Set aside" over a blank line)
         // retired debt subs (lendMoney/creditCardPayment) refile by sign
         await migrateRetiredDebtSubs(store, repo);
+        // #252: Bought/Sold became brokerage-internal — unstamped
+        // movement legs refile to Invested/Withdrawn (one-shot)
+        await migrateInvestMovementSubs(store, repo);
         // typed-splits v2: the funding TYPE retires into its category…
         await migrateFundingRows(store, repo);
         // #211: splits mean PARTS — legacy bare category slices fold

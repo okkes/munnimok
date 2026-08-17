@@ -239,6 +239,40 @@ export async function migrateRetiredDebtSubs(store: StorageBackend, repo: Repo):
 }
 
 /**
+ * #252 (user 2026-08-16): Bought/Sold became brokerage-internal — the
+ * unstamped movement legs file Invested/Withdrawn now. One pass refiles
+ * old rows whose OWN account is not a brokerage (raw rows and per-space
+ * overlays alike); brokerage-ledger rows keep Bought/Sold, which mean
+ * exactly what they say there. Review status stays untouched.
+ */
+const INVEST_MOVEMENT_REFILE: Record<string, string> = { investBuy: 'investContribution', investSell: 'investWithdraw' };
+
+export async function migrateInvestMovementSubs(store: StorageBackend, repo: Repo): Promise<number> {
+  const markerKey = 'investMovementSubs_v1';
+  if (await store.metaGet(markerKey)) return 0;
+
+  const brokerages = new Set(
+    (await store.allRows('account')).filter((a) => a.type === 'brokerage').map((a) => a.id),
+  );
+  let touched = 0;
+  for (const tx of await store.allRows('transaction')) {
+    if (tx.deleted === 0 && tx.catId && INVEST_MOVEMENT_REFILE[tx.catId] && !brokerages.has(tx.accountId)) {
+      await repo.upsert('transaction', tx.spaceId, tx.id, { catId: INVEST_MOVEMENT_REFILE[tx.catId] });
+      touched++;
+    }
+  }
+  for (const meta of await store.allRows('txMeta')) {
+    if (meta.deleted !== 0 || !meta.catId || !INVEST_MOVEMENT_REFILE[meta.catId]) continue;
+    const raw = await store.get('transaction', meta.txId);
+    if (raw && brokerages.has(raw.accountId)) continue;
+    await repo.upsert('txMeta', meta.spaceId, meta.id, { catId: INVEST_MOVEMENT_REFILE[meta.catId] });
+    touched++;
+  }
+  await store.metaPut(markerKey, Date.now());
+  return touched;
+}
+
+/**
  * Typed-splits v2, Q3 (user 2026-08-05): the funding TYPE retires —
  * funding is a marked special CATEGORY on standard rows now. Every
  * funding-typed row (raw and overlay alike) re-derives its type by

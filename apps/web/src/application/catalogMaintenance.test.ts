@@ -269,6 +269,38 @@ describe('retired debt subs refile by sign (2026-08-01)', () => {
   });
 });
 
+describe('#252: Bought/Sold became brokerage-internal — unstamped legs refile', () => {
+  const stores: DexieBackend[] = [];
+  afterEach(async () => {
+    for (const s of stores.splice(0)) await s.destroy();
+  });
+
+  it('investBuy/investSell off-brokerage land on Invested/Withdrawn; brokerage rows keep theirs', async () => {
+    const { migrateInvestMovementSubs } = await import('./catalogMaintenance');
+    const store = new DexieBackend(new MunniDB(`munni_ims_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('ims'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    await repo.upsert('account', SPACE, 'bank', { name: 'Bank', type: 'checking', currency: 'EUR', balanceCents: 0, source: 'manual' });
+    await repo.upsert('account', SPACE, 'brk', { name: 'DeGiro', type: 'brokerage', currency: 'EUR', balanceCents: 0, source: 'manual' });
+    const base = { currency: 'EUR', merchant: 'X', txType: 'investment' as const, needsReview: 0 as const };
+    await repo.upsert('transaction', SPACE, 'leg-out', { ...base, accountId: 'bank', date: '2026-01-01', amountCents: -5_000, catId: 'investBuy' });
+    await repo.upsert('transaction', SPACE, 'leg-in', { ...base, accountId: 'bank', date: '2026-01-02', amountCents: 3_000, catId: 'investSell' });
+    await repo.upsert('transaction', SPACE, 'stock', { ...base, accountId: 'brk', date: '2026-01-03', amountCents: -2_000, catId: 'investBuy' });
+    // a per-space overlay on a raw feed row (non-brokerage) refiles too
+    await repo.upsert('transaction', 'feedY', 'rawI', { accountId: 'bank', currency: 'EUR', merchant: 'B', date: '2026-01-04', amountCents: -900 } as never);
+    await repo.upsert('txMeta', SPACE, 'metaI', { txId: 'rawI', catId: 'investBuy' } as never);
+
+    expect(await migrateInvestMovementSubs(store, repo)).toBe(3);
+    expect((await store.get('transaction', 'leg-out'))?.catId).toBe('investContribution');
+    expect((await store.get('transaction', 'leg-in'))?.catId).toBe('investWithdraw');
+    expect((await store.get('transaction', 'stock'))?.catId).toBe('investBuy'); // brokerage keeps Bought
+    expect((await store.get('txMeta', 'metaI'))?.catId).toBe('investContribution');
+    // marker gates the rerun
+    expect(await migrateInvestMovementSubs(store, repo)).toBe(0);
+  });
+});
+
 describe('typed-splits v2 migrations (funding retirement + linked-family inversion)', () => {
   const stores: DexieBackend[] = [];
   afterEach(async () => {

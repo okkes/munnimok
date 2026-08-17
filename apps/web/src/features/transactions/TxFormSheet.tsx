@@ -809,6 +809,10 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         selectedId={catId}
         onPick={setCatId}
         direction={isExpense ? 'debit' : 'credit'}
+        // #252 (user ss): the form knows its account — the movement
+        // matrix narrows here too (a bank row never sees Bought/Sold or
+        // the loan's Interest/Fees)
+        sourceAccountType={(accounts ?? []).find((a) => a.id === effectiveAccount)?.type}
       />
     </>
   );
