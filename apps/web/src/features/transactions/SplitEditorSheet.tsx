@@ -438,6 +438,11 @@ export function SplitEditorSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('split.title')} size="tall">
       <div className="flex flex-col gap-2 pt-1" data-testid="split-editor">
+        {/* #210 (user): split categories is the everyday tool — the
+            transaction split is for parts that need lives of their own */}
+        <p className="px-1 text-[12px] leading-relaxed text-ink-3" data-testid="split-vs-cats-hint">
+          {t('split.vsCatsHint')}
+        </p>
         {/* exact euros for one charge, percentages when the shape repeats */}
         <div className="flex gap-1.5">
           <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>
@@ -447,6 +452,11 @@ export function SplitEditorSheet({
             {t('split.modePct')}
           </Chip>
         </div>
+        {/* #209 (user): what the two modes MEAN — especially under a
+            bulk update, where percentages refit each transaction */}
+        <p className="px-1 text-[11px] leading-relaxed text-ink-4" data-testid="split-mode-hint">
+          {t('split.modeHint')}
+        </p>
         {rows.map((row, i) => (
           <ValuesRow
             key={row.key}

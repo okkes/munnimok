@@ -512,6 +512,11 @@ export function CatsSheet({
               {t('split.modePct')}
             </Chip>
           </div>
+          {/* #209 (user): what the two modes MEAN — especially under a
+              bulk update, where percentages refit each transaction */}
+          <p className="px-1 text-[11px] leading-relaxed text-ink-4" data-testid="part-cat-mode-hint">
+            {t('split.modeHint')}
+          </p>
           {/* #228 feedback: the settled bookkeeping stands FIRST, pinned
               and untouchable — removing the reimbursement link is the
               only way to remove it */}
