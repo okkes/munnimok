@@ -331,7 +331,8 @@ describe('TxFormSheet (demo identity)', () => {
     // valid amount+merchant, but no account: the tap names it (#195)
     fireEvent.click(save);
     expect(await screen.findByTestId('txform-save-blocker')).toBeTruthy();
-    expect(screen.getByTestId('txform-account').getAttribute('aria-invalid')).toBe('true');
+    // S6811: a button carries data-invalid (aria-invalid is inputs-only)
+    expect(screen.getByTestId('txform-account').getAttribute('data-invalid')).toBe('true');
     fireEvent.click(screen.getByTestId('txform-account'));
     fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
     await waitFor(() => expect(screen.queryByTestId('txform-save-blocker')).toBeNull());

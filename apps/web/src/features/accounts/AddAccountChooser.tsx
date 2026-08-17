@@ -29,6 +29,9 @@ import { Sheet } from '@/ui/Sheet';
  * types extend it with the debt story (loans v2 — the account IS the
  * loan, so the Debts "+" lands here too, pre-filtered).
  */
+/** any manual-form field carrying text keeps the discard ask armed (S3776) */
+const anyManualFieldFilled = (fields: readonly string[]): boolean => fields.some((field) => field !== '');
+
 export function AddAccountChooser({
   open,
   onOpenChange,
@@ -169,6 +172,9 @@ export function AddAccountChooser({
   const nameMissing = !name.trim();
   const balanceMissing = balanceRequired && parseCents(balance) === null;
   const saveDisabled = nameMissing || balanceMissing;
+  // #195 rings, precomputed once (S3776: the JSX kept re-branching)
+  const nameBad = attempted && nameMissing;
+  const balanceBad = attempted && balanceMissing;
 
   /** the debt story a LIABILITY account carries (loans v2) — blank
    *  fields stay off the row entirely */
@@ -215,10 +221,7 @@ export function AddAccountChooser({
 
   // a filled manual form deserves a "discard?" before a stray backdrop
   // tap drops it (user request 2026-08-01) — the intent step never asks
-  const manualDirty =
-    step === 'manual' &&
-    newType !== null &&
-    (name.trim() !== '' || balance !== '' || iban !== '' || original !== '' || apr !== '' || payment !== '' || note !== '');
+  const manualDirty = step === 'manual' && newType !== null && anyManualFieldFilled([name.trim(), balance, iban, original, apr, payment, note]);
 
   return (
     <>
@@ -321,8 +324,8 @@ export function AddAccountChooser({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('acct.accountName')}
-                aria-invalid={attempted && nameMissing}
-                className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && nameMissing)}`}
+                aria-invalid={nameBad}
+                className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(nameBad)}`}
               />
               <div className="flex gap-2">
                 <div className="flex overflow-hidden rounded-input border border-line">
@@ -351,8 +354,8 @@ export function AddAccountChooser({
                   // starting value (user ss: "Initial balance" next to
                   // "Original amount" read as the same thing twice)
                   placeholder={`${t(isLiability(newType) ? 'debts.current' : 'acct.initialBalance')} (${effectiveCurrency})`}
-                  aria-invalid={attempted && balanceMissing}
-                  className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && balanceMissing)}`}
+                  aria-invalid={balanceBad}
+                  className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(balanceBad)}`}
                 />
               </div>
               <div className="m-cap px-1">{t('space.currency')}</div>

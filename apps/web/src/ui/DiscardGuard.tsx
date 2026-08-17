@@ -13,10 +13,9 @@ import { Sheet } from './Sheet';
 export function useDiscardGuard(dirty: boolean, back: () => void): { guardedBack: () => void; sheet: ReactNode } {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
-  const guardedBack = () => {
-    if (dirty) setOpen(true);
-    else back();
-  };
+  // dirty is live screen STATE, not a behavior selector (S2301): the
+  // guarded function is picked per render from what the draft looks like
+  const guardedBack = dirty ? () => setOpen(true) : back;
   const sheet = (
     <Sheet open={open} onOpenChange={setOpen} title={t('sheet.discardTitle')} size="compact">
       <div className="flex flex-col gap-3 pt-1" data-testid="screen-discard">

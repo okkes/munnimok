@@ -105,6 +105,31 @@ const blockerKeyFor = (form: FormState): 'form.needName' | 'form.needAmount' | '
   return null;
 };
 
+/** stable reseed key: the record's identity, 'new' for drafts (S3776) */
+const seedKeyOf = (initial: FormState | null): string | null => (initial === null ? null : (initial.id ?? 'new'));
+
+/** custom cadences anchor on the first due date; presets keep the
+ *  no-auto-`since` rule so a cost added mid-period still counts for the
+ *  whole current period (and accepted suggestions own their history) */
+function cadenceFieldsFor(form: FormState) {
+  if (form.custom) {
+    return {
+      every: form.every,
+      everyN: Math.min(99, Math.max(1, Math.round(form.everyN) || 1)),
+      since: form.firstDue,
+      dueDay: Number(form.firstDue.slice(8, 10)),
+      dueMonth: Number(form.firstDue.slice(5, 7)),
+    };
+  }
+  return {
+    every: form.every,
+    everyN: 1, // overwrite a previous custom cadence
+    since: '', // '' clears — an absent field would not sync
+    dueDay: Math.min(31, Math.max(1, form.dueDay || 1)),
+    ...(form.every === 'year' ? { dueMonth: Math.min(12, Math.max(1, form.dueMonth || 1)) } : {}),
+  };
+}
+
 interface RecurringFormSheetProps {
   /** non-null opens the sheet with this draft; the sheet owns edits from there */
   initial: FormState | null;
@@ -149,7 +174,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   // identity: callers rebuild `initial` per render (formFromTx in review),
   // and on the native SQL backend every sync cycle re-emits fresh objects.
   // The identity-keyed reseed kept overwriting mid-typing edits (iOS ss).
-  const seedKey = initial === null ? null : (initial.id ?? 'new');
+  const seedKey = seedKeyOf(initial);
   const seededRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (seededRef.current === seedKey) return;
@@ -168,31 +193,17 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   const baselineRef = useRef('');
   const dirty = form !== null && JSON.stringify(form) !== baselineRef.current;
   const blockerKey = form === null ? null : blockerKeyFor(form);
+  // #195 rings, precomputed once (S3776: the JSX kept re-branching)
+  const nameBad = attempted && !form?.name.trim();
+  const amountBad = attempted && !form?.amount;
+  const dateBad = attempted && !form?.firstDue;
 
   const save = async () => {
-    if (!form?.name.trim()) return;
-    if (form.custom && !form.firstDue) return;
+    if (form === null || blockerKeyFor(form) !== null) return;
     const amountCents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
     if (!Number.isFinite(amountCents) || amountCents <= 0) return;
     const fromSuggestion = form.id === null && !!form.merchantKey;
-    // custom cadences anchor on the first due date; presets keep the
-    // no-auto-`since` rule so a cost added mid-period still counts for
-    // the whole current period (and accepted suggestions own their history)
-    const cadence = form.custom
-      ? {
-          every: form.every,
-          everyN: Math.min(99, Math.max(1, Math.round(form.everyN) || 1)),
-          since: form.firstDue,
-          dueDay: Number(form.firstDue.slice(8, 10)),
-          dueMonth: Number(form.firstDue.slice(5, 7)),
-        }
-      : {
-          every: form.every,
-          everyN: 1, // overwrite a previous custom cadence
-          since: '', // '' clears — an absent field would not sync
-          dueDay: Math.min(31, Math.max(1, form.dueDay || 1)),
-          ...(form.every === 'year' ? { dueMonth: Math.min(12, Math.max(1, form.dueMonth || 1)) } : {}),
-        };
+    const cadence = cadenceFieldsFor(form);
     const savedId = await ops.save(form.id, {
       name: form.name.trim(),
       kind: form.kind,
@@ -249,8 +260,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder={t('recurring.name')}
-              aria-invalid={attempted && !form.name.trim()}
-              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !form.name.trim())}`}
+              aria-invalid={nameBad}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(nameBad)}`}
             />
             <div className="flex gap-2">
               <Chip testId="recform-kind-fixed" selected={form.kind === 'fixed'} onClick={() => setForm({ ...form, kind: 'fixed' })}>
@@ -290,8 +301,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               value={form.amount}
               onChange={(e) => setForm({ ...form, amount: e.target.value })}
               placeholder="0.00"
-              aria-invalid={attempted && !form.amount}
-              className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !form.amount)}`}
+              aria-invalid={amountBad}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(amountBad)}`}
             />
 
             <div className="m-cap px-1">{t('recurring.iconTitle')}</div>
@@ -368,8 +379,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
                     type="date"
                     value={form.firstDue}
                     onChange={(e) => setForm({ ...form, firstDue: e.target.value })}
-                    aria-invalid={attempted && !form.firstDue}
-                    className={`h-10 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none${blockerRing(attempted && !form.firstDue)}`}
+                    aria-invalid={dateBad}
+                    className={`h-10 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none${blockerRing(dateBad)}`}
                   />
                 </label>
               </div>

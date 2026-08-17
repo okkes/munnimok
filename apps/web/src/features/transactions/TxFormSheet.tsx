@@ -413,7 +413,9 @@ function AccountFieldRow({ account, onOpen, bad = false }: Readonly<{ account: A
     <button
       data-testid="txform-account"
       onClick={onOpen}
-      aria-invalid={bad}
+      // S6811: buttons don't take aria-invalid — the ring + data flag
+      // carry the "fix this field" signal instead
+      data-invalid={bad || undefined}
       className={`m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink${blockerRing(bad)}`}
     >
       <Icon name={account ? typeDef(account.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />

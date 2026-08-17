@@ -41,7 +41,7 @@ export function MultiLine({
             strokeLinecap="round"
             strokeDasharray={s.dashed ? '5 4' : undefined}
           />
-          <circle cx={x(s.values.length - 1)} cy={y(s.values[s.values.length - 1])} r={3} fill={s.color} />
+          <circle cx={x(s.values.length - 1)} cy={y(s.values.at(-1)!)} r={3} fill={s.color} />
         </g>
       ))}
       {labels?.map((label, i) => {

@@ -154,6 +154,9 @@ public static class SocialEndpoints
             edges.Where(f => f.Status == StatusPending && f.RequestedBy != me).Select(Req).ToList()));
     }
 
+    /// <summary>#169: the optional space a friend request carries along.</summary>
+    private readonly record struct SpaceIntent(string SpaceId, string Role, string? SpaceName);
+
     private static async Task<IResult> SendFriendRequestAsync(SendFriendRequest request, AppDbContext db, PushNotifier push, HttpContext http, CancellationToken ct)
     {
         var me = http.GetUserId();
@@ -170,57 +173,59 @@ public static class SocialEndpoints
 
         var (a, b) = me < request.ToUserId ? (me, request.ToUserId) : (request.ToUserId, me);
         var existing = await db.Friendships.FirstOrDefaultAsync(f => f.UserAId == a && f.UserBId == b, ct);
-        if (existing is not null)
-        {
-            // their pending request to me? -> auto-accept (legacy behavior)
-            if (existing.Status == StatusPending && existing.RequestedBy != me)
-            {
-                existing.Status = StatusAccepted;
-                await db.SaveChangesAsync(ct);
-                await push.NotifyFriendAcceptedAsync(request.ToUserId, await NameOf(db, me, ct), ct);
-                // already friends now — the space intent survives as a
-                // regular pending invite (joining still needs their yes)
-                if (request.SpaceId is not null)
-                    await AddSpaceInviteIfMissingAsync(db, push, request.SpaceId, me, request.ToUserId, role, request.SpaceName, ct);
-            }
-        }
-        else
-        {
-            db.Friendships.Add(new Friendship
-            {
-                Id = Guid.NewGuid(),
-                UserAId = a,
-                UserBId = b,
-                RequestedBy = me,
-                Status = StatusPending,
-                SpaceId = request.SpaceId,
-                SpaceRole = request.SpaceId is null ? null : role,
-                SpaceName = request.SpaceId is null ? null : request.SpaceName,
-            });
-            await db.SaveChangesAsync(ct);
-            await push.NotifyFriendRequestAsync(request.ToUserId, await NameOf(db, me, ct), ct);
-        }
+        if (existing is not null) await AutoAcceptReciprocalAsync(db, push, existing, me, request, role, ct);
+        else await CreatePendingRequestAsync(db, push, (a, b), me, request, role, ct);
         return Results.Ok();
+    }
+
+    /// <summary>their pending request to me auto-accepts (legacy behavior).</summary>
+    private static async Task AutoAcceptReciprocalAsync(AppDbContext db, PushNotifier push, Friendship existing, Guid me, SendFriendRequest request, string role, CancellationToken ct)
+    {
+        if (existing.Status != StatusPending || existing.RequestedBy == me) return;
+        existing.Status = StatusAccepted;
+        await db.SaveChangesAsync(ct);
+        await push.NotifyFriendAcceptedAsync(request.ToUserId, await NameOf(db, me, ct), ct);
+        // already friends now — the space intent survives as a
+        // regular pending invite (joining still needs their yes)
+        if (request.SpaceId is not null)
+            await AddSpaceInviteIfMissingAsync(db, push, new SpaceIntent(request.SpaceId, role, request.SpaceName), me, request.ToUserId, ct);
+    }
+
+    private static async Task CreatePendingRequestAsync(AppDbContext db, PushNotifier push, (Guid A, Guid B) pair, Guid me, SendFriendRequest request, string role, CancellationToken ct)
+    {
+        db.Friendships.Add(new Friendship
+        {
+            Id = Guid.NewGuid(),
+            UserAId = pair.A,
+            UserBId = pair.B,
+            RequestedBy = me,
+            Status = StatusPending,
+            SpaceId = request.SpaceId,
+            SpaceRole = request.SpaceId is null ? null : role,
+            SpaceName = request.SpaceId is null ? null : request.SpaceName,
+        });
+        await db.SaveChangesAsync(ct);
+        await push.NotifyFriendRequestAsync(request.ToUserId, await NameOf(db, me, ct), ct);
     }
 
     /// <summary>#169 fallback when the pair turned out to be friends already.</summary>
     private static async Task AddSpaceInviteIfMissingAsync(
-        AppDbContext db, PushNotifier push, string spaceId, Guid fromUserId, Guid toUserId, string role, string? spaceName, CancellationToken ct)
+        AppDbContext db, PushNotifier push, SpaceIntent intent, Guid fromUserId, Guid toUserId, CancellationToken ct)
     {
-        if (await db.SpaceMembers.AnyAsync(m => m.SpaceId == spaceId && m.UserId == toUserId, ct)) return;
-        if (await db.SpaceInvites.AnyAsync(i => i.SpaceId == spaceId && i.ToUserId == toUserId && i.Status == StatusPending, ct)) return;
+        if (await db.SpaceMembers.AnyAsync(m => m.SpaceId == intent.SpaceId && m.UserId == toUserId, ct)) return;
+        if (await db.SpaceInvites.AnyAsync(i => i.SpaceId == intent.SpaceId && i.ToUserId == toUserId && i.Status == StatusPending, ct)) return;
         db.SpaceInvites.Add(new SpaceInvite
         {
             Id = Guid.NewGuid(),
-            SpaceId = spaceId,
+            SpaceId = intent.SpaceId,
             FromUserId = fromUserId,
             ToUserId = toUserId,
-            Role = role,
+            Role = intent.Role,
             Status = StatusPending,
-            SpaceName = spaceName,
+            SpaceName = intent.SpaceName,
         });
         await db.SaveChangesAsync(ct);
-        await push.NotifySpaceInviteAsync(toUserId, await NameOf(db, fromUserId, ct), spaceName, ct);
+        await push.NotifySpaceInviteAsync(toUserId, await NameOf(db, fromUserId, ct), intent.SpaceName, ct);
     }
 
     private static async Task<IResult> AcceptFriendRequest(Guid id, AppDbContext db, PushNotifier push, HttpContext http, CancellationToken ct)
@@ -403,35 +408,40 @@ public static class SocialEndpoints
         var removingSelf = userId == me;
         if (myRole is null || (!removingSelf && !SpaceRoles.IsOwner(myRole))) return Results.Forbid();
         var member = await db.SpaceMembers.FirstOrDefaultAsync(m => m.SpaceId == spaceId && m.UserId == userId, ct);
-        if (member is not null)
-        {
-            db.SpaceMembers.Remove(member);
-            // the leaver's attached bank accounts freeze in this space:
-            // shared history stays readable, new data stops flowing
-            await Accounts.AccountEndpoints.ArchiveLinksOnLeaveAsync(db, spaceId, userId);
-            // never leave a space ownerless: promote the longest-standing
-            // remaining member (deterministic by user id) when the last
-            // owner walks out
-            if (SpaceRoles.IsOwner(member.Role) && !await HasAnotherOwner(db, spaceId, userId))
-            {
-                var successor = await db.SpaceMembers
-                    .Where(m => m.SpaceId == spaceId && m.UserId != userId)
-                    .OrderBy(m => m.UserId)
-                    .FirstOrDefaultAsync(ct);
-                if (successor is not null) successor.Role = SpaceRoles.Owner;
-            }
-            await db.SaveChangesAsync(ct);
-            // #172/#173: being removed reaches the victim's devices as a
-            // notification carrying who did it; a self-leave stays silent.
-            // spaceName rides the query (spaces have no server-side name);
-            // capped like the invite validator caps it.
-            if (!removingSelf)
-            {
-                var cappedName = spaceName is { Length: > 200 } ? spaceName[..200] : spaceName;
-                await push.NotifyMemberRemovedAsync(userId, cappedName, await NameOf(db, me, ct), ct);
-            }
-        }
+        if (member is null) return Results.Ok();
+        await RemoveMembershipAsync(db, spaceId, userId, member, ct);
+        // #172/#173: being removed reaches the victim's devices as a
+        // notification carrying who did it; a self-leave stays silent
+        if (!removingSelf) await NotifyRemovedAsync(db, push, userId, spaceName, me, ct);
         return Results.Ok();
+    }
+
+    private static async Task RemoveMembershipAsync(AppDbContext db, string spaceId, Guid userId, SpaceMember member, CancellationToken ct)
+    {
+        db.SpaceMembers.Remove(member);
+        // the leaver's attached bank accounts freeze in this space:
+        // shared history stays readable, new data stops flowing
+        await Accounts.AccountEndpoints.ArchiveLinksOnLeaveAsync(db, spaceId, userId);
+        // never leave a space ownerless: promote the longest-standing
+        // remaining member (deterministic by user id) when the last
+        // owner walks out
+        if (SpaceRoles.IsOwner(member.Role) && !await HasAnotherOwner(db, spaceId, userId))
+        {
+            var successor = await db.SpaceMembers
+                .Where(m => m.SpaceId == spaceId && m.UserId != userId)
+                .OrderBy(m => m.UserId)
+                .FirstOrDefaultAsync(ct);
+            if (successor is not null) successor.Role = SpaceRoles.Owner;
+        }
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>the removal push — the name travels with the request (spaces
+    /// keep no server-side name) and is capped like the invite validator caps it</summary>
+    private static async Task NotifyRemovedAsync(AppDbContext db, PushNotifier push, Guid userId, string? spaceName, Guid actorId, CancellationToken ct)
+    {
+        var cappedName = spaceName is { Length: > 200 } ? spaceName[..200] : spaceName;
+        await push.NotifyMemberRemovedAsync(userId, cappedName, await NameOf(db, actorId, ct), ct);
     }
 
     private static async Task<bool> HasAnotherOwner(AppDbContext db, string spaceId, Guid excludingUserId) =>

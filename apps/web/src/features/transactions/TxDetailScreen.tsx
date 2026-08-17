@@ -600,6 +600,83 @@ function splitDoorModeFor(multiPart: boolean, categoryLocked: boolean): 'row' | 
   return categoryLocked ? 'none' : 'row';
 }
 
+/** #213/#232: the Actions card — split door first, recurring + event
+ *  links after (expense, non-container rows only — r7: parts own their
+ *  links). Module-level for S3776; null when no row applies. */
+function DetailActionsCard({
+  tx,
+  multiPart,
+  splitDoorMode,
+  recurrings,
+  events,
+  onSplitDoor,
+  onOpenRecurring,
+  onOpenEvent,
+}: Readonly<{
+  tx: SpaceTx;
+  multiPart: boolean;
+  splitDoorMode: 'row' | 'manage' | 'none';
+  recurrings: readonly { id: string; name: string }[] | undefined;
+  events: readonly { id: string; name: string }[] | undefined;
+  onSplitDoor: () => void;
+  onOpenRecurring: () => void;
+  onOpenEvent: () => void;
+}>) {
+  const { t } = useLang();
+  const linkRows = tx.txType === 'expense' && !multiPart;
+  if (splitDoorMode === 'none' && !linkRows) return null;
+  return (
+    <>
+      <div className="m-cap mt-5 mb-1 px-1">{t('tx.actionsSection')}</div>
+      <div className="overflow-hidden rounded-card border border-line bg-surface">
+        {splitDoorMode !== 'none' && (
+          <button
+            data-testid={splitDoorMode === 'row' ? 'tx-detail-split-row' : 'tx-detail-manage-splits'}
+            onClick={onSplitDoor}
+            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+          >
+            <Icon name="call-split" size={20} color="var(--m-ink-3)" />
+            <span className="flex-1 truncate">{t(splitDoorMode === 'row' ? 'split.title' : 'review.manageSplits')}</span>
+            <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+          </button>
+        )}
+        {linkRows && (
+          <>
+            {splitDoorMode !== 'none' && <div className="mx-4 h-px bg-line-2" />}
+            <button
+              data-testid="tx-detail-recurring-row"
+              onClick={onOpenRecurring}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+            >
+              <Icon name="autorenew" size={20} color="var(--m-ink-3)" />
+              <span className="flex-1 truncate">
+                {tx.recurringId
+                  ? (recurrings?.find((r) => r.id === tx.recurringId)?.name ?? t('recurring.linkTitle'))
+                  : t('recurring.linkTitle')}
+              </span>
+              {!tx.recurringId && <span className="text-xs text-ink-4">{t('recurring.linkNone')}</span>}
+              <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+            </button>
+            <div className="mx-4 h-px bg-line-2" />
+            <button
+              data-testid="tx-detail-event-row"
+              onClick={onOpenEvent}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+            >
+              <Icon name="party-popper" size={20} color="var(--m-ink-3)" />
+              <span className="flex-1 truncate">
+                {tx.eventId ? (events?.find((e) => e.id === tx.eventId)?.name ?? t('events.linkTitle')) : t('events.linkTitle')}
+              </span>
+              {!tx.eventId && <span className="text-xs text-ink-4">{t('events.linkNone')}</span>}
+              <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+            </button>
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ── small derivations, module-level so the screen stays readable to
 // Sonar (S3776) ──
 /** #143: a split container is never a bulk-recategorize target — its
@@ -2322,59 +2399,18 @@ export function TxDetailScreen() { // NOSONAR(S3776)
               // #213 (user): the split door leads the actions, out of the
               // categories card; recurring + event links follow (expense,
               // non-container rows only — r7: parts own their links)
-              actions:
-                splitDoorMode !== 'none' || (tx.txType === 'expense' && !multiPart) ? (
-                  <>
-                    <div className="m-cap mt-5 mb-1 px-1">{t('tx.actionsSection')}</div>
-                    <div className="overflow-hidden rounded-card border border-line bg-surface">
-                      {splitDoorMode !== 'none' && (
-                        <button
-                          data-testid={splitDoorMode === 'row' ? 'tx-detail-split-row' : 'tx-detail-manage-splits'}
-                          onClick={splitDoorMode === 'row' ? requestSplit : openValuesEditor}
-                          className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-                        >
-                          <Icon name="call-split" size={20} color="var(--m-ink-3)" />
-                          <span className="flex-1 truncate">
-                            {t(splitDoorMode === 'row' ? 'split.title' : 'review.manageSplits')}
-                          </span>
-                          <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
-                        </button>
-                      )}
-                      {tx.txType === 'expense' && !multiPart && (
-                        <>
-                          {splitDoorMode !== 'none' && <div className="mx-4 h-px bg-line-2" />}
-                          <button
-                            data-testid="tx-detail-recurring-row"
-                            onClick={() => setRecurringOpen(true)}
-                            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-                          >
-                            <Icon name="autorenew" size={20} color="var(--m-ink-3)" />
-                            <span className="flex-1 truncate">
-                              {tx.recurringId
-                                ? (recurrings?.find((r) => r.id === tx.recurringId)?.name ?? t('recurring.linkTitle'))
-                                : t('recurring.linkTitle')}
-                            </span>
-                            {!tx.recurringId && <span className="text-xs text-ink-4">{t('recurring.linkNone')}</span>}
-                            <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
-                          </button>
-                          <div className="mx-4 h-px bg-line-2" />
-                          <button
-                            data-testid="tx-detail-event-row"
-                            onClick={() => setEventOpen(true)}
-                            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-                          >
-                            <Icon name="party-popper" size={20} color="var(--m-ink-3)" />
-                            <span className="flex-1 truncate">
-                              {tx.eventId ? (events?.find((e) => e.id === tx.eventId)?.name ?? t('events.linkTitle')) : t('events.linkTitle')}
-                            </span>
-                            {!tx.eventId && <span className="text-xs text-ink-4">{t('events.linkNone')}</span>}
-                            <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </>
-                ) : null,
+              actions: (
+                <DetailActionsCard
+                  tx={tx}
+                  multiPart={multiPart}
+                  splitDoorMode={splitDoorMode}
+                  recurrings={recurrings}
+                  events={events}
+                  onSplitDoor={splitDoorMode === 'row' ? requestSplit : openValuesEditor}
+                  onOpenRecurring={() => setRecurringOpen(true)}
+                  onOpenEvent={() => setEventOpen(true)}
+                />
+              ),
               facts: (
                 <DetailFacts
                   tx={tx}

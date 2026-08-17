@@ -84,7 +84,7 @@ describe('TransactionsScreen (demo identity)', () => {
     cleanup();
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
-    await waitFor(() => expect(rows().length).toBe(fullCount));
+    await waitFor(() => expect(rows()).toHaveLength(fullCount));
   }, 15_000);
 
   it('search narrows the list to matching merchants', async () => {
