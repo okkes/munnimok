@@ -90,6 +90,16 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
       globalThis.location.assign('/#/login');
     }
   }
+  // #186 (user rule): UNEXPECTED server answers reach GlitchTip from the
+  // choke point — callers keep swallowing into UI state, but the trace
+  // survives. Identity states (401/403/410) have their own handlers,
+  // and plain 4xx are the caller's business; 5xx and 409 are the
+  // "should not happen" band (the re-import 409 resolved itself and
+  // left no trace anywhere).
+  if (response.status >= 500 || response.status === 409) {
+    const { reportWarning } = await import('@/lib/report');
+    reportWarning('api', `apiFetch ${init.method ?? 'GET'} ${path} -> ${response.status}`, { status: response.status });
+  }
   return response;
 }
 

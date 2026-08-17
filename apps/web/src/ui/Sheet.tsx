@@ -132,6 +132,17 @@ function popVisual(id: number) {
 /** true while any sheet is open — global gestures (edge-swipe back) must stand down */
 export const hasOpenSheet = (): boolean => visualStack.length > 0;
 
+/** #136: is this element visible on the TOP layer — the topmost sheet,
+ *  or the base screen when no sheet is open? The Mina glow pierced any
+ *  sheet stacked ABOVE its anchor (the overlay outranks every sheet at
+ *  z-60); the tutorial stands its glow down when this says no. */
+export function elementOnTopLayer(el: HTMLElement): boolean {
+  if (visualStack.length === 0) return true; // no sheets — the screen IS the top
+  const topEl = coveredEls.get(visualStack.at(-1)!);
+  if (!topEl) return true; // top sheet not measurable yet — don't flicker
+  return topEl.contains(el);
+}
+
 // every open sheet registers its close callback; the Mina tutorial (and
 // only flows like it) dismisses leftovers before moving to a step whose
 // target lives outside any sheet
@@ -273,6 +284,10 @@ interface SheetProps {
    *  first instead of silently dropping the form. Programmatic closes
    *  (the host's own save calling onOpenChange) are unaffected. */
   dirty?: boolean;
+  /** #203 (user): work in flight — dismissal gestures flash this note
+   *  ("still running") instead of closing; the drag springs back. The
+   *  host clears it (and may close) when the work lands. */
+  busyNote?: string | null;
 }
 
 /**
@@ -396,7 +411,7 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
  * cancelling inputs mid-typing, user report); stacked sheets lock their
  * parents automatically. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, size, height, footer, dirty }: Readonly<SheetProps>) {
+export function Sheet({ open, onOpenChange, title, children, size, height, footer, dirty, busyNote }: Readonly<SheetProps>) {
   const { t } = useLang();
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
@@ -404,6 +419,14 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   // the flow while it runs, and unsaved edits get a conscious "discard?"
   // before the form is dropped (both 2026-08-01 user requests)
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // #203: a dismissal attempt while work runs flashes the note briefly
+  const [busyFlash, setBusyFlash] = useState(false);
+  const busyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashBusy = () => {
+    setBusyFlash(true);
+    if (busyTimer.current) clearTimeout(busyTimer.current);
+    busyTimer.current = setTimeout(() => setBusyFlash(false), 2500);
+  };
   // #253 (user): a DRAG on a dirty sheet completes — the sheet hides,
   // the "discard?" ask shows, and Keep editing slides it back up. This
   // flag is the hidden-while-asking state; a ref mirror keeps the
@@ -426,6 +449,11 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
     // nested picker (budget period, currency…) must stay dismissible or
     // the user is trapped one level down (user ss 2026-08-01)
     if (isMinaSheetGuarded() && depth === 0) return;
+    // #203: work in flight — say so instead of closing over it
+    if (busyNote) {
+      flashBusy();
+      return;
+    }
     if (dirty) {
       setConfirmDiscard(true);
       return;
@@ -541,10 +569,20 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
     </Sheet>
   ) : null;
 
+  // #203: the flash itself — rendered at the top of the content in
+  // both shapes (mobile sheet + desktop dialog)
+  const busyBanner =
+    busyFlash && busyNote ? (
+      <div className="mb-2 rounded-card bg-warning-soft px-3 py-2 text-[12px] text-ink-2" data-testid="sheet-busy-note">
+        {busyNote}
+      </div>
+    ) : null;
+
   if (panel) {
     return (
       <>
         <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} onDismiss={requestDismiss}>
+          {busyBanner}
           {children}
         </DesktopDialog>
         {discardConfirm}
@@ -561,6 +599,11 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
         syncCoveredStyles(); // a settled dismissal ends the drag
         if (!open) return; // a programmatic close is already handled
         if (isLocked || (isMinaSheetGuarded() && depth === 0)) return;
+        // #203: belt for the drag path — disableDismiss already refuses
+        if (busyNote) {
+          flashBusy();
+          return;
+        }
         if (dirty) {
           // #253 (user): the drag COMPLETES — the sheet hides and the
           // "discard?" ask takes over; Keep editing brings it back
@@ -589,8 +632,9 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
       // the Mina tutorial refuses the drag-dismissal (root sheet only —
       // nested pickers stay dismissible). #253: dirty forms no longer
       // refuse it — the drag completes, the sheet hides, and the
-      // "discard?" ask decides whether it comes back.
-      disableDismiss={isLocked || (isMinaSheetGuarded() && depth === 0)}
+      // "discard?" ask decides whether it comes back. #203: in-flight
+      // work refuses the drag (it springs back, the note flashes).
+      disableDismiss={isLocked || (isMinaSheetGuarded() && depth === 0) || !!busyNote}
       prefersReducedMotion={IS_TEST}
       unstyled
       // z-50 like the old drawer: the Mina tutorial overlay must still be

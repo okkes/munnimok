@@ -90,10 +90,13 @@ export function StatementImportFlow({
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
     try {
       setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds));
-    } catch {
+    } catch (err) {
       // a failed run (feed registration, server away) must SAY so —
       // a silently unchanged screen reads as "the app is broken"
-      // (user report 2026-07-24); the preview stays for a retry
+      // (user report 2026-07-24); the preview stays for a retry.
+      // #186: …and leave a trace — the swallow hid every import failure
+      const { reportError } = await import('@/lib/report');
+      reportError('import', err);
       setRunFailed(true);
       return;
     } finally {
@@ -172,7 +175,15 @@ export function StatementImportFlow({
       </Sheet>
 
       {/* CAMT.053 import: preview then result */}
-      <Sheet open={importPreview !== null} onOpenChange={(next) => !next && closeImport()} title={t('import.preview')} size="form">
+      {/* #203 (user): while the import runs, clicking away says "still
+          running" instead of silently closing over the work */}
+      <Sheet
+        open={importPreview !== null}
+        onOpenChange={(next) => !next && closeImport()}
+        title={t('import.preview')}
+        size="form"
+        busyNote={importing ? t('sheet.stillRunning') : null}
+      >
         {importError && (
           <div className="flex items-center gap-2 rounded-card bg-negative-soft px-4 py-3 text-[14px] text-negative" data-testid="import-error">
             <Icon name="alert-circle-outline" size={18} />

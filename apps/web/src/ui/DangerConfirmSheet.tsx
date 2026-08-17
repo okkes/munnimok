@@ -50,7 +50,9 @@ export function DangerConfirmSheet({
 
   const label = confirmLabel ?? t('action.confirm');
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={title} size="form">
+    // #203: while the destructive work runs, dismissal attempts say so
+    // instead of closing over it (the delete kept running invisibly)
+    <Sheet open={open} onOpenChange={onOpenChange} title={title} size="form" busyNote={busy ? t('sheet.stillRunning') : null}>
       <div className="flex flex-col gap-4 pt-1">
         <p className="text-[14px] leading-relaxed text-ink-2" data-testid={`${testId}-body`}>
           {body}
