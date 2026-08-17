@@ -10,7 +10,7 @@ import { useLang } from '@/i18n';
 import { revealInScroller } from '@/lib/viewport';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { closeAllSheets, hasOpenSheet } from '@/ui/Sheet';
+import { closeAllSheets, elementOnTopLayer, hasOpenSheet } from '@/ui/Sheet';
 import { MINA_ART, MINA_EXPR } from './assets';
 import { MINA_DONE_KEY, MINA_STATE_KEY, MINA_STEPS, minaStepIndex, minaSuggestedAccountName, minaSuggestedSpaceName, minaSuggestedTx, setMinaSuggestions } from './steps';
 import { setMinaSheetGuard } from './lock';
@@ -422,9 +422,12 @@ export function MinaTutorial() {
       });
       setTargetLabel(elementLabel(resolveAnchor(step?.labelFrom ?? step?.anchor)));
       setAnchorInSheet(!!el?.closest('[data-sheet-body]'));
-      // act steps: track the save button for the soft glow
+      // act steps: track the save button for the soft glow. #136 (user
+      // ss): the overlay outranks every sheet (z-60 vs z-50), so the
+      // glow PIERCED a second sheet stacked above its anchor — it now
+      // stands down unless the anchor is on the TOP layer.
       const softEl = step?.act && !step.anchor ? resolveAnchor(step.labelFrom) : null;
-      const softNext = softEl?.getBoundingClientRect() ?? null;
+      const softNext = softEl && elementOnTopLayer(softEl) ? softEl.getBoundingClientRect() : null;
       setSoftRect((prev) => {
         if (!prev && !softNext) return prev;
         if (prev && softNext && Math.abs(prev.top - softNext.top) < 1 && Math.abs(prev.left - softNext.left) < 1 && Math.abs(prev.width - softNext.width) < 1) return prev;

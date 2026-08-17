@@ -307,11 +307,13 @@ export function ManageCategoriesScreen() {
     setIcon(ICONS[0]);
     setColor(COLORS[0]);
     setTxType('expense');
+    setNameError(null); // #247: a stale conflict must not flash into a fresh form
     setMode({ kind: 'newMain' });
   };
   const openNewSub = (parentId: string) => {
     setName('');
     setIcon(ICONS[0]);
+    setNameError(null); // #247
     setMode({ kind: 'newSub', parentId });
   };
   const openEdit = (cat: Cat) => {
@@ -322,6 +324,7 @@ export function ManageCategoriesScreen() {
     setColor(row.color || COLORS[0]);
     setTxType(row.txType);
     setMoveTo(null);
+    setNameError(null); // #247
     setMode(row.isParent === 1 ? { kind: 'editMain', row } : { kind: 'editSub', row });
   };
 
@@ -730,7 +733,13 @@ export function ManageCategoriesScreen() {
       {/* create / edit */}
       <Sheet
         open={mode !== null}
-        onOpenChange={(open) => !open && setMode(null)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setMode(null);
+          // #247 (user): the error outlived the sheet — a click-away
+          // flashed the OLD conflict while the exit animation ran
+          setNameError(null);
+        }}
         title={formTitle}
         size="tall"
         // pinned footer (user ss: the sticky version floated over the
