@@ -167,11 +167,11 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Car loan'), { timeout: 5000 });
 
-    // a payoff is a debt payment, not a recurring cost: the debt row
-    // appears and names the loan account itself
-    await waitFor(() => expect(screen.getByTestId('review-debt-row')).toBeTruthy(), { timeout: 5000 });
-    expect(screen.getByTestId('review-debt-row').textContent).toContain('Car loan');
-    expect(screen.queryByTestId('review-recurring-row')).toBeNull();
+    // #236: no separate debt row — the Counterparty row above already
+    // names the loan (1:1 with its account); a payoff is still not a
+    // recurring cost, so that row stands down too
+    await waitFor(() => expect(screen.queryByTestId('review-recurring-row')).toBeNull(), { timeout: 5000 });
+    expect(screen.queryByTestId('review-debt-row')).toBeNull();
   }, 15_000);
 
   it('#133 E+r5: a ◆ Transfer pick stages nothing until the mandatory ask answers — pinned Default, REGULAR accounts only', async () => {

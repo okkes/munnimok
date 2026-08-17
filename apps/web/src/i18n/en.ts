@@ -1484,7 +1484,6 @@ export const en = {
   'review.linkRecurringPick': 'Link a recurring cost',
   'review.recNone': 'No link',
   'txform.pickAccount': 'Pick an account',
-  'review.debtRow': 'Debt',
   'review.recDeltaMore': '{amount} more than usual',
   'review.recDeltaLess': '{amount} less than usual',
   'review.skip': 'Skip',

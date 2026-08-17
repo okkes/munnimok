@@ -1110,14 +1110,14 @@ function BulkConfirmSection({
 }
 
 /**
- * The card's link row below categories: for a loan/mortgage counterparty
- * it names WHICH debt the transfer pays (a payoff is a debt payment, not
- * a recurring cost — user request 2026-07-29); otherwise the editable
- * recurring link with its price-delta warning.
+ * The card's link row below categories: the editable recurring link with
+ * its price-delta warning. A loan/mortgage counterparty renders NOTHING —
+ * the Counterparty row already names the debt (1:1 with its account),
+ * and a second "Debt" line right under it was pure repetition (#236);
+ * a payoff transfer is not a recurring cost either (user 2026-07-29).
  */
 function DebtOrRecurringRow({
   isLoanCounter,
-  payingDebt,
   recMatch,
   linkRecurring,
   manualRec,
@@ -1126,7 +1126,6 @@ function DebtOrRecurringRow({
   onEdit,
 }: Readonly<{
   isLoanCounter: boolean;
-  payingDebt: { name: string } | undefined;
   recMatch: RecurringRow | undefined;
   linkRecurring: boolean;
   manualRec: RecurringRow | undefined;
@@ -1135,16 +1134,7 @@ function DebtOrRecurringRow({
   onEdit: () => void;
 }>) {
   const { t, lang } = useLang();
-  if (isLoanCounter) {
-    return (
-      <div data-testid="review-debt-row" className="flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-[14px] text-ink">
-        <Icon name="hand-coin-outline" size={18} color="var(--m-ink-3)" />
-        {/* v2: the counterparty account IS the loan — name it directly */}
-        <span className="min-w-0 flex-1 truncate">{payingDebt?.name}</span>
-        <span className="text-[11px] text-ink-4">{t('review.debtRow')}</span>
-      </div>
-    );
-  }
+  if (isLoanCounter) return null;
   const delta = recMatch ? Math.abs(Math.abs(amountCents) - recMatch.amountCents) : 0;
   return (
     <>
@@ -1443,8 +1433,7 @@ export function ReviewScreen() {
   // IS the loan (v2), so the card names the counterparty itself and
   // retires the recurring row — a payoff transfer is not a recurring
   // cost (user request 2026-07-29)
-  const payingDebt = loanCounterOf(draftCounter);
-  const isLoanCounter = payingDebt !== undefined;
+  const isLoanCounter = loanCounterOf(draftCounter) !== undefined;
   // #237 r3: the Counter-transaction row's ingredients — the SPACE's
   // view of the counter account, and the face of whatever leg stands
   // (a stored pair reads first and locks the row; review never
@@ -1838,7 +1827,6 @@ export function ReviewScreen() {
                 {!multiPart && (
                   <DebtOrRecurringRow
                     isLoanCounter={isLoanCounter}
-                    payingDebt={payingDebt}
                     recMatch={recMatch}
                     linkRecurring={linkRecurring}
                     manualRec={manualRec}

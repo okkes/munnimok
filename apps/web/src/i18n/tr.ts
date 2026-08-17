@@ -1486,7 +1486,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'review.linkRecurringPick': 'Düzenli ödemeye bağla',
   'review.recNone': 'Bağlantı yok',
   'txform.pickAccount': 'Bir hesap seç',
-  'review.debtRow': 'Borç',
   'review.recDeltaMore': 'Her zamankinden {amount} fazla',
   'review.recDeltaLess': 'Her zamankinden {amount} az',
   'review.skip': 'Atla',

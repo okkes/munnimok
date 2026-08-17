@@ -1486,7 +1486,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'review.linkRecurringPick': 'Terugkerende kosten koppelen',
   'review.recNone': 'Geen koppeling',
   'txform.pickAccount': 'Kies een rekening',
-  'review.debtRow': 'Schuld',
   'review.recDeltaMore': '{amount} meer dan gebruikelijk',
   'review.recDeltaLess': '{amount} minder dan gebruikelijk',
   'review.skip': 'Overslaan',
