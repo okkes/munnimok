@@ -82,7 +82,8 @@ export async function healUntypedLinks(store: StorageBackend, repo: Repo): Promi
     for (const link of (await store.bySpace('accountLink', space.id)).filter((l) => l.deleted === 0)) {
       if (link.type) continue;
       const account = await store.get('account', link.accountId);
-      if (!account || account.deleted !== 0) continue;
+      if (!account) continue;
+      if (account.deleted !== 0) continue;
       await repo.upsert('accountLink', space.id, link.id, { type: account.type });
       touched++;
     }

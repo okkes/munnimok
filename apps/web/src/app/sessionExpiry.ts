@@ -41,7 +41,8 @@ export function subscribeSessionExpiry(listener: () => void): () => void {
 /** Logto's verdict on a spent refresh grant, in either error shape */
 export function isInvalidGrantError(err: unknown): boolean {
   if (!err || typeof err !== 'object') return false;
-  const code = 'code' in err ? String((err as { code?: unknown }).code ?? '') : '';
+  const rawCode = (err as { code?: unknown }).code;
+  const code = typeof rawCode === 'string' ? rawCode : '';
   const message = err instanceof Error ? err.message : '';
   return code.includes('invalid_grant') || message.includes('Grant request is invalid');
 }
