@@ -409,7 +409,6 @@ function CardCategoryRows({
   fallbackColor,
   currency,
   onOpenCategories,
-  onOpenSplit,
   onEditCounter,
   counterTx,
 }: Readonly<{
@@ -419,8 +418,6 @@ function CardCategoryRows({
   currency: string;
   /** the classic per-slice category editor (the chip's door) */
   onOpenCategories: () => void;
-  /** the values-only split editor (#126 v2 — pure money partition) */
-  onOpenSplit: () => void;
   /** #228 feedback: the card's own Counterparty row — counter-first
    *  stages the special category; absent = the row hides */
   onEditCounter?: () => void;
@@ -492,18 +489,6 @@ function CardCategoryRows({
             )}
           </span>
           {single && <span className="m-num text-[12px] text-ink-2">{fmtCents(single.amountCents, currency, lang)}</span>}
-          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-        </button>
-      )}
-      {/* the split door, in the open (#126) */}
-      {!multi && (
-        <button
-          data-testid="review-split-row"
-          onClick={onOpenSplit}
-          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-        >
-          <Icon name="call-split" size={18} color="var(--m-ink-3)" />
-          <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
           <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
         </button>
       )}
@@ -1916,11 +1901,12 @@ export function ReviewScreen() {
         )}
         {tx && (
           /* D3 focus layout: at lg the deck becomes a fixed 520px column,
-             centered both ways (user: left-anchored read as broken); the
-             pickers slide in as dimmed right-hand panels, so the card
-             stays visible while editing. Skip/Confirm attach under the
-             card instead of the far bottom. */
-          <div className="relative flex min-h-0 flex-1 flex-col lg:mx-auto lg:my-auto lg:w-[520px] lg:flex-none lg:pb-10">
+             horizontally centered; #151 (user): TOP-anchored — vertical
+             centering made the card float mid-screen. The pickers slide
+             in as dimmed right-hand panels, so the card stays visible
+             while editing. Skip/Confirm attach under the card instead
+             of the far bottom. */
+          <div className="relative flex min-h-0 flex-1 flex-col lg:mx-auto lg:w-[520px] lg:flex-none lg:pb-10">
             {leavingHtml && (
               <div
                 aria-hidden
@@ -1973,7 +1959,6 @@ export function ReviewScreen() {
                   fallbackColor={parentColor}
                   currency={tx.currency}
                   onOpenCategories={() => setCatsOpen(true)}
-                  onOpenSplit={requestSplit}
                   onEditCounter={counterRowDoors.onEdit}
                   counterTx={counterTxRow}
                 />
@@ -1999,6 +1984,21 @@ export function ReviewScreen() {
                     <Icon name="party-popper" size={18} color="var(--m-ink-3)" />
                     <span className="min-w-0 flex-1 truncate">{pickedEvent?.name ?? t('events.linkNone')}</span>
                     <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
+                    <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+                  </button>
+                )}
+
+                {/* #249 (user): the split door comes LAST — categories,
+                    counterparty, recurring and event lead; splitting is
+                    the escape hatch, not the second suggestion */}
+                {!multiPart && (
+                  <button
+                    data-testid="review-split-row"
+                    onClick={requestSplit}
+                    className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+                  >
+                    <Icon name="call-split" size={18} color="var(--m-ink-3)" />
+                    <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
                     <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
                   </button>
                 )}
