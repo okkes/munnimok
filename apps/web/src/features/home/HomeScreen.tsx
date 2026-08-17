@@ -52,6 +52,7 @@ import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
+import { presetTxFilters } from '@/features/transactions/txFilters';
 
 const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary; signed?: boolean }> = {
   income: { icon: 'cash-plus', color: 'var(--m-accent)', field: 'incomeCents' },
@@ -1058,6 +1059,9 @@ export function HomeScreen() {
             data-testid="home-newtx-all"
             onClick={() => {
               void ackAll();
+              // #148 (user): arrive on the list already narrowed to the
+              // new ones — the unreviewed lens is that narrowing
+              presetTxFilters({ newOnly: true });
               void navigate({ to: '/transactions' });
             }}
             className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"

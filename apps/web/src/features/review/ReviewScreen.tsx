@@ -1045,6 +1045,8 @@ export function ReviewPartDeck({
         direction={deckDirection}
         txType={rowType}
         allowedCatIds={allowedCatIds}
+        // #216 (user): part spreads keep their %/€ shape too
+        includePct
         excludeAccountId={tx.accountId}
         askDisabled={lockedKind}
         onApply={(entries) => {
@@ -2229,6 +2231,16 @@ export function ReviewScreen() {
           rows={allTxs ?? []}
           onCreate={resetPickDoor(counterBankFed, false, () => setPickedPeer(null))}
           onWait={resetPickDoor(counterBankFed, true, () => setPickedPeer(null))}
+          // #255 (user): "none" — the real counter is out of reach (e.g.
+          // predates the space); the whole counter story stands down
+          onNone={
+            counterRowDoors.onDetach
+              ? () => {
+                  counterRowDoors.onDetach?.();
+                  setPickedPeer(null);
+                }
+              : undefined
+          }
           onPick={(pickedId) => {
             const linkedId = counterAcct.id;
             stageWithBulkWarning(similar.length, () => setPickedPeer({ txId: pickedId, linkedId }), setPickWarn);

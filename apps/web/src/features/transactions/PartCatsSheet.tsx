@@ -223,9 +223,13 @@ const subjectNetCents = (subject: Pick<CatsSubject, 'amountCents' | 'cats'>): nu
     Math.abs(subject.amountCents) - settledEntriesOf(subject.cats).reduce((sum, c) => sum + c.amountCents, 0),
   );
 
-/** a %-typed spread reopens in % — the stored pct is the user's shape */
-const seedsAsPct = (subject: CatsSubject): boolean =>
-  !!subject.cats?.length && subject.cats.every((entry) => entry.pct != null);
+/** a %-typed spread reopens in % — the stored pct is the user's shape.
+ *  #216: the settled `reimbursed` bookkeeping entry never carries a pct
+ *  and must not flip a %-shaped spread back to amounts. */
+const seedsAsPct = (subject: CatsSubject): boolean => {
+  const real = (subject.cats ?? []).filter((entry) => entry.catId !== REIMBURSED_ID);
+  return real.length > 0 && real.every((entry) => entry.pct != null);
+};
 
 /**
  * #126 r6/r7 (user request): money spreads across categories with the

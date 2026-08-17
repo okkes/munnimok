@@ -1,8 +1,9 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
+import { clearTxFilters, presetTxFilters } from './txFilters';
 import { DEMO_SPACE_ID } from '@/db/seed';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
@@ -20,6 +21,8 @@ describe('TransactionsScreen (demo identity)', () => {
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
+    // #140: the lens survives remounts by design — specs are fresh apps
+    clearTxFilters();
   });
 
   it('a filter that matches only SOME parts shows exactly those, aligned as normal rows (#126 r8)', async () => {
@@ -50,6 +53,38 @@ describe('TransactionsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('tx-filter-uncat'));
     await screen.findByTestId('tx-parts-pf1');
     db.close();
+  }, 15_000);
+
+  it('#140/#148: the lens survives a remount (detail detour); the new-only preset narrows to unreviewed', async () => {
+    const first = renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    await waitFor(() => expect(rows().length).toBeGreaterThan(3));
+    const fullCount = rows().length;
+    // turn a lens on — search text
+    fireEvent.change(screen.getByTestId('tx-search'), { target: { value: 'heijn' } });
+    await waitFor(() => expect(rows().length).toBeLessThan(fullCount));
+    // mobile unmounts the list for the detail page — simulate the detour
+    first.unmount();
+    cleanup();
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    // #140: the lens came back with the remount
+    expect((screen.getByTestId('tx-search') as HTMLInputElement).value).toBe('heijn');
+    await waitFor(() => expect(rows().length).toBeLessThan(fullCount));
+    cleanup();
+    // #148: home's "see all" arrives with ONLY the new lens preset —
+    // the demo seeds reviewed rows, so the list narrows visibly
+    presetTxFilters({ newOnly: true });
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    expect((screen.getByTestId('tx-search') as HTMLInputElement).value).toBe('');
+    await waitFor(() => expect(rows().length).toBeLessThan(fullCount));
+    // and a tab-switch style reset clears it again
+    clearTxFilters();
+    cleanup();
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    await waitFor(() => expect(rows().length).toBe(fullCount));
   }, 15_000);
 
   it('search narrows the list to matching merchants', async () => {

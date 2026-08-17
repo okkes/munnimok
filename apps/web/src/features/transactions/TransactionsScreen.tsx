@@ -15,7 +15,8 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
-import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
+import { useData } from '@/app/data';
+import { readTxFilters, writeTxFilters } from './txFilters';
 import { Icon } from '@/ui/Icon';
 import { Chip, Pill } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
@@ -197,20 +198,27 @@ export function TransactionsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const [addOpen, setAddOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const [uncatOnly, setUncatOnly] = useState(false);
-  const [unsettledOnly, setUnsettledOnly] = useState(false);
+  // #140: seeded from the module snapshot — the lens survives the detour
+  // into a transaction; a tab switch or fresh start finds it empty
+  const [query, setQuery] = useState(() => readTxFilters().query);
+  const [uncatOnly, setUncatOnly] = useState(() => readTxFilters().uncatOnly);
+  const [unsettledOnly, setUnsettledOnly] = useState(() => readTxFilters().unsettledOnly);
   // #243 (user): see the linked legs on their own — pairs uncollapsed
-  const [counterOnly, setCounterOnly] = useState(false);
-  const [filters, setFilters] = useState<SheetFilters>(EMPTY_FILTERS);
+  const [counterOnly, setCounterOnly] = useState(() => readTxFilters().counterOnly);
+  // #148: home's "see all new" arrives with this lens on
+  const [newOnly, setNewOnly] = useState(() => readTxFilters().newOnly);
+  const [filters, setFilters] = useState<SheetFilters>(() => readTxFilters().filters);
   const [filterOpen, setFilterOpen] = useState(false);
   const cats = useCategories();
+  useEffect(() => {
+    writeTxFilters({ query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters });
+  }, [query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters]);
 
   const allTxs = useSpaceTransactions();
   // desktop density (D2): the account column needs names, one lookup for all rows
   const accounts = useSpaceAccounts();
-  // AE3: the empty state opens the shared chooser IN PLACE
-  const [chooserOpen, setChooserOpen] = useState(false);
+  // #181 (user): the empty state leads to the SPACE's own accounts screen
+  const { spaceId } = useData();
   const accountNames = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a.name])), [accounts]);
   // credits net out what they refunded: one pass over the links for the whole list
   const givenByCredit = useMemo(() => {
@@ -273,6 +281,8 @@ export function TransactionsScreen() {
     });
     // quick filter (redesign): expected/received value still open
     if (unsettledOnly) matched = matched.filter(hasUnsettledReimbursement);
+    // #148: the "new" lens = rows still wearing the unreviewed badge
+    if (newOnly) matched = matched.filter((item) => item.needsReview === 1);
     // #243 (user): the counter lens shows ONLY linked transactions —
     // every leg of every pair, nothing collapsed
     if (counterOnly) {
@@ -302,7 +312,7 @@ export function TransactionsScreen() {
     }
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
-  }, [allTxs, query, filters, uncatOnly, unsettledOnly, counterOnly, catIds]);
+  }, [allTxs, query, filters, uncatOnly, unsettledOnly, counterOnly, newOnly, catIds]);
 
   // the collapsed row says where the money went: "Checking → Savings".
   // #237: a same-sign wallet pair's surviving purchase reads the funding
@@ -331,7 +341,7 @@ export function TransactionsScreen() {
 
   const groups = groupByDate(txs ?? []);
   const activeCount = countActive(filters);
-  const filtering = !!query || uncatOnly || unsettledOnly || counterOnly || !!catIds || activeCount > 0;
+  const filtering = !!query || uncatOnly || unsettledOnly || counterOnly || newOnly || !!catIds || activeCount > 0;
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-transactions">
@@ -362,6 +372,10 @@ export function TransactionsScreen() {
                 {activeCount}
               </span>
             )}
+          </Chip>
+          {/* #148: the unreviewed lens home's "see all" arrives with */}
+          <Chip testId="tx-filter-new" selected={newOnly} onClick={() => setNewOnly((v) => !v)}>
+            {t('tx.newFilter')}
           </Chip>
           <Chip testId="tx-filter-uncat" tone="warning" selected={uncatOnly} onClick={() => setUncatOnly((v) => !v)}>
             {t('tx.uncategorizedFilter')}
@@ -395,7 +409,12 @@ export function TransactionsScreen() {
             text={t(filtering ? 'tx.emptyFiltered' : 'tx.emptyList')}
             action={
               filtering ? undefined : (
-                <Button size="sm" variant="outline" data-testid="tx-empty-add-account" onClick={() => setChooserOpen(true)}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="tx-empty-add-account"
+                  onClick={() => void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } })}
+                >
                   <Icon name="bank-plus" size={16} />
                   {t('tx.emptyCta')}
                 </Button>
@@ -460,7 +479,6 @@ export function TransactionsScreen() {
           </div>
         ))}
       </div>
-      <AddAccountChooser open={chooserOpen} onOpenChange={setChooserOpen} gcAvailable />
     </div>
   );
 }

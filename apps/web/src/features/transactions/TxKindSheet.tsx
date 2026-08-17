@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useData } from '@/app/data';
@@ -13,7 +13,9 @@ import type { DefaultFamily } from '@/application/defaultAccounts';
 import type { AccountType, TransactionRow, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
+import { txTitle } from '@/lib/text';
 import { Icon } from '@/ui/Icon';
+import { SearchField } from '@/ui/SearchField';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
@@ -356,6 +358,7 @@ export function CounterMatchSheet({
   rows,
   onCreate,
   onWait,
+  onNone,
   onPick,
 }: Readonly<{
   open: boolean;
@@ -367,15 +370,34 @@ export function CounterMatchSheet({
   onCreate?: () => void;
   /** bank-fed: link now, the feed delivers the other side later */
   onWait?: () => void;
+  /** #255 (user): "none" — no counter exists to find (e.g. it predates
+   *  the space); the caller detaches/stands the story down */
+  onNone?: () => void;
   onPick: (txId: string) => void;
 }>) {
   const { t } = useLang();
+  // #255: search narrows both lists — by title or by price
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    if (open) setQuery('');
+  }, [open]);
   const near = target ? counterDuplicates(rows, target.id, anchor) : [];
   const sameSign = target && near.length === 0 ? counterSameSignCandidates(rows, target.id, anchor) : [];
   // 1–3 suggestions (user sizing) — everything else scrolls below
-  const suggested = [...near, ...sameSign].slice(0, 3);
-  const listed = new Set(suggested.map((row) => row.id));
-  const rest = target ? counterOpenRows(rows, target.id, anchor.id, 50).filter((row) => !listed.has(row.id)) : [];
+  const allSuggested = [...near, ...sameSign].slice(0, 3);
+  const listed = new Set(allSuggested.map((row) => row.id));
+  const allRest = target ? counterOpenRows(rows, target.id, anchor.id, 50).filter((row) => !listed.has(row.id)) : [];
+  const matches = (row: TransactionRow): boolean => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return true;
+    if (txTitle(row).toLowerCase().includes(needle)) return true;
+    return (Math.abs(row.amountCents) / 100).toFixed(2).includes(needle.replace(',', '.'));
+  };
+  const suggested = allSuggested.filter(matches);
+  const rest = allRest.filter(matches);
+  // #255: the height fits the content — doors + a few suggestions never
+  // earned the tall shape's white void (locked at open, unfiltered counts)
+  const size = allRest.length > 0 ? 'tall' : 'form';
   const pick = (txId: string) => {
     onPick(txId);
     onOpenChange(false);
@@ -408,11 +430,24 @@ export function CounterMatchSheet({
     </div>
   );
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={target?.name ?? ''} size="tall">
+    <Sheet open={open} onOpenChange={onOpenChange} title={target?.name ?? ''} size={size}>
       {target && (
         <div className="flex flex-col pt-1" data-testid="counter-fork">
           {onCreate && door('counter-fork-create', 'plus-circle-outline', t('tx.counterForkCreate'), t('tx.counterForkCreateSub'), onCreate)}
           {onWait && door('counter-fork-wait', 'clock-outline', t('tx.counterForkWait'), t('tx.counterForkWaitSub'), onWait)}
+          {/* #255: the honest exit — no counter exists to find */}
+          {onNone && door('counter-fork-none', 'link-variant-off', t('tx.counterForkNone'), t('tx.counterForkNoneSub'), onNone)}
+          {(allSuggested.length > 0 || allRest.length > 0) && (
+            <SearchField
+              testId="counter-match-search"
+              value={query}
+              onChange={setQuery}
+              placeholder={t('tx.counterSearchPlaceholder')}
+              height="h-10"
+              textSize="text-[13px]"
+              className="mb-1"
+            />
+          )}
           {suggested.length > 0 && (
             <>
               <div className="m-cap mt-2 mb-1 flex items-center gap-1.5 px-1 text-accent-deep">
@@ -438,7 +473,7 @@ export function CounterMatchSheet({
           )}
           {suggested.length === 0 && rest.length === 0 && (
             <p className="px-1 pt-2 text-[13px] text-ink-4" data-testid="counter-fork-empty">
-              {t('tx.counterForkNoRows')}
+              {t(query ? 'tx.counterSearchNoHit' : 'tx.counterForkNoRows')}
             </p>
           )}
         </div>

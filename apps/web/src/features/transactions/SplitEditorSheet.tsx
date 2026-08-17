@@ -7,7 +7,7 @@ import { nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
 import { txTitle } from '@/lib/text';
 import { balanceTargetIndex, pctRemainder, resolveSplitsFor, splitRemainderCents, splitsArePct, validatePctSplits, validateSplits } from '@/domain/splits';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import type { TxSplit, TxType } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -260,7 +260,9 @@ export function SplitEditorSheet({
   useEffect(() => {
     if (!open) return;
     if (source?.length) {
-      const pctMode = splitsArePct(source);
+      // #216: settled `reimbursed` slices carry no pct by design — they
+      // must not flip a %-shaped partition back to amount mode
+      const pctMode = splitsArePct(source.filter((s) => s.catId !== REIMBURSED_ID));
       setMode(pctMode ? 'pct' : 'amount');
       setRows(
         source.map((s) => {

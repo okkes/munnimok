@@ -12,6 +12,7 @@ import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
+import { clearTxFilters } from '@/features/transactions/txFilters';
 import { padScrollportForKeyboard, restoreScrollportPad, revealInScroller } from '@/lib/viewport';
 import { wheelToHorizontal } from '@/lib/wheelScroll';
 import { SHEET_OWNS_KEYBOARD } from '@/ui/Sheet';
@@ -234,6 +235,10 @@ export function AppLayout() {
                 key={tab.to}
                 to={tab.to}
                 data-testid={`side-${tab.testId}`}
+                onClick={() => {
+                  // #140: choosing another TAB resets the tx lens
+                  if (tab.to !== '/transactions') clearTxFilters();
+                }}
                 className={`m-tap flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium ${
                   active ? 'bg-accent-soft text-accent-deep' : 'text-ink-2 hover:bg-surface'
                 }`}
@@ -283,6 +288,10 @@ export function AppLayout() {
                 key={tab.to}
                 to={tab.to}
                 data-testid={tab.testId}
+                onClick={() => {
+                  // #140: choosing another TAB resets the tx lens
+                  if (tab.to !== '/transactions') clearTxFilters();
+                }}
                 className={`m-tap flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[10px] font-medium ${
                   active ? 'text-brand' : 'text-ink-4'
                 }`}

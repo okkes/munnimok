@@ -17,6 +17,7 @@ import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
 import { SearchField } from '@/ui/SearchField';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { REIMBURSED_ID } from '@/domain/categories';
 import type { TxSplit } from '@/db/types';
 
@@ -99,8 +100,11 @@ export function ReimburseLinkScreen() {
   // #197: picking a PART carries its id — the link lands on that part,
   // never on the root container (partId = expense side, creditPartId =
   // the split credit's funding part)
-  const [chosen, setChosen] = useState<{ row: SpaceTx; partId?: string; creditPartId?: string } | null>(null);
+  // #233: maxCents is the pair's honest ceiling — saving above it now
+  // ERRORS instead of silently shrinking to the clamp
+  const [chosen, setChosen] = useState<{ row: SpaceTx; partId?: string; creditPartId?: string; maxCents: number } | null>(null);
   const [amount, setAmount] = useState('');
+  const [amountError, setAmountError] = useState<string | null>(null);
 
   // the search bar rides along: it scrolls away with the content and a
   // DELIBERATE upward scroll brings it back — one search-field's worth of
@@ -166,24 +170,27 @@ export function ReimburseLinkScreen() {
     const expected = reimbEarmarkCents(expense);
     const need = expected === null ? remainingCents(expense) : Math.min(remainingCents(expense), Math.max(0, expected - (expense.reimbursements ?? []).reduce((s, r) => s + r.amountCents, 0)));
     const prefill = clampReimbursement(expense, giveableCents(credit), Math.max(need, 0) || giveableCents(credit));
-    setChosen({ row });
+    setChosen({ row, maxCents: clampReimbursement(expense, giveableCents(credit), Number.MAX_SAFE_INTEGER) });
     setAmount(toText(prefill));
+    setAmountError(null);
   };
 
   // #197: an EXPENSE part pick (credit anchor) — the prefill is the
   // part's open value, clamped by what this credit can still give
   const pickPart = (row: SpaceTx, part: TxSplit, openCents: number) => {
     const prefill = clampReimbursement(row, giveableCents(tx!), Math.min(openCents, giveableCents(tx!)) || openCents);
-    setChosen({ row, partId: part.id });
+    setChosen({ row, partId: part.id, maxCents: clampReimbursement(row, giveableCents(tx!), openCents) });
     setAmount(toText(prefill));
+    setAmountError(null);
   };
 
   // #197 (the other side): a CREDIT part pick (expense anchor) — the
   // prefill is what that part can still fund, clamped by the expense
   const pickCreditPart = (row: SpaceTx, part: TxSplit, openCents: number) => {
     const prefill = clampReimbursement(tx!, openCents, Math.min(openCents, remainingCents(tx!)) || openCents);
-    setChosen({ row, creditPartId: part.id });
+    setChosen({ row, creditPartId: part.id, maxCents: clampReimbursement(tx!, openCents, Number.MAX_SAFE_INTEGER) });
     setAmount(toText(prefill));
+    setAmountError(null);
   };
 
   // #197: what ONE part of a split credit can still give — its own
@@ -198,14 +205,22 @@ export function ReimburseLinkScreen() {
   const confirm = () => {
     if (!tx || !chosen) return;
     const cents = parseCents(amount) ?? 0;
-    if (cents > 0) {
-      // the part target lives on the EXPENSE side's split — from the
-      // expense anchor it rides the ?part param; the CREDIT part rides
-      // the pick (expense anchor) or the ?part param (credit anchor's
-      // own part page, #197)
-      if (anchorIsExpense) link(tx, chosen.row, cents, partId, chosen.creditPartId);
-      else link(chosen.row, tx, cents, chosen.partId, partId);
+    // #233 (user): an over-the-ceiling amount INTERRUPTS the save and
+    // says the max — silently shrinking to the clamp taught nothing
+    if (cents <= 0) {
+      setAmountError(t('form.needAmount'));
+      return;
     }
+    if (cents > chosen.maxCents) {
+      setAmountError(t('reimb.maxError', { max: fmtCents(chosen.maxCents, tx.currency, lang) }));
+      return;
+    }
+    // the part target lives on the EXPENSE side's split — from the
+    // expense anchor it rides the ?part param; the CREDIT part rides
+    // the pick (expense anchor) or the ?part param (credit anchor's
+    // own part page, #197)
+    if (anchorIsExpense) link(tx, chosen.row, cents, partId, chosen.creditPartId);
+    else link(chosen.row, tx, cents, chosen.partId, partId);
     setChosen(null);
     // REPLACE, not back: pressing back on the detail afterwards must not
     // resurface a stale picker — a part-born link returns to its part
@@ -301,11 +316,16 @@ export function ReimburseLinkScreen() {
           <input
             data-testid="reimb-amount"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              setAmountError(null);
+            }}
+            aria-invalid={!!amountError}
             inputMode="decimal"
             placeholder={t('reimb.amountLabel')}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none${blockerRing(!!amountError)}`}
           />
+          <FormBlockerNote show={!!amountError} text={amountError ?? ''} testId="reimb-amount-error" />
           <Button data-testid="reimb-save" onClick={confirm}>
             {t('action.save')}
           </Button>

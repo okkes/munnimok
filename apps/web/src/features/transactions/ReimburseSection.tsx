@@ -97,7 +97,9 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
             </div>
           )}
           {(reimburses ?? []).length === 0 && (
-            <div className="px-4 py-4 text-center text-[12px] text-ink-4">—</div>
+            <div className="px-4 py-4 text-center text-[12px] text-ink-4" data-testid="reimb-out-empty-note">
+              {t('reimb.noneOutYet')}
+            </div>
           )}
         </div>
       </>
@@ -121,6 +123,14 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
         )}
       </div>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="reimb-list">
+        {/* #231 (user): the whole row tells the same explicit story a
+            split part does — original amount up top, links, net below */}
+        {total > 0 && (
+          <div className="flex items-baseline justify-between border-b border-line-2 px-4 py-2.5 text-[13px]" data-testid="reimb-original">
+            <span className="text-ink-3">{t('tx.originalAmount')}</span>
+            <span className="m-num text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</span>
+          </div>
+        )}
         {(linkedTxs ?? []).map((linked) => {
           const link = (tx.reimbursements ?? []).find((r) => r.txId === linked.id);
           return (
@@ -167,8 +177,18 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
             )}
           </div>
         )}
+        {/* #231: the net line closes the statement — what this expense
+            really cost after the money that came back */}
+        {total > 0 && (
+          <div className="flex items-baseline justify-between border-t border-line-2 px-4 py-2.5 text-[13px]" data-testid="reimb-net">
+            <span className="font-medium text-ink-2">{t('reimb.net')}</span>
+            <span className="m-num font-semibold text-ink">{fmtCents(netAmountCents(tx), tx.currency, lang, { sign: true })}</span>
+          </div>
+        )}
         {(linkedTxs ?? []).length === 0 && total === 0 && (
-          <div className="px-4 py-4 text-center text-[12px] text-ink-4">—</div>
+          <div className="px-4 py-4 text-center text-[12px] text-ink-4" data-testid="reimb-empty-note">
+            {t('reimb.noneYet')}
+          </div>
         )}
       </div>
     </>

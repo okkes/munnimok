@@ -600,40 +600,6 @@ function splitDoorModeFor(multiPart: boolean, categoryLocked: boolean): 'row' | 
   return categoryLocked ? 'none' : 'row';
 }
 
-/** the door itself, placed either inside the categories card (row) or
- *  under it (manage) — renders only its own placement */
-function DetailSplitDoor({
-  mode,
-  placement,
-  onOpen,
-}: Readonly<{ mode: 'row' | 'manage' | 'none'; placement: 'row' | 'manage'; onOpen: () => void }>) {
-  const { t } = useLang();
-  if (mode !== placement) return null;
-  if (mode === 'row') {
-    return (
-      <button
-        data-testid="tx-detail-split-row"
-        onClick={onOpen}
-        className="m-tap flex w-full items-center gap-3 border-t border-line-2 bg-transparent px-4 py-3 text-left text-[14px] text-ink"
-      >
-        <Icon name="call-split" size={18} color="var(--m-ink-3)" />
-        <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
-        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-      </button>
-    );
-  }
-  return (
-    <button
-      data-testid="tx-detail-manage-splits"
-      onClick={onOpen}
-      className="m-tap mt-2 flex w-full items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-transparent px-4 py-2.5 text-[13px] font-medium text-accent-deep"
-    >
-      <Icon name="tune" size={15} />
-      {t('review.manageSplits')}
-    </button>
-  );
-}
-
 // ── small derivations, module-level so the screen stays readable to
 // Sonar (S3776) ──
 /** #143: a split container is never a bulk-recategorize target — its
@@ -984,6 +950,7 @@ function writeUnsplit(
   catId: string,
 ): void {
   const cat = catId !== UNCATEGORIZED_ID ? catId : fallbackCatId;
+  // #260: un-splitting is a deliberate category decision — reviewed
   if (settledCents > 0) {
     // #211: a whole row's gross partition lives in its own cats now —
     // #228: the parts' settled bookkeeping folds back into the row's
@@ -992,9 +959,10 @@ function writeUnsplit(
       cats: [...(rest > 0 ? [{ catId: cat, amountCents: rest }] : []), { catId: REIMBURSED_ID, amountCents: settledCents }],
       splits: null as never,
       catId: cat,
+      needsReview: 0,
     });
   } else {
-    void transform(tx, { splits: null as never, catId: cat });
+    void transform(tx, { splits: null as never, catId: cat, needsReview: 0 });
   }
 }
 
@@ -1205,11 +1173,12 @@ function PartDetailBody({
   };
 
   /** per-part write-through — r7 (user rule): NO restriction on a split
-   *  beyond the amounts, every patch lands */
+   *  beyond the amounts, every patch lands. #260: a deliberate edit here
+   *  IS the review — the unreviewed badge stands down with it. */
   const patchPart = (patch: Partial<TxSplit>): void => {
     const nextSplits = (tx.splits ?? []).map((s) => (s.id === part.id ? { ...s, ...patch } : s));
     const nonReimb = nextSplits.filter((s) => s.catId !== REIMBURSED_ID);
-    void transform(tx, { splits: nextSplits, catId: primaryCatId(nonReimb) ?? tx.catId }, 'txCategory');
+    void transform(tx, { splits: nextSplits, catId: primaryCatId(nonReimb) ?? tx.catId, needsReview: 0 }, 'txCategory');
   };
 
   // #228: the part's one counterparty — pick refiles the category by the
@@ -1477,6 +1446,9 @@ function PartDetailBody({
         direction={partDirection}
         txType={tx.txType}
         allowedCatIds={allowedCatIds}
+        // #216 (user): the chosen %/€ shape is per-transaction data —
+        // part spreads keep it too, so the editor reopens as it was left
+        includePct
         excludeAccountId={tx.accountId}
         askDisabled={ownStamp}
         onApply={(entries) => patchPart(partCatsApplyPatch(part, entries))}
@@ -2041,6 +2013,8 @@ export function TxDetailScreen() { // NOSONAR(S3776)
       // also VERSION-STAMPS the row (its cats fieldVersion tells fresh
       // devices these splits are real parts, never legacy slices)
       cats: null as never,
+      // #260: landing a split IS the review decision for this row
+      needsReview: 0,
       ...(tx.notes ? { notes: '' } : {}),
       ...(tx.eventId ? { eventId: null as never } : {}),
       ...(tx.recurringId ? { recurringId: null as never } : {}),
@@ -2057,6 +2031,11 @@ export function TxDetailScreen() { // NOSONAR(S3776)
     parts.reduce((sum, part) => sum + reimbursedInCats(part.cats), 0);
   const unsplitTo = (catId: string) => {
     setSplitStage(null);
+    // #201 (user): removing the split retires the armed bulk offers —
+    // a bar selling the deleted partition (or its spread) is stale
+    setSplitBulk(null);
+    setCatsBulk(null);
+    setBulkOffer(null);
     writeUnsplit(transform, tx, unsplitFallbackCat, partsSettledCents, catId);
   };
 
@@ -2297,8 +2276,6 @@ export function TxDetailScreen() { // NOSONAR(S3776)
               void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: id } })
             }
           />
-          {/* the split door, in the open on the detail too (#126 r4) */}
-          <DetailSplitDoor mode={splitDoorMode} placement="row" onOpen={requestSplit} />
           {bulkOffer && (
             <DetailBulkBar
               targets={bulkTargets}
@@ -2330,66 +2307,85 @@ export function TxDetailScreen() { // NOSONAR(S3776)
             />
           )}
         </div>
-        <DetailSplitDoor mode={splitDoorMode} placement="manage" onOpen={openValuesEditor} />
 
-        {/* block: actions — recurring + event links. A split container
-            carries none of its own (r7): the parts do */}
-        {tx.txType === 'expense' && !multiPart && (
-          <>
-            <div className="m-cap mt-5 mb-1 px-1">{t('tx.actionsSection')}</div>
-            <div className="overflow-hidden rounded-card border border-line bg-surface">
-              <button
-                data-testid="tx-detail-recurring-row"
-                onClick={() => setRecurringOpen(true)}
-                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-              >
-                <Icon name="autorenew" size={20} color="var(--m-ink-3)" />
-                <span className="flex-1 truncate">
-                  {tx.recurringId
-                    ? (recurrings?.find((r) => r.id === tx.recurringId)?.name ?? t('recurring.linkTitle'))
-                    : t('recurring.linkTitle')}
-                </span>
-                {!tx.recurringId && <span className="text-xs text-ink-4">{t('recurring.linkNone')}</span>}
-                <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
-              </button>
-              <div className="mx-4 h-px bg-line-2" />
-              <button
-                data-testid="tx-detail-event-row"
-                onClick={() => setEventOpen(true)}
-                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
-              >
-                <Icon name="party-popper" size={20} color="var(--m-ink-3)" />
-                <span className="flex-1 truncate">
-                  {tx.eventId ? (events?.find((e) => e.id === tx.eventId)?.name ?? t('events.linkTitle')) : t('events.linkTitle')}
-                </span>
-                {!tx.eventId && <span className="text-xs text-ink-4">{t('events.linkNone')}</span>}
-                <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* block: details — the facts underneath the user's edits */}
-        <DetailFacts
-          tx={tx}
-          givenOut={givenOut}
-          counterAccountName={counterAccount?.name}
-          onOpenCounterAccount={() => setCounterOpen(true)}
-        />
-
-        {/* the sections below the details card follow the space's saved
-            order/visibility (user request — same mechanics as Home).
-            r7/r9: a container carries NONE of them — notes, reimburse-
-            ments and receipts all live on the parts. #221: a default-
-            ledger row carries none either — read-only, no attachments */}
-        {!multiPart && !onDefaultLedger &&
-          resolveTxDetailBlocks(space)
+        {/* everything below the categories card follows the space's saved
+            order/visibility (#232: actions and the facts card joined the
+            registry — same mechanics as Home). r7/r9: a container carries
+            no notes/reimbursements/receipts — the parts do. #221: a
+            default-ledger row carries none either. Actions and facts run
+            for every row, gated only by their own content. */}
+        {resolveTxDetailBlocks(space)
           .filter((entry) => !entry.hidden)
           .map((entry) => {
+            const attachable = !multiPart && !onDefaultLedger;
             const section: Record<TxDetailBlockId, ReactNode> = {
-              reimburse: <ReimburseSection tx={tx} />,
-              receipts: <ReceiptSection tx={tx} />,
-              notes: (
+              // #213 (user): the split door leads the actions, out of the
+              // categories card; recurring + event links follow (expense,
+              // non-container rows only — r7: parts own their links)
+              actions:
+                splitDoorMode !== 'none' || (tx.txType === 'expense' && !multiPart) ? (
+                  <>
+                    <div className="m-cap mt-5 mb-1 px-1">{t('tx.actionsSection')}</div>
+                    <div className="overflow-hidden rounded-card border border-line bg-surface">
+                      {splitDoorMode !== 'none' && (
+                        <button
+                          data-testid={splitDoorMode === 'row' ? 'tx-detail-split-row' : 'tx-detail-manage-splits'}
+                          onClick={splitDoorMode === 'row' ? requestSplit : openValuesEditor}
+                          className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+                        >
+                          <Icon name="call-split" size={20} color="var(--m-ink-3)" />
+                          <span className="flex-1 truncate">
+                            {t(splitDoorMode === 'row' ? 'split.title' : 'review.manageSplits')}
+                          </span>
+                          <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+                        </button>
+                      )}
+                      {tx.txType === 'expense' && !multiPart && (
+                        <>
+                          {splitDoorMode !== 'none' && <div className="mx-4 h-px bg-line-2" />}
+                          <button
+                            data-testid="tx-detail-recurring-row"
+                            onClick={() => setRecurringOpen(true)}
+                            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+                          >
+                            <Icon name="autorenew" size={20} color="var(--m-ink-3)" />
+                            <span className="flex-1 truncate">
+                              {tx.recurringId
+                                ? (recurrings?.find((r) => r.id === tx.recurringId)?.name ?? t('recurring.linkTitle'))
+                                : t('recurring.linkTitle')}
+                            </span>
+                            {!tx.recurringId && <span className="text-xs text-ink-4">{t('recurring.linkNone')}</span>}
+                            <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+                          </button>
+                          <div className="mx-4 h-px bg-line-2" />
+                          <button
+                            data-testid="tx-detail-event-row"
+                            onClick={() => setEventOpen(true)}
+                            className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left text-[15px] text-ink"
+                          >
+                            <Icon name="party-popper" size={20} color="var(--m-ink-3)" />
+                            <span className="flex-1 truncate">
+                              {tx.eventId ? (events?.find((e) => e.id === tx.eventId)?.name ?? t('events.linkTitle')) : t('events.linkTitle')}
+                            </span>
+                            {!tx.eventId && <span className="text-xs text-ink-4">{t('events.linkNone')}</span>}
+                            <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </>
+                ) : null,
+              facts: (
+                <DetailFacts
+                  tx={tx}
+                  givenOut={givenOut}
+                  counterAccountName={counterAccount?.name}
+                  onOpenCounterAccount={() => setCounterOpen(true)}
+                />
+              ),
+              reimburse: attachable ? <ReimburseSection tx={tx} /> : null,
+              receipts: attachable ? <ReceiptSection tx={tx} /> : null,
+              notes: attachable ? (
                 <>
                   <div className="m-cap mt-5 mb-1 px-1">{t('tx.notes')}</div>
                   <NotesField
@@ -2399,14 +2395,15 @@ export function TxDetailScreen() { // NOSONAR(S3776)
                     className="w-full resize-none rounded-card border border-line bg-surface px-4 py-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
                 </>
-              ),
+              ) : null,
             };
             return <div key={entry.id}>{section[entry.id]}</div>;
           })}
 
-        {/* r9: with no customizable blocks on a container, the door to
-            their settings would steer nothing visible here */}
-        {!multiPart && !onDefaultLedger && (
+        {/* #232: actions/facts are customizable on every row now — the
+            door stays on containers too; a read-only DEFAULT-ledger row
+            keeps none of its doors (#221) */}
+        {!onDefaultLedger && (
           <button
             data-testid="tx-detail-customize"
             onClick={() => void navigate({ to: '/tx-customize' })}
@@ -2469,6 +2466,9 @@ export function TxDetailScreen() { // NOSONAR(S3776)
           target={{ id: linkedAccount.id, name: linkedAccount.name }}
           anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
           rows={allTxs ?? []}
+          // #255: "none" — no counter exists to find; the link resets
+          // (same action as the counterparty sheet's detach door)
+          onNone={removeCounter}
           onPick={(pickedTxId) => void pairWithPicked(pickedTxId)}
         />
       )}

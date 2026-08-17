@@ -650,6 +650,48 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     db.close();
   }, 20_000);
 
+  it('#255: the match sheet searches by title AND amount; a dead-end search says so', async () => {
+    renderApp('/transactions/dm6');
+    await screen.findByTestId('screen-tx-detail');
+    const seed = new MunniDB('munni_demo');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('match-search'), { trackOutbox: false });
+    await seedRepo.upsert('account', DEMO_SPACE_ID, 'ms9', {
+      name: 'Search pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0,
+    });
+    const dm6seed = await seed.transactions.get('dm6');
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'sr1', {
+      accountId: 'ms9', date: dm6seed!.date, amountCents: -dm6seed!.amountCents, currency: 'EUR',
+      merchant: 'Blue Coffee', catId: 'uncategorized', txType: 'income', needsReview: 0,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'sr2', {
+      accountId: 'ms9', date: dm6seed!.date, amountCents: 777, currency: 'EUR',
+      merchant: 'Yellow Bakery', catId: 'uncategorized', txType: 'income', needsReview: 0,
+    });
+    seed.close();
+
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await screen.findByTestId('counter-default', {}, { timeout: 8000 });
+    fireEvent.click(await screen.findByTestId('counter-pick-ms9', {}, { timeout: 8000 }));
+    await screen.findByTestId('counter-fork', {}, { timeout: 8000 });
+
+    // both candidate rows are reachable before any search
+    await screen.findByTestId('counter-match-search');
+    // narrow by TITLE — only the bakery survives
+    fireEvent.change(screen.getByTestId('counter-match-search'), { target: { value: 'yellow' } });
+    await waitFor(() => expect(document.querySelector('[data-testid$="-sr1"]')).toBeNull());
+    expect(document.querySelector('[data-testid$="-sr2"]')).toBeTruthy();
+    // narrow by AMOUNT (7,77 — comma notation like the row wears it)
+    fireEvent.change(screen.getByTestId('counter-match-search'), { target: { value: '7,77' } });
+    await waitFor(() => expect(document.querySelector('[data-testid$="-sr1"]')).toBeNull());
+    expect(document.querySelector('[data-testid$="-sr2"]')).toBeTruthy();
+    // a dead-end search says so instead of leaving a silent void
+    fireEvent.change(screen.getByTestId('counter-match-search'), { target: { value: 'zzz-nothing' } });
+    await screen.findByTestId('counter-fork-empty');
+  }, 20_000);
+
   it('#133 B/#221: the Default row links onto the space\'s own pot (eagerly minted at boot)', async () => {
     renderApp('/transactions/dm6');
     fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
@@ -1258,12 +1300,13 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     // (#133 D: kind rows are gone everywhere, they anchor nothing now)
     await screen.findByTestId('tx-detail-manage-splits');
     await waitFor(() => expect(screen.queryByTestId('tx-detail-recurring-row')).toBeNull());
-    // r9: the parts section says what it lists, and the container-only
-    // blocks (reimbursements, receipt, customize) leave with the notes
+    // r9: the parts section says what it lists, and the part-owned
+    // blocks (reimbursements, receipt) leave with the notes — while the
+    // customize door STAYS (#232: actions/facts are customizable here)
     expect(screen.getByText('Split transactions')).toBeTruthy();
     expect(screen.queryByTestId('reimb-list')).toBeNull();
     expect(screen.queryByTestId('receipt-file')).toBeNull();
-    expect(screen.queryByTestId('tx-detail-customize')).toBeNull();
+    expect(screen.getByTestId('tx-detail-customize')).toBeTruthy();
     // #200: no Edit pencil on a container, and a part row NAVIGATES to
     // its page instead of opening the manage flow
     expect(screen.queryByTestId('tx-detail-cats-edit')).toBeNull();
