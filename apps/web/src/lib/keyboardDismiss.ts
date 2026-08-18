@@ -22,8 +22,16 @@
 /** far enough that a wobbly tap never reads as a scroll */
 const DRAG_THRESHOLD_PX = 12;
 
+/** input types that summon NO on-screen keyboard (kept in step with
+ *  AppLayout's tab-bar heuristic) — blurring a checkbox on drag would
+ *  only fight its toggle */
+const KEYBOARDLESS_INPUTS = new Set(['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'file', 'color']);
+
 const isEditable = (el: EventTarget | null): el is HTMLElement =>
-  el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  el instanceof HTMLElement &&
+  ((el.tagName === 'INPUT' && !KEYBOARDLESS_INPUTS.has((el as HTMLInputElement).type)) ||
+    el.tagName === 'TEXTAREA' ||
+    el.isContentEditable);
 
 const coarsePointer = (): boolean => window.matchMedia?.('(pointer: coarse)')?.matches ?? false;
 

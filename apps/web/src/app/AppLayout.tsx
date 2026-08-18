@@ -39,8 +39,16 @@ const TABS: TabDef[] = [
   { to: '/settings', labelKey: 'tab.settings', icon: 'cog-outline', iconActive: 'cog', testId: 'tab-settings' },
 ];
 
+/** input types that summon NO on-screen keyboard — focusing a checkbox
+ *  must not hide the tab bar (#162 fallout: the private toggle left the
+ *  bar hidden until blur) */
+const KEYBOARDLESS_INPUTS = new Set(['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'file', 'color']);
+
 const isEditable = (el: EventTarget | null): el is HTMLElement =>
-  el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  el instanceof HTMLElement &&
+  ((el.tagName === 'INPUT' && !KEYBOARDLESS_INPUTS.has((el as HTMLInputElement).type)) ||
+    el.tagName === 'TEXTAREA' ||
+    el.isContentEditable);
 
 
 /**

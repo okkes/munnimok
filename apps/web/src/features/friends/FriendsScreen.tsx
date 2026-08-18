@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/app/session';
+import { useData } from '@/app/data';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 import { useServerRefresh } from '@/lib/serverEvents';
@@ -94,6 +95,7 @@ export function FriendsScreen() {
   // friends are server-mediated: demo/offline identities must stay fully
   // local, so the screen shows a sign-in note and makes zero network calls
   const isUser = useSession((s) => s.identity?.kind === 'user');
+  const { engine } = useData();
   const [me, setMe] = useState<{ userId: string } | null>(null);
   const [data, setData] = useState<FriendsResponse | null>(null);
   const [addId, setAddId] = useState('');
@@ -140,8 +142,12 @@ export function FriendsScreen() {
     await reload();
   };
   const accept = async (id: string) => {
+    // #169: a space-carrying request makes us a MEMBER on accept — pull
+    // the new space right away instead of waiting for the next cycle
+    const joinsSpace = !!data?.receivedPending.find((r) => r.id === id)?.spaceName;
     await apiFetch(`/friends/requests/${id}/accept`, { method: 'POST' });
     await reload();
+    if (joinsSpace) void engine?.syncAll().catch(() => undefined);
   };
   const removeFriend = async (userId: string) => {
     await apiFetch(`/friends/${userId}`, { method: 'DELETE' });

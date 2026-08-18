@@ -58,6 +58,18 @@ describe('installKeyboardDismiss', () => {
     expect(document.activeElement).not.toBe(el);
   });
 
+  it('keyboardless inputs (checkbox) are not "editable" — no blur, no keyboard bookkeeping', () => {
+    const el = mountInput('input');
+    el.setAttribute('type', 'checkbox');
+    // a drag with a focused CHECKBOX must not blur it (it summons no
+    // keyboard; blurring would only fight the toggle)
+    touch('touchstart', document.body, 10, 10);
+    touch('touchmove', document.body, 10, 60);
+    expect(document.activeElement).toBe(el);
+    pressEnter(el);
+    expect(document.activeElement).toBe(el);
+  });
+
   it('Enter blurs a notes textarea too (user rule: no multiline expected)', () => {
     const el = mountInput('textarea');
     pressEnter(el);
