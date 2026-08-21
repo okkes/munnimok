@@ -15,6 +15,7 @@ import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import { AccountTypeRow } from '@/features/accounts/AccountTypeRow';
 import { ACCOUNT_TYPES, typeDef } from '@/features/accounts/accountTypes';
 import { setAccountOpenHandoff } from '@/features/accounts/openHandoff';
+import { useMyRole } from './SpaceSharing';
 import { takeSpaceAddAccountIntent } from './spaceAccountsHandoff';
 import { linkEffectiveType } from '@/db/joined';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
@@ -122,6 +123,10 @@ export function SpaceAccountsScreen() {
   const { spaceId } = useParams({ strict: false }) as { spaceId: string };
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const syncing = identity?.kind === 'user';
+  // #284: readers look but don't touch — every mutating affordance on
+  // this screen stands down (the server enforces; the UI stops promising)
+  const myRole = useMyRole(spaceId, syncing);
+  const readOnly = myRole === 'reader';
 
   const [attachOpen, setAttachOpen] = useState(false);
   const [picked, setPicked] = useState<AttachCandidate | null>(null);
@@ -245,6 +250,11 @@ export function SpaceAccountsScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8">
         <div className="pt-1" data-testid="space-accounts">
+          {readOnly && (
+            <p className="px-1 pb-2 text-[13px] text-ink-4" data-testid="space-accounts-reader-note">
+              {t('acct.readerNote')}
+            </p>
+          )}
           {entries?.length === 0 && (
             <p className="px-1 text-[13px] text-ink-4" data-testid="space-accounts-empty">
               {t('space.noAccounts')}
@@ -260,7 +270,8 @@ export function SpaceAccountsScreen() {
                     data-testid={`space-account-${entry.key}`}
                     // #206: a space-owned (manual) row edits directly — its
                     // info sheet had nothing the editor doesn't say better
-                    onClick={() => (entry.manual ? setEditing(entry.manual) : setInfo(entry))}
+                    // (#284: readers get the read-only info sheet instead)
+                    onClick={() => (entry.manual && !readOnly ? setEditing(entry.manual) : setInfo(entry))}
                     className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
                   >
                     {/* the real bank mark where we have it (user request);
@@ -300,38 +311,42 @@ export function SpaceAccountsScreen() {
               })}
             </div>
           )}
-          {syncing ? (
+          {/* #284: attach/add are mutations — readers see neither */}
+          {!readOnly &&
+            (syncing ? (
+              <Button
+                variant="outline"
+                className="mt-3 w-full"
+                data-testid="space-accounts-attach"
+                onClick={() => {
+                  setPicked(null);
+                  setAttachOpen(true);
+                }}
+              >
+                <Icon name="link-plus" size={17} />
+                {t('acct.attachToSpace')}
+              </Button>
+            ) : (
+              <button
+                data-testid="space-accounts-manage"
+                onClick={() => void navigate({ to: '/accounts' })}
+                className="m-tap mt-1.5 flex items-center gap-1 border-none bg-transparent px-1 text-[13px] text-accent-deep"
+              >
+                {t('space.manageAccounts')}
+                <Icon name="chevron-right" size={15} />
+              </button>
+            ))}
+          {!readOnly && (
             <Button
               variant="outline"
-              className="mt-3 w-full"
-              data-testid="space-accounts-attach"
-              onClick={() => {
-                setPicked(null);
-                setAttachOpen(true);
-              }}
+              className="mt-2 w-full"
+              data-testid="space-accounts-add"
+              onClick={() => setAddOpen(true)}
             >
-              <Icon name="link-plus" size={17} />
-              {t('acct.attachToSpace')}
+              <Icon name="pencil-plus-outline" size={17} />
+              {t('acct.addManualHere')}
             </Button>
-          ) : (
-            <button
-              data-testid="space-accounts-manage"
-              onClick={() => void navigate({ to: '/accounts' })}
-              className="m-tap mt-1.5 flex items-center gap-1 border-none bg-transparent px-1 text-[13px] text-accent-deep"
-            >
-              {t('space.manageAccounts')}
-              <Icon name="chevron-right" size={15} />
-            </button>
           )}
-          <Button
-            variant="outline"
-            className="mt-2 w-full"
-            data-testid="space-accounts-add"
-            onClick={() => setAddOpen(true)}
-          >
-            <Icon name="pencil-plus-outline" size={17} />
-            {t('acct.addManualHere')}
-          </Button>
         </div>
       </div>
 
@@ -358,7 +373,10 @@ export function SpaceAccountsScreen() {
                   data-testid="space-account-rename"
                   defaultValue={info.link.displayName ?? ''}
                   placeholder={info.account?.name ?? ''}
+                  readOnly={readOnly}
                   onBlur={(e) => {
+                    // #284: readers read the field, never write it
+                    if (readOnly) return;
                     const trimmed = e.target.value.trim();
                     if (trimmed === (info.link!.displayName ?? '')) return;
                     void repo.upsert('accountLink', spaceId, info.link!.id, {
@@ -372,8 +390,10 @@ export function SpaceAccountsScreen() {
             )}
             {/* #212 r2 (user): the TYPE is this space's own fact for an
                 attached account — import/linked rows were missing it
-                here entirely; changing re-reviews THIS space only */}
-            {info.link && info.account && <AccountTypeRow account={info.account} link={info.link} />}
+                here entirely; changing re-reviews THIS space only.
+                #284: the change row is a mutation — readers keep the
+                type reading in the row subtitle instead */}
+            {info.link && info.account && !readOnly && <AccountTypeRow account={info.account} link={info.link} />}
             <div className="overflow-hidden rounded-card border border-line bg-surface">
               {[
                 // #239 r2 (user): the GLOBAL name, next to the space's own
@@ -414,7 +434,7 @@ export function SpaceAccountsScreen() {
                 <Icon name="bank-outline" size={16} /> {t('acct.openGlobal')}
               </Button>
             )}
-            {info.detach && (
+            {info.detach && !readOnly && (
               <Button
                 variant="danger"
                 data-testid="space-account-sheet-detach"

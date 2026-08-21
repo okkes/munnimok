@@ -361,4 +361,38 @@ describe('SpacesScreen (demo identity)', () => {
       timeout: 5000,
     });
   }, 10_000);
+
+  it('#277: shared rows wear the people badge and ALWAYS name their creator', async () => {
+    const first = renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    // seeding a bare space row mid-boot races the every-boot folds
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const [{ MunniDB }, { DexieBackend }, { Repo }, { HlcClock }] = await Promise.all([
+      import('@/db/schema'),
+      import('@/db/backend'),
+      import('@/db/repo'),
+      import('@/sync/hlc'),
+    ]);
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('shared'), { trackOutbox: false });
+    await repo.upsert('space', 'sh1', 'sh1', {
+      name: 'Familie',
+      kind: 'shared',
+      createdByName: 'Bob',
+      currency: 'EUR',
+      periodType: 'month',
+      periodDay: 1,
+    });
+    db.close();
+    first.unmount();
+
+    renderApp('/spaces');
+    const row = await screen.findByTestId('space-row-sh1', {}, { timeout: 5000 });
+    expect(screen.getByTestId('space-shared-badge-sh1')).toBeTruthy();
+    // the creator line no longer waits for a name collision (#277)
+    expect(row.textContent).toContain('created by Bob');
+    // personal rows carry neither badge nor creator
+    expect(screen.queryByTestId('space-shared-badge-demo_space')).toBeNull();
+    expect(screen.getByTestId('space-row-demo_space').textContent).not.toContain('created by');
+  }, 15_000);
 });

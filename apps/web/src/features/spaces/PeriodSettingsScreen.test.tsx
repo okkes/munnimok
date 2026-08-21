@@ -23,7 +23,12 @@ describe('PeriodSettingsScreen (demo identity)', () => {
     await openFromSettings();
     // the form renders only once the space row loaded (fast-tap guard)
     fireEvent.click(await screen.findByTestId('space-period-biweekly', {}, { timeout: 5000 }));
+    // #283: the explainer folds behind an InfoHint — collapsed until asked
+    expect(screen.queryByTestId('period-explain')).toBeNull();
+    fireEvent.click(screen.getByTestId('period-explain-toggle'));
     expect(screen.getByTestId('period-explain')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('period-explain-toggle'));
+    expect(screen.queryByTestId('period-explain')).toBeNull();
     // weekly/bi-weekly periods pick a START WEEKDAY instead (legacy
     // parity) — rendered once the live query reflects the persisted type
     expect(await screen.findByTestId('space-weekday-3', {}, { timeout: 5000 })).toBeTruthy();

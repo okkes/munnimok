@@ -18,6 +18,7 @@ import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Chip } from '@/ui/primitives';
 import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
 import { Icon } from '@/ui/Icon';
+import { InfoHint } from '@/ui/InfoHint';
 import { Sheet } from '@/ui/Sheet';
 
 /**
@@ -319,9 +320,15 @@ export function AddAccountChooser({
 
       {step === 'manual' && (
         <div className="flex flex-col gap-3 pt-1" data-testid="chooser-manual-form">
-          <p className="text-[12px] leading-snug text-ink-4">
-            {loanFlavor ? t('debts.chooserNote') : t('acct.spaceScopedNote', { space: space?.name ?? '' })}
-          </p>
+          {/* #283: the scope/storage story folds behind a hint — the
+              always-visible paragraph shouted over the form */}
+          <div className="m-cap flex flex-wrap items-center gap-1.5">
+            {t('acct.manual')}
+            <InfoHint
+              text={loanFlavor ? t('debts.chooserNote') : t('acct.spaceScopedNote', { space: space?.name ?? '' })}
+              testId="chooser-hint"
+            />
+          </div>
           {newType ? (
             <>
               <div className="flex items-center gap-2 text-[13px] text-ink-3">
@@ -336,6 +343,8 @@ export function AddAccountChooser({
                 aria-invalid={nameBad}
                 className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(nameBad)}`}
               />
+              {/* #195 r2 (user): the blocker sits AT the field */}
+              <FormBlockerNote show={nameBad} text={t('form.needName')} testId="chooser-acctform-save-blocker" />
               <div className="flex gap-2">
                 <div className="flex overflow-hidden rounded-input border border-line">
                   <button
@@ -367,6 +376,7 @@ export function AddAccountChooser({
                   className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(balanceBad)}`}
                 />
               </div>
+              <FormBlockerNote show={!nameBad && balanceBad} text={t('form.needAmount')} testId="chooser-acctform-save-blocker" />
               <div className="m-cap px-1">{t('space.currency')}</div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {CURRENCIES.map((c) => (
@@ -464,11 +474,6 @@ export function AddAccountChooser({
                   />
                 </>
               )}
-              <FormBlockerNote
-                show={attempted && saveDisabled}
-                text={nameMissing ? t('form.needName') : t('form.needAmount')}
-                testId="chooser-acctform-save-blocker"
-              />
               <Button
                 data-testid="chooser-acctform-save"
                 onClick={() => {

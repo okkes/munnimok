@@ -5,6 +5,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAMT_FIXTURE } from '@/test/camt-fixture';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 
+// #226 r2: a minimal real-shape PayPal activity export — columns are
+// looked up by header name, so the short header parses fine
+const PAYPAL_CSV = [
+  '"Date","Time","TimeZone","Name","Type","Status","Currency","Gross","Fee","Net","From Email Address","To Email Address","Transaction ID","Balance","Balance Impact"',
+  '"06/01/2026","12:00:00","CET","Acme Music","General Payment","Completed","EUR","-23,00","0,00","-23,00","me@example.com","billing@acme.example","TXA1","-23,00","Debit"',
+].join('\n');
+
 describe('AccountsScreen (demo identity)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -711,6 +718,201 @@ describe('AccountsScreen (demo identity)', () => {
     fireEvent.change(input);
     expect(await screen.findByTestId('import-error')).toBeTruthy();
   });
+
+  it('#226 r2: the ING row carries its download route and a real logo image', async () => {
+    renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    fireEvent.click(screen.getByTestId('accounts-import'));
+    const row = await screen.findByTestId('import-bank-ing');
+    // the semicolon instruction (the copy the user liked) is the sub line
+    expect(row.textContent).toContain('semicolon separated');
+    const logo = row.querySelector('img');
+    expect(logo?.getAttribute('src') ?? '').toMatch(/ing\.svg|^data:image/);
+    // ASN and PayPal rows carry their own download routes
+    expect(screen.getByTestId('import-bank-asn').textContent).toContain('CAMT.053 (XML)');
+    expect(screen.getByTestId('import-bank-paypal').textContent).toContain('paypal.com');
+  });
+
+  it('#226 r2: picking ING then uploading a PayPal CSV asks before importing', async () => {
+    renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    fireEvent.click(screen.getByTestId('accounts-import'));
+    fireEvent.click(await screen.findByTestId('import-bank-ing'));
+    const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
+    const uploadPaypal = () => {
+      Object.defineProperty(input, 'files', {
+        value: [new File([PAYPAL_CSV], 'Download.CSV', { type: 'text/csv' })],
+        configurable: true, // re-defined on the re-upload below
+      });
+      fireEvent.change(input);
+    };
+    uploadPaypal();
+
+    // the ask names the picked bank and the detected format — no preview yet
+    const sheet = await screen.findByTestId('import-mismatch-sheet');
+    expect(sheet.textContent).toContain('ING');
+    expect(sheet.textContent).toContain('PayPal CSV');
+    expect(screen.queryByTestId('import-preview')).toBeNull();
+
+    // Cancel discards the file: no preview, back on the bank picker
+    fireEvent.click(screen.getByTestId('import-mismatch-cancel'));
+    await waitFor(() => expect(screen.queryByTestId('import-mismatch-sheet')).toBeNull());
+    expect(screen.queryByTestId('import-preview')).toBeNull();
+
+    // re-pick + re-upload, then Continue → the normal preview step
+    fireEvent.click(screen.getByTestId('import-bank-ing'));
+    uploadPaypal();
+    fireEvent.click(await screen.findByTestId('import-mismatch-continue'));
+    const preview = await screen.findByTestId('import-preview');
+    expect(preview.textContent).toContain('PAYPALMEEXAMPLECOM');
+  });
+
+  it('#227 r2: tapping an echo row flashes the jumped-to account row, then the flash fades', async () => {
+    const first = renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    await repo.upsert('accountLink', 'demo_space', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1' });
+    db.close();
+    first.unmount();
+
+    renderApp('/accounts');
+    fireEvent.click(await screen.findByTestId('account-echo-demo_space-feedacct-1'));
+    // the jump target wears the flash marker the moment the echo fires…
+    const target = document.getElementById('acct-row-feedacct-1')!;
+    expect(target.getAttribute('data-flash')).toBe('1');
+    // …and sheds it once the pulse ends (the setTimeout cleanup)
+    await waitFor(() => expect(target.getAttribute('data-flash')).toBeNull(), { timeout: 4000 });
+  }, 15_000);
+
+  it('#269: a PLAIN manual balance edit warns with the delta and mints the adjustment row', async () => {
+    renderApp('/accounts');
+    // demo_save is an ordinary manual account — no defaultFor (#221's
+    // defaults-only minting grew to every manual account)
+    fireEvent.click(await screen.findByTestId('account-row-demo_save'));
+    await screen.findByTestId('acctedit-balance');
+    // untouched field: no note
+    expect(screen.queryByTestId('acctedit-adjust-note')).toBeNull();
+    fireEvent.change(screen.getByTestId('acctedit-balance'), { target: { value: '8200' } });
+    // the note names the exact signed delta the save will record
+    expect((await screen.findByTestId('acctedit-adjust-note')).textContent).toContain('+€50.00');
+    fireEvent.click(screen.getByTestId('acctedit-save'));
+
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      expect((await db.accounts.get('demo_save'))?.balanceCents).toBe(820_000);
+      const adjustment = await db.transactions
+        .filter((t) => t.accountId === 'demo_save' && t.catId === 'balanceAdjustment')
+        .first();
+      expect(adjustment).toMatchObject({ amountCents: 5000, adjustment: 1, needsReview: 0, txType: 'adjustment' });
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
+  it('#278: the unattached import result names the space the attach button targets', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { feedSpaceId } = await import('@/domain/feedIds');
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        // the fixture's feed must stay reachable or the engine purges it
+        'GET /me/spaces': () => ['s-user', feedSpaceId('NL69INGB0123456789')],
+        'GET /me/feeds': () => [],
+        'POST /feeds': () => ({}),
+      },
+    });
+    await screen.findByTestId('screen-accounts');
+    const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [new File([CAMT_FIXTURE], 'statement.xml', { type: 'text/xml' })] });
+    fireEvent.change(input);
+    fireEvent.click(await screen.findByTestId('import-run'));
+
+    await screen.findByTestId('import-result', {}, { timeout: 10_000 });
+    // #204's note stands — and now SAYS which space attaching lands in
+    expect(await screen.findByTestId('import-unattached-note')).toBeTruthy();
+    expect(screen.getByTestId('import-attach-target').textContent).toContain('"Personal"');
+  }, 20_000);
+
+  it('#279: deleting a global account sweeps member-space overlays and legacy own rows', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { txMetaId } = await import('@/domain/feedIds');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    // the feed's raw row + this space's OVERLAY for it — engine.purgeSpace
+    // is feed-keyed, so the overlay used to survive as invisible junk
+    await repo.upsert('transaction', 'feed-1', 'rawtx-1', {
+      accountId: 'feedacct-1',
+      date: '2026-06-10',
+      amountCents: -1200,
+      currency: 'EUR',
+      merchant: 'SHELL',
+      txType: 'expense',
+    });
+    const metaId = txMetaId('s-user', 'rawtx-1');
+    await repo.upsert('txMeta', 's-user', metaId, { txId: 'rawtx-1', txType: 'expense', needsReview: 0, catId: 'groceries' });
+    // a legacy merged-import leftover: the member space's OWN row on the
+    // deleted account — it kept rendering with a dangling account
+    await repo.upsert('transaction', 's-user', 'legacy-1', {
+      accountId: 'feedacct-1',
+      date: '2026-05-01',
+      amountCents: -700,
+      currency: 'EUR',
+      merchant: 'OLD PATH',
+      txType: 'expense',
+    });
+    await repo.upsert('accountLink', 's-user', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1' });
+    db.close();
+
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+        'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
+        'DELETE /me/feeds/feed-1': () => ({ erased: true }),
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('account-row-feedacct-1'));
+    fireEvent.click(await screen.findByTestId('attach-delete'));
+    fireEvent.click(await screen.findByTestId('attach-delete-confirm'));
+    await waitFor(() => expect(screen.queryByTestId('account-row-feedacct-1')).toBeNull(), { timeout: 5000 });
+
+    // both remnants are TOMBSTONED (synced deletes), not merely dropped
+    const check = new MunniDB(USER_TEST_DB);
+    await waitFor(async () => {
+      expect((await check.txMeta.get(metaId))?.deleted).toBe(1);
+      expect((await check.transactions.get('legacy-1'))?.deleted).toBe(1);
+    }, { timeout: 5000 });
+    check.close();
+  }, 20_000);
 });
 
 describe('reconcile suggestion (master plan: linked is the truth)', () => {

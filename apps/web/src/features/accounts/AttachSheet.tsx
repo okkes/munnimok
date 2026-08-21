@@ -3,7 +3,9 @@ import { useQuery } from '@/db/useQuery';
 import type { GlobalAccount } from '@/application/accounts';
 import { newestTxDate } from '@/application/accounts';
 import { detachFeedFromSpace } from '@/application/accountAttach';
+import { purgeAccountRemnants } from '@/application/accountPurge';
 import { logActivity } from '@/application/activity';
+import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { useData } from '@/app/data';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
@@ -173,6 +175,9 @@ export function AttachSheet({
       for (const link of liveLinks ?? []) {
         await repo.remove('accountLink', link.spaceId, link.id);
       }
+      // #279: the engine purge below is feed-keyed — member spaces keep
+      // their txMeta overlays and legacy own rows unless swept here
+      await purgeAccountRemnants(store, repo, account.id, feedSpaceId);
       await engine?.purgeSpace(feedSpaceId);
       void logActivity(store, repo, spaceId, 'accountRemove', account.name);
       setDeleteOpen(false);
@@ -268,6 +273,8 @@ export function AttachSheet({
               className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0"
             >
               <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{space.name}</span>
+              {/* #277: a shared space says so wherever it is listed */}
+              {space.kind === 'shared' && <SharedSpaceBadge testId={`attach-space-shared-${space.id}`} />}
               {via?.historyFrom && <span className="font-mono text-[11px] text-ink-4">{via.historyFrom}</span>}
               {via?.archived ? (
                 <span

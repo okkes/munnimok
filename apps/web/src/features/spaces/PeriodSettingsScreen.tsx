@@ -10,6 +10,7 @@ import type { SpacePeriodType } from '@/db/types';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { HelpButton } from '@/features/help/HelpButton';
 import { Icon } from '@/ui/Icon';
+import { InfoHint } from '@/ui/InfoHint';
 import { Chip } from '@/ui/primitives';
 
 export const PERIODS: SpacePeriodType[] = ['month', 'week', 'biweekly'];
@@ -150,16 +151,18 @@ export function PeriodSettingsScreen() {
             never apply against an unloaded row (silent no-op) */}
         {space && (
         <div className="flex flex-col gap-3 pt-1">
-          <p className="rounded-card bg-bg-2 px-4 py-3 text-[13px] leading-relaxed text-ink-2" data-testid="period-explain">
-            {t('period.explain')}
-          </p>
           {readOnly && (
             <p className="px-1 text-[12px] text-ink-3" data-testid="period-reader-note">
               {t('space.readerNote')}
             </p>
           )}
 
-          <div className="m-cap px-1">{t('space.periodTitle')}</div>
+          {/* #283: the money-rhythm explainer folds behind a hint on the
+              caption row — the tinted paragraph shouted over the picker */}
+          <div className="m-cap flex flex-wrap items-center gap-1.5 px-1">
+            {t('space.periodTitle')}
+            <InfoHint text={t('period.explain')} testId="period-explain" />
+          </div>
           <PeriodControls periodType={periodType} periodDay={periodDay} readOnly={readOnly} onChange={(c) => void apply(c)} />
 
           <p className="px-1 text-[11px] text-ink-4" data-testid="period-instant-note">

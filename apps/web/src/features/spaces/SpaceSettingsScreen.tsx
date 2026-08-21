@@ -197,6 +197,8 @@ export function SpaceSettingsScreen() {
               aria-invalid={attempted && !name.trim()}
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none disabled:opacity-60${blockerRing(attempted && !name.trim())}`}
             />
+            {/* #195 r2 (user): the blocker sits AT the field */}
+            <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="space-edit-blocker" />
 
             <div className="m-cap px-1">{t('space.icon')}</div>
             <input
@@ -233,7 +235,8 @@ export function SpaceSettingsScreen() {
                   title={t('profile.photoUpload')}
                   className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
                 >
-                  <Icon name="camera-outline" size={17} />
+                  {/* #146 r2: upload ≠ webcam — two camera icons read as one */}
+                  <Icon name="upload-outline" size={17} />
                 </button>
               )}
               {/* #160: desktop webcam snapshot — mirrors the upload tile */}
@@ -256,8 +259,10 @@ export function SpaceSettingsScreen() {
                   // while one is set, picking them would change nothing visible
                   disabled={readOnly || picture !== ''}
                   onClick={() => setIcon(name_)}
+                  // #146 r2: with a picture set nothing is "selected" —
+                  // the stale accent ring on the old symbol read as active
                   className={`m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
-                    icon === name_ ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
+                    icon === name_ && picture === '' ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
                   }`}
                 >
                   <Icon name={name_} size={19} />
@@ -282,12 +287,9 @@ export function SpaceSettingsScreen() {
             />
 
             {!readOnly && (
-              <>
-                <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="space-edit-blocker" />
-                <Button data-testid="space-edit-save" onClick={() => void save()}>
-                  {t('action.save')}
-                </Button>
-              </>
+              <Button data-testid="space-edit-save" onClick={() => void save()}>
+                {t('action.save')}
+              </Button>
             )}
 
             {/* the private lock moved to the Settings tab (#162) — this

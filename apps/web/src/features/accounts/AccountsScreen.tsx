@@ -34,6 +34,28 @@ import { typeDef } from './accountTypes';
 const daysSince = (date?: string | null): number =>
   date ? Math.floor((Date.now() - new Date(date).getTime()) / 86_400_000) : 0;
 
+/** #227 r2: matches the m-row-flash animation in styles.css */
+const FLASH_MS = 1600;
+const flashTimers = new WeakMap<HTMLElement, number>();
+
+/** #227 r2: the echo's jump scrolls to the real row AND pulses it —
+ *  on a long list the smooth scroll alone left the eye searching */
+function flashJumpTarget(accountId: string): void {
+  const target = document.getElementById(`acct-row-${accountId}`);
+  if (!target) return;
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const pending = flashTimers.get(target);
+  if (pending !== undefined) window.clearTimeout(pending);
+  target.removeAttribute('data-flash');
+  // reflow restarts the CSS animation on a re-tap mid-pulse
+  void target.offsetWidth;
+  target.setAttribute('data-flash', '1');
+  flashTimers.set(
+    target,
+    window.setTimeout(() => target.removeAttribute('data-flash'), FLASH_MS),
+  );
+}
+
 function AccountRowButton({
   entry,
   lang,
@@ -247,9 +269,7 @@ function EchoRow({
   return (
     <button
       data-testid={`account-echo-${spaceId}-${account.id}`}
-      onClick={() =>
-        document.getElementById(`acct-row-${account.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      }
+      onClick={() => flashJumpTarget(account.id)}
       className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left opacity-60"
     >
       <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />

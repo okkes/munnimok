@@ -9,8 +9,11 @@ import { linkAllCounterparties } from '@/application/counterLink';
 import { linkPaypalFunding } from '@/application/paypalLink';
 import { linkTransferPairs } from '@/application/transferMatch';
 import { applyTitleMemory } from '@/application/titleMemory';
-import { parseStatement } from '@/lib/statements/parseStatement';
-import type { ParsedStatement } from '@/lib/statements/parseStatement';
+import { detectStatementKind, parseStatement } from '@/lib/statements/parseStatement';
+import type { ParsedStatement, StatementKind } from '@/lib/statements/parseStatement';
+import asnLogo from '@/assets/banks/asn.svg';
+import ingLogo from '@/assets/banks/ing.svg';
+import paypalLogo from '@/assets/banks/paypal.svg';
 import { fmtTimeAgo } from '@/lib/text';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { importCamtStatements, statementCoverageEnd } from './importCamt';
@@ -24,14 +27,28 @@ const daysSince = (iso: string): number => Math.floor((Date.now() - new Date(iso
 
 /** #226 (user): the tested banks, searchable like the connect flow —
  *  the pick guides the file dialog (parsing still sniffs the content).
- *  Brand names stay brand names in every language. */
+ *  Brand names stay brand names in every language. #226 r2: each row
+ *  wears the bank's logo (local asset — offline-first, never hotlinked),
+ *  its own download route, and the format family the pick promises. */
 const IMPORT_BANKS = [
-  { id: 'asn', name: 'ASN Bank', icon: 'file-xml-box', accept: '.xml,text/xml,application/xml', subKey: 'import.bankXmlSub' },
-  { id: 'ing', name: 'ING', icon: 'file-delimited-outline', accept: '.csv,text/csv', subKey: 'import.bankCsvSub' },
-  { id: 'paypal', name: 'PayPal', icon: 'file-delimited-outline', accept: '.csv,text/csv', subKey: 'import.bankCsvSub' },
+  { id: 'asn', name: 'ASN Bank', logo: asnLogo, accept: '.xml,text/xml,application/xml', subKey: 'import.bankAsnSub', kind: 'camt' },
+  { id: 'ing', name: 'ING', logo: ingLogo, accept: '.csv,text/csv', subKey: 'import.formatIngSub', kind: 'ing' },
+  { id: 'paypal', name: 'PayPal', logo: paypalLogo, accept: '.csv,text/csv', subKey: 'import.bankPaypalSub', kind: 'paypal' },
 ] as const;
 
 const ANY_ACCEPT = '.xml,.csv,text/xml,application/xml,text/csv';
+
+/** #226 r2: human names for detected formats in the wrong-file ask */
+const KIND_NAMES: Record<Exclude<StatementKind, 'unknown'>, string> = {
+  camt: 'CAMT.053 (ASN)',
+  ing: 'ING CSV',
+  paypal: 'PayPal CSV',
+};
+
+interface PendingFile {
+  content: string;
+  name: string;
+}
 
 /**
  * The whole statement-import journey as one reusable flow (extracted
@@ -68,6 +85,11 @@ export function StatementImportFlow({
   // #226: the searchable bank list narrows; the pick tunes the dialog
   const [bankQuery, setBankQuery] = useState('');
   const [accept, setAccept] = useState<string>(ANY_ACCEPT);
+  // #226 r2: the picked bank promises a format family — a file that
+  // sniffs as another one gets an explicit "import anyway?" ask
+  // (the universal CAMT door promises nothing and never asks)
+  const [pickedBank, setPickedBank] = useState<(typeof IMPORT_BANKS)[number] | null>(null);
+  const [mismatch, setMismatch] = useState<{ found: Exclude<StatementKind, 'unknown'>; files: PendingFile[] } | null>(null);
   // #184 (user): long imports say how far they are, not just "busy"
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
@@ -79,24 +101,56 @@ export function StatementImportFlow({
     [allAccounts],
   );
 
-  const onFilePicked = async (files: FileList | null) => {
-    const picked = [...(files ?? [])];
-    if (picked.length === 0) return;
-    setImportError(false);
-    setImportResult(null);
+  const buildPreview = (files: readonly PendingFile[]) => {
     try {
       // several exports in one go (user request): parse each file and
       // pool the statements — dedupe refs make overlaps import cleanly
       const statements: ParsedStatement[] = [];
-      for (const file of picked) {
-        statements.push(...parseStatement(await file.text(), file.name));
+      for (const file of files) {
+        statements.push(...parseStatement(file.content, file.name));
       }
       setImportPreview(statements);
     } catch {
-      setImportPreview(null);
       setImportError(true);
       setImportPreview([]); // open the sheet to show the error
     }
+  };
+
+  const onFilePicked = async (list: FileList | null) => {
+    const picked = [...(list ?? [])];
+    if (picked.length === 0) return;
+    setImportError(false);
+    setImportResult(null);
+    const files: PendingFile[] = [];
+    for (const file of picked) {
+      files.push({ content: await file.text(), name: file.name });
+    }
+    // #226 r2 (user): picked bank X but the file reads as format Y —
+    // ask BEFORE the preview ('unknown' stays silent: the parse error
+    // path already reports unsupported files)
+    const found = pickedBank
+      ? files
+          .map((f) => detectStatementKind(f.content, f.name))
+          .find((k): k is Exclude<StatementKind, 'unknown'> => k !== 'unknown' && k !== pickedBank.kind)
+      : undefined;
+    if (found) {
+      if (fileRef.current) fileRef.current.value = ''; // a re-pick must fire change again
+      setMismatch({ found, files });
+      return;
+    }
+    buildPreview(files);
+  };
+
+  // #226 r2: Continue imports the stashed files on the exact same parse
+  // path; Cancel discards them and reopens the bank picker
+  const confirmMismatch = () => {
+    const pending = mismatch;
+    setMismatch(null);
+    if (pending) buildPreview(pending.files);
+  };
+  const cancelMismatch = () => {
+    setMismatch(null);
+    onOpenChange(true);
   };
 
   const runImport = async () => {
@@ -184,13 +238,14 @@ export function StatementImportFlow({
               data-testid={`import-bank-${bank.id}`}
               onClick={() => {
                 setAccept(bank.accept);
+                setPickedBank(bank);
                 onOpenChange(false);
                 // the accept change must land in the DOM before the dialog
                 requestAnimationFrame(() => fileRef.current?.click());
               }}
               className="m-tap flex items-start gap-3 rounded-card border border-line bg-surface p-4 text-left"
             >
-              <Icon name={bank.icon} size={22} color="var(--m-accent)" />
+              <img src={bank.logo} alt="" className="h-8 w-8 rounded-lg object-contain" />
               <span className="min-w-0 flex-1">
                 <span className="block text-[14px] font-semibold text-ink">{bank.name}</span>
                 <span className="block pt-0.5 text-[12px] leading-snug text-ink-3">{t(bank.subKey)}</span>
@@ -202,6 +257,7 @@ export function StatementImportFlow({
             data-testid="import-format-camt"
             onClick={() => {
               setAccept(ANY_ACCEPT);
+              setPickedBank(null); // universal door: no format promise, no ask
               onOpenChange(false);
               requestAnimationFrame(() => fileRef.current?.click());
             }}
@@ -220,6 +276,25 @@ export function StatementImportFlow({
             {t('import.longHistoryTip')}
           </p>
         </div>
+      </Sheet>
+
+      {/* #226 r2 (user): the pick said bank X but the file reads as
+          format Y — ask before the preview. Content is state-gated so
+          post-close assertions see it leave (IS_TEST sheets stay mounted). */}
+      <Sheet open={mismatch !== null} onOpenChange={(next) => !next && cancelMismatch()} title={t('import.mismatchTitle')} size="compact">
+        {mismatch && (
+          <div className="flex flex-col gap-3 pt-1" data-testid="import-mismatch-sheet">
+            <p className="text-[14px] leading-relaxed text-ink-2">
+              {t('import.mismatchBody', { picked: pickedBank?.name ?? '', found: KIND_NAMES[mismatch.found] })}
+            </p>
+            <Button data-testid="import-mismatch-continue" onClick={confirmMismatch}>
+              {t('import.mismatchContinue')}
+            </Button>
+            <Button variant="outline" data-testid="import-mismatch-cancel" onClick={cancelMismatch}>
+              {t('action.cancel')}
+            </Button>
+          </div>
+        )}
       </Sheet>
 
       {/* CAMT.053 import: preview then result */}
@@ -339,6 +414,11 @@ export function StatementImportFlow({
               <div className="w-full rounded-card border border-accent/40 bg-accent-soft/30 px-4 py-3 text-left" data-testid="import-unattached-note">
                 <p className="text-[13px] font-medium text-ink">{t('import.notAttachedTitle')}</p>
                 <p className="mt-0.5 text-[12px] leading-relaxed text-ink-3">{t('import.notAttachedBody')}</p>
+                {/* #278: "a space" was a riddle — name the space the
+                    button below will attach into (the active one) */}
+                <p className="mt-1 text-[12px] leading-relaxed font-medium text-ink-2" data-testid="import-attach-target">
+                  {t('acct.importAttachTarget', { space: activeSpace?.name ?? '' })}
+                </p>
                 <Button
                   size="sm"
                   className="mt-2 w-full"

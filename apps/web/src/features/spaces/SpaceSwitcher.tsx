@@ -12,6 +12,21 @@ function avatarIcon(space: SpaceRow): string {
   return space.icon ?? (space.kind === 'shared' ? 'account-group-outline' : 'leaf');
 }
 
+/** #277: the one "this space is shared" mark — a quiet people pill next
+ *  to the space's name, everywhere spaces are listed */
+export function SharedSpaceBadge({ testId }: Readonly<{ testId?: string }>) {
+  const { t } = useLang();
+  return (
+    <span
+      data-testid={testId}
+      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-deep"
+    >
+      <Icon name="account-multiple-outline" size={11} />
+      {t('space.sharedBadge')}
+    </span>
+  );
+}
+
 /**
  * Home app-bar entry point for quick space switching (the full Spaces
  * screen lives behind Settings): the active space's avatar opens a sheet
@@ -85,7 +100,10 @@ export function SpaceSwitcher() {
                 </span>
               )}
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[15px] font-medium text-ink">{space.name}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="min-w-0 truncate text-[15px] font-medium text-ink">{space.name}</span>
+                  {space.kind === 'shared' && <SharedSpaceBadge testId={`space-pick-shared-${space.id}`} />}
+                </span>
                 {space.id === spaceId && <span className="block text-xs text-accent-deep">{t('space.active')}</span>}
               </span>
               {/* what this space would ask of you (arc 7) */}

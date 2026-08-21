@@ -11,10 +11,13 @@ import type { FeedGateway } from './importCamt';
 export function apiFeedGateway(sub: string): FeedGateway {
   return {
     async register(preferredFeedId, accountRef) {
-      const res = await apiFetch('/feeds', {
-        method: 'POST',
-        body: JSON.stringify({ feedSpaceId: preferredFeedId, accountRef }),
-      });
+      // #281: a 409 here is the designed fork (the shared feed id is
+      // taken) — the personal-feed retry below handles it, no report
+      const res = await apiFetch(
+        '/feeds',
+        { method: 'POST', body: JSON.stringify({ feedSpaceId: preferredFeedId, accountRef }) },
+        { expectStatuses: [409] },
+      );
       if (res.ok) return preferredFeedId;
       if (res.status === 409) {
         const personal = personalFeedSpaceId(accountRef, sub);

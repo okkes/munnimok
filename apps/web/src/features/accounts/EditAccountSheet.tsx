@@ -5,7 +5,7 @@ import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
 import { newestTxDate } from '@/application/accounts';
 import { isDebtTracked } from '@/domain/debts';
-import { parseCents } from '@/lib/money';
+import { fmtCents, parseCents } from '@/lib/money';
 import type { AccountRow, RecurringEvery } from '@/db/types';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
@@ -20,6 +20,15 @@ import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadence
 /** an emptied field must CLEAR the row (null); undefined would drop from
  *  the op and leave the stale value standing */
 const orClear = <T,>(value: T | undefined): T | null => value ?? null;
+
+/** #269: the signed cents a save would ADD to the stored balance — null
+ *  while the field is unparseable or matches the row (nothing to record) */
+const balanceDelta = (account: AccountRow, balance: string, negative: boolean): number | null => {
+  const cents = parseCents(balance || '');
+  if (cents === null) return null;
+  const signed = negative ? -Math.abs(cents) : Math.abs(cents);
+  return signed === account.balanceCents ? null : signed - account.balanceCents;
+};
 
 /** the sheet's whole draft, computed from the row (S3776: the seeding
  *  branches live out of the component) */
@@ -51,7 +60,7 @@ const seedFrom = (account: AccountRow) => ({
  * deleted from here. Writes target the ACCOUNT's own space.
  */
 export function EditAccountSheet({ account, onClose }: Readonly<{ account: AccountRow | null; onClose: () => void }>) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { store, repo } = useData();
   const [seedId, setSeedId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -96,6 +105,9 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
 
   const manual = account?.source === 'manual';
   const liability = !!account && isLiability(account.type);
+  // #269: the delta the save would record as an adjustment row — the
+  // note below the field makes the side effect known BEFORE saving
+  const adjustDelta = account && manual ? balanceDelta(account, balance, negative) : null;
   // #205: the newest transaction on the account, for the About section
   const newest = useQuery(store, async () => (account ? newestTxDate(store, account.id) : undefined), [account?.id]);
 
@@ -143,29 +155,24 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     if (!account || !name.trim()) return;
     const changes: Partial<AccountRow> = { name: name.trim() };
     if (manual) {
-      const cents = parseCents(balance || '');
-      if (cents !== null) {
-        const signed = negative ? -Math.abs(cents) : Math.abs(cents);
-        if (signed !== account.balanceCents) {
-          changes.balanceCents = signed;
-          changes.balanceAsOf = manualBalanceDate();
-          // #221: a DEFAULT account's ledger is system-managed — the one
-          // hand on it is this balance edit, and it leaves a record: an
-          // adjustment row for the delta, so the history stays coherent
-          if (account.defaultFor) {
-            void repo.upsert('transaction', account.spaceId, repo.newId(), {
-              accountId: account.id,
-              date: manualBalanceDate(),
-              amountCents: signed - account.balanceCents,
-              currency: account.currency,
-              merchant: t('cat.balanceAdjustment'),
-              txType: 'adjustment',
-              adjustment: 1,
-              catId: 'balanceAdjustment',
-              needsReview: 0,
-            });
-          }
-        }
+      const delta = balanceDelta(account, balance, negative);
+      if (delta !== null) {
+        changes.balanceCents = account.balanceCents + delta;
+        changes.balanceAsOf = manualBalanceDate();
+        // #269 (grown from #221's defaults-only rule): EVERY manual
+        // balance edit records its delta as an adjustment row, so the
+        // ledger explains the jump instead of silently rewriting
+        void repo.upsert('transaction', account.spaceId, repo.newId(), {
+          accountId: account.id,
+          date: manualBalanceDate(),
+          amountCents: delta,
+          currency: account.currency,
+          merchant: t('cat.balanceAdjustment'),
+          txType: 'adjustment',
+          adjustment: 1,
+          catId: 'balanceAdjustment',
+          needsReview: 0,
+        });
       }
     }
     void repo.upsert('account', account.spaceId, account.id, { ...changes, ...(liability ? storyChanges() : {}) });
@@ -241,6 +248,11 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
                 />
               </div>
+              {account && adjustDelta !== null && (
+                <p className="px-1 text-[11px] leading-snug text-warning" data-testid="acctedit-adjust-note">
+                  {t('acct.adjustNote', { delta: fmtCents(adjustDelta, account.currency, lang, { sign: true }) })}
+                </p>
+              )}
               {account?.balanceAsOf && (
                 <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="acctedit-balance-asof">
                   {t('acct.balanceAsOf', { date: account.balanceAsOf })}

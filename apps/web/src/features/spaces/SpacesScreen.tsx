@@ -5,6 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
+import { SharedSpaceBadge } from './SpaceSwitcher';
 import { takeSpacesCreateIntent } from './spacesHandoff';
 import { useAttentionMap } from '@/application/spaceAttention';
 import { DEFAULT_HISTORY_MONTHS, SPACE_COLORS, SPACE_ICONS, isoMonthsAgo } from './spaceDefaults';
@@ -183,15 +184,18 @@ export function SpacesScreen() {
                       </span>
                     )}
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[15px] font-medium text-ink">{space.name}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className="min-w-0 truncate text-[15px] font-medium text-ink">{space.name}</span>
+                        {/* #277: shared spaces wear the people pill */}
+                        {space.kind === 'shared' && <SharedSpaceBadge testId={`space-shared-badge-${space.id}`} />}
+                      </span>
                       <span className="block truncate text-xs text-ink-4">
                         {t(space.kind === 'shared' ? 'space.kindShared' : 'space.kindPersonal')}
-                        {/* shared spaces may share a name — the creator
-                            line tells the twins apart (user rule) */}
-                        {space.createdByName &&
-                          (spaces ?? []).some(
-                            (other) => other.id !== space.id && other.name.trim().toLowerCase() === space.name.trim().toLowerCase(),
-                          ) && <> · {t('space.createdBy', { name: space.createdByName })}</>}
+                        {/* #277: shared rows ALWAYS name their creator
+                            (the old name-collision gate hid it) */}
+                        {space.kind === 'shared' && space.createdByName && (
+                          <> · {t('space.createdBy', { name: space.createdByName })}</>
+                        )}
                         {active && (
                           <>
                             {' · '}
@@ -249,6 +253,8 @@ export function SpacesScreen() {
             aria-invalid={attempted && !name.trim()}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
           />
+          {/* #195 r2 (user): the blocker sits AT the field */}
+          <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="space-create-blocker" />
           {nameError && (
             <p className="text-[12px] text-negative" data-testid="space-create-name-taken">
               {t('space.nameTaken')}
@@ -311,7 +317,6 @@ export function SpacesScreen() {
             </label>
             <p className="mt-1 pl-7 text-[12px] leading-snug text-ink-3">{t('space.inviteLockSub')}</p>
           </div>
-          <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="space-create-blocker" />
           <Button data-testid="space-create-save" onClick={() => void createSpace()}>
             {t('space.create')}
           </Button>

@@ -17,6 +17,7 @@ import { Chip, Row } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { useQuery } from '@/db/useQuery';
 import { useMyRole } from '@/features/spaces/SpaceSharing';
+import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { PERIOD_KEYS } from '@/features/spaces/PeriodSettingsScreen';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { CURRENCIES } from '@/domain/countries';
@@ -97,8 +98,15 @@ function SpaceHeaderRow({ space, onClick }: Readonly<{ space: SpaceRow | undefin
         </span>
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-semibold text-ink">{space?.name ?? ''}</span>
-        <span className="block text-[12px] text-ink-3">{t('settings.spaceCardSub')}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="min-w-0 truncate text-[15px] font-semibold text-ink">{space?.name ?? ''}</span>
+          {/* #277: the card says when the scope is a SHARED space */}
+          {space?.kind === 'shared' && <SharedSpaceBadge testId="settings-space-shared-badge" />}
+        </span>
+        <span className="block truncate text-[12px] text-ink-3">
+          {t('settings.spaceCardSub')}
+          {space?.kind === 'shared' && space.createdByName && <> · {t('space.createdBy', { name: space.createdByName })}</>}
+        </span>
       </span>
       <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
     </button>
