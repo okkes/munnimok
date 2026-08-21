@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
 import { REIMBURSED_ID, isSpecialCategory, mainCatOf, specialCatType } from '@/domain/categories';
@@ -109,7 +109,15 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
   // #245 (user): the search rides along — #273 r2: 1:1 WITH the scroll
   // (no animation; the finger owns the motion); the list's cap grows by
   // exactly the freed height, so the tail always stays reachable
-  const { offset: searchOffset, onListScroll } = useSearchCollapse(noSpecials ? 56 : 90);
+  const { offset: searchOffset, onListScroll, reset: resetCollapse } = useSearchCollapse(noSpecials ? 56 : 90);
+  const listRef = useRef<HTMLDivElement>(null);
+  // #273 r3 (user): reopening must start whole — field shown, list at top
+  useEffect(() => {
+    if (!open) return;
+    resetCollapse();
+    if (listRef.current) listRef.current.scrollTop = 0;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} size="tall" dragHandle>
@@ -126,7 +134,8 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         )}
       </CollapsingSearch>
       <div
-        className="mt-2 overflow-y-auto overscroll-contain"
+        ref={listRef}
+        className="mt-2 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]"
         style={{ maxHeight: 440 + searchOffset }}
         data-testid="catpicker-list"
         onScroll={onListScroll}

@@ -103,6 +103,23 @@ describe('MultiLine (#168 r3)', () => {
     expect(Math.max(...cys)).toBe(112);
   });
 
+  it('#168 r4: markerIndex draws the start marker under the -start testid', () => {
+    render(
+      <MultiLine
+        series={[{ values: [0, 50, 100], color: 'red' }]}
+        height={120}
+        testId="ml3"
+        markerIndex={1}
+        onPointClick={() => undefined}
+      />,
+    );
+    const marker = screen.getByTestId('ml3-start');
+    expect(marker.getAttribute('x1')).toBe('160');
+    expect(marker.getAttribute('x2')).toBe('160');
+    // the old current-period name is gone for good
+    expect(screen.queryByTestId('ml3-now')).toBeNull();
+  });
+
   it('skipDotAt suppresses exactly that series-point dot; the path still passes through it', () => {
     render(
       <MultiLine

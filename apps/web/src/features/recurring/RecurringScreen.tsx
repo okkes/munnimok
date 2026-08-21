@@ -25,6 +25,7 @@ import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { Pill, ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
+import { TxPeekSheet } from '@/features/transactions/TxPeekSheet';
 import { MultiLine } from '@/ui/charts/MultiLine';
 
 /** linked-tx rows with their ids for the period sheet (#168 r2/r3) —
@@ -222,12 +223,21 @@ export function RecurringScreen() {
     [yearView, recs, linkedByRec, chartYear, today, space?.historyStartDate],
   );
   const nowMonthIdx = Number(today.slice(5, 7)) - 1;
+  // #168 r4 (user): the vertical marker means the SPACE'S START — the
+  // months left of it are untracked; outside the charted year, no marker
+  const startDate = space?.historyStartDate;
+  const startMonthIdx =
+    startDate && Number(startDate.slice(0, 4)) === chartYear ? Number(startDate.slice(5, 7)) - 1 : undefined;
   const [selectedDot, setSelectedDot] = useState<{ seriesIndex: number; pointIndex: number } | null>(null);
   const [periodSheet, setPeriodSheet] = useState<{ seriesIndex: number; monthIdx: number } | null>(null);
+  // #168 r4 (user): a period-sheet payment opens as a PEEK on top — the
+  // sheet stays put, so closing the peek lands right back on it
+  const [peekTxId, setPeekTxId] = useState<string | null>(null);
   // a dot selection is meaningless on a different range's chart
   useEffect(() => {
     setSelectedDot(null);
     setPeriodSheet(null);
+    setPeekTxId(null);
   }, [view]);
   const toggleDot = (seriesIndex: number, pointIndex: number) =>
     setSelectedDot((prev) =>
@@ -355,13 +365,15 @@ export function RecurringScreen() {
           )}
         </div>
 
-        {/* #168 r2 (user): both lines always draw; the marker pins the
-            current period and tapped dots surface their month */}
+        {/* #168 r2 (user): both lines always draw and tapped dots surface
+            their month. #168 r4: the marker sits on the space's start
+            month — the lines' own paid/estimate split marks "now". */}
         {yearView && monthly && (
           <RecurringChartCard
             monthly={monthly}
             labels={monthLabels}
             nowIndex={chartYear === thisYear ? nowMonthIdx : undefined}
+            markerIndex={startMonthIdx}
             selected={selectedDot}
             onSelect={toggleDot}
             onShowTxs={() => {
@@ -395,7 +407,11 @@ export function RecurringScreen() {
         floor={space?.historyStartDate}
         money={money}
         onClose={() => setPeriodSheet(null)}
+        onPeekTx={setPeekTxId}
       />
+      {/* SIBLING after the period sheet (portal order): the peek stacks
+          on top while the period sheet stays open underneath */}
+      <TxPeekSheet txId={peekTxId} onClose={() => setPeekTxId(null)} />
     </div>
   );
 }
@@ -406,6 +422,7 @@ function RecurringChartCard({
   monthly,
   labels,
   nowIndex,
+  markerIndex,
   selected,
   onSelect,
   onShowTxs,
@@ -414,8 +431,12 @@ function RecurringChartCard({
 }: Readonly<{
   monthly: { expected: number[]; paid: number[] };
   labels: string[];
-  /** current-month index; undefined when the chart year is future */
+  /** current-month index (splits paid/estimate); undefined when the
+   *  chart year is future */
   nowIndex?: number;
+  /** #168 r4 (user): the space's start month — the vertical marker;
+   *  undefined when the start falls outside the charted year */
+  markerIndex?: number;
   selected: { seriesIndex: number; pointIndex: number } | null;
   onSelect: (seriesIndex: number, pointIndex: number) => void;
   onShowTxs: () => void;
@@ -470,7 +491,7 @@ function RecurringChartCard({
         labels={labels}
         height={120}
         testId="recurring-chart"
-        nowIndex={nowIndex}
+        markerIndex={markerIndex}
         onPointClick={onSelect}
         selected={selected}
       />
@@ -485,8 +506,10 @@ function RecurringChartCard({
               {money(selectedCents)}
             </span>
           </span>
+          {/* #168 r4 (user): the door wears its arrow */}
           <Button size="sm" variant="outline" data-testid="recurring-chart-txs" onClick={onShowTxs}>
             {t('recurring.showTxs')}
+            <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
           </Button>
         </div>
       )}
@@ -496,8 +519,10 @@ function RecurringChartCard({
 
 /** #168 r2 (user): the tapped period's story — the linked transactions
  *  behind a paid number; a future estimate lists the expected items.
- *  #168 r3 (user): payments wear the standard TxRow face and tap
- *  through to the transaction detail — no more bespoke plain rows. */
+ *  #168 r3 (user): payments wear the standard TxRow face. #168 r4:
+ *  tapping one opens the PEEK sheet on top (this sheet stays put);
+ *  expected rows carry the recurring's own face and lead on to its
+ *  detail screen. */
 function PeriodTxSheet({
   sel,
   chartYear,
@@ -507,6 +532,7 @@ function PeriodTxSheet({
   floor,
   money,
   onClose,
+  onPeekTx,
 }: Readonly<{
   sel: { seriesIndex: number; monthIdx: number } | null;
   chartYear: number;
@@ -516,6 +542,8 @@ function PeriodTxSheet({
   floor?: string;
   money: (cents: number) => string;
   onClose: () => void;
+  /** opens the sibling transaction peek — never closes this sheet */
+  onPeekTx: (txId: string) => void;
 }>) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -537,9 +565,10 @@ function PeriodTxSheet({
     return rows.sort((a, b) => a.date.localeCompare(b.date));
   }, [sel, active, linkedByRec, monthKey, txById]);
 
-  const openTx = (txId: string) => {
+  // #168 r4 (user): the recurring's own page, reached from an expected row
+  const openRec = (recId: string) => {
     onClose();
-    void navigate({ to: '/transactions/$txId', params: { txId } });
+    void navigate({ to: '/recurring/$recId', params: { recId } });
   };
 
   // an ESTIMATE dot in a future month has no payments yet — it lists
@@ -553,7 +582,6 @@ function PeriodTxSheet({
     );
   }, [futureEstimate, active, linkedByRec, monthKey, chartYear, monthIdx, today, floor]);
 
-  const rowClass = 'flex items-center gap-3 border-b border-line-2 py-2.5 last:border-0';
   return (
     <Sheet
       open={sel !== null}
@@ -565,8 +593,18 @@ function PeriodTxSheet({
     >
       <div data-testid="recurring-period-sheet" className="pt-1">
         {futureEstimate ? (
+          // #168 r4 (user): an expected row wears the recurring's own
+          // icon and is a door into its detail — arrow included
           expectedRows.map((c) => (
-            <div key={c.rec.id} data-testid={`recurring-period-exp-${c.rec.id}`} className={rowClass}>
+            <button
+              key={c.rec.id}
+              data-testid={`recurring-period-exp-${c.rec.id}`}
+              onClick={() => openRec(c.rec.id)}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 py-2.5 text-left last:border-0"
+            >
+              <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-bg-2">
+                <RecurringVisual rec={c.rec} active={false} fill />
+              </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink">{c.rec.name}</span>
                 <span className="block text-[11px] text-ink-4">{t('recurring.chartEstimate')}</span>
@@ -575,13 +613,15 @@ function PeriodTxSheet({
                 {c.occurrences > 1 ? `${c.occurrences}× ` : ''}
                 {money(c.expectedCents)}
               </span>
-            </div>
+              <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+            </button>
           ))
         ) : (
           <div className="divide-y divide-line-2">
             {txRows.map((tx) => (
               <div key={tx.id} data-testid={`recurring-period-tx-${tx.id}`}>
-                <TxRow tx={tx} showDate onClick={() => openTx(tx.id)} />
+                {/* #168 r4 (user): the peek opens on top — no page jump */}
+                <TxRow tx={tx} showDate onClick={() => onPeekTx(tx.id)} />
               </div>
             ))}
           </div>

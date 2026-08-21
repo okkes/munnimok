@@ -18,6 +18,12 @@ import type { ReactNode, UIEvent } from 'react';
 export function useSearchCollapse(searchH: number) {
   const [offset, setOffset] = useState(0);
   const lastScrollTop = useRef(0);
+  // #273 r3 (user): a sheet that stays mounted reopens with the field
+  // collapsed from last time — hosts reset on open
+  const reset = () => {
+    setOffset(0);
+    lastScrollTop.current = 0;
+  };
   const onListScroll = (e: UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     const top = el.scrollTop;
@@ -28,7 +34,7 @@ export function useSearchCollapse(searchH: number) {
     if (top < 0 || top > maxTop) return;
     setOffset((prev) => Math.min(searchH, Math.max(0, prev + delta)));
   };
-  return { offset, searchH, onListScroll };
+  return { offset, searchH, onListScroll, reset };
 }
 
 export function CollapsingSearch({

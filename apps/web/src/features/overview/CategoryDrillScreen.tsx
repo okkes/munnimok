@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
-import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
+import { useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useData } from '@/app/data';
 import { categoryContributionCents, txsForCategory } from '@/domain/overview';
@@ -14,6 +14,7 @@ import { BarChart } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
+import { TxPeekSheet } from '@/features/transactions/TxPeekSheet';
 import { matchingPartIndexes } from '@/domain/txFilter';
 import type { TxSplit } from '@/db/types';
 
@@ -39,16 +40,19 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
 /**
  * One category, in place: period total, per-period mini bars doubling as
  * the period selector, and the plain list of the transactions behind the
- * number — each row leading on to its detail. Replaces the old forward
- * to the filtered Transactions tab, which lost the analysis context.
+ * number — each row opening its PEEK sheet in place (#168 r4; the full
+ * detail is one door further). Replaces the old forward to the filtered
+ * Transactions tab, which lost the analysis context.
  */
 export function CategoryDrillScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
   const { kind, catId } = useParams({ strict: false }) as { kind: OverviewKind; catId: string };
   const { from } = useSearch({ strict: false }) as { from?: string };
-  const navigate = useNavigate();
   const cats = useCategories();
+  // #168 r4 (user): a tapped payment peeks on top of the drill instead
+  // of navigating away — leaving killed the analysis context
+  const [peekTxId, setPeekTxId] = useState<string | null>(null);
 
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const accounts = useSpaceAccounts();
@@ -153,8 +157,8 @@ export function CategoryDrillScreen() {
               const slice = categoryContributionCents(kind, tx, catId, cats);
               const signed = tx.amountCents < 0 ? -slice : slice;
               // #126 r8 (user request): a split shows only ITS matching
-              // parts here — normal-looking rows with the split glyph,
-              // each opening its own part page
+              // parts here — normal-looking rows with the split glyph;
+              // #168 r4: they peek the parent transaction in place
               const rowParts = (tx.splits ?? []).filter((s) => s.catId !== 'reimbursed');
               // #149: every multi-part row branches, labels or not
               if (rowParts.length > 1) {
@@ -170,9 +174,7 @@ export function CategoryDrillScreen() {
                       (tx.amountCents < 0 ? -1 : 1) * partCatShare(rowParts[i], drillCats),
                       currency,
                     )}
-                    onClick={() =>
-                      void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: rowParts[i].id } })
-                    }
+                    onClick={() => setPeekTxId(tx.id)}
                     showDate
                   />
                 ));
@@ -185,7 +187,7 @@ export function CategoryDrillScreen() {
                   // a sub-category drill repeats its own name on every row
                   hideCategory={!!cat.parentId}
                   amountOverrideCents={signed}
-                  onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+                  onClick={() => setPeekTxId(tx.id)}
                 />
               );
             })}
@@ -196,6 +198,7 @@ export function CategoryDrillScreen() {
           </p>
         )}
       </div>
+      <TxPeekSheet txId={peekTxId} onClose={() => setPeekTxId(null)} />
     </div>
   );
 }

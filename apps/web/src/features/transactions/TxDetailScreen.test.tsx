@@ -298,6 +298,96 @@ describe('TxDetailScreen (demo identity)', () => {
     db.close();
   }, 20_000);
 
+  it('#255 r4: BOTH sides of a part pair travel on tap — no sheet, no dead jump, and the peer wears the PART\'s face', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('screen-transactions');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-r4'), { trackOutbox: false });
+    // the settled state the r3 pick flow writes (asserted there): the
+    // PART holds the pair, the picked pot row carries the reciprocal
+    // pointing at the CONTAINER row
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-pp', {
+      accountId: 'demo_main', date: '2020-03-05', amountCents: -6000, currency: 'EUR',
+      merchant: 'Split with pot', catId: 'telecom', txType: 'expense', needsReview: 0,
+      splits: [
+        { id: 'pp1', catId: 'telecom', amountCents: 4000 },
+        { id: 'pp2', catId: 'savingDeposit', amountCents: 2000, txType: 'saving', linkedAccountId: 'demo_save', transferPeerId: 'pot-in' },
+      ],
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'pot-in', {
+      accountId: 'demo_save', date: '2020-03-05', amountCents: 2000, currency: 'EUR',
+      merchant: 'Pot arrival', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      linkedAccountId: 'demo_main', transferPeerId: 'tx-pp',
+    });
+    await screen.findByTestId('tx-parts-tx-pp', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('tx-part-row-tx-pp-1'));
+    // side A (the part page): the row wears the other leg's face…
+    await waitFor(() => expect(screen.getByTestId('tx-part-countertx-row').textContent).toContain('Pot arrival'), { timeout: 8000 });
+    // …and its TAP TRAVELS to the peer — no match sheet on a plain tap
+    fireEvent.click(screen.getByTestId('tx-part-countertx-row'));
+    expect(screen.queryByTestId('counter-fork')).toBeNull();
+    await waitFor(() => expect(screen.getByTestId('tx-detail-account-row').textContent).toContain('Demo Savings'), { timeout: 8000 });
+
+    // side B (the picked pot row): the SAME rich row — the PART's face
+    // (its own €20, never the container's €60), not a bare link row
+    const peerRow = await screen.findByTestId('tx-detail-peer');
+    expect(peerRow.textContent).toContain('Split with pot');
+    expect(peerRow.textContent).toContain('20.00');
+    expect(peerRow.textContent).not.toContain('60.00');
+    // its tap travels BACK to the exact part page
+    fireEvent.click(peerRow);
+    await waitFor(() => expect(screen.getByTestId('tx-part-countertx-row').textContent).toContain('Pot arrival'), { timeout: 8000 });
+
+    // re-picking lives on the pencil — THAT opens the match sheet
+    fireEvent.click(screen.getByTestId('tx-part-countertx-edit'));
+    await screen.findByTestId('counter-fork', {}, { timeout: 5000 });
+
+    // #255 r4 heal-leak regression: visiting the container's detail must
+    // NOT lift the part's pair to a row-level pointer (it minted a
+    // duplicate pair row on the container)
+    await waitFor(async () => {
+      expect((await db.transactions.get('tx-pp'))?.transferPeerId).toBeFalsy();
+      expect((await db.transactions.get('pot-in'))?.transferPeerId).toBe('tx-pp');
+    }, { timeout: 5000 });
+    db.close();
+  }, 30_000);
+
+  it('#255 r4: a MINTED part-leg resolves its synthetic back-pointer — rich face + a real landing (the blank-screen glitch)', async () => {
+    const legId = mirrorTxId(partMirrorSourceId('tx-mm', 'mm2'));
+    renderApp(`/transactions/${legId}`);
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-r4m'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-mm', {
+      accountId: 'demo_main', date: '2020-04-01', amountCents: -6000, currency: 'EUR',
+      merchant: 'Mint split', catId: 'telecom', txType: 'expense', needsReview: 0,
+      splits: [
+        { id: 'mm1', catId: 'telecom', amountCents: 4000 },
+        { id: 'mm2', catId: 'savingDeposit', amountCents: 2000, txType: 'saving', linkedAccountId: 'demo_save', transferPeerId: legId },
+      ],
+    });
+    // the leg the part-level mint engine creates: its back-pointer is
+    // the part-mirror SOURCE key ("rowId:partId") — not a row id. The
+    // r4 report: this rendered a bare "Counterpart transaction" link
+    // whose tap opened an EMPTY detail (the glitch screenshots).
+    await repo.upsert('transaction', DEMO_SPACE_ID, legId, {
+      accountId: 'demo_save', date: '2020-04-01', amountCents: 2000, currency: 'EUR',
+      merchant: 'Minted leg', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      linkedAccountId: 'demo_main', transferPeerId: partMirrorSourceId('tx-mm', 'mm2'),
+    });
+    await screen.findByTestId('tx-detail-amount', {}, { timeout: 8000 });
+    // the rich face resolves through the synthetic key to the PART
+    const peerRow = await waitFor(() => {
+      const row = screen.getByTestId('tx-detail-peer');
+      expect(row.textContent).toContain('Mint split');
+      return row;
+    }, { timeout: 8000 });
+    expect(peerRow.textContent).toContain('20.00');
+    // the tap lands on the part's page — never on a blank screen
+    fireEvent.click(peerRow);
+    await waitFor(() => expect(screen.getByTestId('tx-part-countertx-row').textContent).toContain('Minted leg'), { timeout: 8000 });
+    db.close();
+  }, 30_000);
+
   it('a bogus tx id does not crash the screen', async () => {
     renderApp('/transactions/does-not-exist');
     // resolves to either the detail shell or a redirect back — must render something

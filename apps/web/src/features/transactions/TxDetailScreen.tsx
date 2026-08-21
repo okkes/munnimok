@@ -349,41 +349,50 @@ function TransferPeerRow({
   lang: ReturnType<typeof useLang>['lang'];
   peer: SpaceTx | undefined;
   accountName: string | undefined;
-  onOpen: () => void;
+  /** #255 r4: absent = the other leg is out of this space's view — the
+   *  old blind jump landed on an EMPTY detail (the reported glitch) */
+  onOpen?: () => void;
   onUnpair?: () => void;
 }>) {
+  const face = peer ? (
+    <>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[10px] font-semibold tracking-wide text-accent-deep uppercase">
+          {t('tx.pairedCounterpart')}
+        </span>
+        <span className="block truncate text-[14px] text-ink">{txTitle(peer)}</span>
+        <span className="block truncate text-[11px] text-ink-4">
+          {peer.date}
+          {accountName ? ` · ${accountName}` : ''}
+        </span>
+      </span>
+      <span className="m-num shrink-0 text-[14px] font-semibold text-ink">
+        {fmtCents(peer.amountCents, peer.currency, lang, { sign: true })}
+      </span>
+    </>
+  ) : (
+    // the other leg lives outside this space's view — nothing to
+    // preview, and (#255 r4) nothing to jump to either
+    <span className="text-[14px] font-medium text-accent-deep">{t('tx.pairedCounterpart')}</span>
+  );
   return (
     <>
       <div className="mx-4 h-px bg-line-2" />
       <div className="flex w-full items-center gap-3 px-4 py-3">
         <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
-        <button
-          data-testid="tx-detail-peer"
-          onClick={onOpen}
-          className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
-        >
-          {peer ? (
-            <>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[10px] font-semibold tracking-wide text-accent-deep uppercase">
-                  {t('tx.pairedCounterpart')}
-                </span>
-                <span className="block truncate text-[14px] text-ink">{txTitle(peer)}</span>
-                <span className="block truncate text-[11px] text-ink-4">
-                  {peer.date}
-                  {accountName ? ` · ${accountName}` : ''}
-                </span>
-              </span>
-              <span className="m-num shrink-0 text-[14px] font-semibold text-ink">
-                {fmtCents(peer.amountCents, peer.currency, lang, { sign: true })}
-              </span>
-            </>
-          ) : (
-            // the other leg lives outside this space's view — the jump
-            // still works, there is just nothing to preview
-            <span className="text-[14px] font-medium text-accent-deep">{t('tx.pairedCounterpart')}</span>
-          )}
-        </button>
+        {onOpen ? (
+          <button
+            data-testid="tx-detail-peer"
+            onClick={onOpen}
+            className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
+          >
+            {face}
+          </button>
+        ) : (
+          <div data-testid="tx-detail-peer" className="flex min-w-0 flex-1 items-center gap-3 text-left">
+            {face}
+          </div>
+        )}
         {onUnpair && (
           <button
             aria-label={t('tx.unpair')}
@@ -755,7 +764,25 @@ async function releasePeerLeg(
   const peer =
     (allTxs ?? []).find((item) => item.id === peerId) ??
     (await visibleTransactions(store, spaceId)).find((item) => item.id === peerId);
-  if (peer) await writeTxTransform(repo, peer, { transferPeerId: null as never });
+  if (peer) {
+    await writeTxTransform(repo, peer, { transferPeerId: null as never });
+    return;
+  }
+  // #255 r4 (user): a minted part-leg's back-pointer is the part-mirror
+  // SOURCE key ("rowId:partId") — releasing from the leg's side must
+  // reach the PART's own pointer, or the part keeps a dead pair
+  const colon = peerId.indexOf(':');
+  if (colon <= 0) return;
+  const ownerId = peerId.slice(0, colon);
+  const partId = peerId.slice(colon + 1);
+  const owner =
+    (allTxs ?? []).find((item) => item.id === ownerId) ??
+    (await visibleTransactions(store, spaceId)).find((item) => item.id === ownerId);
+  if (owner?.splits?.some((s) => s.id === partId && s.transferPeerId === tx.id)) {
+    await writeTxTransform(repo, owner, {
+      splits: owner.splits.map((s) => (s.id === partId ? { ...s, transferPeerId: undefined } : s)),
+    });
+  }
 }
 
 // retypeRow retired (#220, user): the transaction-level counterparty
@@ -998,6 +1025,55 @@ const derivedPartLabel = (tx: SpaceTx, parts: readonly TxSplit[], partView: TxSp
 function detailScreenTitle(tx: SpaceTx, parts: readonly TxSplit[], partView: TxSplit | undefined, t: TFunc): string {
   if (!partView) return txTitle(tx);
   return orDefaultLabel(partView.label, derivedPartLabel(tx, parts, partView, t));
+}
+
+/** #255 r4 (user): where a pair pointer actually LANDS. The stored id
+ *  may be the peer row itself, a CONTAINER whose PART holds the pair's
+ *  other end, or a minted part-leg's back-pointer — the part-mirror
+ *  SOURCE key ("rowId:partId"; ':' never occurs inside real ids). Both
+ *  sides resolve to the other LEG's face and a REAL navigation target:
+ *  a tap must never land on an empty screen (the reported glitch was a
+ *  jump to the synthetic key's blank detail). Module for S3776. */
+interface ResolvedPairPeer {
+  /** the row the face reads from (the container when the leg is a part) */
+  row: SpaceTx;
+  /** set when the other leg is a PART of `row` */
+  part?: TxSplit;
+  nav: { txId: string; part?: string };
+}
+function resolvePairPeer(
+  txId: string,
+  peerId: string | undefined,
+  allTxs: readonly SpaceTx[] | undefined,
+): ResolvedPairPeer | null {
+  if (!peerId || !allTxs) return null;
+  const direct = allTxs.find((row) => row.id === peerId && row.deleted === 0);
+  if (direct) {
+    // a part-level pair's reciprocal points at the CONTAINER row — the
+    // real other leg is the part pointing back here
+    const part = direct.splits?.find((s) => s.transferPeerId === txId);
+    return { row: direct, part, nav: { txId: direct.id, ...(part?.id ? { part: part.id } : {}) } };
+  }
+  const colon = peerId.indexOf(':');
+  if (colon <= 0) return null;
+  const owner = allTxs.find((row) => row.id === peerId.slice(0, colon) && row.deleted === 0);
+  const part = owner?.splits?.find((s) => s.id === peerId.slice(colon + 1));
+  return owner && part?.id ? { row: owner, part, nav: { txId: owner.id, part: part.id } } : null;
+}
+
+/** the face the pair row wears: the peer row itself, or — when the other
+ *  leg is a PART — the container recut to the part's own money and
+ *  derived name. Module for S3776. */
+function pairPeerFace(resolved: ResolvedPairPeer, t: TFunc): SpaceTx {
+  const { row, part } = resolved;
+  if (!part) return row;
+  const parts = (row.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
+  return {
+    ...row,
+    amountCents: (row.amountCents < 0 ? -1 : 1) * Math.abs(part.amountCents),
+    merchant: orDefaultLabel(part.label, derivedPartLabel(row, parts, part, t)),
+    titleOverride: undefined,
+  };
 }
 
 /** r9: the part's label written from its own page — Save trims; ''
@@ -1292,7 +1368,11 @@ function PartDetailBody({
   // account's kind (the bijection's re-pick rule), remove resets it.
   // Settled `reimbursed` bookkeeping always survives a category rewrite.
   const partCounter = accounts?.find((a) => a.id === part.linkedAccountId);
-  const partPeerRow = part.transferPeerId ? allTxs?.find((row) => row.id === part.transferPeerId) : undefined;
+  // #255 r4 (user): the part's pair resolves like the whole row's — the
+  // other leg's face plus a REAL landing for the row's tap
+  const partPeer = resolvePairPeer(tx.id, part.transferPeerId, allTxs);
+  const partPeerFaceRow = partPeer ? pairPeerFace(partPeer, t) : undefined;
+  const partPeerAccountName = partPeer ? accounts?.find((a) => a.id === partPeer.row.accountId)?.name : undefined;
   const partRealCats = (part.cats ?? []).filter((c) => c.catId !== REIMBURSED_ID);
   const partSettledCats = (part.cats ?? []).filter((c) => c.catId === REIMBURSED_ID);
   const partSigned = sign * Math.abs(part.amountCents);
@@ -1361,25 +1441,56 @@ function PartDetailBody({
           {!ownStamp && <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />}
         </button>
         {/* #255 r3 (user): the part's Counter-transaction row — the
-            picked leg's face, or the honest waiting state; tapping opens
-            the match sheet (pick existing / link and wait) */}
+            picked leg's face, or the honest waiting state. #255 r4
+            (user): a PAIRED row's tap TRAVELS to the other side (the
+            same contract as the whole row's counterpart row); the
+            pencil is what re-opens the match sheet. Unpaired, the tap
+            still opens the sheet — there is nowhere to travel yet. */}
         {partCounter && !ownStamp && (
           <>
             <div className="mx-4 h-px bg-line-2" />
-            <button
-              data-testid="tx-part-countertx-row"
-              onClick={() => setPartMatchOpen(true)}
-              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[15px] text-ink"
-            >
+            <div className="flex w-full items-center gap-3 px-4 py-3 text-[15px] text-ink">
               <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
-              <span className={`min-w-0 flex-1 truncate ${partPeerRow ? '' : 'text-ink-4'}`}>
-                {partPeerRow
-                  ? `${txTitle(partPeerRow)} · ${fmtCents(partPeerRow.amountCents, partPeerRow.currency, lang, { sign: true })}`
-                  : t('tx.awaitingCounterpart')}
-              </span>
-              <span className="text-xs text-ink-4">{t('tx.counterTxRow')}</span>
-              <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
-            </button>
+              <button
+                data-testid="tx-part-countertx-row"
+                onClick={() => {
+                  if (partPeer) {
+                    void navigate({
+                      to: '/transactions/$txId',
+                      params: { txId: partPeer.nav.txId },
+                      ...(partPeer.nav.part ? { search: { part: partPeer.nav.part } } : {}),
+                    });
+                  } else setPartMatchOpen(true);
+                }}
+                className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
+              >
+                {partPeerFaceRow ? (
+                  <>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] text-ink">{txTitle(partPeerFaceRow)}</span>
+                      <span className="block truncate text-[11px] text-ink-4">
+                        {partPeerFaceRow.date}
+                        {partPeerAccountName ? ` · ${partPeerAccountName}` : ''}
+                      </span>
+                    </span>
+                    <span className="m-num shrink-0 text-[14px] font-semibold text-ink">
+                      {fmtCents(partPeerFaceRow.amountCents, partPeerFaceRow.currency, lang, { sign: true })}
+                    </span>
+                  </>
+                ) : (
+                  <span className="min-w-0 flex-1 truncate text-ink-4">{t('tx.awaitingCounterpart')}</span>
+                )}
+              </button>
+              <span className="shrink-0 text-xs text-ink-4">{t('tx.counterTxRow')}</span>
+              <button
+                aria-label={t('action.edit')}
+                data-testid="tx-part-countertx-edit"
+                onClick={() => setPartMatchOpen(true)}
+                className="m-tap flex h-8 w-8 shrink-0 items-center justify-center border-none bg-transparent p-0 text-ink-4"
+              >
+                <Icon name="pencil-outline" size={14} />
+              </button>
+            </div>
           </>
         )}
       </div>
@@ -1725,7 +1836,6 @@ function DetailAccountBlock({
   pairState,
   peer,
   peerAccountName,
-  effectivePeerId,
   loanCountBusy,
   setLoanCountBusy,
   onOpenPeer,
@@ -1737,14 +1847,15 @@ function DetailAccountBlock({
   account: AccountRow | undefined;
   linkedAccount: AccountRow | undefined;
   pairState: ReturnType<typeof transferPairState>;
-  /** #237 r2: the other leg as the space sees it (feeds the rich row) */
+  /** #237 r2: the other leg as the space sees it (feeds the rich row) —
+   *  #255 r4: already recut to the exact LEG when that leg is a part */
   peer: SpaceTx | undefined;
   peerAccountName: string | undefined;
-  /** own transferPeerId, or the row-level reverse pointer of a one-way pair */
-  effectivePeerId: string | undefined;
   loanCountBusy: boolean;
   setLoanCountBusy: (busy: boolean) => void;
-  onOpenPeer: (peerId: string) => void;
+  /** #255 r4: absent when the pair pointer resolves to nothing visible —
+   *  the row then renders without the dead jump */
+  onOpenPeer?: () => void;
   /** absent on a default-ledger row (#221): the pair releases from the
    *  origin side only */
   onUnpair?: () => void;
@@ -1818,16 +1929,7 @@ function DetailAccountBlock({
         </>
       )}
       {pairState === 'peered' && (
-        <TransferPeerRow
-          t={t}
-          lang={lang}
-          peer={peer}
-          accountName={peerAccountName}
-          onOpen={() => {
-            if (effectivePeerId) onOpenPeer(effectivePeerId);
-          }}
-          onUnpair={onUnpair}
-        />
+        <TransferPeerRow t={t} lang={lang} peer={peer} accountName={peerAccountName} onOpen={onOpenPeer} onUnpair={onUnpair} />
       )}
       {pairState === 'awaiting' && (
         <div className="px-4 pb-3">
@@ -1998,14 +2100,17 @@ export function TxDetailScreen() { // NOSONAR(S3776)
     [tx, allTxs],
   );
   const effectivePeerId = tx?.transferPeerId ?? reversePeer?.id;
-  const peerRow = useMemo(
-    () => (effectivePeerId ? allTxs?.find((row) => row.id === effectivePeerId && row.deleted === 0) : undefined),
-    [allTxs, effectivePeerId],
+  // #255 r4: the pointer resolves to a REAL destination — the peer row,
+  // or the exact PART (page) when the other leg is, or points into, a
+  // split; a minted part-leg's "rowId:partId" back-pointer resolves too
+  const resolvedPeer = useMemo(
+    () => (tx ? resolvePairPeer(tx.id, effectivePeerId, allTxs) : null),
+    [tx, effectivePeerId, allTxs],
   );
   const peerAccount = useQuery(
     store,
-    async () => (peerRow ? store.get('account', peerRow.accountId) : undefined),
-    [peerRow?.accountId],
+    async () => (resolvedPeer ? store.get('account', resolvedPeer.row.accountId) : undefined),
+    [resolvedPeer?.row.accountId],
   );
   // …and HEALS the missing reciprocal, once per pairing, so every other
   // surface (lists, match-sheet exclusion, the other detail) recovers.
@@ -2021,8 +2126,12 @@ export function TxDetailScreen() { // NOSONAR(S3776)
       if (peer && !peer.transferPeerId && !peer.splits?.some((s) => s.transferPeerId === tx.id)) {
         void writeTxTransform(repo, peer, { transferPeerId: tx.id });
       }
-    } else if (reversePeer?.transferPeerId === tx.id) {
-      // row-level pointer only — a PART's pair belongs to the part
+    } else if (reversePeer?.transferPeerId === tx.id && !tx.splits?.some((s) => s.transferPeerId === reversePeer.id)) {
+      // row-level pointer only — a PART's pair belongs to the part.
+      // #255 r4: a part-level pick's reciprocal ALSO points at the
+      // container row-level; lifting it here minted a duplicate
+      // row-level pair on top of the part's own (the corruption the
+      // user's screenshots walked into).
       void writeTxTransform(repo, tx, { transferPeerId: reversePeer.id });
     }
   }, [tx, allTxs, reversePeer, repo]);
@@ -2432,12 +2541,23 @@ export function TxDetailScreen() { // NOSONAR(S3776)
           account={account}
           linkedAccount={linkedAccount}
           pairState={pairState}
-          peer={peerRow}
+          peer={resolvedPeer ? pairPeerFace(resolvedPeer, t) : undefined}
           peerAccountName={peerAccount?.deleted === 0 ? peerAccount.name : undefined}
-          effectivePeerId={effectivePeerId}
           loanCountBusy={loanCountBusy}
           setLoanCountBusy={setLoanCountBusy}
-          onOpenPeer={(peerId) => void navigate({ to: '/transactions/$txId', params: { txId: peerId } })}
+          // #255 r4: the tap lands on the RESOLVED leg — the peer row,
+          // or its exact part page; unresolvable = no jump at all (the
+          // blind jump rendered an empty detail, the reported glitch)
+          onOpenPeer={
+            resolvedPeer
+              ? () =>
+                  void navigate({
+                    to: '/transactions/$txId',
+                    params: { txId: resolvedPeer.nav.txId },
+                    ...(resolvedPeer.nav.part ? { search: { part: resolvedPeer.nav.part } } : {}),
+                  })
+              : undefined
+          }
           onUnpair={onDefaultLedger ? undefined : unpair}
           // #265 (user): a recurring-narrowed row's counter door STAYS
           // open — a fully inert row left funding picks unescapable; the

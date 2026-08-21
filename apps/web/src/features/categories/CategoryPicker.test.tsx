@@ -208,5 +208,12 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     list.scrollTop = 340;
     fireEvent.scroll(list);
     await waitFor(() => expect(wrapper.style.height).toBe('170px')); // 60 revealed
+
+    // #273 r3 (user): closing and reopening starts WHOLE again — the
+    // collapsed state must not leak into the next visit (a pick closes)
+    fireEvent.click(screen.getByTestId('catpicker-groceries'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-groceries');
+    await waitFor(() => expect((screen.getByTestId('catpicker-search-wrap') as HTMLElement).style.height).toBe('200px'));
   }, 15_000);
 });

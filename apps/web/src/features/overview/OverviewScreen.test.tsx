@@ -73,8 +73,13 @@ describe('Overview (demo identity)', () => {
     const list = await screen.findByTestId('catdrill-list');
     expect(list.querySelectorAll('[data-testid^="tx-row-"]').length).toBeGreaterThan(0);
 
-    // a payment row leads on to the transaction detail
+    // #168 r4 (user): a payment row PEEKS in place — the drill stays
+    // put underneath; the full detail is one door further
     fireEvent.click(list.querySelector('[data-testid^="tx-row-"]')!);
+    await screen.findByTestId('tx-peek');
+    expect(screen.getByTestId('tx-peek-amount').textContent).toMatch(/€[1-9]/);
+    expect(screen.getByTestId('screen-category-drill')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('tx-peek-open'));
     expect(await screen.findByTestId('screen-tx-detail')).toBeTruthy();
   });
 

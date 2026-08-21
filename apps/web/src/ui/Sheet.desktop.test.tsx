@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { LangProvider } from '@/i18n';
 // harness registers RTL cleanup between tests
 import '@/test/harness';
-import { Sheet } from './Sheet';
+import { Sheet, sheetLibAvoidsKeyboard } from './Sheet';
 
 /** lg viewport: the Sheet renders its centered desktop dialog */
 const stubDesktop = () => {
@@ -98,6 +98,51 @@ describe('desktop dialog sizing (#276)', () => {
       const scroller = dialog.querySelector('.overflow-y-auto');
       expect(scroller).toBeTruthy();
       expect(scroller!.contains(screen.getByTestId('tall-content'))).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+});
+
+/** #290 r2 (user): at sub-lg widths the MOBILE sheet hosts the same
+ *  forms — and the sheet library's avoidKeyboard machinery misfires on
+ *  desktop Chromium (navigator.virtualKeyboard exists keyboard-less;
+ *  the lib flips overlaysContent itself and takes any focused field
+ *  for "keyboard open" at height 0), smooth-scrolling the field flush
+ *  under the sheet header. The library must engage by POINTER, not by
+ *  platform: fine pointer = no on-screen keyboard = stand down.
+ *  happy-dom has no layout AND framer-motion drops the lib's var()
+ *  padding there, so the DOM carries no honest signal — the smoke
+ *  specs the exported DECISION the Sheet feeds the library instead
+ *  (the scroll behavior itself was verified in a real Chromium). */
+describe('#290 r2: mobile-sheet keyboard avoidance engages by pointer', () => {
+  const stubPointer = (coarse: boolean) => {
+    const original = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      // '(pointer: coarse)' answers per stub; every other query
+      // (the lg breakpoint) stays false
+      matches: coarse && query.includes('pointer: coarse'),
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    return () => {
+      window.matchMedia = original;
+    };
+  };
+
+  it('fine pointer (plain desktop): the library stands down — nothing scrolls a focused field', () => {
+    const restore = stubPointer(false);
+    try {
+      expect(sheetLibAvoidsKeyboard()).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
+  it('coarse pointer (touch tablets): the avoidance stays — the real-keyboard path is untouched', () => {
+    const restore = stubPointer(true);
+    try {
+      expect(sheetLibAvoidsKeyboard()).toBe(true);
     } finally {
       restore();
     }

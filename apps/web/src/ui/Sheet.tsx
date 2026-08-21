@@ -92,10 +92,28 @@ function popJailGuard(): void {
   }
 }
 
-/** true where the sheet library's avoidKeyboard is active — the global
+/** true where the SHEET surface owns keyboard handling — the global
  *  keyboard reveal must stand down inside sheets there (AppLayout).
- *  No longer true on iOS (#134): there AppLayout owns the reveal. */
+ *  No longer true on iOS (#134): there AppLayout owns the reveal.
+ *  #290 r2: "owns" now means the library where an on-screen keyboard
+ *  is plausible, and NOTHING on fine-pointer machines — with no
+ *  keyboard there is nothing to reveal, and every scripted scroll on
+ *  focus is a pure yank. */
 export const SHEET_OWNS_KEYBOARD = !VIEWPORT_RESIZES && !ON_IOS;
+
+/** #290 r2 (user): the mobile sheet library's keyboard avoidance may
+ *  engage only where an on-screen keyboard is PLAUSIBLE — a coarse
+ *  primary pointer (touch). Desktop Chromium exposes
+ *  navigator.virtualKeyboard even on mouse-only machines, and the
+ *  library reads the API's presence as "keyboard open" the moment a
+ *  field is focused (it flips overlaysContent itself and a zero-height
+ *  keyboard rect still counts) — then smooth-scrolls the focused field
+ *  flush under the sheet header (the "fields fall behind the New loan
+ *  header" report). Android/native keep their resize path and iOS its
+ *  #134 opt-out; evaluated at render so docking/undocking a tablet
+ *  keyboard is honored. Exported for the Sheet.desktop smoke. */
+export const sheetLibAvoidsKeyboard = (): boolean =>
+  !VIEWPORT_RESIZES && !ON_IOS && typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
 
 // ── sheet stack ──────────────────────────────────────────────────────────
 // Only the TOP sheet may dismiss. Without this, opening a picker sheet on
@@ -645,8 +663,11 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
       detent="content"
       // #134: on iOS BOTH library behaviors stand down (see the block
       // at the top) — AppLayout reveals, the jail guard keeps chrome
-      // straight, and the fixed app frame already pins the page
-      avoidKeyboard={!VIEWPORT_RESIZES && !ON_IOS}
+      // straight, and the fixed app frame already pins the page.
+      // #290 r2: fine-pointer machines have no on-screen keyboard —
+      // the library stands down there too, or its virtualKeyboard
+      // misfire scrolls every focused field under the sheet header
+      avoidKeyboard={sheetLibAvoidsKeyboard()}
       disableScrollLocking={ON_IOS}
       // the Mina tutorial refuses the drag-dismissal (root sheet only —
       // nested pickers stay dismissible). #253: dirty forms no longer

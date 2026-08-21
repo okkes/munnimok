@@ -1,7 +1,8 @@
 /** Two-or-more series on one shared scale (#168: recurring year chart).
  *  Same fluid-width conventions as Line. #168 r2 (user): values may be
  *  null (a gap — segments span only consecutive non-null runs),
- *  `nowIndex` pins a vertical marker on the current period, and with
+ *  `markerIndex` pins a vertical marker on one x index (#168 r4: the
+ *  tracking START — data left of it is unknown), and with
  *  `onPointClick` every point wears a tappable dot. Without
  *  `onPointClick` the chart stays decorative: aria-hidden, one end-dot
  *  per series. #168 r3 (user): smoothing is monotone cubic (no
@@ -77,7 +78,7 @@ export function MultiLine({
   labels,
   height = 140,
   testId,
-  nowIndex,
+  markerIndex,
   onPointClick,
   selected,
 }: Readonly<{
@@ -93,8 +94,9 @@ export function MultiLine({
   labels?: string[];
   height?: number;
   testId?: string;
-  /** vertical marker at this x index (#168 r2: the current period) */
-  nowIndex?: number;
+  /** vertical marker at this x index (#168 r4: the space's start month
+   *  — anything left of it is untracked; testid `<testId>-start`) */
+  markerIndex?: number;
   /** interactive mode: every non-null point becomes a tappable dot */
   onPointClick?: (seriesIndex: number, pointIndex: number) => void;
   selected?: { seriesIndex: number; pointIndex: number } | null;
@@ -146,16 +148,16 @@ export function MultiLine({
       aria-hidden={onPointClick ? undefined : true}
       data-testid={testId}
     >
-      {nowIndex !== undefined && (
+      {markerIndex !== undefined && (
         <line
-          x1={x(nowIndex)}
+          x1={x(markerIndex)}
           y1={0}
-          x2={x(nowIndex)}
+          x2={x(markerIndex)}
           y2={height}
           stroke="var(--m-line)"
           strokeWidth={1}
           strokeDasharray="2 3"
-          data-testid={testId ? `${testId}-now` : undefined}
+          data-testid={testId ? `${testId}-start` : undefined}
         />
       )}
       {series.map((s, si) => {

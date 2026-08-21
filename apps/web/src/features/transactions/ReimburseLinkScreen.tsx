@@ -378,20 +378,29 @@ export function ReimburseLinkScreen() {
       </div>
 
       {/* the amount sheet: how much of the pair actually links */}
-      <Sheet open={chosen !== null} onOpenChange={(next) => !next && setChosen(null)} title={chosen ? cleanBankText(chosen.row.merchant) : ''} size="form">
+      {/* #233 r4 (user): both sides sit IN the sheet now — the title
+          names the ACT, not one of the two rows */}
+      <Sheet open={chosen !== null} onOpenChange={(next) => !next && setChosen(null)} title={t('reimb.confirmTitle')} size="form">
         <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
           {/* #270 r2 (user): BOTH transactions' face — title, date and
               amount of each side of the link */}
           {chosen && tx && (
-            <div className="flex flex-col gap-1 rounded-input bg-bg px-3 py-2" data-testid="reimb-confirm-pair">
+            <div
+              className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-baseline gap-x-3 gap-y-1 rounded-input bg-bg px-3 py-2"
+              data-testid="reimb-confirm-pair"
+            >
+              {/* #233 r4 (user): dates align as their OWN column, like
+                  the amounts */}
               {[tx, chosen.row].map((row) => (
-                <p key={row.id} className="flex items-baseline gap-2 text-[12px] text-ink-3" data-testid="reimb-confirm-side">
-                  <span className="min-w-0 flex-1 truncate text-ink-2">{cleanBankText(row.merchant)}</span>
-                  <span className="shrink-0 text-ink-4">
+                <Fragment key={row.id}>
+                  <span className="min-w-0 truncate text-[12px] text-ink-2" data-testid="reimb-confirm-side">
+                    {cleanBankText(row.merchant)}
+                  </span>
+                  <span className="text-right text-[12px] text-ink-4">
                     {new Date(row.date).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short' })}
                   </span>
-                  <span className="m-num shrink-0">{fmtCents(row.amountCents, row.currency, lang, { sign: true })}</span>
-                </p>
+                  <span className="m-num text-right text-[12px] text-ink-3">{fmtCents(row.amountCents, row.currency, lang, { sign: true })}</span>
+                </Fragment>
               ))}
             </div>
           )}

@@ -419,9 +419,13 @@ describe('RecurringScreen editing (demo identity)', () => {
   it('#167/#168 r2: future ranges show only the total; the year chart splits at now and dots open their month', async () => {
     const first = renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-167'), { trackOutbox: false });
     const day = Math.min(new Date().getDate(), 28);
+    // #168 r4: the chart marker means the SPACE'S START month — pin it
+    // to January so the marker lands on a fixed, gate-safe index
+    await repo.upsert('space', DEMO_SPACE_ID, DEMO_SPACE_ID, { historyStartDate: `${new Date().getFullYear()}-01-01` });
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_167', {
       name: 'Gym 167',
       kind: 'fixed',
@@ -458,13 +462,16 @@ describe('RecurringScreen editing (demo identity)', () => {
     expect(screen.getByTestId('recurring-summary').textContent).not.toContain('Paid');
 
     // the year view (#168 r2): both lines always draw — the chips and the
-    // all-off note are gone — smoothed (bezier C commands), with a marker
-    // pinned on the current period
+    // all-off note are gone — smoothed (bezier C commands). #168 r4: the
+    // vertical marker sits on the SPACE'S START month (January = x 0),
+    // not on "now" — the paid/estimate split marks now by itself
     fireEvent.click(screen.getByTestId('recurring-view-year'));
     const svg = await screen.findByTestId('recurring-chart');
     expect(screen.queryByTestId('recurring-chart-est')).toBeNull();
     expect(screen.queryByTestId('recurring-chart-act')).toBeNull();
-    expect(screen.getByTestId('recurring-chart-now')).toBeTruthy();
+    const marker = await screen.findByTestId('recurring-chart-start');
+    expect(marker.getAttribute('x1')).toBe('0');
+    expect(screen.queryByTestId('recurring-chart-now')).toBeNull();
     const paths = [...svg.querySelectorAll('path')];
     // in Jan/Dec one line is a single point (a lone dot, no path)
     expect(paths.length).toBeGreaterThanOrEqual(1);
@@ -496,12 +503,13 @@ describe('RecurringScreen editing (demo identity)', () => {
     expect(txRow.querySelector('[data-testid="tx-row-pay_167"]')).toBeTruthy();
     expect(txRow.textContent).toMatch(/€[1-9]/);
 
-    // next year is future: total-only summary, no now-line, estimate on
-    // all twelve months, paid on none
+    // next year is future: total-only summary, estimate on all twelve
+    // months, paid on none — and the start marker stands down (the
+    // space started THIS year, outside the charted one)
     fireEvent.click(screen.getByTestId('recurring-view-nextyear'));
     await screen.findByTestId('recurring-summary-future');
     const svg2 = await screen.findByTestId('recurring-chart');
-    await waitFor(() => expect(screen.queryByTestId('recurring-chart-now')).toBeNull());
+    await waitFor(() => expect(screen.queryByTestId('recurring-chart-start')).toBeNull());
     expect(svg2.querySelectorAll('[data-testid^="recurring-chart-dot-0-"]')).toHaveLength(12);
     expect(svg2.querySelectorAll('[data-testid^="recurring-chart-dot-1-"]')).toHaveLength(0);
 
@@ -536,22 +544,35 @@ describe('RecurringScreen editing (demo identity)', () => {
     fireEvent.click(screen.getByTestId('recurring-view-nextyear'));
     const svg = await screen.findByTestId('recurring-chart');
     expect(svg.querySelectorAll('[data-testid^="recurring-chart-dot-0-"]')).toHaveLength(12);
+    // #168 r4: the demo space has no historyStartDate — no start marker
+    expect(screen.queryByTestId('recurring-chart-start')).toBeNull();
 
     // January carries the expected yearly item…
     fireEvent.click(screen.getByTestId('recurring-chart-dot-0-0'));
     const value = await screen.findByTestId('recurring-chart-value');
     expect(value.textContent).toMatch(/€[1-9]/);
     fireEvent.click(screen.getByTestId('recurring-chart-txs'));
-    await screen.findByTestId('recurring-period-exp-rec_168y');
+    const expRow = await screen.findByTestId('recurring-period-exp-rec_168y');
+    // #168 r4 (user): the expected row wears the recurring's icon and
+    // reads as a door — a real button with the arrow at its edge
+    expect(expRow.tagName).toBe('BUTTON');
+    expect(expRow.querySelector('.mdi')).toBeTruthy();
 
     // …June has neither payments nor occurrences — the sheet says so
     fireEvent.click(screen.getByTestId('recurring-chart-dot-0-5'));
     fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
     await screen.findByTestId('recurring-period-empty');
     expect(screen.queryByTestId('recurring-period-exp-rec_168y')).toBeNull();
+
+    // #168 r4 (user): tapping the expected row closes the sheet and
+    // opens that recurring's own detail screen
+    fireEvent.click(screen.getByTestId('recurring-chart-dot-0-0'));
+    fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
+    fireEvent.click(await screen.findByTestId('recurring-period-exp-rec_168y'));
+    await screen.findByTestId('screen-recurring-detail', {}, { timeout: 5000 });
   }, 15_000);
 
-  it('#168 r3: a period sheet row is a real TxRow and taps through to the transaction detail', async () => {
+  it('#168 r3+r4: a period sheet row opens the PEEK in place; its one door lands on the detail', async () => {
     const first = renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
     const db = new MunniDB('munni_demo');
@@ -587,8 +608,16 @@ describe('RecurringScreen editing (demo identity)', () => {
     fireEvent.click(await screen.findByTestId(`recurring-chart-dot-1-${nowIdx}`));
     fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
     const wrapper = await screen.findByTestId('recurring-period-tx-pay_r3');
-    // tapping the TxRow closes the sheet and lands on the detail screen
+    // #168 r4 (user): tapping the TxRow opens the PEEK on top — no page
+    // jump, the period sheet stays underneath to come back to
     fireEvent.click(wrapper.querySelector<HTMLElement>('[data-testid="tx-row-pay_r3"]')!);
+    await screen.findByTestId('tx-peek');
+    expect(screen.getByTestId('tx-peek-amount').textContent).toMatch(/€[1-9]/);
+    expect(screen.getByTestId('tx-peek-title').textContent).toContain('GYM R3');
+    expect(screen.getByTestId('screen-recurring')).toBeTruthy();
+    expect(screen.getByTestId('recurring-period-sheet')).toBeTruthy();
+    // the peek's one door: the full transaction detail screen
+    fireEvent.click(screen.getByTestId('tx-peek-open'));
     await screen.findByTestId('screen-tx-detail', {}, { timeout: 5000 });
     await waitFor(() => expect(screen.queryByTestId('recurring-period-sheet')).toBeNull());
   }, 20_000);
