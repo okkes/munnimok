@@ -43,9 +43,16 @@ const anySlice = (tx: TransactionRow, hit: (view: ReturnType<typeof txSliceViews
 const isUncategorized = (tx: TransactionRow): boolean =>
   anySlice(tx, (v) => (v.catId === 'uncategorized' || v.catId == null) && v.effType !== 'transfer');
 
+/** #267 r2: the direction a leading +/- constrains (0 = both) */
+function querySign(q: string | undefined): -1 | 0 | 1 {
+  if (q?.startsWith('+')) return 1;
+  if (q?.startsWith('-')) return -1;
+  return 0;
+}
+
 export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionRow[] {
   const q = filter.query?.trim().toLowerCase();
-  const signQ = q?.startsWith('+') ? 1 : q?.startsWith('-') ? -1 : 0;
+  const signQ = querySign(q);
   const digits = q?.replaceAll(/[\s.,€+-]/g, '') ?? '';
   const amountQ = /^\d+$/.test(digits) ? digits : null;
   return txs.filter((tx) => {
@@ -56,7 +63,7 @@ export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionR
     if (filter.txTypes?.size && !anySlice(tx, (v) => filter.txTypes!.has(v.effType))) return false;
     if (filter.from && tx.date < filter.from) return false;
     if (filter.to && tx.date > filter.to) return false;
-    return !q || matchesQuery(tx, q, amountQ, signQ as -1 | 0 | 1);
+    return !q || matchesQuery(tx, q, amountQ, signQ);
   });
 }
 
