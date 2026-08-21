@@ -277,12 +277,14 @@ describe('TxDetailScreen (demo identity)', () => {
     });
     await screen.findByTestId('tx-parts-tx-pp', {}, { timeout: 5000 });
     fireEvent.click(screen.getByTestId('tx-part-row-tx-pp-1'));
-    fireEvent.click(await screen.findByTestId('tx-part-counter-row'));
-    // an uncategorized part asks the OPEN accounts list (no family pin)
-    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    fireEvent.click(await screen.findByTestId('tx-part-counter-row', {}, { timeout: 5000 }));
+    // an uncategorized part asks the OPEN accounts list (no family pin);
+    // generous waits — this file contends with the boot chain under
+    // full-suite coverage load (CI flake 2026-08-21)
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save', {}, { timeout: 8000 }));
     // the fork offers the row already there — point at it
-    await screen.findByTestId('counter-fork');
-    fireEvent.click((await screen.findByTestId('counter-dup-pot-in')).querySelector('button')!);
+    await screen.findByTestId('counter-fork', {}, { timeout: 5000 });
+    fireEvent.click((await screen.findByTestId('counter-dup-pot-in', {}, { timeout: 5000 })).querySelector('button')!);
     await waitFor(async () => {
       const stored = (await db.transactions.get('tx-pp'))?.splits?.find((sp) => sp.id === 'pp2');
       expect(stored?.linkedAccountId).toBe('demo_save');
