@@ -99,6 +99,20 @@ public class SyncEndpointsTests : IClassFixture<SyncApiFactory>
         var response = await anon.GetAsync($"/sync/space_x/pull?since=0");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+
+    [Fact]
+    public void UniqueViolationPredicate_MatchesOnlyPostgresDuplicateKey()
+    {
+        // #281: the push retry keys on exactly the concurrent-insert
+        // signal — anything else must keep surfacing
+        var dup = new DbUpdateException("save failed",
+            new Npgsql.PostgresException("duplicate key", "ERROR", "ERROR", "23505"));
+        Assert.True(SyncWriter.IsUniqueViolation(dup));
+        Assert.False(SyncWriter.IsUniqueViolation(new DbUpdateException("save failed",
+            new Npgsql.PostgresException("deadlock", "ERROR", "ERROR", "40P01"))));
+        Assert.False(SyncWriter.IsUniqueViolation(new DbUpdateException("save failed", new InvalidOperationException())));
+    }
+
 }
 
 public class SyncApiFactory : WebApplicationFactory<Program>

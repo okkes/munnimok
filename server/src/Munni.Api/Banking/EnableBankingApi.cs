@@ -132,11 +132,21 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
     {
         if (!string.IsNullOrEmpty(authCode))
         {
-            var session = await SendAsync<SessionResponse>(HttpMethod.Post, "sessions", new { code = authCode }, ct);
-            var uids = session.Accounts?.Where(a => a.Uid is not null).Select(a => a.Uid!).ToList() ?? [];
-            return new GcRequisitionStatus(session.SessionId ?? requisitionId, "LN", uids);
+            try
+            {
+                var session = await SendAsync<SessionResponse>(HttpMethod.Post, "sessions", new { code = authCode }, ct);
+                var uids = session.Accounts?.Where(a => a.Uid is not null).Select(a => a.Uid!).ToList() ?? [];
+                return new GcRequisitionStatus(session.SessionId ?? requisitionId, "LN", uids);
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("ALREADY_AUTHORIZED"))
+            {
+                // #281 (staging 2026-08-17): callbacks re-fire and the auth
+                // code is single-use — an earlier complete already minted
+                // the session. Authorized IS the goal state: fall through
+                // to the status read instead of failing the whole complete.
+            }
         }
-        // no code = a retry after the session already exists
+        // no code (or a burnt one) = a retry after the session exists
         var existing = await SendAsync<SessionStatus>(HttpMethod.Get, $"sessions/{Uri.EscapeDataString(requisitionId)}", null, ct);
         var status = existing.Status?.ToUpperInvariant() == "AUTHORIZED" ? "LN" : existing.Status ?? "CR";
         return new GcRequisitionStatus(requisitionId, status, existing.Accounts ?? []);

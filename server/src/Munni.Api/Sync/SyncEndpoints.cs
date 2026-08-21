@@ -40,6 +40,26 @@ public static class SyncEndpoints
     private static async Task<IResult> Push(string spaceId, PushRequest request, AppDbContext db, SpaceEventBroadcaster events, HttpContext http)
     {
         var userId = http.GetUserId();
+        // #281 (GlitchTip API-STAGING-N, 2026-08-20 storm): concurrent
+        // pushes — or a push racing the bank ingest — both miss the row
+        // read and collide on a PK at save. A clean retry re-reads what
+        // the winner committed and the LWW merge converges; without it
+        // the client saw 500s, retried, and ran into the rate limiter.
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await PushOnce(spaceId, request, db, events, userId);
+            }
+            catch (DbUpdateException ex) when (attempt < 3 && SyncWriter.IsUniqueViolation(ex))
+            {
+                db.ChangeTracker.Clear();
+            }
+        }
+    }
+
+    private static async Task<IResult> PushOnce(string spaceId, PushRequest request, AppDbContext db, SpaceEventBroadcaster events, Guid userId)
+    {
         var space = await db.Spaces.FindAsync(spaceId);
         if (space is null)
         {
@@ -47,7 +67,8 @@ public static class SyncEndpoints
             // feeds are born only via POST /feeds (security review S1)
             if (Accounts.FeedAccess.IsFeedShaped(spaceId))
                 return Results.Forbid();
-            // first push creates the space with the pusher as owner
+            // first push creates the space with the pusher as owner (a
+            // lost create race lands in the member check on the retry)
             space = new Space { Id = spaceId };
             db.Spaces.Add(space);
             db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = userId, Role = Social.SpaceRoles.Owner });
