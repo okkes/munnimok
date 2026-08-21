@@ -59,6 +59,10 @@ export const ENTITIES: readonly EntityName[] = [
   'insightDismiss',
   'topic',
   'activity',
+  // #296: forgotten here while Dexie got it — on native, user login
+  // crashed the home mount (`unknown entity: txSeen`) the moment the
+  // synced first-seen clock (#148 r3) asked for its rows
+  'txSeen',
 ];
 
 const ENTITY_SET: ReadonlySet<EntityName> = new Set(ENTITIES);

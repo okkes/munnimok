@@ -41,7 +41,9 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
   // ── synced path (user identities) ─────────────────────────────────
   const seenRows = useQuery(
     store,
-    async () => (stateSpaceId ? await store.bySpace('txSeen', stateSpaceId) : null),
+    // #296: a backend missing the entity must degrade to "nothing new",
+    // never crash the screen that mounted the hook
+    async () => (stateSpaceId ? await store.bySpace('txSeen', stateSpaceId).catch(() => []) : null),
     [stateSpaceId],
   );
   const spaceSeen = useMemo(
