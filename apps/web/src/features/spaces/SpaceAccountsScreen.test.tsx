@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
@@ -47,7 +48,7 @@ describe('SpaceAccountsScreen (#284 reader gating)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal', kind: 'shared' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
@@ -83,7 +84,7 @@ describe('SpaceAccountsScreen (#284 reader gating)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal', kind: 'shared' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],

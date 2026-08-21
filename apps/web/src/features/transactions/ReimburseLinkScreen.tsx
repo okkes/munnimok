@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
@@ -6,7 +6,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { fmtCents, parseCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { filterTxs } from '@/domain/txFilter';
-import { clampReimbursement, creditPartGivenCents, creditRemainingCents, givenCents, remainingCents } from '@/domain/reimbursement';
+import { clampReimbursement, creditPartGivenCents, creditRemainingCents, givenCents, isReimbContainer, remainingCents, settledCats } from '@/domain/reimbursement';
 import { reimbEarmarkCents, suggestCounterparts } from '@/domain/reimburseMatch';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useReimburseLinks } from './useReimburseLinks';
@@ -19,19 +19,44 @@ import { TxPartRow } from '@/ui/TxPartRow';
 import { SearchField } from '@/ui/SearchField';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { CollapsingSearch, useSearchCollapse } from '@/ui/CollapsingSearch';
-import { REIMBURSED_ID } from '@/domain/categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
 import type { TxSplit } from '@/db/types';
 
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
 
-interface ImpactSide {
-  title: string;
-  lines: string[];
+interface ImpactLine {
+  catId: string;
+  before: number;
+  after: number;
 }
 
-/** #233 r2 (user): what the amount does to each side's categories —
- *  every line reads "<before> → <after>" so the automatic refile is
- *  visible BEFORE saving. Module-level for S3776. */
+interface ImpactSide {
+  title: string;
+  lines: ImpactLine[];
+}
+
+/** #233 r3: the preview diffs the REAL settlement engine — settledCats
+ *  before vs after — so spreads, earmarks and the claimant carve-out
+ *  all preview exactly what the save would write. Module for S3776. */
+function impactLinesFor(
+  subject: { amountCents: number; catId?: string; cats?: { catId: string; amountCents: number }[] },
+  beforeCents: number,
+  afterCents: number,
+  nameOf: (catId: string) => string,
+): ImpactLine[] {
+  const before = settledCats(subject, beforeCents, nameOf);
+  const after = settledCats(subject, afterCents, nameOf);
+  const at = (list: { catId: string; amountCents: number }[], id: string) =>
+    list.find((slice) => slice.catId === id)?.amountCents ?? 0;
+  const ids = [...new Set([...before, ...after].map((slice) => slice.catId))];
+  // read in the after-partition's order, the bookkeeping slice last
+  const order = [...after.filter((slice) => slice.catId !== REIMBURSED_ID).map((slice) => slice.catId), REIMBURSED_ID];
+  ids.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  return ids
+    .map((catId) => ({ catId, before: at(before, catId), after: at(after, catId) }))
+    .filter((line) => line.before !== line.after);
+}
+
 function impactSides(args: {
   expense: SpaceTx;
   expensePartId?: string;
@@ -39,42 +64,28 @@ function impactSides(args: {
   creditPartId?: string;
   cents: number;
   allTxs: SpaceTx[];
-  name: (catId: string | undefined) => string;
-  fmt: (cents: number) => string;
-  reimbursedName: string;
-  expectedLabel: string;
+  nameOf: (catId: string) => string;
 }): ImpactSide[] {
-  const { expense, credit, cents, allTxs, name, fmt } = args;
-  const ePart = args.expensePartId ? (expense.splits ?? []).find((s) => s.id === args.expensePartId) : undefined;
-  const eGross = Math.abs(ePart?.amountCents ?? expense.amountCents);
+  const { expense, credit, cents, allTxs, nameOf } = args;
+  const ePart = args.expensePartId ? (expense.splits ?? []).find((part) => part.id === args.expensePartId) : undefined;
+  const eSubject = ePart ? { amountCents: ePart.amountCents, catId: ePart.catId, cats: ePart.cats } : expense;
   const eAlready = (expense.reimbursements ?? [])
-    .filter((r) => (ePart ? r.partId === args.expensePartId : true))
-    .reduce((sum, r) => sum + r.amountCents, 0);
-  // the whole-row earmark only speaks for whole-row links — a part pick
-  // reads the part's own category instead
-  const earmark = ePart ? null : reimbEarmarkCents(expense);
-  const expenseLines: string[] = [];
-  if (earmark !== null) {
-    expenseLines.push(
-      `${args.expectedLabel} ${fmt(Math.max(0, earmark - eAlready))} → ${args.reimbursedName} ${fmt(eAlready + cents)}`,
-    );
-  } else {
-    expenseLines.push(
-      `${name(ePart?.catId ?? expense.catId)} ${fmt(eGross - eAlready)} → ${fmt(Math.max(0, eGross - eAlready - cents))}`,
-      `${args.reimbursedName} ${fmt(eAlready)} → ${fmt(eAlready + cents)}`,
-    );
-  }
-  const cPart = args.creditPartId ? (credit.splits ?? []).find((s) => s.id === args.creditPartId) : undefined;
-  const cGross = Math.abs(cPart?.amountCents ?? credit.amountCents);
+    .filter((link) => (ePart ? link.partId === args.expensePartId : true))
+    .reduce((sum, link) => sum + link.amountCents, 0);
+  const cPart = args.creditPartId ? (credit.splits ?? []).find((part) => part.id === args.creditPartId) : undefined;
   const cGiven =
     cPart && args.creditPartId ? creditPartGivenCents(allTxs, credit.id, args.creditPartId) : givenCents(allTxs, credit.id);
-  const creditLines = [
-    `${name(cPart?.catId ?? credit.catId)} ${fmt(cGross - cGiven)} → ${fmt(Math.max(0, cGross - cGiven - cents))}`,
-    `${args.reimbursedName} ${fmt(cGiven)} → ${fmt(cGiven + cents)}`,
-  ];
+  // the credit self-files as Reimbursed exactly like the save would
+  const selfFiles =
+    !cPart &&
+    !isReimbContainer(credit) &&
+    (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1);
+  const cSubject = cPart
+    ? { amountCents: cPart.amountCents, catId: cPart.catId, cats: cPart.cats }
+    : { ...credit, catId: selfFiles ? REIMBURSED_ID : credit.catId };
   return [
-    { title: cleanBankText(expense.merchant), lines: expenseLines },
-    { title: cleanBankText(credit.merchant), lines: creditLines },
+    { title: cleanBankText(expense.merchant), lines: impactLinesFor(eSubject, eAlready, eAlready + cents, nameOf) },
+    { title: cleanBankText(credit.merchant), lines: impactLinesFor(cSubject, cGiven, cGiven + cents, nameOf) },
   ];
 }
 
@@ -168,7 +179,7 @@ export function ReimburseLinkScreen() {
   // the search bar rides along — #273: through the shared GLIDING
   // collapse (deliberate up-travel rule + measured max-height, so the
   // list flows into the freed space instead of jumping past a void)
-  const { shown: searchShown, onListScroll } = useSearchCollapse(56);
+  const { offset: searchOffset, onListScroll } = useSearchCollapse(56);
 
   const anchorIsExpense = (tx?.amountCents ?? 0) < 0;
   const givenOf = (id: string) => givenCents(allTxs ?? [], id);
@@ -251,13 +262,10 @@ export function ReimburseLinkScreen() {
       creditPartId: anchorIsExpense ? chosen.creditPartId : partId,
       cents: impactCents,
       allTxs: allTxs ?? [],
-      name: (catId) => catName(cats.byId(catId), t),
-      fmt: (cents) => fmtCents(cents, tx.currency, lang),
-      reimbursedName: catName(cats.byId(REIMBURSED_ID), t),
-      expectedLabel: t('reimb.expectedLabel'),
+      nameOf: (catId) => catName(cats.byId(catId), t),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tx, chosen, impactCents, anchorIsExpense, partId, allTxs, cats, lang]);
+  }, [tx, chosen, impactCents, anchorIsExpense, partId, allTxs, cats]);
 
   const confirm = () => {
     if (!tx || !chosen) return;
@@ -337,7 +345,7 @@ export function ReimburseLinkScreen() {
       )}
       {/* #273: the field lives ABOVE the scroller and collapses smoothly —
           the sticky+translate version left its slot as a void */}
-      <CollapsingSearch shown={searchShown}>
+      <CollapsingSearch offset={searchOffset}>
         <div className="px-5 pt-1 pb-2">
           <SearchField
             testId="reimb-link-search"
@@ -372,14 +380,20 @@ export function ReimburseLinkScreen() {
       {/* the amount sheet: how much of the pair actually links */}
       <Sheet open={chosen !== null} onOpenChange={(next) => !next && setChosen(null)} title={chosen ? cleanBankText(chosen.row.merchant) : ''} size="form">
         <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
-          {/* #270 (user): the picked row's date — the title alone left
-              same-named rows ambiguous */}
-          {chosen && (
-            <p className="text-[12px] text-ink-3" data-testid="reimb-confirm-date">
-              {new Date(chosen.row.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' })}
-              {' · '}
-              {fmtCents(chosen.row.amountCents, chosen.row.currency, lang, { sign: true })}
-            </p>
+          {/* #270 r2 (user): BOTH transactions' face — title, date and
+              amount of each side of the link */}
+          {chosen && tx && (
+            <div className="flex flex-col gap-1 rounded-input bg-bg px-3 py-2" data-testid="reimb-confirm-pair">
+              {[tx, chosen.row].map((row) => (
+                <p key={row.id} className="flex items-baseline gap-2 text-[12px] text-ink-3" data-testid="reimb-confirm-side">
+                  <span className="min-w-0 flex-1 truncate text-ink-2">{cleanBankText(row.merchant)}</span>
+                  <span className="shrink-0 text-ink-4">
+                    {new Date(row.date).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </span>
+                  <span className="m-num shrink-0">{fmtCents(row.amountCents, row.currency, lang, { sign: true })}</span>
+                </p>
+              ))}
+            </div>
           )}
           <input
             data-testid="reimb-amount"
@@ -394,17 +408,40 @@ export function ReimburseLinkScreen() {
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none${blockerRing(!!amountError)}`}
           />
           <FormBlockerNote show={!!amountError} text={amountError ?? ''} testId="reimb-amount-error" />
-          {impact && (
+          {impact && tx && (
             <div className="rounded-input bg-bg px-3 py-2.5" data-testid="reimb-impact">
-              <p className="pb-1 text-[11px] font-medium uppercase tracking-wide text-ink-4">{t('reimb.impactCaption')}</p>
+              <p className="pb-1.5 text-[11px] font-medium uppercase tracking-wide text-ink-4">{t('reimb.impactCaption')}</p>
               {impact.map((side) => (
-                <div key={side.title} className="pt-1.5 first:pt-0">
-                  <p className="text-[11px] text-ink-4">{side.title}</p>
-                  {side.lines.map((line) => (
-                    <p key={line} className="text-[12.5px] leading-snug text-ink-2" data-testid="reimb-impact-line">
-                      {line}
-                    </p>
-                  ))}
+                <div key={side.title} className="pt-2 first:pt-0">
+                  <p className="truncate pb-1 text-[11px] font-medium text-ink-3">{side.title}</p>
+                  {/* #233 r3 (user): icon + name, amounts in aligned
+                      columns — the whole diff readable at a glance */}
+                  <div className="grid grid-cols-[auto_minmax(0,1fr)_auto_auto_auto] items-center gap-x-2 gap-y-1">
+                    {side.lines.map((line) => {
+                      const cat = cats.byId(line.catId);
+                      const color = cat.color ?? cats.byId(cat.parentId ?? '').color ?? 'var(--m-ink-3)';
+                      return (
+                        <Fragment key={line.catId}>
+                          <span
+                            className="flex h-6 w-6 items-center justify-center rounded-full"
+                            style={{ background: `color-mix(in srgb, ${color} 14%, transparent)` }}
+                          >
+                            <Icon name={cat.icon} size={13} color={color} />
+                          </span>
+                          <span className="min-w-0 truncate text-[12.5px] text-ink-2" data-testid="reimb-impact-line">
+                            {catName(cat, t)}
+                          </span>
+                          <span className="m-num text-right text-[12.5px] text-ink-4">
+                            {fmtCents(line.before, tx.currency, lang)}
+                          </span>
+                          <span className="text-[12px] text-ink-4"> → </span>
+                          <span className="m-num text-right text-[12.5px] font-medium text-ink">
+                            {fmtCents(line.after, tx.currency, lang)}
+                          </span>
+                        </Fragment>
+                      );
+                    })}
+                  </div>
                 </div>
               ))}
             </div>

@@ -1,31 +1,16 @@
 /** Two-or-more series on one shared scale (#168: recurring year chart).
  *  Same fluid-width conventions as Line. #168 r2 (user): values may be
- *  null (a gap — segments span only consecutive non-null runs), lines
- *  are Catmull-Rom smoothed, `nowIndex` pins a vertical marker on the
- *  current period, and with `onPointClick` every point wears a
- *  tappable dot. Without `onPointClick` the chart stays decorative:
- *  aria-hidden, one end-dot per series. */
+ *  null (a gap — segments span only consecutive non-null runs),
+ *  `nowIndex` pins a vertical marker on the current period, and with
+ *  `onPointClick` every point wears a tappable dot. Without
+ *  `onPointClick` the chart stays decorative: aria-hidden, one end-dot
+ *  per series. #168 r3 (user): smoothing is monotone cubic (no
+ *  overshoot dips) and the plot keeps dot-sized vertical padding. */
+import { monotonePath } from './monotone';
 
-interface Pt {
-  x: number;
-  y: number;
-}
-
-const coords = (p: Pt) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`;
-
-/** uniform Catmull-Rom → cubic bezier; endpoints duplicate themselves */
-function smoothPath(pts: readonly Pt[]): string {
-  if (pts.length < 2) return '';
-  const at = (i: number) => pts[Math.min(pts.length - 1, Math.max(0, i))];
-  let d = `M${coords(pts[0])}`;
-  for (let i = 0; i + 1 < pts.length; i++) {
-    const [p0, p1, p2, p3] = [at(i - 1), at(i), at(i + 1), at(i + 2)];
-    const c1: Pt = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
-    const c2: Pt = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
-    d += ` C${coords(c1)} ${coords(c2)} ${coords(p2)}`;
-  }
-  return d;
-}
+/** #168 r3 (user): room for the r=4.5 selected dot + 2px stroke — the
+ *  peak's dot clipped the viewBox edge */
+const PAD = 8;
 
 interface Run {
   start: number;
@@ -96,7 +81,14 @@ export function MultiLine({
   onPointClick,
   selected,
 }: Readonly<{
-  series: readonly { values: readonly (number | null)[]; color: string; dashed?: boolean }[];
+  series: readonly {
+    values: readonly (number | null)[];
+    color: string;
+    dashed?: boolean;
+    /** #168 r3 (user): suppress this index's dot — the shared now-point
+     *  renders ONE dot (the paid line owns it); the path still passes */
+    skipDotAt?: number;
+  }[];
   /** sparse x labels aligned with the longest series (empty strings skip) */
   labels?: string[];
   height?: number;
@@ -116,14 +108,15 @@ export function MultiLine({
   const max = Math.max(...all, 0);
   const span = max - min || 1;
   const x = (i: number) => (n === 1 ? width / 2 : (i / (n - 1)) * width);
-  const y = (value: number) => height - ((value - min) / span) * (height - 8) - 4;
+  const y = (value: number) => height - PAD - ((value - min) / span) * (height - 2 * PAD);
 
   const handlePick = (si: number, i: number) => onPointClick?.(si, i);
-  const interactiveDots = (si: number, color: string, runs: readonly Run[]) =>
+  const interactiveDots = (si: number, color: string, runs: readonly Run[], skipDotAt?: number) =>
     runs.flatMap((run) =>
-      run.points.map((value, k) => {
+      run.points.flatMap((value, k) => {
         const i = run.start + k;
-        return (
+        if (i === skipDotAt) return [];
+        return [
           <ChartDot
             key={i}
             si={si}
@@ -134,8 +127,8 @@ export function MultiLine({
             isSelected={selected?.seriesIndex === si && selected?.pointIndex === i}
             onPick={handlePick}
             testId={testId ? `${testId}-dot-${si}-${i}` : undefined}
-          />
-        );
+          />,
+        ];
       }),
     );
 
@@ -174,7 +167,7 @@ export function MultiLine({
                 run.points.length > 1 && (
                   <path
                     key={run.start}
-                    d={smoothPath(run.points.map((value, k) => ({ x: x(run.start + k), y: y(value) })))}
+                    d={monotonePath(run.points.map((value, k) => ({ x: x(run.start + k), y: y(value) })))}
                     fill="none"
                     stroke={s.color}
                     strokeWidth={2}
@@ -184,7 +177,7 @@ export function MultiLine({
                   />
                 ),
             )}
-            {onPointClick ? interactiveDots(si, s.color, runs) : endDot(s.color, runs)}
+            {onPointClick ? interactiveDots(si, s.color, runs, s.skipDotAt) : endDot(s.color, runs)}
           </g>
         );
       })}

@@ -18,8 +18,10 @@ import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { SearchField } from '@/ui/SearchField';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { MDI_NAMES } from '@/generated/mdiNames';
 import { minaSuggestedSpaceName } from '@/features/mina/steps';
 
 /**
@@ -43,6 +45,8 @@ export function SpacesScreen() {
   // everything except the name has a default, "type a name, press
   // Create" still works (Mina's act step stays valid)
   const [icon, setIcon] = useState(SPACE_ICONS[0]);
+  // #285 (user): search widens the curated set to the whole icon font
+  const [iconQuery, setIconQuery] = useState('');
   const [color, setColor] = useState(SPACE_COLORS[0]);
   const [periodType, setPeriodType] = useState<SpacePeriodType>('month');
   const [periodDay, setPeriodDay] = useState(1);
@@ -111,6 +115,7 @@ export function SpacesScreen() {
     setNameError(false);
     setAttempted(false);
     setIcon(SPACE_ICONS[0]);
+    setIconQuery('');
     setColor(SPACE_COLORS[0]);
     setPeriodType('month');
     setPeriodDay(1);
@@ -260,19 +265,39 @@ export function SpacesScreen() {
               {t('space.nameTaken')}
             </p>
           )}
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {SPACE_ICONS.map((candidate) => (
+          {/* #285 (user): search opens the WHOLE self-hosted font (the
+              categories pattern); glyphs render in the picked color so a
+              swatch tap previews its real impact live */}
+          <SearchField
+            testId="space-create-icon-search"
+            value={iconQuery}
+            onChange={setIconQuery}
+            placeholder={t('space.iconSearch')}
+            height="h-10"
+            textSize="text-[13px]"
+          />
+          <div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto">
+            {(iconQuery.trim()
+              ? MDI_NAMES.filter((n) => n.includes(iconQuery.trim().toLowerCase())).slice(0, 60)
+              : SPACE_ICONS
+            ).map((candidate) => (
               <button
                 key={candidate}
                 data-testid={`space-create-icon-${candidate}`}
+                title={candidate}
                 onClick={() => setIcon(candidate)}
-                className={`m-tap flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
-                  icon === candidate ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
+                className={`m-tap flex h-11 items-center justify-center rounded-xl border ${
+                  icon === candidate ? 'border-accent bg-accent-soft' : 'border-line bg-surface'
                 }`}
               >
-                <Icon name={candidate} size={19} />
+                <Icon name={candidate} size={19} color={color} />
               </button>
             ))}
+            {iconQuery.trim() && MDI_NAMES.every((n) => !n.includes(iconQuery.trim().toLowerCase())) && (
+              <p className="col-span-6 py-2 text-center text-[12px] text-ink-4" data-testid="space-create-icon-none">
+                {t('space.iconNone')}
+              </p>
+            )}
           </div>
           <ColorPicker colors={SPACE_COLORS} value={color} onChange={setColor} testIdPrefix="space-create-color" customLabel={t('color.custom')} />
 

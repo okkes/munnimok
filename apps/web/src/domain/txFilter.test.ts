@@ -109,6 +109,19 @@ describe('filterTxs', () => {
     expect(matchingPartIndexes(settled, { catIds: new Set(['groceries']) })).toEqual([0]);
   });
 
+  it('#267 r2: a leading +/- constrains the sign, magnitude stays a substring hit', () => {
+    const signed = [
+      tx({ id: 'in1', merchant: 'Refund A', amountCents: 1391 }),
+      tx({ id: 'in2', merchant: 'Refund B', amountCents: 1391 }),
+      tx({ id: 'out1', merchant: 'Shop', amountCents: -1391 }),
+      tx({ id: 'out2', merchant: 'Shop big', amountCents: -21391 }),
+    ];
+    expect(filterTxs(signed, { query: '+13,91' }).map((r) => r.id)).toEqual(['in1', 'in2']);
+    expect(filterTxs(signed, { query: '-13,91' }).map((r) => r.id)).toEqual(['out1', 'out2']);
+    // unsigned keeps matching both directions
+    expect(filterTxs(signed, { query: '13,91' })).toHaveLength(4);
+  });
+
   it('hasActiveFilter ignores whitespace-only queries and empty sets', () => {
     expect(hasActiveFilter({})).toBe(false);
     expect(hasActiveFilter({ query: '   ' })).toBe(false);

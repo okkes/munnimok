@@ -106,14 +106,14 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
     setQuery('');
   };
 
-  // #245 (user): the search rides along — #273: through the shared
-  // GLIDING collapse (measured max-height, no pop, no leftover void);
-  // the list's own cap grows by the freed field height in step
-  const { shown: searchShown, onListScroll } = useSearchCollapse(56);
+  // #245 (user): the search rides along — #273 r2: 1:1 WITH the scroll
+  // (no animation; the finger owns the motion); the list's cap grows by
+  // exactly the freed height, so the tail always stays reachable
+  const { offset: searchOffset, onListScroll } = useSearchCollapse(noSpecials ? 56 : 90);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} size="tall" dragHandle>
-      <CollapsingSearch shown={searchShown} testId="catpicker-search-wrap">
+      <CollapsingSearch offset={searchOffset} testId="catpicker-search-wrap">
         <SearchField testId="catpicker-search" value={query} onChange={setQuery} placeholder={t('cats.searchPlaceholder')} />
         {/* #246: the ◆ lens — hidden where specials are off the table */}
         {!noSpecials && (
@@ -126,8 +126,8 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         )}
       </CollapsingSearch>
       <div
-        className="mt-2 overflow-y-auto overscroll-contain transition-[max-height] duration-200 ease-out"
-        style={{ maxHeight: searchShown ? 440 : 440 + 90 }}
+        className="mt-2 overflow-y-auto overscroll-contain"
+        style={{ maxHeight: 440 + searchOffset }}
         data-testid="catpicker-list"
         onScroll={onListScroll}
       >

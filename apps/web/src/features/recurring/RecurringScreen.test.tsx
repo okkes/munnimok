@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
@@ -469,11 +470,12 @@ describe('RecurringScreen editing (demo identity)', () => {
     expect(paths.length).toBeGreaterThanOrEqual(1);
     for (const path of paths) expect(path.getAttribute('d')).toContain('C');
 
-    // estimate dots run now→Dec, paid dots Jan→now; overlap only at now
+    // paid dots run Jan→now; estimate dots only AFTER now — the shared
+    // now-point wears ONE dot and paid owns it (#168 r3)
     const nowIdx = new Date().getMonth();
-    expect(svg.querySelectorAll('[data-testid^="recurring-chart-dot-0-"]')).toHaveLength(12 - nowIdx);
+    expect(svg.querySelectorAll('[data-testid^="recurring-chart-dot-0-"]')).toHaveLength(11 - nowIdx);
     expect(svg.querySelectorAll('[data-testid^="recurring-chart-dot-1-"]')).toHaveLength(nowIdx + 1);
-    expect(screen.getByTestId(`recurring-chart-dot-0-${nowIdx}`)).toBeTruthy();
+    expect(screen.queryByTestId(`recurring-chart-dot-0-${nowIdx}`)).toBeNull();
     expect(screen.getByTestId(`recurring-chart-dot-1-${nowIdx}`)).toBeTruthy();
     if (nowIdx > 0) expect(screen.queryByTestId('recurring-chart-dot-0-0')).toBeNull();
     if (nowIdx < 11) expect(screen.queryByTestId('recurring-chart-dot-1-11')).toBeNull();
@@ -489,7 +491,9 @@ describe('RecurringScreen editing (demo identity)', () => {
     fireEvent.click(screen.getByTestId(`recurring-chart-dot-1-${nowIdx}`));
     fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
     await screen.findByTestId('recurring-period-sheet');
+    // #168 r3: the payment wears the standard TxRow face, not a plain row
     const txRow = await screen.findByTestId('recurring-period-tx-pay_167');
+    expect(txRow.querySelector('[data-testid="tx-row-pay_167"]')).toBeTruthy();
     expect(txRow.textContent).toMatch(/€[1-9]/);
 
     // next year is future: total-only summary, no now-line, estimate on
@@ -546,6 +550,48 @@ describe('RecurringScreen editing (demo identity)', () => {
     await screen.findByTestId('recurring-period-empty');
     expect(screen.queryByTestId('recurring-period-exp-rec_168y')).toBeNull();
   }, 15_000);
+
+  it('#168 r3: a period sheet row is a real TxRow and taps through to the transaction detail', async () => {
+    const first = renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-168r3'), { trackOutbox: false });
+    const day = Math.min(new Date().getDate(), 28);
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_r3', {
+      name: 'Gym r3',
+      kind: 'fixed',
+      amountCents: 2_500,
+      every: 'month',
+      dueDay: day,
+      active: 1,
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'pay_r3', {
+      accountId: 'demo_main',
+      date: monthsAgo(0, day),
+      amountCents: -2_500,
+      currency: 'EUR',
+      merchant: 'GYM R3',
+      catId: 'subs',
+      txType: 'expense',
+      needsReview: 0,
+      recurringId: 'rec_r3',
+    });
+    db.close();
+    first.unmount();
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    await screen.findByText('Gym r3', {}, { timeout: 5000 });
+
+    fireEvent.click(screen.getByTestId('recurring-view-year'));
+    const nowIdx = new Date().getMonth();
+    fireEvent.click(await screen.findByTestId(`recurring-chart-dot-1-${nowIdx}`));
+    fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
+    const wrapper = await screen.findByTestId('recurring-period-tx-pay_r3');
+    // tapping the TxRow closes the sheet and lands on the detail screen
+    fireEvent.click(wrapper.querySelector<HTMLElement>('[data-testid="tx-row-pay_r3"]')!);
+    await screen.findByTestId('screen-tx-detail', {}, { timeout: 5000 });
+    await waitFor(() => expect(screen.queryByTestId('recurring-period-sheet')).toBeNull());
+  }, 20_000);
 
   it('#188/#189: a recurring lives only in ranges it OCCURS in; pre-start occurrences neither list nor count', async () => {
     renderApp('/home');
@@ -694,7 +740,7 @@ describe('brand picker online search (user identity)', () => {
 
   it('keeps the vendored segment first when logo.dev hits arrive below it', async () => {
     await openPickerAndSearch({
-      'GET /health': () => ({ capabilities: { gocardless: false, logos: true } }),
+      'GET /health': () => ({ capabilities: { gocardless: false, logos: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
       'GET /logos/search': () => [netflixRemote],
     });
 
@@ -714,7 +760,7 @@ describe('brand picker online search (user identity)', () => {
 
   it('says so when online search is unavailable and keeps the vendored set', async () => {
     await openPickerAndSearch({
-      'GET /health': () => ({ capabilities: { gocardless: false, logos: false } }),
+      'GET /health': () => ({ capabilities: { gocardless: false, logos: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
     });
 
     await screen.findByTestId('brandpicker-offline-note', {}, { timeout: 3000 });

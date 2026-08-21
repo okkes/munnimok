@@ -1,4 +1,5 @@
 import { RouterProvider, createMemoryHistory, createRouter } from '@tanstack/react-router';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { cleanup, render } from '@testing-library/react';
 import type { ReactElement, ReactNode } from 'react';
 import { afterEach, vi } from 'vitest';
@@ -134,6 +135,9 @@ export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 
     }
     // SSE stream: an immediately-closed stream — the engine falls back to polling
     if (url.pathname === '/sync/events') return new Response('', { status: 200 });
+    // the handshake must agree with THIS build's protocol, or every
+    // user-identity spec sits behind a false "server outdated" (#148 r3)
+    if (url.pathname === '/health') return json({ capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 });
     return json({}, 404);
   });
   vi.stubGlobal('fetch', fetchMock);

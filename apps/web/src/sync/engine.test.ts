@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { HlcClock } from './hlc';
 import { applyOp } from './merge';
 import type { Op, SyncEnvelope } from './merge';
@@ -61,7 +62,14 @@ describe('SyncEngine', () => {
   beforeEach(() => {
     dbCounter++;
     server = new InMemoryServer();
+    // hermetic: syncAll's /health handshake must never reach a REAL
+    // server (a running local stack once answered with an older
+    // protocol and silently blocked every cycle here)
+    vi.stubGlobal('fetch', async () =>
+      new Response(JSON.stringify({ capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 })),
+    );
   });
+  afterEach(() => vi.unstubAllGlobals());
   const dbs: MunniDB[] = [];
   afterEach(async () => {
     while (dbs.length) await dbs.pop()!.delete();

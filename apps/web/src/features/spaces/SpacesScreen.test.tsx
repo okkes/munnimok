@@ -395,4 +395,73 @@ describe('SpacesScreen (demo identity)', () => {
     expect(screen.queryByTestId('space-shared-badge-demo_space')).toBeNull();
     expect(screen.getByTestId('space-row-demo_space').textContent).not.toContain('created by');
   }, 15_000);
+
+  // the glyph's live color — Icon paints an inline style from the prop
+  const glyphColor = (tileTestId: string) => {
+    const glyph = screen.getByTestId(tileTestId).querySelector('i') as HTMLElement;
+    return glyph.style.color.replace(/\s+/g, '').toLowerCase();
+  };
+
+  it('#285: create-form icon search opens the whole font; swatches repaint the grid', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+
+    fireEvent.click(screen.getByTestId('spaces-add'));
+    await screen.findByTestId('space-create-name');
+    // curated set by default — the full-font glyph is not offered yet
+    expect(screen.getByTestId('space-create-icon-leaf')).toBeTruthy();
+    expect(screen.queryByTestId('space-create-icon-rocket-launch')).toBeNull();
+
+    // searching swaps the grid to the FULL mdi set (non-curated result)
+    fireEvent.change(screen.getByTestId('space-create-icon-search'), { target: { value: 'rocket-lau' } });
+    const found = await screen.findByTestId('space-create-icon-rocket-launch');
+    // …and the curated rows stand down while a query narrows the grid
+    expect(screen.queryByTestId('space-create-icon-leaf')).toBeNull();
+
+    // the grid previews the picked color live (default first, then a swatch)
+    expect(glyphColor('space-create-icon-rocket-launch')).toMatch(/#08372b|rgb\(8,55,43\)/);
+    fireEvent.click(screen.getByTestId('space-create-color-E74C3C'));
+    await waitFor(() => expect(glyphColor('space-create-icon-rocket-launch')).toMatch(/#e74c3c|rgb\(231,76,60\)/));
+
+    // a searched glyph is a real pick — it lands on the created space
+    fireEvent.click(found);
+    fireEvent.change(screen.getByTestId('space-create-name'), { target: { value: 'Launchpad' } });
+    fireEvent.click(screen.getByTestId('space-create-save'));
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const made = (await db.spaces.toArray()).find((s) => s.name === 'Launchpad');
+        expect(made).toMatchObject({ icon: 'rocket-launch', color: '#E74C3C' });
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
+  it('#285: settings icon search narrows and extends the grid; color previews live', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+    const id = (await findActiveRow()).getAttribute('data-testid')!.replace('space-row-', '');
+
+    fireEvent.click(screen.getByTestId(`space-edit-${id}`));
+    // the identity form mounts once the space row loads — wait for it
+    const search = await screen.findByTestId('space-icon-search');
+    expect(screen.queryByTestId('space-icon-campfire')).toBeNull();
+
+    fireEvent.change(search, { target: { value: 'campfire' } });
+    await screen.findByTestId('space-icon-campfire');
+    expect(screen.queryByTestId('space-icon-briefcase-outline')).toBeNull();
+
+    // a swatch pick recolors every glyph in the grid on the spot
+    fireEvent.click(screen.getByTestId('space-color-3498DB'));
+    await waitFor(() => expect(glyphColor('space-icon-campfire')).toMatch(/#3498db|rgb\(52,152,219\)/));
+
+    // a hopeless query says so instead of showing an empty void
+    fireEvent.change(screen.getByTestId('space-icon-search'), { target: { value: 'zzqx' } });
+    expect(await screen.findByTestId('space-icon-none')).toBeTruthy();
+    // clearing the query brings the curated set back
+    fireEvent.click(screen.getByTestId('space-icon-search-clear'));
+    expect(await screen.findByTestId('space-icon-briefcase-outline')).toBeTruthy();
+  }, 15_000);
 });

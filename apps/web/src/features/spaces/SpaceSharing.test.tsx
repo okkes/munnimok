@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { USER_TEST_DB, renderAppAsUser } from '@/test/harness';
 
@@ -233,12 +233,18 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     expect(screen.queryByTestId('member-sheet-remove')).toBeNull();
   }, 15_000);
 
-  it('pending space invites show on the Spaces tab; accepting clears the banner', async () => {
+  it('pending space invites show on the Spaces tab; accepting clears the banner and stamps the space shared (#277 r2)', async () => {
     let invites = [
       { id: 'i1', spaceId: 's-new', spaceName: 'Big Family', fromUserId: BOB, fromName: 'Bob', role: 'contributor' },
     ];
     const responses: string[] = [];
     renderAppAsUser('/spaces', {
+      // the joined space syncs in still claiming kind personal — the
+      // owner-side flip never reached this device
+      spaces: [
+        { id: 's-user', name: 'Personal' },
+        { id: 's-new', name: 'Big Family' },
+      ],
       api: {
         'GET /me/invites': () => invites,
         'POST /spaces/invites/i1/accept': () => {
@@ -256,5 +262,105 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     fireEvent.click(screen.getByTestId('space-invite-accept-i1'));
     await waitFor(() => expect(screen.queryByTestId('space-invites')).toBeNull());
     expect(responses).toEqual(['accept']);
+
+    // #277 r2 (user): the JOINER's copy now wears the badge too — the
+    // accept path stamped kind shared + the inviter as the creator line
+    expect(await screen.findByTestId('space-shared-badge-s-new', {}, { timeout: 8000 })).toBeTruthy();
+    expect(screen.getByTestId('space-row-s-new').textContent).toContain('Bob');
+  }, 15_000);
+
+  it('#277 r2 heal: a 2-member payload flips a joiner row that still says personal', async () => {
+    const membersApi = {
+      'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+      'GET /me/invites': () => [],
+      'GET /spaces/s-user/members': () => [member(BOB, 'Bob', 'owner'), member(ME, 'Me', 'contributor')],
+      'GET /friends': () => ({ friends: [], sentPending: [], receivedPending: [] }),
+      'GET /spaces/s-user/invites': () => new Response('', { status: 403 }), // not an owner
+    };
+    renderAppAsUser('/spaces/s-user/members', {
+      spaces: [{ id: 's-user', name: 'Family' }], // arrives kind personal
+      api: membersApi,
+    });
+
+    // the member list loading IS the heal trigger
+    await screen.findByTestId(`member-row-${BOB}`);
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB(USER_TEST_DB);
+    await waitFor(async () => {
+      const row = await db.spaces.get('s-user');
+      expect(row?.kind).toBe('shared');
+      expect(row?.createdByName).toBe('Bob'); // the payload's owner
+    });
+    db.close();
+
+    // the spaces list reads the healed fact: badge + creator line
+    cleanup();
+    renderAppAsUser('/spaces', { spaces: [{ id: 's-user', name: 'Family' }], api: membersApi });
+    expect(await screen.findByTestId('space-shared-badge-s-user', {}, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByTestId('space-row-s-user').textContent).toContain('Bob');
+  }, 15_000);
+
+  it('#291: a friend request sent from the members surface pends right there; a 404 says no such user', async () => {
+    let sent: { id: string; toUserId: string; toName: string | null; spaceName: string }[] = [];
+    renderAppAsUser('/spaces/s-user/members', {
+      api: {
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /me/invites': () => [],
+        'GET /spaces/s-user/members': () => [member(ME, 'Me', 'owner')],
+        'GET /friends': () => ({ friends: [], sentPending: sent, receivedPending: [] }),
+        'GET /spaces/s-user/invites': () => [],
+        'POST /friends/requests': (body) => {
+          if ((body as { toUserId: string }).toUserId === 'ghost') return new Response('', { status: 404 });
+          sent = [
+            { id: 's1', toUserId: BOB, toName: 'Bob', spaceName: 'Personal' },
+            { id: 's2', toUserId: CARA, toName: 'Cara', spaceName: 'Elsewhere' },
+          ];
+          return {};
+        },
+      },
+    });
+
+    // an id nobody owns: field-level error, no "sent" claim, id kept
+    fireEvent.change(await screen.findByTestId('space-addfriend-input'), { target: { value: 'ghost' } });
+    fireEvent.click(screen.getByTestId('space-addfriend-send'));
+    expect(await screen.findByTestId('space-addfriend-notfound')).toBeTruthy();
+    expect(screen.queryByTestId('space-addfriend-sent')).toBeNull();
+    expect((screen.getByTestId('space-addfriend-input') as HTMLInputElement).value).toBe('ghost');
+
+    // typing clears the error; a real send pends IN the members surface
+    fireEvent.change(screen.getByTestId('space-addfriend-input'), { target: { value: BOB } });
+    await waitFor(() => expect(screen.queryByTestId('space-addfriend-notfound')).toBeNull());
+    fireEvent.click(screen.getByTestId('space-addfriend-send'));
+    const row = await screen.findByTestId(`space-friendpending-${BOB}`);
+    expect(row.textContent).toContain('Bob');
+    expect(row.textContent).toContain('Friend request pending');
+    expect(await screen.findByTestId('space-addfriend-sent')).toBeTruthy();
+    // …but only requests carrying THIS space's name
+    expect(screen.queryByTestId(`space-friendpending-${CARA}`)).toBeNull();
+  }, 15_000);
+
+  it('#292: the self row reads "Me" with the self mark — a member NAMED Me gets neither', async () => {
+    renderAppAsUser('/spaces/s-user/members', {
+      api: {
+        'GET /me': () => ({ userId: ME, displayName: 'Okkes' }),
+        'GET /me/invites': () => [],
+        // BOB tries to pose by naming himself "Me"
+        'GET /spaces/s-user/members': () => [member(ME, 'Okkes', 'owner'), member(BOB, 'Me', 'contributor')],
+        'GET /friends': () => ({ friends: [], sentPending: [], receivedPending: [] }),
+        'GET /spaces/s-user/invites': () => [],
+      },
+    });
+
+    // the genuine self row: authenticated-id match → icon + Me + quiet real name
+    const selfRow = await screen.findByTestId(`member-row-${ME}`);
+    expect(await within(selfRow).findByTestId('member-me-icon')).toBeTruthy();
+    expect(selfRow.textContent).toContain('Me');
+    expect(selfRow.textContent).toContain('Okkes');
+
+    // the impostor renders his NAME, unmarked and without a suffix
+    const bobRow = screen.getByTestId(`member-row-${BOB}`);
+    expect(within(bobRow).queryByTestId('member-me-icon')).toBeNull();
+    expect(bobRow.textContent).toContain('Me');
+    expect(bobRow.textContent).not.toContain('Okkes');
   }, 15_000);
 });

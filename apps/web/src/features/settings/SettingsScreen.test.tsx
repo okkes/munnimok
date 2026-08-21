@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
@@ -281,7 +282,7 @@ describe('Settings screens (user identity, scripted server)', () => {
   it('shows the sync card on the settings tab', async () => {
     renderAppAsUser('/settings', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
       },
     });
     await screen.findByTestId('settings-sync-row');
@@ -291,7 +292,7 @@ describe('Settings screens (user identity, scripted server)', () => {
   it('shows user rows; the connections sheet lists bank links', async () => {
     renderAppAsUser('/settings/global', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true, push: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true, push: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /gocardless/connections': () => [{ gcAccountId: 'g1', iban: 'NL69INGB0123456789', lastFetchAt: null }],
       },
     });
@@ -312,6 +313,8 @@ describe('Settings screens (user identity, scripted server)', () => {
         'GET /health': () => ({
           status: 'ok',
           capabilities: { gocardless: false, push: true, vapidPublicKey: 'BPtest-key_123' },
+          protocol: CLIENT_PROTOCOL,
+          minClientProtocol: 1,
         }),
         'POST /me/push-subscriptions': (body) => {
           registrations.push(body);
@@ -329,7 +332,7 @@ describe('Settings screens (user identity, scripted server)', () => {
 
   it('user sign-out keeps the local database (sync is the source of truth)', async () => {
     renderAppAsUser('/settings', {
-      api: { 'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }) },
+      api: { 'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }) },
     });
     await screen.findByTestId('screen-settings');
     fireEvent.click(screen.getByTestId('settings-signout'));
@@ -344,7 +347,7 @@ describe('Settings screens (user identity, scripted server)', () => {
     // lives on the PROFILE screen now (user request: identity-level danger)
     renderAppAsUser('/profile', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'DELETE /me': () => {
           deleted = true;
           return { deleted: true };

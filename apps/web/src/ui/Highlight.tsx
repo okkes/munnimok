@@ -27,7 +27,11 @@ export function splitHighlight(text: string, query: string): HighlightPart[] {
  * so the decimal separator swaps before giving up. '' = no hit.
  */
 export function amountQueryFor(amountText: string, query: string | undefined): string {
-  const q = (query ?? '').trim();
+  const raw = (query ?? '').trim();
+  if (!raw) return '';
+  // #267 r2 (user): a leading +/- narrows the SIGN (the filter's job) —
+  // the visible hit is the number itself
+  const q = /^[+-]/.test(raw) ? raw.slice(1).trim() : raw;
   if (!q) return '';
   const lower = amountText.toLowerCase();
   if (lower.includes(q.toLowerCase())) return q;

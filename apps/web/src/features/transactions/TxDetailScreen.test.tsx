@@ -232,9 +232,9 @@ describe('TxDetailScreen (demo identity)', () => {
     fireEvent.click(row);
     // the ◆ part narrows the ask to ITS kinds — the family default leads
     await screen.findByTestId('counter-default');
-    // the part PROPERTY row picks directly (#237: its sheet carries no
-    // anchor — pick-existing for parts lives in the cats editor's ask)
+    // #255 r3: the part's ask carries the fork now — Create is the mint
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    fireEvent.click(await screen.findByTestId('counter-fork-create'));
     await waitFor(async () => {
       const stored = (await db.transactions.get('tx-cnt'))?.splits?.find((p) => p.id === 'cp2');
       expect(stored?.linkedAccountId).toBe('demo_save');
@@ -254,6 +254,45 @@ describe('TxDetailScreen (demo identity)', () => {
       expect(stored?.linkedAccountId ?? undefined).toBeUndefined();
       expect((await db.transactions.get(mirrorTxId(partMirrorSourceId('tx-cnt', 'cp2'))))?.deleted).toBe(1);
     }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
+
+  it('#255 r3: a part points at the EXISTING pot row — pick, pair, and the countertx row wears its face', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('screen-transactions');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-partpick'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-pp', {
+      accountId: 'demo_main', date: '2020-03-05', amountCents: -6000, currency: 'EUR',
+      merchant: 'Split with pot', catId: 'telecom', txType: 'expense', needsReview: 0,
+      splits: [
+        { id: 'pp1', catId: 'telecom', amountCents: 4000 },
+        { id: 'pp2', catId: 'uncategorized', amountCents: 2000 },
+      ],
+    });
+    // the pot row that already IS the other leg of the €20 part
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'pot-in', {
+      accountId: 'demo_save', date: '2020-03-05', amountCents: 2000, currency: 'EUR',
+      merchant: 'Pot arrival', catId: 'uncategorized', txType: 'income', needsReview: 0,
+    });
+    await screen.findByTestId('tx-parts-tx-pp', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('tx-part-row-tx-pp-1'));
+    fireEvent.click(await screen.findByTestId('tx-part-counter-row'));
+    // an uncategorized part asks the OPEN accounts list (no family pin)
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
+    // the fork offers the row already there — point at it
+    await screen.findByTestId('counter-fork');
+    fireEvent.click((await screen.findByTestId('counter-dup-pot-in')).querySelector('button')!);
+    await waitFor(async () => {
+      const stored = (await db.transactions.get('tx-pp'))?.splits?.find((sp) => sp.id === 'pp2');
+      expect(stored?.linkedAccountId).toBe('demo_save');
+      expect(stored?.transferPeerId).toBe('pot-in');
+      // the reciprocal landed on the pot row; nothing was minted
+      expect((await db.transactions.get('pot-in'))?.transferPeerId).toBe('tx-pp');
+      expect(await db.transactions.get(mirrorTxId(partMirrorSourceId('tx-pp', 'pp2')))).toBeUndefined();
+    }, { timeout: 8000 });
+    // the part page's Counter-transaction row wears the picked face
+    await waitFor(() => expect(screen.getByTestId('tx-part-countertx-row').textContent).toContain('Pot arrival'));
     db.close();
   }, 20_000);
 
@@ -922,6 +961,41 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     db.close();
   });
 
+  it('#233 r3: a SPREAD expense previews every touched slice — engine-true, untouched ones stay quiet', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('impact-seed'), { trackOutbox: false });
+    // hotel 60 + groceries 40 spread; a 30 reimb must eat the LARGEST
+    // slice (hotel) and leave groceries untouched (#235 order)
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'imp1', {
+      accountId: 'demo_main', date: '2026-05-02', amountCents: -10_000, currency: 'EUR',
+      merchant: 'Spread Hotel', catId: 'hotels', txType: 'expense', needsReview: 0,
+      cats: [{ catId: 'hotels', amountCents: 6000 }, { catId: 'groceries', amountCents: 4000 }],
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'imp2', {
+      accountId: 'demo_main', date: '2026-05-03', amountCents: 3000, currency: 'EUR',
+      merchant: 'Refund thirty', catId: 'uncategorized', txType: 'income', needsReview: 0,
+    });
+    seed.close();
+    cleanup();
+    renderApp('/transactions/imp1');
+    fireEvent.click(await screen.findByTestId('reimb-add'));
+    const picker = await screen.findByTestId('reimb-link-list');
+    await waitFor(() => expect(picker.querySelector('[data-testid="reimb-pick-imp2"] [data-testid^="tx-row-"]')).toBeTruthy());
+    fireEvent.click(picker.querySelector('[data-testid="reimb-pick-imp2"] [data-testid^="tx-row-"]')!);
+    const amountInput = (await screen.findByTestId('reimb-amount')) as HTMLInputElement;
+    fireEvent.change(amountInput, { target: { value: '30,00' } });
+    const impact = await screen.findByTestId('reimb-impact');
+    // expense side: hotel shrinks, reimbursed grows — groceries silent
+    expect(impact.textContent).toContain('€60.00 → €30.00');
+    expect(impact.textContent).toContain('€0.00 → €30.00');
+    expect(impact.textContent).not.toContain('€40.00');
+    // credit side self-files: its whole value moves under Reimbursed
+    expect(impact.textContent).toContain('€30.00 → €0.00');
+  }, 20_000);
+
   it('links an expense from the income side: the credit nets out and self-files as Reimbursement', async () => {
     // strip the salary's category so the self-filing rule may act
     const first = renderApp('/transactions/dm1');
@@ -1442,7 +1516,7 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     expect(screen.getByTestId('tx-parts-tx-parts').querySelector('.mdi-subdirectory-arrow-right')).toBeTruthy();
     const head = screen.getByTestId('tx-parts-head-tx-parts');
     expect(head.textContent).toContain('Vodafone');
-    expect(head.textContent).toContain('2 linked parts');
+    expect(head.textContent).toContain('2 split parts');
     await waitFor(() => expect(screen.getByTestId('tx-parts-head-tx-parts').textContent).toMatch(/60\.00/));
     expect(screen.getByTestId('tx-part-row-tx-parts-1').textContent).toContain('Device plan');
 

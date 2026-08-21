@@ -276,7 +276,11 @@ describe('Debts (demo identity)', () => {
     await screen.findByTestId('loanmatch-pick-oldpay');
     // the strong-match pre-check settles an effect tick after the row
     await waitFor(() => expect((screen.getByTestId('loanmatch-pick-oldpay') as HTMLInputElement).checked).toBe(true));
-    expect(screen.getByTestId('loanmatch-count-oldpay')).toBeTruthy();
+    // #286: the pre-anchor story reads ONCE above the list; the row keeps
+    // one trailing counts-toward checkbox, off by default — no more
+    // per-row warning text with a floating amount badge
+    expect(screen.getByTestId('loanmatch-old-caption')).toBeTruthy();
+    expect((screen.getByTestId('loanmatch-count-oldpay') as HTMLInputElement).checked).toBe(false);
     fireEvent.click(screen.getByTestId('loanmatch-apply'));
 
     await waitFor(async () => {
@@ -293,6 +297,42 @@ describe('Debts (demo identity)', () => {
       expect((await db.accounts.get(accountId))?.balanceCents).toBe(-485_000);
     }, { timeout: 5000 });
     expect((await db.transactions.get('oldpay'))?.loanCounted).toBe(1);
+    db.close();
+  }, 20_000);
+
+  it('#286: ticking the trailing Counts control subtracts a pre-anchor payment at apply', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    // drain the boot chain first (house trap: its late bare-row fold
+    // races the apply and its default link could win by LWW)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const card = await createLoan('Car loan', '5000');
+    const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
+
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    const y = new Date(Date.now() - 86_400_000);
+    const yesterday = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+    await repo.upsert('transaction', 'demo_space', 'oldpay2', {
+      accountId: 'demo_main', date: yesterday, amountCents: -15_000, merchant: 'Aflossing',
+      currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+    });
+
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    await screen.findByTestId('loanmatch-pick-oldpay2');
+    await waitFor(() => expect((screen.getByTestId('loanmatch-pick-oldpay2') as HTMLInputElement).checked).toBe(true));
+    // the deliberate opt-in rides the row's ONE trailing control (#286)
+    fireEvent.click(screen.getByTestId('loanmatch-count-oldpay2'));
+    expect((screen.getByTestId('loanmatch-count-oldpay2') as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(screen.getByTestId('loanmatch-apply'));
+
+    await waitFor(async () => {
+      expect((await db.transactions.get('oldpay2'))?.loanCounted).toBe(1);
+      // counted: the pre-anchor payment lowers the loan (−5000 → −4850)
+      expect((await db.accounts.get(accountId))?.balanceCents).toBe(-485_000);
+    }, { timeout: 5000 });
     db.close();
   }, 20_000);
 

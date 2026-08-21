@@ -10,7 +10,7 @@ import { EventFormSheet } from '@/features/events/EventsScreen';
 import { useRecurringOps, useRecurrings } from '@/application/recurring';
 import { useEvents } from '@/application/events';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import type { TFunc } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -1250,6 +1250,10 @@ function PartDetailBody({
   const [spreadOpen, setSpreadOpen] = useState(false);
   // #228: the PART's one counterparty — its own property row
   const [counterOpen, setCounterOpen] = useState(false);
+  // #255 r3 (user): the part's own counter-TRANSACTION mechanism —
+  // point at the existing row, or link and wait
+  const [partMatchOpen, setPartMatchOpen] = useState(false);
+  const { store, repo, spaceId } = useData();
 
   const sign = tx.amountCents < 0 ? -1 : 1;
   const partDirection: 'debit' | 'credit' = tx.amountCents < 0 ? 'debit' : 'credit';
@@ -1269,6 +1273,11 @@ function PartDetailBody({
     const row = allTxs?.find((item) => item.id === id);
     return row ? txTitle(row) : id;
   };
+  // #270 r2 (user): the linked rows say WHEN, here too
+  const rowDayOf = (id: string) => {
+    const row = allTxs?.find((item) => item.id === id);
+    return row ? new Date(row.date).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+  };
 
   /** per-part write-through — r7 (user rule): NO restriction on a split
    *  beyond the amounts, every patch lands. #260: a deliberate edit here
@@ -1283,17 +1292,25 @@ function PartDetailBody({
   // account's kind (the bijection's re-pick rule), remove resets it.
   // Settled `reimbursed` bookkeeping always survives a category rewrite.
   const partCounter = accounts?.find((a) => a.id === part.linkedAccountId);
+  const partPeerRow = part.transferPeerId ? allTxs?.find((row) => row.id === part.transferPeerId) : undefined;
   const partRealCats = (part.cats ?? []).filter((c) => c.catId !== REIMBURSED_ID);
   const partSettledCats = (part.cats ?? []).filter((c) => c.catId === REIMBURSED_ID);
-  const applyPartCounter = (picked: { id: string; type: AccountRow['type'] }): void => {
-    const derived = movementCatFor(picked.type, sign * Math.abs(part.amountCents));
+  const partSigned = sign * Math.abs(part.amountCents);
+  // #255 r3: the reciprocal pairing a part-level pick leaves behind —
+  // the same shape review's part picks use
+  const pairPartPick = (pickedTxId: string): void => {
+    void pairWithExistingRow(store, repo, spaceId, { id: tx.id, accountId: tx.accountId, amountCents: partSigned }, pickedTxId, allTxs);
+  };
+  const applyPartCounter = (picked: { id: string; type: AccountRow['type'] }, peer?: { txId: string }): void => {
+    const derived = movementCatFor(picked.type, partSigned);
     patchPart({
       catId: derived,
       txType: specialCatType(derived),
       linkedAccountId: picked.id,
-      transferPeerId: undefined,
+      transferPeerId: peer?.txId,
       cats: catsAroundSingle(part, derived),
     });
+    if (peer) pairPartPick(peer.txId);
   };
   const removePartCounter = (): void =>
     patchPart({
@@ -1343,6 +1360,28 @@ function PartDetailBody({
           <span className="text-xs text-ink-4">{t('tx.counterAccount')}</span>
           {!ownStamp && <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />}
         </button>
+        {/* #255 r3 (user): the part's Counter-transaction row — the
+            picked leg's face, or the honest waiting state; tapping opens
+            the match sheet (pick existing / link and wait) */}
+        {partCounter && !ownStamp && (
+          <>
+            <div className="mx-4 h-px bg-line-2" />
+            <button
+              data-testid="tx-part-countertx-row"
+              onClick={() => setPartMatchOpen(true)}
+              className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[15px] text-ink"
+            >
+              <Icon name="swap-horizontal" size={20} color="var(--m-ink-3)" />
+              <span className={`min-w-0 flex-1 truncate ${partPeerRow ? '' : 'text-ink-4'}`}>
+                {partPeerRow
+                  ? `${txTitle(partPeerRow)} · ${fmtCents(partPeerRow.amountCents, partPeerRow.currency, lang, { sign: true })}`
+                  : t('tx.awaitingCounterpart')}
+              </span>
+              <span className="text-xs text-ink-4">{t('tx.counterTxRow')}</span>
+              <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+            </button>
+          </>
+        )}
       </div>
 
       {/* the category card IS the door to the whole-transaction category
@@ -1456,7 +1495,10 @@ function PartDetailBody({
             className="m-tap flex w-full items-center gap-3 border-x-0 border-t-0 border-b border-line-2 bg-transparent px-4 py-2.5 text-left text-[13px] last:border-0"
           >
             <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate text-ink">{rowTitleOf(linkRow.txId)}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-ink">{rowTitleOf(linkRow.txId)}</span>
+              <span className="block text-[11px] text-ink-4">{rowDayOf(linkRow.txId)}</span>
+            </span>
             <span className="m-num text-ink-2">{fmtCents(linkRow.amountCents, tx.currency, lang)}</span>
           </button>
         ))}
@@ -1469,7 +1511,10 @@ function PartDetailBody({
             className="m-tap flex w-full items-center gap-3 border-x-0 border-t-0 border-b border-line-2 bg-transparent px-4 py-2.5 text-left text-[13px] last:border-0"
           >
             <Icon name="cash-refund" size={16} color="var(--m-ink-3)" />
-            <span className="min-w-0 flex-1 truncate text-ink">{rowTitleOf(given.rowId)}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-ink">{rowTitleOf(given.rowId)}</span>
+              <span className="block text-[11px] text-ink-4">{rowDayOf(given.rowId)}</span>
+            </span>
             <span className="m-num text-ink-2">{fmtCents(-given.amountCents, tx.currency, lang, { sign: true })}</span>
           </button>
         ))}
@@ -1516,9 +1561,26 @@ function PartDetailBody({
         currentLinkedId={part.linkedAccountId}
         defaultFamily={specialCatType(part.catId) ? (defaultFamilyFor(part.catId) ?? undefined) : undefined}
         counterTypes={specialCatType(part.catId) ? counterTypesFor(part.catId) : undefined}
-        onChoose={(picked) => applyPartCounter(picked)}
+        anchor={{ id: tx.id, amountCents: partSigned, date: tx.date }}
+        onChoose={(picked, peer) => applyPartCounter(picked, peer)}
         onDetach={part.linkedAccountId ? removePartCounter : undefined}
       />
+      {/* #255 r3: the part's own match sheet — pick the existing row or
+          keep waiting for the bank */}
+      {partCounter && (
+        <CounterMatchSheet
+          open={partMatchOpen}
+          onOpenChange={setPartMatchOpen}
+          target={{ id: partCounter.id, name: partCounter.name }}
+          anchor={{ id: tx.id, amountCents: partSigned, date: tx.date }}
+          rows={allTxs ?? []}
+          onWait={part.transferPeerId ? () => patchPart({ transferPeerId: undefined }) : undefined}
+          onPick={(pickedTxId) => {
+            patchPart({ transferPeerId: pickedTxId });
+            pairPartPick(pickedTxId);
+          }}
+        />
+      )}
       {/* the part's categories (r6/r7) — the whole-transaction editor,
           scoped to the part's amount. #228: a lone ◆ pick asks the
           part's counterparty inside the editor; spreads offer regular
@@ -2635,7 +2697,9 @@ export function TxDetailScreen() { // NOSONAR(S3776)
         splitOpen={splitOpen}
         setSplitOpen={setSplitOpen}
         editorValue={editorValue}
-        allowedCatIds={recurringAllowedCats}
+        // #289 (user): parts are independent — the whole-row recurring
+        // constraint must not narrow them (the split resets the link)
+        allowedCatIds={undefined}
         unsplitTo={unsplitTo}
         unsplitFallbackCat={unsplitFallbackCat}
         splitStage={splitStage}

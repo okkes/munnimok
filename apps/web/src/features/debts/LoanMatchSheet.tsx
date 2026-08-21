@@ -7,9 +7,7 @@ import type { SpaceTx } from '@/application/transactions';
 import { countsTowardLoan } from '@/application/loanBalance';
 import { REIMBURSED_ID, autoSubFor } from '@/domain/categories';
 import { normalizeIban } from '@/domain/feedIds';
-import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { Button } from '@/ui/Button';
-import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
 
@@ -52,7 +50,6 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
   const { t } = useLang();
   const { store } = useData();
   const transform = useTxTransform();
-  const { fmt } = useDisplayMoney();
   const txs = useSpaceHistoryTransactions();
   const spaceAccounts = useSpaceAccounts();
   const account = useQuery(store, async () => (accountId ? store.get('account', accountId) : undefined), [accountId]);
@@ -148,10 +145,17 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
           {t('debts.matchEmpty')}
         </p>
       )}
+      {/* #286 (user): the pre-anchor story told ONCE above the list —
+          the per-row warning text + floating amount badge read messy */}
+      {candidates.some((c) => c.preAnchor) && (
+        <p className="pb-2 text-[11px] leading-snug text-ink-4" data-testid="loanmatch-old-caption">
+          {t('debts.matchOldCaption')}
+        </p>
+      )}
       <div className="flex flex-col" data-testid="loanmatch-list">
         {candidates.map(({ tx, preAnchor }) => (
-          <div key={tx.id} className="border-b border-line-2 py-1 last:border-0">
-            <label className="flex items-center gap-2">
+          <div key={tx.id} className="flex items-center gap-2 border-b border-line-2 py-1 last:border-0">
+            <label className="flex min-w-0 flex-1 items-center gap-2">
               <input
                 data-testid={`loanmatch-pick-${tx.id}`}
                 type="checkbox"
@@ -163,17 +167,19 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
                 <TxRow tx={tx} showDate />
               </span>
             </label>
+            {/* #286: ONE clear trailing control, standard row anatomy —
+                left the payment's face, right the counts-toward switch */}
             {preAnchor && picked.has(tx.id) && (
-              <div className="flex items-center gap-2 pb-1.5 pl-7">
-                <span className="text-[11px] text-warning">{t('debts.matchOld')}</span>
-                <Chip
-                  testId={`loanmatch-count-${tx.id}`}
-                  selected={counted.has(tx.id)}
-                  onClick={() => setCounted((prev) => toggle(prev, tx.id))}
-                >
-                  {t('debts.matchCount', { amount: fmt(Math.abs(tx.amountCents), tx.currency) })}
-                </Chip>
-              </div>
+              <label className="flex shrink-0 flex-col items-center gap-1 pr-1 text-[10px] font-medium text-ink-4">
+                <input
+                  data-testid={`loanmatch-count-${tx.id}`}
+                  type="checkbox"
+                  checked={counted.has(tx.id)}
+                  onChange={() => setCounted((prev) => toggle(prev, tx.id))}
+                  className="h-5 w-5 accent-[var(--m-accent)]"
+                />
+                {t('debts.matchCounts')}
+              </label>
             )}
           </div>
         ))}

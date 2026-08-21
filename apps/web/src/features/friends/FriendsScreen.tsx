@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSession } from '@/app/session';
 import { useData } from '@/app/data';
 import { useLang } from '@/i18n';
+import { stampJoinedSharedSpace } from '@/application/spaces';
 import { apiFetch } from '@/lib/api';
+import { postFriendRequest } from './sendFriendRequest';
 import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -95,13 +97,15 @@ export function FriendsScreen() {
   // friends are server-mediated: demo/offline identities must stay fully
   // local, so the screen shows a sign-in note and makes zero network calls
   const isUser = useSession((s) => s.identity?.kind === 'user');
-  const { engine } = useData();
+  const { store, repo, engine } = useData();
   const [me, setMe] = useState<{ userId: string } | null>(null);
   const [data, setData] = useState<FriendsResponse | null>(null);
   const [addId, setAddId] = useState('');
   const [copied, setCopied] = useState(false);
   // #195: Add stays enabled — an empty click says why instead
   const [attempted, setAttempted] = useState(false);
+  // #291: the id pointed at nobody — a field-level error, not a log line
+  const [notFound, setNotFound] = useState(false);
   // #165: tapping a friend opens their profile sheet
   const [profile, setProfile] = useState<FriendDto | null>(null);
   // removing a friend is destructive enough for a second look
@@ -137,17 +141,34 @@ export function FriendsScreen() {
       return;
     }
     setAttempted(false);
-    await apiFetch('/friends/requests', { method: 'POST', body: JSON.stringify({ toUserId: id }) });
-    setAddId('');
+    // #291: 404 = "no such user" — the field says so and keeps the typed
+    // id for fixing; the input only clears when the request really went
+    const outcome = await postFriendRequest({ toUserId: id });
+    setNotFound(outcome === 'notFound');
+    if (outcome === 'sent') setAddId('');
     await reload();
   };
   const accept = async (id: string) => {
     // #169: a space-carrying request makes us a MEMBER on accept — pull
     // the new space right away instead of waiting for the next cycle
-    const joinsSpace = !!data?.receivedPending.find((r) => r.id === id)?.spaceName;
+    const request = data?.receivedPending.find((r) => r.id === id);
+    // #277 r2: the accept answer names no space id — snapshot what we
+    // already know, so whatever the sync delivers NEW gets stamped shared
+    // (the sender owns the space, so their name backfills the creator line)
+    const known = request?.spaceName ? new Set((await store.allRows('space')).map((s) => s.id)) : null;
     await apiFetch(`/friends/requests/${id}/accept`, { method: 'POST' });
     await reload();
-    if (joinsSpace) void engine?.syncAll().catch(() => undefined);
+    if (known && request?.spaceName) {
+      await stampJoinedSharedSpace(
+        store,
+        repo,
+        async () => {
+          await engine?.syncAll().catch(() => undefined);
+        },
+        { except: known, name: request.spaceName },
+        request.fromName ?? null,
+      );
+    }
   };
   const removeFriend = async (userId: string) => {
     await apiFetch(`/friends/${userId}`, { method: 'DELETE' });
@@ -190,15 +211,20 @@ export function FriendsScreen() {
         {/* add by id */}
         <div className="m-cap mt-5 mb-1 px-1">{t('friends.addById')}</div>
         <FormBlockerNote show={attempted && !addId.trim()} text={t('form.needId')} testId="friends-add-blocker" className="mb-1 px-1" />
+        {/* #291: the 404 answer lands AT the field, #195 style */}
+        <FormBlockerNote show={notFound} text={t('friends.userNotFound')} testId="friends-add-notfound" className="mb-1 px-1" />
         <div className="flex gap-2">
           <input
             ref={addRef}
             data-testid="friends-add-input"
             value={addId}
-            onChange={(e) => setAddId(e.target.value)}
+            onChange={(e) => {
+              setAddId(e.target.value);
+              setNotFound(false);
+            }}
             placeholder={t('friends.idPlaceholder')}
-            aria-invalid={attempted && !addId.trim()}
-            className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !addId.trim())}`}
+            aria-invalid={(attempted && !addId.trim()) || notFound}
+            className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4${blockerRing((attempted && !addId.trim()) || notFound)}`}
           />
           <Button size="sm" className="h-11" data-testid="friends-add-send" onClick={() => void sendRequest()}>
             {t('action.add')}

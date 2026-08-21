@@ -67,6 +67,13 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
     const links = allLinks.filter((l) => l.deleted === 0);
     const spaceNames = new Map(spaces.map((s) => [s.id, s.name]));
     const memberSpaceIds = new Set(spaces.map((s) => s.id));
+    // #295 (user ss): debris of a DELETED space renders nowhere — after a
+    // delete-account → re-signup cycle the old spaces were tombstoned but
+    // their manual/default account rows stayed live, and "no live space
+    // row" made them read as FEED accounts wearing a false "not attached"
+    // badge in the global list. Real feed accounts are unaffected: a feed
+    // never has a local 'space' row at all, live or tombstoned.
+    const tombstonedSpaceIds = new Set(allSpaces.filter((s) => s.deleted !== 0).map((s) => s.id));
 
     const viaByAccount = new Map<string, SharedVia[]>();
     for (const link of links) {
@@ -87,6 +94,7 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
     const scopedBySpace = new Map<string, GlobalAccount[]>();
     const sharedWithMe: GlobalAccount[] = [];
     for (const account of accounts) {
+      if (tombstonedSpaceIds.has(account.spaceId)) continue; // #295: dead space's debris
       const isFeedAccount = !memberSpaceIds.has(account.spaceId);
       const entry: GlobalAccount = {
         account,

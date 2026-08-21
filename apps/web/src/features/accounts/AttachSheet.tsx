@@ -328,14 +328,6 @@ export function AttachSheet({
           </div>
         </>
       )}
-      <DangerConfirmSheet
-        open={rollbackBatch !== null}
-        onOpenChange={(o) => !o && setRollbackBatch(null)}
-        title={t('imports.rollback')}
-        body={t('imports.rollbackBody', { n: rollbackBatch?.count ?? 0, from: rollbackBatch?.from ?? '', to: rollbackBatch?.to ?? '' })}
-        onConfirm={() => void rollback()}
-        testId="attach-rollback"
-      />
       {/* danger zone: deletion exists for connected accounts too (user
           request) — syncing identities only, the server owns the cascade */}
       {canEdit && engine && (
@@ -351,30 +343,6 @@ export function AttachSheet({
           {t('acct.deleteAccount')}
         </Button>
       )}
-      {/* aligned destructive confirm: sheet + cooldown, same as space side */}
-      <DangerConfirmSheet
-        open={detachSpaceId !== null}
-        onOpenChange={(o) => !o && setDetachSpaceId(null)}
-        title={t('acct.detachConfirmTitle')}
-        body={t('acct.detachConfirmBodySpace', {
-          account: account.name,
-          space: (spaces ?? []).find((s) => s.id === detachSpaceId)?.name ?? '',
-        })}
-        busy={busy !== null}
-        onConfirm={() => void detach()}
-        testId="attach-detach"
-      />
-      <DangerConfirmSheet
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={t('acct.deleteConfirmTitle')}
-        body={t('acct.deleteConfirmBody')}
-        busy={deleteBusy}
-        busyText={deleteStage === 'local' ? t('acct.deleteStageLocal') : t('acct.deleteStageServer')}
-        error={deleteFailed ? t('acct.deleteFailed') : null}
-        onConfirm={() => void deleteAccount()}
-        testId="attach-delete"
-      />
     </Sheet>
     {/* #241 (user ss): SIBLINGS, not children — a sheet nested inside
         another sheet's children portals FIRST and paints BELOW its
@@ -412,6 +380,41 @@ export function AttachSheet({
         </Button>
       </div>
     </Sheet>
+    {/* #288 (user ss): the destructive confirms are SIBLINGS too — nested
+        in the sheet's children they portaled FIRST and the delete popup
+        painted BEHIND the sheet (same #241 body-order rule as above) */}
+    <DangerConfirmSheet
+      open={rollbackBatch !== null}
+      onOpenChange={(o) => !o && setRollbackBatch(null)}
+      title={t('imports.rollback')}
+      body={t('imports.rollbackBody', { n: rollbackBatch?.count ?? 0, from: rollbackBatch?.from ?? '', to: rollbackBatch?.to ?? '' })}
+      onConfirm={() => void rollback()}
+      testId="attach-rollback"
+    />
+    {/* aligned destructive confirm: sheet + cooldown, same as space side */}
+    <DangerConfirmSheet
+      open={detachSpaceId !== null}
+      onOpenChange={(o) => !o && setDetachSpaceId(null)}
+      title={t('acct.detachConfirmTitle')}
+      body={t('acct.detachConfirmBodySpace', {
+        account: account.name,
+        space: (spaces ?? []).find((s) => s.id === detachSpaceId)?.name ?? '',
+      })}
+      busy={busy !== null}
+      onConfirm={() => void detach()}
+      testId="attach-detach"
+    />
+    <DangerConfirmSheet
+      open={deleteOpen}
+      onOpenChange={setDeleteOpen}
+      title={t('acct.deleteConfirmTitle')}
+      body={t('acct.deleteConfirmBody')}
+      busy={deleteBusy}
+      busyText={deleteStage === 'local' ? t('acct.deleteStageLocal') : t('acct.deleteStageServer')}
+      error={deleteFailed ? t('acct.deleteFailed') : null}
+      onConfirm={() => void deleteAccount()}
+      testId="attach-delete"
+    />
     </>
   );
 }

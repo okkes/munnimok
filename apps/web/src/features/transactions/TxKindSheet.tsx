@@ -393,7 +393,11 @@ export function CounterMatchSheet({
     const needle = query.trim().toLowerCase();
     if (!needle) return true;
     if (txTitle(row).toLowerCase().includes(needle)) return true;
-    return (Math.abs(row.amountCents) / 100).toFixed(2).includes(needle.replace(',', '.'));
+    // #267 r2 (user): a leading +/- constrains the direction here too
+    const sign = needle.startsWith('+') ? 1 : needle.startsWith('-') ? -1 : 0;
+    if (sign !== 0 && Math.sign(row.amountCents) !== sign) return false;
+    const bare = sign === 0 ? needle : needle.slice(1).trim();
+    return (Math.abs(row.amountCents) / 100).toFixed(2).includes(bare.replace(',', '.'));
   };
   const suggested = allSuggested.filter(matches);
   const rest = allRest.filter(matches);

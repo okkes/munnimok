@@ -2111,7 +2111,9 @@ export function ReviewScreen() {
                 rowType={draft.txType}
                 tx={tx}
                 activeEvents={activeEvents}
-                allowedCatIds={recurringAllowedCats}
+                // #289 (user): parts pick freely — a split confirm never
+                // carries the recurring link anyway (container-only)
+                allowedCatIds={undefined}
                 lockedKind={!!ownStamp}
                 recurrings={activeRecs}
                 attention={partsAttention}

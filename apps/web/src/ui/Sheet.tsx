@@ -371,12 +371,21 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
         style={{ opacity: hidden ? 0 : 1, transition: `opacity ${PANEL_MS}ms ease-out` }}
       />
       {/* a real <dialog> (a11y): UA border/padding/color neutralized */}
+      {/* #290 (user): clicking a field at mid sizes scrolled the dialog
+          "way up" — AppLayout's keyboard reveal CENTERS any focused
+          editable in its nearest scroller, a scripted scrollTo no CSS
+          scroll-padding can temper, and with no on-screen keyboard the
+          centering is a pure yank (big screens hid it: #276 auto-height
+          leaves nothing to scroll). AppLayout already stands down inside
+          `.react-modal-sheet-container` wherever SHEET_OWNS_KEYBOARD, so
+          the dialog wears the same class; where a keyboard really exists
+          (iPad / Android tablets at lg) the reveal keeps working. */}
       <dialog
         open
         aria-modal="true"
         data-sheet-body=""
         ref={(el) => registerCoveredEl(id, el)}
-        className="relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none"
+        className="react-modal-sheet-container relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none"
         style={{
           // #276: the dialog grows with its content — the phone's fixed
           // heights left half-empty dialogs and clipped tall content on
@@ -402,7 +411,11 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
         {/* flex-auto, not flex-1: with no `size` this dialog is
             auto-height, where basis 0% collapses in WebKit (Safari on
             macOS/iPad) exactly like the mobile sheet did on iOS */}
-        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
+        {/* #290: with the app-level reveal standing down, the BROWSER's
+            native focus scroll is what shows a hidden field — it scrolls
+            minimally; scroll-padding gives the revealed field a little
+            air instead of landing flush against the clipped edge */}
+        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pt-2 pb-5 [scroll-padding-block:16px]">{children}</div>
         {footer && <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-5">{footer}</div>}
       </dialog>
     </div>,

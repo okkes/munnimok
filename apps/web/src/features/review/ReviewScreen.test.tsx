@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
@@ -1113,7 +1114,7 @@ describe('ReviewScreen (user identity, split settlements)', () => {
     const ANNA = '22222222-2222-2222-2222-222222222222';
     renderAppAsUser('/review', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits': () => [
           { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', memberCount: 2, entryCount: 1 },
         ],
@@ -1174,7 +1175,7 @@ describe('ReviewScreen (own-account transfers)', () => {
     db.close();
 
     renderAppAsUser('/review', {
-      api: { 'GET /health': () => ({ status: 'ok', capabilities: {} }) },
+      api: { 'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }) },
     });
 
     // #219: no chip; #228 feedback: the card's Counterparty row tells
@@ -1214,7 +1215,7 @@ describe('ReviewScreen (own-account transfers)', () => {
     db.close();
 
     renderAppAsUser('/review', {
-      api: { 'GET /health': () => ({ status: 'ok', capabilities: {} }) },
+      api: { 'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }) },
     });
 
     // the auto-link pre-applied; the card's Counterparty row shows it

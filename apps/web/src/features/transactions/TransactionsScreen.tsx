@@ -91,7 +91,9 @@ function TxPartGroupRows({
   const headCat = cats.byId(tx.catId);
   const headColor = headCat.color ?? cats.byId(headCat.parentId ?? '').color ?? 'var(--m-ink-3)';
   return (
-    <div className="py-0.5" data-testid={`tx-parts-${tx.id}`}>
+    // pt only: the full-bleed inset must MEET the group's closing
+    // hairline, not float 2px above it (#198 r4)
+    <div className="pt-0.5" data-testid={`tx-parts-${tx.id}`}>
       <div className="flex items-center">
         <button
           data-testid={`tx-parts-head-${tx.id}`}
@@ -120,9 +122,12 @@ function TxPartGroupRows({
         </button>
       </div>
       {/* #198 r2 (user): hairlines separate TRANSACTIONS, not the parts
-          of one — the inset alone already groups them */}
+          of one — the inset alone already groups them. r4: the inset
+          runs FULL-BLEED and square, so the group closes on the same
+          straight hairline every other row gets (the rounded box's
+          curved bottom edge read as a second, different divider) */}
       {!collapsed && (
-        <div className="mb-2 rounded-card bg-bg px-2">
+        <div className="-mx-3 bg-bg px-4 py-0.5">
           {parts.map((part, i) => {
             const partCat = cats.byId(part.catId);
             const partColor = partCat.color ?? cats.byId(partCat.parentId ?? '').color;

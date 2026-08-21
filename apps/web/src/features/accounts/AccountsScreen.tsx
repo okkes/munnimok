@@ -36,26 +36,84 @@ const daysSince = (date?: string | null): number =>
 
 /** #227 r2: matches the m-row-flash animation in styles.css */
 const FLASH_MS = 1600;
-const flashTimers = new WeakMap<HTMLElement, number>();
+/** #227 r3: settle-watch cadence — the rect holding still for two
+ *  consecutive checks reads as "the scroll stopped" */
+const SETTLE_POLL_MS = 100;
+const SETTLE_QUIET_CHECKS = 2;
+/** …and a hard cap so a tap that needs no scroll still pulses promptly */
+const SETTLE_MAX_MS = 1500;
+/** whatever is pending per row — a settle watch or a running pulse —
+ *  so a re-tap mid-flight cancels cleanly (WeakMap: removed rows drop) */
+const flashCleanups = new WeakMap<HTMLElement, () => void>();
+
+/** nearest overflow ancestor that actually scrolls (the screen's list
+ *  column here, but resolved generically — isClippedFromView-style walk) */
+function scrollAncestorOf(el: HTMLElement): HTMLElement | null {
+  for (let node = el.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+  }
+  return null;
+}
+
+/** the pulse itself — reflow first, so a re-tap after settle RESTARTS
+ *  the CSS animation instead of dying on the already-set attribute */
+function startFlashPulse(target: HTMLElement): void {
+  delete target.dataset.flash;
+  void target.offsetWidth;
+  target.dataset.flash = '1';
+  const timer = window.setTimeout(() => {
+    delete target.dataset.flash;
+    flashCleanups.delete(target);
+  }, FLASH_MS);
+  flashCleanups.set(target, () => window.clearTimeout(timer));
+}
+
+/** #227 r3 (user): the pulse waits for the smooth scroll to SETTLE —
+ *  started together, the highlight was nearly gone by the time the row
+ *  arrived. 'scrollend' answers precisely where supported; the
+ *  rect-stability poll covers the rest, including the tap that needs no
+ *  scroll at all (which never fires 'scrollend'). */
+function watchScrollSettle(target: HTMLElement, onSettled: () => void): void {
+  const scroller = scrollAncestorOf(target);
+  let lastTop = target.getBoundingClientRect().top;
+  let quiet = 0;
+  let poll = 0;
+  let cap = 0;
+  function teardown(): void {
+    window.clearInterval(poll);
+    window.clearTimeout(cap);
+    window.removeEventListener('scrollend', settle);
+    scroller?.removeEventListener('scrollend', settle);
+  }
+  function settle(): void {
+    teardown();
+    onSettled();
+  }
+  poll = window.setInterval(() => {
+    const { top } = target.getBoundingClientRect();
+    quiet = top === lastTop ? quiet + 1 : 0;
+    lastTop = top;
+    if (quiet >= SETTLE_QUIET_CHECKS) settle();
+  }, SETTLE_POLL_MS);
+  cap = window.setTimeout(settle, SETTLE_MAX_MS);
+  window.addEventListener('scrollend', settle);
+  scroller?.addEventListener('scrollend', settle);
+  flashCleanups.set(target, teardown);
+}
 
 /** #227 r2: the echo's jump scrolls to the real row AND pulses it —
  *  on a long list the smooth scroll alone left the eye searching */
 function flashJumpTarget(accountId: string): void {
   const target = document.getElementById(`acct-row-${accountId}`);
   if (!target) return;
-  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  const pending = flashTimers.get(target);
-  if (pending !== undefined) window.clearTimeout(pending);
+  // cancel whatever is in flight: a mid-scroll re-tap restarts the
+  // watch, a post-settle one restarts the pulse (reflow in startFlashPulse)
+  flashCleanups.get(target)?.();
+  flashCleanups.delete(target);
   delete target.dataset.flash;
-  // reflow restarts the CSS animation on a re-tap mid-pulse
-  void target.offsetWidth;
-  target.dataset.flash = '1';
-  flashTimers.set(
-    target,
-    window.setTimeout(() => {
-      delete target.dataset.flash;
-    }, FLASH_MS),
-  );
+  target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  watchScrollSettle(target, () => startFlashPulse(target));
 }
 
 function AccountRowButton({
@@ -385,8 +443,18 @@ export function AccountsScreen() {
   // spaces and feeds, plus what others share with me via shared spaces
   const global = useGlobalAccounts(myFeedIds);
   const mine = useMemo(() => (global?.mine ?? []).filter((e) => !e.account.archived), [global]);
+  // #288 (user): a deleted feed can leave a ghost — an attachment echo
+  // from a member space re-asserts the mirror row after /me/feeds has
+  // disowned it, and the row lingered under "Shared with me" answering
+  // no tap and naming no sharer. A shared-with-me row is only real
+  // while its account row is LIVE and someone's attachment still
+  // stands un-archived; anything else is dead weight and drops here.
+  const sharedWithMe = useMemo(
+    () => (global?.sharedWithMe ?? []).filter((e) => e.account.deleted === 0 && e.sharedVia.some((v) => !v.archived)),
+    [global],
+  );
   // #227: bank-fed accounts echo (inert) inside each space they feed
-  const echoPool = useMemo(() => [...mine, ...(global?.sharedWithMe ?? [])], [mine, global]);
+  const echoPool = useMemo(() => [...mine, ...sharedWithMe], [mine, sharedWithMe]);
   // reconcile pairing spans BOTH pools: a manual/imported row inside a
   // space can be the twin of a global bank connection
   const suggestionPool = useMemo(
@@ -488,7 +556,7 @@ export function AccountsScreen() {
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* #248 (user): the green auto-attach offer is gone — each
             unattached account wears its own quiet badge instead */}
-        {global && mine.length === 0 && global.sharedWithMe.length === 0 && global.spaceScoped.length === 0 ? (
+        {global && mine.length === 0 && sharedWithMe.length === 0 && global.spaceScoped.length === 0 ? (
           <EmptyState
             testId="accounts-empty"
             icon="bank-outline"
@@ -531,7 +599,7 @@ export function AccountsScreen() {
                 #212 r2: one plain section — a global account has no
                 type of its own, so no assets/liabilities split here */}
             <AccountSection title={t('acct.globalCap')} list={mine} lang={lang} onOpen={openEntry} />
-            <SharedWithMeSection list={global?.sharedWithMe ?? []} lang={lang} />
+            <SharedWithMeSection list={sharedWithMe} lang={lang} />
             {(global?.spaceScoped ?? []).map((segment) => (
               <SpaceSection
                 key={segment.spaceId}

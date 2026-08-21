@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { creditRemainingCents, givenCents, netAmountCents, remainingCents, totalReimbursedCents } from '@/domain/reimbursement';
@@ -20,6 +20,11 @@ import { Icon } from '@/ui/Icon';
  * what the SPACE sees, so reimbursements can only ever pair
  * transactions of accounts attached to the same space (user rule).
  */
+/** #270 r2 (user): the linked rows say WHEN — "Sat 1 Aug", like the
+ *  list's own day headers */
+const fmtLinkDay = (iso: string, lang: keyof typeof LOCALES): string =>
+  new Date(iso).toLocaleDateString(LOCALES[lang], { weekday: 'short', day: 'numeric', month: 'short' });
+
 export function ReimburseSection({ tx }: { tx: SpaceTx }) {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -73,7 +78,7 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] text-ink">{cleanBankText(expense.merchant)}</span>
                   <span className="block text-[11px] text-ink-4">
-                    {expense.date} · {fmtCents(netAmountCents(expense), expense.currency, lang, { sign: true })}
+                    {fmtLinkDay(expense.date, lang)} · {fmtCents(netAmountCents(expense), expense.currency, lang, { sign: true })}
                   </span>
                 </span>
                 <span className="m-num text-[14px] font-semibold text-ink">
@@ -140,7 +145,7 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] text-ink">{cleanBankText(linked.merchant)}</span>
                   <span className="block text-[11px] text-ink-4">
-                    {linked.date} · {fmtCents(netAmountCents(linked), linked.currency, lang, { sign: true })}
+                    {fmtLinkDay(linked.date, lang)} · {fmtCents(netAmountCents(linked), linked.currency, lang, { sign: true })}
                   </span>
                 </span>
                 <span className="m-num text-[14px] font-semibold text-accent-deep">

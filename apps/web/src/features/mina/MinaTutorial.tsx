@@ -125,6 +125,43 @@ function GateShade({ rect, blockHole }: Readonly<{ rect: DOMRect | null; blockHo
   );
 }
 
+/** #136 r3 (exported for tests): two consecutive frames agree — the
+ *  anchor has stopped moving. The clip-aware reveal is a ONE-SHOT per
+ *  step, and at sub-lg sizes it used to fire while the bottom sheet was
+ *  still sliding in: the scroller's on-screen band was empty, the
+ *  scroll no-oped, the shot was spent — and the anchored row (the
+ *  switcher's "Manage spaces") stayed buried below the sheet's fold
+ *  with the glow painting a sliver at the screen edge (user ss). */
+export const rectSettled = (prev: DOMRect | null, next: DOMRect): boolean =>
+  !!prev &&
+  Math.abs(prev.top - next.top) < 1 &&
+  Math.abs(prev.left - next.left) < 1 &&
+  Math.abs(prev.width - next.width) < 1 &&
+  Math.abs(prev.height - next.height) < 1;
+
+/** #136 r3 (exported for tests): window-band pads for the clip check.
+ *  The defaults (70/96) reserve room for the app bar and tab bar — but
+ *  a sheet floats ABOVE that chrome, so its bottom rows legitimately
+ *  live inside those bands; the chrome-sized pads called them "hidden"
+ *  forever (which also stood the act-step soft glow down exactly when
+ *  a sheet-bottom save button came into reach). */
+export const clipPads = (el: HTMLElement): readonly [number, number] =>
+  el.closest('[data-sheet-body]') ? [12, 12] : [70, 96];
+
+/** #136 r3: the one-shot reveal, gated on SETTLED geometry — judged
+ *  only once the anchor's rect held still for a frame, so it can never
+ *  spend itself against a sheet mid slide-in. */
+function revealOnceSettled(el: HTMLElement, next: DOMRect, prev: DOMRect | null, stepIndex: number, revealedRef: { current: number }): void {
+  if (revealedRef.current === stepIndex || !rectSettled(prev, next)) return;
+  const [topPad, bottomPad] = clipPads(el);
+  if (isClippedFromView(el, topPad, bottomPad)) {
+    revealedRef.current = stepIndex;
+    revealInScroller(el);
+  } else if (next.width > 0) {
+    revealedRef.current = stepIndex; // visible — settled, no scroll
+  }
+}
+
 /** the bubble takes whichever half the target does NOT occupy; with no
  *  target it dodges open sheets (they rise from the bottom — user ss:
  *  the bubble kept sitting exactly on the form it talked about) */
@@ -397,26 +434,24 @@ export function MinaTutorial() {
   const anchorKey = step?.anchor?.join(',') ?? '';
   const labelKey = step?.labelFrom?.join(',') ?? '';
   const revealedStepRef = useRef(-1);
+  // #136 r3: the anchor's rect from the PREVIOUS tick — the reveal only
+  // judges once two frames agree (a sheet mid slide-in never settles)
+  const probeRef = useRef<DOMRect | null>(null);
   useEffect(() => {
     if (!run?.active) return;
+    probeRef.current = null; // new step/anchor: re-settle before judging
     let raf = 0;
     const tick = () => {
       const el = resolveAnchor(step?.anchor);
+      const next = el?.getBoundingClientRect() ?? null;
       // a target hiding behind the tab bar (or above the fold) scrolls
       // itself into the visible band, once per step (user ss: the
       // Financial Accounts row sat under the navigation). #136 r2: the
       // check is CLIP-aware — a row scrolled out of a sheet's inner
-      // list has window-plausible coordinates while invisible, and the
-      // glow painted over the wrong spot in long lists.
-      if (el && run && revealedStepRef.current !== run.step) {
-        if (isClippedFromView(el)) {
-          revealedStepRef.current = run.step;
-          revealInScroller(el);
-        } else if (el.getBoundingClientRect().width > 0) {
-          revealedStepRef.current = run.step; // visible — settled, no scroll
-        }
-      }
-      const next = el?.getBoundingClientRect() ?? null;
+      // list has window-plausible coordinates while invisible. #136 r3:
+      // judged on SETTLED geometry only, with sheet-aware pads.
+      if (el && next && run) revealOnceSettled(el, next, probeRef.current, run.step, revealedStepRef);
+      probeRef.current = next;
       setRect((prev) => {
         if (!prev && !next) return prev;
         if (prev && next && Math.abs(prev.top - next.top) < 1 && Math.abs(prev.left - next.left) < 1 && Math.abs(prev.width - next.width) < 1) return prev;
@@ -430,7 +465,9 @@ export function MinaTutorial() {
       // stands down unless the anchor is on the TOP layer.
       const softEl = step?.act && !step.anchor ? resolveAnchor(step.labelFrom) : null;
       // #136 r2: a clipped soft target stands down too — same rule
-      const softNext = softEl && elementOnTopLayer(softEl) && !isClippedFromView(softEl) ? softEl.getBoundingClientRect() : null;
+      // (r3: sheet-aware pads — a save button at a sheet's bottom is
+      // NOT hidden behind the tab bar, the sheet floats above it)
+      const softNext = softEl && elementOnTopLayer(softEl) && !isClippedFromView(softEl, ...clipPads(softEl)) ? softEl.getBoundingClientRect() : null;
       setSoftRect((prev) => {
         if (!prev && !softNext) return prev;
         if (prev && softNext && Math.abs(prev.top - softNext.top) < 1 && Math.abs(prev.left - softNext.left) < 1 && Math.abs(prev.width - softNext.width) < 1) return prev;

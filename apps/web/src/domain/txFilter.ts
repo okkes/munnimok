@@ -22,11 +22,14 @@ export interface TxFilter {
  *  v2: "Sarah's loan" finds the payment it names) — or, for numeric
  *  queries ('10', '10,99'), a digit-substring hit on the amount: '10'
  *  finds 10,99 and 210,15 alike (user request) */
-function matchesQuery(tx: TransactionRow, q: string, amountQ: string | null): boolean {
+function matchesQuery(tx: TransactionRow, q: string, amountQ: string | null, signQ: -1 | 0 | 1): boolean {
   const labels = (tx.splits ?? []).map((s) => s.label ?? '').join(' ');
   const haystack = `${tx.titleOverride ?? ''} ${cleanBankText(tx.merchant)} ${cleanBankText(tx.description)} ${labels}`.toLowerCase();
   if (haystack.includes(q)) return true;
-  return !!amountQ && String(Math.abs(tx.amountCents)).includes(amountQ);
+  if (!amountQ || !String(Math.abs(tx.amountCents)).includes(amountQ)) return false;
+  // #267 r2 (user): a leading +/- constrains the money's direction —
+  // "+13,91" finds only the incoming 13,91s
+  return signQ === 0 || Math.sign(tx.amountCents) === signQ;
 }
 
 /** a row answers a category/type filter through its PARTS (typed-splits
@@ -42,7 +45,8 @@ const isUncategorized = (tx: TransactionRow): boolean =>
 
 export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionRow[] {
   const q = filter.query?.trim().toLowerCase();
-  const digits = q?.replaceAll(/[\s.,€-]/g, '') ?? '';
+  const signQ = q?.startsWith('+') ? 1 : q?.startsWith('-') ? -1 : 0;
+  const digits = q?.replaceAll(/[\s.,€+-]/g, '') ?? '';
   const amountQ = /^\d+$/.test(digits) ? digits : null;
   return txs.filter((tx) => {
     if (filter.accountIds?.size && !filter.accountIds.has(tx.accountId)) return false;
@@ -52,7 +56,7 @@ export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionR
     if (filter.txTypes?.size && !anySlice(tx, (v) => filter.txTypes!.has(v.effType))) return false;
     if (filter.from && tx.date < filter.from) return false;
     if (filter.to && tx.date > filter.to) return false;
-    return !q || matchesQuery(tx, q, amountQ);
+    return !q || matchesQuery(tx, q, amountQ, signQ as -1 | 0 | 1);
   });
 }
 

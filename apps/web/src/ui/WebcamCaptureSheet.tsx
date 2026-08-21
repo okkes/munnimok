@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { isNativeApp } from '@/lib/platform';
 import { useLang } from '@/i18n';
-import { useLgViewport } from '@/lib/viewport';
 import { Button } from './Button';
 import { Icon } from './Icon';
 import { Sheet } from './Sheet';
@@ -9,8 +9,10 @@ import { Sheet } from './Sheet';
  *  viewports (phones/native have the camera path already) whose browser
  *  actually exposes a mediaDevices camera API */
 export function useWebcamDoor(): boolean {
-  const panes = useLgViewport();
-  return panes && typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
+  // #160 r3 (user): capability decides, not viewport size — a small
+  // desktop window still has its webcam. Native shells keep their own
+  // photo chooser instead.
+  return !isNativeApp() && typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia;
 }
 
 interface WebcamCaptureSheetProps {

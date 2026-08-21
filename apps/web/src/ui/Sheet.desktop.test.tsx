@@ -62,6 +62,30 @@ describe('desktop dialog sizing (#276)', () => {
     }
   });
 
+  it('#290: the dialog opts out of the app-level focus reveal; native reveals get air', () => {
+    localStorage.setItem('munni_lang', 'en');
+    const restore = stubDesktop();
+    try {
+      const dialog = dialogFor(
+        <Sheet open onOpenChange={() => undefined} title="t" size="form">
+          <div />
+        </Sheet>,
+      );
+      // AppLayout's keyboard reveal CENTERS a focused field in the
+      // nearest scroller — with no on-screen keyboard that yanked
+      // mid-size dialogs "way up" on click. The guard in AppLayout
+      // stands down inside this class wherever SHEET_OWNS_KEYBOARD,
+      // so the dialog must wear it.
+      expect(dialog.className).toContain('react-modal-sheet-container');
+      // the browser's own minimal focus scroll stays (hidden fields
+      // still surface) — scroll-padding keeps them off the clip edge
+      const scroller = dialog.querySelector('.overflow-y-auto')!;
+      expect(scroller.className).toContain('[scroll-padding-block:16px]');
+    } finally {
+      restore();
+    }
+  });
+
   it('the content area is the scroller, so a taller-than-ceiling body scrolls inside', () => {
     localStorage.setItem('munni_lang', 'en');
     const restore = stubDesktop();

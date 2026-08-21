@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderAppAsUser, renderWithProviders } from '@/test/harness';
@@ -28,7 +29,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
     const hrefSpy = vi.fn();
     const { fetchMock } = renderAppAsUser('/accounts', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/feeds': () => [],
         'GET /gocardless/institutions': () => [ING, ASN],
         'POST /gocardless/requisitions': (body) => {
@@ -58,7 +59,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
   it('shows the error strip when the institution list cannot load', async () => {
     renderAppAsUser('/accounts', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/feeds': () => [],
         'GET /gocardless/institutions': () => new Response('', { status: 502 }),
       },
@@ -74,7 +75,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
     const hrefSpy = vi.fn();
     renderAppAsUser('/accounts', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/feeds': () => [],
         'GET /gocardless/providers': () => ({
           providers: [
@@ -123,7 +124,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
   it('#175: a single configured provider skips the choice entirely', async () => {
     renderAppAsUser('/accounts', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/feeds': () => [],
         'GET /gocardless/providers': () => ({ providers: [{ id: 'gocardless' }] }),
         'GET /gocardless/institutions': () => [ING],

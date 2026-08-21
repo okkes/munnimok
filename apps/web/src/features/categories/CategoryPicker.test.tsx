@@ -187,22 +187,26 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     fireEvent.click(screen.getByTestId('catpicker-special-filter'));
     await screen.findByTestId('catpicker-groceries');
 
-    // #245: browsing DOWN slips the search away; deliberate upward
-    // travel (one field's worth) brings it back. #273: the wrapper is
-    // the shared gliding collapse now (max-height + opacity together)
+    // #273 r2 (user): the field moves 1:1 WITH the scroll — partial
+    // down-travel hides exactly that much, up-travel reveals it again
     const list = screen.getByTestId('catpicker-list');
     Object.defineProperty(list, 'scrollHeight', { value: 1400, configurable: true });
     Object.defineProperty(list, 'clientHeight', { value: 400, configurable: true });
     const wrapper = screen.getByTestId('catpicker-search-wrap') as HTMLElement;
+    // 30px down = 30px of the field gone, the rest still standing
+    list.scrollTop = 30;
+    fireEvent.scroll(list);
+    await waitFor(() => expect(wrapper.style.height).toBe('170px')); // 200 fallback - 30
+    expect(wrapper.style.pointerEvents).toBe('');
+    // far enough down = fully away (clamped at the field height)
     list.scrollTop = 400;
     fireEvent.scroll(list);
-    await waitFor(() => expect(wrapper.style.pointerEvents).toBe('none'));
-    expect(wrapper.style.maxHeight).toMatch(/^0/);
-    list.scrollTop = 370;
+    await waitFor(() => expect(wrapper.style.height).toBe('110px')); // 200 - 90 cap
+    // the list's own cap grew by exactly the freed height
+    expect((list as HTMLElement).style.maxHeight).toBe('530px');
+    // upward travel brings it back the same 1:1 way
+    list.scrollTop = 340;
     fireEvent.scroll(list);
-    list.scrollTop = 320;
-    fireEvent.scroll(list);
-    await waitFor(() => expect(wrapper.style.pointerEvents).toBe(''));
-    expect(wrapper.style.maxHeight).not.toMatch(/^0(px)?$/);
+    await waitFor(() => expect(wrapper.style.height).toBe('170px')); // 60 revealed
   }, 15_000);
 });

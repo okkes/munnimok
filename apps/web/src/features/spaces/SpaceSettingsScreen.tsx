@@ -16,7 +16,9 @@ import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { SearchField } from '@/ui/SearchField';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
+import { MDI_NAMES } from '@/generated/mdiNames';
 
 import { SPACE_COLORS, SPACE_ICONS } from './spaceDefaults';
 
@@ -43,6 +45,9 @@ export function SpaceSettingsScreen() {
 
   const [name, setName] = useState('');
   const [icon, setIcon] = useState(SPACE_ICONS[0]);
+  // #285 (user): the curated set opens into the whole self-hosted font
+  // through a search — the same door the category form has
+  const [iconQuery, setIconQuery] = useState('');
   const [color, setColor] = useState(SPACE_COLORS[0]);
   const [picture, setPicture] = useState('');
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -68,6 +73,7 @@ export function SpaceSettingsScreen() {
     setLoadedFor(space.id);
     setName(space.name);
     setIcon(space.icon ?? SPACE_ICONS[0]);
+    setIconQuery('');
     setColor(space.color ?? SPACE_COLORS[0]);
     setPicture(space.picture ?? '');
   }
@@ -251,23 +257,45 @@ export function SpaceSettingsScreen() {
                   <Icon name="camera-outline" size={17} />
                 </button>
               )}
-              {SPACE_ICONS.map((name_) => (
+            </div>
+            {/* #285 (user): search opens the WHOLE self-hosted font (the
+                categories pattern), and every glyph below renders in the
+                picked color so a swatch tap previews its real impact */}
+            <SearchField
+              testId="space-icon-search"
+              value={iconQuery}
+              onChange={setIconQuery}
+              placeholder={t('space.iconSearch')}
+              height="h-10"
+              textSize="text-[13px]"
+            />
+            <div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto">
+              {(iconQuery.trim()
+                ? MDI_NAMES.filter((n) => n.includes(iconQuery.trim().toLowerCase())).slice(0, 60)
+                : SPACE_ICONS
+              ).map((name_) => (
                 <button
                   key={name_}
                   data-testid={`space-icon-${name_}`}
+                  title={name_}
                   // #146 (user): a picture wins over symbol+color everywhere —
                   // while one is set, picking them would change nothing visible
                   disabled={readOnly || picture !== ''}
                   onClick={() => setIcon(name_)}
                   // #146 r2: with a picture set nothing is "selected" —
                   // the stale accent ring on the old symbol read as active
-                  className={`m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
-                    icon === name_ && picture === '' ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
+                  className={`m-tap flex h-10 items-center justify-center rounded-xl border ${
+                    icon === name_ && picture === '' ? 'border-accent bg-accent-soft' : 'border-line bg-surface'
                   }`}
                 >
-                  <Icon name={name_} size={19} />
+                  <Icon name={name_} size={19} color={color} />
                 </button>
               ))}
+              {iconQuery.trim() && MDI_NAMES.every((n) => !n.includes(iconQuery.trim().toLowerCase())) && (
+                <p className="col-span-6 py-2 text-center text-[12px] text-ink-4" data-testid="space-icon-none">
+                  {t('space.iconNone')}
+                </p>
+              )}
             </div>
             {/* #146: say WHY the pickers sleep, not just gray them out */}
             {picture !== '' && (

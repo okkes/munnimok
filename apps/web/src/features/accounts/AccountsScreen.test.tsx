@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAMT_FIXTURE } from '@/test/camt-fixture';
@@ -150,7 +151,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
       },
@@ -186,7 +187,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         // production /me/spaces includes reachable feeds — without feed-1
         // here the engine treats it as lost access and purges the account
         'GET /me/spaces': () => ['s-user', 'feed-1'],
@@ -234,7 +235,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -282,7 +283,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -324,7 +325,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -380,7 +381,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -418,7 +419,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -462,7 +463,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'DELETE /me/feeds/feed-1': () => {
@@ -503,7 +504,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         // a hanging server: the delete resolves only when the test says so
@@ -525,6 +526,118 @@ describe('AccountsScreen (demo identity)', () => {
     // let the server answer — the delete completes and the row leaves
     release?.();
     await waitFor(() => expect(screen.queryByTestId('account-row-feedacct-1')).toBeNull(), { timeout: 5000 });
+  }, 15_000);
+
+  it('#288: the delete confirm stacks ABOVE the sheet — a body sibling mounted after it (portal order)', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    db.close();
+
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('account-row-feedacct-1'));
+    const sheetRoot = (await screen.findByTestId('attach-name')).closest('.react-modal-sheet-root');
+    fireEvent.click(screen.getByTestId('attach-delete'));
+    const confirmRoot = (await screen.findByTestId('attach-delete-confirm')).closest('.react-modal-sheet-root');
+    expect(sheetRoot).toBeTruthy();
+    expect(confirmRoot).toBeTruthy();
+    // its own sheet, never content nested inside the account sheet…
+    expect(confirmRoot).not.toBe(sheetRoot);
+    const pos = sheetRoot!.compareDocumentPosition(confirmRoot!);
+    expect(pos & Node.DOCUMENT_POSITION_CONTAINED_BY).toBe(0);
+    // …and the LATER body sibling: at the shared z-50, body order is
+    // paint order — nested-in-children portaled first and painted BEHIND
+    expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  }, 15_000);
+
+  it('#288: shared-with-me drops deletion ghosts — dead or archived-only mirrors never render', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    // a GENUINE share: live mirror row + an active link naming the sharer
+    await repo.upsert('account', 'feed-marie', 'sh-live', {
+      name: 'Marie ING',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 12_000,
+      iban: 'NL11INGB0000000011',
+    });
+    await repo.upsert('accountLink', 's-user', 'shlink-1', {
+      feedSpaceId: 'feed-marie',
+      accountId: 'sh-live',
+      attachedByName: 'Marie',
+    });
+    // ghost A: the mirror outlived a feed deletion — only an ARCHIVED
+    // attachment echo remains, so it answers no tap and names no sharer
+    await repo.upsert('account', 'feed-ghost', 'sh-ghost', {
+      name: 'Ghost bank',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 700,
+    });
+    await repo.upsert('accountLink', 's-user', 'shlink-2', {
+      feedSpaceId: 'feed-ghost',
+      accountId: 'sh-ghost',
+      archived: 1,
+    });
+    // ghost B: the mirror row itself is TOMBSTONED while a link echo lives
+    await repo.upsert('account', 'feed-dead', 'sh-dead', {
+      name: 'Dead bank',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 300,
+    });
+    await repo.remove('account', 'feed-dead', 'sh-dead');
+    await repo.upsert('accountLink', 's-user', 'shlink-3', { feedSpaceId: 'feed-dead', accountId: 'sh-dead' });
+    db.close();
+
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        // all three feeds stay reachable so the engine's orphan sweep
+        // never races the assert — the FILTER must do the dropping
+        'GET /me/spaces': () => ['s-user', 'feed-marie', 'feed-ghost', 'feed-dead'],
+        // none of them are MINE: every candidate is a shared-with-me shape
+        'GET /me/feeds': () => [],
+      },
+    });
+
+    const section = await screen.findByTestId('accounts-shared', {}, { timeout: 5000 });
+    expect(screen.getByTestId('shared-account-sh-live')).toBeTruthy();
+    expect(section.textContent).toContain('Marie');
+    // the ghosts render nowhere — not in the section, not as global rows
+    expect(screen.queryByTestId('shared-account-sh-ghost')).toBeNull();
+    expect(screen.queryByTestId('shared-account-sh-dead')).toBeNull();
+    expect(screen.queryByTestId('account-row-sh-ghost')).toBeNull();
+    expect(screen.queryByTestId('account-row-sh-dead')).toBeNull();
   }, 15_000);
 
   it('adds a manual cash account via the space door (manual is space-scoped now)', async () => {
@@ -767,7 +880,46 @@ describe('AccountsScreen (demo identity)', () => {
     expect(preview.textContent).toContain('PAYPALMEEXAMPLECOM');
   });
 
-  it('#227 r2: tapping an echo row flashes the jumped-to account row, then the flash fades', async () => {
+  it('#295: leftover accounts of a DELETED space render nowhere — no false feed rows', async () => {
+    const first = renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    // the debris shape (user ss): the space died, its default pot stayed
+    // live — with no LIVE space row it read as a feed account and wore a
+    // false "not attached" badge in the global list
+    await repo.upsert('space', 'dead-space', 'dead-space', {
+      name: 'Old space',
+      kind: 'personal',
+      currency: 'EUR',
+      periodType: 'month',
+      periodDay: 1,
+    });
+    await repo.upsert('account', 'dead-space', 'debris-1', {
+      name: 'Checking account',
+      type: 'checking',
+      source: 'manual',
+      currency: 'EUR',
+      balanceCents: 0,
+      defaultFor: 'transfer',
+    });
+    await repo.remove('space', 'dead-space', 'dead-space');
+    db.close();
+    first.unmount();
+
+    renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    // nowhere: not a global feed row, no badge, no space section either
+    expect(screen.queryByTestId('account-row-debris-1')).toBeNull();
+    expect(screen.queryByTestId('account-unattached-debris-1')).toBeNull();
+    expect(screen.queryByTestId('accounts-space-dead-space')).toBeNull();
+  }, 15_000);
+
+  it('#227 r3: the echo-jump flash waits for the scroll to settle, then pulses and fades', async () => {
     const first = renderApp('/accounts');
     await screen.findByTestId('account-row-demo_main');
     const { MunniDB } = await import('@/db/schema');
@@ -790,10 +942,16 @@ describe('AccountsScreen (demo identity)', () => {
 
     renderApp('/accounts');
     fireEvent.click(await screen.findByTestId('account-echo-demo_space-feedacct-1'));
-    // the jump target wears the flash marker the moment the echo fires…
     const target = document.getElementById('acct-row-feedacct-1')!;
-    expect(target.getAttribute('data-flash')).toBe('1');
-    // …and sheds it once the pulse ends (the setTimeout cleanup)
+    // r3 (user): NOT yet — starting with the scroll, the pulse was half
+    // gone by the time the row arrived; it holds until the scroll settles
+    expect(target.getAttribute('data-flash')).toBeNull();
+    // a re-tap mid-flight cancels the pending watch and restarts cleanly
+    fireEvent.click(screen.getByTestId('account-echo-demo_space-feedacct-1'));
+    // happy-dom has no layout or smooth scroll: the rect never moves, so
+    // the stability fallback reads "settled" after two quiet checks
+    await waitFor(() => expect(target.getAttribute('data-flash')).toBe('1'), { timeout: 3000 });
+    // …and the marker sheds once the pulse ends (the setTimeout cleanup)
     await waitFor(() => expect(target.getAttribute('data-flash')).toBeNull(), { timeout: 4000 });
   }, 15_000);
 
@@ -828,7 +986,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         // the fixture's feed must stay reachable or the engine purges it
         'GET /me/spaces': () => ['s-user', feedSpaceId('NL69INGB0123456789')],
         'GET /me/feeds': () => [],
@@ -892,7 +1050,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
