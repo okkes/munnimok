@@ -102,7 +102,8 @@ export function TxPeekSheet({ txId, onClose }: Readonly<{ txId: string | null; o
 
   // the net truth, exactly like the detail's headline: expenses minus
   // what came back, credits minus what they refunded elsewhere
-  const netCents = tx ? (tx.amountCents > 0 ? netCreditCents(tx, givenCents(txs ?? [], tx.id)) : netAmountCents(tx)) : 0;
+  let netCents = 0;
+  if (tx) netCents = tx.amountCents > 0 ? netCreditCents(tx, givenCents(txs ?? [], tx.id)) : netAmountCents(tx);
   const sign = (tx?.amountCents ?? 0) < 0 ? -1 : 1;
   const money = (magnitudeCents: number) => (tx ? fmt(sign * magnitudeCents, tx.currency, { sign: true, date: tx.date }) : '');
   const catRows = tx ? peekCatRows(tx, cats, t, money) : [];
