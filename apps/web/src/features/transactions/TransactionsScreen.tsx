@@ -36,12 +36,14 @@ function TxPartSoloRows({
   shownIdx,
   fmt,
   onOpen,
+  highlight = '',
 }: Readonly<{
   tx: TransactionRow;
   parts: readonly NonNullable<TransactionRow['splits']>[number][];
   shownIdx: readonly number[];
   fmt: ReturnType<typeof useDisplayMoney>['fmt'];
   onOpen: (partId: string | undefined) => void;
+  highlight?: string;
 }>) {
   const sign = tx.amountCents < 0 ? -1 : 1;
   return (
@@ -54,6 +56,7 @@ function TxPartSoloRows({
           index={i}
           amountText={fmt(sign * partNetCents(parts[i]), tx.currency, { date: tx.date })}
           onClick={() => onOpen(parts[i].id)}
+          highlight={highlight}
         />
       ))}
     </>
@@ -449,6 +452,7 @@ export function TransactionsScreen() {
                         shownIdx={shown}
                         fmt={fmt}
                         onOpen={(partId) => openPartPage(tx.id, partId)}
+                        highlight={query}
                       />
                     );
                   }

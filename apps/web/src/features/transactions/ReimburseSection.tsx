@@ -122,15 +122,10 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
           </button>
         )}
       </div>
+      {/* #231 r2 (user): the section is the LINKS, nothing else — the
+          netted headline and the Details card's original amount already
+          tell the money story; no original/net/of rows here */}
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="reimb-list">
-        {/* #231 (user): the whole row tells the same explicit story a
-            split part does — original amount up top, links, net below */}
-        {total > 0 && (
-          <div className="flex items-baseline justify-between border-b border-line-2 px-4 py-2.5 text-[13px]" data-testid="reimb-original">
-            <span className="text-ink-3">{t('tx.originalAmount')}</span>
-            <span className="m-num text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</span>
-          </div>
-        )}
         {(linkedTxs ?? []).map((linked) => {
           const link = (tx.reimbursements ?? []).find((r) => r.txId === linked.id);
           return (
@@ -166,30 +161,13 @@ export function ReimburseSection({ tx }: { tx: SpaceTx }) {
             </div>
           );
         })}
-        {total > 0 && (
-          <div className="flex items-center justify-between bg-bg-2 px-4 py-2 text-[12px] text-ink-3" data-testid="reimb-summary">
-            <span>{t('reimb.of', { a: fmtCents(total, tx.currency, lang), b: fmtCents(Math.abs(tx.amountCents), tx.currency, lang) })}</span>
-            {remainingCents(tx) === 0 && (
-              <span className="flex items-center gap-1 font-medium text-accent-deep" data-testid="reimb-settled">
-                <Icon name="check-circle-outline" size={13} />
-                {t('reimb.settled')}
-              </span>
-            )}
+        {total > 0 && remainingCents(tx) === 0 && (
+          <div className="flex items-center gap-1.5 bg-bg-2 px-4 py-2 text-[12px] font-medium text-accent-deep" data-testid="reimb-settled">
+            <Icon name="check-circle-outline" size={13} />
+            {t('reimb.settled')}
           </div>
         )}
-        {/* #231: the net line closes the statement — what this expense
-            really cost after the money that came back */}
-        {total > 0 && (
-          <div className="flex items-baseline justify-between border-t border-line-2 px-4 py-2.5 text-[13px]" data-testid="reimb-net">
-            <span className="font-medium text-ink-2">{t('reimb.net')}</span>
-            <span className="m-num font-semibold text-ink">{fmtCents(netAmountCents(tx), tx.currency, lang, { sign: true })}</span>
-          </div>
-        )}
-        {(linkedTxs ?? []).length === 0 && total === 0 && (
-          <div className="px-4 py-4 text-center text-[12px] text-ink-4" data-testid="reimb-empty-note">
-            {t('reimb.noneYet')}
-          </div>
-        )}
+        {(linkedTxs ?? []).length === 0 && total === 0 && <div className="px-4 py-4" data-testid="reimb-empty-note" />}
       </div>
     </>
   );

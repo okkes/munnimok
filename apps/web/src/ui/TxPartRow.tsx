@@ -2,6 +2,7 @@ import { LOCALES, useLang } from '@/i18n';
 import type { TransactionRow, TxSplit } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { orDefaultLabel, txTitle } from '@/lib/text';
+import { Highlight, amountQueryFor } from './Highlight';
 import { Icon } from './Icon';
 
 /**
@@ -18,6 +19,7 @@ export function TxPartRow({
   amountText,
   onClick,
   showDate = false,
+  highlight = '',
 }: Readonly<{
   tx: TransactionRow;
   part: TxSplit;
@@ -27,6 +29,8 @@ export function TxPartRow({
   onClick?: () => void;
   /** lists without date group headers show it inline, like TxRow (#143) */
   showDate?: boolean;
+  /** the active search query — label and amount hits light up (#267) */
+  highlight?: string;
 }>) {
   const { t, lang } = useLang();
   const cats = useCategories();
@@ -48,7 +52,9 @@ export function TxPartRow({
       </span>
       <span className="min-w-0 flex-1">
         <span className="flex items-center gap-1.5 text-[14px] font-medium text-ink">
-          <span className="truncate">{label}</span>
+          <span className="min-w-0 truncate">
+            <Highlight text={label} query={highlight} />
+          </span>
           {/* the split glyph: this row is a piece of a larger payment */}
           <Icon name="call-split" size={12} color="var(--m-accent-deep)" />
         </span>
@@ -64,7 +70,9 @@ export function TxPartRow({
       </span>
       {/* #139: the amount wears exactly TxRow's face — weight and the
           positive green included */}
-      <span className={`m-num text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>{amountText}</span>
+      <span className={`m-num text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
+        <Highlight text={amountText} query={amountQueryFor(amountText, highlight)} />
+      </span>
     </button>
   );
 }

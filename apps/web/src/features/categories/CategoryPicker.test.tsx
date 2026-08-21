@@ -188,18 +188,21 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     await screen.findByTestId('catpicker-groceries');
 
     // #245: browsing DOWN slips the search away; deliberate upward
-    // travel (one field's worth) brings it back
+    // travel (one field's worth) brings it back. #273: the wrapper is
+    // the shared gliding collapse now (max-height + opacity together)
     const list = screen.getByTestId('catpicker-list');
     Object.defineProperty(list, 'scrollHeight', { value: 1400, configurable: true });
     Object.defineProperty(list, 'clientHeight', { value: 400, configurable: true });
-    const wrapper = screen.getByTestId('catpicker-search').closest('div')!.parentElement as HTMLElement;
+    const wrapper = screen.getByTestId('catpicker-search-wrap') as HTMLElement;
     list.scrollTop = 400;
     fireEvent.scroll(list);
     await waitFor(() => expect(wrapper.style.pointerEvents).toBe('none'));
+    expect(wrapper.style.maxHeight).toMatch(/^0/);
     list.scrollTop = 370;
     fireEvent.scroll(list);
     list.scrollTop = 320;
     fireEvent.scroll(list);
     await waitFor(() => expect(wrapper.style.pointerEvents).toBe(''));
+    expect(wrapper.style.maxHeight).not.toMatch(/^0(px)?$/);
   }, 15_000);
 });

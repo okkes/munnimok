@@ -1,5 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
-import type { UIEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
@@ -18,6 +17,7 @@ import { TxRow } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
 import { SearchField } from '@/ui/SearchField';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
+import { CollapsingSearch, useSearchCollapse } from '@/ui/CollapsingSearch';
 import { REIMBURSED_ID } from '@/domain/categories';
 import type { TxSplit } from '@/db/types';
 
@@ -42,6 +42,7 @@ function ReimbPartRows({
   money,
   openOf,
   onPick,
+  highlight = '',
 }: Readonly<{
   row: SpaceTx;
   testId: string;
@@ -51,6 +52,7 @@ function ReimbPartRows({
    *  credit: still giveable) */
   openOf: (row: SpaceTx, part: TxSplit) => number;
   onPick: (row: SpaceTx, part: TxSplit, openCents: number) => void;
+  highlight?: string;
 }>) {
   const parts = (row.splits ?? []).map((part, idx) => ({ part, idx })).filter((e) => e.part.catId !== REIMBURSED_ID);
   const sign = row.amountCents < 0 ? -1 : 1;
@@ -68,6 +70,7 @@ function ReimbPartRows({
               showDate
               amountText={money(sign * open)}
               onClick={() => onPick(row, e.part, open)}
+              highlight={highlight}
             />
           </div>
         );
@@ -106,32 +109,10 @@ export function ReimburseLinkScreen() {
   const [amount, setAmount] = useState('');
   const [amountError, setAmountError] = useState<string | null>(null);
 
-  // the search bar rides along: it scrolls away with the content and a
-  // DELIBERATE upward scroll brings it back — one search-field's worth of
-  // travel, not a single jittery pixel (user tuning 2026-07-31); iOS
-  // rubber-band frames must never fake that gesture
-  const [searchShown, setSearchShown] = useState(true);
-  const lastScrollTop = useRef(0);
-  const upTravel = useRef(0);
-  // the wrapper's real height: h-11 input (44) + pt-1 (4) + pb-2 (8)
-  const SEARCH_H = 56;
-  const onListScroll = (e: UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    const top = el.scrollTop;
-    const delta = lastScrollTop.current - top; // > 0 → upward
-    lastScrollTop.current = top;
-    const maxTop = el.scrollHeight - el.clientHeight;
-    // rubber-band guard: overscroll runs scrollTop past [0, maxTop] and
-    // the spring-back frames read as "upward" — near the edges nothing
-    // counts, in either direction
-    if (top < 0 || top > maxTop - SEARCH_H) {
-      upTravel.current = 0;
-      return;
-    }
-    if (delta > 0) upTravel.current += delta;
-    else if (delta < 0) upTravel.current = 0; // any downward move re-arms
-    setSearchShown(upTravel.current >= SEARCH_H || top < SEARCH_H);
-  };
+  // the search bar rides along — #273: through the shared GLIDING
+  // collapse (deliberate up-travel rule + measured max-height, so the
+  // list flows into the freed space instead of jumping past a void)
+  const { shown: searchShown, onListScroll } = useSearchCollapse(56);
 
   const anchorIsExpense = (tx?.amountCents ?? 0) < 0;
   const givenOf = (id: string) => givenCents(allTxs ?? [], id);
@@ -242,6 +223,7 @@ export function ReimburseLinkScreen() {
           money={(cents) => fmtCents(cents, row.currency, lang)}
           openOf={anchorIsExpense ? creditPartOpen : partOpenCents}
           onPick={anchorIsExpense ? pickCreditPart : pickPart}
+          highlight={query}
         />
       );
     }
@@ -277,11 +259,10 @@ export function ReimburseLinkScreen() {
           {cleanBankText(tx.merchant)} · {fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" onScroll={onListScroll}>
-        <div
-          className="sticky top-0 z-10 -mx-5 bg-bg px-5 pt-1 pb-2 transition-all duration-200 ease-out"
-          style={searchShown ? undefined : { transform: 'translateY(-110%)', opacity: 0, pointerEvents: 'none' }}
-        >
+      {/* #273: the field lives ABOVE the scroller and collapses smoothly —
+          the sticky+translate version left its slot as a void */}
+      <CollapsingSearch shown={searchShown}>
+        <div className="px-5 pt-1 pb-2">
           <SearchField
             testId="reimb-link-search"
             value={query}
@@ -289,6 +270,8 @@ export function ReimburseLinkScreen() {
             placeholder={t('tx.searchPlaceholder')}
           />
         </div>
+      </CollapsingSearch>
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" onScroll={onListScroll}>
 
         {/* the smart segment stands down while the user searches */}
         {!query && suggested.length > 0 && (

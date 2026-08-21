@@ -1,122 +1,69 @@
 # munni — functionality checklist
 
-A grouped inventory of everything the app does, for manual test passes
-(#194). Tick what you verified; every feature change updates this file
-in the same commit — the rule lives in the assistant's memory alongside
-the user-guide and tour maintenance rules.
+The high-level manual test inventory (#194): the CORE things to walk to
+know each feature works — not a changelog. Feature changes update the
+affected line (or add one only for a genuinely new core flow); details,
+fixes and internals never become items. The rule lives in the
+assistant's memory alongside the guide/tour maintenance rules.
 
 ## Identity & onboarding
-- [ ] Sign in with Logto (web redirect; native deep-link return)
-- [ ] Demo mode (sample data, zero network, zero telemetry)
-- [ ] Offline identity; go-offline from a signed-in profile
-- [ ] Interrupted SSO signup resumes onboarding, never "no account"
-- [ ] Onboarding: display name, avatar (upload / native camera / desktop webcam), country search
-- [ ] Session expiry: dead refresh grant → silent re-entry near app open, else "sign in again" banner
-- [ ] App lock: PIN pad (auto-verify from 4 digits), passkey prompt once per lock cycle, PIN entry dismisses the passkey sheet
+- [ ] Sign in (web + native return), demo mode, offline profile
+- [ ] Fresh signup walks onboarding (name, avatar, country) and an interrupted one resumes
+- [ ] Session survives restarts; an expired session recovers or says so honestly
+- [ ] App lock: set up, unlock with PIN and passkey, disable
 
-## Spaces
-- [ ] Create space: name, icon, color, budget period (with explanation), ledger currency, history start, private-mode checkbox
-- [ ] Space appearance: picture upload (camera/webcam on capable devices) disables symbol+color while set
-- [ ] Space settings icon = palette (identity only: rename, look, leave/delete)
-- [ ] Private mode toggle (invite lock) in space settings; sharing & invites when unlocked
-- [ ] Members: roles, permissions, kick-out; activity history logs every mutation
-- [ ] Space switcher; per-space landing (Home) layout
+## Spaces & sharing
+- [ ] Create a space (period, currency, start date); edit its identity; switch spaces
+- [ ] Invite-lock toggle gates all sharing; invite an existing friend with a role; invite a new person from the members screen (accept joins the space)
+- [ ] Members: view, change role, remove; the removed member is told and lands in another space
+- [ ] Leave a space; history start date moves with honest consequences
 
 ## Home
-- [ ] Balance band modes: net worth / total cash / safe-to-spend (premade, read-only) + Picked accounts (checkboxes)
-- [ ] Display-currency lens (band toggle + profile setting, bare currency symbols, ≈ conversions)
-- [ ] Blocks: review nudge, new transactions, budgets, events, goals, debts, insights, Explore; customize order/visibility
-- [ ] Desktop: two columns only when ≥4 blocks, else one centered column
-- [ ] Notifications bell; install hint; update card
-- [ ] Quick-add FAB: manual transaction, bank export upload, category, account, friend request, space
+- [ ] Balance band modes and per-account picks; blocks render, reorder, hide
+- [ ] Quick-add FAB reaches all six doors
+- [ ] Review nudge, new transactions, upcoming costs and notifications reflect reality
 
 ## Transactions
-- [ ] List: date groups, hairline dividers between transactions (not between split parts), search with clear ×
-- [ ] Quick filters: filter sheet (accounts/kinds/categories/dates), New (unreviewed), uncategorized, unsettled reimbursements, counter transactions (pairs uncollapsed)
-- [ ] Filters survive a detour into a transaction; reset on tab switch or fresh start; Home's "see all" arrives with the New lens on
-- [ ] Empty list leads to the space's own accounts screen
-- [ ] Pair collapse: one row per transfer with "A → B" note; per-account view keeps both legs
-- [ ] Desktop master-detail: full-width selected-row highlight, `/` focuses search
-- [ ] Manual add/edit: amount arithmetic, account picker, category, counterparty, adjustment toggle, date guard with full history-move door
-- [ ] Detail: consistent affordances (pencil = edits here, chevron = navigates); rename/edit, categories editor, Actions section (split door first, recurring, event), notes inline, receipt, facts, customize blocks (incl. actions + details), delete
-- [ ] Category edits from part pages / landing or removing a split clear the unreviewed badge; removing a split closes stale bulk offers
-- [ ] Split transaction: values editor (amount/pct with mode explainer; the chosen shape sticks per transaction), per-part deck (categories, counterparty, counter transaction, recurring/event with quick-create), part pages
-- [ ] Split categories: one transaction, several categories; special categories span the whole; percentage spreads (parts keep their % shape too)
-- [ ] Reimbursements: explicit original → links → net story on whole rows and parts; over-max link amounts error with the max named
-- [ ] Counterparty: one per (split) transaction; counter-first fills the category; counter transaction row (pick existing / create / await feed); unpair dialogs
-- [ ] Reimbursements: expected/received, settle order (expecting → uncategorized → largest), net display, links both directions
+- [ ] List: search (title + amount, highlighted), quick filters, filter sheet; filters survive a detail detour
+- [ ] Transfer pairs collapse to one row; per-account view keeps both legs
+- [ ] Add/edit a manual transaction end to end (amount math, account, category, counterparty, date guard)
+- [ ] Detail: recategorize, rename, counterparty set/remove, recurring/event links, notes, receipt, customize sections, delete
+- [ ] Split a transaction into parts; edit parts; un-split; split categories (€ and %) on rows and parts
+- [ ] Reimbursements: link both directions (with clamping errors), parts included; unlink restores
 
 ## Review
-- [ ] Card queue: category rows, counterparty row, counter-transaction row (search by title/amount, None door), recurring, event, split door (last)
-- [ ] Memory: recency-weighted category recall (space-own first), spreads, events, titles; amount match
-- [ ] Bulk confirm: similar transactions, percentages refit each amount
-- [ ] Skip leaves no trace; desktop top-anchored card with buttons beneath
+- [ ] Walk the queue: category, counterparty, counter-transaction, recurring, event, split — confirm and skip
+- [ ] Memory pre-fills return; bulk "apply to similar" applies what it promised
 
 ## Categories
-- [ ] Catalog: built-in + custom parents/subs; income ◆ special parent; Adjustment locked ◆ (no user subs through any door); new mains are expense
-- [ ] Manage: create/edit/delete with impact guard, icons search, colors, drag subs between mains, hold-menu
-- [ ] Picker: search matches parent names (whole group survives, no mid-word gap), hide-on-scroll-down / back on scroll-up, ◆ special filter chip, create-custom door, no stale error flash
-- [ ] Account-typed gating: a brokerage manual row offers only the investment story (savings/loans likewise via their stamps)
+- [ ] Browse and search the picker (parent names match, ◆ filter); manage: create/edit/delete customs with impact warnings; locked families refuse subs
+- [ ] Account-typed rows only offer categories that fit
 
-## Recurring costs
-- [ ] Five tabs (period, next, this year, next year, all); occurrence-filtered; pre-start occurrences excluded; future ranges show only the total
-- [ ] Year views: monthly estimate-vs-paid line chart with per-line toggles
-- [ ] Detection inbox: evidence, accept (prefilled form) → occurrence review (pre-checked picks, prune before linking; linked charges take the category), dismiss; lender patterns live on Debts instead
-- [ ] Price-change badges, yearly totals, due days, payment history, logos everywhere pickers list costs
-
-## Debts & loans
-- [ ] Loan = account (loan/mortgage/credit); track-as-debt toggle; APR nag; payment plan with due day
-- [ ] "Left to pay", payoff projection, payment history, unassigned payments bucket
-- [ ] Detection: DUO-style lender patterns as cards on the Debts screen — track in place (prefilled chooser) or "Not a loan"
-
-## Events
-- [ ] Create/edit with cover picture; date range; per-day cost; category breakdown with drill
-- [ ] Attach transactions: full screen, checkboxes left, select/deselect all, split parts attach individually
-
-## Goals, budgets & allocation
-- [ ] Goals with cover pictures and progress
-- [ ] Budgets: categories with exclusivity, carry-over modes, warning threshold; period math follows the space rhythm
-- [ ] Allocation (envelopes): to-allocate, per-period cells
+## Recurring & debts
+- [ ] Detection inbox → accept walks the occurrence review; linked charges take the category
+- [ ] Ranges (period/next/year) tell the truth; the year chart plots estimate vs paid
+- [ ] A loan account shows debt, plan, payments and payoff; lender detection lands on Debts
 
 ## Accounts & banks
-- [ ] Global overview: one plain "Connected & imported" section (no via-space text; IBAN speaks), shared-with-me, per-space sections with types, defaults folded behind a toggle, bank-fed echoes that jump to the real row
-- [ ] Unattached accounts wear a badge (no auto-attach offer); explicit attach picks space, TYPE and history start
-- [ ] Space level: type leads each row's subtitle; info sheet shows global name, per-space rename, type change (re-reviews that space only), history-from, provenance, "view in all accounts" door, detach
-- [ ] Bank connect (GoCardless/Enable Banking): provider choice, consent, callback screens, never auto-attaches, nightly fetch, reconnect hints, sync-empty/dropped warnings
-- [ ] Account deletion with purge; co-owned same-IBAN feeds; feed janitor
-- [ ] Import: searchable bank chooser (ASN/ING/PayPal) + universal CAMT.053 door; preview with pre-start warning, live n/total progress, busy note on click-away, no false "archived" badge mid-import, result step with explicit attach door, batches with rollback, reconcile suggestions
-- [ ] Account editor: sectioned Basics / Balance / loan story / About; data-through + latest-transaction dates on info surfaces; staged delete progress on feed removal
-- [ ] Attach flow: no history-from field (the space start date governs); manual rows open the editor directly
+- [ ] Global overview: sections, defaults fold, echoes jump to the real row
+- [ ] Connect a bank (choice, consent, callback, nightly fetch, reconnect); imports (bank chooser, preview, progress, result → explicit attach)
+- [ ] Attach/detach per space with type; rename locally vs globally; type change re-reviews that space only
+- [ ] Edit an account (balance → adjustment where it applies); delete manual and bank-fed accounts cleanly
 
-## Portfolio
-- [ ] Holdings search (stocks/coins), buys/sells, valuation
+## Plans (budgets, goals, allocation, events)
+- [ ] Budget lifecycle: create with categories, thresholds warn, carry-over works
+- [ ] Goals fund and progress; allocation envelopes fill per period
+- [ ] Events: create, attach transactions (select-all screen), per-day costs and drill
 
-## Insights, trends & overview
-- [ ] Overview per period, category drill; trends charts; insights; net-worth series
+## Portfolio, insights & receipts
+- [ ] Holdings buy/sell and valuation; overview/trends/insights drill correctly
+- [ ] Receipt capture (camera/webcam/upload) links to transactions; shopping connections pull receipts
 
-## Receipts & shopping
-- [ ] Receipt capture (camera on native, webcam on desktop, upload), OCR link suggestions, receipts list search
+## Splits (bill splitting) & friends
+- [ ] Split session with a friend end to end (invite, expenses, settle)
+- [ ] Friends: add by ID, accept, profile sheet (copy ID, remove)
 
-## Splits (bill splitting)
-- [ ] Split sessions with friends, invites, event attachment, settle flows
-
-## Friends
-- [ ] Friend rows open a profile sheet (full ID + copy, fullscreen picture, remove door)
-- [ ] Space invites: searchable friend sheet with upfront role; new-person invite carries the space (accepting joins it)
-- [ ] Members: rows open a member sheet (role, member-since, remove); role changes and kicks push to the affected user; kicked-out takeover sheet switches the active space
-
-## Settings
-- [ ] Space settings: groups (plan/track/learn/setup), sync status row, budget period, currency (with explainer), history start with impact counts, private-mode toggle (owner-only, moved from the identity screen)
-- [ ] Global settings: profile, spaces, all accounts, friends, connections, devices (browser names, numbered duplicates, rename/disconnect), language, shopping, export, help, push, app lock, appearance (tap row to cycle light→dark→auto), tips
-- [ ] What's-new entries per release; user guide (10 sections) regenerated on change
-
-## PWA & native
-- [ ] Installable, offline precache, web push, favicon/leaf icons per channel, update toast
-- [ ] Native shells: universal-link auth return, camera capture, biometric lock, store update polling
-
-## Offline & sync
-- [ ] Local-first everywhere; outbox; HLC/LWW convergence; per-field merges
-- [ ] Forms: primary buttons stay tappable — an invalid tap names the blocker and rings the field; draft screens guard their back arrow with a discard ask
-- [ ] Start date governs on every device (link gates heal every boot)
-- [ ] Offline banner truthfulness: no-network / unreachable / session-expired / version mismatch
-- [ ] GlitchTip: unexpected 5xx/409 reported from the API choke; import failures reported; demo/offline identities send nothing
+## Settings & platform
+- [ ] Space settings rows all lead somewhere sane; global settings: profile, devices, language (EN/NL/TR), appearance cycle, export, push, tips
+- [ ] PWA installs and updates; native shells build, deep-link back and capture photos
+- [ ] Offline end to end: everything works, syncs on return, conflicts converge

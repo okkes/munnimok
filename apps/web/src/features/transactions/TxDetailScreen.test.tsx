@@ -812,9 +812,13 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     fireEvent.change(amountInput, { target: { value: '20,00' } });
     fireEvent.click(screen.getByTestId('reimb-save'));
 
-    const summary = await screen.findByTestId('reimb-summary');
-    expect(summary.textContent).toContain('€20.00');
-    expect(summary.textContent).toContain('€52.40');
+    // #231 r2: the section is the LINKS only — the linked row carries the
+    // amount; no original/net/of rows anymore
+    await waitFor(() =>
+      expect(screen.getByTestId('reimb-list').querySelector('[data-testid^="reimb-row-"]')?.textContent).toContain('€20.00'),
+    );
+    expect(screen.queryByTestId('reimb-summary')).toBeNull();
+    expect(screen.queryByTestId('reimb-net')).toBeNull();
     // hero shows the net amount, gross struck through
     expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€32.40');
     expect(screen.getByTestId('tx-detail-original-amount').textContent).toContain('-€52.40'); // details block owns the original now
@@ -840,7 +844,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     );
     fireEvent.click(screen.getByTestId('reimb-list').querySelector('[data-testid^="reimb-unlink-"]')!);
     await waitFor(() => {
-      expect(screen.queryByTestId('reimb-summary')).toBeNull();
+      expect(screen.getByTestId('reimb-list').querySelector('[data-testid^="reimb-row-"]')).toBeNull();
       expect(screen.getByTestId('tx-detail-amount').textContent).toContain('-€52.40');
     });
     // the freed value lands on Uncategorized, not the original category (user rule)
@@ -1050,9 +1054,10 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     // …and the part page's headline is what the part is WORTH (its
     // settled bookkeeping nets it) — the gross moved into Original
     await waitFor(() => expect(screen.getByTestId('tx-part-amount').textContent).toContain('1,195.80'));
-    // the statement rows wait on the live links query
-    await waitFor(() => expect(screen.getByTestId('tx-part-original').textContent).toContain('1,200.00'));
-    expect(screen.getByTestId('tx-part-net').textContent).toContain('1,195.80');
+    // #231 r2: the reimb card is links-only — no original/net rows; the
+    // facts card still carries the part's gross
+    expect(screen.queryByTestId('tx-part-original')).toBeNull();
+    expect(screen.queryByTestId('tx-part-net')).toBeNull();
     // the siblings list nets too — and the untouched one keeps its face
     const siblings = screen.getByTestId('tx-part-siblings');
     expect(siblings.textContent).toContain('1,195.80');
@@ -1392,9 +1397,10 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     // the face waits on the accounts live query
     await waitFor(() => expect(screen.getByTestId('tx-part-counter-row').textContent).toContain('Demo Savings'));
 
-    // r5: its own reimbursements — the part-targeted link and the net
+    // r5: its own reimbursements — the part-targeted link row (#231 r2:
+    // the card is links-only, no net row)
     await waitFor(() => expect(screen.getByTestId('tx-part-reimbs').textContent).toContain('Sam pays back'), { timeout: 5000 });
-    expect(screen.getByTestId('tx-part-net').textContent).toContain('20.00');
+    expect(screen.queryByTestId('tx-part-net')).toBeNull();
     // #199: the parent's Details card shows right on the part page
     expect(screen.getByTestId('tx-detail-facts')).toBeTruthy();
 

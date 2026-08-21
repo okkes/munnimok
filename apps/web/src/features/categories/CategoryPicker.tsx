@@ -1,5 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
-import type { UIEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
 import { REIMBURSED_ID, isSpecialCategory, mainCatOf, specialCatType } from '@/domain/categories';
@@ -11,6 +10,7 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SearchField } from '@/ui/SearchField';
+import { CollapsingSearch, useSearchCollapse } from '@/ui/CollapsingSearch';
 import { catName, useCategories } from './useCategories';
 import { SpecialCatMark } from './SpecialCatMark';
 
@@ -103,34 +103,14 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
     setQuery('');
   };
 
-  // #245 (user): the search rides along exactly like the reimbursement
-  // picker's — it scrolls away with the content and a deliberate upward
-  // scroll (one field's worth of travel) brings it back
-  const [searchShown, setSearchShown] = useState(true);
-  const lastScrollTop = useRef(0);
-  const upTravel = useRef(0);
-  const SEARCH_H = 56;
-  const onListScroll = (e: UIEvent<HTMLDivElement>) => {
-    const el = e.currentTarget;
-    const top = el.scrollTop;
-    const delta = lastScrollTop.current - top; // > 0 → upward
-    lastScrollTop.current = top;
-    const maxTop = el.scrollHeight - el.clientHeight;
-    if (top < 0 || top > maxTop - SEARCH_H) {
-      upTravel.current = 0;
-      return;
-    }
-    if (delta > 0) upTravel.current += delta;
-    else if (delta < 0) upTravel.current = 0;
-    setSearchShown(upTravel.current >= SEARCH_H || top < SEARCH_H);
-  };
+  // #245 (user): the search rides along — #273: through the shared
+  // GLIDING collapse (measured max-height, no pop, no leftover void);
+  // the list's own cap grows by the freed field height in step
+  const { shown: searchShown, onListScroll } = useSearchCollapse(56);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} size="tall" dragHandle>
-      <div
-        className="transition-all duration-200 ease-out"
-        style={searchShown ? undefined : { transform: 'translateY(-110%)', opacity: 0, pointerEvents: 'none', height: 0, marginBottom: 0 }}
-      >
+      <CollapsingSearch shown={searchShown} testId="catpicker-search-wrap">
         <SearchField testId="catpicker-search" value={query} onChange={setQuery} placeholder={t('cats.searchPlaceholder')} />
         {/* #246: the ◆ lens — hidden where specials are off the table */}
         {!noSpecials && (
@@ -141,8 +121,13 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
             </Chip>
           </div>
         )}
-      </div>
-      <div className="mt-2 max-h-[440px] overflow-y-auto overscroll-contain" data-testid="catpicker-list" onScroll={onListScroll}>
+      </CollapsingSearch>
+      <div
+        className="mt-2 overflow-y-auto overscroll-contain transition-[max-height] duration-200 ease-out"
+        style={{ maxHeight: searchShown ? 440 : 440 + 90 }}
+        data-testid="catpicker-list"
+        onScroll={onListScroll}
+      >
       {groups.map(({ parent, children }) => (
         <div key={parent.id}>
           <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1" style={{ color: parent.color }}>

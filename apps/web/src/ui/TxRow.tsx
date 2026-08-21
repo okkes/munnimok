@@ -5,7 +5,7 @@ import { netAmountCents, netCreditCents } from '@/domain/reimbursement';
 import type { TransactionRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { TFunc } from '@/i18n';
-import { Highlight } from './Highlight';
+import { Highlight, amountQueryFor } from './Highlight';
 import { Icon } from './Icon';
 import { Pill } from './primitives';
 
@@ -138,7 +138,11 @@ export function TxRow({
       )}
       <span className="shrink-0 text-right">
         <span className={`m-num block text-[14px] font-semibold ${positive ? 'text-accent-deep' : 'text-ink'}`}>
-          {fmt(display, tx.currency, { sign: true, date: tx.date })}
+          {/* #267: amount hits light up like text hits (comma/dot agnostic) */}
+          {(() => {
+            const amountText = fmt(display, tx.currency, { sign: true, date: tx.date });
+            return <Highlight text={amountText} query={amountQueryFor(amountText, highlight)} />;
+          })()}
         </span>
         {/* #250 (user): the 2px category-ratio bar is gone — noise over
             value; the parts tell their own story in the split group */}

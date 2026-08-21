@@ -1903,13 +1903,15 @@ export function ReviewScreen() {
           </div>
         )}
         {tx && (
-          /* D3 focus layout: at lg the deck becomes a fixed 520px column,
+          /* D3 focus layout: the deck becomes a fixed 520px column,
              horizontally centered; #151 (user): TOP-anchored — vertical
              centering made the card float mid-screen. The pickers slide
              in as dimmed right-hand panels, so the card stays visible
              while editing. Skip/Confirm attach under the card instead
-             of the far bottom. */
-          <div className="relative flex min-h-0 flex-1 flex-col lg:mx-auto lg:w-[520px] lg:flex-none lg:pb-10">
+             of the far bottom. #151 r2: "desktop" starts where the
+             SIDEBAR does (md), not at lg — a 900px window kept the
+             mobile bottom-pinned buttons. */
+          <div className="relative flex min-h-0 flex-1 flex-col md:mx-auto md:w-[520px] md:flex-none md:pb-10">
             {leavingHtml && (
               <div
                 aria-hidden
@@ -2053,8 +2055,8 @@ export function ReviewScreen() {
             )}
             </div>
 
-            {/* mobile: pinned to the thumb at the bottom; lg: attached to the card */}
-            <div className="mt-auto flex gap-3 pt-4 lg:mt-0">
+            {/* mobile: pinned to the thumb at the bottom; md+: attached to the card */}
+            <div className="mt-auto flex gap-3 pt-4 md:mt-0">
               <Button
                 variant="outline"
                 className="w-28"
@@ -2231,16 +2233,6 @@ export function ReviewScreen() {
           rows={allTxs ?? []}
           onCreate={resetPickDoor(counterBankFed, false, () => setPickedPeer(null))}
           onWait={resetPickDoor(counterBankFed, true, () => setPickedPeer(null))}
-          // #255 (user): "none" — the real counter is out of reach (e.g.
-          // predates the space); the whole counter story stands down
-          onNone={
-            counterRowDoors.onDetach
-              ? () => {
-                  counterRowDoors.onDetach?.();
-                  setPickedPeer(null);
-                }
-              : undefined
-          }
           onPick={(pickedId) => {
             const linkedId = counterAcct.id;
             stageWithBulkWarning(similar.length, () => setPickedPeer({ txId: pickedId, linkedId }), setPickWarn);

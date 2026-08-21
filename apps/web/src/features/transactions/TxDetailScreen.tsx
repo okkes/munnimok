@@ -1242,8 +1242,6 @@ function PartDetailBody({
       .filter((r) => r.txId === tx.id && r.creditPartId === part.id)
       .map((r) => ({ rowId: row.id, amountCents: r.amountCents })),
   );
-  const partLinkedCents =
-    partLinks.reduce((sum, r) => sum + r.amountCents, 0) + givenLinks.reduce((sum, g) => sum + g.amountCents, 0);
   const rowTitleOf = (id: string) => {
     const row = allTxs?.find((item) => item.id === id);
     return row ? txTitle(row) : id;
@@ -1423,16 +1421,8 @@ function PartDetailBody({
         </button>
       </div>
       <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="tx-part-reimbs">
-        {/* #228: the part's own statement — original − links = net; the
-            headline above already wears the net */}
-        {partLinkedCents > 0 && (
-          <div className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 text-[13px]">
-            <span className="min-w-0 flex-1 text-ink-3">{t('tx.originalAmount')}</span>
-            <span className="m-num text-ink-2" data-testid="tx-part-original">
-              {fmtCents(sign * Math.abs(part.amountCents), tx.currency, lang, { sign: true })}
-            </span>
-          </div>
-        )}
+        {/* #231 r2 (user): links only — the netted headline and the facts
+            card's original amount carry the money story */}
         {/* #237 (user): reimbursement rows go STRAIGHT to the linked
             transaction — no sheet in between, on parts too */}
         {partLinks.map((linkRow) => (
@@ -1460,12 +1450,7 @@ function PartDetailBody({
             <span className="m-num text-ink-2">{fmtCents(-given.amountCents, tx.currency, lang, { sign: true })}</span>
           </button>
         ))}
-        <div className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-          <span className="min-w-0 flex-1 text-ink-3">{t('reimb.net')}</span>
-          <span className="m-num font-semibold text-ink" data-testid="tx-part-net">
-            {fmtCents(sign * Math.max(0, Math.abs(part.amountCents) - partLinkedCents), tx.currency, lang, { sign: true })}
-          </span>
-        </div>
+        {partLinks.length === 0 && givenLinks.length === 0 && <div className="px-4 py-3" />}
       </div>
 
       {/* #199: the parent's bank facts right here — a deliberate
@@ -2502,9 +2487,6 @@ export function TxDetailScreen() { // NOSONAR(S3776)
           target={{ id: linkedAccount.id, name: linkedAccount.name }}
           anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
           rows={allTxs ?? []}
-          // #255: "none" — no counter exists to find; the link resets
-          // (same action as the counterparty sheet's detach door)
-          onNone={removeCounter}
           onPick={(pickedTxId) => void pairWithPicked(pickedTxId)}
         />
       )}

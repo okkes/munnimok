@@ -358,7 +358,6 @@ export function CounterMatchSheet({
   rows,
   onCreate,
   onWait,
-  onNone,
   onPick,
 }: Readonly<{
   open: boolean;
@@ -370,9 +369,6 @@ export function CounterMatchSheet({
   onCreate?: () => void;
   /** bank-fed: link now, the feed delivers the other side later */
   onWait?: () => void;
-  /** #255 (user): "none" — no counter exists to find (e.g. it predates
-   *  the space); the caller detaches/stands the story down */
-  onNone?: () => void;
   onPick: (txId: string) => void;
 }>) {
   const { t } = useLang();
@@ -424,7 +420,8 @@ export function CounterMatchSheet({
     >
       {items.map((row) => (
         <div key={row.id} data-testid={`${prefix}-${row.id}`}>
-          <TxRow tx={row} showDate hideUnreviewed onClick={() => pick(row.id)} />
+          {/* #255 r2: the search's hits light up like everywhere else */}
+          <TxRow tx={row} showDate hideUnreviewed highlight={query} onClick={() => pick(row.id)} />
         </div>
       ))}
     </div>
@@ -434,9 +431,9 @@ export function CounterMatchSheet({
       {target && (
         <div className="flex flex-col pt-1" data-testid="counter-fork">
           {onCreate && door('counter-fork-create', 'plus-circle-outline', t('tx.counterForkCreate'), t('tx.counterForkCreateSub'), onCreate)}
+          {/* #255 r2 (user): "link and wait" is the one honest exit —
+              the separate None door confused more than it solved */}
           {onWait && door('counter-fork-wait', 'clock-outline', t('tx.counterForkWait'), t('tx.counterForkWaitSub'), onWait)}
-          {/* #255: the honest exit — no counter exists to find */}
-          {onNone && door('counter-fork-none', 'link-variant-off', t('tx.counterForkNone'), t('tx.counterForkNoneSub'), onNone)}
           {(allSuggested.length > 0 || allRest.length > 0) && (
             <SearchField
               testId="counter-match-search"
