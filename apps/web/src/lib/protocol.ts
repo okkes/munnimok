@@ -11,13 +11,15 @@
  * raise MinClient/MIN_SERVER_PROTOCOL only when the change is
  * INCOMPATIBLE (an old peer would misbehave, not just miss a feature).
  */
-export const CLIENT_PROTOCOL = 1;
+// v2 (#148 r3): the txSeen entity rides the push — a v1 server rejects it
+export const CLIENT_PROTOCOL = 2;
 /** oldest server protocol this client can safely talk to */
-export const MIN_SERVER_PROTOCOL = 1;
+export const MIN_SERVER_PROTOCOL = 2;
 
 export type ProtocolIssue = 'client-outdated' | 'server-outdated';
 
-/** servers predating the handshake send nothing — that generation is compatible */
+/** servers predating the handshake send nothing — they default to v1,
+ *  which v2 clients refuse (the txSeen entity would 400 there) */
 export function protocolIssueFor(server: { protocol?: number; minClientProtocol?: number }): ProtocolIssue | null {
   const serverProtocol = server.protocol ?? 1;
   const minClient = server.minClientProtocol ?? 1;

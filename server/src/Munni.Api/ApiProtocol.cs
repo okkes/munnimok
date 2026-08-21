@@ -9,7 +9,8 @@ namespace Munni.Api;
 /// </summary>
 public static class ApiProtocol
 {
-    public const int Version = 1;
+    // v2 (#148 r3): the txSeen entity — a v2 client's push would 400 on a v1 server
+    public const int Version = 2;
     /// <summary>oldest client protocol this server still speaks</summary>
     public const int MinClient = 1;
 }

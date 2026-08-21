@@ -4,7 +4,7 @@ import { CLIENT_PROTOCOL, MIN_SERVER_PROTOCOL, protocolIssueFor } from './protoc
 describe('version handshake (native apps deploy separately from the API)', () => {
   it('same generation is compatible — and so are servers predating the handshake', () => {
     expect(protocolIssueFor({ protocol: CLIENT_PROTOCOL, minClientProtocol: 1 })).toBeNull();
-    expect(protocolIssueFor({})).toBeNull(); // old /health without the fields
+    expect(protocolIssueFor({})).toBe('server-outdated'); // pre-handshake servers default to v1 — v2 clients refuse (#148 r3)
   });
 
   it('a server that dropped support for this client says: update the app', () => {

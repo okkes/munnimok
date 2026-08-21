@@ -353,6 +353,22 @@ export interface RecurringDismissRow extends SyncEnvelope {
   merchantKey: string;
 }
 
+/** #148 r3: one row per transaction a signed-in user FIRST saw — synced
+ *  through the user's private state space so the 24h "new" clock agrees
+ *  across their devices. `spaceId` is the state space; `forSpaceId` the
+ *  space the transaction lives in. The per-space baseline row (its id
+ *  from `txSeenBaseId`) marks when the scheme started: rows older than
+ *  it are known without a row of their own. */
+export interface TxSeenRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  forSpaceId: string;
+  txId?: string;
+  /** ms — when the badge clock started (0 on the baseline row) */
+  labeledAt: number;
+  baseline?: 0 | 1;
+}
+
 export type BudgetEvery = 'week' | '2weeks' | 'month';
 export type BudgetCarryMode = 'periods' | 'cap';
 
@@ -762,6 +778,7 @@ export type EntityName =
   | 'accountLink'
   | 'recurring'
   | 'recurringDismiss'
+  | 'txSeen'
   | 'budget'
   | 'event'
   | 'goal'
@@ -788,6 +805,7 @@ export interface EntityRowMap {
   accountLink: AccountLinkRow;
   recurring: RecurringRow;
   recurringDismiss: RecurringDismissRow;
+  txSeen: TxSeenRow;
   budget: BudgetRow;
   event: EventRow;
   goal: GoalRow;
