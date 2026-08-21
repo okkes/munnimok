@@ -2,8 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
-import { useSpaceTransactions } from '@/application/transactions';
+import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
+import { pairWithExistingRow } from '@/application/counterPair';
+import { writeTxTransform } from '@/db/joined';
+import type { TransactionRow } from '@/db/types';
+import { BulkCounterQueue } from '@/features/transactions/TxKindSheet';
 import { useRecurringOps } from '@/application/recurring';
 import { REIMBURSED_ID } from '@/domain/categories';
 import { merchantKey } from '@/domain/merchantKey';
@@ -22,17 +26,23 @@ import { TxRow } from '@/ui/TxRow';
  */
 export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string | null; onClose: () => void }>) {
   const { t } = useLang();
-  const { store } = useData();
+  const { store, repo, spaceId } = useData();
   const ops = useRecurringOps();
   const txs = useSpaceTransactions();
+  const accounts = useSpaceAccounts();
   const rec = useQuery(store, async () => (recId ? store.get('recurring', recId) : undefined), [recId]);
   const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
+  // #274: the per-row counter-match queue a bank-fed counterparty runs
+  // after the links land
+  const [counterQueue, setCounterQueue] = useState<SpaceTx[] | null>(null);
+  const counterAcct = accounts?.find((a) => a.id === rec?.linkedAccountId);
 
   const candidates = useMemo<SpaceTx[]>(() => {
     if (!rec?.merchantKey || !txs) return [];
     const rows = txs.filter((tx) => {
-      if (tx.deleted !== 0 || tx.amountCents >= 0 || tx.txType !== 'expense') return false;
+      // #264: funding rows join the candidates (monthly pot top-ups)
+      if (tx.deleted !== 0 || tx.amountCents >= 0 || (tx.txType !== 'expense' && tx.txType !== 'funding')) return false;
       if (tx.recurringId && tx.recurringId !== rec.id) return false;
       // container rule mirrors the reconciler: parts link from their own pages
       if ((tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1) return false;
@@ -76,9 +86,18 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
     if (!recId || busy) return;
     setBusy(true);
     try {
+      const linked: SpaceTx[] = [];
       for (const tx of candidates) {
         if (!picked.has(tx.id)) continue;
         await ops.linkTx(tx, recId);
+        linked.push(tx);
+      }
+      // #274 (user): a BANK-FED counterparty can't mint its legs — each
+      // linked row picks its own counter transaction (or keeps waiting).
+      // Manual counters already minted per row inside linkTx's choke.
+      if (counterAcct && counterAcct.source !== 'manual' && linked.length > 0) {
+        setCounterQueue(linked);
+        return;
       }
       onClose();
     } finally {
@@ -86,8 +105,18 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
     }
   };
 
+  // #274: one queue step — the row already links-and-waits; a pick adds
+  // its own peer and pairs the reciprocal
+  const resolveCounter = async (item: TransactionRow, peerId: string | null) => {
+    if (!peerId) return; // link-and-wait: linkTx already wrote the link
+    const row = txs?.find((tx) => tx.id === item.id) ?? (item as SpaceTx);
+    await writeTxTransform(repo, row, { transferPeerId: peerId });
+    await pairWithExistingRow(store, repo, spaceId, row, peerId, txs);
+  };
+
   return (
-    <Sheet open={recId !== null} onOpenChange={(next) => !next && onClose()} title={t('recurring.matchTitle')} size="tall">
+    <>
+      <Sheet open={recId !== null} onOpenChange={(next) => !next && onClose()} title={t('recurring.matchTitle')} size="tall">
       <p className="pb-2 text-[12px] leading-snug text-ink-3">{t('recurring.matchHint', { name: rec?.name ?? '' })}</p>
       {candidates.length === 0 && (
         <p className="px-1 py-6 text-center text-[13px] text-ink-4" data-testid="recmatch-empty">
@@ -115,6 +144,22 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
           {t('recurring.matchApply', { n: picked.size })}
         </Button>
       )}
-    </Sheet>
+      </Sheet>
+      {/* #274 (user): each linked row picks its own counter transaction
+          when the counterparty is bank-fed (link-and-wait otherwise) —
+          a sheet SIBLING, never nested (portal order) */}
+      {counterQueue && counterAcct && (
+        <BulkCounterQueue
+          queue={counterQueue}
+          target={{ id: counterAcct.id, name: counterAcct.name }}
+          rows={txs ?? []}
+          onResolve={(item, peerId) => void resolveCounter(item, peerId)}
+          onDone={() => {
+            setCounterQueue(null);
+            onClose();
+          }}
+        />
+      )}
+    </>
   );
 }

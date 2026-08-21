@@ -5,7 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import { resetApiCapabilitiesCache } from '@/lib/api';
 import { DEMO_SPACE_ID } from '@/db/seed';
-import { reconcileRecurringLinks } from '@/application/recurring';
+import { propagateRecurringCategory, reconcileRecurringLinks } from '@/application/recurring';
+import { mirrorTxId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
@@ -102,6 +103,66 @@ describe('RecurringScreen (demo identity)', () => {
     expect(screen.getByTestId('recurring-summary').textContent).toMatch(/740/);
     expect(screen.getByText(/Fixed costs/)).toBeTruthy();
   }, 15_000);
+
+  it('#274: a special category offers the counterparty pick; save persists it', async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+
+    fireEvent.click(screen.getByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Pot money' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '100' } });
+    // no counter row while the category is regular/unpicked
+    expect(screen.queryByTestId('recform-counter')).toBeNull();
+    fireEvent.click(screen.getByTestId('recform-cat'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    // the special pick surfaces the counterparty row; the pot answers it
+    fireEvent.click(await screen.findByTestId('recform-counter'));
+    fireEvent.click(await screen.findByTestId('recform-counter-acct-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('recform-counter').textContent).toContain('Demo Savings'));
+    fireEvent.click(screen.getByTestId('recform-save'));
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const rec = (await db.recurrings.toArray()).find((r) => r.name === 'Pot money');
+        expect(rec?.catId).toBe('savingDeposit');
+        expect(rec?.linkedAccountId).toBe('demo_save');
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
+  it('#274: propagation carries the counterparty to linked rows — the manual pot leg mints', async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const backend = new DexieBackend(db);
+    const repo = new Repo(backend, new HlcClock('rec-counter'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-ct', {
+      name: 'Pot topup', kind: 'subscription', amountCents: 10_000, every: 'month',
+      dueDay: 1, active: 1, catId: 'savingDeposit', linkedAccountId: 'demo_save',
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'rt1', {
+      accountId: 'demo_main', date: '2026-03-01', amountCents: -10_000, currency: 'EUR',
+      merchant: 'Pot topup', catId: 'uncategorized', txType: 'expense', needsReview: 1, recurringId: 'rec-ct',
+    });
+
+    await propagateRecurringCategory(backend, repo, DEMO_SPACE_ID, 'rec-ct', 'savingDeposit', 'demo_save');
+
+    await waitFor(async () => {
+      const row = await db.transactions.get('rt1');
+      expect(row?.catId).toBe('savingDeposit');
+      expect(row?.linkedAccountId).toBe('demo_save');
+      expect(row?.needsReview).toBe(0);
+      // manual counterparty: the choke minted the pot's own leg
+      const mirror = await db.transactions.get(mirrorTxId('rt1'));
+      expect(mirror?.accountId).toBe('demo_save');
+      expect(mirror?.amountCents).toBe(10_000);
+    }, { timeout: 8000 });
+    db.close();
+  }, 20_000);
 
   it('luxury subscriptions show the badge and the luxury line', async () => {
     renderApp('/recurring');
@@ -354,18 +415,31 @@ describe('RecurringScreen editing (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('Gym')).toBeNull(), { timeout: 5000 });
   }, 15_000);
 
-  it('#167/#168: future ranges show only the total; the year views plot the chart with toggleable lines', async () => {
+  it('#167/#168 r2: future ranges show only the total; the year chart splits at now and dots open their month', async () => {
     const first = renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-167'), { trackOutbox: false });
+    const day = Math.min(new Date().getDate(), 28);
     await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_167', {
       name: 'Gym 167',
       kind: 'fixed',
       amountCents: 2_500,
       every: 'month',
-      dueDay: Math.min(new Date().getDate(), 28),
+      dueDay: day,
       active: 1,
+    });
+    // one linked payment THIS month — the paid line's value at "now"
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'pay_167', {
+      accountId: 'demo_main',
+      date: monthsAgo(0, day),
+      amountCents: -2_500,
+      currency: 'EUR',
+      merchant: 'GYM 167',
+      catId: 'subs',
+      txType: 'expense',
+      needsReview: 0,
+      recurringId: 'rec_167',
     });
     db.close();
     first.unmount();
@@ -382,18 +456,95 @@ describe('RecurringScreen editing (demo identity)', () => {
     await screen.findByTestId('recurring-summary-future');
     expect(screen.getByTestId('recurring-summary').textContent).not.toContain('Paid');
 
-    // the year view (#168): the chart card arrives with both lines on
+    // the year view (#168 r2): both lines always draw — the chips and the
+    // all-off note are gone — smoothed (bezier C commands), with a marker
+    // pinned on the current period
     fireEvent.click(screen.getByTestId('recurring-view-year'));
-    await screen.findByTestId('recurring-chart');
-    expect(screen.getByTestId('recurring-chart-svg')).toBeTruthy();
-    // switching both lines off leaves the honest empty note
-    fireEvent.click(screen.getByTestId('recurring-chart-est'));
-    fireEvent.click(screen.getByTestId('recurring-chart-act'));
-    await waitFor(() => expect(screen.queryByTestId('recurring-chart-svg')).toBeNull());
-    // next year is future too: total-only summary, chart still available
+    const svg = await screen.findByTestId('recurring-chart');
+    expect(screen.queryByTestId('recurring-chart-est')).toBeNull();
+    expect(screen.queryByTestId('recurring-chart-act')).toBeNull();
+    expect(screen.getByTestId('recurring-chart-now')).toBeTruthy();
+    const paths = [...svg.querySelectorAll('path')];
+    // in Jan/Dec one line is a single point (a lone dot, no path)
+    expect(paths.length).toBeGreaterThanOrEqual(1);
+    for (const path of paths) expect(path.getAttribute('d')).toContain('C');
+
+    // estimate dots run now→Dec, paid dots Jan→now; overlap only at now
+    const nowIdx = new Date().getMonth();
+    expect(svg.querySelectorAll('[data-testid^="recurring-chart-dot-0-"]')).toHaveLength(12 - nowIdx);
+    expect(svg.querySelectorAll('[data-testid^="recurring-chart-dot-1-"]')).toHaveLength(nowIdx + 1);
+    expect(screen.getByTestId(`recurring-chart-dot-0-${nowIdx}`)).toBeTruthy();
+    expect(screen.getByTestId(`recurring-chart-dot-1-${nowIdx}`)).toBeTruthy();
+    if (nowIdx > 0) expect(screen.queryByTestId('recurring-chart-dot-0-0')).toBeNull();
+    if (nowIdx < 11) expect(screen.queryByTestId('recurring-chart-dot-1-11')).toBeNull();
+
+    // tapping the paid dot at now surfaces the month's value + the door
+    fireEvent.click(screen.getByTestId(`recurring-chart-dot-1-${nowIdx}`));
+    const value = await screen.findByTestId('recurring-chart-value');
+    expect(value.textContent).toMatch(/€[1-9]/);
+    // the same dot again toggles the selection off…
+    fireEvent.click(screen.getByTestId(`recurring-chart-dot-1-${nowIdx}`));
+    await waitFor(() => expect(screen.queryByTestId('recurring-chart-value')).toBeNull());
+    // …and back on; the door opens the month's linked transactions
+    fireEvent.click(screen.getByTestId(`recurring-chart-dot-1-${nowIdx}`));
+    fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
+    await screen.findByTestId('recurring-period-sheet');
+    const txRow = await screen.findByTestId('recurring-period-tx-pay_167');
+    expect(txRow.textContent).toMatch(/€[1-9]/);
+
+    // next year is future: total-only summary, no now-line, estimate on
+    // all twelve months, paid on none
     fireEvent.click(screen.getByTestId('recurring-view-nextyear'));
     await screen.findByTestId('recurring-summary-future');
-    expect(screen.getByTestId('recurring-chart')).toBeTruthy();
+    const svg2 = await screen.findByTestId('recurring-chart');
+    await waitFor(() => expect(screen.queryByTestId('recurring-chart-now')).toBeNull());
+    expect(svg2.querySelectorAll('[data-testid^="recurring-chart-dot-0-"]')).toHaveLength(12);
+    expect(svg2.querySelectorAll('[data-testid^="recurring-chart-dot-1-"]')).toHaveLength(0);
+
+    // a future ESTIMATE dot's door lists the expected items instead
+    fireEvent.click(screen.getByTestId('recurring-chart-dot-0-5'));
+    fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
+    const expRow = await screen.findByTestId('recurring-period-exp-rec_167');
+    expect(expRow.textContent).toMatch(/€[1-9]/);
+  }, 20_000);
+
+  it('#168 r2: a period with nothing expected or linked says so in the sheet', async () => {
+    const first = renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-168b'), { trackOutbox: false });
+    // yearly, due January — next year's June has nothing to show
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_168y', {
+      name: 'Insurance 168',
+      kind: 'fixed',
+      amountCents: 9_900,
+      every: 'year',
+      dueDay: 15,
+      dueMonth: 1,
+      active: 1,
+    });
+    db.close();
+    first.unmount();
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    await waitFor(() => expect(screen.getByTestId('recurring-year-total').textContent).toMatch(/99/), { timeout: 5000 });
+
+    fireEvent.click(screen.getByTestId('recurring-view-nextyear'));
+    const svg = await screen.findByTestId('recurring-chart');
+    expect(svg.querySelectorAll('[data-testid^="recurring-chart-dot-0-"]')).toHaveLength(12);
+
+    // January carries the expected yearly item…
+    fireEvent.click(screen.getByTestId('recurring-chart-dot-0-0'));
+    const value = await screen.findByTestId('recurring-chart-value');
+    expect(value.textContent).toMatch(/€[1-9]/);
+    fireEvent.click(screen.getByTestId('recurring-chart-txs'));
+    await screen.findByTestId('recurring-period-exp-rec_168y');
+
+    // …June has neither payments nor occurrences — the sheet says so
+    fireEvent.click(screen.getByTestId('recurring-chart-dot-0-5'));
+    fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
+    await screen.findByTestId('recurring-period-empty');
+    expect(screen.queryByTestId('recurring-period-exp-rec_168y')).toBeNull();
   }, 15_000);
 
   it('#188/#189: a recurring lives only in ranges it OCCURS in; pre-start occurrences neither list nor count', async () => {

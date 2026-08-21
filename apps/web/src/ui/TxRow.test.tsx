@@ -61,4 +61,38 @@ describe('TxRow', () => {
     fireEvent.click(await screen.findByTestId('tx-row-t1'));
     expect(onClick).toHaveBeenCalled();
   });
+
+  it('#156 r2: the selected tint rounds to the card edge the row sits on', async () => {
+    renderWithData(
+      <>
+        <TxRow tx={tx({ id: 'e-first' })} selected edge="first" />
+        <TxRow tx={tx({ id: 'e-mid' })} selected />
+        <TxRow tx={tx({ id: 'e-last' })} selected edge="last" />
+        <TxRow tx={tx({ id: 'e-both' })} selected edge="both" />
+      </>,
+    );
+    const first = await screen.findByTestId('tx-row-e-first');
+    expect(first.className).toContain('bg-accent-soft/50');
+    expect(first.className).toContain('rounded-t-card');
+    expect(first.className).toContain('rounded-b-none');
+    const mid = screen.getByTestId('tx-row-e-mid');
+    expect(mid.className).toContain('rounded-none'); // default edge keeps the flat band
+    const last = screen.getByTestId('tx-row-e-last');
+    expect(last.className).toContain('rounded-b-card');
+    expect(last.className).toContain('rounded-t-none');
+    expect(screen.getByTestId('tx-row-e-both').className).toContain('rounded-card');
+  });
+
+  it('#156 r2: keyboard focus wears the identical tint — background instead of the outline ring', async () => {
+    renderWithData(<TxRow tx={tx({})} edge="first" />);
+    const row = await screen.findByTestId('tx-row-t1');
+    // styles.css skips the global focus ring for quiet-focus rows
+    expect(row.hasAttribute('data-quiet-focus')).toBe(true);
+    expect(row.className).toContain('focus-visible:bg-accent-soft/50');
+    expect(row.className).toContain('focus-visible:outline-none');
+    expect(row.className).toContain('focus-visible:-mx-3');
+    expect(row.className).toContain('focus-visible:rounded-t-card');
+    // the resting row is untouched — no visible change without focus
+    expect(row.className).toContain('bg-transparent');
+  });
 });

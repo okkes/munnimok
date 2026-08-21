@@ -26,13 +26,34 @@ describe('WebcamCaptureSheet', () => {
     setMediaDevices(undefined);
     renderSheet();
     expect(await screen.findByTestId('webcam-error')).toBeTruthy();
-    expect(screen.queryByTestId('webcam-video')).toBeNull();
+    // r2: the video shell stays mounted; only Start/Capture stand down
+    expect(screen.queryByTestId('webcam-capture')).toBeNull();
+    expect(screen.queryByTestId('webcam-start')).toBeNull();
   });
 
   it('shows the error note when the camera permission is refused', async () => {
     setMediaDevices({ getUserMedia: vi.fn(() => Promise.reject(new Error('denied'))) });
     renderSheet();
     expect(await screen.findByTestId('webcam-error')).toBeTruthy();
+  });
+
+  it('#160 r2: a suppressed prompt leaves the GESTURE start — clicking it asks again', async () => {
+    // Chromium auto-denies gesture-less requests: NotAllowedError first…
+    const denied = Object.assign(new Error('Permission denied'), { name: 'NotAllowedError' });
+    const getUserMedia = vi
+      .fn<() => Promise<MediaStream>>()
+      .mockRejectedValueOnce(denied)
+      .mockResolvedValue({ getTracks: () => [{ stop: vi.fn() }] } as unknown as MediaStream);
+    setMediaDevices({ getUserMedia });
+    renderSheet();
+    // …the note names the cure and the Start button waits for a real tap
+    expect(await screen.findByTestId('webcam-error')).toBeTruthy();
+    const start = await screen.findByTestId('webcam-start');
+    fireEvent.click(start);
+    // the gesture attempt succeeds: capture arms, the note clears
+    expect(await screen.findByTestId('webcam-capture')).toBeTruthy();
+    expect(screen.queryByTestId('webcam-error')).toBeNull();
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
   });
 
   it('starts the front camera into the preview and stops tracks on close', async () => {

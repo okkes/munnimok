@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { attachScrollMemory } from '@/lib/scrollMemory';
+import { txTitle } from '@/lib/text';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
@@ -10,6 +11,7 @@ import { computeRange, monthlyRecurringSeries, summarize } from '@/domain/recurr
 import type { RecurringComputed } from '@/domain/recurring';
 import { detectPriceChange, yearlyCents } from '@/domain/recurringPrice';
 import { detectRecurring } from '@/domain/detectRecurring';
+import type { RecurringRow } from '@/db/types';
 import { looksLikeDebtCreditor } from '@/domain/detectDebts';
 import { nextPeriod, periodHistory } from '@/domain/periods';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
@@ -18,9 +20,20 @@ import type { FormState } from './RecurringFormSheet';
 import { RecurringVisual, cadenceLabel } from './RecurringVisual';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Chip, Pill, ProgressBar } from '@/ui/primitives';
+import { Sheet } from '@/ui/Sheet';
+import { Pill, ProgressBar } from '@/ui/primitives';
 import { MultiLine } from '@/ui/charts/MultiLine';
+
+/** linked-tx rows enriched for the period sheet (#168 r2) — structurally
+ *  a superset of domain LinkedTx, so the same map feeds computeRange */
+interface ChartTx {
+  id: string;
+  date: string;
+  amountCents: number;
+  title: string;
+}
 
 export function RecurringScreen() {
   const { t, lang } = useLang();
@@ -65,11 +78,11 @@ export function RecurringScreen() {
   else if (view === 'nextyear') range = { start: `${thisYear + 1}-01-01`, end: `${thisYear + 1}-12-31` };
 
   const linkedByRec = useMemo(() => {
-    const map = new Map<string, { date: string; amountCents: number }[]>();
+    const map = new Map<string, ChartTx[]>();
     for (const tx of txs ?? []) {
       if (!tx.recurringId) continue;
       const list = map.get(tx.recurringId) ?? [];
-      list.push({ date: tx.date, amountCents: tx.amountCents });
+      list.push({ id: tx.id, date: tx.date, amountCents: tx.amountCents, title: txTitle(tx) });
       map.set(tx.recurringId, list);
     }
     return map;
@@ -198,24 +211,28 @@ export function RecurringScreen() {
   // #167: a future range has no payments — only its total is a fact
   const futureView = view === 'next' || view === 'nextyear';
 
-  // #168 (user): the year views plot the months — estimate vs actual,
-  // each line toggleable on its own
-  const [showEstimate, setShowEstimate] = useState(true);
-  const [showActual, setShowActual] = useState(true);
+  // #168 r2 (user): the year views plot the months — estimate from the
+  // current period into the future, paid from the past up to it, and
+  // every point is a tappable dot that opens its month's numbers
   const yearView = view === 'year' || view === 'nextyear';
   const chartYear = view === 'nextyear' ? thisYear + 1 : thisYear;
   const monthly = useMemo(
     () => (yearView ? monthlyRecurringSeries(recs ?? [], linkedByRec, chartYear, today, space?.historyStartDate) : null),
     [yearView, recs, linkedByRec, chartYear, today, space?.historyStartDate],
   );
-  const chartSeries = useMemo(() => {
-    if (!monthly) return [];
-    const list: { values: number[]; color: string; dashed?: boolean }[] = [];
-    // cents → euros keeps the shared scale honest across both lines
-    if (showEstimate) list.push({ values: monthly.expected.map((c) => c / 100), color: 'var(--m-ink-4)', dashed: true });
-    if (showActual) list.push({ values: monthly.paid.map((c) => c / 100), color: 'var(--m-accent)' });
-    return list;
-  }, [monthly, showEstimate, showActual]);
+  const nowMonthIdx = Number(today.slice(5, 7)) - 1;
+  const [selectedDot, setSelectedDot] = useState<{ seriesIndex: number; pointIndex: number } | null>(null);
+  const [periodSheet, setPeriodSheet] = useState<{ seriesIndex: number; monthIdx: number } | null>(null);
+  // a dot selection is meaningless on a different range's chart
+  useEffect(() => {
+    setSelectedDot(null);
+    setPeriodSheet(null);
+  }, [view]);
+  const toggleDot = (seriesIndex: number, pointIndex: number) =>
+    setSelectedDot((prev) =>
+      prev?.seriesIndex === seriesIndex && prev?.pointIndex === pointIndex ? null : { seriesIndex, pointIndex },
+    );
+  const monthNameOf = (idx: number) => new Date(chartYear, idx, 1).toLocaleDateString(LOCALES[lang], { month: 'long' });
   const monthLabels = useMemo(
     () =>
       Array.from({ length: 12 }, (_, i) =>
@@ -337,26 +354,21 @@ export function RecurringScreen() {
           )}
         </div>
 
-        {/* #168: the year's monthly line chart — estimate and actual,
-            each togglable; the card hides only when both are off */}
+        {/* #168 r2 (user): both lines always draw; the marker pins the
+            current period and tapped dots surface their month */}
         {yearView && monthly && (
-          <div className="mt-3 rounded-card border border-line bg-surface p-4" data-testid="recurring-chart">
-            <div className="mb-2 flex gap-2">
-              <Chip testId="recurring-chart-est" selected={showEstimate} onClick={() => setShowEstimate((v) => !v)}>
-                <span aria-hidden className="inline-block h-[2px] w-[14px] rounded bg-current opacity-70" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0 4px, transparent 4px 7px)' }} />
-                {t('recurring.chartEstimate')}
-              </Chip>
-              <Chip testId="recurring-chart-act" selected={showActual} onClick={() => setShowActual((v) => !v)}>
-                <span aria-hidden className="inline-block h-[2px] w-[14px] rounded bg-current" />
-                {t('recurring.chartActual')}
-              </Chip>
-            </div>
-            {chartSeries.length > 0 ? (
-              <MultiLine series={chartSeries} labels={monthLabels} height={120} testId="recurring-chart-svg" />
-            ) : (
-              <p className="py-6 text-center text-[12px] text-ink-4">{t('recurring.chartAllOff')}</p>
-            )}
-          </div>
+          <RecurringChartCard
+            monthly={monthly}
+            labels={monthLabels}
+            nowIndex={chartYear === thisYear ? nowMonthIdx : undefined}
+            selected={selectedDot}
+            onSelect={toggleDot}
+            onShowTxs={() => {
+              if (selectedDot) setPeriodSheet({ seriesIndex: selectedDot.seriesIndex, monthIdx: selectedDot.pointIndex });
+            }}
+            money={money}
+            monthNameOf={monthNameOf}
+          />
         )}
 
         {section('recurring.fixed', fixed)}
@@ -373,6 +385,195 @@ export function RecurringScreen() {
       </div>
 
       <RecurringFormSheet initial={formInitial} onClose={() => setFormInitial(null)} />
+      <PeriodTxSheet
+        sel={periodSheet}
+        chartYear={chartYear}
+        recs={recs ?? []}
+        linkedByRec={linkedByRec}
+        today={today}
+        floor={space?.historyStartDate}
+        money={money}
+        onClose={() => setPeriodSheet(null)}
+      />
     </div>
+  );
+}
+
+/** #168 r2 (user): the year chart card — passive legend, smoothed
+ *  lines split at the current period, tapped dot's value + tx door */
+function RecurringChartCard({
+  monthly,
+  labels,
+  nowIndex,
+  selected,
+  onSelect,
+  onShowTxs,
+  money,
+  monthNameOf,
+}: Readonly<{
+  monthly: { expected: number[]; paid: number[] };
+  labels: string[];
+  /** current-month index; undefined when the chart year is future */
+  nowIndex?: number;
+  selected: { seriesIndex: number; pointIndex: number } | null;
+  onSelect: (seriesIndex: number, pointIndex: number) => void;
+  onShowTxs: () => void;
+  money: (cents: number) => string;
+  monthNameOf: (idx: number) => string;
+}>) {
+  const { t } = useLang();
+  // cents → euros keeps the shared scale honest across both lines;
+  // estimate exists from now onward, paid up to now — overlap only at now
+  const series = useMemo(
+    () => [
+      {
+        values: monthly.expected.map((c, i) => (nowIndex !== undefined && i < nowIndex ? null : c / 100)),
+        color: 'var(--m-ink-4)',
+        dashed: true,
+      },
+      {
+        values: monthly.paid.map((c, i) => (nowIndex === undefined || i > nowIndex ? null : c / 100)),
+        color: 'var(--m-accent)',
+      },
+    ],
+    [monthly, nowIndex],
+  );
+  const selectedCents = selected ? (selected.seriesIndex === 0 ? monthly.expected : monthly.paid)[selected.pointIndex] : null;
+  return (
+    <div className="mt-3 rounded-card border border-line bg-surface p-4">
+      <div className="mb-2 flex items-center gap-4 text-[11px] text-ink-3">
+        <span className="flex items-center gap-1.5">
+          <span
+            aria-hidden
+            className="inline-block h-[2px] w-[14px] rounded opacity-70"
+            style={{ backgroundImage: 'repeating-linear-gradient(90deg, var(--m-ink-4) 0 4px, transparent 4px 7px)' }}
+          />
+          {t('recurring.chartEstimate')}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span aria-hidden className="inline-block h-[2px] w-[14px] rounded" style={{ background: 'var(--m-accent)' }} />
+          {t('recurring.chartActual')}
+        </span>
+      </div>
+      <MultiLine
+        series={series}
+        labels={labels}
+        height={120}
+        testId="recurring-chart"
+        nowIndex={nowIndex}
+        onPointClick={onSelect}
+        selected={selected}
+      />
+      {selected !== null && selectedCents !== null && (
+        <div className="mt-2 flex items-center justify-between gap-2" data-testid="recurring-chart-value">
+          <span className="text-[12px] text-ink-2">
+            {monthNameOf(selected.pointIndex)}
+            <span
+              className="ml-2 font-mono text-[13px] font-semibold"
+              style={{ color: selected.seriesIndex === 0 ? 'var(--m-ink-2)' : 'var(--m-accent-deep)' }}
+            >
+              {money(selectedCents)}
+            </span>
+          </span>
+          <Button size="sm" variant="outline" data-testid="recurring-chart-txs" onClick={onShowTxs}>
+            {t('recurring.showTxs')}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** #168 r2 (user): the tapped period's story — the linked transactions
+ *  behind a paid number; a future estimate lists the expected items */
+function PeriodTxSheet({
+  sel,
+  chartYear,
+  recs,
+  linkedByRec,
+  today,
+  floor,
+  money,
+  onClose,
+}: Readonly<{
+  sel: { seriesIndex: number; monthIdx: number } | null;
+  chartYear: number;
+  recs: readonly RecurringRow[];
+  linkedByRec: ReadonlyMap<string, readonly ChartTx[]>;
+  today: string;
+  floor?: string;
+  money: (cents: number) => string;
+  onClose: () => void;
+}>) {
+  const { t, lang } = useLang();
+  const monthIdx = sel?.monthIdx ?? 0;
+  const monthKey = `${chartYear}-${String(monthIdx + 1).padStart(2, '0')}`;
+  const fmtDay = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
+
+  const active = useMemo(() => recs.filter((r) => r.active === 1), [recs]);
+  const txRows = useMemo(() => {
+    if (!sel) return [];
+    const rows: (ChartTx & { recName: string })[] = [];
+    for (const rec of active) {
+      for (const tx of linkedByRec.get(rec.id) ?? []) {
+        if (tx.date.startsWith(monthKey)) rows.push({ ...tx, recName: rec.name });
+      }
+    }
+    return rows.sort((a, b) => a.date.localeCompare(b.date));
+  }, [sel, active, linkedByRec, monthKey]);
+
+  // an ESTIMATE dot in a future month has no payments yet — it lists
+  // the expected recurring items for that month instead
+  const futureEstimate = sel?.seriesIndex === 0 && monthKey > today.slice(0, 7);
+  const expectedRows = useMemo(() => {
+    if (!futureEstimate) return [];
+    const lastDay = String(new Date(chartYear, monthIdx + 1, 0).getDate()).padStart(2, '0');
+    return computeRange(active, linkedByRec, `${monthKey}-01`, `${monthKey}-${lastDay}`, today, floor).filter(
+      (c) => c.occurrences > 0,
+    );
+  }, [futureEstimate, active, linkedByRec, monthKey, chartYear, monthIdx, today, floor]);
+
+  const rowClass = 'flex items-center gap-3 border-b border-line-2 py-2.5 last:border-0';
+  return (
+    <Sheet
+      open={sel !== null}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      title={`${new Date(chartYear, monthIdx, 1).toLocaleDateString(LOCALES[lang], { month: 'long' })} ${chartYear}`}
+      size="form"
+    >
+      <div data-testid="recurring-period-sheet" className="pt-1">
+        {futureEstimate
+          ? expectedRows.map((c) => (
+              <div key={c.rec.id} data-testid={`recurring-period-exp-${c.rec.id}`} className={rowClass}>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-ink">{c.rec.name}</span>
+                  <span className="block text-[11px] text-ink-4">{t('recurring.chartEstimate')}</span>
+                </span>
+                <span className="font-mono text-[13px] font-semibold text-ink">
+                  {c.occurrences > 1 ? `${c.occurrences}× ` : ''}
+                  {money(c.expectedCents)}
+                </span>
+              </div>
+            ))
+          : txRows.map((tx) => (
+              <div key={tx.id} data-testid={`recurring-period-tx-${tx.id}`} className={rowClass}>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-medium text-ink">{tx.title}</span>
+                  <span className="block text-[11px] text-ink-4">
+                    {tx.recName} · {fmtDay(tx.date)}
+                  </span>
+                </span>
+                <span className="font-mono text-[13px] font-semibold text-ink">{money(Math.abs(tx.amountCents))}</span>
+              </div>
+            ))}
+        {(futureEstimate ? expectedRows : txRows).length === 0 && (
+          <p className="py-6 text-center text-[12px] text-ink-4" data-testid="recurring-period-empty">
+            {t('recurring.periodNoTxs')}
+          </p>
+        )}
+      </div>
+    </Sheet>
   );
 }

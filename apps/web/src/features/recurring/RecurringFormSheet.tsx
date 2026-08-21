@@ -6,6 +6,9 @@ import { setDebtHandoff } from '@/features/debts/handoff';
 import { DebtHandoffInterstitial } from '@/features/debts/DebtHandoffInterstitial';
 import { useData } from '@/app/data';
 import { propagateRecurringCategory, useRecurringOps } from '@/application/recurring';
+import { useSpaceAccounts } from '@/application/transactions';
+import { specialCatType } from '@/domain/categories';
+import { counterTypesFor } from '@/domain/txType';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
@@ -38,6 +41,8 @@ export interface FormState {
   active: boolean;
   merchantKey?: string;
   catId?: string;
+  /** #274: counterparty account for a special category */
+  linkedAccountId?: string;
 }
 
 export const emptyForm = (): FormState => ({
@@ -85,6 +90,7 @@ export const formFromRec = (rec: RecurringRow): FormState => ({
   active: rec.active === 1,
   merchantKey: rec.merchantKey,
   catId: rec.catId,
+  linkedAccountId: rec.linkedAccountId,
 });
 
 export const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
@@ -162,13 +168,17 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
+  const accounts = useSpaceAccounts();
   const [form, setForm] = useState<FormState | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [catPickerOpen, setCatPickerOpen] = useState(false);
+  // #274: the counterparty pick for special categories
+  const [counterPickerOpen, setCounterPickerOpen] = useState(false);
   const [debtIntent, setDebtIntent] = useState(false);
   // what the category was when the sheet opened -- propagation fires
   // only on a real change
   const initialCatIdRef = useRef<string | undefined>(undefined);
+  const initialLinkRef = useRef<string | undefined>(undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // free-typed drafts so the '1' can be deleted while editing; clamped on blur
   const [dueDayText, setDueDayText] = useState('1');
@@ -186,6 +196,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
     if (seededRef.current === seedKey) return;
     seededRef.current = seedKey;
     initialCatIdRef.current = initial?.catId;
+    initialLinkRef.current = initial?.linkedAccountId;
     setForm(initial);
     setDueDayText(String(initial?.dueDay ?? 1));
     setEveryNText(String(initial?.everyN ?? 1));
@@ -199,6 +210,12 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   const baselineRef = useRef('');
   const dirty = form !== null && JSON.stringify(form) !== baselineRef.current;
   const blockerKey = form === null ? null : blockerKeyFor(form);
+  // #274: which accounts the category's counter matrix allows
+  const counterChoices = (() => {
+    if (!form?.catId || !specialCatType(form.catId)) return [];
+    const allowed = counterTypesFor(form.catId);
+    return (accounts ?? []).filter((acct) => !allowed || allowed.includes(acct.type));
+  })();
   // #195 rings, precomputed once (S3776: the JSX kept re-branching)
   const { nameBad, amountBad, dateBad } = recformRings(attempted, form);
 
@@ -220,11 +237,15 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
       notifyDaysBefore: form.notify || undefined,
       merchantKey: form.merchantKey,
       catId: form.catId ?? '', // '' clears -- an absent field would not sync
+      linkedAccountId: form.linkedAccountId ?? '', // #274 — same clear rule
     });
     // the recurring OWNS its transactions' category (user rule
-    // 2026-07-28): a changed category re-files every linked transaction
-    if (form.id && form.catId !== initialCatIdRef.current) {
-      await propagateRecurringCategory(store, repo, spaceId, form.id, form.catId).catch(() => undefined);
+    // 2026-07-28): a changed category re-files every linked transaction;
+    // #274: a changed counterparty rides the same propagation
+    if (form.id && (form.catId !== initialCatIdRef.current || form.linkedAccountId !== initialLinkRef.current)) {
+      await propagateRecurringCategory(store, repo, spaceId, form.id, form.catId, form.linkedAccountId || undefined).catch(
+        () => undefined,
+      );
     }
     onSaved?.(savedId);
     onClose();
@@ -294,6 +315,22 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               <span className="min-w-0 flex-1 truncate">{form.catId ? catName(cats.byId(form.catId), t) : t('recurring.pickCat')}</span>
               <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
             </button>
+
+            {/* #274 (user): a special category carries a counterparty —
+                transactions attached to this recurring inherit it */}
+            {form.catId && specialCatType(form.catId) && (
+              <button
+                data-testid="recform-counter"
+                onClick={() => setCounterPickerOpen(true)}
+                className="m-tap flex h-11 w-full items-center gap-2 rounded-input border border-line bg-surface px-3 text-left text-[14px] text-ink"
+              >
+                <Icon name="swap-horizontal" size={17} color="var(--m-accent-deep)" />
+                <span className={`min-w-0 flex-1 truncate${form.linkedAccountId ? '' : ' text-ink-4'}`}>
+                  {accounts?.find((a) => a.id === form.linkedAccountId)?.name ?? t('recurring.pickCounter')}
+                </span>
+                <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+              </button>
+            )}
 
             <div className="m-cap px-1">{t('recurring.amount')}</div>
             <input
@@ -501,9 +538,48 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
         direction="debit"
         selectedId={form?.catId}
         onPick={(catId) => {
-          if (form) setForm({ ...form, catId });
+          // #274: a counter only means something under a special category
+          if (form) setForm({ ...form, catId, ...(specialCatType(catId) ? {} : { linkedAccountId: undefined }) });
         }}
       />
+      {/* #274 (user): the counterparty pick — accounts the category's
+          matrix allows (sheet SIBLING, never nested — portal order) */}
+      <Sheet open={counterPickerOpen} onOpenChange={setCounterPickerOpen} title={t('recurring.counterTitle')} size="form">
+        <div className="flex flex-col gap-2 pt-1" data-testid="recform-counter-sheet">
+          {counterChoices.map((acct) => (
+            <button
+              key={acct.id}
+              data-testid={`recform-counter-acct-${acct.id}`}
+              onClick={() => {
+                if (form) setForm({ ...form, linkedAccountId: acct.id });
+                setCounterPickerOpen(false);
+              }}
+              className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[14px] text-ink"
+            >
+              <Icon name="bank-outline" size={18} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1 truncate">{acct.name}</span>
+              {form?.linkedAccountId === acct.id && <Icon name="check" size={16} color="var(--m-accent-deep)" />}
+            </button>
+          ))}
+          {counterChoices.length === 0 && (
+            <p className="px-1 py-4 text-center text-[13px] text-ink-4" data-testid="recform-counter-empty">
+              {t('recurring.counterEmpty')}
+            </p>
+          )}
+          {form?.linkedAccountId && (
+            <Button
+              variant="outline"
+              data-testid="recform-counter-clear"
+              onClick={() => {
+                if (form) setForm({ ...form, linkedAccountId: undefined });
+                setCounterPickerOpen(false);
+              }}
+            >
+              {t('recurring.counterNone')}
+            </Button>
+          )}
+        </div>
+      </Sheet>
       {debtIntent && form && (
         <DebtHandoffInterstitial
           onStay={() => setDebtIntent(false)}

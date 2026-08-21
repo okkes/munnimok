@@ -378,8 +378,14 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
         ref={(el) => registerCoveredEl(id, el)}
         className="relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none"
         style={{
-          height: fixedHeight,
-          maxHeight: '85dvh',
+          // #276: the dialog grows with its content — the phone's fixed
+          // heights left half-empty dialogs and clipped tall content on
+          // large screens. The size still sets a floor so short content
+          // keeps a recognizable shape; the ceiling is viewport-relative.
+          // (The MOBILE sheet keeps its mount-locked height — hard rule.)
+          height: 'auto',
+          minHeight: fixedHeight === undefined ? undefined : Math.round(fixedHeight * 0.6),
+          maxHeight: 'min(85dvh, 900px)',
           // grow from the source, shrink back to it — the covered-parent
           // recede writes to the same properties, so hand them over only
           // while entering/exiting

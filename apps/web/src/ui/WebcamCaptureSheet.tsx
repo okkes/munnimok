@@ -20,53 +20,74 @@ interface WebcamCaptureSheetProps {
   onCapture: (file: File) => void;
 }
 
+type CamError = 'denied' | 'nocamera' | 'busy' | 'unavailable';
+
+/** map a getUserMedia rejection to the guidance the user can act on */
+const camErrorOf = (err: unknown): CamError => {
+  const name = err instanceof Error ? err.name : '';
+  if (name === 'NotAllowedError' || name === 'SecurityError') return 'denied';
+  if (name === 'NotFoundError' || name === 'OverconstrainedError') return 'nocamera';
+  if (name === 'NotReadableError' || name === 'AbortError') return 'busy';
+  return 'denied';
+};
+
 /**
  * #160 (user): desktops have no camera-capable file input worth using —
  * a webcam snapshot sheet serves every own-picture upload site instead.
- * The stream starts on open and every track stops on close/unmount so
- * the camera light never lingers. Errors (permission denied, no camera,
- * no mediaDevices at all — happy-dom) render a note, never a crash.
+ * r2: Chromium suppresses permission prompts for gesture-less
+ * getUserMedia (Edge/Chrome showed no popup while Firefox asked), so
+ * the stream now starts from the explicit Start button — a real user
+ * activation — with an auto-attempt on open kept for browsers that
+ * allow it. Every failure names its cure (address-bar permission, no
+ * camera, camera busy). Tracks stop on close/unmount, always.
  */
 export function WebcamCaptureSheet({ open, onOpenChange, onCapture }: Readonly<WebcamCaptureSheetProps>) {
   const { t } = useLang();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<CamError | null>(null);
+  const [running, setRunning] = useState(false);
+
+  const stop = () => {
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    setRunning(false);
+  };
+
+  const start = async () => {
+    const media = navigator.mediaDevices;
+    if (!media?.getUserMedia) {
+      setError('unavailable'); // no API at all (old browser, test env)
+      return;
+    }
+    setError(null);
+    try {
+      const stream = await media.getUserMedia({ video: { facingMode: 'user' } });
+      streamRef.current = stream;
+      setRunning(true);
+      const video = videoRef.current;
+      if (video) {
+        try {
+          video.srcObject = stream;
+        } catch {
+          // happy-dom's <video> lacks a real srcObject sink — the
+          // preview simply stays blank there
+        }
+      }
+    } catch (err) {
+      setError(camErrorOf(err));
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
-    setError(false);
-    let cancelled = false;
-    const media = navigator.mediaDevices;
-    if (!media?.getUserMedia) {
-      setError(true); // no API at all (old browser, test env)
-      return;
-    }
-    media
-      .getUserMedia({ video: { facingMode: 'user' } })
-      .then((stream) => {
-        if (cancelled) {
-          // closed before the permission prompt resolved
-          stream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        streamRef.current = stream;
-        const video = videoRef.current;
-        if (video) {
-          try {
-            video.srcObject = stream;
-          } catch {
-            // happy-dom's <video> lacks a real srcObject sink — the
-            // preview simply stays blank there
-          }
-        }
-      })
-      .catch(() => setError(true)); // permission denied / no camera
-    return () => {
-      cancelled = true;
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
-    };
+    setError(null);
+    setRunning(false);
+    // the auto-attempt: browsers that prompt without a gesture (Firefox)
+    // get the old zero-tap flow; the rest land on the Start button
+    void start();
+    return stop;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const capture = () => {
@@ -94,26 +115,33 @@ export function WebcamCaptureSheet({ open, onOpenChange, onCapture }: Readonly<W
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('webcam.title')} size="tall">
       <div className="flex flex-col gap-3 pt-1">
-        {error ? (
-          <p className="rounded-card bg-bg-2 px-4 py-3 text-[13px] text-ink-3" data-testid="webcam-error">
-            {t('webcam.error')}
+        {error && (
+          <p className="rounded-card bg-bg-2 px-4 py-3 text-[13px] leading-relaxed text-ink-3" data-testid="webcam-error">
+            {t(`webcam.error.${error}`)}
           </p>
+        )}
+        {/* fixed px height — sheets must never size off vh */}
+        <video
+          ref={videoRef}
+          data-testid="webcam-video"
+          autoPlay
+          playsInline
+          muted
+          className="h-[320px] w-full rounded-card bg-bg-2 object-cover"
+        />
+        {running ? (
+          <Button data-testid="webcam-capture" onClick={capture}>
+            <Icon name="camera-outline" size={16} />
+            {t('webcam.capture')}
+          </Button>
         ) : (
-          <>
-            {/* fixed px height — sheets must never size off vh */}
-            <video
-              ref={videoRef}
-              data-testid="webcam-video"
-              autoPlay
-              playsInline
-              muted
-              className="h-[320px] w-full rounded-card bg-bg-2 object-cover"
-            />
-            <Button data-testid="webcam-capture" onClick={capture}>
+          error !== 'unavailable' && (
+            // r2: the GESTURE start — Chromium only prompts from here
+            <Button data-testid="webcam-start" onClick={() => void start()}>
               <Icon name="camera-outline" size={16} />
-              {t('webcam.capture')}
+              {t('webcam.start')}
             </Button>
-          </>
+          )
         )}
       </div>
     </Sheet>

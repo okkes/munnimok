@@ -273,8 +273,11 @@ export function AppLayout() {
                   // #140: choosing another TAB resets the tx lens
                   if (tab.to !== '/transactions') clearTxFilters();
                 }}
+                // #271: hover tints in the accent language — bg-surface
+                // (white on light bg-2 / gray on dark) read as stale gray
+                // blocks whenever hover state lingered
                 className={`m-tap flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium ${
-                  active ? 'bg-accent-soft text-accent-deep' : 'text-ink-2 hover:bg-surface'
+                  active ? 'bg-accent-soft text-accent-deep' : 'text-ink-2 hover:bg-accent-soft/40'
                 }`}
               >
                 <Icon name={active ? tab.iconActive : tab.icon} size={20} />

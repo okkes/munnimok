@@ -272,12 +272,27 @@
   }
 }
 
+/* #198 r3: Tailwind v4 draws divide-y through a zero-specificity
+   :where() whose border-bottom-style reads the CHILD's --tw-border-style
+   — so `border-none` on the row buttons (a UA-border reset, never a
+   divider opt-out) swallowed the hairline below every such row. This
+   re-asserts the divider edge above `.border-none` (0,1,0), scoped to
+   exactly the broken case; width/color still come from the divide
+   utilities, so `border-b-0` remains an explicit opt-out. */
+.divide-y > .border-none:not(:last-child) {
+  border-bottom-style: solid;
+}
+
 /* keyboard focus (redesign U5): a visible ring for tab users only —
    touch and mouse never see it. Editable fields are EXCLUDED: unlike
    buttons they match :focus-visible on plain touch focus too, which
    painted a green ring on every tapped input and clipped awkwardly at
-   sheet edges (user rule 2026-07-28: the caret is the focus signal) */
-:where(button, a, [tabindex]):focus-visible {
+   sheet edges (user rule 2026-07-28: the caret is the focus signal).
+   #156 r2: elements marked data-quiet-focus carry keyboard focus as a
+   background tint of their own instead — the square ring poked outside
+   the list card's rounded frame (this rule is unlayered, so a
+   focus-visible:outline-none utility alone could never beat it). */
+:where(button, a, [tabindex]):focus-visible:where(:not([data-quiet-focus])) {
   outline: 2px solid var(--m-accent);
   outline-offset: 2px;
 }
@@ -331,3 +346,13 @@
 /* info-only highlight: a soft steady glow — noticeable, clearly not a
    button to press (user ruling: two kinds of attention) */
 .m-mina-glow-soft { box-shadow: 0 0 10px 2px color-mix(in srgb, var(--m-accent) 40%, transparent), 0 0 0 1.5px color-mix(in srgb, var(--m-accent) 60%, transparent); }
+
+/* #227 r2: the echo's jump target pulses once, then fades — a soft
+   accent wash so the eye lands on the row the scroll stopped at
+   (duration mirrors FLASH_MS in AccountsScreen.flashJumpTarget) */
+@keyframes m-row-flash {
+  0% { background-color: transparent; }
+  15% { background-color: var(--m-accent-soft); }
+  100% { background-color: transparent; }
+}
+[data-flash='1'] { animation: m-row-flash 1.6s ease-out; }

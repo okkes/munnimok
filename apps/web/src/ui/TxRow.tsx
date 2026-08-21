@@ -36,6 +36,31 @@ function txVisual(
   return { icon: cat.icon, color: cat.color ?? parent?.color ?? 'var(--m-ink-3)', label: catName(cat, t) };
 }
 
+/** #156 r2: where the row sits against its group card's rounded frame */
+export type TxRowEdge = 'first' | 'last' | 'both' | 'none';
+
+// #156 r2: the full-bleed selection follows the card's corner radius at
+// the card's edges (the square tint poked past the rounded frame), and
+// keyboard focus wears the IDENTICAL treatment — the background carries
+// focus, replacing the outline ring (suppressed via data-quiet-focus in
+// styles.css). Literal class strings per edge: Tailwind only extracts
+// complete names.
+const EDGE_SELECTED: Record<TxRowEdge, string> = {
+  first: 'rounded-t-card rounded-b-none',
+  last: 'rounded-t-none rounded-b-card',
+  both: 'rounded-card',
+  none: 'rounded-none',
+};
+const EDGE_FOCUS: Record<TxRowEdge, string> = {
+  first: 'focus-visible:rounded-t-card focus-visible:rounded-b-none',
+  last: 'focus-visible:rounded-t-none focus-visible:rounded-b-card',
+  both: 'focus-visible:rounded-card',
+  none: 'focus-visible:rounded-none',
+};
+const SELECTED_BLEED = '-mx-3 w-[calc(100%+1.5rem)] bg-accent-soft/50 px-4';
+const FOCUS_BLEED =
+  'focus-visible:-mx-3 focus-visible:w-[calc(100%+1.5rem)] focus-visible:bg-accent-soft/50 focus-visible:px-4 focus-visible:outline-none';
+
 export function TxRow({
   tx,
   onClick,
@@ -45,10 +70,11 @@ export function TxRow({
   hideUnreviewed = false,
   amountOverrideCents,
   selected = false,
+  edge = 'none',
   accountName,
   givenCents = 0,
   transferNote,
-}: {
+}: Readonly<{
   tx: TransactionRow;
   onClick?: () => void;
   highlight?: string;
@@ -62,13 +88,16 @@ export function TxRow({
   amountOverrideCents?: number;
   /** master–detail panes mark the row whose detail is open (§4.2) */
   selected?: boolean;
+  /** #156 r2: rows at the group card's rim round their selection/focus
+   *  tint to the card's own radius; only those styles consume it */
+  edge?: TxRowEdge;
   /** desktop density (D2): the account surfaces as an md+ column */
   accountName?: string;
   /** cents this credit gave away as reimbursements (derived by the list) */
   givenCents?: number;
   /** collapsed transfer pair: "From → To" replaces the category line */
   transferNote?: string;
-}) {
+}>) {
   const { t, lang } = useLang();
   const cats = useCategories();
   // display-currency lens (currency plan): rows convert at their OWN
@@ -87,14 +116,19 @@ export function TxRow({
 
   return (
     <button
+      type="button"
       onClick={onClick}
       data-testid={`tx-row-${tx.id}`}
+      // #156 r2: styles.css skips the outline ring for this button — the
+      // focus-visible background below is the one focus signal
+      data-quiet-focus=""
       // #156: the selected row (desktop master–detail) tints edge to edge
-      // — the list card's px-3 left white slivers beside the highlight
+      // — the list card's px-3 left white slivers beside the highlight;
+      // keyboard focus paints the same full-bleed tint (one style, r2)
       className={`m-tap flex items-center gap-3 border-none py-2.5 text-left md:py-2 ${
         selected
-          ? '-mx-3 w-[calc(100%+1.5rem)] rounded-none bg-accent-soft/50 px-4'
-          : 'w-full rounded-xl bg-transparent px-1'
+          ? `${SELECTED_BLEED} ${EDGE_SELECTED[edge]}`
+          : `w-full rounded-xl bg-transparent px-1 ${FOCUS_BLEED} ${EDGE_FOCUS[edge]}`
       }`}
     >
       <span
