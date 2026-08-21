@@ -59,6 +59,26 @@ const seedFrom = (account: AccountRow) => ({
  * editable but their balance is the bank's and the row can't be
  * deleted from here. Writes target the ACCOUNT's own space.
  */
+/** dirty vs the row-derived seed (S3776: out of the component) */
+function editedVsSeed(
+  seed: ReturnType<typeof seedFrom>,
+  now: {
+    name: string; balance: string; negative: boolean; iban: string; original: string; apr: string;
+    payment: string; payDay: string; payEvery: RecurringEvery; payEveryN: number; note: string; track: boolean;
+  },
+  manual: boolean,
+  liability: boolean,
+): boolean {
+  if (now.name !== seed.name) return true;
+  if (manual && (now.balance !== seed.balance || now.negative !== seed.negative)) return true;
+  if (!liability) return false;
+  return (
+    now.iban !== seed.iban || now.original !== seed.original || now.apr !== seed.apr ||
+    now.payment !== seed.payment || now.payDay !== seed.payDay || now.payEvery !== seed.payEvery ||
+    now.payEveryN !== seed.payEveryN || now.note !== seed.note || now.track !== seed.track
+  );
+}
+
 export function EditAccountSheet({ account, onClose }: Readonly<{ account: AccountRow | null; onClose: () => void }>) {
   const { t, lang } = useLang();
   const { store, repo } = useData();
@@ -117,18 +137,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const seedNow = account ? seedFrom(account) : null;
   const dirty =
     !!seedNow &&
-    (name !== seedNow.name ||
-      (manual && (balance !== seedNow.balance || negative !== seedNow.negative)) ||
-      (liability &&
-        (iban !== seedNow.iban ||
-          original !== seedNow.original ||
-          apr !== seedNow.apr ||
-          payment !== seedNow.payment ||
-          payDay !== seedNow.payDay ||
-          payEvery !== seedNow.payEvery ||
-          payEveryN !== seedNow.payEveryN ||
-          note !== seedNow.note ||
-          track !== seedNow.track)));
+    editedVsSeed(seedNow, { name, balance, negative, iban, original, apr, payment, payDay, payEvery, payEveryN, note, track }, manual, liability);
 
   /** what the liability form asks of the row — empties null-clear */
   const storyChanges = (): Partial<AccountRow> => {

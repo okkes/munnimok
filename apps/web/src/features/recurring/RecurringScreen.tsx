@@ -438,7 +438,8 @@ function RecurringChartCard({
     ],
     [monthly, nowIndex],
   );
-  const selectedCents = selected ? (selected.seriesIndex === 0 ? monthly.expected : monthly.paid)[selected.pointIndex] : null;
+  const selectedSeries = selected?.seriesIndex === 0 ? monthly.expected : monthly.paid;
+  const selectedCents = selected ? selectedSeries[selected.pointIndex] : null;
   return (
     <div className="mt-3 rounded-card border border-line bg-surface p-4">
       <div className="mb-2 flex items-center gap-4 text-[11px] text-ink-3">

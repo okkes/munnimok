@@ -45,6 +45,48 @@ function nonNullRuns(values: readonly (number | null)[]): Run[] {
   return runs;
 }
 
+/** one tappable point (S2004: the handlers live outside the render
+ *  nesting) */
+function ChartDot({
+  si,
+  i,
+  cx,
+  cy,
+  color,
+  isSelected,
+  onPick,
+  testId,
+}: Readonly<{
+  si: number;
+  i: number;
+  cx: number;
+  cy: number;
+  color: string;
+  isSelected: boolean;
+  onPick: (seriesIndex: number, pointIndex: number) => void;
+  testId?: string;
+}>) {
+  const activate = () => onPick(si, i);
+  return (
+    <g
+      role="button"
+      tabIndex={0}
+      className="cursor-pointer outline-none"
+      onClick={activate}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          activate();
+        }
+      }}
+    >
+      <circle cx={cx} cy={cy} r={isSelected ? 4.5 : 3} fill={color} />
+      {/* transparent hit target — a 3px dot is untappable */}
+      <circle cx={cx} cy={cy} r={8} fill="transparent" data-testid={testId} />
+    </g>
+  );
+}
+
 export function MultiLine({
   series,
   labels,
@@ -76,29 +118,23 @@ export function MultiLine({
   const x = (i: number) => (n === 1 ? width / 2 : (i / (n - 1)) * width);
   const y = (value: number) => height - ((value - min) / span) * (height - 8) - 4;
 
+  const handlePick = (si: number, i: number) => onPointClick?.(si, i);
   const interactiveDots = (si: number, color: string, runs: readonly Run[]) =>
     runs.flatMap((run) =>
       run.points.map((value, k) => {
         const i = run.start + k;
-        const isSelected = selected?.seriesIndex === si && selected?.pointIndex === i;
         return (
-          <g
+          <ChartDot
             key={i}
-            role="button"
-            tabIndex={0}
-            className="cursor-pointer outline-none"
-            onClick={() => onPointClick?.(si, i)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onPointClick?.(si, i);
-              }
-            }}
-          >
-            <circle cx={x(i)} cy={y(value)} r={isSelected ? 4.5 : 3} fill={color} />
-            {/* transparent hit target — a 3px dot is untappable */}
-            <circle cx={x(i)} cy={y(value)} r={8} fill="transparent" data-testid={testId ? `${testId}-dot-${si}-${i}` : undefined} />
-          </g>
+            si={si}
+            i={i}
+            cx={x(i)}
+            cy={y(value)}
+            color={color}
+            isSelected={selected?.seriesIndex === si && selected?.pointIndex === i}
+            onPick={handlePick}
+            testId={testId ? `${testId}-dot-${si}-${i}` : undefined}
+          />
         );
       }),
     );

@@ -45,8 +45,10 @@ public static class SyncEndpoints
         // read and collide on a PK at save. A clean retry re-reads what
         // the winner committed and the LWW merge converges; without it
         // the client saw 500s, retried, and ran into the rate limiter.
-        for (var attempt = 1; ; attempt++)
+        var attempt = 0;
+        while (true)
         {
+            attempt++;
             try
             {
                 return await PushOnce(spaceId, request, db, events, userId);

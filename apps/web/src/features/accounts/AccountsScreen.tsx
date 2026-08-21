@@ -46,13 +46,15 @@ function flashJumpTarget(accountId: string): void {
   target.scrollIntoView({ behavior: 'smooth', block: 'center' });
   const pending = flashTimers.get(target);
   if (pending !== undefined) window.clearTimeout(pending);
-  target.removeAttribute('data-flash');
+  delete target.dataset.flash;
   // reflow restarts the CSS animation on a re-tap mid-pulse
   void target.offsetWidth;
-  target.setAttribute('data-flash', '1');
+  target.dataset.flash = '1';
   flashTimers.set(
     target,
-    window.setTimeout(() => target.removeAttribute('data-flash'), FLASH_MS),
+    window.setTimeout(() => {
+      delete target.dataset.flash;
+    }, FLASH_MS),
   );
 }
 

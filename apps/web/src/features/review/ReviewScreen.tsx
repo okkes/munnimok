@@ -179,6 +179,27 @@ const stageWithBulkWarning = (
   else stage();
 };
 
+/** #268: the per-sibling counter queue a confirmed row-level pick
+ *  leaves behind — null when nothing queues (S3776) */
+function queuedCounterBulk(
+  pickedPeer: { txId: string; linkedId: string } | null,
+  bulk: SpaceTx[],
+  draft: ReviewDraft,
+  accounts: readonly { id: string; name: string }[] | undefined,
+  recurringId: string | undefined,
+  eventId: string | undefined,
+): { items: SpaceTx[]; draft: ReviewDraft; recurringId?: string; eventId?: string; target: { id: string; name: string } } | null {
+  if (!pickedPeer || bulk.length === 0 || !draft.linkedAccountId) return null;
+  const linkedId = draft.linkedAccountId;
+  return {
+    items: bulk,
+    draft,
+    recurringId,
+    eventId,
+    target: { id: linkedId, name: accounts?.find((a) => a.id === linkedId)?.name ?? '' },
+  };
+}
+
 /** #237 r3: the match sheet's create/await doors — manual counters get
  *  Create, bank-fed ones Wait; both just reset the pick (S3776) */
 const resetPickDoor = (bankFed: boolean, wantBank: boolean, clear: () => void): (() => void) | undefined =>
@@ -1847,7 +1868,7 @@ export function ReviewScreen() {
     const bulk = partPeers.length > 0 ? [] : similar.filter((s) => bulkSelected.has(s.id));
     const recurringId = container && !isLoanCounter ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined;
     const eventId = container ? (eventPick ?? undefined) : undefined;
-    const queued = pickedPeer && bulk.length > 0 && draft.linkedAccountId ? bulk : [];
+    const queued = queuedCounterBulk(pickedPeer, bulk, draft, spaceAccounts, recurringId, eventId);
     await writeConfirmation({
       tx,
       draft,
@@ -1859,16 +1880,7 @@ export function ReviewScreen() {
       pairPeerId: pickedPeer?.txId,
     });
     await pairReviewPicks({ store, repo, spaceId }, tx, pickedPeer?.txId, partPeers);
-    if (queued.length > 0) {
-      const linkedId = draft.linkedAccountId!;
-      setCounterBulk({
-        items: queued,
-        draft,
-        recurringId,
-        eventId,
-        target: { id: linkedId, name: spaceAccounts?.find((a) => a.id === linkedId)?.name ?? '' },
-      });
-    }
+    if (queued) setCounterBulk(queued);
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
     const bulkN = pickedPeer ? 0 : bulk.length;

@@ -433,8 +433,77 @@ function AccountFieldRow({ account, onOpen, bad = false }: Readonly<{ account: A
  * automatically synced accounts (open banking) never take manual rows:
  * the bank feed is their single source of truth (user rule).
  */
-export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProps) {
+/** #269: the signed cents a manual save writes — target mode is the
+ *  difference to the account's balance, delta mode the signed value
+ *  (S3776/S3358: out of the component) */
+function signedManualCents(adjustment: boolean, adjustTarget: boolean, cents: number, adjustBase: number, isExpense: boolean): number {
+  if (adjustment && adjustTarget) return Math.abs(cents) - adjustBase;
+  return isExpense ? -Math.abs(cents) : Math.abs(cents);
+}
+
+/** #195 r2: the (field, message) the blocker cascade names (S3776) */
+function manualBlockerFor(args: {
+  attempted: boolean;
+  valid: boolean;
+  merchant: string;
+  cents: number | null;
+  adjustNoop: boolean;
+  effectiveAccount: string | null;
+  startGateBlocking: string | undefined;
+  t: ReturnType<typeof useLang>['t'];
+}): [string, string] {
+  const { t } = args;
+  if (!args.attempted || args.valid) return ['', ''];
+  if (!args.merchant.trim()) return ['merchant', t('form.needName')];
+  if (args.cents === null || args.cents === 0) return ['amount', t('form.needAmount')];
+  if (args.adjustNoop) return ['amount', t('txform.adjustNoop')];
+  if (!args.effectiveAccount) return ['account', t('form.needAccount')];
+  // the start-gate card already explains itself — just point at it
+  if (args.startGateBlocking) return ['form', t('form.fixErrors')];
+  return ['form', t('form.needFields')];
+}
+
+/** #269 (user): the adjustment names its balance impact, and the typed
+ *  number can mean the value OR the balance to land on (S3776) */
+function AdjustmentPanel({
+  adjustTarget,
+  onMode,
+  adjustDelta,
+  adjustBase,
+  currency,
+}: Readonly<{
+  adjustTarget: boolean;
+  onMode: (target: boolean) => void;
+  adjustDelta: number | null;
+  adjustBase: number;
+  currency: string;
+}>) {
   const { t, lang } = useLang();
+  return (
+    <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="txform-adjust-panel">
+      <div className="flex gap-1.5">
+        <Chip testId="txform-adjust-mode-delta" selected={!adjustTarget} onClick={() => onMode(false)}>
+          {t('txform.adjustModeDelta')}
+        </Chip>
+        <Chip testId="txform-adjust-mode-target" selected={adjustTarget} onClick={() => onMode(true)}>
+          {t('txform.adjustModeTarget')}
+        </Chip>
+      </div>
+      <p className="text-[12px] text-ink-3" data-testid="txform-adjust-impact">
+        {adjustDelta === null
+          ? t('txform.adjustImpactIdle')
+          : t('txform.adjustImpact', {
+              from: fmtCents(adjustBase, currency, lang),
+              to: fmtCents(adjustBase + adjustDelta, currency, lang),
+              delta: fmtCents(adjustDelta, currency, lang, { sign: true }),
+            })}
+      </p>
+    </div>
+  );
+}
+
+export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProps) {
+  const { t } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
@@ -522,32 +591,23 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // derives the transaction's value from the difference to the balance)
   const adjustBase = selectedAccount?.balanceCents ?? 0;
   const adjustDelta =
-    adjustment && cents !== null && cents !== 0
-      ? (adjustTarget ? Math.abs(cents) - adjustBase : (isExpense ? -Math.abs(cents) : Math.abs(cents)))
-      : null;
-  const adjustNoop = adjustment && adjustTarget && cents !== null && cents !== 0 && adjustDelta === 0;
+    adjustment && cents !== null && cents !== 0 ? signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense) : null;
+  const adjustNoop = adjustTarget && adjustDelta === 0;
   const valid =
     isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing: false, beforeStart: !!startGateBlocking }) &&
     !adjustNoop;
   // #195 r2 (user): the note renders under the field it names — one
   // (field, text) pair at a time, the note scrolls itself into view
-  const [blockerField, blockerText] = ((): [string, string] => {
-    if (!attempted || valid) return ['', ''];
-    if (!merchant.trim()) return ['merchant', t('form.needName')];
-    if (cents === null || cents === 0) return ['amount', t('form.needAmount')];
-    if (adjustNoop) return ['amount', t('txform.adjustNoop')];
-    if (!effectiveAccount) return ['account', t('form.needAccount')];
-    // the start-gate card already explains itself — just point at it
-    if (startGateBlocking) return ['form', t('form.fixErrors')];
-    return ['form', t('form.needFields')];
-  })();
+  const [blockerField, blockerText] = manualBlockerFor({
+    attempted, valid, merchant, cents, adjustNoop, effectiveAccount, startGateBlocking, t,
+  });
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
 
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
     // #269: target mode writes the DIFFERENCE to the named balance
-    const signed = adjustment && adjustTarget ? Math.abs(cents) - adjustBase : (isExpense ? -Math.abs(cents) : Math.abs(cents));
+    const signed = signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense);
     const rowId = tx?.id ?? repo.newId();
     // Q8: a stamped row that names a counterparty is a movement — the
     // category is forced from the special account's own side; a bare
@@ -749,25 +809,13 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
           {/* #269 (user): the adjustment names its balance impact, and the
               typed number can mean the value OR the balance to land on */}
           {adjustment && selectedAccount && (
-            <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="txform-adjust-panel">
-              <div className="flex gap-1.5">
-                <Chip testId="txform-adjust-mode-delta" selected={!adjustTarget} onClick={() => setAdjustTarget(false)}>
-                  {t('txform.adjustModeDelta')}
-                </Chip>
-                <Chip testId="txform-adjust-mode-target" selected={adjustTarget} onClick={() => setAdjustTarget(true)}>
-                  {t('txform.adjustModeTarget')}
-                </Chip>
-              </div>
-              <p className="text-[12px] text-ink-3" data-testid="txform-adjust-impact">
-                {adjustDelta === null
-                  ? t('txform.adjustImpactIdle')
-                  : t('txform.adjustImpact', {
-                      from: fmtCents(adjustBase, formCurrency, lang),
-                      to: fmtCents(adjustBase + adjustDelta, formCurrency, lang),
-                      delta: fmtCents(adjustDelta, formCurrency, lang, { sign: true }),
-                    })}
-              </p>
-            </div>
+            <AdjustmentPanel
+              adjustTarget={adjustTarget}
+              onMode={setAdjustTarget}
+              adjustDelta={adjustDelta}
+              adjustBase={adjustBase}
+              currency={formCurrency}
+            />
           )}
 
           {/* manual counter account: offer to write the other side too —
