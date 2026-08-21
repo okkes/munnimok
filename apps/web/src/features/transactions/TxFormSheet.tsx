@@ -441,6 +441,12 @@ function signedManualCents(adjustment: boolean, adjustTarget: boolean, cents: nu
   return isExpense ? -Math.abs(cents) : Math.abs(cents);
 }
 
+/** #269: the live balance delta — null while the field is empty (S3776) */
+function adjustDeltaFor(adjustment: boolean, adjustTarget: boolean, cents: number | null, adjustBase: number, isExpense: boolean): number | null {
+  if (!adjustment || cents === null || cents === 0) return null;
+  return signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense);
+}
+
 /** #195 r2: the (field, message) the blocker cascade names (S3776) */
 function manualBlockerFor(args: {
   attempted: boolean;
@@ -466,12 +472,15 @@ function manualBlockerFor(args: {
 /** #269 (user): the adjustment names its balance impact, and the typed
  *  number can mean the value OR the balance to land on (S3776) */
 function AdjustmentPanel({
+  show,
   adjustTarget,
   onMode,
   adjustDelta,
   adjustBase,
   currency,
 }: Readonly<{
+  /** on only while the checkbox is ticked AND an account is picked */
+  show: boolean;
   adjustTarget: boolean;
   onMode: (target: boolean) => void;
   adjustDelta: number | null;
@@ -479,6 +488,7 @@ function AdjustmentPanel({
   currency: string;
 }>) {
   const { t, lang } = useLang();
+  if (!show) return null;
   return (
     <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="txform-adjust-panel">
       <div className="flex gap-1.5">
@@ -499,6 +509,67 @@ function AdjustmentPanel({
             })}
       </p>
     </div>
+  );
+}
+
+/** #269: the category row — locked to Balance Adjustment while the
+ *  checkbox is on (S3776: the swap lives out of the component) */
+function FormCategorySlot({
+  adjustment,
+  tx,
+  cat,
+  cats,
+  stagedCats,
+  onOpen,
+}: Readonly<{
+  adjustment: boolean;
+  tx: TransactionRow | undefined;
+  cat: ReturnType<ReturnType<typeof useCategories>['byId']>;
+  cats: ReturnType<typeof useCategories>;
+  stagedCats: TxSplitCat[] | null;
+  onOpen: () => void;
+}>) {
+  const { t } = useLang();
+  if (!adjustment) return <FormCategoryRow tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={onOpen} />;
+  return (
+    <div
+      className="flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-[15px] text-ink-3"
+      data-testid="txform-adjust-cat"
+    >
+      <Icon name="scale-balance" size={20} color="var(--m-ink-3)" />
+      <span className="flex-1">{catName(cats.byId('balanceAdjustment'), t)}</span>
+      <Icon name="lock-outline" size={14} color="var(--m-ink-4)" />
+    </div>
+  );
+}
+
+/** #269: the recurring-link row — never on an adjustment (S3776) */
+function RecurringLinkRow({
+  adjustment,
+  recurrings,
+  recurringId,
+  onOpen,
+}: Readonly<{
+  adjustment: boolean;
+  recurrings: readonly Pick<RecurringRow, 'id' | 'name'>[] | undefined;
+  recurringId: string | null;
+  onOpen: () => void;
+}>) {
+  const { t } = useLang();
+  if (adjustment || (recurrings?.length ?? 0) === 0) return null;
+  return (
+    <button
+      data-testid="txform-recurring"
+      onClick={onOpen}
+      className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+    >
+      <Icon name="autorenew" size={20} color="var(--m-ink-3)" />
+      <span className={`flex-1 ${recurringId ? '' : 'text-ink-4'}`}>
+        {recurrings?.find((r) => r.id === recurringId)?.name ?? t('recurring.linkNone')}
+      </span>
+      <span className="text-xs text-ink-4">{t('recurring.linkTitle')}</span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
   );
 }
 
@@ -590,8 +661,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // #269: the adjustment's balance story — current → after (target mode
   // derives the transaction's value from the difference to the balance)
   const adjustBase = selectedAccount?.balanceCents ?? 0;
-  const adjustDelta =
-    adjustment && cents !== null && cents !== 0 ? signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense) : null;
+  const adjustDelta = adjustDeltaFor(adjustment, adjustTarget, cents, adjustBase, isExpense);
   const adjustNoop = adjustTarget && adjustDelta === 0;
   const valid =
     isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing: false, beforeStart: !!startGateBlocking }) &&
@@ -808,15 +878,14 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
 
           {/* #269 (user): the adjustment names its balance impact, and the
               typed number can mean the value OR the balance to land on */}
-          {adjustment && selectedAccount && (
-            <AdjustmentPanel
-              adjustTarget={adjustTarget}
-              onMode={setAdjustTarget}
-              adjustDelta={adjustDelta}
-              adjustBase={adjustBase}
-              currency={formCurrency}
-            />
-          )}
+          <AdjustmentPanel
+            show={adjustment && !!selectedAccount}
+            adjustTarget={adjustTarget}
+            onMode={setAdjustTarget}
+            adjustDelta={adjustDelta}
+            adjustBase={adjustBase}
+            currency={formCurrency}
+          />
 
           {/* manual counter account: offer to write the other side too —
               without it "-100 to savings" updated only half the picture */}
@@ -827,35 +896,9 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
           {/* category row — the split-categories editor (#211). A split
               CONTAINER owns no category of its own: the row states the
               parts and stays inert (the detail's manage flow edits them) */}
-          {adjustment ? (
-            <div
-              className="flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-[15px] text-ink-3"
-              data-testid="txform-adjust-cat"
-            >
-              <Icon name="scale-balance" size={20} color="var(--m-ink-3)" />
-              <span className="flex-1">{catName(cats.byId('balanceAdjustment'), t)}</span>
-              <Icon name="lock-outline" size={14} color="var(--m-ink-4)" />
-            </div>
-          ) : (
-            <FormCategoryRow tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={() => setCatsSheetOpen(true)} />
-          )}
+          <FormCategorySlot adjustment={adjustment} tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={() => setCatsSheetOpen(true)} />
 
-          {/* recurring link (only when the space has recurring costs;
-              #269: never on an adjustment) */}
-          {!adjustment && (recurrings?.length ?? 0) > 0 && (
-            <button
-              data-testid="txform-recurring"
-              onClick={() => setRecurringOpen(true)}
-              className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-            >
-              <Icon name="autorenew" size={20} color="var(--m-ink-3)" />
-              <span className={`flex-1 ${recurringId ? '' : 'text-ink-4'}`}>
-                {recurrings?.find((r) => r.id === recurringId)?.name ?? t('recurring.linkNone')}
-              </span>
-              <span className="text-xs text-ink-4">{t('recurring.linkTitle')}</span>
-              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-            </button>
-          )}
+          <RecurringLinkRow adjustment={adjustment} recurrings={recurrings} recurringId={recurringId} onOpen={() => setRecurringOpen(true)} />
 
           <FormBlockerNote show={blockerField === 'form'} text={blockerText} testId="txform-save-blocker" />
           <Button

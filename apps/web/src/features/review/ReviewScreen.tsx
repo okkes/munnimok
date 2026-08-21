@@ -179,6 +179,21 @@ const stageWithBulkWarning = (
   else stage();
 };
 
+/** #221/#228 r3: the default account a BARE movement confirm links in
+ *  the same write — transfer keeps no fallback (S3776: out of confirm) */
+async function bareMovementDefaultLink(
+  deps: { store: ReturnType<typeof useData>['store']; repo: ReturnType<typeof useData>['repo']; spaceId: string },
+  ownStamp: unknown,
+  draft: ReviewDraft,
+): Promise<string | undefined> {
+  const family =
+    !ownStamp && !draft.linkedAccountId && !draft.cats?.length && !draft.splits?.length && isMovementCat(draft.catId)
+      ? defaultFamilyFor(draft.catId)
+      : null;
+  if (!family || family === 'transfer') return undefined;
+  return ensureDefaultAccount(deps.store, deps.repo, deps.spaceId, family);
+}
+
 /** #268: the per-sibling counter queue a confirmed row-level pick
  *  leaves behind — null when nothing queues (S3776) */
 function queuedCounterBulk(
@@ -1854,13 +1869,7 @@ export function ReviewScreen() {
     // #228 r3 (user rule): the TRANSFER family lost that fallback — an
     // automatic transfer either clue-matched a real account upstream or
     // stood down to Uncategorized; its default is a manual pick only.
-    const bareMovementFamily =
-      !ownStamp && !draft.linkedAccountId && !draft.cats?.length && !draft.splits?.length && isMovementCat(draft.catId)
-        ? defaultFamilyFor(draft.catId)
-        : null;
-    const defaultLinkId = bareMovementFamily && bareMovementFamily !== 'transfer'
-      ? await ensureDefaultAccount(store, repo, spaceId, bareMovementFamily)
-      : undefined;
+    const defaultLinkId = await bareMovementDefaultLink({ store, repo, spaceId }, ownStamp, draft);
     // #237 r2: a pick on any PART is specific to this transaction — the
     // bulk apply stands down. #268 (user): a ROW-level pick keeps bulk
     // alive instead — the siblings walk a per-transaction match queue.
