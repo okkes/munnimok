@@ -41,14 +41,14 @@ assistant's memory alongside the guide/tour maintenance rules.
 
 ## Recurring & debts
 - [ ] Detection inbox → accept walks the occurrence review; linked charges take the category
-- [ ] Ranges (period/next/year) tell the truth; the year chart plots estimate vs paid
+- [ ] Ranges (period/next/year) tell the truth; the year chart plots paid-to-now and estimate-from-now with tappable dots
 - [ ] A loan account shows debt, plan, payments and payoff; lender detection lands on Debts
 
 ## Accounts & banks
 - [ ] Global overview: sections, defaults fold, echoes jump to the real row
 - [ ] Connect a bank (choice, consent, callback, nightly fetch, reconnect); imports (bank chooser, preview, progress, result → explicit attach)
 - [ ] Attach/detach per space with type; rename locally vs globally; type change re-reviews that space only
-- [ ] Edit an account (balance → adjustment where it applies); delete manual and bank-fed accounts cleanly
+- [ ] Edit an account (a manual balance edit records an adjustment transaction); delete manual and bank-fed accounts cleanly
 
 ## Plans (budgets, goals, allocation, events)
 - [ ] Budget lifecycle: create with categories, thresholds warn, carry-over works

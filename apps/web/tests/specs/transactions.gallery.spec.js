@@ -127,7 +127,8 @@ for (const V of VARIANTS) {
     // net −18.99, gross struck through, summary line
     await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('18.99');
     await expect(page.locator('[data-testid="tx-detail-original-amount"]')).toContainText('28.99'); // details block owns the original
-    await expect(page.locator('[data-testid="reimb-summary"]')).toContainText('10.00');
+    // #231 r2: the section is links-only — the linked row carries the amount
+    await expect(page.locator('[data-testid="reimb-list"] [data-testid^="reimb-row-"]').first()).toContainText('10.00');
     await shot(page, k('34-tx-reimburse'));
     // unlink restores the gross amount
     await page.locator('[data-testid^="reimb-unlink-"]').click();
