@@ -570,7 +570,7 @@ describe('AccountsScreen (demo identity)', () => {
     expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }, 15_000);
 
-  it('#288: shared-with-me drops deletion ghosts — dead or archived-only mirrors never render', async () => {
+  it('#288: shared-with-me drops deletion ghosts — a dead mirror never renders; archived-only stays with its pill', async () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
@@ -592,8 +592,8 @@ describe('AccountsScreen (demo identity)', () => {
       accountId: 'sh-live',
       attachedByName: 'Marie',
     });
-    // ghost A: the mirror outlived a feed deletion — only an ARCHIVED
-    // attachment echo remains, so it answers no tap and names no sharer
+    // NOT a ghost: an archived-only echo is the DESIGNED left-the-space
+    // state (sync-a6) — the row stays, wearing the Archived pill
     await repo.upsert('account', 'feed-ghost', 'sh-ghost', {
       name: 'Ghost bank',
       type: 'checking',
@@ -633,8 +633,9 @@ describe('AccountsScreen (demo identity)', () => {
     const section = await screen.findByTestId('accounts-shared', {}, { timeout: 5000 });
     expect(screen.getByTestId('shared-account-sh-live')).toBeTruthy();
     expect(section.textContent).toContain('Marie');
-    // the ghosts render nowhere — not in the section, not as global rows
-    expect(screen.queryByTestId('shared-account-sh-ghost')).toBeNull();
+    // archived-only STAYS (the sharer left; rejoin re-arms it)…
+    expect(screen.getByTestId('shared-account-sh-ghost')).toBeTruthy();
+    // …only the tombstoned mirror is a true ghost and renders nowhere
     expect(screen.queryByTestId('shared-account-sh-dead')).toBeNull();
     expect(screen.queryByTestId('account-row-sh-ghost')).toBeNull();
     expect(screen.queryByTestId('account-row-sh-dead')).toBeNull();

@@ -446,11 +446,13 @@ export function AccountsScreen() {
   // #288 (user): a deleted feed can leave a ghost — an attachment echo
   // from a member space re-asserts the mirror row after /me/feeds has
   // disowned it, and the row lingered under "Shared with me" answering
-  // no tap and naming no sharer. A shared-with-me row is only real
-  // while its account row is LIVE and someone's attachment still
-  // stands un-archived; anything else is dead weight and drops here.
+  // no tap and naming no sharer. The bar is a LIVE account row —
+  // archived-only stays (the sharer left; the Archived pill and the
+  // rejoin flow own that state, sync-a6), a tombstoned account drops.
   const sharedWithMe = useMemo(
-    () => (global?.sharedWithMe ?? []).filter((e) => e.account.deleted === 0 && e.sharedVia.some((v) => !v.archived)),
+    // a live account row is the bar — archived-only is a DESIGNED state
+    // (the sharer left; the row wears the Archived pill until rejoin)
+    () => (global?.sharedWithMe ?? []).filter((e) => e.account.deleted === 0),
     [global],
   );
   // #227: bank-fed accounts echo (inert) inside each space they feed
