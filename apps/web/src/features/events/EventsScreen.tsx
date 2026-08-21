@@ -189,6 +189,8 @@ export function EventFormSheet({
           aria-invalid={attempted && !name.trim()}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
+        {/* #195 r2 (user): the blocker sits AT the field */}
+        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="eventform-save-blocker" />
         <div className="flex items-end gap-2">
           <label className="relative min-w-0 flex-1 text-[12px] text-ink-3">
             {t('events.from')}
@@ -245,7 +247,6 @@ export function EventFormSheet({
             {t(editing.archived === 1 ? 'events.unarchive' : 'events.archive')}
           </button>
         )}
-        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="eventform-save-blocker" />
         <Button
           data-testid="eventform-save"
           onClick={() => {

@@ -611,6 +611,68 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     db.close();
   }, 20_000);
 
+  it('#268: bulk after a specific pick runs the per-sibling counter queue', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('queue-seed'), { trackOutbox: false });
+    await seedRepo.upsert('account', DEMO_SPACE_ID, 'qs1', {
+      name: 'Queue pot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 10_000,
+    });
+    // two same-merchant expenses + one pot twin EACH
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'dt1', {
+      accountId: 'demo_main', date: '2026-02-01', amountCents: -500, currency: 'EUR',
+      merchant: 'Queue Shop', catId: 'uncategorized', txType: 'expense', needsReview: 0,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'dt2', {
+      accountId: 'demo_main', date: '2026-02-02', amountCents: -500, currency: 'EUR',
+      merchant: 'Queue Shop', catId: 'uncategorized', txType: 'expense', needsReview: 0,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'qc1', {
+      accountId: 'qs1', date: '2026-02-01', amountCents: 500, currency: 'EUR',
+      merchant: 'Pot in one', catId: 'uncategorized', txType: 'income', needsReview: 0,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'qc2', {
+      accountId: 'qs1', date: '2026-02-02', amountCents: 500, currency: 'EUR',
+      merchant: 'Pot in two', catId: 'uncategorized', txType: 'income', needsReview: 0,
+    });
+    seed.close();
+    cleanup();
+    renderApp('/transactions/dt1');
+    await screen.findByTestId('screen-tx-detail');
+
+    // special cat + counter + SPECIFIC pick through the editor
+    fireEvent.click(await screen.findByTestId('tx-detail-cats-edit'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    await screen.findByTestId('counter-default');
+    fireEvent.click(await screen.findByTestId('counter-pick-qs1'));
+    await screen.findByTestId('counter-fork');
+    fireEvent.click((await screen.findByTestId('counter-dup-qc1')).querySelector('button')!);
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('qs1'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+
+    // the sibling offer arms; applying opens the per-transaction queue
+    // instead of copying the pick (#268 user spec)
+    fireEvent.click(await screen.findByTestId('tx-detail-bulk-apply'));
+    const context = await screen.findByTestId('counter-queue-context');
+    expect(context.textContent).toContain('Queue Shop');
+    expect(context.textContent).toContain('1/1');
+    fireEvent.click((await screen.findByTestId('counter-dup-qc2')).querySelector('button')!);
+
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      expect((await db.transactions.get('dt1'))?.transferPeerId).toBe('qc1');
+      const sibling = await db.transactions.get('dt2');
+      expect(sibling?.catId).toBe('savingDeposit');
+      expect(sibling?.linkedAccountId).toBe('qs1');
+      expect(sibling?.transferPeerId).toBe('qc2');
+      expect((await db.transactions.get('qc2'))?.transferPeerId).toBe('dt2');
+    }, { timeout: 8000 });
+    db.close();
+  }, 25_000);
+
   it('#133 B: the fork can also CREATE the counterpart — the mint, as always', async () => {
     renderApp('/transactions/dm6');
     await screen.findByTestId('screen-tx-detail');
@@ -810,6 +872,10 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
 
     // link a partial 20,00 instead
     fireEvent.change(amountInput, { target: { value: '20,00' } });
+    // #233 r2: both sides preview their category shift before saving
+    const impact = screen.getByTestId('reimb-impact');
+    expect(impact.textContent).toContain('€52.40 → €32.40');
+    expect(impact.textContent).toContain('€0.00 → €20.00');
     fireEvent.click(screen.getByTestId('reimb-save'));
 
     // #231 r2: the section is the LINKS only — the linked row carries the

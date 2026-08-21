@@ -13,6 +13,7 @@ import { applyHistoryMove } from '@/application/historyStart';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
+import { Chip } from '@/ui/primitives';
 import { focusEntryMode, nextAmountEntry } from '@/lib/amountRegister';
 import type { AmountEntryMode } from '@/lib/amountRegister';
 import type { AccountRow, RecurringRow, TransactionRow, TxSplitCat, TxType } from '@/db/types';
@@ -433,7 +434,7 @@ function AccountFieldRow({ account, onOpen, bad = false }: Readonly<{ account: A
  * the bank feed is their single source of truth (user rule).
  */
 export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProps) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
@@ -452,6 +453,9 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // #133 D: no kind — a counterparty makes it a transfer, the toggle
   // marks manual corrections (C3)
   const [adjustment, setAdjustment] = useState(false);
+  // #269 (user): what the typed number MEANS while Adjustment is on —
+  // the transaction's value (default) or the balance to land on
+  const [adjustTarget, setAdjustTarget] = useState(false);
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
   const [recurringId, setRecurringId] = useState<string | null>(null);
   const [counterOpen, setCounterOpen] = useState(false);
@@ -514,22 +518,36 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const ownStamp = accountStamp(selectedAccount?.type);
   const effectiveType = formEffectiveType(adjustment, ownStamp, catId, linkedAccount, isExpense);
   const startGateBlocking = blockingStartDate(space, date);
-  const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing: false, beforeStart: !!startGateBlocking });
-  const blockerText = (() => {
-    if (!attempted || valid) return '';
-    if (!merchant.trim()) return t('form.needName');
-    if (cents === null || cents === 0) return t('form.needAmount');
-    if (!effectiveAccount) return t('form.needAccount');
+  // #269: the adjustment's balance story — current → after (target mode
+  // derives the transaction's value from the difference to the balance)
+  const adjustBase = selectedAccount?.balanceCents ?? 0;
+  const adjustDelta =
+    adjustment && cents !== null && cents !== 0
+      ? (adjustTarget ? Math.abs(cents) - adjustBase : (isExpense ? -Math.abs(cents) : Math.abs(cents)))
+      : null;
+  const adjustNoop = adjustment && adjustTarget && cents !== null && cents !== 0 && adjustDelta === 0;
+  const valid =
+    isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing: false, beforeStart: !!startGateBlocking }) &&
+    !adjustNoop;
+  // #195 r2 (user): the note renders under the field it names — one
+  // (field, text) pair at a time, the note scrolls itself into view
+  const [blockerField, blockerText] = ((): [string, string] => {
+    if (!attempted || valid) return ['', ''];
+    if (!merchant.trim()) return ['merchant', t('form.needName')];
+    if (cents === null || cents === 0) return ['amount', t('form.needAmount')];
+    if (adjustNoop) return ['amount', t('txform.adjustNoop')];
+    if (!effectiveAccount) return ['account', t('form.needAccount')];
     // the start-gate card already explains itself — just point at it
-    if (startGateBlocking) return t('form.fixErrors');
-    return t('form.needFields');
+    if (startGateBlocking) return ['form', t('form.fixErrors')];
+    return ['form', t('form.needFields')];
   })();
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
 
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
-    const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
+    // #269: target mode writes the DIFFERENCE to the named balance
+    const signed = adjustment && adjustTarget ? Math.abs(cents) - adjustBase : (isExpense ? -Math.abs(cents) : Math.abs(cents));
     const rowId = tx?.id ?? repo.newId();
     // Q8: a stamped row that names a counterparty is a movement — the
     // category is forced from the special account's own side; a bare
@@ -537,7 +555,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     const forcedCat = ownStamp && (linkedAccountId || catId === UNCATEGORIZED_ID) ? stampMovementSub(ownStamp, signed) : undefined;
     applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
     const prevLinked = tx?.linkedAccountId ?? undefined;
-    const nextLinked = linkedAccountId ?? undefined; // mirrors manualTxFields' write
+    const nextLinked = (adjustment ? null : linkedAccountId) ?? undefined; // mirrors manualTxFields' write
     void logActivity(store, repo, spaceId, tx ? 'txEdit' : 'txAdd', merchant.trim());
     // the form writes the raw row directly (not through writeTxTransform),
     // so the mirror-mint lifecycle must ride here too: a linked MANUAL
@@ -552,11 +570,13 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         signed,
         currency: formCurrency,
         merchant: merchant.trim(),
-        catId: forcedCat ?? catId,
+        // #269: an adjustment IS its category — no spreads, no counter,
+        // no recurring riding along
+        catId: adjustment ? 'balanceAdjustment' : (forcedCat ?? catId),
         txType: effectiveType,
-        stagedCats,
-        linkedAccountId,
-        recurringId,
+        stagedCats: adjustment ? null : stagedCats,
+        linkedAccountId: adjustment ? null : linkedAccountId,
+        recurringId: adjustment ? null : recurringId,
       });
       await repo.upsert('transaction', spaceId, rowId, fields);
       if (prevLinked !== nextLinked) {
@@ -657,6 +677,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
               className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && (cents === null || cents === 0))}`}
             />
           </div>
+          <FormBlockerNote show={blockerField === 'amount'} text={blockerText} testId="txform-save-blocker" />
 
           <input
             data-testid="txform-merchant"
@@ -666,6 +687,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             aria-invalid={attempted && !merchant.trim()}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !merchant.trim())}`}
           />
+          <FormBlockerNote show={blockerField === 'merchant'} text={blockerText} testId="txform-save-blocker" />
 
           {/* the webview's own picker indicator sat misaligned (user
               report) — hide it and draw our chevron where it belongs */}
@@ -706,6 +728,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
           {writable.length > 0 && (
             <AccountFieldRow account={selectedAccount} onOpen={() => setAccountOpen(true)} bad={attempted && !effectiveAccount} />
           )}
+          <FormBlockerNote show={blockerField === 'account'} text={blockerText} testId="txform-save-blocker" />
           {writable.length === 0 && (
             <p className="px-1 text-[12px] text-ink-4" data-testid="txform-no-manual-account">
               {t('txform.manualOnly')}
@@ -714,11 +737,38 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
 
           <CounterAdjustRows
             counterName={linkedAccount?.name}
-            locked={!!ownStamp}
+            locked={!!ownStamp || adjustment}
             adjustment={adjustment}
             onCounter={() => setCounterOpen(true)}
-            onToggleAdjustment={() => setAdjustment((v) => !v)}
+            onToggleAdjustment={() => {
+              setAdjustment((v) => !v);
+              setAdjustTarget(false);
+            }}
           />
+
+          {/* #269 (user): the adjustment names its balance impact, and the
+              typed number can mean the value OR the balance to land on */}
+          {adjustment && selectedAccount && (
+            <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="txform-adjust-panel">
+              <div className="flex gap-1.5">
+                <Chip testId="txform-adjust-mode-delta" selected={!adjustTarget} onClick={() => setAdjustTarget(false)}>
+                  {t('txform.adjustModeDelta')}
+                </Chip>
+                <Chip testId="txform-adjust-mode-target" selected={adjustTarget} onClick={() => setAdjustTarget(true)}>
+                  {t('txform.adjustModeTarget')}
+                </Chip>
+              </div>
+              <p className="text-[12px] text-ink-3" data-testid="txform-adjust-impact">
+                {adjustDelta === null
+                  ? t('txform.adjustImpactIdle')
+                  : t('txform.adjustImpact', {
+                      from: fmtCents(adjustBase, formCurrency, lang),
+                      to: fmtCents(adjustBase + adjustDelta, formCurrency, lang),
+                      delta: fmtCents(adjustDelta, formCurrency, lang, { sign: true }),
+                    })}
+              </p>
+            </div>
+          )}
 
           {/* manual counter account: offer to write the other side too —
               without it "-100 to savings" updated only half the picture */}
@@ -729,10 +779,22 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
           {/* category row — the split-categories editor (#211). A split
               CONTAINER owns no category of its own: the row states the
               parts and stays inert (the detail's manage flow edits them) */}
-          <FormCategoryRow tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={() => setCatsSheetOpen(true)} />
+          {adjustment ? (
+            <div
+              className="flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-[15px] text-ink-3"
+              data-testid="txform-adjust-cat"
+            >
+              <Icon name="scale-balance" size={20} color="var(--m-ink-3)" />
+              <span className="flex-1">{catName(cats.byId('balanceAdjustment'), t)}</span>
+              <Icon name="lock-outline" size={14} color="var(--m-ink-4)" />
+            </div>
+          ) : (
+            <FormCategoryRow tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={() => setCatsSheetOpen(true)} />
+          )}
 
-          {/* recurring link (only when the space has recurring costs) */}
-          {(recurrings?.length ?? 0) > 0 && (
+          {/* recurring link (only when the space has recurring costs;
+              #269: never on an adjustment) */}
+          {!adjustment && (recurrings?.length ?? 0) > 0 && (
             <button
               data-testid="txform-recurring"
               onClick={() => setRecurringOpen(true)}
@@ -747,7 +809,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             </button>
           )}
 
-          <FormBlockerNote show={!!blockerText} text={blockerText} testId="txform-save-blocker" />
+          <FormBlockerNote show={blockerField === 'form'} text={blockerText} testId="txform-save-blocker" />
           <Button
             data-testid="txform-save"
             onClick={() => {

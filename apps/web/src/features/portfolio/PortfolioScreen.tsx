@@ -170,6 +170,8 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
           aria-invalid={attempted && !name.trim()}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
+        {/* #195 r2 (user): the blocker sits AT the field */}
+        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="pf-save-blocker" />
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {ASSET_CLASSES.map((candidate) => (
             <Chip
@@ -207,7 +209,6 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
             />
           </label>
         )}
-        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="pf-save-blocker" />
         <Button
           data-testid="pf-save"
           onClick={() => {

@@ -338,6 +338,9 @@ export interface RecurringRow extends SyncEnvelope {
   notifyDaysBefore?: number;
   /** normalized merchant (domain/merchantKey) for auto-linking */
   merchantKey?: string;
+  /** #274: counterparty account for special categories — linked
+   *  transactions inherit it (older clients simply ignore the field) */
+  linkedAccountId?: string;
 }
 
 /**

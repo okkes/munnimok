@@ -462,6 +462,8 @@ export function AllocateScreen() {
             aria-invalid={topicAttempted && !topicName.trim()}
             className={`h-11 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4${blockerRing(topicAttempted && !topicName.trim())}`}
           />
+          {/* #195 r2 (user): the blocker sits AT the field */}
+          <FormBlockerNote show={topicAttempted && !topicName.trim()} text={t('form.needName')} testId="alloc-topic-save-blocker" />
           <div className="overflow-hidden rounded-card border border-line bg-surface">
             {rows.map((cat) => {
               const member = topicCats.has(cat.id);
@@ -489,8 +491,8 @@ export function AllocateScreen() {
             })}
           </div>
           <FormBlockerNote
-            show={topicAttempted && (!topicName.trim() || topicCats.size === 0)}
-            text={topicName.trim() ? t('form.needCategory') : t('form.needName')}
+            show={topicAttempted && topicName.trim() !== '' && topicCats.size === 0}
+            text={t('form.needCategory')}
             testId="alloc-topic-save-blocker"
           />
           <Button

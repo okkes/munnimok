@@ -2,12 +2,13 @@ import { useMemo, useState } from 'react';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceTransactions } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { fmtCents, parseCents } from '@/lib/money';
 import { cleanBankText } from '@/lib/text';
 import { filterTxs } from '@/domain/txFilter';
 import { clampReimbursement, creditPartGivenCents, creditRemainingCents, givenCents, remainingCents } from '@/domain/reimbursement';
 import { reimbEarmarkCents, suggestCounterparts } from '@/domain/reimburseMatch';
+import { catName, useCategories } from '@/features/categories/useCategories';
 import { useReimburseLinks } from './useReimburseLinks';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -22,6 +23,60 @@ import { REIMBURSED_ID } from '@/domain/categories';
 import type { TxSplit } from '@/db/types';
 
 const toText = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
+
+interface ImpactSide {
+  title: string;
+  lines: string[];
+}
+
+/** #233 r2 (user): what the amount does to each side's categories —
+ *  every line reads "<before> → <after>" so the automatic refile is
+ *  visible BEFORE saving. Module-level for S3776. */
+function impactSides(args: {
+  expense: SpaceTx;
+  expensePartId?: string;
+  credit: SpaceTx;
+  creditPartId?: string;
+  cents: number;
+  allTxs: SpaceTx[];
+  name: (catId: string | undefined) => string;
+  fmt: (cents: number) => string;
+  reimbursedName: string;
+  expectedLabel: string;
+}): ImpactSide[] {
+  const { expense, credit, cents, allTxs, name, fmt } = args;
+  const ePart = args.expensePartId ? (expense.splits ?? []).find((s) => s.id === args.expensePartId) : undefined;
+  const eGross = Math.abs(ePart?.amountCents ?? expense.amountCents);
+  const eAlready = (expense.reimbursements ?? [])
+    .filter((r) => (ePart ? r.partId === args.expensePartId : true))
+    .reduce((sum, r) => sum + r.amountCents, 0);
+  // the whole-row earmark only speaks for whole-row links — a part pick
+  // reads the part's own category instead
+  const earmark = ePart ? null : reimbEarmarkCents(expense);
+  const expenseLines: string[] = [];
+  if (earmark !== null) {
+    expenseLines.push(
+      `${args.expectedLabel} ${fmt(Math.max(0, earmark - eAlready))} → ${args.reimbursedName} ${fmt(eAlready + cents)}`,
+    );
+  } else {
+    expenseLines.push(
+      `${name(ePart?.catId ?? expense.catId)} ${fmt(eGross - eAlready)} → ${fmt(Math.max(0, eGross - eAlready - cents))}`,
+      `${args.reimbursedName} ${fmt(eAlready)} → ${fmt(eAlready + cents)}`,
+    );
+  }
+  const cPart = args.creditPartId ? (credit.splits ?? []).find((s) => s.id === args.creditPartId) : undefined;
+  const cGross = Math.abs(cPart?.amountCents ?? credit.amountCents);
+  const cGiven =
+    cPart && args.creditPartId ? creditPartGivenCents(allTxs, credit.id, args.creditPartId) : givenCents(allTxs, credit.id);
+  const creditLines = [
+    `${name(cPart?.catId ?? credit.catId)} ${fmt(cGross - cGiven)} → ${fmt(Math.max(0, cGross - cGiven - cents))}`,
+    `${args.reimbursedName} ${fmt(cGiven)} → ${fmt(cGiven + cents)}`,
+  ];
+  return [
+    { title: cleanBankText(expense.merchant), lines: expenseLines },
+    { title: cleanBankText(credit.merchant), lines: creditLines },
+  ];
+}
 
 /** #197: what a split expense's PART still expects back — its magnitude
  *  minus the links already targeting it */
@@ -108,6 +163,7 @@ export function ReimburseLinkScreen() {
   const [chosen, setChosen] = useState<{ row: SpaceTx; partId?: string; creditPartId?: string; maxCents: number } | null>(null);
   const [amount, setAmount] = useState('');
   const [amountError, setAmountError] = useState<string | null>(null);
+  const cats = useCategories();
 
   // the search bar rides along — #273: through the shared GLIDING
   // collapse (deliberate up-travel rule + measured max-height, so the
@@ -182,6 +238,26 @@ export function ReimburseLinkScreen() {
       giveableCents(row),
       Math.max(0, Math.abs(part.amountCents) - (part.id ? creditPartGivenCents(allTxs ?? [], row.id, part.id) : 0)),
     );
+
+  // #233 r2 (user): the per-side category impact of the typed amount,
+  // live while it is a saveable value — over-max keeps the error path
+  const impactCents = parseCents(amount) ?? 0;
+  const impact = useMemo(() => {
+    if (!tx || !chosen || impactCents <= 0 || impactCents > chosen.maxCents) return null;
+    return impactSides({
+      expense: anchorIsExpense ? tx : chosen.row,
+      expensePartId: anchorIsExpense ? partId : chosen.partId,
+      credit: anchorIsExpense ? chosen.row : tx,
+      creditPartId: anchorIsExpense ? chosen.creditPartId : partId,
+      cents: impactCents,
+      allTxs: allTxs ?? [],
+      name: (catId) => catName(cats.byId(catId), t),
+      fmt: (cents) => fmtCents(cents, tx.currency, lang),
+      reimbursedName: catName(cats.byId(REIMBURSED_ID), t),
+      expectedLabel: t('reimb.expectedLabel'),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tx, chosen, impactCents, anchorIsExpense, partId, allTxs, cats, lang]);
 
   const confirm = () => {
     if (!tx || !chosen) return;
@@ -296,6 +372,15 @@ export function ReimburseLinkScreen() {
       {/* the amount sheet: how much of the pair actually links */}
       <Sheet open={chosen !== null} onOpenChange={(next) => !next && setChosen(null)} title={chosen ? cleanBankText(chosen.row.merchant) : ''} size="form">
         <div className="flex flex-col gap-3 pt-1" data-testid="reimb-confirm">
+          {/* #270 (user): the picked row's date — the title alone left
+              same-named rows ambiguous */}
+          {chosen && (
+            <p className="text-[12px] text-ink-3" data-testid="reimb-confirm-date">
+              {new Date(chosen.row.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' })}
+              {' · '}
+              {fmtCents(chosen.row.amountCents, chosen.row.currency, lang, { sign: true })}
+            </p>
+          )}
           <input
             data-testid="reimb-amount"
             value={amount}
@@ -309,6 +394,21 @@ export function ReimburseLinkScreen() {
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none${blockerRing(!!amountError)}`}
           />
           <FormBlockerNote show={!!amountError} text={amountError ?? ''} testId="reimb-amount-error" />
+          {impact && (
+            <div className="rounded-input bg-bg px-3 py-2.5" data-testid="reimb-impact">
+              <p className="pb-1 text-[11px] font-medium uppercase tracking-wide text-ink-4">{t('reimb.impactCaption')}</p>
+              {impact.map((side) => (
+                <div key={side.title} className="pt-1.5 first:pt-0">
+                  <p className="text-[11px] text-ink-4">{side.title}</p>
+                  {side.lines.map((line) => (
+                    <p key={line} className="text-[12.5px] leading-snug text-ink-2" data-testid="reimb-impact-line">
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
           <Button data-testid="reimb-save" onClick={confirm}>
             {t('action.save')}
           </Button>

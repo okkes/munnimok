@@ -197,6 +197,8 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
           aria-invalid={attempted && nameMissing}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && nameMissing)}`}
         />
+        {/* #195 r2 (user): the blocker sits AT the field */}
+        <FormBlockerNote show={attempted && nameMissing} text={t('form.needName')} testId="goalform-save-blocker" />
         <div className="m-cap px-1">{t('goals.target')}</div>
         <input
           data-testid="goalform-target"
@@ -210,6 +212,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
           aria-invalid={attempted && amountMissing}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && amountMissing)}`}
         />
+        <FormBlockerNote show={attempted && !nameMissing && amountMissing} text={t('form.needAmount')} testId="goalform-save-blocker" />
         <label className="flex items-center gap-3 text-[13px] text-ink-2">
           {t('goals.targetDate')}
           <input
@@ -220,11 +223,6 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
             className="h-10 min-w-0 flex-1 appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
           />
         </label>
-        <FormBlockerNote
-          show={attempted && !valid}
-          text={nameMissing ? t('form.needName') : t('form.needAmount')}
-          testId="goalform-save-blocker"
-        />
         <Button
           data-testid="goalform-save"
           onClick={() => {

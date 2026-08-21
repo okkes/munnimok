@@ -36,7 +36,7 @@ import { ReimburseSection } from './ReimburseSection';
 import { SplitEditorSheet } from './SplitEditorSheet';
 import { CatsSheet, catsAroundSingle, partCatsApplyPatch } from './PartCatsSheet';
 import type { CatsApplyEntry } from './PartCatsSheet';
-import { CounterMatchSheet, CounterpartySheet } from './TxKindSheet';
+import { BulkCounterQueue, CounterMatchSheet, CounterpartySheet } from './TxKindSheet';
 import { TxFormSheet } from './TxFormSheet';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { kindOf } from '@/domain/txKind';
@@ -623,7 +623,9 @@ function DetailActionsCard({
   onOpenEvent: () => void;
 }>) {
   const { t } = useLang();
-  const linkRows = tx.txType === 'expense' && !multiPart;
+  // #264 (user): funding is recurring-shaped money too — its rows keep
+  // the recurring/event doors
+  const linkRows = (tx.txType === 'expense' || tx.txType === 'funding') && !multiPart;
   if (splitDoorMode === 'none' && !linkRows) return null;
   return (
     <>
@@ -774,8 +776,18 @@ interface RowEntryDeps {
   singleCatFields: (catId: string) => Partial<{ cats: never; splits: never }>;
   setSplitBulk: (v: TxSplit[] | null) => void;
   setCatsBulk: (v: TxSplitCat[] | null) => void;
-  setBulkOffer: (v: { catId: string; txType: TxType; count: number } | null) => void;
+  setBulkOffer: (v: BulkOfferState | null) => void;
   setBulkSelected: (v: ReadonlySet<string>) => void;
+}
+
+/** #268: the offer remembers the entry's counter story — a plain link
+ *  bulk-applies (each sibling links and waits), a SPECIFIC pick runs the
+ *  per-sibling match queue instead */
+interface BulkOfferState {
+  catId: string;
+  txType: TxType;
+  count: number;
+  link?: { accountId: string; viaPeer: boolean };
 }
 
 /** ONE entry decides the row — its counterparty (#228: the transaction-
@@ -828,7 +840,18 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
   deps.bulkArmedReimbRef.current = deps.reimbNow;
   deps.setSplitBulk(null);
   deps.setCatsBulk(null);
-  deps.setBulkOffer(similar.length > 0 ? { catId: entry.catId, txType, count: similar.length } : null);
+  deps.setBulkOffer(
+    similar.length > 0
+      ? {
+          catId: entry.catId,
+          txType,
+          count: similar.length,
+          // #268: the link travels with the offer — viaPeer flips the
+          // apply into the per-sibling counter-match queue
+          link: entry.linkedAccountId ? { accountId: entry.linkedAccountId, viaPeer: !!foreignPeer } : undefined,
+        }
+      : null,
+  );
   deps.setBulkSelected(new Set(similar.map((item) => item.id)));
 }
 
@@ -1830,7 +1853,9 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const [eventCreating, setEventCreating] = useState(false);
   const [eventOpen, setEventOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
-  const [bulkOffer, setBulkOffer] = useState<{ catId: string; txType: TxType; count: number } | null>(null);
+  const [bulkOffer, setBulkOffer] = useState<BulkOfferState | null>(null);
+  // #268: the per-sibling counter-match queue a viaPeer bulk apply runs
+  const [counterBulk, setCounterBulk] = useState<{ items: SpaceTx[]; catId: string; txType: TxType; accountId: string } | null>(null);
   // #141: a landed split offers itself to the splitless siblings —
   // mutually exclusive with the category offer (they share the bar)
   const [splitBulk, setSplitBulk] = useState<TxSplit[] | null>(null);
@@ -2018,6 +2043,11 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const pairWithPicked = async (pickedTxId: string) => {
     await transform(tx, { transferPeerId: pickedTxId }, 'txLink');
     await pairWithExistingRow(store, repo, spaceId, tx, pickedTxId, allTxs);
+    // #268: a standing bulk offer upgrades — the anchor now points at a
+    // SPECIFIC row, so applying must queue per-sibling counter picks
+    setBulkOffer((offer) =>
+      offer?.link && offer.link.accountId === tx.linkedAccountId ? { ...offer, link: { ...offer.link, viaPeer: true } } : offer,
+    );
   };
   // #221: a DEFAULT account's ledger is system-managed — its rows (the
   // minted mirror legs and balance adjustments) are read-only; they are
@@ -2196,10 +2226,48 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   const applyBulk = async () => {
     if (!bulkOffer) return;
     const picked = bulkTargets.filter((target) => bulkSelected.has(target.id));
-    // one history line for the whole bulk, not one per sibling
-    for (const item of picked) await transform(item, { catId: bulkOffer.catId, txType: bulkOffer.txType, needsReview: 0 }, null);
+    // #268 (user): a SPECIFIC counter pick cannot be copied — each
+    // sibling asks for its own counter row (or links and waits)
+    if (bulkOffer.link?.viaPeer && picked.length > 0) {
+      setCounterBulk({ items: picked, catId: bulkOffer.catId, txType: bulkOffer.txType, accountId: bulkOffer.link.accountId });
+      setBulkOffer(null);
+      return;
+    }
+    // one history line for the whole bulk, not one per sibling — a plain
+    // account link rides along (each sibling links and waits, #268)
+    for (const item of picked) {
+      await transform(
+        item,
+        {
+          catId: bulkOffer.catId,
+          txType: bulkOffer.txType,
+          needsReview: 0,
+          ...(bulkOffer.link ? { linkedAccountId: bulkOffer.link.accountId } : {}),
+        },
+        null,
+      );
+    }
     if (picked.length) void logActivity(store, repo, spaceId, 'txCategory', `${txTitle(tx)} +${picked.length}`);
     setBulkOffer(null);
+  };
+
+  // #268: one queue step — the sibling gets the category, the link and
+  // (on a pick) its own peer, exactly like the anchor's single write
+  const resolveCounterBulk = async (item: SpaceTx, peerId: string | null) => {
+    if (!counterBulk) return;
+    if (item.transferPeerId) void releasePeerLeg(store, repo, spaceId, item, allTxs);
+    await transform(
+      item,
+      {
+        catId: counterBulk.catId,
+        txType: counterBulk.txType,
+        needsReview: 0,
+        linkedAccountId: counterBulk.accountId as never,
+        ...(peerId ? { transferPeerId: peerId } : {}),
+      },
+      null,
+    );
+    if (peerId) await pairWithExistingRow(store, repo, spaceId, item, peerId, allTxs);
   };
   const saveNotes = (notes: string) => {
     if (notes === (tx.notes ?? '')) return;
@@ -2309,8 +2377,11 @@ export function TxDetailScreen() { // NOSONAR(S3776)
           setLoanCountBusy={setLoanCountBusy}
           onOpenPeer={(peerId) => void navigate({ to: '/transactions/$txId', params: { txId: peerId } })}
           onUnpair={onDefaultLedger ? undefined : unpair}
+          // #265 (user): a recurring-narrowed row's counter door STAYS
+          // open — a fully inert row left funding picks unescapable; the
+          // sheet's detach is the way out (it resets the category too)
           onEditCounter={
-            multiPart || onDefaultLedger || tx.adjustment === 1 || tx.txType === 'adjustment' || !!recurringAllowedCats
+            multiPart || onDefaultLedger || tx.adjustment === 1 || tx.txType === 'adjustment'
               ? undefined
               : () => setCounterPickOpen(true)
           }
@@ -2488,6 +2559,20 @@ export function TxDetailScreen() { // NOSONAR(S3776)
           anchor={{ id: tx.id, amountCents: tx.amountCents, date: tx.date }}
           rows={allTxs ?? []}
           onPick={(pickedTxId) => void pairWithPicked(pickedTxId)}
+        />
+      )}
+      {/* #268 (user): a bulk apply born from a specific counter pick —
+          every sibling matches its own counter row in turn */}
+      {counterBulk && (
+        <BulkCounterQueue
+          queue={counterBulk.items}
+          target={{ id: counterBulk.accountId, name: linkedAccount?.id === counterBulk.accountId ? linkedAccount.name : '' }}
+          rows={allTxs ?? []}
+          onResolve={(item, peerId) => void resolveCounterBulk(item as SpaceTx, peerId)}
+          onDone={(resolved) => {
+            if (resolved > 0) void logActivity(store, repo, spaceId, 'txCategory', `${txTitle(tx)} +${resolved}`);
+            setCounterBulk(null);
+          }}
         />
       )}
       {/* #237 (user): unlinking a DEFAULT counter resets the story — say

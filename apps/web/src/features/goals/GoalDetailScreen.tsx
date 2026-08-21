@@ -172,6 +172,8 @@ export function GoalDetailScreen() {
             aria-invalid={attempted && fundBad}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && fundBad)}`}
           />
+          {/* #195 r2 (user): the blocker sits AT the field */}
+          <FormBlockerNote show={attempted && fundBad} text={t('form.needAmount')} testId="goalfund-save-blocker" />
           <input
             data-testid="goalfund-note"
             value={note}
@@ -179,7 +181,6 @@ export function GoalDetailScreen() {
             placeholder={t('goals.notePlaceholder')}
             className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
           />
-          <FormBlockerNote show={attempted && fundBad} text={t('form.needAmount')} testId="goalfund-save-blocker" />
           <Button
             data-testid="goalfund-save"
             onClick={() => {

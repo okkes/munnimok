@@ -16,10 +16,11 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
 import { useData } from '@/app/data';
+import { useNewTransactions } from '@/application/newTxs';
 import { readTxFilters, writeTxFilters } from './txFilters';
 import { Icon } from '@/ui/Icon';
 import { Chip, Pill } from '@/ui/primitives';
-import { TxRow } from '@/ui/TxRow';
+import { TxRow, type TxRowEdge } from '@/ui/TxRow';
 import { TxPartRow } from '@/ui/TxPartRow';
 import { SearchField } from '@/ui/SearchField';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
@@ -187,6 +188,15 @@ function peerNoteFor(
   return from && to ? `${from} → ${to}` : undefined;
 }
 
+/** #156 r2: where a row sits against its group card's rounded frame —
+ *  only the selected/focused tint consumes it (TxRow) */
+function edgeOf(index: number, count: number): TxRowEdge {
+  if (count === 1) return 'both';
+  if (index === 0) return 'first';
+  if (index === count - 1) return 'last';
+  return 'none';
+}
+
 function groupByDate(txs: TransactionRow[]): [string, TransactionRow[]][] {
   const groups = new Map<string, TransactionRow[]>();
   for (const tx of txs) {
@@ -218,6 +228,9 @@ export function TransactionsScreen() {
   }, [query, uncatOnly, unsettledOnly, counterOnly, newOnly, filters]);
 
   const allTxs = useSpaceTransactions();
+  // #148 r2: NEW = first-seen on this device within 24h (the same set
+  // home's block lists) — not the unreviewed badge
+  const { newIds } = useNewTransactions(allTxs);
   // desktop density (D2): the account column needs names, one lookup for all rows
   const accounts = useSpaceAccounts();
   // #181 (user): the empty state leads to the SPACE's own accounts screen
@@ -284,18 +297,15 @@ export function TransactionsScreen() {
     });
     // quick filter (redesign): expected/received value still open
     if (unsettledOnly) matched = matched.filter(hasUnsettledReimbursement);
-    // #148: the "new" lens = rows still wearing the unreviewed badge
-    if (newOnly) matched = matched.filter((item) => item.needsReview === 1);
-    // #243 (user): the counter lens shows ONLY linked transactions —
-    // every leg of every pair, nothing collapsed
-    if (counterOnly) {
-      matched = matched.filter((item) => item.transferPeerId ?? item.linkedAccountId);
-    }
+    // #148 r2: the "new" lens = rows first seen within the last 24h
+    if (newOnly) matched = matched.filter((item) => newIds.has(item.id));
     // paired transfers are ONE event (arc 1): the incoming leg hides when
     // its outgoing peer is listed too — unless an account filter is on
     // (a per-account view needs its own leg for the running story).
     // #237 (user decision "a"): a SAME-SIGN wallet pair hides its
     // TRANSFER leg instead — the real purchase stays, counted once.
+    // #243 r2 (user): the chip does NOT narrow — it shows the full list
+    // with every pair's legs standing separately (collapse off).
     if (filters.accountIds.size === 0 && !counterOnly) {
       const byId = new Map(matched.map((item) => [item.id, item]));
       // #237 r2: one-way pairs collapse too — the pointed-at row reads
@@ -315,7 +325,7 @@ export function TransactionsScreen() {
     }
     matched.sort((a, b) => b.date.localeCompare(a.date));
     return matched.slice(0, 200);
-  }, [allTxs, query, filters, uncatOnly, unsettledOnly, counterOnly, newOnly, catIds]);
+  }, [allTxs, query, filters, uncatOnly, unsettledOnly, counterOnly, newOnly, newIds, catIds]);
 
   // the collapsed row says where the money went: "Checking → Savings".
   // #237: a same-sign wallet pair's surviving purchase reads the funding
@@ -386,7 +396,7 @@ export function TransactionsScreen() {
           <Chip testId="tx-filter-unsettled" selected={unsettledOnly} onClick={() => setUnsettledOnly((v) => !v)}>
             {t('tx.unsettledFilter')}
           </Chip>
-          {/* #243 (user): the linked legs on their own, pairs uncollapsed */}
+          {/* #243 r2 (user): ALL transactions with pairs uncollapsed */}
           <Chip testId="tx-filter-counter" selected={counterOnly} onClick={() => setCounterOnly((v) => !v)}>
             <Icon name="swap-horizontal" size={14} />
             {t('tx.counterFilter')}
@@ -431,7 +441,7 @@ export function TransactionsScreen() {
             <div className="m-cap sticky top-0 z-10 -mx-1 mt-4 mb-1 bg-bg px-2 py-1">{fmtDay(date)}</div>
             {/* #198: hairline dividers between rows — every tx list */}
             <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1">
-              {list.map((tx) => {
+              {list.map((tx, listIndex) => {
                 // #126 r5: a real split doesn't show its container in the
                 // list — the sub-transactions stand as rows of their own,
                 // the shared rail linking them; each opens its own page
@@ -472,6 +482,7 @@ export function TransactionsScreen() {
                     tx={tx}
                     highlight={query}
                     selected={tx.id === openTxId}
+                    edge={edgeOf(listIndex, list.length)}
                     accountName={accountNames.get(tx.accountId)}
                     givenCents={givenByCredit.get(tx.id) ?? 0}
                     transferNote={peerNotes.get(tx.id)}

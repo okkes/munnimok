@@ -12,6 +12,7 @@ import type { TxSplit, TxType } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { InfoHint } from '@/ui/InfoHint';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
@@ -449,20 +450,18 @@ export function SplitEditorSheet({
         <p className="px-1 text-[12px] leading-relaxed text-ink-3" data-testid="split-vs-cats-hint">
           {t('split.vsCatsHint')}
         </p>
-        {/* exact euros for one charge, percentages when the shape repeats */}
-        <div className="flex gap-1.5">
+        {/* exact euros for one charge, percentages when the shape repeats.
+            #283: the #209 what-the-modes-mean paragraph folds behind the
+            hint beside the chips instead of standing open */}
+        <div className="flex flex-wrap items-center gap-1.5">
           <Chip className="flex-1" testId="split-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>
             {t('split.modeAmount')}
           </Chip>
           <Chip className="flex-1" testId="split-mode-pct" selected={mode === 'pct'} onClick={() => switchMode('pct')}>
             {t('split.modePct')}
           </Chip>
+          <InfoHint text={t('split.modeHint')} testId="split-mode-hint" />
         </div>
-        {/* #209 (user): what the two modes MEAN — especially under a
-            bulk update, where percentages refit each transaction */}
-        <p className="px-1 text-[11px] leading-relaxed text-ink-4" data-testid="split-mode-hint">
-          {t('split.modeHint')}
-        </p>
         {rows.map((row, i) => (
           <ValuesRow
             key={row.key}

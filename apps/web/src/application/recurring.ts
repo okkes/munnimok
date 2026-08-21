@@ -51,12 +51,19 @@ export async function propagateRecurringCategory(
   spaceId: string,
   recurringId: string,
   catId: string = 'uncategorized',
+  linkedAccountId?: string,
 ): Promise<number> {
   let touched = 0;
   for (const tx of await visibleTransactions(store, spaceId)) {
     if (tx.deleted !== 0 || tx.recurringId !== recurringId) continue;
-    if (tx.catId === catId || tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
-    await writeTxTransform(repo, tx, { catId });
+    if (tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
+    // #274 (user): the recurring's counterparty rides to its rows — the
+    // choke mints the manual counter leg per row ("bulk create")
+    const linkField =
+      linkedAccountId && tx.linkedAccountId !== linkedAccountId ? { linkedAccountId } : {};
+    if (tx.catId === catId && !('linkedAccountId' in linkField)) continue;
+    // #260 r2 (user): the recurring applying its category IS the review
+    await writeTxTransform(repo, tx, { catId, needsReview: 0, ...linkField });
     touched++;
   }
   return touched;
@@ -104,16 +111,29 @@ export function useRecurringOps(): RecurringOps {
       // re-files the transaction — unless the user filed it as expected
       // reimbursement or settlement filed it as reimbursed
       const rec = recurringId ? await store.get('recurring', recurringId) : undefined;
+      // #260 r2 (user): the refile counts as the review — linked rows
+      // must not keep wearing the unreviewed badge
       const refile =
         rec?.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
-          ? { catId: rec.catId }
+          ? { catId: rec.catId, needsReview: 0 as const }
           : {};
-      await writeTxTransform(repo, tx, { recurringId, ...refile });
+      // #274 (user): the recurring's counterparty rides to its rows —
+      // for a manual counter the choke mints the leg right here
+      const counter =
+        rec?.linkedAccountId && tx.linkedAccountId !== rec.linkedAccountId
+          ? { linkedAccountId: rec.linkedAccountId }
+          : {};
+      await writeTxTransform(repo, tx, { recurringId, ...refile, ...counter });
       void logActivity(store, repo, spaceId, 'txLink', txTitle(tx));
     },
     reconcile: () => reconcileRecurringLinks(store, repo, spaceId),
   };
 }
+
+/** rows the auto-linker considers at all — unlinked outgoing expense or
+ *  funding money (#264: pot top-ups are recurring-shaped too). S3776. */
+const reconcilableRow = (tx: SpaceTx): boolean =>
+  !tx.recurringId && tx.amountCents < 0 && (tx.txType === 'expense' || tx.txType === 'funding');
 
 /**
  * Auto-link unlinked expenses to active recurrings by merchant pattern:
@@ -142,7 +162,7 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
 
   let linked = 0;
   for (const tx of [...txs].sort((a, b) => a.date.localeCompare(b.date))) {
-    if (tx.recurringId || tx.amountCents >= 0 || tx.txType !== 'expense') continue;
+    if (!reconcilableRow(tx)) continue;
     // #126 r7: a split container never takes a row-level recurring link —
     // its parts carry their own (linked by hand from the part surfaces)
     if ((tx.splits ?? []).filter((s) => s.catId !== 'reimbursed').length > 1) continue;

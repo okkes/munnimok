@@ -10,6 +10,7 @@ import { catName } from '@/features/categories/useCategories';
 import { localToday } from '@/application/recurring';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
+import { InfoHint } from '@/ui/InfoHint';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
@@ -128,9 +129,12 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
   return (
     <Sheet open={open} onOpenChange={close} title={t('settings.exportData')} size="tall">
       <div className="flex flex-col gap-3 pt-1" data-testid="export-sheet">
-        <p className="text-[13px] leading-relaxed text-ink-2">{t('export.note')}</p>
-
-        <div className="m-cap px-1">{t('export.scope')}</div>
+        {/* #283: the nothing-is-uploaded note folds behind a hint on the
+            first caption row — the paragraph shouted over the form */}
+        <div className="m-cap flex flex-wrap items-center gap-1.5 px-1">
+          {t('export.scope')}
+          <InfoHint text={t('export.note')} testId="export-hint" />
+        </div>
         <div className="flex gap-2">
           <Chip testId="export-scope-space" selected={scope === 'space'} onClick={() => setScope('space')}>
             {t('export.scopeSpace')}
@@ -148,24 +152,28 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
           {rangeChip('custom', t('export.rangeCustom'))}
         </div>
         {range === 'custom' && (
-          <div className="flex gap-2">
-            <input
-              data-testid="export-from"
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              aria-invalid={attempted && !from}
-              className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none${blockerRing(attempted && !from)}`}
-            />
-            <input
-              data-testid="export-to"
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              aria-invalid={attempted && !to}
-              className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none${blockerRing(attempted && !to)}`}
-            />
-          </div>
+          <>
+            <div className="flex gap-2">
+              <input
+                data-testid="export-from"
+                type="date"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                aria-invalid={attempted && !from}
+                className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none${blockerRing(attempted && !from)}`}
+              />
+              <input
+                data-testid="export-to"
+                type="date"
+                value={to}
+                onChange={(e) => setTo(e.target.value)}
+                aria-invalid={attempted && !to}
+                className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none${blockerRing(attempted && !to)}`}
+              />
+            </div>
+            {/* #195 r2 (user): the blocker sits AT the field */}
+            <FormBlockerNote show={attempted && dateBad} text={t('form.needDate')} testId="export-run-blocker" />
+          </>
         )}
 
         <div className="m-cap px-1">{t('export.format')}</div>
@@ -200,7 +208,6 @@ export function ExportSheet({ open, onOpenChange }: Readonly<{ open: boolean; on
             {t('export.empty')}
           </p>
         )}
-        <FormBlockerNote show={attempted && dateBad} text={t('form.needDate')} testId="export-run-blocker" />
         <Button
           data-testid="export-run"
           onClick={() => {

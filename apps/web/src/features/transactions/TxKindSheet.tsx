@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useData } from '@/app/data';
@@ -11,7 +11,7 @@ import { counterDuplicates, counterOpenRows, counterSameSignCandidates } from '@
 import { FAMILY_ACCOUNT_TYPE, NAME_KEYS, defaultAccountId, ensureDefaultAccount } from '@/application/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
 import type { AccountType, TransactionRow, TxType } from '@/db/types';
-import { useLang } from '@/i18n';
+import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { txTitle } from '@/lib/text';
 import { Icon } from '@/ui/Icon';
@@ -359,6 +359,8 @@ export function CounterMatchSheet({
   onCreate,
   onWait,
   onPick,
+  contextRow,
+  progress,
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -370,8 +372,12 @@ export function CounterMatchSheet({
   /** bank-fed: link now, the feed delivers the other side later */
   onWait?: () => void;
   onPick: (txId: string) => void;
+  /** #268 (user): a bulk queue names WHICH transaction is matching */
+  contextRow?: TransactionRow;
+  /** "2/5" alongside the context row */
+  progress?: string;
 }>) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   // #255: search narrows both lists — by title or by price
   const [query, setQuery] = useState('');
   useEffect(() => {
@@ -430,6 +436,22 @@ export function CounterMatchSheet({
     <Sheet open={open} onOpenChange={onOpenChange} title={target?.name ?? ''} size={size}>
       {target && (
         <div className="flex flex-col pt-1" data-testid="counter-fork">
+          {/* #268 (user): while a bulk queue walks the siblings, the sheet
+              says exactly WHICH transaction it is matching right now */}
+          {contextRow && (
+            <div className="mb-2 rounded-card border border-accent/40 bg-accent-soft/30 px-3 py-2" data-testid="counter-queue-context">
+              <p className="m-cap pb-0.5 text-accent-deep">
+                {t('tx.counterQueueFor')}
+                {progress ? ` · ${progress}` : ''}
+              </p>
+              <p className="truncate text-[13px] font-medium text-ink">{txTitle(contextRow)}</p>
+              <p className="text-[12px] text-ink-3">
+                {new Date(contextRow.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' })}
+                {' · '}
+                {fmtCents(contextRow.amountCents, contextRow.currency, lang, { sign: true })}
+              </p>
+            </div>
+          )}
           {onCreate && door('counter-fork-create', 'plus-circle-outline', t('tx.counterForkCreate'), t('tx.counterForkCreateSub'), onCreate)}
           {/* #255 r2 (user): "link and wait" is the one honest exit —
               the separate None door confused more than it solved */}
@@ -476,5 +498,64 @@ export function CounterMatchSheet({
         </div>
       )}
     </Sheet>
+  );
+}
+
+/**
+ * #268 (user): a bulk apply that carried a SPECIFIC counter pick cannot
+ * copy that pick — each sibling gets its own match sheet in turn, the
+ * context block naming which transaction is matching. Every step either
+ * picks an existing row or links-and-waits; dismissing the sheet stops
+ * the queue and leaves the remaining siblings untouched.
+ */
+export function BulkCounterQueue({
+  queue,
+  target,
+  rows,
+  onResolve,
+  onDone,
+}: Readonly<{
+  queue: readonly TransactionRow[];
+  target: { id: string; name: string } | null;
+  rows: readonly TransactionRow[];
+  /** peerId = the picked existing row; null = link-and-wait */
+  onResolve: (tx: TransactionRow, peerId: string | null) => void;
+  /** fires once — queue exhausted or dismissed early */
+  onDone: (resolved: number) => void;
+}>) {
+  const [index, setIndex] = useState(0);
+  const resolvedRef = useRef(0);
+  // a pick closes the inner sheet — that close must not read as dismiss
+  const advancingRef = useRef(false);
+  const current = queue[index];
+  if (!current) return null;
+  const advance = () => {
+    advancingRef.current = true;
+    resolvedRef.current += 1;
+    if (index + 1 >= queue.length) onDone(resolvedRef.current);
+    else setIndex(index + 1);
+  };
+  return (
+    <CounterMatchSheet
+      key={current.id}
+      open
+      onOpenChange={(next) => {
+        if (!next && !advancingRef.current) onDone(resolvedRef.current);
+        advancingRef.current = false;
+      }}
+      target={target}
+      anchor={{ id: current.id, amountCents: current.amountCents, date: current.date }}
+      rows={rows}
+      contextRow={current}
+      progress={`${index + 1}/${queue.length}`}
+      onWait={() => {
+        onResolve(current, null);
+        advance();
+      }}
+      onPick={(txId) => {
+        onResolve(current, txId);
+        advance();
+      }}
+    />
   );
 }

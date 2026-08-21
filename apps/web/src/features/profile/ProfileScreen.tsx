@@ -348,7 +348,8 @@ export function ProfileScreen() {
             data-testid="profile-photo-upload"
             onClick={pickPhoto}
           >
-            <Icon name="camera-outline" size={16} />
+            {/* #146 r2: upload wears the upload glyph — webcam keeps the camera */}
+            <Icon name="upload-outline" size={16} />
             {isDataImage(picture) ? t('profile.photoReplace') : t('profile.photoUpload')}
           </Button>
           {/* #160: desktop webcam snapshot beside the upload */}
@@ -369,6 +370,8 @@ export function ProfileScreen() {
           aria-invalid={attempted && !name.trim()}
           className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
+        {/* #195 r2 (user): the blocker sits AT the field */}
+        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="profile-save-blocker" className="mt-1 px-1" />
 
         {/* country of use — changeable later (user request); tunes the
             category predictor, explained by the info line */}
@@ -447,7 +450,6 @@ export function ProfileScreen() {
           </div>
         </Sheet>
 
-        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="profile-save-blocker" className="mt-4" />
         <Button
           className="mt-4 w-full"
           data-testid="profile-save"

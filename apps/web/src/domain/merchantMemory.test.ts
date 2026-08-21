@@ -32,6 +32,10 @@ describe('merchantKey', () => {
     expect(merchantKey('AH DELFT')).toBe('ah');
     expect(merchantKey("JUMBO 'S-GRAVENHAGE")).toBe('jumbo');
     expect(merchantKey('Restaurant Den Haag')).toBe('restaurant');
+    // #201 r2: every bank spelling of the same city strips identically —
+    // the squashed comparison keys these two rows together
+    expect(merchantKey('Albert Heijn 1473 SGRAVENHAGE')).toBe('albert heijn');
+    expect(merchantKey('ALBERT HEIJN 1473 S GRAVENHAGE')).toBe('albert heijn');
     // a merchant that IS a city name keeps its identity
     expect(merchantKey('Delft')).toBe('delft');
   });

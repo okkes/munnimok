@@ -233,8 +233,16 @@ describe('GlobalSettingsScreen (demo identity)', () => {
       expect(config?.pinHash).toMatch(/^[0-9a-f]{64}$/); // hashed, never the raw pin
     });
 
-    // the user proved themself at unlock time — disabling is direct
+    // #282: disabling is a GUARDED act now — the current PIN answers
     fireEvent.click(screen.getByTestId('settings-lock-toggle'));
+    await screen.findByTestId('lock-disarm-sheet');
+    expect(readLockConfig()).not.toBeNull(); // nothing until the challenge
+    // a wrong 8-digit try errors and keeps the lock armed
+    fireEvent.change(screen.getByTestId('lock-disarm-pin'), { target: { value: '99999999' } });
+    expect(await screen.findByTestId('lock-disarm-error')).toBeTruthy();
+    expect(readLockConfig()).not.toBeNull();
+    // the real PIN disarms
+    fireEvent.change(screen.getByTestId('lock-disarm-pin'), { target: { value: '1234' } });
     await waitFor(() => expect(readLockConfig()).toBeNull());
   }, 15_000);
 });

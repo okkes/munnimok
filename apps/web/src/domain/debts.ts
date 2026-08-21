@@ -1,4 +1,5 @@
 import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
+import { nextDueDate } from './recurring';
 
 /**
  * Loan math (loans v2, 2026-08-01) — all pure, interest informational.
@@ -140,6 +141,28 @@ export function estimatePaymentPlan(payments: readonly { date: string; amountCen
 }
 
 /** the loan's explicit payment as a monthly figure (cadence-normalized) */
+/** #266: the loan plan's next due date — the payment fields translate
+ *  into the recurring cadence shape and ride the same date math.
+ *  Anchorless weekly plans have no derivable date → null. */
+export function nextDebtPaymentDate(
+  loan: Pick<AccountRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN' | 'paymentDay'>,
+  today: string,
+): string | null {
+  if (!loan.paymentCents || !loan.paymentDay) return null;
+  if (loan.paymentEvery === 'week') return null;
+  return nextDueDate(
+    {
+      active: 1,
+      every: loan.paymentEvery ?? 'month',
+      everyN: loan.paymentEveryN ?? 1,
+      dueDay: loan.paymentDay,
+      dueMonth: 1,
+      since: '',
+    },
+    today,
+  );
+}
+
 export function monthlyPaymentCents(loan: Pick<AccountRow, 'paymentCents' | 'paymentEvery' | 'paymentEveryN'>): number {
   if (!loan.paymentCents) return 0;
   return Math.round((loan.paymentCents * paymentsPerYear(loan.paymentEvery, loan.paymentEveryN)) / 12);

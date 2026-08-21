@@ -17,6 +17,7 @@ import type { AccountType, TxSplit, TxSplitCat, TxType } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { InfoHint } from '@/ui/InfoHint';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 
@@ -259,6 +260,7 @@ export function CatsSheet({
   excludeAccountId,
   askDisabled = false,
   anchor,
+  onCreateCustomNav,
   onApply,
 }: Readonly<{
   open: boolean;
@@ -283,6 +285,8 @@ export function CatsSheet({
   /** the row being spread — enables the pick-existing fork on manual
    *  counterparties (row-level editors only; the lone entry anchors) */
   anchor?: { id: string; date: string };
+  /** #275: forwarded to the picker's create-custom door */
+  onCreateCustomNav?: () => void;
   onApply: (entries: CatsApplyEntry[]) => void;
 }>) {
   const { t, lang } = useLang();
@@ -512,19 +516,17 @@ export function CatsSheet({
           </div>
           {/* exact euros or percentages — the whole-transaction editor's
               two gears, unchanged for parts (#126 r7) */}
-          <div className="flex gap-1.5">
+          {/* #283: the #209 what-the-modes-mean paragraph folds behind
+              the hint beside the chips instead of standing open */}
+          <div className="flex flex-wrap items-center gap-1.5">
             <Chip className="flex-1" testId="part-cat-mode-amount" selected={mode === 'amount'} onClick={() => switchMode('amount')}>
               {t('split.modeAmount')}
             </Chip>
             <Chip className="flex-1" testId="part-cat-mode-pct" selected={mode === 'pct'} onClick={() => switchMode('pct')}>
               {t('split.modePct')}
             </Chip>
+            <InfoHint text={t('split.modeHint')} testId="part-cat-mode-hint" />
           </div>
-          {/* #209 (user): what the two modes MEAN — especially under a
-              bulk update, where percentages refit each transaction */}
-          <p className="px-1 text-[11px] leading-relaxed text-ink-4" data-testid="part-cat-mode-hint">
-            {t('split.modeHint')}
-          </p>
           {/* #228 feedback: the settled bookkeeping stands FIRST, pinned
               and untouchable — removing the reimbursement link is the
               only way to remove it */}
@@ -641,6 +643,7 @@ export function CatsSheet({
         selectedId={pickedCatId}
         excludeIds={excluded}
         onlyIds={allowedCatIds ?? counterNarrowedIds}
+          onCreateCustomNav={onCreateCustomNav}
         noSpecials={entries.length > 1}
         onPick={(catId) => {
           if (pickerFor === null) return;

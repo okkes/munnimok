@@ -53,6 +53,7 @@ import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
 import { presetTxFilters } from '@/features/transactions/txFilters';
+import { isDebtTracked, nextDebtPaymentDate } from '@/domain/debts';
 import { TxFormSheet } from '@/features/transactions/TxFormSheet';
 import { StatementImportFlow } from '@/features/accounts/StatementImportFlow';
 import { setCategoriesCreateIntent } from '@/features/categories/categoriesHandoff';
@@ -177,7 +178,7 @@ export function HomeScreen() {
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
   const cats = useCategories();
-  const { newTxs, ackAll } = useNewTransactions(allTxs);
+  const { newTxs } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
   const needsOnboarding = useQuery(store, async () => store.metaGet('needsOnboarding'), []);
@@ -242,6 +243,18 @@ export function HomeScreen() {
       .sort((a, b) => a.nextDue.localeCompare(b.nextDue))
       .slice(0, 4);
   }, [recurrings]);
+  // #266 (user): loan payment plans join the coming-up story — same
+  // horizon, clearly labeled so recurring vs debt reads apart
+  const upcomingDebts = useMemo(() => {
+    const today = localToday();
+    const horizon = addDays(today, 7);
+    return (accounts ?? [])
+      .filter((a) => a.archived !== 1 && !a.defaultFor && isDebtTracked(a))
+      .map((loan) => ({ loan, nextDue: nextDebtPaymentDate(loan, today) }))
+      .filter((u): u is { loan: (typeof u)['loan']; nextDue: string } => u.nextDue !== null && u.nextDue <= horizon)
+      .sort((a, b) => a.nextDue.localeCompare(b.nextDue))
+      .slice(0, 3);
+  }, [accounts]);
 
   // landing-zone blocks that only appear once the feature is in use.
   // one event only: running now, else the next upcoming, else the latest
@@ -842,7 +855,7 @@ export function HomeScreen() {
   }
 
   function renderUpcomingBlock() {
-    if (upcoming.length === 0) return null;
+    if (upcoming.length === 0 && upcomingDebts.length === 0) return null;
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
@@ -866,10 +879,34 @@ export function HomeScreen() {
               <RecurringVisual rec={rec} size={16} active={false} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
-                <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
+                <span className="block text-[11px] text-ink-4">
+                  {fmtShort(nextDue)} · {t('home.upcomingRecurring')}
+                </span>
               </span>
               <span className="m-num text-[13px] font-semibold text-ink">
                 {fmt(rec.amountCents, currency)}
+              </span>
+            </button>
+          ))}
+          {/* #266: the loan plans' next payments, clearly told apart */}
+          {upcomingDebts.map(({ loan, nextDue }) => (
+            <button
+              key={loan.id}
+              data-testid={`home-upcoming-debt-${loan.id}`}
+              onClick={() => void navigate({ to: '/debts/$debtId', params: { debtId: loan.id } })}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft/60">
+                <Icon name="credit-card-outline" size={16} color="var(--m-accent-deep)" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-ink">{loan.name}</span>
+                <span className="block text-[11px] text-ink-4">
+                  {fmtShort(nextDue)} · {t('home.upcomingLoan')}
+                </span>
+              </span>
+              <span className="m-num text-[13px] font-semibold text-ink">
+                {fmt(-(loan.paymentCents ?? 0), currency)}
               </span>
             </button>
           ))}
@@ -1120,9 +1157,9 @@ export function HomeScreen() {
           <button
             data-testid="home-newtx-all"
             onClick={() => {
-              void ackAll();
-              // #148 (user): arrive on the list already narrowed to the
-              // new ones — the unreviewed lens is that narrowing
+              // #148 r2 (user): NEW = first-seen within 24h, not
+              // unreviewed — seeing the list must NOT clear the badges
+              // (their 24h clock does); arrive with the New lens on
               presetTxFilters({ newOnly: true });
               void navigate({ to: '/transactions' });
             }}

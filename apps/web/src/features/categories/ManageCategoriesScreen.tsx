@@ -763,7 +763,6 @@ export function ManageCategoriesScreen() {
         // icon grid once the keyboard/safe-area shifted the scrollport)
         footer={
           <div className="flex flex-col gap-2">
-            <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="catform-save-blocker" />
             <Button
               data-testid="catform-save"
               onClick={() => {
@@ -803,6 +802,9 @@ export function ManageCategoriesScreen() {
             aria-invalid={attempted && !name.trim()}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
           />
+          {/* #195 r2 (user): the blocker sits AT the field, not by the
+              footer button — the sheet scrolls it into view */}
+          <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="catform-save-blocker" />
           {nameError && (
             <p className="text-[12px] text-negative" data-testid="catform-name-error">
               {t(NAME_ERROR_KEYS[nameError])}

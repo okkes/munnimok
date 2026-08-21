@@ -7,7 +7,7 @@ import { useQuery } from '@/db/useQuery';
 import { v7 as uuidv7 } from 'uuid';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { useLang } from '@/i18n';
-import { revealInScroller } from '@/lib/viewport';
+import { isClippedFromView, revealInScroller } from '@/lib/viewport';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { closeAllSheets, elementOnTopLayer, hasOpenSheet } from '@/ui/Sheet';
@@ -404,13 +404,15 @@ export function MinaTutorial() {
       const el = resolveAnchor(step?.anchor);
       // a target hiding behind the tab bar (or above the fold) scrolls
       // itself into the visible band, once per step (user ss: the
-      // Financial Accounts row sat under the navigation)
+      // Financial Accounts row sat under the navigation). #136 r2: the
+      // check is CLIP-aware — a row scrolled out of a sheet's inner
+      // list has window-plausible coordinates while invisible, and the
+      // glow painted over the wrong spot in long lists.
       if (el && run && revealedStepRef.current !== run.step) {
-        const r = el.getBoundingClientRect();
-        if (r.top < 70 || r.bottom > window.innerHeight - 96) {
+        if (isClippedFromView(el)) {
           revealedStepRef.current = run.step;
           revealInScroller(el);
-        } else if (r.width > 0) {
+        } else if (el.getBoundingClientRect().width > 0) {
           revealedStepRef.current = run.step; // visible — settled, no scroll
         }
       }
@@ -427,7 +429,8 @@ export function MinaTutorial() {
       // glow PIERCED a second sheet stacked above its anchor — it now
       // stands down unless the anchor is on the TOP layer.
       const softEl = step?.act && !step.anchor ? resolveAnchor(step.labelFrom) : null;
-      const softNext = softEl && elementOnTopLayer(softEl) ? softEl.getBoundingClientRect() : null;
+      // #136 r2: a clipped soft target stands down too — same rule
+      const softNext = softEl && elementOnTopLayer(softEl) && !isClippedFromView(softEl) ? softEl.getBoundingClientRect() : null;
       setSoftRect((prev) => {
         if (!prev && !softNext) return prev;
         if (prev && softNext && Math.abs(prev.top - softNext.top) < 1 && Math.abs(prev.left - softNext.left) < 1 && Math.abs(prev.width - softNext.width) < 1) return prev;

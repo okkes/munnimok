@@ -70,14 +70,14 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.queryByTestId('review-cat-counter-savingDeposit')).toBeNull();
   }, 15_000);
 
-  it('#237 r3: the card Counter-transaction row points at an EXISTING row — the bulk offer warns, stands down, and the pair lands both ways', async () => {
+  it('#268: a row-level pick keeps bulk — confirm walks each sibling through its own counter queue', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const seed = new MunniDB('munni_demo');
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revpick'), { trackOutbox: false });
     // two same-merchant cards (the bulk offer's fuel), dated OLDEST so
-    // they lead the queue; the pickable twin lives on the savings pot
+    // they lead the queue; each has its own pickable twin on the pot
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rv1', {
       accountId: 'demo_main', date: '2026-01-02', amountCents: -500, currency: 'EUR',
       merchant: 'Coffee Corner', needsReview: 1,
@@ -89,6 +89,10 @@ describe('ReviewScreen (demo identity)', () => {
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rvc', {
       accountId: 'demo_save', date: '2026-01-02', amountCents: 500, currency: 'EUR',
       merchant: 'Pot side', catId: 'uncategorized', needsReview: 0,
+    });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rvc2', {
+      accountId: 'demo_save', date: '2026-01-03', amountCents: 500, currency: 'EUR',
+      merchant: 'Pot side two', catId: 'uncategorized', needsReview: 0,
     });
     seed.close();
     cleanup();
@@ -104,18 +108,21 @@ describe('ReviewScreen (demo identity)', () => {
     const counterTxRow = await screen.findByTestId('review-countertx-row');
     expect(counterTxRow.textContent).toContain('created on confirm');
     fireEvent.click(counterTxRow);
-    // the match sheet suggests the pot's twin; picking it while a bulk
-    // offer stands asks first — "the other counterparts can't be predicted"
+    // #268 (user): picking the pot's twin no longer warns or silences
+    // the bulk — the siblings will queue for their own counters
     fireEvent.click((await screen.findByTestId('counter-dup-rvc')).querySelector('button')!);
-    await screen.findByTestId('review-pick-warn');
-    fireEvent.click(screen.getByTestId('review-pick-continue'));
-
-    // the row now wears the picked leg's face
     await waitFor(() => expect(screen.getByTestId('review-countertx-row').textContent).toContain('Pot side'));
-    // the pick silenced the bulk section — it points at ONE row
-    expect(screen.queryByTestId('review-bulk')).toBeNull();
+    expect(screen.queryByTestId('review-pick-warn')).toBeNull();
+    expect(screen.getByTestId('review-bulk')).toBeTruthy();
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    // the per-sibling queue opens, naming WHICH transaction is matching
+    const context = await screen.findByTestId('counter-queue-context');
+    expect(context.textContent).toContain('Coffee Corner');
+    expect(context.textContent).toContain('1/1');
+    // the sibling picks ITS OWN twin (rv1's pick is spoken for)
+    fireEvent.click((await screen.findByTestId('counter-dup-rvc2')).querySelector('button')!);
+
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const source = await db.transactions.get('rv1');
@@ -124,8 +131,12 @@ describe('ReviewScreen (demo identity)', () => {
       expect(source?.transferPeerId).toBe('rvc');
       // the reciprocal landed; nothing was minted
       expect((await db.transactions.get('rvc'))?.transferPeerId).toBe('rv1');
-      // …and the sibling did NOT ride along (bulk stood down)
-      expect((await db.transactions.get('rv2'))?.needsReview).toBe(1);
+      // #268: the sibling rode along WITH its own picked pair
+      const sibling = await db.transactions.get('rv2');
+      expect(sibling?.needsReview).toBe(0);
+      expect(sibling?.linkedAccountId).toBe('demo_save');
+      expect(sibling?.transferPeerId).toBe('rvc2');
+      expect((await db.transactions.get('rvc2'))?.transferPeerId).toBe('rv2');
     }, { timeout: 8000 });
     db.close();
   }, 25_000);

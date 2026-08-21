@@ -1,4 +1,4 @@
-import { CATEGORY_BY_ID, UNCATEGORIZED_ID } from './categories';
+import { CATEGORY_BY_ID, LOCKED_MAIN_IDS, UNCATEGORIZED_ID } from './categories';
 import type { BuiltinCategory } from './categories';
 import { mergedBuiltins } from './catalogDoc';
 import type { CatalogDoc } from './catalogDoc';
@@ -98,7 +98,15 @@ export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: bo
   const all: Cat[] = [...(mergedBuiltins(doc) as Cat[]), ...custom];
   const map = new Map(all.map((c) => [c.id, c]));
   const off = new Set(hiddenMains);
-  const allParents = all.filter((c) => c.isParent && !c.hidden);
+  // #263 (user): everyday EXPENSE families lead every list; income next;
+  // the ◆ special/system families sit below (stable within each band)
+  const parentRank = (c: Cat): number => {
+    if (LOCKED_MAIN_IDS.has(c.id)) return 2;
+    return c.id === 'income' ? 1 : 0;
+  };
+  const allParents = all
+    .filter((c) => c.isParent && !c.hidden)
+    .sort((a, b) => parentRank(a) - parentRank(b));
   return {
     all,
     byId: (id) => (id && map.get(id)) || FALLBACK,

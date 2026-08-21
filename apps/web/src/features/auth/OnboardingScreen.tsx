@@ -230,6 +230,8 @@ export function OnboardingScreen() {
               aria-invalid={attempted && !name.trim()}
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
             />
+            {/* #195 r2 (user): the blocker sits AT the field */}
+            <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="onboarding-save-blocker" />
             {/* the WHY, kept short (user request): offline nobody else
                 ever sees the name; online it's the face others see */}
             <p className="px-1 text-[12px] leading-snug text-ink-4">
@@ -261,7 +263,6 @@ export function OnboardingScreen() {
               {t('onboarding.countryInfo')}
             </p>
 
-            <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="onboarding-save-blocker" />
             <Button
               data-testid="onboarding-save"
               onClick={() => {
@@ -299,6 +300,7 @@ export function OnboardingScreen() {
               aria-invalid={lockAttempted && !lockPin}
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !lockPin)}`}
             />
+            <FormBlockerNote show={lockAttempted && !lockPin} text={t('form.needFields')} testId="onboarding-lock-enable-blocker" />
             <input
               data-testid="onboarding-lock-pin2"
               type="password"
@@ -312,16 +314,16 @@ export function OnboardingScreen() {
               aria-invalid={lockAttempted && !lockPin2}
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !lockPin2)}`}
             />
+            <FormBlockerNote
+              show={lockAttempted && !!lockPin && !lockPin2}
+              text={t('form.needFields')}
+              testId="onboarding-lock-enable-blocker"
+            />
             {lockError && (
               <p className="text-[12px] text-negative" data-testid="onboarding-lock-error">
                 {lockError}
               </p>
             )}
-            <FormBlockerNote
-              show={lockAttempted && (!lockPin || !lockPin2)}
-              text={t('form.needFields')}
-              testId="onboarding-lock-enable-blocker"
-            />
             <Button
               data-testid="onboarding-lock-enable"
               onClick={() => {

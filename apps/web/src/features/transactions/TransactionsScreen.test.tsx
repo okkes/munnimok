@@ -55,7 +55,7 @@ describe('TransactionsScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('#140/#148: the lens survives a remount (detail detour); the new-only preset narrows to unreviewed', async () => {
+  it('#140/#148 r2: the lens survives a remount (detail detour); the new-only preset shows first-seen arrivals', async () => {
     const first = renderApp('/transactions');
     await screen.findByTestId('tx-list');
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
@@ -72,19 +72,68 @@ describe('TransactionsScreen (demo identity)', () => {
     expect((screen.getByTestId('tx-search') as HTMLInputElement).value).toBe('heijn');
     await waitFor(() => expect(rows().length).toBeLessThan(fullCount));
     cleanup();
-    // #148: home's "see all" arrives with ONLY the new lens preset —
-    // the demo seeds reviewed rows, so the list narrows visibly
+    // #148 r2: home's "see all" arrives with ONLY the new lens preset.
+    // NEW = first seen by this device within 24h — the whole demo seed
+    // was present on the first render, so the lens starts EMPTY…
     presetTxFilters({ newOnly: true });
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     expect((screen.getByTestId('tx-search') as HTMLInputElement).value).toBe('');
-    await waitFor(() => expect(rows().length).toBeLessThan(fullCount));
-    // and a tab-switch style reset clears it again
+    await waitFor(() => expect(rows()).toHaveLength(0));
+    // …and a row arriving AFTER that first sight gets labeled and shows
+    const db2 = new MunniDB('munni_demo');
+    const repo2 = new Repo(new DexieBackend(db2), new HlcClock('seed-newlens'), { trackOutbox: false });
+    await repo2.upsert('transaction', DEMO_SPACE_ID, 'fresh1', {
+      accountId: 'demo_main', date: '2020-04-01', amountCents: -1234, currency: 'EUR',
+      merchant: 'Fresh Arrival', catId: 'groceries', txType: 'expense', needsReview: 0,
+    });
+    await screen.findByTestId('tx-row-fresh1', {}, { timeout: 5000 });
+    expect(rows()).toHaveLength(1);
+    db2.close();
+    // and a tab-switch style reset clears it again (full list = the
+    // demo seed plus the fresh arrival)
     clearTxFilters();
     cleanup();
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
-    await waitFor(() => expect(rows()).toHaveLength(fullCount));
+    await waitFor(() => expect(rows()).toHaveLength(fullCount + 1));
+  }, 15_000);
+
+  it('#243 r2: the linked chip keeps EVERY row and uncollapses the pairs', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    await waitFor(() => expect(rows().length).toBeGreaterThan(3));
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-pairlens'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'leg-out', {
+      accountId: 'demo_main', date: '2020-05-01', amountCents: -7000, currency: 'EUR',
+      merchant: 'To savings', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      linkedAccountId: 'demo_save', transferPeerId: 'leg-in',
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'leg-in', {
+      accountId: 'demo_save', date: '2020-05-01', amountCents: 7000, currency: 'EUR',
+      merchant: 'From checking', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      linkedAccountId: 'demo_main', transferPeerId: 'leg-out',
+    });
+    // collapsed by default: the outgoing leg speaks for the pair
+    await screen.findByTestId('tx-row-leg-out', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('tx-row-leg-in')).toBeNull();
+    // set-based asserts — background mirror mints keep exact counts racy
+    const snap = () => new Set([...rows()].map((r) => r.getAttribute('data-testid')));
+    const collapsed = snap();
+    // chip on: the incoming leg joins WITHOUT narrowing — every row of
+    // the collapsed view is still there (the old lens filtered to
+    // linked-only, which the user rejected)
+    fireEvent.click(screen.getByTestId('tx-filter-counter'));
+    await screen.findByTestId('tx-row-leg-in');
+    const uncollapsed = snap();
+    for (const id of collapsed) expect(uncollapsed.has(id), `${id} vanished`).toBe(true);
+    // chip off: the pair collapses back — nothing new appears either
+    fireEvent.click(screen.getByTestId('tx-filter-counter'));
+    await waitFor(() => expect(screen.queryByTestId('tx-row-leg-in')).toBeNull());
+    expect(screen.getByTestId('tx-row-leg-out')).toBeTruthy();
+    for (const id of snap()) expect(uncollapsed.has(id), `${id} appeared from nowhere`).toBe(true);
+    db.close();
   }, 15_000);
 
   it('search narrows the list to matching merchants', async () => {
@@ -106,7 +155,7 @@ describe('TransactionsScreen (demo identity)', () => {
     }
 
     fireEvent.change(screen.getByTestId('tx-search'), { target: { value: 'zzz-no-such-merchant' } });
-    await waitFor(() => expect(rows().length).toBe(0));
+    await waitFor(() => expect(rows()).toHaveLength(0));
   });
 
   it('the quick chip narrows to uncategorized transactions (user request: unreviewed lives on Home)', async () => {
@@ -133,7 +182,7 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.queryByText('MYSTERY SHOP')).toBeTruthy(), { timeout: 5000 });
 
     fireEvent.click(screen.getByTestId('tx-filter-uncat'));
-    await waitFor(() => expect(rows().length).toBe(1), { timeout: 5000 });
+    await waitFor(() => expect(rows()).toHaveLength(1), { timeout: 5000 });
     expect(screen.getByText('MYSTERY SHOP')).toBeTruthy();
     fireEvent.click(screen.getByTestId('tx-filter-uncat'));
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
@@ -183,12 +232,12 @@ describe('TransactionsScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('tx-filter-open'));
     fireEvent.click(await screen.findByTestId('filter-account-demo_save'));
     fireEvent.click(screen.getByTestId('filter-done'));
-    await waitFor(() => expect(rows().length).toBe(0));
+    await waitFor(() => expect(rows()).toHaveLength(0));
     expect(screen.getByTestId('tx-filter-count').textContent).toBe('1');
 
     // the clear chip resets the sheet filters
     fireEvent.click(screen.getByTestId('tx-filter-clear'));
-    await waitFor(() => expect(rows().length).toBe(all));
+    await waitFor(() => expect(rows()).toHaveLength(all));
 
     // kind filter: the Transfer kind selects the whole family, then the
     // detail chips narrow to plain transfers only. #133 removal: the
@@ -236,6 +285,72 @@ describe('TransactionsScreen (demo identity)', () => {
     expect(screen.queryByTestId('tx-row-wbank')).toBeNull();
     // …and the surviving row says where the money came from
     expect(screen.getByTestId('tx-row-wpur').textContent).toContain('→ Wallet PayPal');
+    db.close();
+  }, 15_000);
+
+  it('#198 r3: a split group and its neighbours are direct siblings of the divide-y card', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-divide'), { trackOutbox: false });
+    // [tx, split-tx, tx] on one far-past day — an isolated date card
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'dv1', {
+      accountId: 'demo_main', date: '2020-05-02', amountCents: -1000, currency: 'EUR',
+      merchant: 'Before Split', catId: 'groceries', txType: 'expense', needsReview: 0,
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'dvs', {
+      accountId: 'demo_main', date: '2020-05-02', amountCents: -3000, currency: 'EUR',
+      merchant: 'Split Shop', catId: 'groceries', txType: 'expense', needsReview: 0, cats: null as never,
+      splits: [
+        { id: 'dvsa', catId: 'groceries', amountCents: 2000 },
+        { id: 'dvsb', catId: 'eatingOut', amountCents: 1000 },
+      ],
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'dv2', {
+      accountId: 'demo_main', date: '2020-05-02', amountCents: -2000, currency: 'EUR',
+      merchant: 'After Split', catId: 'eatingOut', txType: 'expense', needsReview: 0,
+    });
+
+    const group = await screen.findByTestId('tx-parts-dvs', {}, { timeout: 5000 });
+    await screen.findByTestId('tx-row-dv1');
+    await screen.findByTestId('tx-row-dv2');
+    // the divide-y card draws a hairline between DIRECT siblings — the
+    // group wrapper and both plain rows must all sit at that level for
+    // the group's boundaries to get their lines (the paint itself is
+    // restored in styles.css, above border-none's reach)
+    const card = group.parentElement!;
+    expect(card.className).toContain('divide-y');
+    expect(screen.getByTestId('tx-row-dv1').parentElement).toBe(card);
+    expect(screen.getByTestId('tx-row-dv2').parentElement).toBe(card);
+    // #198 r2 rule: the parts INSIDE the inset stay nested — no hairlines
+    // between the parts of one transaction
+    expect(screen.getByTestId('tx-part-row-dvs-0').parentElement).not.toBe(card);
+    db.close();
+  }, 15_000);
+
+  it('#156 r2: the card-rim rows carry the edge rounding for their selection/focus tint', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-edge'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'er1', {
+      accountId: 'demo_main', date: '2020-05-03', amountCents: -1000, currency: 'EUR',
+      merchant: 'Edge One', catId: 'groceries', txType: 'expense', needsReview: 0,
+    });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'er2', {
+      accountId: 'demo_main', date: '2020-05-03', amountCents: -2000, currency: 'EUR',
+      merchant: 'Edge Two', catId: 'groceries', txType: 'expense', needsReview: 0,
+    });
+    const first = await screen.findByTestId('tx-row-er1', {}, { timeout: 5000 });
+    await screen.findByTestId('tx-row-er2');
+    const card = first.parentElement!;
+    const rowEls = [...card.querySelectorAll('[data-testid^="tx-row-"]')];
+    expect(rowEls).toHaveLength(2);
+    // first row rounds its tint to the card's top radius, last to the bottom
+    expect(rowEls[0].className).toContain('focus-visible:rounded-t-card');
+    expect(rowEls[0].className).not.toContain('focus-visible:rounded-b-card');
+    expect(rowEls[1].className).toContain('focus-visible:rounded-b-card');
+    expect(rowEls[1].className).not.toContain('focus-visible:rounded-t-card');
     db.close();
   }, 15_000);
 });

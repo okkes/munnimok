@@ -98,14 +98,16 @@ export function BudgetFormScreen() {
 
   const amountCents = Math.round(Number.parseFloat(amount.replace(',', '.')) * 100);
   const valid = name.trim().length > 0 && Number.isFinite(amountCents) && amountCents > 0 && catIds.length > 0 && !!anchor;
-  // #195: the save stays tappable — an invalid tap names the blocker
+  // #195: the save stays tappable — an invalid tap names the blocker.
+  // r2 (user): the note renders under the field it names — one
+  // (field, text) pair at a time, the note scrolls itself into view
   const [attempted, setAttempted] = useState(false);
-  const blockerText = (() => {
-    if (!attempted || valid) return '';
-    if (!name.trim()) return t('form.needName');
-    if (!Number.isFinite(amountCents) || amountCents <= 0) return t('form.needAmount');
-    if (catIds.length === 0) return t('form.needCategory');
-    return t('form.needFields');
+  const [blockerField, blockerText] = ((): [string, string] => {
+    if (!attempted || valid) return ['', ''];
+    if (!name.trim()) return ['name', t('form.needName')];
+    if (!Number.isFinite(amountCents) || amountCents <= 0) return ['amount', t('form.needAmount')];
+    if (catIds.length === 0) return ['cats', t('form.needCategory')];
+    return ['anchor', t('form.needFields')]; // only the anchor is left to miss
   })();
   // #164: edits guard the back arrow — the draft is dirty once any field
   // moved away from the seeded state (creation counts from blank)
@@ -214,6 +216,8 @@ export function BudgetFormScreen() {
             placeholder={t('budgets.namePlaceholder')}
             className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
+          {/* #195 r2 (user): the blocker sits AT the field */}
+          <FormBlockerNote show={blockerField === 'name'} text={blockerText} testId="budgetform-blocker" />
 
           <div className="m-cap px-1">{t('budgets.amount', { currency })}</div>
           <input
@@ -227,6 +231,7 @@ export function BudgetFormScreen() {
             placeholder="0.00"
             className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
+          <FormBlockerNote show={blockerField === 'amount'} text={blockerText} testId="budgetform-blocker" />
 
           <div className="m-cap px-1">{t('budgets.cadence')}</div>
           <div className="flex flex-wrap items-center gap-2">
@@ -252,6 +257,7 @@ export function BudgetFormScreen() {
               className="h-10 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
             />
           </label>
+          <FormBlockerNote show={blockerField === 'anchor'} text={blockerText} testId="budgetform-blocker" />
 
           <div className="m-cap px-1">
             {t('screen.categories')} · {catIds.length}
@@ -300,6 +306,7 @@ export function BudgetFormScreen() {
               );
             })}
           </div>
+          <FormBlockerNote show={blockerField === 'cats'} text={blockerText} testId="budgetform-blocker" />
 
           {/* carry-over */}
           <button
@@ -363,7 +370,6 @@ export function BudgetFormScreen() {
             ))}
           </div>
 
-          <FormBlockerNote show={!!blockerText} text={blockerText} testId="budgetform-blocker" />
           <Button
             data-testid="budgetform-save"
             onClick={() => {

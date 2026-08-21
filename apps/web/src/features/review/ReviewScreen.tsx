@@ -52,7 +52,8 @@ import { CatsSheet, catsAroundSingle, partCatsApplyPatch } from '@/features/tran
 import type { CatsApplyEntry } from '@/features/transactions/PartCatsSheet';
 import { RecurringVisual, cadenceLabel } from '@/features/recurring/RecurringVisual';
 import { TX_TYPE_VISUAL } from '@/features/transactions/TxTypeSheet';
-import { CounterMatchSheet, CounterpartySheet } from '@/features/transactions/TxKindSheet';
+import { BulkCounterQueue, CounterMatchSheet, CounterpartySheet } from '@/features/transactions/TxKindSheet';
+import { setReviewReturn, takeReviewReturn } from './reviewReturn';
 
 /** one grouped-context row inside the category editor (counterparty,
  *  type) — the card-row anatomy in the sheet's input skin */
@@ -1453,13 +1454,25 @@ export function ReviewScreen() {
   // when similar transactions were about to ride along.
   const [pickedPeer, setPickedPeer] = useState<{ txId: string; linkedId: string } | null>(null);
   const [pickWarn, setPickWarn] = useState<{ n: number; stage: () => void } | null>(null);
+  // #268 (user): the per-sibling counter-match queue a confirmed
+  // row-level pick leaves behind (draft snapshot at confirm time)
+  const [counterBulk, setCounterBulk] = useState<{
+    items: SpaceTx[];
+    draft: ReviewDraft;
+    recurringId?: string;
+    eventId?: string;
+    target: { id: string; name: string };
+  } | null>(null);
   // #237 r3: the card's Counter-transaction row opens the match sheet
   // directly — the fork after the counterparty pick is gone
   const [counterTxOpen, setCounterTxOpen] = useState(false);
   // per-visit only (user ruling): mid-review side steps happen in sheets
   // that keep the screen mounted, so state survives those — but leaving
-  // review and coming back later starts the deck from the top again
-  const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set());
+  // review and coming back later starts the deck from the top again.
+  // #275: the ONE exception is the create-category detour — its stash
+  // restores the skipped set so the deck resumes on the same card.
+  const returnState = useRef(takeReviewReturn());
+  const [skipped, setSkipped] = useState<ReadonlySet<string>>(() => new Set(returnState.current?.skippedIds ?? []));
   // the card's STAGED decision (review redesign): user edits live here,
   // only Confirm writes; null = untouched, follow tx + prediction live
   const [stagedDraft, setStagedDraft] = useState<ReviewDraft | null>(null);
@@ -1503,6 +1516,17 @@ export function ReviewScreen() {
 
   const remaining = useMemo(() => queue?.filter((item) => !skipped.has(item.id)), [queue, skipped]);
   const tx = remaining?.[0];
+  // #275: back from the create-category detour — the same card is up
+  // (skipped restored above); reopen the category editor once so the
+  // fresh category is one tap away
+  useEffect(() => {
+    const back = returnState.current;
+    if (back?.reopenCats && tx?.id === back.txId) {
+      returnState.current = null;
+      setCatsOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tx?.id]);
 
   const prediction = useMemo(
     () => (tx && memory ? predictTx({ memory, merchant: tx.merchant, titleOverride: tx.titleOverride, description: tx.description, amountCents: tx.amountCents }) : null),
@@ -1816,27 +1840,55 @@ export function ReviewScreen() {
     const defaultLinkId = bareMovementFamily && bareMovementFamily !== 'transfer'
       ? await ensureDefaultAccount(store, repo, spaceId, bareMovementFamily)
       : undefined;
-    // #237 r2: a pick-existing (row-level or on any part) is specific to
-    // THIS transaction — the bulk apply stands down entirely
+    // #237 r2: a pick on any PART is specific to this transaction — the
+    // bulk apply stands down. #268 (user): a ROW-level pick keeps bulk
+    // alive instead — the siblings walk a per-transaction match queue.
     const partPeers = (draft.splits ?? []).filter((s) => s.transferPeerId && s.catId !== REIMBURSED_ID);
-    const pickSpecific = !!pickedPeer || partPeers.length > 0;
-    const bulk = pickSpecific ? [] : similar.filter((s) => bulkSelected.has(s.id));
+    const bulk = partPeers.length > 0 ? [] : similar.filter((s) => bulkSelected.has(s.id));
+    const recurringId = container && !isLoanCounter ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined;
+    const eventId = container ? (eventPick ?? undefined) : undefined;
+    const queued = pickedPeer && bulk.length > 0 && draft.linkedAccountId ? bulk : [];
     await writeConfirmation({
       tx,
       draft,
-      recurringId: container && !isLoanCounter ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined,
-      eventId: container ? (eventPick ?? undefined) : undefined,
-      bulk,
+      recurringId,
+      eventId,
+      bulk: pickedPeer ? [] : bulk,
       transform,
       defaultLinkId,
       pairPeerId: pickedPeer?.txId,
     });
     await pairReviewPicks({ store, repo, spaceId }, tx, pickedPeer?.txId, partPeers);
+    if (queued.length > 0) {
+      const linkedId = draft.linkedAccountId!;
+      setCounterBulk({
+        items: queued,
+        draft,
+        recurringId,
+        eventId,
+        target: { id: linkedId, name: spaceAccounts?.find((a) => a.id === linkedId)?.name ?? '' },
+      });
+    }
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
-    const bulkN = bulk.length;
+    const bulkN = pickedPeer ? 0 : bulk.length;
     void logActivity(store, repo, spaceId, 'review', bulkN ? `${txTitle(tx)} +${bulkN}` : txTitle(tx));
     hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
+  };
+
+  // #268: one queue step — the sibling gets the whole decision through
+  // the same sibling-field mapper bulk uses, plus its OWN peer on a pick
+  const resolveCounterBulk = async (item: SpaceTx, peerId: string | null) => {
+    if (!counterBulk) return;
+    await transform(
+      item,
+      {
+        ...bulkFieldsFor(item, counterBulk.draft, counterBulk.recurringId, counterBulk.eventId),
+        ...(peerId ? { transferPeerId: peerId } : {}),
+      },
+      null,
+    );
+    if (peerId) await pairWithExistingRow(store, repo, spaceId, item, peerId, allTxs);
   };
 
   const { progress, sub } = progressState(initialCount, queue?.length, skipped.size);
@@ -2048,9 +2100,10 @@ export function ReviewScreen() {
               />
             )}
 
-            {/* #237 r2: a standing pick-existing silences the bulk offer —
-                it points at ONE row, siblings can't ride along */}
-            {!pickedPeer && !(draft?.splits ?? []).some((s) => s.transferPeerId) && (
+            {/* #237 r2: a PART-level pick silences the bulk offer.
+                #268 (user): a row-level pick keeps it — confirm walks the
+                siblings through their own counter-match queue. */}
+            {!(draft?.splits ?? []).some((s) => s.transferPeerId) && (
               <BulkConfirmSection similar={similar} selected={bulkSelected} onChange={setBulkSelected} />
             )}
             </div>
@@ -2137,6 +2190,9 @@ export function ReviewScreen() {
           includePct
           excludeAccountId={tx.accountId}
           askDisabled={!!ownStamp}
+          // #275: the create-category door stashes the deck's place —
+          // the detour returns to THIS card with the editor reopened
+          onCreateCustomNav={() => setReviewReturn({ skippedIds: [...skipped], txId: tx.id, reopenCats: true })}
           onApply={(entries) => {
             if (entries.length === 1) {
               stageSingleEntry(entries[0]);
@@ -2234,8 +2290,24 @@ export function ReviewScreen() {
           onCreate={resetPickDoor(counterBankFed, false, () => setPickedPeer(null))}
           onWait={resetPickDoor(counterBankFed, true, () => setPickedPeer(null))}
           onPick={(pickedId) => {
-            const linkedId = counterAcct.id;
-            stageWithBulkWarning(similar.length, () => setPickedPeer({ txId: pickedId, linkedId }), setPickWarn);
+            // #268 (user): a row-level pick no longer stands bulk down —
+            // confirm walks the siblings through their own match queue
+            setPickedPeer({ txId: pickedId, linkedId: counterAcct.id });
+          }}
+        />
+      )}
+      {/* #268 (user): the per-sibling counter-match queue a confirmed
+          pick-existing leaves behind — each selected sibling picks its
+          own counter row or links and waits */}
+      {counterBulk && (
+        <BulkCounterQueue
+          queue={counterBulk.items}
+          target={counterBulk.target}
+          rows={allTxs ?? []}
+          onResolve={(item, peerId) => void resolveCounterBulk(item as SpaceTx, peerId)}
+          onDone={(resolved) => {
+            if (resolved > 0) void logActivity(store, repo, spaceId, 'review', `+${resolved}`);
+            setCounterBulk(null);
           }}
         />
       )}

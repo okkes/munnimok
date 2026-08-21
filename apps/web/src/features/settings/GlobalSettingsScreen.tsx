@@ -26,6 +26,7 @@ import {
   readLockConfig,
   registerBiometric,
   validPin,
+  verifyBiometric,
   writeLockConfig,
 } from '@/features/lock/lock';
 
@@ -162,11 +163,40 @@ export function GlobalSettingsScreen() {
     void pushEnabled().then(setPushOn);
   }, [identity?.kind]);
 
+  // #282 (user): turning the lock OFF is a guarded act — the current
+  // PIN (or the registered biometric) must answer first
+  const [disarmOpen, setDisarmOpen] = useState(false);
+  const [disarmPin, setDisarmPin] = useState('');
+  const [disarmError, setDisarmError] = useState(false);
+  const disarm = () => {
+    writeLockConfig(null);
+    setLockOn(false);
+    setDisarmOpen(false);
+  };
+  const tryDisarmBiometric = async () => {
+    const config = readLockConfig();
+    if (config && (await verifyBiometric(config, t('lock.disarmTitle')))) disarm();
+  };
+  const onDisarmDigit = async (next: string) => {
+    setDisarmPin(next);
+    setDisarmError(false);
+    const config = readLockConfig();
+    if (!config || next.length < 4) return;
+    if ((await hashPin(next, config.pinSalt)) === config.pinHash) {
+      disarm();
+    } else if (next.length >= 8) {
+      setDisarmError(true);
+    }
+  };
+
   const toggleLock = async () => {
     if (lockOn) {
-      // the user already proved themself at unlock time — direct disable
-      writeLockConfig(null);
-      setLockOn(false);
+      setDisarmPin('');
+      setDisarmError(false);
+      setDisarmOpen(true);
+      const config = readLockConfig();
+      // the registered biometric answers hands-free where it exists
+      if (config?.credentialId) void tryDisarmBiometric();
       return;
     }
     setLockPin('');
@@ -361,6 +391,33 @@ export function GlobalSettingsScreen() {
       </Sheet>
 
       {/* App lock setup: backup PIN + re-lock timeout (+ biometrics when available) */}
+      {/* #282: the disarm challenge — current PIN (auto-verifying like
+          the lock screen) or the registered biometric */}
+      <Sheet open={disarmOpen} onOpenChange={setDisarmOpen} title={t('lock.disarmTitle')} size="compact">
+        <div className="flex flex-col gap-3 pt-1" data-testid="lock-disarm-sheet">
+          <p className="text-[13px] leading-relaxed text-ink-2">{t('lock.disarmBody')}</p>
+          <input
+            data-testid="lock-disarm-pin"
+            value={disarmPin}
+            onChange={(e) => void onDisarmDigit(e.target.value.replaceAll(/\D/g, '').slice(0, 8))}
+            inputMode="numeric"
+            type="password"
+            autoComplete="off"
+            placeholder={t('lock.pinPlaceholder')}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-center font-mono text-[18px] tracking-[0.4em] text-ink outline-none${disarmError ? ' ring-1 ring-negative' : ''}`}
+          />
+          {disarmError && (
+            <p className="text-center text-[12px] text-negative" data-testid="lock-disarm-error">
+              {t('lock.wrongPin')}
+            </p>
+          )}
+          {readLockConfig()?.credentialId && (
+            <Button variant="outline" data-testid="lock-disarm-bio" onClick={() => void tryDisarmBiometric()}>
+              {t('lock.disarmBiometric')}
+            </Button>
+          )}
+        </div>
+      </Sheet>
       <Sheet open={lockSheetOpen} onOpenChange={setLockSheetOpen} title={t('lock.setup')} size="form">
         <div className="flex flex-col gap-3 pt-1">
           {!lockBioAvailable && <p className="text-[12px] text-ink-3">{t('lock.notSupported')}</p>}
@@ -375,6 +432,8 @@ export function GlobalSettingsScreen() {
             aria-invalid={lockAttempted && !validPin(lockPin)}
             className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !validPin(lockPin))}`}
           />
+          {/* #195 r2 (user): the blocker sits AT the field */}
+          <FormBlockerNote show={lockAttempted && !validPin(lockPin)} text={t('form.needFields')} testId="lock-setup-save-blocker" />
           <input
             data-testid="lock-setup-pin2"
             type="password"
@@ -407,7 +466,6 @@ export function GlobalSettingsScreen() {
               {lockError}
             </p>
           )}
-          <FormBlockerNote show={lockAttempted && !validPin(lockPin)} text={t('form.needFields')} testId="lock-setup-save-blocker" />
           <Button
             data-testid="lock-setup-save"
             onClick={() => {

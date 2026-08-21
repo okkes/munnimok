@@ -172,6 +172,34 @@ describe('TxFormSheet (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('#269: the adjustment names its impact; target mode writes the difference; category locks', async () => {
+    await openForm();
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    const before = (await db.accounts.get('demo_main'))!.balanceCents;
+
+    fireEvent.click(screen.getByTestId('txform-adjustment'));
+    // the panel arrives; the category is munni's own, locked
+    await screen.findByTestId('txform-adjust-panel');
+    expect(screen.getByTestId('txform-adjust-cat').textContent).toContain('Balance Adjustment');
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Fix saldo' } });
+    expect(screen.getByTestId('txform-adjust-impact').textContent).toContain('→');
+
+    // target mode: the typed 50,00 is the balance to LAND ON — the row
+    // gets the difference and the account ends exactly there
+    fireEvent.click(screen.getByTestId('txform-adjust-mode-target'));
+    fireEvent.click(screen.getByTestId('txform-save'));
+    await waitFor(async () => {
+      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Fix saldo');
+      expect(row?.amountCents).toBe(5000 - before);
+      expect(row?.catId).toBe('balanceAdjustment');
+      expect(row?.txType).toBe('adjustment');
+      expect((await db.accounts.get('demo_main'))!.balanceCents).toBe(5000);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
   it('a transfer kind demands its counterparty; the counterparty derives the type', async () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });

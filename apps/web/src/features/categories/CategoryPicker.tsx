@@ -43,10 +43,13 @@ interface CategoryPickerProps {
    *  multi-entry editor hides them (reimbursement, the one exception,
    *  stays pickable) */
   noSpecials?: boolean;
+  /** #275: fired right before the create-custom door navigates away —
+   *  hosts stash their return state (review keeps its place) */
+  onCreateCustomNav?: () => void;
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials }: Readonly<CategoryPickerProps>) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, onCreateCustomNav }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
   const cats = useCategories();
   const navigate = useNavigate();
@@ -171,6 +174,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         <button
           data-testid="catpicker-create-custom"
           onClick={() => {
+            onCreateCustomNav?.(); // #275: hosts stash their way back
             onOpenChange(false);
             setQuery('');
             void navigate({ to: '/categories' });
