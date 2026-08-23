@@ -259,7 +259,7 @@ describe('TxDetailScreen (demo identity)', () => {
 
   it('#255 r3: a part points at the EXISTING pot row — pick, pair, and the countertx row wears its face', async () => {
     renderApp('/transactions');
-    await screen.findByTestId('screen-transactions');
+    await screen.findByTestId('screen-transactions', {}, { timeout: 10_000 });
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-partpick'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-pp', {
@@ -275,16 +275,16 @@ describe('TxDetailScreen (demo identity)', () => {
       accountId: 'demo_save', date: '2020-03-05', amountCents: 2000, currency: 'EUR',
       merchant: 'Pot arrival', catId: 'uncategorized', txType: 'income', needsReview: 0,
     });
-    await screen.findByTestId('tx-parts-tx-pp', {}, { timeout: 5000 });
+    await screen.findByTestId('tx-parts-tx-pp', {}, { timeout: 10_000 });
     fireEvent.click(screen.getByTestId('tx-part-row-tx-pp-1'));
-    fireEvent.click(await screen.findByTestId('tx-part-counter-row', {}, { timeout: 5000 }));
+    fireEvent.click(await screen.findByTestId('tx-part-counter-row', {}, { timeout: 10_000 }));
     // an uncategorized part asks the OPEN accounts list (no family pin);
     // generous waits — this file contends with the boot chain under
     // full-suite coverage load (CI flake 2026-08-21)
-    fireEvent.click(await screen.findByTestId('counter-pick-demo_save', {}, { timeout: 8000 }));
+    fireEvent.click(await screen.findByTestId('counter-pick-demo_save', {}, { timeout: 10_000 }));
     // the fork offers the row already there — point at it
-    await screen.findByTestId('counter-fork', {}, { timeout: 5000 });
-    fireEvent.click((await screen.findByTestId('counter-dup-pot-in', {}, { timeout: 5000 })).querySelector('button')!);
+    await screen.findByTestId('counter-fork', {}, { timeout: 10_000 });
+    fireEvent.click((await screen.findByTestId('counter-dup-pot-in', {}, { timeout: 10_000 })).querySelector('button')!);
     await waitFor(async () => {
       const stored = (await db.transactions.get('tx-pp'))?.splits?.find((sp) => sp.id === 'pp2');
       expect(stored?.linkedAccountId).toBe('demo_save');
@@ -292,11 +292,11 @@ describe('TxDetailScreen (demo identity)', () => {
       // the reciprocal landed on the pot row; nothing was minted
       expect((await db.transactions.get('pot-in'))?.transferPeerId).toBe('tx-pp');
       expect(await db.transactions.get(mirrorTxId(partMirrorSourceId('tx-pp', 'pp2')))).toBeUndefined();
-    }, { timeout: 8000 });
+    }, { timeout: 10_000 });
     // the part page's Counter-transaction row wears the picked face
     await waitFor(() => expect(screen.getByTestId('tx-part-countertx-row').textContent).toContain('Pot arrival'));
     db.close();
-  }, 20_000);
+  }, 40_000);
 
   it('#255 r4: BOTH sides of a part pair travel on tap — no sheet, no dead jump, and the peer wears the PART\'s face', async () => {
     renderApp('/transactions');
