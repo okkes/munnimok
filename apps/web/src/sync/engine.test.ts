@@ -37,9 +37,23 @@ class InMemoryServer implements SyncBackend {
     return { lastSeq: this.lastSeq };
   }
 
+  /** page like Munni.Api does (Take(1000)); Infinity = everything */
+  pageSize = Number.POSITIVE_INFINITY;
+  /** old servers predate the nextSince cursor — the client must survive */
+  omitNextSince = false;
+  pullCalls = 0;
+
   async pull(spaceId: string, since: number): Promise<PullResult> {
     if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
-    return { ops: this.ops.filter((o) => o.seq > since && o.spaceId === spaceId), latestSeq: this.lastSeq };
+    this.pullCalls++;
+    const all = this.ops.filter((o) => o.seq > since && o.spaceId === spaceId);
+    const page = all.slice(0, this.pageSize);
+    const nextSince = page.length > 0 ? page.at(-1)!.seq : since;
+    return {
+      ops: page,
+      latestSeq: this.lastSeq,
+      ...(this.omitNextSince ? {} : { nextSince }),
+    };
   }
 
   async listSpaces(): Promise<string[]> {
@@ -272,5 +286,31 @@ describe('SyncEngine', () => {
     const pull = await server.pull('s1', 0);
     expect(pull.ops).toHaveLength(outbox.length); // no duplicates server-side
     expect(await a.db.outbox.count()).toBe(0);
+  });
+
+  it('#305 bug 4: a paged server drains fully — the head cursor never eats the tail', async () => {
+    let wa = 1_000_000;
+    const a = device('devA', () => ++wa, server);
+    dbs.push(a.db);
+    for (let i = 0; i < 25; i++) {
+      await a.repo.upsert('category', 's-page', `c${i}`, { name: `Cat ${i}` });
+    }
+    await a.engine.syncAll();
+
+    server.pageSize = 10; // the real server pages at 1000
+    let wb = 2_000_000;
+    const b = device('devB', () => ++wb, server);
+    dbs.push(b.db);
+    await b.engine.syncAll();
+    expect((await b.db.categories.toArray()).filter((row) => row.deleted === 0)).toHaveLength(25);
+    expect(server.pullCalls).toBeGreaterThan(2); // it genuinely paged
+
+    // an OLD server without nextSince: the dense-seq fallback still drains
+    server.omitNextSince = true;
+    let wc = 3_000_000;
+    const c = device('devC', () => ++wc, server);
+    dbs.push(c.db);
+    await c.engine.syncAll();
+    expect((await c.db.categories.toArray()).filter((row) => row.deleted === 0)).toHaveLength(25);
   });
 });

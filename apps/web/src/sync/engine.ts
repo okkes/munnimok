@@ -226,11 +226,27 @@ export class SyncEngine {
         await this.pushChunk(spaceId, chunk);
       }
 
-      // 2. pull everything after our cursor and merge (own ops no-op)
-      const since = ((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
-      const { ops, latestSeq } = await this.backend.pull(spaceId, since);
-      if (ops.length > 0) await this.repo.applyRemoteOps(ops);
-      if (latestSeq !== since) await this.store.metaPut(cursorKey(spaceId), latestSeq);
+      // 2. pull everything after our cursor and merge (own ops no-op).
+      // #305 bug 4: the server PAGES at 1000 ops while reporting the
+      // space-head LatestSeq — stamping the cursor at the head after a
+      // partial page skipped every op in between FOREVER (a consumer
+      // joining a mature shared feed lost its whole recent window).
+      // Page until drained: prefer the server's explicit nextSince,
+      // fall back on dense per-space seqs for servers predating it.
+      let since = ((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
+      for (;;) {
+        const { ops, latestSeq, nextSince } = await this.backend.pull(spaceId, since);
+        if (ops.length === 0) {
+          if (latestSeq > since) await this.store.metaPut(cursorKey(spaceId), latestSeq);
+          break;
+        }
+        await this.repo.applyRemoteOps(ops);
+        const next = nextSince ?? since + ops.length;
+        if (next <= since) break; // defensive: never spin without progress
+        await this.store.metaPut(cursorKey(spaceId), next);
+        since = next;
+        if (since >= latestSeq) break;
+      }
     } catch (err) {
       if (err instanceof SyncHttpError && err.status === 403) {
         // #173: a 403 on a MEMBER space is an eviction — tell the app

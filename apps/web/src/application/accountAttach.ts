@@ -56,11 +56,15 @@ export async function reconcileSpaceLinks(store: StorageBackend, repo: Repo, spa
   let mirrored = 0;
   for (const link of server) {
     if (local.some((l) => l.feedSpaceId === link.feedSpaceId && l.accountId === link.accountId)) continue;
+    // #305: copy the SERVER link's own facts — minting a fresh
+    // historyFrom here out-HLC'd the real attach op mid-race and
+    // ratcheted the gate forward, hiding older shared transactions
     await repo.upsert('accountLink', spaceId, accountLinkId(spaceId, link.feedSpaceId), {
       feedSpaceId: link.feedSpaceId,
       accountId: link.accountId,
-      historyFrom: space?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
-      archived: 0,
+      historyFrom: link.historyFrom ?? space?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
+      ...(link.attachedByName ? { attachedByName: link.attachedByName } : {}),
+      archived: link.archived ? (1 as const) : (0 as const),
     });
     mirrored++;
   }

@@ -8,7 +8,10 @@ namespace Munni.Api.Sync;
 
 public sealed record PushRequest(string ClientId, List<SyncOpDto> Ops);
 public sealed record PushResponse(long LastSeq, int Accepted, int Duplicates);
-public sealed record PullResponse(List<SyncOpDto> Ops, long LatestSeq);
+// NextSince (#305 bug 4): the last RETURNED op's seq — the honest page
+// cursor. LatestSeq is the space head; advancing the client cursor to it
+// after a capped 1000-op page skipped everything in between forever.
+public sealed record PullResponse(List<SyncOpDto> Ops, long LatestSeq, long NextSince);
 public sealed record BootstrapRow(string Entity, string EntityId, bool Deleted, JsonElement Data, Dictionary<string, string> FieldVersions);
 public sealed record BootstrapResponse(List<BootstrapRow> Rows, long LatestSeq);
 
@@ -113,7 +116,8 @@ public static class SyncEndpoints
             JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(o.PayloadJson) ?? new(),
             o.Hlc, o.Deleted)).ToList();
         // archived readers must not chase a cursor beyond their cap
-        return Results.Ok(new PullResponse(dtos, Math.Min(space?.LastSeq ?? 0, cap)));
+        var nextSince = ops.Count > 0 ? ops[^1].Seq : since;
+        return Results.Ok(new PullResponse(dtos, Math.Min(space?.LastSeq ?? 0, cap), Math.Min(nextSince, cap)));
     }
 
     private static async Task<IResult> Bootstrap(string spaceId, AppDbContext db, HttpContext http)

@@ -74,7 +74,19 @@ export async function deleteFeedAccount(feedSpaceId: string): Promise<{ erased: 
 }
 
 /** server links of a space (authoritative ids needed for detach) */
-export async function fetchSpaceLinks(spaceId: string): Promise<{ id: string; feedSpaceId: string; accountId: string }[]> {
+export interface ServerSpaceLink {
+  id: string;
+  feedSpaceId: string;
+  accountId: string;
+  /** the link's OWN gate/name facts — the reconcile mirror must copy
+   *  them, never re-guess them (#305: a boot-minted fresh historyFrom
+   *  out-HLC'd the real attach and ratcheted the gate forward) */
+  historyFrom?: string | null;
+  attachedByName?: string | null;
+  archived?: boolean;
+}
+
+export async function fetchSpaceLinks(spaceId: string): Promise<ServerSpaceLink[]> {
   const res = await apiFetch(`/spaces/${spaceId}/accounts`);
-  return res.ok ? ((await res.json()) as { id: string; feedSpaceId: string; accountId: string }[]) : [];
+  return res.ok ? ((await res.json()) as ServerSpaceLink[]) : [];
 }
