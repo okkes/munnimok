@@ -57,10 +57,10 @@ export function RecurringScreen() {
   // #188 (user): this year, next year and All join the range filter.
   // #168 r5 (user): the tab survives a detour into a transaction — the
   // module snapshot seeds it and every change writes back (#140 pattern)
-  const [view, setViewState] = useState<RecurringView>(() => readRecurringView());
-  const setView = (next: RecurringView) => {
+  const [view, setView] = useState<RecurringView>(() => readRecurringView());
+  const switchView = (next: RecurringView) => {
     writeRecurringView(next);
-    setViewState(next);
+    setView(next);
   };
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
 
@@ -291,7 +291,7 @@ export function RecurringScreen() {
             <button
               key={v}
               data-testid={`recurring-view-${v}`}
-              onClick={() => setView(v)}
+              onClick={() => switchView(v)}
               className={`m-tap min-w-fit flex-1 rounded-[10px] border-none px-2.5 py-2 text-[12px] whitespace-nowrap ${
                 view === v ? 'bg-surface font-semibold text-ink shadow-sm' : 'bg-transparent text-ink-3'
               }`}

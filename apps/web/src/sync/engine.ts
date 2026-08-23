@@ -213,6 +213,29 @@ export class SyncEngine {
     if (stillParked.length !== parked.length) await this.store.metaPut(parkedKey(spaceId), stillParked);
   }
 
+  /** #305 bug 4: the server PAGES at 1000 ops while reporting the
+   *  space-head LatestSeq — stamping the cursor at the head after a
+   *  partial page skipped every op in between FOREVER (a consumer
+   *  joining a mature shared feed lost its whole recent window). Page
+   *  until drained: prefer the server's explicit nextSince, fall back
+   *  on dense per-space seqs for servers predating it. */
+  private async drainPull(spaceId: string, initialSince: number): Promise<void> {
+    let since = initialSince;
+    for (;;) {
+      const { ops, latestSeq, nextSince } = await this.backend.pull(spaceId, since);
+      if (ops.length === 0) {
+        if (latestSeq > since) await this.store.metaPut(cursorKey(spaceId), latestSeq);
+        return;
+      }
+      await this.repo.applyRemoteOps(ops);
+      const next = nextSince ?? since + ops.length;
+      if (next <= since) return; // defensive: never spin without progress
+      await this.store.metaPut(cursorKey(spaceId), next);
+      since = next;
+      if (since >= latestSeq) return;
+    }
+  }
+
   async syncSpace(spaceId: string): Promise<void> {
     try {
       // 1. push queued local ops (ordered by HLC), CHUNKED: the server
@@ -226,27 +249,10 @@ export class SyncEngine {
         await this.pushChunk(spaceId, chunk);
       }
 
-      // 2. pull everything after our cursor and merge (own ops no-op).
-      // #305 bug 4: the server PAGES at 1000 ops while reporting the
-      // space-head LatestSeq — stamping the cursor at the head after a
-      // partial page skipped every op in between FOREVER (a consumer
-      // joining a mature shared feed lost its whole recent window).
-      // Page until drained: prefer the server's explicit nextSince,
-      // fall back on dense per-space seqs for servers predating it.
-      let since = ((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
-      for (;;) {
-        const { ops, latestSeq, nextSince } = await this.backend.pull(spaceId, since);
-        if (ops.length === 0) {
-          if (latestSeq > since) await this.store.metaPut(cursorKey(spaceId), latestSeq);
-          break;
-        }
-        await this.repo.applyRemoteOps(ops);
-        const next = nextSince ?? since + ops.length;
-        if (next <= since) break; // defensive: never spin without progress
-        await this.store.metaPut(cursorKey(spaceId), next);
-        since = next;
-        if (since >= latestSeq) break;
-      }
+      // 2. pull everything after our cursor and merge (own ops no-op) —
+      // paged until drained (#305 bug 4; the loop lives in drainPull)
+      const since = ((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
+      await this.drainPull(spaceId, since);
     } catch (err) {
       if (err instanceof SyncHttpError && err.status === 403) {
         // #173: a 403 on a MEMBER space is an eviction — tell the app

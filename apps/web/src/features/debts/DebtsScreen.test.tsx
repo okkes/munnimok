@@ -389,7 +389,7 @@ describe('Debts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('chooser-acctform-save'));
 
     // the auto-offer opens on the real candidate (debt-payment label)
-    await screen.findByTestId('loanmatch-pick-prepay');
+    expect(screen.findByTestId('loanmatch-pick-prepay')).toBeTruthy();
     db.close();
   }, 15_000);
 
