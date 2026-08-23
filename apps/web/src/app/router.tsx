@@ -134,6 +134,18 @@ const recurringDetailRoute = createRoute({
   path: '$recId',
   component: RecurringDetailScreen,
 });
+// #168 r5 (user): a transaction opened FROM the recurring screen mounts
+// under the recurring layout — at lg the recurring list stays the master
+// pane beside it (like $recId above); on mobile, back lands on
+// /recurring. Deeper detours from the detail (parts, peers, link-reimb)
+// continue under the canonical /transactions tree by design.
+const recurringTxRoute = createRoute({
+  getParentRoute: () => recurringRoute,
+  path: 'tx/$txId',
+  component: () => <TxDetailScreen backTo="/recurring" />,
+  validateSearch: (search: Record<string, unknown>): { part?: string } =>
+    typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
+});
 const spacesRoute = createRoute({ getParentRoute: () => appRoute, path: '/spaces', component: SpacesScreen });
 const spaceSettingsRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -236,7 +248,7 @@ export const routeTree = rootRoute.addChildren([
     homeCustomizeRoute,
     txCustomizeRoute,
     transactionsRoute.addChildren([txDetailRoute, reimburseLinkRoute]),
-    recurringRoute.addChildren([recurringDetailRoute]),
+    recurringRoute.addChildren([recurringDetailRoute, recurringTxRoute]),
     recurringSuggestionsRoute,
     spacesRoute,
     spaceSettingsRoute,

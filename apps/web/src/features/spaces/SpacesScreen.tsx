@@ -5,6 +5,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { SpaceInvitesBanner } from './SpaceSharing';
+import { SpacePhotoStrip, applySpacePhoto } from './SpaceSettingsScreen';
 import { SharedSpaceBadge } from './SpaceSwitcher';
 import { takeSpacesCreateIntent } from './spacesHandoff';
 import { useAttentionMap } from '@/application/spaceAttention';
@@ -21,6 +22,7 @@ import { Icon } from '@/ui/Icon';
 import { SearchField } from '@/ui/SearchField';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 import { MDI_NAMES } from '@/generated/mdiNames';
 import { minaSuggestedSpaceName } from '@/features/mina/steps';
 
@@ -48,6 +50,10 @@ export function SpacesScreen() {
   // #285 (user): search widens the curated set to the whole icon font
   const [iconQuery, setIconQuery] = useState('');
   const [color, setColor] = useState(SPACE_COLORS[0]);
+  // #301: an own picture from birth — the settings strip, re-used
+  const [picture, setPicture] = useState('');
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
   const [periodType, setPeriodType] = useState<SpacePeriodType>('month');
   const [periodDay, setPeriodDay] = useState(1);
   const [currency, setCurrency] = useState('EUR');
@@ -95,6 +101,8 @@ export function SpacesScreen() {
         // #147 (user): the create form decides the lock — still private
         // unless the checkbox was explicitly unticked
         inviteLock: inviteLock ? 1 : 0,
+        // #301: the picked picture is born with the space
+        ...(picture ? { picture } : {}),
         ...(profile?.name ? { createdByName: profile.name } : {}),
       })
       .then(async () => {
@@ -117,6 +125,8 @@ export function SpacesScreen() {
     setIcon(SPACE_ICONS[0]);
     setIconQuery('');
     setColor(SPACE_COLORS[0]);
+    setPicture(''); // #301: no picture carried over from the last form
+
     setPeriodType('month');
     setPeriodDay(1);
     setCurrency('EUR');
@@ -265,6 +275,15 @@ export function SpacesScreen() {
               {t('space.nameTaken')}
             </p>
           )}
+          {/* #301: own picture from birth — the settings strip, shared
+              (upload/clear + the desktop webcam door) */}
+          <div className="m-cap px-1">{t('space.icon')}</div>
+          <SpacePhotoStrip
+            picture={picture}
+            onPicture={setPicture}
+            onWebcam={webcamDoor ? () => setWebcamOpen(true) : null}
+            testIdPrefix="space-create-photo"
+          />
           {/* #285 (user): search opens the WHOLE self-hosted font (the
               categories pattern); glyphs render in the picked color so a
               swatch tap previews its real impact live */}
@@ -285,9 +304,12 @@ export function SpacesScreen() {
                 key={candidate}
                 data-testid={`space-create-icon-${candidate}`}
                 title={candidate}
+                // #146 (user): a picture wins over symbol+color everywhere —
+                // while one is set, picking them would change nothing visible
+                disabled={picture !== ''}
                 onClick={() => setIcon(candidate)}
                 className={`m-tap flex h-11 items-center justify-center rounded-xl border ${
-                  icon === candidate ? 'border-accent bg-accent-soft' : 'border-line bg-surface'
+                  icon === candidate && picture === '' ? 'border-accent bg-accent-soft' : 'border-line bg-surface'
                 }`}
               >
                 <Icon name={candidate} size={19} color={color} />
@@ -299,7 +321,13 @@ export function SpacesScreen() {
               </p>
             )}
           </div>
-          <ColorPicker colors={SPACE_COLORS} value={color} onChange={setColor} testIdPrefix="space-create-color" customLabel={t('color.custom')} />
+          {/* #146: say WHY the pickers sleep, not just gray them out */}
+          {picture !== '' && (
+            <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="space-create-icon-picture-note">
+              {t('space.picStompsIcon')}
+            </p>
+          )}
+          <ColorPicker colors={SPACE_COLORS} value={color} onChange={setColor} disabled={picture !== ''} testIdPrefix="space-create-color" customLabel={t('color.custom')} />
 
           {(
             [
@@ -406,6 +434,9 @@ export function SpacesScreen() {
           />
         </div>
       </Sheet>
+      {/* #301: snapshot feeds the same downscale path as the file input
+          (a SIBLING sheet, like its settings twin) */}
+      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => applySpacePhoto(file, setPicture)} />
     </div>
   );
 }

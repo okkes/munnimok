@@ -26,6 +26,9 @@ export interface SharedVia {
   archived: boolean;
   attachedByName?: string;
   historyFrom?: string;
+  /** #305: the SPACE's type opinion for the attachment (#152) — the
+   *  consumer's read-only info sheet reports it */
+  type?: AccountType;
   /** synced link row id (client mirror) */
   linkRowId: string;
 }
@@ -85,6 +88,7 @@ export function useGlobalAccounts(myFeedIds: ReadonlySet<string> | undefined): G
         archived: !!link.archived,
         attachedByName: link.attachedByName,
         historyFrom: link.historyFrom,
+        type: link.type,
         linkRowId: link.id,
       });
       viaByAccount.set(link.accountId, list);

@@ -122,6 +122,14 @@
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
   }
+  /* #198 r6 (user ss, iOS): preflight leaves `appearance: button`, and
+     newer iOS paints that as a white rounded pill even over a
+     transparent background — every row-button read as a stacked 3D
+     card. The app styles all its buttons itself; kill the chrome. */
+  button {
+    appearance: none;
+    -webkit-appearance: none;
+  }
   /* fixed app frame: the document itself can never scroll, so the bottom
      tab bar is always visible (Android URL-bar dance, iOS standalone). All
      scrolling happens inside designated containers.

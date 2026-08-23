@@ -1360,10 +1360,21 @@ export const en = {
   'space.invitePending': 'Invited — waiting for a response',
   'space.deleteConfirmNote': 'This permanently removes the space and its data for every member.',
   'space.sharedBadge': 'Shared',
+  'space.inviteUnlockTitle': 'Enable invitations',
+  'space.inviteUnlockBody': 'Enter your app PIN to open this space up for invitations.',
   // #291: a friend request sent from the members surface pends there too
   'space.friendPending': 'Friend request pending — they join when they accept',
   // #292: the signed-in user's own member row
   'space.me': 'Me',
+  // #304: ONE members-screen door — friends list + friend request share a sheet
+  'space.inviteSomeone': 'Invite someone',
+  'space.inviteFromFriends': 'From your friends',
+  'space.inviteRequestLead': 'Can’t find someone? Send them a friend request right here.',
+  // #303: withdrawing a pending invite asks first
+  'space.cancelInviteTitle': 'Cancel invitation?',
+  'space.cancelInviteBody': '{name} will no longer be able to accept this invitation.',
+  // #302: the locked note links straight to the switch that lifts the lock
+  'space.inviteLockedGo': 'Open the setting',
   'sync.offlineBanner': 'Offline — changes are saved on this device.',
   'sync.offlineShort': 'Offline',
   'login.offlineNote': 'You’re offline — signing in needs a connection. Demo and offline mode still work.',
@@ -1632,6 +1643,7 @@ export const en = {
   'recurring.counterNone': 'No counterparty',
   'recurring.counterEmpty': 'No matching accounts yet.',
   'recurring.showTxs': 'Show transactions',
+  'recurring.showRecs': 'Show recurring costs',
   'recurring.periodNoTxs': 'Nothing linked in this month yet.',
   'tx.setByRecurring': 'Set by the recurring cost',
   'mina.debtHandoff.t': 'Make it a debt?',
@@ -1842,7 +1854,6 @@ export const en = {
   'tx.counterFilter': 'Show linked separately',
   'tx.newFilter': 'New',
   'tx.counterAccount': 'Counterparty',
-  'tx.peekOpenFull': 'Open full details',
   'tx.counterAccountHint': 'Only accounts attached to this space are shown.',
   'tx.counterFundingHint': 'Pick the funding account this money went to — only accounts attached as funding are shown.',
   'tx.originalCounterparty': 'Original counterparty',
@@ -2207,6 +2218,12 @@ export const en = {
   'tour.shop.5t': 'Logins on your other devices',
   'tour.shop.5b': 'Device sync ships your store logins to your other devices as ciphertext. New devices wait until you approve them — after comparing the 6-digit codes.',
   'tour.shop.4b': 'Read items from a receipt photo and the line items appear — handled by your own server, stored nowhere else.',
+  'import.doImportSelected': 'Import {n} of {m} accounts',
+  'import.selectNone': 'Select at least one account to import.',
+  'import.etaLeft': 'about {time} left',
+  'debts.matchNone': 'No transactions found to link.',
+  'acct.sharedEchoHint': 'Shared with you — tap for details',
+  'acct.sharedReadOnly': 'Shared with you — the owner manages this account',
 } as const;
 
 export type TranslationKey = keyof typeof en;

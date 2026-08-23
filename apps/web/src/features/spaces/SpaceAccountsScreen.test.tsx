@@ -97,5 +97,27 @@ describe('SpaceAccountsScreen (#284 reader gating)', () => {
     expect(await screen.findByTestId('space-accounts-add')).toBeTruthy();
     expect(screen.getByTestId('space-accounts-attach')).toBeTruthy();
     expect(screen.queryByTestId('space-accounts-reader-note')).toBeNull();
+    // #305: my OWN feed's attachment never wears the shared badge
+    expect(screen.queryByTestId('space-account-shared-link-1')).toBeNull();
+  }, 15_000);
+
+  it('#305: an attachment on someone ELSE\'s feed wears the shared badge; space-owned rows do not', async () => {
+    await seedRows();
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal', kind: 'shared' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        // feed-1 is NOT mine — I reach it through Bob's attachment
+        'GET /me/feeds': () => [],
+        'GET /spaces/s-user/members': () => [member(BOB, 'Bob', 'owner'), member(ME, 'Me', 'contributor')],
+        'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
+      },
+    });
+
+    expect(await screen.findByTestId('space-account-shared-link-1', {}, { timeout: 5000 })).toBeTruthy();
+    // the space's own manual account stays badge-free
+    expect(screen.queryByTestId('space-account-shared-manual-1')).toBeNull();
   }, 15_000);
 });

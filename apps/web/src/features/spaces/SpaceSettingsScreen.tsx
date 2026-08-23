@@ -22,6 +22,105 @@ import { MDI_NAMES } from '@/generated/mdiNames';
 
 import { SPACE_COLORS, SPACE_ICONS } from './spaceDefaults';
 
+/** one downscale path for all three photo doors (input, native, webcam) */
+export const applySpacePhoto = (file: File, onPicture: (dataUrl: string) => void): void => {
+  void downscaleImage(file, 128).then(onPicture).catch(() => undefined);
+};
+
+/**
+ * #301: the space-image tiles (upload/clear + optional webcam door),
+ * shared by the settings form AND the create form — the strip owns the
+ * hidden file input and the native chooser; the WEBCAM SHEET stays with
+ * the host (sheets are siblings, never nested).
+ */
+export function SpacePhotoStrip({
+  picture,
+  onPicture,
+  disabled = false,
+  onWebcam,
+  testIdPrefix,
+}: Readonly<{
+  picture: string;
+  /** '' clears a previously set image */
+  onPicture: (dataUrl: string) => void;
+  disabled?: boolean;
+  /** null hides the webcam tile (no capable camera / native shell) */
+  onWebcam: (() => void) | null;
+  testIdPrefix: string;
+}>) {
+  const { t } = useLang();
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => {
+        if (file) applySpacePhoto(file, onPicture);
+      });
+      return;
+    }
+    fileRef.current?.click();
+  };
+
+  return (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        hidden
+        data-testid={`${testIdPrefix}-input`}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) applySpacePhoto(file, onPicture);
+        }}
+      />
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {/* own image: shown first, wins over the icon everywhere */}
+        {picture ? (
+          <button
+            data-testid={`${testIdPrefix}-clear`}
+            disabled={disabled}
+            onClick={() => onPicture('')}
+            title={t('action.delete')}
+            className="m-tap relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-accent"
+          >
+            <img src={picture} alt="" className="h-full w-full object-cover" />
+            <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white">
+              <Icon name="close" size={14} />
+            </span>
+          </button>
+        ) : (
+          <button
+            data-testid={`${testIdPrefix}-upload`}
+            disabled={disabled}
+            onClick={pickPhoto}
+            title={t('profile.photoUpload')}
+            className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
+          >
+            {/* #146 r2: upload ≠ webcam — two camera icons read as one */}
+            <Icon name="upload-outline" size={17} />
+          </button>
+        )}
+        {/* #160: desktop webcam snapshot — mirrors the upload tile */}
+        {onWebcam && (
+          <button
+            data-testid={`${testIdPrefix}-webcam`}
+            disabled={disabled}
+            onClick={onWebcam}
+            title={t('webcam.use')}
+            className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
+          >
+            <Icon name="camera-outline" size={17} />
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
 /**
  * A space's settings, slimmed to its IDENTITY: name, image/icon, color —
  * plus leaving/deleting the space (user request: the screen tried to do
@@ -55,7 +154,6 @@ export function SpaceSettingsScreen() {
   const [confirmLeave, setConfirmLeave] = useState(false);
   // leaving needs someone to stay behind — mirror the members screen rule
   const [memberCount, setMemberCount] = useState(0);
-  const fileRef = useRef<HTMLInputElement>(null);
   // #160: desktop-only webcam door beside the upload tile
   const webcamDoor = useWebcamDoor();
   const [webcamOpen, setWebcamOpen] = useState(false);
@@ -89,24 +187,6 @@ export function SpaceSettingsScreen() {
     seedNow !== null &&
     (name !== seedNow.name || icon !== seedNow.icon || color !== seedNow.color || picture !== seedNow.picture);
   const { guardedBack, sheet: discardSheet } = useDiscardGuard(dirty, goBack);
-
-  // one downscale path for all three photo doors (input, native, webcam)
-  const applyPhoto = (file: File): void => {
-    void downscaleImage(file, 128).then(setPicture).catch(() => undefined);
-  };
-
-  const pickPhoto = () => {
-    // #166: the Android shell's file input is gallery-only — the Camera
-    // plugin's chooser answers there; null from it = the user cancelled,
-    // never a reason to open the web input on top
-    if (isNativeApp()) {
-      void pickPhotoNative().then((file) => {
-        if (file) applyPhoto(file);
-      });
-      return;
-    }
-    fileRef.current?.click();
-  };
 
   const save = async () => {
     if (!space || readOnly) return;
@@ -143,11 +223,9 @@ export function SpaceSettingsScreen() {
       .catch(() => setMemberCount(0));
   }, [spaceId, syncing]);
 
+  // #304 (user): leaving confirms like removing a member — the standard
+  // countdown danger sheet, on this surface too
   const leave = async () => {
-    if (!confirmLeave) {
-      setConfirmLeave(true); // destructive: second tap confirms
-      return;
-    }
     if (await leaveSpace({ store, engine, setActiveSpace, activeSpaceId }, spaceId)) {
       void navigate({ to: '/spaces' });
     }
@@ -207,57 +285,14 @@ export function SpaceSettingsScreen() {
             <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="space-edit-blocker" />
 
             <div className="m-cap px-1">{t('space.icon')}</div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              hidden
-              data-testid="space-photo-input"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) applyPhoto(file);
-              }}
+            {/* #301: the strip is shared with the create form now */}
+            <SpacePhotoStrip
+              picture={picture}
+              onPicture={setPicture}
+              disabled={readOnly}
+              onWebcam={webcamDoor ? () => setWebcamOpen(true) : null}
+              testIdPrefix="space-photo"
             />
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {/* own image: shown first, wins over the icon everywhere */}
-              {picture ? (
-                <button
-                  data-testid="space-photo-clear"
-                  disabled={readOnly}
-                  onClick={() => setPicture('')}
-                  title={t('action.delete')}
-                  className="m-tap relative h-10 w-10 shrink-0 overflow-hidden rounded-xl border border-accent"
-                >
-                  <img src={picture} alt="" className="h-full w-full object-cover" />
-                  <span className="absolute inset-0 flex items-center justify-center bg-black/35 text-white">
-                    <Icon name="close" size={14} />
-                  </span>
-                </button>
-              ) : (
-                <button
-                  data-testid="space-photo-upload"
-                  disabled={readOnly}
-                  onClick={pickPhoto}
-                  title={t('profile.photoUpload')}
-                  className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
-                >
-                  {/* #146 r2: upload ≠ webcam — two camera icons read as one */}
-                  <Icon name="upload-outline" size={17} />
-                </button>
-              )}
-              {/* #160: desktop webcam snapshot — mirrors the upload tile */}
-              {webcamDoor && (
-                <button
-                  data-testid="space-photo-webcam"
-                  disabled={readOnly}
-                  onClick={() => setWebcamOpen(true)}
-                  title={t('webcam.use')}
-                  className="m-tap flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-line bg-surface text-ink-3"
-                >
-                  <Icon name="camera-outline" size={17} />
-                </button>
-              )}
-            </div>
             {/* #285 (user): search opens the WHOLE self-hosted font (the
                 categories pattern), and every glyph below renders in the
                 picked color so a swatch tap previews its real impact */}
@@ -327,13 +362,8 @@ export function SpaceSettingsScreen() {
                 between things people actually come here for */}
             {syncing && memberCount > 1 && (
               <div className="mt-4 flex flex-col gap-2">
-                {confirmLeave && (
-                  <p className="px-1 text-[13px] text-ink-3" data-testid="space-leave-confirm-note">
-                    {t('space.leaveConfirm')}
-                  </p>
-                )}
-                <Button variant="outline" data-testid="space-edit-leave" onClick={() => void leave()}>
-                  {confirmLeave ? t('action.confirm') : t('space.leave')}
+                <Button variant="outline" data-testid="space-edit-leave" onClick={() => setConfirmLeave(true)}>
+                  {t('space.leave')}
                 </Button>
               </div>
             )}
@@ -355,9 +385,20 @@ export function SpaceSettingsScreen() {
       {/* #164: the back button's "discard changes?" ask */}
       {discardSheet}
       {/* #160: snapshot feeds the same downscale path as the file input */}
-      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={applyPhoto} />
+      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => applySpacePhoto(file, setPicture)} />
       {/* aligned destructive confirm (user request): sheet + cooldown,
           same shape as account/store/user deletion */}
+      {/* #304: the leave confirm — countdown-armed like every other
+          destructive door */}
+      <DangerConfirmSheet
+        open={confirmLeave}
+        onOpenChange={setConfirmLeave}
+        title={t('space.leaveConfirmTitle')}
+        body={t('space.leaveConfirm')}
+        confirmLabel={t('space.leave')}
+        onConfirm={() => void leave()}
+        testId="space-edit-leave-sheet"
+      />
       <DangerConfirmSheet
         open={confirmDelete}
         onOpenChange={setConfirmDelete}

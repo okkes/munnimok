@@ -625,4 +625,11 @@ async function enforceAccountBinding(store: StorageBackend, identity: Identity):
 
 export async function destroyIdentityData(identity: Identity): Promise<void> {
   await destroyStorage(identityDbName(identityKey(identity)));
+  // #298: the identity's lock config dies with it — a later signup on
+  // this device must never inherit a dead user's PIN
+  try {
+    localStorage.removeItem(`munni_lock_${identityKey(identity)}`);
+  } catch {
+    // storage may be unavailable mid-wipe; the stale key is harmless
+  }
 }

@@ -14,16 +14,44 @@ import type { ParsedStatement, StatementKind } from '@/lib/statements/parseState
 import asnLogo from '@/assets/banks/asn.svg';
 import ingLogo from '@/assets/banks/ing.svg';
 import paypalLogo from '@/assets/banks/paypal.svg';
-import { fmtTimeAgo } from '@/lib/text';
+import { fmtEtaShort, fmtTimeAgo } from '@/lib/text';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
 import { importCamtStatements, statementCoverageEnd } from './importCamt';
 import type { ImportResult } from './importCamt';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
 
 const daysSince = (iso: string): number => Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+
+// ── #300: live ETA while a big import runs ──────────────────────────
+// rows/second over a ROLLING window (early slow rows must not haunt the
+// whole run), spoken only once it can be honest: ≥2s in, a window wide
+// enough to smooth burst noise, and actual forward progress.
+const ETA_WINDOW_MS = 8000;
+const ETA_MIN_ELAPSED_MS = 2000;
+const ETA_MIN_SPAN_MS = 1000;
+
+export interface EtaState {
+  startAt: number;
+  samples: { at: number; done: number }[];
+}
+
+export const newEtaState = (now: number): EtaState => ({ startAt: now, samples: [{ at: now, done: 0 }] });
+
+/** whole seconds left, or null while an estimate would be dishonest */
+export function etaSecondsLeft(state: EtaState, done: number, total: number, now: number): number | null {
+  const { samples } = state;
+  samples.push({ at: now, done });
+  while (samples.length > 2 && now - samples[1].at >= ETA_WINDOW_MS) samples.shift();
+  const first = samples[0];
+  const spanMs = now - first.at;
+  const rows = done - first.done;
+  if (now - state.startAt < ETA_MIN_ELAPSED_MS || spanMs < ETA_MIN_SPAN_MS || rows <= 0) return null;
+  return Math.ceil(((total - done) * spanMs) / rows / 1000);
+}
 
 /** #226 (user): the tested banks, searchable like the connect flow —
  *  the pick guides the file dialog (parsing still sniffs the content).
@@ -92,6 +120,13 @@ export function StatementImportFlow({
   const [mismatch, setMismatch] = useState<{ found: Exclude<StatementKind, 'unknown'>; files: PendingFile[] } | null>(null);
   // #184 (user): long imports say how far they are, not just "busy"
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  // #299 (user): pick which previewed accounts import — excluded INDEXES
+  // into importPreview (monthly exports repeat IBANs); empty set = all
+  const [excluded, setExcluded] = useState<ReadonlySet<number>>(new Set());
+  const [noneBlocked, setNoneBlocked] = useState(false);
+  // #300: "about X left" while the rows land — null until honest
+  const etaRef = useRef<EtaState | null>(null);
+  const [etaSec, setEtaSec] = useState<number | null>(null);
 
   const activeSpace = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   // IBAN matching spans every account the device knows (both pools)
@@ -101,7 +136,21 @@ export function StatementImportFlow({
     [allAccounts],
   );
 
+  // #299: what Import will actually run — the result notes reuse it
+  const selectedStatements = useMemo(() => (importPreview ?? []).filter((_, i) => !excluded.has(i)), [importPreview, excluded]);
+  const toggleStatement = (index: number) => {
+    setNoneBlocked(false); // checking anything answers the blocker
+    setExcluded((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
   const buildPreview = (files: readonly PendingFile[]) => {
+    setExcluded(new Set()); // #299: a fresh preview starts all-checked
+    setNoneBlocked(false);
     try {
       // several exports in one go (user request): parse each file and
       // pool the statements — dedupe refs make overlaps import cleanly
@@ -155,20 +204,31 @@ export function StatementImportFlow({
 
   const runImport = async () => {
     if (!importPreview?.length || importing) return; // double-taps fired PARALLEL imports (user report 2026-07-25)
+    // #299 (user): only the CHECKED accounts import; zero checked names
+    // the reason instead of a dead click (#195 blocker pattern)
+    const chosen = selectedStatements;
+    if (chosen.length === 0) {
+      setNoneBlocked(true);
+      return;
+    }
     setImporting(true);
     // #184: rows land one by one — the count updates every ~1% so an
     // 8000-row statement narrates instead of spinning mutely
-    const total = importPreview.reduce((sum, stmt) => sum + stmt.entries.length, 0);
+    const total = chosen.reduce((sum, stmt) => sum + stmt.entries.length, 0);
     const step = Math.max(1, Math.floor(total / 100));
     setProgress({ done: 0, total });
+    etaRef.current = newEtaState(Date.now());
     const onProgress = (done: number) => {
-      if (done === total || done % step === 0) setProgress({ done, total });
+      if (done !== total && done % step !== 0) return;
+      setProgress({ done, total });
+      // #300: the narration gains "about X left" once it can be honest
+      if (etaRef.current) setEtaSec(done === total ? null : etaSecondsLeft(etaRef.current, done, total, Date.now()));
     };
     // syncing identities import into feed spaces (shared-accounts model);
     // demo/offline keep everything merged in the current space
     const feeds = identity?.kind === 'user' ? apiFeedGateway(identity.sub) : undefined;
     try {
-      setImportResult(await importCamtStatements(repo, store, spaceId, importPreview, feeds, onProgress));
+      setImportResult(await importCamtStatements(repo, store, spaceId, chosen, feeds, onProgress));
     } catch (err) {
       // a failed run (feed registration, server away) must SAY so —
       // a silently unchanged screen reads as "the app is broken"
@@ -181,9 +241,11 @@ export function StatementImportFlow({
     } finally {
       setImporting(false);
       setProgress(null);
+      setEtaSec(null);
+      etaRef.current = null;
     }
     setRunFailed(false);
-    void logActivity(store, repo, spaceId, 'importRun', `${importPreview.length}`);
+    void logActivity(store, repo, spaceId, 'importRun', `${chosen.length}`);
     // a just-imported account may BE the counterparty of older rows
     // (and vice versa) — retro-link them (user rule)
     await linkAllCounterparties(store, repo, spaceId).catch(() => undefined);
@@ -200,8 +262,16 @@ export function StatementImportFlow({
     setImportPreview(null);
     setImportResult(null);
     setImportError(false);
+    setExcluded(new Set()); // #299
+    setNoneBlocked(false);
     if (fileRef.current) fileRef.current.value = '';
   };
+
+  // #299: with several accounts on offer the button counts the picks
+  const importLabel =
+    (importPreview?.length ?? 0) > 1
+      ? t('import.doImportSelected', { n: selectedStatements.length, m: importPreview?.length ?? 0 })
+      : t('import.doImport');
 
   return (
     <>
@@ -326,7 +396,19 @@ export function StatementImportFlow({
               const match = byIban.get(iban);
               return (
                 // key by index: monthly exports repeat the same IBAN per statement
-                <div key={`${stmt.iban}-${i}`} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
+                <label key={`${stmt.iban}-${i}`} className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3">
+                  {/* #299 (user): several accounts in the pick (one CAMT
+                      with many, or several files) import à la carte —
+                      all checked by default, unchecking skips one */}
+                  {(importPreview?.length ?? 0) > 1 && (
+                    <input
+                      type="checkbox"
+                      data-testid={`import-select-${i}`}
+                      checked={!excluded.has(i)}
+                      onChange={() => toggleStatement(i)}
+                      className="h-5 w-5 shrink-0 accent-[var(--m-accent)]"
+                    />
+                  )}
                   <Icon name={match ? 'bank-check' : 'bank-plus'} size={22} color="var(--m-accent)" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[14px] font-medium text-ink">
@@ -368,9 +450,11 @@ export function StatementImportFlow({
                       ? t('import.txCountOne')
                       : t('import.txCount', { n: stmt.entries.length })}
                   </span>
-                </div>
+                </label>
               );
             })}
+            {/* #299: zero checked — the note near the list says why */}
+            <FormBlockerNote show={noneBlocked} text={t('import.selectNone')} testId="import-select-blocker" className="px-1" />
             <Button data-testid="import-run" onClick={() => void runImport()} disabled={!importPreview?.length || importing}>
               {importing ? (
                 // big statements take a while — #184: narrate the count,
@@ -384,9 +468,16 @@ export function StatementImportFlow({
                     : t('import.importing')}
                 </span>
               ) : (
-                t('import.doImport')
+                importLabel
               )}
             </Button>
+            {/* #300: the quiet ETA line under the narration, only once
+                the rolling rows/sec window can speak honestly */}
+            {importing && etaSec !== null && (
+              <p className="text-center text-[11px] text-ink-4" data-testid="import-eta">
+                {t('import.etaLeft', { time: fmtEtaShort(etaSec, lang) })}
+              </p>
+            )}
           </div>
         )}
         {importResult && (
@@ -397,8 +488,9 @@ export function StatementImportFlow({
             </p>
             {(() => {
               const start = activeSpace?.historyStartDate;
+              // #299: only what actually imported counts here
               const preStart = start
-                ? (importPreview ?? []).reduce((sum, stmt) => sum + stmt.entries.filter((e) => e.date < start).length, 0)
+                ? selectedStatements.reduce((sum, stmt) => sum + stmt.entries.filter((e) => e.date < start).length, 0)
                 : 0;
               if (preStart === 0) return null;
               return (

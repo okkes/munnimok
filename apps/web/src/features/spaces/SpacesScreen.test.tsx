@@ -1,8 +1,17 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { renderApp } from '@/test/harness';
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { renderApp, renderWithProviders } from '@/test/harness';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
+
+// happy-dom has no canvas — the downscaler is covered by lib/image.test.ts,
+// here we care about the flow around it (#301)
+const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
+vi.mock('@/lib/image', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/image')>()),
+  downscaleImage: vi.fn(async () => FAKE_PHOTO),
+}));
 
 describe('SpacesScreen (demo identity)', () => {
   beforeEach(() => {
@@ -464,4 +473,75 @@ describe('SpacesScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('space-icon-search-clear'));
     expect(await screen.findByTestId('space-icon-briefcase-outline')).toBeTruthy();
   }, 15_000);
+
+  it('#301: the create form takes a picture through the shared strip and births the space with it', async () => {
+    renderApp('/spaces');
+    await screen.findByTestId('screen-spaces');
+
+    fireEvent.click(screen.getByTestId('spaces-add'));
+    await screen.findByTestId('space-create-name');
+    // the settings strip, re-housed: upload tile + hidden input
+    const file = new File(['x'], 'photo.png', { type: 'image/png' });
+    expect(screen.getByTestId('space-create-photo-upload')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('space-create-photo-input'), { target: { files: [file] } });
+
+    // the picked picture shows as the clear tile and puts the symbol +
+    // color pickers to sleep with the #146 note, like its settings twin
+    expect(await screen.findByTestId('space-create-photo-clear')).toBeTruthy();
+    expect(await screen.findByTestId('space-create-icon-picture-note')).toBeTruthy();
+    expect((screen.getByTestId('space-create-icon-leaf') as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.change(screen.getByTestId('space-create-name'), { target: { value: 'Pictured' } });
+    fireEvent.click(screen.getByTestId('space-create-save'));
+
+    // the picture persists ON the new space
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const made = (await db.spaces.toArray()).find((s) => s.name === 'Pictured');
+        expect(made?.picture).toBe(FAKE_PHOTO);
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
+  it('#304: the leave/remove danger confirm arms only after the 5s countdown', () => {
+    // the flows pass no cooldown prop, so they inherit the standard
+    // (5s in production, 0 in test mode) — the countdown machinery is
+    // proven here with the prod value and fake timers
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] });
+    try {
+      renderWithProviders(
+        <DangerConfirmSheet
+          open
+          onOpenChange={() => undefined}
+          title="Leave space?"
+          body="You will lose access to this space and its data on this device."
+          confirmLabel="Leave space"
+          onConfirm={() => undefined}
+          testId="space-leave"
+          cooldown={5}
+        />,
+      );
+      const confirm = screen.getByTestId('space-leave-confirm') as HTMLButtonElement;
+      expect(confirm.disabled).toBe(true);
+      expect(confirm.textContent).toContain('(5)');
+
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(confirm.disabled).toBe(true);
+      expect(confirm.textContent).toContain('(2)');
+
+      act(() => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect(confirm.disabled).toBe(false);
+      expect(confirm.textContent).not.toContain('(');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

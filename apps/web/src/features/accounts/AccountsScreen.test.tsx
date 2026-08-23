@@ -5,6 +5,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAMT_FIXTURE } from '@/test/camt-fixture';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
+import { etaSecondsLeft, newEtaState } from './StatementImportFlow';
 
 // #226 r2: a minimal real-shape PayPal activity export — columns are
 // looked up by header name, so the short header parses fine
@@ -12,6 +13,37 @@ const PAYPAL_CSV = [
   '"Date","Time","TimeZone","Name","Type","Status","Currency","Gross","Fee","Net","From Email Address","To Email Address","Transaction ID","Balance","Balance Impact"',
   '"06/01/2026","12:00:00","CET","Acme Music","General Payment","Completed","EUR","-23,00","0,00","-23,00","me@example.com","billing@acme.example","TXA1","-23,00","Debit"',
 ].join('\n');
+
+// #299/#300: synthetic CAMT.053 builders — one document, N statements
+const camtEntry = (ref: string, name: string) => `
+      <Ntry>
+        <Amt Ccy="EUR">1.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt><Dt>2026-06-28</Dt></BookgDt>
+        <AcctSvcrRef>${ref}</AcctSvcrRef>
+        <NtryDtls><TxDtls>
+          <RltdPties><Cdtr><Nm>${name}</Nm></Cdtr></RltdPties>
+          <RmtInf><Ustrd>${name}</Ustrd></RmtInf>
+        </TxDtls></NtryDtls>
+      </Ntry>`;
+const camtStmt = (iban: string, entries: string) => `
+    <Stmt>
+      <Id>STMT-${iban}</Id>
+      <Acct><Id><IBAN>${iban}</IBAN></Id><Ccy>EUR</Ccy></Acct>
+      <Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">100.00</Amt><CdtDbtInd>CRDT</CdtDbtInd></Bal>${entries}
+    </Stmt>`;
+const camtDoc = (stmts: string) => `<?xml version="1.0" encoding="UTF-8"?>
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02">
+  <BkToCstmrStmt>
+    <GrpHdr><MsgId>MSG-MULTI</MsgId><CreDtTm>2026-07-01T00:30:00</CreDtTm></GrpHdr>${stmts}
+  </BkToCstmrStmt>
+</Document>`;
+/** two accounts in ONE file — the #299 selection case */
+const TWO_ACCOUNT_CAMT = camtDoc(
+  camtStmt('NL11TEST0000000011', camtEntry('SEL-1', 'Statement Shop A') + camtEntry('SEL-2', 'Statement Shop A2')) +
+    camtStmt('NL22TEST0000000022', camtEntry('SEL-3', 'Bakkerij Bos')),
+);
 
 describe('AccountsScreen (demo identity)', () => {
   beforeEach(() => {
@@ -570,7 +602,7 @@ describe('AccountsScreen (demo identity)', () => {
     expect(pos & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   }, 15_000);
 
-  it('#288: shared-with-me drops deletion ghosts — a dead mirror never renders; archived-only stays with its pill', async () => {
+  it('#288/#305: shared accounts live as SPACE echoes — badge + info sheet; archived wears its pill; a dead mirror renders nowhere', async () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
@@ -579,6 +611,7 @@ describe('AccountsScreen (demo identity)', () => {
     const db = new MunniDB(USER_TEST_DB);
     const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
     // a GENUINE share: live mirror row + an active link naming the sharer
+    // — the owner's icon pick rides the synced account row (#305 bug 3)
     await repo.upsert('account', 'feed-marie', 'sh-live', {
       name: 'Marie ING',
       type: 'checking',
@@ -586,11 +619,13 @@ describe('AccountsScreen (demo identity)', () => {
       currency: 'EUR',
       balanceCents: 12_000,
       iban: 'NL11INGB0000000011',
+      logo: 'data:image/png;base64,iVBORw0KGgo=',
     });
     await repo.upsert('accountLink', 's-user', 'shlink-1', {
       feedSpaceId: 'feed-marie',
       accountId: 'sh-live',
       attachedByName: 'Marie',
+      type: 'savings',
     });
     // NOT a ghost: an archived-only echo is the DESIGNED left-the-space
     // state (sync-a6) — the row stays, wearing the Archived pill
@@ -630,15 +665,35 @@ describe('AccountsScreen (demo identity)', () => {
       },
     });
 
-    const section = await screen.findByTestId('accounts-shared', {}, { timeout: 5000 });
-    expect(screen.getByTestId('shared-account-sh-live')).toBeTruthy();
-    expect(section.textContent).toContain('Marie');
-    // archived-only STAYS (the sharer left; rejoin re-arms it)…
-    expect(screen.getByTestId('shared-account-sh-ghost')).toBeTruthy();
+    // #305: the global "Shared with me" section is GONE — the share's one
+    // face is its echo inside the space that sees it, wearing the badge
+    // (the badge is the signal that /me/feeds answered and the entry
+    // flipped from the optimistic "mine" to shared-with-me)
+    await screen.findByTestId('echo-shared-s-user-sh-live', {}, { timeout: 5000 });
+    const liveEcho = screen.getByTestId('account-echo-s-user-sh-live');
+    expect(screen.queryByTestId('accounts-shared')).toBeNull();
+    // the owner's synced logo reaches the consumer row (#305 bug 3)
+    expect((screen.getByTestId('account-echo-logo-sh-live') as HTMLImageElement).src).toContain('data:image/png');
+    // archived-only STAYS (the sharer left; rejoin re-arms it) — the
+    // pill that lived in the old section now rides the echo row
+    expect(screen.getByTestId('account-echo-s-user-sh-ghost')).toBeTruthy();
+    expect(screen.getByTestId('echo-archived-s-user-sh-ghost')).toBeTruthy();
     // …only the tombstoned mirror is a true ghost and renders nowhere
-    expect(screen.queryByTestId('shared-account-sh-dead')).toBeNull();
+    expect(screen.queryByTestId('account-echo-s-user-sh-dead')).toBeNull();
     expect(screen.queryByTestId('account-row-sh-ghost')).toBeNull();
     expect(screen.queryByTestId('account-row-sh-dead')).toBeNull();
+
+    // #305 bug 2: tapping the shared echo opens the READ-ONLY info sheet
+    fireEvent.click(liveEcho);
+    const sheet = await screen.findByTestId('shared-account-info');
+    expect(sheet.textContent).toContain('NL11INGB0000000011');
+    expect(sheet.textContent).toContain('Marie'); // shared-by
+    expect(sheet.textContent).toMatch(/€\s?120/); // balance
+    expect(sheet.textContent).toContain('Saving Account'); // the SPACE's type (#152)
+    // …and none of the owner's levers
+    expect(screen.queryByTestId('space-account-sheet-detach')).toBeNull();
+    expect(screen.queryByTestId('attach-delete')).toBeNull();
+    expect(screen.queryByTestId('acctedit-name')).toBeNull();
   }, 15_000);
 
   it('adds a manual cash account via the space door (manual is space-scoped now)', async () => {
@@ -832,6 +887,99 @@ describe('AccountsScreen (demo identity)', () => {
     fireEvent.change(input);
     expect(await screen.findByTestId('import-error')).toBeTruthy();
   });
+
+  it('#299: a two-account CAMT previews checkboxes; unchecking one imports only the other', async () => {
+    renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [new File([TWO_ACCOUNT_CAMT], 'statement.xml', { type: 'text/xml' })] });
+    fireEvent.change(input);
+
+    await screen.findByTestId('import-preview');
+    // both accounts previewed, both checked by default, the button counts
+    expect((screen.getByTestId('import-select-0') as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByTestId('import-select-1') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByTestId('import-run').textContent).toContain('Import 2 of 2 accounts');
+
+    // skip the second account — the button follows the pick
+    fireEvent.click(screen.getByTestId('import-select-1'));
+    expect((screen.getByTestId('import-select-1') as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByTestId('import-run').textContent).toContain('Import 1 of 2 accounts');
+
+    fireEvent.click(screen.getByTestId('import-run'));
+    const result = await screen.findByTestId('import-result');
+    expect(result.textContent).toContain('Imported 2 transactions, skipped 0 duplicates');
+
+    // only the CHECKED account's rows (and account) landed
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const accounts = await db.accounts.toArray();
+      expect(accounts.some((a) => a.iban === 'NL11TEST0000000011')).toBe(true);
+      expect(accounts.some((a) => a.iban === 'NL22TEST0000000022')).toBe(false);
+      const txs = await db.transactions.toArray();
+      expect(txs.filter((t) => t.merchant === 'Statement Shop A')).toHaveLength(1);
+      expect(txs.filter((t) => t.merchant === 'Bakkerij Bos')).toHaveLength(0);
+    }, { timeout: 5000 });
+    db.close();
+  }, 15_000);
+
+  it('#299: zero checked accounts blocks with the note until a pick returns', async () => {
+    renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [new File([TWO_ACCOUNT_CAMT], 'statement.xml', { type: 'text/xml' })] });
+    fireEvent.change(input);
+    await screen.findByTestId('import-preview');
+
+    fireEvent.click(screen.getByTestId('import-select-0'));
+    fireEvent.click(screen.getByTestId('import-select-1'));
+    expect(screen.getByTestId('import-run').textContent).toContain('Import 0 of 2 accounts');
+    fireEvent.click(screen.getByTestId('import-run'));
+    // #195 pattern: the enabled button surfaces the note instead of dying
+    expect(await screen.findByTestId('import-select-blocker')).toBeTruthy();
+    expect(screen.queryByTestId('import-result')).toBeNull();
+
+    // re-checking one clears the note and the run lands
+    fireEvent.click(screen.getByTestId('import-select-0'));
+    await waitFor(() => expect(screen.queryByTestId('import-select-blocker')).toBeNull());
+    fireEvent.click(screen.getByTestId('import-run'));
+    await screen.findByTestId('import-result');
+  }, 15_000);
+
+  it('#300: a big import narrates a live "about X left" estimate', async () => {
+    renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
+    const big = camtDoc(
+      camtStmt(
+        'NL33TEST0000000033',
+        Array.from({ length: 320 }, (_, i) => camtEntry(`BIG-${i}`, `Bulk ${i}`)).join(''),
+      ),
+    );
+    Object.defineProperty(input, 'files', { value: [new File([big], 'big.xml', { type: 'text/xml' })] });
+    fireEvent.change(input);
+    await screen.findByTestId('import-preview');
+
+    // a stubbed clock advances 40ms per reading — the honesty gates
+    // (≥2s elapsed, ≥1s window) pass deterministically, no real sleeps
+    const t0 = Date.now();
+    let tick = 0;
+    const nowSpy = vi.spyOn(Date, 'now').mockImplementation(() => t0 + (tick += 40));
+    try {
+      fireEvent.click(screen.getByTestId('import-run'));
+      // the quiet line appears while rows land…
+      const eta = await screen.findByTestId('import-eta', {}, { timeout: 10_000 });
+      expect(eta.textContent).toMatch(/about .+ left/);
+      // …and the run still completes (generous: 320 rows under full-
+      // suite coverage load run slow — the CI-load lesson)
+      await screen.findByTestId('import-result', {}, { timeout: 30_000 });
+    } finally {
+      nowSpy.mockRestore();
+    }
+    // the estimate leaves with the progress narration
+    expect(screen.queryByTestId('import-eta')).toBeNull();
+  }, 45_000);
 
   it('#226 r2: the ING row carries its download route and a real logo image', async () => {
     renderApp('/accounts');
@@ -1176,4 +1324,19 @@ describe('import batches (master plan IB)', () => {
     expect((await check.transactions.get('B2a'))?.deleted).toBe(0);
     check.close();
   }, 20_000);
+});
+
+describe('#300 etaSecondsLeft (unit)', () => {
+  it('honesty gates: silent early, estimates on a steady rate, silent on a stall', () => {
+    const state = newEtaState(0);
+    // 1s in at 100 rows/s — under the 2s floor, no estimate yet
+    expect(etaSecondsLeft(state, 100, 1000, 1000)).toBeNull();
+    // 3s in, steady 100 rows/s — 700 rows left reads as 7s
+    expect(etaSecondsLeft(state, 300, 1000, 3000)).toBe(7);
+    // a long stall: the rolling window slides past the progress and the
+    // rate reads zero — the line goes silent instead of lying
+    expect(etaSecondsLeft(state, 300, 1000, 12_000)).toBeNull();
+    // resuming speaks again from the window's surviving span
+    expect(etaSecondsLeft(state, 400, 1000, 13_000)).toBe(60);
+  });
 });

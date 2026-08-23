@@ -1362,10 +1362,21 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'space.invitePending': 'Uitgenodigd — wacht op reactie',
   'space.deleteConfirmNote': 'Dit verwijdert de ruimte en alle gegevens definitief voor alle leden.',
   'space.sharedBadge': 'Gedeeld',
+  'space.inviteUnlockTitle': 'Uitnodigingen inschakelen',
+  'space.inviteUnlockBody': 'Voer je app-pincode in om deze space open te stellen voor uitnodigingen.',
   // #291: a friend request sent from the members surface pends there too
   'space.friendPending': 'Vriendschapsverzoek in behandeling — ze doen mee zodra ze accepteren',
   // #292: the signed-in user's own member row
   'space.me': 'Ik',
+  // #304: ONE members-screen door — friends list + friend request share a sheet
+  'space.inviteSomeone': 'Iemand uitnodigen',
+  'space.inviteFromFriends': 'Uit je vrienden',
+  'space.inviteRequestLead': 'Iemand niet gevonden? Stuur hier direct een vriendschapsverzoek.',
+  // #303: withdrawing a pending invite asks first
+  'space.cancelInviteTitle': 'Uitnodiging intrekken?',
+  'space.cancelInviteBody': '{name} kan deze uitnodiging daarna niet meer accepteren.',
+  // #302: the locked note links straight to the switch that lifts the lock
+  'space.inviteLockedGo': 'Instelling openen',
   'sync.offlineBanner': 'Offline — wijzigingen worden op dit apparaat bewaard.',
   'sync.offlineShort': 'Offline',
   'login.offlineNote': 'Je bent offline — inloggen heeft verbinding nodig. Demo en offline-modus werken wel.',
@@ -1634,6 +1645,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'recurring.counterNone': 'Geen tegenpartij',
   'recurring.counterEmpty': 'Nog geen passende rekeningen.',
   'recurring.showTxs': 'Toon transacties',
+  'recurring.showRecs': 'Toon vaste lasten',
   'recurring.periodNoTxs': 'Nog niets gekoppeld in deze maand.',
   'tx.setByRecurring': 'Bepaald door de vaste last',
   'mina.debtHandoff.t': 'Er een schuld van maken?',
@@ -1844,7 +1856,6 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tx.counterFilter': 'Gekoppelde apart tonen',
   'tx.newFilter': 'Nieuw',
   'tx.counterAccount': 'Tegenpartij',
-  'tx.peekOpenFull': 'Volledige details openen',
   'tx.counterAccountHint': 'Alleen rekeningen die aan deze ruimte gekoppeld zijn, worden getoond.',
   'tx.counterFundingHint': 'Kies de potrekening waar dit geld heen ging — alleen rekeningen die als pot gekoppeld zijn, worden getoond.',
   'tx.originalCounterparty': 'Oorspronkelijke tegenpartij',
@@ -2209,4 +2220,10 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tour.shop.5t': 'Logins op je andere apparaten',
   'tour.shop.5b': 'Apparaatsync verstuurt je winkellogins als versleutelde tekst naar je andere apparaten. Nieuwe apparaten wachten tot jij ze goedkeurt — na het vergelijken van de 6-cijferige codes.',
   'tour.shop.4b': 'Lees artikelen uit een bonfoto en de regels verschijnen — verwerkt door je eigen server, nergens anders opgeslagen.',
+  'import.doImportSelected': 'Importeer {n} van {m} rekeningen',
+  'import.selectNone': 'Selecteer minstens één rekening om te importeren.',
+  'import.etaLeft': 'nog ongeveer {time}',
+  'debts.matchNone': 'Geen transacties gevonden om te koppelen.',
+  'acct.sharedEchoHint': 'Met jou gedeeld — tik voor details',
+  'acct.sharedReadOnly': 'Met jou gedeeld — de eigenaar beheert deze rekening',
 };

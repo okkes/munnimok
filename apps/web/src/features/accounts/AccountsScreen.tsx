@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useGlobalAccounts } from '@/application/accounts';
-import type { GlobalAccount, SpaceScopedAccounts } from '@/application/accounts';
+import type { GlobalAccount, SharedVia, SpaceScopedAccounts } from '@/application/accounts';
+import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { linkAllCounterparties } from '@/application/counterLink';
@@ -27,6 +28,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { EmptyState } from '@/ui/EmptyState';
 import { Icon } from '@/ui/Icon';
+import { Sheet } from '@/ui/Sheet';
 
 import { typeDef } from './accountTypes';
 
@@ -272,71 +274,133 @@ function AccountSection({
   );
 }
 
-/** accounts other people attached into spaces shared with me (read-only) */
-function SharedWithMeSection({ list, lang }: { list: GlobalAccount[]; lang: ReturnType<typeof useLang>['lang'] }) {
+/** one echo per attachment: the entry plus THIS space's link (#305) */
+interface EchoEntry {
+  entry: GlobalAccount;
+  via: SharedVia;
+}
+
+/** #305 (user): the read-only story of an account someone else shares
+ *  into a space — same facts the owner reads (IBAN, type, balance,
+ *  freshness, who shared it), none of the levers (no rename, no detach,
+ *  no delete: it is not the consumer's account to manage) */
+function SharedAccountSheet({
+  info,
+  onClose,
+  lang,
+}: {
+  info: EchoEntry | null;
+  onClose: () => void;
+  lang: ReturnType<typeof useLang>['lang'];
+}) {
   const { t } = useLang();
-  if (list.length === 0) return null;
+  const account = info?.entry.account;
+  const bankLogo = account ? (account.logo ?? institutionLogoUrl(account.bankId)) : undefined;
   return (
-    <>
-      <div className="m-cap mt-5 mb-1 px-1">{t('acct.sharedWithMe')}</div>
-      <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="accounts-shared">
-        {list.map(({ account, sharedVia }, i) => {
-          const active = sharedVia.filter((v) => !v.archived);
-          const first = active[0] ?? sharedVia[0];
-          // #227: no "via space x, y" — who shared it, plus the IBAN
-          const subtitle = [first?.attachedByName, account.iban].filter(Boolean).join(' · ');
-          return (
-            <div key={account.id} id={`acct-row-${account.id}`}>
-              {i > 0 && <div className="mx-4 h-px bg-line-2" />}
-              <div className="flex items-center gap-3 px-4 py-3.5" data-testid={`shared-account-${account.id}`}>
-                {/* #212 r2: no type at the global level — plain bank tile */}
-                <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[15px] text-ink">{account.name}</span>
-                  {subtitle && <span className="block truncate text-[11px] text-ink-4">{subtitle}</span>}
-                </span>
-                {active.length === 0 && (
-                  <span className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink-2">
-                    {t('acct.archived')}
-                  </span>
-                )}
-                <span className="m-num text-[15px] font-semibold text-ink">
-                  {fmtCents(account.balanceCents, account.currency, lang)}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </>
+    <Sheet open={info !== null} onOpenChange={(next) => !next && onClose()} title={account?.name} size="form">
+      {info && account && (
+        <div className="flex flex-col gap-3 pt-1" data-testid="shared-account-info">
+          <div className="flex items-center gap-2.5">
+            {bankLogo ? (
+              <img src={bankLogo} alt="" className="h-7 w-7 rounded-lg object-contain" data-testid="shared-info-logo" />
+            ) : (
+              <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
+            )}
+            <SharedSpaceBadge testId="shared-info-badge" />
+          </div>
+          <p className="px-1 text-[13px] leading-snug text-ink-3" data-testid="shared-info-readonly">
+            {t('acct.sharedReadOnly')}
+          </p>
+          <div className="overflow-hidden rounded-card border border-line bg-surface">
+            {[
+              account.iban ? ([t('accounts.ibanLabel'), account.iban] as const) : null,
+              // #152: the type is the SPACE's reading of the attachment
+              [t('acct.typeRow'), t(typeDef(info.via.type ?? account.type).labelKey)] as const,
+              [t('acct.balanceNow'), fmtCents(account.balanceCents, account.currency, lang)] as const,
+              account.dataThroughDate ? ([t('acct.dataThroughLabel'), account.dataThroughDate] as const) : null,
+              account.lastSyncedAt ? ([t('acct.lastSyncedLabel'), fmtTimeAgo(account.lastSyncedAt, lang)] as const) : null,
+              info.via.attachedByName ? ([t('acct.attachedBy'), info.via.attachedByName] as const) : null,
+            ]
+              .filter((row): row is readonly [string, string] => row !== null)
+              .map(([label, value]) => (
+                <div key={label} className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0">
+                  <span className="text-ink-3">{label}</span>
+                  <span className="min-w-0 truncate text-right font-mono text-[12px] text-ink">{value}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </Sheet>
   );
 }
 
 /** #227: an inert mirror of a bank-fed account inside the space that
  *  sees it — tapping jumps up to the REAL row, which lives in the top
- *  section (the screen's scroller owns the smooth scroll) */
+ *  section (the screen's scroller owns the smooth scroll). #305: for an
+ *  account shared WITH me there is no real row anymore — the echo IS
+ *  the account's face here: it wears the shared badge, keeps the synced
+ *  logo, carries the Archived pill and opens the read-only info sheet. */
 function EchoRow({
   spaceId,
-  entry,
+  echo,
+  shared,
   lang,
+  onOpenShared,
 }: {
   spaceId: string;
-  entry: GlobalAccount;
+  echo: EchoEntry;
+  /** #305: reachable only through someone else's attachment */
+  shared: boolean;
   lang: ReturnType<typeof useLang>['lang'];
+  onOpenShared: (echo: EchoEntry) => void;
 }) {
   const { t } = useLang();
-  const { account } = entry;
+  const { account } = echo.entry;
+  // #305 (user): the owner's icon pick lives on the SYNCED account row —
+  // the echo used to draw a hardcoded bank tile, so consumers never saw it
+  const bankLogo = account.logo ?? institutionLogoUrl(account.bankId);
   return (
     <button
       data-testid={`account-echo-${spaceId}-${account.id}`}
-      onClick={() => flashJumpTarget(account.id)}
-      className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left opacity-60"
+      onClick={() => (shared ? onOpenShared(echo) : flashJumpTarget(account.id))}
+      className={`m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3.5 text-left${shared ? '' : ' opacity-60'}`}
     >
-      <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] text-ink">{account.name}</span>
-        <span className="block truncate text-[11px] text-ink-4">{t('acct.echoHint')}</span>
+      <span className="shrink-0">
+        {bankLogo ? (
+          <img
+            src={bankLogo}
+            alt=""
+            className="h-7 w-7 rounded-lg object-contain"
+            loading="lazy"
+            data-testid={`account-echo-logo-${account.id}`}
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+              e.currentTarget.nextElementSibling?.classList.remove('hidden');
+            }}
+          />
+        ) : null}
+        <span className={bankLogo ? 'hidden' : ''}>
+          <Icon name="bank-outline" size={22} color="var(--m-ink-3)" />
+        </span>
       </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5">
+          <span className="min-w-0 truncate text-[15px] text-ink">{account.name}</span>
+          {shared && <SharedSpaceBadge testId={`echo-shared-${spaceId}-${account.id}`} />}
+        </span>
+        <span className="block truncate text-[11px] text-ink-4">{t(shared ? 'acct.sharedEchoHint' : 'acct.echoHint')}</span>
+      </span>
+      {/* #305: the sharer left — the frozen state lands on the echo now
+          (the retired "Shared with me" section used to carry this pill) */}
+      {echo.via.archived && (
+        <span
+          className="rounded bg-warning-soft px-1.5 py-0.5 text-[10px] font-semibold text-ink-2"
+          data-testid={`echo-archived-${spaceId}-${account.id}`}
+        >
+          {t('acct.archived')}
+        </span>
+      )}
       <span className="m-num text-[15px] font-semibold text-ink">
         {fmtCents(account.balanceCents, account.currency, lang)}
       </span>
@@ -350,13 +414,18 @@ function EchoRow({
 function SpaceSection({
   segment,
   echoes,
+  sharedIds,
   lang,
   onOpen,
+  onOpenShared,
 }: {
   segment: SpaceScopedAccounts;
-  echoes: GlobalAccount[];
+  echoes: EchoEntry[];
+  /** #305: accounts reaching me only through someone else's attachment */
+  sharedIds: ReadonlySet<string>;
   lang: ReturnType<typeof useLang>['lang'];
   onOpen: (entry: GlobalAccount) => void;
+  onOpenShared: (echo: EchoEntry) => void;
 }) {
   const { t } = useLang();
   const [showDefaults, setShowDefaults] = useState(false);
@@ -376,10 +445,16 @@ function SpaceSection({
             <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
           </div>
         ))}
-        {echoes.map((entry, i) => (
-          <div key={entry.account.id}>
+        {echoes.map((echo, i) => (
+          <div key={echo.entry.account.id}>
             {(aboveEchoes || i > 0) && <div className="mx-4 h-px bg-line-2" />}
-            <EchoRow spaceId={segment.spaceId} entry={entry} lang={lang} />
+            <EchoRow
+              spaceId={segment.spaceId}
+              echo={echo}
+              shared={sharedIds.has(echo.entry.account.id)}
+              lang={lang}
+              onOpenShared={onOpenShared}
+            />
           </div>
         ))}
         {defaults.length > 0 && (
@@ -455,8 +530,35 @@ export function AccountsScreen() {
     () => (global?.sharedWithMe ?? []).filter((e) => e.account.deleted === 0),
     [global],
   );
-  // #227: bank-fed accounts echo (inert) inside each space they feed
+  // #227: bank-fed accounts echo (inert) inside each space they feed.
+  // #305: shared-with-me accounts live ONLY here now — the echo is their
+  // face, so the pool keeps carrying them after the section's retirement
   const echoPool = useMemo(() => [...mine, ...sharedWithMe], [mine, sharedWithMe]);
+  const sharedIds = useMemo(() => new Set(sharedWithMe.map((e) => e.account.id)), [sharedWithMe]);
+  // #305: the consumer's tap-through — read-only facts, zero levers
+  const [sharedInfo, setSharedInfo] = useState<{ entry: GlobalAccount; via: SharedVia } | null>(null);
+  // #305: a space whose only accounts are OTHERS' attachments still owns
+  // a section — the shared echo must always have a home, even while the
+  // space's own (default) account rows are still syncing in
+  const sections = useMemo(() => {
+    const out = [...(global?.spaceScoped ?? [])];
+    const known = new Set(out.map((s) => s.spaceId));
+    for (const entry of echoPool) {
+      for (const via of entry.sharedVia) {
+        if (known.has(via.spaceId)) continue;
+        known.add(via.spaceId);
+        out.push({ spaceId: via.spaceId, spaceName: via.spaceName, accounts: [] });
+      }
+    }
+    return out.sort((a, b) => a.spaceName.localeCompare(b.spaceName));
+  }, [global, echoPool]);
+  // every attachment of the space, archived included — the frozen state
+  // (the sharer left) surfaces as a pill on the echo row (#305)
+  const echoesFor = (spaceId: string): { entry: GlobalAccount; via: SharedVia }[] =>
+    echoPool.flatMap((entry) => {
+      const via = entry.sharedVia.find((v) => v.spaceId === spaceId);
+      return via ? [{ entry, via }] : [];
+    });
   // reconcile pairing spans BOTH pools: a manual/imported row inside a
   // space can be the twin of a global bank connection
   const suggestionPool = useMemo(
@@ -511,6 +613,13 @@ export function AccountsScreen() {
   }, [suggestionPool, sourcesByAccount]);
 
   const openEntry = (entry: GlobalAccount) => {
+    // #305: not mine to manage — the read-only story opens instead
+    // (reached via the goto-global handoff; shared rows have no top row)
+    if (sharedIds.has(entry.account.id)) {
+      const via = entry.sharedVia.find((v) => !v.archived) ?? entry.sharedVia[0];
+      if (via) setSharedInfo({ entry, via });
+      return;
+    }
     if (entry.feedSpaceId) setAttaching(entry); // bank feed: manage attachments
     else setEditing(entry.account); // manual/legacy row: EditAccountSheet
   };
@@ -601,14 +710,18 @@ export function AccountsScreen() {
                 #212 r2: one plain section — a global account has no
                 type of its own, so no assets/liabilities split here */}
             <AccountSection title={t('acct.globalCap')} list={mine} lang={lang} onOpen={openEntry} />
-            <SharedWithMeSection list={sharedWithMe} lang={lang} />
-            {(global?.spaceScoped ?? []).map((segment) => (
+            {/* #305: the global "Shared with me" section retired — a
+                shared account's one face is its echo inside the space
+                that sees it (tap-through info sheet below) */}
+            {sections.map((segment) => (
               <SpaceSection
                 key={segment.spaceId}
                 segment={segment}
-                echoes={echoPool.filter((e) => e.sharedVia.some((v) => v.spaceId === segment.spaceId && !v.archived))}
+                echoes={echoesFor(segment.spaceId)}
+                sharedIds={sharedIds}
                 lang={lang}
                 onOpen={openEntry}
+                onOpenShared={setSharedInfo}
               />
             ))}
           </>
@@ -646,6 +759,10 @@ export function AccountsScreen() {
       <ReconcileSheet open={reconcileIds !== null} onOpenChange={(next) => !next && setReconcileIds(null)} accountIds={reconcileIds ?? []} />
 
       <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
+
+      {/* #305: consumer's read-only view of an account shared with me —
+          a SIBLING sheet like every other overlay on this screen */}
+      <SharedAccountSheet info={sharedInfo} onClose={() => setSharedInfo(null)} lang={lang} />
     </div>
   );
 }

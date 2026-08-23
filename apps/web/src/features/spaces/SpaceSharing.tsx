@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
+import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
@@ -9,11 +10,15 @@ import { apiFetch } from '@/lib/api';
 import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { postFriendRequest } from '@/features/friends/sendFriendRequest';
+import type { FriendRequestOutcome } from '@/features/friends/sendFriendRequest';
+import { setSettingsJump } from '@/features/settings/settingsJump';
 import { Button } from '@/ui/Button';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
+import { SearchField } from '@/ui/SearchField';
 import { Sheet } from '@/ui/Sheet';
-import { InviteFriendSheet, RolePicker } from './InviteFriendSheet';
+import { RolePicker } from './InviteFriendSheet';
 import { MemberSheet } from './MemberSheet';
 
 export type SpaceRole = 'owner' | 'contributor' | 'reader';
@@ -182,10 +187,10 @@ export function SpaceInvitesBanner() {
 }
 
 /**
- * #292: the signed-in user's row reads "Me" (with their real name kept
- * quietly beside it) and wears a check mark that ONLY the authenticated
- * self row gets — a member merely NAMED "Me" shows neither mark nor
- * suffix, so nobody can pose as you.
+ * #292: the signed-in user's row reads "Me" and wears a check mark that
+ * ONLY the authenticated self row gets — a member merely NAMED "Me"
+ * shows no mark, so nobody can pose as you. #304 (user): the mark sits
+ * AFTER the name and the quiet real-name suffix is gone.
  */
 function MemberRow({ member, isSelf, onOpen }: Readonly<{ member: MemberDto; isSelf: boolean; onOpen: (userId: string) => void }>) {
   const { t } = useLang();
@@ -197,16 +202,13 @@ function MemberRow({ member, isSelf, onOpen }: Readonly<{ member: MemberDto; isS
     >
       <Avatar picture={member.picture} size={24} />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        <span className="min-w-0 truncate text-[14px] text-ink">
+          {isSelf ? t('space.me') : (member.displayName ?? short(member.userId))}
+        </span>
         {isSelf && (
           <span data-testid="member-me-icon" className="inline-flex shrink-0 text-accent-deep">
             <Icon name="account-check" size={15} />
           </span>
-        )}
-        <span className="min-w-0 truncate text-[14px] text-ink">
-          {isSelf ? t('space.me') : (member.displayName ?? short(member.userId))}
-        </span>
-        {isSelf && member.displayName && (
-          <span className="min-w-0 truncate text-[12px] text-ink-4">· {member.displayName}</span>
         )}
       </span>
       <span className="text-[11px] text-ink-4" data-testid={`space-rolelabel-${member.userId}`}>
@@ -230,6 +232,7 @@ interface SpaceMembersSectionProps {
 export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: SpaceMembersSectionProps) {
   const { t } = useLang();
   const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
+  const navigate = useNavigate();
   // the private lock (arc 4): a locked space renders the invite tools as
   // an explainer — unlocking is an explicit owner act in space settings
   const spaceRow = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
@@ -240,17 +243,12 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   // #291: friend requests sent from HERE, still waiting for their yes
   const [pendingFriends, setPendingFriends] = useState<SentFriendRequestDto[]>([]);
   const [me, setMe] = useState<string | null>(null);
-  const [confirmLeave, setConfirmLeave] = useState(false);
-  const [friendId, setFriendId] = useState('');
-  // #169: the new person's role in THIS space, picked up front
-  const [newFriendRole, setNewFriendRole] = useState<SpaceRole>('contributor');
-  // #195: Send stays enabled — an empty click says why instead
-  const [addAttempted, setAddAttempted] = useState(false);
-  // #291: the id pointed at nobody — a field-level error, not a log line
-  const [friendNotFound, setFriendNotFound] = useState(false);
-  const [friendRequestSent, setFriendRequestSent] = useState(false);
+  // #304 (user): leaving is as destructive as being removed — the same
+  // danger sheet (with the standard cooldown) asks first
+  const [leaveOpen, setLeaveOpen] = useState(false);
   const [inviteSentTo, setInviteSentTo] = useState<string | null>(null);
-  // #170/#171: the invite-a-friend sheet (search + role, replaces the badges)
+  // #304: ONE door — the sheet holds the friends list AND the
+  // friend-request path (#291) together
   const [inviteOpen, setInviteOpen] = useState(false);
   // #172: the tapped member's sheet — held by ID so reloads keep it fresh
   // and a kicked member's sheet closes on its own
@@ -258,6 +256,8 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   // removing someone is disruptive (they lose the shared accounts too) —
   // the door only opens a confirm sheet, the sheet does the removal
   const [kickTarget, setKickTarget] = useState<MemberDto | null>(null);
+  // #303: withdrawing a pending invite asks first, like every removal
+  const [revokeTarget, setRevokeTarget] = useState<OutgoingInviteDto | null>(null);
 
   const reload = useCallback(async () => {
     const [membersRes, friendsRes, meRes, outgoingRes] = await Promise.all([
@@ -298,6 +298,10 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   const memberIds = new Set(members.map((m) => m.userId));
   const pendingIds = new Set(outgoing.map((i) => i.toUserId));
   const invitable = friends.filter((f) => !memberIds.has(f.userId) && !pendingIds.has(f.userId));
+  // #291 r2: the space-invite row is the richer fact — anyone already
+  // carrying a pending SPACE invite (or already a member) must not show
+  // a second time as a friend-request row on this surface
+  const friendPendingRows = pendingFriends.filter((r) => !pendingIds.has(r.toUserId) && !memberIds.has(r.toUserId));
 
   // inviting someone makes this a shared space: category adoption + the
   // kind flip live in ensureSpaceShared now (#277 r2 — the joiner-side
@@ -323,31 +327,22 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
   const revokeInvite = async (inviteId: string) => {
     await apiFetch(`/spaces/invites/${inviteId}`, { method: 'DELETE' }).catch(() => null);
     setInviteSentTo(null);
+    setRevokeTarget(null);
     await reload();
   };
   // #169: one shot — the friend request carries this space and the
-  // picked role, so accepting it also joins them here
-  const addFriend = async () => {
-    const toUserId = friendId.trim();
-    if (!toUserId) {
-      setAddAttempted(true);
-      return;
-    }
-    setAddAttempted(false);
-    const outcome = await postFriendRequest({ toUserId, spaceId, role: newFriendRole, spaceName });
-    // #291: 404 = nobody owns that id — the field says so and keeps the
-    // typed id for fixing; "sent" is only claimed when it really was
-    setFriendNotFound(outcome === 'notFound');
-    setFriendRequestSent(outcome === 'sent');
+  // picked role, so accepting it also joins them here. The field state
+  // lives in the sheet (#304); this does the sending + bookkeeping.
+  const sendFriendRequestHere = async (toUserId: string, role: SpaceRole): Promise<FriendRequestOutcome> => {
+    const outcome = await postFriendRequest({ toUserId, spaceId, role, spaceName });
     if (outcome === 'sent') {
       void logActivity(store, repo, spaceId, 'memberInvite', short(toUserId));
       await ensureShared();
-      setFriendId('');
-      setNewFriendRole('contributor');
     }
     // if they had already requested me, the server auto-accepts (the
     // space intent becomes a regular invite) and the reload shows it
     await reload();
+    return outcome;
   };
   const kick = async (userId: string) => {
     const name = members.find((m) => m.userId === userId)?.displayName ?? short(userId);
@@ -377,7 +372,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
           <MemberRow key={m.userId} member={m} isSelf={m.userId === me} onOpen={setMemberSheetId} />
         ))}
       </div>
-      {isOwner && (outgoing.length > 0 || pendingFriends.length > 0) && (
+      {isOwner && (outgoing.length > 0 || friendPendingRows.length > 0) && (
         <>
           <div className="m-cap mt-3 mb-1 px-1">{t('space.invitePendingTitle')}</div>
           <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="space-outgoing-invites">
@@ -388,12 +383,16 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
                   <span className="block truncate text-[14px] text-ink">
                     {invitation.toName ?? short(invitation.toUserId)}
                   </span>
-                  <span className="block truncate text-[12px] text-ink-4">{t('space.invitePending')}</span>
+                  {/* #303: the row says which role the invite carries */}
+                  <span className="block truncate text-[12px] text-ink-4">
+                    {t('space.invitePending')} · {t(roleKey(invitation.role))}
+                  </span>
                 </span>
+                {/* #303: the X only opens a confirm — the sheet cancels */}
                 <button
-                  aria-label={t('action.delete')}
+                  aria-label={t('friends.cancelInvite')}
                   data-testid={`space-invite-revoke-${invitation.id}`}
-                  onClick={() => void revokeInvite(invitation.id)}
+                  onClick={() => setRevokeTarget(invitation)}
                   className="m-tap border-none bg-transparent text-ink-4"
                 >
                   <Icon name="close" size={16} />
@@ -402,7 +401,7 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
             ))}
             {/* #291: friend requests sent from here wait HERE too — the
                 person becomes a member the moment they accept */}
-            {pendingFriends.map((request) => (
+            {friendPendingRows.map((request) => (
               <div
                 key={request.id}
                 className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0"
@@ -423,89 +422,56 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
       {isOwner && locked && (
         <div className="mt-3 flex items-start gap-3 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="space-invite-locked">
           <Icon name="lock-outline" size={18} color="var(--m-ink-3)" />
-          <span className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-3">
+          <div className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-3">
             {t('space.inviteLockedBody')}
-          </span>
+            {/* #302: straight to the switch that lifts the lock */}
+            <button
+              data-testid="space-invite-locked-go"
+              onClick={() => {
+                setSettingsJump('invite-lock');
+                void navigate({ to: '/settings' });
+              }}
+              className="m-tap mt-1.5 block border-none bg-transparent p-0 text-[12px] font-medium text-accent-deep"
+            >
+              {t('space.inviteLockedGo')}
+            </button>
+          </div>
         </div>
       )}
       {isOwner && !locked && (
         <>
-          <div className="m-cap mt-3 mb-1 px-1">{t('space.addMember')}</div>
           {inviteSentTo && (
-            <p className="mb-2 flex items-center gap-1.5 px-1 text-[12px] text-accent-deep" data-testid="space-invite-sent">
+            <p className="mt-3 mb-2 flex items-center gap-1.5 px-1 text-[12px] text-accent-deep" data-testid="space-invite-sent">
               <Icon name="check-circle-outline" size={14} />
               {t('space.spaceInviteSent', { name: inviteSentTo })}
             </p>
           )}
-          {/* #170: one door — the sheet searches friends and asks the
-              role up front (the instant-invite badges died with it) */}
-          <Button variant="outline" className="w-full" data-testid="space-invite-open" onClick={() => setInviteOpen(true)}>
-            {t('space.addMember')}
+          {/* #304 (user): ONE action — the sheet holds the friends list
+              AND the friend-request path together */}
+          <Button variant="outline" className="mt-3 w-full" data-testid="space-members-add" onClick={() => setInviteOpen(true)}>
+            {t('space.inviteSomeone')}
           </Button>
-          {/* global friends stay the invite guard — but adding a new friend
-              must not require leaving the invite flow (user decision) */}
-          <div className="m-cap mt-3 mb-1 px-1">{t('friends.addById')}</div>
-          <FormBlockerNote show={addAttempted && !friendId.trim()} text={t('form.needId')} testId="space-addfriend-blocker" className="mb-1 px-1" />
-          {/* #291: the 404 answer lands AT the field, #195 style */}
-          <FormBlockerNote show={friendNotFound} text={t('friends.userNotFound')} testId="space-addfriend-notfound" className="mb-1 px-1" />
-          <div className="flex gap-2">
-            <input
-              data-testid="space-addfriend-input"
-              value={friendId}
-              onChange={(e) => {
-                setFriendId(e.target.value);
-                setFriendNotFound(false);
-              }}
-              placeholder={t('friends.idPlaceholder')}
-              aria-invalid={(addAttempted && !friendId.trim()) || friendNotFound}
-              className={`h-10 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 font-mono text-[12px] text-ink outline-none placeholder:text-ink-4${blockerRing((addAttempted && !friendId.trim()) || friendNotFound)}`}
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-10"
-              data-testid="space-addfriend-send"
-              onClick={() => void addFriend()}
-            >
-              {t('friends.sendRequest')}
-            </Button>
-          </div>
-          {/* #169: their role here, decided before they even accept */}
-          <div className="mt-2">
-            <RolePicker value={newFriendRole} onChange={setNewFriendRole} testIdPrefix="space-addfriend-role" />
-          </div>
-          <p className="mt-1.5 px-1 text-[12px] text-ink-3" data-testid="space-addfriend-autonote">
-            {t('invite.autoAddNote', { space: spaceName })}
-          </p>
-          {friendRequestSent && (
-            <p className="mt-1.5 px-1 text-[12px] text-accent-deep" data-testid="space-addfriend-sent">
-              {t('invite.requestSent')}
-            </p>
-          )}
         </>
       )}
       {members.length > 1 && (
         <div className="mt-4">
-          {confirmLeave && <p className="mb-2 text-[13px] text-ink-3">{t('space.leaveConfirm')}</p>}
-          <Button
-            variant="outline"
-            className="w-full"
-            data-testid="space-leave"
-            onClick={() => (confirmLeave ? void leave() : setConfirmLeave(true))}
-          >
-            {confirmLeave ? t('action.confirm') : t('space.leave')}
+          {/* #304 (user): same confirm shape as removing a member */}
+          <Button variant="outline" className="w-full" data-testid="space-leave" onClick={() => setLeaveOpen(true)}>
+            {t('space.leave')}
           </Button>
         </div>
       )}
-      {/* #170/#171: search + role, then send */}
-      <InviteFriendSheet
+      {/* #304: the combined invite sheet (friends list + friend request) */}
+      <SpaceInviteSheet
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         friends={invitable}
+        spaceName={spaceName}
         onInvite={async (friend, role) => {
           await invite(friend, role);
           setInviteOpen(false);
         }}
+        onSendRequest={sendFriendRequestHere}
       />
       {/* #172: the tapped member — resolved live so a kick closes it */}
       <MemberSheet
@@ -516,24 +482,208 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
         onChangeRole={(userId, role) => void changeRole(userId, role)}
         onKick={(m) => setKickTarget(m)}
       />
-      {/* removal double-check (user request): the door never removes directly */}
-      <Sheet open={kickTarget !== null} onOpenChange={(next) => !next && setKickTarget(null)} title={t('space.kickTitle')} size="compact">
-        <div className="flex flex-col gap-4 pt-1">
-          <p className="text-[14px] text-ink-2" data-testid="space-kick-body">
-            {t('space.kickBody', { name: kickTarget?.displayName ?? short(kickTarget?.userId ?? '') })}
-          </p>
+      {/* removal double-check (user request): the door never removes
+          directly. #304: the aligned danger sheet — cooldown included,
+          same shape as every other destructive confirm */}
+      <DangerConfirmSheet
+        open={kickTarget !== null}
+        onOpenChange={(next) => {
+          if (!next) setKickTarget(null);
+        }}
+        title={t('space.kickTitle')}
+        body={t('space.kickBody', { name: kickTarget?.displayName ?? short(kickTarget?.userId ?? '') })}
+        onConfirm={() => {
+          if (kickTarget) void kick(kickTarget.userId);
+        }}
+        testId="space-kick"
+      />
+      {/* #304 (user): leaving asks with the SAME sheet + cooldown as
+          removing someone — it is the same loss, seen from inside */}
+      <DangerConfirmSheet
+        open={leaveOpen}
+        onOpenChange={setLeaveOpen}
+        title={t('space.leaveConfirmTitle')}
+        body={t('space.leaveConfirm')}
+        confirmLabel={t('space.leave')}
+        onConfirm={() => void leave()}
+        testId="space-leave"
+      />
+      {/* #303: cancelling a pending invite asks first — no cooldown, a
+          withdrawn invite is re-sendable in two taps (the tx ruling) */}
+      <DangerConfirmSheet
+        open={revokeTarget !== null}
+        onOpenChange={(next) => {
+          if (!next) setRevokeTarget(null);
+        }}
+        title={t('space.cancelInviteTitle')}
+        body={t('space.cancelInviteBody', { name: revokeTarget?.toName ?? short(revokeTarget?.toUserId ?? '') })}
+        onConfirm={() => {
+          if (revokeTarget) void revokeInvite(revokeTarget.id);
+        }}
+        testId="space-revoke"
+        cooldown={0}
+      />
+    </div>
+  );
+}
+
+/**
+ * #304 (user): ONE door for growing the member list — first the friends
+ * not yet in the space (pick + role, the #170/#171 flow re-housed), and
+ * right below it the friend-request path (#291) for someone not
+ * befriended yet: id + role, pending feedback in place.
+ */
+function SpaceInviteSheet({
+  open,
+  onOpenChange,
+  friends,
+  spaceName,
+  onInvite,
+  onSendRequest,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  friends: FriendDto[];
+  spaceName: string;
+  onInvite: (friend: FriendDto, role: SpaceRole) => void | Promise<void>;
+  onSendRequest: (toUserId: string, role: SpaceRole) => Promise<FriendRequestOutcome>;
+}>) {
+  const { t } = useLang();
+  const [search, setSearch] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [role, setRole] = useState<SpaceRole>('contributor');
+  // the friend-request half — field state lives with its fields
+  const [friendId, setFriendId] = useState('');
+  const [requestRole, setRequestRole] = useState<SpaceRole>('contributor');
+  // #195: Send stays enabled — an empty click says why instead
+  const [addAttempted, setAddAttempted] = useState(false);
+  // #291: the id pointed at nobody — a field-level error, not a log line
+  const [friendNotFound, setFriendNotFound] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
+  // every open starts fresh: empty search, nothing expanded, default roles
+  useEffect(() => {
+    if (open) {
+      setSearch('');
+      setSelectedId(null);
+      setRole('contributor');
+      setFriendId('');
+      setRequestRole('contributor');
+      setAddAttempted(false);
+      setFriendNotFound(false);
+      setRequestSent(false);
+    }
+  }, [open]);
+
+  const needle = search.trim().toLowerCase();
+  const matches = friends.filter(
+    (f) => !needle || (f.displayName ?? '').toLowerCase().includes(needle) || f.userId.toLowerCase().includes(needle),
+  );
+
+  const pick = (userId: string) => {
+    setSelectedId((prev) => (prev === userId ? null : userId));
+    setRole('contributor');
+  };
+
+  const sendRequest = async () => {
+    const toUserId = friendId.trim();
+    if (!toUserId) {
+      setAddAttempted(true);
+      return;
+    }
+    setAddAttempted(false);
+    const outcome = await onSendRequest(toUserId, requestRole);
+    // #291: "not found" says so AT the field and keeps the typed id for
+    // fixing; "sent" is only claimed when it really was
+    setFriendNotFound(outcome === 'notFound');
+    setRequestSent(outcome === 'sent');
+    if (outcome === 'sent') {
+      setFriendId('');
+      setRequestRole('contributor');
+    }
+  };
+
+  return (
+    // dirty: a typed-but-unsent id survives an accidental swipe-down
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('space.inviteSomeone')} size="tall" dirty={friendId.trim() !== ''}>
+      <div className="flex flex-col gap-3 pt-1" data-testid="space-invite-sheet">
+        {/* (a) friends not yet members: search, expand, role, send */}
+        <div className="m-cap px-1">{t('space.inviteFromFriends')}</div>
+        <SearchField testId="space-invite-search" value={search} onChange={setSearch} placeholder={t('invite.searchPlaceholder')} height="h-11" textSize="text-[14px]" />
+        <div className="overflow-hidden rounded-card border border-line bg-surface">
+          {matches.map((f) => (
+            <div key={f.userId} className="border-b border-line-2 last:border-0">
+              <button
+                data-testid={`space-invite-row-${f.userId}`}
+                onClick={() => pick(f.userId)}
+                className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left"
+              >
+                <Avatar picture={f.picture} size={36} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-medium text-ink">{f.displayName ?? short(f.userId)}</span>
+                  <span className="block truncate font-mono text-[11px] text-ink-4">{short(f.userId)}</span>
+                </span>
+                <Icon name={selectedId === f.userId ? 'chevron-up' : 'chevron-down'} size={17} color="var(--m-ink-4)" />
+              </button>
+              {selectedId === f.userId && (
+                <div className="flex flex-col gap-2 px-4 pb-3">
+                  <p className="font-mono text-[11px] break-all text-ink-3" data-testid="space-invite-full-id">
+                    {f.userId}
+                  </p>
+                  <div className="m-cap">{t('invite.roleTitle')}</div>
+                  <RolePicker value={role} onChange={setRole} testIdPrefix="space-invite-role" />
+                  <Button size="sm" data-testid="space-invite-send" onClick={() => void onInvite(f, role)}>
+                    {t('friends.send')}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ))}
+          {matches.length === 0 && (
+            <p className="px-4 py-6 text-center text-[13px] text-ink-3" data-testid="space-invite-empty">
+              {t('friends.noFriendsToInvite')}
+            </p>
+          )}
+        </div>
+        {/* (b) can't find them? the friend-request door lives in the SAME
+            sheet (user decision) — global friends stay the invite guard */}
+        <div className="m-cap mt-2 px-1">{t('friends.addById')}</div>
+        <p className="px-1 text-[12px] text-ink-3">{t('space.inviteRequestLead')}</p>
+        <FormBlockerNote show={addAttempted && !friendId.trim()} text={t('form.needId')} testId="space-addfriend-blocker" className="px-1" />
+        {/* #291: the not-found answer lands AT the field, #195 style */}
+        <FormBlockerNote show={friendNotFound} text={t('friends.userNotFound')} testId="space-addfriend-notfound" className="px-1" />
+        <div className="flex gap-2">
+          <input
+            data-testid="space-addfriend-input"
+            value={friendId}
+            onChange={(e) => {
+              setFriendId(e.target.value);
+              setFriendNotFound(false);
+            }}
+            placeholder={t('friends.idPlaceholder')}
+            aria-invalid={(addAttempted && !friendId.trim()) || friendNotFound}
+            className={`h-10 min-w-0 flex-1 rounded-input border border-line bg-surface px-3 font-mono text-[12px] text-ink outline-none placeholder:text-ink-4${blockerRing((addAttempted && !friendId.trim()) || friendNotFound)}`}
+          />
           <Button
-            variant="danger"
-            data-testid="space-kick-confirm"
-            onClick={() => kickTarget && void kick(kickTarget.userId)}
+            size="sm"
+            variant="outline"
+            className="h-10"
+            data-testid="space-addfriend-send"
+            onClick={() => void sendRequest()}
           >
-            {t('action.confirm')}
-          </Button>
-          <Button variant="outline" data-testid="space-kick-cancel" onClick={() => setKickTarget(null)}>
-            {t('action.cancel')}
+            {t('friends.sendRequest')}
           </Button>
         </div>
-      </Sheet>
-    </div>
+        {/* #169: their role here, decided before they even accept */}
+        <RolePicker value={requestRole} onChange={setRequestRole} testIdPrefix="space-addfriend-role" />
+        <p className="px-1 text-[12px] text-ink-3" data-testid="space-addfriend-autonote">
+          {t('invite.autoAddNote', { space: spaceName })}
+        </p>
+        {requestSent && (
+          <p className="px-1 text-[12px] text-accent-deep" data-testid="space-addfriend-sent">
+            {t('invite.requestSent')}
+          </p>
+        )}
+      </div>
+    </Sheet>
   );
 }

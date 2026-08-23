@@ -1362,10 +1362,21 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'space.invitePending': 'Davet edildi — yanıt bekleniyor',
   'space.deleteConfirmNote': 'Bu, alanı ve verilerini tüm üyeler için kalıcı olarak siler.',
   'space.sharedBadge': 'Paylaşılan',
+  'space.inviteUnlockTitle': 'Davetleri etkinleştir',
+  'space.inviteUnlockBody': 'Bu alanı davetlere açmak için uygulama PIN kodunuzu girin.',
   // #291: a friend request sent from the members surface pends there too
   'space.friendPending': 'Arkadaşlık isteği beklemede — kabul edince katılır',
   // #292: the signed-in user's own member row
   'space.me': 'Ben',
+  // #304: ONE members-screen door — friends list + friend request share a sheet
+  'space.inviteSomeone': 'Birini davet et',
+  'space.inviteFromFriends': 'Arkadaşlarından',
+  'space.inviteRequestLead': 'Birini bulamadın mı? Buradan hemen arkadaşlık isteği gönder.',
+  // #303: withdrawing a pending invite asks first
+  'space.cancelInviteTitle': 'Davet iptal edilsin mi?',
+  'space.cancelInviteBody': '{name} bu daveti artık kabul edemez.',
+  // #302: the locked note links straight to the switch that lifts the lock
+  'space.inviteLockedGo': 'Ayarı aç',
   'sync.offlineBanner': 'Çevrimdışı — değişiklikler bu cihazda saklanır.',
   'sync.offlineShort': 'Çevrimdışı',
   'login.offlineNote': 'Çevrimdışısın — giriş için bağlantı gerekli. Demo ve çevrimdışı mod çalışmaya devam eder.',
@@ -1634,6 +1645,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'recurring.counterNone': 'Karşı taraf yok',
   'recurring.counterEmpty': 'Henüz uygun hesap yok.',
   'recurring.showTxs': 'İşlemleri göster',
+  'recurring.showRecs': 'Sabit giderleri göster',
   'recurring.periodNoTxs': 'Bu ay henüz bağlı işlem yok.',
   'tx.setByRecurring': 'Düzenli gider belirler',
   'mina.debtHandoff.t': 'Borca çevirelim mi?',
@@ -1844,7 +1856,6 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tx.counterFilter': 'Bağlantılıları ayrı göster',
   'tx.newFilter': 'Yeni',
   'tx.counterAccount': 'Karşı taraf',
-  'tx.peekOpenFull': 'Tüm ayrıntıları aç',
   'tx.counterAccountHint': 'Yalnızca bu alana bağlı hesaplar gösterilir.',
   'tx.counterFundingHint': 'Bu paranın gittiği ortak kasa hesabını seçin — yalnızca ortak kasa olarak bağlanan hesaplar gösterilir.',
   'tx.originalCounterparty': 'Orijinal karşı taraf',
@@ -2209,4 +2220,10 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tour.shop.5t': 'Diğer cihazlarındaki girişler',
   'tour.shop.5b': 'Cihaz senkronizasyonu mağaza girişlerini diğer cihazlarına şifreli metin olarak gönderir. Yeni cihazlar sen onaylayana kadar bekler — 6 haneli kodları karşılaştırdıktan sonra.',
   'tour.shop.4b': 'Fiş fotoğrafından ürünleri oku, satırlar belirsin — kendi sunucun işler, başka yerde saklanmaz.',
+  'import.doImportSelected': '{m} hesaptan {n} tanesini içe aktar',
+  'import.selectNone': 'İçe aktarmak için en az bir hesap seçin.',
+  'import.etaLeft': 'yaklaşık {time} kaldı',
+  'debts.matchNone': 'Bağlanacak işlem bulunamadı.',
+  'acct.sharedEchoHint': 'Seninle paylaşıldı — ayrıntılar için dokun',
+  'acct.sharedReadOnly': 'Seninle paylaşıldı — bu hesabı sahibi yönetir',
 };

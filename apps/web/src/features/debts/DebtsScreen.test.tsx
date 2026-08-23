@@ -22,10 +22,9 @@ async function createLoan(name: string, current: string, apr?: string, payment?:
   await waitFor(() => {
     expect(document.querySelector('[data-testid^="debt-card-"]')).toBeTruthy();
   });
-  // creation auto-offers matching payments — close the (empty) sheet so
-  // its candidate rows never shadow the test's own tx rows
-  await screen.findByTestId('loanmatch-empty');
-  fireEvent.keyDown(window, { key: 'Escape' });
+  // #286 r2: creation auto-offers matching payments ONLY when history
+  // holds candidates — these seeds start empty, so no sheet ever opens
+  expect(screen.queryByTestId('loanmatch-list')).toBeNull();
   return document.querySelector('[data-testid^="debt-card-"]')!;
 }
 
@@ -355,5 +354,56 @@ describe('Debts (demo identity)', () => {
       return el!;
     }, { timeout: 5000 });
     expect(archived.className).toContain('opacity-60');
+  }, 15_000);
+
+  it('#286 r2: a loan created with no matching history auto-opens NO sheet', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    await createLoan('Car loan', '5000');
+    // the offer stood down entirely — no sheet, no empty-state bloat
+    // (deterministic: with zero candidates the host never sets matchFor)
+    expect(screen.queryByTestId('loanmatch-empty')).toBeNull();
+    expect(screen.queryByTestId('loanmatch-list')).toBeNull();
+  }, 15_000);
+
+  it('#286 r2: a loan created WITH matching history still auto-offers the sheet', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    // drain the boot chain BEFORE seeding (house trap: the late
+    // bare-row fold races the seed; post-drain rows stay bare)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    await repo.upsert('transaction', 'demo_space', 'prepay', {
+      accountId: 'demo_main', date: '2026-08-01', amountCents: -15_000, merchant: 'Aflossing',
+      currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+    });
+    // the bare payment surfaces in the virtual bucket — the screen's
+    // live queries have folded the row in before the create begins
+    await screen.findByTestId('debts-unassigned');
+
+    fireEvent.click(screen.getByTestId('debts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+    fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Car loan' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '5000' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
+
+    // the auto-offer opens on the real candidate (debt-payment label)
+    await screen.findByTestId('loanmatch-pick-prepay');
+    db.close();
+  }, 15_000);
+
+  it('#286 r2: manual Find payments with nothing to link shows one quiet line only', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    const card = await createLoan('Car loan', '5000');
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    const empty = await screen.findByTestId('loanmatch-empty');
+    expect(empty.textContent).toBe('No transactions found to link.');
+    // the header noise stands down: title only — no hint, no apply
+    expect(screen.queryByTestId('loanmatch-hint')).toBeNull();
+    expect(screen.queryByTestId('loanmatch-apply')).toBeNull();
   }, 15_000);
 });

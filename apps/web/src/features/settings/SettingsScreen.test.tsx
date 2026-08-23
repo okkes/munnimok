@@ -74,6 +74,38 @@ describe('SettingsScreen (demo identity)', () => {
     db.close();
   });
 
+  it('#302: with an app lock armed, ENABLING invitations asks for the PIN first', async () => {
+    // arm the app lock for the demo identity (hash of '1234' with salt 's')
+    const { hashPin } = await import('@/features/lock/lock');
+    const pinHash = await hashPin('1234', 'salty');
+    localStorage.setItem('munni_lock_demo', JSON.stringify({ enabled: true, pinSalt: 'salty', pinHash, timeoutSec: 0 }));
+
+    renderApp('/settings');
+    await screen.findByTestId('screen-settings');
+    const toggle = (await screen.findByTestId('settings-space-private-toggle')) as HTMLInputElement;
+    // arm the space lock first (checking is free)
+    if (!toggle.checked) {
+      fireEvent.click(toggle);
+      await waitFor(() => expect((screen.getByTestId('settings-space-private-toggle') as HTMLInputElement).checked).toBe(true), { timeout: 5000 });
+    }
+    // unchecking = opening the space for invitations → the challenge
+    fireEvent.click(screen.getByTestId('settings-space-private-toggle'));
+    await screen.findByTestId('pin-challenge-sheet');
+    // still locked — nothing wrote yet
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    expect((await db.spaces.toArray()).some((sp) => sp.deleted === 0 && sp.inviteLock === 1)).toBe(true);
+    // a wrong 8-digit pin errors; the right one passes and writes
+    fireEvent.change(screen.getByTestId('pin-challenge-pin'), { target: { value: '99999999' } });
+    await screen.findByTestId('pin-challenge-error');
+    fireEvent.change(screen.getByTestId('pin-challenge-pin'), { target: { value: '1234' } });
+    await waitFor(async () => {
+      expect((await db.spaces.toArray()).some((sp) => sp.deleted === 0 && sp.inviteLock === 1)).toBe(false);
+    }, { timeout: 5000 });
+    db.close();
+    localStorage.removeItem('munni_lock_demo');
+  }, 15_000);
+
   it('the private lock is an owner toggle in the Setup group now (#162)', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');

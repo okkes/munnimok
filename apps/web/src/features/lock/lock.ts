@@ -47,16 +47,12 @@ export function readLockConfig(): LockConfig | null {
   const key = keyForIdentity();
   if (!key) return null; // signed out — never locked
   try {
-    let raw = localStorage.getItem(key);
-    // one-time migration: pre-scoping configs were device-global
-    if (!raw) {
-      const legacy = localStorage.getItem(LEGACY_KEY);
-      if (legacy) {
-        localStorage.setItem(key, legacy);
-        localStorage.removeItem(LEGACY_KEY);
-        raw = legacy;
-      }
-    }
+    // #298 (user): a pre-scoping DEVICE-global config belonged to
+    // whoever set it — adopting it into the next identity handed a
+    // deleted user's PIN to a fresh signup, gating their onboarding.
+    // The lock is a per-identity fact; stale device relics just clear.
+    localStorage.removeItem(LEGACY_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LockConfig;
     return parsed.enabled && parsed.pinHash ? parsed : null;

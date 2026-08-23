@@ -16,6 +16,7 @@ import { AccountTypeRow } from '@/features/accounts/AccountTypeRow';
 import { ACCOUNT_TYPES, typeDef } from '@/features/accounts/accountTypes';
 import { setAccountOpenHandoff } from '@/features/accounts/openHandoff';
 import { useMyRole } from './SpaceSharing';
+import { SharedSpaceBadge } from './SpaceSwitcher';
 import { takeSpaceAddAccountIntent } from './spaceAccountsHandoff';
 import { linkEffectiveType } from '@/db/joined';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
@@ -150,6 +151,16 @@ export function SpaceAccountsScreen() {
   );
 
   const mySub = identity?.kind === 'user' ? identity.sub : undefined;
+
+  // #305: whose attachment is this? my own feeds come from /me/feeds —
+  // anything else in the list was shared INTO the space by someone else
+  // and wears the shared badge (offline the set stays unknown: no badge
+  // beats a wrong one)
+  const myFeeds = useQuery(
+    store,
+    async () => (syncing ? fetchMyFeedIds().catch(() => undefined) : undefined),
+    [syncing],
+  );
 
   const entries = useQuery(store, async () => {
     // reads only — a teardown/closed-db rejection must never escape
@@ -295,6 +306,11 @@ export function SpaceAccountsScreen() {
                       <span className="block truncate text-[15px] font-medium text-ink">{entry.name}</span>
                       <span className="block truncate text-[12px] text-ink-4">{entry.subtitle}</span>
                     </span>
+                    {/* #305 (user): say it IS a shared account, right on
+                        the consumer's row */}
+                    {entry.link && myFeeds && !myFeeds.has(entry.link.feedSpaceId) && (
+                      <SharedSpaceBadge testId={`space-account-shared-${entry.key}`} />
+                    )}
                     {entry.stale && (
                       <Pill tone="warning" testId={`space-account-stale-${entry.key}`}>
                         {t('acct.reconnectHint')}

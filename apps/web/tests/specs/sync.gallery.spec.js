@@ -195,7 +195,7 @@ for (const V of VARIANTS) {
     await shot(alice.page, k('33-space-share') + '--s1');
     // #170/#171: the badge strip died — the invite sheet picks the friend
     // and the role up front (contributor preselected); send closes it
-    await alice.page.click('[data-testid="space-invite-open"]');
+    await alice.page.click('[data-testid="space-members-add"]');
     await alice.page.locator('[data-testid^="space-invite-row-"]').first().click();
     await alice.page.click('[data-testid="space-invite-send"]');
     await alice.page.waitForTimeout(800);
@@ -237,8 +237,10 @@ for (const V of VARIANTS) {
     // bob leaves the space: it disappears from his list, alice keeps it
     await gotoMembersOf(bob.page, 'Shared Home');
     await bob.page.waitForSelector('[data-testid="space-leave"]');
-    await bob.page.click('[data-testid="space-leave"]'); // arm
-    await bob.page.click('[data-testid="space-leave"]'); // confirm
+    await bob.page.click('[data-testid="space-leave"]');
+    // #304: the danger sheet counts down 5s before the confirm arms
+    await expect(bob.page.locator('[data-testid="space-leave-confirm"]')).toBeEnabled({ timeout: 10000 });
+    await bob.page.click('[data-testid="space-leave-confirm"]');
     await expect(bob.page.locator('[data-testid="screen-spaces"]')).not.toContainText('Shared Home', { timeout: 10000 });
     await shot(bob.page, k('57-space-roles') + '--s1');
 
@@ -342,9 +344,15 @@ for (const V of VARIANTS) {
     const bobId = (await bob.page.locator('[data-testid="friends-copy-id"] span').textContent()).trim();
 
     await gotoMembersOf(alice.page, 'Feed Home', { unlock: true });
+    // #304: the request field lives inside the one invite sheet now
+    await alice.page.click('[data-testid="space-members-add"]');
     await alice.page.fill('[data-testid="space-addfriend-input"]', bobId);
     await alice.page.click('[data-testid="space-addfriend-send"]');
     await expect(alice.page.locator('[data-testid="space-addfriend-sent"]')).toBeVisible({ timeout: 10000 });
+    // #304: the request field lives inside the invite SHEET — close it
+    // first, or its backdrop swallows the back tap below
+    await alice.page.keyboard.press('Escape');
+    await alice.page.waitForTimeout(500);
     // #169: the members-screen request CARRIES the space — bob's accept
     // makes him a member on the spot (no second invite, no banner) and
     // the accept handler pulls the fresh space immediately
@@ -379,20 +387,39 @@ for (const V of VARIANTS) {
     await expect(alice.page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Video Game', { timeout: 20000 });
     await shot(alice.page, k('61-feed-share'));
 
+    // #305: bob meets the shared account inside ITS space section — the
+    // global "Shared with me" section is retired. The echo wears the
+    // shared badge and answers with the READ-ONLY info sheet (facts, no
+    // owner levers: no rename, no detach, no delete)
+    await bob.page.click('[data-testid="tx-detail-back"]');
+    await gotoGlobalSettings(bob.page);
+    await bob.page.click('[data-testid="settings-accounts-row"]');
+    // the badge doubles as the ready signal: it appears once /me/feeds
+    // answered and the entry classified as shared-with-me
+    await expect(bob.page.locator('[data-testid^="echo-shared-"]').first()).toBeVisible({ timeout: 15000 });
+    const sharedEcho = bob.page.locator('button[data-testid^="account-echo-"]').first();
+    await expect(bob.page.locator('[data-testid="accounts-shared"]')).toHaveCount(0);
+    await sharedEcho.click();
+    await bob.page.waitForSelector('[data-testid="shared-account-info"]');
+    await expect(bob.page.locator('[data-testid="space-account-sheet-detach"]')).toHaveCount(0);
+    await expect(bob.page.locator('[data-testid="attach-delete"]')).toHaveCount(0);
+    await shot(bob.page, k('61-feed-share') + '--s3');
+    await bob.page.keyboard.press('Escape');
+    await bob.page.waitForTimeout(600);
+
     // alice (feed owner + attacher) leaves the space: bob keeps the shared
     // history but the account freezes — the synced mirror row delivers the
-    // archived badge to his accounts screen
+    // archived state onto the space-level echo (#305: the pill moved here
+    // from the retired shared section; bob's open screen updates live)
     await alice.page.click('[data-testid="tx-detail-back"]');
     await gotoMembersOf(alice.page, 'Feed Home');
     await alice.page.waitForSelector('[data-testid="space-leave"]');
     await alice.page.click('[data-testid="space-leave"]');
-    await alice.page.click('[data-testid="space-leave"]');
+    await expect(alice.page.locator('[data-testid="space-leave-confirm"]')).toBeEnabled({ timeout: 10000 });
+    await alice.page.click('[data-testid="space-leave-confirm"]');
     await expect(alice.page.locator('[data-testid="screen-spaces"]')).not.toContainText('Feed Home', { timeout: 10000 });
 
-    await bob.page.click('[data-testid="tx-detail-back"]');
-    await gotoGlobalSettings(bob.page);
-    await bob.page.click('[data-testid="settings-accounts-row"]');
-    await expect(bob.page.locator('[data-testid="accounts-shared"]')).toContainText('Archived', { timeout: 25000 });
+    await expect(bob.page.locator('[data-testid^="echo-archived-"]').first()).toBeVisible({ timeout: 25000 });
     await shot(bob.page, k('62-feed-archive'));
 
     await teardown(bob.page, bob.ctx, k('61-feed-share') + '--bob');

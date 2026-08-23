@@ -67,13 +67,14 @@ describe('lock config + pin (identity-scoped)', () => {
     expect(readLockConfig()?.timeoutSec).toBe(300); // same person: lock re-arms
   });
 
-  it('migrates a pre-scoping device-global config to the active identity', () => {
+  it('#298: a pre-scoping device-global config is a dead relic — cleared, never adopted', () => {
     localStorage.setItem('munni_lock', JSON.stringify(config({ timeoutSec: 900 })));
     signIn('demo');
-    expect(readLockConfig()?.timeoutSec).toBe(900);
+    // the fresh identity must NOT inherit the previous user's PIN
+    expect(readLockConfig()).toBeNull();
     expect(localStorage.getItem('munni_lock')).toBeNull();
-    expect(localStorage.getItem('munni_lock_demo')).toBeTruthy();
-  });
+    expect(localStorage.getItem('munni_lock_demo')).toBeNull();
+  })
 
   it('validPin: 4-8 digits only', () => {
     expect(validPin('1234')).toBe(true);

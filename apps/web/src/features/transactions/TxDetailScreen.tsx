@@ -1978,7 +1978,10 @@ function DetailAccountBlock({
 // plumbing) lives in the module helpers above; what remains here is
 // state wiring and JSX visibility gating, and slicing the markup
 // further would only scatter one screen across pretend-components.
-export function TxDetailScreen() { // NOSONAR(S3776)
+// #168 r5 (user): `backTo` is where LEAVING the detail lands (panes
+// close, Esc, delete) — the /recurring/tx/$txId mount passes /recurring
+// so the recurring list keeps the master pane; mobile back stays history.
+export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?: '/transactions' | '/recurring' }> = {}) { // NOSONAR(S3776)
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
   const { txId } = useParams({ strict: false }) as { txId: string };
@@ -2045,11 +2048,11 @@ export function TxDetailScreen() { // NOSONAR(S3776)
       // any open sheet owns Esc — mobile sheets included (they render no
       // <dialog>, which the old selector-only guard missed)
       if (e.key !== 'Escape' || hasOpenSheet() || document.querySelector('dialog[open], [role="dialog"]')) return;
-      void navigate({ to: '/transactions' });
+      void navigate({ to: backTo });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [navigate]);
+  }, [navigate, backTo]);
 
   const tx = useSpaceTransaction(txId);
   const transform = useTxTransform();
@@ -2449,7 +2452,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
   // two-tap confirm, matching the app's other destructive rows
   const deleteManualTx = async () => {
     await deleteManualTxRow(store, repo, spaceId, tx, account);
-    void navigate({ to: '/transactions' });
+    void navigate({ to: backTo });
   };
 
   const fmtDay = new Intl.DateTimeFormat(DATE_FMT[lang], { weekday: 'long', day: 'numeric', month: 'long' });
@@ -2476,7 +2479,7 @@ export function TxDetailScreen() { // NOSONAR(S3776)
       <AppBar
         title={screenTitle}
         leading={
-          <DetailBackButton panes={panes} onClose={() => void navigate({ to: '/transactions', replace: true })} t={t} />
+          <DetailBackButton panes={panes} onClose={() => void navigate({ to: backTo, replace: true })} t={t} />
         }
         trailing={trailingAction}
       />

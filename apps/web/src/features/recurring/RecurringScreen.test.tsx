@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
 import { resetApiCapabilitiesCache } from '@/lib/api';
 import { DEMO_SPACE_ID } from '@/db/seed';
+import { clearRecurringView } from './recurringView';
 import { propagateRecurringCategory, reconcileRecurringLinks } from '@/application/recurring';
 import { mirrorTxId } from '@/domain/feedIds';
 import { HlcClock } from '@/sync/hlc';
@@ -41,6 +42,7 @@ describe('RecurringScreen (demo identity)', () => {
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
+    clearRecurringView(); // #168 r5: the tab memory outlives renderApp by design
   });
 
   it('a sustained price change badges the row, the detail and the yearly totals', async () => {
@@ -381,6 +383,7 @@ describe('RecurringScreen editing (demo identity)', () => {
     localStorage.clear();
     sessionStorage.clear();
     indexedDB.deleteDatabase('munni_demo');
+    clearRecurringView(); // #168 r5: the tab memory outlives renderApp by design
   });
 
   it('year view multiplies, editing toggles active, delete needs a second tap', async () => {
@@ -494,9 +497,12 @@ describe('RecurringScreen editing (demo identity)', () => {
     // the same dot again toggles the selection off…
     fireEvent.click(screen.getByTestId(`recurring-chart-dot-1-${nowIdx}`));
     await waitFor(() => expect(screen.queryByTestId('recurring-chart-value')).toBeNull());
-    // …and back on; the door opens the month's linked transactions
+    // …and back on; the door names the payments story (#168 r5) and
+    // opens the month's linked transactions
     fireEvent.click(screen.getByTestId(`recurring-chart-dot-1-${nowIdx}`));
-    fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
+    const paidDoor = await screen.findByTestId('recurring-chart-txs');
+    expect(paidDoor.textContent).toContain('Show transactions');
+    fireEvent.click(paidDoor);
     await screen.findByTestId('recurring-period-sheet');
     // #168 r3: the payment wears the standard TxRow face, not a plain row
     const txRow = await screen.findByTestId('recurring-period-tx-pay_167');
@@ -513,9 +519,12 @@ describe('RecurringScreen editing (demo identity)', () => {
     expect(svg2.querySelectorAll('[data-testid^="recurring-chart-dot-0-"]')).toHaveLength(12);
     expect(svg2.querySelectorAll('[data-testid^="recurring-chart-dot-1-"]')).toHaveLength(0);
 
-    // a future ESTIMATE dot's door lists the expected items instead
+    // a future ESTIMATE dot's door says so (#168 r5, user) and lists
+    // the expected items instead
     fireEvent.click(screen.getByTestId('recurring-chart-dot-0-5'));
-    fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
+    const estDoor = await screen.findByTestId('recurring-chart-txs');
+    expect(estDoor.textContent).toContain('Show recurring costs');
+    fireEvent.click(estDoor);
     const expRow = await screen.findByTestId('recurring-period-exp-rec_167');
     expect(expRow.textContent).toMatch(/€[1-9]/);
   }, 20_000);
@@ -572,54 +581,102 @@ describe('RecurringScreen editing (demo identity)', () => {
     await screen.findByTestId('screen-recurring-detail', {}, { timeout: 5000 });
   }, 15_000);
 
-  it('#168 r3+r4: a period sheet row opens the PEEK in place; its one door lands on the detail', async () => {
+  it('#168 r5: a period row travels STRAIGHT to the transaction (chevron on); the tab survives the detour', async () => {
     const first = renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
     const db = new MunniDB('munni_demo');
-    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-168r3'), { trackOutbox: false });
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-168r5'), { trackOutbox: false });
     const day = Math.min(new Date().getDate(), 28);
-    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_r3', {
-      name: 'Gym r3',
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec_r5', {
+      name: 'Gym r5',
       kind: 'fixed',
       amountCents: 2_500,
       every: 'month',
       dueDay: day,
       active: 1,
     });
-    await repo.upsert('transaction', DEMO_SPACE_ID, 'pay_r3', {
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'pay_r5', {
       accountId: 'demo_main',
       date: monthsAgo(0, day),
       amountCents: -2_500,
       currency: 'EUR',
-      merchant: 'GYM R3',
+      merchant: 'GYM R5',
       catId: 'subs',
       txType: 'expense',
       needsReview: 0,
-      recurringId: 'rec_r3',
+      recurringId: 'rec_r5',
     });
     db.close();
     first.unmount();
     renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
-    await screen.findByText('Gym r3', {}, { timeout: 5000 });
+    await screen.findByText('Gym r5', {}, { timeout: 5000 });
 
     fireEvent.click(screen.getByTestId('recurring-view-year'));
     const nowIdx = new Date().getMonth();
     fireEvent.click(await screen.findByTestId(`recurring-chart-dot-1-${nowIdx}`));
     fireEvent.click(await screen.findByTestId('recurring-chart-txs'));
-    const wrapper = await screen.findByTestId('recurring-period-tx-pay_r3');
-    // #168 r4 (user): tapping the TxRow opens the PEEK on top — no page
-    // jump, the period sheet stays underneath to come back to
-    fireEvent.click(wrapper.querySelector<HTMLElement>('[data-testid="tx-row-pay_r3"]')!);
-    await screen.findByTestId('tx-peek');
-    expect(screen.getByTestId('tx-peek-amount').textContent).toMatch(/€[1-9]/);
-    expect(screen.getByTestId('tx-peek-title').textContent).toContain('GYM R3');
-    expect(screen.getByTestId('screen-recurring')).toBeTruthy();
-    expect(screen.getByTestId('recurring-period-sheet')).toBeTruthy();
-    // the peek's one door: the full transaction detail screen
-    fireEvent.click(screen.getByTestId('tx-peek-open'));
+    const wrapper = await screen.findByTestId('recurring-period-tx-pay_r5');
+    // #168 r5 (user): the row wears the arrow like the recurring rows…
+    expect(wrapper.querySelector('.mdi-chevron-right')).toBeTruthy();
+    // …and tapping it lands DIRECTLY on the full page — the in-between
+    // peek sheet is gone; below lg the detail owns the screen
+    fireEvent.click(wrapper.querySelector<HTMLElement>('[data-testid="tx-row-pay_r5"]')!);
     await screen.findByTestId('screen-tx-detail', {}, { timeout: 5000 });
-    await waitFor(() => expect(screen.queryByTestId('recurring-period-sheet')).toBeNull());
+    expect(screen.queryByTestId('tx-peek')).toBeNull();
+    expect(screen.queryByTestId('recurring-period-sheet')).toBeNull();
+    expect(screen.queryByTestId('screen-recurring')).toBeNull();
+
+    // #168 r5 (user): the return lands on the SAME tab — the view
+    // survives the unmount via the module memory (#140 pattern)
+    cleanup();
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    expect(screen.getByTestId('recurring-view-year').className).toContain('font-semibold');
+    expect(await screen.findByTestId('recurring-chart')).toBeTruthy();
+  }, 20_000);
+
+  it('#168 r5: at lg the transaction opens BESIDE the recurring list; close hands the pane back', async () => {
+    const first = renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-168lg'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'pay_lg', {
+      accountId: 'demo_main',
+      date: monthsAgo(0, 7),
+      amountCents: -2_500,
+      currency: 'EUR',
+      merchant: 'GYM LG',
+      catId: 'subs',
+      txType: 'expense',
+      needsReview: 0,
+    });
+    db.close();
+    first.unmount();
+
+    // lg viewport: the /recurring/tx/$txId mount renders the recurring
+    // list as the MASTER pane with the tx detail beside it (§4.2)
+    const original = window.matchMedia;
+    window.matchMedia = (() => ({
+      matches: true,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia;
+    try {
+      renderApp('/recurring/tx/pay_lg');
+      // the !tx branch renders an empty shell first — wait for the
+      // LOADED detail (its app bar) before poking the panes
+      await screen.findByTestId('tx-detail-back', {}, { timeout: 5000 });
+      expect(screen.getByTestId('screen-tx-detail')).toBeTruthy();
+      expect(screen.getByTestId('split-pane')).toBeTruthy();
+      expect(screen.getByTestId('screen-recurring')).toBeTruthy();
+      // the panes close button leaves the detail and keeps recurring
+      fireEvent.click(screen.getByTestId('tx-detail-back'));
+      await waitFor(() => expect(screen.queryByTestId('screen-tx-detail')).toBeNull());
+      expect(screen.getByTestId('screen-recurring')).toBeTruthy();
+    } finally {
+      window.matchMedia = original;
+    }
   }, 20_000);
 
   it('#188/#189: a recurring lives only in ranges it OCCURS in; pre-start occurrences neither list nor count', async () => {
@@ -751,6 +808,7 @@ describe('brand picker online search (user identity)', () => {
     sessionStorage.clear();
     indexedDB.deleteDatabase(USER_TEST_DB);
     resetApiCapabilitiesCache(); // each test scripts its own /health
+    clearRecurringView(); // #168 r5: the tab memory outlives renderApp by design
   });
 
   async function openPickerAndSearch(api: Record<string, () => unknown>) {

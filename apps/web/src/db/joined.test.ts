@@ -113,6 +113,28 @@ describe('feature B join layer', () => {
     expect(metas[0].notes).toBe('weekly shop');
   });
 
+  it('#305: the CONSUMER view — a link SOMEONE ELSE attached joins the feed rows, and an archived link keeps serving history', async () => {
+    await seedFeed();
+    // re-shape the attachment as a foreign one: the viewing user never
+    // wrote it — visibleTransactions must not care WHO attached
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), {
+      attachedBy: 'someone-else',
+      attachedByName: 'Marie',
+    });
+    const store = new DexieBackend(db);
+    const txs = await visibleTransactions(store, SPACE);
+    expect(txs).toHaveLength(1); // raw2 stays behind the history gate
+    expect(txs[0].id).toBe('raw1');
+    expect(txs[0].feedSpaceId).toBe(FEED); // joined, not a legacy merge
+
+    // the sharer LEFT the space: the link archives (sync-a6) but the
+    // stored history keeps serving — the freeze stops NEW data, not old
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { archived: 1 });
+    const after = await visibleTransactions(store, SPACE);
+    expect(after).toHaveLength(1);
+    expect(after[0].id).toBe('raw1');
+  });
+
   it('#211: the category spread is a space opinion — cats overlay onto feed rows and stay per space', async () => {
     await seedFeed();
     const [tx] = await visibleTransactions(new DexieBackend(db), SPACE);

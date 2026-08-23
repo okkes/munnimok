@@ -21,7 +21,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { takeDebtHandoff } from './handoff';
 import type { DebtHandoff } from './handoff';
-import { LoanMatchSheet } from './LoanMatchSheet';
+import { LoanMatchSheet, loanMatchCandidates } from './LoanMatchSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -165,6 +165,14 @@ export function DebtsScreen() {
       paymentDay: s.every !== 'week' ? s.dueDay : undefined,
       merchantKey: s.merchantKey,
     });
+  };
+
+  // #286 r2 (user): the just-created loan offers matching payments only
+  // when history actually HOLDS some — deciding once, before opening,
+  // beats an auto-opened sheet whose only content is "nothing found"
+  const offerMatches = async (id: string) => {
+    const account = await store.get('account', id);
+    if (account && loanMatchCandidates(account, historyTxs ?? [], spaceAccounts ?? []).length > 0) setMatchFor(id);
   };
 
   const { fmt } = useDisplayMoney();
@@ -315,7 +323,7 @@ export function DebtsScreen() {
         manualTypes={['loan', 'mortgage', 'credit']}
         loanFlavor
         prefill={prefill ?? undefined}
-        onCreated={({ id }) => setMatchFor(id)}
+        onCreated={({ id }) => void offerMatches(id)}
       />
       <LoanMatchSheet accountId={matchFor} onClose={() => setMatchFor(null)} />
     </div>

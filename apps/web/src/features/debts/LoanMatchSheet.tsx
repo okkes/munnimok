@@ -7,6 +7,7 @@ import type { SpaceTx } from '@/application/transactions';
 import { countsTowardLoan } from '@/application/loanBalance';
 import { REIMBURSED_ID, autoSubFor } from '@/domain/categories';
 import { normalizeIban } from '@/domain/feedIds';
+import type { AccountRow } from '@/db/types';
 import { Button } from '@/ui/Button';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
@@ -15,11 +16,51 @@ import { TxRow } from '@/ui/TxRow';
 const AMOUNT_TOLERANCE = (paymentCents: number) => Math.max(50, Math.round(paymentCents * 0.1));
 const MAX_SHOWN = 20;
 
-interface Scored {
+export interface Scored {
   tx: SpaceTx;
   score: number;
   /** dated before the loan's known-true balance — linking won't move it */
   preAnchor: boolean;
+}
+
+/** the loan fields the matcher reads — a fresh store.get row satisfies it */
+type MatchAccount = Pick<AccountRow, 'id' | 'name' | 'iban' | 'paymentCents' | 'balanceAsOf'>;
+
+/**
+ * #286 r2: the WHOLE candidate derivation as one module joint — the
+ * sheet's memo renders from it, and the DebtsScreen host asks it BEFORE
+ * auto-opening (zero hits = the sheet never shows at all).
+ */
+export function loanMatchCandidates(
+  account: MatchAccount,
+  txs: readonly SpaceTx[],
+  spaceAccounts: readonly Pick<AccountRow, 'id' | 'defaultFor'>[],
+): Scored[] {
+  // #221: a link onto the space's DEFAULT pot is provisional — those
+  // rows stay candidates, and applying RELINKS them (the choke moves
+  // the minted leg from the pot to this loan)
+  const defaultIds = new Set(spaceAccounts.filter((a) => a.defaultFor).map((a) => a.id));
+  const provisional = (tx: SpaceTx) => !!tx.linkedAccountId && defaultIds.has(tx.linkedAccountId);
+  const ctx = {
+    iban: account.iban ? normalizeIban(account.iban) : null,
+    tokens: account.name
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((token) => token.length > 3),
+    paymentCents: account.paymentCents,
+  };
+  const scored: Scored[] = [];
+  for (const tx of txs) {
+    if (tx.deleted !== 0 || tx.accountId === account.id) continue;
+    if ((tx.linkedAccountId || tx.transferPeerId) && !provisional(tx)) continue;
+    // #143: a split container never links wholesale — its parts carry
+    // their own loan legs (linked from their part pages)
+    if ((tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1) continue;
+    const score = scoreCandidate(tx, ctx);
+    if (score >= 2) scored.push({ tx, score, preAnchor: !countsTowardLoan(account, tx) });
+  }
+  scored.sort((a, b) => b.score - a.score || b.tx.date.localeCompare(a.tx.date));
+  return scored.slice(0, MAX_SHOWN);
 }
 
 /** additive evidence: counter-IBAN is near-proof, the debt-payment
@@ -57,34 +98,14 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
   const [counted, setCounted] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
 
-  const candidates = useMemo<Scored[]>(() => {
-    if (!account || !txs) return [];
-    // #221: a link onto the space's DEFAULT pot is provisional — those
-    // rows stay candidates, and applying RELINKS them (the choke moves
-    // the minted leg from the pot to this loan)
-    const defaultIds = new Set((spaceAccounts ?? []).filter((a) => a.defaultFor).map((a) => a.id));
-    const provisional = (tx: SpaceTx) => !!tx.linkedAccountId && defaultIds.has(tx.linkedAccountId);
-    const ctx = {
-      iban: account.iban ? normalizeIban(account.iban) : null,
-      tokens: account.name
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}]+/u)
-        .filter((token) => token.length > 3),
-      paymentCents: account.paymentCents,
-    };
-    const scored: Scored[] = [];
-    for (const tx of txs) {
-      if (tx.deleted !== 0 || tx.accountId === account.id) continue;
-      if ((tx.linkedAccountId || tx.transferPeerId) && !provisional(tx)) continue;
-      // #143: a split container never links wholesale — its parts carry
-      // their own loan legs (linked from their part pages)
-      if ((tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).length > 1) continue;
-      const score = scoreCandidate(tx, ctx);
-      if (score >= 2) scored.push({ tx, score, preAnchor: !countsTowardLoan(account, tx) });
-    }
-    scored.sort((a, b) => b.score - a.score || b.tx.date.localeCompare(a.tx.date));
-    return scored.slice(0, MAX_SHOWN);
-  }, [account, txs, spaceAccounts]);
+  const candidates = useMemo<Scored[]>(
+    () => (account && txs ? loanMatchCandidates(account, txs, spaceAccounts ?? []) : []),
+    [account, txs, spaceAccounts],
+  );
+  // #286 r2: "nothing found" is only true once the queries answered —
+  // while they load, the sheet shows the hint, never a false empty line
+  const ready = !!account && !!txs && !!spaceAccounts;
+  const empty = ready && candidates.length === 0;
 
   // strong matches arrive pre-checked ONCE per loan; live-query
   // re-emissions must never clobber the user's pruning (review finding)
@@ -138,11 +159,18 @@ export function LoanMatchSheet({ accountId, onClose }: Readonly<{ accountId: str
   };
 
   return (
-    <Sheet open={accountId !== null} onOpenChange={(next) => !next && onClose()} title={t('debts.matchTitle')} size="tall">
-      <p className="pb-2 text-[12px] leading-snug text-ink-3">{t('debts.matchHint')}</p>
-      {candidates.length === 0 && (
+    // #286 r2 (user): a manual open with nothing to offer collapses to
+    // the title plus ONE quiet line — no hint paragraph, compact height
+    // (the auto-open host skips the sheet entirely on zero candidates)
+    <Sheet open={accountId !== null} onOpenChange={(next) => !next && onClose()} title={t('debts.matchTitle')} size={empty ? 'compact' : 'tall'}>
+      {!empty && (
+        <p className="pb-2 text-[12px] leading-snug text-ink-3" data-testid="loanmatch-hint">
+          {t('debts.matchHint')}
+        </p>
+      )}
+      {empty && (
         <p className="px-1 py-6 text-center text-[13px] text-ink-4" data-testid="loanmatch-empty">
-          {t('debts.matchEmpty')}
+          {t('debts.matchNone')}
         </p>
       )}
       {/* #286 (user): the pre-anchor story told ONCE above the list —

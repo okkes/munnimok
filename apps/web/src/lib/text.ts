@@ -15,6 +15,15 @@ export function fmtTimeAgo(iso: string, lang: Lang, now = Date.now()): string {
   return rtf.format(-Math.round(days / 30), 'month');
 }
 
+/** #300: the duration half of "about {time} left" on long imports —
+ *  seconds under a minute, whole minutes above, localized through Intl
+ *  ("45 sec" / "2 min" / "2 dk") so no unit tables are needed */
+export function fmtEtaShort(seconds: number, lang: Lang): string {
+  const unit = seconds < 60 ? 'second' : 'minute';
+  const value = unit === 'second' ? Math.max(1, Math.round(seconds)) : Math.round(seconds / 60);
+  return new Intl.NumberFormat(LOCALES[lang], { style: 'unit', unit, unitDisplay: 'short' }).format(value);
+}
+
 /**
  * Bank data hygiene: ING (and others) embed literal "<br>" separators in
  * remittance text. Strip markup-ish noise for display — covers rows that

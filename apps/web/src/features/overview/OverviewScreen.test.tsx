@@ -73,14 +73,11 @@ describe('Overview (demo identity)', () => {
     const list = await screen.findByTestId('catdrill-list');
     expect(list.querySelectorAll('[data-testid^="tx-row-"]').length).toBeGreaterThan(0);
 
-    // #168 r4 (user): a payment row PEEKS in place — the drill stays
-    // put underneath; the full detail is one door further
+    // #168 r5 (user): a payment row goes STRAIGHT to the transaction
+    // page — the in-between peek sheet is retired
     fireEvent.click(list.querySelector('[data-testid^="tx-row-"]')!);
-    await screen.findByTestId('tx-peek');
-    expect(screen.getByTestId('tx-peek-amount').textContent).toMatch(/€[1-9]/);
-    expect(screen.getByTestId('screen-category-drill')).toBeTruthy();
-    fireEvent.click(screen.getByTestId('tx-peek-open'));
     expect(await screen.findByTestId('screen-tx-detail')).toBeTruthy();
+    expect(screen.queryByTestId('tx-peek')).toBeNull();
   });
 
   it('the drill period selector swaps the list to the chosen period', async () => {
