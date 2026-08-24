@@ -10,6 +10,7 @@ import { SyncEngine } from './engine';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
+import { useEvicted } from '@/app/evicted';
 import type { AccountRow } from '@/db/types';
 
 /** Minimal in-memory server with the same semantics as Munni.Api. */
@@ -19,11 +20,16 @@ class InMemoryServer implements SyncBackend {
   private seenOpIds = new Set<string>();
   private lastSeq = 0;
   forbiddenSpaces = new Set<string>();
+  /** #306: reader role — push 403s while pull/list stay granted */
+  readerSpaces = new Set<string>();
   rejectedSpaces = new Set<string>(); // 400s (a poisoned op) — never 403
   pushCalls: number[] = [];
+  /** every push REQUEST that arrived, denied ones included */
+  pushAttempts: string[] = [];
 
   async push(spaceId: string, _clientId: string, ops: Op[]): Promise<PushResult> {
-    if (this.forbiddenSpaces.has(spaceId)) throw new SyncHttpError(403);
+    this.pushAttempts.push(spaceId);
+    if (this.forbiddenSpaces.has(spaceId) || this.readerSpaces.has(spaceId)) throw new SyncHttpError(403);
     if (this.rejectedSpaces.has(spaceId)) throw new SyncHttpError(400);
     this.pushCalls.push(ops.length);
     for (const op of ops) {
@@ -76,6 +82,7 @@ describe('SyncEngine', () => {
   beforeEach(() => {
     dbCounter++;
     server = new InMemoryServer();
+    useEvicted.getState().clear();
     // hermetic: syncAll's /health handshake must never reach a REAL
     // server (a running local stack once answered with an older
     // protocol and silently blocked every cycle here)
@@ -151,6 +158,110 @@ describe('SyncEngine', () => {
     expect(await a.db.spaces.get('s1')).toBeUndefined();
     expect(await a.db.accounts.get('acc1')).toBeUndefined();
     expect(await a.db.outbox.count()).toBe(0);
+  });
+
+  it('#306: a read-only member (push 403, pull OK) is NOT an eviction — ops park, data stays', async () => {
+    let wa = 1_000_000;
+    const owner = device('owner', () => ++wa, server);
+    dbs.push(owner.db);
+    await owner.repo.upsert('space', 's1', 's1', { name: 'Shared', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await owner.repo.upsert('account', 's1', 'acc1', { name: 'Theirs', balanceCents: 7 });
+    await owner.engine.syncAll();
+
+    // the reader device discovers and pulls the space fine…
+    let wb = 2_000_000;
+    const reader = device('reader', () => ++wb, server);
+    dbs.push(reader.db);
+    server.readerSpaces.add('s1');
+    await reader.engine.syncAll();
+    expect((await reader.db.spaces.get('s1'))?.name).toBe('Shared');
+
+    // …then writes locally (a boot heal, a tap) — that push is denied
+    await reader.repo.upsert('account', 's1', 'acc1', { color: '#abc' });
+    await reader.engine.syncAll();
+
+    // no "removed from space" sheet, nothing purged (the old code
+    // popped the sheet and wiped the space on every cycle — user4 loop)
+    expect(useEvicted.getState().evicted).toBeNull();
+    expect((await reader.db.spaces.get('s1'))?.name).toBe('Shared');
+    expect((await reader.db.accounts.get('acc1'))?.color).toBe('#abc');
+    // the unlandable ops are parked, not retried forever
+    expect(await reader.db.outbox.count()).toBe(0);
+    expect(((await reader.db.meta.get('parkedOps_s1'))?.value as unknown[]).length).toBeGreaterThan(0);
+    const attempts = server.pushAttempts.filter((s) => s === 's1').length;
+    await reader.engine.syncAll();
+    expect(server.pushAttempts.filter((s) => s === 's1')).toHaveLength(attempts); // quiet now
+  });
+
+  it('#306: eviction (push AND pull 403) reports ONCE — stragglers never re-raise or re-push', async () => {
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Shared', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.engine.syncAll();
+
+    server.forbiddenSpaces.add('s1');
+    await a.repo.upsert('account', 's1', 'acc1', { name: 'Late edit' });
+    await a.engine.syncAll();
+
+    // the one takeover sheet; the local copy is gone
+    expect(useEvicted.getState().evicted?.spaceId).toBe('s1');
+    expect(await a.db.spaces.get('s1')).toBeUndefined();
+    expect(await a.db.outbox.count()).toBe(0);
+
+    // the user confirms; a straggler write races in AFTER the purge
+    useEvicted.getState().clear();
+    await a.repo.upsert('account', 's1', 'acc2', { name: 'Straggler' });
+    const attempts = server.pushAttempts.filter((s) => s === 's1').length;
+    await a.engine.syncAll();
+
+    // no second sheet, not one more push request, the straggler is swept
+    expect(useEvicted.getState().evicted).toBeNull();
+    expect(server.pushAttempts.filter((s) => s === 's1')).toHaveLength(attempts);
+    expect(await a.db.outbox.count()).toBe(0);
+    expect(await a.db.accounts.get('acc2')).toBeUndefined();
+  });
+
+  it('#306: a re-grant clears the tombstone — sync resumes and a LATER eviction reports again', async () => {
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Shared', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.engine.syncAll();
+    server.forbiddenSpaces.add('s1');
+    await a.repo.upsert('account', 's1', 'acc1', { name: 'Late' });
+    await a.engine.syncAll();
+    expect(useEvicted.getState().evicted?.spaceId).toBe('s1');
+    useEvicted.getState().clear();
+
+    // re-invited: the server lists the space again, history intact
+    server.forbiddenSpaces.delete('s1');
+    await a.engine.syncAll();
+    expect(await a.db.meta.get('evictedSpace_s1')).toBeUndefined();
+    expect((await a.db.spaces.get('s1'))?.name).toBe('Shared');
+
+    // kicked AGAIN much later — the new eviction may speak again
+    server.forbiddenSpaces.add('s1');
+    await a.engine.syncAll();
+    expect(useEvicted.getState().evicted?.spaceId).toBe('s1');
+  });
+
+  it('#306: eviction clears parked ops with the space', async () => {
+    let w = 1_000_000;
+    const a = device('devA', () => ++w, server);
+    dbs.push(a.db);
+    await a.repo.upsert('space', 's1', 's1', { name: 'Shared', kind: 'shared', currency: 'EUR', periodType: 'month', periodDay: 1 });
+    await a.engine.syncAll();
+    server.rejectedSpaces.add('s1');
+    await a.repo.upsert('receipt', 's1', 'r1', { merchant: 'AH', totalCents: 100 });
+    await a.engine.syncAll(); // 400 → parked
+    expect(((await a.db.meta.get('parkedOps_s1'))?.value as unknown[]).length).toBeGreaterThan(0);
+
+    server.rejectedSpaces.delete('s1');
+    server.forbiddenSpaces.add('s1');
+    await a.engine.syncAll(); // eviction — nothing of the space lingers
+    expect(await a.db.meta.get('parkedOps_s1')).toBeUndefined();
+    expect(await a.db.spaces.get('s1')).toBeUndefined();
   });
 
   it('feed data of a space the server no longer grants is purged (left-space ghost accounts)', async () => {

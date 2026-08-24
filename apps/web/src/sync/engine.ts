@@ -9,6 +9,8 @@ import { SyncHttpError } from './backend';
 
 const cursorKey = (spaceId: string) => `syncCursor_${spaceId}`;
 const parkedKey = (spaceId: string) => `parkedOps_${spaceId}`;
+/** #306: durable per-identity eviction tombstone — mirrored in swSync.ts */
+const evictedKey = (spaceId: string) => `evictedSpace_${spaceId}`;
 
 /** ops per push request — the server caps at 1000, proxies cap body size */
 const PUSH_CHUNK = 300;
@@ -141,8 +143,12 @@ export class SyncEngine {
       // else on the device synced anymore (user report: store receipts +
       // "offline" while the server was fine)
       let firstError: unknown = null;
+      const serverSet = new Set(serverSpaces);
       for (const spaceId of spaceIds) {
         try {
+          // #306 (user): a space we KNOW evicted us stays untouched until
+          // the server re-grants it — no request may leave for it
+          if (await this.skipKnownEvicted(spaceId, serverSet)) continue;
           await this.syncSpace(spaceId);
         } catch (err) {
           firstError ??= err;
@@ -203,11 +209,17 @@ export class SyncEngine {
     const parked = ((await this.store.metaGet(parkedKey(spaceId)))?.value as OutboxRow[] | undefined) ?? [];
     if (!parked.length) return;
     const stillParked: OutboxRow[] = [];
-    for (const op of parked) {
+    for (const [i, op] of parked.entries()) {
       try {
         await this.backend.push(spaceId, this.clientId, [op]);
-      } catch {
+      } catch (err) {
         stillParked.push(op);
+        // #306: 403 = the space denies us as a whole (read-only role or
+        // lost membership) — the rest would fail identically, stop here
+        if (err instanceof SyncHttpError && err.status === 403) {
+          stillParked.push(...parked.slice(i + 1));
+          break;
+        }
       }
     }
     if (stillParked.length !== parked.length) await this.store.metaPut(parkedKey(spaceId), stillParked);
@@ -243,28 +255,77 @@ export class SyncEngine {
       // receipt sync alone can queue hundreds of fat ops, and each chunk
       // that lands is deleted immediately so progress survives a failure
       await this.retryParked(spaceId);
-      const outbox = await this.store.outboxBySpace(spaceId);
-      for (let i = 0; i < outbox.length; i += PUSH_CHUNK) {
-        const chunk = outbox.slice(i, i + PUSH_CHUNK);
-        await this.pushChunk(spaceId, chunk);
+      // #306 (user): a push-403 alone is AMBIGUOUS — a reader role may
+      // pull but never push. The pull below is the judge: succeeding
+      // means we are still a member (read-only: park the unlandable
+      // ops); only a denied pull is a true eviction. Before this, every
+      // push-403 raised the "removed from space" sheet and purged — and
+      // the still-granted pull resurrected the space, looping forever.
+      let writeDenied = false;
+      try {
+        const outbox = await this.store.outboxBySpace(spaceId);
+        for (let i = 0; i < outbox.length; i += PUSH_CHUNK) {
+          const chunk = outbox.slice(i, i + PUSH_CHUNK);
+          await this.pushChunk(spaceId, chunk);
+        }
+      } catch (err) {
+        if (!(err instanceof SyncHttpError) || err.status !== 403) throw err;
+        writeDenied = true;
       }
 
       // 2. pull everything after our cursor and merge (own ops no-op) —
       // paged until drained (#305 bug 4; the loop lives in drainPull)
       const since = ((await this.store.metaGet(cursorKey(spaceId)))?.value as number | undefined) ?? 0;
       await this.drainPull(spaceId, since);
+      if (writeDenied) await this.parkReadOnlyOps(spaceId);
     } catch (err) {
       if (err instanceof SyncHttpError && err.status === 403) {
-        // #173: a 403 on a MEMBER space is an eviction — tell the app
-        // before the purge erases the name (feed sweeps stay silent:
-        // they route through purgeOrphanFeeds, not this catch)
-        const name = (await this.store.get('space', spaceId))?.name;
-        if (name) reportEviction({ spaceId, spaceName: name });
-        await this.purgeSpace(spaceId);
+        // #173: a 403 on a MEMBER space is an eviction (feed sweeps stay
+        // silent: they route through purgeOrphanFeeds, not this catch)
+        await this.evictSpace(spaceId);
         return;
       }
       throw err;
     }
+  }
+
+  /** #306: read-only member — local ops the server will never take are
+   *  parked (kept: a role upgrade re-offers them via retryParked), so
+   *  the outbox stops re-pushing into a guaranteed 403 every cycle */
+  private async parkReadOnlyOps(spaceId: string): Promise<void> {
+    const ops = await this.store.outboxBySpace(spaceId);
+    if (ops.length === 0) return;
+    const parked = ((await this.store.metaGet(parkedKey(spaceId)))?.value as OutboxRow[] | undefined) ?? [];
+    await this.store.metaPut(parkedKey(spaceId), [...parked, ...ops].slice(-500));
+    await this.store.outboxDelete(ops.map((o) => o.opId));
+  }
+
+  /** #173/#306: membership truly revoked — ONE durable notice, then purge.
+   *  The tombstone survives boots/logins, so late straggler ops or a
+   *  half-done purge can never re-raise the sheet; syncAll clears it
+   *  when the server lists the space again (re-invite). */
+  private async evictSpace(spaceId: string): Promise<void> {
+    const seen = await this.store.metaGet(evictedKey(spaceId));
+    await this.store.metaPut(evictedKey(spaceId), Date.now());
+    if (!seen) {
+      // tell the app before the purge erases the name
+      const name = (await this.store.get('space', spaceId))?.name;
+      if (name) reportEviction({ spaceId, spaceName: name });
+    }
+    await this.purgeSpace(spaceId);
+  }
+
+  /** #306: evicted tombstone gate — while the server does not grant the
+   *  space, no sync request leaves for it and stray local ops (writers
+   *  that raced the purge) are swept; a re-grant clears the tombstone. */
+  private async skipKnownEvicted(spaceId: string, serverSpaces: ReadonlySet<string>): Promise<boolean> {
+    if (!(await this.store.metaGet(evictedKey(spaceId)))) return false;
+    if (serverSpaces.has(spaceId)) {
+      await this.store.metaDelete(evictedKey(spaceId)); // re-invited — sync (and a future eviction) proceed
+      return false;
+    }
+    await this.purgeSpace(spaceId);
+    return true;
   }
 
   /**
@@ -323,6 +384,10 @@ export class SyncEngine {
       }
       await this.store.outboxDeleteBySpace(spaceId);
       await this.store.metaDelete(cursorKey(spaceId));
+      // #306: parked ops died with the space (they were re-offered every
+      // session — a lingering 403 POST per boot); the eviction tombstone
+      // deliberately survives this purge
+      await this.store.metaDelete(parkedKey(spaceId));
     });
   }
 }

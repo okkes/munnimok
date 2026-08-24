@@ -132,6 +132,12 @@ export async function flushOutbox(deps: SwSyncDeps = {}): Promise<number> {
       bySpace.set(op.spaceId, list);
     }
     for (const [spaceId, ops] of bySpace) {
+      // #306: the engine marked this space evicted — pushing would 403
+      // forever; stray ops written after the purge are dropped instead
+      if (await store.metaGet(`evictedSpace_${spaceId}`)) {
+        await store.outboxDelete(ops.map((o) => o.opId));
+        continue;
+      }
       ops.sort((a, b) => a.hlc.localeCompare(b.hlc));
       await backend.push(spaceId, 'sw-bgsync', ops);
       await store.outboxDelete(ops.map((o) => o.opId));
