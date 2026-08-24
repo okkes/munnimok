@@ -407,4 +407,35 @@ describe('Settings screens (user identity, scripted server)', () => {
       expect(dbs.some((d) => d.name === USER_TEST_DB)).toBe(false);
     });
   }, 15_000);
+
+  it('#307: deletion in flight narrates the stage and refuses dismissal', async () => {
+    let release: (() => void) | undefined;
+    renderAppAsUser('/profile', {
+      api: {
+        // a slow server erase — resolved by hand below
+        'DELETE /me': () =>
+          new Promise((resolve) => {
+            release = () => resolve({ deleted: true });
+          }),
+      },
+    });
+    await screen.findByTestId('screen-profile');
+    fireEvent.click(await screen.findByTestId('settings-delete-account'));
+    fireEvent.change(await screen.findByTestId('delete-account-input'), { target: { value: 'delete' } });
+    fireEvent.click(screen.getByTestId('delete-account-confirm'));
+
+    // the running stage names itself (server erase first — the slow one)
+    const progress = await screen.findByTestId('delete-account-progress');
+    expect(progress.textContent).toContain('Deleting your account on the server');
+    // a dismissal attempt mid-run is refused with the busy note
+    fireEvent.keyDown(window, { key: 'Escape' });
+    const note = await screen.findByTestId('sheet-busy-note');
+    expect(note.textContent).toContain('still running');
+    expect(screen.getByTestId('delete-account-progress')).toBeTruthy(); // sheet stayed
+
+    // the server answers — wipe + sign-out land as before
+    release?.();
+    expect(await screen.findByTestId('screen-login')).toBeTruthy();
+    expect(useSession.getState().identity).toBeNull();
+  }, 15_000);
 });

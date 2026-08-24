@@ -172,6 +172,8 @@ export function ProfileScreen() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTyped, setDeleteTyped] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
+  // #307: which stage of the deletion runs (server erase → device wipe)
+  const [deletePhase, setDeletePhase] = useState<'server' | 'local' | null>(null);
   const [deleteError, setDeleteError] = useState(false);
   const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -182,18 +184,23 @@ export function ProfileScreen() {
   const logout = useSession((s) => s.logout);
 
   // full account deletion (account-deletion design; Apple 5.1.1(v)):
-  // the server erases everything, then the device forgets the identity
+  // the server erases everything, then the device forgets the identity.
+  // #307 (user): the wait is narrated per stage — the server erase is
+  // the slow one — and the sheet refuses dismissal while it runs
   const deleteAccount = async () => {
     const current = identity;
     if (current?.kind !== 'user') return;
     setDeleteBusy(true);
     setDeleteError(false);
+    setDeletePhase('server');
     const res = await apiFetch('/me', { method: 'DELETE' }).catch(() => null);
     if (!res?.ok) {
       setDeleteBusy(false);
+      setDeletePhase(null);
       setDeleteError(true);
       return;
     }
+    setDeletePhase('local');
     logout();
     await destroyIdentityData(current);
     await navigate({ to: '/login' });
@@ -548,8 +555,16 @@ export function ProfileScreen() {
       />
 
       {/* the point of no return: everything the design promises, spelled
-          out, then a typed confirmation — no accidental taps */}
-      <Sheet open={deleteOpen} onOpenChange={setDeleteOpen} title={t('settings.deleteAccountTitle')} size="form">
+          out, then a typed confirmation — no accidental taps. #307: while
+          the deletion runs the sheet locks (busyNote) and narrates the
+          stage instead of leaving the user staring at a dimmed button */}
+      <Sheet
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={t('settings.deleteAccountTitle')}
+        size="form"
+        busyNote={deleteBusy ? t('settings.deleteBusyNote') : null}
+      >
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[13px] text-ink-2">{t('settings.deleteAccountBody')}</p>
           <p className="text-[12px] text-ink-3">{t('settings.deleteTypePrompt', { word: t('settings.deleteTypeWord') })}</p>
@@ -559,11 +574,20 @@ export function ProfileScreen() {
             onChange={(e) => setDeleteTyped(e.target.value)}
             placeholder={t('settings.deleteTypeWord')}
             autoCapitalize="characters"
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+            disabled={deleteBusy}
+            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none disabled:opacity-40"
           />
           {deleteError && (
             <p className="text-[12px] text-negative" data-testid="delete-account-error">
               {t('settings.deleteFailed')}
+            </p>
+          )}
+          {deleteBusy && (
+            <p className="flex items-center gap-2 text-[12px] text-ink-2" data-testid="delete-account-progress">
+              <span className="inline-flex animate-spin">
+                <Icon name="loading" size={14} />
+              </span>
+              {deletePhase === 'local' ? t('settings.deleteBusyLocal') : t('settings.deleteBusyServer')}
             </p>
           )}
           <button
