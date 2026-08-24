@@ -179,19 +179,19 @@ const stageWithBulkWarning = (
   else stage();
 };
 
-/** #268 r2 (user): a coming counter queue FREEZES the deck on the
- *  confirmed card — no advance, and the exit flight waits for the
- *  queue's last step; without a queue the ghost flies right away
- *  (S3776: out of confirm) */
-const holdDeckOrFly = (willQueue: boolean, hold: () => void, fly: () => void): void => {
-  if (willQueue) hold();
-  else fly();
-};
-
 /** #268 r2: the deck's shown card — the held snapshot outranks the live
  *  queue head while the counter queue runs (S3776: out of the body) */
 const shownCard = (held: SpaceTx | null, remaining: SpaceTx[] | undefined): SpaceTx | undefined =>
   held ?? remaining?.[0];
+
+/** #309: the refused row's red ring — flat helpers keep the JSX free of
+ *  nested templates/ternaries (S4624/S3358) */
+const counterRowRing = (required: boolean | undefined): string => (required ? ` rounded-lg${blockerRing(true)}` : '');
+
+function counterValueTone(required: boolean | undefined, linkedAccountId: string | undefined): string {
+  if (required) return 'text-negative';
+  return linkedAccountId ? '' : 'text-ink-4';
+}
 
 /** #268 r2: the held deck's face — the data marker the specs read plus
  *  the inert class that closes the frozen card to edits (S3776) */
@@ -553,10 +553,10 @@ function CardCategoryRows({
           <button
             data-testid="review-counter-row"
             onClick={onEditCounter}
-            className={`m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink${counterRequired ? ` rounded-lg${blockerRing(true)}` : ''}`}
+            className={'m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink' + counterRowRing(counterRequired)}
           >
             <Icon name="bank-transfer" size={18} color={counterRequired ? 'var(--m-negative)' : 'var(--m-ink-3)'} />
-            <span className={`min-w-0 flex-1 truncate ${counterRequired ? 'text-negative' : draft?.linkedAccountId ? '' : 'text-ink-4'}`}>
+            <span className={`min-w-0 flex-1 truncate ${counterValueTone(counterRequired, draft?.linkedAccountId)}`}>
               {(accounts ?? []).find((a) => a.id === draft?.linkedAccountId)?.name ?? t('tx.counterNone')}
             </span>
             <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
@@ -1928,7 +1928,8 @@ export function ReviewScreen() {
     // #268 r2 (user): "wait with animating until we are done with the
     // bulk update" — a coming queue freezes the deck on this card; the
     // exit flight plays when the queue finishes instead of now
-    holdDeckOrFly(!!queued, () => setHeldTx(tx), captureLeaving);
+    if (queued) setHeldTx(tx);
+    else captureLeaving();
     // #221→#309: the bare-movement default fallback is GONE — the gate
     // above guarantees every movement confirm carries its picked link
     // (which may well BE the family default, chosen in the ask).

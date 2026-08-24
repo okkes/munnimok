@@ -223,6 +223,14 @@ function FormCategoryRow({
 const movementCounterMissing = (adjustment: boolean, catId: string | null, linkedAccountId: string | null): boolean =>
   !adjustment && !!catId && isMovementCat(catId) && specialCatType(catId) !== 'debtPayment' && !linkedAccountId;
 
+/** #309: the ask pins the staged special's family default (S3776) */
+const askDefaultFamily = (catId: string | null) =>
+  catId && specialCatType(catId) ? (defaultFamilyFor(catId) ?? undefined) : undefined;
+
+/** #195/#309: the blocker text when it names THIS field (S3776) */
+const fieldBlocker = (field: string, current: string, text: string): string | undefined =>
+  current === field ? text : undefined;
+
 /** save gate: real merchant, positive amount, an account, a date not
  *  before the space starts (arc 5), and — for transfers — a decided
  *  other side */
@@ -887,7 +895,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             counterName={linkedAccount?.name}
             locked={!!ownStamp || adjustment}
             adjustment={adjustment}
-            counterBlocker={blockerField === 'counter' ? blockerText : undefined}
+            counterBlocker={fieldBlocker('counter', blockerField, blockerText)}
             onCounter={() => setCounterOpen(true)}
             onToggleAdjustment={() => {
               setAdjustment((v) => !v);
@@ -944,7 +952,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         // #309: a staged movement category pins its family Default in
         // the ask — the one-tap answer to the required-counter refusal
         // (same wiring as the detail screen's row)
-        defaultFamily={catId && specialCatType(catId) ? (defaultFamilyFor(catId) ?? undefined) : undefined}
+        defaultFamily={askDefaultFamily(catId)}
         onChoose={(picked) => {
           setLinkedAccountId(picked.id);
           // #133 r5 bijection: a movement category follows the newly
