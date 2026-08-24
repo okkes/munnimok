@@ -36,7 +36,39 @@ const seedRows = async () => {
   db.close();
 };
 
-describe('SpaceAccountsScreen (#284 reader gating)', () => {
+/** one UNATTACHED feed account — the attach candidate (#310) */
+const seedCandidate = async () => {
+  const { MunniDB } = await import('@/db/schema');
+  const { Repo } = await import('@/db/repo');
+  const { DexieBackend } = await import('@/db/backend');
+  const { HlcClock } = await import('@/sync/hlc');
+  const db = new MunniDB(USER_TEST_DB);
+  const repo = new Repo(new DexieBackend(db), new HlcClock('t2'), { trackOutbox: false });
+  await repo.upsert('account', 'feed-2', 'feedacct-2', {
+    name: 'Bunq Main',
+    type: 'checking',
+    source: 'gocardless',
+    currency: 'EUR',
+    balanceCents: 100,
+    iban: 'NL13BUNQ2025000001',
+  });
+  db.close();
+};
+
+/** the REST surface the attach-intent specs need (#308/#310) — the
+ *  member list must agree with the kind: healSharedKind flips a space
+ *  to shared the moment a fetch reports 2+ members */
+const apiWithCandidate = (kind: 'personal' | 'shared') => ({
+  'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+  'GET /me': () => ({ userId: ME, displayName: 'Me' }),
+  'GET /me/spaces': () => ['s-user', 'feed-1', 'feed-2'],
+  'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }, { feedSpaceId: 'feed-2' }],
+  'GET /spaces/s-user/members': () =>
+    kind === 'shared' ? [member(ME, 'Me', 'owner'), member(BOB, 'Bob', 'contributor')] : [member(ME, 'Me', 'owner')],
+  'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
+});
+
+describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -100,6 +132,63 @@ describe('SpaceAccountsScreen (#284 reader gating)', () => {
     // #305: my OWN feed's attachment never wears the shared badge
     expect(screen.queryByTestId('space-account-shared-link-1')).toBeNull();
   }, 15_000);
+
+  it('#310: an attach intent naming a candidate opens the FINAL step — pick list skipped; #308: the shared-space warning rides along', async () => {
+    await seedRows();
+    await seedCandidate();
+    const { setSpaceAttachIntent } = await import('@/features/accounts/openHandoff');
+    setSpaceAttachIntent('feedacct-2');
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Familie', kind: 'shared' }],
+      api: apiWithCandidate('shared'),
+    });
+
+    // the sheet opened by itself on the final step: the named account
+    // stands pre-picked, the pick list never mounts
+    const focus = await screen.findByTestId('space-attach-focus', {}, { timeout: 10_000 });
+    expect(focus.textContent).toContain('Bunq Main');
+    expect(screen.queryByTestId('space-attach-candidates')).toBeNull();
+    expect(await screen.findByTestId('space-attach-types', {}, { timeout: 10_000 })).toBeTruthy();
+    expect(screen.getByTestId('space-attach-save')).toBeTruthy();
+
+    // #308: attaching into a SHARED space says so, right above the button
+    const warn = await screen.findByTestId('space-attach-share-warn', {}, { timeout: 10_000 });
+    expect(warn.textContent).toContain('Familie');
+  }, 20_000);
+
+  it('#308: a PRIVATE space attaches without the warning', async () => {
+    await seedRows();
+    await seedCandidate();
+    const { setSpaceAttachIntent } = await import('@/features/accounts/openHandoff');
+    setSpaceAttachIntent('feedacct-2');
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: apiWithCandidate('personal'),
+    });
+
+    await screen.findByTestId('space-attach-focus', {}, { timeout: 10_000 });
+    await screen.findByTestId('space-attach-types', {}, { timeout: 10_000 });
+    expect(screen.queryByTestId('space-attach-share-warn')).toBeNull();
+  }, 20_000);
+
+  it('#310: an already-attached target falls back to the plain pick list — where a manual pick still warns (#308)', async () => {
+    await seedRows();
+    await seedCandidate();
+    const { setSpaceAttachIntent } = await import('@/features/accounts/openHandoff');
+    setSpaceAttachIntent('feedacct-1'); // link-1 already attaches it here
+    renderAppAsUser('/spaces/s-user/accounts', {
+      spaces: [{ id: 's-user', name: 'Familie', kind: 'shared' }],
+      api: apiWithCandidate('shared'),
+    });
+
+    // fallback: the sheet still opens, but on the pick list (no focus row)
+    await screen.findByTestId('space-attach-candidates', {}, { timeout: 10_000 });
+    expect(screen.queryByTestId('space-attach-focus')).toBeNull();
+
+    // picking by hand reaches the same confirm step — warning included
+    fireEvent.click(screen.getByTestId('space-attach-pick-feedacct-2'));
+    expect(await screen.findByTestId('space-attach-share-warn', {}, { timeout: 10_000 })).toBeTruthy();
+  }, 20_000);
 
   it('#305: an attachment on someone ELSE\'s feed wears the shared badge; space-owned rows do not', async () => {
     await seedRows();

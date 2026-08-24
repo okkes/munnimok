@@ -16,6 +16,7 @@ import ingLogo from '@/assets/banks/ing.svg';
 import paypalLogo from '@/assets/banks/paypal.svg';
 import { fmtEtaShort, fmtTimeAgo } from '@/lib/text';
 import { apiFeedGateway, fetchMyFeedIds } from './feedGateway';
+import { setSpaceAttachIntent } from './openHandoff';
 import { importCamtStatements, statementCoverageEnd } from './importCamt';
 import type { ImportResult } from './importCamt';
 import { Button } from '@/ui/Button';
@@ -33,6 +34,12 @@ const daysSince = (iso: string): number => Math.floor((Date.now() - new Date(iso
 const ETA_WINDOW_MS = 8000;
 const ETA_MIN_ELAPSED_MS = 2000;
 const ETA_MIN_SPAN_MS = 1000;
+// #300 r2 (user): the first spoken number should be the HIGH guess that
+// quickly falls — never a low one that creeps up. A young sample window
+// hasn't met the stalls ahead, so early estimates wear a pad that decays
+// away as the run matures.
+const ETA_PAD_START = 1.5;
+const ETA_PAD_UNTIL_MS = 12_000;
 
 export interface EtaState {
   startAt: number;
@@ -50,7 +57,9 @@ export function etaSecondsLeft(state: EtaState, done: number, total: number, now
   const spanMs = now - first.at;
   const rows = done - first.done;
   if (now - state.startAt < ETA_MIN_ELAPSED_MS || spanMs < ETA_MIN_SPAN_MS || rows <= 0) return null;
-  return Math.ceil(((total - done) * spanMs) / rows / 1000);
+  const age = now - state.startAt;
+  const pad = 1 + (ETA_PAD_START - 1) * Math.max(0, 1 - age / ETA_PAD_UNTIL_MS);
+  return Math.ceil((((total - done) * spanMs) / rows / 1000) * pad);
 }
 
 /** #226 (user): the tested banks, searchable like the connect flow —
@@ -516,6 +525,10 @@ export function StatementImportFlow({
                   className="mt-2 w-full"
                   data-testid="import-goto-attach"
                   onClick={() => {
+                    // #310 (user): land with the attach sheet OPEN — and
+                    // when exactly one account waits, on its final step
+                    const unattached = importResult.accounts.filter((a) => a.attached === false);
+                    setSpaceAttachIntent(unattached.length === 1 ? unattached[0].accountId : undefined);
                     closeImport();
                     void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
                   }}

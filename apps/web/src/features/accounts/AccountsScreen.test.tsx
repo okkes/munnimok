@@ -1331,12 +1331,22 @@ describe('#300 etaSecondsLeft (unit)', () => {
     const state = newEtaState(0);
     // 1s in at 100 rows/s — under the 2s floor, no estimate yet
     expect(etaSecondsLeft(state, 100, 1000, 1000)).toBeNull();
-    // 3s in, steady 100 rows/s — 700 rows left reads as 7s
-    expect(etaSecondsLeft(state, 300, 1000, 3000)).toBe(7);
+    // 3s in, steady 100 rows/s — honest 7s wears the young-run pad
+    // (#300 r2: ×~1.38 at 3s) and reads 10: high first, falls fast
+    expect(etaSecondsLeft(state, 300, 1000, 3000)).toBe(10);
     // a long stall: the rolling window slides past the progress and the
     // rate reads zero — the line goes silent instead of lying
     expect(etaSecondsLeft(state, 300, 1000, 12_000)).toBeNull();
-    // resuming speaks again from the window's surviving span
+    // resuming speaks again from the window's surviving span — the run
+    // is past 12s, so the pad is gone and the number is the honest one
     expect(etaSecondsLeft(state, 400, 1000, 13_000)).toBe(60);
+  });
+
+  it('#300 r2: the young-run pad decays to honest as the run matures', () => {
+    const state = newEtaState(0);
+    etaSecondsLeft(state, 100, 2000, 1000);
+    // 12s in at a steady 100 rows/s — window keeps the 1s..12s span,
+    // 800 rows left at 100/s = honest 8s, pad fully decayed
+    expect(etaSecondsLeft(state, 1200, 2000, 12_000)).toBe(8);
   });
 });

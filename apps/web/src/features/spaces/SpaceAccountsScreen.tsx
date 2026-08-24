@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
@@ -14,7 +14,7 @@ import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
 import { AccountTypeRow } from '@/features/accounts/AccountTypeRow';
 import { ACCOUNT_TYPES, typeDef } from '@/features/accounts/accountTypes';
-import { setAccountOpenHandoff } from '@/features/accounts/openHandoff';
+import { setAccountOpenHandoff, takeSpaceAttachIntent } from '@/features/accounts/openHandoff';
 import { useMyRole } from './SpaceSharing';
 import { SharedSpaceBadge } from './SpaceSwitcher';
 import { takeSpaceAddAccountIntent } from './spaceAccountsHandoff';
@@ -131,6 +131,12 @@ export function SpaceAccountsScreen() {
 
   const [attachOpen, setAttachOpen] = useState(false);
   const [picked, setPicked] = useState<AttachCandidate | null>(null);
+  // #310 (user): an attach door elsewhere forwarded here — read once at
+  // mount, resolved against the candidates the moment they load (below)
+  const [pendingAttach, setPendingAttach] = useState(() => takeSpaceAttachIntent());
+  // #310: the intent named THIS account — the sheet skips the pick list
+  // and opens on the final step (type + attach only)
+  const [attachFocus, setAttachFocus] = useState(false);
   // #152: the account's type is a SPACE-level decision, made here
   const [attachType, setAttachType] = useState<AccountType>('checking');
   const [busy, setBusy] = useState(false);
@@ -216,6 +222,21 @@ export function SpaceAccountsScreen() {
     [spaceId, syncing, attachOpen],
   );
 
+  // #310 (user): the arrival intent opens the attach sheet by itself.
+  // A named account that IS a candidate lands pre-picked on the final
+  // step; an unknown or already-attached one falls back to the pick
+  // list (today's behavior). Waits for the candidates query on purpose.
+  useEffect(() => {
+    if (!pendingAttach || candidates === undefined) return;
+    const target = pendingAttach.accountId
+      ? candidates.find((c) => c.accountId === pendingAttach.accountId)
+      : undefined;
+    setPicked(target ?? null);
+    setAttachFocus(!!target);
+    setAttachOpen(true);
+    setPendingAttach(null);
+  }, [pendingAttach, candidates]);
+
   const attach = async () => {
     if (!picked || busy) return;
     setBusy(true);
@@ -225,6 +246,7 @@ export function SpaceAccountsScreen() {
       await attachFeedToSpace(store, repo, spaceId, picked.feedSpaceId, picked.accountId, undefined, attachType);
       setPicked(null);
       setAttachType('checking');
+      setAttachFocus(false);
       setAttachOpen(false);
     } catch {
       // offline or forbidden — the sheet simply stays open
@@ -472,9 +494,28 @@ export function SpaceAccountsScreen() {
 
       {/* pick an existing account, choose its type here, attach (#207:
           the history start is the space's own, no per-attach ask) */}
-      <Sheet open={attachOpen} onOpenChange={setAttachOpen} title={t('acct.attachToSpace')} size="tall">
+      <Sheet
+        open={attachOpen}
+        onOpenChange={(next) => {
+          setAttachOpen(next);
+          if (!next) setAttachFocus(false);
+        }}
+        title={t('acct.attachToSpace')}
+        size="tall"
+      >
         <div className="flex flex-col gap-3 pt-1">
-          {(candidates ?? []).length > 0 ? (
+          {/* #310: arrived FOR this account — say which one, skip the list */}
+          {attachFocus && picked && (
+            <div
+              className="flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3"
+              data-testid="space-attach-focus"
+            >
+              <Icon name="link-plus" size={18} color="var(--m-accent)" />
+              <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{picked.name}</span>
+              {picked.ibanTail && <span className="font-mono text-[11px] text-ink-4">{picked.ibanTail}</span>}
+            </div>
+          )}
+          {!(attachFocus && picked) && ((candidates ?? []).length > 0 ? (
             <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="space-attach-candidates">
               {(candidates ?? []).map((candidate) => (
                 <button
@@ -497,7 +538,7 @@ export function SpaceAccountsScreen() {
             <p className="px-1 text-[13px] text-ink-4" data-testid="space-attach-none">
               {t('acct.noAttachable')}
             </p>
-          )}
+          ))}
 
           {picked && (
             <>
@@ -530,6 +571,25 @@ export function SpaceAccountsScreen() {
               )}
               {/* #207: no history-date ask — the space's own history
                   start governs; the info sheet still shows the fact */}
+              {/* #308 (user): the shared-space heads-up lives HERE now —
+                  connect/import are global and never auto-attach, so the
+                  moment the data reaches other people is this attach.
+                  kind='shared' flips only once someone actually joined
+                  (pending invites alone keep a space personal). */}
+              {space?.kind === 'shared' && (
+                <div
+                  className="flex items-start gap-2.5 rounded-card bg-warning-soft px-3 py-2.5"
+                  data-testid="space-attach-share-warn"
+                >
+                  <Icon name="account-group-outline" size={18} color="var(--m-warning)" />
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-semibold text-ink">{t('acct.attachShareWarnTitle')}</p>
+                    <p className="mt-0.5 text-[12px] leading-snug text-ink-2">
+                      {t('acct.attachShareWarnBody', { space: space.name })}
+                    </p>
+                  </div>
+                </div>
+              )}
             </>
           )}
           <Button data-testid="space-attach-save" disabled={!picked || busy} onClick={() => void attach()}>

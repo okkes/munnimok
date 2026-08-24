@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { minaSuggestedAccountName } from '@/features/mina/steps';
 import { getApiCapabilities } from '@/lib/api';
@@ -88,7 +88,7 @@ export function AddAccountChooser({
   const navigate = useNavigate();
   const syncing = useSession((s) => s.identity?.kind === 'user');
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const [step, setStep] = useState<'intent' | 'manual' | 'shareWarn'>(initialStep ?? 'intent');
+  const [step, setStep] = useState<'intent' | 'manual'>(initialStep ?? 'intent');
   // hosts that know pass gcAvailable; everyone else (the counterparty
   // picker's Create door, ss 2026-08-01: the bank option was missing
   // there) gets it resolved right here
@@ -125,8 +125,6 @@ export function AddAccountChooser({
   const [note, setNote] = useState('');
   // #195: tappable — an invalid tap names the blocker
   const [attempted, setAttempted] = useState(false);
-  // the action a shared-space warning is holding back (connect/import)
-  const pendingRef = useRef<(() => void) | null>(null);
   const effectiveCurrency = currency ?? space?.currency ?? 'EUR';
 
   const close = (next: boolean) => {
@@ -147,21 +145,12 @@ export function AddAccountChooser({
       setPayCustom(false);
       setNote('');
       setAttempted(false);
-      pendingRef.current = null;
     }
   };
 
-  // bank-connected and imported accounts become visible to every member
-  // of a SHARED space — that deserves a conscious yes before the flow
-  // starts; manual accounts are exempt (user rule 2026-07-28)
-  const guarded = (action: () => void) => {
-    if (space?.kind === 'shared') {
-      pendingRef.current = action;
-      setStep('shareWarn');
-    } else {
-      action();
-    }
-  };
+  // #308 (user): the shared-space warning left this flow — connect and
+  // import create GLOBAL accounts and never auto-attach anymore, so the
+  // heads-up moved to the space's attach step, where it is true
 
   // Mina suggests the demo account's name; the user still presses Add
   useEffect(() => {
@@ -245,13 +234,11 @@ export function AddAccountChooser({
               accent
               title={t('chooser.connect')}
               sub={t('chooser.connectSub')}
-              onClick={() =>
-                guarded(() => {
-                  close(false);
-                  if (onConnect) onConnect();
-                  else setConnectOpen(true);
-                })
-              }
+              onClick={() => {
+                close(false);
+                if (onConnect) onConnect();
+                else setConnectOpen(true);
+              }}
             />
           )}
           <IntentRow
@@ -259,13 +246,11 @@ export function AddAccountChooser({
             icon="file-upload-outline"
             title={t('chooser.import')}
             sub={t('chooser.importSub')}
-            onClick={() =>
-              guarded(() => {
-                close(false);
-                if (onImport) onImport();
-                else setImportOpen(true);
-              })
-            }
+            onClick={() => {
+              close(false);
+              if (onImport) onImport();
+              else setImportOpen(true);
+            }}
           />
           {hideManual ? (
             <button
@@ -292,29 +277,6 @@ export function AddAccountChooser({
               onClick={() => setStep('manual')}
             />
           )}
-        </div>
-      )}
-
-      {step === 'shareWarn' && (
-        <div className="flex flex-col gap-3 pt-1" data-testid="chooser-share-warn">
-          <div className="flex items-center gap-2 text-[14px] font-semibold text-ink">
-            <Icon name="account-group-outline" size={20} color="var(--m-warning)" />
-            {t('chooser.shareWarnTitle')}
-          </div>
-          <p className="text-[13px] leading-relaxed text-ink-2">{t('chooser.shareWarnBody', { space: space?.name ?? '' })}</p>
-          <Button
-            data-testid="chooser-share-continue"
-            onClick={() => {
-              const action = pendingRef.current;
-              pendingRef.current = null;
-              action?.();
-            }}
-          >
-            {t('chooser.shareWarnContinue')}
-          </Button>
-          <Button variant="outline" data-testid="chooser-share-cancel" onClick={() => setStep('intent')}>
-            {t('action.cancel')}
-          </Button>
         </div>
       )}
 
