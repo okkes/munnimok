@@ -19,9 +19,9 @@ const setPointer = (coarse: boolean) => {
 
 // happy-dom has no TouchEvent constructor — a plain event with a touches
 // list is exactly what the handler reads
-const touch = (type: 'touchstart' | 'touchmove', target: EventTarget, x: number, y: number) => {
+const touch = (type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel', target: EventTarget, x = 0, y = 0) => {
   const e = new Event(type, { bubbles: true, cancelable: true });
-  Object.defineProperty(e, 'touches', { value: [{ clientX: x, clientY: y }] });
+  Object.defineProperty(e, 'touches', { value: type.startsWith('touchend') || type === 'touchcancel' ? [] : [{ clientX: x, clientY: y }] });
   target.dispatchEvent(e);
 };
 
@@ -96,11 +96,31 @@ describe('installKeyboardDismiss', () => {
     expect(document.activeElement).toBe(el);
   });
 
-  it('a touch-drag outside the field hides the keyboard', () => {
+  it('#312: a touch-drag outside the field hides the keyboard AT GESTURE END, not mid-drag', () => {
     const el = mountInput('input');
     touch('touchstart', document.body, 100, 300);
     touch('touchmove', document.body, 100, 280);
+    // the finger is still down — the viewport must not resize under it
+    expect(document.activeElement).toBe(el);
+    touch('touchend', document.body);
     expect(document.activeElement).not.toBe(el);
+  });
+
+  it('#312: a system-cancelled gesture still lands the decided blur', () => {
+    const el = mountInput('input');
+    touch('touchstart', document.body, 100, 300);
+    touch('touchmove', document.body, 100, 280);
+    touch('touchcancel', document.body);
+    expect(document.activeElement).not.toBe(el);
+  });
+
+  it('#312: focus that moved on its own mid-gesture is left alone', () => {
+    mountInput('input'); // the field the gesture judged…
+    touch('touchstart', document.body, 100, 300);
+    touch('touchmove', document.body, 100, 280);
+    const other = mountInput('textarea'); // …then a script moved focus
+    touch('touchend', document.body);
+    expect(document.activeElement).toBe(other);
   });
 
   it('a drag inside the focused field is selection work, not a scroll', () => {

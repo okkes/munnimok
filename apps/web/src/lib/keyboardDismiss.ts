@@ -7,7 +7,9 @@
  *    standing. Listening to touchmove (not scroll) keeps focus-driven
  *    auto-scrolls from closing the keyboard the moment a field is
  *    tapped: the browser's reveal scroll fires scroll events but never
- *    touchmove.
+ *    touchmove. #312: the hide waits for the FINGER TO LIFT — where the
+ *    viewport resizes with the keyboard, hiding mid-drag reflowed the
+ *    sheet under the moving finger.
  *
  * 2. Enter on a field that goes nowhere (search-as-you-type, notes)
  *    hides the keyboard — nothing submits, but reaching for Enter is
@@ -37,10 +39,19 @@ const coarsePointer = (): boolean => window.matchMedia?.('(pointer: coarse)')?.m
 
 export function installKeyboardDismiss(): () => void {
   let start: { x: number; y: number } | null = null;
+  // #312 (user): the blur is DECIDED mid-drag but EXECUTED at gesture
+  // end. On Android and in the native shells the webview RESIZES when
+  // the keyboard hides — blurring 12px into the drag landed that reflow
+  // under the moving finger ("the moment I touch the screen to scroll,
+  // the screen jumps"). Deferred, the scroll runs its course with the
+  // keyboard still up; on lift the keyboard slides away and the sheet
+  // settles with no gesture left to fight.
+  let pendingBlur: HTMLElement | null = null;
 
   const onTouchStart = (e: TouchEvent) => {
     const t = e.touches[0];
     start = t ? { x: t.clientX, y: t.clientY } : null;
+    pendingBlur = null;
   };
 
   const onTouchMove = (e: TouchEvent) => {
@@ -53,8 +64,16 @@ export function installKeyboardDismiss(): () => void {
     const t = e.touches[0];
     if (!t) return;
     if (Math.abs(t.clientX - start.x) < DRAG_THRESHOLD_PX && Math.abs(t.clientY - start.y) < DRAG_THRESHOLD_PX) return;
-    active.blur();
-    start = null; // one blur per gesture
+    pendingBlur = active;
+    start = null; // one decision per gesture
+  };
+
+  const onTouchEnd = () => {
+    // only the field the gesture judged — a focus that moved on its own
+    // mid-gesture is not ours to tear down
+    if (pendingBlur && document.activeElement === pendingBlur) pendingBlur.blur();
+    pendingBlur = null;
+    start = null;
   };
 
   const onKeyDown = (e: KeyboardEvent) => {
@@ -70,10 +89,14 @@ export function installKeyboardDismiss(): () => void {
   // must not be able to starve the dismissal
   window.addEventListener('touchstart', onTouchStart, { passive: true, capture: true });
   window.addEventListener('touchmove', onTouchMove, { passive: true, capture: true });
+  window.addEventListener('touchend', onTouchEnd, { passive: true, capture: true });
+  window.addEventListener('touchcancel', onTouchEnd, { passive: true, capture: true });
   window.addEventListener('keydown', onKeyDown);
   return () => {
     window.removeEventListener('touchstart', onTouchStart, true);
     window.removeEventListener('touchmove', onTouchMove, true);
+    window.removeEventListener('touchend', onTouchEnd, true);
+    window.removeEventListener('touchcancel', onTouchEnd, true);
     window.removeEventListener('keydown', onKeyDown);
   };
 }
