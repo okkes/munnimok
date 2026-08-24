@@ -15,6 +15,7 @@ import { LOCALES, useLang } from '@/i18n';
 import { fmtCents } from '@/lib/money';
 import { txTitle } from '@/lib/text';
 import { Icon } from '@/ui/Icon';
+import { InfoHint } from '@/ui/InfoHint';
 import { SearchField } from '@/ui/SearchField';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -446,10 +447,16 @@ export function CounterMatchSheet({
               says exactly WHICH transaction it is matching right now */}
           {contextRow && (
             <div className="mb-2 rounded-card border border-accent/40 bg-accent-soft/30 px-3 py-2" data-testid="counter-queue-context">
-              <p className="m-cap pb-0.5 text-accent-deep">
-                {t('tx.counterQueueFor')}
-                {progress ? ` · ${progress}` : ''}
-              </p>
+              <div className="m-cap flex flex-wrap items-center gap-1 pb-0.5 text-accent-deep">
+                <span>
+                  {t('tx.counterQueueFor')}
+                  {progress ? ` · ${progress}` : ''}
+                </span>
+                {/* #268 r2 (user): WHY every sibling asks again — the
+                    picked counter row is spoken for, so each transaction
+                    needs its own pick (or links and waits) */}
+                <InfoHint text={t('tx.counterQueueWhy')} testId="counter-queue-why" />
+              </div>
               <p className="truncate text-[13px] font-medium text-ink">{txTitle(contextRow)}</p>
               <p className="text-[12px] text-ink-3">
                 {new Date(contextRow.date).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' })}

@@ -347,6 +347,43 @@ describe('TxFormSheet (demo identity)', () => {
     db.close();
   }, 15_000);
 
+  it('#309: a movement category refuses to SAVE bare — red counter field; the ask’s Default answers it', async () => {
+    // savingDeposit: the ask is NOT mandatory (unlike the transfer
+    // family, whose editor rolls a dismissed pick back), so a bare
+    // movement could reach save — and used to land silently default-
+    // linked by the boot fold. Now the save itself refuses.
+    await openForm();
+    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50,00' } });
+    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Spaarpot' } });
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    // the ask opens on the pick — walking away keeps the bare story
+    await screen.findByTestId('counter-default');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(await screen.findByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Set aside'));
+    // #309 (user): "we should not be able to continue" — the save
+    // refuses and names the field instead of writing a silent default
+    fireEvent.click(await screen.findByTestId('txform-save'));
+    expect((await screen.findByTestId('txform-save-blocker')).textContent).toContain('Counterparty required');
+    expect(screen.getByTestId('txform-counter').className).toContain('ring-negative');
+
+    // answering through the field: the pinned Default is the one tap
+    fireEvent.click(screen.getByTestId('txform-counter'));
+    fireEvent.click(await screen.findByTestId('counter-default'));
+    await waitFor(() => expect(screen.queryByTestId('txform-save-blocker')).toBeNull());
+    fireEvent.click(screen.getByTestId('txform-save'));
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => {
+      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Spaarpot');
+      expect(row).toMatchObject({ catId: 'savingDeposit', needsReview: 0 });
+      expect(row?.linkedAccountId).toBeTruthy();
+    }, { timeout: 5000 });
+    db.close();
+  }, 20_000);
+
   it('with several manual accounts nothing pre-selects — save requires a pick', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');

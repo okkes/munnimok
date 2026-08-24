@@ -16,7 +16,6 @@ import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORI
 import { accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
 import { partNetCents } from '@/domain/reimbursement';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
-import { ensureDefaultAccount } from '@/application/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
 import { normalizeIban } from '@/domain/feedIds';
 import { isPaypalAccount, isPaypalFunding } from '@/domain/paypal';
@@ -44,6 +43,7 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -179,20 +179,24 @@ const stageWithBulkWarning = (
   else stage();
 };
 
-/** #221/#228 r3: the default account a BARE movement confirm links in
- *  the same write — transfer keeps no fallback (S3776: out of confirm) */
-async function bareMovementDefaultLink(
-  deps: { store: ReturnType<typeof useData>['store']; repo: ReturnType<typeof useData>['repo']; spaceId: string },
-  ownStamp: unknown,
-  draft: ReviewDraft,
-): Promise<string | undefined> {
-  const family =
-    !ownStamp && !draft.linkedAccountId && !draft.cats?.length && !draft.splits?.length && isMovementCat(draft.catId)
-      ? defaultFamilyFor(draft.catId)
-      : null;
-  if (!family || family === 'transfer') return undefined;
-  return ensureDefaultAccount(deps.store, deps.repo, deps.spaceId, family);
-}
+/** #268 r2 (user): a coming counter queue FREEZES the deck on the
+ *  confirmed card — no advance, and the exit flight waits for the
+ *  queue's last step; without a queue the ghost flies right away
+ *  (S3776: out of confirm) */
+const holdDeckOrFly = (willQueue: boolean, hold: () => void, fly: () => void): void => {
+  if (willQueue) hold();
+  else fly();
+};
+
+/** #268 r2: the deck's shown card — the held snapshot outranks the live
+ *  queue head while the counter queue runs (S3776: out of the body) */
+const shownCard = (held: SpaceTx | null, remaining: SpaceTx[] | undefined): SpaceTx | undefined =>
+  held ?? remaining?.[0];
+
+/** #268 r2: the held deck's face — the data marker the specs read plus
+ *  the inert class that closes the frozen card to edits (S3776) */
+const heldDeckProps = (held: boolean): { marker: '1' | undefined; inertCls: string } =>
+  held ? { marker: '1', inertCls: ' pointer-events-none' } : { marker: undefined, inertCls: '' };
 
 /** #268: the per-sibling counter queue a confirmed row-level pick
  *  leaves behind — null when nothing queues (S3776) */
@@ -213,6 +217,18 @@ function queuedCounterBulk(
     eventId,
     target: { id: linkedId, name: accounts?.find((a) => a.id === linkedId)?.name ?? '' },
   };
+}
+
+/** the confirm's activity line — the bulk count rides along unless a
+ *  pick queued the siblings instead (S3776: out of confirm) */
+function logConfirmActivity(
+  deps: { store: ReturnType<typeof useData>['store']; repo: ReturnType<typeof useData>['repo']; spaceId: string },
+  tx: SpaceTx,
+  picked: boolean,
+  bulkLen: number,
+): void {
+  const bulkN = picked ? 0 : bulkLen;
+  void logActivity(deps.store, deps.repo, deps.spaceId, 'review', bulkN ? `${txTitle(tx)} +${bulkN}` : txTitle(tx));
 }
 
 /** #237 r3: the match sheet's create/await doors — manual counters get
@@ -279,10 +295,6 @@ async function writeConfirmation(args: {
   eventId: string | undefined;
   bulk: SpaceTx[];
   transform: ReturnType<typeof useTxTransform>;
-  /** #221: "confirms the category + default account" — a bare movement
-   *  draft links the space's default in the SAME write, so the choke
-   *  mints the counter leg right here */
-  defaultLinkId?: string;
   /** #237 r2: the EXISTING row the user pointed at (pick-existing) */
   pairPeerId?: string;
 }): Promise<void> {
@@ -296,7 +308,8 @@ async function writeConfirmation(args: {
   const catsField = draft.splits?.length
     ? { cats: null as never }
     : replacing('cats', draftCatEntries, !!args.tx.cats?.length);
-  const linkField = replacing('linkedAccountId', draft.linkedAccountId ?? args.defaultLinkId, !!args.tx.linkedAccountId);
+  // #309: no default fallback — the gate upstream made the link explicit
+  const linkField = replacing('linkedAccountId', draft.linkedAccountId, !!args.tx.linkedAccountId);
   await args.transform(args.tx, {
     catId: draft.catId,
     txType: draft.txType,
@@ -311,7 +324,7 @@ async function writeConfirmation(args: {
     ...(args.eventId ? { eventId: args.eventId } : {}),
   }, null); // confirm logs its own richer 'review' line (with bulk count)
   for (const item of args.bulk) {
-    await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId, args.defaultLinkId), null);
+    await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId), null);
   }
 }
 
@@ -334,7 +347,7 @@ function catsForSibling(item: SpaceTx, entries: TxSplitCat[]): TxSplitCat[] | un
  *  similar filter already keeps signs together; this guards any path
  *  that doesn't). A partition travels whole: parts clear a sibling's
  *  spread and vice versa (#211 — the two never mix on one row). */
-function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined, defaultLinkId?: string) {
+function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined) {
   // #237 r2: a pointed-at EXISTING row is specific to ONE part — a
   // sibling's copy must never point at the same row (bulk is disabled
   // while a pick stands; this guards every other path)
@@ -343,7 +356,7 @@ function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | 
     : undefined;
   const catEntries = !splits && draft.cats?.length ? catsForSibling(item, draft.cats) : undefined;
   const siblingType = kindOf(draft.txType) === 'standard' ? standardTypeFor(item.amountCents) : draft.txType;
-  const linkedId = draft.linkedAccountId ?? defaultLinkId;
+  const linkedId = draft.linkedAccountId;
   return {
     catId: draft.catId,
     txType: siblingType,
@@ -447,6 +460,7 @@ function CardCategoryRows({
   currency,
   onOpenCategories,
   onEditCounter,
+  counterRequired,
   counterTx,
 }: Readonly<{
   draft: ReviewDraft | null;
@@ -458,6 +472,8 @@ function CardCategoryRows({
   /** #228 feedback: the card's own Counterparty row — counter-first
    *  stages the special category; absent = the row hides */
   onEditCounter?: () => void;
+  /** #309 (user): a refused bare-movement Confirm paints this row red */
+  counterRequired?: boolean;
   /** #237 r3 (user): the card's own Counter-transaction row — appears
    *  once a counterparty stands; face = the picked row or the default
    *  (create / await the feed). No onEdit = read-only (a stored pair). */
@@ -533,18 +549,22 @@ function CardCategoryRows({
           row — counter-first picks the special category automatically,
           removal resets the category (same doors as the detail screen) */}
       {!multi && onEditCounter && (
-        <button
-          data-testid="review-counter-row"
-          onClick={onEditCounter}
-          className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-        >
-          <Icon name="bank-transfer" size={18} color="var(--m-ink-3)" />
-          <span className={`min-w-0 flex-1 truncate ${draft?.linkedAccountId ? '' : 'text-ink-4'}`}>
-            {(accounts ?? []).find((a) => a.id === draft?.linkedAccountId)?.name ?? t('tx.counterNone')}
-          </span>
-          <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
-          <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-        </button>
+        <>
+          <button
+            data-testid="review-counter-row"
+            onClick={onEditCounter}
+            className={`m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink${counterRequired ? ` rounded-lg${blockerRing(true)}` : ''}`}
+          >
+            <Icon name="bank-transfer" size={18} color={counterRequired ? 'var(--m-negative)' : 'var(--m-ink-3)'} />
+            <span className={`min-w-0 flex-1 truncate ${counterRequired ? 'text-negative' : draft?.linkedAccountId ? '' : 'text-ink-4'}`}>
+              {(accounts ?? []).find((a) => a.id === draft?.linkedAccountId)?.name ?? t('tx.counterNone')}
+            </span>
+            <span className="text-[11px] text-ink-4">{t('tx.counterAccount')}</span>
+            <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+          </button>
+          {/* #309: the honest reason the Confirm refused, under the field */}
+          <FormBlockerNote show={!!counterRequired} text={t('review.counterRequired')} testId="review-counter-required" className="px-4 pb-2" />
+        </>
       )}
       {/* #237 r3 (user): the counter TRANSACTION is the card's own row —
           the fork sheet after the counterparty pick is gone; this row
@@ -1457,6 +1477,8 @@ export function ReviewScreen() {
   const [catsOpen, setCatsOpen] = useState(false);
   // r7: a refused Confirm marks the parts that still need a category
   const [partsAttention, setPartsAttention] = useState(false);
+  // #309 (user): a refused Confirm marks the REQUIRED counterparty red
+  const [counterRequired, setCounterRequired] = useState(false);
   // r7 (user rule): splitting RESETS the card's own decisions — staged
   // edits get a conscious warning before the split flow opens
   const [splitResetOpen, setSplitResetOpen] = useState(false);
@@ -1499,6 +1521,10 @@ export function ReviewScreen() {
     eventId?: string;
     target: { id: string; name: string };
   } | null>(null);
+  // #268 r2 (user): while that queue walks the siblings, the deck must
+  // not advance behind it — the just-confirmed card stays frozen (a
+  // stale snapshot, edits closed) until the queue is done
+  const [heldTx, setHeldTx] = useState<SpaceTx | null>(null);
   // #237 r3: the card's Counter-transaction row opens the match sheet
   // directly — the fork after the counterparty pick is gone
   const [counterTxOpen, setCounterTxOpen] = useState(false);
@@ -1551,7 +1577,10 @@ export function ReviewScreen() {
   }, [queue, initialCount]);
 
   const remaining = useMemo(() => queue?.filter((item) => !skipped.has(item.id)), [queue, skipped]);
-  const tx = remaining?.[0];
+  // #268 r2 (user): the deck keeps showing the confirmed card (the held
+  // snapshot) while the counter queue runs
+  const tx = shownCard(heldTx, remaining);
+  const heldDeck = heldDeckProps(!!counterBulk);
   // #275: back from the create-category detour — the same card is up
   // (skipped restored above); reopen the category editor once so the
   // fresh category is one tap away
@@ -1710,6 +1739,11 @@ export function ReviewScreen() {
       (item) =>
         item.id !== tx.id &&
         !skipped.has(item.id) &&
+        // #268 r2 (user rule): forward only — the deck walks oldest to
+        // newest, so the offer reaches same-day-or-newer rows; an older
+        // row syncing in mid-card never joins a decision it was not
+        // visible for
+        item.date >= tx.date &&
         // decisions are sign-bound (income vs expense, reimbursement
         // side): a -€1000 sibling must never inherit a "received
         // reimbursement" decision made on +€1000 (user ss 2026-07-28)
@@ -1730,6 +1764,7 @@ export function ReviewScreen() {
     setEventPick(null);
     setDescExpanded(false);
     setPartsAttention(false);
+    setCounterRequired(false);
     setSplitResetOpen(false);
     setPickedPeer(null);
     setPickWarn(null);
@@ -1741,6 +1776,10 @@ export function ReviewScreen() {
   useEffect(() => {
     if (pickedPeer && draft?.linkedAccountId !== pickedPeer.linkedId) setPickedPeer(null);
   }, [draft?.linkedAccountId, pickedPeer]);
+  // #309: answering the counterparty clears the red field on the spot
+  useEffect(() => {
+    if (draft?.linkedAccountId) setCounterRequired(false);
+  }, [draft?.linkedAccountId]);
   // select every similar item by default. Keyed on MEMBERSHIP, not array
   // identity: the native SQL backend re-emits unchanged rows every sync
   // cycle, and an identity-keyed reset kept re-arming boxes the user had
@@ -1852,24 +1891,32 @@ export function ReviewScreen() {
   };
 
   const confirm = async () => {
-    if (!tx || !draft) return;
+    // #268 r2 (user): a held deck accepts no further confirms
+    if (!tx || !draft || counterBulk) return;
     if (!draftReady(draft)) {
       // r7: a blocked Confirm POINTS at what holds it back — the deck
       // badges the parts that still need a category
       if (multiPartSplits(draft)) setPartsAttention(true);
       return;
     }
-    captureLeaving();
+    // #309 (user): a movement category REQUIRES its counterparty — no
+    // more silently settling onto the family default at Confirm. The
+    // refused click marks the field red; the ask's pinned Default row
+    // stays the one-tap answer for those who mean it. The DEBT family
+    // keeps its designed bare story (unassigned payments await a loan).
+    if (
+      isMovementCat(draft.catId) &&
+      specialCatType(draft.catId) !== 'debtPayment' &&
+      !draft.linkedAccountId &&
+      !draft.cats?.length &&
+      !draft.splits?.length
+    ) {
+      setCounterRequired(true);
+      return;
+    }
     // r7: a split container carries no recurring/event of its own — the
     // parts do (their links ride inside draft.splits)
     const container = !multiPartSplits(draft);
-    // #221: a bare movement confirm links the space's DEFAULT for the
-    // category's family in the same write — the choke mints the counter
-    // leg ("confirms the category + default account", user spec).
-    // #228 r3 (user rule): the TRANSFER family lost that fallback — an
-    // automatic transfer either clue-matched a real account upstream or
-    // stood down to Uncategorized; its default is a manual pick only.
-    const defaultLinkId = await bareMovementDefaultLink({ store, repo, spaceId }, ownStamp, draft);
     // #237 r2: a pick on any PART is specific to this transaction — the
     // bulk apply stands down. #268 (user): a ROW-level pick keeps bulk
     // alive instead — the siblings walk a per-transaction match queue.
@@ -1878,6 +1925,13 @@ export function ReviewScreen() {
     const recurringId = container && !isLoanCounter ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined;
     const eventId = container ? (eventPick ?? undefined) : undefined;
     const queued = queuedCounterBulk(pickedPeer, bulk, draft, spaceAccounts, recurringId, eventId);
+    // #268 r2 (user): "wait with animating until we are done with the
+    // bulk update" — a coming queue freezes the deck on this card; the
+    // exit flight plays when the queue finishes instead of now
+    holdDeckOrFly(!!queued, () => setHeldTx(tx), captureLeaving);
+    // #221→#309: the bare-movement default fallback is GONE — the gate
+    // above guarantees every movement confirm carries its picked link
+    // (which may well BE the family default, chosen in the ask).
     await writeConfirmation({
       tx,
       draft,
@@ -1885,15 +1939,13 @@ export function ReviewScreen() {
       eventId,
       bulk: pickedPeer ? [] : bulk,
       transform,
-      defaultLinkId,
       pairPeerId: pickedPeer?.txId,
     });
     await pairReviewPicks({ store, repo, spaceId }, tx, pickedPeer?.txId, partPeers);
     if (queued) setCounterBulk(queued);
     // other billing cycles of a linked recurring pick up their link here
     void recurringOps.reconcile().catch(() => undefined);
-    const bulkN = pickedPeer ? 0 : bulk.length;
-    void logActivity(store, repo, spaceId, 'review', bulkN ? `${txTitle(tx)} +${bulkN}` : txTitle(tx));
+    logConfirmActivity({ store, repo, spaceId }, tx, !!pickedPeer, bulk.length);
     hapticNotify('SUCCESS'); // §5: a physical tick on the native shells
   };
 
@@ -1921,6 +1973,8 @@ export function ReviewScreen() {
   useEffect(() => {
     if (!tx) return;
     const onKey = (e: KeyboardEvent) => {
+      // #268 r2 (user): the held deck ignores the keyboard too
+      if (counterBulk) return;
       if (document.querySelector('dialog[open], [role="dialog"]')) return;
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT')) return;
@@ -1984,7 +2038,11 @@ export function ReviewScreen() {
              of the far bottom. #151 r2: "desktop" starts where the
              SIDEBAR does (md), not at lg — a 900px window kept the
              mobile bottom-pinned buttons. */
-          <div className="relative flex min-h-0 flex-1 flex-col md:mx-auto md:w-[520px] md:flex-none md:pb-10">
+          <div
+            /* #268 r2 (user): a held deck is inert — the queue sheet owns
+               the screen; no edit or skip reaches the frozen card */
+            className={`relative flex min-h-0 flex-1 flex-col md:mx-auto md:w-[520px] md:flex-none md:pb-10${heldDeck.inertCls}`}
+          >
             {leavingHtml && (
               <div
                 aria-hidden
@@ -1994,7 +2052,13 @@ export function ReviewScreen() {
               />
             )}
             <div key={`card-${tx.id}`} ref={cardRef} className="m-card-in">
-            <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="review-card">
+            {/* #268 r2 (user): data-held marks the frozen face while the
+                counter queue covers the screen — the deck sits still */}
+            <div
+              className="mt-4 overflow-hidden rounded-card border border-line bg-surface"
+              data-testid="review-card"
+              data-held={heldDeck.marker}
+            >
               {/* compact header (user: title + amount were too huge once
                   the card carries every editable row) */}
               <div className="px-4 pt-3 pb-2.5">
@@ -2038,6 +2102,7 @@ export function ReviewScreen() {
                   currency={tx.currency}
                   onOpenCategories={() => setCatsOpen(true)}
                   onEditCounter={counterRowDoors.onEdit}
+                  counterRequired={counterRequired}
                   counterTx={counterTxRow}
                 />
 
@@ -2302,8 +2367,10 @@ export function ReviewScreen() {
       {/* #237 r3: the card row's counter-transaction match sheet —
           suggestions first, the rest scrollable; create/await resets
           the pick; a pick with a standing bulk offer warns first.
-          (counterAcct non-null already means the draft carries a link) */}
-      {tx && counterAcct && (
+          (counterAcct non-null already means the draft carries a link)
+          #268 r2 (user): a held deck folds it away — the queue's own
+          match sheet is the only one on screen */}
+      {tx && counterAcct && !counterBulk && (
         <CounterMatchSheet
           open={counterTxOpen}
           onOpenChange={setCounterTxOpen}
@@ -2330,7 +2397,11 @@ export function ReviewScreen() {
           onResolve={(item, peerId) => void resolveCounterBulk(item as SpaceTx, peerId)}
           onDone={(resolved) => {
             if (resolved > 0) void logActivity(store, repo, spaceId, 'review', `+${resolved}`);
+            // #268 r2 (user): release the hold — the deferred exit
+            // flight plays now and the deck advances to the next card
+            captureLeaving();
             setCounterBulk(null);
+            setHeldTx(null);
           }}
         />
       )}

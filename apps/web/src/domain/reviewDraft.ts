@@ -161,10 +161,12 @@ export function withCats(draft: ReviewDraft, entries: TxSplitCat[] | undefined):
 export const draftReady = (draft: ReviewDraft): boolean => {
   if (!draft.catId) return false;
   // R2 (typed-splits v2): a transfer strictly needs its tracked counter
-  // account — except a MOVEMENT category (#221): Confirm links the
-  // space's default for its family in the same write, so a predicted
-  // "Cash withdraw" confirms in one tap. #228 r3 (user rule): the
-  // TRANSFER family lost that fallback — a bare transfer never confirms.
+  // account — a MOVEMENT category stays "ready" while bare so Confirm
+  // remains TAPPABLE, but the tap now refuses with the red
+  // "Counterparty required" field (#309, user) instead of silently
+  // linking the family default (#221's old fallback); the ask's pinned
+  // Default row is the deliberate one-tap path. #228 r3 (user rule):
+  // the TRANSFER family has no default — a bare transfer never confirms.
   if (draft.txType === 'transfer') {
     return !!draft.linkedAccountId || (isMovementCat(draft.catId) && defaultFamilyFor(draft.catId) !== 'transfer');
   }

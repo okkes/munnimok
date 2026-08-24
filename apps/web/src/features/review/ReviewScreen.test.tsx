@@ -118,11 +118,27 @@ describe('ReviewScreen (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     // the per-sibling queue opens, naming WHICH transaction is matching
-    const context = await screen.findByTestId('counter-queue-context');
+    const context = await screen.findByTestId('counter-queue-context', undefined, { timeout: 10_000 });
     expect(context.textContent).toContain('Coffee Corner');
     expect(context.textContent).toContain('1/1');
+    // #268 r2 (user): the deck HOLDS behind the queue — the confirmed
+    // card stays frozen (no advance, no exit flight) while it runs
+    expect(screen.getByTestId('review-card').getAttribute('data-held')).toBe('1');
+    const heldMeta = screen.getByTestId('review-card-meta').textContent;
+    expect(heldMeta).toContain('2 January'); // rv1's own face, not rv2's
+    // #268 r2: the info bulb says WHY every sibling asks again
+    fireEvent.click(screen.getByTestId('counter-queue-why-toggle'));
+    expect((await screen.findByTestId('counter-queue-why')).textContent).toContain('needs its own');
+    fireEvent.click(screen.getByTestId('counter-queue-why-toggle'));
+    expect(screen.queryByTestId('counter-queue-why')).toBeNull();
     // the sibling picks ITS OWN twin (rv1's pick is spoken for)
     fireEvent.click((await screen.findByTestId('counter-dup-rvc2')).querySelector('button')!);
+    // queue done — the hold releases and the deck moves on
+    await waitFor(() => expect(screen.queryByTestId('counter-queue-context')).toBeNull(), { timeout: 10_000 });
+    await waitFor(() => {
+      expect(screen.getByTestId('review-card').getAttribute('data-held')).toBeNull();
+      expect(screen.getByTestId('review-card-meta').textContent).not.toBe(heldMeta);
+    }, { timeout: 10_000 });
 
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
@@ -141,6 +157,51 @@ describe('ReviewScreen (demo identity)', () => {
     }, { timeout: 8000 });
     db.close();
   }, 25_000);
+
+  it('#268 r2: the bulk list holds only LATER unreviewed siblings — reviewed, current and skipped rows drop out', async () => {
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('revwalk'), { trackOutbox: false });
+    // the user's "7 paypals" walk in miniature: three same-merchant
+    // unreviewed rows, oldest first (categorized so Confirm is live)
+    const base = { accountId: 'demo_main', currency: 'EUR', merchant: 'Metro Market', catId: 'groceries', needsReview: 1 as const };
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rw1', { ...base, date: '2026-01-02', amountCents: -500 });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rw2', { ...base, date: '2026-01-03', amountCents: -600 });
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rw3', { ...base, date: '2026-01-04', amountCents: -700 });
+    seed.close();
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card', undefined, { timeout: 10_000 });
+
+    // card 1 of 3: the offer counts the OTHER two — never itself
+    await waitFor(() => expect(screen.getByTestId('review-bulk-toggle').getAttribute('aria-label')).toContain('2 similar'), { timeout: 10_000 });
+    fireEvent.click(screen.getByTestId('review-bulk-expand'));
+    await screen.findByTestId('review-bulk-list');
+    expect(screen.queryByTestId('review-bulk-rw1')).toBeNull(); // the current card itself
+    expect(screen.getByTestId('review-bulk-rw2')).toBeTruthy();
+    expect(screen.getByTestId('review-bulk-rw3')).toBeTruthy();
+
+    // confirm WITHOUT the bulk (untick all): only this card is written
+    fireEvent.click(screen.getByTestId('review-bulk-toggle'));
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    // card 2: the count dropped by exactly the reviewed one
+    await waitFor(() => expect(screen.getByTestId('review-card-meta').textContent).toContain('3 January'), { timeout: 10_000 });
+    await waitFor(() => expect(screen.getByTestId('review-bulk-toggle').getAttribute('aria-label')).toContain('1 similar'), { timeout: 10_000 });
+    // the sheet remounts with the card — open it again for the list
+    fireEvent.click(screen.getByTestId('review-bulk-expand'));
+    await screen.findByTestId('review-bulk-list', undefined, { timeout: 10_000 });
+    expect(screen.queryByTestId('review-bulk-rw1')).toBeNull(); // reviewed — must never ride again
+    expect(screen.queryByTestId('review-bulk-rw2')).toBeNull(); // now the current card
+    expect(screen.getByTestId('review-bulk-rw3')).toBeTruthy();
+
+    // skip card 2: a skipped card left the deck on purpose — the last
+    // card has nobody left to offer, so the bulk row stands down
+    fireEvent.click(screen.getByTestId('review-skip-btn'));
+    await waitFor(() => expect(screen.getByTestId('review-card-meta').textContent).toContain('4 January'), { timeout: 10_000 });
+    await waitFor(() => expect(screen.queryByTestId('review-bulk')).toBeNull(), { timeout: 10_000 });
+  }, 30_000);
 
   it('#228 feedback: counter-FIRST from the card row — the pick fills the special category by itself', async () => {
     renderApp('/review');
@@ -228,14 +289,14 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Second checking'));
   }, 15_000);
 
-  it('#133 C/#221: dismissing the ask keeps the bare ◆ story — and Confirm links the DEFAULT in the same write', async () => {
+  it('#133 C/#309: a bare ◆ Confirm REFUSES with the red counterparty field — the ask’s Default is the one-tap answer', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     fireEvent.click(screen.getByTestId('review-category-chip'));
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
-    // the ask opens on the pick (#133 r4); walking away is legal — the
-    // bare story stands, and Confirm settles it onto the default pot
+    // the ask opens on the pick (#133 r4); walking away keeps the bare
+    // story staged — but it can no longer CONFIRM bare (#309)
     await screen.findByTestId('counter-default');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
@@ -244,8 +305,21 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
 
-    // #221: "confirms the category + default account" — the one write
-    // carries the default link, and the choke mints the pot's leg
+    // #309 (user): "we should not be able to continue" — the click marks
+    // the field red instead of silently linking the default
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    expect((await screen.findByTestId('review-counter-required')).textContent).toContain('Counterparty required');
+    expect(screen.getByTestId('review-counter-row').className).toContain('ring-negative');
+    expect(screen.getByTestId('review-card')).toBeTruthy(); // still here
+
+    // answering through the field clears the red on the spot: the ask's
+    // pinned Default remains the one-tap path to the old behavior
+    fireEvent.click(screen.getByTestId('review-counter-row'));
+    fireEvent.click(await screen.findByTestId('counter-default'));
+    await waitFor(() => expect(screen.queryByTestId('review-counter-required')).toBeNull());
+
+    // the confirm now carries the EXPLICITLY picked default — same write
+    // as ever: the link lands and the choke mints the pot's leg
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     const { MunniDB } = await import('@/db/schema');
     const db = new MunniDB('munni_demo');
@@ -258,7 +332,7 @@ describe('ReviewScreen (demo identity)', () => {
       expect((await db.transactions.get(row!.transferPeerId!))?.accountId).toBe('defaultacct_saving_demo_space');
     }, { timeout: 8000 });
     db.close();
-  }, 15_000);
+  }, 20_000);
 
   const seedR3 = async (over: { id: string; merchant: string; description?: string; counterIban?: string; withPaypalAccount?: boolean }) => {
     const seed = new MunniDB('munni_demo');

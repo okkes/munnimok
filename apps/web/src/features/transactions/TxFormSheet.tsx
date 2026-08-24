@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
-import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType, stampMovementSub } from '@/domain/categories';
+import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, isMovementCat, specialCatType, stampMovementSub } from '@/domain/categories';
 import { scaleCatsTo } from '@/domain/txSlices';
 import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
+import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
@@ -93,6 +94,7 @@ function CounterAdjustRows({
   counterName,
   locked = false,
   adjustment,
+  counterBlocker,
   onCounter,
   onToggleAdjustment,
 }: Readonly<{
@@ -100,6 +102,8 @@ function CounterAdjustRows({
   /** R1: a stamped account owns its rows' meaning */
   locked?: boolean;
   adjustment: boolean;
+  /** #309 (user): the save refused for THIS field — text under the row */
+  counterBlocker?: string;
   onCounter: () => void;
   onToggleAdjustment: () => void;
 }>) {
@@ -109,13 +113,14 @@ function CounterAdjustRows({
       <button
         data-testid="txform-counter"
         onClick={locked ? undefined : onCounter}
-        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+        className={`m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink${blockerRing(!!counterBlocker)}`}
       >
-        <Icon name="bank-transfer" size={20} color="var(--m-ink-3)" />
-        <span className="flex-1">{counterName ?? t('tx.counterNone')}</span>
+        <Icon name="bank-transfer" size={20} color={counterBlocker ? 'var(--m-negative)' : 'var(--m-ink-3)'} />
+        <span className={`flex-1${counterBlocker ? ' text-negative' : ''}`}>{counterName ?? t('tx.counterNone')}</span>
         <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
         <Icon name={locked ? 'lock-outline' : 'chevron-right'} size={locked ? 14 : 18} color="var(--m-ink-4)" />
       </button>
+      <FormBlockerNote show={!!counterBlocker} text={counterBlocker ?? ''} testId="txform-save-blocker" />
       {/* C3: corrections stay a manual-row tool — a quiet toggle */}
       <button
         data-testid="txform-adjustment"
@@ -210,6 +215,13 @@ function FormCategoryRow({
     </button>
   );
 }
+
+/** #309 (user): a movement category without its decided other side —
+ *  adjustments carry no counterparty at all, and the DEBT family keeps
+ *  its designed bare story (the unassigned-payments bucket collects
+ *  loan rows until a real loan claims them). (S3776: out of the component) */
+const movementCounterMissing = (adjustment: boolean, catId: string | null, linkedAccountId: string | null): boolean =>
+  !adjustment && !!catId && isMovementCat(catId) && specialCatType(catId) !== 'debtPayment' && !linkedAccountId;
 
 /** save gate: real merchant, positive amount, an account, a date not
  *  before the space starts (arc 5), and — for transfers — a decided
@@ -455,6 +467,7 @@ function manualBlockerFor(args: {
   cents: number | null;
   adjustNoop: boolean;
   effectiveAccount: string | null;
+  counterMissing: boolean;
   startGateBlocking: string | undefined;
   t: ReturnType<typeof useLang>['t'];
 }): [string, string] {
@@ -464,6 +477,8 @@ function manualBlockerFor(args: {
   if (args.cents === null || args.cents === 0) return ['amount', t('form.needAmount')];
   if (args.adjustNoop) return ['amount', t('txform.adjustNoop')];
   if (!args.effectiveAccount) return ['account', t('form.needAccount')];
+  // #309 (user): a movement category refuses to save without its counter
+  if (args.counterMissing) return ['counter', t('review.counterRequired')];
   // the start-gate card already explains itself — just point at it
   if (args.startGateBlocking) return ['form', t('form.fixErrors')];
   return ['form', t('form.needFields')];
@@ -663,13 +678,16 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const adjustBase = selectedAccount?.balanceCents ?? 0;
   const adjustDelta = adjustDeltaFor(adjustment, adjustTarget, cents, adjustBase, isExpense);
   const adjustNoop = adjustTarget && adjustDelta === 0;
+  // #309 (user): a movement category REQUIRES its counterparty here too —
+  // the validator always had the gate, the form just never fed it
+  const counterMissing = movementCounterMissing(adjustment, catId, linkedAccountId);
   const valid =
-    isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing: false, beforeStart: !!startGateBlocking }) &&
+    isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking }) &&
     !adjustNoop;
   // #195 r2 (user): the note renders under the field it names — one
   // (field, text) pair at a time, the note scrolls itself into view
   const [blockerField, blockerText] = manualBlockerFor({
-    attempted, valid, merchant, cents, adjustNoop, effectiveAccount, startGateBlocking, t,
+    attempted, valid, merchant, cents, adjustNoop, effectiveAccount, counterMissing, startGateBlocking, t,
   });
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
@@ -869,6 +887,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             counterName={linkedAccount?.name}
             locked={!!ownStamp || adjustment}
             adjustment={adjustment}
+            counterBlocker={blockerField === 'counter' ? blockerText : undefined}
             onCounter={() => setCounterOpen(true)}
             onToggleAdjustment={() => {
               setAdjustment((v) => !v);
@@ -922,6 +941,10 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onOpenChange={setCounterOpen}
         excludeAccountId={effectiveAccount ?? ''}
         currentLinkedId={linkedAccountId ?? undefined}
+        // #309: a staged movement category pins its family Default in
+        // the ask — the one-tap answer to the required-counter refusal
+        // (same wiring as the detail screen's row)
+        defaultFamily={catId && specialCatType(catId) ? (defaultFamilyFor(catId) ?? undefined) : undefined}
         onChoose={(picked) => {
           setLinkedAccountId(picked.id);
           // #133 r5 bijection: a movement category follows the newly
