@@ -323,7 +323,11 @@ for (const V of VARIANTS) {
     await expect(alice.page.locator('[data-testid="import-unattached-note"]')).toBeVisible();
     await alice.page.click('[data-testid="import-goto-attach"]');
     await alice.page.waitForSelector('[data-testid="screen-space-accounts"]', { timeout: 10000 });
-    await alice.page.click('[data-testid="space-accounts-attach"]');
+    // #310: the attach sheet auto-opens on arrival. This CAMT fixture
+    // imports TWO accounts, so the door can't know which one — the
+    // sheet lands on the pick list (a single import would land on the
+    // final step, `space-attach-focus`, covered by unit specs)
+    await alice.page.waitForSelector('[data-testid="space-attach-candidates"]', { timeout: 10000 });
     await alice.page.locator('[data-testid^="space-attach-pick-"]').first().click({ timeout: 10000 });
     await alice.page.click('[data-testid="space-attach-save"]');
     await alice.page.waitForTimeout(1500); // server attach + link mirror
