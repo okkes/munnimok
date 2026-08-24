@@ -95,4 +95,11 @@ describe('TxRow', () => {
     // the resting row is untouched — no visible change without focus
     expect(row.className).toContain('bg-transparent');
   });
+
+  it('#198 r7: an idle row carries NO radius — divide-y borders curve on rounded elements', async () => {
+    renderWithData(<TxRow tx={tx({ id: 'flat1' })} onClick={() => undefined} />);
+    const row = await screen.findByTestId('tx-row-flat1');
+    expect(row.className).not.toContain('rounded-xl');
+    expect(row.className).toContain('focus-visible:rounded-none');
+  });
 });

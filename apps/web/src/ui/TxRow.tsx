@@ -128,7 +128,12 @@ export function TxRow({
       className={`m-tap flex items-center gap-3 border-none py-2.5 text-left md:py-2 ${
         selected
           ? `${SELECTED_BLEED} ${EDGE_SELECTED[edge]}`
-          : `w-full rounded-xl bg-transparent px-1 ${FOCUS_BLEED} ${EDGE_FOCUS[edge]}`
+          : // #198 r7 (user, desktop ss): NO base radius — divide-y draws
+            // the hairline through this element's border-bottom, and a
+            // border on a rounded element CURVES at both ends (the
+            // "thick 3D" edge between rows). The focus/selected tints
+            // carry their own edge-aware radii.
+            `w-full bg-transparent px-1 ${FOCUS_BLEED} ${EDGE_FOCUS[edge]}`
       }`}
     >
       <span
