@@ -46,7 +46,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 
 ## Accounts & banks
 - [ ] Global overview: two segments — the global pool and collapsible per-space cards (closed by default); defaults fold, echoes jump to the real row, archived shares say who stopped sharing; an unattached account offers "Attach to this space"
-- [ ] Connect a bank (choice, consent, callback, nightly fetch, reconnect); imports (bank chooser, preview, progress, result → explicit attach)
+- [ ] Connect a bank (choice, consent, callback, nightly fetch, reconnect); imports (bank chooser, preview, progress, result → explicit attach); an import beside a bank link stays its OWN account until the explicit merge (which runs the reconcile)
 - [ ] Attach/detach per space with type (the attach door lands on the final step; shared spaces warn before attach); rename locally vs globally; type change re-reviews that space only
 - [ ] Edit an account (a manual balance edit records an adjustment transaction); delete manual and bank-fed accounts cleanly
 
@@ -65,6 +65,6 @@ assistant's memory alongside the guide/tour maintenance rules.
 
 ## Settings & platform
 - [ ] Space settings rows all lead somewhere sane; global settings: profile (account deletion narrates its progress), devices, language (EN/NL/TR), appearance cycle, export, push, tips
-- [ ] Bottom sheets wrap their content (≤ half screen) and grow 1:1 with scroll/drag when content overflows (field focus glides, fitting content never grows); they never shrink on their own — keyboard exit leaves the layout still
+- [ ] Scrolling a search list dismisses the keyboard; multi-field forms keep it while scrolling
 - [ ] PWA installs and updates; native shells build, deep-link back and capture photos
 - [ ] Offline end to end: everything works, syncs on return, conflicts converge
