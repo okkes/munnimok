@@ -181,6 +181,41 @@ describe('RecurringScreen (demo identity)', () => {
     expect(screen.getByTestId('recurring-luxury-line')).toBeTruthy();
   }, 15_000);
 
+  it('#332: fixed costs hide the luxury flag — and picking fixed clears a set one', async () => {
+    renderApp('/recurring');
+    await screen.findByTestId('screen-recurring');
+
+    fireEvent.click(screen.getByTestId('recurring-add'));
+    fireEvent.change(await screen.findByTestId('recform-name'), { target: { value: 'Rent 332' } });
+    fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '740' } });
+    // the default (subscription) offers the flag; switch it on
+    fireEvent.click(screen.getByTestId('recform-luxury'));
+    await waitFor(() => expect(screen.getByTestId('recform-luxury').innerHTML).toContain('justify-end'));
+
+    // fixed: the control disappears (a structural cost is never luxury)…
+    fireEvent.click(screen.getByTestId('recform-kind-fixed'));
+    await waitFor(() => expect(screen.queryByTestId('recform-luxury')).toBeNull());
+
+    // …and returning shows it again, cleared — no hidden flag lurked
+    fireEvent.click(screen.getByTestId('recform-kind-subscription'));
+    await waitFor(() => expect(screen.getByTestId('recform-luxury').innerHTML).toContain('justify-start'));
+
+    // set once more, pick fixed, save: the record persists luxury OFF
+    fireEvent.click(screen.getByTestId('recform-luxury'));
+    fireEvent.click(screen.getByTestId('recform-kind-fixed'));
+    fireEvent.click(screen.getByTestId('recform-save'));
+    const db = new MunniDB('munni_demo');
+    await waitFor(
+      async () => {
+        const rec = (await db.recurrings.toArray()).find((r) => r.name === 'Rent 332');
+        expect(rec?.kind).toBe('fixed');
+        expect(rec?.luxury).toBe(0);
+      },
+      { timeout: 5000 },
+    );
+    db.close();
+  }, 15_000);
+
   it('detects a monthly pattern; the inbox shows its evidence; dismissing removes it for good', async () => {
     const db = new MunniDB('munni_demo');
     // the demo seed only runs once — let the app create it first

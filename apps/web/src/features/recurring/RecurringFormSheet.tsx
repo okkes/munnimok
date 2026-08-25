@@ -228,7 +228,9 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
     const savedId = await ops.save(form.id, {
       name: form.name.trim(),
       kind: form.kind,
-      luxury: form.luxury ? 1 : 0,
+      // #332 (user): fixed never saves luxury — heals pre-#332 records
+      // whose hidden flag would otherwise silently persist through an edit
+      luxury: form.luxury && form.kind !== 'fixed' ? 1 : 0,
       amountCents,
       icon: KIND_ICON[form.kind],
       logo: form.logo ?? '', // '' clears — an absent field would not sync
@@ -289,7 +291,9 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(nameBad)}`}
             />
             <div className="flex gap-2">
-              <Chip testId="recform-kind-fixed" selected={form.kind === 'fixed'} onClick={() => setForm({ ...form, kind: 'fixed' })}>
+              {/* #332 (user): a fixed cost is never a luxury — picking it
+                  clears the flag so no hidden-but-set value survives */}
+              <Chip testId="recform-kind-fixed" selected={form.kind === 'fixed'} onClick={() => setForm({ ...form, kind: 'fixed', luxury: false })}>
                 {t('recurring.kindFixed')}
               </Chip>
               <Chip testId="recform-kind-subscription" selected={form.kind === 'subscription'} onClick={() => setForm({ ...form, kind: 'subscription' })}>
@@ -462,21 +466,24 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               </label>
             )}
 
-            <button
-              data-testid="recform-luxury"
-              onClick={() => setForm({ ...form, luxury: !form.luxury })}
-              className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block text-[14px] text-ink">{t('recurring.luxury')}</span>
-                <span className="block text-[11px] text-ink-4">{t('recurring.luxuryHint')}</span>
-              </span>
-              <span
-                className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${form.luxury ? 'justify-end bg-accent' : 'justify-start bg-bg-2'}`}
+            {/* #332 (user): fixed costs hide the luxury toggle entirely */}
+            {form.kind !== 'fixed' && (
+              <button
+                data-testid="recform-luxury"
+                onClick={() => setForm({ ...form, luxury: !form.luxury })}
+                className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
               >
-                <span className="h-5 w-5 rounded-full bg-surface shadow" />
-              </span>
-            </button>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] text-ink">{t('recurring.luxury')}</span>
+                  <span className="block text-[11px] text-ink-4">{t('recurring.luxuryHint')}</span>
+                </span>
+                <span
+                  className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${form.luxury ? 'justify-end bg-accent' : 'justify-start bg-bg-2'}`}
+                >
+                  <span className="h-5 w-5 rounded-full bg-surface shadow" />
+                </span>
+              </button>
+            )}
 
             <div className="m-cap px-1">{t('recurring.notify')}</div>
             <div className="flex flex-wrap gap-2">

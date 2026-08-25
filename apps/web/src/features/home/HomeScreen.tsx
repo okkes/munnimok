@@ -6,9 +6,9 @@ import { localToday } from '@/application/recurring';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
-import { addDays, nextDueDate } from '@/domain/recurring';
+import { addDays } from '@/domain/recurring';
+import { upcomingLoanPayments, upcomingRecurrings } from '@/domain/upcoming';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
-import type { RecurringRow } from '@/db/types';
 import { LOCALES, useLang } from '@/i18n';
 import type { TFunc, TranslationKey } from '@/i18n';
 import { useSession } from '@/app/session';
@@ -39,7 +39,7 @@ import { useInsights } from '@/application/insights';
 import { useNewTransactions } from '@/application/newTxs';
 import { eventSpentCents } from '@/domain/events';
 import { goalProgress } from '@/domain/goals';
-import { debtsOverview, isDebtTracked, nextDebtPaymentDate } from '@/domain/debts';
+import { debtsOverview } from '@/domain/debts';
 import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { budgetDaysLeft } from '@/domain/budgets';
@@ -255,26 +255,17 @@ export function HomeScreen() {
   const budgets = useBudgets();
   const urgentBudgets = useMemo(() => (budgetStatuses ?? []).slice(0, 3), [budgetStatuses]);
   const hasBudgets = (budgets?.length ?? 0) > 0;
+  // #334 (user): the row-building is shared with the /upcoming see-all
+  // landing (domain/upcoming) so block and landing can never drift
   const upcoming = useMemo(() => {
     const today = localToday();
-    const horizon = addDays(today, 7);
-    return (recurrings ?? [])
-      .map((rec) => ({ rec, nextDue: nextDueDate(rec, today) }))
-      .filter((u): u is { rec: RecurringRow; nextDue: string } => u.nextDue !== null && u.nextDue <= horizon)
-      .sort((a, b) => a.nextDue.localeCompare(b.nextDue))
-      .slice(0, 4);
+    return upcomingRecurrings(recurrings ?? [], today, addDays(today, 7)).slice(0, 4);
   }, [recurrings]);
   // #266 (user): loan payment plans join the coming-up story — same
   // horizon, clearly labeled so recurring vs debt reads apart
   const upcomingDebts = useMemo(() => {
     const today = localToday();
-    const horizon = addDays(today, 7);
-    return (accounts ?? [])
-      .filter((a) => a.archived !== 1 && !a.defaultFor && isDebtTracked(a))
-      .map((loan) => ({ loan, nextDue: nextDebtPaymentDate(loan, today) }))
-      .filter((u): u is { loan: (typeof u)['loan']; nextDue: string } => u.nextDue !== null && u.nextDue <= horizon)
-      .sort((a, b) => a.nextDue.localeCompare(b.nextDue))
-      .slice(0, 3);
+    return upcomingLoanPayments(accounts ?? [], today, addDays(today, 7)).slice(0, 3);
   }, [accounts]);
 
   // landing-zone blocks that only appear once the feature is in use.
@@ -891,9 +882,11 @@ export function HomeScreen() {
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
           <span>{t('recurring.upcoming')}</span>
+          {/* #334 (user): the block mixes recurring + loans, so see-all
+              lands on the combined list — not the recurring manager */}
           <button
             data-testid="home-seeall-upcoming"
-            onClick={() => void navigate({ to: '/recurring' })}
+            onClick={() => void navigate({ to: '/upcoming' })}
             className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
           >
             {t('action.seeAll')}

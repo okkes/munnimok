@@ -53,6 +53,7 @@ import { InsightsScreen } from '@/features/insights/InsightsScreen';
 import { TrendsScreen } from '@/features/trends/TrendsScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { DevicesScreen } from '@/features/profile/DevicesScreen';
+import { UpcomingScreen } from '@/features/home/UpcomingScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
 import { RecurringSuggestionsScreen } from '@/features/recurring/RecurringSuggestionsScreen';
@@ -91,6 +92,9 @@ const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home', c
 // sheet felt awkward; the sheet transform also sent the drag ghost adrift)
 const homeCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home/customize', component: HomeCustomizeScreen });
 const txCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/tx-customize', component: TxDetailCustomizeScreen });
+// #334 (user): home's coming-up see-all lands on the combined recurring +
+// loan list — a plain child route, so browser back returns to Home
+const upcomingRoute = createRoute({ getParentRoute: () => appRoute, path: '/upcoming', component: UpcomingScreen });
 // list routes render the master-detail layout: the list stays mounted
 // while a detail child slides in beside it at lg (animated, §4.2)
 const transactionsRoute = createRoute({
@@ -247,6 +251,7 @@ export const routeTree = rootRoute.addChildren([
     homeRoute,
     homeCustomizeRoute,
     txCustomizeRoute,
+    upcomingRoute,
     transactionsRoute.addChildren([txDetailRoute, reimburseLinkRoute]),
     recurringRoute.addChildren([recurringDetailRoute, recurringTxRoute]),
     recurringSuggestionsRoute,
