@@ -273,7 +273,7 @@ export function AttachSheet({
           by name — through the real flow: the intent pre-aims the space
           accounts screen, whose attach sheet opens on the final step
           (type pick + Attach, #310) — never a silent in-place attach */}
-      {canEdit && liveLinks !== undefined && liveLinks.length === 0 && activeSpace && (
+      {canEdit && liveLinks?.length === 0 && activeSpace && (
         <Button
           variant="outline"
           className="mt-2 w-full"

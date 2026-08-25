@@ -71,7 +71,7 @@ async function migrateMatch(store: StorageBackend, repo: Repo, match: ReconcileM
     const importedUnreviewed = !metas.some((m) => m.needsReview === 0);
     if (importedUnreviewed) {
       const linkedMeta = await store.get('txMeta', txMetaId(spaceId, match.linked.id));
-      if (linkedMeta && linkedMeta.deleted === 0 && linkedMeta.needsReview === 0) {
+      if (linkedMeta?.deleted === 0 && linkedMeta?.needsReview === 0) {
         await repo.upsert('txMeta', spaceId, txMetaId(spaceId, match.linked.id), { txId: match.linked.id, needsReview: 1 });
       }
     }

@@ -213,6 +213,14 @@ const stageWithBulkWarning = (
 const shownCard = (held: SpaceTx | null, remaining: SpaceTx[] | undefined): SpaceTx | undefined =>
   held ?? remaining?.[0];
 
+/** #324: the note the confirm writes — untouched or unchanged stays
+ *  silent, and a container carries no note of its own (S3776) */
+function stagedNoteFor(noteDraft: string | null, container: boolean, current: string | undefined): string | undefined {
+  const staged = noteDraft?.trim();
+  if (!container || staged === undefined) return undefined;
+  return staged === (current ?? '') ? undefined : staged;
+}
+
 /** #309: the refused row's red ring — flat helpers keep the JSX free of
  *  nested templates/ternaries (S4624/S3358). #316 (user): the ring draws
  *  INSET — the row spans the card's full inner width and the card's
@@ -2022,10 +2030,8 @@ export function ReviewScreen() {
     const bulk = partPeers.length > 0 ? [] : similar.filter((s) => bulkSelected.has(s.id));
     const recurringId = container && !isLoanCounter ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined;
     const eventId = container ? (eventPick ?? undefined) : undefined;
-    // #324 (user): the staged note — untouched (or unchanged) writes
-    // nothing; a container carries no note of its own (the parts do)
-    const staged = noteDraft?.trim();
-    const note = container && staged !== undefined && staged !== (tx.notes ?? '') ? staged : undefined;
+    // #324 (user): untouched or unchanged notes write nothing
+    const note = stagedNoteFor(noteDraft, container, tx.notes);
     const queued = queuedCounterBulk(pickedPeer, bulk, draft, spaceAccounts, recurringId, eventId, note);
     // #268 r2 (user): "wait with animating until we are done with the
     // bulk update" — a coming queue freezes the deck on this card; the

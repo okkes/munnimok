@@ -80,11 +80,11 @@ describe('#334: upcoming see-all = recurring + loans together', () => {
 
     renderApp('/upcoming');
     fireEvent.click(await screen.findByTestId('upcoming-rec-rec334', {}, { timeout: 10_000 }));
-    await screen.findByTestId('screen-recurring-detail', {}, { timeout: 10_000 });
+    expect(await screen.findByTestId('screen-recurring-detail', {}, { timeout: 10_000 })).toBeTruthy();
     cleanup();
 
     renderApp('/upcoming');
     fireEvent.click(await screen.findByTestId('upcoming-loan-loan334', {}, { timeout: 10_000 }));
-    await screen.findByTestId('debtdetail-hero', {}, { timeout: 10_000 });
+    expect(await screen.findByTestId('debtdetail-hero', {}, { timeout: 10_000 })).toBeTruthy();
   }, 30_000);
 });
