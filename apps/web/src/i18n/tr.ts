@@ -1036,6 +1036,11 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'acct.archivedEverywhere': 'Arşivlendi — yeniden bağlamak için dokun',
   'acct.archived': 'Arşivlendi',
   'acct.archivedReconnect': 'Arşivlendi — yeniden bağlamak için dokun',
+  // #314 (user): tüm hesaplar ekranının iki net bölümü + arşivlenen
+  // satırın nedeni
+  'acct.inSpacesCap': 'Alanlarınızda',
+  'acct.noLongerSharedBy': '{name} bu hesabı artık paylaşmıyor',
+  'acct.noLongerShared': 'Artık paylaşılmıyor',
   'acct.attachSub': 'Bu hesabı görecek alanları seç. O alanların üyeleri işlemleri görür; her alan kendi kategori ve notlarını tutar.',
   'acct.historyFrom': 'Geçmiş başlangıcı',
   'acct.historyFromHint': 'Boş bırakırsan her alanın kendi geçmiş başlangıcı kullanılır.',
@@ -1624,7 +1629,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'debts.current': 'Kalan borç',
   'debts.chooserNote': 'Arka planda kredi bir hesap olarak saklanır — hesap listelerinde de görünür ve ona yapılan transferler ödeme sayılır.',
   'debts.matchTitle': 'Bu ödemeler bulundu',
-  'debts.matchHint': 'Bunlar bu kredinin ödemelerine benziyor — hesap numarası, tutar, etiket ve ada göre seçildi. Ait olanları bağla.',
+  'debts.matchHint': 'Bu krediyle ilgili olabilecek şu ödemeleri bulduk.',
   'debts.matchEmpty': 'Geçmişinde bu kredinin ödemesine benzeyen bir şey henüz yok.',
   'debts.matchOld': 'Bakiye tarihinden eski — bağlandı ama sayılmadı',
   'debts.matchCount': '{amount} say',
@@ -1633,7 +1638,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'debts.matchCounts': 'Sayılır',
   // #286 r3 (user): count→deduct rename + footer math + bulk sweeps
   'debts.matchDeduct': 'Düşülür',
-  'debts.matchDeductCaption': 'Bakiye tarihinden eski ödemeler bakiyeyi düşürmeden bağlanır — bakiye onları zaten içerir. Yine de düşülmesi için Düşülür anahtarını aç.',
+  'debts.matchDeductCaption': 'Düşülür bu kredide kalan borcu azaltır.',
   'debts.matchSelected': '{n} seçili',
   'debts.matchDeductTotal': '{sum} düşülür',
   'debts.matchNewBalance': 'Yeni bakiye',

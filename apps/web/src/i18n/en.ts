@@ -1034,6 +1034,11 @@ export const en = {
   'acct.archivedEverywhere': 'Archived — tap to reconnect',
   'acct.archived': 'Archived',
   'acct.archivedReconnect': 'Archived — tap to reconnect',
+  // #314 (user): the all-accounts screen's two clear segments + the
+  // archived echo's reason line
+  'acct.inSpacesCap': 'In your spaces',
+  'acct.noLongerSharedBy': '{name} no longer shares this account',
+  'acct.noLongerShared': 'No longer shared',
   'acct.attachSub': 'Pick the spaces that should see this account. Members of those spaces see its transactions; each space keeps its own categories and notes.',
   'acct.historyFrom': 'History from',
   'acct.historyFromHint': 'Leave empty to use each space’s own history start.',
@@ -1622,7 +1627,7 @@ export const en = {
   'debts.current': 'Left to pay',
   'debts.chooserNote': 'Behind the scenes the loan is stored as an account — it shows in your account lists too, and transfers to it count as payments.',
   'debts.matchTitle': 'Found these payments',
-  'debts.matchHint': 'These look like payments on this loan — picked by account number, amount, label and name. Link the ones that belong.',
+  'debts.matchHint': 'We found these payments that could be related to this loan.',
   'debts.matchEmpty': 'Nothing in your history looks like a payment on this loan yet.',
   'debts.matchOld': 'Older than the balance date — linked but not counted',
   'debts.matchCount': 'Count {amount} in',
@@ -1631,7 +1636,7 @@ export const en = {
   'debts.matchCounts': 'Counts',
   // #286 r3 (user): count→deduct rename + footer math + bulk sweeps
   'debts.matchDeduct': 'Deducts',
-  'debts.matchDeductCaption': 'Payments older than the balance date link up without lowering the balance — it already includes them. Turn Deducts on to subtract such a payment anyway.',
+  'debts.matchDeductCaption': 'Deducts lowers what’s left to pay on this loan.',
   'debts.matchSelected': '{n} selected',
   'debts.matchDeductTotal': 'Deducts {sum}',
   'debts.matchNewBalance': 'New balance',

@@ -22,7 +22,7 @@ import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { fmtCents } from '@/lib/money';
 import { fmtTimeAgo } from '@/lib/text';
-import type { AccountRow } from '@/db/types';
+import type { AccountRow, SpaceRow } from '@/db/types';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
@@ -280,6 +280,25 @@ interface EchoEntry {
   via: SharedVia;
 }
 
+/** #314 (user): the space's own face leads its subsection — picture
+ *  wins, else icon + color circle (the SpaceSwitcher recipe, compact) */
+function SpaceAvatar({ space }: Readonly<{ space?: SpaceRow }>) {
+  if (space?.picture) {
+    return <img src={space.picture} alt="" className="h-6 w-6 shrink-0 rounded-full object-cover" />;
+  }
+  return (
+    <span
+      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full"
+      style={{
+        background: `color-mix(in srgb, ${space?.color ?? 'var(--m-ink-4)'} 14%, transparent)`,
+        color: space?.color ?? 'var(--m-ink-3)',
+      }}
+    >
+      <Icon name={space?.icon ?? (space?.kind === 'shared' ? 'account-group-outline' : 'leaf')} size={14} />
+    </span>
+  );
+}
+
 /** #305 (user): the read-only story of an account someone else shares
  *  into a space — same facts the owner reads (IBAN, type, balance,
  *  freshness, who shared it), none of the levers (no rename, no detach,
@@ -360,6 +379,15 @@ function EchoRow({
   // #305 (user): the owner's icon pick lives on the SYNCED account row —
   // the echo used to draw a hardcoded bank tile, so consumers never saw it
   const bankLogo = account.logo ?? institutionLogoUrl(account.bankId);
+  // #314 (user): an archived share says WHY — its sharer stopped sharing
+  // (left the space / removed the account); the link's frozen
+  // attachedByName is the one name the data can truthfully speak
+  let archivedReason: string | null = null;
+  if (shared && echo.via.archived) {
+    archivedReason = echo.via.attachedByName
+      ? t('acct.noLongerSharedBy', { name: echo.via.attachedByName })
+      : t('acct.noLongerShared');
+  }
   return (
     <button
       data-testid={`account-echo-${spaceId}-${account.id}`}
@@ -389,7 +417,16 @@ function EchoRow({
           <span className="min-w-0 truncate text-[15px] text-ink">{account.name}</span>
           {shared && <SharedSpaceBadge testId={`echo-shared-${spaceId}-${account.id}`} />}
         </span>
-        <span className="block truncate text-[11px] text-ink-4">{t(shared ? 'acct.sharedEchoHint' : 'acct.echoHint')}</span>
+        {archivedReason ? (
+          <span
+            className="block truncate text-[11px] text-warning"
+            data-testid={`echo-archived-hint-${spaceId}-${account.id}`}
+          >
+            {archivedReason}
+          </span>
+        ) : (
+          <span className="block truncate text-[11px] text-ink-4">{t(shared ? 'acct.sharedEchoHint' : 'acct.echoHint')}</span>
+        )}
       </span>
       {/* #305: the sharer left — the frozen state lands on the echo now
           (the retired "Shared with me" section used to carry this pill) */}
@@ -408,11 +445,17 @@ function EchoRow({
   );
 }
 
-/** #227: one space's section — real rows first, bank-fed echoes next,
+/** #227: one space's cluster — real rows first, bank-fed echoes next,
  *  and the default pots folded behind a quiet toggle (closed by default:
- *  six system rows per space drowned the accounts people actually made) */
+ *  six system rows per space drowned the accounts people actually made).
+ *  #314 (user): no longer its own card — a SUBSECTION inside the one
+ *  "In your spaces" segment, led by the space's icon + name (plus the
+ *  creator when someone else made the space); '· Manual' died. */
 function SpaceSection({
   segment,
+  space,
+  ownName,
+  first,
   echoes,
   sharedIds,
   lang,
@@ -420,6 +463,11 @@ function SpaceSection({
   onOpenShared,
 }: {
   segment: SpaceScopedAccounts;
+  /** the synced space row — the avatar + creator facts (#314) */
+  space?: SpaceRow;
+  /** the user's own profile name — "created by" only names OTHERS */
+  ownName?: string;
+  first: boolean;
   echoes: EchoEntry[];
   /** #305: accounts reaching me only through someone else's attachment */
   sharedIds: ReadonlySet<string>;
@@ -432,52 +480,64 @@ function SpaceSection({
   const visible = segment.accounts.filter((e) => !e.account.archived);
   const regular = visible.filter((e) => !e.account.defaultFor);
   const defaults = visible.filter((e) => !!e.account.defaultFor);
-  if (visible.length === 0 && echoes.length === 0) return null;
   const aboveEchoes = regular.length > 0;
   const aboveToggle = aboveEchoes || echoes.length > 0;
+  // #314: name the creator only when the space is someone else's work
+  const creator = space?.kind === 'shared' && space.createdByName && space.createdByName !== ownName
+    ? space.createdByName
+    : undefined;
   return (
-    <div data-testid={`accounts-space-${segment.spaceId}`}>
-      <div className="m-cap mt-5 mb-1 px-1">{`${segment.spaceName} · ${t('acct.spaceScopedCap')}`}</div>
-      <div className="overflow-hidden rounded-card border border-line bg-surface">
-        {regular.map((entry, i) => (
-          <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
-            {i > 0 && <div className="mx-4 h-px bg-line-2" />}
-            <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
-          </div>
-        ))}
-        {echoes.map((echo, i) => (
-          <div key={echo.entry.account.id}>
-            {(aboveEchoes || i > 0) && <div className="mx-4 h-px bg-line-2" />}
-            <EchoRow
-              spaceId={segment.spaceId}
-              echo={echo}
-              shared={sharedIds.has(echo.entry.account.id)}
-              lang={lang}
-              onOpenShared={onOpenShared}
-            />
-          </div>
-        ))}
-        {defaults.length > 0 && (
-          <>
-            {aboveToggle && <div className="mx-4 h-px bg-line-2" />}
-            <button
-              data-testid={`accounts-defaults-toggle-${segment.spaceId}`}
-              onClick={() => setShowDefaults((v) => !v)}
-              className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-4 py-3 text-left text-[12px] font-medium text-ink-4"
-            >
-              <Icon name={showDefaults ? 'chevron-up' : 'chevron-down'} size={14} />
-              {showDefaults ? t('acct.hideDefaults') : t('acct.showDefaults', { n: defaults.length })}
-            </button>
-            {showDefaults &&
-              defaults.map((entry) => (
-                <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
-                  <div className="mx-4 h-px bg-line-2" />
-                  <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
-                </div>
-              ))}
-          </>
-        )}
+    <div data-testid={`accounts-space-${segment.spaceId}`} className={first ? '' : 'border-t border-line'}>
+      <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2" data-testid={`accounts-space-head-${segment.spaceId}`}>
+        <SpaceAvatar space={space} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold text-ink">{segment.spaceName}</span>
+          {creator && (
+            <span className="block truncate text-[11px] text-ink-4" data-testid={`accounts-space-creator-${segment.spaceId}`}>
+              {t('space.createdBy', { name: creator })}
+            </span>
+          )}
+        </span>
       </div>
+      <div className="mx-4 h-px bg-line-2" />
+      {regular.map((entry, i) => (
+        <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
+          {i > 0 && <div className="mx-4 h-px bg-line-2" />}
+          <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
+        </div>
+      ))}
+      {echoes.map((echo, i) => (
+        <div key={echo.entry.account.id}>
+          {(aboveEchoes || i > 0) && <div className="mx-4 h-px bg-line-2" />}
+          <EchoRow
+            spaceId={segment.spaceId}
+            echo={echo}
+            shared={sharedIds.has(echo.entry.account.id)}
+            lang={lang}
+            onOpenShared={onOpenShared}
+          />
+        </div>
+      ))}
+      {defaults.length > 0 && (
+        <>
+          {aboveToggle && <div className="mx-4 h-px bg-line-2" />}
+          <button
+            data-testid={`accounts-defaults-toggle-${segment.spaceId}`}
+            onClick={() => setShowDefaults((v) => !v)}
+            className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-4 py-3 text-left text-[12px] font-medium text-ink-4"
+          >
+            <Icon name={showDefaults ? 'chevron-up' : 'chevron-down'} size={14} />
+            {showDefaults ? t('acct.hideDefaults') : t('acct.showDefaults', { n: defaults.length })}
+          </button>
+          {showDefaults &&
+            defaults.map((entry) => (
+              <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
+                <div className="mx-4 h-px bg-line-2" />
+                <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
+              </div>
+            ))}
+        </>
+      )}
     </div>
   );
 }
@@ -559,6 +619,23 @@ export function AccountsScreen() {
       const via = entry.sharedVia.find((v) => v.spaceId === spaceId);
       return via ? [{ entry, via }] : [];
     });
+  // #314 (user): the subsections come pre-filtered, so an empty cluster
+  // never leaves a bare space header inside the shared segment card
+  const renderableSections = useMemo(
+    () =>
+      sections.filter(
+        (segment) =>
+          segment.accounts.some((e) => !e.account.archived) ||
+          echoPool.some((entry) => entry.sharedVia.some((v) => v.spaceId === segment.spaceId)),
+      ),
+    [sections, echoPool],
+  );
+  // …and the space rows carry each subsection's face (#314): the
+  // icon/picture + color, the shared kind and the creator's name
+  const spaceRows = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
+  const spacesById = useMemo(() => new Map((spaceRows ?? []).map((s) => [s.id, s])), [spaceRows]);
+  // "created by {name}" must stay quiet for the user's own spaces
+  const ownName = useQuery(store, async () => ((await store.metaGet('profile'))?.value as { name?: string } | undefined)?.name, []);
   // reconcile pairing spans BOTH pools: a manual/imported row inside a
   // space can be the twin of a global bank connection
   const suggestionPool = useMemo(
@@ -712,18 +789,31 @@ export function AccountsScreen() {
             <AccountSection title={t('acct.globalCap')} list={mine} lang={lang} onOpen={openEntry} />
             {/* #305: the global "Shared with me" section retired — a
                 shared account's one face is its echo inside the space
-                that sees it (tap-through info sheet below) */}
-            {sections.map((segment) => (
-              <SpaceSection
-                key={segment.spaceId}
-                segment={segment}
-                echoes={echoesFor(segment.spaceId)}
-                sharedIds={sharedIds}
-                lang={lang}
-                onOpen={openEntry}
-                onOpenShared={setSharedInfo}
-              />
-            ))}
+                that sees it (tap-through info sheet below).
+                #314 (user): the per-space clusters stopped posing as N
+                sibling segments — ONE "In your spaces" segment holds
+                them as subsections inside a single card flow */}
+            {renderableSections.length > 0 && (
+              <>
+                <div className="m-cap mt-5 mb-1 px-1">{t('acct.inSpacesCap')}</div>
+                <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="accounts-spaces-segment">
+                  {renderableSections.map((segment, i) => (
+                    <SpaceSection
+                      key={segment.spaceId}
+                      segment={segment}
+                      space={spacesById.get(segment.spaceId)}
+                      ownName={ownName}
+                      first={i === 0}
+                      echoes={echoesFor(segment.spaceId)}
+                      sharedIds={sharedIds}
+                      lang={lang}
+                      onOpen={openEntry}
+                      onOpenShared={setSharedInfo}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
       </div>

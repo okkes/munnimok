@@ -77,6 +77,28 @@ const tileValueClass = (kind: OverviewKind, cents: number): string => {
   return cents < 0 ? 'text-negative' : 'text-accent-deep';
 };
 
+/** #313 (user): a sparse desktop home keeps ONE centered column — the
+ *  block width the user liked (~720px) with emptiness on both sides */
+const SINGLE_COLUMN_LG = 'lg:mx-auto lg:max-w-[720px]';
+
+/** #313 (user ss): unused blocks render null (their door lives inside
+ *  Explore), so counting CONFIGURED blocks kept a broken half-empty grid
+ *  on nearly empty homes — only blocks that actually render earn a
+ *  column (#155's bar of four). While the core data still loads the
+ *  configured count stands in, so a content-rich home does not flash
+ *  single-column on arrival. Out of the component for S3776. */
+function resolveRenderedBlocks(
+  visible: { id: HomeBlockId }[],
+  renderers: Record<HomeBlockId, () => React.ReactNode>,
+  dataReady: boolean,
+): { rendered: { id: HomeBlockId; node: React.ReactNode }[]; twoColumns: boolean } {
+  const rendered = visible
+    .map((entry) => ({ id: entry.id, node: renderers[entry.id]() }))
+    .filter((entry) => entry.node !== null);
+  const contentCount = dataReady ? rendered.length : visible.length;
+  return { rendered, twoColumns: contentCount >= 4 };
+}
+
 /** a block's teaser descriptor (#121) — present only while the feature
  *  is unused AND its data has loaded enough to know */
 interface TeaserDesc {
@@ -350,8 +372,6 @@ export function HomeScreen() {
   };
   const layout = resolveHomeBlocks(space);
   const visibleBlocks = layout.filter((entry) => !entry.hidden);
-  // #155: the split earns its keep only with enough content to fill it
-  const twoColumns = visibleBlocks.length >= 4;
 
   // #121 v2: the unused/teaser states, resolved in one place (module fn)
   const teaserOf = buildTeaserMap({
@@ -365,6 +385,10 @@ export function HomeScreen() {
     debtsLoaded: !!debtStatuses,
     activeDebtsCount: activeDebts.length,
   });
+
+  // #313 (user ss): the columns follow what actually RENDERS — see
+  // resolveRenderedBlocks (#155: the split earns its keep with 4+)
+  const { rendered: renderedBlocks, twoColumns } = resolveRenderedBlocks(visibleBlocks, blockRenderers, allTxs !== undefined);
 
   return (
     <div className="m-fade relative flex h-full flex-col" data-testid="screen-home">
@@ -440,8 +464,12 @@ export function HomeScreen() {
             wasted the width), the nudges head the right; on mobile the
             grid dissolves and the DOM order is balance → nudges → blocks.
             #155 (user ss): with only a couple of blocks the split read
-            as broken — sparse homes keep ONE centered column instead */}
-        <div className={twoColumns ? 'lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6' : 'lg:mx-auto lg:max-w-[640px]'}>
+            as broken — sparse homes keep ONE centered column instead
+            (#313: centered on what actually RENDERS, a bit wider) */}
+        <div
+          data-testid="home-columns"
+          className={twoColumns ? 'lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6' : SINGLE_COLUMN_LG}
+        >
           {/* slim balance band: one line; accounts fold out on tap. The
               fold-out lives BESIDE the header button (nested buttons are
               invalid HTML — the quick lens toggle needs its own) */}
@@ -527,24 +555,28 @@ export function HomeScreen() {
 
           </div>
 
+          {/* #313: the halves split what RENDERS, so both columns carry
+              real content instead of one side collecting all the nulls */}
           <div className="min-w-0 lg:col-start-1 lg:row-start-2">
-            {(twoColumns ? visibleBlocks.slice(0, Math.ceil(visibleBlocks.length / 2)) : visibleBlocks).map((entry) => (
-              <div key={entry.id}>{blockRenderers[entry.id]()}</div>
+            {(twoColumns ? renderedBlocks.slice(0, Math.ceil(renderedBlocks.length / 2)) : renderedBlocks).map((entry) => (
+              <div key={entry.id}>{entry.node}</div>
             ))}
           </div>
           {twoColumns && (
             <div className="min-w-0 lg:col-start-2 lg:row-start-2">
-              {visibleBlocks.slice(Math.ceil(visibleBlocks.length / 2)).map((entry) => (
-                <div key={entry.id}>{blockRenderers[entry.id]()}</div>
+              {renderedBlocks.slice(Math.ceil(renderedBlocks.length / 2)).map((entry) => (
+                <div key={entry.id}>{entry.node}</div>
               ))}
             </div>
           )}
         </div>
 
+        {/* #313: the door joins the centered column on sparse desktops —
+            a full-width stray made the rest read off-center */}
         <button
           data-testid="home-customize"
           onClick={() => void navigate({ to: '/home/customize' })}
-          className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3"
+          className={`m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3${twoColumns ? '' : ` ${SINGLE_COLUMN_LG}`}`}
         >
           <Icon name="tune-variant" size={16} />
           {t('home.customize')}

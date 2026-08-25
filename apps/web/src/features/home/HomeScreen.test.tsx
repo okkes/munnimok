@@ -80,3 +80,77 @@ describe('Home balance band (demo identity)', () => {
     expect(rows.length).toBeGreaterThanOrEqual(1);
   }, 15_000);
 });
+
+/**
+ * #313 (user ss): the desktop split used to count CONFIGURED blocks, so a
+ * nearly empty home (most features unused → their blocks render null and
+ * collapse into Explore) kept a broken half-empty grid, left-aligned.
+ * Now only blocks that actually RENDER earn a column: under four, the one
+ * column centers itself and widens to the width the user picked.
+ */
+describe('#313: desktop columns follow what actually renders', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  it('few rendering blocks: no grid — the single column centers and widens', async () => {
+    const first = renderApp('/home');
+    await screen.findByTestId('screen-home');
+    // the boot chain must settle before this handle's writes (db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const { HOME_BLOCK_IDS } = await import('./HomeCustomizeScreen');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    // hide everything but the two blocks the lean demo always renders —
+    // the CONFIGURED count alone used to keep the grid switched on
+    const kept = new Set(['overview', 'explore']);
+    await repo.upsert('space', 'demo_space', 'demo_space', {
+      homeBlocks: HOME_BLOCK_IDS.map((id) => ({ id, hidden: kept.has(id) ? (0 as const) : (1 as const) })),
+    });
+    db.close();
+    first.unmount();
+
+    renderApp('/home');
+    await screen.findByTestId('home-explore', {}, { timeout: 10_000 });
+    // until the space row + txs land, the configured-count fallback may
+    // hold the grid — the settled state is the centered single column
+    await waitFor(() => expect(screen.getByTestId('home-columns').className).toContain('lg:mx-auto'), { timeout: 10_000 });
+    const wrap = screen.getByTestId('home-columns');
+    expect(wrap.className).toContain('lg:max-w-[720px]');
+    expect(wrap.className).not.toContain('lg:grid');
+    // the customize door joins the centered column instead of straying wide
+    expect(screen.getByTestId('home-customize').className).toContain('lg:max-w-[720px]');
+  }, 20_000);
+
+  it('four rendering blocks still earn the two-column grid', async () => {
+    const first = renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    // a goal makes the goals block render — with the demo's review rows,
+    // This period and Explore that is four blocks of real content
+    await repo.upsert('goal', 'demo_space', 'g313', { name: 'Trip', targetCents: 100_000, allocatedCents: 25_000 });
+    db.close();
+    first.unmount();
+
+    renderApp('/home');
+    // all four content blocks are on screen…
+    await screen.findByTestId('home-goal-g313', {}, { timeout: 10_000 });
+    await screen.findByTestId('home-review-banner', {}, { timeout: 10_000 });
+    await screen.findByTestId('home-explore', {}, { timeout: 10_000 });
+    expect(screen.getByTestId('home-overview-income')).toBeTruthy();
+    // …so the desktop split stays a grid
+    await waitFor(() => expect(screen.getByTestId('home-columns').className).toContain('lg:grid-cols-2'), { timeout: 10_000 });
+  }, 20_000);
+});

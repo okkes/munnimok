@@ -1036,6 +1036,11 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'acct.archivedEverywhere': 'Gearchiveerd — tik om opnieuw te verbinden',
   'acct.archived': 'Gearchiveerd',
   'acct.archivedReconnect': 'Gearchiveerd — tik om opnieuw te verbinden',
+  // #314 (user): de twee segmenten van het accountsoverzicht + de reden
+  // op een gearchiveerde rij
+  'acct.inSpacesCap': 'In je ruimtes',
+  'acct.noLongerSharedBy': '{name} deelt deze rekening niet meer',
+  'acct.noLongerShared': 'Niet meer gedeeld',
   'acct.attachSub': 'Kies de ruimtes die deze rekening mogen zien. Leden van die ruimtes zien de transacties; elke ruimte houdt eigen categorieën en notities.',
   'acct.historyFrom': 'Historie vanaf',
   'acct.historyFromHint': 'Laat leeg om de eigen historie-start van elke space te gebruiken.',
@@ -1624,7 +1629,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'debts.current': 'Nog te betalen',
   'debts.chooserNote': 'Achter de schermen wordt de lening opgeslagen als rekening — hij staat ook in je rekeninglijsten, en overboekingen ernaartoe tellen als aflossingen.',
   'debts.matchTitle': 'Deze betalingen gevonden',
-  'debts.matchHint': 'Deze lijken aflossingen op deze lening — gekozen op rekeningnummer, bedrag, label en naam. Koppel wat erbij hoort.',
+  'debts.matchHint': 'We vonden deze betalingen die bij deze lening kunnen horen.',
   'debts.matchEmpty': 'Niets in je geschiedenis lijkt nog op een aflossing van deze lening.',
   'debts.matchOld': 'Ouder dan de saldodatum — gekoppeld maar niet meegeteld',
   'debts.matchCount': '{amount} meetellen',
@@ -1633,7 +1638,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'debts.matchCounts': 'Telt mee',
   // #286 r3 (user): count→deduct rename + footer math + bulk sweeps
   'debts.matchDeduct': 'Trekt af',
-  'debts.matchDeductCaption': 'Betalingen ouder dan de saldodatum worden gekoppeld zonder het saldo te verlagen — dat bevat ze al. Zet Trekt af aan om zo’n betaling alsnog af te trekken.',
+  'debts.matchDeductCaption': 'Trekt af verlaagt wat er nog openstaat op deze lening.',
   'debts.matchSelected': '{n} geselecteerd',
   'debts.matchDeductTotal': 'Trekt {sum} af',
   'debts.matchNewBalance': 'Nieuw saldo',

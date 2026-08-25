@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { CLIENT_PROTOCOL } from '@/lib/protocol';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CAMT_FIXTURE } from '@/test/camt-fixture';
 import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
@@ -639,6 +639,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('accountLink', 's-user', 'shlink-2', {
       feedSpaceId: 'feed-ghost',
       accountId: 'sh-ghost',
+      attachedByName: 'test4', // #314: the reason line names the sharer
       archived: 1,
     });
     // ghost B: the mirror row itself is TOMBSTONED while a link echo lives
@@ -678,6 +679,12 @@ describe('AccountsScreen (demo identity)', () => {
     // pill that lived in the old section now rides the echo row
     expect(screen.getByTestId('account-echo-s-user-sh-ghost')).toBeTruthy();
     expect(screen.getByTestId('echo-archived-s-user-sh-ghost')).toBeTruthy();
+    // #314 (user): the row also SAYS why — the sharer stopped sharing
+    expect(screen.getByTestId('echo-archived-hint-s-user-sh-ghost').textContent).toContain(
+      'test4 no longer shares this account',
+    );
+    // …while the live share keeps its ordinary shared hint
+    expect(screen.queryByTestId('echo-archived-hint-s-user-sh-live')).toBeNull();
     // …only the tombstoned mirror is a true ghost and renders nowhere
     expect(screen.queryByTestId('account-echo-s-user-sh-dead')).toBeNull();
     expect(screen.queryByTestId('account-row-sh-ghost')).toBeNull();
@@ -695,6 +702,70 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.queryByTestId('attach-delete')).toBeNull();
     expect(screen.queryByTestId('acctedit-name')).toBeNull();
   }, 15_000);
+
+  it('#314: TWO clear segments — global pool + ONE In-your-spaces card whose subsections lead with the space face', async () => {
+    const first = renderApp('/accounts');
+    await screen.findByTestId('account-row-demo_main');
+    // the boot chain must settle before this handle's writes (db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    // a feed account so the GLOBAL segment has a face too…
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    await repo.upsert('accountLink', 'demo_space', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1' });
+    // …and a SHARED space someone else created, with one manual account
+    await repo.upsert('space', 's-beach', 's-beach', {
+      name: 'Beach',
+      kind: 'shared',
+      createdByName: 'Bob',
+      icon: 'umbrella-beach',
+      currency: 'EUR',
+      periodType: 'month',
+      periodDay: 1,
+    });
+    await repo.upsert('account', 's-beach', 'acc-beach', {
+      name: 'Beach wallet',
+      type: 'cash',
+      source: 'manual',
+      currency: 'EUR',
+      balanceCents: 1200,
+    });
+    db.close();
+    first.unmount();
+
+    renderApp('/accounts');
+    await screen.findByTestId('accounts-space-head-demo_space', {}, { timeout: 10_000 });
+    // exactly TWO segment captions — not one caption per space anymore
+    expect(screen.getAllByText('Connected & imported')).toHaveLength(1);
+    expect(screen.getAllByText('In your spaces')).toHaveLength(1);
+    expect(screen.queryByText(/manual, space-scoped/)).toBeNull();
+    // BOTH space clusters live inside the one segment card…
+    const segmentCard = screen.getByTestId('accounts-spaces-segment');
+    expect(within(segmentCard).getByTestId('accounts-space-demo_space')).toBeTruthy();
+    expect(within(segmentCard).getByTestId('accounts-space-s-beach')).toBeTruthy();
+    // …each led by the space's face: icon + name (no '· Manual' suffix)
+    const demoHead = screen.getByTestId('accounts-space-head-demo_space');
+    expect(demoHead.textContent).toContain('Demo');
+    expect(demoHead.querySelector('.mdi')).toBeTruthy();
+    const beachHead = screen.getByTestId('accounts-space-head-s-beach');
+    expect(beachHead.querySelector('.mdi-umbrella-beach')).toBeTruthy();
+    // the creator shows only for someone ELSE's space
+    expect(screen.getByTestId('accounts-space-creator-s-beach').textContent).toContain('Bob');
+    expect(screen.queryByTestId('accounts-space-creator-demo_space')).toBeNull();
+    // row behavior survives the restructure: the echo row still jumps home
+    expect(within(segmentCard).getByTestId('account-echo-demo_space-feedacct-1')).toBeTruthy();
+  }, 20_000);
 
   it('adds a manual cash account via the space door (manual is space-scoped now)', async () => {
     renderApp('/accounts');
