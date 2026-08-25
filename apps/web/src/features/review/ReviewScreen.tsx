@@ -27,7 +27,8 @@ import { fetchSettlementCandidates } from '@/features/splits/settlementCandidate
 import type { SettlementCandidate } from '@/features/splits/settlementCandidates';
 import { useSession } from '@/app/session';
 import type { DraftCatalog, ReviewDraft } from '@/domain/reviewDraft';
-import type { AccountType, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountType, RecurringEvery, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import { setChooserLoanPrefill } from '@/features/accounts/AddAccountChooser';
 import { resolveSplitsFor, splitsArePct } from '@/domain/splits';
 import { predictTx } from '@/domain/predictCategory';
 import type { TxPrediction } from '@/domain/predictCategory';
@@ -161,8 +162,36 @@ function counterTxFaceFor(
  *  part page, which carries the same doors) */
 export const partRecurringPrefill = (tx: SpaceTx, part: TxSplit | undefined): RecurringFormState => {
   const base = formFromTx({ ...tx, amountCents: part?.amountCents ?? tx.amountCents });
-  return part?.label ? { ...base, name: part.label } : base;
+  // #331 (user): the part's picked category rides into the form too
+  const withCat = { ...base, catId: stagedRealCatId(part?.catId) };
+  return part?.label ? { ...withCat, name: part.label } : withCat;
 };
+
+/** #331 (user): a quick-created recurring copies the card's picked
+ *  category — the uncategorized placeholder stays behind */
+const stagedRealCatId = (catId: string | undefined): string | undefined =>
+  catId && catId !== UNCATEGORIZED_ID ? catId : undefined;
+
+/** #324: the review card's notes field grows with its content instead
+ *  of scrolling inside the card */
+const autoGrowNotes = (el: HTMLTextAreaElement): void => {
+  el.style.height = 'auto';
+  el.style.height = `${el.scrollHeight}px`;
+};
+
+/** #326: the honest cadence guess for a quick-created loan — the
+ *  merchant's review rows spaced near-monthly (every gap 25–35 days)
+ *  mean a monthly payment plan; anything else stays unguessed */
+export function guessCadence(dates: readonly string[]): RecurringEvery | undefined {
+  const stamps = [...new Set(dates)].sort((a, b) => a.localeCompare(b)).map((d) => Date.parse(d));
+  if (stamps.length < 2) return undefined;
+  const dayMs = 86_400_000;
+  const monthly = stamps.slice(1).every((ms, i) => {
+    const gap = Math.round((ms - stamps[i]) / dayMs);
+    return gap >= 25 && gap <= 35;
+  });
+  return monthly ? 'month' : undefined;
+}
 
 const partSignedCents = (containerCents: number, partAbsCents: number): number =>
   (containerCents < 0 ? -1 : 1) * partAbsCents;
@@ -185,8 +214,11 @@ const shownCard = (held: SpaceTx | null, remaining: SpaceTx[] | undefined): Spac
   held ?? remaining?.[0];
 
 /** #309: the refused row's red ring — flat helpers keep the JSX free of
- *  nested templates/ternaries (S4624/S3358) */
-const counterRowRing = (required: boolean | undefined): string => (required ? ` rounded-lg${blockerRing(true)}` : '');
+ *  nested templates/ternaries (S4624/S3358). #316 (user): the ring draws
+ *  INSET — the row spans the card's full inner width and the card's
+ *  overflow-hidden was clipping a box-edge ring at both sides. */
+const counterRowRing = (required: boolean | undefined): string =>
+  required ? ` rounded-lg${blockerRing(true)} ring-inset` : '';
 
 function counterValueTone(required: boolean | undefined, linkedAccountId: string | undefined): string {
   if (required) return 'text-negative';
@@ -207,7 +239,8 @@ function queuedCounterBulk(
   accounts: readonly { id: string; name: string }[] | undefined,
   recurringId: string | undefined,
   eventId: string | undefined,
-): { items: SpaceTx[]; draft: ReviewDraft; recurringId?: string; eventId?: string; target: { id: string; name: string } } | null {
+  note: string | undefined,
+): { items: SpaceTx[]; draft: ReviewDraft; recurringId?: string; eventId?: string; note?: string; target: { id: string; name: string } } | null {
   if (!pickedPeer || bulk.length === 0 || !draft.linkedAccountId) return null;
   const linkedId = draft.linkedAccountId;
   return {
@@ -215,6 +248,7 @@ function queuedCounterBulk(
     draft,
     recurringId,
     eventId,
+    note,
     target: { id: linkedId, name: accounts?.find((a) => a.id === linkedId)?.name ?? '' },
   };
 }
@@ -238,13 +272,15 @@ const resetPickDoor = (bankFed: boolean, wantBank: boolean, clear: () => void): 
 
 /** #161: does the card hold USER-staged work a split would reset? A
  *  memory-offered event is not a user decision (S3776: out of the
- *  component) */
+ *  component). #324: a typed note counts too — a container carries no
+ *  note of its own, so splitting drops it. */
 const hasUserStaging = (
   staged: ReviewDraft | null,
   eventTouched: boolean,
   eventPick: string | null,
   manualRecId: string | null,
-): boolean => staged !== null || (eventTouched && eventPick !== null) || manualRecId !== null;
+  noteDraft: string | null,
+): boolean => staged !== null || (eventTouched && eventPick !== null) || manualRecId !== null || noteDraft !== null;
 
 /** #237 r3: the card's Counter-transaction row descriptor — undefined
  *  hides the row (no counterparty, or a funding pot: nothing ever
@@ -293,6 +329,8 @@ async function writeConfirmation(args: {
   draft: ReviewDraft;
   recurringId: string | undefined;
   eventId: string | undefined;
+  /** #324 (user): the staged note — undefined leaves the row's own alone */
+  note?: string;
   bulk: SpaceTx[];
   transform: ReturnType<typeof useTxTransform>;
   /** #237 r2: the EXISTING row the user pointed at (pick-existing) */
@@ -322,9 +360,11 @@ async function writeConfirmation(args: {
     ...(args.pairPeerId ? { transferPeerId: args.pairPeerId } : {}),
     ...(args.recurringId ? { recurringId: args.recurringId } : {}),
     ...(args.eventId ? { eventId: args.eventId } : {}),
+    // #324 (user): the staged note lands with the same write ('' clears)
+    ...(args.note !== undefined ? { notes: args.note } : {}),
   }, null); // confirm logs its own richer 'review' line (with bulk count)
   for (const item of args.bulk) {
-    await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId), null);
+    await args.transform(item, bulkFieldsFor(item, draft, args.recurringId, args.eventId, args.note), null);
   }
 }
 
@@ -347,7 +387,7 @@ function catsForSibling(item: SpaceTx, entries: TxSplitCat[]): TxSplitCat[] | un
  *  similar filter already keeps signs together; this guards any path
  *  that doesn't). A partition travels whole: parts clear a sibling's
  *  spread and vice versa (#211 — the two never mix on one row). */
-function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined) {
+function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined, note?: string) {
   // #237 r2: a pointed-at EXISTING row is specific to ONE part — a
   // sibling's copy must never point at the same row (bulk is disabled
   // while a pick stands; this guards every other path)
@@ -366,6 +406,9 @@ function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | 
     ...(linkedId ? { linkedAccountId: linkedId } : {}),
     ...(recurringId ? { recurringId } : {}),
     ...(eventId ? { eventId } : {}),
+    // #324 (user): the typed note travels to every selected sibling —
+    // an untouched or emptied field never blanks a sibling's own note
+    ...(note ? { notes: note } : {}),
   };
 }
 
@@ -1207,6 +1250,9 @@ function BulkConfirmSection({
     else next.add(id);
     onChange(next);
   };
+  // #325 (user): "Also apply to 0 similar" read odd — an emptied
+  // selection gets its own short line instead of the zero count
+  const countLine = selected.size === 0 ? t('review.bulkNoneSelected') : t('review.alsoApply', { n: selected.size });
 
   return (
     <div className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid="review-bulk">
@@ -1228,7 +1274,7 @@ function BulkConfirmSection({
           onClick={() => setOpen(true)}
           className="m-tap flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
         >
-          <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{t('review.alsoApply', { n: selected.size })}</span>
+          <span className="min-w-0 flex-1 truncate text-[13px] text-ink-2">{countLine}</span>
           <span className="flex items-center gap-1 text-[12px] text-ink-3">
             {t('review.bulkViewAll')}
             <Icon name="chevron-right" size={15} />
@@ -1239,7 +1285,7 @@ function BulkConfirmSection({
       {/* near-max-height sheet styled like the transactions list (user
           redesign): TxRow rows with a checkbox rail, select/unselect all,
           and a row tap opens a compact READ-ONLY detail as a stacked sheet */}
-      <Sheet open={open} onOpenChange={setOpen} title={t('review.alsoApply', { n: selected.size })} height={760} dragHandle>
+      <Sheet open={open} onOpenChange={setOpen} title={countLine} height={760} dragHandle>
         <div className="flex items-center justify-between pb-2">
           <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: similar.length })}</span>
           <button
@@ -1318,6 +1364,11 @@ function DebtOrRecurringRow({
   const { t, lang } = useLang();
   if (isLoanCounter) return null;
   const delta = recMatch ? Math.abs(Math.abs(amountCents) - recMatch.amountCents) : 0;
+  // #333 (user): once a recurring is picked, the row leads with ITS OWN
+  // face (logo or kind icon) — the generic circle-arrow only means
+  // "nothing linked yet". Mirrors the label's chosen-rec derivation.
+  const linked = recMatch && linkRecurring ? recMatch : manualRec;
+  const chosen = chosenRecurringId(recMatch, linkRecurring, manualRec?.id ?? null) ? linked : undefined;
   return (
     <>
       <button
@@ -1325,7 +1376,13 @@ function DebtOrRecurringRow({
         onClick={onEdit}
         className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
       >
-        <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
+        {chosen ? (
+          <span data-testid="review-recurring-visual" className="flex shrink-0 items-center justify-center">
+            <RecurringVisual rec={chosen} size={18} />
+          </span>
+        ) : (
+          <Icon name="autorenew" size={18} color="var(--m-ink-3)" />
+        )}
         <span className="min-w-0 flex-1 truncate">{recurringRowLabel(recMatch, linkRecurring, manualRec, t)}</span>
         <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
         <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
@@ -1480,20 +1537,20 @@ export function ReviewScreen() {
   // #309 (user): a refused Confirm marks the REQUIRED counterparty red
   const [counterRequired, setCounterRequired] = useState(false);
   // r7 (user rule): splitting RESETS the card's own decisions — staged
-  // edits get a conscious warning before the split flow opens
+  // edits get a conscious warning before the split flow opens. #330
+  // (user): the reset itself now waits for the split editor's DONE —
+  // continue only ARMS it, and cancelling the editor keeps everything.
   const [splitResetOpen, setSplitResetOpen] = useState(false);
+  const splitResetArmed = useRef(false);
   const requestSplit = () => {
-    if (hasUserStaging(stagedDraft, eventTouched.current, eventPick, manualRecId)) {
+    if (hasUserStaging(stagedDraft, eventTouched.current, eventPick, manualRecId, noteDraft)) {
       setSplitResetOpen(true);
       return;
     }
     setSplitOpen(true);
   };
   const confirmSplitReset = () => {
-    setStagedDraft(null);
-    eventTouched.current = true; // a conscious reset — the offer stays down
-    setEventPick(null);
-    setManualRecId(null);
+    splitResetArmed.current = true;
     setSplitResetOpen(false);
     setSplitOpen(true);
   };
@@ -1519,6 +1576,7 @@ export function ReviewScreen() {
     draft: ReviewDraft;
     recurringId?: string;
     eventId?: string;
+    note?: string;
     target: { id: string; name: string };
   } | null>(null);
   // #268 r2 (user): while that queue walks the siblings, the deck must
@@ -1539,6 +1597,9 @@ export function ReviewScreen() {
   // only Confirm writes; null = untouched, follow tx + prediction live
   const [stagedDraft, setStagedDraft] = useState<ReviewDraft | null>(null);
   const [descExpanded, setDescExpanded] = useState(false);
+  // #324 (user): the card's staged note — null = untouched (the field
+  // shows the row's own note); written with the confirm, bulk included
+  const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
   // deck animation (user request): keep the outgoing card's markup as a
   // ghost that flies out left while the next card slides in from the right
@@ -1762,10 +1823,12 @@ export function ReviewScreen() {
     setLinkRecurring(true);
     setManualRecId(null);
     setEventPick(null);
+    setNoteDraft(null);
     setDescExpanded(false);
     setPartsAttention(false);
     setCounterRequired(false);
     setSplitResetOpen(false);
+    splitResetArmed.current = false;
     setPickedPeer(null);
     setPickWarn(null);
     setCounterTxOpen(false);
@@ -1794,6 +1857,25 @@ export function ReviewScreen() {
     prevSimilarIds.current = new Set(ids);
     setBulkSelected((sel) => new Set(ids.filter((id) => (prev.has(id) ? sel.has(id) : true))));
   }, [similarKey]);
+
+  // #326 (user): quick-creating the counterparty account mid-review —
+  // the ask's Create door mounts the chooser itself, so the card stages
+  // its facts here while it is up: title, currency, the amount as the
+  // loan's payment, the date's day as the due day, and a monthly plan
+  // when the merchant's similar rows keep a near-monthly rhythm.
+  useEffect(() => {
+    if (!tx) return undefined;
+    setChooserLoanPrefill({
+      name: txTitle(tx),
+      currency: tx.currency,
+      paymentCents: Math.abs(tx.amountCents),
+      paymentDay: Math.min(28, Number(tx.date.slice(8, 10)) || 1),
+      paymentEvery: guessCadence([tx.date, ...similar.map((s) => s.date)]),
+    });
+    return () => setChooserLoanPrefill(null);
+    // similarKey stands in for the similar array's identity churn
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tx?.id, similarKey]);
 
   // the recurring OWNS the category (user rule 2026-07-28): linking one
   // stages its category once, and the editor then only offers that
@@ -1849,22 +1931,38 @@ export function ReviewScreen() {
         ]
       : undefined;
 
+  /** #330 (user): the armed split-reset lands HERE, at the editor's
+   *  Done — consumes the warning's arm, drops the staged event/
+   *  recurring/note picks and hands back the card's untouched baseline
+   *  to apply onto; a cancelled editor never reaches this */
+  const takeSplitResetBase = (): ReviewDraft | null => {
+    if (!splitResetArmed.current) return null;
+    splitResetArmed.current = false;
+    eventTouched.current = true; // a conscious reset — the offer stays down
+    setEventPick(null);
+    setManualRecId(null);
+    setNoteDraft(null);
+    return spreadDraft;
+  };
+
   /** ONE category decides the card — the VALUES-collapse path (catId
    *  only): stages it with the ◆ machinery — Transfer stages nothing
-   *  until its mandatory counterparty answers; families ask right away */
-  const stageSingleCategory = (catId: string) => {
-    if (!draft) return;
+   *  until its mandatory counterparty answers; families ask right away.
+   *  #330: `from` applies onto the reset baseline instead of the draft. */
+  const stageSingleCategory = (catId: string, from?: ReviewDraft | null) => {
+    const src = from ?? draft;
+    if (!src) return;
     const family = specialCatType(catId);
     // #133 E: the ◆ Transfer pick stages NOTHING yet — the mandatory
     // counterparty answers it (dismiss = rollback, an unlinked transfer
     // is unrepresentable)
     if (family === 'transfer' && !ownStamp) {
-      counterFallback.current = draft;
+      counterFallback.current = src;
       setCounterAskCat(catId);
       setCounterOpen(true);
       return;
     }
-    const next = { ...withCategory(withSplits(draft, undefined), catId, cats), cats: settledCatsFor(catId) };
+    const next = { ...withCategory(withSplits(src, undefined), catId, cats), cats: settledCatsFor(catId) };
     // #228: a REGULAR pick ends any movement story — the counterparty
     // clears with it (category and counter are one fact)
     setStagedDraft(family || ownStamp ? next : { ...next, linkedAccountId: undefined });
@@ -1924,7 +2022,11 @@ export function ReviewScreen() {
     const bulk = partPeers.length > 0 ? [] : similar.filter((s) => bulkSelected.has(s.id));
     const recurringId = container && !isLoanCounter ? chosenRecurringId(recMatch, linkRecurring, manualRecId) : undefined;
     const eventId = container ? (eventPick ?? undefined) : undefined;
-    const queued = queuedCounterBulk(pickedPeer, bulk, draft, spaceAccounts, recurringId, eventId);
+    // #324 (user): the staged note — untouched (or unchanged) writes
+    // nothing; a container carries no note of its own (the parts do)
+    const staged = noteDraft?.trim();
+    const note = container && staged !== undefined && staged !== (tx.notes ?? '') ? staged : undefined;
+    const queued = queuedCounterBulk(pickedPeer, bulk, draft, spaceAccounts, recurringId, eventId, note);
     // #268 r2 (user): "wait with animating until we are done with the
     // bulk update" — a coming queue freezes the deck on this card; the
     // exit flight plays when the queue finishes instead of now
@@ -1938,6 +2040,7 @@ export function ReviewScreen() {
       draft,
       recurringId,
       eventId,
+      note,
       bulk: pickedPeer ? [] : bulk,
       transform,
       pairPeerId: pickedPeer?.txId,
@@ -1957,7 +2060,7 @@ export function ReviewScreen() {
     await transform(
       item,
       {
-        ...bulkFieldsFor(item, counterBulk.draft, counterBulk.recurringId, counterBulk.eventId),
+        ...bulkFieldsFor(item, counterBulk.draft, counterBulk.recurringId, counterBulk.eventId, counterBulk.note),
         ...(peerId ? { transferPeerId: peerId } : {}),
       },
       null,
@@ -2132,6 +2235,27 @@ export function ReviewScreen() {
                   </button>
                 )}
 
+                {/* #324 (user): the note joins the review card — staged
+                    like every other field, written on Confirm, and the
+                    bulk update carries it to the selected siblings */}
+                {!multiPart && (
+                  <div className="flex w-full items-start gap-2.5 px-4 py-2.5">
+                    <Icon name="note-text-outline" size={18} color="var(--m-ink-3)" style={{ marginTop: 1 }} />
+                    <textarea
+                      data-testid="review-notes"
+                      value={noteDraft ?? tx.notes ?? ''}
+                      onChange={(e) => {
+                        setNoteDraft(e.target.value);
+                        autoGrowNotes(e.currentTarget);
+                      }}
+                      placeholder={t('tx.notesPlaceholder')}
+                      rows={1}
+                      className="min-w-0 flex-1 resize-none border-none bg-transparent p-0 text-[14px] leading-snug text-ink outline-none placeholder:text-ink-4"
+                    />
+                    <span className="text-[11px] text-ink-4">{t('tx.notes')}</span>
+                  </div>
+                )}
+
                 {/* #249 (user): the split door comes LAST — categories,
                     counterparty, recurring and event lead; splitting is
                     the escape hatch, not the second suggestion */}
@@ -2236,17 +2360,24 @@ export function ReviewScreen() {
       {tx && draft && (
         <SplitEditorSheet
           open={splitOpen}
-          onOpenChange={setSplitOpen}
+          // #330 (user): closing without Done stands the armed reset down
+          // — the staged decisions survive a cancelled split editor
+          onOpenChange={(next) => {
+            setSplitOpen(next);
+            if (!next) splitResetArmed.current = false;
+          }}
           tx={tx}
           // empty value: the editor itself seeds "current category owns the
           // full amount + one fresh row" — exactly the add-part start
           value={draft.splits}
           seedSingle
           seedCatId={draft.catId}
+          // #330 (user): Done is where the warned reset finally lands —
+          // the split applies onto the untouched baseline, not the draft
           onApply={(splits) => {
-            setStagedDraft(withSplits(draft, splits ?? undefined));
+            setStagedDraft(withSplits(takeSplitResetBase() ?? draft, splits ?? undefined));
           }}
-          onApplySingle={stageSingleCategory}
+          onApplySingle={(catId) => stageSingleCategory(catId, takeSplitResetBase())}
         />
       )}
       {/* #211: the split-CATEGORIES editor — the chip's door. One entry
@@ -2437,7 +2568,8 @@ export function ReviewScreen() {
           lost race, which is why "create" never actually attached */}
       {recCreating && tx && (
         <RecurringFormSheet
-          initial={formFromTx(tx)}
+          // #331 (user): a category picked upfront rides into the form
+          initial={{ ...formFromTx(tx), catId: stagedRealCatId(draft?.catId) }}
           onSaved={(id) => {
             if (recMatch) setLinkRecurring(false);
             setManualRecId(id);

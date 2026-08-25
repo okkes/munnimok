@@ -310,6 +310,9 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('review-confirm-btn'));
     expect((await screen.findByTestId('review-counter-required')).textContent).toContain('Counterparty required');
     expect(screen.getByTestId('review-counter-row').className).toContain('ring-negative');
+    // #316 (user): the ring draws INSET — the row spans the card's full
+    // inner width, and the card's overflow-hidden clipped a box-edge ring
+    expect(screen.getByTestId('review-counter-row').className).toContain('ring-inset');
     expect(screen.getByTestId('review-card')).toBeTruthy(); // still here
 
     // answering through the field clears the red on the spot: the ask's
@@ -712,6 +715,14 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-part-deck');
     fireEvent.click(screen.getByTestId('deck-part-1'));
     fireEvent.change(await screen.findByTestId('deck-label-1'), { target: { value: 'Gym half' } });
+    // #331: give the part a category first — it must ride into the form
+    fireEvent.click(screen.getByTestId('deck-cat-1'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    await waitFor(() => expect((screen.getByTestId('part-cat-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('deck-cat-1').textContent).toContain('Coffee'));
 
     // the create door opens the recurring form, prefilled from the part
     fireEvent.click(screen.getByTestId('deck-rec-1'));
@@ -719,10 +730,108 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(screen.getByTestId('deck-rec-create'));
     const name = (await screen.findByTestId('recform-name')) as HTMLInputElement;
     await waitFor(() => expect(name.value).toBe('Gym half'));
+    // #331 (user): the part's picked category came along
+    expect(screen.getByTestId('recform-cat').textContent).toContain('Coffee');
     fireEvent.click(screen.getByTestId('recform-save'));
 
     // the created cost is linked on the part row — create-and-return
     await waitFor(() => expect(screen.getByTestId('deck-rec-1').textContent).toContain('Gym half'));
+  }, 15_000);
+
+  it('#331: a category picked upfront rides into the quick-created recurring form', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    // stage Coffee through the chip's cats editor
+    fireEvent.click(screen.getByTestId('review-category-chip'));
+    await screen.findByTestId('part-cats-editor');
+    fireEvent.click(screen.getByTestId('part-cat-0'));
+    fireEvent.click(await screen.findByTestId('catpicker-coffee'));
+    fireEvent.click(screen.getByTestId('part-cat-save'));
+    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
+
+    // the recurring picker's Create door opens the form WITH the category
+    fireEvent.click(screen.getByTestId('review-recurring-row'));
+    await screen.findByTestId('recpick-list');
+    fireEvent.click(screen.getByTestId('recpick-create'));
+    await screen.findByTestId('recform-name');
+    await waitFor(() => expect(screen.getByTestId('recform-cat').textContent).toContain('Coffee'));
+  }, 15_000);
+
+  it('#333: the picked recurring\'s own visual replaces the generic circle-arrow on the card row', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-recvis'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-logo', {
+      name: 'Spotify', kind: 'subscription', amountCents: 1099, every: 'month', dueDay: 5, active: 1,
+      merchantKey: 'spotify', logo: 'data:image/png;base64,abc',
+    });
+    db.close();
+    // nothing linked yet: the generic autorenew icon, no visual
+    expect(screen.queryByTestId('review-recurring-visual')).toBeNull();
+    fireEvent.click(await screen.findByTestId('review-recurring-row', {}, { timeout: 10_000 }));
+    await screen.findByTestId('recpick-list');
+    fireEvent.click(await screen.findByTestId('recpick-rec-logo', {}, { timeout: 10_000 }));
+    await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Spotify'), { timeout: 10_000 });
+    // the row now leads with the recurring's OWN face — its logo
+    const visual = await screen.findByTestId('review-recurring-visual');
+    expect(visual.querySelector('img')?.getAttribute('src')).toBe('data:image/png;base64,abc');
+    // …and unpicking restores the generic icon
+    fireEvent.click(screen.getByTestId('review-recurring-row'));
+    fireEvent.click(await screen.findByTestId('recpick-none'));
+    await waitFor(() => expect(screen.queryByTestId('review-recurring-visual')).toBeNull(), { timeout: 10_000 });
+  }, 15_000);
+
+  it('#324: a typed note lands with the confirm — and the bulk update carries it to the siblings', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-notes'), { trackOutbox: false });
+    // two same-merchant cards, dated oldest so they lead the queue
+    for (const [id, day] of [['note-a', '01'], ['note-b', '02']] as const) {
+      await repo.upsert('transaction', DEMO_SPACE_ID, id, {
+        accountId: 'demo_main', date: `2020-02-${day}`, amountCents: -1500, currency: 'EUR',
+        merchant: 'PADEL CLUB', catId: 'entertainment', txType: 'expense', needsReview: 1,
+      });
+    }
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('PADEL CLUB'), { timeout: 10_000 });
+    await screen.findByTestId('review-bulk'); // the sibling offer is up
+
+    // the card's own notes field — staged only, nothing written yet
+    fireEvent.change(screen.getByTestId('review-notes'), { target: { value: 'Court 4, with Jan' } });
+    expect((await db.transactions.get('note-a'))?.notes).toBeUndefined();
+
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    await waitFor(async () => {
+      expect((await db.transactions.get('note-a'))?.notes).toBe('Court 4, with Jan');
+      // the selected sibling receives the same note with its decision
+      expect((await db.transactions.get('note-b'))?.notes).toBe('Court 4, with Jan');
+      expect((await db.transactions.get('note-b'))?.needsReview).toBe(0);
+    }, { timeout: 8000 });
+    db.close();
+  }, 15_000);
+
+  it('#325: unticking every similar row swaps the zero count for the short none-selected line', async () => {
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-none'), { trackOutbox: false });
+    const first = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
+      .sort((a, b) => a.date.localeCompare(b.date))[0]; // the current card
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'none-1', {
+      accountId: first.accountId, date: '2030-01-01', amountCents: first.amountCents, currency: 'EUR',
+      merchant: first.merchant, catId: first.catId, txType: 'expense', needsReview: 1,
+    });
+    db.close();
+    await waitFor(() => expect(screen.getByTestId('review-bulk').textContent).toContain('Also apply to 1 similar'), { timeout: 10_000 });
+
+    // untick all: the odd "…to 0 similar" swaps for the short line
+    fireEvent.click(screen.getByTestId('review-bulk-toggle'));
+    await waitFor(() => expect(screen.getByTestId('review-bulk').textContent).toContain('Similar found — none selected'), { timeout: 10_000 });
+    expect(screen.getByTestId('review-bulk').textContent).not.toContain('0 similar');
+    // re-tick: the honest count returns
+    fireEvent.click(screen.getByTestId('review-bulk-toggle'));
+    await waitFor(() => expect(screen.getByTestId('review-bulk').textContent).toContain('Also apply to 1 similar'), { timeout: 10_000 });
   }, 15_000);
 
   it('NO restrictions on a split: even the same special kind twice lands (#126 r7)', async () => {
@@ -927,9 +1036,16 @@ describe('ReviewScreen (demo identity)', () => {
     expect(screen.queryByTestId('deck-cat-counter-0-0')).toBeNull();
   }, 15_000);
 
-  it('splitting a card with staged decisions warns first — cancel keeps them, continue resets (#126 r7)', async () => {
+  it('splitting warns first — the reset waits for the editor\'s Done; cancelling keeps the staged picks (#126 r7, #330)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
+    // an active recurring so the card can stage a manual link too
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-splitreset'), { trackOutbox: false });
+    await repo.upsert('recurring', DEMO_SPACE_ID, 'rec-yoga', {
+      name: 'Yoga studio', kind: 'subscription', amountCents: 2500, every: 'month', dueDay: 3, active: 1, merchantKey: 'yoga',
+    });
+    db.close();
     // stage a deliberate category pick through the chip's cats editor
     fireEvent.click(await screen.findByTestId('review-category-chip'));
     await screen.findByTestId('part-cats-editor');
@@ -937,19 +1053,57 @@ describe('ReviewScreen (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-coffee'));
     fireEvent.click(screen.getByTestId('part-cat-save'));
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee'));
+    // …and a manual recurring link on top
+    fireEvent.click(screen.getByTestId('review-recurring-row'));
+    fireEvent.click(await screen.findByTestId('recpick-rec-yoga', {}, { timeout: 10_000 }));
+    await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).toContain('Yoga studio'));
 
-    // the split door warns; cancel drops back to the untouched card
+    // the split door warns; cancelling the WARNING changes nothing
     fireEvent.click(screen.getByTestId('review-split-row'));
     await screen.findByTestId('split-reset-continue');
     fireEvent.click(screen.getByTestId('split-reset-cancel'));
     expect(screen.queryByTestId('split-label-0')).toBeNull();
 
-    // continue resets the staged pick and opens the VALUES editor
+    // #330 (user): continue opens the VALUES editor with everything
+    // still staged — the reset now waits for Done, so Escape-dismissing
+    // the editor keeps category and recurring exactly as staged (test
+    // sheets stay mounted after close — the CARD's rows are the signal)
     fireEvent.click(screen.getByTestId('review-split-row'));
     fireEvent.click(await screen.findByTestId('split-reset-continue'));
     await screen.findByTestId('split-label-0');
-    await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).not.toContain('Coffee'));
-  }, 15_000);
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee');
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee');
+    expect(screen.getByTestId('review-recurring-row').textContent).toContain('Yoga studio');
+    expect(screen.queryByTestId('review-part-deck')).toBeNull(); // no split landed
+
+    // through the warning again — Done is where the reset finally
+    // lands: the single-collapse keeps the seeded category as the
+    // split's shape while the staged recurring link is reversed
+    fireEvent.click(screen.getByTestId('review-split-row'));
+    fireEvent.click(await screen.findByTestId('split-reset-continue'));
+    await screen.findByTestId('split-label-0');
+    fireEvent.click(screen.getByTestId('split-save'));
+    // the seeded category stays as the collapse's shape while the
+    // staged recurring link is reversed by the landed reset
+    await waitFor(() => expect(screen.getByTestId('review-recurring-row').textContent).not.toContain('Yoga studio'));
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Coffee');
+
+    // a REAL split's Done resets the card to the split shape: the deck
+    // (the collapse above left a staged category, so the warning asks
+    // once more — the arm rides through to this Done)
+    fireEvent.click(screen.getByTestId('review-split-row'));
+    fireEvent.click(await screen.findByTestId('split-reset-continue'));
+    fireEvent.click(await screen.findByTestId('split-add-row'));
+    const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
+    fireEvent.focus(amount0);
+    fireEvent.change(amount0, { target: { value: '6,00' } });
+    fireEvent.blur(amount0);
+    fireEvent.click(await screen.findByTestId('split-remainder'));
+    await waitFor(() => expect((screen.getByTestId('split-save') as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(screen.getByTestId('split-save'));
+    await screen.findByTestId('review-part-deck');
+  }, 20_000);
 
   it('the pill fills the FOCUSED field even though its blur restores the stash first (#130 r2)', async () => {
     renderApp('/review');
