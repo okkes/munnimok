@@ -11,21 +11,22 @@ const body = () => document.querySelector('[data-sheet-body]') as HTMLElement;
 const mount = (ui: React.ReactElement) => render(<LangProvider>{ui}</LangProvider>);
 
 describe('#312 r2: partial open + intent-driven expansion', () => {
-  it('height math: half-screen partial, near-top ceiling, depth steps, ratchet clamp', () => {
+  it('height math: half-screen partial, the 92% expanded fraction, depth steps', () => {
     expect(sheetPartialPx(800, 0)).toBe(400);
     expect(sheetPartialPx(800, 1)).toBe(372); // stacked sheets step down
     expect(sheetPartialPx(300, 0)).toBe(240); // floor
     expect(sheetExpandedCap(800, 0)).toBe(736);
     // partial caps a sized sheet at half; a shorter size keeps its own
     // height; a content sheet stays content-sized under the same cap
-    expect(sheetBodyHeightStyle(false, 800, 0, 600, 0)).toEqual({ height: 400 });
-    expect(sheetBodyHeightStyle(false, 800, 0, 320, 0)).toEqual({ height: 320 });
-    expect(sheetBodyHeightStyle(false, 800, 0, undefined, 0)).toEqual({ maxHeight: 400 });
-    // expanded pins the ratcheted target, clamped by the CURRENT viewport
-    // (an open keyboard shrinks it only while it must; its exit re-grows)
-    expect(sheetBodyHeightStyle(true, 800, 0, 600, 500)).toEqual({ height: 500 });
-    expect(sheetBodyHeightStyle(true, 800, 0, 600, 9999)).toEqual({ height: 736 });
-    expect(sheetBodyHeightStyle(true, 500, 0, 600, 736)).toEqual({ height: 460 });
+    expect(sheetBodyHeightStyle(false, 800, 0, 600)).toEqual({ height: 400 });
+    expect(sheetBodyHeightStyle(false, 800, 0, 320)).toEqual({ height: 320 });
+    expect(sheetBodyHeightStyle(false, 800, 0, undefined)).toEqual({ maxHeight: 400 });
+    // #312 r3 (user): expanded IS the fraction of the live viewport —
+    // the top edge stays put through keyboard open (small vh) and close
+    // (full vh); content never caps it
+    expect(sheetBodyHeightStyle(true, 800, 0, 600)).toEqual({ height: 736 });
+    expect(sheetBodyHeightStyle(true, 500, 0, 600)).toEqual({ height: 460 });
+    expect(sheetBodyHeightStyle(true, 800, 1, undefined)).toEqual({ height: 708 });
   });
 
   it('opens PARTIAL and expands when a field inside gains focus', async () => {
