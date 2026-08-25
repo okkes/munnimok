@@ -15,73 +15,6 @@ import { Button } from './Button';
 export type SheetSize = 'compact' | 'form' | 'tall';
 const SIZE_PX: Record<SheetSize, number> = { compact: 320, form: 440, tall: 600 };
 
-// ── #312 r2–r4 (user): partial open + growth PACED by the gesture ────
-// A mobile sheet OPENS wrapping its content, at most half the screen —
-// what's underneath stays readable and a stray open is easy to dismiss.
-// When (and only when) the content overflows, scrolling or dragging
-// upward GROWS the sheet 1:1 with the gesture — "as if the scroll
-// itself is expanding the sheet" — until the near-top ceiling; the
-// leftover gesture then scrolls the content. Focusing a field glides
-// straight to the target (the keyboard is coming). Grown height never
-// shrinks on its own; the keyboard episode ratchets the TOP EDGE, so
-// its exit grows the sheet into the freed space instead of dropping it.
-// Only a drag-down (the dismissal gesture) takes the sheet away.
-const PARTIAL_FRACTION = 0.5;
-const EXPANDED_FRACTION = 0.92;
-const EXPAND_TRANSITION = 'height 280ms cubic-bezier(0.2, 0.8, 0.2, 1)';
-
-/** the partial cap: half the viewport, stepped down per stack depth */
-export const sheetPartialPx = (vh: number, depth: number): number =>
-  Math.max(240, Math.floor(vh * PARTIAL_FRACTION) - depth * 28);
-/** the expansion ceiling: near-top, same depth step */
-export const sheetExpandedCap = (vh: number, depth: number): number =>
-  Math.max(280, Math.floor(vh * EXPANDED_FRACTION) - depth * 28);
-
-/** the body's height style. #312 r4 (user): ungrown sheets WRAP their
- *  content under the half-screen cap — a short picker takes only what
- *  it needs. Growth (grownPx > 0) pins an explicit height: the measured
- *  base plus whatever the gestures have eaten, never past the target. */
-export function sheetBodyHeightStyle(
-  vh: number,
-  depth: number,
-  basePx: number,
-  grownPx: number,
-  target: number,
-): { height?: number; maxHeight?: number } {
-  if (grownPx <= 0) return { maxHeight: sheetPartialPx(vh, depth) };
-  return { height: Math.min(basePx + grownPx, target) };
-}
-
-/** #312 r4: how far growth may reach — the near-top ceiling, clamped to
- *  what the content actually needs (a fitting sheet never grows), and
- *  raised by the keyboard ratchet: once the top edge stood at `topMin`,
- *  the exit viewport keeps it there (the emptiness below is deliberate). */
-export function sheetGrowTarget(vh: number, depth: number, naturalPx: number, topMin: number): number {
-  const wanted = Math.max(naturalPx, Number.isFinite(topMin) ? vh - topMin : 0);
-  return Math.min(sheetExpandedCap(vh, depth), wanted);
-}
-
-/** the sheet's natural content height — body chrome plus whatever the
- *  scroller hides; 0 in layoutless environments */
-function naturalBodyPx(body: HTMLElement): number {
-  const scroller = body.querySelector('.react-modal-sheet-content-scroller');
-  const hidden = scroller ? scroller.scrollHeight - scroller.clientHeight : 0;
-  return body.offsetHeight + hidden;
-}
-
-const subscribeViewportHeight = (listener: () => void) => {
-  window.addEventListener('resize', listener);
-  window.visualViewport?.addEventListener('resize', listener);
-  return () => {
-    window.removeEventListener('resize', listener);
-    window.visualViewport?.removeEventListener('resize', listener);
-  };
-};
-const readViewportHeight = () => (typeof window === 'undefined' ? 800 : window.innerHeight);
-const useViewportHeight = (): number => useSyncExternalStore(subscribeViewportHeight, readViewportHeight, () => 800);
-
-const EXPAND_EDITABLE = 'input, textarea, select, [contenteditable="true"]';
-
 // framer-motion animates in real wall-clock time even in jsdom (vaul's
 // CSS transitions never ran there) — under parallel test load those
 // ~300ms opens/closes eat waitFor budgets at random. Instant in tests.
@@ -580,64 +513,6 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   // drag bar alone never gave (user request)
   const fixedHeight = requested === undefined ? undefined : Math.max(280, requested - depth * 28);
   const panel = usePanelMode();
-  // #312 r4: continuous growth — gestures EAT height 1:1 (see the
-  // module block); refs mirror the state for the capture handlers
-  const vh = useViewportHeight();
-  const [grownPx, setGrownPx] = useState(0);
-  const [smoothGrow, setSmoothGrow] = useState(false);
-  const grownPxRef = useRef(0);
-  const baseRef = useRef(0);
-  const targetRef = useRef(0);
-  const topMinRef = useRef(Number.POSITIVE_INFINITY);
-  const bodyElRef = useRef<HTMLElement | null>(null);
-  const dragLastYRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (!open) {
-      grownPxRef.current = 0;
-      baseRef.current = 0;
-      targetRef.current = 0;
-      topMinRef.current = Number.POSITIVE_INFINITY;
-      setGrownPx(0);
-      setSmoothGrow(false);
-    }
-  }, [open]);
-  /** eat `deltaPx` of gesture into sheet height; returns the px taken.
-   *  A fitting sheet has no room — the gesture passes through whole. */
-  const growBy = (deltaPx: number, smooth: boolean): number => {
-    const body = bodyElRef.current;
-    if (!body || panel || deltaPx <= 0) return 0;
-    if (baseRef.current === 0) baseRef.current = body.offsetHeight;
-    const liveVh = readViewportHeight();
-    const natural = naturalBodyPx(body) || sheetExpandedCap(liveVh, depth);
-    targetRef.current = sheetGrowTarget(liveVh, depth, natural, topMinRef.current);
-    const room = targetRef.current - (baseRef.current + grownPxRef.current);
-    const eat = Math.max(0, Math.min(deltaPx, room));
-    if (eat > 0) {
-      grownPxRef.current += eat;
-      setSmoothGrow(smooth);
-      setGrownPx(grownPxRef.current);
-    }
-    return eat;
-  };
-  // the keyboard ratchet: while grown, remember the highest top edge;
-  // a viewport growing back (keyboard exit) refills the sheet into the
-  // freed space so the top edge holds instead of dropping (r3 rule,
-  // scoped to grown sheets — short fitted ones ride with the keyboard)
-  useEffect(() => {
-    if (panel || grownPxRef.current <= 0 || !bodyElRef.current) return;
-    const natural = naturalBodyPx(bodyElRef.current) || sheetExpandedCap(vh, depth);
-    const target = sheetGrowTarget(vh, depth, natural, topMinRef.current);
-    targetRef.current = target;
-    const held = Number.isFinite(topMinRef.current) ? vh - topMinRef.current - baseRef.current : 0;
-    const desired = Math.max(grownPxRef.current, Math.min(target - baseRef.current, held));
-    if (desired > grownPxRef.current) {
-      grownPxRef.current = desired;
-      setSmoothGrow(true);
-      setGrownPx(desired);
-    }
-    const height = Math.min(baseRef.current + grownPxRef.current, target);
-    topMinRef.current = Math.min(topMinRef.current, vh - height);
-  }, [vh, grownPx, depth, panel]);
   // #134: while an iOS mobile sheet is open, undo WebKit scroll-jail
   // shoves on every editable focus (see module block)
   useEffect(() => {
@@ -835,36 +710,10 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
             (flex-initial) so `height` rules; min-h-0 only lets the
             container's own max clamp shrink it on short screens. */}
         <div
-          ref={(el) => {
-            bodyElRef.current = el;
-            registerCoveredEl(id, el);
-          }}
+          ref={(el) => registerCoveredEl(id, el)}
           data-sheet-body=""
-          data-expanded={grownPx > 0 ? '1' : '0'}
           className="flex min-h-0 flex-initial flex-col"
-          style={{
-            transformOrigin: 'top center',
-            ...(smoothGrow && !IS_TEST ? { transition: EXPAND_TRANSITION } : {}),
-            ...sheetBodyHeightStyle(vh, depth, baseRef.current, grownPx, targetRef.current),
-          }}
-          // #312 r4 growth intents: a field focus takes the full target
-          // smoothly (the keyboard is coming); a scroll or upward drag
-          // grows 1:1 — the gesture is eaten before the content moves
-          onFocusCapture={(e) => {
-            if ((e.target as HTMLElement).closest?.(EXPAND_EDITABLE)) growBy(Number.MAX_SAFE_INTEGER, true);
-          }}
-          onScrollCapture={(e) => {
-            const el = e.target as HTMLElement;
-            // a scroller that owns its own 1:1 scroll mechanic (the
-            // collapsing search) opts out — two gesture-eaters on one
-            // scroller deadlock each other; drag-up and focus still
-            // grow the sheet there
-            if (el.closest('[data-sheet-no-grow]')) return;
-            if (el.scrollTop > 0) {
-              const eaten = growBy(el.scrollTop, false);
-              if (eaten > 0) el.scrollTop = Math.max(0, el.scrollTop - eaten);
-            }
-          }}
+          style={{ transformOrigin: 'top center', height: fixedHeight }}
           // a gesture landing on an editable, a self-handling element or
           // a mid-scroll list must NEVER become a sheet drag (inputs:
           // cancelled-while-typing report; lists: scroll moved list +
@@ -876,16 +725,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
             if (gestureBelongsToContent(e.target as HTMLElement, e.currentTarget)) e.stopPropagation();
           }}
           onTouchStartCapture={(e) => {
-            dragLastYRef.current = e.touches[0]?.clientY ?? null;
             if (gestureBelongsToContent(e.target as HTMLElement, e.currentTarget)) e.stopPropagation();
-          }}
-          onTouchMoveCapture={(e) => {
-            const y = e.touches[0]?.clientY;
-            const last = dragLastYRef.current;
-            if (y !== undefined && last !== null) {
-              if (last - y > 0) growBy(last - y, false);
-              dragLastYRef.current = y;
-            }
           }}
         >
           {/* full-height drag zone across the title area */}

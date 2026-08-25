@@ -156,9 +156,6 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         className="mt-2 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]"
         style={{ maxHeight: 440 + searchOffset }}
         data-testid="catpicker-list"
-        // #312 r4: this scroller's 1:1 gesture belongs to the collapsing
-        // search — the sheet's scroll-growth stands down here
-        data-sheet-no-grow=""
         onScroll={onListScroll}
       >
       {/* #322 (user): the narrowed list says WHY and offers the way out —

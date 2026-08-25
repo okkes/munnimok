@@ -1,4 +1,4 @@
-// @vitest-environment happy-dom
+﻿// @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { installKeyboardDismiss } from './keyboardDismiss';
 
@@ -19,9 +19,9 @@ const setPointer = (coarse: boolean) => {
 
 // happy-dom has no TouchEvent constructor — a plain event with a touches
 // list is exactly what the handler reads
-const touch = (type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel', target: EventTarget, x = 0, y = 0) => {
+const touch = (type: 'touchstart' | 'touchmove', target: EventTarget, x: number, y: number) => {
   const e = new Event(type, { bubbles: true, cancelable: true });
-  Object.defineProperty(e, 'touches', { value: type.startsWith('touchend') || type === 'touchcancel' ? [] : [{ clientX: x, clientY: y }] });
+  Object.defineProperty(e, 'touches', { value: [{ clientX: x, clientY: y }] });
   target.dispatchEvent(e);
 };
 
@@ -96,35 +96,24 @@ describe('installKeyboardDismiss', () => {
     expect(document.activeElement).toBe(el);
   });
 
-  it('#312: a touch-drag outside the field hides the keyboard AT GESTURE END, not mid-drag', () => {
+  it('#312 r5: a touch-drag hides the keyboard on a SEARCH field only', () => {
     const el = mountInput('input');
+    el.setAttribute('data-search-dismiss', '');
     touch('touchstart', document.body, 100, 300);
     touch('touchmove', document.body, 100, 280);
-    // the finger is still down — the viewport must not resize under it
+    expect(document.activeElement).not.toBe(el);
+  });
+
+  it('#312 r5: a FORM field keeps its keyboard through a scroll (multi-input sheets)', () => {
+    const el = mountInput('input');
+    touch('touchstart', document.body, 100, 300);
+    touch('touchmove', document.body, 100, 200);
     expect(document.activeElement).toBe(el);
-    touch('touchend', document.body);
-    expect(document.activeElement).not.toBe(el);
-  });
-
-  it('#312: a system-cancelled gesture still lands the decided blur', () => {
-    const el = mountInput('input');
-    touch('touchstart', document.body, 100, 300);
-    touch('touchmove', document.body, 100, 280);
-    touch('touchcancel', document.body);
-    expect(document.activeElement).not.toBe(el);
-  });
-
-  it('#312: focus that moved on its own mid-gesture is left alone', () => {
-    mountInput('input'); // the field the gesture judged…
-    touch('touchstart', document.body, 100, 300);
-    touch('touchmove', document.body, 100, 280);
-    const other = mountInput('textarea'); // …then a script moved focus
-    touch('touchend', document.body);
-    expect(document.activeElement).toBe(other);
   });
 
   it('a drag inside the focused field is selection work, not a scroll', () => {
     const el = mountInput('textarea');
+    el.setAttribute('data-search-dismiss', '');
     touch('touchstart', el, 100, 300);
     touch('touchmove', el, 100, 240);
     expect(document.activeElement).toBe(el);
@@ -132,6 +121,7 @@ describe('installKeyboardDismiss', () => {
 
   it('a sub-threshold wobble is a tap, not a scroll', () => {
     const el = mountInput('input');
+    el.setAttribute('data-search-dismiss', '');
     touch('touchstart', document.body, 100, 300);
     touch('touchmove', document.body, 104, 296);
     expect(document.activeElement).toBe(el);

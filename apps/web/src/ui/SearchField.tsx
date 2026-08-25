@@ -33,6 +33,10 @@ export function SearchField({
       </span>
       <input
         data-testid={testId}
+        // #312 r5 (user): search is the ONE surface where a scroll
+        // dismisses the keyboard — the browse gesture means reading
+        // results, not typing. Form fields keep their keyboard.
+        data-search-dismiss=""
         value={value}
         onFocus={onFocus}
         onChange={(e) => onChange(e.target.value)}

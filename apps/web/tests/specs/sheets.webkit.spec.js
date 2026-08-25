@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+﻿import { test, expect } from '@playwright/test';
 import { VARIANTS, base } from '../helpers/base.js';
 
 /**
@@ -24,29 +24,20 @@ async function openSplitEditor(page) {
   await expect(page.locator('[data-testid="part-cat-0"]')).toBeVisible();
 }
 
-test(`sheet-w1 a tall sheet opens PARTIAL and expands on intent [${V.id}]`, async ({ browser }) => {
+test(`sheet-w1 a tall sheet opens to its full height [${V.id}]`, async ({ browser }) => {
   const ctx = await browser.newContext({ viewport: V.vp, deviceScaleFactor: V.dpr, locale: 'en-US' });
   const page = await ctx.newPage();
   await base(page, V, { demo: true });
   await openSplitEditor(page);
 
   const sheet = page.locator('.react-modal-sheet-container');
-  // #312 r4: sheets WRAP their content under the half cap (852 → 426).
-  // The WebKit header-only collapse clipped the Done row away — the
-  // last-control-visible assert is the collapse guard; the ceiling
-  // catches a wrap regression back to fixed heights.
-  const done = await page.locator('[data-testid="part-cat-save"]').boundingBox();
-  expect(done).toBeTruthy();
-  expect(done.y + done.height).toBeLessThanOrEqual(V.vp.height);
-  expect((await sheet.boundingBox())?.height ?? 0).toBeLessThan(480);
-  // content that already fits NEVER grows — an unscrollable list clamps
-  // scrollTop to zero, so the growth trigger has nothing to eat
-  await page.locator('.react-modal-sheet-content-scroller').evaluate((el) => {
-    el.scrollTop = 10;
-    el.dispatchEvent(new Event('scroll', { bubbles: true }));
-  });
-  await page.waitForTimeout(400);
-  expect((await sheet.boundingBox())?.height ?? 0).toBeLessThan(480);
+  // the collapse measured 261px of sheet and 199px of scrollport — the
+  // thresholds sit far from both the broken and the correct value, so
+  // animation timing can't flake them and a regression can't sneak under
+  await expect.poll(async () => (await sheet.boundingBox())?.height ?? 0).toBeGreaterThan(450);
+  const scroller = await page.locator('.react-modal-sheet-content-scroller').boundingBox();
+  expect(scroller?.height ?? 0).toBeGreaterThan(300);
+  expect((await sheet.boundingBox())?.height ?? 0).toBeLessThan(V.vp.height);
   await ctx.close();
 });
 
@@ -59,23 +50,11 @@ test(`sheet-w2 a stacked child keeps the depth step-down [${V.id}]`, async ({ br
   await page.click('[data-testid="part-cat-0"]'); // stacks the category picker
   const sheets = page.locator('.react-modal-sheet-container');
   await expect(sheets).toHaveCount(2);
-  // the catalog's content overflows, so the stacked child fills its
-  // depth-stepped half cap (852/2 − 28 = 398); the collapse (261 with
-  // the list clipped) stays far below
-  await expect.poll(async () => (await sheets.nth(1).boundingBox())?.height ?? 0).toBeGreaterThan(350);
-  expect((await sheets.nth(1).boundingBox())?.height ?? 0).toBeLessThan(410);
-
-  // #312 r4: growth is PACED — the gesture is eaten 1:1. A big scroll
-  // grows the child toward near-top and leaves the remainder to the
-  // content; WebKit lays the grown height out for real.
-  await sheets
-    .nth(1)
-    .locator('.react-modal-sheet-content-scroller')
-    .evaluate((el) => {
-      el.scrollTop = 500;
-      el.dispatchEvent(new Event('scroll', { bubbles: true }));
-    });
-  await expect.poll(async () => (await sheets.nth(1).boundingBox())?.height ?? 0).toBeGreaterThan(600);
-  expect((await sheets.nth(1).boundingBox())?.height ?? 0).toBeLessThan(V.vp.height);
+  // stacked sheets step down 28px per level (Sheet.tsx depth cue) — the
+  // child must be full-height too, just one step shorter than its parent
+  await expect.poll(async () => (await sheets.nth(1).boundingBox())?.height ?? 0).toBeGreaterThan(450);
+  const parent = (await sheets.nth(0).boundingBox())?.height ?? 0;
+  const child = (await sheets.nth(1).boundingBox())?.height ?? 0;
+  expect(Math.abs(parent - 28 - child)).toBeLessThanOrEqual(2);
   await ctx.close();
 });

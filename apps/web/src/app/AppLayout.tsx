@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { DisplayMoneyProvider } from '@/features/currency/useDisplayMoney';
 import { useLang } from '@/i18n';
@@ -13,7 +13,7 @@ import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
 import { clearTxFilters } from '@/features/transactions/txFilters';
-import { padScrollportForKeyboard, releaseScrollportPad, revealInScroller } from '@/lib/viewport';
+import { padScrollportForKeyboard, restoreScrollportPad, revealInScroller } from '@/lib/viewport';
 import { wheelToHorizontal } from '@/lib/wheelScroll';
 import { SHEET_OWNS_KEYBOARD, Sheet } from '@/ui/Sheet';
 import { Button } from '@/ui/Button';
@@ -128,9 +128,7 @@ function useKeyboardOpen(): boolean {
       setTimeout(() => {
         if (!isEditable(document.activeElement)) {
           setOpen(false);
-          // #312 r2: deferred — the pad stays until it scrolls out of
-          // sight, so closing the keyboard never reflows the view
-          releaseScrollportPad();
+          restoreScrollportPad();
         }
       }, 100);
     };
