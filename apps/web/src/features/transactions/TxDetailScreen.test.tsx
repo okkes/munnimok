@@ -258,6 +258,12 @@ describe('TxDetailScreen (demo identity)', () => {
   }, 20_000);
 
   it('#255 r3: a part points at the EXISTING pot row — pick, pair, and the countertx row wears its face', async () => {
+    // CI-load rework (4th flake 2026-08-25): the old walk stacked FOUR
+    // sheets (counter row → account ask → fork → dup pick) and starved
+    // under full-suite coverage. The part's countertx PENCIL opens the
+    // match sheet directly — the pick's write mechanics (patch + the
+    // review-shape reciprocal) are identical on that path, and the
+    // counter-first ask/fork doors keep their own #228/#237 specs.
     renderApp('/transactions');
     await screen.findByTestId('screen-transactions', {}, { timeout: 10_000 });
     const db = new MunniDB('munni_demo');
@@ -267,7 +273,8 @@ describe('TxDetailScreen (demo identity)', () => {
       merchant: 'Split with pot', catId: 'telecom', txType: 'expense', needsReview: 0,
       splits: [
         { id: 'pp1', catId: 'telecom', amountCents: 4000 },
-        { id: 'pp2', catId: 'uncategorized', amountCents: 2000 },
+        // the counter account is already decided; only the PEER is open
+        { id: 'pp2', catId: 'savingDeposit', txType: 'saving', amountCents: 2000, linkedAccountId: 'demo_save' },
       ],
     });
     // the pot row that already IS the other leg of the €20 part
@@ -277,13 +284,9 @@ describe('TxDetailScreen (demo identity)', () => {
     });
     await screen.findByTestId('tx-parts-tx-pp', {}, { timeout: 10_000 });
     fireEvent.click(screen.getByTestId('tx-part-row-tx-pp-1'));
-    fireEvent.click(await screen.findByTestId('tx-part-counter-row', {}, { timeout: 10_000 }));
-    // an uncategorized part asks the OPEN accounts list (no family pin);
-    // generous waits — this file contends with the boot chain under
-    // full-suite coverage load (CI flake 2026-08-21)
-    fireEvent.click(await screen.findByTestId('counter-pick-demo_save', {}, { timeout: 10_000 }));
-    // the fork offers the row already there — point at it
-    await screen.findByTestId('counter-fork', {}, { timeout: 10_000 });
+    // the pencil opens the part's own match sheet — pot-in is the
+    // same-amount candidate on the linked account
+    fireEvent.click(await screen.findByTestId('tx-part-countertx-edit', {}, { timeout: 10_000 }));
     fireEvent.click((await screen.findByTestId('counter-dup-pot-in', {}, { timeout: 10_000 })).querySelector('button')!);
     await waitFor(async () => {
       const stored = (await db.transactions.get('tx-pp'))?.splits?.find((sp) => sp.id === 'pp2');
@@ -296,7 +299,7 @@ describe('TxDetailScreen (demo identity)', () => {
     // the part page's Counter-transaction row wears the picked face
     await waitFor(() => expect(screen.getByTestId('tx-part-countertx-row').textContent).toContain('Pot arrival'));
     db.close();
-  }, 40_000);
+  }, 30_000);
 
   it('#255 r4: BOTH sides of a part pair travel on tap — no sheet, no dead jump, and the peer wears the PART\'s face', async () => {
     renderApp('/transactions');
