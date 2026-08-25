@@ -91,7 +91,9 @@ function CategorySlices({
   cats: ReturnType<typeof useCategories>;
   fallbackCat: ReturnType<ReturnType<typeof useCategories>['byId']>;
   fallbackColor: string;
-  onEdit: () => void;
+  /** #328 (user): absent = the category is locked — the row is inert
+   *  and drops its chevron */
+  onEdit?: () => void;
   /** #200: a real part row navigates to its page */
   onOpenPart?: (partId: string) => void;
 }>) {
@@ -144,7 +146,9 @@ function CategorySlices({
             <span className="m-num text-[13px] text-ink-2">
               {fmtCents(sliceRowAmountCents(partsMode, slice, tx), tx.currency, lang)}
             </span>
-            {openPartId && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
+            {/* #328 (user): the editor door is a door too — every live
+                tap (part page OR cats editor) wears the chevron */}
+            {(openPartId || onEdit) && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
           </button>
         );
       })}
@@ -648,7 +652,9 @@ function DetailActionsCard({
           >
             <Icon name="call-split" size={20} color="var(--m-ink-3)" />
             <span className="flex-1 truncate">{t(splitDoorMode === 'row' ? 'split.title' : 'review.manageSplits')}</span>
-            <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+            {/* #328 (user): rows whose tap opens a sheet wear the right
+                chevron — the pencil stays for true in-place edits */}
+            <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
           </button>
         )}
         {linkRows && (
@@ -666,7 +672,7 @@ function DetailActionsCard({
                   : t('recurring.linkTitle')}
               </span>
               {!tx.recurringId && <span className="text-xs text-ink-4">{t('recurring.linkNone')}</span>}
-              <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
             </button>
             <div className="mx-4 h-px bg-line-2" />
             <button
@@ -679,7 +685,7 @@ function DetailActionsCard({
                 {tx.eventId ? (events?.find((e) => e.id === tx.eventId)?.name ?? t('events.linkTitle')) : t('events.linkTitle')}
               </span>
               {!tx.eventId && <span className="text-xs text-ink-4">{t('events.linkNone')}</span>}
-              <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />
+              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
             </button>
           </>
         )}
@@ -1438,7 +1444,8 @@ function PartDetailBody({
             {partCounter?.name ?? t('tx.counterNone')}
           </span>
           <span className="text-xs text-ink-4">{t('tx.counterAccount')}</span>
-          {!ownStamp && <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />}
+          {/* #328 (user): the tap opens the counterparty sheet — chevron */}
+          {!ownStamp && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
         </button>
         {/* #255 r3 (user): the part's Counter-transaction row — the
             picked leg's face, or the honest waiting state. #255 r4
@@ -1521,7 +1528,7 @@ function PartDetailBody({
               <span className="m-num text-[13px] text-ink-2">
                 {fmtCents(entry ? entry.amountCents : partNetCents(part), tx.currency, lang)}
               </span>
-              <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
             </button>
           );
         })}
@@ -1535,6 +1542,8 @@ function PartDetailBody({
             <Icon name={cats.byId(entry.catId).icon} size={20} color="var(--m-ink-4)" />
             <span className="min-w-0 flex-1 truncate text-[15px] text-ink-2">{catName(cats.byId(entry.catId), t)}</span>
             <span className="m-num text-[13px] text-ink-3">{fmtCents(entry.amountCents, tx.currency, lang)}</span>
+            {/* #328 (user): this tap opens the editor too — say so */}
+            <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
           </button>
         ))}
       </div>
@@ -1550,7 +1559,7 @@ function PartDetailBody({
           {activeRecs.find((rec) => rec.id === part.recurringId)?.name ?? t('recurring.linkNone')}
         </span>
         <span className="text-[11px] text-ink-4">{t('recurring.linkTitle')}</span>
-        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
       </button>
 
       <button
@@ -1561,7 +1570,7 @@ function PartDetailBody({
         <Icon name="party-popper" size={18} color="var(--m-ink-3)" />
         <span className="min-w-0 flex-1 truncate">{partEvent?.name ?? t('events.linkNone')}</span>
         <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
-        <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+        <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
       </button>
 
       {/* r5: the part's own note — parts are full transactions */}
@@ -1924,7 +1933,8 @@ function DetailAccountBlock({
               )}
             </span>
             <span className="text-xs text-ink-4">{t('tx.counterAccount')}</span>
-            {onEditCounter && <Icon name="pencil-outline" size={14} color="var(--m-ink-4)" />}
+            {/* #328 (user): the tap opens the counterparty sheet — chevron */}
+            {onEditCounter && <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />}
           </div>
         </>
       )}
@@ -2589,7 +2599,8 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
             cats={cats}
             fallbackCat={cat}
             fallbackColor={color}
-            onEdit={() => !categoryLocked && openCategoriesEditor()}
+            // #328 (user): locked = no door — undefined drops the chevron
+            onEdit={categoryLocked ? undefined : openCategoriesEditor}
             onOpenPart={(id) =>
               void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: id } })
             }

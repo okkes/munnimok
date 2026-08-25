@@ -216,4 +216,90 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     await screen.findByTestId('catpicker-groceries');
     await waitFor(() => expect((screen.getByTestId('catpicker-search-wrap') as HTMLElement).style.height).toBe('200px'));
   }, 15_000);
+
+  it('#329: the ◆ lens resets when the picker closes — the next visit starts unfiltered', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-groceries');
+
+    fireEvent.click(screen.getByTestId('catpicker-special-filter'));
+    await waitFor(() => expect(screen.queryByTestId('catpicker-groceries')).toBeNull());
+    // dismiss WITHOUT picking (Escape reaches only the top sheet)…
+    fireEvent.keyDown(window, { key: 'Escape' });
+    // …and the reopened picker starts whole: chip off, full catalog back
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-groceries');
+    expect(screen.getByTestId('catpicker-special-filter').className).not.toContain('bg-accent-soft');
+  }, 15_000);
+
+  it('#322: a counter-narrowed picker offers the detach door — tap frees the full catalog in place', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    // a ◆ family pick asks its counterparty; the pinned Default answers
+    fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
+    fireEvent.click(await screen.findByTestId('counter-default'));
+    await waitFor(() => expect(screen.getByTestId('part-cats-editor').getAttribute('data-counter')).not.toBe(''));
+
+    // the standing counter narrows the reopened picker to what it can
+    // mean — and the door says why, right where the narrowing bites
+    fireEvent.click(screen.getByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-clear-counter');
+    expect(screen.getByTestId('catpicker-savingDeposit')).toBeTruthy();
+    expect(screen.queryByTestId('catpicker-groceries')).toBeNull();
+
+    // the door runs the counter row's own detach: link gone, category
+    // reset, and the picker un-narrows without closing
+    fireEvent.click(screen.getByTestId('catpicker-clear-counter'));
+    await screen.findByTestId('catpicker-groceries');
+    expect(screen.getByTestId('part-cats-editor').getAttribute('data-counter')).toBe('');
+    expect(screen.queryByTestId('catpicker-clear-counter')).toBeNull();
+  }, 15_000);
+
+  it('#323: filtering drops the collapse slack; growth stops at a short list’s end', async () => {
+    renderApp('/transactions');
+    await screen.findByTestId('tx-list');
+    fireEvent.click(screen.getByTestId('tx-add'));
+    fireEvent.click(await screen.findByTestId('txform-account'));
+    fireEvent.click(await screen.findByTestId('txform-account-demo_main'));
+    fireEvent.click(screen.getByTestId('txform-category'));
+    fireEvent.click(await screen.findByTestId('part-cat-0'));
+    await screen.findByTestId('catpicker-groceries');
+
+    const list = screen.getByTestId('catpicker-list') as HTMLElement;
+    Object.defineProperty(list, 'scrollHeight', { value: 1400, configurable: true });
+    Object.defineProperty(list, 'clientHeight', { value: 400, configurable: true });
+    const wrapper = screen.getByTestId('catpicker-search-wrap') as HTMLElement;
+    // collapse the field fully with a long unfiltered list
+    list.scrollTop = 400;
+    fireEvent.scroll(list);
+    await waitFor(() => expect(wrapper.style.height).toBe('110px'));
+    expect(list.style.maxHeight).toBe('530px');
+
+    // #323 (user): the filter shrinks the content — the stale offset held
+    // phantom scroll range (the endless rubber band). A query change
+    // restores the whole field and rewinds the list to its top.
+    fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'groc' } });
+    await waitFor(() => expect(wrapper.style.height).toBe('200px'));
+    expect(list.style.maxHeight).toBe('440px');
+    expect(list.scrollTop).toBe(0);
+
+    // firm end: collapsing frees exactly as much viewport as it hides, so
+    // on a SHORT list growth may only spend the scroll room still below —
+    // never overshoot the content and bounce back
+    Object.defineProperty(list, 'scrollHeight', { value: 600, configurable: true });
+    list.scrollTop = 150; // maxTop 200 → only 50px of room left
+    fireEvent.scroll(list);
+    await waitFor(() => expect(wrapper.style.height).toBe('150px')); // 200 − 50, NOT 200 − 90
+    expect(list.style.maxHeight).toBe('490px');
+  }, 15_000);
 });

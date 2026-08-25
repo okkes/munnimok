@@ -645,6 +645,18 @@ export function CatsSheet({
         onlyIds={allowedCatIds ?? counterNarrowedIds}
           onCreateCustomNav={onCreateCustomNav}
         noSpecials={entries.length > 1}
+        // #322 (user): when the COUNTER narrows the list (never a host
+        // allowlist), the picker offers the detach door in place — the
+        // same reset the counter row's detach runs, and the un-narrowed
+        // catalog appears without leaving the sheet
+        onClearCounter={
+          !allowedCatIds && counterNarrowedIds && pickerFor !== null
+            ? () => {
+                patchEntry(pickerFor, detachPatch(entries[pickerFor]?.catId));
+                rollbackRef.current = null;
+              }
+            : undefined
+        }
         onPick={(catId) => {
           if (pickerFor === null) return;
           const prev = entries[pickerFor];

@@ -46,10 +46,15 @@ interface CategoryPickerProps {
   /** #275: fired right before the create-custom door navigates away —
    *  hosts stash their return state (review keeps its place) */
   onCreateCustomNav?: () => void;
+  /** #322 (user): a standing counterparty narrows the list — hosts that
+   *  narrow pass this to render the detach door INSIDE the picker; the
+   *  callback clears the counter through the host's own detach mechanics
+   *  and the picker un-narrows in place */
+  onClearCounter?: () => void;
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, onCreateCustomNav }: Readonly<CategoryPickerProps>) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, onCreateCustomNav, onClearCounter }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
   const cats = useCategories();
   const navigate = useNavigate();
@@ -108,16 +113,26 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
 
   // #245 (user): the search rides along — #273 r2: 1:1 WITH the scroll
   // (no animation; the finger owns the motion); the list's cap grows by
-  // exactly the freed height, so the tail always stays reachable
-  const { offset: searchOffset, onListScroll, reset: resetCollapse } = useSearchCollapse(noSpecials ? 56 : 90);
+  // exactly the freed height, so the tail always stays reachable.
+  // #323 (user): the query doubles as the hook's resetKey — a filtered
+  // (shorter) list must not inherit the unfiltered state's collapse slack
+  const { offset: searchOffset, onListScroll, reset: resetCollapse } = useSearchCollapse(noSpecials ? 56 : 90, query);
   const listRef = useRef<HTMLDivElement>(null);
-  // #273 r3 (user): reopening must start whole — field shown, list at top
+  // #273 r3 (user): reopening must start whole — field shown, list at
+  // top. #329 (user): the ◆ lens resets with it — a filter toggled on
+  // the LAST visit must not silently narrow the next one.
   useEffect(() => {
     if (!open) return;
     resetCollapse();
+    setSpecialOnly(false);
     if (listRef.current) listRef.current.scrollTop = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  // #323 (user): the hook dropped its offset on the query change — the
+  // scroller rewinds with it so the shorter result list starts at its top
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0;
+  }, [query]);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('screen.categories')} size="tall" dragHandle>
@@ -140,6 +155,19 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         data-testid="catpicker-list"
         onScroll={onListScroll}
       >
+      {/* #322 (user): the narrowed list says WHY and offers the way out —
+          detaching the counterparty right here frees the whole catalog
+          without a trip back to the counter row */}
+      {onClearCounter && (
+        <button
+          data-testid="catpicker-clear-counter"
+          onClick={onClearCounter}
+          className="m-tap mt-1 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-3 py-2.5 text-left text-[13px] font-medium text-accent-deep"
+        >
+          <Icon name="link-off" size={16} />
+          {t('cats.clearCounter')}
+        </button>
+      )}
       {groups.map(({ parent, children }) => (
         <div key={parent.id}>
           <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1" style={{ color: parent.color }}>

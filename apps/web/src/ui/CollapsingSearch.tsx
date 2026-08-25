@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode, UIEvent } from 'react';
 
 /**
@@ -15,7 +15,7 @@ import type { ReactNode, UIEvent } from 'react';
  *   slides it, so the list below flows into the freed space in the same
  *   frame the finger moves.
  */
-export function useSearchCollapse(searchH: number) {
+export function useSearchCollapse(searchH: number, resetKey?: unknown) {
   const [offset, setOffset] = useState(0);
   const lastScrollTop = useRef(0);
   // #273 r3 (user): a sheet that stays mounted reopens with the field
@@ -24,6 +24,17 @@ export function useSearchCollapse(searchH: number) {
     setOffset(0);
     lastScrollTop.current = 0;
   };
+  // #323 (user): filtering shrinks the content while the offset still
+  // held the field collapsed — the stale slack left phantom scroll range
+  // that rubber-banded at the list's end forever. A resetKey change (the
+  // query) restores the whole field; hosts rewind their scroller with it.
+  const keyRef = useRef(resetKey);
+  useEffect(() => {
+    if (Object.is(keyRef.current, resetKey)) return;
+    keyRef.current = resetKey;
+    setOffset(0);
+    lastScrollTop.current = 0;
+  }, [resetKey]);
   const onListScroll = (e: UIEvent<HTMLDivElement>) => {
     const el = e.currentTarget;
     const top = el.scrollTop;
@@ -32,7 +43,12 @@ export function useSearchCollapse(searchH: number) {
     const maxTop = el.scrollHeight - el.clientHeight;
     // rubber band: bounce frames at either end must not eat the field
     if (top < 0 || top > maxTop) return;
-    setOffset((prev) => Math.min(searchH, Math.max(0, prev + delta)));
+    // #323 (user): collapsing frees exactly as much viewport as it hides,
+    // so near the end of a SHORT (filtered) list unchecked growth would
+    // overshoot the content — the browser clamps back and the tug-of-war
+    // bounces forever. Growth spends at most the scroll room still below.
+    const step = delta > 0 ? Math.min(delta, Math.max(0, maxTop - top)) : delta;
+    setOffset((prev) => Math.min(searchH, Math.max(0, prev + step)));
   };
   return { offset, searchH, onListScroll, reset };
 }
