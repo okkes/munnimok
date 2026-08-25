@@ -2,6 +2,8 @@ import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { localToday, useRecurrings } from '@/application/recurring';
 import { useSpaceAccounts } from '@/application/transactions';
+import type { AccountRow } from '@/db/types';
+import { typeDef } from '@/features/accounts/accountTypes';
 import {
   upcomingHorizon,
   upcomingLoanAmountCents,
@@ -24,6 +26,19 @@ import { Icon } from '@/ui/Icon';
  * period, stretched to at least the block's 7-day horizon so no row the
  * block promised goes missing here.
  */
+/** #336 (user): the loan row wears the ACCOUNT's face — its chosen
+ *  logo/picture if set, else the type icon tinted the account's color —
+ *  the old hardcoded card icon ignored the editor entirely. Shared by
+ *  the home block and this landing so the two can never drift. */
+export function LoanFace({ loan }: Readonly<{ loan: AccountRow }>) {
+  if (loan.logo) return <img src={loan.logo} alt="" className="h-8 w-8 shrink-0 rounded-lg object-contain" />;
+  return (
+    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft/60">
+      <Icon name={typeDef(loan.type).icon} size={16} color={loan.color ?? 'var(--m-accent-deep)'} />
+    </span>
+  );
+}
+
 export function UpcomingScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
@@ -95,9 +110,7 @@ export function UpcomingScreen() {
                   onClick={() => void navigate({ to: '/debts/$debtId', params: { debtId: loan.id } })}
                   className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
                 >
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft/60">
-                    <Icon name="credit-card-outline" size={16} color="var(--m-accent-deep)" />
-                  </span>
+                  <LoanFace loan={loan} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">{loan.name}</span>
                     <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>

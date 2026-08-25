@@ -86,6 +86,8 @@ function ThemeModeSwitch() {
   return (
     // no group role (S6819): each segment is a labelled aria-pressed
     // button — the span is purely a visual frame
+    // #327 r3 (user): the end segments own the frame's corners so the
+    // inset focus ring follows the visible rounding
     <span className="flex shrink-0 overflow-hidden rounded-lg border border-line-2">
       <button
         type="button"
@@ -93,7 +95,7 @@ function ThemeModeSwitch() {
         aria-label={t('settings.themeLight')}
         aria-pressed={mode === 'light'}
         onClick={pick('light')}
-        className={segCls(mode === 'light')}
+        className={`${segCls(mode === 'light')} rounded-l-lg`}
       >
         <Icon name="weather-sunny" size={15} />
       </button>
@@ -113,7 +115,7 @@ function ThemeModeSwitch() {
         aria-label={t('settings.followDevice')}
         aria-pressed={mode === 'system'}
         onClick={pick('system')}
-        className={`${segCls(mode === 'system')} font-mono text-[11px] font-semibold`}
+        className={`${segCls(mode === 'system')} rounded-r-lg font-mono text-[11px] font-semibold`}
       >
         AUTO
       </button>

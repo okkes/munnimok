@@ -800,18 +800,20 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         <div className="flex flex-col gap-3 pt-1">
           {/* direction + amount */}
           <div className="flex gap-2">
+            {/* #327 r3 (user): halves own their corners — the inset
+                focus ring follows the group's rounding */}
             <div className="flex overflow-hidden rounded-input border border-line">
               <button
                 data-testid="txform-expense"
                 onClick={() => setIsExpense(true)}
-                className={`m-tap border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
+                className={`m-tap rounded-l-input border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
               >
                 −
               </button>
               <button
                 data-testid="txform-income"
                 onClick={() => setIsExpense(false)}
-                className={`m-tap border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
+                className={`m-tap rounded-r-input border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
               >
                 +
               </button>

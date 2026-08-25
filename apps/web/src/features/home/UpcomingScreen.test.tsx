@@ -123,3 +123,69 @@ describe('#334: upcoming see-all = recurring + loans together', () => {
     expect(await screen.findByTestId('debtdetail-hero', {}, { timeout: 10_000 })).toBeTruthy();
   }, 30_000);
 });
+
+/** #336 (user): the loan rows wear the ACCOUNT's face — the editor's
+ *  chosen logo/picture, else the type icon in the account's color —
+ *  never the old hardcoded card icon that ignored every edit */
+describe('#336: upcoming loan rows wear the account face', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase('munni_demo');
+  });
+
+  async function seedFacedLoans() {
+    // the boot chain must settle before this handle's writes (db.close trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-336'), { trackOutbox: false });
+    const plan = {
+      type: 'loan' as const,
+      source: 'manual' as const,
+      currency: 'EUR',
+      balanceCents: -300_000,
+      trackAsDebt: 1 as const,
+      paymentCents: 15_000,
+      paymentEvery: 'month' as const,
+      paymentDay: day,
+    };
+    // colored, no logo: the TYPE icon tinted with the account's color
+    await repo.upsert('account', DEMO_SPACE_ID, 'face336a', { ...plan, name: 'Tinted loan 336', color: '#B33771' });
+    // pictured: the chosen logo wins outright
+    await repo.upsert('account', DEMO_SPACE_ID, 'face336b', { ...plan, name: 'Logo loan 336', logo: '/brands/acme.svg' });
+    db.close();
+  }
+
+  function expectFaces(tinted: HTMLElement, logoed: HTMLElement) {
+    const icon = tinted.querySelector('.mdi-hand-coin-outline');
+    expect(icon).not.toBeNull();
+    expect(icon?.getAttribute('style') ?? '').toMatch(/#b33771|179,\s*55,\s*113/i);
+    // …and never the old hardcoded stand-in
+    expect(tinted.querySelector('.mdi-credit-card-outline')).toBeNull();
+    expect(logoed.querySelector('img')?.getAttribute('src')).toBe('/brands/acme.svg');
+  }
+
+  it('home block rows render the loan logo / colored type icon', async () => {
+    const first = renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await seedFacedLoans();
+    first.unmount();
+
+    renderApp('/home');
+    const tinted = await screen.findByTestId('home-upcoming-debt-face336a', {}, { timeout: 10_000 });
+    const logoed = await screen.findByTestId('home-upcoming-debt-face336b', {}, { timeout: 10_000 });
+    expectFaces(tinted, logoed);
+  }, 30_000);
+
+  it('/upcoming landing rows render the loan logo / colored type icon', async () => {
+    const first = renderApp('/upcoming');
+    await screen.findByTestId('screen-upcoming');
+    await seedFacedLoans();
+    first.unmount();
+
+    renderApp('/upcoming');
+    const tinted = await screen.findByTestId('upcoming-loan-face336a', {}, { timeout: 10_000 });
+    const logoed = await screen.findByTestId('upcoming-loan-face336b', {}, { timeout: 10_000 });
+    expectFaces(tinted, logoed);
+  }, 30_000);
+});

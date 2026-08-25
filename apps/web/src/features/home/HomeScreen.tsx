@@ -15,6 +15,7 @@ import {
   upcomingRecurrings,
 } from '@/domain/upcoming';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
+import { LoanFace } from './UpcomingScreen';
 import { LOCALES, useLang } from '@/i18n';
 import type { TFunc, TranslationKey } from '@/i18n';
 import { useSession } from '@/app/session';
@@ -82,6 +83,14 @@ const tileValueClass = (kind: OverviewKind, cents: number): string => {
   if (!TILE_META[kind].signed) return 'text-ink';
   return cents < 0 ? 'text-negative' : 'text-accent-deep';
 };
+
+/** #327 r3 (user): the square tiles sit inside the card's rounded
+ *  overflow-hidden frame — each corner tile owns the card's corner so
+ *  the inset focus ring hugs the visible shape instead of being sliced */
+const tileCorners = (i: number, len: number): string =>
+  [i === 0 && 'rounded-tl-card', i === 1 && 'rounded-tr-card', i === len - 2 && 'rounded-bl-card', i === len - 1 && 'rounded-br-card']
+    .filter(Boolean)
+    .join(' ');
 
 /** #313 (user): a sparse desktop home keeps ONE centered column — the
  *  block width the user liked (~720px) with emptiness on both sides */
@@ -727,7 +736,7 @@ export function HomeScreen() {
               onClick={() => void navigate({ to: '/overview/$kind', params: { kind } })}
               className={`m-tap flex items-center gap-2.5 border-none bg-transparent px-4 py-3 text-left ${
                 i % 2 === 1 ? 'border-l border-l-line-2' : ''
-              } ${i > 1 ? 'border-t border-t-line-2' : ''}`}
+              } ${i > 1 ? 'border-t border-t-line-2' : ''} ${tileCorners(i, OVERVIEW_KINDS.length)}`}
             >
               <span
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
@@ -941,9 +950,8 @@ export function HomeScreen() {
               onClick={() => void navigate({ to: '/debts/$debtId', params: { debtId: loan.id } })}
               className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
             >
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-soft/60">
-                <Icon name="credit-card-outline" size={16} color="var(--m-accent-deep)" />
-              </span>
+              {/* #336 (user): the account's own face, not a stand-in */}
+              <LoanFace loan={loan} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink">{loan.name}</span>
                 <span className="block text-[11px] text-ink-4">

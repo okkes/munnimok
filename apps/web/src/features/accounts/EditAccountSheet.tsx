@@ -232,18 +232,20 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
             <>
               <div className="m-cap px-1 pt-1">{t('acct.sectionBalance')}</div>
               <div className="flex gap-2">
+                {/* #327 r3 (user): halves own their corners — the inset
+                    focus ring follows the group's rounding */}
                 <div className="flex overflow-hidden rounded-input border border-line">
                   <button
                     data-testid="acctedit-neg"
                     onClick={() => setNegative(true)}
-                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
+                    className={`m-tap rounded-l-input border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
                   >
                     −
                   </button>
                   <button
                     data-testid="acctedit-pos"
                     onClick={() => setNegative(false)}
-                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
+                    className={`m-tap rounded-r-input border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
                   >
                     +
                   </button>

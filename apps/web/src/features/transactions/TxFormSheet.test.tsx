@@ -40,7 +40,9 @@ describe('TxFormSheet (demo identity)', () => {
 
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '4,50' } });
     await waitFor(() => expect(screen.queryByTestId('txform-save-blocker')).toBeNull());
-  });
+    // 15s cap: first coverage-load flake 2026-08-25 (5s default in a
+    // 70s file) — a second flake means reworking, not re-timing
+  }, 15_000);
 
   it('register-style amount entry: bare digits fill cents from the right (user request)', async () => {
     await openForm();

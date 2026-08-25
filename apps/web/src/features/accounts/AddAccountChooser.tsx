@@ -345,18 +345,21 @@ export function AddAccountChooser({
               {/* #195 r2 (user): the blocker sits AT the field */}
               <FormBlockerNote show={nameBad} text={t('form.needName')} testId="chooser-acctform-save-blocker" />
               <div className="flex gap-2">
+                {/* #327 r3 (user): each half owns its corners of the
+                    clipping frame so the inset focus ring hugs the
+                    visible shape instead of losing its corners */}
                 <div className="flex overflow-hidden rounded-input border border-line">
                   <button
                     data-testid="chooser-acctform-neg"
                     onClick={() => setNegative(true)}
-                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
+                    className={`m-tap rounded-l-input border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
                   >
                     −
                   </button>
                   <button
                     data-testid="chooser-acctform-pos"
                     onClick={() => setNegative(false)}
-                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
+                    className={`m-tap rounded-r-input border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
                   >
                     +
                   </button>
