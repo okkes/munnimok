@@ -29,6 +29,11 @@ export interface LockConfig {
   pinHash: string;
   /** seconds hidden before the app locks again (0 = immediately) */
   timeoutSec: number;
+  /** #315 (user): last moment this identity was seen unlocked (epoch ms).
+   * Written on unlock and cheaply while unlocked, so a page refresh
+   * within timeoutSec boots unlocked. Same trust domain as the config
+   * itself (a UI gate, not crypto); missing/invalid/future -> locked. */
+  lastActiveAt?: number;
 }
 
 /** the config's biometric path, resolving pre-§1 configs (credentialId only) */
@@ -174,6 +179,35 @@ export async function verifyBiometric(
 }
 
 // ── lock state ──────────────────────────────────────────────────────────
+/** pure decision: should the app lock after `elapsedMs` out of sight? */
+export const shouldLock = (config: LockConfig | null, elapsedMs: number): boolean =>
+  config !== null && elapsedMs >= config.timeoutSec * 1000;
+
+/** #315 (user): boot decision — a refresh within the configured timeout of
+ * the persisted last-active stamp stays unlocked. Fail closed: a missing
+ * or corrupted stamp, and a stamp from the future (the clock moved
+ * backward), cannot prove recent activity. */
+export const bootLocked = (config: LockConfig | null, now: number): boolean => {
+  if (!config) return false; // no lock armed — nothing to gate
+  const stamp = config.lastActiveAt;
+  if (typeof stamp !== 'number' || !Number.isFinite(stamp) || stamp > now) return true;
+  return shouldLock(config, now - stamp);
+};
+
+/** refresh the last-active stamp — only an UNLOCKED page extends trust
+ * (a refresh under the lock screen must come back locked) */
+function touchLockStamp(): void {
+  if (useLock.getState().locked) return;
+  const config = readLockConfig();
+  if (config) writeLockConfig({ ...config, lastActiveAt: Date.now() });
+}
+
+function clearLockStamp(): void {
+  const config = readLockConfig();
+  // JSON.stringify drops the explicit undefined — the stamp is gone
+  if (config?.lastActiveAt !== undefined) writeLockConfig({ ...config, lastActiveAt: undefined });
+}
+
 interface LockState {
   locked: boolean;
   /** #202: the auto passkey prompt fires ONCE per lock cycle — remounts
@@ -186,16 +220,21 @@ interface LockState {
 }
 
 export const useLock = create<LockState>((set) => ({
-  locked: readLockConfig() !== null, // enabled -> start locked
+  locked: bootLocked(readLockConfig(), Date.now()),
   promptSpent: false,
-  lock: () => set({ locked: true, promptSpent: false }),
-  unlock: () => set({ locked: false }),
+  lock: () => {
+    set({ locked: true, promptSpent: false });
+    clearLockStamp(); // #315: locking outlives any refresh
+  },
+  unlock: () => {
+    set({ locked: false });
+    touchLockStamp(); // #315: unlocking IS fresh activity
+  },
   spendPrompt: () => set({ promptSpent: true }),
 }));
 
-/** pure decision: should the app lock after `elapsedMs` out of sight? */
-export const shouldLock = (config: LockConfig | null, elapsedMs: number): boolean =>
-  config !== null && elapsedMs >= config.timeoutSec * 1000;
+/** low-frequency safety net for pages killed without a pagehide */
+const STAMP_INTERVAL_MS = 30_000;
 
 /** watches visibility and re-locks after the configured timeout */
 export function initLockWatcher(): void {
@@ -203,11 +242,21 @@ export function initLockWatcher(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       hiddenAt = Date.now();
+      touchLockStamp(); // #315: going out of sight is the last active moment
     } else if (hiddenAt !== null) {
       if (shouldLock(readLockConfig(), Date.now() - hiddenAt)) useLock.getState().lock();
+      else touchLockStamp();
       hiddenAt = null;
     }
   });
+
+  // #315 (user): a refresh keeps its unlock only through the persisted
+  // stamp — pagehide catches the reload itself, the slow tick covers
+  // hard kills that never fire it. Any tab may stamp (shared storage).
+  window.addEventListener('pagehide', touchLockStamp);
+  setInterval(() => {
+    if (document.visibilityState === 'visible') touchLockStamp();
+  }, STAMP_INTERVAL_MS);
 
   // signing in or out is itself fresh verification — never keep a stale
   // lock across an identity change (logout must free a shared machine)

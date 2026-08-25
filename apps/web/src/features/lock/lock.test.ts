@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSession } from '@/app/session';
 import {
   biometricAvailable,
+  bootLocked,
   effectiveBiometricKind,
   hashPin,
   initLockWatcher,
@@ -162,6 +163,130 @@ describe('webauthn wrappers', () => {
     expect(effectiveBiometricKind({ credentialId: 'abc' })).toBe('webauthn');
     expect(effectiveBiometricKind({ biometricKind: 'native' })).toBe('native');
     expect(effectiveBiometricKind({})).toBeNull();
+  });
+});
+
+describe('#315 bootLocked (a refresh keeps the unlock within the window)', () => {
+  const T = 1_700_000_000_000;
+
+  beforeEach(() => {
+    localStorage.clear();
+    useSession.getState().logout();
+  });
+
+  it('no armed lock -> never locked', () => {
+    expect(bootLocked(null, T)).toBe(false);
+  });
+
+  it('stays unlocked inside the window, locks from the boundary on', () => {
+    expect(bootLocked(config({ timeoutSec: 60, lastActiveAt: T - 59_000 }), T)).toBe(false);
+    expect(bootLocked(config({ timeoutSec: 60, lastActiveAt: T - 60_000 }), T)).toBe(true);
+    expect(bootLocked(config({ timeoutSec: 300, lastActiveAt: T - 299_000 }), T)).toBe(false);
+  });
+
+  it('fail-closed: missing stamp (pre-#315 config), NaN stamp, future stamp', () => {
+    expect(bootLocked(config(), T)).toBe(true); // never seen unlocked -> today's behavior
+    expect(bootLocked(config({ lastActiveAt: Number.NaN }), T)).toBe(true);
+    expect(bootLocked(config({ lastActiveAt: T + 1 }), T)).toBe(true); // clock moved backward
+  });
+
+  it('timeout 0 ("immediately") locks every boot regardless of a fresh stamp', () => {
+    expect(bootLocked(config({ timeoutSec: 0, lastActiveAt: T }), T)).toBe(true);
+  });
+
+  it('a corrupted non-number stamp in storage fails closed through the read path', () => {
+    signIn();
+    localStorage.setItem(
+      'munni_lock_demo',
+      JSON.stringify({ enabled: true, pinSalt: 's', pinHash: 'h', timeoutSec: 60, lastActiveAt: 'yesterday' }),
+    );
+    expect(bootLocked(readLockConfig(), T)).toBe(true);
+  });
+});
+
+describe('#315 last-active stamp (store actions)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useSession.getState().logout();
+    signIn();
+  });
+
+  it('unlock persists the stamp — the next boot inside the window skips the PIN', () => {
+    writeLockConfig(config({ timeoutSec: 60 }));
+    useLock.setState({ locked: true, promptSpent: false });
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+    try {
+      useLock.getState().unlock();
+    } finally {
+      now.mockRestore();
+    }
+    expect(readLockConfig()?.lastActiveAt).toBe(1_000_000);
+    expect(bootLocked(readLockConfig(), 1_000_000 + 59_000)).toBe(false); // the #315 refresh
+    expect(bootLocked(readLockConfig(), 1_000_000 + 61_000)).toBe(true);
+  });
+
+  it('lock() clears the stamp — a refresh under the lock screen comes back locked', () => {
+    writeLockConfig(config({ timeoutSec: 60, lastActiveAt: 1_000_000 }));
+    useLock.setState({ locked: false, promptSpent: false });
+    useLock.getState().lock();
+    expect(readLockConfig()?.lastActiveAt).toBeUndefined();
+    expect(localStorage.getItem('munni_lock_demo')).not.toContain('lastActiveAt');
+    expect(bootLocked(readLockConfig(), 1_000_001)).toBe(true);
+  });
+});
+
+describe('#315 activity stamping (watcher)', () => {
+  const setVisibility = (v: 'visible' | 'hidden') =>
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => v });
+
+  beforeEach(() => {
+    localStorage.clear();
+    useSession.getState().logout();
+    signIn();
+    writeLockConfig(config({ timeoutSec: 60 }));
+  });
+
+  it('pagehide stamps only while unlocked (a locked page never extends trust)', () => {
+    initLockWatcher();
+    const now = vi.spyOn(Date, 'now').mockReturnValue(2_000_000);
+    try {
+      useLock.setState({ locked: true, promptSpent: false });
+      window.dispatchEvent(new Event('pagehide'));
+      expect(readLockConfig()?.lastActiveAt).toBeUndefined();
+
+      useLock.setState({ locked: false });
+      window.dispatchEvent(new Event('pagehide'));
+    } finally {
+      now.mockRestore();
+    }
+    expect(readLockConfig()?.lastActiveAt).toBe(2_000_000);
+  });
+
+  it('going hidden stamps the moment the page left sight', () => {
+    useLock.setState({ locked: false, promptSpent: false });
+    const now = vi.spyOn(Date, 'now').mockReturnValue(3_000_000);
+    try {
+      setVisibility('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+    } finally {
+      now.mockRestore();
+      setVisibility('visible');
+    }
+    expect(readLockConfig()?.lastActiveAt).toBe(3_000_000);
+  });
+
+  it('the slow tick stamps while visible and unlocked (kill without pagehide)', () => {
+    useLock.setState({ locked: false, promptSpent: false });
+    setVisibility('visible');
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(4_000_000);
+      initLockWatcher(); // this registration owns the fake interval
+      vi.advanceTimersByTime(30_000);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(readLockConfig()?.lastActiveAt).toBe(4_030_000);
   });
 });
 
