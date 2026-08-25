@@ -50,12 +50,36 @@ export function nearestScrollport(el: HTMLElement): HTMLElement | null {
  * keyboard inset. Measurement-driven: on Android/native the layout
  * resizes with the keyboard, the inset reads ~0 and this is a no-op.
  */
-let paddedScrollport: { el: HTMLElement; prev: string } | null = null;
+let paddedScrollport: { el: HTMLElement; prev: string; pad: number } | null = null;
+let padReleaseWatcher: (() => void) | null = null;
 
 export function restoreScrollportPad(): void {
+  padReleaseWatcher?.();
+  padReleaseWatcher = null;
   if (!paddedScrollport) return;
   paddedScrollport.el.style.paddingBottom = paddedScrollport.prev;
   paddedScrollport = null;
+}
+
+/** #312 r2 (user, the "old school Mario" rule): the keyboard's slack pad
+ *  is NOT yanked on blur — that reflowed the content in front of the
+ *  user ("the sheet moves around again"). The emptiness the keyboard
+ *  leaves behind stays until it has scrolled OUT of sight below the
+ *  fold; only then does the pad come off — invisibly. */
+export function releaseScrollportPad(): void {
+  if (!paddedScrollport) return;
+  const { el, pad } = paddedScrollport;
+  const padOutOfView = () => el.scrollTop + el.clientHeight <= el.scrollHeight - pad + 4;
+  if (padOutOfView()) {
+    restoreScrollportPad();
+    return;
+  }
+  if (padReleaseWatcher) return; // already waiting for the scroll-away
+  const onScroll = () => {
+    if (padOutOfView()) restoreScrollportPad();
+  };
+  el.addEventListener('scroll', onScroll, { passive: true });
+  padReleaseWatcher = () => el.removeEventListener('scroll', onScroll);
 }
 
 export function padScrollportForKeyboard(target: HTMLElement): void {
@@ -65,8 +89,12 @@ export function padScrollportForKeyboard(target: HTMLElement): void {
   const scroller = nearestScrollport(target);
   if (!scroller) return;
   if (paddedScrollport && paddedScrollport.el !== scroller) restoreScrollportPad();
-  paddedScrollport ??= { el: scroller, prev: scroller.style.paddingBottom };
+  // a re-focus while a deferred release is armed keeps the pad standing
+  padReleaseWatcher?.();
+  padReleaseWatcher = null;
+  paddedScrollport ??= { el: scroller, prev: scroller.style.paddingBottom, pad: 0 };
   scroller.style.paddingBottom = `${inset + 16}px`;
+  paddedScrollport.pad = inset + 16 - (Number.parseFloat(paddedScrollport.prev) || 0);
 }
 
 /** #136 r2: is the element outside the visible band — the WINDOW band or
