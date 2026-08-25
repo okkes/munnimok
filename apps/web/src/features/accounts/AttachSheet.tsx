@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import type { GlobalAccount } from '@/application/accounts';
 import { newestTxDate } from '@/application/accounts';
+import { setSpaceAttachIntent } from './openHandoff';
 import { detachFeedFromSpace } from '@/application/accountAttach';
 import { purgeAccountRemnants } from '@/application/accountPurge';
 import { logActivity } from '@/application/activity';
@@ -60,6 +62,7 @@ export function AttachSheet({
 }>) {
   const { t } = useLang();
   const { store, repo, engine, spaceId } = useData();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
   const [detachSpaceId, setDetachSpaceId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -207,6 +210,8 @@ export function AttachSheet({
   const attachedSpaces = (spaces ?? [])
     .map((space) => ({ space, via: viaBySpace.get(space.id) }))
     .filter((row) => !!row.via);
+  // #318: the quick-attach door names the ACTIVE space
+  const activeSpace = (spaces ?? []).find((s) => s.id === spaceId);
 
   return (
     <>
@@ -263,6 +268,25 @@ export function AttachSheet({
         <p className="px-1 text-[13px] text-ink-4" data-testid="attach-none">
           {t('acct.notAttached')}
         </p>
+      )}
+      {/* #318 (user): a truly link-less account offers the CURRENT space
+          by name — through the real flow: the intent pre-aims the space
+          accounts screen, whose attach sheet opens on the final step
+          (type pick + Attach, #310) — never a silent in-place attach */}
+      {canEdit && liveLinks !== undefined && liveLinks.length === 0 && activeSpace && (
+        <Button
+          variant="outline"
+          className="mt-2 w-full"
+          data-testid="account-attach-here"
+          onClick={() => {
+            setSpaceAttachIntent(account.id);
+            onOpenChange(false);
+            void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
+          }}
+        >
+          <Icon name="link-plus" size={16} />
+          {t('acct.attachHere', { space: activeSpace.name })}
+        </Button>
       )}
       {attachedSpaces.length > 0 && (
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="attach-spaces">

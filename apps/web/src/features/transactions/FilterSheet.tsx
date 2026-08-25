@@ -1,7 +1,8 @@
 import { useSpaceAccounts } from '@/application/transactions';
-import { TRANSFER_TYPES, TX_KINDS } from '@/domain/txKind';
-import type { TxKind } from '@/domain/txKind';
+import type { SpaceAccount } from '@/db/joined';
 import type { TxType } from '@/db/types';
+import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
+import { typeDef } from '@/features/accounts/accountTypes';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useLang } from '@/i18n';
 import { Button } from '@/ui/Button';
@@ -12,7 +13,9 @@ import { Sheet } from '@/ui/Sheet';
 /**
  * Filter state owned by the transactions screen; the sheet only edits
  * it. Sets are additive within a section and sections combine with AND
- * (pick two accounts + 'expense' = expenses on either account).
+ * (pick two accounts + a category = that category on either account).
+ * #320 (user): the type/kind chips left the sheet — `txTypes` stays in
+ * the contract (the screen still applies it) but nothing writes it here.
  */
 export interface SheetFilters {
   accountIds: ReadonlySet<string>;
@@ -35,22 +38,56 @@ function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
   return next;
 }
 
-/** what each KIND chip means in stored-type terms (user simplification:
- *  people filter by kind; the transfer family unfolds on demand) */
-const KIND_FILTER_TYPES: Record<TxKind, readonly TxType[]> = {
-  standard: ['income', 'expense'],
-  transfer: TRANSFER_TYPES,
-  adjustment: ['adjustment'],
-};
+/** #320 (user): each chip wears the account's face — the bank logo
+ *  where one exists (the AccountsScreen row recipe), else the type icon
+ *  in the account's color; a dead logo URL swaps to the icon */
+function AccountChipFace({ account }: Readonly<{ account: SpaceAccount }>) {
+  const logo = account.logo ?? institutionLogoUrl(account.bankId);
+  const icon = <Icon name={typeDef(account.type).icon} size={13} color={account.color ?? 'var(--m-ink-3)'} />;
+  if (!logo) return icon;
+  return (
+    <>
+      <img
+        src={logo}
+        alt=""
+        className="h-4 w-4 rounded object-contain"
+        loading="lazy"
+        onError={(e) => {
+          e.currentTarget.style.display = 'none';
+          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+        }}
+      />
+      <span className="hidden">{icon}</span>
+    </>
+  );
+}
 
-/** kind chip toggle: any member selected → drop the whole family,
- *  otherwise select all of it (detail chips then narrow) */
-function kindToggled(set: ReadonlySet<TxType>, kind: TxKind): Set<TxType> {
-  const family = KIND_FILTER_TYPES[kind];
-  const next = new Set(set);
-  if (family.some((type) => next.has(type))) for (const type of family) next.delete(type);
-  else for (const type of family) next.add(type);
-  return next;
+/** one selectable group of account chips (#320: defaults split out) */
+function AccountChips({
+  list,
+  value,
+  onChange,
+  testId,
+}: Readonly<{
+  list: SpaceAccount[];
+  value: SheetFilters;
+  onChange: (next: SheetFilters) => void;
+  testId?: string;
+}>) {
+  return (
+    <div className="flex flex-wrap gap-2" data-testid={testId}>
+      {list.map((a) => (
+        <Chip
+          key={a.id}
+          testId={`filter-account-${a.id}`}
+          selected={value.accountIds.has(a.id)}
+          onClick={() => onChange({ ...value, accountIds: toggled(value.accountIds, a.id) })}
+        >
+          <AccountChipFace account={a} /> {a.name}
+        </Chip>
+      ))}
+    </div>
+  );
 }
 
 export function FilterSheet({
@@ -58,61 +95,30 @@ export function FilterSheet({
   onOpenChange,
   value,
   onChange,
-}: {
+}: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
   value: SheetFilters;
   onChange: (next: SheetFilters) => void;
-}) {
+}>) {
   const { t } = useLang();
   const cats = useCategories();
   const accounts = useSpaceAccounts();
+  // #320 (user): the space's default pots stand apart from the accounts
+  // people actually made — two labeled groups
+  const realAccounts = (accounts ?? []).filter((a) => !a.defaultFor);
+  const defaultAccounts = (accounts ?? []).filter((a) => !!a.defaultFor);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.filters')} size="tall">
       <div className="flex flex-col gap-3 pb-2">
         <div className="m-cap px-1">{t('acct.financialAccounts')}</div>
-        <div className="flex flex-wrap gap-2">
-          {(accounts ?? []).map((a) => (
-            <Chip
-              key={a.id}
-              testId={`filter-account-${a.id}`}
-              selected={value.accountIds.has(a.id)}
-              onClick={() => onChange({ ...value, accountIds: toggled(value.accountIds, a.id) })}
-            >
-              {a.name}
-            </Chip>
-          ))}
-        </div>
-
-        <div className="m-cap px-1">{t('tx.kindTitle')}</div>
-        <div className="flex flex-wrap gap-2">
-          {TX_KINDS.map((kind) => (
-            <Chip
-              key={kind}
-              testId={`filter-kind-${kind}`}
-              selected={KIND_FILTER_TYPES[kind].some((type) => value.txTypes.has(type))}
-              onClick={() => onChange({ ...value, txTypes: kindToggled(value.txTypes, kind) })}
-            >
-              {t(`tx.kind.${kind}`)}
-            </Chip>
-          ))}
-        </div>
-        {/* power detail (user choice "kinds + detail"): a selected
-            Transfer kind unfolds its exact family members */}
-        {TRANSFER_TYPES.some((type) => value.txTypes.has(type)) && (
-          <div className="flex flex-wrap gap-2 pl-3" data-testid="filter-transfer-detail">
-            {TRANSFER_TYPES.map((type) => (
-              <Chip
-                key={type}
-                testId={`filter-type-${type}`}
-                selected={value.txTypes.has(type)}
-                onClick={() => onChange({ ...value, txTypes: toggled(value.txTypes, type) })}
-              >
-                {t(`tx.type.${type}`)}
-              </Chip>
-            ))}
-          </div>
+        <AccountChips list={realAccounts} value={value} onChange={onChange} />
+        {defaultAccounts.length > 0 && (
+          <>
+            <div className="m-cap px-1">{t('tx.filterDefaultsCap')}</div>
+            <AccountChips list={defaultAccounts} value={value} onChange={onChange} testId="filter-defaults-group" />
+          </>
         )}
 
         <div className="m-cap px-1">{t('screen.categories')}</div>

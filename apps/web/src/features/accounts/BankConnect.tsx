@@ -389,15 +389,12 @@ function GcCallbackShell({
         </p>
       )}
       {state === 'done' && (
-        // bank-app detours land this screen in a browser tab, not the
-        // installed app — say out loud that closing the tab is fine
-        <p className="max-w-[280px] text-[13px] text-ink-3">{t('gc.closeTabHint')}</p>
-      )}
-      {state === 'done' && (
-        // #204 r2 (user): connecting creates the GLOBAL account only —
-        // say so, and point at the explicit attach step that follows
-        <p className="max-w-[280px] text-[12px] text-ink-4" data-testid="gc-unattached-note">
-          {t('gc.notAttachedNote')}
+        // #319 (user): ONE next-step line — the headline already says it
+        // connected, and "transactions arrive by themselves" covers the
+        // old close-this-tab paragraph; the #204 r2 fact stays: nothing
+        // attached itself, the accounts screen is where that happens
+        <p className="max-w-[280px] text-[13px] leading-relaxed text-ink-3" data-testid="gc-unattached-note">
+          {t('gc.doneNext')}
         </p>
       )}
       {state !== 'working' && (

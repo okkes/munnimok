@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { clearTxFilters, presetTxFilters } from './txFilters';
@@ -222,15 +222,27 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
   });
 
-  it('the filter sheet narrows by account and type; clear restores everything', async () => {
+  it('#320: the filter sheet narrows by account, splits defaults into their own group, type chips gone', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
     const all = rows().length;
 
-    // the demo savings account has no transactions — filter yields none
     fireEvent.click(screen.getByTestId('tx-filter-open'));
-    fireEvent.click(await screen.findByTestId('filter-account-demo_save'));
+    // #320 (user): the space's default pots sit in their OWN labeled
+    // group, apart from the accounts people actually made
+    const defaultsGroup = await screen.findByTestId('filter-defaults-group');
+    expect(within(defaultsGroup).getByTestId('filter-account-defaultacct_saving_demo_space')).toBeTruthy();
+    expect(within(defaultsGroup).queryByTestId('filter-account-demo_main')).toBeNull();
+    // every chip wears the account's face (type icon here — no logo seeded)
+    expect(screen.getByTestId('filter-account-demo_main').querySelector('.mdi')).toBeTruthy();
+    // …and the type/kind chips are gone for good
+    expect(screen.queryByTestId('filter-kind-standard')).toBeNull();
+    expect(screen.queryByTestId('filter-kind-transfer')).toBeNull();
+    expect(screen.queryByTestId('filter-transfer-detail')).toBeNull();
+
+    // the demo savings account has no transactions — filter yields none
+    fireEvent.click(screen.getByTestId('filter-account-demo_save'));
     fireEvent.click(screen.getByTestId('filter-done'));
     await waitFor(() => expect(rows()).toHaveLength(0));
     expect(screen.getByTestId('tx-filter-count').textContent).toBe('1');
@@ -238,24 +250,6 @@ describe('TransactionsScreen (demo identity)', () => {
     // the clear chip resets the sheet filters
     fireEvent.click(screen.getByTestId('tx-filter-clear'));
     await waitFor(() => expect(rows()).toHaveLength(all));
-
-    // kind filter: the Transfer kind selects the whole family, then the
-    // detail chips narrow to plain transfers only. #133 removal: the
-    // demo's pot-linked rows honestly derive TRANSFER now (R2 — the
-    // saving story lives on the pot's own ledger), so Transfer is the
-    // chip with rows behind it
-    fireEvent.click(screen.getByTestId('tx-filter-open'));
-    fireEvent.click(await screen.findByTestId('filter-kind-transfer'));
-    const detail = await screen.findByTestId('filter-transfer-detail');
-    expect(detail.textContent).toContain('Saving');
-    fireEvent.click(screen.getByTestId('filter-type-saving'));
-    fireEvent.click(screen.getByTestId('filter-type-debtPayment'));
-    fireEvent.click(screen.getByTestId('filter-type-investment'));
-    fireEvent.click(screen.getByTestId('filter-done'));
-    await waitFor(() => {
-      expect(rows().length).toBeGreaterThan(0);
-      expect(rows().length).toBeLessThan(all);
-    });
     // coverage instrumentation pushes this flow past vitest's 5s default
   }, 15_000);
 

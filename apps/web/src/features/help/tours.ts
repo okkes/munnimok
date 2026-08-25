@@ -179,7 +179,8 @@ export const TOURS: Tour[] = [
     screen: '/accounts',
     steps: [
       { titleKey: 'tour.acct.1t', bodyKey: 'tour.acct.1b', illustration: '🏦' },
-      { titleKey: 'tour.acct.2t', bodyKey: 'tour.acct.2b', illustration: '📄', anchor: 'accounts-import' },
+      // #317: the header upload icon is gone — import lives behind the +
+      { titleKey: 'tour.acct.2t', bodyKey: 'tour.acct.2b', illustration: '📄', anchor: 'accounts-add' },
       { titleKey: 'tour.acct.3t', bodyKey: 'tour.acct.3b', illustration: '⏰' },
     ],
   },

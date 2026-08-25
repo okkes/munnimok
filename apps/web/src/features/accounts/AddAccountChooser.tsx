@@ -33,6 +33,24 @@ import { Sheet } from '@/ui/Sheet';
 /** any manual-form field carrying text keeps the discard ask armed (S3776) */
 const anyManualFieldFilled = (fields: readonly string[]): boolean => fields.some((field) => field !== '');
 
+/** #326 (user): hosts that cannot pass props — the counterparty ask's
+ *  Create door mounts the chooser itself — stage a prefill HERE while
+ *  their context is up (review stages the card's facts, and clears on
+ *  leave). The chooser drinks it whenever it opens without an explicit
+ *  `prefill` prop; the loan-plan fields apply once a liability type is
+ *  picked, the name and currency apply to every manual create. */
+export interface ChooserLoanPrefill {
+  name?: string;
+  currency?: string;
+  paymentCents?: number;
+  paymentDay?: number;
+  paymentEvery?: RecurringEvery;
+}
+let stagedLoanPrefill: ChooserLoanPrefill | null = null;
+export const setChooserLoanPrefill = (next: ChooserLoanPrefill | null): void => {
+  stagedLoanPrefill = next;
+};
+
 /** the loan-handoff prefill's payment as typed text (S3776) */
 const prefillPaymentText = (cents: number | undefined): string => (cents ? (cents / 100).toFixed(2) : '');
 const prefillPayDayText = (day: number | undefined): string => (day ? String(day) : '');
@@ -100,6 +118,25 @@ export function AddAccountChooser({
       .catch(() => undefined);
   }, [syncing, gcAvailable]);
   const bankAvailable = gcAvailable ?? gcSelf;
+  // #326 (user): drink the staged one-shot prefill on open — hosts that
+  // mount the chooser themselves (the counterparty ask's Create door)
+  // cannot pass the `prefill` prop; review stages the card's facts and
+  // clears them again when the card leaves
+  useEffect(() => {
+    if (!open || prefill) return;
+    const staged = stagedLoanPrefill;
+    if (!staged) return;
+    if (staged.name) setName(staged.name);
+    if (staged.currency) setCurrency(staged.currency);
+    if (staged.paymentCents) setPayment(prefillPaymentText(staged.paymentCents));
+    if (staged.paymentDay) setPayDay(prefillPayDayText(staged.paymentDay));
+    if (staged.paymentEvery) {
+      setPayEvery(staged.paymentEvery);
+      setPayCustom(isCustomCadence(staged.paymentEvery, 1));
+    }
+    // one-shot per open — the staged facts are the OPEN's starting point
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   // no in-place import host? the flow itself embeds (user request: the
   // old door bounced to the global overview mid-flow)
   const [importOpen, setImportOpen] = useState(false);

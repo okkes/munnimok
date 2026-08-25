@@ -192,6 +192,10 @@ describe('GcCallbackScreen (test auth — no Logto)', () => {
     await screen.findByText('Bank connected');
     expect(completed[0]).toContain('/gocardless/requisitions/ref-9/complete');
     expect(sessionStorage.getItem('munni_gc_ref')).toBeNull(); // consumed
+    // #319 (user): ONE next-step line under the headline — the stacked
+    // "close this tab" paragraph is gone
+    expect(screen.getByTestId('gc-unattached-note').textContent).toContain('accounts screen');
+    expect(screen.queryByText(/close this tab/i)).toBeNull();
   });
 
   it('fails gracefully without a reference or on a server error', async () => {

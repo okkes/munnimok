@@ -45,6 +45,13 @@ const TWO_ACCOUNT_CAMT = camtDoc(
     camtStmt('NL22TEST0000000022', camtEntry('SEL-3', 'Bakkerij Bos')),
 );
 
+/** #314 r2: space cards mount COLLAPSED — open the demo space's card
+ *  and wait for its first row (doubles as the old boot-ready anchor) */
+async function openDemoCluster() {
+  fireEvent.click(await screen.findByTestId('accounts-space-head-demo_space', {}, { timeout: 10_000 }));
+  return screen.findByTestId('account-row-demo_main', {}, { timeout: 10_000 });
+}
+
 describe('AccountsScreen (demo identity)', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -52,9 +59,12 @@ describe('AccountsScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('lists the seeded demo accounts', async () => {
+  it('lists the seeded demo accounts behind the collapsed space card (#314 r2)', async () => {
     renderApp('/accounts');
-    expect(await screen.findByTestId('account-row-demo_main')).toBeTruthy();
+    // collapsed by default: the card's face is there, its rows are not
+    await screen.findByTestId('accounts-space-head-demo_space');
+    expect(screen.queryByTestId('account-row-demo_main')).toBeNull();
+    await openDemoCluster();
     expect(screen.getByTestId('account-row-demo_save')).toBeTruthy();
   });
 
@@ -64,7 +74,7 @@ describe('AccountsScreen (demo identity)', () => {
     // under the space section and tapping opens attach management, not
     // the editor
     const first = renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
@@ -103,7 +113,9 @@ describe('AccountsScreen (demo identity)', () => {
     // #227: no "via space" subtitle — the row says the IBAN instead…
     expect(screen.getByTestId('account-via-feedacct-1').textContent).toContain('NL69INGB0123456789');
     expect(screen.getByTestId('account-via-feedacct-1').textContent).not.toContain('Demo');
-    // …and the attachment echoes as an inert row inside the space section
+    // …and the attachment echoes as an inert row inside the space card
+    // (#314 r2: opened first — cards mount collapsed)
+    fireEvent.click(await screen.findByTestId('accounts-space-head-demo_space'));
     expect(await screen.findByTestId('account-echo-demo_space-feedacct-1')).toBeTruthy();
     // when the bank last answered (user request)
     expect(screen.getByTestId('account-synced-feedacct-1').textContent).toContain('minutes ago');
@@ -114,6 +126,8 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.getByTestId('attach-space-demo_space')).toBeTruthy();
     expect(screen.getByTestId('attach-detach-demo_space')).toBeTruthy();
     expect(screen.queryByTestId('acctedit-name')).toBeNull(); // not the editor
+    // #318: an ATTACHED account never offers the quick-attach door
+    expect(screen.queryByTestId('account-attach-here')).toBeNull();
     // #205: where the data ends + the newest transaction on the account
     expect(screen.getByTestId('attach-datathrough').textContent).toContain('2026-06-07');
     await waitFor(() => expect(screen.getByTestId('attach-newest-tx').textContent).toContain('2026-06-10'));
@@ -128,7 +142,7 @@ describe('AccountsScreen (demo identity)', () => {
         : new Response('', { status: 404 }),
     );
     const first = renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
@@ -192,6 +206,48 @@ describe('AccountsScreen (demo identity)', () => {
     // the badge says it plainly; the green offer card is gone for good
     await screen.findByTestId('account-unattached-feedacct-1', {}, { timeout: 5000 });
     expect(screen.queryByTestId('attach-offer')).toBeNull();
+  }, 15_000);
+
+  it('#318: a link-less account doors into "Attach to {space}" — the intent pre-aims the space attach sheet', async () => {
+    indexedDB.deleteDatabase(USER_TEST_DB);
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB(USER_TEST_DB);
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    // a connected account with ZERO accountLink rows anywhere (#204 r2)
+    await repo.upsert('account', 'feed-1', 'feedacct-1', {
+      name: 'ING Betaal',
+      type: 'checking',
+      source: 'gocardless',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+    });
+    db.close();
+
+    renderAppAsUser('/accounts', {
+      spaces: [{ id: 's-user', name: 'Personal' }],
+      api: {
+        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /me/spaces': () => ['s-user', 'feed-1'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId('account-row-feedacct-1', {}, { timeout: 10_000 }));
+    // the door names the CURRENT space, right by the not-attached note
+    await screen.findByTestId('attach-none', {}, { timeout: 10_000 });
+    const door = await screen.findByTestId('account-attach-here', {}, { timeout: 10_000 });
+    expect(door.textContent).toContain('Personal');
+    fireEvent.click(door);
+    // the REAL flow takes over: the space's accounts screen, its attach
+    // sheet auto-open on the FINAL step with this account pre-picked (#310)
+    await screen.findByTestId('screen-space-accounts', {}, { timeout: 10_000 });
+    const focus = await screen.findByTestId('space-attach-focus', {}, { timeout: 10_000 });
+    expect(focus.textContent).toContain('ING Betaal');
+    expect(screen.getByTestId('space-attach-save')).toBeTruthy();
   }, 15_000);
 
   it('space accounts screen attaches one of my feed accounts — the space decides the history start (#207)', async () => {
@@ -669,7 +725,9 @@ describe('AccountsScreen (demo identity)', () => {
     // #305: the global "Shared with me" section is GONE — the share's one
     // face is its echo inside the space that sees it, wearing the badge
     // (the badge is the signal that /me/feeds answered and the entry
-    // flipped from the optimistic "mine" to shared-with-me)
+    // flipped from the optimistic "mine" to shared-with-me).
+    // #314 r2: the space card mounts collapsed — open it first
+    fireEvent.click(await screen.findByTestId('accounts-space-head-s-user', {}, { timeout: 5000 }));
     await screen.findByTestId('echo-shared-s-user-sh-live', {}, { timeout: 5000 });
     const liveEcho = screen.getByTestId('account-echo-s-user-sh-live');
     expect(screen.queryByTestId('accounts-shared')).toBeNull();
@@ -703,9 +761,9 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.queryByTestId('acctedit-name')).toBeNull();
   }, 15_000);
 
-  it('#314: TWO clear segments — global pool + ONE In-your-spaces card whose subsections lead with the space face', async () => {
+  it('#314 r2: each space is its OWN collapsed card — the head face toggles it open, independently', async () => {
     const first = renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     // the boot chain must settle before this handle's writes (db.close trap)
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const { MunniDB } = await import('@/db/schema');
@@ -750,11 +808,14 @@ describe('AccountsScreen (demo identity)', () => {
     expect(screen.getAllByText('Connected & imported')).toHaveLength(1);
     expect(screen.getAllByText('In your spaces')).toHaveLength(1);
     expect(screen.queryByText(/manual, space-scoped/)).toBeNull();
-    // BOTH space clusters live inside the one segment card…
+    // BOTH space cards live inside the one stacked segment…
     const segmentCard = screen.getByTestId('accounts-spaces-segment');
-    expect(within(segmentCard).getByTestId('accounts-space-demo_space')).toBeTruthy();
-    expect(within(segmentCard).getByTestId('accounts-space-s-beach')).toBeTruthy();
-    // …each led by the space's face: icon + name (no '· Manual' suffix)
+    const demoCard = within(segmentCard).getByTestId('accounts-space-demo_space');
+    const beachCard = within(segmentCard).getByTestId('accounts-space-s-beach');
+    // …each its OWN rounded card now (r2), not subsections of one card
+    expect(demoCard.className).toContain('rounded-card');
+    expect(beachCard.className).toContain('rounded-card');
+    // …led by the space's face: icon + name (no '· Manual' suffix)
     const demoHead = screen.getByTestId('accounts-space-head-demo_space');
     expect(demoHead.textContent).toContain('Demo');
     expect(demoHead.querySelector('.mdi')).toBeTruthy();
@@ -763,13 +824,24 @@ describe('AccountsScreen (demo identity)', () => {
     // the creator shows only for someone ELSE's space
     expect(screen.getByTestId('accounts-space-creator-s-beach').textContent).toContain('Bob');
     expect(screen.queryByTestId('accounts-space-creator-demo_space')).toBeNull();
-    // row behavior survives the restructure: the echo row still jumps home
-    expect(within(segmentCard).getByTestId('account-echo-demo_space-feedacct-1')).toBeTruthy();
+    // r2: COLLAPSED by default — faces only, no rows in the DOM
+    expect(screen.queryByTestId('account-row-acc-beach')).toBeNull();
+    expect(screen.queryByTestId('account-echo-demo_space-feedacct-1')).toBeNull();
+    // the head toggles ITS card open; the neighbour stays closed
+    fireEvent.click(beachHead);
+    expect(await screen.findByTestId('account-row-acc-beach')).toBeTruthy();
+    expect(screen.queryByTestId('account-echo-demo_space-feedacct-1')).toBeNull();
+    // opening the demo card reveals the echo row (jump behavior intact)
+    fireEvent.click(demoHead);
+    expect(await screen.findByTestId('account-echo-demo_space-feedacct-1')).toBeTruthy();
+    // …and the toggle closes again
+    fireEvent.click(beachHead);
+    await waitFor(() => expect(screen.queryByTestId('account-row-acc-beach')).toBeNull());
   }, 20_000);
 
   it('adds a manual cash account via the space door (manual is space-scoped now)', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     fireEvent.click(screen.getByTestId('accounts-add'));
     // the GLOBAL screen offers manual only as a DOOR into the space
     // (user ruling 2026-07-28) — creation happens on the space screen
@@ -785,7 +857,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('a credit card account stores its balance as a liability, listed under its space', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     fireEvent.click(screen.getByTestId('accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-manual-door'));
     fireEvent.click(await screen.findByTestId('space-accounts-add'));
@@ -806,7 +878,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('the sign toggle stores an overpaid card POSITIVE; space rows edit in place', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     fireEvent.click(screen.getByTestId('accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-manual-door'));
     fireEvent.click(await screen.findByTestId('space-accounts-add'));
@@ -841,7 +913,8 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('renames and deletes an account from the edit sheet', async () => {
     renderApp('/accounts');
-    fireEvent.click(await screen.findByTestId('account-row-demo_save'));
+    await openDemoCluster();
+    fireEvent.click(screen.getByTestId('account-row-demo_save'));
     const nameInput = await screen.findByTestId('acctedit-name');
     fireEvent.change(nameInput, { target: { value: 'Rainy day' } });
     fireEvent.click(screen.getByTestId('acctedit-save'));
@@ -856,7 +929,8 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#176: an Enable Banking-fetched account says so — never "GoCardless"', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    // #314 r2: opened up front — the EB row lands inside this card
+    await openDemoCluster();
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
@@ -883,6 +957,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#221: a DEFAULT account offers no delete — and its balance edit leaves an adjustment row', async () => {
     renderApp('/accounts');
+    await openDemoCluster();
     // #227: the six defaults sit folded behind the section's toggle
     fireEvent.click(await screen.findByTestId('accounts-defaults-toggle-demo_space'));
     // the demo space is born with its six defaults (eager mint)
@@ -909,7 +984,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#227: the default pots sit folded — closed by default, the toggle reveals them', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await openDemoCluster();
     // folded: no default row in the DOM; the quiet toggle counts them
     expect(screen.queryByTestId('account-row-defaultacct_saving_demo_space')).toBeNull();
     const toggle = await screen.findByTestId('accounts-defaults-toggle-demo_space');
@@ -932,7 +1007,8 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('imports a CAMT.053 file: preview, run, result, new account appears', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    // #314 r2: opened — the closing IBAN assert reads demo_main's row
+    await openDemoCluster();
     const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
     const file = new File([CAMT_FIXTURE], 'statement.xml', { type: 'text/xml' });
     Object.defineProperty(input, 'files', { value: [file] });
@@ -952,7 +1028,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('rejects a non-CAMT file with the error banner', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
     Object.defineProperty(input, 'files', { value: [new File(['<html>nope</html>'], 'x.xml')] });
     fireEvent.change(input);
@@ -961,7 +1037,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#299: a two-account CAMT previews checkboxes; unchecking one imports only the other', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
     Object.defineProperty(input, 'files', { value: [new File([TWO_ACCOUNT_CAMT], 'statement.xml', { type: 'text/xml' })] });
     fireEvent.change(input);
@@ -997,7 +1073,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#299: zero checked accounts blocks with the note until a pick returns', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
     Object.defineProperty(input, 'files', { value: [new File([TWO_ACCOUNT_CAMT], 'statement.xml', { type: 'text/xml' })] });
     fireEvent.change(input);
@@ -1020,7 +1096,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#300: a big import narrates a live "about X left" estimate', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
     const big = camtDoc(
       camtStmt(
@@ -1054,8 +1130,12 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#226 r2: the ING row carries its download route and a real logo image', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
-    fireEvent.click(screen.getByTestId('accounts-import'));
+    await screen.findByTestId('accounts-space-head-demo_space');
+    // #317 (user): the header upload icon is GONE — import goes through
+    // the + chooser's statement door
+    expect(screen.queryByTestId('accounts-import')).toBeNull();
+    fireEvent.click(screen.getByTestId('accounts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-import'));
     const row = await screen.findByTestId('import-bank-ing');
     // the semicolon instruction (the copy the user liked) is the sub line
     expect(row.textContent).toContain('semicolon separated');
@@ -1068,8 +1148,10 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#226 r2: picking ING then uploading a PayPal CSV asks before importing', async () => {
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
-    fireEvent.click(screen.getByTestId('accounts-import'));
+    await screen.findByTestId('accounts-space-head-demo_space');
+    // #317: the format sheet opens through the + chooser now
+    fireEvent.click(screen.getByTestId('accounts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-import'));
     fireEvent.click(await screen.findByTestId('import-bank-ing'));
     const input = screen.getByTestId('accounts-import-input') as HTMLInputElement;
     const uploadPaypal = () => {
@@ -1102,7 +1184,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#295: leftover accounts of a DELETED space render nowhere — no false feed rows', async () => {
     const first = renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
@@ -1132,7 +1214,7 @@ describe('AccountsScreen (demo identity)', () => {
     first.unmount();
 
     renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     // nowhere: not a global feed row, no badge, no space section either
     expect(screen.queryByTestId('account-row-debris-1')).toBeNull();
     expect(screen.queryByTestId('account-unattached-debris-1')).toBeNull();
@@ -1141,7 +1223,7 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#227 r3: the echo-jump flash waits for the scroll to settle, then pulses and fades', async () => {
     const first = renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
@@ -1161,6 +1243,8 @@ describe('AccountsScreen (demo identity)', () => {
     first.unmount();
 
     renderApp('/accounts');
+    // #314 r2: the echo lives behind the collapsed space card
+    fireEvent.click(await screen.findByTestId('accounts-space-head-demo_space'));
     fireEvent.click(await screen.findByTestId('account-echo-demo_space-feedacct-1'));
     const target = document.getElementById('acct-row-feedacct-1')!;
     // r3 (user): NOT yet — starting with the scroll, the pulse was half
@@ -1177,9 +1261,10 @@ describe('AccountsScreen (demo identity)', () => {
 
   it('#269: a PLAIN manual balance edit warns with the delta and mints the adjustment row', async () => {
     renderApp('/accounts');
+    await openDemoCluster();
     // demo_save is an ordinary manual account — no defaultFor (#221's
     // defaults-only minting grew to every manual account)
-    fireEvent.click(await screen.findByTestId('account-row-demo_save'));
+    fireEvent.click(screen.getByTestId('account-row-demo_save'));
     await screen.findByTestId('acctedit-balance');
     // untouched field: no note
     expect(screen.queryByTestId('acctedit-adjust-note')).toBeNull();
@@ -1302,7 +1387,7 @@ describe('reconcile suggestion (master plan: linked is the truth)', () => {
 
   it('offers a reconcile pass on a mixed-source account, reviews, and deletes judged imports', async () => {
     const first = renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
@@ -1326,7 +1411,10 @@ describe('reconcile suggestion (master plan: linked is the truth)', () => {
 
     // full review: the match (checked for migration), the mismatch, the keeper note
     await screen.findByTestId('reconcile-review', {}, { timeout: 5000 });
-    expect(screen.getByTestId('reconcile-match-RI1')).toBeTruthy();
+    // #311 r2: the match list starts FOLDED — open it first
+    expect(screen.queryByTestId('reconcile-match-RI1')).toBeNull();
+    fireEvent.click(screen.getByTestId('reconcile-matches-toggle'));
+    expect(await screen.findByTestId('reconcile-match-RI1')).toBeTruthy();
     expect((screen.getByTestId('reconcile-migrate-RI1') as HTMLInputElement).checked).toBe(true);
     expect(screen.getByTestId('reconcile-mismatch-RI2').textContent).toContain('GHOST');
     expect(screen.getByTestId('reconcile-kept').textContent).toContain('1');
@@ -1351,7 +1439,7 @@ describe('import batches (master plan IB)', () => {
 
   it('the attach sheet lists statement uploads and rolls one back — only ITS rows fall', async () => {
     const first = renderApp('/accounts');
-    await screen.findByTestId('account-row-demo_main');
+    await screen.findByTestId('accounts-space-head-demo_space');
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');

@@ -448,14 +448,14 @@ function EchoRow({
 /** #227: one space's cluster — real rows first, bank-fed echoes next,
  *  and the default pots folded behind a quiet toggle (closed by default:
  *  six system rows per space drowned the accounts people actually made).
- *  #314 (user): no longer its own card — a SUBSECTION inside the one
- *  "In your spaces" segment, led by the space's icon + name (plus the
- *  creator when someone else made the space); '· Manual' died. */
+ *  #314 r2 (user): every space is its OWN card again, stacked with no
+ *  captions in between — and COLLAPSED to just its face by default: the
+ *  header row (avatar + name + chevron) is the toggle. Nothing persists;
+ *  every mount starts closed. */
 function SpaceSection({
   segment,
   space,
   ownName,
-  first,
   echoes,
   sharedIds,
   lang,
@@ -467,7 +467,6 @@ function SpaceSection({
   space?: SpaceRow;
   /** the user's own profile name — "created by" only names OTHERS */
   ownName?: string;
-  first: boolean;
   echoes: EchoEntry[];
   /** #305: accounts reaching me only through someone else's attachment */
   sharedIds: ReadonlySet<string>;
@@ -476,6 +475,8 @@ function SpaceSection({
   onOpenShared: (echo: EchoEntry) => void;
 }) {
   const { t } = useLang();
+  // #314 r2: closed on every mount — deliberately not persisted
+  const [expanded, setExpanded] = useState(false);
   const [showDefaults, setShowDefaults] = useState(false);
   const visible = segment.accounts.filter((e) => !e.account.archived);
   const regular = visible.filter((e) => !e.account.defaultFor);
@@ -487,8 +488,13 @@ function SpaceSection({
     ? space.createdByName
     : undefined;
   return (
-    <div data-testid={`accounts-space-${segment.spaceId}`} className={first ? '' : 'border-t border-line'}>
-      <div className="flex items-center gap-2.5 px-4 pt-3.5 pb-2" data-testid={`accounts-space-head-${segment.spaceId}`}>
+    <div data-testid={`accounts-space-${segment.spaceId}`} className="overflow-hidden rounded-card border border-line bg-surface">
+      <button
+        data-testid={`accounts-space-head-${segment.spaceId}`}
+        aria-expanded={expanded}
+        onClick={() => setExpanded((v) => !v)}
+        className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-3.5 text-left"
+      >
         <SpaceAvatar space={space} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold text-ink">{segment.spaceName}</span>
@@ -498,44 +504,51 @@ function SpaceSection({
             </span>
           )}
         </span>
-      </div>
-      <div className="mx-4 h-px bg-line-2" />
-      {regular.map((entry, i) => (
-        <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
-          {i > 0 && <div className="mx-4 h-px bg-line-2" />}
-          <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
-        </div>
-      ))}
-      {echoes.map((echo, i) => (
-        <div key={echo.entry.account.id}>
-          {(aboveEchoes || i > 0) && <div className="mx-4 h-px bg-line-2" />}
-          <EchoRow
-            spaceId={segment.spaceId}
-            echo={echo}
-            shared={sharedIds.has(echo.entry.account.id)}
-            lang={lang}
-            onOpenShared={onOpenShared}
-          />
-        </div>
-      ))}
-      {defaults.length > 0 && (
+        <span className={`transition-transform duration-200 ${expanded ? 'rotate-180' : ''}`}>
+          <Icon name="chevron-down" size={16} color="var(--m-ink-4)" />
+        </span>
+      </button>
+      {expanded && (
         <>
-          {aboveToggle && <div className="mx-4 h-px bg-line-2" />}
-          <button
-            data-testid={`accounts-defaults-toggle-${segment.spaceId}`}
-            onClick={() => setShowDefaults((v) => !v)}
-            className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-4 py-3 text-left text-[12px] font-medium text-ink-4"
-          >
-            <Icon name={showDefaults ? 'chevron-up' : 'chevron-down'} size={14} />
-            {showDefaults ? t('acct.hideDefaults') : t('acct.showDefaults', { n: defaults.length })}
-          </button>
-          {showDefaults &&
-            defaults.map((entry) => (
-              <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
-                <div className="mx-4 h-px bg-line-2" />
-                <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
-              </div>
-            ))}
+          <div className="mx-4 h-px bg-line-2" />
+          {regular.map((entry, i) => (
+            <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
+              {i > 0 && <div className="mx-4 h-px bg-line-2" />}
+              <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
+            </div>
+          ))}
+          {echoes.map((echo, i) => (
+            <div key={echo.entry.account.id}>
+              {(aboveEchoes || i > 0) && <div className="mx-4 h-px bg-line-2" />}
+              <EchoRow
+                spaceId={segment.spaceId}
+                echo={echo}
+                shared={sharedIds.has(echo.entry.account.id)}
+                lang={lang}
+                onOpenShared={onOpenShared}
+              />
+            </div>
+          ))}
+          {defaults.length > 0 && (
+            <>
+              {aboveToggle && <div className="mx-4 h-px bg-line-2" />}
+              <button
+                data-testid={`accounts-defaults-toggle-${segment.spaceId}`}
+                onClick={() => setShowDefaults((v) => !v)}
+                className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-4 py-3 text-left text-[12px] font-medium text-ink-4"
+              >
+                <Icon name={showDefaults ? 'chevron-up' : 'chevron-down'} size={14} />
+                {showDefaults ? t('acct.hideDefaults') : t('acct.showDefaults', { n: defaults.length })}
+              </button>
+              {showDefaults &&
+                defaults.map((entry) => (
+                  <div key={entry.account.id} id={`acct-row-${entry.account.id}`}>
+                    <div className="mx-4 h-px bg-line-2" />
+                    <AccountRowButton entry={entry} lang={lang} showType onOpen={onOpen} />
+                  </div>
+                ))}
+            </>
+          )}
         </>
       )}
     </div>
@@ -732,13 +745,8 @@ export function AccountsScreen() {
         trailing={
           <>
             <HelpButton tourId="accounts" />
-            <IconButton
-              label={t('import.statement')}
-              testId="accounts-import"
-              onClick={() => setImportOpen(true)}
-            >
-              <Icon name="file-upload-outline" size={21} />
-            </IconButton>
+            {/* #317 (user): the upload icon is gone — the + chooser
+                embeds the statement-import door */}
             <IconButton label={t('acct.addAccount')} testId="accounts-add" onClick={() => setAddOpen(true)}>
               <Icon name="plus" size={22} />
             </IconButton>
@@ -794,20 +802,18 @@ export function AccountsScreen() {
             {/* #305: the global "Shared with me" section retired — a
                 shared account's one face is its echo inside the space
                 that sees it (tap-through info sheet below).
-                #314 (user): the per-space clusters stopped posing as N
-                sibling segments — ONE "In your spaces" segment holds
-                them as subsections inside a single card flow */}
+                #314 r2 (user): one caption, then each space as its OWN
+                collapsed card — a tight stack with nothing in between */}
             {renderableSections.length > 0 && (
               <>
                 <div className="m-cap mt-5 mb-1 px-1">{t('acct.inSpacesCap')}</div>
-                <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="accounts-spaces-segment">
-                  {renderableSections.map((segment, i) => (
+                <div className="flex flex-col gap-2" data-testid="accounts-spaces-segment">
+                  {renderableSections.map((segment) => (
                     <SpaceSection
                       key={segment.spaceId}
                       segment={segment}
                       space={spacesById.get(segment.spaceId)}
                       ownName={ownName}
-                      first={i === 0}
                       echoes={echoesFor(segment.spaceId)}
                       sharedIds={sharedIds}
                       lang={lang}
