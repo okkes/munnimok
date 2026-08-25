@@ -1409,6 +1409,8 @@ describe('reconcile suggestion (master plan: linked is the truth)', () => {
     // the suggestion names the mixed-source account and its import count
     fireEvent.click(await screen.findByTestId('account-reconcile-demo_main', {}, { timeout: 5000 }));
 
+    // #311 r3: the sheet asks first — the review list is behind the yes
+    fireEvent.click(await screen.findByTestId('reconcile-ask-go', {}, { timeout: 5000 }));
     // full review: the match (checked for migration), the mismatch, the keeper note
     await screen.findByTestId('reconcile-review', {}, { timeout: 5000 });
     // #311 r2: the match list starts FOLDED — open it first

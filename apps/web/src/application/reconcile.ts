@@ -142,8 +142,14 @@ export async function applyReconcile(
   activeSpaceId: string,
   plan: ReconcilePlan,
   ignoredImportedIds: ReadonlySet<string>,
+  // #311 r3 (user): long runs narrate — (done, total) after every step
+  onProgress?: (done: number, total: number) => void,
 ): Promise<ReconcileResult> {
   const spaceIds = (await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => s.id);
+  const toDelete = [...plan.matches.map((m) => m.imported), ...plan.mismatched];
+  const total = plan.matches.length + 1 + toDelete.length;
+  let done = 0;
+  const step = () => onProgress?.(++done, total);
 
   // links referencing a matched import re-point to its truth row; links
   // referencing a deleted mismatch are dropped
@@ -155,15 +161,17 @@ export async function applyReconcile(
       migrated++;
     }
     replacements.set(match.imported.id, match.linked.id);
+    step();
   }
   for (const row of plan.mismatched) replacements.set(row.id, null);
   await repointReimbursements(store, repo, spaceIds, replacements);
+  step();
 
   // the truth stands — every judged import goes (ignored matches too:
   // ignoring only skips the EDIT migration, the duplicate still falls)
-  const toDelete = [...plan.matches.map((m) => m.imported), ...plan.mismatched];
   for (const row of toDelete) {
     await repo.remove('transaction', row.spaceId, row.id);
+    step();
   }
 
   void logActivity(store, repo, activeSpaceId, 'reconcile', `${migrated}/${toDelete.length}`);

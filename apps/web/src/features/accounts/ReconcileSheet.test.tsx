@@ -36,6 +36,9 @@ describe('ReconcileSheet (#311 r2)', () => {
   it('folded matches open to labeled PAIRS, and confirm actually deletes (the “nothing happens” walk)', async () => {
     const db = await seedPair();
     renderWithData(<ReconcileSheet open onOpenChange={() => undefined} accountIds={['acct-ui']} />);
+    // #311 r3: the QUESTION comes first — nothing auto-matches; the
+    // list only shows after an explicit yes
+    fireEvent.click(await screen.findByTestId('reconcile-ask-go', {}, { timeout: 10_000 }));
     await screen.findByTestId('reconcile-review', {}, { timeout: 10_000 });
 
     // #311 r2: the match list starts FOLDED — the mismatch section is

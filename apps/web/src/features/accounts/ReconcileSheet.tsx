@@ -48,6 +48,11 @@ export function ReconcileSheet({
   const [matchesOpen, setMatchesOpen] = useState(false);
   // #311 r2 (user, "nothing happens"): a failed apply SAYS so
   const [failed, setFailed] = useState(false);
+  // #311 r3 (user): nothing "auto-matches" — the sheet first ASKS
+  // whether these two sources are the same account before any list
+  const [step, setStep] = useState<'ask' | 'review'>('ask');
+  // #311 r3: the apply narrates — done/total while it runs
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +60,8 @@ export function ReconcileSheet({
     setIgnored(new Set());
     setMatchesOpen(false);
     setFailed(false);
+    setStep('ask');
+    setProgress(null);
     void (async () => {
       // one plan across every involved account: the same-IBAN pair case
       // feeds both accounts' rows in — linked rows vouch either way
@@ -80,20 +87,33 @@ export function ReconcileSheet({
     if (!plan || busy) return;
     setBusy(true);
     setFailed(false);
+    setProgress(null);
     try {
-      setResult(await applyReconcile(store, repo, spaceId, plan, ignored));
+      setResult(await applyReconcile(store, repo, spaceId, plan, ignored, (done, total) => setProgress({ done, total })));
     } catch {
       // #311 r2: dying silently read as "nothing happens" — say it
       setFailed(true);
     } finally {
       setBusy(false);
+      setProgress(null);
     }
   };
 
   const judged = plan ? plan.matches.length + plan.mismatched.length : 0;
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('reconcile.title')} size="tall">
+    <Sheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('reconcile.title')}
+      size="tall"
+      // #311 r3 (user): the desktop dialog uses the width — pairs read
+      // side by side without truncating titles
+      wide
+      // …and clicking away mid-apply says what's running instead of
+      // closing over it (the import flow's mechanic)
+      busyNote={busy ? t('reconcile.busy') : null}
+    >
       {result && (
         <div className="flex flex-col items-center gap-3 pt-4 text-center" data-testid="reconcile-done">
           <Icon name="check-circle-outline" size={40} color="var(--m-accent)" />
@@ -108,7 +128,24 @@ export function ReconcileSheet({
           {t('reconcile.nothing')}
         </p>
       )}
-      {!result && plan && judged > 0 && (
+      {/* #311 r3 (user): "rather than doing it automatically, show a
+          popup like: these two look similar — is that correct?" — the
+          question comes FIRST, the match list only after a yes */}
+      {!result && plan && judged > 0 && step === 'ask' && (
+        <div className="flex flex-col gap-3 pt-2" data-testid="reconcile-ask">
+          <div className="flex items-start gap-3">
+            <Icon name="source-merge" size={22} color="var(--m-accent)" />
+            <p className="text-[13px] leading-relaxed text-ink-2">{t('reconcile.askBody', { n: judged })}</p>
+          </div>
+          <Button data-testid="reconcile-ask-go" onClick={() => setStep('review')}>
+            {t('reconcile.askGo')}
+          </Button>
+          <Button variant="outline" data-testid="reconcile-ask-later" onClick={() => onOpenChange(false)}>
+            {t('reconcile.askLater')}
+          </Button>
+        </div>
+      )}
+      {!result && plan && judged > 0 && step === 'review' && (
         <div className="flex flex-col gap-3 pt-1" data-testid="reconcile-review">
           {plan.coverage && (
             <p className="text-[12px] leading-relaxed text-ink-3">
@@ -192,6 +229,11 @@ export function ReconcileSheet({
           {failed && (
             <p className="rounded-card bg-negative-soft px-3 py-2 text-[12px] text-ink" data-testid="reconcile-failed">
               {t('reconcile.failed')}
+            </p>
+          )}
+          {busy && progress && (
+            <p className="m-num text-center text-[12px] text-ink-3" data-testid="reconcile-progress">
+              {progress.done} / {progress.total}
             </p>
           )}
           <Button variant="danger" data-testid="reconcile-confirm" disabled={busy} onClick={() => void confirm()}>
