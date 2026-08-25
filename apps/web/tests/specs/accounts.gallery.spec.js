@@ -43,10 +43,11 @@ for (const V of VARIANTS) {
     await page.waitForTimeout(500); // sheet slide-out
     // the fresh manual account lists on the SPACE's accounts screen…
     await expect(page.locator('[data-testid="screen-space-accounts"]')).toContainText('Wallet');
-    // …and the global overview shows it inside its space segment
+    // …and the global overview shows it inside its space cluster (#314:
+    // the space HEAD shares the prefix now — target the cluster exactly)
     await page.click('[data-testid="spaceaccounts-back"]');
-    await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('Wallet');
-    await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('52.50');
+    await expect(page.locator('[data-testid="accounts-space-demo_space"]')).toContainText('Wallet');
+    await expect(page.locator('[data-testid="accounts-space-demo_space"]')).toContainText('52.50');
     // home total includes the new account: 8,105.55 + 52.50 (the #133
     // migration links the demo split's bare Device-plan part onto the
     // default loan pot, whose €25 repayment leg joins the band)

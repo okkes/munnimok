@@ -10,7 +10,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Sign in (web + native return), demo mode, offline profile
 - [ ] Fresh signup walks onboarding (name, avatar, country) and an interrupted one resumes
 - [ ] Session survives restarts; an expired session recovers or says so honestly
-- [ ] App lock: set up, unlock with PIN and passkey, disable
+- [ ] App lock: set up, unlock with PIN and passkey, disable; a refresh honors the configured auto-lock delay
 
 ## Spaces & sharing
 - [ ] Create a space (period, currency, start date); edit its identity; switch spaces
@@ -19,7 +19,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Leave a space; history start date moves with honest consequences
 
 ## Home
-- [ ] Balance band modes and per-account picks; blocks render, reorder, hide
+- [ ] Balance band modes and per-account picks; blocks render, reorder, hide; a sparse desktop home centers one wider column
 - [ ] Quick-add FAB reaches all six doors
 - [ ] Review nudge, new transactions, upcoming costs and notifications reflect reality
 
@@ -45,7 +45,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] A loan account shows debt, plan, payments and payoff; lender detection lands on Debts
 
 ## Accounts & banks
-- [ ] Global overview: sections, defaults fold, echoes jump to the real row
+- [ ] Global overview: two segments — the global pool and "In your spaces" with space faces; defaults fold, echoes jump to the real row, archived shares say who stopped sharing
 - [ ] Connect a bank (choice, consent, callback, nightly fetch, reconnect); imports (bank chooser, preview, progress, result → explicit attach)
 - [ ] Attach/detach per space with type (the attach door lands on the final step; shared spaces warn before attach); rename locally vs globally; type change re-reviews that space only
 - [ ] Edit an account (a manual balance edit records an adjustment transaction); delete manual and bank-fed accounts cleanly
@@ -65,5 +65,6 @@ assistant's memory alongside the guide/tour maintenance rules.
 
 ## Settings & platform
 - [ ] Space settings rows all lead somewhere sane; global settings: profile (account deletion narrates its progress), devices, language (EN/NL/TR), appearance cycle, export, push, tips
+- [ ] Bottom sheets open partial (≤ half screen), expand on swipe-up/field focus/scroll, and never shrink on their own — keyboard exit leaves the layout still
 - [ ] PWA installs and updates; native shells build, deep-link back and capture photos
 - [ ] Offline end to end: everything works, syncs on return, conflicts converge
