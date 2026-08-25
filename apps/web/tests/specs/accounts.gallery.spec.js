@@ -7,6 +7,10 @@ async function goToAccounts(page) {
   await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.waitForSelector('[data-testid="screen-accounts"]');
+  // #314 r2: space cards mount COLLAPSED — open the demo cluster so the
+  // demo rows are interactable, like before
+  await page.click('[data-testid="accounts-space-head-demo_space"]');
+  await page.waitForSelector('[data-testid="account-row-demo_main"]');
 }
 
 for (const V of VARIANTS) {
@@ -43,9 +47,12 @@ for (const V of VARIANTS) {
     await page.waitForTimeout(500); // sheet slide-out
     // the fresh manual account lists on the SPACE's accounts screen…
     await expect(page.locator('[data-testid="screen-space-accounts"]')).toContainText('Wallet');
-    // …and the global overview shows it inside its space cluster (#314:
-    // the space HEAD shares the prefix now — target the cluster exactly)
+    // …and the global overview shows it inside its space card (#314 r2:
+    // the back-nav remounts the screen, so the card is collapsed again —
+    // expand it before asserting its content)
     await page.click('[data-testid="spaceaccounts-back"]');
+    await page.waitForSelector('[data-testid="screen-accounts"]');
+    await page.click('[data-testid="accounts-space-head-demo_space"]');
     await expect(page.locator('[data-testid="accounts-space-demo_space"]')).toContainText('Wallet');
     await expect(page.locator('[data-testid="accounts-space-demo_space"]')).toContainText('52.50');
     // home total includes the new account: 8,105.55 + 52.50 (the #133

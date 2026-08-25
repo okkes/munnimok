@@ -11,6 +11,10 @@ async function goToAccounts(page) {
   await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.waitForSelector('[data-testid="screen-accounts"]');
+  // #314 r2: space cards mount COLLAPSED — open the demo cluster so the
+  // balance asserts on demo rows keep seeing them
+  await page.click('[data-testid="accounts-space-head-demo_space"]');
+  await page.waitForSelector('[data-testid="account-row-demo_main"]');
 }
 
 async function pickFixture(page) {

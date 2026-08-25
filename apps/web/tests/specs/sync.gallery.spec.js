@@ -66,6 +66,8 @@ for (const V of VARIANTS) {
     // lists it inside the space's own segment
     await expect(a.page.locator('[data-testid="screen-space-accounts"]')).toContainText('Sync Wallet');
     await a.page.click('[data-testid="spaceaccounts-back"]');
+    // #314 r2: space cards mount collapsed — expand before asserting rows
+    await a.page.locator('[data-testid^="accounts-space-head-"]').first().click();
     await expect(a.page.locator('[data-testid="screen-accounts"]')).toContainText('Sync Wallet');
     await shot(a.page, k('25-sync-devices') + '--s1');
     await a.page.waitForTimeout(3500); // nudge debounce (2s) + push
@@ -75,6 +77,8 @@ for (const V of VARIANTS) {
     await base(b.page, V, { userSub: sub });
     await gotoGlobalSettings(b.page);
     await b.page.click('[data-testid="settings-accounts-row"]');
+    // #314 r2: the pulled space arrives as a collapsed card — expand it
+    await b.page.locator('[data-testid^="accounts-space-head-"]').first().click({ timeout: 15000 });
     await expect(b.page.locator('[data-testid="screen-accounts"]')).toContainText('Sync Wallet', { timeout: 15000 });
     await expect(b.page.locator('[data-testid="screen-accounts"]')).toContainText('12.34');
     await shot(b.page, k('25-sync-devices') + '--s2');
@@ -89,6 +93,8 @@ for (const V of VARIANTS) {
     await a.page.waitForSelector('[data-testid="tab-home"]');
     await gotoGlobalSettings(a.page);
     await a.page.click('[data-testid="settings-accounts-row"]');
+    // #314 r2: fresh mount = collapsed again
+    await a.page.locator('[data-testid^="accounts-space-head-"]').first().click({ timeout: 15000 });
     await expect(a.page.locator('[data-testid="screen-accounts"]')).toContainText('Renamed on B', { timeout: 15000 });
     await shot(a.page, k('25-sync-devices'));
 
@@ -334,7 +340,9 @@ for (const V of VARIANTS) {
     await gotoGlobalSettings(alice.page);
     await alice.page.click('[data-testid="settings-accounts-row"]');
     // #227: the "via <space>" subtitle is gone — the attachment now
-    // echoes as an inert row under the space's own section instead
+    // echoes as an inert row under the space's own card, which mounts
+    // COLLAPSED since #314 r2 — open it before looking for the echo
+    await alice.page.locator('[data-testid^="accounts-space-head-"]', { hasText: 'Feed Home' }).click({ timeout: 15000 });
     await expect(alice.page.locator('[data-testid^="account-echo-"]').first()).toBeVisible({ timeout: 10000 });
     await shot(alice.page, k('61-feed-share') + '--s1');
     await alice.page.waitForTimeout(4000); // push feed rows + overlay
@@ -398,6 +406,8 @@ for (const V of VARIANTS) {
     await bob.page.click('[data-testid="tx-detail-back"]');
     await gotoGlobalSettings(bob.page);
     await bob.page.click('[data-testid="settings-accounts-row"]');
+    // #314 r2: the space card mounts collapsed — open Feed Home's first
+    await bob.page.locator('[data-testid^="accounts-space-head-"]', { hasText: 'Feed Home' }).click({ timeout: 15000 });
     // the badge doubles as the ready signal: it appears once /me/feeds
     // answered and the entry classified as shared-with-me
     await expect(bob.page.locator('[data-testid^="echo-shared-"]').first()).toBeVisible({ timeout: 15000 });

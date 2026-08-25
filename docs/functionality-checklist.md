@@ -21,7 +21,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 ## Home
 - [ ] Balance band modes and per-account picks; blocks render, reorder, hide; a sparse desktop home centers one wider column
 - [ ] Quick-add FAB reaches all six doors
-- [ ] Review nudge, new transactions, upcoming costs and notifications reflect reality
+- [ ] Review nudge, new transactions, upcoming costs and notifications reflect reality; see-all lands on the Upcoming page (recurring + loan dues together)
 
 ## Transactions
 - [ ] List: search (title + amount, highlighted), quick filters, filter sheet; filters survive a detail detour
@@ -32,7 +32,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Reimbursements: link both directions (with clamping errors), parts included; unlink restores
 
 ## Review
-- [ ] Walk the queue: category, counterparty (movement confirms require one), counter-transaction, recurring, event, split — confirm and skip
+- [ ] Walk the queue: category, counterparty (movement confirms require one), counter-transaction, recurring, event, notes, split — confirm and skip
 - [ ] Memory pre-fills return; bulk "apply to similar" applies what it promised; the per-sibling counter queue holds the deck and counts down
 
 ## Categories
@@ -45,7 +45,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] A loan account shows debt, plan, payments and payoff; lender detection lands on Debts
 
 ## Accounts & banks
-- [ ] Global overview: two segments — the global pool and "In your spaces" with space faces; defaults fold, echoes jump to the real row, archived shares say who stopped sharing
+- [ ] Global overview: two segments — the global pool and collapsible per-space cards (closed by default); defaults fold, echoes jump to the real row, archived shares say who stopped sharing; an unattached account offers "Attach to this space"
 - [ ] Connect a bank (choice, consent, callback, nightly fetch, reconnect); imports (bank chooser, preview, progress, result → explicit attach)
 - [ ] Attach/detach per space with type (the attach door lands on the final step; shared spaces warn before attach); rename locally vs globally; type change re-reviews that space only
 - [ ] Edit an account (a manual balance edit records an adjustment transaction); delete manual and bank-fed accounts cleanly
