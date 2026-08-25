@@ -120,11 +120,14 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
   const listRef = useRef<HTMLDivElement>(null);
   // #273 r3 (user): reopening must start whole — field shown, list at
   // top. #329 (user): the ◆ lens resets with it — a filter toggled on
-  // the LAST visit must not silently narrow the next one.
+  // the LAST visit must not silently narrow the next one. #335 (user):
+  // the search query clears too — a stale search must not greet the
+  // reopen (as the #323 resetKey it also rewinds the collapse slack).
   useEffect(() => {
     if (!open) return;
     resetCollapse();
     setSpecialOnly(false);
+    setQuery('');
     if (listRef.current) listRef.current.scrollTop = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -153,6 +156,9 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         className="mt-2 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]"
         style={{ maxHeight: 440 + searchOffset }}
         data-testid="catpicker-list"
+        // #312 r4: this scroller's 1:1 gesture belongs to the collapsing
+        // search — the sheet's scroll-growth stands down here
+        data-sheet-no-grow=""
         onScroll={onListScroll}
       >
       {/* #322 (user): the narrowed list says WHY and offers the way out —

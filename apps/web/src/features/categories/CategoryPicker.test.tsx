@@ -217,7 +217,7 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
     await waitFor(() => expect((screen.getByTestId('catpicker-search-wrap') as HTMLElement).style.height).toBe('200px'));
   }, 15_000);
 
-  it('#329: the ◆ lens resets when the picker closes — the next visit starts unfiltered', async () => {
+  it('#329/#335: lens AND query reset when the picker closes — the next visit starts whole', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     fireEvent.click(screen.getByTestId('tx-add'));
@@ -229,12 +229,16 @@ describe('CategoryPicker direction filtering (via add-transaction form)', () => 
 
     fireEvent.click(screen.getByTestId('catpicker-special-filter'));
     await waitFor(() => expect(screen.queryByTestId('catpicker-groceries')).toBeNull());
+    // #335 (user): a typed query must not survive the close either
+    fireEvent.change(screen.getByTestId('catpicker-search'), { target: { value: 'gro' } });
     // dismiss WITHOUT picking (Escape reaches only the top sheet)…
     fireEvent.keyDown(window, { key: 'Escape' });
-    // …and the reopened picker starts whole: chip off, full catalog back
+    // …and the reopened picker starts whole: chip off, field empty,
+    // full catalog back
     fireEvent.click(await screen.findByTestId('part-cat-0'));
     await screen.findByTestId('catpicker-groceries');
     expect(screen.getByTestId('catpicker-special-filter').className).not.toContain('bg-accent-soft');
+    expect((screen.getByTestId('catpicker-search') as HTMLInputElement).value).toBe('');
   }, 15_000);
 
   it('#322: a counter-narrowed picker offers the detach door — tap frees the full catalog in place', async () => {
