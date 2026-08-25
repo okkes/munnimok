@@ -65,6 +65,6 @@ assistant's memory alongside the guide/tour maintenance rules.
 
 ## Settings & platform
 - [ ] Space settings rows all lead somewhere sane; global settings: profile (account deletion narrates its progress), devices, language (EN/NL/TR), appearance cycle, export, push, tips
-- [ ] Bottom sheets open partial (≤ half screen), expand on swipe-up/field focus/scroll, and never shrink on their own — keyboard exit leaves the layout still
+- [ ] Bottom sheets wrap their content (≤ half screen) and grow 1:1 with scroll/drag when content overflows (field focus glides, fitting content never grows); they never shrink on their own — keyboard exit leaves the layout still
 - [ ] PWA installs and updates; native shells build, deep-link back and capture photos
 - [ ] Offline end to end: everything works, syncs on return, conflicts converge
