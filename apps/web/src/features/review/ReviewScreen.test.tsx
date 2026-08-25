@@ -17,6 +17,14 @@ describe('ReviewScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
+  // #330 r2: the demo cards wear their seeded category, so the split
+  // door warns on the FIRST press now — walk through to the editor
+  const openSplitEditor = async () => {
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    fireEvent.click(await screen.findByTestId('split-reset-continue', {}, { timeout: 10_000 }));
+    await screen.findByTestId('split-editor');
+  };
+
   it('walks the queue with progress: confirm clears the flag and advances', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
@@ -627,8 +635,7 @@ describe('ReviewScreen (demo identity)', () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
     // visible row, not hidden under the category pencil
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     // the split as transactions: label + amount, value/pct modes —
     // categories belong to the deck, not this sheet
     await screen.findByTestId('split-label-0');
@@ -641,8 +648,7 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
 
     // stage a 6/4 split through the values door
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-add-row'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     fireEvent.focus(amount0);
@@ -702,8 +708,7 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-card');
 
     // a 6/4 split, part 1 labeled — the label must seed the form's name
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-add-row'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     fireEvent.focus(amount0);
@@ -837,8 +842,7 @@ describe('ReviewScreen (demo identity)', () => {
   it('NO restrictions on a split: even the same special kind twice lands (#126 r7)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-add-row'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     fireEvent.focus(amount0);
@@ -880,8 +884,7 @@ describe('ReviewScreen (demo identity)', () => {
   it('a split holds MORE than two parts: pct rows seed the leftover, Done stays armed, the stepper walks the stack (#126 r6)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-mode-pct'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     fireEvent.focus(amount0);
@@ -943,8 +946,7 @@ describe('ReviewScreen (demo identity)', () => {
   it('a part spreads its own money across several categories from the deck (#126 r6)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '6,00' } });
@@ -988,8 +990,7 @@ describe('ReviewScreen (demo identity)', () => {
   it('#133 r3: a ◆ Transfer pick on a PART stages nothing until its mandatory ask answers; dismissal rolls back', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     fireEvent.focus(amount0);
     fireEvent.change(amount0, { target: { value: '6,00' } });
@@ -1105,11 +1106,54 @@ describe('ReviewScreen (demo identity)', () => {
     await screen.findByTestId('review-part-deck');
   }, 20_000);
 
+  it('#330 r2 (user): the FIRST split press warns when the card only wears its ROW category — and stays silent on a bare card', async () => {
+    // the user's real card: the category came with the ROW (an imported/
+    // predicted fill — their ATM card wore "Cash Withdraw · Transfer"),
+    // NOTHING user-staged. r1 keyed the warning on user staging only, so
+    // the first press silently opened the split sheet; only after
+    // splitting + removing (which stages) did the warning appear.
+    renderApp('/home');
+    await screen.findByTestId('screen-home');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const seed = new MunniDB('munni_demo');
+    const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('splitwarn'), { trackOutbox: false });
+    // a story-less card dated OLDEST so it leads the queue: uncategorized,
+    // no counterparty, no note — the one shape that may open directly
+    await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'bare-split', {
+      accountId: 'demo_main', date: '2020-01-01', amountCents: -1000, currency: 'EUR',
+      merchant: 'Storyless Stall', catId: 'uncategorized', txType: 'expense', needsReview: 1,
+    });
+    seed.close();
+    cleanup();
+    renderApp('/review');
+    await screen.findByTestId('review-card');
+
+    // card 1 = the bare row: no story to reset — the editor opens directly
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('Storyless Stall'), { timeout: 10_000 });
+    fireEvent.click(await screen.findByTestId('review-split-row'));
+    await screen.findByTestId('split-editor');
+    expect(screen.queryByTestId('split-reset-continue')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    // skip to the demo card that WEARS its seeded row category (Hobby)
+    fireEvent.click(screen.getByTestId('review-skip-btn'));
+    await waitFor(() => expect(screen.getByTestId('review-card').textContent).not.toContain('Storyless Stall'), { timeout: 10_000 });
+
+    // the FIRST press must warn — no user staging happened at all
+    // (the earlier card's editor stays mounted in tests, so the warning
+    // sheet's own button is the honest signal here)
+    fireEvent.click(screen.getByTestId('review-split-row'));
+    await screen.findByTestId('split-reset-continue', {}, { timeout: 10_000 });
+
+    // cancel keeps everything: the row category still stands on the chip
+    fireEvent.click(screen.getByTestId('split-reset-cancel'));
+    expect(screen.getByTestId('review-category-chip').textContent).toContain('Hobby');
+  }, 25_000);
+
   it('the pill fills the FOCUSED field even though its blur restores the stash first (#130 r2)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-add-row'));
     fireEvent.click(screen.getByTestId('split-mode-pct'));
     // the report's exact flow: type 50 into the SECOND row…
@@ -1136,8 +1180,7 @@ describe('ReviewScreen (demo identity)', () => {
   it('the left-to-assign pill fills the EMPTY row, not the last one (#130)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-add-row'));
     fireEvent.click(screen.getByTestId('split-mode-pct'));
     // the report's shape: TOP row empty, second row 50
@@ -1159,8 +1202,7 @@ describe('ReviewScreen (demo identity)', () => {
   it('a lone 50% row holds Done — the partition must always add up (#126 r3)', async () => {
     renderApp('/review');
     await screen.findByTestId('review-card');
-    fireEvent.click(await screen.findByTestId('review-split-row'));
-    await screen.findByTestId('split-editor');
+    await openSplitEditor();
     fireEvent.click(screen.getByTestId('split-mode-pct'));
     const amount0 = (await screen.findByTestId('split-amount-0')) as HTMLInputElement;
     fireEvent.focus(amount0);

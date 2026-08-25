@@ -173,10 +173,12 @@ const stagedRealCatId = (catId: string | undefined): string | undefined =>
   catId && catId !== UNCATEGORIZED_ID ? catId : undefined;
 
 /** #324: the review card's notes field grows with its content instead
- *  of scrolling inside the card */
+ *  of scrolling inside the card. #324 r2 (user): the field wears a real
+ *  border now (border-box), so the frame's two edges ride on top of the
+ *  content-only scrollHeight. */
 const autoGrowNotes = (el: HTMLTextAreaElement): void => {
   el.style.height = 'auto';
-  el.style.height = `${el.scrollHeight}px`;
+  el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
 };
 
 /** #326: the honest cadence guess for a quick-created loan — the
@@ -278,17 +280,29 @@ function logConfirmActivity(
 const resetPickDoor = (bankFed: boolean, wantBank: boolean, clear: () => void): (() => void) | undefined =>
   bankFed === wantBank ? clear : undefined;
 
-/** #161: does the card hold USER-staged work a split would reset? A
- *  memory-offered event is not a user decision (S3776: out of the
- *  component). #324: a typed note counts too — a container carries no
- *  note of its own, so splitting drops it. */
-const hasUserStaging = (
-  staged: ReviewDraft | null,
-  eventTouched: boolean,
-  eventPick: string | null,
-  manualRecId: string | null,
-  noteDraft: string | null,
-): boolean => staged !== null || (eventTouched && eventPick !== null) || manualRecId !== null || noteDraft !== null;
+/** #161/#324: does the card hold work a split would reset? #330 r2
+ *  (user): the check reads the card's VISIBLE story, not who staged it
+ *  — a row's imported/predicted category (the user's ATM card wore
+ *  "Cash Withdraw · Transfer" with nothing user-staged) counts exactly
+ *  like a hand-picked one, because the split's Done drops both the
+ *  same way. (S3776: out of the component) */
+const splitWouldReset = (args: {
+  draft: ReviewDraft | null;
+  staged: ReviewDraft | null;
+  /** the recurring the confirm would link (auto-match or manual) */
+  recurringId: string | undefined;
+  eventPick: string | null;
+  /** the notes field's shown value (staged draft or the row's own) */
+  note: string;
+}): boolean =>
+  args.staged !== null ||
+  args.recurringId !== undefined ||
+  args.eventPick !== null ||
+  args.note.trim() !== '' ||
+  !!args.draft?.cats?.length ||
+  !!args.draft?.splits?.length ||
+  !!args.draft?.linkedAccountId ||
+  (!!args.draft?.catId && args.draft.catId !== UNCATEGORIZED_ID);
 
 /** #237 r3: the card's Counter-transaction row descriptor — undefined
  *  hides the row (no counterparty, or a funding pot: nothing ever
@@ -1320,9 +1334,14 @@ function BulkConfirmSection({
                 >
                   {checked && <Icon name="check" size={12} />}
                 </button>
-                <div className="min-w-0 flex-1" data-testid={`review-bulk-open-${item.id}`}>
-                  {/* every row here is unreviewed by definition — the badge is noise */}
-                  <TxRow tx={item} showDate hideUnreviewed onClick={() => setDetailId(item.id)} />
+                <div className="flex min-w-0 flex-1 items-center gap-1" data-testid={`review-bulk-open-${item.id}`}>
+                  <div className="min-w-0 flex-1">
+                    {/* every row here is unreviewed by definition — the badge is noise */}
+                    <TxRow tx={item} showDate hideUnreviewed onClick={() => setDetailId(item.id)} />
+                  </div>
+                  {/* #328 r2 (user): the row opens the read-only peek —
+                      it wears the opener chevron (checkboxes don't) */}
+                  <Icon name="chevron-right" size={15} color="var(--m-ink-4)" />
                 </div>
               </div>
             );
@@ -1551,7 +1570,16 @@ export function ReviewScreen() {
   const [splitResetOpen, setSplitResetOpen] = useState(false);
   const splitResetArmed = useRef(false);
   const requestSplit = () => {
-    if (hasUserStaging(stagedDraft, eventTouched.current, eventPick, manualRecId, noteDraft)) {
+    // #330 r2 (user): warn on the FIRST press — the card's shown story
+    // (row/prediction fills included) is what the split will reset
+    const wouldReset = splitWouldReset({
+      draft,
+      staged: stagedDraft,
+      recurringId: chosenRecurringId(recMatch, linkRecurring, manualRecId),
+      eventPick,
+      note: noteDraft ?? tx?.notes ?? '',
+    });
+    if (wouldReset) {
       setSplitResetOpen(true);
       return;
     }
@@ -2246,7 +2274,10 @@ export function ReviewScreen() {
                     bulk update carries it to the selected siblings */}
                 {!multiPart && (
                   <div className="flex w-full items-start gap-2.5 px-4 py-2.5">
-                    <Icon name="note-text-outline" size={18} color="var(--m-ink-3)" style={{ marginTop: 1 }} />
+                    <Icon name="note-text-outline" size={18} color="var(--m-ink-3)" style={{ marginTop: 8 }} />
+                    {/* #324 r2 (user): a real white FIELD, not bare text in
+                        the card — the standard input skin; the #327 inset
+                        focus ring draws cleanly on the bg-surface box */}
                     <textarea
                       data-testid="review-notes"
                       value={noteDraft ?? tx.notes ?? ''}
@@ -2256,9 +2287,9 @@ export function ReviewScreen() {
                       }}
                       placeholder={t('tx.notesPlaceholder')}
                       rows={1}
-                      className="min-w-0 flex-1 resize-none border-none bg-transparent p-0 text-[14px] leading-snug text-ink outline-none placeholder:text-ink-4"
+                      className="min-w-0 flex-1 resize-none rounded-input border border-line bg-surface px-3 py-2 text-[14px] leading-snug text-ink outline-none placeholder:text-ink-4"
                     />
-                    <span className="text-[11px] text-ink-4">{t('tx.notes')}</span>
+                    <span className="text-[11px] text-ink-4" style={{ marginTop: 10 }}>{t('tx.notes')}</span>
                   </div>
                 )}
 
