@@ -74,4 +74,30 @@ describe('applyReconcile (linked is the truth)', () => {
     expect(await store.get('txMeta', txMetaId(SPACE, 'L2'))).toBeUndefined();
     expect((await store.get('transaction', 'I1'))?.deleted).toBe(1);
   });
+
+  it('#311 r2 (user): an UNREVIEWED import never comes out reviewed — the bank row’s prediction overlay loses its review claim, keeps its category', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_rec_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('rec2'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    await repo.upsert('space', FEED, FEED, { name: 'feed', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    const raw = { accountId: 'acct-2', currency: 'EUR', txType: 'expense' as const, needsReview: 1 as const };
+    // flanking bank rows: the coverage's edges are EXCLUSIVE — the
+    // matched day must sit strictly inside
+    await repo.upsert('transaction', FEED, 'LB0', { ...raw, date: '2026-06-01', amountCents: -100, merchant: 'X', importRef: 'REF-X' });
+    await repo.upsert('transaction', FEED, 'LB9', { ...raw, date: '2026-06-20', amountCents: -200, merchant: 'Y', importRef: 'REF-Y' });
+    await repo.upsert('transaction', FEED, 'LB', { ...raw, date: '2026-06-10', amountCents: -1500, merchant: 'AH', importRef: 'REF-AH' });
+    await repo.upsert('transaction', FEED, 'IB', { ...raw, date: '2026-06-10', amountCents: -1500, merchant: 'Albert Heijn', importRef: 'ing:y:1' });
+    // the bank row arrived wearing a keyword PREDICTION: category filled,
+    // review claimed done — while the imported twin was never reviewed
+    await repo.upsert('txMeta', SPACE, txMetaId(SPACE, 'LB'), { txId: 'LB', catId: 'groceries', needsReview: 0 });
+
+    const plan = (await buildReconcilePlan(store, 'acct-2'))!;
+    expect(plan.matches.map((m) => [m.imported.id, m.linked.id])).toEqual([['IB', 'LB']]);
+    await applyReconcile(store, repo, SPACE, plan, new Set());
+
+    const linkedMeta = await store.get('txMeta', txMetaId(SPACE, 'LB'));
+    expect(linkedMeta?.needsReview).toBe(1); // the import’s verdict travels
+    expect(linkedMeta?.catId).toBe('groceries'); // the prediction survives
+  });
 });

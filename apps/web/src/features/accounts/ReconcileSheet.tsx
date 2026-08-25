@@ -43,11 +43,18 @@ export function ReconcileSheet({
   const [ignored, setIgnored] = useState<ReadonlySet<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ReconcileResult | null>(null);
+  // #311 r2 (user): "I dont have to scroll a lot to get to the mismatch
+  // section" — the (usually long) match list starts folded
+  const [matchesOpen, setMatchesOpen] = useState(false);
+  // #311 r2 (user, "nothing happens"): a failed apply SAYS so
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     setResult(null);
     setIgnored(new Set());
+    setMatchesOpen(false);
+    setFailed(false);
     void (async () => {
       // one plan across every involved account: the same-IBAN pair case
       // feeds both accounts' rows in — linked rows vouch either way
@@ -72,8 +79,12 @@ export function ReconcileSheet({
   const confirm = async () => {
     if (!plan || busy) return;
     setBusy(true);
+    setFailed(false);
     try {
       setResult(await applyReconcile(store, repo, spaceId, plan, ignored));
+    } catch {
+      // #311 r2: dying silently read as "nothing happens" — say it
+      setFailed(true);
     } finally {
       setBusy(false);
     }
@@ -107,26 +118,53 @@ export function ReconcileSheet({
 
           {plan.matches.length > 0 && (
             <div>
-              <div className="m-cap mb-1 px-1">{t('reconcile.matches', { n: plan.matches.length })}</div>
-              <p className="mb-1 px-1 text-[11px] text-ink-4">{t('reconcile.matchSub')}</p>
-              <div className="overflow-hidden rounded-card border border-line bg-surface">
-                {plan.matches.map((match) => (
-                  <label
-                    key={match.imported.id}
-                    data-testid={`reconcile-match-${match.imported.id}`}
-                    className="flex cursor-pointer items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0"
-                  >
-                    <input
-                      type="checkbox"
-                      data-testid={`reconcile-migrate-${match.imported.id}`}
-                      checked={!ignored.has(match.imported.id)}
-                      onChange={() => toggleIgnore(match.imported.id)}
-                      className="h-4 w-4 accent-(--m-accent)"
-                    />
-                    <TxLine tx={match.imported} lang={lang} />
-                  </label>
-                ))}
-              </div>
+              {/* #311 r2 (user): the long match list folds — the header
+                  is the toggle, closed by default so the mismatches are
+                  one glance away */}
+              <button
+                data-testid="reconcile-matches-toggle"
+                onClick={() => setMatchesOpen((v) => !v)}
+                className="m-tap flex w-full items-center gap-2 border-none bg-transparent px-1 py-1 text-left"
+              >
+                <span className="m-cap flex-1">{t('reconcile.matches', { n: plan.matches.length })}</span>
+                <Icon name={matchesOpen ? 'chevron-up' : 'chevron-down'} size={16} color="var(--m-ink-4)" />
+              </button>
+              {matchesOpen && (
+                <>
+                  <p className="mb-1 px-1 text-[11px] text-ink-4">{t('reconcile.matchSub')}</p>
+                  <div className="overflow-hidden rounded-card border border-line bg-surface">
+                    {plan.matches.map((match) => (
+                      <label
+                        key={match.imported.id}
+                        data-testid={`reconcile-match-${match.imported.id}`}
+                        className="flex cursor-pointer items-start gap-3 border-b border-line-2 px-4 py-2.5 last:border-0"
+                      >
+                        <input
+                          type="checkbox"
+                          data-testid={`reconcile-migrate-${match.imported.id}`}
+                          checked={!ignored.has(match.imported.id)}
+                          onChange={() => toggleIgnore(match.imported.id)}
+                          className="mt-1 h-4 w-4 accent-(--m-accent)"
+                        />
+                        {/* #311 r2 (user): BOTH halves of the pair, side
+                            by side on desktop, stacked on the phone —
+                            "right now I have no clue what I am looking
+                            at" */}
+                        <span className="grid min-w-0 flex-1 gap-x-4 gap-y-1.5 lg:grid-cols-2">
+                          <span className="min-w-0">
+                            <span className="m-cap block text-[10px] text-ink-4">{t('reconcile.sideImported')}</span>
+                            <TxLine tx={match.imported} lang={lang} />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="m-cap block text-[10px] text-accent-deep">{t('reconcile.sideLinked')}</span>
+                            <TxLine tx={match.linked} lang={lang} />
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -151,6 +189,11 @@ export function ReconcileSheet({
             </p>
           )}
 
+          {failed && (
+            <p className="rounded-card bg-negative-soft px-3 py-2 text-[12px] text-ink" data-testid="reconcile-failed">
+              {t('reconcile.failed')}
+            </p>
+          )}
           <Button variant="danger" data-testid="reconcile-confirm" disabled={busy} onClick={() => void confirm()}>
             {t('reconcile.confirm', { n: judged })}
           </Button>

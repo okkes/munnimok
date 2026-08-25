@@ -61,6 +61,20 @@ async function migrateMatch(store: StorageBackend, repo: Repo, match: ReconcileM
         ...pickOpinions(meta),
       });
     }
+    // #311 r2 (user): the import's REVIEW VERDICT travels with the
+    // match. An import the space never reviewed (no overlay, or an
+    // explicit 1) must not come out "reviewed" just because the bank
+    // row arrived wearing a prediction overlay that claims 0 — the
+    // prediction's category may stay, the review claim resets.
+    // unreviewed = no overlay, an explicit 1, or an overlay that never
+    // spoke about review (the joined view defaults those to 1)
+    const importedUnreviewed = !metas.some((m) => m.needsReview === 0);
+    if (importedUnreviewed) {
+      const linkedMeta = await store.get('txMeta', txMetaId(spaceId, match.linked.id));
+      if (linkedMeta && linkedMeta.deleted === 0 && linkedMeta.needsReview === 0) {
+        await repo.upsert('txMeta', spaceId, txMetaId(spaceId, match.linked.id), { txId: match.linked.id, needsReview: 1 });
+      }
+    }
     // receipts follow the surviving row
     for (const receipt of (await store.bySpace('receipt', spaceId)).filter((r) => r.deleted === 0 && r.txId === match.imported.id)) {
       await repo.upsert('receipt', spaceId, receipt.id, { txId: match.linked.id });
