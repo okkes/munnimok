@@ -297,17 +297,18 @@ function MatchFooter({
   const { fmt } = useDisplayMoney();
   return (
     <div className="flex flex-col gap-1.5" data-testid="loanmatch-summary">
-      {/* #286 r4 (user ss): ONE type treatment for both fact rows —
-          m-num on labels too so the count's digits match the sums */}
-      <div className="m-num flex items-baseline justify-between text-[12px] text-ink-3">
+      {/* #286 r5 (user ss): the app's fact-row recipe — plain UI-font
+          label (digits included, like "2 parts" elsewhere), m-num value.
+          r4's whole-row m-num made the halves read as two styles. */}
+      <div className="flex items-baseline justify-between text-[12px] text-ink-3">
         <span>{t('debts.matchSelected', { n: count })}</span>
-        <span className="font-medium text-ink" data-testid="loanmatch-deduct-sum">
+        <span className="m-num font-medium text-ink" data-testid="loanmatch-deduct-sum">
           {t('debts.matchDeductTotal', { sum: fmt(deductSumCents, currency) })}
         </span>
       </div>
-      <div className="m-num flex items-baseline justify-between text-[12px] text-ink-3">
+      <div className="flex items-baseline justify-between text-[12px] text-ink-3">
         <span>{t('debts.matchNewBalance')}</span>
-        <span className="font-medium text-ink" data-testid="loanmatch-new-balance">
+        <span className="m-num font-medium text-ink" data-testid="loanmatch-new-balance">
           {fmt(balanceCents, currency)} → {fmt(newBalanceCents, currency)}
         </span>
       </div>

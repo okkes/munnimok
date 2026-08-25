@@ -112,7 +112,10 @@ export function FilterSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('tx.filters')} size="tall">
       <div className="flex flex-col gap-3 pb-2">
-        <div className="m-cap px-1">{t('acct.financialAccounts')}</div>
+        {/* #320 r2 (user): "All accounts" over MORE accounts (the defaults)
+            below read odd — this caption is the filter's own key; the global
+            overview keeps its shared title */}
+        <div className="m-cap px-1">{t('tx.filterAccountsCap')}</div>
         <AccountChips list={realAccounts} value={value} onChange={onChange} />
         {defaultAccounts.length > 0 && (
           <>

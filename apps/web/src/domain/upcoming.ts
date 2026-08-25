@@ -1,5 +1,6 @@
-import type { AccountRow, RecurringRow } from '@/db/types';
-import { nextDueDate } from './recurring';
+import type { AccountRow, RecurringRow, SpaceRow } from '@/db/types';
+import { addDays, nextDueDate } from './recurring';
+import { periodHistory } from './periods';
 import { isDebtTracked, nextDebtPaymentDate } from './debts';
 
 /**
@@ -28,6 +29,23 @@ export function upcomingRecurrings<R extends RecurringRow>(recurrings: R[], toda
     .filter((u): u is UpcomingRecurring<R> => u.nextDue !== null && u.nextDue <= horizon)
     .sort((a, b) => a.nextDue.localeCompare(b.nextDue));
 }
+
+/** #334 r2 (user): the landing's window — the space's current period,
+ *  stretched to at least the block's 7-day horizon. Lives here so the
+ *  block's "does see-all add anything?" question and the landing itself
+ *  measure the SAME window and can never disagree. */
+export function upcomingHorizon(space: Pick<SpaceRow, 'periodType' | 'periodDay'> | undefined, today: string): string {
+  const period = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1)[0];
+  const week = addDays(today, 7);
+  if (period.end > week) return period.end;
+  return week;
+}
+
+/** #334 r2 (user): costs are outgoing — block AND landing print both
+ *  kinds as plain unsigned amounts (no minus, no plus, never mixed) */
+export const upcomingRecAmountCents = (rec: Pick<RecurringRow, 'amountCents'>): number => Math.abs(rec.amountCents);
+export const upcomingLoanAmountCents = (loan: Pick<AccountRow, 'paymentCents'>): number =>
+  Math.abs(loan.paymentCents ?? 0);
 
 /** tracked loan payment plans due in the window — archived accounts and
  *  dormant default pots stay out, matching the home block (#266) */

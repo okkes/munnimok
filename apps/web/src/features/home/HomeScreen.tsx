@@ -7,7 +7,13 @@ import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { addDays } from '@/domain/recurring';
-import { upcomingLoanPayments, upcomingRecurrings } from '@/domain/upcoming';
+import {
+  upcomingHorizon,
+  upcomingLoanAmountCents,
+  upcomingLoanPayments,
+  upcomingRecAmountCents,
+  upcomingRecurrings,
+} from '@/domain/upcoming';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { LOCALES, useLang } from '@/i18n';
 import type { TFunc, TranslationKey } from '@/i18n';
@@ -267,6 +273,17 @@ export function HomeScreen() {
     const today = localToday();
     return upcomingLoanPayments(accounts ?? [], today, addDays(today, 7)).slice(0, 3);
   }, [accounts]);
+  // #334 r2 (user): the see-all door only earns its place when the
+  // landing (uncapped, period-wide — same shared builders + window)
+  // would list MORE rows than the block already shows
+  const upcomingHasMore = useMemo(() => {
+    const today = localToday();
+    const horizon = upcomingHorizon(space, today);
+    const landingCount =
+      upcomingRecurrings(recurrings ?? [], today, horizon).length +
+      upcomingLoanPayments(accounts ?? [], today, horizon).length;
+    return landingCount > upcoming.length + upcomingDebts.length;
+  }, [space, recurrings, accounts, upcoming, upcomingDebts]);
 
   // landing-zone blocks that only appear once the feature is in use.
   // one event only: running now, else the next upcoming, else the latest
@@ -883,14 +900,17 @@ export function HomeScreen() {
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
           <span>{t('recurring.upcoming')}</span>
           {/* #334 (user): the block mixes recurring + loans, so see-all
-              lands on the combined list — not the recurring manager */}
-          <button
-            data-testid="home-seeall-upcoming"
-            onClick={() => void navigate({ to: '/upcoming' })}
-            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
-          >
-            {t('action.seeAll')}
-          </button>
+              lands on the combined list — not the recurring manager.
+              r2: hidden when the landing has nothing more to show */}
+          {upcomingHasMore && (
+            <button
+              data-testid="home-seeall-upcoming"
+              onClick={() => void navigate({ to: '/upcoming' })}
+              className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+            >
+              {t('action.seeAll')}
+            </button>
+          )}
         </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-upcoming">
           {upcoming.map(({ rec, nextDue }) => (
@@ -907,8 +927,9 @@ export function HomeScreen() {
                   {fmtShort(nextDue)} · {t('home.upcomingRecurring')}
                 </span>
               </span>
+              {/* #334 r2 (user): unsigned — one sign story for both kinds */}
               <span className="m-num text-[13px] font-semibold text-ink">
-                {fmt(rec.amountCents, currency)}
+                {fmt(upcomingRecAmountCents(rec), currency)}
               </span>
             </button>
           ))}
@@ -930,7 +951,7 @@ export function HomeScreen() {
                 </span>
               </span>
               <span className="m-num text-[13px] font-semibold text-ink">
-                {fmt(-(loan.paymentCents ?? 0), currency)}
+                {fmt(upcomingLoanAmountCents(loan), currency)}
               </span>
             </button>
           ))}

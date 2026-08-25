@@ -298,18 +298,22 @@
    amount paints the accent ring again — but only on FINE pointers:
    inputs match :focus-visible on every plain tap, and on touch the
    caret stays the focus signal (user rule 2026-07-28).
+   #327 r2 (user ss): outline draws a RECTANGLE, so on pill/rounded
+   buttons "the corners fell off" — an inset box-shadow follows the
+   border-radius exactly and still cannot be clipped. An element's own
+   box-shadow yields only WHILE it is focused — accepted, not composed.
    #156 r2: elements marked data-quiet-focus carry keyboard focus as a
    background tint of their own instead — the square ring poked outside
    the list card's rounded frame (this rule is unlayered, so a
    focus-visible:outline-none utility alone could never beat it). */
 :where(button, a, [tabindex]):focus-visible:where(:not([data-quiet-focus])) {
-  outline: 2px solid var(--m-accent);
-  outline-offset: -2px;
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--m-accent);
 }
 @media (pointer: fine) {
   :where(input, textarea, select):focus-visible:where(:not([data-quiet-focus])) {
-    outline: 2px solid var(--m-accent);
-    outline-offset: -2px;
+    outline: none;
+    box-shadow: inset 0 0 0 2px var(--m-accent);
   }
 }
 

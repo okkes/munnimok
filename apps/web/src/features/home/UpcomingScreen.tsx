@@ -2,9 +2,13 @@ import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { localToday, useRecurrings } from '@/application/recurring';
 import { useSpaceAccounts } from '@/application/transactions';
-import { addDays } from '@/domain/recurring';
-import { periodHistory } from '@/domain/periods';
-import { upcomingLoanPayments, upcomingRecurrings } from '@/domain/upcoming';
+import {
+  upcomingHorizon,
+  upcomingLoanAmountCents,
+  upcomingLoanPayments,
+  upcomingRecAmountCents,
+  upcomingRecurrings,
+} from '@/domain/upcoming';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { useData } from '@/app/data';
@@ -31,9 +35,9 @@ export function UpcomingScreen() {
   const currency = space?.currency ?? 'EUR';
 
   const today = localToday();
-  const period = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 1)[0];
-  const week = addDays(today, 7);
-  const horizon = period.end > week ? period.end : week;
+  // #334 r2 (user): the shared window — the home block asks the same
+  // helper the same question when deciding whether see-all adds anything
+  const horizon = upcomingHorizon(space, today);
   const recs = upcomingRecurrings(recurrings ?? [], today, horizon);
   const loans = upcomingLoanPayments(accounts ?? [], today, horizon);
 
@@ -72,7 +76,8 @@ export function UpcomingScreen() {
                     <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
                     <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
                   </span>
-                  <span className="m-num text-[13px] font-semibold text-ink">{fmt(rec.amountCents, currency)}</span>
+                  {/* #334 r2 (user): unsigned — one sign story for both kinds */}
+                  <span className="m-num text-[13px] font-semibold text-ink">{fmt(upcomingRecAmountCents(rec), currency)}</span>
                 </button>
               ))}
             </div>
@@ -97,7 +102,7 @@ export function UpcomingScreen() {
                     <span className="block truncate text-[13px] font-medium text-ink">{loan.name}</span>
                     <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
                   </span>
-                  <span className="m-num text-[13px] font-semibold text-ink">{fmt(-(loan.paymentCents ?? 0), currency)}</span>
+                  <span className="m-num text-[13px] font-semibold text-ink">{fmt(upcomingLoanAmountCents(loan), currency)}</span>
                 </button>
               ))}
             </div>
