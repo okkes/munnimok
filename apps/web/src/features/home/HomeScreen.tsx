@@ -576,7 +576,7 @@ export function HomeScreen() {
         <button
           data-testid="home-customize"
           onClick={() => void navigate({ to: '/home/customize' })}
-          className={`m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3${twoColumns ? '' : ` ${SINGLE_COLUMN_LG}`}`}
+          className={'m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3' + (twoColumns ? '' : ' ' + SINGLE_COLUMN_LG)}
         >
           <Icon name="tune-variant" size={16} />
           {t('home.customize')}

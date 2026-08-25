@@ -542,6 +542,15 @@ function SpaceSection({
   );
 }
 
+/** #314: does a space cluster have anything to show — a live account or
+ *  any echo row (archived included) (S2004: out of the component) */
+const sectionHasContent = (
+  segment: { spaceId: string; accounts: { account: { archived?: unknown } }[] },
+  echoPool: { sharedVia: { spaceId: string }[] }[],
+): boolean =>
+  segment.accounts.some((e) => !e.account.archived) ||
+  echoPool.some((entry) => entry.sharedVia.some((v) => v.spaceId === segment.spaceId));
+
 export function AccountsScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -622,12 +631,7 @@ export function AccountsScreen() {
   // #314 (user): the subsections come pre-filtered, so an empty cluster
   // never leaves a bare space header inside the shared segment card
   const renderableSections = useMemo(
-    () =>
-      sections.filter(
-        (segment) =>
-          segment.accounts.some((e) => !e.account.archived) ||
-          echoPool.some((entry) => entry.sharedVia.some((v) => v.spaceId === segment.spaceId)),
-      ),
+    () => sections.filter((segment) => sectionHasContent(segment, echoPool)),
     [sections, echoPool],
   );
   // …and the space rows carry each subsection's face (#314): the
