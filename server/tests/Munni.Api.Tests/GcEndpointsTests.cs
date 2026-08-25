@@ -253,6 +253,61 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     }
 
     [Fact]
+    public async Task Bank_forks_its_own_account_row_when_a_statement_import_owns_the_canonical_id()
+    {
+        // #311 r4 (user): "the import version was instantly consumed by
+        // the linked one" — no more. An import-owned canonical row makes
+        // the bank bind acct:{iban}:bank; the app offers an explicit merge.
+        var (client, _, spaceId) = await MemberAsync("forker");
+        // a unique account + IBAN — the factory's default gc-acc-1 rides
+        // through many tests and its GcLinkedAccounts row would bypass
+        // the first-bind branch under test
+        var iban = "NL21FORK0000000311";
+        var feedId = ImportIds.FeedSpaceId(iban);
+        using (var seedScope = _factory.Services.CreateScope())
+        {
+            var seedDb = seedScope.ServiceProvider.GetRequiredService<AppDbContext>();
+            seedDb.EntityRows.Add(new EntityRow
+            {
+                SpaceId = feedId,
+                Entity = "account",
+                EntityId = ImportIds.AccountId(iban),
+                Deleted = false,
+                DataJson = "{\"source\":\"camt053\",\"name\":\"Mijn ING\"}",
+                FieldVersionsJson = "{}",
+            });
+            await seedDb.SaveChangesAsync();
+        }
+        _factory.Gc.Details = new GcAccountDetails(iban, "Betaalrekening", "EUR");
+        _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-fork-311"]);
+        try
+        {
+            var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
+                new CreateRequisitionRequest(spaceId, "ING_INGBNL2A", "https://app/gc-callback"))).Content
+                .ReadFromJsonAsync<CreateRequisitionResponse>();
+            var complete = await (await client.PostAsync($"/gocardless/requisitions/{created!.Reference}/complete", null))
+                .Content.ReadFromJsonAsync<CompleteResponse>();
+            Assert.Equal(1, complete!.LinkedAccounts);
+
+            using var scope = _factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var linked = await db.GcLinkedAccounts.FindAsync("gc-fork-311");
+            Assert.Equal(ImportIds.BankAccountId(iban), linked!.AccountEntityId);
+            // the import's row stands untouched; the bank's own row exists
+            var importRow = await db.EntityRows.FindAsync(feedId, "account", ImportIds.AccountId(iban));
+            Assert.Contains("camt053", importRow!.DataJson);
+            var bankRow = await db.EntityRows.FindAsync(feedId, "account", ImportIds.BankAccountId(iban));
+            Assert.NotNull(bankRow);
+            Assert.Contains("gocardless", bankRow!.DataJson);
+        }
+        finally
+        {
+            _factory.Gc.Details = new GcAccountDetails("NL69INGB0123456789", "Betaalrekening", "EUR");
+            _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "LN", ["gc-acc-1"]);
+        }
+    }
+
+    [Fact]
     public async Task Wallet_accounts_without_iban_still_link_and_ingest()
     {
         // PayPal-style accounts return no IBAN — they used to be skipped

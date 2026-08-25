@@ -6,7 +6,7 @@ import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
 import { txMetaId } from '@/domain/feedIds';
-import { applyReconcile, buildReconcilePlan } from './reconcile';
+import { applyMerge, applyReconcile, buildMergePlan, buildReconcilePlan } from './reconcile';
 
 const FEED = 'feed-1';
 const SPACE = 'space-1';
@@ -99,5 +99,44 @@ describe('applyReconcile (linked is the truth)', () => {
     const linkedMeta = await store.get('txMeta', txMetaId(SPACE, 'LB'));
     expect(linkedMeta?.needsReview).toBe(1); // the import’s verdict travels
     expect(linkedMeta?.catId).toBe('groceries'); // the prediction survives
+  });
+
+  it('#311 r4: applyMerge reconciles the PAIR, moves the surviving history, repoints links and retires the imported account', async () => {
+    const store = new DexieBackend(new MunniDB(`munni_rec_${Math.random().toString(36).slice(2)}`));
+    stores.push(store);
+    const repo = new Repo(store, new HlcClock('rec3'), { trackOutbox: false });
+    await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    await repo.upsert('space', FEED, FEED, { name: 'feed', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    await repo.upsert('account', FEED, 'BA', { name: 'Bank', type: 'checking', source: 'gocardless', currency: 'EUR', balanceCents: 0, iban: 'NL01' });
+    await repo.upsert('account', FEED, 'IA', { name: 'Import', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0, iban: 'NL01' });
+    const bank = { accountId: 'BA', currency: 'EUR', txType: 'expense' as const, needsReview: 0 as const };
+    const imp = { ...bank, accountId: 'IA' };
+    await repo.upsert('transaction', FEED, 'ML0', { ...bank, date: '2026-06-01', amountCents: -100, merchant: 'X', importRef: 'REF-M0' });
+    await repo.upsert('transaction', FEED, 'ML1', { ...bank, date: '2026-06-10', amountCents: -1200, merchant: 'SHELL', importRef: 'REF-M1' });
+    await repo.upsert('transaction', FEED, 'ML9', { ...bank, date: '2026-06-20', amountCents: -200, merchant: 'Y', importRef: 'REF-M9' });
+    await repo.upsert('transaction', FEED, 'MI1', { ...imp, date: '2026-06-10', amountCents: -1200, merchant: 'Shell station', importRef: 'ing:m:1' });
+    await repo.upsert('transaction', FEED, 'MI2', { ...imp, date: '2026-06-12', amountCents: -999, merchant: 'GHOST', importRef: 'ing:m:2' });
+    await repo.upsert('transaction', FEED, 'MI3', { ...imp, date: '2023-01-05', amountCents: -700, merchant: 'OLD', importRef: 'ing:m:3' });
+    await repo.upsert('txMeta', SPACE, txMetaId(SPACE, 'MI1'), { txId: 'MI1', catId: 'transport', needsReview: 0 });
+    // the space attached the IMPORTED account — the link must follow
+    await repo.upsert('accountLink', SPACE, 'link-m', { feedSpaceId: FEED, accountId: 'IA', historyFrom: '2020-01-01' });
+
+    const plan = (await buildMergePlan(store, 'IA', 'BA'))!;
+    expect(plan.matches.map((m) => [m.imported.id, m.linked.id])).toEqual([['MI1', 'ML1']]);
+    expect(plan.kept.map((r) => r.id)).toEqual(['MI3']);
+
+    const result = await applyMerge(store, repo, SPACE, { importedAccountId: 'IA', bankAccountId: 'BA' }, plan, new Set());
+    expect(result).toMatchObject({ migrated: 1, removed: 2, moved: 1 });
+    // the match's edits live on the bank row; judged imports fell
+    expect((await store.get('txMeta', txMetaId(SPACE, 'ML1')))?.catId).toBe('transport');
+    expect((await store.get('transaction', 'MI1'))?.deleted).toBe(1);
+    expect((await store.get('transaction', 'MI2'))?.deleted).toBe(1);
+    // the pre-coverage keeper MOVED onto the bank account
+    expect(await store.get('transaction', 'MI3')).toMatchObject({ accountId: 'BA', deleted: 0 });
+    // the space's link points at the bank account now
+    expect((await store.get('accountLink', 'link-m'))?.accountId).toBe('BA');
+    // and the imported account is retired
+    expect((await store.get('account', 'IA'))?.deleted).toBe(1);
+    expect((await store.get('account', 'BA'))?.deleted).toBe(0);
   });
 });

@@ -314,7 +314,11 @@ public static partial class GcEndpoints
                 {
                     GcAccountId = gcAccountId,
                     SpaceId = requisition.SpaceId,
-                    AccountEntityId = ImportIds.AccountId(accountRef),
+                    // #311 r4 (user): the bank never silently consumes a
+                    // statement-imported account — when the canonical id
+                    // is already an import's, the bank binds its OWN row
+                    // and the user merges the two explicitly in the app
+                    AccountEntityId = await BankAccountEntityIdAsync(db, accountRef),
                     Iban = ImportIds.Normalize(accountRef),
                     Currency = details.Currency ?? "EUR",
                     RequisitionId = requisition.Id,
@@ -372,6 +376,23 @@ public static partial class GcEndpoints
     /// newest consent always claims the binding (a stale foreign binding
     /// stranded PayPal as "shared with me" for its real owner).
     /// </summary>
+    /// <summary>#311 r4 (user): the id the bank binds its account row to —
+    /// the canonical acct id, UNLESS a statement import already owns that
+    /// row on the feed (its source is not a provider's). Then the bank
+    /// forks to its own row and the app offers an explicit merge.</summary>
+    private static async Task<string> BankAccountEntityIdAsync(AppDbContext db, string accountRef)
+    {
+        var canonical = ImportIds.AccountId(accountRef);
+        var feedId = ImportIds.FeedSpaceId(accountRef);
+        var row = await db.EntityRows.FirstOrDefaultAsync(r =>
+            r.SpaceId == feedId && r.Entity == "account" && r.EntityId == canonical && !r.Deleted);
+        if (row is null) return canonical;
+        using var data = System.Text.Json.JsonDocument.Parse(row.DataJson);
+        var importOwned = !data.RootElement.TryGetProperty("source", out var source)
+            || source.GetString() != "gocardless";
+        return importOwned ? ImportIds.BankAccountId(accountRef) : canonical;
+    }
+
     private static async Task RebindToNewestConsentAsync(AppDbContext db, GcLinkedAccount linked, GcRequisition requisition)
     {
         var wallet = linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);

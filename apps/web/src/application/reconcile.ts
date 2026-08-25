@@ -23,6 +23,20 @@ export async function buildReconcilePlan(
   return reconcilePlan(rows);
 }
 
+/** #311 r4 (user): the merge plan spans BOTH accounts of the pair — the
+ *  classifier splits the union by row provenance exactly as before */
+export async function buildMergePlan(
+  store: StorageBackend,
+  importedAccountId: string,
+  bankAccountId: string,
+): Promise<ReconcilePlan | null> {
+  const rows = (await store.allRows('transaction')).filter(
+    (t) => t.deleted === 0 && (t.accountId === importedAccountId || t.accountId === bankAccountId),
+  );
+  if (rows.length === 0) return null;
+  return reconcilePlan(rows);
+}
+
 /** the fields that make up a space's opinion about a transaction */
 const OPINION_FIELDS = [
   'catId',
@@ -176,4 +190,45 @@ export async function applyReconcile(
 
   void logActivity(store, repo, activeSpaceId, 'reconcile', `${migrated}/${toDelete.length}`);
   return { migrated, removed: toDelete.length };
+}
+
+export interface MergeResult extends ReconcileResult {
+  moved: number;
+}
+
+/**
+ * #311 r4 (user): the explicit MERGE of a statement-imported account
+ * into its bank-fed twin. The reconcile runs as part of it; surviving
+ * pre-coverage history MOVES onto the bank account, every space link
+ * naming the imported account repoints, and the imported row retires —
+ * the bank twin becomes the one face.
+ */
+export async function applyMerge(
+  store: StorageBackend,
+  repo: Repo,
+  activeSpaceId: string,
+  pair: { importedAccountId: string; bankAccountId: string },
+  plan: ReconcilePlan,
+  ignoredImportedIds: ReadonlySet<string>,
+  onProgress?: (done: number, total: number) => void,
+): Promise<MergeResult> {
+  const result = await applyReconcile(store, repo, activeSpaceId, plan, ignoredImportedIds, onProgress);
+  let moved = 0;
+  for (const row of plan.kept) {
+    await repo.upsert('transaction', row.spaceId, row.id, { accountId: pair.bankAccountId });
+    moved++;
+  }
+  // links share their id (spaceId+feedId) across the pair — only the
+  // accountId fact changes hands
+  for (const space of (await store.allRows('space')).filter((s) => s.deleted === 0)) {
+    const links = (await store.bySpace('accountLink', space.id)).filter(
+      (l) => l.deleted === 0 && l.accountId === pair.importedAccountId,
+    );
+    for (const link of links) {
+      await repo.upsert('accountLink', space.id, link.id, { accountId: pair.bankAccountId });
+    }
+  }
+  const imported = await store.get('account', pair.importedAccountId);
+  if (imported?.deleted === 0) await repo.remove('account', imported.spaceId, imported.id);
+  return { ...result, moved };
 }

@@ -90,6 +90,10 @@ public static class ImportIds
     private static readonly Guid Namespace = Guid.Parse("5f3c9a70-0d3e-4e0f-9a57-6d2b3a1c8e42");
 
     public static string AccountId(string iban) => V5($"acct:{Normalize(iban)}").ToString();
+    /// <summary>#311 r4: the bank's OWN account row when a statement
+    /// import already owns the canonical id — the two stay separate
+    /// accounts until the user merges them in the app</summary>
+    public static string BankAccountId(string iban) => V5($"acct:{Normalize(iban)}:bank").ToString();
     public static string TransactionId(string iban, string reference) => V5($"tx:{Normalize(iban)}:{reference}").ToString();
     /// <summary>sync-space id of a bank account's feed (matches client feedIds.ts)</summary>
     public static string FeedSpaceId(string iban) => V5($"feed:{Normalize(iban)}").ToString();

@@ -1,5 +1,5 @@
 import { v5 as uuidv5 } from 'uuid';
-import { accountLinkId, feedSpaceId, txMetaId } from '@/domain/feedIds';
+import { accountLinkId, canonicalAccountId, feedSpaceId, importAccountId, txMetaId } from '@/domain/feedIds';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { predictTx, predictionSkipsReview } from '@/domain/predictCategory';
 import { cachedCatalog } from '@/sync/catalogSync';
@@ -360,6 +360,19 @@ async function refreshExistingAttachment(
   return true;
 }
 
+/** #311 r4 (user): which account row this statement lands in — a
+ *  BANK-fed row owning the canonical `acct:{iban}` id means the import
+ *  keeps its OWN separate account (never silently consumed; the user
+ *  merges explicitly, and the merge runs the reconcile). Without a bank
+ *  row the canonical id stays the import's — pure-import users see no
+ *  change and no data migrates. (S3776: out of the loop) */
+async function importTargetAccountId(store: StorageBackend, feedId: string, iban: string): Promise<string> {
+  const canonicalId = canonicalAccountId(iban);
+  const canonical = await store.get('account', canonicalId);
+  const bankOwnsCanonical = canonical?.spaceId === feedId && canonical.deleted === 0 && canonical.source === 'gocardless';
+  return bankOwnsCanonical ? importAccountId(iban) : canonicalId;
+}
+
 /**
  * Feed shape (shared-accounts design): raw facts go ONCE into the
  * account's feed space, the current space gets the transformation
@@ -386,7 +399,7 @@ async function importIntoFeeds(
     if (emptyStatement(stmt)) continue;
     const iban = normalizeIban(stmt.iban);
     const feedId = await feeds.register(feedSpaceId(iban), iban);
-    const accountId = uuidv5(`acct:${iban}`, IMPORT_NS);
+    const accountId = await importTargetAccountId(store, feedId, iban);
 
     const account = await store.get('account', accountId);
     if (account?.spaceId !== feedId) await createStatementAccount(repo, feedId, accountId, stmt, iban);

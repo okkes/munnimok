@@ -14,6 +14,17 @@ export const normalizeIban = (iban: string) => iban.replaceAll(/\s/g, '').toUppe
 /** sync-space id of a bank account's feed */
 export const feedSpaceId = (iban: string): string => uuidv5(`feed:${normalizeIban(iban)}`, IMPORT_NS);
 
+/** #311 r4 (user): when a BANK-fed account already owns the canonical
+ *  `acct:{iban}` id, statement imports keep their own separate account
+ *  row — the two sources stay two visible accounts until the user
+ *  explicitly MERGES them (the merge runs the reconcile). The server
+ *  mirrors this with an `acct:{iban}:bank` fork when the import owned
+ *  the canonical id first. */
+export const importAccountId = (iban: string): string => uuidv5(`acct:${normalizeIban(iban)}:import`, IMPORT_NS);
+
+/** the canonical per-IBAN account id (shared with the server's ImportIds) */
+export const canonicalAccountId = (iban: string): string => uuidv5(`acct:${normalizeIban(iban)}`, IMPORT_NS);
+
 /**
  * Fallback when the deterministic id is already registered by another
  * user (feed squatting defence, security S1): salted with the owner's

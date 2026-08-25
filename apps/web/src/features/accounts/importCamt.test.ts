@@ -4,7 +4,7 @@ import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
-import { accountLinkId, feedSpaceId } from '@/domain/feedIds';
+import { accountLinkId, canonicalAccountId, feedSpaceId, importAccountId } from '@/domain/feedIds';
 import { visibleTransactions } from '@/db/joined';
 import type { CamtStatement } from '@/lib/camt053/parse';
 import { importCamtStatements, statementCoverageEnd } from './importCamt';
@@ -369,5 +369,36 @@ describe('importCamtStatements', () => {
       statement({ closingBalanceCents: 9000, balanceAsOf: '2026-07-01', entries: [] }),
     ]);
     expect((await db.accounts.get('acct-manual'))!).toMatchObject({ balanceCents: 42, balanceAsOf: '2026-07-08' });
+  });
+
+  // #311 r4 (user): "the import and link were two separate financial
+  // accounts and not that the import version was instantly consumed"
+  it('#311 r4: a bank-owned canonical account forks the import to its OWN row', async () => {
+    const gateway = { register: async (id: string) => id, attach: async () => undefined };
+    const iban = 'NL69INGB0123456789';
+    const feedId = feedSpaceId(iban);
+    // the bank connection already owns the canonical per-IBAN row
+    await repo.upsert('account', feedId, canonicalAccountId(iban), {
+      name: 'Mijn ING', type: 'checking', source: 'gocardless', currency: 'EUR', balanceCents: 500, iban,
+    });
+    await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+
+    const result = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
+    // the import keeps its own separate account — never consumed
+    expect(result.accounts[0].accountId).toBe(importAccountId(iban));
+    const importedAccount = await db.accounts.get(importAccountId(iban));
+    expect(importedAccount).toMatchObject({ spaceId: feedId, deleted: 0 });
+    // the bank row stands untouched (its balance is the bank's)
+    expect((await db.accounts.get(canonicalAccountId(iban)))!).toMatchObject({ source: 'gocardless', balanceCents: 500 });
+    // every imported row landed on the IMPORT account
+    const rows = (await db.transactions.toArray()).filter((tx) => tx.deleted === 0);
+    expect(rows.every((tx) => tx.accountId === importAccountId(iban))).toBe(true);
+  });
+
+  it('#311 r4: with no bank row the canonical id stays the import’s (nothing changes for pure imports)', async () => {
+    const gateway = { register: async (id: string) => id, attach: async () => undefined };
+    await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
+    const result = await importCamtStatements(repo, new DexieBackend(db), 's1', [statement()], gateway);
+    expect(result.accounts[0].accountId).toBe(canonicalAccountId('NL69INGB0123456789'));
   });
 });

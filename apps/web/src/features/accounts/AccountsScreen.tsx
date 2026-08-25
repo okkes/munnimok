@@ -555,6 +555,15 @@ function SpaceSection({
   );
 }
 
+/** #311 r4: one reconcile/merge banner's identity + what its tap opens */
+interface ReconcileOffer {
+  name: string;
+  imported: number;
+  accountIds: string[];
+  merge?: { importedAccountId: string; bankAccountId: string };
+}
+type ReconcileOfferState = Pick<ReconcileOffer, 'accountIds' | 'merge'>;
+
 /** #314: does a space cluster have anything to show — a live account or
  *  any echo row (archived included) (S2004: out of the component) */
 const sectionHasContent = (
@@ -675,10 +684,10 @@ export function AccountsScreen() {
     }
     return byAccount;
   }, []);
-  const [reconcileIds, setReconcileIds] = useState<string[] | null>(null);
+  const [reconcileOffer, setReconcileOffer] = useState<ReconcileOfferState | null>(null);
   const reconcileSuggestions = useMemo(() => {
     if (!sourcesByAccount) return [];
-    const out: { name: string; imported: number; accountIds: string[] }[] = [];
+    const out: ReconcileOffer[] = [];
     const claimed = new Set<string>();
     for (const entry of suggestionPool) {
       const own = sourcesByAccount.get(entry.account.id);
@@ -687,7 +696,9 @@ export function AccountsScreen() {
         claimed.add(entry.account.id);
         continue;
       }
-      // same-IBAN pair: this imported account has a linked twin
+      // same-IBAN pair: this imported account has a linked twin. #311 r4
+      // (user): the pair stays TWO accounts — the offer is an explicit
+      // MERGE (the reconcile runs inside it), never a silent adoption
       if (!own?.imported || !entry.account.iban || claimed.has(entry.account.id)) continue;
       const iban = normalizeIban(entry.account.iban);
       const twin = suggestionPool.find(
@@ -698,7 +709,12 @@ export function AccountsScreen() {
           sourcesByAccount.get(other.account.id)?.linked,
       );
       if (twin) {
-        out.push({ name: twin.account.name, imported: own.imported, accountIds: [twin.account.id, entry.account.id] });
+        out.push({
+          name: twin.account.name,
+          imported: own.imported,
+          accountIds: [twin.account.id, entry.account.id],
+          merge: { importedAccountId: entry.account.id, bankAccountId: twin.account.id },
+        });
         claimed.add(entry.account.id);
         claimed.add(twin.account.id);
       }
@@ -782,13 +798,15 @@ export function AccountsScreen() {
               <button
                 key={suggestion.accountIds.join('+')}
                 data-testid={`account-reconcile-${suggestion.accountIds[suggestion.accountIds.length - 1]}`}
-                onClick={() => setReconcileIds(suggestion.accountIds)}
+                onClick={() => setReconcileOffer({ accountIds: suggestion.accountIds, merge: suggestion.merge })}
                 className="m-tap mb-2 flex w-full items-center gap-2.5 rounded-card border border-accent bg-accent-soft px-4 py-3 text-left text-[13px] font-medium text-accent-deep"
               >
-                <Icon name="bank-check" size={18} />
+                <Icon name={suggestion.merge ? 'source-merge' : 'bank-check'} size={18} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{suggestion.name}</span>
-                  <span className="block text-[11px] font-normal">{t('reconcile.suggest', { n: suggestion.imported })}</span>
+                  <span className="block text-[11px] font-normal">
+                    {t(suggestion.merge ? 'reconcile.suggestMerge' : 'reconcile.suggest', { n: suggestion.imported })}
+                  </span>
                 </span>
                 <Icon name="chevron-right" size={16} />
               </button>
@@ -856,7 +874,12 @@ export function AccountsScreen() {
       />
 
       <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
-      <ReconcileSheet open={reconcileIds !== null} onOpenChange={(next) => !next && setReconcileIds(null)} accountIds={reconcileIds ?? []} />
+      <ReconcileSheet
+        open={reconcileOffer !== null}
+        onOpenChange={(next) => !next && setReconcileOffer(null)}
+        accountIds={reconcileOffer?.accountIds ?? []}
+        merge={reconcileOffer?.merge}
+      />
 
       <EditAccountSheet account={editing} onClose={() => setEditing(null)} />
 

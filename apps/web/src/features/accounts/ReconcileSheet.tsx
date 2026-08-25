@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { applyReconcile } from '@/application/reconcile';
+import { applyMerge, applyReconcile } from '@/application/reconcile';
 import type { ReconcileResult } from '@/application/reconcile';
 import type { ReconcilePlan } from '@/domain/reconcile';
 import type { TransactionRow } from '@/db/types';
@@ -36,7 +36,16 @@ export function ReconcileSheet({
   open,
   onOpenChange,
   accountIds,
-}: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void; accountIds: string[] }>) {
+  merge,
+}: Readonly<{
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  accountIds: string[];
+  /** #311 r4 (user): the pair to MERGE — the imported account dissolves
+   *  into the bank one after the reconcile runs; absent = the classic
+   *  in-place reconcile of one mixed-source account */
+  merge?: { importedAccountId: string; bankAccountId: string };
+}>) {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
   const [plan, setPlan] = useState<ReconcilePlan | null>(null);
@@ -89,7 +98,12 @@ export function ReconcileSheet({
     setFailed(false);
     setProgress(null);
     try {
-      setResult(await applyReconcile(store, repo, spaceId, plan, ignored, (done, total) => setProgress({ done, total })));
+      const tick = (done: number, total: number) => setProgress({ done, total });
+      setResult(
+        merge
+          ? await applyMerge(store, repo, spaceId, merge, plan, ignored, tick)
+          : await applyReconcile(store, repo, spaceId, plan, ignored, tick),
+      );
     } catch {
       // #311 r2: dying silently read as "nothing happens" — say it
       setFailed(true);
@@ -100,6 +114,10 @@ export function ReconcileSheet({
   };
 
   const judged = plan ? plan.matches.length + plan.mismatched.length : 0;
+  // #311 r4: a merge with nothing overlapping is still real work — the
+  // imported history MOVES onto the bank account (a fresh link's rows
+  // may not overlap yet)
+  const workable = judged > 0 || (!!merge && (plan?.kept.length ?? 0) > 0);
 
   return (
     <Sheet
@@ -117,13 +135,15 @@ export function ReconcileSheet({
       {result && (
         <div className="flex flex-col items-center gap-3 pt-4 text-center" data-testid="reconcile-done">
           <Icon name="check-circle-outline" size={40} color="var(--m-accent)" />
-          <p className="text-[14px] text-ink-2">{t('reconcile.done', { migrated: result.migrated, removed: result.removed })}</p>
+          <p className="text-[14px] text-ink-2">
+            {t(merge ? 'reconcile.mergeDone' : 'reconcile.done', { migrated: result.migrated, removed: result.removed })}
+          </p>
           <Button variant="outline" data-testid="reconcile-close" onClick={() => onOpenChange(false)}>
             {t('action.done')}
           </Button>
         </div>
       )}
-      {!result && plan && judged === 0 && (
+      {!result && plan && !workable && (
         <p className="pt-2 text-[13px] text-ink-2" data-testid="reconcile-nothing">
           {t('reconcile.nothing')}
         </p>
@@ -131,21 +151,23 @@ export function ReconcileSheet({
       {/* #311 r3 (user): "rather than doing it automatically, show a
           popup like: these two look similar — is that correct?" — the
           question comes FIRST, the match list only after a yes */}
-      {!result && plan && judged > 0 && step === 'ask' && (
+      {!result && plan && workable && step === 'ask' && (
         <div className="flex flex-col gap-3 pt-2" data-testid="reconcile-ask">
           <div className="flex items-start gap-3">
             <Icon name="source-merge" size={22} color="var(--m-accent)" />
-            <p className="text-[13px] leading-relaxed text-ink-2">{t('reconcile.askBody', { n: judged })}</p>
+            <p className="text-[13px] leading-relaxed text-ink-2">
+              {t(merge ? 'reconcile.mergeAskBody' : 'reconcile.askBody', { n: judged })}
+            </p>
           </div>
           <Button data-testid="reconcile-ask-go" onClick={() => setStep('review')}>
-            {t('reconcile.askGo')}
+            {t(merge ? 'reconcile.mergeAskGo' : 'reconcile.askGo')}
           </Button>
           <Button variant="outline" data-testid="reconcile-ask-later" onClick={() => onOpenChange(false)}>
             {t('reconcile.askLater')}
           </Button>
         </div>
       )}
-      {!result && plan && judged > 0 && step === 'review' && (
+      {!result && plan && workable && step === 'review' && (
         <div className="flex flex-col gap-3 pt-1" data-testid="reconcile-review">
           {plan.coverage && (
             <p className="text-[12px] leading-relaxed text-ink-3">
@@ -222,7 +244,7 @@ export function ReconcileSheet({
 
           {plan.kept.length > 0 && (
             <p className="px-1 text-[11px] text-ink-4" data-testid="reconcile-kept">
-              {t('reconcile.kept', { n: plan.kept.length })}
+              {t(merge ? 'reconcile.mergeKept' : 'reconcile.kept', { n: plan.kept.length })}
             </p>
           )}
 
@@ -237,7 +259,7 @@ export function ReconcileSheet({
             </p>
           )}
           <Button variant="danger" data-testid="reconcile-confirm" disabled={busy} onClick={() => void confirm()}>
-            {t('reconcile.confirm', { n: judged })}
+            {merge ? t('reconcile.mergeConfirm') : t('reconcile.confirm', { n: judged })}
           </Button>
         </div>
       )}
