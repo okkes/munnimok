@@ -145,17 +145,35 @@ export async function applySocialConnectors(pairStack, { m2mId, m2mSecret }) {
 export async function applyBranding(pairStack, { m2mId, m2mSecret }) {
   const logtoUrl = pairStack.urls.logto;
   const token = await mgmtToken(logtoUrl, m2mId, m2mSecret);
-  const logoUrl = `${pairStack.urls.web}/icon-512.png`;
+  const { logoUrl, favicon } = await brandingImages(pairStack);
   await api(logtoUrl, token, '/sign-in-exp', {
     method: 'PATCH',
     body: JSON.stringify({
-      branding: { logoUrl, darkLogoUrl: logoUrl, favicon: `${pairStack.urls.web}/icon-192.png` },
+      branding: { logoUrl, darkLogoUrl: logoUrl, favicon },
       // darkPrimaryColor is REQUIRED by the API (found live 2026-08-26:
       // 400 ZodError without it) — the light mint the app uses on dark
       color: { primaryColor: '#08372B', darkPrimaryColor: '#8FC7B4', isDarkModeEnabled: true },
     }),
   });
   return { logoUrl };
+}
+
+/** Logto's own CSP allows img-src 'self' data: https: blob: — a plain-http
+ * web origin (the LOCAL twin) can't serve the logo by URL (blocked live
+ * 2026-08-26), so http stacks inline the icons as data: URIs instead. */
+async function brandingImages(pairStack) {
+  const web = pairStack.urls.web;
+  if (web.startsWith('https://')) {
+    return { logoUrl: `${web}/icon-512.png`, favicon: `${web}/icon-192.png` };
+  }
+  const asDataUri = async (url) => {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) throw new Error(`icon fetch ${url} failed (${res.status})`);
+    const type = res.headers.get('content-type') ?? 'image/png';
+    return `data:${type};base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`;
+  };
+  const logo = await asDataUri(`${web}/icon-192.png`);
+  return { logoUrl: logo, favicon: logo };
 }
 
 /** write the ids where CI reads them (variables) + m2m secret (secret) */
