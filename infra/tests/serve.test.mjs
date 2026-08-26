@@ -3,12 +3,15 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { EventEmitter } from 'node:events';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-serve-test-'));
 process.env.MUNNI_RENDER_DIR = SCRATCH;
 const { createApp, OPERATOR_NAMES, TOOLS } = await import('../setup/serve.mjs');
+const { loadLocalValues } = await import('../modules/localstore.mjs');
+const { loadStack } = await import('../modules/stack.mjs');
 
 test.after(() => rmSync(SCRATCH, { recursive: true, force: true }));
 
@@ -130,4 +133,48 @@ test('status reports store NAMES and service probes, never values', async () => 
   assert.deepEqual(body.services, { web: false, api: false, logto: false, glitchtip: false });
   assert.ok(body.urls.web.startsWith('http://localhost:'));
   assert.ok(!JSON.stringify(body).includes('ghp_'), 'status leaked a value');
+});
+
+test('glitchtip-setup: mints inside the container, feeds the token to bootstrap, masks it in the stream', async () => {
+  const spawned = [];
+  const spawnScript = (cmd, args, opts) => {
+    spawned.push({ cmd, args, opts });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => {
+      if (spawned.length === 1) child.stdout.emit('data', 'USER:created\nTOKEN_STATE:created\nTOKEN:gt_secret_token_123\n');
+      else child.stdout.emit('data', 'ok\n');
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  const gtApp = createApp({ token: 'tok', spawnImpl: spawnScript, probeImpl: async () => false });
+  const res = fakeRes();
+  await gtApp(fakeReq({ method: 'POST', url: '/api/local/glitchtip-setup', token: 'tok', body: {} }), res);
+  // wait for the chained steps to finish (three spawns, each a microtask)
+  for (let i = 0; i < 50 && !res.ended; i++) await new Promise((r) => setTimeout(r, 10));
+
+  assert.equal(spawned.length, 3, 'expected exec → bootstrap → compose up');
+  // step 1: manage.py shell inside the glitchtip service, creds via env not argv
+  const exec = spawned[0];
+  assert.equal(exec.cmd, 'docker');
+  assert.ok(exec.args.includes('exec') && exec.args.includes('glitchtip') && exec.args.includes('shell'));
+  assert.ok(!exec.args.join(' ').includes(exec.opts.env.GT_ADMIN_PASSWORD), 'password leaked into argv');
+  // step 2: bootstrap with the captured token in env
+  const boot = spawned[1];
+  assert.equal(boot.cmd, process.execPath);
+  assert.equal(boot.opts.env.IAC_GLITCHTIP_API_TOKEN, 'gt_secret_token_123');
+  // step 3: compose up -d
+  assert.deepEqual(spawned[2].args.slice(-2), ['up', '-d']);
+
+  const stream = res.chunks.join('');
+  assert.ok(!stream.includes('gt_secret_token_123'), 'the API token leaked into the page stream');
+  assert.match(stream, /TOKEN:\(captured\)/);
+  assert.match(stream, /console login → email admin@munni\.local · password \S+/);
+  assert.match(stream, /\[exit 0\]/);
+  // admin credentials persisted for later logins
+  const store = loadLocalValues(loadStack('munni-local'));
+  assert.equal(store.GLITCHTIP_ADMIN_EMAIL, 'admin@munni.local');
+  assert.ok(store.GLITCHTIP_ADMIN_PASSWORD?.length >= 12);
 });

@@ -24,7 +24,7 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST } from '../modules/secrets.mjs';
-import { loadLocalValues, localManifestEntries } from '../modules/localstore.mjs';
+import { loadLocalValues, saveLocalValues, localManifestEntries } from '../modules/localstore.mjs';
 import { loadStack } from '../modules/stack.mjs';
 import { validate } from '../modules/validate.mjs';
 
@@ -136,6 +136,88 @@ async function toolEndpoint(req, res, runImpl) {
  * transient use only, never stored, never logged */
 const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator').map((s) => s.name));
 
+/* ── GlitchTip zero-input setup (user: "glitchtip is deployed by the
+   process itself — fetch/generate these things automatically"). Locally
+   we own the container, so the first admin user AND the API token are
+   created INSIDE it via manage.py; the token then flows straight into
+   bootstrap (org + projects + DSN write-back) — nothing to paste. ── */
+const GT_BOOTSTRAP_PY = `
+import os
+from django.contrib.auth import get_user_model
+from apps.api_tokens.models import APIToken
+email = os.environ['GT_ADMIN_EMAIL']
+password = os.environ['GT_ADMIN_PASSWORD']
+U = get_user_model()
+u = U.objects.filter(email=email).first()
+if u is None:
+    u = U.objects.create_superuser(email, password)
+    print('USER:created')
+else:
+    print('USER:existing')
+t = APIToken.objects.filter(user=u).first()
+if t is None:
+    flags = getattr(APIToken._meta.get_field('scopes'), 'flags', []) or []
+    t = APIToken.objects.create(user=u, scopes=(1 << len(flags)) - 1)
+    print('TOKEN_STATE:created')
+else:
+    print('TOKEN_STATE:existing')
+print('TOKEN:' + str(t.token))
+`;
+
+const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
+  new Promise((resolve) => {
+    res.write(`\n▶ ${label}\n`);
+    const child = spawnImpl(cmd, args, { cwd: opts.cwd ?? ROOT, env: opts.env ?? process.env, shell: false });
+    let out = '';
+    const forward = (d) => {
+      const s = String(d);
+      out += s;
+      res.write(opts.mask ? opts.mask(s) : s);
+    };
+    child.stdout.on('data', forward);
+    child.stderr.on('data', forward);
+    child.on('error', (e) => { res.write(`[helper] ${cmd} failed to start: ${e.message}\n`); resolve({ code: -1, out }); });
+    child.on('close', (code) => resolve({ code, out }));
+  });
+
+async function glitchtipSetupEndpoint(res, spawnImpl) {
+  const stack = loadStack('munni-local');
+  const values = loadLocalValues(stack);
+  const email = values.GLITCHTIP_ADMIN_EMAIL ?? 'admin@munni.local';
+  const password = values.GLITCHTIP_ADMIN_PASSWORD ?? randomBytes(12).toString('base64url');
+  saveLocalValues(stack, { ...values, GLITCHTIP_ADMIN_EMAIL: email, GLITCHTIP_ADMIN_PASSWORD: password });
+
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const run = stepRunner(spawnImpl);
+
+  const mint = await run(res, 'create the GlitchTip admin + API token (inside the container)', 'docker',
+    [...TWIN_COMPOSE, 'exec', '-T', '-e', 'GT_ADMIN_EMAIL', '-e', 'GT_ADMIN_PASSWORD', 'glitchtip', './manage.py', 'shell', '-c', GT_BOOTSTRAP_PY],
+    {
+      cwd: RENDERED,
+      env: { ...process.env, GT_ADMIN_EMAIL: email, GT_ADMIN_PASSWORD: password },
+      mask: (s) => s.replace(/TOKEN:\S+/g, 'TOKEN:(captured)'),
+    });
+  if (mint.code !== 0) {
+    res.write('\nIs munni running? Use step 4 → Set up & start munni first, wait for GlitchTip to come up, then retry.\n');
+    return res.end('[exit 1]\n');
+  }
+  const token = /TOKEN:(\S+)/.exec(mint.out)?.[1];
+  if (!token) {
+    res.write('\ncould not read the API token back from the container — use the manual fallback below\n');
+    return res.end('[exit 1]\n');
+  }
+  res.write(`\nGlitchTip console login → email ${email} · password ${password}\n(also kept in infra/rendered/munni-local/.secrets.local.json — change it inside GlitchTip whenever you like)\n`);
+
+  const wire = await run(res, 'wire org, projects and DSNs (bootstrap)', process.execPath,
+    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', 'munni-local'],
+    { cwd: ROOT, env: { ...process.env, IAC_GLITCHTIP_API_TOKEN: token } });
+  if (wire.code !== 0) return res.end('[exit 1]\n');
+
+  const restart = await run(res, 'restart with the DSNs wired in (docker compose up -d)', 'docker',
+    [...TWIN_COMPOSE, 'up', '-d'], { cwd: RENDERED });
+  return res.end(`\n[exit ${restart.code === 0 ? 0 : 1}]\n`);
+}
+
 async function validateEndpoint(req, res, validateImpl) {
   const body = await readBody(req);
   // pasted field values win; the machine's own store fills the gaps so
@@ -157,7 +239,7 @@ function serveHtml(res, token) {
 }
 
 /** build the handler; spawn/probe/validate deps injectable for tests */
-export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate } = {}) {
+export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn } = {}) {
   return async function handle(req, res) {
     if (!hostOk(req)) return json(res, 403, { error: 'bad host' });
     const url = new URL(req.url, 'http://localhost');
@@ -168,6 +250,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
       if (req.method === 'GET' && url.pathname === '/api/local/status') return await statusEndpoint(res, probeImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/run') return await runEndpoint(req, res, runImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/tool') return await toolEndpoint(req, res, runImpl);
+      if (req.method === 'POST' && url.pathname === '/api/local/glitchtip-setup') return await glitchtipSetupEndpoint(res, spawnImpl);
       if (req.method === 'POST' && url.pathname === '/api/validate') return await validateEndpoint(req, res, validateImpl);
       return json(res, 404, { error: 'not found' });
     } catch (e) {

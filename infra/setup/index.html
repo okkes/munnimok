@@ -219,12 +219,16 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 
     <div class="card">
       <h3>Crash reports (GlitchTip, optional) <span class="dot" data-localdot="VITE_GLITCHTIP_DSN"></span></h3>
-      <p class="why">Register at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> → profile → <b>Auth Tokens</b> → create one → paste. Apply creates the org + projects and wires every DSN in.</p>
-      <label class="f" for="in-local-gt">IAC_GLITCHTIP_API_TOKEN</label>
-      <input type="password" id="in-local-gt" autocomplete="off"/>
-      <button id="btn-local-gt">Apply crash tracking</button>
-      <button class="ghost" id="btn-local-gt-check">Check</button>
-      <div class="msg" id="msg-local-gt"></div>
+      <p class="why">Nothing to create by hand: munni deploys GlitchTip itself, so this button creates the first admin account INSIDE it, mints the API token, creates the org + projects and wires every DSN in. The console login it creates (for <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a>) is printed in the output once and kept in the local secret store.</p>
+      <button id="btn-local-gt-auto">Set up crash tracking automatically</button>
+      <details class="how"><summary>Manual fallback — bring your own account/token instead</summary>
+        <p>Register at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> → profile → <b>Auth Tokens</b> → create one → paste:</p>
+        <label class="f" for="in-local-gt">IAC_GLITCHTIP_API_TOKEN</label>
+        <input type="password" id="in-local-gt" autocomplete="off"/>
+        <button id="btn-local-gt">Apply crash tracking</button>
+        <button class="ghost" id="btn-local-gt-check">Check</button>
+        <div class="msg" id="msg-local-gt"></div>
+      </details>
     </div>
 
     <div class="card">
@@ -869,7 +873,7 @@ const S = {
 /* feature toggles → which credential groups show */
 const FEATURES = [
   { id: 'gocardless', label: 'Bank sync via GoCardless', hint: 'live transactions from 2500+ EU banks (read-only PSD2 AIS) — the heart of the product' },
-  { id: 'enablebanking', label: 'Enable Banking as a second bank provider', hint: 'optional fallback aggregator; banks missing at GoCardless' },
+  { id: 'enablebanking', label: 'Enable Banking as a second bank provider', hint: 'optional fallback aggregator; banks missing at GoCardless', localHint: 'store + check credentials locally; the bank-consent redirect itself needs the hosted track (Enable Banking is https-only)' },
   { id: 'logodev', label: 'Merchant logos (logo.dev)', hint: 'brand logos on transactions and recurring costs' },
   { id: 'fcm', label: 'Native push notifications (Firebase FCM)', hint: 'push for the Android/iOS shells — web push works without this' },
   { id: 'google', label: 'Sign in with Google', hint: 'social login button on the sign-in screen' },
@@ -923,7 +927,7 @@ const GROUPS = [
       'Environment: <b>Sandbox</b> only reaches Enable Banking’s test banks — for real banks register a <b>production</b> application (Enable Banking may ask a few questions before enabling it).',
       {
         nas: 'Allowed <b>redirect URLs</b> — after the bank consent, munni returns the user to the app origin + <code>/gc-callback</code>. Register BOTH twins: <code class="dom-inline">https://munni-iac.&lt;domain&gt;/gc-callback</code> and <code class="dom-inline">https://munni-iac-test.&lt;domain&gt;/gc-callback</code>. An unregistered URL fails at connect time with a 403 that names the problem.',
-        local: 'Allowed <b>redirect URLs</b> — after the bank consent, munni returns the user to the app origin + <code>/gc-callback</code>. For the local twin register <code>http://localhost:8380/gc-callback</code> (add <code>http://localhost:5173/gc-callback</code> too if you’ll test bank connect from the dev stack). An unregistered URL fails at connect time with a 403 that names the problem.',
+        local: 'Heads-up: Enable Banking accepts <b>https URLs only</b> — it refuses <code>http://localhost:8380/gc-callback</code> with “unsupported scheme”, so the full bank-consent roundtrip cannot run on the plain-http local twin. Register your future HOSTED urls instead (<code class="dom-inline">https://munni-iac.&lt;domain&gt;/gc-callback</code> and the -test twin) so one application serves both. Locally you can still store + <b>Check</b> the credentials — Check talks to the API directly, no redirect involved.',
       },
       'Registering creates the application’s key pair — <b>download the private key (.pem)</b>; it is shown/offered ONCE. Paste its FULL contents below, BEGIN/END lines included.',
       'The <b>Application ID</b> (a UUID) is on the application’s page in the Control Panel after registration.',
@@ -1227,9 +1231,10 @@ function applyDomain() {
 function renderFeatures() {
   document.getElementById('features').innerHTML = FEATURES.map((f) => {
     const off = !(f.targets ?? ['nas', 'local']).includes(S.platform);
+    const hint = off ? f.offHint : ((S.platform === 'local' && f.localHint) || f.hint);
     return `
     <div class="feature" ${off ? 'style="opacity:.5"' : ''}><input type="checkbox" id="feat-${f.id}" ${S.features[f.id] && !off ? 'checked' : ''} ${off ? 'disabled' : ''}/>
-    <label for="feat-${f.id}"><b>${f.label}</b> — <span class="sub" style="display:inline">${off ? f.offHint : f.hint}</span></label></div>`;
+    <label for="feat-${f.id}"><b>${f.label}</b> — <span class="sub" style="display:inline">${hint}</span></label></div>`;
   }).join('');
   FEATURES.forEach((f) => {
     document.getElementById('feat-' + f.id).addEventListener('change', (e) => {
@@ -1248,6 +1253,14 @@ function renderCards() {
   // strings apply everywhere, {nas, local} objects resolve here
   const howSteps = (g) => g.how.map((h) => (typeof h === 'string' ? h : h[S.platform])).filter(Boolean);
   const wrap = document.getElementById('cred-cards');
+  // re-rendering (feature toggles, platform switch) must never eat what
+  // the user already typed: snapshot values + open explainers, restore after
+  const typed = Object.fromEntries(
+    [...wrap.querySelectorAll('[data-secret]')].map((el) => [el.dataset.secret, el.value]).filter(([, v]) => v),
+  );
+  const openHow = new Set(
+    [...wrap.querySelectorAll('.card')].filter((c) => c.querySelector('details.how')?.open).map((c) => c.dataset.group),
+  );
   wrap.innerHTML = GROUPS.filter(groupVisible).map((g) => `
     <div class="card" data-group="${g.id}">
       <h3>${g.title} ${g.fields.map((f) => `<span class="dot" data-dot="${f.name}" data-carddot="1" ${f.optional ? 'data-opt="1"' : ''}></span>`).join('')}</h3>
@@ -1268,6 +1281,8 @@ function renderCards() {
     const store = card.querySelector('[data-store-group]');
     if (store?.dataset.force) { delete store.dataset.force; store.textContent = S.platform === 'local' ? 'Store on this machine' : 'Store'; }
   }));
+  wrap.querySelectorAll('[data-secret]').forEach((el) => { if (!el.value && typed[el.dataset.secret]) el.value = typed[el.dataset.secret]; });
+  wrap.querySelectorAll('.card').forEach((card) => { if (openHow.has(card.dataset.group)) { const d = card.querySelector('details.how'); if (d) d.open = true; } });
   wrap.querySelectorAll('[data-mirror="domain"]').forEach((input) => {
     if (!input.value && S.domain) input.value = S.domain;
     input.addEventListener('input', () => { S.domain = input.value.trim(); LS.set('domain', S.domain); applyDomain(); });
@@ -1560,6 +1575,8 @@ document.getElementById('btn-local-oobe')?.addEventListener('click', async () =>
     await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'restart web/admin with the new config');
   }
 });
+document.getElementById('btn-local-gt-auto')?.addEventListener('click', () =>
+  streamLocal('/api/local/glitchtip-setup', {}, 'set up crash tracking (admin + token + org + DSNs, zero input)'));
 document.getElementById('btn-local-gt')?.addEventListener('click', async () => {
   const token = document.getElementById('in-local-gt').value.trim();
   if (!token) { localLog('\nPaste the GlitchTip token first.\n'); return; }
