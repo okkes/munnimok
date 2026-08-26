@@ -19,3 +19,18 @@ done
 
 printf 'window.__MUNNI_CONFIG__={%s};\n' "$json" > "$OUT"
 echo "40-runtime-config: rendered $OUT ($([ -n "$json" ] && echo 'overlay active' || echo 'empty — baked config applies'))"
+
+# The baked CSP allows img-src 'self' data: blob: https: — enough for every
+# https deployment, but a plain-http API origin (the LOCAL twin) serves the
+# vendored institution logos from http://localhost:<api-port>, which that
+# policy blocks (34 blank bank logos, found live 2026-08-27). When THIS
+# deployment's API is http, admit exactly that one origin.
+SNIPPET="/etc/nginx/snippets/security-headers.conf"
+case "${MUNNI_API_URL:-}" in
+  http://*)
+    if [ -w "$SNIPPET" ] && ! grep -q "img-src 'self' data: blob: https: ${MUNNI_API_URL}" "$SNIPPET"; then
+      sed -i "s|img-src 'self' data: blob: https:|img-src 'self' data: blob: https: ${MUNNI_API_URL}|" "$SNIPPET"
+      echo "40-runtime-config: CSP img-src extended with ${MUNNI_API_URL} (http deployment)"
+    fi
+    ;;
+esac
