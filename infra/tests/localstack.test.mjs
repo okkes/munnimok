@@ -75,6 +75,21 @@ test('local render inlines real values (no placeholders) and localizes auth', ()
   assert.ok(compose.includes('TRUST_PROXY_HEADER: "0"'));
 });
 
+test('the pair vault renders with the shared services (secrets-access SA1)', () => {
+  const local = loadStack('munni-local');
+  const dir = renderStack(local, {});
+  const compose = readFileSync(join(dir, 'docker-compose.munni-local.yml'), 'utf8');
+  assert.ok(compose.includes('vaultwarden/server'), 'vaultwarden service missing locally');
+  assert.ok(compose.includes('"8384:80"'));
+  assert.ok(compose.includes('vaultdata:'));
+  assert.ok(compose.includes('SIGNUPS_ALLOWED: ${VAULT_SIGNUPS_ALLOWED:-true}'));
+  const iac = loadStack('munni-iac-prod');
+  const iacCompose = readFileSync(join(renderStack(iac), 'docker-compose.munni-iac-prod.yml'), 'utf8');
+  assert.ok(iacCompose.includes('vaultwarden/server'), 'vaultwarden service missing on the prod twin');
+  assert.equal(iac.urls.vault, 'https://vault-iac.example.test');
+  assert.ok(templatePlaceholders(iac).includes('VAULT_SIGNUPS_ALLOWED'));
+});
+
 test('iac render keeps the CI placeholder contract and the runtime-config overlay', () => {
   const stack = loadStack('munni-iac-prod');
   const dir = renderStack(stack);

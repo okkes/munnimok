@@ -146,7 +146,7 @@ services:
       retries: 10
 ${shared ? sharedServices(s, pair) : ''}
 volumes:
-  pgdata:
+  pgdata:${shared ? '\n  vaultdata:' : ''}
 `;
 }
 
@@ -219,6 +219,21 @@ function sharedServices(s, pair) {
   valkey:
     image: valkey/valkey:9-alpine
     restart: unless-stopped
+
+  # the pair's secrets vault (docs/secrets-access-plan.md SA1): the HUMAN
+  # copy of every credential — read with the Bitwarden apps/extension.
+  # Never internet-facing (LAN-only reverse proxy / localhost). Flip
+  # VAULT_SIGNUPS_ALLOWED=false once your one account exists.
+  vaultwarden:
+    image: vaultwarden/server:latest
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${pair.urls.vault}
+      SIGNUPS_ALLOWED: \${VAULT_SIGNUPS_ALLOWED:-true}
+    volumes:
+      - vaultdata:/data
+    ports:
+      - "${p.vault}:80"
 `;
 }
 
@@ -253,6 +268,9 @@ ADMIN_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN_ADMIN}
 GLITCHTIP_SECRET_KEY=\${NAS_GLITCHTIP_SECRET_KEY}
 GLITCHTIP_EMAIL_URL=\${NAS_GLITCHTIP_EMAIL_URL}
 API_SENTRY_DSN=\${NAS_API_SENTRY_DSN}
+
+# empty = signups OPEN (first account); set to false once yours exists
+VAULT_SIGNUPS_ALLOWED=\${VAULT_SIGNUPS_ALLOWED}
 
 GOCARDLESS_SECRET_ID=\${NAS_GOCARDLESS_SECRET_ID}
 GOCARDLESS_SECRET_KEY=\${NAS_GOCARDLESS_SECRET_KEY}

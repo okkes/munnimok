@@ -97,20 +97,65 @@ async function statusEndpoint(res, probeImpl) {
     c.on('error', () => resolve({ ok: false }));
     c.on('close', (code) => resolve({ ok: code === 0, version: out.trim() }));
   });
-  const [web, api, logto, glitchtip] = await Promise.all([
+  const [web, api, logto, glitchtip, vault] = await Promise.all([
     probeImpl(stack.urls.web),
     probeImpl(`${stack.urls.api}/health`),
     probeImpl(`${stack.urls.logto}/oidc/.well-known/openid-configuration`),
     probeImpl(`${stack.urls.glitchtip}/api/0/`),
+    probeImpl(`${stack.urls.vault}/alive`),
   ]);
   return json(res, 200, {
     docker,
     rendered: existsSync(join(RENDERED, '.env.munni-local')),
     stored,            // NAMES only — never values
     required,
-    services: { web, api, logto, glitchtip },
+    services: { web, api, logto, glitchtip, vault },
     urls: stack.urls,
   });
+}
+
+/* ── secret retrieval (docs/secrets-access-plan.md, local half): the
+   machine's own store IS readable — these endpoints surface it on
+   EXPLICIT request only. Values go to the page, never to any log. ── */
+function secretsEndpoint(res) {
+  const values = loadLocalValues(loadStack('munni-local'));
+  return json(res, 200, { values });
+}
+
+/** Bitwarden-importable JSON (web vault → Tools → Import → Bitwarden json).
+ * VAPID keys stay out per the plan — no human ever types those. */
+function vaultExportEndpoint(res) {
+  const stack = loadStack('munni-local');
+  const values = loadLocalValues(stack);
+  const item = (name, { username = '', password = '', uri = '', notes = '' } = {}) => ({
+    type: 1,
+    name,
+    notes,
+    favorite: false,
+    login: { username, password, uris: uri ? [{ match: null, uri }] : [], totp: null },
+    collectionIds: null,
+  });
+  const items = [];
+  if (values.GLITCHTIP_ADMIN_EMAIL) {
+    items.push(item('munni-local / GlitchTip console', {
+      username: values.GLITCHTIP_ADMIN_EMAIL,
+      password: values.GLITCHTIP_ADMIN_PASSWORD ?? '',
+      uri: stack.urls.glitchtip,
+      notes: 'created by the munni setup wizard',
+    }));
+  }
+  if (values.NAS_POSTGRES_PASSWORD) {
+    items.push(item('munni-local / Postgres', { username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: 'db munni/logto/glitchtip inside the twin' }));
+  }
+  if (values.IAC_LOGTO_INFRA_M2M_ID) {
+    items.push(item('munni-local / Logto infra M2M', { username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto }));
+  }
+  const covered = new Set(['GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_POSTGRES_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET', 'NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY']);
+  for (const [name, value] of Object.entries(values)) {
+    if (covered.has(name) || !value) continue;
+    items.push(item(`munni-local / ${name}`, { password: String(value), notes: 'from the munni setup wizard local store' }));
+  }
+  return json(res, 200, { encrypted: false, folders: [], items });
 }
 
 async function runEndpoint(req, res, runImpl) {
@@ -305,6 +350,8 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
       if (req.method === 'POST' && url.pathname === '/api/local/tool') return await toolEndpoint(req, res, runImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/glitchtip-setup') return await glitchtipSetupEndpoint(res, spawnImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/logto-setup') return await logtoSetupEndpoint(res, spawnImpl);
+      if (req.method === 'GET' && url.pathname === '/api/local/secrets') return secretsEndpoint(res);
+      if (req.method === 'GET' && url.pathname === '/api/local/vault-export') return vaultExportEndpoint(res);
       if (req.method === 'POST' && url.pathname === '/api/validate') return await validateEndpoint(req, res, validateImpl);
       return json(res, 404, { error: 'not found' });
     } catch (e) {

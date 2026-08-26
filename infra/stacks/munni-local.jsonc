@@ -21,7 +21,8 @@
     "admin": "localhost",
     "logto": "localhost",
     "logtoAdmin": "localhost",
-    "glitchtip": "localhost"
+    "glitchtip": "localhost",
+    "vault": "localhost"
   },
 
   // 83xx block: clear of the live stacks (80xx/81xx), the iac pair (82xx)
@@ -32,7 +33,8 @@
     "api": 8382,
     "logto": 3201,
     "logtoAdmin": 3202,
-    "glitchtip": 8383
+    "glitchtip": 8383,
+    "vault": 8384
   },
 
   "sharedServices": true,

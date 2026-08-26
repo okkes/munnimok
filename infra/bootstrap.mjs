@@ -80,6 +80,7 @@ async function probeAll() {
   allUp &= await probe('api', `${stack.urls.api}/health`);
   allUp &= await probe('logto', `${pair.urls.logto}/oidc/.well-known/openid-configuration`);
   allUp &= await probe('glitchtip', `${pair.urls.glitchtip}/api/0/`, (r) => r.status < 500);
+  allUp &= await probe('vault', `${pair.urls.vault}/alive`, (r) => r.status < 500);
   return allUp;
 }
 

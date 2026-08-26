@@ -35,6 +35,7 @@ ${(isProdTwin
       [stack.host('logto'), stack.ports.logto],
       [stack.host('logtoAdmin'), stack.ports.logtoAdmin],
       [stack.host('glitchtip'), stack.ports.glitchtip],
+      [stack.host('vault'), stack.ports.vault],
     ]
   : [
       [stack.host('web'), stack.ports.web],
@@ -86,6 +87,17 @@ Auth Tokens → create a token → store it once per pair:
 (the setup wizard does this for you). Re-run bootstrap — the glitchtip
 module creates the org + per-stack projects and writes every DSN back
 (NAS_API_SENTRY_DSN secret, VITE_GLITCHTIP_DSN/_ADMIN variables) itself.
+
+## 4b. Secrets vault (once per pair — the HUMAN copy)
+
+Vaultwarden runs at ${pair.urls.vault} (LAN-restrict it in the DSM
+firewall like the *-admin hosts). Open it → Create account (the master
+password is the one secret that lives only in your head) → then store
+\`VAULT_SIGNUPS_ALLOWED=false\` as a pair secret and redeploy so
+registration closes. Generated GitHub secrets stay write-only — put the
+credentials you'll want to look up (GlitchTip login, pgadmin, the infra
+M2M) into the vault as you create them; the automated write-back of
+minted values (plan SA2) is still on the roadmap.
 
 ## 5. Native apps (first upload is Apple/Google-mandated manual)
 

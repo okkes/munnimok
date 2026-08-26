@@ -237,6 +237,23 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
     </div>
 
     <div class="card">
+      <h3>Your secrets &amp; the vault <span class="pill">read them back any time</span></h3>
+      <p class="why">Every generated or saved secret lives readable in this machine's gitignored store — and a <b>Vaultwarden</b> vault (the self-hosted Bitwarden server) runs inside the stack at <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> as the human copy, usable with the real Bitwarden apps/extension. Containers themselves keep reading env (third-party images know nothing else — the vault is for YOU, not for them).</p>
+      <div class="runrow">
+        <button class="ghost" id="btn-local-reveal">Reveal secrets here</button>
+        <button class="ghost" id="btn-local-vault-export">Download vault import file</button>
+      </div>
+      <div id="local-secrets" hidden style="margin-top:8px"></div>
+      <details class="how"><summary>Putting them into the vault (2 minutes, once)</summary>
+        <ol>
+          <li>Open <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> → <b>Create account</b> — the master password you choose here is the ONE secret that lives only in your head.</li>
+          <li>Download the import file (button above) → in the vault: <b>Tools → Import data</b> → format <b>Bitwarden (json)</b> → select the file → Import.</li>
+          <li>Optional hardening: save <code>VAULT_SIGNUPS_ALLOWED=false</code> below (any card's Save works — or paste it in step 3) and press Set up again, so nobody else on your network can register.</li>
+        </ol>
+      </details>
+    </div>
+
+    <div class="card">
       <h3>The dev stack &amp; tooling <span class="pill">on demand</span></h3>
       <p class="why">The from-source DEV stack (API + Logto + Postgres in docker, the app via <code>npm run dev</code> with hot reload) and the heavyweight verification tools — all containerized, all one click.</p>
       <div class="runrow">
@@ -1137,6 +1154,7 @@ async function refreshLocal() {
       link('api', st.services.api, `${st.urls.api}/health`),
       link('logto admin', st.services.logto, 'http://localhost:3202'),
       link('glitchtip', st.services.glitchtip, st.urls.glitchtip),
+      link('vault', st.services.vault, st.urls.vault),
     ].join(' &nbsp;·&nbsp; ');
     document.getElementById('local-links').innerHTML =
       `Once up: app <a href="${st.urls.web}" target="_blank" rel="noreferrer">${st.urls.web.replace('http://', '')}</a> · admin <a href="${st.urls.admin}" target="_blank" rel="noreferrer">:${new URL(st.urls.admin).port}</a> · api <a href="${st.urls.api}/health" target="_blank" rel="noreferrer">:${new URL(st.urls.api).port}/health</a>`;
@@ -1720,6 +1738,27 @@ document.getElementById('btn-local-gt')?.addEventListener('click', async () => {
 document.querySelectorAll('[data-local-tool]').forEach((btn) => btn.addEventListener('click', () => {
   streamLocal('/api/local/tool', { tool: btn.dataset.localTool }, btn.textContent.trim());
 }));
+document.getElementById('btn-local-reveal')?.addEventListener('click', async () => {
+  const box = document.getElementById('local-secrets');
+  if (!box.hidden) { box.hidden = true; box.innerHTML = ''; document.getElementById('btn-local-reveal').textContent = 'Reveal secrets here'; return; }
+  const res = await hfetch('/api/local/secrets');
+  const { values } = await res.json();
+  const rows = Object.entries(values).filter(([, v]) => v).map(([name, value]) =>
+    `<tr><td style="padding:2px 10px 2px 0"><code>${name}</code></td><td><code style="user-select:all">${String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</code></td></tr>`);
+  box.innerHTML = `<p class="why">Shown on your request only — nothing here is logged. Click a value to select it.</p><div style="overflow-x:auto"><table style="font-size:12px">${rows.join('')}</table></div>`;
+  box.hidden = false;
+  document.getElementById('btn-local-reveal').textContent = 'Hide secrets';
+});
+document.getElementById('btn-local-vault-export')?.addEventListener('click', async () => {
+  const res = await hfetch('/api/local/vault-export');
+  const blob = new Blob([JSON.stringify(await res.json(), null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'munni-local-vault-import.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  localLog('\nVault import file downloaded — in Vaultwarden: Tools → Import data → Bitwarden (json). Delete the file after importing.\n');
+});
 const localCheck = async (provider, values, msgId) => {
   msg(msgId, 'checking…', true);
   try {

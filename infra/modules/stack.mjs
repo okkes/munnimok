@@ -48,6 +48,7 @@ export function loadStack(name) {
       logto: url('logto'),
       logtoAdmin: url('logtoAdmin'),
       glitchtip: url('glitchtip'),
+      vault: url('vault'),
     },
     host,
   };

@@ -191,9 +191,44 @@ test('status reports store NAMES and service probes, never values', async () => 
   assert.equal(res.statusCode, 200);
   const body = JSON.parse(res.chunks.join(''));
   assert.ok(Array.isArray(body.stored));
-  assert.deepEqual(body.services, { web: false, api: false, logto: false, glitchtip: false });
+  assert.deepEqual(body.services, { web: false, api: false, logto: false, glitchtip: false, vault: false });
   assert.ok(body.urls.web.startsWith('http://localhost:'));
   assert.ok(!JSON.stringify(body).includes('ghp_'), 'status leaked a value');
+});
+
+test('secret retrieval: reveal returns the store; the vault export skips VAPID and shapes real logins', async () => {
+  const { saveLocalValues, loadLocalValues: llv } = await import('../modules/localstore.mjs');
+  const { loadStack: ls } = await import('../modules/stack.mjs');
+  const stack = ls('munni-local');
+  saveLocalValues(stack, {
+    ...llv(stack),
+    NAS_PUSH_VAPID_PRIVATE_KEY: 'vapid-secret-x',
+    NAS_GOCARDLESS_SECRET_ID: 'gc-id-1',
+    GLITCHTIP_ADMIN_EMAIL: 'admin@munni.local',
+    GLITCHTIP_ADMIN_PASSWORD: 'pw-x',
+  });
+
+  const reveal = fakeRes();
+  await app(fakeReq({ url: '/api/local/secrets', token: 'tok' }), reveal);
+  const revealed = JSON.parse(reveal.chunks.join('')).values;
+  assert.equal(revealed.NAS_GOCARDLESS_SECRET_ID, 'gc-id-1');
+  assert.equal(revealed.GLITCHTIP_ADMIN_EMAIL, 'admin@munni.local');
+
+  const noToken = fakeRes();
+  await app(fakeReq({ url: '/api/local/secrets' }), noToken);
+  assert.equal(noToken.statusCode, 401);
+
+  const exportRes = fakeRes();
+  await app(fakeReq({ url: '/api/local/vault-export', token: 'tok' }), exportRes);
+  const exported = JSON.parse(exportRes.chunks.join(''));
+  assert.equal(exported.encrypted, false);
+  const names = exported.items.map((i) => i.name);
+  assert.ok(names.includes('munni-local / GlitchTip console'));
+  assert.ok(names.includes('munni-local / NAS_GOCARDLESS_SECRET_ID'));
+  assert.ok(!JSON.stringify(exported).includes('vapid-secret-x'), 'VAPID key leaked into the vault export');
+  const gt = exported.items.find((i) => i.name === 'munni-local / GlitchTip console');
+  assert.equal(gt.login.username, 'admin@munni.local');
+  assert.ok(gt.login.uris[0].uri.includes('localhost:8383'));
 });
 
 test('glitchtip-setup: mints inside the container, feeds the token to bootstrap, masks it in the stream', async () => {

@@ -32,13 +32,19 @@ async function api(logtoUrl, token, path, init = {}) {
   return res.status === 204 ? null : res.json();
 }
 
-/** the app definitions one STACK needs (SPA web+admin, native, m2m) */
+/** the app definitions one STACK needs (SPA web+admin, native, m2m) —
+ * the redirect URIs mirror what the APPS really send (found live
+ * 2026-08-26 as oidc.invalid_redirect_uri): both SPAs redirect to
+ * `origin + /auth-callback` (features/auth/logto.tsx callbackUri, admin
+ * main.tsx) and post-logout to their origin; the native shell returns
+ * via the hosted universal link /native-auth (scheme bounce as the
+ * fallback) and signs out to /native-signed-out + scheme://signed-out. */
 export function appDefinitions(stack) {
   const spa = (name, url) => ({
     name,
     type: 'SPA',
     oidcClientMetadata: {
-      redirectUris: [`${url}/callback`, url],
+      redirectUris: [`${url}/auth-callback`],
       postLogoutRedirectUris: [url],
     },
     customClientMetadata: { corsAllowedOrigins: [url] },
@@ -47,8 +53,8 @@ export function appDefinitions(stack) {
     name: `${stack.stack} native`,
     type: 'Native',
     oidcClientMetadata: {
-      redirectUris: [`${stack.native.scheme}://auth-callback`],
-      postLogoutRedirectUris: [`${stack.native.scheme}://signed-out`],
+      redirectUris: [`${stack.urls.web}/native-auth`, `${stack.native.scheme}://auth-callback`],
+      postLogoutRedirectUris: [`${stack.urls.web}/native-signed-out`, `${stack.native.scheme}://signed-out`],
     },
     customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'] },
   };
