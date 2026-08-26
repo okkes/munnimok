@@ -33,8 +33,11 @@ export function loadStack(name) {
     cfg.domain = process.env.IAC_DOMAIN;
   }
   if (cfg.stack !== name) throw new Error(`stack file ${file} declares "${cfg.stack}" — must match its filename`);
-  const host = (key) => `${cfg.hosts[key]}.${cfg.domain}`;
-  const url = (key) => `https://${host(key)}`;
+  // target "local": everything on localhost over plain http (Docker
+  // Desktop twin) — no DSM, no DDNS, no GitHub Environment
+  const local = cfg.target === 'local';
+  const host = (key) => (local ? 'localhost' : `${cfg.hosts[key]}.${cfg.domain}`);
+  const url = (key) => (local ? `http://localhost:${cfg.ports[key]}` : `https://${host(key)}`);
   return {
     ...cfg,
     file,

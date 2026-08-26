@@ -3,21 +3,27 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pairProd } from './stack.mjs';
 
-const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
+// MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
+const OUT_DIR = process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
 
 /**
  * Render docker-compose.<stack>.yml + .env.<stack> (NAS_* placeholder
  * template, same contract as deploy/env/.env.nas: CI substitutes the
- * placeholders from the stack's GitHub Environment secrets at bundle
- * time). Output goes to infra/rendered/<stack>/ and ships through the
- * SAME NAS bundle pipeline as the live stacks — just a new channel.
+ * placeholders from the stack's GitHub Environment secrets + variables at
+ * bundle time — deploy/nas/render-env.sh). Output goes to
+ * infra/rendered/<stack>/ and ships through the SAME NAS bundle pipeline
+ * as the live stacks — just its own channel (deploy-nas.yml).
+ *
+ * `values` (local target only): a name→value map that substitutes the
+ * placeholders right here, producing a runnable .env with the minted
+ * secrets inline — nothing GitHub-side is involved for the local twin.
  */
-export function renderStack(stack) {
+export function renderStack(stack, values) {
   const pair = pairProd(stack);
   const dir = join(OUT_DIR, stack.stack);
   mkdirSync(join(dir, 'initdb'), { recursive: true });
   writeFileSync(join(dir, `docker-compose.${stack.stack}.yml`), compose(stack, pair));
-  writeFileSync(join(dir, `.env.${stack.stack}`), envTemplate(stack));
+  writeFileSync(join(dir, `.env.${stack.stack}`), envFile(stack, values));
   // first postgres boot: side databases for the pair's shared services
   writeFileSync(
     join(dir, 'initdb', '01-create-databases.sql'),
@@ -26,23 +32,50 @@ export function renderStack(stack) {
   return dir;
 }
 
+function composeHeader(s) {
+  const p = s.ports;
+  if (s.target === 'local') return '# Local twin: everything on localhost, plain http, no reverse proxy.';
+  const sharedHosts = s.sharedServices
+    ? `,\n# ${s.host('logto')} -> :${p.logto}, ${s.host('logtoAdmin')} -> :${p.logtoAdmin} (LAN only), ${s.host('glitchtip')} -> :${p.glitchtip}`
+    : '';
+  return `# Reverse proxy (DSM): ${s.host('web')} -> :${p.web}, ${s.host('api')} -> :${p.api},
+# ${s.host('admin')} -> :${p.admin} (LAN only)${sharedHosts}`;
+}
+
 function compose(s, pair) {
   const shared = s.sharedServices;
+  const local = s.target === 'local';
   const p = s.ports;
   return `# ${s.stack} — RENDERED by infra/bootstrap.mjs, do not edit by hand.
-# Reverse proxy (DSM): ${s.host('web')} -> :${p.web}, ${s.host('api')} -> :${p.api},
-# ${s.host('admin')} -> :${p.admin} (LAN only)${shared ? `,\n# ${s.host('logto')} -> :${p.logto}, ${s.host('logtoAdmin')} -> :${p.logtoAdmin} (LAN only), ${s.host('glitchtip')} -> :${p.glitchtip}` : ''}
+${composeHeader(s)}
 
 services:
   web:
     image: \${REGISTRY}/munni-web:\${TAG}
     restart: unless-stopped
+    # runtime-config overlay: the image is stack-agnostic; these MUNNI_*
+    # vars become /runtime-config.js at container start
+    environment:
+      MUNNI_API_URL: ${s.urls.api}
+      MUNNI_LOGTO_ENDPOINT: ${pair.urls.logto}
+      MUNNI_LOGTO_APP_ID: \${WEB_LOGTO_APP_ID}
+      MUNNI_LOGTO_RESOURCE: ${s.urls.api}
+      MUNNI_GLITCHTIP_DSN: \${WEB_GLITCHTIP_DSN}
+      MUNNI_CHANNEL: ${s.role === 'prod' ? 'production' : 'staging'}
+      MUNNI_NATIVE_SCHEME: ${s.native.scheme}
+      MUNNI_PUBLIC_ORIGIN: ${s.urls.web}
     ports:
       - "${p.web}:80"
 
   admin:
     image: \${REGISTRY}/munni-admin:\${TAG}
     restart: unless-stopped
+    environment:
+      MUNNI_API_URL: ${s.urls.api}
+      MUNNI_LOGTO_ENDPOINT: ${pair.urls.logto}
+      MUNNI_LOGTO_APP_ID: \${ADMIN_LOGTO_APP_ID}
+      MUNNI_LOGTO_RESOURCE: ${s.urls.api}
+      MUNNI_GLITCHTIP_DSN: \${ADMIN_GLITCHTIP_DSN}
     ports:
       - "${p.admin}:80"
 
@@ -53,7 +86,10 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Db: Host=postgres;Database=munni;Username=munni;Password=\${POSTGRES_PASSWORD}
       Db__AutoMigrate: "true"
-      Auth__Authority: ${pair.urls.logto}/oidc
+      Auth__Authority: ${pair.urls.logto}/oidc${local ? `
+      # localhost issuer for browsers; metadata fetched in-network over http
+      Auth__MetadataAddress: http://logto:${p.logto}/oidc/.well-known/openid-configuration
+      Auth__RequireHttps: "false"` : ''}
       Auth__Audience: ${s.urls.api}
       Cors__Origins__0: ${s.urls.web}
       Cors__Origins__1: ${s.urls.admin}
@@ -107,6 +143,7 @@ volumes:
 }
 
 function sharedServices(s, pair) {
+  const local = s.target === 'local';
   const p = s.ports;
   return `
   logto:
@@ -114,15 +151,15 @@ function sharedServices(s, pair) {
     restart: unless-stopped
     entrypoint: ["sh", "-c", "npm run alteration deploy latest || true; npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
     environment:
-      TRUST_PROXY_HEADER: "1"
+      TRUST_PROXY_HEADER: "${local ? '0' : '1'}"
       DB_URL: postgres://munni:\${POSTGRES_PASSWORD}@postgres:5432/logto
       ENDPOINT: ${pair.urls.logto}
       ADMIN_ENDPOINT: ${pair.urls.logtoAdmin}
       PORT: "${p.logto}"
-      ADMIN_PORT: "${p.logtoAdmin}"
+      ADMIN_PORT: "${p.logtoAdmin}"${local ? '' : `
     extra_hosts:
       - "${s.host('logto')}:host-gateway"
-      - "${s.host('logtoAdmin')}:host-gateway"
+      - "${s.host('logtoAdmin')}:host-gateway"`}
     ports:
       - "${p.logto}:${p.logto}"
       - "${p.logtoAdmin}:${p.logtoAdmin}"
@@ -172,10 +209,16 @@ function sharedServices(s, pair) {
 `;
 }
 
-function envTemplate(s) {
+function envHeader(s) {
+  if (s.target === 'local') return `# ${s.stack} env (local twin: values inlined by bootstrap — never commit this file)`;
   return `# ${s.stack} env TEMPLATE — rendered secrets come from the GitHub
 # Environment "${s.githubEnvironment}" (same NAS_* substitution contract as
-# deploy/env/.env.nas). Never edit the rendered .env on the host.
+# deploy/env/.env.nas; \${VITE_*} placeholders come from the environment's
+# VARIABLES). Never edit the rendered .env on the host.`;
+}
+
+function envTemplate(s) {
+  return `${envHeader(s)}
 DOMAIN=${s.domain}
 REGISTRY=${s.registry}
 TAG=${s.channel}
@@ -187,6 +230,12 @@ POSTGRES_PASSWORD=\${NAS_POSTGRES_PASSWORD}
 LOGTO_API_RESOURCE=${s.urls.api}
 LOGTO_M2M_APP_ID=\${NAS_LOGTO_M2M_APP_ID}
 LOGTO_M2M_APP_SECRET=\${NAS_LOGTO_M2M_APP_SECRET}
+
+# frontend runtime-config (written back by the logto + glitchtip modules)
+WEB_LOGTO_APP_ID=\${VITE_LOGTO_APP_ID}
+ADMIN_LOGTO_APP_ID=\${VITE_LOGTO_APP_ID_ADMIN}
+WEB_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN}
+ADMIN_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN_ADMIN}
 
 GLITCHTIP_SECRET_KEY=\${NAS_GLITCHTIP_SECRET_KEY}
 GLITCHTIP_EMAIL_URL=\${NAS_GLITCHTIP_EMAIL_URL}
@@ -201,11 +250,29 @@ ADMIN_SUBS=\${NAS_ADMIN_SUBS}
 
 PUSH_VAPID_PUBLIC_KEY=\${NAS_PUSH_VAPID_PUBLIC_KEY}
 PUSH_VAPID_PRIVATE_KEY=\${NAS_PUSH_VAPID_PRIVATE_KEY}
-PUSH_VAPID_SUBJECT=mailto:admin@${s.domain}
+PUSH_VAPID_SUBJECT=mailto:admin@${s.target === 'local' ? 'localhost' : s.domain}
 
 FCM_SERVICE_ACCOUNT_JSON='\${NAS_FCM_SERVICE_ACCOUNT_JSON}'
 
 LOGODEV_SECRET_KEY=\${NAS_LOGODEV_SECRET_KEY}
 LOGODEV_PUBLIC_TOKEN=\${NAS_LOGODEV_PUBLIC_TOKEN}
 `;
+}
+
+/**
+ * The names the env template references, in template order — the local
+ * substitution and its tests derive from the template itself so the two
+ * can never drift.
+ */
+export function templatePlaceholders(stack) {
+  return [...envTemplate(stack).matchAll(/\$\{([A-Z][A-Z0-9_]*)\}/g)].map((m) => m[1]);
+}
+
+function envFile(stack, values) {
+  const text = envTemplate(stack);
+  if (!values) return text;
+  // local twin: substitute inline. Values are single-line by construction
+  // except the PEM/JSON entries, which the template single-quotes — keep
+  // any embedded single quotes out (dotenv cannot express them safely).
+  return text.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (_, name) => String(values[name] ?? '').replaceAll("'", ''));
 }

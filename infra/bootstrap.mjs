@@ -2,9 +2,11 @@
 /**
  * The ONE entry point for IaC stacks (docs/iac-plan.md).
  *
- *   node infra/bootstrap.mjs --stack munni-iac-prod            # ensure secrets + render + runbook (+ logto when creds exist)
+ *   node infra/bootstrap.mjs --stack munni-iac-prod            # ensure secrets + render + runbook (+ logto/glitchtip when creds exist)
  *   node infra/bootstrap.mjs --stack munni-iac-prod --verify   # probe reality, no writes
  *   node infra/bootstrap.mjs --stack munni-iac-prod --rotate NAS_GLITCHTIP_SECRET_KEY
+ *   node infra/bootstrap.mjs --stack munni-iac-prod --render-only  # compose+env template only, no gh (the NAS bundle job)
+ *   node infra/bootstrap.mjs --stack munni-local               # local twin: secrets live in a gitignored file, .env renders with real values
  *   node infra/bootstrap.mjs --list
  *
  * First run: mints generated secrets, renders compose/env + a runbook
@@ -14,9 +16,11 @@
 import { execFileSync } from 'node:child_process';
 import { listStacks, loadStack, pairProd } from './modules/stack.mjs';
 import { ensureSecrets, verifySecrets } from './modules/secrets.mjs';
+import { ensureLocalSecrets, loadLocalValues, saveLocalValues, localManifestEntries } from './modules/localstore.mjs';
 import { applyApps, applyBranding, applySocialConnectors, writeBack } from './modules/logto.mjs';
+import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
-import { renderRunbook } from './modules/runbook.mjs';
+import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
 import { applyReverseProxy } from './modules/dsm.mjs';
 
 const args = process.argv.slice(2);
@@ -33,11 +37,21 @@ if (flag('list')) {
 
 const stackName = value('stack');
 if (!stackName) {
-  console.error('usage: bootstrap.mjs --stack <name> [--verify] [--rotate SECRET,...]');
+  console.error('usage: bootstrap.mjs --stack <name> [--verify] [--rotate SECRET,...] [--render-only]');
   process.exit(2);
 }
 const stack = loadStack(stackName);
 const pair = pairProd(stack);
+const rotate = (value('rotate') ?? '').split(',').filter(Boolean);
+
+// --render-only: compose + env TEMPLATE, nothing else — no gh, no
+// modules. The deploy-nas bundle job uses this before render-env.sh
+// substitutes the placeholders from the stack's GitHub Environment.
+if (flag('render-only')) {
+  const dir = renderStack(stack);
+  console.log(`rendered compose + env template → ${dir}`);
+  process.exit(0);
+}
 
 function envSecret(env, name) {
   try {
@@ -60,22 +74,92 @@ async function probe(label, url, ok = (r) => r.ok) {
   }
 }
 
+async function probeAll() {
+  let allUp = true;
+  allUp &= await probe('web', stack.urls.web);
+  allUp &= await probe('api', `${stack.urls.api}/health`);
+  allUp &= await probe('logto', `${pair.urls.logto}/oidc/.well-known/openid-configuration`);
+  allUp &= await probe('glitchtip', `${pair.urls.glitchtip}/api/0/`, (r) => r.status < 500);
+  return allUp;
+}
+
+// ── target:"local" — the GitHub-free twin ──────────────────────────────
+if (stack.target === 'local') {
+  if (flag('verify')) {
+    console.log(`verify ${stack.stack} (local)`);
+    const values = loadLocalValues(stack);
+    const missing = localManifestEntries()
+      .filter((s) => !s.optional && s.owner !== 'module' && !values[s.name])
+      .map((s) => s.name);
+    if (missing.length) console.log(`  ✗ values missing from the local store: ${missing.join(', ')}`);
+    else console.log('  ✓ local secret store satisfies the manifest');
+    const allUp = await probeAll();
+    process.exit(missing.length || !allUp ? 1 : 0);
+  }
+
+  console.log(`bootstrap ${stack.stack} (local twin — secrets in infra/rendered/${stack.stack}/.secrets.local.json)`);
+  const { values, minted, missingOperator } = ensureLocalSecrets(stack, { rotate });
+  if (minted.length) console.log(`  minted: ${minted.join(', ')}`);
+  if (missingOperator.length) console.log(`  ⚠ operator values still missing (export them and re-run): ${missingOperator.join(', ')}`);
+
+  // Logto-as-code against localhost — needs the stack RUNNING, so first
+  // runs fall through gracefully to "start it, do the OOBE, re-run"
+  if (values.IAC_LOGTO_INFRA_M2M_ID && values.IAC_LOGTO_INFRA_M2M_SECRET) {
+    try {
+      const apps = await applyApps(pair, stack, { m2mId: values.IAC_LOGTO_INFRA_M2M_ID, m2mSecret: values.IAC_LOGTO_INFRA_M2M_SECRET });
+      values.NAS_LOGTO_M2M_APP_ID = apps.m2m.id;
+      values.NAS_LOGTO_M2M_APP_SECRET = apps.m2m.secret;
+      values.VITE_LOGTO_APP_ID = apps.web.id;
+      values.VITE_LOGTO_APP_ID_ADMIN = apps.admin.id;
+      saveLocalValues(stack, values);
+      console.log(`  logto: apps upserted (web ${apps.web.id}, admin ${apps.admin.id}, native ${apps.native.id})`);
+      const social = await applySocialConnectors(pair, { m2mId: values.IAC_LOGTO_INFRA_M2M_ID, m2mSecret: values.IAC_LOGTO_INFRA_M2M_SECRET }).catch((e) => ({ applied: [], error: e.message }));
+      console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]` : '  logto: no social connector credentials — skipped');
+      const brand = await applyBranding(pair, { m2mId: values.IAC_LOGTO_INFRA_M2M_ID, m2mSecret: values.IAC_LOGTO_INFRA_M2M_SECRET }).catch((e) => ({ error: e.message }));
+      console.log(brand.error ? `  logto: branding failed (${brand.error})` : '  logto: sign-in branded (munni logo + colors)');
+    } catch (e) {
+      console.log(`  logto: unreachable or failed (${e.message}) — is the stack up? docker compose up first, then re-run`);
+    }
+  } else {
+    console.log('  logto: waiting for the one manual OOBE step (see the runbook) — infra M2M credential not stored yet');
+  }
+
+  if (values.IAC_GLITCHTIP_API_TOKEN) {
+    try {
+      const dsns = await applyGlitchTip(pair, stack, values.IAC_GLITCHTIP_API_TOKEN);
+      values.NAS_API_SENTRY_DSN = dsns.api;
+      values.VITE_GLITCHTIP_DSN = dsns.web;
+      values.VITE_GLITCHTIP_DSN_ADMIN = dsns.admin;
+      saveLocalValues(stack, values);
+      console.log('  glitchtip: org/projects ensured, DSNs stored');
+    } catch (e) {
+      console.log(`  glitchtip: apply failed (${e.message}) — is the stack up?`);
+    }
+  } else {
+    console.log('  glitchtip: waiting for IAC_GLITCHTIP_API_TOKEN (profile → Auth Tokens after first boot)');
+  }
+
+  // render LAST so the .env carries every write-back from this run
+  const dir = renderStack(stack, values);
+  console.log(`  rendered compose + .env (real values) → ${dir}`);
+  const runbook = renderLocalRunbook(stack, { minted, missingOperator });
+  console.log(`  runbook → ${runbook}`);
+  console.log(`done. Next: cd ${dir} && docker compose --env-file .env.${stack.stack} -f docker-compose.${stack.stack}.yml up -d`);
+  process.exit(0);
+}
+
+// ── GitHub-driven stacks (CI or a shell with gh + the secrets) ─────────
 if (flag('verify')) {
   console.log(`verify ${stack.stack}`);
   const { missing, unmanaged } = verifySecrets(stack);
   if (missing.length) console.log(`  ✗ secrets missing from ${stack.githubEnvironment}: ${missing.join(', ')}`);
   else console.log(`  ✓ secrets manifest satisfied (${stack.githubEnvironment})`);
   if (unmanaged.length) console.log(`  ! unmanaged secrets present (add to manifest or remove): ${unmanaged.join(', ')}`);
-  let allUp = true;
-  allUp &= await probe('web', stack.urls.web);
-  allUp &= await probe('api', `${stack.urls.api}/health`);
-  allUp &= await probe('logto', `${pair.urls.logto}/oidc/.well-known/openid-configuration`);
-  allUp &= await probe('glitchtip', `${pair.urls.glitchtip}/api/0/`, (r) => r.status < 500);
+  const allUp = await probeAll();
   process.exit(missing.length || !allUp ? 1 : 0);
 }
 
 // --- apply path -------------------------------------------------------------
-const rotate = (value('rotate') ?? '').split(',').filter(Boolean);
 console.log(`bootstrap ${stack.stack} (pair ${stack.pair}, role ${stack.role})`);
 
 const { minted, missingOperator } = ensureSecrets(stack, { rotate });
@@ -107,6 +191,25 @@ if (envSecret(infraEnv, 'IAC_LOGTO_INFRA_M2M_ID')) {
   }
 } else {
   console.log(`  logto: waiting for the one manual OOBE step (see the runbook) — infra M2M credential not stored yet`);
+}
+
+// GlitchTip-as-code (IAC8): once the pair's operator token exists, the
+// org/team/per-stack projects are ensured and the DSNs written back —
+// runbook §4 becomes a no-op. Soft-fails: GlitchTip may not be booted yet.
+if (envSecret(infraEnv, 'IAC_GLITCHTIP_API_TOKEN')) {
+  if (process.env.IAC_GLITCHTIP_API_TOKEN) {
+    try {
+      const dsns = await applyGlitchTip(pair, stack, process.env.IAC_GLITCHTIP_API_TOKEN);
+      writeBackDsns(stack, dsns);
+      console.log(`  glitchtip: org/projects ensured, DSNs written back (${stack.stack}-pwa/-api/-admin)`);
+    } catch (e) {
+      console.log(`  glitchtip: apply failed (${e.message}) — retried on the next run`);
+    }
+  } else {
+    console.log('  glitchtip: token exists in GitHub but not in this shell — export IAC_GLITCHTIP_API_TOKEN to apply locally (CI injects it)');
+  }
+} else {
+  console.log('  glitchtip: waiting for IAC_GLITCHTIP_API_TOKEN (see the runbook) — org/DSNs not ensured yet');
 }
 
 // DSM reverse proxy as code — runs whenever the deploy account creds
