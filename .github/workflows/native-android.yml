@@ -17,6 +17,12 @@ name: Native Android
 
 on:
   workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment (empty = by branch)'
+        type: choice
+        options: ['', iac-production, iac-staging]
+        default: ''
   push:
     branches: [master, dev]
 
@@ -35,8 +41,9 @@ jobs:
   android:
     runs-on: ubuntu-latest
     # GitHub Environment resolves NATIVE_* variables per stack (staging
-    # values override repo-level defaults with the SAME name)
-    environment: ${{ github.ref_name == 'dev' && 'staging' || 'production' }}
+    # values override repo-level defaults with the SAME name). A dispatch
+    # may target an iac twin explicitly (runbook §5 / the setup wizard).
+    environment: ${{ inputs.environment || (github.ref_name == 'dev' && 'staging' || 'production') }}
     steps:
       - uses: actions/checkout@v7
         with:
