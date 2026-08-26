@@ -132,9 +132,9 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
   <div id="features"></div>
 </section>
 
-<section id="s-creds" data-platform="nas">
+<section id="s-creds">
   <h2><span class="n">3</span> Accounts &amp; credentials <span class="pill" id="creds-pill"></span></h2>
-  <p class="sub">Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — this page encrypts them client-side (GitHub's sealed-box contract) and writes repository or environment secrets directly. Values are write-only from then on; the dots show presence, never content.</p>
+  <p class="sub" id="creds-sub"></p>
   <div id="cred-cards"></div>
   <div class="msg" id="msg-manifest"></div>
 </section>
@@ -165,45 +165,84 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 </section>
 
 <section id="s-local" data-platform="local">
-  <h2><span class="n">3</span> Run munni on this machine</h2>
-  <p class="sub">Two different stacks for two different jobs — plus the tooling containers. Everything runs from this checkout; nothing is installed on the host beyond Docker Desktop.</p>
+  <h2><span class="n">4</span> Run munni on this machine <span class="pill" id="local-pill"></span></h2>
+  <p class="sub">Two different stacks for two different jobs — plus the tooling containers. Nothing is installed on the host beyond Docker Desktop (and node, which this repo already needs).</p>
 
-  <div class="card">
-    <h3>The full local twin <span class="pill">whole product, released images</span></h3>
-    <p class="why">The complete ecosystem — app, admin, API, Logto, GlitchTip, Postgres — on localhost ports, from the same public images the NAS runs. Secrets are minted into a gitignored file and stay stable across re-runs. Needs a <a href="https://github.com/settings/tokens/new?scopes=read:packages" target="_blank" rel="noreferrer">PAT with read:packages</a> for the image pulls.</p>
-    <pre><button class="copy">copy</button><code>$env:NAS_GHCR_PAT = '&lt;your read:packages PAT&gt;'
-node infra/bootstrap.mjs --stack munni-local
-cd infra/rendered/munni-local
-docker compose --env-file .env.munni-local -f docker-compose.munni-local.yml up -d</code></pre>
-    <p class="why">Then: app <a href="http://localhost:8380" target="_blank" rel="noreferrer">localhost:8380</a> · admin <a href="http://localhost:8381" target="_blank" rel="noreferrer">:8381</a> · api <a href="http://localhost:8382/health" target="_blank" rel="noreferrer">:8382/health</a> · Logto admin <a href="http://localhost:3202" target="_blank" rel="noreferrer">:3202</a> · GlitchTip <a href="http://localhost:8383" target="_blank" rel="noreferrer">:8383</a></p>
-    <details class="how"><summary>Sign-in (Logto OOBE, once) + optional bank sync</summary>
+  <div class="card" id="local-nohelper" hidden>
+    <h3>One double-click and this page does the work itself</h3>
+    <p class="why">You're viewing the file directly, so the page can only guide. Start the <b>local helper</b> and it gains hands: it stores the values you paste, runs bootstrap and docker for you, and streams every step's output right here — no terminal needed.</p>
+    <pre><button class="copy">copy</button><code>infra\setup\start.cmd        (double-click it — or: node infra/setup/serve.mjs)</code></pre>
+    <details class="how"><summary>Manual fallback — the exact commands the helper would run</summary>
       <ol>
-        <li>Open <a href="http://localhost:3202" target="_blank" rel="noreferrer">localhost:3202</a> → create the admin user → Applications → Create → <b>Machine-to-machine</b> → name it <code>infra</code> → assign the Logto Management API role (all permissions).</li>
-        <li>Feed the credential back and re-run — apps, redirect URIs and the API resource become code:<br/><code>$env:IAC_LOGTO_INFRA_M2M_ID='…'; $env:IAC_LOGTO_INFRA_M2M_SECRET='…'; node infra/bootstrap.mjs --stack munni-local</code></li>
-        <li><code>docker compose … up -d</code> again so web/admin pick up their new runtime config.</li>
-        <li>Bank sync locally: also export <code>NAS_GOCARDLESS_SECRET_ID/_KEY</code> before the re-run (from bankaccountdata.gocardless.com → Developers → User secrets — free tier).</li>
-        <li>Crash tracking: register at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> → profile → Auth Tokens → <code>$env:IAC_GLITCHTIP_API_TOKEN='…'</code> → re-run → up -d.</li>
+        <li>Full twin: <code>$env:NAS_GHCR_PAT='&lt;read:packages PAT&gt;'; node infra/bootstrap.mjs --stack munni-local</code> then <code>cd infra/rendered/munni-local; docker compose --env-file .env.munni-local -f docker-compose.munni-local.yml up -d</code></li>
+        <li>Logto OOBE at localhost:3202 (M2M app <code>infra</code>) → <code>$env:IAC_LOGTO_INFRA_M2M_ID='…'; $env:IAC_LOGTO_INFRA_M2M_SECRET='…'; node infra/bootstrap.mjs --stack munni-local</code> → compose up -d again.</li>
+        <li>GlitchTip token → <code>$env:IAC_GLITCHTIP_API_TOKEN='…'</code> → re-run → up -d. Verify: <code>node infra/bootstrap.mjs --stack munni-local --verify</code></li>
+        <li>Dev stack: <code>docker compose --env-file deploy/env/.env.local -f deploy/docker-compose.local.yml up -d --build</code> + <code>npm run dev</code> (see deploy/README.md).</li>
+        <li>Tooling: <code>deploy/docker-compose.sonar.yml</code> + <code>./deploy/sonar/analyze.ps1</code>; <code>deploy/docker-compose.test.yml</code>; <code>./deploy/webkit-e2e.ps1</code>.</li>
       </ol>
     </details>
-    <p class="why">The generated <code>infra/rendered/munni-local/runbook.munni-local.md</code> carries these exact steps with your values filled in. Verify any time: <code>node infra/bootstrap.mjs --stack munni-local --verify</code></p>
   </div>
 
-  <div class="card">
-    <h3>The dev stack <span class="pill">develop against it</span></h3>
-    <p class="why">Real Logto + API + Postgres in docker, the app itself via the Vite dev server with hot reload — the everyday development loop.</p>
-    <pre><button class="copy">copy</button><code>docker compose --env-file deploy/env/.env.local -f deploy/docker-compose.local.yml up -d --build
-npm run dev</code></pre>
-    <p class="why">Details and first-time Logto wiring: <code>deploy/README.md</code> ("Local full-stack test").</p>
-  </div>
+  <div id="local-helper-ui" hidden>
+    <div class="card">
+      <h3>Status <button class="ghost" id="btn-local-refresh" style="margin:0 0 0 8px;padding:3px 10px;font-size:11px">refresh</button></h3>
+      <div id="local-status" class="why">checking…</div>
+    </div>
 
-  <div class="card">
-    <h3>Tooling containers <span class="pill">on demand</span></h3>
-    <p class="why">Heavyweight verification tools run in containers, never installed on the host.</p>
-    <ul style="font-size:13px">
-      <li><b>SonarQube</b> — one-time setup in <code>deploy/docker-compose.sonar.yml</code>, then analyze web+api+admin: <code>./deploy/sonar/analyze.ps1</code></li>
-      <li><b>e2e stack</b> — API in TestMode + Postgres for the Playwright suite: <code>docker compose -f deploy/docker-compose.test.yml up --build -d</code></li>
-      <li><b>WebKit lane</b> — Safari-engine e2e in docker: <code>./deploy/webkit-e2e.ps1</code></li>
-    </ul>
+    <div class="card">
+      <h3>The full local twin <span class="pill">whole product, released images</span></h3>
+      <p class="why">The complete ecosystem — app, admin, API, Logto, GlitchTip, Postgres — on localhost ports, from the same public images the NAS runs. Fill the credentials you want in step 3 (they land in a gitignored store on this machine — GitHub is not involved), then:</p>
+      <div class="runrow">
+        <button id="btn-local-setup">Set up &amp; start munni</button>
+        <button class="ghost" data-local-tool="twin-down">Stop</button>
+        <button class="ghost" id="btn-local-verify">Verify</button>
+      </div>
+      <p class="why" id="local-links"></p>
+    </div>
+
+    <div class="card">
+      <h3>Sign-in (Logto OOBE — the one manual step) <span class="dot" data-localdot="NAS_LOGTO_M2M_APP_ID"></span></h3>
+      <ol style="font-size:13px">
+        <li>Open <a href="http://localhost:3202" target="_blank" rel="noreferrer">localhost:3202</a> → create the admin user (this is YOUR console login, not an app user) → Applications → Create → <b>Machine-to-machine</b> → name it <code>infra</code> → assign the <b>Logto Management API</b> role (all permissions).</li>
+        <li>Paste the app's id + secret — Apply stores them, re-runs bootstrap (apps, redirect URIs and the API resource become code) and restarts web/admin with the new config:</li>
+      </ol>
+      <div class="grid2">
+        <div><label class="f" for="in-local-m2m-id">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-local-m2m-id" autocomplete="off"/></div>
+        <div><label class="f" for="in-local-m2m-secret">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-local-m2m-secret" autocomplete="off"/></div>
+      </div>
+      <label class="f" for="in-local-subs">NAS_ADMIN_SUBS — your Logto User ID, unlocks the admin console (optional, add any time)</label>
+      <input type="text" id="in-local-subs" placeholder="usr_…" autocomplete="off"/>
+      <button id="btn-local-oobe">Apply sign-in setup</button>
+    </div>
+
+    <div class="card">
+      <h3>Crash reports (GlitchTip, optional) <span class="dot" data-localdot="VITE_GLITCHTIP_DSN"></span></h3>
+      <p class="why">Register at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> → profile → <b>Auth Tokens</b> → create one → paste. Apply creates the org + projects and wires every DSN in.</p>
+      <label class="f" for="in-local-gt">IAC_GLITCHTIP_API_TOKEN</label>
+      <input type="password" id="in-local-gt" autocomplete="off"/>
+      <button id="btn-local-gt">Apply crash tracking</button>
+    </div>
+
+    <div class="card">
+      <h3>The dev stack &amp; tooling <span class="pill">on demand</span></h3>
+      <p class="why">The from-source DEV stack (API + Logto + Postgres in docker, the app via <code>npm run dev</code> with hot reload) and the heavyweight verification tools — all containerized, all one click.</p>
+      <div class="runrow">
+        <button class="ghost" data-local-tool="dev-up">Dev stack up</button>
+        <button class="ghost" data-local-tool="dev-down">Dev stack down</button>
+        <button class="ghost" data-local-tool="sonar-up">SonarQube up</button>
+        <button class="ghost" data-local-tool="sonar-analyze">Analyze web+api+admin</button>
+        <button class="ghost" data-local-tool="sonar-down">SonarQube down</button>
+        <button class="ghost" data-local-tool="test-up">e2e stack up</button>
+        <button class="ghost" data-local-tool="test-down">e2e stack down</button>
+        <button class="ghost" data-local-tool="webkit-e2e">WebKit lane</button>
+      </div>
+      <p class="why">After "Dev stack up": run <code>npm run dev</code> in a terminal (hot reload can't live in a container) — details in <code>deploy/README.md</code>. Sonar dashboard: <a href="http://localhost:9000" target="_blank" rel="noreferrer">localhost:9000</a>.</p>
+    </div>
+
+    <div class="card">
+      <h3>Output</h3>
+      <pre id="local-log" style="max-height:340px;overflow:auto;white-space:pre-wrap">idle — every button streams its output here live</pre>
+    </div>
   </div>
 </section>
 
@@ -819,6 +858,7 @@ const S = {
   envs: {},          // name -> { secrets:Set, vars:Set }
   keys: {},          // sealed-box public keys per base path
   runs: { iac: [], nas: [], native: [] },
+  localStore: new Set(),   // names present in the LOCAL secret store (via the helper)
   pollTimer: null,
 };
 
@@ -829,20 +869,20 @@ const FEATURES = [
   { id: 'logodev', label: 'Merchant logos (logo.dev)', hint: 'brand logos on transactions and recurring costs' },
   { id: 'fcm', label: 'Native push notifications (Firebase FCM)', hint: 'push for the Android/iOS shells — web push works without this' },
   { id: 'google', label: 'Sign in with Google', hint: 'social login button on the sign-in screen' },
-  { id: 'apple', label: 'Sign in with Apple', hint: 'required by Apple if you ship the iOS app with any social login' },
+  { id: 'apple', label: 'Sign in with Apple', hint: 'required by Apple if you ship the iOS app with any social login', targets: ['nas'], offHint: 'needs the https NAS track — Apple refuses http return URLs' },
   { id: 'email', label: 'Crash-report emails', hint: 'GlitchTip mails on new errors (needs an SMTP url); without it, reports stay in the UI' },
 ];
 
 /* credential cards (step 3) — what/why/how per provider */
 const GROUPS = [
   {
-    id: 'domain', title: 'Your domain', platform: 'nas',
+    id: 'domain', title: 'Your domain', targets: ['nas'],
     why: 'Every service becomes a subdomain of your NAS DDNS domain (munni-iac.…, logto-iac.…). The domain is treated as a secret because this repo is public.',
     how: ['DSM → Control Panel → External Access → DDNS — add or read your hostname (e.g. yourname.synology.me).', 'Paste it below; the field also personalizes every link on this page.'],
     fields: [{ name: 'IAC_DOMAIN', scope: 'repo', ph: 'yourname.synology.me', mirror: 'domain' }],
   },
   {
-    id: 'synology', title: 'Synology deploy account', platform: 'nas',
+    id: 'synology', title: 'Synology deploy account', targets: ['nas'],
     why: 'The pipeline uploads bundles via the FileStation API and creates reverse-proxy rules via the DSM API — no SSH. Needs a dedicated DSM account with administrator rights and 2FA off (the login API cannot answer an OTP prompt).',
     how: ['DSM → Control Panel → User & Group → create e.g. "deploy" with administrator group membership; disable 2FA for it.', 'URL is your DSM address including port, e.g. https://yourname.synology.me:5001.', 'Path is the shared-folder path bundles land in, e.g. /docker/munni/published.'],
     fields: [
@@ -853,8 +893,8 @@ const GROUPS = [
     ],
   },
   {
-    id: 'ghcr', title: 'Container registry pulls', platform: 'nas',
-    why: 'The NAS logs into ghcr.io to pull the munni images. A minimal read-only token keeps that safe.',
+    id: 'ghcr', title: 'Container registry pulls',
+    why: 'The host (NAS or this machine) logs into ghcr.io to pull the munni images. A minimal read-only token keeps that safe.',
     how: ['Open github.com/settings/tokens (classic) → Generate new token → scope: read:packages only.', 'Fine-grained tokens do not reliably work for ghcr docker login yet — use classic here.'],
     fields: [{ name: 'NAS_GHCR_PAT', scope: 'repo', secret: true }],
   },
@@ -901,7 +941,7 @@ const GROUPS = [
     ],
   },
   {
-    id: 'apple', title: 'Apple sign-in', feature: 'apple',
+    id: 'apple', title: 'Apple sign-in', feature: 'apple', targets: ['nas'],
     why: 'Sign in with Apple for web + iOS. Requires an Apple Developer membership.',
     how: ['developer.apple.com → Identifiers → new <b>Services ID</b> — its identifier is the client ID below. Enable Sign in with Apple.', 'Return URL: <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/apple-universal</code>', 'Keys → create a key with Sign in with Apple → note the Key ID, download the .p8 (paste its contents).', 'Team ID: top right of the developer console (Membership).'],
     fields: [
@@ -991,7 +1031,10 @@ function scheduleLivePoll() {
   if (busy) S.pollTimer = setTimeout(() => refresh().catch(() => {}), 12000);
 }
 
-function secretPresent(name) {
+function secretPresent(name, cardScoped = false) {
+  // credential-card dots under the LOCAL platform reflect the machine's
+  // own store (via the helper), never GitHub
+  if (cardScoped && S.platform === 'local') return S.localStore.has(name);
   if (name.startsWith('var:')) {
     const v = name.slice(4);
     return ENVS.some((env) => S.envs[env]?.vars?.has(v));
@@ -1002,7 +1045,7 @@ function secretPresent(name) {
 
 function renderStatus() {
   document.querySelectorAll('[data-dot]').forEach((el) => {
-    const present = secretPresent(el.dataset.dot);
+    const present = secretPresent(el.dataset.dot, Boolean(el.dataset.carddot));
     el.className = 'dot ' + (present ? 'ok' : (el.dataset.opt ? 'opt' : 'miss'));
     el.title = present ? 'stored' : 'not stored yet';
   });
@@ -1025,9 +1068,87 @@ function renderStatus() {
   el('gt-pill').textContent = gtDone ? 'DSNs written back ✓' : 'pending token';
   el('gt-pill').className = 'pill ' + (gtDone ? 'ok' : '');
   const required = GROUPS.filter(groupVisible).flatMap((g) => g.fields).filter((f) => !f.optional);
-  const missing = required.filter((f) => !secretPresent(f.name));
+  const missing = required.filter((f) => !secretPresent(f.name, true));
   el('creds-pill').textContent = missing.length ? `${required.length - missing.length}/${required.length} stored` : 'all stored ✓';
   el('creds-pill').className = 'pill ' + (missing.length ? 'warn' : 'ok');
+}
+
+/* ── the LOCAL HELPER (infra/setup/serve.mjs) — when this page is served
+   by it, the local track gains hands: it stores values, runs bootstrap
+   and docker, and streams the output below. file:// keeps the guide. ── */
+const HELPER = globalThis.__SETUP_HELPER__ ?? null;
+const hfetch = (path, init = {}) =>
+  fetch(path, { ...init, headers: { 'x-setup-token': HELPER.token, ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
+let localBusy = false;
+
+async function refreshLocal() {
+  if (!HELPER) return;
+  const box = document.getElementById('local-status');
+  try {
+    const res = await hfetch('/api/local/status');
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const st = await res.json();
+    S.localStore = new Set(st.stored);
+    const dot = (up) => `<span class="dot ${up ? 'ok' : 'miss'}"></span>`;
+    const link = (label, up, url) => `${dot(up)} <a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
+    box.innerHTML = [
+      `${dot(st.docker.ok)} Docker ${st.docker.ok ? st.docker.version : '<b>not running — start Docker Desktop</b>'}`,
+      `${dot(st.rendered)} stack ${st.rendered ? 'rendered' : 'not set up yet'}`,
+      link('app', st.services.web, st.urls.web),
+      link('admin', st.services.web, st.urls.admin),
+      link('api', st.services.api, `${st.urls.api}/health`),
+      link('logto admin', st.services.logto, 'http://localhost:3202'),
+      link('glitchtip', st.services.glitchtip, st.urls.glitchtip),
+    ].join(' &nbsp;·&nbsp; ');
+    document.getElementById('local-links').innerHTML =
+      `Once up: app <a href="${st.urls.web}" target="_blank" rel="noreferrer">${st.urls.web.replace('http://', '')}</a> · admin <a href="${st.urls.admin}" target="_blank" rel="noreferrer">:${new URL(st.urls.admin).port}</a> · api <a href="${st.urls.api}/health" target="_blank" rel="noreferrer">:${new URL(st.urls.api).port}/health</a>`;
+    document.querySelectorAll('[data-localdot]').forEach((el) => {
+      el.className = 'dot ' + (S.localStore.has(el.dataset.localdot) ? 'ok' : 'miss');
+    });
+    const pill = document.getElementById('local-pill');
+    const up = st.services.web && st.services.api;
+    pill.textContent = up ? 'running ✓' : (st.rendered ? 'set up — not running' : 'not set up yet');
+    pill.className = 'pill ' + (up ? 'ok' : '');
+    renderStatus();
+  } catch (e) {
+    box.textContent = `helper unreachable (${e.message}) — restart infra/setup/start.cmd and reload`;
+  }
+}
+
+const localLog = (text) => {
+  const log = document.getElementById('local-log');
+  log.textContent = (log.textContent + text).slice(-200000);
+  log.scrollTop = log.scrollHeight;
+};
+
+async function streamLocal(path, body, label) {
+  if (!HELPER) return false;
+  if (localBusy) { localLog(`\n(busy — wait for the current step to finish)\n`); return false; }
+  localBusy = true;
+  localLog(`\n▶ ${label}\n`);
+  try {
+    const res = await hfetch(path, { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok || !res.body) { localLog(`helper error ${res.status}: ${await res.text()}\n`); return false; }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let tail = '';
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = dec.decode(value, { stream: true });
+      tail = (tail + chunk).slice(-40);
+      localLog(chunk);
+    }
+    const ok = /\[exit 0\]/.test(tail);
+    localLog(ok ? `✓ ${label} done\n` : `✗ ${label} failed — read the output above\n`);
+    return ok;
+  } catch (e) {
+    localLog(`✗ ${label}: ${e.message}\n`);
+    return false;
+  } finally {
+    localBusy = false;
+    await refreshLocal();
+  }
 }
 
 /* ── ui plumbing ── */
@@ -1038,7 +1159,7 @@ const msg = (id, text, ok) => {
 };
 
 function groupVisible(g) {
-  if (g.platform && g.platform !== S.platform) return false;
+  if (!(g.targets ?? ['nas', 'local']).includes(S.platform)) return false;
   if (g.feature && !S.features[g.feature]) return false;
   return true;
 }
@@ -1050,7 +1171,12 @@ function applyPlatform() {
   document.querySelectorAll('[data-platform-pick]').forEach((el) => {
     el.classList.toggle('sel', el.dataset.platformPick === S.platform);
   });
+  document.getElementById('creds-sub').textContent = S.platform === 'local'
+    ? 'Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — with the local helper running, they land in a gitignored secret store on THIS machine (GitHub is not involved for the local twin) and step 4 uses them.'
+    : "Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — this page encrypts them client-side (GitHub's sealed-box contract) and writes repository or environment secrets directly. Values are write-only from then on; the dots show presence, never content.";
+  renderFeatures();
   renderCards();
+  if (S.platform === 'local') refreshLocal();
 }
 
 function applyDomain() {
@@ -1070,9 +1196,12 @@ function applyDomain() {
 }
 
 function renderFeatures() {
-  document.getElementById('features').innerHTML = FEATURES.map((f) => `
-    <div class="feature"><input type="checkbox" id="feat-${f.id}" ${S.features[f.id] ? 'checked' : ''}/>
-    <label for="feat-${f.id}"><b>${f.label}</b> — <span class="sub" style="display:inline">${f.hint}</span></label></div>`).join('');
+  document.getElementById('features').innerHTML = FEATURES.map((f) => {
+    const off = !(f.targets ?? ['nas', 'local']).includes(S.platform);
+    return `
+    <div class="feature" ${off ? 'style="opacity:.5"' : ''}><input type="checkbox" id="feat-${f.id}" ${S.features[f.id] && !off ? 'checked' : ''} ${off ? 'disabled' : ''}/>
+    <label for="feat-${f.id}"><b>${f.label}</b> — <span class="sub" style="display:inline">${off ? f.offHint : f.hint}</span></label></div>`;
+  }).join('');
   FEATURES.forEach((f) => {
     document.getElementById('feat-' + f.id).addEventListener('change', (e) => {
       S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); renderStatus();
@@ -1081,17 +1210,22 @@ function renderFeatures() {
 }
 
 function renderCards() {
+  const local = S.platform === 'local';
+  const scopeTag = (f) => {
+    if (local) return 'local secret store (this machine)';
+    return f.scope === 'repo' ? 'repository secret' : 'both iac environments';
+  };
   const wrap = document.getElementById('cred-cards');
   wrap.innerHTML = GROUPS.filter(groupVisible).map((g) => `
     <div class="card" data-group="${g.id}">
-      <h3>${g.title} ${g.fields.map((f) => `<span class="dot" data-dot="${f.name}" ${f.optional ? 'data-opt="1"' : ''}></span>`).join('')}</h3>
+      <h3>${g.title} ${g.fields.map((f) => `<span class="dot" data-dot="${f.name}" data-carddot="1" ${f.optional ? 'data-opt="1"' : ''}></span>`).join('')}</h3>
       <p class="why">${g.why}</p>
       <details class="how"><summary>Where these values come from</summary><ol>${g.how.map((h) => `<li>${h}</li>`).join('')}</ol></details>
       ${g.fields.map((f) => `
-        <label class="f" for="field-${f.name}">${f.name} <span class="envtag">${f.scope === 'repo' ? 'repository secret' : 'both iac environments'}</span></label>
+        <label class="f" for="field-${f.name}">${f.name} <span class="envtag">${scopeTag(f)}</span></label>
         ${f.area ? `<textarea id="field-${f.name}" data-secret="${f.name}" data-scope="${f.scope}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''}></textarea>`
                  : `<input id="field-${f.name}" type="${f.secret ? 'password' : 'text'}" data-secret="${f.name}" data-scope="${f.scope}" placeholder="${f.ph ?? ''}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''} autocomplete="off"/>`}`).join('')}
-      <button data-store-group="${g.id}">Store</button>
+      <button data-store-group="${g.id}">${local ? 'Store on this machine' : 'Store'}</button>
       <div class="msg" id="msg-group-${g.id}"></div>
     </div>`).join('');
   wrap.querySelectorAll('[data-store-group]').forEach((btn) => btn.addEventListener('click', () => storeGroup(btn.dataset.storeGroup)));
@@ -1104,12 +1238,25 @@ function renderCards() {
 }
 
 async function storeGroup(id) {
-  const g = GROUPS.find((x) => x.id === id);
   const card = document.querySelector(`[data-group="${id}"]`);
   const entries = [...card.querySelectorAll('[data-secret]')]
     .map((el) => ({ name: el.dataset.secret, scope: el.dataset.scope, value: el.value.trim() }))
     .filter((e) => e.value);
   if (!entries.length) { msg('msg-group-' + id, 'Nothing to store — every field is empty.', false); return; }
+
+  if (S.platform === 'local') {
+    if (!HELPER) { msg('msg-group-' + id, 'Start the local helper first (double-click infra\\setup\\start.cmd) — then this page can store values on this machine.', false); return; }
+    const values = Object.fromEntries(entries.map((e) => [e.name, e.value]));
+    const ok = await streamLocal('/api/local/run', { values }, `store ${entries.map((e) => e.name).join(', ')}`);
+    if (ok) {
+      card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
+      msg('msg-group-' + id, `Stored on this machine ✓ (${entries.map((e) => e.name).join(', ')})`, true);
+    } else {
+      msg('msg-group-' + id, 'Storing failed — see the output box in step 4.', false);
+    }
+    return;
+  }
+
   try {
     requireConnection();
     for (const e of entries) await storeSecret(e.name, e.value, e.scope);
@@ -1269,7 +1416,41 @@ document.querySelectorAll('pre button.copy').forEach((btn) => btn.addEventListen
   setTimeout(() => { btn.textContent = 'copy'; }, 1600);
 }));
 
-renderFeatures();
+/* local-track buttons (helper mode) */
+document.getElementById('local-nohelper').hidden = Boolean(HELPER);
+document.getElementById('local-helper-ui').hidden = !HELPER;
+document.getElementById('btn-local-refresh')?.addEventListener('click', () => refreshLocal());
+document.getElementById('btn-local-setup')?.addEventListener('click', async () => {
+  if (await streamLocal('/api/local/run', {}, 'bootstrap munni-local (mint secrets + render)')) {
+    await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'docker compose up (pulls images on first run — can take a while)');
+  }
+});
+document.getElementById('btn-local-verify')?.addEventListener('click', () => streamLocal('/api/local/run', { verify: true }, 'verify munni-local'));
+document.getElementById('btn-local-oobe')?.addEventListener('click', async () => {
+  const values = {
+    IAC_LOGTO_INFRA_M2M_ID: document.getElementById('in-local-m2m-id').value.trim(),
+    IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById('in-local-m2m-secret').value.trim(),
+  };
+  const subs = document.getElementById('in-local-subs').value.trim();
+  if (subs) values.NAS_ADMIN_SUBS = subs;
+  if (!values.IAC_LOGTO_INFRA_M2M_ID || !values.IAC_LOGTO_INFRA_M2M_SECRET) { localLog('\nBoth the app id and the secret are needed.\n'); return; }
+  if (await streamLocal('/api/local/run', { values }, 'apply sign-in setup (logto apps as code)')) {
+    document.getElementById('in-local-m2m-secret').value = '';
+    await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'restart web/admin with the new config');
+  }
+});
+document.getElementById('btn-local-gt')?.addEventListener('click', async () => {
+  const token = document.getElementById('in-local-gt').value.trim();
+  if (!token) { localLog('\nPaste the GlitchTip token first.\n'); return; }
+  if (await streamLocal('/api/local/run', { values: { IAC_GLITCHTIP_API_TOKEN: token } }, 'apply crash tracking (org + projects + DSNs)')) {
+    document.getElementById('in-local-gt').value = '';
+    await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'restart with the DSNs wired in');
+  }
+});
+document.querySelectorAll('[data-local-tool]').forEach((btn) => btn.addEventListener('click', () => {
+  streamLocal('/api/local/tool', { tool: btn.dataset.localTool }, btn.textContent.trim());
+}));
+
 applyPlatform();
 applyDomain();
 </script>

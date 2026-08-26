@@ -1,0 +1,114 @@
+// The setup wizard's local helper: token gate, host gate, the fixed tool
+// allowlist, and the operator-name filter on env passed to bootstrap.
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-serve-test-'));
+process.env.MUNNI_RENDER_DIR = SCRATCH;
+const { createApp, OPERATOR_NAMES, TOOLS } = await import('../setup/serve.mjs');
+
+test.after(() => rmSync(SCRATCH, { recursive: true, force: true }));
+
+function fakeRes() {
+  const res = { statusCode: 0, headers: null, chunks: [], ended: false };
+  res.writeHead = (code, headers) => { res.statusCode = code; res.headers = headers; };
+  res.write = (c) => res.chunks.push(String(c));
+  res.end = (c) => { if (c) res.chunks.push(String(c)); res.ended = true; };
+  return res;
+}
+const fakeReq = ({ method = 'GET', url = '/', host = '127.0.0.1:8377', token, body } = {}) => {
+  const listeners = {};
+  return {
+    method,
+    url,
+    headers: { host, ...(token ? { 'x-setup-token': token } : {}) },
+    on(event, cb) {
+      listeners[event] = cb;
+      if (event === 'end') {
+        if (body !== undefined) listeners.data?.(JSON.stringify(body));
+        cb();
+      }
+      return this;
+    },
+  };
+};
+
+const runs = [];
+const app = createApp({
+  token: 'tok',
+  probeImpl: async () => false,
+  runImpl: (res, cmd, args, opts) => { runs.push({ cmd, args, opts }); res.writeHead(200, {}); res.end('[exit 0]\n'); },
+});
+
+test('api calls without the token are rejected; bad hosts are rejected outright', async () => {
+  const noToken = fakeRes();
+  await app(fakeReq({ url: '/api/local/status' }), noToken);
+  assert.equal(noToken.statusCode, 401);
+  const badHost = fakeRes();
+  await app(fakeReq({ url: '/api/local/status', host: 'evil.example', token: 'tok' }), badHost);
+  assert.equal(badHost.statusCode, 403);
+});
+
+test('the served page carries the helper token; file paths outside / are 404', async () => {
+  const page = fakeRes();
+  await app(fakeReq({ url: '/' }), page);
+  assert.equal(page.statusCode, 200);
+  assert.match(page.chunks.join(''), /__SETUP_HELPER__=\{token:"tok"\}/);
+  const other = fakeRes();
+  await app(fakeReq({ url: '/etc/passwd' }), other);
+  assert.equal(other.statusCode, 404);
+});
+
+test('run passes ONLY manifest operator names as env, never arbitrary ones', async () => {
+  runs.length = 0;
+  const res = fakeRes();
+  await app(fakeReq({
+    method: 'POST', url: '/api/local/run', token: 'tok',
+    body: { values: { NAS_GHCR_PAT: 'ghp_x', PATH: 'evil', LD_PRELOAD: 'evil', NOT_A_SECRET: 'x', IAC_DOMAIN: 'nas-only' } },
+  }), res);
+  assert.equal(runs.length, 1);
+  const { cmd, args, opts } = runs[0];
+  assert.equal(cmd, process.execPath);
+  assert.ok(args.join(' ').includes('bootstrap.mjs --stack munni-local'));
+  assert.equal(opts.env.NAS_GHCR_PAT, 'ghp_x');
+  assert.notEqual(opts.env.PATH, 'evil');
+  assert.equal(opts.env.NOT_A_SECRET, undefined);
+  // platform-nas operator roots are not local operator names
+  assert.ok(!OPERATOR_NAMES.has('IAC_DOMAIN'));
+  assert.equal(opts.env.IAC_DOMAIN, process.env.IAC_DOMAIN);
+});
+
+test('verify flag appends --verify', async () => {
+  runs.length = 0;
+  const res = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/run', token: 'tok', body: { verify: true } }), res);
+  assert.ok(runs[0].args.includes('--verify'));
+});
+
+test('tools run only from the fixed allowlist', async () => {
+  runs.length = 0;
+  const bad = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/tool', token: 'tok', body: { tool: 'rm -rf /' } }), bad);
+  assert.equal(bad.statusCode, 400);
+  assert.equal(runs.length, 0);
+  const good = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/tool', token: 'tok', body: { tool: 'twin-up' } }), good);
+  assert.equal(runs.length, 1);
+  assert.deepEqual(runs[0].args.slice(-2), ['up', '-d']);
+  // every allowlisted tool is a fixed docker/powershell invocation
+  for (const tool of Object.values(TOOLS)) assert.ok(['docker', 'powershell'].includes(tool.cmd));
+});
+
+test('status reports store NAMES and service probes, never values', async () => {
+  const res = fakeRes();
+  await app(fakeReq({ url: '/api/local/status', token: 'tok' }), res);
+  assert.equal(res.statusCode, 200);
+  const body = JSON.parse(res.chunks.join(''));
+  assert.ok(Array.isArray(body.stored));
+  assert.deepEqual(body.services, { web: false, api: false, logto: false, glitchtip: false });
+  assert.ok(body.urls.web.startsWith('http://localhost:'));
+  assert.ok(!JSON.stringify(body).includes('ghp_'), 'status leaked a value');
+});

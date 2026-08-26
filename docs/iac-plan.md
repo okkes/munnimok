@@ -299,3 +299,12 @@ the re-audit of every manual step shipped:
   module against a faked API, local store/render contracts, and the
   wizard's sealed-box crypto extracted from the shipped HTML and pinned
   to RFC 7748/7693 vectors.
+- **Local helper (user feedback round 2: "I want to avoid running
+  commands myself")**: `infra/setup/serve.mjs` + `start.cmd` — a
+  zero-dependency localhost server that serves the SAME wizard page and
+  executes the local track for it (store values, bootstrap, compose
+  up/down, dev/sonar/e2e/webkit tools) over a token-gated, fixed
+  command allowlist, streaming output into the page. file:// keeps the
+  guided-manual fallback. Credential cards now apply to the local
+  platform too (feature toggles visibly add/remove them; values land in
+  the machine's gitignored store instead of GitHub).

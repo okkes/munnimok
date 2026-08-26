@@ -142,6 +142,18 @@ the ASC record for TestFlight. Every build after the first is CI.
 
 ## The local track (full ecosystem on one machine)
 
+**Double-click `infra/setup/start.cmd`** (or `node infra/setup/serve.mjs`).
+That starts the wizard's LOCAL HELPER: it serves the same page on
+127.0.0.1 and gives it hands — the page then stores the values you paste
+(gitignored local store, GitHub not involved), runs bootstrap and
+`docker compose` for you, streams every step's output live, and offers
+one-click buttons for the dev stack and the tooling containers
+(SonarQube + analyze, e2e stack, WebKit lane). The helper executes only
+a fixed command allowlist, binds to 127.0.0.1, and requires the per-run
+token it injects into the page.
+
+The same flow by hand, if you prefer a terminal:
+
 ```sh
 $env:NAS_GHCR_PAT = '<read:packages PAT>'
 node infra/bootstrap.mjs --stack munni-local
@@ -151,11 +163,10 @@ docker compose --env-file .env.munni-local -f docker-compose.munni-local.yml up 
 
 Secrets are minted into `infra/rendered/munni-local/.secrets.local.json`
 (gitignored, stable across re-runs); the rendered `.env` carries real
-values — GitHub is not involved. The generated
-`runbook.munni-local.md` walks the Logto OOBE and GlitchTip token steps
-against `localhost`. This is distinct from the from-source DEV stack
-(`deploy/docker-compose.local.yml`) — the wizard's local track shows
-both, plus the tooling containers (SonarQube, e2e stack, WebKit lane).
+values. The generated `runbook.munni-local.md` walks the Logto OOBE and
+GlitchTip token steps against `localhost`. This is distinct from the
+from-source DEV stack (`deploy/docker-compose.local.yml`) — the wizard's
+local track covers both.
 
 ---
 

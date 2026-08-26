@@ -1,0 +1,179 @@
+#!/usr/bin/env node
+/**
+ * The setup wizard's LOCAL HELPER — `node infra/setup/serve.mjs` (or
+ * double-click infra/setup/start.cmd). Zero dependencies.
+ *
+ * It serves infra/setup/index.html on 127.0.0.1 and gives the page hands
+ * on THIS machine: the wizard's local track stops printing commands and
+ * instead runs them — bootstrap, docker compose up/down, the tooling
+ * stacks — streaming their output live into the page. Without the helper
+ * the same page still works from file:// as the guided manual.
+ *
+ * Security model (a localhost dev tool, but still):
+ * - binds 127.0.0.1 only; Host header must be localhost/127.0.0.1;
+ * - every /api call needs the per-run token the server injects into the
+ *   page it serves (other local pages can't drive it);
+ * - commands are a fixed allowlist — the ONLY caller-controlled data is
+ *   operator secret VALUES, passed as env to bootstrap (never argv,
+ *   never logged) and restricted to the manifest's operator names.
+ */
+import { createServer } from 'node:http';
+import { spawn } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { MANIFEST } from '../modules/secrets.mjs';
+import { loadLocalValues, localManifestEntries } from '../modules/localstore.mjs';
+import { loadStack } from '../modules/stack.mjs';
+
+const DIR = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(DIR, '..', '..');
+// MUNNI_RENDER_DIR: same test override the render/localstore modules honor
+const RENDERED = process.env.MUNNI_RENDER_DIR
+  ? join(process.env.MUNNI_RENDER_DIR, 'munni-local')
+  : join(ROOT, 'infra', 'rendered', 'munni-local');
+const HTML = join(DIR, 'index.html');
+
+/** operator names the browser may hand to bootstrap via env */
+export const OPERATOR_NAMES = new Set(
+  MANIFEST.secrets.filter((s) => s.owner === 'operator' && !['nas', 'ci'].includes(s.platform)).map((s) => s.name),
+);
+
+const TWIN_COMPOSE = ['compose', '--env-file', '.env.munni-local', '-f', 'docker-compose.munni-local.yml'];
+/** fixed command allowlist — nothing here is caller-controlled */
+export const TOOLS = {
+  'twin-up': { cwd: RENDERED, cmd: 'docker', args: [...TWIN_COMPOSE, 'up', '-d'] },
+  'twin-down': { cwd: RENDERED, cmd: 'docker', args: [...TWIN_COMPOSE, 'down'] },
+  'dev-up': { cwd: ROOT, cmd: 'docker', args: ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml', 'up', '-d', '--build'] },
+  'dev-down': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.local.yml', 'down'] },
+  'sonar-up': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.sonar.yml', 'up', '-d'] },
+  'sonar-down': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.sonar.yml', 'down'] },
+  'sonar-analyze': { cwd: ROOT, cmd: 'powershell', args: ['-ExecutionPolicy', 'Bypass', '-File', 'deploy/sonar/analyze.ps1'], winOnly: true },
+  'test-up': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.test.yml', 'up', '--build', '-d'] },
+  'test-down': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.test.yml', 'down'] },
+  'webkit-e2e': { cwd: ROOT, cmd: 'powershell', args: ['-ExecutionPolicy', 'Bypass', '-File', 'deploy/webkit-e2e.ps1'], winOnly: true },
+};
+
+const hostOk = (req) => /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host ?? '');
+
+async function probe(url) {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
+    return res.status < 500;
+  } catch {
+    return false; // unreachable → down
+  }
+}
+
+function runToStream(res, cmd, args, { cwd, env } = {}) {
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const child = spawn(cmd, args, { cwd: cwd ?? ROOT, env: env ?? process.env, shell: false });
+  child.stdout.on('data', (d) => res.write(d));
+  child.stderr.on('data', (d) => res.write(d));
+  child.on('error', (e) => { res.write(`\n[helper] failed to start ${cmd}: ${e.message}\n`); res.end('[exit -1]\n'); });
+  child.on('close', (code) => res.end(`\n[exit ${code}]\n`));
+}
+
+const readBody = (req) =>
+  new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (c) => { data += c; if (data.length > 1_000_000) { reject(new Error('body too large')); req.destroy(); } });
+    req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
+  });
+
+const json = (res, status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
+
+async function statusEndpoint(res, probeImpl) {
+  const stack = loadStack('munni-local');
+  const values = loadLocalValues(stack);
+  const stored = Object.keys(values).filter((k) => values[k]);
+  const required = localManifestEntries().filter((s) => !s.optional && s.owner === 'operator').map((s) => s.name);
+  const docker = await new Promise((resolve) => {
+    const c = spawn('docker', ['version', '--format', '{{.Server.Version}}'], { shell: false });
+    let out = '';
+    c.stdout.on('data', (d) => { out += d; });
+    c.on('error', () => resolve({ ok: false }));
+    c.on('close', (code) => resolve({ ok: code === 0, version: out.trim() }));
+  });
+  const [web, api, logto, glitchtip] = await Promise.all([
+    probeImpl(stack.urls.web),
+    probeImpl(`${stack.urls.api}/health`),
+    probeImpl(`${stack.urls.logto}/oidc/.well-known/openid-configuration`),
+    probeImpl(`${stack.urls.glitchtip}/api/0/`),
+  ]);
+  return json(res, 200, {
+    docker,
+    rendered: existsSync(join(RENDERED, '.env.munni-local')),
+    stored,            // NAMES only — never values
+    required,
+    services: { web, api, logto, glitchtip },
+    urls: stack.urls,
+  });
+}
+
+async function runEndpoint(req, res, runImpl) {
+  const body = await readBody(req);
+  const env = { ...process.env };
+  for (const [name, value] of Object.entries(body.values ?? {})) {
+    if (OPERATOR_NAMES.has(name) && typeof value === 'string' && value) env[name] = value;
+  }
+  const args = [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', 'munni-local'];
+  if (body.verify) args.push('--verify');
+  return runImpl(res, process.execPath, args, { cwd: ROOT, env });
+}
+
+async function toolEndpoint(req, res, runImpl) {
+  const body = await readBody(req);
+  const tool = TOOLS[body.tool];
+  if (!tool) return json(res, 400, { error: 'unknown tool' });
+  if (tool.winOnly && process.platform !== 'win32') return json(res, 400, { error: 'this tool is windows-only here — run its script directly' });
+  return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
+}
+
+function serveHtml(res, token) {
+  const html = readFileSync(HTML, 'utf8').replace(
+    '</head>',
+    `<script>window.__SETUP_HELPER__={token:${JSON.stringify(token)}};</script></head>`,
+  );
+  res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
+  res.end(html);
+}
+
+/** build the handler; spawn/probe deps injectable for tests */
+export function createApp({ token, probeImpl = probe, runImpl = runToStream } = {}) {
+  return async function handle(req, res) {
+    if (!hostOk(req)) return json(res, 403, { error: 'bad host' });
+    const url = new URL(req.url, 'http://localhost');
+    if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) return serveHtml(res, token);
+    if (!url.pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' });
+    if (req.headers['x-setup-token'] !== token) return json(res, 401, { error: 'bad token' });
+    try {
+      if (req.method === 'GET' && url.pathname === '/api/local/status') return await statusEndpoint(res, probeImpl);
+      if (req.method === 'POST' && url.pathname === '/api/local/run') return await runEndpoint(req, res, runImpl);
+      if (req.method === 'POST' && url.pathname === '/api/local/tool') return await toolEndpoint(req, res, runImpl);
+      return json(res, 404, { error: 'not found' });
+    } catch (e) {
+      return json(res, 500, { error: String(e.message ?? e) });
+    }
+  };
+}
+
+// ── main ───────────────────────────────────────────────────────────────
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  const token = randomBytes(16).toString('hex');
+  const port = Number(process.env.SETUP_PORT ?? 8377);
+  const server = createServer(createApp({ token }));
+  server.requestTimeout = 0; // compose builds stream for many minutes
+  server.listen(port, '127.0.0.1', () => {
+    const url = `http://127.0.0.1:${port}/`;
+    console.log(`munni setup helper ready → ${url}`);
+    console.log('(the page it serves can now run the local setup for you; Ctrl+C stops the helper)');
+    if (!process.env.SETUP_NO_OPEN) {
+      const openers = { win32: ['cmd', ['/c', 'start', '', url]], darwin: ['open', [url]] };
+      const [cmd, args] = openers[process.platform] ?? ['xdg-open', [url]];
+      spawn(cmd, args, { shell: false, stdio: 'ignore' }).on('error', () => {});
+    }
+  });
+}
