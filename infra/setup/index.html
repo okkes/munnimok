@@ -905,7 +905,11 @@ const GROUPS = [
   {
     id: 'gocardless', title: 'GoCardless Bank Account Data', feature: 'gocardless', check: 'gocardless',
     why: 'The PSD2 account-information (AIS) aggregator behind bank sync: users link their bank once and transactions flow in read-only. Free tier covers personal use.',
-    how: ['Sign up at bankaccountdata.gocardless.com (this is the Bank Account Data product, not GoCardless payments).', 'Developers → User secrets → Create → copy the Secret ID and Secret Key.'],
+    how: [
+      'Sign up at <b>bankaccountdata.gocardless.com</b> — the Bank Account Data product, NOT the gocardless.com payments dashboard (same company, different portal; the free tier covers ~50 bank connections).',
+      'Developers → <b>User secrets</b> → Create new → name it (e.g. munni) → copy the <b>Secret ID</b> and <b>Secret Key</b> (the key is shown once).',
+      'Nothing else to configure: GoCardless needs NO redirect-URL registration — munni passes the return address with every connection, on any platform.',
+    ],
     fields: [
       { name: 'NAS_GOCARDLESS_SECRET_ID', scope: 'repo' },
       { name: 'NAS_GOCARDLESS_SECRET_KEY', scope: 'repo', secret: true },
@@ -914,7 +918,16 @@ const GROUPS = [
   {
     id: 'enablebanking', title: 'Enable Banking', feature: 'enablebanking', check: 'enablebanking',
     why: 'A second PSD2 aggregator — useful when a bank is missing or flaky at GoCardless. Fully optional.',
-    how: ['Register at enablebanking.com → Control Panel → create an application.', 'Download the application private key (.pem) — paste its FULL contents including the BEGIN/END lines.'],
+    how: [
+      'Create an account at enablebanking.com and open its Control Panel → <b>Applications</b> → Register new application.',
+      'Environment: <b>Sandbox</b> only reaches Enable Banking’s test banks — for real banks register a <b>production</b> application (Enable Banking may ask a few questions before enabling it).',
+      {
+        nas: 'Allowed <b>redirect URLs</b> — after the bank consent, munni returns the user to the app origin + <code>/gc-callback</code>. Register BOTH twins: <code class="dom-inline">https://munni-iac.&lt;domain&gt;/gc-callback</code> and <code class="dom-inline">https://munni-iac-test.&lt;domain&gt;/gc-callback</code>. An unregistered URL fails at connect time with a 403 that names the problem.',
+        local: 'Allowed <b>redirect URLs</b> — after the bank consent, munni returns the user to the app origin + <code>/gc-callback</code>. For the local twin register <code>http://localhost:8380/gc-callback</code> (add <code>http://localhost:5173/gc-callback</code> too if you’ll test bank connect from the dev stack). An unregistered URL fails at connect time with a 403 that names the problem.',
+      },
+      'Registering creates the application’s key pair — <b>download the private key (.pem)</b>; it is shown/offered ONCE. Paste its FULL contents below, BEGIN/END lines included.',
+      'The <b>Application ID</b> (a UUID) is on the application’s page in the Control Panel after registration.',
+    ],
     fields: [
       { name: 'NAS_ENABLEBANKING_APPLICATION_ID', scope: 'repo' },
       { name: 'NAS_ENABLEBANKING_PRIVATE_KEY_PEM', scope: 'repo', area: true },
@@ -923,7 +936,11 @@ const GROUPS = [
   {
     id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'fcm', check: 'fcm',
     why: 'Push notifications for the NATIVE apps route through FCM (web push uses self-minted VAPID keys — no Google involved there).',
-    how: ['console.firebase.google.com → create/open the project → Project settings → Service accounts.', 'Generate new private key → paste the whole JSON file here.'],
+    how: [
+      'console.firebase.google.com → create/open a project (any name; no Android/iOS app registration is needed for THIS step).',
+      'Project settings (gear) → <b>Service accounts</b> → Generate new private key → a JSON file downloads — paste its WHOLE contents here.',
+      'This JSON is only the SERVER’s sender credential; the native apps’ own google-services/plist files are a separate step of the native build docs.',
+    ],
     fields: [{ name: 'NAS_FCM_SERVICE_ACCOUNT_JSON', scope: 'repo', area: true }],
   },
   {
@@ -937,8 +954,16 @@ const GROUPS = [
   },
   {
     id: 'google', title: 'Google sign-in', feature: 'google', check: 'google',
-    why: 'An OAuth client that lets Logto offer "Continue with Google". Wired into the sign-in screen automatically by the bootstrap once stored.',
-    how: ['console.cloud.google.com → APIs & Services → Credentials → Create credentials → OAuth client ID → Web application.', 'Authorized redirect URI: <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/google-universal</code>', 'Copy client ID + secret.'],
+    why: 'An OAuth client that lets Logto offer "Continue with Google". Wired into the sign-in screen automatically once stored.',
+    how: [
+      'console.cloud.google.com → create/pick any project → APIs &amp; Services. First time: configure the <b>OAuth consent screen</b> (External, app name + your email) — Google requires it before clients can exist.',
+      'Credentials → Create credentials → <b>OAuth client ID</b> → type <b>Web application</b>.',
+      {
+        nas: 'Authorized <b>redirect URI</b> (this is Logto’s Google callback): <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/google-universal</code>',
+        local: 'Authorized <b>redirect URI</b> (this is the LOCAL Logto’s Google callback — Google allows localhost): <code>http://localhost:3201/callback/google-universal</code>',
+      },
+      'Copy the client ID + client secret.',
+    ],
     fields: [
       { name: 'LOGTO_GOOGLE_CLIENT_ID', scope: 'pair' },
       { name: 'LOGTO_GOOGLE_CLIENT_SECRET', scope: 'pair', secret: true },
@@ -1219,12 +1244,15 @@ function renderCards() {
     if (local) return 'local secret store (this machine)';
     return f.scope === 'repo' ? 'repository secret' : 'both iac environments';
   };
+  // how-steps may differ per platform (redirect URLs above all): plain
+  // strings apply everywhere, {nas, local} objects resolve here
+  const howSteps = (g) => g.how.map((h) => (typeof h === 'string' ? h : h[S.platform])).filter(Boolean);
   const wrap = document.getElementById('cred-cards');
   wrap.innerHTML = GROUPS.filter(groupVisible).map((g) => `
     <div class="card" data-group="${g.id}">
       <h3>${g.title} ${g.fields.map((f) => `<span class="dot" data-dot="${f.name}" data-carddot="1" ${f.optional ? 'data-opt="1"' : ''}></span>`).join('')}</h3>
       <p class="why">${g.why}</p>
-      <details class="how"><summary>Where these values come from</summary><ol>${g.how.map((h) => `<li>${h}</li>`).join('')}</ol></details>
+      <details class="how"><summary>Where these values come from</summary><ol>${howSteps(g).map((h) => `<li>${h}</li>`).join('')}</ol></details>
       ${g.fields.map((f) => `
         <label class="f" for="field-${f.name}">${f.name} <span class="envtag">${scopeTag(f)}</span></label>
         ${f.area ? `<textarea id="field-${f.name}" data-secret="${f.name}" data-scope="${f.scope}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''}></textarea>`
