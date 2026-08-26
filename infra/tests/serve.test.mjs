@@ -205,7 +205,9 @@ test('secret retrieval: reveal returns the store; the vault export skips VAPID a
     NAS_PUSH_VAPID_PRIVATE_KEY: 'vapid-secret-x',
     NAS_GOCARDLESS_SECRET_ID: 'gc-id-1',
     GLITCHTIP_ADMIN_EMAIL: 'admin@munni.local',
-    GLITCHTIP_ADMIN_PASSWORD: 'pw-x',
+    // ≥12 chars: the glitchtip-setup endpoint REUSES a stored password,
+    // and its own spec asserts real-password length
+    GLITCHTIP_ADMIN_PASSWORD: 'pw-x-seeded-long',
   });
 
   const reveal = fakeRes();
