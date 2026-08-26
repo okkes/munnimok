@@ -26,6 +26,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST } from '../modules/secrets.mjs';
 import { loadLocalValues, localManifestEntries } from '../modules/localstore.mjs';
 import { loadStack } from '../modules/stack.mjs';
+import { validate } from '../modules/validate.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(DIR, '..', '..');
@@ -131,6 +132,21 @@ async function toolEndpoint(req, res, runImpl) {
   return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
 }
 
+/** every manifest operator name may carry a value INTO a validation —
+ * transient use only, never stored, never logged */
+const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator').map((s) => s.name));
+
+async function validateEndpoint(req, res, validateImpl) {
+  const body = await readBody(req);
+  // pasted field values win; the machine's own store fills the gaps so
+  // "Check" also re-verifies values stored earlier
+  const values = { ...loadLocalValues(loadStack('munni-local')) };
+  for (const [name, value] of Object.entries(body.values ?? {})) {
+    if (VALIDATABLE_NAMES.has(name) && typeof value === 'string' && value) values[name] = value;
+  }
+  return json(res, 200, await validateImpl(String(body.provider ?? ''), values));
+}
+
 function serveHtml(res, token) {
   const html = readFileSync(HTML, 'utf8').replace(
     '</head>',
@@ -140,8 +156,8 @@ function serveHtml(res, token) {
   res.end(html);
 }
 
-/** build the handler; spawn/probe deps injectable for tests */
-export function createApp({ token, probeImpl = probe, runImpl = runToStream } = {}) {
+/** build the handler; spawn/probe/validate deps injectable for tests */
+export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate } = {}) {
   return async function handle(req, res) {
     if (!hostOk(req)) return json(res, 403, { error: 'bad host' });
     const url = new URL(req.url, 'http://localhost');
@@ -152,6 +168,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream } = 
       if (req.method === 'GET' && url.pathname === '/api/local/status') return await statusEndpoint(res, probeImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/run') return await runEndpoint(req, res, runImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/tool') return await toolEndpoint(req, res, runImpl);
+      if (req.method === 'POST' && url.pathname === '/api/validate') return await validateEndpoint(req, res, validateImpl);
       return json(res, 404, { error: 'not found' });
     } catch (e) {
       return json(res, 500, { error: String(e.message ?? e) });

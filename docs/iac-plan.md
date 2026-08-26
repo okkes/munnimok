@@ -308,3 +308,16 @@ the re-audit of every manual step shipped:
   guided-manual fallback. Credential cards now apply to the local
   platform too (feature toggles visibly add/remove them; values land in
   the machine's gitignored store instead of GitHub).
+- **Credential validation (user feedback round 3: "check if the pat is
+  correct, like GitHub")**: every credential card gained a Check button
+  and Store validates first — a definitive provider rejection blocks the
+  store (Store anyway overrides), an unreachable provider only warns.
+  `infra/modules/validate.mjs` mirrors the SERVER's real auth per
+  provider (GoCardless token/new, Enable Banking RS256 JWT kid=app id,
+  FCM jwt-bearer token mint, logo.dev sk search + pk image + swap
+  detection, Google/Apple OAuth dummy-code trick where only
+  invalid_client fails, DSM login via dsm.mjs, local Logto M2M +
+  GlitchTip token). GitHub-token checks (ghcr PAT scopes) run in the
+  browser; CORS-bound providers validate through the helper's
+  /api/validate (field values merged over the local store, transient,
+  never logged).

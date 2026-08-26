@@ -213,6 +213,8 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
       <label class="f" for="in-local-subs">NAS_ADMIN_SUBS — your Logto User ID, unlocks the admin console (optional, add any time)</label>
       <input type="text" id="in-local-subs" placeholder="usr_…" autocomplete="off"/>
       <button id="btn-local-oobe">Apply sign-in setup</button>
+      <button class="ghost" id="btn-local-oobe-check">Check</button>
+      <div class="msg" id="msg-local-oobe"></div>
     </div>
 
     <div class="card">
@@ -221,6 +223,8 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
       <label class="f" for="in-local-gt">IAC_GLITCHTIP_API_TOKEN</label>
       <input type="password" id="in-local-gt" autocomplete="off"/>
       <button id="btn-local-gt">Apply crash tracking</button>
+      <button class="ghost" id="btn-local-gt-check">Check</button>
+      <div class="msg" id="msg-local-gt"></div>
     </div>
 
     <div class="card">
@@ -876,13 +880,13 @@ const FEATURES = [
 /* credential cards (step 3) — what/why/how per provider */
 const GROUPS = [
   {
-    id: 'domain', title: 'Your domain', targets: ['nas'],
+    id: 'domain', title: 'Your domain', targets: ['nas'], check: 'browser:domain',
     why: 'Every service becomes a subdomain of your NAS DDNS domain (munni-iac.…, logto-iac.…). The domain is treated as a secret because this repo is public.',
     how: ['DSM → Control Panel → External Access → DDNS — add or read your hostname (e.g. yourname.synology.me).', 'Paste it below; the field also personalizes every link on this page.'],
     fields: [{ name: 'IAC_DOMAIN', scope: 'repo', ph: 'yourname.synology.me', mirror: 'domain' }],
   },
   {
-    id: 'synology', title: 'Synology deploy account', targets: ['nas'],
+    id: 'synology', title: 'Synology deploy account', targets: ['nas'], check: 'synology',
     why: 'The pipeline uploads bundles via the FileStation API and creates reverse-proxy rules via the DSM API — no SSH. Needs a dedicated DSM account with administrator rights and 2FA off (the login API cannot answer an OTP prompt).',
     how: ['DSM → Control Panel → User & Group → create e.g. "deploy" with administrator group membership; disable 2FA for it.', 'URL is your DSM address including port, e.g. https://yourname.synology.me:5001.', 'Path is the shared-folder path bundles land in, e.g. /docker/munni/published.'],
     fields: [
@@ -893,13 +897,13 @@ const GROUPS = [
     ],
   },
   {
-    id: 'ghcr', title: 'Container registry pulls',
+    id: 'ghcr', title: 'Container registry pulls', check: 'browser:ghcr',
     why: 'The host (NAS or this machine) logs into ghcr.io to pull the munni images. A minimal read-only token keeps that safe.',
     how: ['Open github.com/settings/tokens (classic) → Generate new token → scope: read:packages only.', 'Fine-grained tokens do not reliably work for ghcr docker login yet — use classic here.'],
     fields: [{ name: 'NAS_GHCR_PAT', scope: 'repo', secret: true }],
   },
   {
-    id: 'gocardless', title: 'GoCardless Bank Account Data', feature: 'gocardless',
+    id: 'gocardless', title: 'GoCardless Bank Account Data', feature: 'gocardless', check: 'gocardless',
     why: 'The PSD2 account-information (AIS) aggregator behind bank sync: users link their bank once and transactions flow in read-only. Free tier covers personal use.',
     how: ['Sign up at bankaccountdata.gocardless.com (this is the Bank Account Data product, not GoCardless payments).', 'Developers → User secrets → Create → copy the Secret ID and Secret Key.'],
     fields: [
@@ -908,7 +912,7 @@ const GROUPS = [
     ],
   },
   {
-    id: 'enablebanking', title: 'Enable Banking', feature: 'enablebanking',
+    id: 'enablebanking', title: 'Enable Banking', feature: 'enablebanking', check: 'enablebanking',
     why: 'A second PSD2 aggregator — useful when a bank is missing or flaky at GoCardless. Fully optional.',
     how: ['Register at enablebanking.com → Control Panel → create an application.', 'Download the application private key (.pem) — paste its FULL contents including the BEGIN/END lines.'],
     fields: [
@@ -917,13 +921,13 @@ const GROUPS = [
     ],
   },
   {
-    id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'fcm',
+    id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'fcm', check: 'fcm',
     why: 'Push notifications for the NATIVE apps route through FCM (web push uses self-minted VAPID keys — no Google involved there).',
     how: ['console.firebase.google.com → create/open the project → Project settings → Service accounts.', 'Generate new private key → paste the whole JSON file here.'],
     fields: [{ name: 'NAS_FCM_SERVICE_ACCOUNT_JSON', scope: 'repo', area: true }],
   },
   {
-    id: 'logodev', title: 'logo.dev', feature: 'logodev',
+    id: 'logodev', title: 'logo.dev', feature: 'logodev', check: 'logodev',
     why: 'Merchant and brand logos next to transactions and recurring costs. Free tier is plenty.',
     how: ['logo.dev → sign up → dashboard → API keys: the secret key (server) and the publishable token (client).'],
     fields: [
@@ -932,7 +936,7 @@ const GROUPS = [
     ],
   },
   {
-    id: 'google', title: 'Google sign-in', feature: 'google',
+    id: 'google', title: 'Google sign-in', feature: 'google', check: 'google',
     why: 'An OAuth client that lets Logto offer "Continue with Google". Wired into the sign-in screen automatically by the bootstrap once stored.',
     how: ['console.cloud.google.com → APIs & Services → Credentials → Create credentials → OAuth client ID → Web application.', 'Authorized redirect URI: <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/google-universal</code>', 'Copy client ID + secret.'],
     fields: [
@@ -941,7 +945,7 @@ const GROUPS = [
     ],
   },
   {
-    id: 'apple', title: 'Apple sign-in', feature: 'apple', targets: ['nas'],
+    id: 'apple', title: 'Apple sign-in', feature: 'apple', targets: ['nas'], check: 'apple',
     why: 'Sign in with Apple for web + iOS. Requires an Apple Developer membership.',
     how: ['developer.apple.com → Identifiers → new <b>Services ID</b> — its identifier is the client ID below. Enable Sign in with Apple.', 'Return URL: <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/apple-universal</code>', 'Keys → create a key with Sign in with Apple → note the Key ID, download the .p8 (paste its contents).', 'Team ID: top right of the developer console (Membership).'],
     fields: [
@@ -952,7 +956,7 @@ const GROUPS = [
     ],
   },
   {
-    id: 'email', title: 'Crash-report emails', feature: 'email',
+    id: 'email', title: 'Crash-report emails', feature: 'email', check: 'browser:emailUrl',
     why: 'GlitchTip sends "new issue" mails through this SMTP url. Leave unset and reports simply stay in the web UI.',
     how: ['Format: smtp://USER:PASSWORD@HOST:PORT (smtps:// for TLS). Any mailbox provider works.'],
     fields: [{ name: 'NAS_GLITCHTIP_EMAIL_URL', scope: 'pair', ph: 'smtp://user:pass@smtp.example.com:587' }],
@@ -1225,10 +1229,17 @@ function renderCards() {
         <label class="f" for="field-${f.name}">${f.name} <span class="envtag">${scopeTag(f)}</span></label>
         ${f.area ? `<textarea id="field-${f.name}" data-secret="${f.name}" data-scope="${f.scope}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''}></textarea>`
                  : `<input id="field-${f.name}" type="${f.secret ? 'password' : 'text'}" data-secret="${f.name}" data-scope="${f.scope}" placeholder="${f.ph ?? ''}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''} autocomplete="off"/>`}`).join('')}
-      <button data-store-group="${g.id}">${local ? 'Store on this machine' : 'Store'}</button>
+      <button data-store-group="${g.id}">${local ? 'Store on this machine' : 'Store'}</button>${g.check ? `
+      <button class="ghost" data-check-group="${g.id}">Check</button>` : ''}
       <div class="msg" id="msg-group-${g.id}"></div>
     </div>`).join('');
   wrap.querySelectorAll('[data-store-group]').forEach((btn) => btn.addEventListener('click', () => storeGroup(btn.dataset.storeGroup)));
+  wrap.querySelectorAll('[data-check-group]').forEach((btn) => btn.addEventListener('click', () => checkGroup(btn.dataset.checkGroup)));
+  // any edit resets a pending "Store anyway" back to the validating Store
+  wrap.querySelectorAll('.card').forEach((card) => card.addEventListener('input', () => {
+    const store = card.querySelector('[data-store-group]');
+    if (store?.dataset.force) { delete store.dataset.force; store.textContent = S.platform === 'local' ? 'Store on this machine' : 'Store'; }
+  }));
   wrap.querySelectorAll('[data-mirror="domain"]').forEach((input) => {
     if (!input.value && S.domain) input.value = S.domain;
     input.addEventListener('input', () => { S.domain = input.value.trim(); LS.set('domain', S.domain); applyDomain(); });
@@ -1238,11 +1249,33 @@ function renderCards() {
 }
 
 async function storeGroup(id) {
+  const g = GROUPS.find((x) => x.id === id);
   const card = document.querySelector(`[data-group="${id}"]`);
+  const storeBtn = card.querySelector('[data-store-group]');
   const entries = [...card.querySelectorAll('[data-secret]')]
     .map((el) => ({ name: el.dataset.secret, scope: el.dataset.scope, value: el.value.trim() }))
     .filter((e) => e.value);
   if (!entries.length) { msg('msg-group-' + id, 'Nothing to store — every field is empty.', false); return; }
+
+  // validate first (like the GitHub connect step). A definitive rejection
+  // blocks the store — Store turns into "Store anyway" for an override; a
+  // provider we couldn't reach only warns.
+  let verdictNote = '';
+  if (g.check && !storeBtn.dataset.force) {
+    msg('msg-group-' + id, 'checking the values first…', true);
+    try {
+      const verdict = await checkCredentials(g.check, cardValues(card));
+      if (verdict && !verdict.ok && !verdict.unreachable && !verdict.noHelper) {
+        msg('msg-group-' + id, `✗ not stored — ${verdict.detail}`, false);
+        storeBtn.dataset.force = '1';
+        storeBtn.textContent = 'Store anyway';
+        return;
+      }
+      verdictNote = verdict?.ok ? ` — checked ✓ (${verdict.detail})` : (verdict ? ` — could not verify: ${verdict.detail}` : '');
+    } catch { verdictNote = ' — could not verify (check failed)'; }
+  }
+  delete storeBtn.dataset.force;
+  storeBtn.textContent = S.platform === 'local' ? 'Store on this machine' : 'Store';
 
   if (S.platform === 'local') {
     if (!HELPER) { msg('msg-group-' + id, 'Start the local helper first (double-click infra\\setup\\start.cmd) — then this page can store values on this machine.', false); return; }
@@ -1250,7 +1283,7 @@ async function storeGroup(id) {
     const ok = await streamLocal('/api/local/run', { values }, `store ${entries.map((e) => e.name).join(', ')}`);
     if (ok) {
       card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
-      msg('msg-group-' + id, `Stored on this machine ✓ (${entries.map((e) => e.name).join(', ')})`, true);
+      msg('msg-group-' + id, `Stored on this machine ✓ (${entries.map((e) => e.name).join(', ')})${verdictNote}`, true);
     } else {
       msg('msg-group-' + id, 'Storing failed — see the output box in step 4.', false);
     }
@@ -1261,13 +1294,73 @@ async function storeGroup(id) {
     requireConnection();
     for (const e of entries) await storeSecret(e.name, e.value, e.scope);
     card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
-    msg('msg-group-' + id, `Stored ${entries.map((e) => e.name).join(', ')} ✓ (values are write-only from here on)`, true);
+    msg('msg-group-' + id, `Stored ${entries.map((e) => e.name).join(', ')} ✓ (values are write-only from here on)${verdictNote}`, true);
     await refresh();
   } catch (e) { msg('msg-group-' + id, String(e.message || e), false); }
 }
 
 function requireConnection() {
   if (!S.pat || !S.user) throw new Error('Connect first (step 0) — paste the PAT and hit Connect.');
+}
+
+/* ── credential validation (user request: "check if the pat is correct,
+   like GitHub"). GitHub-token checks run right here in the page; most
+   other providers block cross-origin calls, so their checks run through
+   the local helper, which mirrors the server's real auth flows. ── */
+const BROWSER_VALIDATORS = {
+  async ghcr(values) {
+    const pat = values.NAS_GHCR_PAT;
+    if (!pat) return { ok: false, detail: 'paste the token first' };
+    const res = await fetch('https://api.github.com/user', { headers: { authorization: 'Bearer ' + pat } });
+    if (!res.ok) return { ok: false, detail: `GitHub rejected the token (${res.status})` };
+    const scopes = res.headers.get('x-oauth-scopes') ?? '';
+    const login = (await res.json()).login;
+    if (!/(read|write):packages/.test(scopes)) {
+      return { ok: false, detail: `the token authenticates as ${login} but lacks read:packages (scopes: ${scopes || 'none — is it fine-grained? use classic here'})` };
+    }
+    return { ok: true, detail: `valid — ${login}, scopes: ${scopes}` };
+  },
+  async domain(values) {
+    const d = values.IAC_DOMAIN ?? '';
+    return /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(d)
+      ? { ok: true, detail: 'looks like a valid hostname (DNS itself is probed by bootstrap --verify)' }
+      : { ok: false, detail: 'not a hostname — expected something like yourname.synology.me (no https://, no trailing slash)' };
+  },
+  async emailUrl(values) {
+    const u = values.NAS_GLITCHTIP_EMAIL_URL ?? '';
+    return /^smtps?:\/\/[^:@\s]+(:[^@\s]*)?@[^:@\s]+:\d+\/?$/.test(u)
+      ? { ok: true, detail: 'well-formed smtp url (delivery itself is proven by the first GlitchTip mail)' }
+      : { ok: false, detail: 'expected smtp://USER:PASSWORD@HOST:PORT (or smtps://)' };
+  },
+};
+
+/** run a group's validator with the values at hand; null = cannot check here */
+async function checkCredentials(check, values) {
+  if (!check) return null;
+  if (check.startsWith('browser:')) return BROWSER_VALIDATORS[check.slice(8)](values);
+  if (!HELPER) return { ok: false, noHelper: true, detail: 'this provider blocks browser calls — start the local helper (infra\\setup\\start.cmd) and this page can check it for real; the value is verified on first use either way' };
+  const res = await hfetch('/api/validate', { method: 'POST', body: JSON.stringify({ provider: check, values }) });
+  if (!res.ok) return { ok: false, unreachable: true, detail: `helper error ${res.status}` };
+  return res.json();
+}
+
+const cardValues = (card) =>
+  Object.fromEntries([...card.querySelectorAll('[data-secret]')].map((el) => [el.dataset.secret, el.value.trim()]).filter(([, v]) => v));
+
+async function checkGroup(id) {
+  const g = GROUPS.find((x) => x.id === id);
+  const card = document.querySelector(`[data-group="${id}"]`);
+  const btn = card.querySelector('[data-check-group]');
+  btn.disabled = true;
+  msg('msg-group-' + id, 'checking…', true);
+  try {
+    const verdict = await checkCredentials(g.check, cardValues(card));
+    msg('msg-group-' + id, `${verdict.ok ? '✓' : '✗'} ${verdict.detail}`, verdict.ok);
+  } catch (e) {
+    msg('msg-group-' + id, `✗ check failed: ${e.message}`, false);
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 /* ── manifest drift check: the wizard must cover every operator secret ── */
@@ -1450,6 +1543,20 @@ document.getElementById('btn-local-gt')?.addEventListener('click', async () => {
 document.querySelectorAll('[data-local-tool]').forEach((btn) => btn.addEventListener('click', () => {
   streamLocal('/api/local/tool', { tool: btn.dataset.localTool }, btn.textContent.trim());
 }));
+const localCheck = async (provider, values, msgId) => {
+  msg(msgId, 'checking…', true);
+  try {
+    const verdict = await checkCredentials(provider, values);
+    msg(msgId, `${verdict.ok ? '✓' : '✗'} ${verdict.detail}`, verdict.ok);
+  } catch (e) { msg(msgId, `✗ check failed: ${e.message}`, false); }
+};
+document.getElementById('btn-local-oobe-check')?.addEventListener('click', () => localCheck('logto-m2m', {
+  IAC_LOGTO_INFRA_M2M_ID: document.getElementById('in-local-m2m-id').value.trim(),
+  IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById('in-local-m2m-secret').value.trim(),
+}, 'msg-local-oobe'));
+document.getElementById('btn-local-gt-check')?.addEventListener('click', () => localCheck('glitchtip-token', {
+  IAC_GLITCHTIP_API_TOKEN: document.getElementById('in-local-gt').value.trim(),
+}, 'msg-local-gt'));
 
 applyPlatform();
 applyDomain();

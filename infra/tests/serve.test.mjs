@@ -37,10 +37,12 @@ const fakeReq = ({ method = 'GET', url = '/', host = '127.0.0.1:8377', token, bo
 };
 
 const runs = [];
+const validations = [];
 const app = createApp({
   token: 'tok',
   probeImpl: async () => false,
   runImpl: (res, cmd, args, opts) => { runs.push({ cmd, args, opts }); res.writeHead(200, {}); res.end('[exit 0]\n'); },
+  validateImpl: async (provider, values) => { validations.push({ provider, values }); return { ok: true, detail: 'fake' }; },
 });
 
 test('api calls without the token are rejected; bad hosts are rejected outright', async () => {
@@ -100,6 +102,23 @@ test('tools run only from the fixed allowlist', async () => {
   assert.deepEqual(runs[0].args.slice(-2), ['up', '-d']);
   // every allowlisted tool is a fixed docker/powershell invocation
   for (const tool of Object.values(TOOLS)) assert.ok(['docker', 'powershell'].includes(tool.cmd));
+});
+
+test('validate passes only manifest operator names through, merged over the store', async () => {
+  validations.length = 0;
+  const res = fakeRes();
+  await app(fakeReq({
+    method: 'POST', url: '/api/validate', token: 'tok',
+    body: { provider: 'gocardless', values: { NAS_GOCARDLESS_SECRET_ID: 'id1', PATH: 'evil', RANDOM: 'x', SYNOLOGY_URL: 'https://nas:5001' } },
+  }), res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(validations.length, 1);
+  assert.equal(validations[0].provider, 'gocardless');
+  assert.equal(validations[0].values.NAS_GOCARDLESS_SECRET_ID, 'id1');
+  // SYNOLOGY_* are operator names (NAS platform) — allowed for validation
+  assert.equal(validations[0].values.SYNOLOGY_URL, 'https://nas:5001');
+  assert.equal(validations[0].values.PATH, undefined);
+  assert.equal(validations[0].values.RANDOM, undefined);
 });
 
 test('status reports store NAMES and service probes, never values', async () => {
