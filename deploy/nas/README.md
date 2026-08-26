@@ -7,12 +7,14 @@ version stamp it unpacks the bundle over the live directory (scripts
 included — everything self-updates) and runs `update.sh`, which pulls
 the images and restarts the stack.
 
-Two channels, both handled:
+Four channels, all handled:
 
-| Branch | Uploads | What gets updated on the NAS |
+| Trigger | Uploads | What gets updated on the NAS |
 |---|---|---|
-| `master` | `munni-deploy.tgz` + `VERSION` | **production** stack, then **staging** (a release moves both) — bundle includes compose files, nginx conf, scripts and the rendered `.env` |
-| `dev` | `munni-deploy-staging.tgz` + `VERSION_STAGING` | **staging** only (tests dev's compose changes before a release) |
+| `master` push | `munni-deploy.tgz` + `VERSION` | **production** stack, then **staging** (a release moves both) — bundle includes compose files, nginx conf, scripts and the rendered `.env` |
+| `dev` push | `munni-deploy-staging.tgz` + `VERSION_STAGING` | **staging** only (tests dev's compose changes before a release) |
+| dispatch `channel=iac-prod` | `munni-deploy-iac-prod.tgz` + `VERSION_IAC_PROD` | the **munni-iac-prod** twin, in its own `/volume1/docker/munni-iac-prod/` (rendered from `infra/` stack files + the `iac-production` environment) |
+| dispatch `channel=iac-staging` | `munni-deploy-iac-staging.tgz` + `VERSION_IAC_STAGING` | the **munni-iac-staging** twin, same pattern (`iac-both` publishes both) |
 
 ## Secrets: template + placeholders
 

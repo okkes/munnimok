@@ -67,4 +67,5 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Space settings rows all lead somewhere sane; global settings: profile (account deletion narrates its progress), devices, language (EN/NL/TR), appearance cycle, export, push, tips
 - [ ] Scrolling a search list dismisses the keyboard; multi-field forms keep it while scrolling
 - [ ] PWA installs and updates; native shells build, deep-link back and capture photos
+- [ ] Hosted web/admin read their config at runtime (/runtime-config.js from container env) — one public image serves prod, staging, the iac pair and the local twin, each pointing at its own API/Logto/GlitchTip
 - [ ] Offline end to end: everything works, syncs on return, conflicts converge

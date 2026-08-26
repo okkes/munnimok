@@ -250,3 +250,52 @@ scope.
 Migration order: introduce the shared stack in the IaC pair first
 (munni-iac-shared + the twins consuming it), prove it, then fold the
 LIVE deployment the same way during IAC7.
+
+## Amendment 2026-08-26 (user request): setup wizard + the automation sweep
+
+The user's ask — "an HTML file that walks the whole initial setup,
+explains each account, fills the secrets in for us, and clicks the
+follow-ups" — landed as `infra/setup/index.html` (engine ruling:
+**static HTML driving the GitHub API directly**; the browser writes
+sealed-box secrets, dispatches workflows and reads live status with the
+one IAC_GH_PAT — nothing installed, works for any fork). Alongside it,
+the re-audit of every manual step shipped:
+
+- **Runtime-config overlay (user-approved)**: web + admin read
+  `window.__MUNNI_CONFIG__` (from `/runtime-config.js`, rendered by the
+  nginx entrypoint from `MUNNI_*` env) before their baked Vite env. The
+  bake had silently pinned every published image to the LIVE stacks —
+  the iac pair and any fork would have served frontends pointing at
+  prod. One public image now serves every stack, which is what the CSP
+  design ("connect-src stays open so one image serves every
+  environment") always assumed.
+- **IAC4 completed**: deploy-nas.yml channel input (`iac-prod` /
+  `iac-staging` / `iac-both`) renders via `bootstrap --render-only`,
+  substitutes secrets AND written-back variables (render-env.sh now
+  resolves any `${NAME}`, secrets-then-vars), and the NAS poller unpacks
+  each twin into its own `/volume1/docker/<stack>/`. B1-2's manual copy
+  is gone. update.sh guards the pg-migration volume names so an
+  iac-staging deploy can never touch live staging volumes.
+- **IAC8 progress — GlitchTip as code**: `infra/modules/glitchtip.mjs`
+  ensures org/team/per-stack projects and writes the DSNs back once the
+  operator stores one API token (`IAC_GLITCHTIP_API_TOKEN`). Runbook §4
+  shrank to "register + create token".
+- **Local target**: `munni-iac` gained a sibling `munni-local` stack
+  (target:"local") — the whole ecosystem on Docker Desktop, http on
+  localhost ports, secrets minted into a gitignored store, .env rendered
+  with real values, its own short runbook. User ruling: the wizard's
+  local track covers the twin AND the dev flow AND the tooling
+  containers (SonarQube, e2e, WebKit).
+- **Native works for the pair**: native-android/ios gained an
+  `environment` dispatch input (`iac-production`/`iac-staging`) — the
+  branch-derived environment had made runbook §5 impossible to execute.
+- **Manifest hardening**: SYNOLOGY_*, IAC_GH_PAT and the GlitchTip
+  token joined `secrets.manifest.json` with platform tags (nas/ci);
+  scope:"global" roots are now accepted at repository level by
+  ensure/verify; NAS_API_SENTRY_DSN became module-owned.
+- **Raspberry Pi**: wizard shows a placeholder card until PI3 lands
+  (user ruling: don't build install.sh in this arc).
+- Tests: `infra/tests/` (node --test, wired into iac.yml) — glitchtip
+  module against a faked API, local store/render contracts, and the
+  wizard's sealed-box crypto extracted from the shipped HTML and pinned
+  to RFC 7748/7693 vectors.
