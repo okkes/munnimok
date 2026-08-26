@@ -213,7 +213,7 @@ function envHeader(s) {
   if (s.target === 'local') return `# ${s.stack} env (local twin: values inlined by bootstrap — never commit this file)`;
   return `# ${s.stack} env TEMPLATE — rendered secrets come from the GitHub
 # Environment "${s.githubEnvironment}" (same NAS_* substitution contract as
-# deploy/env/.env.nas; \${VITE_*} placeholders come from the environment's
+# deploy/env/.env.nas; VITE_* placeholders come from the environment's
 # VARIABLES). Never edit the rendered .env on the host.`;
 }
 
