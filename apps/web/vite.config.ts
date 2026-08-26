@@ -56,6 +56,10 @@ export default defineConfig(({ mode }) => {
           // empty logo picker. jpg: the bundled event pictures must work
           // offline/demo too.
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2,jpg}'],
+          // never precache the runtime-config overlay: the nginx entrypoint
+          // rewrites it per deployment, but the precache would pin the
+          // build-time stub forever (sw.ts serves it network-first instead)
+          globIgnores: ['runtime-config.js'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           // iife, NOT the default es: the worker is registered as a classic
           // script, but the es build kept `import.meta` (dynamic-import

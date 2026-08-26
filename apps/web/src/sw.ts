@@ -21,6 +21,30 @@ cleanupOutdatedCaches();
 // content-hashed, so matching URLs without their query is always safe.
 precacheAndRoute(self.__WB_MANIFEST, { ignoreURLParametersMatching: [/.*/] });
 
+// /runtime-config.js is the per-deployment config overlay the nginx
+// entrypoint rewrites — excluded from the precache (vite.config globIgnores)
+// and served network-first here so an offline relaunch still boots with the
+// last-seen deployment config instead of the baked defaults.
+const RUNTIME_CONFIG_CACHE = 'munni-runtime-config';
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin || url.pathname !== '/runtime-config.js') return;
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(RUNTIME_CONFIG_CACHE);
+      try {
+        const fresh = await fetch(event.request);
+        if (fresh.ok) await cache.put(event.request, fresh.clone());
+        return fresh;
+      } catch {
+        const cached = await cache.match(event.request);
+        // no cached copy either: an empty overlay keeps the baked config
+        return cached ?? new Response('', { headers: { 'Content-Type': 'text/javascript' } });
+      }
+    })(),
+  );
+});
+
 // UpdateToast's reload button posts SKIP_WAITING (registerSW prompt mode)
 self.addEventListener('message', (event) => {
   // defense-in-depth: only act on messages from same-origin clients (a

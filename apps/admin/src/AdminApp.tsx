@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import type { AdminConfig } from './main';
+import type { AdminConfig } from './config';
 import bundledCatalog from './generated/bundledCatalog.json';
 
 interface UserDiagnosis {

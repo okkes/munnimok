@@ -33,5 +33,8 @@ RUN sed -i "s/__APPLE_TEAM_ID__/${APPLE_TEAM_ID}/g" apps/web/dist/.well-known/ap
 FROM nginx:alpine
 COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
 COPY deploy/nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
+# runtime-config overlay: renders /runtime-config.js from MUNNI_* env at
+# container start so one image serves every stack (empty env = baked config)
+COPY --chmod=755 deploy/nginx/40-runtime-config.sh /docker-entrypoint.d/40-runtime-config.sh
 COPY --from=build /repo/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
