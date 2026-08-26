@@ -180,6 +180,59 @@ const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
     child.on('close', (code) => resolve({ code, out }));
   });
 
+/* ── Logto zero-input sign-in setup (user: "is it necessary to do logto
+   manually?"). Locally we own Logto's database, and the seed already
+   ships a 'Logto Management API access' role in tenant `default` — so
+   the OOBE console visit reduces to ONE SQL insert: an M2M application
+   row plus its role link (proven live: token minted with scope=all,
+   management API answered). The credential then flows into bootstrap,
+   which turns apps/redirects/resources into code. The console's own
+   create-account screen stays for the human to claim later — app
+   sign-in does not depend on it. ── */
+const LOGTO_MGMT_ROLE = 'Logto Management API access';
+
+async function logtoSetupEndpoint(res, spawnImpl) {
+  const stack = loadStack('munni-local');
+  const values = loadLocalValues(stack);
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const run = stepRunner(spawnImpl);
+
+  let id = values.IAC_LOGTO_INFRA_M2M_ID;
+  let secret = values.IAC_LOGTO_INFRA_M2M_SECRET;
+  if (id && secret) {
+    res.write('A stored infra credential already exists — re-applying it (no new app inserted).\n');
+  } else {
+    id = `infra${randomBytes(8).toString('hex')}`;          // 21 chars, column limit
+    secret = randomBytes(24).toString('hex');
+    const linkId = `link0${randomBytes(8).toString('hex')}`;
+    const sqlApp = `insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('default', '${id}', 'infra (munni setup)', '${secret}', 'created by the munni setup wizard', 'MachineToMachine', '{"redirectUris":[],"postLogoutRedirectUris":[]}', '{}') on conflict (id) do nothing;`;
+    const sqlRole = `insert into applications_roles (tenant_id, id, application_id, role_id) select 'default', '${linkId}', '${id}', r.id from roles r where r.tenant_id = 'default' and r.name = '${LOGTO_MGMT_ROLE}' on conflict do nothing;`;
+    const ins = await run(res, 'create the infra M2M app inside Logto (management role attached)', 'docker',
+      [...TWIN_COMPOSE, 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', 'logto', '-v', 'ON_ERROR_STOP=1', '-c', sqlApp, '-c', sqlRole],
+      { cwd: RENDERED, mask: (s) => s.replaceAll(secret, '(secret)') });
+    if (ins.code !== 0) {
+      res.write('\nIs munni running (step 4), and has Logto finished booting? The logto dot in the status card must be green — then retry.\n');
+      return res.end('[exit 1]\n');
+    }
+  }
+  res.write(`\nInfra app id: ${id} — the secret goes straight into the local secret store, never shown.\n`);
+
+  const boot = await run(res, 'turn sign-in into code (apps, redirect URIs, API resource) + store the credential', process.execPath,
+    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', 'munni-local'],
+    { cwd: ROOT, env: { ...process.env, IAC_LOGTO_INFRA_M2M_ID: id, IAC_LOGTO_INFRA_M2M_SECRET: secret } });
+  // bootstrap soft-fails logto errors (exit 0) — the upsert line is the
+  // real success marker; the credential is stored either way, so a retry
+  // after logto boots re-applies without inserting again
+  if (boot.code !== 0 || !/logto: apps upserted/.test(boot.out)) {
+    res.write('\nLogto did not accept the credential yet — wait for the logto dot to turn green, then press the button again (the credential is stored; nothing is lost).\n');
+    return res.end('[exit 1]\n');
+  }
+
+  const up = await run(res, 'restart web/admin with their sign-in config', 'docker', [...TWIN_COMPOSE, 'up', '-d'], { cwd: RENDERED });
+  res.write('\nDone. The Logto console (localhost:3202) still greets its create-account screen the first time — that login is YOURS to claim whenever you want to browse Logto itself; app sign-in works without it.\n');
+  return res.end(`\n[exit ${up.code === 0 ? 0 : 1}]\n`);
+}
+
 async function glitchtipSetupEndpoint(res, spawnImpl) {
   const stack = loadStack('munni-local');
   const values = loadLocalValues(stack);
@@ -251,6 +304,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
       if (req.method === 'POST' && url.pathname === '/api/local/run') return await runEndpoint(req, res, runImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/tool') return await toolEndpoint(req, res, runImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/glitchtip-setup') return await glitchtipSetupEndpoint(res, spawnImpl);
+      if (req.method === 'POST' && url.pathname === '/api/local/logto-setup') return await logtoSetupEndpoint(res, spawnImpl);
       if (req.method === 'POST' && url.pathname === '/api/validate') return await validateEndpoint(req, res, validateImpl);
       return json(res, 404, { error: 'not found' });
     } catch (e) {

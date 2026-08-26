@@ -9,7 +9,9 @@
   "stack": "munni-local",
   "pair": "munni-local",
   "role": "prod", // owns its own logto + glitchtip like any prod twin
-  "channel": "latest",
+  // dev channel: `latest` only moves on RELEASES (master) — the twin
+  // should run the same code as the checkout it renders from
+  "channel": "dev",
   "target": "local",
 
   "domain": "localhost",

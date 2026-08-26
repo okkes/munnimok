@@ -144,7 +144,9 @@ export async function applyBranding(pairStack, { m2mId, m2mSecret }) {
     method: 'PATCH',
     body: JSON.stringify({
       branding: { logoUrl, darkLogoUrl: logoUrl, favicon: `${pairStack.urls.web}/icon-192.png` },
-      color: { primaryColor: '#08372B', isDarkModeEnabled: true },
+      // darkPrimaryColor is REQUIRED by the API (found live 2026-08-26:
+      // 400 ZodError without it) — the light mint the app uses on dark
+      color: { primaryColor: '#08372B', darkPrimaryColor: '#8FC7B4', isDarkModeEnabled: true },
     }),
   });
   return { logoUrl };

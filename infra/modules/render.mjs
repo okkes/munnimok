@@ -48,7 +48,15 @@ function compose(s, pair) {
   const p = s.ports;
   return `# ${s.stack} — RENDERED by infra/bootstrap.mjs, do not edit by hand.
 ${composeHeader(s)}
-
+${local ? `
+# explicit project name: the dev stack (deploy/docker-compose.local.yml)
+# already OWNS the "munni-local" project — without this line the twin
+# rendered into a same-named directory would absorb/recreate the dev
+# stack's containers mid-flight (live incident 2026-08-26: postgres got
+# recreated under a seeding Logto, leaving a half-seeded db in a
+# crash-loop)
+name: ${s.stack}-twin
+` : ''}
 services:
   web:
     image: \${REGISTRY}/munni-web:\${TAG}
@@ -149,7 +157,12 @@ function sharedServices(s, pair) {
   logto:
     image: svhd/logto:1.41
     restart: unless-stopped
-    entrypoint: ["sh", "-c", "npm run alteration deploy latest || true; npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
+    # SEED FIRST: alteration-before-seed on an EMPTY db half-creates
+    # tables ("248 alterations" against no schema), then seed --swe sees
+    # them and SKIPS — a permanent RLS crash-loop (live incident
+    # 2026-08-26). Seed is a no-op on seeded dbs; alteration handles
+    # upgrades after it.
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
     environment:
       TRUST_PROXY_HEADER: "${local ? '0' : '1'}"
       DB_URL: postgres://munni:\${POSTGRES_PASSWORD}@postgres:5432/logto

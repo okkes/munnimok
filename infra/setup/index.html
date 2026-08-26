@@ -95,25 +95,27 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 
 <section id="s-connect">
   <h2><span class="n">0</span> Connect to GitHub <span class="pill" id="connect-pill">not connected</span></h2>
-  <p class="sub">One fine-grained personal access token drives everything: this page uses it live, and stores it as the <code>IAC_GH_PAT</code> secret so the bootstrap workflow can manage environments too.</p>
+  <p class="sub" id="connect-local-note" hidden>Running on this machine? <b>Skip this section</b> — the local track never talks to GitHub. <a href="#" id="connect-show">Show it anyway</a> (for the NAS track, or to fork munni into your own repo).</p>
+  <div id="connect-body">
+  <p class="sub">One fine-grained personal access token drives everything: this page uses it live, and stores it as the <code>IAC_GH_PAT</code> secret so the bootstrap workflow can manage environments too. Point it at a repo that carries munni — or at a repo name that doesn't exist yet, and this page forks <code>okkes/munnimok</code> under it for you. Branches are munni's own (<code>dev</code>/<code>master</code>) and picked automatically.</p>
   <details class="how"><summary>How to create the token (2 minutes)</summary>
     <ol>
       <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com/settings/personal-access-tokens/new</a>.</li>
-      <li><b>Repository access</b>: Only select repositories → this repo.</li>
+      <li><b>Repository access</b>: Only select repositories → your munni repo. (If you want this page to CREATE the repo as a fork, pick <b>All repositories</b> instead — a fine-grained token can't pre-select a repo that doesn't exist yet.)</li>
       <li><b>Repository permissions</b>: Administration <b>Read and write</b> · Secrets <b>Read and write</b> · Variables <b>Read and write</b> · Actions <b>Read and write</b> · Contents <b>Read-only</b>.</li>
       <li>Generate, copy the <code>github_pat_…</code> value and paste it below. Set a long expiry — rotating it means redoing only this step.</li>
     </ol>
   </details>
-  <div class="grid2">
-    <div><label class="f" for="in-slug">repository (owner/name)</label><input type="text" id="in-slug"/></div>
-    <div><label class="f" for="in-ref">branch with the infra code</label><input type="text" id="in-ref"/></div>
-  </div>
+  <label class="f" for="in-slug">repository (owner/name)</label>
+  <input type="text" id="in-slug"/>
   <label class="f" for="in-pat">fine-grained PAT (kept in memory only)</label>
   <input type="password" id="in-pat" placeholder="github_pat_…" autocomplete="off"/>
   <button id="btn-connect">Connect</button>
+  <button class="ghost" id="btn-fork" hidden>Create it as a fork of okkes/munnimok</button>
   <button class="ghost" id="btn-store-pat" disabled>Store as IAC_GH_PAT <span class="dot" data-dot="IAC_GH_PAT"></span></button>
   <button class="ghost" id="btn-refresh" disabled>Refresh status</button>
   <div class="msg" id="msg-connect"></div>
+  </div>
 </section>
 
 <section id="s-platform">
@@ -201,20 +203,23 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
     </div>
 
     <div class="card">
-      <h3>Sign-in (Logto OOBE — the one manual step) <span class="dot" data-localdot="NAS_LOGTO_M2M_APP_ID"></span></h3>
-      <ol style="font-size:13px">
-        <li>Open <a href="http://localhost:3202" target="_blank" rel="noreferrer">localhost:3202</a> → create the admin user (this is YOUR console login, not an app user) → Applications → Create → <b>Machine-to-machine</b> → name it <code>infra</code> → assign the <b>Logto Management API</b> role (all permissions).</li>
-        <li>Paste the app's id + secret — Apply stores them, re-runs bootstrap (apps, redirect URIs and the API resource become code) and restarts web/admin with the new config:</li>
-      </ol>
-      <div class="grid2">
-        <div><label class="f" for="in-local-m2m-id">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-local-m2m-id" autocomplete="off"/></div>
-        <div><label class="f" for="in-local-m2m-secret">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-local-m2m-secret" autocomplete="off"/></div>
-      </div>
-      <label class="f" for="in-local-subs">NAS_ADMIN_SUBS — your Logto User ID, unlocks the admin console (optional, add any time)</label>
+      <h3>Sign-in (Logto) <span class="dot" data-localdot="NAS_LOGTO_M2M_APP_ID"></span></h3>
+      <p class="why">Fully automatic here: munni deploys Logto itself, so this button plants the infra credential straight into it, turns apps + redirect URIs + the API resource into code and restarts web/admin. No console visit needed — the Logto console (<a href="http://localhost:3202" target="_blank" rel="noreferrer">localhost:3202</a>) stays yours to claim later if you want to browse it.</p>
+      <p class="msg bad" id="local-logto-warn" hidden>Logto isn't answering yet — run step 4's Set up first and wait for the logto dot above to turn green, then press this.</p>
+      <button id="btn-local-logto-auto">Set up sign-in automatically</button>
+      <label class="f" for="in-local-subs">NAS_ADMIN_SUBS — your Logto User ID, unlocks the admin console (optional: sign up in the app first, find the ID under User management at localhost:3202)</label>
       <input type="text" id="in-local-subs" placeholder="usr_…" autocomplete="off"/>
-      <button id="btn-local-oobe">Apply sign-in setup</button>
-      <button class="ghost" id="btn-local-oobe-check">Check</button>
-      <div class="msg" id="msg-local-oobe"></div>
+      <button class="ghost" id="btn-local-subs">Store admin access</button>
+      <details class="how"><summary>Manual fallback — bring your own M2M credential instead</summary>
+        <p>Console → Applications → Create → <b>Machine-to-machine</b> → name it <code>infra</code> → assign the <b>Logto Management API</b> role → paste:</p>
+        <div class="grid2">
+          <div><label class="f" for="in-local-m2m-id">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-local-m2m-id" autocomplete="off"/></div>
+          <div><label class="f" for="in-local-m2m-secret">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-local-m2m-secret" autocomplete="off"/></div>
+        </div>
+        <button id="btn-local-oobe">Apply sign-in setup</button>
+        <button class="ghost" id="btn-local-oobe-check">Check</button>
+        <div class="msg" id="msg-local-oobe"></div>
+      </details>
     </div>
 
     <div class="card">
@@ -1142,6 +1147,7 @@ async function refreshLocal() {
     const up = st.services.web && st.services.api;
     pill.textContent = up ? 'running ✓' : (st.rendered ? 'set up — not running' : 'not set up yet');
     pill.className = 'pill ' + (up ? 'ok' : '');
+    document.getElementById('local-logto-warn').hidden = st.services.logto;
     renderStatus();
   } catch (e) {
     box.textContent = `helper unreachable (${e.message}) — restart infra/setup/start.cmd and reload`;
@@ -1204,6 +1210,9 @@ function applyPlatform() {
   document.querySelectorAll('[data-platform-pick]').forEach((el) => {
     el.classList.toggle('sel', el.dataset.platformPick === S.platform);
   });
+  // GitHub is optional for the local track — fold the connect section away
+  document.getElementById('connect-local-note').hidden = S.platform !== 'local';
+  document.getElementById('connect-body').hidden = S.platform === 'local' && !S.user;
   document.getElementById('creds-sub').textContent = S.platform === 'local'
     ? 'Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — with the local helper running, they land in a gitignored secret store on THIS machine (GitHub is not involved for the local twin) and step 4 uses them.'
     : "Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — this page encrypts them client-side (GitHub's sealed-box contract) and writes repository or environment secrets directly. Values are write-only from then on; the dots show presence, never content.";
@@ -1424,29 +1433,85 @@ async function checkManifest() {
 }
 
 /* ── wire up ── */
+const UPSTREAM = 'okkes/munnimok';
 document.getElementById('in-slug').value = S.slug;
-document.getElementById('in-ref').value = S.ref;
-document.getElementById('in-slug').addEventListener('input', (e) => { S.slug = e.target.value.trim(); LS.set('slug', S.slug); });
-document.getElementById('in-ref').addEventListener('input', (e) => { S.ref = e.target.value.trim(); LS.set('ref', S.ref); });
+document.getElementById('in-slug').addEventListener('input', (e) => { S.slug = e.target.value.trim(); LS.set('slug', S.slug); document.getElementById('btn-fork').hidden = true; });
+document.getElementById('connect-show')?.addEventListener('click', (e) => { e.preventDefault(); document.getElementById('connect-body').hidden = false; });
+
+async function connectRepo(repo) {
+  const pill = document.getElementById('connect-pill');
+  // branches are munni's own: dev when it exists, else the default branch
+  const dev = await gh(`/repos/${S.slug}/branches/dev`, { allow404: true });
+  S.ref = dev ? 'dev' : repo.default_branch;
+  LS.set('ref', S.ref);
+  const ci = await gh(`/repos/${S.slug}/contents/.github/workflows/iac.yml?ref=${encodeURIComponent(S.ref)}`, { allow404: true });
+  if (!ci) {
+    S.user = null;
+    pill.textContent = 'repo has no munni pipeline';
+    pill.className = 'pill bad';
+    msg('msg-connect', `${repo.full_name} exists but does not carry munni (.github/workflows/iac.yml missing on ${S.ref}). Point at a repo that does — or type a NEW repo name and Connect again, and this page forks ${UPSTREAM} under it for you (a fork cannot land on an existing repo).`, false);
+    return;
+  }
+  pill.textContent = `connected as ${S.user.login} ✓`;
+  pill.className = 'pill ok';
+  document.getElementById('btn-store-pat').disabled = false;
+  document.getElementById('btn-refresh').disabled = false;
+  msg('msg-connect', `Repo ${repo.full_name} ready (branch ${S.ref}). Loading live status…`, true);
+  await refresh();
+  await checkManifest();
+  msg('msg-connect', `Repo ${repo.full_name} ready (branch ${S.ref}). Live status loaded — dots and pills below reflect reality.`, true);
+}
 
 document.getElementById('btn-connect').addEventListener('click', async () => {
   S.pat = document.getElementById('in-pat').value.trim();
   const pill = document.getElementById('connect-pill');
+  document.getElementById('btn-fork').hidden = true;
   try {
     if (!S.pat) throw new Error('Paste the PAT first.');
-    const [user, repo] = await Promise.all([gh('/user'), gh(`/repos/${S.slug}`)]);
-    S.user = user;
-    pill.textContent = `connected as ${user.login} ✓`;
-    pill.className = 'pill ok';
-    msg('msg-connect', `Repo ${repo.full_name} reachable (default branch ${repo.default_branch}). Loading live status…`, true);
-    document.getElementById('btn-store-pat').disabled = false;
-    document.getElementById('btn-refresh').disabled = false;
-    await refresh();
-    await checkManifest();
-    msg('msg-connect', `Repo ${repo.full_name} reachable. Live status loaded — dots and pills below reflect reality.`, true);
+    if (!/^[^/\s]+\/[^/\s]+$/.test(S.slug)) throw new Error('The repository must be owner/name.');
+    S.user = await gh('/user');
+    const repo = await gh(`/repos/${S.slug}`, { allow404: true });
+    if (!repo) {
+      pill.textContent = 'repo does not exist yet';
+      pill.className = 'pill warn';
+      document.getElementById('btn-fork').hidden = false;
+      msg('msg-connect', `${S.slug} does not exist. I can create it as YOUR fork of ${UPSTREAM} — all branches, upstream link kept for pulling updates. The PAT must cover All repositories for this (see the token how-to).`, false);
+      return;
+    }
+    await connectRepo(repo);
   } catch (e) {
     S.user = null;
     pill.textContent = 'not connected';
+    pill.className = 'pill bad';
+    msg('msg-connect', String(e.message || e), false);
+  }
+});
+
+document.getElementById('btn-fork').addEventListener('click', async () => {
+  const pill = document.getElementById('connect-pill');
+  try {
+    if (!S.user) throw new Error('Connect first so I know who you are.');
+    const [owner, name] = S.slug.split('/');
+    const body = { name, default_branch_only: false };
+    if (owner.toLowerCase() !== S.user.login.toLowerCase()) body.organization = owner;
+    await gh(`/repos/${UPSTREAM}/forks`, { method: 'POST', body: JSON.stringify(body) });
+    msg('msg-connect', 'Fork requested — GitHub copies the repository in the background, this usually takes a few seconds…', true);
+    pill.textContent = 'forking…';
+    pill.className = 'pill warn';
+    let repo = null;
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 3000));
+      repo = await gh(`/repos/${S.slug}`, { allow404: true });
+      if (repo && (await gh(`/repos/${S.slug}/contents/.github/workflows/iac.yml?ref=${encodeURIComponent(repo.default_branch)}`, { allow404: true }))) break;
+    }
+    if (!repo) throw new Error('the fork never appeared — check the PAT covers All repositories, then retry.');
+    // workflows arrive disabled on forks — enable them so the buttons work
+    await gh(`/repos/${S.slug}/actions/permissions`, { method: 'PUT', body: JSON.stringify({ enabled: true, allowed_actions: 'all' }) })
+      .catch(() => msg('msg-connect', 'Fork ready, but Actions could not be enabled via the API — flip it on under the repo Settings → Actions.', false));
+    document.getElementById('btn-fork').hidden = true;
+    await connectRepo(repo);
+  } catch (e) {
+    pill.textContent = 'fork failed';
     pill.className = 'pill bad';
     msg('msg-connect', String(e.message || e), false);
   }
@@ -1562,13 +1627,20 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
   }
 });
 document.getElementById('btn-local-verify')?.addEventListener('click', () => streamLocal('/api/local/run', { verify: true }, 'verify munni-local'));
+document.getElementById('btn-local-logto-auto')?.addEventListener('click', () =>
+  streamLocal('/api/local/logto-setup', {}, 'set up sign-in (infra credential + apps as code, zero input)'));
+document.getElementById('btn-local-subs')?.addEventListener('click', async () => {
+  const subs = document.getElementById('in-local-subs').value.trim();
+  if (!subs) { localLog('\nPaste your Logto User ID first.\n'); return; }
+  if (await streamLocal('/api/local/run', { values: { NAS_ADMIN_SUBS: subs } }, 'store admin access (NAS_ADMIN_SUBS)')) {
+    await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'restart the api with admin access');
+  }
+});
 document.getElementById('btn-local-oobe')?.addEventListener('click', async () => {
   const values = {
     IAC_LOGTO_INFRA_M2M_ID: document.getElementById('in-local-m2m-id').value.trim(),
     IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById('in-local-m2m-secret').value.trim(),
   };
-  const subs = document.getElementById('in-local-subs').value.trim();
-  if (subs) values.NAS_ADMIN_SUBS = subs;
   if (!values.IAC_LOGTO_INFRA_M2M_ID || !values.IAC_LOGTO_INFRA_M2M_SECRET) { localLog('\nBoth the app id and the secret are needed.\n'); return; }
   if (await streamLocal('/api/local/run', { values }, 'apply sign-in setup (logto apps as code)')) {
     document.getElementById('in-local-m2m-secret').value = '';

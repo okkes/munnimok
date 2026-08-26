@@ -124,6 +124,67 @@ test('validate passes only manifest operator names through, merged over the stor
   assert.equal(validations[0].values.RANDOM, undefined);
 });
 
+test('logto-setup: inserts the M2M app via psql, hands the credential to bootstrap, masks the secret', async () => {
+  const spawned = [];
+  const spawnScript = (cmd, args, opts) => {
+    spawned.push({ cmd, args, opts });
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => {
+      if (spawned.length === 1) child.stdout.emit('data', 'INSERT 0 1\nINSERT 0 1\n');
+      else if (spawned.length === 2) child.stdout.emit('data', '  logto: apps upserted (web w1, admin a1, native n1)\n');
+      else child.stdout.emit('data', 'ok\n');
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  const app2 = createApp({ token: 'tok', spawnImpl: spawnScript, probeImpl: async () => false });
+  const res = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/logto-setup', token: 'tok', body: {} }), res);
+  for (let i = 0; i < 50 && !res.ended; i++) await new Promise((r) => setTimeout(r, 10));
+
+  assert.equal(spawned.length, 3, 'expected psql → bootstrap → compose up');
+  const psql = spawned[0];
+  assert.equal(psql.cmd, 'docker');
+  assert.ok(psql.args.includes('psql'));
+  const insertSql = psql.args.join(' ');
+  assert.match(insertSql, /insert into applications /);
+  assert.match(insertSql, /Logto Management API access/);
+  const boot = spawned[1];
+  assert.equal(boot.cmd, process.execPath);
+  const id = boot.opts.env.IAC_LOGTO_INFRA_M2M_ID;
+  const secret = boot.opts.env.IAC_LOGTO_INFRA_M2M_SECRET;
+  assert.match(id, /^infra[a-f0-9]{16}$/);
+  assert.equal(id.length, 21);
+  assert.equal(secret.length, 48);
+  assert.ok(insertSql.includes(id), 'psql insert must carry the same app id');
+  const stream = res.chunks.join('');
+  assert.ok(!stream.includes(secret), 'the M2M secret leaked into the page stream');
+  assert.match(stream, /\[exit 0\]/);
+  assert.deepEqual(spawned[2].args.slice(-2), ['up', '-d']);
+});
+
+test('logto-setup fails loudly when bootstrap never reports the upsert', async () => {
+  const spawnScript = (cmd, args) => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    queueMicrotask(() => {
+      child.stdout.emit('data', args.includes('psql') ? 'INSERT 0 1\n' : 'logto: unreachable or failed (fetch failed)\n');
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  const app2 = createApp({ token: 'tok', spawnImpl: spawnScript, probeImpl: async () => false });
+  const res = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/logto-setup', token: 'tok', body: {} }), res);
+  for (let i = 0; i < 50 && !res.ended; i++) await new Promise((r) => setTimeout(r, 10));
+  const stream = res.chunks.join('');
+  assert.match(stream, /\[exit 1\]/);
+  assert.match(stream, /did not accept the credential/);
+});
+
 test('status reports store NAMES and service probes, never values', async () => {
   const res = fakeRes();
   await app(fakeReq({ url: '/api/local/status', token: 'tok' }), res);
