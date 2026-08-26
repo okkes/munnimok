@@ -193,7 +193,7 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 
     <div class="card">
       <h3>The full local twin <span class="pill">whole product, released images</span></h3>
-      <p class="why">The complete ecosystem — app, admin, API, Logto, GlitchTip, Postgres — on localhost ports, from the same public images the NAS runs. Fill the credentials you want in step 3 (they land in a gitignored store on this machine — GitHub is not involved), then:</p>
+      <p class="why">One button does the whole thing: mints the secrets, starts every container, waits for Logto and GlitchTip to come up and wires them in automatically — sign-in apps and crash tracking included, nothing else to click. Credentials from step 3 join in whenever you save them (before or after); pressing it again is always safe, it only fills gaps.</p>
       <div class="runrow">
         <button id="btn-local-setup">Set up &amp; start munni</button>
         <button class="ghost" data-local-tool="twin-down">Stop</button>
@@ -203,10 +203,10 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
     </div>
 
     <div class="card">
-      <h3>Sign-in (Logto) <span class="dot" data-localdot="NAS_LOGTO_M2M_APP_ID"></span></h3>
-      <p class="why">Fully automatic here: munni deploys Logto itself, so this button plants the infra credential straight into it, turns apps + redirect URIs + the API resource into code and restarts web/admin. No console visit needed — the Logto console (<a href="http://localhost:3202" target="_blank" rel="noreferrer">localhost:3202</a>) stays yours to claim later if you want to browse it.</p>
-      <p class="msg bad" id="local-logto-warn" hidden>Logto isn't answering yet — run step 4's Set up first and wait for the logto dot above to turn green, then press this.</p>
-      <button id="btn-local-logto-auto">Set up sign-in automatically</button>
+      <h3>Sign-in (Logto) <span class="dot" data-localdot="NAS_LOGTO_M2M_APP_ID"></span> <span class="pill" id="local-signin-pill"></span></h3>
+      <p class="why">Configured automatically by step 4's Set up — when the dot is green, munni's sign-in is LIVE: open <a href="http://localhost:8380" target="_blank" rel="noreferrer">the app</a> and create your account there. Heads-up: the Logto console at <a href="http://localhost:3202" target="_blank" rel="noreferrer">localhost:3202</a> keeps showing its own “Create account” welcome — that page is Logto managing itself (optional, claim it whenever you like); it is NOT part of munni's setup and no munni step will make it disappear.</p>
+      <p class="msg bad" id="local-logto-warn" hidden>Logto isn't answering yet — run step 4's Set up first and wait for the logto dot above to turn green.</p>
+      <button class="ghost" id="btn-local-logto-auto">Re-run sign-in setup</button>
       <label class="f" for="in-local-subs">NAS_ADMIN_SUBS — your Logto User ID, unlocks the admin console (optional: sign up in the app first, find the ID under User management at localhost:3202)</label>
       <input type="text" id="in-local-subs" placeholder="usr_…" autocomplete="off"/>
       <button class="ghost" id="btn-local-subs">Store admin access</button>
@@ -223,9 +223,9 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
     </div>
 
     <div class="card">
-      <h3>Crash reports (GlitchTip, optional) <span class="dot" data-localdot="VITE_GLITCHTIP_DSN"></span></h3>
-      <p class="why">Nothing to create by hand: munni deploys GlitchTip itself, so this button creates the first admin account INSIDE it, mints the API token, creates the org + projects and wires every DSN in. The console login it creates (for <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a>) is printed in the output once and kept in the local secret store.</p>
-      <button id="btn-local-gt-auto">Set up crash tracking automatically</button>
+      <h3>Crash reports (GlitchTip, optional) <span class="dot" data-localdot="VITE_GLITCHTIP_DSN"></span> <span class="pill" id="local-gt-pill"></span></h3>
+      <p class="why">Configured automatically by step 4's Set up: it creates the first admin account INSIDE GlitchTip, mints the API token, creates the org + projects and wires every DSN in. The console login it generates (for <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a>) is printed in the output once and kept in the local secret store.</p>
+      <button class="ghost" id="btn-local-gt-auto">Re-run crash-tracking setup</button>
       <details class="how"><summary>Manual fallback — bring your own account/token instead</summary>
         <p>Register at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> → profile → <b>Auth Tokens</b> → create one → paste:</p>
         <label class="f" for="in-local-gt">IAC_GLITCHTIP_API_TOKEN</label>
@@ -1148,6 +1148,14 @@ async function refreshLocal() {
     pill.textContent = up ? 'running ✓' : (st.rendered ? 'set up — not running' : 'not set up yet');
     pill.className = 'pill ' + (up ? 'ok' : '');
     document.getElementById('local-logto-warn').hidden = st.services.logto;
+    const signinDone = st.stored.includes('NAS_LOGTO_M2M_APP_ID');
+    const signinPill = document.getElementById('local-signin-pill');
+    signinPill.textContent = signinDone ? 'app sign-in live ✓' : 'runs with step 4';
+    signinPill.className = 'pill ' + (signinDone ? 'ok' : '');
+    const gtDone2 = st.stored.includes('VITE_GLITCHTIP_DSN');
+    const gtPill = document.getElementById('local-gt-pill');
+    gtPill.textContent = gtDone2 ? 'wired ✓' : 'runs with step 4';
+    gtPill.className = 'pill ' + (gtDone2 ? 'ok' : '');
     renderStatus();
   } catch (e) {
     box.textContent = `helper unreachable (${e.message}) — restart infra/setup/start.cmd and reload`;
@@ -1159,6 +1167,34 @@ const localLog = (text) => {
   log.textContent = (log.textContent + text).slice(-200000);
   log.scrollTop = log.scrollHeight;
 };
+
+/** quiet run: store-style operations shouldn't flood the output box —
+ * the response is read whole and only failures land in the log */
+async function runLocalQuiet(body) {
+  const res = await hfetch('/api/local/run', { method: 'POST', body: JSON.stringify(body) });
+  const text = await res.text();
+  const ok = res.ok && /\[exit 0\]/.test(text.slice(-40));
+  if (!ok) localLog(`\n${text}\n`);
+  return ok;
+}
+
+/** poll /status until the named services answer (progress into the log) */
+async function waitForServices(need, label, timeoutMs = 300000) {
+  const started = Date.now();
+  localLog(`\n▶ ${label}\n`);
+  for (;;) {
+    let st = null;
+    try { st = await (await hfetch('/api/local/status')).json(); } catch { /* helper hiccup — keep polling */ }
+    const missing = st ? need.filter((k) => !st.services[k]) : need;
+    if (!missing.length) { localLog(`✓ ${label}\n`); return st; }
+    if (Date.now() - started > timeoutMs) {
+      localLog(`✗ ${label}: still waiting on ${missing.join(', ')} — check the output above / docker ps, then press Set up again (it resumes where it left off).\n`);
+      return null;
+    }
+    localLog(`… ${missing.join(', ')} not up yet (${Math.round((Date.now() - started) / 1000)}s — first image pulls and seeds take a while)\n`);
+    await new Promise((r) => setTimeout(r, 8000));
+  }
+}
 
 async function streamLocal(path, body, label) {
   if (!HELPER) return false;
@@ -1214,7 +1250,7 @@ function applyPlatform() {
   document.getElementById('connect-local-note').hidden = S.platform !== 'local';
   document.getElementById('connect-body').hidden = S.platform === 'local' && !S.user;
   document.getElementById('creds-sub').textContent = S.platform === 'local'
-    ? 'Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — with the local helper running, they land in a gitignored secret store on THIS machine (GitHub is not involved for the local twin) and step 4 uses them.'
+    ? 'Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Save — with the local helper running, they land in a gitignored secret store on THIS machine (GitHub is not involved for the local twin) and step 4 uses them.'
     : "Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — this page encrypts them client-side (GitHub's sealed-box contract) and writes repository or environment secrets directly. Values are write-only from then on; the dots show presence, never content.";
   renderFeatures();
   renderCards();
@@ -1279,7 +1315,7 @@ function renderCards() {
         <label class="f" for="field-${f.name}">${f.name} <span class="envtag">${scopeTag(f)}</span></label>
         ${f.area ? `<textarea id="field-${f.name}" data-secret="${f.name}" data-scope="${f.scope}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''}></textarea>`
                  : `<input id="field-${f.name}" type="${f.secret ? 'password' : 'text'}" data-secret="${f.name}" data-scope="${f.scope}" placeholder="${f.ph ?? ''}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''} autocomplete="off"/>`}`).join('')}
-      <button data-store-group="${g.id}">${local ? 'Store on this machine' : 'Store'}</button>${g.check ? `
+      <button data-store-group="${g.id}">${local ? 'Save' : 'Store'}</button>${g.check ? `
       <button class="ghost" data-check-group="${g.id}">Check</button>` : ''}
       <div class="msg" id="msg-group-${g.id}"></div>
     </div>`).join('');
@@ -1288,7 +1324,7 @@ function renderCards() {
   // any edit resets a pending "Store anyway" back to the validating Store
   wrap.querySelectorAll('.card').forEach((card) => card.addEventListener('input', () => {
     const store = card.querySelector('[data-store-group]');
-    if (store?.dataset.force) { delete store.dataset.force; store.textContent = S.platform === 'local' ? 'Store on this machine' : 'Store'; }
+    if (store?.dataset.force) { delete store.dataset.force; store.textContent = S.platform === 'local' ? 'Save' : 'Store'; }
   }));
   wrap.querySelectorAll('[data-secret]').forEach((el) => { if (!el.value && typed[el.dataset.secret]) el.value = typed[el.dataset.secret]; });
   wrap.querySelectorAll('.card').forEach((card) => { if (openHow.has(card.dataset.group)) { const d = card.querySelector('details.how'); if (d) d.open = true; } });
@@ -1327,17 +1363,19 @@ async function storeGroup(id) {
     } catch { verdictNote = ' — could not verify (check failed)'; }
   }
   delete storeBtn.dataset.force;
-  storeBtn.textContent = S.platform === 'local' ? 'Store on this machine' : 'Store';
+  storeBtn.textContent = S.platform === 'local' ? 'Save' : 'Store';
 
   if (S.platform === 'local') {
-    if (!HELPER) { msg('msg-group-' + id, 'Start the local helper first (double-click infra\\setup\\start.cmd) — then this page can store values on this machine.', false); return; }
+    if (!HELPER) { msg('msg-group-' + id, 'Start the local helper first (double-click infra\\setup\\start.cmd) — then this page can save values on this machine.', false); return; }
+    msg('msg-group-' + id, 'saving…', true);
     const values = Object.fromEntries(entries.map((e) => [e.name, e.value]));
-    const ok = await streamLocal('/api/local/run', { values }, `store ${entries.map((e) => e.name).join(', ')}`);
+    const ok = await runLocalQuiet({ values });
     if (ok) {
       card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
-      msg('msg-group-' + id, `Stored on this machine ✓ (${entries.map((e) => e.name).join(', ')})${verdictNote}`, true);
+      msg('msg-group-' + id, `Saved ✓ — kept in this machine's gitignored store; step 4 uses it (running containers pick it up on the next Set up)${verdictNote}`, true);
+      await refreshLocal();
     } else {
-      msg('msg-group-' + id, 'Storing failed — see the output box in step 4.', false);
+      msg('msg-group-' + id, 'Saving failed — details in the step-4 output box.', false);
     }
     return;
   }
@@ -1621,9 +1659,31 @@ document.querySelectorAll('pre button.copy').forEach((btn) => btn.addEventListen
 document.getElementById('local-nohelper').hidden = Boolean(HELPER);
 document.getElementById('local-helper-ui').hidden = !HELPER;
 document.getElementById('btn-local-refresh')?.addEventListener('click', () => refreshLocal());
+/* the ONE local button: start everything, then wire Logto + GlitchTip in
+   automatically the moment they answer (user ruling: no extra clicks).
+   Idempotent — done parts are skipped, so re-pressing resumes/repairs. */
 document.getElementById('btn-local-setup')?.addEventListener('click', async () => {
-  if (await streamLocal('/api/local/run', {}, 'bootstrap munni-local (mint secrets + render)')) {
-    await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'docker compose up (pulls images on first run — can take a while)');
+  const btn = document.getElementById('btn-local-setup');
+  btn.disabled = true;
+  try {
+    if (!(await streamLocal('/api/local/run', {}, 'mint secrets + render the stack'))) return;
+    if (!(await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'start the containers (first run pulls images — can take a while)'))) return;
+    const st = await waitForServices(['logto', 'glitchtip'], 'wait for Logto + GlitchTip to come up');
+    if (!st) return;
+    if (!st.stored.includes('NAS_LOGTO_M2M_APP_ID')) {
+      if (!(await streamLocal('/api/local/logto-setup', {}, 'wire sign-in (automatic)'))) return;
+    } else {
+      localLog('\n✓ sign-in already wired — skipped\n');
+    }
+    if (!st.stored.includes('VITE_GLITCHTIP_DSN')) {
+      if (!(await streamLocal('/api/local/glitchtip-setup', {}, 'wire crash tracking (automatic)'))) return;
+    } else {
+      localLog('\n✓ crash tracking already wired — skipped\n');
+    }
+    localLog('\n══ munni is ready → open http://localhost:8380 and create your account. ══\n(The page at localhost:3202 is Logto’s own optional console — its Create-account welcome is normal and not part of munni’s setup.)\n');
+  } finally {
+    btn.disabled = false;
+    await refreshLocal();
   }
 });
 document.getElementById('btn-local-verify')?.addEventListener('click', () => streamLocal('/api/local/run', { verify: true }, 'verify munni-local'));
