@@ -1,9 +1,10 @@
 // munni-local-prod — the local PRODUCTION-like environment (plan LS2):
-// its own web/admin/api and its OWN Logto (per-environment identity,
-// plan LS3 — isolated user pool, account deletion always safe). Rides
-// munni-local-shared for Postgres/GlitchTip/Vault/OCR. Keeps the former
-// munni-local twin's ports, so existing bank-consent redirects
-// (http://localhost:8380/gc-callback) stay valid.
+// its own web/admin/api, its OWN Logto (per-environment identity, plan
+// LS3) and its OWN postgres (data isolation — deleting this stack can
+// never touch another environment's data). Rides munni-local-shared only
+// for GlitchTip/Vault/OCR/pgAdmin. Keeps the former munni-local twin's
+// ports, so bank-consent redirects (http://localhost:8380/gc-callback)
+// stay valid.
 {
   "stack": "munni-local-prod",
   "pair": "munni-local-prod",
@@ -13,7 +14,6 @@
   "channel": "dev",
   "target": "local",
   "sharedStack": "munni-local-shared",
-  "dbSuffix": "prod",
   "appChannel": "production",
 
   "domain": "localhost",

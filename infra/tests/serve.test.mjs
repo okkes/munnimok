@@ -164,8 +164,8 @@ test('logto-setup targets the chosen environment and reuses the stored credentia
   const psql = spawned[0];
   assert.equal(psql.cmd, 'docker');
   assert.ok(psql.args.includes('psql'));
-  assert.ok(psql.args.join(' ').includes('docker-compose.munni-local-shared.yml'), 'postgres lives in the SHARED stack');
-  assert.deepEqual(psql.args.slice(psql.args.indexOf('-d'), psql.args.indexOf('-d') + 2), ['-d', 'logto_dev']);
+  assert.ok(psql.args.join(' ').includes('docker-compose.munni-local-dev.yml'), 'the env runs its OWN postgres');
+  assert.deepEqual(psql.args.slice(psql.args.indexOf('-d'), psql.args.indexOf('-d') + 2), ['-d', 'logto']);
   const insertSql = psql.args.join(' ');
   assert.match(insertSql, /insert into applications /);
   assert.match(insertSql, /on conflict \(id\) do nothing/i);
@@ -260,7 +260,7 @@ test('status reports per-stack store NAMES, requirements and probes — never va
   const body = JSON.parse(res.chunks.join(''));
   assert.deepEqual(Object.keys(body.stacks), LOCAL_STACKS);
   const shared = body.stacks['munni-local-shared'];
-  assert.deepEqual(shared.services, { glitchtip: false, vault: false, control: false });
+  assert.deepEqual(shared.services, { glitchtip: false, vault: false, control: false, pgadmin: false });
   assert.ok(shared.required.includes('NAS_GHCR_PAT'), 'family roots are the shared stack\'s asks');
   const prod = body.stacks['munni-local-prod'];
   assert.deepEqual(prod.services, { web: false, api: false, logto: false });
@@ -278,6 +278,7 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
     ...loadLocalValues(prodStack),
     NAS_PUSH_VAPID_PRIVATE_KEY: 'vapid-secret-x',
     NAS_GOCARDLESS_SECRET_ID: 'gc-id-1',
+    NAS_PGADMIN_PASSWORD: 'pgadmin-pw-long',
     GLITCHTIP_ADMIN_EMAIL: 'admin@munni.local',
     // ≥12 chars: the glitchtip-setup endpoint REUSES a stored password,
     // and its own spec asserts real-password length
@@ -302,6 +303,7 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
   assert.equal(exported.encrypted, false);
   const names = exported.items.map((i) => i.name);
   assert.ok(names.includes('munni local / GlitchTip console'));
+  assert.ok(names.includes('munni local / pgAdmin'), 'pgAdmin login rides the export');
   assert.ok(names.includes('munni-local-shared / NAS_GOCARDLESS_SECRET_ID'));
   assert.ok(!JSON.stringify(exported).includes('vapid-secret-x'), 'VAPID key leaked into the vault export');
   const gt = exported.items.find((i) => i.name === 'munni local / GlitchTip console');

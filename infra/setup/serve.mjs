@@ -140,6 +140,7 @@ async function statusEndpoint(res, probeImpl) {
     if (stack.urls.glitchtip) probes.push(['glitchtip', probeImpl(`${stack.urls.glitchtip}/api/0/`)]);
     if (stack.urls.vault) probes.push(['vault', probeImpl(`${stack.urls.vault}/alive`)]);
     if (stack.urls.control) probes.push(['control', probeImpl(stack.urls.control)]);
+    if (stack.urls.pgadmin) probes.push(['pgadmin', probeImpl(`${stack.urls.pgadmin}/misc/ping`)]);
     for (const [key, p] of probes) services[key] = await p;
     const own = loadLocalValues(stack);
     stacks[name] = {
@@ -204,20 +205,20 @@ const logtoApi = async (base, token, path, init = {}) => {
   return res.status === 204 ? null : res.json();
 };
 
-const sharedPsql = (db, sql) => [
-  ...composeArgs(SHARED_STACK), 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1',
+/** psql inside the ENVIRONMENT's own postgres (each env runs its own) */
+const envPsql = (stackName, db, sql) => [
+  ...composeArgs(stackName), 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1',
   ...sql.flatMap((s) => ['-c', s]),
 ];
 /** single-VALUE query: -At strips headers/footers so out.trim() IS the value */
-const sharedPsqlValue = (db, sql) => [
-  ...composeArgs(SHARED_STACK), 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', sql,
+const envPsqlValue = (stackName, db, sql) => [
+  ...composeArgs(stackName), 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', sql,
 ];
 
 async function claimLogtoHumans(res, run, stack, infra) {
-  const logtoDb = `logto_${stack.dbSuffix}`;
   const secretStep = await run(res, 'read the console machine credential (inside postgres)', 'docker',
-    sharedPsqlValue(logtoDb, "select secret from applications where tenant_id='admin' and id='m-admin';"),
-    { cwd: renderedDir(SHARED_STACK), mask: () => '(captured)\n' });
+    envPsqlValue(stack.stack, 'logto', "select secret from applications where tenant_id='admin' and id='m-admin';"),
+    { cwd: renderedDir(stack.stack), mask: () => '(captured)\n' });
   const mSecret = secretStep.code === 0 ? secretStep.out.trim() : '';
   if (!/^[0-9a-zA-Z_-]{16,}$/.test(mSecret)) {
     res.write('could not read the console machine credential — account auto-claim skipped\n');
@@ -279,14 +280,13 @@ async function logtoSetupEndpoint(req, res, spawnImpl) {
   const id = values.IAC_LOGTO_INFRA_M2M_ID ?? `infra${randomBytes(8).toString('hex')}`;
   const secret = values.IAC_LOGTO_INFRA_M2M_SECRET ?? randomBytes(24).toString('hex');
   const linkId = `link0${randomBytes(8).toString('hex')}`;
-  const logtoDb = `logto_${stack.dbSuffix}`;
   const sqlApp = `insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('default', '${id}', 'infra (munni setup)', '${secret}', 'created by the munni setup wizard', 'MachineToMachine', '{"redirectUris":[],"postLogoutRedirectUris":[]}', '{}') on conflict (id) do nothing;`;
   const sqlRole = `insert into applications_roles (tenant_id, id, application_id, role_id) select 'default', '${linkId}', '${id}', r.id from roles r where r.tenant_id = 'default' and r.name = '${LOGTO_MGMT_ROLE}' on conflict do nothing;`;
   const ins = await run(res, `seed the infra M2M app inside ${stack.stack}'s Logto`, 'docker',
-    sharedPsql(logtoDb, [sqlApp, sqlRole]),
-    { cwd: renderedDir(SHARED_STACK), mask: (s) => s.replaceAll(secret, '(secret)') });
+    envPsql(stack.stack, 'logto', [sqlApp, sqlRole]),
+    { cwd: renderedDir(stack.stack), mask: (s) => s.replaceAll(secret, '(secret)') });
   if (ins.code !== 0) {
-    res.write('\nAre the shared stack AND this environment running (step 4)? The logto dot must be green — then retry.\n');
+    res.write('\nIs this environment running (step 4)? Its logto dot must be green — then retry.\n');
     return res.end('[exit 1]\n');
   }
   res.write(`\nInfra app id: ${id} — the secret goes straight into the local secret store, never shown.\n`);
@@ -464,14 +464,22 @@ function vaultExportEndpoint(res) {
       notes: 'created by the munni setup wizard',
     }));
   }
-  if (shared.NAS_POSTGRES_PASSWORD) {
-    items.push(item('munni local / Postgres', { username: 'munni', password: shared.NAS_POSTGRES_PASSWORD, notes: 'shared server: munni_*/logto_*/glitchtip databases' }));
+  if (shared.NAS_PGADMIN_PASSWORD) {
+    items.push(item('munni local / pgAdmin', { username: 'admin@munni.dev', password: shared.NAS_PGADMIN_PASSWORD, uri: 'http://localhost:8386', notes: 'one console over every database server in the family' }));
   }
   const skip = new Set(['NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY']);
-  const covered = new Set(['GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_POSTGRES_PASSWORD']);
+  const covered = new Set(['GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_PGADMIN_PASSWORD']);
+  const pgNote = {
+    [SHARED_STACK]: 'the glitchtip-db server (shared stack)',
+    'munni-local-prod': 'production’s own postgres (munni + logto databases)',
+    'munni-local-dev': 'development’s own postgres (munni + logto databases)',
+  };
   for (const stackName of LOCAL_STACKS) {
     const stack = loadStack(stackName);
     const values = loadLocalValues(stack);
+    if (values.NAS_POSTGRES_PASSWORD) {
+      items.push(item(`${stackName} / Postgres`, { username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: pgNote[stackName] ?? '' }));
+    }
     if (values.LOGTO_CONSOLE_USERNAME) {
       items.push(item(`${stackName} / Logto console`, { username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '' }));
     }
@@ -481,7 +489,7 @@ function vaultExportEndpoint(res) {
     if (values.IAC_LOGTO_INFRA_M2M_ID) {
       items.push(item(`${stackName} / Logto infra M2M`, { username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '' }));
     }
-    const localCovered = new Set([...covered, 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD', 'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET']);
+    const localCovered = new Set([...covered, 'NAS_POSTGRES_PASSWORD', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD', 'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET']);
     for (const [name, value] of Object.entries(values)) {
       if (localCovered.has(name) || skip.has(name) || !value) continue;
       items.push(item(`${stackName} / ${name}`, { password: String(value), notes: 'from the munni setup wizard local store' }));

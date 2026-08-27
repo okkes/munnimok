@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { listStacks, loadStack, pairProd } from './stack.mjs';
+import { loadStack, pairProd } from './stack.mjs';
 
 /** the docker network local env stacks share with munni-local-shared */
 export const LOCAL_SHARED_NET = 'munni-local-shared-net';
@@ -26,23 +26,20 @@ export function renderStack(stack, values) {
   mkdirSync(join(dir, 'initdb'), { recursive: true });
 
   if (stack.target === 'local' && stack.role === 'shared') {
-    // the local SHARED stack (plan LS1): postgres for every consumer,
-    // glitchtip, vault, ocr, munni-control
+    // the local SHARED stack (plan LS1): glitchtip (own db), vault, ocr,
+    // munni-control, pgAdmin over the whole family
     writeFileSync(join(dir, `docker-compose.${stack.stack}.yml`), sharedLocalCompose(stack));
     writeFileSync(join(dir, `.env.${stack.stack}`), substitute(sharedLocalTemplate(stack), values));
-    const dbs = sharedConsumers(stack)
-      .flatMap((c) => [`CREATE DATABASE munni_${c.dbSuffix};`, `CREATE DATABASE logto_${c.dbSuffix};`])
-      .concat('CREATE DATABASE glitchtip;');
-    writeFileSync(join(dir, 'initdb', '01-create-databases.sql'), `${dbs.join('\n')}\n`);
+    writeFileSync(join(dir, 'pgadmin-servers.json'), `${pgadminServers(stack)}\n`);
     return dir;
   }
 
   if (stack.target === 'local' && stack.sharedStack) {
-    // a local ENV stack (plan LS2/LS3): web/admin/api + its OWN logto,
-    // riding the shared stack over the shared network
+    // a local ENV stack (plan LS2/LS3): web/admin/api + its OWN logto
+    // and OWN postgres, riding the shared stack only for glitchtip/ocr
     writeFileSync(join(dir, `docker-compose.${stack.stack}.yml`), envLocalCompose(stack));
     writeFileSync(join(dir, `.env.${stack.stack}`), substitute(envLocalTemplate(stack), values));
-    writeFileSync(join(dir, 'initdb', '01-create-databases.sql'), '-- databases live on the shared stack\n');
+    writeFileSync(join(dir, 'initdb', '01-create-databases.sql'), 'CREATE DATABASE logto;\n');
     return dir;
   }
 
@@ -55,18 +52,6 @@ export function renderStack(stack, values) {
     stack.sharedServices ? 'CREATE DATABASE logto;\nCREATE DATABASE glitchtip;\n' : '-- no side databases: shared services live on the prod twin\n',
   );
   return dir;
-}
-
-/** local env stacks that declared THIS stack as their shared home
- * (stacks that fail to load — iac files needing IAC_DOMAIN — can never
- * be local consumers, skip them) */
-export function sharedConsumers(sharedStack) {
-  return listStacks()
-    .filter((name) => name !== sharedStack.stack)
-    .map((name) => {
-      try { return loadStack(name); } catch { return null; }
-    })
-    .filter((s) => s?.sharedStack === sharedStack.stack);
 }
 
 const substitute = (text, values) =>
@@ -358,8 +343,9 @@ function sharedLocalCompose(s) {
   const control = loadStack(s.controlApi);
   return `# ${s.stack} — RENDERED by infra/bootstrap.mjs, do not edit by hand.
 # The local machine's cross-environment services. Environment stacks join
-# the "${LOCAL_SHARED_NET}" network to reach postgres/glitchtip/ocr by
-# service name; only browser-facing ports are published.
+# the "${LOCAL_SHARED_NET}" network to reach glitchtip/ocr by service
+# name; each environment runs its OWN postgres (isolation ruling) and
+# only publishes a pgAdmin-facing alias here.
 name: ${s.stack}
 
 networks:
@@ -367,16 +353,17 @@ networks:
     name: ${LOCAL_SHARED_NET}
 
 services:
-  postgres:
+  # GlitchTip's OWN database — nothing else lives on this server (the
+  # environments each run their own postgres)
+  glitchtip-db:
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: munni
       POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
-      POSTGRES_DB: munni
+      POSTGRES_DB: glitchtip
     volumes:
-      - pgdata:/var/lib/postgresql
-      - ./initdb:/docker-entrypoint-initdb.d:ro
+      - glitchtipdb:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U munni"]
       interval: 5s
@@ -389,14 +376,14 @@ services:
     restart: "no"
     command: ./manage.py migrate
     environment: &glitchtip_env
-      DATABASE_URL: postgres://munni:\${POSTGRES_PASSWORD}@postgres:5432/glitchtip
+      DATABASE_URL: postgres://munni:\${POSTGRES_PASSWORD}@glitchtip-db:5432/glitchtip
       REDIS_URL: redis://valkey:6379/0
       SECRET_KEY: \${GLITCHTIP_SECRET_KEY}
       GLITCHTIP_DOMAIN: ${s.urls.glitchtip}
       EMAIL_URL: \${GLITCHTIP_EMAIL_URL:-consolemail://}
       CELERY_WORKER_AUTOSCALE: "1,3"
     depends_on:
-      postgres:
+      glitchtip-db:
         condition: service_healthy
     networks: [shared]
 
@@ -457,10 +444,55 @@ services:
     ports:
       - "${p.control}:80"
 
+  # ONE console over every database in the family: glitchtip-db here plus
+  # each environment's own postgres (reachable as postgres-prod /
+  # postgres-dev on the shared network). Passwords differ per server —
+  # they live under Reveal secrets in the setup wizard.
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    restart: unless-stopped
+    environment:
+      # must be a resolvable-TLD address — pgadmin refuses .local
+      PGADMIN_DEFAULT_EMAIL: admin@munni.dev
+      PGADMIN_DEFAULT_PASSWORD: \${PGADMIN_PASSWORD}
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmindata:/var/lib/pgadmin
+      - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
+    ports:
+      - "${p.pgadmin}:80"
+    depends_on:
+      glitchtip-db:
+        condition: service_healthy
+    networks: [shared]
+
 volumes:
-  pgdata:
+  glitchtipdb:
   vaultdata:
+  pgadmindata:
 `;
+}
+
+/** pgAdmin's preregistered server list — one entry per database server
+ * in the family. Passwords are NOT stored here (pgAdmin prompts once;
+ * tick "save password" — the values live under Reveal secrets). */
+function pgadminServers(s) {
+  const envServer = (name, host) => ({
+    Name: name,
+    Group: 'munni local',
+    Host: host,
+    Port: 5432,
+    MaintenanceDB: 'munni',
+    Username: 'munni',
+    SSLMode: 'prefer',
+  });
+  return JSON.stringify({
+    Servers: {
+      1: envServer('production', 'postgres-prod'),
+      2: envServer('development', 'postgres-dev'),
+      3: { ...envServer('glitchtip (shared)', 'glitchtip-db'), MaintenanceDB: 'glitchtip' },
+    },
+  }, null, 2);
 }
 
 function sharedLocalTemplate(s) {
@@ -470,9 +502,11 @@ TAG=${s.channel}
 GHCR_USER=okkes
 GHCR_PAT=\${NAS_GHCR_PAT}
 
+# glitchtip-db ONLY — each environment's postgres has its own password
 POSTGRES_PASSWORD=\${NAS_POSTGRES_PASSWORD}
 GLITCHTIP_SECRET_KEY=\${NAS_GLITCHTIP_SECRET_KEY}
 GLITCHTIP_EMAIL_URL=\${NAS_GLITCHTIP_EMAIL_URL}
+PGADMIN_PASSWORD=\${NAS_PGADMIN_PASSWORD}
 
 # empty = signups OPEN (first account); set false once yours exists
 VAULT_SIGNUPS_ALLOWED=\${VAULT_SIGNUPS_ALLOWED}
@@ -485,10 +519,12 @@ CONTROL_LOGTO_APP_ID=\${CONTROL_LOGTO_APP_ID}
 function envLocalCompose(s) {
   const p = s.ports;
   const appChannel = s.appChannel ?? (s.role === 'prod' ? 'production' : 'staging');
+  const shortName = s.stack.replace('munni-local-', '');
   return `# ${s.stack} — RENDERED by infra/bootstrap.mjs, do not edit by hand.
-# A complete local environment (own web/admin/api + OWN Logto), riding
-# ${s.sharedStack} for postgres/glitchtip/ocr over "${LOCAL_SHARED_NET}"
-# (start the shared stack first — this one joins its network).
+# A complete local environment: own web/admin/api, OWN Logto and OWN
+# postgres (data isolation — deleting this stack can never touch another
+# environment), riding ${s.sharedStack} only for glitchtip/ocr over
+# "${LOCAL_SHARED_NET}" (start the shared stack first).
 name: ${s.stack}
 
 networks:
@@ -498,6 +534,29 @@ networks:
     name: ${LOCAL_SHARED_NET}
 
 services:
+  # this environment's OWN database server. The alias below exists so
+  # the shared stack's pgAdmin can reach it; other environments hold no
+  # credentials for it (every postgres mints its own password).
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: munni
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+      POSTGRES_DB: munni
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U munni"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      default: {}
+      shared:
+        aliases: [postgres-${shortName}]
+
   web:
     image: \${REGISTRY}/munni-web:\${TAG}
     restart: unless-stopped
@@ -530,7 +589,7 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_URLS: http://+:8080
-      ConnectionStrings__Db: Host=postgres;Database=munni_${s.dbSuffix};Username=munni;Password=\${POSTGRES_PASSWORD}
+      ConnectionStrings__Db: Host=postgres;Database=munni;Username=munni;Password=\${POSTGRES_PASSWORD}
       Db__AutoMigrate: "true"
       Auth__Authority: ${s.urls.logto}/oidc
       # localhost issuer for browsers; metadata fetched in-network over http
@@ -562,6 +621,8 @@ services:
     ports:
       - "${p.api}:8080"
     depends_on:
+      postgres:
+        condition: service_healthy
       logto:
         condition: service_started
     networks: [default, shared]
@@ -574,7 +635,7 @@ services:
     entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
     environment:
       TRUST_PROXY_HEADER: "0"
-      DB_URL: postgres://munni:\${POSTGRES_PASSWORD}@postgres:5432/logto_${s.dbSuffix}
+      DB_URL: postgres://munni:\${POSTGRES_PASSWORD}@postgres:5432/logto
       ENDPOINT: ${s.urls.logto}
       ADMIN_ENDPOINT: ${s.urls.logtoAdmin}
       PORT: "${p.logto}"
@@ -582,7 +643,13 @@ services:
     ports:
       - "${p.logto}:${p.logto}"
       - "${p.logtoAdmin}:${p.logtoAdmin}"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks: [default, shared]
+
+volumes:
+  pgdata:
 `;
 }
 

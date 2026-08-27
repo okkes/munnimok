@@ -32,8 +32,8 @@ export const SHARED_LOCAL_NAMES = new Set([
   'LOGTO_GOOGLE_CLIENT_ID',
   'LOGTO_GOOGLE_CLIENT_SECRET',
   'NAS_GLITCHTIP_EMAIL_URL',
-  'NAS_POSTGRES_PASSWORD',
   'NAS_GLITCHTIP_SECRET_KEY',
+  'NAS_PGADMIN_PASSWORD',
   'VAULT_SIGNUPS_ALLOWED',
   'IAC_GLITCHTIP_API_TOKEN',
   'GLITCHTIP_ADMIN_EMAIL',
@@ -42,7 +42,12 @@ export const SHARED_LOCAL_NAMES = new Set([
 ]);
 
 /** generated names the shared stack mints (env stacks never do) */
-const SHARED_GENERATED = new Set(['NAS_POSTGRES_PASSWORD', 'NAS_GLITCHTIP_SECRET_KEY']);
+const SHARED_GENERATED = new Set(['NAS_GLITCHTIP_SECRET_KEY', 'NAS_PGADMIN_PASSWORD']);
+
+/** minted by EVERY stack into its OWN store: each postgres server gets
+ * its own password, so one environment's credentials never open another
+ * environment's database (user isolation ruling 2026-08-27) */
+const PER_STACK_GENERATED = new Set(['NAS_POSTGRES_PASSWORD']);
 
 const readStore = (stackName) => {
   const file = storeFile(stackName);
@@ -117,9 +122,19 @@ export const localManifestEntries = () => MANIFEST.secrets.filter((s) => !['nas'
 /** the entries a PARTICULAR local stack is responsible for */
 export function stackManifestEntries(stack) {
   const entries = localManifestEntries();
-  if (stack.role === 'shared') return entries.filter((e) => SHARED_LOCAL_NAMES.has(e.name));
+  if (stack.role === 'shared') return entries.filter((e) => SHARED_LOCAL_NAMES.has(e.name) || PER_STACK_GENERATED.has(e.name));
   if (stack.sharedStack) return entries.filter((e) => !SHARED_LOCAL_NAMES.has(e.name));
   return entries;
+}
+
+function ensureVapid(values, rotate, minted) {
+  const needed =
+    rotate.includes('NAS_PUSH_VAPID_PUBLIC_KEY') || !values.NAS_PUSH_VAPID_PUBLIC_KEY || !values.NAS_PUSH_VAPID_PRIVATE_KEY;
+  if (!needed) return;
+  const pair = vapidPair();
+  values.NAS_PUSH_VAPID_PUBLIC_KEY = pair.publicKey;
+  values.NAS_PUSH_VAPID_PRIVATE_KEY = pair.privateKey;
+  minted.push('NAS_PUSH_VAPID_PUBLIC_KEY', 'NAS_PUSH_VAPID_PRIVATE_KEY');
 }
 
 /**
@@ -129,35 +144,33 @@ export function stackManifestEntries(stack) {
  */
 export function ensureLocalSecrets(stack, { rotate = [] } = {}) {
   const values = familyValues(stack);
+  const own = loadLocalValues(stack);
   const minted = [];
   const missingOperator = [];
   const isShared = stack.role === 'shared';
 
-  const ownsGenerated = (name) => (isShared ? SHARED_GENERATED.has(name) : !SHARED_GENERATED.has(name));
+  const ownsGenerated = (name) =>
+    PER_STACK_GENERATED.has(name) || (isShared ? SHARED_GENERATED.has(name) : !SHARED_GENERATED.has(name));
+  // per-stack names must exist in THIS stack's store — the merged view
+  // would satisfy the check with another stack's value
+  const present = (name) => (PER_STACK_GENERATED.has(name) ? own[name] : values[name]);
 
-  if (!isShared) {
-    const vapidNeeded =
-      rotate.includes('NAS_PUSH_VAPID_PUBLIC_KEY') || !values.NAS_PUSH_VAPID_PUBLIC_KEY || !values.NAS_PUSH_VAPID_PRIVATE_KEY;
-    if (vapidNeeded) {
-      const pair = vapidPair();
-      values.NAS_PUSH_VAPID_PUBLIC_KEY = pair.publicKey;
-      values.NAS_PUSH_VAPID_PRIVATE_KEY = pair.privateKey;
-      minted.push('NAS_PUSH_VAPID_PUBLIC_KEY', 'NAS_PUSH_VAPID_PRIVATE_KEY');
-    }
-  }
+  if (!isShared) ensureVapid(values, rotate, minted);
 
-  for (const entry of localManifestEntries()) {
-    if (entry.name.startsWith('NAS_PUSH_VAPID_')) continue;
+  const applyEntry = (entry) => {
     const ownedHere = isShared ? SHARED_LOCAL_NAMES.has(entry.name) : true; // env stacks absorb env names; shared names route on save
     if (entry.owner === 'operator' && ownedHere && process.env[entry.name]) values[entry.name] = process.env[entry.name];
-    const needed = rotate.includes(entry.name) || !values[entry.name];
-    if (!needed) continue;
+    const needed = rotate.includes(entry.name) || !present(entry.name);
+    if (!needed) return;
     if (entry.owner === 'generated' && ownsGenerated(entry.name)) {
       values[entry.name] = generateValue(entry.name);
       minted.push(entry.name);
     } else if (entry.owner === 'operator' && !entry.optional && stackManifestEntries(stack).some((e) => e.name === entry.name)) {
       missingOperator.push(entry.name);
     }
+  };
+  for (const entry of localManifestEntries()) {
+    if (!entry.name.startsWith('NAS_PUSH_VAPID_')) applyEntry(entry);
   }
   saveLocalValues(stack, values);
   return { values: familyValues(stack), minted, missingOperator };

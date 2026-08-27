@@ -42,7 +42,7 @@ export function loadStack(name) {
   // stack has no web/api; an env stack pointing at a shared stack has no
   // glitchtip of its own) — locally that is "port defined", hosted
   // "host defined"
-  const keys = ['web', 'api', 'admin', 'logto', 'logtoAdmin', 'glitchtip', 'vault', 'control'];
+  const keys = ['web', 'api', 'admin', 'logto', 'logtoAdmin', 'glitchtip', 'vault', 'control', 'pgadmin'];
   const urls = Object.fromEntries(
     keys.filter((k) => (local ? cfg.ports?.[k] !== undefined : cfg.hosts?.[k] !== undefined)).map((k) => [k, url(k)]),
   );

@@ -118,10 +118,17 @@ now concretized:
 ## Slices & order
 
 - LS1 ✅ render/stack support for `role:"shared"` + munni-local-shared
-  (glitchtip, vault, ocr, postgres, control) — env stacks point at it
+  (glitchtip, vault, ocr, control) — RE-RULED same day (user): NO
+  shared postgres. Each environment runs its OWN postgres under its OWN
+  minted password (deleting one env can never touch another; no env
+  holds another's credentials); glitchtip keeps a dedicated glitchtip-db
+  in the shared stack, and pgAdmin (8386) joins it as the one console
+  over all three servers (preregistered via rendered
+  pgadmin-servers.json; env servers publish postgres-prod/postgres-dev
+  aliases on the shared network)
 - LS2 ✅ munni-local-dev + munni-local-prod stack files; wizard family
-  UI + one-button orchestration; twin data migrated (munni/logto dumps
-  → munni_prod/logto_prod on the shared postgres)
+  UI + one-button orchestration; local data declared WIP — rebuilt
+  fresh on the postgres re-ruling (twin backup volumes deleted too)
 - LS3 ✅ Logto-per-env locally (own logto per env stack, wizard seeds
   the M2M in-database idempotently; iac pair follows with LS7)
 - LS4 ✅ GcRequisitions.RedirectOrigin column + attribution (also:

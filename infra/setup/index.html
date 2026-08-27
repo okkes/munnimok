@@ -168,7 +168,7 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 
 <section id="s-local" data-platform="local">
   <h2><span class="n">4</span> Run munni on this machine <span class="pill" id="local-pill"></span></h2>
-  <p class="sub">Three stacks, one machine: <b>shared services</b> (postgres, GlitchTip, the vault, OCR, the munni-control cockpit) plus TWO complete munni environments — <b>production</b> at localhost:8380 (your real data) and <b>development</b> at localhost:8480 (safe to break). Each environment has its own sign-in service and its own databases; deleting one never touches the other. Nothing is installed on the host beyond Docker Desktop (and node, which this repo already needs).</p>
+  <p class="sub">Three stacks, one machine: <b>shared services</b> (GlitchTip, the vault, OCR, the munni-control cockpit, pgAdmin) plus TWO complete munni environments — <b>production</b> at localhost:8380 (your real data) and <b>development</b> at localhost:8480 (safe to break). Each environment runs its OWN sign-in service and its OWN database server with its own password — deleting one can never touch the other, and neither holds credentials for the other's data. Nothing is installed on the host beyond Docker Desktop (and node, which this repo already needs).</p>
 
   <div class="card" id="local-nohelper" hidden>
     <h3>One double-click and this page does the work itself</h3>
@@ -207,7 +207,7 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 
     <div class="card">
       <h3>Shared services <span class="pill" id="local-shared-pill"></span></h3>
-      <p class="why">The family's common ground, shared by both environments: postgres (separate databases per environment), GlitchTip crash tracking at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a>, the Vaultwarden vault, receipt OCR — and <b>munni-control</b> at <a href="http://localhost:8385" target="_blank" rel="noreferrer">localhost:8385</a>, the cockpit that watches the shared GoCardless account across ALL environments (sign in with your production admin account).</p>
+      <p class="why">The family's common ground, shared by both environments: GlitchTip crash tracking at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> (with its own database server), the Vaultwarden vault, receipt OCR, <b>munni-control</b> at <a href="http://localhost:8385" target="_blank" rel="noreferrer">localhost:8385</a> (the cockpit that watches the shared GoCardless account across ALL environments — sign in with your production admin account) — and <b>pgAdmin</b> at <a href="http://localhost:8386" target="_blank" rel="noreferrer">localhost:8386</a>, one console over every database server in the family. Its login and each server's password are under Reveal secrets; the three servers come preregistered, pgAdmin just asks for each password once (tick “save password”).</p>
       <div class="runrow">
         <button class="ghost" data-local-tool="munni-local-shared:up">Start</button>
         <button class="ghost" data-local-tool="munni-local-shared:down">Stop</button>
@@ -1163,7 +1163,7 @@ async function refreshLocal() {
       }
       if (s.urls.glitchtip) {
         parts.push(link('glitchtip', s.services.glitchtip, s.urls.glitchtip), link('vault', s.services.vault, s.urls.vault),
-          link('control', s.services.control, s.urls.control));
+          link('control', s.services.control, s.urls.control), link('pgadmin', s.services.pgadmin, s.urls.pgadmin));
       }
       rows.push(parts.join(' &nbsp;·&nbsp; '));
     }
@@ -1835,7 +1835,12 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
     if (v.LOGTO_CONSOLE_USERNAME && v.LOGTO_CONSOLE_PASSWORD) signIns.push({ name: `Logto console — ${env.label.toLowerCase()}`, url: env.logtoAdmin, user: v.LOGTO_CONSOLE_USERNAME, pass: v.LOGTO_CONSOLE_PASSWORD });
   }
   if (shared.GLITCHTIP_ADMIN_EMAIL && shared.GLITCHTIP_ADMIN_PASSWORD) signIns.push({ name: 'GlitchTip (family-wide)', url: 'http://localhost:8383', user: shared.GLITCHTIP_ADMIN_EMAIL, pass: shared.GLITCHTIP_ADMIN_PASSWORD });
-  if (shared.NAS_POSTGRES_PASSWORD) signIns.push({ name: 'Postgres (shared server)', url: '', user: 'munni', pass: shared.NAS_POSTGRES_PASSWORD });
+  if (shared.NAS_PGADMIN_PASSWORD) signIns.push({ name: 'pgAdmin (all database servers)', url: 'http://localhost:8386', user: 'admin@munni.dev', pass: shared.NAS_PGADMIN_PASSWORD });
+  for (const env of LOCAL_ENVS) {
+    const v = values[env.stack] ?? {};
+    if (v.NAS_POSTGRES_PASSWORD) signIns.push({ name: `Postgres — ${env.label.toLowerCase()} (its own server)`, url: '', user: 'munni', pass: v.NAS_POSTGRES_PASSWORD });
+  }
+  if (shared.NAS_POSTGRES_PASSWORD) signIns.push({ name: 'Postgres — glitchtip-db (shared)', url: '', user: 'munni', pass: shared.NAS_POSTGRES_PASSWORD });
   signIns.push({ name: 'Vaultwarden', url: 'http://localhost:8384', user: '(your own account)', pass: '(master password lives in your head)' });
   const signInRows = signIns.map((l) =>
     `<tr><td style="padding:2px 10px 2px 0"><b>${esc(l.name)}</b>${l.url ? ` <a href="${l.url}" target="_blank" rel="noreferrer" style="font-size:11px">open</a>` : ''}</td><td style="padding:2px 10px 2px 0"><code style="user-select:all">${esc(l.user)}</code></td><td><code style="user-select:all">${esc(l.pass)}</code></td></tr>`);
@@ -1855,11 +1860,11 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
 document.querySelectorAll('[data-envnuke]').forEach((btn) => btn.addEventListener('click', () => {
   const stack = btn.dataset.envnuke;
   const label = STACK_LABELS[stack];
-  if (!confirm(`Delete the ${label.toUpperCase()} environment COMPLETELY?\n\nThis stops its containers and removes its volumes, and revokes the bank consents THIS environment created at GoCardless. The other environment and the shared services keep running; the secret store stays, so a fresh Set up keeps the same passwords.\n\nNote: its databases live on the shared postgres and are NOT dropped by this — delete the shared services too for a truly blank slate.`)) return;
+  if (!confirm(`Delete the ${label.toUpperCase()} environment COMPLETELY?\n\nThis stops its containers and removes its volumes INCLUDING its own database server (all of this environment's data), and revokes the bank consents THIS environment created at GoCardless. The other environment and the shared services are untouched — they run their own servers. The secret store stays, so a fresh Set up keeps the same passwords.`)) return;
   streamLocal('/api/local/cleanup', { target: stack }, `delete ${label} (containers + volumes + GoCardless consents)`);
 }));
 document.getElementById('btn-local-nuke-shared')?.addEventListener('click', () => {
-  if (!confirm('Delete the SHARED SERVICES completely?\n\nThis removes postgres (BOTH environments’ databases!), GlitchTip, the vault and munni-control, volumes included. Both environments stop working until you run Set up again. The secret stores stay.')) return;
+  if (!confirm('Delete the SHARED SERVICES completely?\n\nThis removes GlitchTip (with its crash-report database), the vault, pgAdmin and munni-control, volumes included. The environments keep their own databases, but crash tracking and the cockpit stop until you run Set up again. The secret stores stay.')) return;
   streamLocal('/api/local/cleanup', { target: SHARED_STACK }, 'delete the shared services (containers + volumes)');
 });
 document.getElementById('btn-local-nuke-all')?.addEventListener('click', async () => {

@@ -30,6 +30,7 @@ test('the family derives plain-http localhost urls per stack', () => {
   assert.equal(shared.urls.glitchtip, 'http://localhost:8383');
   assert.equal(shared.urls.vault, 'http://localhost:8384');
   assert.equal(shared.urls.control, 'http://localhost:8385');
+  assert.equal(shared.urls.pgadmin, 'http://localhost:8386');
   assert.equal(sharedOf(prod).stack, 'munni-local-shared');
 });
 
@@ -46,27 +47,46 @@ test('the legacy single-twin store migrates by ownership', () => {
   const own = loadLocalValues(prod);
   assert.equal(own.VITE_LOGTO_APP_ID, 'web-legacy');
   assert.equal(own.NAS_ADMIN_SUBS, 'usr_legacy');
+  // postgres passwords are PER-STACK now — the legacy value seeds prod
+  assert.equal(own.NAS_POSTGRES_PASSWORD, 'pg_legacy');
   assert.equal(own.NAS_GHCR_PAT, undefined, 'shared names must not land in the env store');
   const merged = familyValues(prod);
   assert.equal(merged.NAS_GHCR_PAT, 'ghp_legacy');
-  assert.equal(merged.NAS_POSTGRES_PASSWORD, 'pg_legacy');
   // dev starts CLEAN — no leaked env values from prod's past
   const dev = loadLocalValues(loadStack('munni-local-dev'));
   assert.equal(dev.VITE_LOGTO_APP_ID, undefined);
+  assert.equal(dev.NAS_POSTGRES_PASSWORD, undefined, 'each stack mints its OWN postgres password');
 });
 
-test('minting follows ownership: shared owns postgres/glitchtip, envs own VAPID', () => {
+test('minting follows ownership: every stack its own postgres password, shared owns glitchtip + pgadmin, envs own VAPID', () => {
   const shared = loadStack('munni-local-shared');
   const sharedRun = ensureLocalSecrets(shared, {});
-  // postgres came from the legacy migration; the glitchtip key gets minted
   assert.ok(sharedRun.values.NAS_GLITCHTIP_SECRET_KEY);
+  assert.ok(sharedRun.values.NAS_PGADMIN_PASSWORD, 'shared mints the pgAdmin login');
+  assert.ok(sharedRun.minted.includes('NAS_POSTGRES_PASSWORD'), 'shared mints glitchtip-db its own password');
   assert.ok(!sharedRun.minted.includes('NAS_PUSH_VAPID_PUBLIC_KEY'), 'shared must not mint VAPID');
 
   const prod = loadStack('munni-local-prod');
   const prodRun = ensureLocalSecrets(prod, {});
   assert.ok(prodRun.values.NAS_PUSH_VAPID_PUBLIC_KEY);
-  assert.ok(!prodRun.minted.includes('NAS_POSTGRES_PASSWORD'), 'envs must not mint the shared postgres password');
-  assert.equal(prodRun.values.NAS_POSTGRES_PASSWORD, 'pg_legacy', 'env sees the shared value');
+  assert.ok(!prodRun.minted.includes('NAS_POSTGRES_PASSWORD'), 'prod keeps its legacy-seeded password');
+  assert.equal(loadLocalValues(prod).NAS_POSTGRES_PASSWORD, 'pg_legacy');
+  assert.ok(!prodRun.minted.includes('NAS_PGADMIN_PASSWORD'), 'envs must not mint the shared pgAdmin login');
+
+  const dev = loadStack('munni-local-dev');
+  const devRun = ensureLocalSecrets(dev, {});
+  assert.ok(devRun.minted.includes('NAS_POSTGRES_PASSWORD'), 'dev mints its OWN password');
+  const pw = {
+    shared: loadLocalValues(shared).NAS_POSTGRES_PASSWORD,
+    prod: loadLocalValues(prod).NAS_POSTGRES_PASSWORD,
+    dev: loadLocalValues(dev).NAS_POSTGRES_PASSWORD,
+  };
+  assert.ok(pw.shared);
+  assert.ok(pw.prod);
+  assert.ok(pw.dev);
+  assert.notEqual(pw.dev, pw.prod, 'isolation: no two servers share a password');
+  assert.notEqual(pw.dev, pw.shared);
+  assert.notEqual(pw.prod, pw.shared);
 
   const again = ensureLocalSecrets(prod, {});
   assert.deepEqual(again.minted, [], 'stable across re-runs');
@@ -81,30 +101,34 @@ test('saving a shared-owned name from an env stack routes to the shared store', 
   assert.equal(familyValues(loadStack('munni-local-dev')).NAS_GOCARDLESS_SECRET_ID, 'gc-route-1', 'the whole family sees it');
 });
 
-test('shared render: postgres + glitchtip + vault + ocr + control, dbs enumerated', () => {
+test('shared render: glitchtip with own db + vault + ocr + control + pgadmin over the family', () => {
   const shared = loadStack('munni-local-shared');
   const dir = renderStack(shared, familyValues(shared));
   const compose = readFileSync(join(dir, 'docker-compose.munni-local-shared.yml'), 'utf8');
-  for (const marker of ['vaultwarden/server', 'glitchtip/glitchtip', 'hertzg/tesseract-server', 'munni-local-shared-net', 'munni-control:', '"8385:80"']) {
+  for (const marker of ['vaultwarden/server', 'glitchtip/glitchtip', 'hertzg/tesseract-server', 'munni-local-shared-net', 'munni-control:', '"8385:80"', 'dpage/pgadmin4', '"8386:80"', 'glitchtip-db:5432/glitchtip']) {
     assert.ok(compose.includes(marker), `shared compose lacks ${marker}`);
   }
-  const initdb = readFileSync(join(dir, 'initdb', '01-create-databases.sql'), 'utf8');
-  for (const db of ['munni_prod', 'logto_prod', 'munni_dev', 'logto_dev', 'glitchtip']) {
-    assert.ok(initdb.includes(`CREATE DATABASE ${db};`), `initdb lacks ${db}`);
-  }
+  assert.ok(!compose.includes('CREATE DATABASE'), 'no consumer databases here — envs run their own postgres');
+  const servers = JSON.parse(readFileSync(join(dir, 'pgadmin-servers.json'), 'utf8'));
+  const hosts = Object.values(servers.Servers).map((s) => s.Host);
+  assert.deepEqual(hosts.sort((a, b) => a.localeCompare(b)), ['glitchtip-db', 'postgres-dev', 'postgres-prod']);
 });
 
-test('env render: own logto, shared network, per-env databases, no glitchtip service', () => {
+test('env render: own logto, OWN postgres with a pgadmin alias, no glitchtip service', () => {
   const dev = loadStack('munni-local-dev');
   const dir = renderStack(dev, familyValues(dev));
   const compose = readFileSync(join(dir, 'docker-compose.munni-local-dev.yml'), 'utf8');
-  assert.ok(compose.includes('Database=munni_dev'));
-  assert.ok(compose.includes('logto_dev'));
+  assert.ok(compose.includes('postgres:18-alpine'), 'the environment runs its own database server');
+  assert.ok(compose.includes('aliases: [postgres-dev]'), 'pgAdmin reaches it via the shared-net alias');
+  assert.ok(compose.includes('Database=munni;'));
+  assert.ok(compose.includes('postgres:5432/logto'));
   assert.ok(compose.includes('external: true'));
   assert.ok(compose.includes('munni-local-shared-net'));
   assert.ok(compose.includes('MUNNI_CHANNEL: staging'));
   assert.ok(compose.includes('Auth__RequireHttps: "false"'));
   assert.ok(!compose.includes('glitchtip/glitchtip'), 'env stacks must not run their own glitchtip');
+  const initdb = readFileSync(join(dir, 'initdb', '01-create-databases.sql'), 'utf8');
+  assert.ok(initdb.includes('CREATE DATABASE logto;'));
   const env = readFileSync(join(dir, '.env.munni-local-dev'), 'utf8');
   assert.ok(!env.includes('${'), 'placeholders survived the env render');
 });

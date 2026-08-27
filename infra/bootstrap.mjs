@@ -89,6 +89,7 @@ async function probeAll() {
   if (shared.urls.glitchtip) allUp &= await probe('glitchtip', `${shared.urls.glitchtip}/api/0/`, (r) => r.status < 500);
   if (shared.urls.vault) allUp &= await probe('vault', `${shared.urls.vault}/alive`, (r) => r.status < 500);
   if (stack.urls.control) allUp &= await probe('control', stack.urls.control, (r) => r.status < 500);
+  if (stack.urls.pgadmin) allUp &= await probe('pgadmin', `${stack.urls.pgadmin}/misc/ping`);
   return allUp;
 }
 
