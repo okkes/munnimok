@@ -208,11 +208,15 @@ const sharedPsql = (db, sql) => [
   ...composeArgs(SHARED_STACK), 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1',
   ...sql.flatMap((s) => ['-c', s]),
 ];
+/** single-VALUE query: -At strips headers/footers so out.trim() IS the value */
+const sharedPsqlValue = (db, sql) => [
+  ...composeArgs(SHARED_STACK), 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', sql,
+];
 
 async function claimLogtoHumans(res, run, stack, infra) {
   const logtoDb = `logto_${stack.dbSuffix}`;
   const secretStep = await run(res, 'read the console machine credential (inside postgres)', 'docker',
-    sharedPsql(logtoDb, ["select secret from applications where tenant_id='admin' and id='m-admin';"]).concat(),
+    sharedPsqlValue(logtoDb, "select secret from applications where tenant_id='admin' and id='m-admin';"),
     { cwd: renderedDir(SHARED_STACK), mask: () => '(captured)\n' });
   const mSecret = secretStep.code === 0 ? secretStep.out.trim() : '';
   if (!/^[0-9a-zA-Z_-]{16,}$/.test(mSecret)) {
@@ -251,10 +255,11 @@ async function claimLogtoHumans(res, run, stack, infra) {
       res.write('the app already has users — paste YOUR user id under Store admin access instead\n');
       return changed;
     }
+    // NOTE: Logto usernames must match /^[A-Z_a-z]\w*$/ — no hyphens
     const password = randomBytes(12).toString('base64url');
-    const created = await logtoApi(stack.urls.logto, token, '/users', { method: 'POST', body: JSON.stringify({ username: 'munni-admin', password }) });
-    saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_APP_ADMIN_USERNAME: 'munni-admin', LOGTO_APP_ADMIN_PASSWORD: password, NAS_ADMIN_SUBS: created.id });
-    res.write(`munni admin user created → sign into the app as munni-admin · ${password}\nadmin access wired automatically (NAS_ADMIN_SUBS=${created.id})\n`);
+    const created = await logtoApi(stack.urls.logto, token, '/users', { method: 'POST', body: JSON.stringify({ username: 'munni_admin', password }) });
+    saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_APP_ADMIN_USERNAME: 'munni_admin', LOGTO_APP_ADMIN_PASSWORD: password, NAS_ADMIN_SUBS: created.id });
+    res.write(`munni admin user created → sign into the app as munni_admin · ${password}\nadmin access wired automatically (NAS_ADMIN_SUBS=${created.id})\n`);
     return true;
   } catch (e) {
     res.write(`app-admin auto-create failed (${e.message}) — use Store admin access after your first sign-up\n`);
@@ -309,7 +314,7 @@ async function logtoSetupEndpoint(req, res, spawnImpl) {
 
   const up = await run(res, 'restart web/admin with their sign-in config', 'docker',
     [...composeArgs(stack.stack), 'up', '-d'], { cwd: renderedDir(stack.stack) });
-  res.write('\nDone. Sign-in is code, the console is claimed (login under Reveal secrets), and the app admin is wired.\n');
+  res.write('\nDone. Sign-in is code — console and admin logins live under Reveal secrets.\n');
   return res.end(`\n[exit ${up.code === 0 ? 0 : 1}]\n`);
 }
 
