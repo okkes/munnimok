@@ -93,31 +93,6 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 </header>
 <main>
 
-<section id="s-connect">
-  <h2><span class="n">0</span> Connect to GitHub <span class="pill" id="connect-pill">not connected</span></h2>
-  <p class="sub" id="connect-local-note" hidden>Running on this machine? <b>Skip this section</b> — the local track never talks to GitHub. <a href="#" id="connect-show">Show it anyway</a> (for the NAS track, or to fork munni into your own repo).</p>
-  <div id="connect-body">
-  <p class="sub">One fine-grained personal access token drives everything: this page uses it live, and stores it as the <code>IAC_GH_PAT</code> secret so the bootstrap workflow can manage environments too. Point it at a repo that carries munni — or at a repo name that doesn't exist yet, and this page forks <code>okkes/munnimok</code> under it for you. Branches are munni's own (<code>dev</code>/<code>master</code>) and picked automatically.</p>
-  <details class="how"><summary>How to create the token (2 minutes)</summary>
-    <ol>
-      <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com/settings/personal-access-tokens/new</a>.</li>
-      <li><b>Repository access</b>: Only select repositories → your munni repo. (If you want this page to CREATE the repo as a fork, pick <b>All repositories</b> instead — a fine-grained token can't pre-select a repo that doesn't exist yet.)</li>
-      <li><b>Repository permissions</b>: Administration <b>Read and write</b> · Secrets <b>Read and write</b> · Variables <b>Read and write</b> · Actions <b>Read and write</b> · Contents <b>Read-only</b>.</li>
-      <li>Generate, copy the <code>github_pat_…</code> value and paste it below. Set a long expiry — rotating it means redoing only this step.</li>
-    </ol>
-  </details>
-  <label class="f" for="in-slug">repository (owner/name)</label>
-  <input type="text" id="in-slug"/>
-  <label class="f" for="in-pat">fine-grained PAT (kept in memory only)</label>
-  <input type="password" id="in-pat" placeholder="github_pat_…" autocomplete="off"/>
-  <button id="btn-connect">Connect</button>
-  <button class="ghost" id="btn-fork" hidden>Create it as a fork of okkes/munnimok</button>
-  <button class="ghost" id="btn-store-pat" disabled>Store as IAC_GH_PAT <span class="dot" data-dot="IAC_GH_PAT"></span></button>
-  <button class="ghost" id="btn-refresh" disabled>Refresh status</button>
-  <div class="msg" id="msg-connect"></div>
-  </div>
-</section>
-
 <section id="s-platform">
   <h2><span class="n">1</span> Where will munni run?</h2>
   <p class="sub">The choice filters everything below to the steps that platform actually needs.</p>
@@ -137,6 +112,32 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 <section id="s-creds">
   <h2><span class="n">3</span> Accounts &amp; credentials <span class="pill" id="creds-pill"></span></h2>
   <p class="sub" id="creds-sub"></p>
+
+  <div class="card" id="connect-card">
+    <h3>GitHub — the build &amp; deploy engine <span class="pill" id="connect-pill">not connected</span></h3>
+    <p class="why" id="connect-why-nas">The whole NAS pipeline lives in your repo's Actions: one fine-grained token drives this page live and is stored as <code>IAC_GH_PAT</code> so the bootstrap workflow can manage environments too. Point it at a repo that carries munni — or at a name that doesn't exist yet, and this page forks <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically.</p>
+    <p class="why" id="connect-why-local" hidden>This card only appears because Android/iOS is ticked: the native apps are BUILT by GitHub CI (never on this machine), so those builds need your repo's Actions. Everything else on the local track stays GitHub-free. Same token rules as the NAS track; a nonexistent repo name gets forked from <code>okkes/munnimok</code>.</p>
+    <div id="connect-body">
+    <details class="how"><summary>How to create the token (2 minutes)</summary>
+      <ol>
+        <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com/settings/personal-access-tokens/new</a>.</li>
+        <li><b>Repository access</b>: Only select repositories → your munni repo. (If you want this page to CREATE the repo as a fork, pick <b>All repositories</b> instead — a fine-grained token can't pre-select a repo that doesn't exist yet.)</li>
+        <li><b>Repository permissions</b>: Administration <b>Read and write</b> · Secrets <b>Read and write</b> · Variables <b>Read and write</b> · Actions <b>Read and write</b> · Contents <b>Read-only</b>.</li>
+        <li>Generate, copy the <code>github_pat_…</code> value and paste it below. Set a long expiry — rotating it means redoing only this step.</li>
+      </ol>
+    </details>
+    <label class="f" for="in-slug">repository (owner/name)</label>
+    <input type="text" id="in-slug"/>
+    <label class="f" for="in-pat">fine-grained PAT (kept in memory only)</label>
+    <input type="password" id="in-pat" placeholder="github_pat_…" autocomplete="off"/>
+    <button id="btn-connect">Connect</button>
+    <button class="ghost" id="btn-fork" hidden>Create it as a fork of okkes/munnimok</button>
+    <button class="ghost" id="btn-store-pat" disabled>Store as IAC_GH_PAT <span class="dot" data-dot="IAC_GH_PAT"></span></button>
+    <button class="ghost" id="btn-refresh" disabled>Refresh status</button>
+    <div class="msg" id="msg-connect"></div>
+    </div>
+  </div>
+
   <div id="cred-cards"></div>
   <div class="msg" id="msg-manifest"></div>
 </section>
@@ -333,7 +334,7 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 
     <div class="card" data-needs-feature="android">
       <h3>Android on your phone (via Play) <span class="pill" id="native-local-pill"></span></h3>
-      <p class="why">The LAN build is a store channel like the others — its own app id <code>app.munni.local</code>, delivered through the Play <b>internal testing</b> track. One button: this page writes the LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Needs the GitHub connection from step 1 (use <i>Show it anyway</i> under the local note). Only Google's one rule stays manual, ONCE: the first upload of a new app id.</p>
+      <p class="why">The LAN build is a store channel like the others — its own app id <code>app.munni.local</code>, delivered through the Play <b>internal testing</b> track. One button: this page writes the LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Needs the GitHub card in step 3 (it appears there while Android/iOS is ticked). Only Google's one rule stays manual, ONCE: the first upload of a new app id.</p>
       <div class="runrow">
         <button id="btn-native-local-android">Build the Android app (CI)</button>
         <button class="ghost" id="btn-native-local-publish">Enable auto-publish</button>
@@ -1324,8 +1325,6 @@ function applyPlatform() {
     el.classList.toggle('sel', el.dataset.platformPick === S.platform);
   });
   // GitHub is optional for the local track — fold the connect section away
-  document.getElementById('connect-local-note').hidden = S.platform !== 'local';
-  document.getElementById('connect-body').hidden = S.platform === 'local' && !S.user;
   document.getElementById('creds-sub').textContent = S.platform === 'local'
     ? 'Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Save — with the local helper running, they land in a gitignored secret store on THIS machine (GitHub is not involved for the local twin) and step 4 uses them.'
     : "Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — this page encrypts them client-side (GitHub's sealed-box contract) and writes repository or environment secrets directly. Values are write-only from then on; the dots show presence, never content.";
@@ -1347,6 +1346,12 @@ function renderNative() {
     el.classList.toggle('hide', !S.features[el.dataset.needsFeature]);
   });
   setPill('native-pill', S.platform === 'local' ? 'CI builds, your phone installs' : 'store-mandated manual firsts', false);
+  // the GitHub card follows the same inputs: the NAS track always needs
+  // it; the local track only when a CI-built feature (Android/iOS) is on
+  const needGithub = S.platform === 'nas' || nativeOn;
+  document.getElementById('connect-card').classList.toggle('hide', !needGithub);
+  document.getElementById('connect-why-nas').hidden = S.platform !== 'nas';
+  document.getElementById('connect-why-local').hidden = S.platform !== 'local';
 }
 
 function applyDomain() {
@@ -1566,7 +1571,6 @@ async function checkManifest() {
 const UPSTREAM = 'okkes/munnimok';
 document.getElementById('in-slug').value = S.slug;
 document.getElementById('in-slug').addEventListener('input', (e) => { S.slug = e.target.value.trim(); LS.set('slug', S.slug); document.getElementById('btn-fork').hidden = true; });
-document.getElementById('connect-show')?.addEventListener('click', (e) => { e.preventDefault(); document.getElementById('connect-body').hidden = false; });
 
 async function connectRepo(repo) {
   const pill = document.getElementById('connect-pill');
@@ -1806,17 +1810,12 @@ async function setupEnv(env) {
   if (!(await streamLocal('/api/local/tool', { tool: `${env.stack}:up` }, `start ${label} (first run pulls images — can take a while)`))) return false;
   const st = await waitForServices(env.stack, ['logto'], `wait for ${label}'s sign-in service`);
   if (!st) return false;
-  const stored = new Set(st.stacks[env.stack].stored);
-  if (!stored.has('NAS_LOGTO_M2M_APP_ID')) {
-    if (!(await streamLocal('/api/local/logto-setup', { stack: env.stack }, `wire ${label} sign-in (automatic)`))) return false;
-  } else {
-    localLog(`\n✓ ${label} sign-in already wired — skipped\n`);
-  }
-  if (!stored.has('VITE_GLITCHTIP_DSN')) {
-    if (!(await streamLocal('/api/local/glitchtip-setup', { stack: env.stack }, `wire ${label} crash tracking (automatic)`))) return false;
-  } else {
-    localLog(`\n✓ ${label} crash tracking already wired — skipped\n`);
-  }
+  // ALWAYS wire — the setups are idempotent and self-healing. (A stored
+  // name must never gate this: after Delete + Set up the store still
+  // says "wired" while the fresh databases are empty — found live
+  // 2026-08-28 as a family that LOOKED set up but had no sign-in.)
+  if (!(await streamLocal('/api/local/logto-setup', { stack: env.stack }, `wire ${label} sign-in (automatic, self-healing)`))) return false;
+  if (!(await streamLocal('/api/local/glitchtip-setup', { stack: env.stack }, `wire ${label} crash tracking (automatic, self-healing)`))) return false;
   return true;
 }
 
@@ -1832,7 +1831,8 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
     for (const env of LOCAL_ENVS) {
       if (!(await setupEnv(env))) return;
     }
-    localLog('\n══ munni is ready ══\nproduction → http://localhost:8380 (create your account there)\ndevelopment → http://localhost:8480 (its accounts are separate on purpose)\ncontrol cockpit → http://localhost:8385 (sign in with the production admin)\n');
+    if (!(await streamLocal('/api/local/vault-setup', {}, 'set up the vault (account + every secret imported + signups closed)'))) return;
+    localLog('\n══ munni is ready ══\nproduction → http://localhost:8380 (create your account there)\ndevelopment → http://localhost:8480 (its accounts are separate on purpose)\ncontrol cockpit → http://localhost:8385 (sign in with the production admin)\nvault → http://localhost:8384 (login under Reveal secrets)\n');
   } finally {
     btn.disabled = false;
     await refreshLocal();
@@ -1984,7 +1984,7 @@ const localPublishEnabled = async () => {
 };
 document.getElementById('btn-native-local-publish')?.addEventListener('click', async () => {
   const say = (t, ok = true) => msg('msg-native-local', t, ok);
-  if (!S.pat || !S.user) { say('Connect GitHub first (step 1 → Show it anyway).', false); return; }
+  if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card in step 3).', false); return; }
   try {
     await ensureEnv('local');
     await ghUpsertEnvVar('local', 'NATIVE_LOCAL_CHANNEL', 'true');
@@ -1994,7 +1994,7 @@ document.getElementById('btn-native-local-publish')?.addEventListener('click', a
 document.getElementById('btn-native-local-android')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-native-local-android');
   const say = (t, ok = true) => msg('msg-native-local', t, ok);
-  if (!S.pat || !S.user) { say('Connect GitHub first (step 1 → Show it anyway) — the build runs in your repo’s Actions.', false); return; }
+  if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card in step 3) — the build runs in your repo’s Actions.', false); return; }
   btn.disabled = true;
   try {
     say('writing the LAN config into the GitHub environment "local"…');
@@ -2037,7 +2037,7 @@ document.getElementById('btn-native-local-android')?.addEventListener('click', a
   }
 });
 document.getElementById('btn-native-local-ios')?.addEventListener('click', async () => {
-  if (!S.pat || !S.user) { localLog('\nConnect GitHub first (step 1 → Show it anyway).\n'); return; }
+  if (!S.pat || !S.user) { localLog('\nConnect GitHub first (the GitHub card in step 3).\n'); return; }
   try {
     await writeLocalNativeEnv();
     await dispatch('native-ios.yml', { environment: 'local' });

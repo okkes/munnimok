@@ -255,15 +255,16 @@ async function claimLogtoHumans(res, run, stack, infra) {
     res.write(`console auto-claim failed (${e.message}) — claim it by hand at ${adminBase} when you like\n`);
   }
   try {
-    const store = loadLocalValues(stack);
-    if (store.NAS_ADMIN_SUBS) {
-      res.write('app admin access already configured (NAS_ADMIN_SUBS set)\n');
-      return changed;
-    }
+    // reality first, store second: after Delete + Set up the store still
+    // carries a NAS_ADMIN_SUBS from the WIPED database — the fresh env
+    // must get its admin user regardless (found live 2026-08-28)
     const token = await logtoToken(stack.urls.logto, infra.id, infra.secret, 'https://default.logto.app/api');
     const users = await logtoApi(stack.urls.logto, token, '/users?page_size=1');
     if (users.length) {
-      res.write('the app already has users — paste YOUR user id under Store admin access instead\n');
+      const store = loadLocalValues(stack);
+      res.write(store.NAS_ADMIN_SUBS
+        ? 'the app has users and admin access is configured — left untouched\n'
+        : 'the app already has users — paste YOUR user id under Store admin access instead\n');
       return changed;
     }
     // NOTE: Logto usernames must match /^[A-Z_a-z]\w*$/ — no hyphens
@@ -611,6 +612,27 @@ function vaultExportEndpoint(res) {
  * master password kept in the local store, refresh every secret item
  * inside it (purge + import), then close signups. Re-runnable — a re-run
  * re-syncs the items. */
+/** reopen signups (they close after every successful setup — but a
+ * WIPED vault with a store that still says "closed" must be able to
+ * register its account again; found live 2026-08-28) */
+async function reopenVaultSignups(res, run, base, fetchImpl) {
+  const shared = loadStack(SHARED_STACK);
+  const v = loadLocalValues(shared);
+  saveLocalValues(shared, { ...v, VAULT_SIGNUPS_ALLOWED: '' });
+  await run(res, 'reopen vault signups for the fresh vault (closed again right after)', process.execPath,
+    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
+  await run(res, 'restart the shared stack', 'docker', [...composeArgs(SHARED_STACK), 'up', '-d'], { cwd: renderedDir(SHARED_STACK) });
+  const deadline = Date.now() + 90000;
+  for (;;) {
+    try {
+      const r = await fetchImpl(`${base}/alive`);
+      if (r.ok) return true;
+    } catch { /* still starting */ }
+    if (Date.now() > deadline) return false;
+    await new Promise((s) => setTimeout(s, 3000));
+  }
+}
+
 async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
   const shared = loadStack(SHARED_STACK);
   const values = loadLocalValues(shared);
@@ -619,6 +641,7 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
   const password = values.VAULT_MASTER_PASSWORD ?? randomBytes(16).toString('base64url');
   saveLocalValues(shared, { ...values, VAULT_ADMIN_EMAIL: email, VAULT_MASTER_PASSWORD: password });
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const run = stepRunner(spawnImpl);
   const base = shared.urls.vault;
   res.write(`▶ vault account ${email} — sign in, create when missing\n`);
   const account = buildAccount(email, password);
@@ -626,11 +649,20 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
   if (token) {
     res.write('account already exists — signed in with the stored master password ✓\n');
   } else {
-    const reg = await vaultRegister(base, account.register, fetchImpl);
+    let reg = await vaultRegister(base, account.register, fetchImpl);
     if (!reg.ok) {
-      const text = await reg.text().catch(() => '');
-      res.write(`could not create the account (${reg.status})\n`);
-      if (/exist|registered/i.test(text)) res.write('an account for this email exists with a DIFFERENT master password — Delete shared services (wipes the vault volume) and re-run, or change VAULT_ADMIN_EMAIL in the store\n');
+      // vaultwarden's refusal is ambiguous ("Registration not allowed or
+      // user already exists") — closed signups from a previous run are
+      // the common cause; reopen once and retry before giving up
+      res.write(`registration refused (${reg.status}) — reopening signups once and retrying\n`);
+      if (!(await reopenVaultSignups(res, run, base, fetchImpl))) {
+        res.write('the vault never came back after the restart — check step 4 status, then retry\n');
+        return res.end('[exit 1]\n');
+      }
+      reg = await vaultRegister(base, account.register, fetchImpl);
+    }
+    if (!reg.ok) {
+      res.write(`could not create the account (${reg.status})\nan account for this email exists with a DIFFERENT master password — Delete shared services (wipes the vault volume) and re-run, or change VAULT_ADMIN_EMAIL in the store\n`);
       return res.end('[exit 1]\n');
     }
     res.write('account created ✓\n');
@@ -652,7 +684,6 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
   const v2 = loadLocalValues(shared);
   if (v2.VAULT_SIGNUPS_ALLOWED !== 'false') {
     saveLocalValues(shared, { ...v2, VAULT_SIGNUPS_ALLOWED: 'false' });
-    const run = stepRunner(spawnImpl);
     await run(res, 'close vault signups (nobody else on the network can register)', process.execPath,
       [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
     await run(res, 'restart the shared stack', 'docker', [...composeArgs(SHARED_STACK), 'up', '-d'], { cwd: renderedDir(SHARED_STACK) });

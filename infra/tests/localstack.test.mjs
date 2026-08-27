@@ -141,6 +141,11 @@ test('LAN mode: the marker file moves every local url onto the LAN host, localho
     const prod = loadStack('munni-local-prod');
     assert.equal(prod.urls.web, 'http://192.168.1.50:8380');
     assert.equal(prod.urls.logto, 'http://192.168.1.50:3201');
+    const shared = loadStack('munni-local-shared');
+    assert.equal(shared.urls.glitchtip, 'http://192.168.1.50:8383');
+    // the Bitwarden web client refuses http on non-localhost origins —
+    // the vault is the ONE service that never moves off localhost
+    assert.equal(shared.urls.vault, 'http://localhost:8384');
     // sign-in accepts BOTH forms so host-browser use keeps working
     const apps = appDefinitions(prod);
     assert.deepEqual(apps.web.oidcClientMetadata.redirectUris, [

@@ -403,6 +403,39 @@ test('vault-setup: creates the account, imports the items, closes signups — id
   assert.ok(!vaultCalls2.some((c) => c.url.includes('/accounts/register')), 'no second registration');
 });
 
+test('vault-setup heals a WIPED vault whose store still says signups-closed', async () => {
+  // the store remembers "closed" from a previous life; the vault itself
+  // is empty — registration must reopen, register, then close again
+  const sharedStack = loadStack('munni-local-shared');
+  saveLocalValues(sharedStack, { ...loadLocalValues(sharedStack), VAULT_SIGNUPS_ALLOWED: 'false' });
+  let alive = false;
+  let registered = false;
+  const vaultFetch = async (url) => {
+    if (url.endsWith('/alive')) { alive = true; return { ok: true }; }
+    if (url.includes('/accounts/register')) {
+      if (!alive) return { ok: false, status: 400, text: async () => 'Registration not allowed or user already exists' };
+      registered = true;
+      return { ok: true, text: async () => '' };
+    }
+    if (url.includes('/identity/connect/token')) {
+      return registered ? { ok: true, json: async () => ({ access_token: 'tok' }) } : { ok: false };
+    }
+    return { ok: true, json: async () => ({}), text: async () => '' };
+  };
+  const spawned = [];
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'ok\n'), probeImpl: async () => false, vaultFetchImpl: vaultFetch });
+  const res = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/vault-setup', token: 'tok', body: {} }), res);
+  await settle(res);
+  const stream = res.chunks.join('');
+  assert.match(stream, /reopening signups once/);
+  assert.match(stream, /account created ✓/);
+  assert.match(stream, /\[exit 0\]/);
+  // reopen (bootstrap + up) then close again (bootstrap + up)
+  assert.equal(spawned.length, 4);
+  assert.equal(loadLocalValues(sharedStack).VAULT_SIGNUPS_ALLOWED, 'false', 'signups end closed');
+});
+
 test('glitchtip-setup mints in the SHARED stack and wires the chosen environment', async () => {
   const spawned = [];
   const app2 = createApp({

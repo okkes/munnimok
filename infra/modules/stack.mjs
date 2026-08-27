@@ -53,11 +53,15 @@ export function loadStack(name) {
   if (cfg.stack !== name) throw new Error(`stack file ${file} declares "${cfg.stack}" — must match its filename`);
   // target "local": everything on one host over plain http (Docker
   // Desktop) — localhost, or the machine's LAN address in LAN mode —
-  // no DSM, no DDNS, no GitHub Environment
+  // no DSM, no DDNS, no GitHub Environment. The VAULT stays on
+  // localhost even in LAN mode: the Bitwarden web client refuses plain
+  // http on any non-localhost origin ("All URLs must use HTTPS", found
+  // live 2026-08-28), and phone vault use would need TLS anyway.
   const local = cfg.target === 'local';
-  const localHost = local ? (lanHost() ?? 'localhost') : null;
-  const host = (key) => (local ? localHost : `${cfg.hosts[key]}.${cfg.domain}`);
-  const url = (key) => (local ? `http://${localHost}:${cfg.ports[key]}` : `https://${host(key)}`);
+  const lan = local ? lanHost() : null;
+  const localHostFor = (key) => (key === 'vault' ? 'localhost' : (lan ?? 'localhost'));
+  const host = (key) => (local ? localHostFor(key) : `${cfg.hosts[key]}.${cfg.domain}`);
+  const url = (key) => (local ? `http://${localHostFor(key)}:${cfg.ports[key]}` : `https://${host(key)}`);
   // a stack only gets urls for services it actually addresses (a shared
   // stack has no web/api; an env stack pointing at a shared stack has no
   // glitchtip of its own) — locally that is "port defined", hosted
