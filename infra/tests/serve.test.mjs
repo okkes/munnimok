@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-serve-test-'));
 process.env.MUNNI_RENDER_DIR = SCRATCH;
-const { createApp, lanCandidates, OPERATOR_NAMES, TOOLS, LOCAL_STACKS } = await import('../setup/serve.mjs');
+const { createApp, lanCandidates, OPERATOR_NAMES, toolFor, LOCAL_STACKS } = await import('../setup/serve.mjs');
 const { loadLocalValues, saveLocalValues } = await import('../modules/localstore.mjs');
 const { loadStack } = await import('../modules/stack.mjs');
 
@@ -126,11 +126,18 @@ test('tools run only from the fixed per-stack allowlist', async () => {
   assert.equal(runs.length, 1);
   assert.deepEqual(runs[0].args.slice(-2), ['up', '-d']);
   assert.ok(runs[0].args.join(' ').includes('docker-compose.munni-local-shared.yml'));
-  // every family stack has up/down/destroy; devsource covers the from-source dev flow
-  for (const name of LOCAL_STACKS) for (const verb of ['up', 'down', 'destroy']) assert.ok(TOOLS[`${name}:${verb}`], `${name}:${verb} missing`);
-  assert.ok(TOOLS['devsource:up']);
-  // every allowlisted tool is a fixed docker invocation — nothing else
-  for (const tool of Object.values(TOOLS)) assert.equal(tool.cmd, 'docker');
+  // every family stack resolves up/down/destroy; devsource covers the
+  // from-source dev flow; anything else refuses
+  for (const name of LOCAL_STACKS()) {
+    for (const verb of ['up', 'down', 'destroy']) {
+      const tool = toolFor(`${name}:${verb}`);
+      assert.ok(tool, `${name}:${verb} missing`);
+      assert.equal(tool.cmd, 'docker');
+    }
+  }
+  assert.ok(toolFor('devsource:up'));
+  assert.equal(toolFor('munni-local-ghost:up'), null, 'unknown stacks refuse');
+  assert.equal(toolFor('munni-local-prod:exec'), null, 'unknown verbs refuse');
 });
 
 test('validate passes only manifest operator names through, merged over the store', async () => {
@@ -165,6 +172,7 @@ test('logto-setup targets the chosen environment and reuses the stored credentia
   assert.equal(psql.cmd, 'docker');
   assert.ok(psql.args.includes('psql'));
   assert.ok(psql.args.join(' ').includes('docker-compose.munni-local-dev.yml'), 'the env runs its OWN postgres');
+  assert.ok(psql.args.includes('postgres-dev'), 'exec targets the UNIQUE pg service name');
   assert.deepEqual(psql.args.slice(psql.args.indexOf('-d'), psql.args.indexOf('-d') + 2), ['-d', 'logto']);
   const insertSql = psql.args.join(' ');
   assert.match(insertSql, /insert into applications /);
@@ -258,7 +266,9 @@ test('status reports per-stack store NAMES, requirements and probes — never va
   await app(fakeReq({ url: '/api/local/status', token: 'tok' }), res);
   assert.equal(res.statusCode, 200);
   const body = JSON.parse(res.chunks.join(''));
-  assert.deepEqual(Object.keys(body.stacks), LOCAL_STACKS);
+  assert.deepEqual(Object.keys(body.stacks), LOCAL_STACKS());
+  assert.equal(body.stacks['munni-local-prod'].envName, 'prod');
+  assert.equal(body.stacks['munni-local-prod'].channel, 'dev');
   const shared = body.stacks['munni-local-shared'];
   assert.deepEqual(shared.services, { glitchtip: false, vault: false, control: false, pgadmin: false });
   assert.ok(shared.required.includes('NAS_GHCR_PAT'), 'family roots are the shared stack\'s asks');
@@ -434,6 +444,40 @@ test('vault-setup heals a WIPED vault whose store still says signups-closed', as
   // reopen (bootstrap + up) then close again (bootstrap + up)
   assert.equal(spawned.length, 4);
   assert.equal(loadLocalValues(sharedStack).VAULT_SIGNUPS_ALLOWED, 'false', 'signups end closed');
+});
+
+test('dynamic environments: create validates + registers + renders; delete guards the control env and forgets the rest', async () => {
+  runs.length = 0;
+  for (const badName of ['P!', 'x', 'toolong', 'shared', 'prod']) {
+    const res = fakeRes();
+    await app(fakeReq({ method: 'POST', url: '/api/local/envs', token: 'tok', body: { name: badName } }), res);
+    assert.equal(res.statusCode, 400, `"${badName}" must be refused`);
+  }
+  assert.equal(runs.length, 0);
+  const ok = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/envs', token: 'tok', body: { name: 'tst', channel: 'latest' } }), ok);
+  assert.equal(runs.length, 1);
+  assert.ok(runs[0].args.join(' ').includes('--stack munni-local-tst'));
+  assert.ok(LOCAL_STACKS().includes('munni-local-tst'));
+  const t = loadStack('munni-local-tst');
+  assert.equal(t.urls.web, 'http://localhost:8580', 'slot 2 → the next 100-port block');
+  assert.equal(t.urls.logto, 'http://localhost:3401');
+  assert.equal(t.channel, 'latest');
+  assert.equal(t.appChannel, 'staging');
+
+  const guard = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/envs/delete', token: 'tok', body: { name: 'prod' } }), guard);
+  assert.equal(guard.statusCode, 400, 'the control environment must refuse deletion');
+
+  const spawned = [];
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'ok\n'), probeImpl: async () => false });
+  const del = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/envs/delete', token: 'tok', body: { name: 'tst' } }), del);
+  await settle(del);
+  assert.equal(spawned.length, 1, 'one docker teardown');
+  assert.ok(spawned[0].args.includes('-v'));
+  assert.match(del.chunks.join(''), /deleted and forgotten/);
+  assert.ok(!LOCAL_STACKS().includes('munni-local-tst'), 'registry entry removed');
 });
 
 test('glitchtip-setup mints in the SHARED stack and wires the chosen environment', async () => {

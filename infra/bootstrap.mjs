@@ -26,6 +26,7 @@ import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
 import { applyReverseProxy } from './modules/dsm.mjs';
+import { insecureFetch } from './modules/insecure-fetch.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(`--${name}`);
@@ -77,6 +78,21 @@ async function probe(label, url, ok = (r) => r.ok) {
   }
 }
 
+/** vault probe: hosted vaults have real certs; the local vault sits
+ * behind a locally-minted one (Caddy internal CA) — retry unverified */
+async function probeVault(label, url) {
+  if (!url.startsWith('https://localhost')) return probe(label, url, (r) => r.status < 500);
+  try {
+    const res = await insecureFetch(url);
+    const good = res.status < 500;
+    console.log(`${good ? '  ✓' : '  ✗'} ${label}: ${url} (${res.status})`);
+    return good;
+  } catch (e) {
+    console.log(`  ✗ ${label}: ${url} (${e.cause?.code ?? e.name})`);
+    return false;
+  }
+}
+
 async function probeAll() {
   // probe what THIS stack addresses: its own services plus the shared
   // stack's (for iac pairs sharedOf = the pair's prod twin, unchanged)
@@ -87,7 +103,7 @@ async function probeAll() {
   const logtoUrl = stack.urls.logto ?? pair.urls.logto;
   if (logtoUrl) allUp &= await probe('logto', `${logtoUrl}/oidc/.well-known/openid-configuration`);
   if (shared.urls.glitchtip) allUp &= await probe('glitchtip', `${shared.urls.glitchtip}/api/0/`, (r) => r.status < 500);
-  if (shared.urls.vault) allUp &= await probe('vault', `${shared.urls.vault}/alive`, (r) => r.status < 500);
+  if (shared.urls.vault) allUp &= await probeVault('vault', `${shared.urls.vault}/alive`);
   if (stack.urls.control) allUp &= await probe('control', stack.urls.control, (r) => r.status < 500);
   if (stack.urls.pgadmin) allUp &= await probe('pgadmin', `${stack.urls.pgadmin}/misc/ping`);
   return allUp;

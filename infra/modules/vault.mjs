@@ -1,4 +1,5 @@
 import { createCipheriv, createDecipheriv, createHmac, generateKeyPairSync, pbkdf2Sync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { insecureFetch } from './insecure-fetch.mjs';
 
 /**
  * Vaultwarden (Bitwarden-compatible) as code: register the account,
@@ -97,7 +98,7 @@ export const buildCipher = (userKeys, item) => ({
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64url');
 
 /** password-grant login; returns the access token or null on bad creds */
-export async function vaultLogin(base, email, hash, fetchImpl = fetch) {
+export async function vaultLogin(base, email, hash, fetchImpl = insecureFetch) {
   const res = await fetchImpl(`${base}/identity/connect/token`, {
     method: 'POST',
     headers: {
@@ -121,21 +122,21 @@ export async function vaultLogin(base, email, hash, fetchImpl = fetch) {
   return (await res.json()).access_token;
 }
 
-export const vaultRegister = (base, payload, fetchImpl = fetch) =>
+export const vaultRegister = (base, payload, fetchImpl = insecureFetch) =>
   fetchImpl(`${base}/identity/accounts/register`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(payload),
   });
 
-export const vaultPurge = (base, token, hash, fetchImpl = fetch) =>
+export const vaultPurge = (base, token, hash, fetchImpl = insecureFetch) =>
   fetchImpl(`${base}/api/ciphers/purge`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ masterPasswordHash: hash }),
   });
 
-export const vaultImport = (base, token, ciphers, fetchImpl = fetch) =>
+export const vaultImport = (base, token, ciphers, fetchImpl = insecureFetch) =>
   fetchImpl(`${base}/api/ciphers/import`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },

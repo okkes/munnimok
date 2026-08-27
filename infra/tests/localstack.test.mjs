@@ -29,7 +29,8 @@ test('the family derives plain-http localhost urls per stack', () => {
   assert.equal(dev.urls.logto, 'http://localhost:3301');
   const shared = loadStack('munni-local-shared');
   assert.equal(shared.urls.glitchtip, 'http://localhost:8383');
-  assert.equal(shared.urls.vault, 'http://localhost:8384');
+  // the vault is https even locally (Caddy sidecar, Bitwarden client rule)
+  assert.equal(shared.urls.vault, 'https://localhost:8384');
   assert.equal(shared.urls.control, 'http://localhost:8385');
   assert.equal(shared.urls.pgadmin, 'http://localhost:8386');
   assert.equal(sharedOf(prod).stack, 'munni-local-shared');
@@ -119,8 +120,9 @@ test('env render: own logto, OWN postgres with a pgadmin alias, no glitchtip ser
   const dev = loadStack('munni-local-dev');
   const dir = renderStack(dev, familyValues(dev));
   const compose = readFileSync(join(dir, 'docker-compose.munni-local-dev.yml'), 'utf8');
-  assert.ok(compose.includes('postgres:18-alpine'), 'the environment runs its own database server');
-  assert.ok(compose.includes('aliases: [postgres-dev]'), 'pgAdmin reaches it via the shared-net alias');
+  assert.ok(compose.includes('postgres-dev:'), 'UNIQUE service name — plain "postgres" collides across envs on the shared net');
+  assert.ok(!/\n {2}postgres:\n/.test(compose), 'no ambiguous plain postgres service');
+  assert.ok(compose.includes('aliases: [postgres]'), 'in-stack consumers keep the plain name via a default-net alias');
   assert.ok(compose.includes('Database=munni;'));
   assert.ok(compose.includes('postgres:5432/logto'));
   assert.ok(compose.includes('external: true'));
@@ -143,9 +145,9 @@ test('LAN mode: the marker file moves every local url onto the LAN host, localho
     assert.equal(prod.urls.logto, 'http://192.168.1.50:3201');
     const shared = loadStack('munni-local-shared');
     assert.equal(shared.urls.glitchtip, 'http://192.168.1.50:8383');
-    // the Bitwarden web client refuses http on non-localhost origins —
-    // the vault is the ONE service that never moves off localhost
-    assert.equal(shared.urls.vault, 'http://localhost:8384');
+    // the Bitwarden web client refuses http outright — the vault stays
+    // https://localhost even in LAN mode
+    assert.equal(shared.urls.vault, 'https://localhost:8384');
     // sign-in accepts BOTH forms so host-browser use keeps working
     const apps = appDefinitions(prod);
     assert.deepEqual(apps.web.oidcClientMetadata.redirectUris, [
@@ -156,6 +158,7 @@ test('LAN mode: the marker file moves every local url onto the LAN host, localho
     // the api's CORS carries the localhost twins too
     const dir = renderStack(prod, familyValues(prod));
     const compose = readFileSync(join(dir, 'docker-compose.munni-local-prod.yml'), 'utf8');
+    assert.ok(compose.includes('postgres-prod:'), 'unique pg service name under LAN mode too');
     assert.ok(compose.includes('Cors__Origins__0: http://192.168.1.50:8380'));
     assert.ok(compose.includes('http://localhost:8380'));
     assert.ok(compose.includes('http://localhost:8381'));

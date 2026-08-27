@@ -28,7 +28,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST } from '../modules/secrets.mjs';
 import { familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from '../modules/localstore.mjs';
-import { lanHost, loadStack } from '../modules/stack.mjs';
+import { insecureFetch } from '../modules/insecure-fetch.mjs';
+import { lanHost, loadStack, localEnvRegistry, saveLocalEnvRegistry } from '../modules/stack.mjs';
 import { validate } from '../modules/validate.mjs';
 import { buildAccount, buildCipher, vaultImport, vaultLogin, vaultPurge, vaultRegister } from '../modules/vault.mjs';
 
@@ -37,15 +38,16 @@ const ROOT = join(DIR, '..', '..');
 const HTML = join(DIR, 'index.html');
 
 export const SHARED_STACK = 'munni-local-shared';
-export const LOCAL_ENVS = ['munni-local-prod', 'munni-local-dev'];
-export const LOCAL_STACKS = [SHARED_STACK, ...LOCAL_ENVS];
+/** the environment stacks are DYNAMIC (local-envs.json registry) */
+export const LOCAL_ENVS = () => localEnvRegistry().map((e) => `munni-local-${e.name}`);
+export const LOCAL_STACKS = () => [SHARED_STACK, ...LOCAL_ENVS()];
 
 // MUNNI_RENDER_DIR: same test override the render/localstore modules honor
 const renderedDir = (name) =>
   process.env.MUNNI_RENDER_DIR ? join(process.env.MUNNI_RENDER_DIR, name) : join(ROOT, 'infra', 'rendered', name);
 const composeArgs = (name) => ['compose', '--env-file', `.env.${name}`, '-f', `docker-compose.${name}.yml`];
-const pickStack = (candidate, fallback = 'munni-local-prod') => (LOCAL_STACKS.includes(candidate) ? candidate : fallback);
-const pickEnv = (candidate) => (LOCAL_ENVS.includes(candidate) ? candidate : 'munni-local-prod');
+const pickStack = (candidate, fallback = 'munni-local-prod') => (LOCAL_STACKS().includes(candidate) ? candidate : fallback);
+const pickEnv = (candidate) => (LOCAL_ENVS().includes(candidate) ? candidate : 'munni-local-prod');
 
 /** operator names the browser may hand to bootstrap via env */
 export const OPERATOR_NAMES = new Set(
@@ -53,29 +55,32 @@ export const OPERATOR_NAMES = new Set(
 );
 
 const DEVSOURCE_COMPOSE = ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml'];
-/** fixed command allowlist — nothing here is caller-controlled. The
- * heavyweight VERIFICATION tools (sonar, e2e, webkit) left this list on
- * user ruling: they are development instruments, not setup steps. */
-export const TOOLS = Object.fromEntries([
-  ...LOCAL_STACKS.flatMap((name) => [
-    [`${name}:up`, { cwd: renderedDir(name), cmd: 'docker', args: [...composeArgs(name), 'up', '-d'] }],
-    [`${name}:down`, { cwd: renderedDir(name), cmd: 'docker', args: [...composeArgs(name), 'down'] }],
-    // -v --remove-orphans: destroy nukes volumes, network, strays — the
-    // wizard asks for explicit confirmation before calling these
-    [`${name}:destroy`, { cwd: renderedDir(name), cmd: 'docker', args: [...composeArgs(name), 'down', '-v', '--remove-orphans'] }],
-  ]),
-  ['devsource:up', { cwd: ROOT, cmd: 'docker', args: [...DEVSOURCE_COMPOSE, 'up', '-d', '--build'] }],
-  ['devsource:down', { cwd: ROOT, cmd: 'docker', args: [...DEVSOURCE_COMPOSE, 'down'] }],
-  ['devsource:destroy', { cwd: ROOT, cmd: 'docker', args: [...DEVSOURCE_COMPOSE, 'down', '-v', '--remove-orphans'] }],
-]);
+/** fixed verb set over the KNOWN stacks — nothing here is caller-
+ * controlled beyond picking one. The heavyweight VERIFICATION tools
+ * (sonar, e2e, webkit) left this on user ruling: they are development
+ * instruments, not setup steps. */
+export function toolFor(id) {
+  const m = /^(.+):(up|down|destroy)$/.exec(String(id ?? ''));
+  if (!m) return null;
+  const [, name, verb] = m;
+  if (name === 'devsource') {
+    const args = { up: ['up', '-d', '--build'], down: ['down'], destroy: ['down', '-v', '--remove-orphans'] }[verb];
+    return { cwd: ROOT, cmd: 'docker', args: [...DEVSOURCE_COMPOSE, ...args] };
+  }
+  if (!LOCAL_STACKS().includes(name)) return null;
+  // -v --remove-orphans: destroy nukes volumes, network, strays — the
+  // wizard asks for explicit confirmation before calling these
+  const args = { up: ['up', '-d'], down: ['down'], destroy: ['down', '-v', '--remove-orphans'] }[verb];
+  return { cwd: renderedDir(name), cmd: 'docker', args: [...composeArgs(name), ...args] };
+}
 
 /** the web origin each stack hands to GoCardless as its consent redirect
  * — the discriminator for which requisitions BELONG to it */
-const GC_REDIRECT_PREFIX = {
-  'munni-local-prod': 'http://localhost:8380/',
-  'munni-local-dev': 'http://localhost:8480/',
-  devsource: 'http://localhost:5173/',
-};
+function gcRedirectPrefix(target) {
+  if (target === 'devsource') return 'http://localhost:5173/';
+  if (!LOCAL_ENVS().includes(target)) return null; // shared: no consents
+  return `${loadStack(target).urls.web}/`;
+}
 
 const hostOk = (req) => /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host ?? '');
 
@@ -84,6 +89,15 @@ async function probe(url) {
     const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
     return res.status < 500;
   } catch {
+    // the vault's locally-minted certificate fails strict TLS — retry
+    // without verification for local https urls only
+    if (url.startsWith('https://localhost')) {
+      try {
+        return (await insecureFetch(url)).status < 500;
+      } catch {
+        return false;
+      }
+    }
     return false; // unreachable → down
   }
 }
@@ -132,7 +146,7 @@ async function statusEndpoint(res, probeImpl) {
     c.on('close', (code) => resolve({ ok: code === 0, version: out.trim() }));
   });
   const stacks = {};
-  for (const name of LOCAL_STACKS) {
+  for (const name of LOCAL_STACKS()) {
     const stack = loadStack(name);
     const services = {};
     const probes = [];
@@ -151,6 +165,8 @@ async function statusEndpoint(res, probeImpl) {
       required: stackManifestEntries(stack).filter((s) => !s.optional && s.owner === 'operator').map((s) => s.name),
       services,
       urls: stack.urls,
+      envName: stack.envName ?? null,
+      channel: stack.channel,
     };
   }
   return json(res, 200, { docker, stacks, lan: lanHost() });
@@ -171,7 +187,7 @@ async function runEndpoint(req, res, runImpl) {
 
 async function toolEndpoint(req, res, runImpl) {
   const body = await readBody(req);
-  const tool = TOOLS[body.tool];
+  const tool = toolFor(body.tool);
   if (!tool) return json(res, 400, { error: 'unknown tool' });
   return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
 }
@@ -207,14 +223,16 @@ const logtoApi = async (base, token, path, init = {}) => {
   return res.status === 204 ? null : res.json();
 };
 
-/** psql inside the ENVIRONMENT's own postgres (each env runs its own) */
+/** psql inside the ENVIRONMENT's own postgres (each env runs its own;
+ * the service carries a UNIQUE name — see the render's DNS-collision note) */
+const envPgService = (stackName) => `postgres-${stackName.replace('munni-local-', '')}`;
 const envPsql = (stackName, db, sql) => [
-  ...composeArgs(stackName), 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1',
+  ...composeArgs(stackName), 'exec', '-T', envPgService(stackName), 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1',
   ...sql.flatMap((s) => ['-c', s]),
 ];
 /** single-VALUE query: -At strips headers/footers so out.trim() IS the value */
 const envPsqlValue = (stackName, db, sql) => [
-  ...composeArgs(stackName), 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', sql,
+  ...composeArgs(stackName), 'exec', '-T', envPgService(stackName), 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', sql,
 ];
 
 async function claimLogtoHumans(res, run, stack, infra) {
@@ -402,7 +420,7 @@ async function purgeGcRequisitions(target, res) {
     res.write('no GoCardless credentials in the store — nothing to purge there\n');
     return true;
   }
-  const prefix = GC_REDIRECT_PREFIX[target];
+  const prefix = gcRedirectPrefix(target);
   if (!prefix) { res.write('this stack creates no bank consents — skipping the provider purge\n'); return true; }
   const tokenRes = await fetch('https://bankaccountdata.gocardless.com/api/v2/token/new/', {
     method: 'POST',
@@ -440,7 +458,7 @@ async function cleanupEndpoint(req, res, runImpl) {
   } catch (e) {
     res.write(`GoCardless purge failed (${e.message}) — continuing with the docker teardown\n`);
   }
-  const tool = TOOLS[`${target}:destroy`];
+  const tool = toolFor(`${target}:destroy`);
   return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
 }
 
@@ -488,7 +506,7 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl) {
   // SHARED first: glitchtip must run under the NEW domain before the env
   // bootstraps ask it for DSNs (found live 2026-08-28: env-first kept
   // the localhost DSN form in the LAN render)
-  for (const name of [SHARED_STACK, ...LOCAL_ENVS]) {
+  for (const name of [SHARED_STACK, ...LOCAL_ENVS()]) {
     const boot = await run(res, `re-render ${name}`, process.execPath,
       [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name], { cwd: ROOT });
     if (boot.code !== 0) return res.end('[exit 1]\n');
@@ -535,11 +553,56 @@ function nativeConfigEndpoint(res) {
   return json(res, 200, { environment: 'local', lanHost: lan, ready: missing.length === 0, missing, variables });
 }
 
+/* ── dynamic environments: "+" creates one, delete tears one down and
+   forgets it (user ruling 2026-08-28: any number of environments) ── */
+const RESERVED_ENV_NAMES = new Set(['shared', 'local']);
+
+async function envCreateEndpoint(req, res, runImpl) {
+  const body = await readBody(req);
+  const name = String(body.name ?? '').trim().toLowerCase();
+  const channel = body.channel === 'latest' ? 'latest' : 'dev';
+  if (!/^[a-z]{2,5}$/.test(name)) return json(res, 400, { error: 'name must be 2-5 lowercase letters (like dev, test, acc, stg)' });
+  if (RESERVED_ENV_NAMES.has(name)) return json(res, 400, { error: `"${name}" is reserved` });
+  const envs = localEnvRegistry();
+  if (envs.some((e) => e.name === name)) return json(res, 400, { error: `environment "${name}" already exists` });
+  const used = new Set(envs.map((e) => e.slot));
+  let slot = 0;
+  while (used.has(slot)) slot += 1;
+  saveLocalEnvRegistry([...envs, { name, channel, slot }]);
+  // render right away (mints its secrets, writes compose + env); the
+  // wizard chains start + sign-in + crash wiring from here
+  return runImpl(res, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
+}
+
+async function envDeleteEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  const name = String(body.name ?? '').trim().toLowerCase();
+  const stackName = `munni-local-${name}`;
+  const envs = localEnvRegistry();
+  if (!envs.some((e) => e.name === name)) return json(res, 400, { error: `no environment named "${name}"` });
+  if (loadStack(SHARED_STACK).controlApi === stackName) {
+    return json(res, 400, { error: 'munni-control and the native apps ride this environment — it cannot be deleted' });
+  }
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  res.write(`▶ delete environment ${name} — GoCardless consents, containers + volumes, then forget it\n\n`);
+  try {
+    await purgeGcRequisitions(stackName, res);
+  } catch (e) {
+    res.write(`GoCardless purge failed (${e.message}) — continuing with the docker teardown\n`);
+  }
+  const tool = toolFor(`${stackName}:destroy`);
+  await stepRunner(spawnImpl)(res, 'containers + volumes + network', tool.cmd, tool.args, { cwd: tool.cwd });
+  saveLocalEnvRegistry(localEnvRegistry().filter((e) => e.name !== name));
+  rmSync(renderedDir(stackName), { recursive: true, force: true });
+  res.write(`\nenvironment ${name} deleted and forgotten (its secret store went with the rendered folder)\n`);
+  return res.end('\n[exit 0]\n');
+}
+
 /* ── secret retrieval (family-wide): the stores ARE readable — surfaced
    on EXPLICIT request only; values go to the page, never to any log ── */
 function secretsEndpoint(res) {
   const values = {};
-  for (const name of LOCAL_STACKS) {
+  for (const name of LOCAL_STACKS()) {
     values[name] = loadLocalValues(loadStack(name));
   }
   return json(res, 200, { values });
@@ -564,33 +627,41 @@ function buildVaultItems() {
   if (shared.NAS_PGADMIN_PASSWORD) {
     items.push({ name: 'munni local / pgAdmin', username: 'admin@munni.dev', password: shared.NAS_PGADMIN_PASSWORD, uri: 'http://localhost:8386', notes: 'one console over every database server in the family' });
   }
-  const skip = new Set(['NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD']);
-  const covered = new Set(['GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_PGADMIN_PASSWORD']);
-  const pgNote = {
-    [SHARED_STACK]: 'the glitchtip-db server (shared stack)',
-    'munni-local-prod': 'production’s own postgres (munni + logto databases)',
-    'munni-local-dev': 'development’s own postgres (munni + logto databases)',
-  };
-  for (const stackName of LOCAL_STACKS) {
-    const stack = loadStack(stackName);
-    const values = loadLocalValues(stack);
-    if (values.NAS_POSTGRES_PASSWORD) {
-      items.push({ name: `${stackName} / Postgres`, username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: pgNote[stackName] ?? '' });
-    }
-    if (values.LOGTO_CONSOLE_USERNAME) {
-      items.push({ name: `${stackName} / Logto console`, username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '' });
-    }
-    if (values.LOGTO_APP_ADMIN_USERNAME) {
-      items.push({ name: `${stackName} / munni app (admin user)`, username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web ?? '' });
-    }
-    if (values.IAC_LOGTO_INFRA_M2M_ID) {
-      items.push({ name: `${stackName} / Logto infra M2M`, username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '' });
-    }
-    const localCovered = new Set([...covered, 'NAS_POSTGRES_PASSWORD', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD', 'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET']);
-    for (const [name, value] of Object.entries(values)) {
-      if (localCovered.has(name) || skip.has(name) || !value) continue;
-      items.push({ name: `${stackName} / ${name}`, password: String(value), notes: 'from the munni setup wizard local store' });
-    }
+  for (const stackName of LOCAL_STACKS()) {
+    items.push(...stackVaultItems(stackName));
+  }
+  return items;
+}
+
+const VAULT_SKIP_NAMES = new Set(['NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD']);
+const VAULT_COVERED_NAMES = new Set([
+  'GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_PGADMIN_PASSWORD',
+  'NAS_POSTGRES_PASSWORD', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD',
+  'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET',
+]);
+
+function stackVaultItems(stackName) {
+  const items = [];
+  const stack = loadStack(stackName);
+  const values = loadLocalValues(stack);
+  const pgNote = stackName === SHARED_STACK
+    ? 'the glitchtip-db server (shared stack)'
+    : `${stackName.replace('munni-local-', '')}’s own postgres (munni + logto databases)`;
+  if (values.NAS_POSTGRES_PASSWORD) {
+    items.push({ name: `${stackName} / Postgres`, username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: pgNote });
+  }
+  if (values.LOGTO_CONSOLE_USERNAME) {
+    items.push({ name: `${stackName} / Logto console`, username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '' });
+  }
+  if (values.LOGTO_APP_ADMIN_USERNAME) {
+    items.push({ name: `${stackName} / munni app (admin user)`, username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web ?? '' });
+  }
+  if (values.IAC_LOGTO_INFRA_M2M_ID) {
+    items.push({ name: `${stackName} / Logto infra M2M`, username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '' });
+  }
+  for (const [name, value] of Object.entries(values)) {
+    if (VAULT_COVERED_NAMES.has(name) || VAULT_SKIP_NAMES.has(name) || !value) continue;
+    items.push({ name: `${stackName} / ${name}`, password: String(value), notes: 'from the munni setup wizard local store' });
   }
   return items;
 }
@@ -717,28 +788,34 @@ function serveHtml(res, token) {
 }
 
 /** build the handler; spawn/probe/validate deps injectable for tests */
-export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn, vaultFetchImpl = fetch } = {}) {
+export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn, vaultFetchImpl = insecureFetch } = {}) {
+  const routes = {
+    'GET /api/local/status': (req, res) => statusEndpoint(res, probeImpl),
+    'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),
+    'POST /api/local/tool': (req, res) => toolEndpoint(req, res, runImpl),
+    'POST /api/local/glitchtip-setup': (req, res) => glitchtipSetupEndpoint(req, res, spawnImpl),
+    'POST /api/local/logto-setup': (req, res) => logtoSetupEndpoint(req, res, spawnImpl),
+    'POST /api/local/cleanup': (req, res) => cleanupEndpoint(req, res, runImpl),
+    'POST /api/local/envs': (req, res) => envCreateEndpoint(req, res, runImpl),
+    'POST /api/local/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl),
+    'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
+    'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),
+    'POST /api/local/vault-setup': (req, res) => vaultSetupEndpoint(req, res, spawnImpl, vaultFetchImpl),
+    'GET /api/local/lan': (req, res) => lanGetEndpoint(res),
+    'POST /api/local/lan': (req, res) => lanSetEndpoint(req, res, spawnImpl, probeImpl),
+    'GET /api/local/native-config': (req, res) => nativeConfigEndpoint(res),
+    'POST /api/validate': (req, res) => validateEndpoint(req, res, validateImpl),
+  };
   return async function handle(req, res) {
     if (!hostOk(req)) return json(res, 403, { error: 'bad host' });
     const url = new URL(req.url, 'http://localhost');
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) return serveHtml(res, token);
     if (!url.pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' });
     if (req.headers['x-setup-token'] !== token) return json(res, 401, { error: 'bad token' });
+    const route = routes[`${req.method} ${url.pathname}`];
+    if (!route) return json(res, 404, { error: 'not found' });
     try {
-      if (req.method === 'GET' && url.pathname === '/api/local/status') return await statusEndpoint(res, probeImpl);
-      if (req.method === 'POST' && url.pathname === '/api/local/run') return await runEndpoint(req, res, runImpl);
-      if (req.method === 'POST' && url.pathname === '/api/local/tool') return await toolEndpoint(req, res, runImpl);
-      if (req.method === 'POST' && url.pathname === '/api/local/glitchtip-setup') return await glitchtipSetupEndpoint(req, res, spawnImpl);
-      if (req.method === 'POST' && url.pathname === '/api/local/logto-setup') return await logtoSetupEndpoint(req, res, spawnImpl);
-      if (req.method === 'POST' && url.pathname === '/api/local/cleanup') return await cleanupEndpoint(req, res, runImpl);
-      if (req.method === 'GET' && url.pathname === '/api/local/secrets') return secretsEndpoint(res);
-      if (req.method === 'GET' && url.pathname === '/api/local/vault-export') return vaultExportEndpoint(res);
-      if (req.method === 'POST' && url.pathname === '/api/local/vault-setup') return await vaultSetupEndpoint(req, res, spawnImpl, vaultFetchImpl);
-      if (req.method === 'GET' && url.pathname === '/api/local/lan') return lanGetEndpoint(res);
-      if (req.method === 'POST' && url.pathname === '/api/local/lan') return await lanSetEndpoint(req, res, spawnImpl, probeImpl);
-      if (req.method === 'GET' && url.pathname === '/api/local/native-config') return nativeConfigEndpoint(res);
-      if (req.method === 'POST' && url.pathname === '/api/validate') return await validateEndpoint(req, res, validateImpl);
-      return json(res, 404, { error: 'not found' });
+      return await route(req, res);
     } catch (e) {
       return json(res, 500, { error: String(e.message ?? e) });
     }

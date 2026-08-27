@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadStack, pairProd } from './stack.mjs';
+import { loadStack, localEnvRegistry, pairProd } from './stack.mjs';
 
 /** the docker network local env stacks share with munni-local-shared */
 export const LOCAL_SHARED_NET = 'munni-local-shared-net';
@@ -30,7 +30,7 @@ export function renderStack(stack, values) {
     // munni-control, pgAdmin over the whole family
     writeFileSync(join(dir, `docker-compose.${stack.stack}.yml`), sharedLocalCompose(stack));
     writeFileSync(join(dir, `.env.${stack.stack}`), substitute(sharedLocalTemplate(stack), values));
-    writeFileSync(join(dir, 'pgadmin-servers.json'), `${pgadminServers(stack)}\n`);
+    writeFileSync(join(dir, 'pgadmin-servers.json'), `${pgadminServers()}\n`);
     return dir;
   }
 
@@ -428,8 +428,19 @@ services:
       SIGNUPS_ALLOWED: \${VAULT_SIGNUPS_ALLOWED:-true}
     volumes:
       - vaultdata:/data
+
+  # the Bitwarden web client refuses ANY plain-http url (found live
+  # 2026-08-28, upstream made https mandatory) — Caddy fronts the vault
+  # with a locally-minted certificate (its internal CA, persisted so the
+  # one-time browser accept sticks across restarts)
+  vault-tls:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    command: caddy reverse-proxy --from https://localhost:${p.vault} --to http://vaultwarden:80 --internal-certs
+    volumes:
+      - vaulttls:/data
     ports:
-      - "${p.vault}:80"
+      - "${p.vault}:${p.vault}"
 
   # the shared-services cockpit (plan LS5): its OWN app + image (not the
   # env dashboard), signed in through ${s.controlApi}'s Logto + API
@@ -469,14 +480,16 @@ services:
 volumes:
   glitchtipdb:
   vaultdata:
+  vaulttls:
   pgadmindata:
 `;
 }
 
 /** pgAdmin's preregistered server list — one entry per database server
- * in the family. Passwords are NOT stored here (pgAdmin prompts once;
- * tick "save password" — the values live under Reveal secrets). */
-function pgadminServers(s) {
+ * in the family (dynamic: one per registry environment + glitchtip).
+ * Passwords are NOT stored here (pgAdmin prompts once; tick "save
+ * password" — the values live under Reveal secrets). */
+function pgadminServers() {
   const envServer = (name, host) => ({
     Name: name,
     Group: 'munni local',
@@ -486,13 +499,14 @@ function pgadminServers(s) {
     Username: 'munni',
     SSLMode: 'prefer',
   });
-  return JSON.stringify({
-    Servers: {
-      1: envServer('production', 'postgres-prod'),
-      2: envServer('development', 'postgres-dev'),
-      3: { ...envServer('glitchtip (shared)', 'glitchtip-db'), MaintenanceDB: 'glitchtip' },
-    },
-  }, null, 2);
+  const servers = {};
+  let i = 1;
+  for (const env of localEnvRegistry()) {
+    servers[i] = envServer(env.name, `postgres-${env.name}`);
+    i += 1;
+  }
+  servers[i] = { ...envServer('glitchtip (shared)', 'glitchtip-db'), MaintenanceDB: 'glitchtip' };
+  return JSON.stringify({ Servers: servers }, null, 2);
 }
 
 function sharedLocalTemplate(s) {
@@ -530,7 +544,7 @@ function corsOrigins(s) {
 function envLocalCompose(s) {
   const p = s.ports;
   const appChannel = s.appChannel ?? (s.role === 'prod' ? 'production' : 'staging');
-  const shortName = s.stack.replace('munni-local-', '');
+  const shortName = s.envName ?? s.stack.replace('munni-local-', '');
   return `# ${s.stack} — RENDERED by infra/bootstrap.mjs, do not edit by hand.
 # A complete local environment: own web/admin/api, OWN Logto and OWN
 # postgres (data isolation — deleting this stack can never touch another
@@ -545,10 +559,14 @@ networks:
     name: ${LOCAL_SHARED_NET}
 
 services:
-  # this environment's OWN database server. The alias below exists so
-  # the shared stack's pgAdmin can reach it; other environments hold no
-  # credentials for it (every postgres mints its own password).
-  postgres:
+  # this environment's OWN database server. UNIQUE service name — a
+  # compose service name registers on EVERY network it joins, so a plain
+  # "postgres" service would collide with every other environment's on
+  # the shared network (found live 2026-08-28: a new env's logto
+  # round-robined onto ANOTHER env's postgres and poisoned its own seed;
+  # only the per-env passwords stopped cross-environment writes). The
+  # in-stack alias keeps "postgres" working for THIS stack's consumers.
+  postgres-${shortName}:
     image: postgres:18-alpine
     restart: unless-stopped
     environment:
@@ -564,9 +582,9 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      default: {}
-      shared:
-        aliases: [postgres-${shortName}]
+      default:
+        aliases: [postgres]
+      shared: {}
 
   web:
     image: \${REGISTRY}/munni-web:\${TAG}
@@ -629,7 +647,7 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
     ports:
       - "${p.api}:8080"
     depends_on:
-      postgres:
+      postgres-${shortName}:
         condition: service_healthy
       logto:
         condition: service_started
@@ -652,7 +670,7 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       - "${p.logto}:${p.logto}"
       - "${p.logtoAdmin}:${p.logtoAdmin}"
     depends_on:
-      postgres:
+      postgres-${shortName}:
         condition: service_healthy
     networks: [default, shared]
 

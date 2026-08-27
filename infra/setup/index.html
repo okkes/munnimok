@@ -84,6 +84,20 @@ a{color:var(--brand-ink)}
 .hide{display:none !important}
 .envtag{font-size:10px;color:var(--muted);font-family:ui-monospace,Consolas,monospace}
 footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
+/* ── visual pass 2026-08-28: icon circles, softer cards, action pills ── */
+.card{border-radius:14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+.card-head{display:flex;gap:14px;align-items:flex-start}
+.card-head>div{flex:1;min-width:0}
+.ico{flex:0 0 40px;width:40px;height:40px;border-radius:50%;background:color-mix(in srgb,var(--brand-ink) 10%,transparent);display:flex;align-items:center;justify-content:center;margin-top:2px}
+.ico svg{width:20px;height:20px;stroke:var(--brand-ink);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+button{border-radius:20px;padding:8px 16px}
+button.ghost{border-color:var(--line);color:var(--ink)}
+button.ghost:hover{border-color:var(--brand-ink);color:var(--brand-ink)}
+button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,transparent)}
+.chiplink{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:16px;padding:3px 10px;font-size:12px;text-decoration:none;margin:2px 6px 2px 0}
+.chiplink b{font-weight:600}
+.statline{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:13px;margin:6px 0}
+.statline .pill{margin-left:2px}
 </style>
 </head>
 <body>
@@ -188,37 +202,66 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 
   <div id="local-helper-ui" hidden>
     <div class="card">
-      <h3>Status <button class="ghost" id="btn-local-refresh" style="margin:0 0 0 8px;padding:3px 10px;font-size:11px">refresh</button></h3>
-      <div id="local-status" class="why">checking…</div>
+      <div class="card-head">
+        <span class="ico" data-ico="pulse"></span>
+        <div>
+          <h3>Status <button class="ghost" id="btn-local-refresh" style="margin:0 0 0 8px;padding:3px 10px;font-size:11px">refresh</button></h3>
+          <div id="local-status" class="why">checking…</div>
+        </div>
+      </div>
     </div>
 
     <div class="card">
-      <h3>Set up &amp; start everything <span class="pill">one button</span></h3>
-      <p class="why">One button does the whole family: mints the secrets, starts the <b>shared services</b>, then brings up <b>production</b> and <b>development</b> — waiting for each piece and wiring sign-in + crash tracking automatically, nothing else to click. Credentials from step 3 join in whenever you save them (before or after); pressing it again is always safe, it only fills gaps.</p>
-      <div class="runrow">
-        <button id="btn-local-setup">Set up &amp; start munni</button>
-        <button class="ghost" id="btn-local-stopall">Stop everything</button>
-        <button class="ghost" id="btn-local-verify">Verify</button>
-        <button class="ghost" id="btn-local-nuke-all" style="color:var(--bad);border-color:var(--bad)">Delete everything…</button>
+      <div class="card-head">
+        <span class="ico" data-ico="wand"></span>
+        <div>
+          <h3>Set up &amp; start everything <span class="pill">one button</span></h3>
+          <p class="why">One button does the whole family: mints the secrets, starts the <b>shared services</b>, then brings up every environment — waiting for each piece and wiring sign-in, crash tracking and the vault automatically. Credentials from step 3 join in whenever you save them; pressing it again is always safe, it only fills gaps.</p>
+          <div class="runrow">
+            <button id="btn-local-setup">▶ Set up &amp; start munni</button>
+            <button class="ghost" id="btn-local-stopall">Stop everything</button>
+            <button class="ghost" id="btn-local-verify">Verify</button>
+            <button class="ghost danger" id="btn-local-nuke-all">Delete everything…</button>
+          </div>
+          <p class="why" id="local-links"></p>
+        </div>
       </div>
-      <p class="why" id="local-links"></p>
     </div>
 
     <div id="env-cards"></div>
 
     <div class="card">
-      <h3>Shared services <span class="pill" id="local-shared-pill"></span></h3>
-      <p class="why">The family's common ground, shared by both environments: GlitchTip crash tracking at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> (with its own database server), the Vaultwarden vault, receipt OCR, <b>munni-control</b> at <a href="http://localhost:8385" target="_blank" rel="noreferrer">localhost:8385</a> (the cockpit that watches the shared GoCardless account across ALL environments — sign in with your production admin account) — and <b>pgAdmin</b> at <a href="http://localhost:8386" target="_blank" rel="noreferrer">localhost:8386</a>, one console over every database server in the family. Its login and each server's password are under Reveal secrets; the three servers come preregistered, pgAdmin just asks for each password once (tick “save password”).</p>
-      <div class="runrow">
-        <button class="ghost" data-local-tool="munni-local-shared:up">Start</button>
-        <button class="ghost" data-local-tool="munni-local-shared:down">Stop</button>
-        <button class="ghost" id="btn-local-nuke-shared" style="color:var(--bad);border-color:var(--bad)">Delete shared services…</button>
+      <div class="card-head">
+        <span class="ico" data-ico="plus"></span>
+        <div>
+          <h3>Add an environment</h3>
+          <p class="why">Any number, side by side — each with its own sign-in, its own database server, its own ports. Name it and pick which releases it follows; it spins up and wires itself.</p>
+          <div class="runrow">
+            <input type="text" id="env-add-name" maxlength="5" placeholder="test, acc, stg…" style="max-width:170px"/>
+            <select id="env-add-channel" style="max-width:190px"><option value="dev">dev releases</option><option value="latest">main releases</option></select>
+            <button id="btn-env-add">＋ Add &amp; start</button>
+          </div>
+          <div class="msg" id="msg-env-add"></div>
+        </div>
       </div>
     </div>
 
     <div class="card">
-      <h3>Your secrets &amp; the vault <span class="pill">read them back any time</span></h3>
-      <p class="why">Every generated or saved secret lives readable in this machine's gitignored stores (one per stack, shared values kept once) — and a <b>Vaultwarden</b> vault (the self-hosted Bitwarden server) runs in the shared stack at <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> as the human copy, usable with the real Bitwarden apps/extension. One button does the whole vault: creates the account with a generated master password (kept in the store, shown under Reveal), imports every sign-in and secret as real vault items, and closes signups. Re-press it any time to re-sync the items after setup changes.</p>
+      <div class="card-head">
+        <span class="ico" data-ico="layers"></span>
+        <div>
+          <h3>Shared services <span class="pill" id="local-shared-pill"></span></h3>
+          <p class="why">The family's common ground, always running — Set up starts it, Stop/Delete everything are the only ways it goes down. <a class="chiplink" href="http://localhost:8383" target="_blank" rel="noreferrer"><b>GlitchTip</b> :8383</a> <a class="chiplink" href="https://localhost:8384" target="_blank" rel="noreferrer"><b>Vault</b> :8384</a> <a class="chiplink" href="http://localhost:8385" target="_blank" rel="noreferrer"><b>munni-control</b> :8385</a> <a class="chiplink" href="http://localhost:8386" target="_blank" rel="noreferrer"><b>pgAdmin</b> :8386</a> — control watches the shared GoCardless account across ALL environments (sign in with your production admin); pgAdmin is one console over every database server (logins under Reveal secrets, servers preregistered).</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <span class="ico" data-ico="lock"></span>
+        <div>
+          <h3>Your secrets &amp; the vault <span class="pill">read them back any time</span></h3>
+      <p class="why">Every generated or saved secret lives readable in this machine's gitignored stores (one per stack, shared values kept once) — and a <b>Vaultwarden</b> vault (the self-hosted Bitwarden server) runs in the shared stack at <a href="https://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> as the human copy, usable with the real Bitwarden apps/extension. One button does the whole vault: creates the account with a generated master password (kept in the store, shown under Reveal), imports every sign-in and secret as real vault items, and closes signups. Re-press it any time to re-sync the items after setup changes. The vault is served over https with a locally-minted certificate (the Bitwarden client demands https) — your browser warns ONCE about it; choose Advanced → proceed, it is your own machine signing for itself.</p>
       <div class="runrow">
         <button id="btn-local-vault-auto">Set up the vault automatically</button>
         <button class="ghost" id="btn-local-reveal">Reveal secrets here</button>
@@ -227,22 +270,24 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
       <div id="local-secrets" hidden style="margin-top:8px"></div>
       <details class="how"><summary>Manual fallback — your own account instead</summary>
         <ol>
-          <li>Open <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> → <b>Create account</b> with a master password of your own (needs signups open: save <code>VAULT_SIGNUPS_ALLOWED=</code> empty and press Set up).</li>
+          <li>Open <a href="https://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> → <b>Create account</b> with a master password of your own (needs signups open: save <code>VAULT_SIGNUPS_ALLOWED=</code> empty and press Set up).</li>
           <li>Download the import file (button above) → in the vault: <b>Tools → Import data</b> → format <b>Bitwarden (json)</b> → select the file → Import.</li>
           <li>Harden: save <code>VAULT_SIGNUPS_ALLOWED=false</code> and press Set up again.</li>
         </ol>
       </details>
+        </div>
+      </div>
     </div>
 
     <details class="how" style="margin:12px 0">
       <summary>Developer extras — not needed to run munni</summary>
       <div class="card" style="margin-top:8px">
         <h3>The from-source dev loop <span class="pill">develop against it</span></h3>
-        <p class="why">API + Logto + Postgres in docker built from THIS checkout, the app via <code>npm run dev</code> with hot reload (run that in a terminal — hot reload can't live in a container; details in <code>deploy/README.md</code>). This is separate from the munni-local-dev environment above, which runs released images. Verification tooling (SonarQube, e2e, WebKit) stays in the repo's scripts — it belongs to development, not setup.</p>
+        <p class="why">API + Logto + Postgres in docker built from THIS checkout, the app via <code>npm run dev</code> with hot reload (run that in a terminal — hot reload can't live in a container; details in <code>deploy/README.md</code>). This is separate from the registered environments above, which run released images. Verification tooling (SonarQube, e2e, WebKit) stays in the repo's scripts — it belongs to development, not setup.</p>
         <div class="runrow">
           <button class="ghost" data-local-tool="devsource:up">Dev loop up</button>
           <button class="ghost" data-local-tool="devsource:down">Dev loop down</button>
-          <button class="ghost" id="btn-dev-nuke" style="color:var(--bad);border-color:var(--bad)">Delete dev loop…</button>
+          <button class="ghost danger" id="btn-dev-nuke">Delete dev loop…</button>
         </div>
       </div>
     </details>
@@ -906,6 +951,8 @@ const S = {
   features: LS.get('features', { gocardless: true, enablebanking: false, logodev: false, fcm: false, google: false, apple: false, email: false, android: false, ios: false }),
   domain: LS.get('domain', ''),
   user: null,
+  envList: [],           // the dynamic local environments, mirrored from /status
+  pendingNativeBuild: null,
   repoSecrets: new Set(),
   envs: {},          // name -> { secrets:Set, vars:Set }
   keys: {},          // sealed-box public keys per base path
@@ -1160,13 +1207,25 @@ const hfetch = (path, init = {}) =>
   fetch(path, { ...init, headers: { 'x-setup-token': HELPER.token, ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
 let localBusy = false;
 
-/* the local family (plan LS1-LS3): shared services + two environments */
+/* the local family: shared services + ANY number of environments (the
+   helper's registry drives the list — S.envList mirrors /status) */
 const SHARED_STACK = 'munni-local-shared';
-const LOCAL_ENVS = [
-  { stack: 'munni-local-prod', short: 'prod', label: 'Production', web: 'http://localhost:8380', logtoAdmin: 'http://localhost:3202' },
-  { stack: 'munni-local-dev', short: 'dev', label: 'Development', web: 'http://localhost:8480', logtoAdmin: 'http://localhost:3302' },
-];
-const STACK_LABELS = { [SHARED_STACK]: 'shared services', 'munni-local-prod': 'production', 'munni-local-dev': 'development' };
+const envLabel = (name) => ({ prod: 'Production', dev: 'Development' }[name] ?? name.toUpperCase());
+const labelOf = (stackName) => (stackName === SHARED_STACK ? 'shared services' : envLabel(stackName.replace('munni-local-', '')).toLowerCase());
+
+/* minimalist line icons (stroke = brand ink, dark-mode safe) */
+const ICONS = {
+  wand: '<svg viewBox="0 0 24 24"><path d="M6 18 18 6M14 6h4v4M5 5l1.5 1.5M4 11h2M11 4v2"/></svg>',
+  server: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h.01M8 16.5h.01"/></svg>',
+  layers: '<svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 12.5 9 5 9-5"/><path d="m3 16.5 9 5 9-5"/></svg>',
+  lock: '<svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
+  plus: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
+  pulse: '<svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12L16 12h5"/></svg>',
+  phone: '<svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 17.5h2"/></svg>',
+};
+function applyIcons(root = document) {
+  root.querySelectorAll('[data-ico]').forEach((el) => { el.innerHTML = ICONS[el.dataset.ico] ?? ''; });
+}
 
 const setPill = (id, text, ok) => {
   const el = document.getElementById(id);
@@ -1178,17 +1237,89 @@ const setPill = (id, text, ok) => {
 function updateEnvCard(env, s) {
   const stored = new Set(s.stored);
   const up = s.services.web && s.services.api;
-  setPill(`env-pill-${env.short}`, up ? 'running ✓' : (s.rendered ? 'set up — not running' : 'not set up yet'), up);
-  const warn = document.getElementById(`env-logto-warn-${env.short}`);
+  setPill(`env-pill-${env.name}`, up ? 'running ✓' : (s.rendered ? 'set up — not running' : 'not set up yet'), up);
+  const card = document.querySelector(`[data-envcard="${env.stack}"]`);
+  if (card) {
+    // state-aware actions: only the option that makes sense shows
+    card.querySelector('[data-act="start"]')?.classList.toggle('hide', up);
+    card.querySelector('[data-act="stop"]')?.classList.toggle('hide', !up);
+  }
+  const warn = document.getElementById(`env-logto-warn-${env.name}`);
   if (warn) warn.hidden = Boolean(s.services.logto);
   const signinDone = stored.has('NAS_LOGTO_M2M_APP_ID');
-  const sd = document.getElementById(`env-signin-dot-${env.short}`);
+  const sd = document.getElementById(`env-signin-dot-${env.name}`);
   if (sd) sd.className = 'dot ' + (signinDone ? 'ok' : 'miss');
-  setPill(`env-signin-pill-${env.short}`, signinDone ? 'sign-in live ✓' : 'runs with Set up', signinDone);
+  setPill(`env-signin-pill-${env.name}`, signinDone ? 'live ✓' : 'runs with Set up', signinDone);
   const gtDone = stored.has('VITE_GLITCHTIP_DSN');
-  const gd = document.getElementById(`env-gt-dot-${env.short}`);
+  const gd = document.getElementById(`env-gt-dot-${env.name}`);
   if (gd) gd.className = 'dot ' + (gtDone ? 'ok' : 'miss');
-  setPill(`env-gt-pill-${env.short}`, gtDone ? 'wired ✓' : 'runs with Set up', gtDone);
+  setPill(`env-gt-pill-${env.name}`, gtDone ? 'wired ✓' : 'runs with Set up', gtDone);
+}
+
+function envCardHtml(env) {
+  const s = env.name;
+  const roles = {
+    prod: 'The environment you USE — real accounts, real bank consents.',
+    dev: 'The environment you EXPERIMENT in — break it freely, the others never notice.',
+  };
+  const role = roles[s] ?? 'A full munni environment of its own — isolated sign-in, database and ports.';
+  const deletable = env.stack !== 'munni-local-prod';
+  return `
+  <div class="card" data-envcard="${env.stack}">
+    <div class="card-head">
+      <span class="ico" data-ico="server"></span>
+      <div>
+        <h3>${envLabel(s)} <span class="pill" id="env-pill-${s}"></span> <span class="envtag">${env.channel === 'latest' ? 'main releases' : 'dev releases'}</span></h3>
+        <p class="why">${role} App at <a href="${env.web}" target="_blank" rel="noreferrer">${env.web.replace('http://', '')}</a> · Logto console <a href="${env.logtoAdmin}" target="_blank" rel="noreferrer">${env.logtoAdmin.replace('http://', '')}</a> — sign-in, crash tracking, console and admin user all wired by Set up; logins under Reveal secrets.</p>
+        <p class="msg bad" id="env-logto-warn-${s}" hidden>This environment's Logto isn't answering yet — Start it (or Set up) and wait for its dot to turn green.</p>
+        <div class="statline">
+          <span>Sign-in <span class="dot" id="env-signin-dot-${s}"></span> <span class="pill" id="env-signin-pill-${s}"></span></span>
+          <span>Crash reports <span class="dot" id="env-gt-dot-${s}"></span> <span class="pill" id="env-gt-pill-${s}"></span></span>
+        </div>
+        <div class="runrow">
+          <button class="ghost hide" data-act="start" data-stack="${env.stack}">▶ Start</button>
+          <button class="ghost hide" data-act="stop" data-stack="${env.stack}">■ Stop</button>
+          <button class="ghost" data-act="setup" data-stack="${env.stack}">Re-run setup</button>
+          ${deletable
+            ? `<button class="ghost danger" data-act="nuke" data-stack="${env.stack}">Delete…</button>`
+            : '<span class="envtag" title="munni-control and the native apps ride this environment">not deletable</span>'}
+        </div>
+        <details class="how"><summary>Admin access &amp; manual fallback</summary>
+          <label class="f" for="in-subs-${s}">NAS_ADMIN_SUBS — a Logto User ID to grant admin access (Set up creates the first admin automatically while the environment has no users)</label>
+          <input type="text" id="in-subs-${s}" placeholder="usr_…" autocomplete="off"/>
+          <button class="ghost" data-act="subs" data-stack="${env.stack}">Store admin access</button>
+          <button class="ghost" data-act="signin" data-stack="${env.stack}">Re-run sign-in setup</button>
+          <button class="ghost" data-act="gt" data-stack="${env.stack}">Re-run crash tracking</button>
+          <p style="margin-top:8px;font-size:13px">Bring your own Logto M2M credential (console → Applications → Machine-to-machine, role <b>Logto Management API</b>):</p>
+          <div class="grid2">
+            <div><label class="f" for="in-m2m-id-${s}">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-m2m-id-${s}" autocomplete="off"/></div>
+            <div><label class="f" for="in-m2m-secret-${s}">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-m2m-secret-${s}" autocomplete="off"/></div>
+          </div>
+          <button data-act="oobe" data-stack="${env.stack}">Apply sign-in setup</button>
+          <label class="f" for="in-gt-${s}">IAC_GLITCHTIP_API_TOKEN (family-wide, from <a href="http://localhost:8383" target="_blank" rel="noreferrer">GlitchTip</a> → Auth Tokens)</label>
+          <input type="password" id="in-gt-${s}" autocomplete="off"/>
+          <button data-act="gtapply" data-stack="${env.stack}">Apply crash tracking</button>
+          <div class="msg" id="msg-oobe-${s}"></div>
+        </details>
+      </div>
+    </div>
+  </div>`;
+}
+
+/** re-render the env cards ONLY when the environment LIST changes —
+ * typed values survive every ordinary refresh */
+function renderEnvCards(st) {
+  const list = Object.entries(st.stacks)
+    .filter(([, s]) => s.envName)
+    .map(([stackName, s]) => ({ stack: stackName, name: s.envName, channel: s.channel, web: s.urls.web, logtoAdmin: s.urls.logtoAdmin }));
+  S.envList = list;
+  const signature = JSON.stringify(list);
+  const box = document.getElementById('env-cards');
+  if (box && box.dataset.signature !== signature) {
+    box.dataset.signature = signature;
+    box.innerHTML = list.map(envCardHtml).join('');
+    applyIcons(box);
+  }
 }
 
 async function refreshLocal() {
@@ -1204,7 +1335,7 @@ async function refreshLocal() {
     const link = (label, up, url) => `${dot(up)} <a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
     const rows = [`${dot(st.docker.ok)} Docker ${st.docker.ok ? st.docker.version : '<b>not running — start Docker Desktop</b>'}`];
     for (const [name, s] of Object.entries(st.stacks)) {
-      const parts = [`<b>${STACK_LABELS[name] ?? name}</b>`, `${dot(s.rendered)} ${s.rendered ? 'set up' : 'not set up yet'}`];
+      const parts = [`<b>${labelOf(name)}</b>`, `${dot(s.rendered)} ${s.rendered ? 'set up' : 'not set up yet'}`];
       if (s.urls.web) {
         parts.push(link('app', s.services.web, s.urls.web), link('admin', s.services.web, s.urls.admin),
           link('api', s.services.api, `${s.urls.api}/health`), link('logto', s.services.logto, s.urls.logtoAdmin));
@@ -1216,15 +1347,18 @@ async function refreshLocal() {
       rows.push(parts.join(' &nbsp;·&nbsp; '));
     }
     box.innerHTML = rows.map((r) => `<div style="margin:2px 0">${r}</div>`).join('');
-    const prod = st.stacks['munni-local-prod'];
+    renderEnvCards(st);
     const shared = st.stacks[SHARED_STACK];
-    document.getElementById('local-links').innerHTML =
-      `Once up: production <a href="${prod.urls.web}" target="_blank" rel="noreferrer">localhost:8380</a> · development <a href="${st.stacks['munni-local-dev'].urls.web}" target="_blank" rel="noreferrer">localhost:8480</a> · control cockpit <a href="${shared.urls.control}" target="_blank" rel="noreferrer">localhost:8385</a>`;
-    for (const env of LOCAL_ENVS) updateEnvCard(env, st.stacks[env.stack]);
+    document.getElementById('local-links').innerHTML = ['Once up:',
+      ...S.envList.map((e) => `<a class="chiplink" href="${e.web}" target="_blank" rel="noreferrer"><b>${envLabel(e.name)}</b> ${e.web.replace('http://', '')}</a>`),
+      `<a class="chiplink" href="${shared.urls.control}" target="_blank" rel="noreferrer"><b>control</b> ${shared.urls.control.replace('http://', '')}</a>`,
+    ].join(' ');
+    for (const env of S.envList) updateEnvCard(env, st.stacks[env.stack]);
     const sharedUp = shared.services.glitchtip && shared.services.vault;
     setPill('local-shared-pill', sharedUp ? 'running ✓' : (shared.rendered ? 'set up — not running' : 'not set up yet'), sharedUp);
-    const up = prod.services.web && prod.services.api;
-    setPill('local-pill', up ? 'running ✓' : (prod.rendered ? 'set up — not running' : 'not set up yet'), up);
+    const prod = st.stacks['munni-local-prod'];
+    const up = Boolean(prod?.services.web && prod?.services.api);
+    setPill('local-pill', up ? 'running ✓' : (prod?.rendered ? 'set up — not running' : 'not set up yet'), up);
     setPill('lan-pill', st.lan ? `on — ${st.lan}` : 'off (localhost only)', Boolean(st.lan));
     const lanSel = document.getElementById('lan-select');
     if (lanSel && !lanSel.options.length) {
@@ -1381,6 +1515,9 @@ function renderFeatures() {
   FEATURES.forEach((f) => {
     document.getElementById('feat-' + f.id).addEventListener('change', (e) => {
       S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); renderNative(); renderStatus();
+      // the toggle IS the trigger: android/ios ON under local → the CI
+      // build starts by itself (LAN mode included)
+      if (e.target.checked && (f.id === 'android' || f.id === 'ios')) autoNativeFlow(f.id).catch(() => {});
     });
   });
 }
@@ -1594,6 +1731,12 @@ async function connectRepo(repo) {
   await refresh();
   await checkManifest();
   msg('msg-connect', `Repo ${repo.full_name} ready (branch ${S.ref}). Live status loaded — dots and pills below reflect reality.`, true);
+  // a native toggle that waited on this connection fires now
+  if (S.pendingNativeBuild) {
+    const kind = S.pendingNativeBuild;
+    S.pendingNativeBuild = null;
+    autoNativeFlow(kind).catch(() => {});
+  }
 }
 
 document.getElementById('btn-connect').addEventListener('click', async () => {
@@ -1756,138 +1899,127 @@ document.getElementById('local-nohelper').hidden = Boolean(HELPER);
 document.getElementById('local-helper-ui').hidden = !HELPER;
 document.getElementById('btn-local-refresh')?.addEventListener('click', () => refreshLocal());
 
-/* per-environment cards — rendered ONCE at load (never re-rendered, so
-   typed values survive every refresh) */
-function envCardHtml(env) {
-  const s = env.short;
-  const role = env.stack === 'munni-local-prod'
-    ? 'The environment you USE — real accounts, real bank consents.'
-    : 'The environment you EXPERIMENT in — break it freely, production never notices.';
-  return `
-  <div class="card">
-    <h3>${env.label} environment <span class="pill" id="env-pill-${s}"></span></h3>
-    <p class="why">${role} App at <a href="${env.web}" target="_blank" rel="noreferrer">${env.web.replace('http://', '')}</a>. Sign-in (Logto), crash tracking, the Logto console account and the first admin user are all wired automatically by Set up — the logins land under Reveal secrets below. This environment's own Logto console lives at <a href="${env.logtoAdmin}" target="_blank" rel="noreferrer">${env.logtoAdmin.replace('http://', '')}</a>.</p>
-    <p class="msg bad" id="env-logto-warn-${s}" hidden>This environment's Logto isn't answering yet — press Set up (or Start) and wait for its logto dot to turn green.</p>
-    <div class="runrow">
-      <span style="align-self:center">Sign-in <span class="dot" id="env-signin-dot-${s}"></span> <span class="pill" id="env-signin-pill-${s}"></span></span>
-      <button class="ghost" data-signin="${env.stack}">Re-run sign-in setup</button>
-      <span style="align-self:center;margin-left:10px">Crash reports <span class="dot" id="env-gt-dot-${s}"></span> <span class="pill" id="env-gt-pill-${s}"></span></span>
-      <button class="ghost" data-gt="${env.stack}">Re-run crash tracking</button>
-    </div>
-    <div class="runrow">
-      <button class="ghost" data-envsetup="${env.stack}">Set up this environment</button>
-      <button class="ghost" data-local-tool="${env.stack}:up">Start</button>
-      <button class="ghost" data-local-tool="${env.stack}:down">Stop</button>
-      <button class="ghost" data-envnuke="${env.stack}" style="color:var(--bad);border-color:var(--bad)">Delete…</button>
-    </div>
-    <label class="f" for="in-subs-${s}">NAS_ADMIN_SUBS — a Logto User ID to grant admin access (optional: Set up creates the first admin automatically while the environment has no users)</label>
-    <input type="text" id="in-subs-${s}" placeholder="usr_…" autocomplete="off"/>
-    <button class="ghost" data-subs="${env.stack}">Store admin access</button>
-    <details class="how"><summary>Manual fallback — bring your own credentials instead</summary>
-      <p>Logto console (${env.logtoAdmin.replace('http://', '')}) → Applications → Create → <b>Machine-to-machine</b> → name it <code>infra</code> → assign the <b>Logto Management API</b> role → paste:</p>
-      <div class="grid2">
-        <div><label class="f" for="in-m2m-id-${s}">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-m2m-id-${s}" autocomplete="off"/></div>
-        <div><label class="f" for="in-m2m-secret-${s}">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-m2m-secret-${s}" autocomplete="off"/></div>
-      </div>
-      <button data-oobe="${env.stack}">Apply sign-in setup</button>${s === 'prod' ? ' <button class="ghost" id="btn-local-oobe-check">Check</button>' : ''}
-      <div class="msg" id="msg-oobe-${s}"></div>
-      <p style="margin-top:8px">GlitchTip runs in the shared stack — its token works for every environment. From <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> → profile → <b>Auth Tokens</b>:</p>
-      <label class="f" for="in-gt-${s}">IAC_GLITCHTIP_API_TOKEN</label>
-      <input type="password" id="in-gt-${s}" autocomplete="off"/>
-      <button data-gtapply="${env.stack}">Apply crash tracking</button>${s === 'prod' ? ' <button class="ghost" id="btn-local-gt-check">Check</button>' : ''}
-      <div class="msg" id="msg-gt-${s}"></div>
-    </details>
-  </div>`;
-}
-if (document.getElementById('env-cards')) document.getElementById('env-cards').innerHTML = LOCAL_ENVS.map(envCardHtml).join('');
-const shortOf = (stackName) => LOCAL_ENVS.find((e) => e.stack === stackName)?.short ?? 'prod';
+applyIcons();
 
 /** one environment, end to end: render → start → wait for ITS logto →
- * wire sign-in + crash tracking (idempotent: done parts are skipped) */
+ * wire sign-in + crash tracking. ALWAYS wires — the setups are
+ * idempotent and self-healing (a stored name must never gate this:
+ * after Delete + Set up the store still says "wired" while the fresh
+ * databases are empty — found live 2026-08-28). */
 async function setupEnv(env) {
-  const label = STACK_LABELS[env.stack];
+  const label = labelOf(env.stack);
   if (!(await streamLocal('/api/local/run', { stack: env.stack }, `mint secrets + render ${label}`))) return false;
   if (!(await streamLocal('/api/local/tool', { tool: `${env.stack}:up` }, `start ${label} (first run pulls images — can take a while)`))) return false;
   const st = await waitForServices(env.stack, ['logto'], `wait for ${label}'s sign-in service`);
   if (!st) return false;
-  // ALWAYS wire — the setups are idempotent and self-healing. (A stored
-  // name must never gate this: after Delete + Set up the store still
-  // says "wired" while the fresh databases are empty — found live
-  // 2026-08-28 as a family that LOOKED set up but had no sign-in.)
   if (!(await streamLocal('/api/local/logto-setup', { stack: env.stack }, `wire ${label} sign-in (automatic, self-healing)`))) return false;
   if (!(await streamLocal('/api/local/glitchtip-setup', { stack: env.stack }, `wire ${label} crash tracking (automatic, self-healing)`))) return false;
   return true;
 }
 
-/* the ONE local button: shared services first, then both environments —
+/* the ONE local button: shared services first, then EVERY environment —
    each wired automatically the moment its pieces answer. Idempotent. */
 document.getElementById('btn-local-setup')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-local-setup');
   btn.disabled = true;
   try {
     if (!(await streamLocal('/api/local/run', { stack: SHARED_STACK }, 'mint secrets + render the shared services'))) return;
-    if (!(await streamLocal('/api/local/tool', { tool: `${SHARED_STACK}:up` }, 'start the shared services (postgres, glitchtip, vault, ocr, control)'))) return;
+    if (!(await streamLocal('/api/local/tool', { tool: `${SHARED_STACK}:up` }, 'start the shared services (glitchtip, vault, ocr, control, pgadmin)'))) return;
     if (!(await waitForServices(SHARED_STACK, ['glitchtip', 'vault'], 'wait for the shared services'))) return;
-    for (const env of LOCAL_ENVS) {
+    await refreshLocal(); // pick the env list up before walking it
+    for (const env of S.envList) {
       if (!(await setupEnv(env))) return;
     }
     if (!(await streamLocal('/api/local/vault-setup', {}, 'set up the vault (account + every secret imported + signups closed)'))) return;
-    localLog('\n══ munni is ready ══\nproduction → http://localhost:8380 (create your account there)\ndevelopment → http://localhost:8480 (its accounts are separate on purpose)\ncontrol cockpit → http://localhost:8385 (sign in with the production admin)\nvault → http://localhost:8384 (login under Reveal secrets)\n');
+    const lines = S.envList.map((e) => `${envLabel(e.name)} → ${e.web}`).join('\n');
+    localLog(`\n══ munni is ready ══\n${lines}\ncontrol cockpit → http://localhost:8385 (sign in with the production admin)\nvault → https://localhost:8384 (login under Reveal secrets)\n`);
   } finally {
     btn.disabled = false;
     await refreshLocal();
   }
 });
-document.querySelectorAll('[data-envsetup]').forEach((btn) => btn.addEventListener('click', async () => {
-  btn.disabled = true;
-  try { await setupEnv(LOCAL_ENVS.find((e) => e.stack === btn.dataset.envsetup)); }
-  finally { btn.disabled = false; await refreshLocal(); }
-}));
 document.getElementById('btn-local-stopall')?.addEventListener('click', async () => {
-  for (const name of ['munni-local-dev', 'munni-local-prod', SHARED_STACK]) {
-    await streamLocal('/api/local/tool', { tool: `${name}:down` }, `stop ${STACK_LABELS[name]}`);
+  for (const name of [...S.envList.map((e) => e.stack), SHARED_STACK]) {
+    await streamLocal('/api/local/tool', { tool: `${name}:down` }, `stop ${labelOf(name)}`);
   }
 });
 document.getElementById('btn-local-verify')?.addEventListener('click', async () => {
-  for (const name of [SHARED_STACK, 'munni-local-prod', 'munni-local-dev']) {
-    await streamLocal('/api/local/run', { stack: name, verify: true }, `verify ${STACK_LABELS[name]}`);
+  for (const name of [SHARED_STACK, ...S.envList.map((e) => e.stack)]) {
+    await streamLocal('/api/local/run', { stack: name, verify: true }, `verify ${labelOf(name)}`);
   }
 });
-document.querySelectorAll('[data-signin]').forEach((btn) => btn.addEventListener('click', () =>
-  streamLocal('/api/local/logto-setup', { stack: btn.dataset.signin }, `set up ${STACK_LABELS[btn.dataset.signin]} sign-in (zero input)`)));
-document.querySelectorAll('[data-gt]').forEach((btn) => btn.addEventListener('click', () =>
-  streamLocal('/api/local/glitchtip-setup', { stack: btn.dataset.gt }, `set up ${STACK_LABELS[btn.dataset.gt]} crash tracking (zero input)`)));
-document.querySelectorAll('[data-subs]').forEach((btn) => btn.addEventListener('click', async () => {
-  const stack = btn.dataset.subs;
-  const subs = document.getElementById(`in-subs-${shortOf(stack)}`).value.trim();
-  if (!subs) { localLog('\nPaste a Logto User ID first.\n'); return; }
-  if (await streamLocal('/api/local/run', { stack, values: { NAS_ADMIN_SUBS: subs } }, `store ${STACK_LABELS[stack]} admin access`)) {
-    await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart the api with admin access');
+
+/* add an environment: register + render on the helper, then the same
+   start-and-wire chain every environment gets */
+document.getElementById('btn-env-add')?.addEventListener('click', async () => {
+  const name = document.getElementById('env-add-name').value.trim().toLowerCase();
+  const channel = document.getElementById('env-add-channel').value;
+  const say = (t, ok = true) => msg('msg-env-add', t, ok);
+  if (!/^[a-z]{2,5}$/.test(name)) { say('2-5 lowercase letters (like test, acc, stg)', false); return; }
+  const btn = document.getElementById('btn-env-add');
+  btn.disabled = true;
+  try {
+    if (!(await streamLocal('/api/local/envs', { name, channel }, `register + render environment ${name}`))) { say('could not create it — see the output box', false); return; }
+    document.getElementById('env-add-name').value = '';
+    await refreshLocal(); // the new card appears
+    const env = S.envList.find((e) => e.name === name);
+    if (env && (await setupEnv(env))) say(`${envLabel(name)} is up and wired ✓`, true);
+  } finally {
+    btn.disabled = false;
+    await refreshLocal();
   }
-}));
-document.querySelectorAll('[data-oobe]').forEach((btn) => btn.addEventListener('click', async () => {
-  const stack = btn.dataset.oobe;
-  const s = shortOf(stack);
-  const values = {
-    IAC_LOGTO_INFRA_M2M_ID: document.getElementById(`in-m2m-id-${s}`).value.trim(),
-    IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById(`in-m2m-secret-${s}`).value.trim(),
-  };
-  if (!values.IAC_LOGTO_INFRA_M2M_ID || !values.IAC_LOGTO_INFRA_M2M_SECRET) { localLog('\nBoth the app id and the secret are needed.\n'); return; }
-  if (await streamLocal('/api/local/run', { stack, values }, `apply ${STACK_LABELS[stack]} sign-in setup`)) {
-    document.getElementById(`in-m2m-secret-${s}`).value = '';
-    await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart web/admin with the new config');
+});
+
+/* env-card actions: ONE delegated listener survives every re-render */
+document.getElementById('env-cards')?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const stack = btn.dataset.stack;
+  const env = S.envList.find((x) => x.stack === stack);
+  if (!env) return;
+  const s = env.name;
+  const label = labelOf(stack);
+  const act = btn.dataset.act;
+  if (act === 'start') {
+    streamLocal('/api/local/tool', { tool: `${stack}:up` }, `start ${label}`);
+  } else if (act === 'stop') {
+    streamLocal('/api/local/tool', { tool: `${stack}:down` }, `stop ${label}`);
+  } else if (act === 'setup') {
+    btn.disabled = true;
+    try { await setupEnv(env); } finally { btn.disabled = false; await refreshLocal(); }
+  } else if (act === 'signin') {
+    streamLocal('/api/local/logto-setup', { stack }, `wire ${label} sign-in (zero input)`);
+  } else if (act === 'gt') {
+    streamLocal('/api/local/glitchtip-setup', { stack }, `wire ${label} crash tracking (zero input)`);
+  } else if (act === 'nuke') {
+    if (!confirm(`Delete the ${label.toUpperCase()} environment COMPLETELY?\n\nContainers, volumes INCLUDING its database server, its GoCardless consents — and the environment itself disappears from this page. Other environments and the shared services are untouched.`)) return;
+    await streamLocal('/api/local/envs/delete', { name: s }, `delete environment ${s}`);
+    await refreshLocal();
+  } else if (act === 'subs') {
+    const subs = document.getElementById(`in-subs-${s}`).value.trim();
+    if (!subs) { localLog('\nPaste a Logto User ID first.\n'); return; }
+    if (await streamLocal('/api/local/run', { stack, values: { NAS_ADMIN_SUBS: subs } }, `store ${label} admin access`)) {
+      await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart the api with admin access');
+    }
+  } else if (act === 'oobe') {
+    const values = {
+      IAC_LOGTO_INFRA_M2M_ID: document.getElementById(`in-m2m-id-${s}`).value.trim(),
+      IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById(`in-m2m-secret-${s}`).value.trim(),
+    };
+    if (!values.IAC_LOGTO_INFRA_M2M_ID || !values.IAC_LOGTO_INFRA_M2M_SECRET) { localLog('\nBoth the app id and the secret are needed.\n'); return; }
+    if (await streamLocal('/api/local/run', { stack, values }, `apply ${label} sign-in setup`)) {
+      document.getElementById(`in-m2m-secret-${s}`).value = '';
+      await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart web/admin with the new config');
+    }
+  } else if (act === 'gtapply') {
+    const token = document.getElementById(`in-gt-${s}`).value.trim();
+    if (!token) { localLog('\nPaste the GlitchTip token first.\n'); return; }
+    if (await streamLocal('/api/local/run', { stack, values: { IAC_GLITCHTIP_API_TOKEN: token } }, `apply ${label} crash tracking`)) {
+      document.getElementById(`in-gt-${s}`).value = '';
+      await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart with the DSNs wired in');
+    }
   }
-}));
-document.querySelectorAll('[data-gtapply]').forEach((btn) => btn.addEventListener('click', async () => {
-  const stack = btn.dataset.gtapply;
-  const s = shortOf(stack);
-  const token = document.getElementById(`in-gt-${s}`).value.trim();
-  if (!token) { localLog('\nPaste the GlitchTip token first.\n'); return; }
-  if (await streamLocal('/api/local/run', { stack, values: { IAC_GLITCHTIP_API_TOKEN: token } }, `apply ${STACK_LABELS[stack]} crash tracking`)) {
-    document.getElementById(`in-gt-${s}`).value = '';
-    await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart with the DSNs wired in');
-  }
-}));
+});
 document.querySelectorAll('[data-local-tool]').forEach((btn) => btn.addEventListener('click', () => {
   streamLocal('/api/local/tool', { tool: btn.dataset.localTool }, btn.textContent.trim());
 }));
@@ -1900,29 +2032,30 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
   const shared = values[SHARED_STACK] ?? {};
   // the SIGN-INS people actually type somewhere, assembled per stack
   const signIns = [];
-  for (const env of LOCAL_ENVS) {
+  for (const env of S.envList) {
     const v = values[env.stack] ?? {};
-    if (v.LOGTO_APP_ADMIN_USERNAME && v.LOGTO_APP_ADMIN_PASSWORD) signIns.push({ name: `munni app — ${env.label.toLowerCase()} (admin)`, url: env.web, user: v.LOGTO_APP_ADMIN_USERNAME, pass: v.LOGTO_APP_ADMIN_PASSWORD });
-    if (v.LOGTO_CONSOLE_USERNAME && v.LOGTO_CONSOLE_PASSWORD) signIns.push({ name: `Logto console — ${env.label.toLowerCase()}`, url: env.logtoAdmin, user: v.LOGTO_CONSOLE_USERNAME, pass: v.LOGTO_CONSOLE_PASSWORD });
+    const l = envLabel(env.name).toLowerCase();
+    if (v.LOGTO_APP_ADMIN_USERNAME && v.LOGTO_APP_ADMIN_PASSWORD) signIns.push({ name: `munni app — ${l} (admin)`, url: env.web, user: v.LOGTO_APP_ADMIN_USERNAME, pass: v.LOGTO_APP_ADMIN_PASSWORD });
+    if (v.LOGTO_CONSOLE_USERNAME && v.LOGTO_CONSOLE_PASSWORD) signIns.push({ name: `Logto console — ${l}`, url: env.logtoAdmin, user: v.LOGTO_CONSOLE_USERNAME, pass: v.LOGTO_CONSOLE_PASSWORD });
   }
   if (shared.GLITCHTIP_ADMIN_EMAIL && shared.GLITCHTIP_ADMIN_PASSWORD) signIns.push({ name: 'GlitchTip (family-wide)', url: 'http://localhost:8383', user: shared.GLITCHTIP_ADMIN_EMAIL, pass: shared.GLITCHTIP_ADMIN_PASSWORD });
   if (shared.NAS_PGADMIN_PASSWORD) signIns.push({ name: 'pgAdmin (all database servers)', url: 'http://localhost:8386', user: 'admin@munni.dev', pass: shared.NAS_PGADMIN_PASSWORD });
-  for (const env of LOCAL_ENVS) {
+  for (const env of S.envList) {
     const v = values[env.stack] ?? {};
-    if (v.NAS_POSTGRES_PASSWORD) signIns.push({ name: `Postgres — ${env.label.toLowerCase()} (its own server)`, url: '', user: 'munni', pass: v.NAS_POSTGRES_PASSWORD });
+    if (v.NAS_POSTGRES_PASSWORD) signIns.push({ name: `Postgres — ${envLabel(env.name).toLowerCase()} (its own server)`, url: '', user: 'munni', pass: v.NAS_POSTGRES_PASSWORD });
   }
   if (shared.NAS_POSTGRES_PASSWORD) signIns.push({ name: 'Postgres — glitchtip-db (shared)', url: '', user: 'munni', pass: shared.NAS_POSTGRES_PASSWORD });
   if (shared.VAULT_ADMIN_EMAIL && shared.VAULT_MASTER_PASSWORD) {
-    signIns.push({ name: 'Vaultwarden (master password)', url: 'http://localhost:8384', user: shared.VAULT_ADMIN_EMAIL, pass: shared.VAULT_MASTER_PASSWORD });
+    signIns.push({ name: 'Vaultwarden (master password)', url: 'https://localhost:8384', user: shared.VAULT_ADMIN_EMAIL, pass: shared.VAULT_MASTER_PASSWORD });
   } else {
-    signIns.push({ name: 'Vaultwarden', url: 'http://localhost:8384', user: '(not set up yet)', pass: '(press Set up the vault automatically)' });
+    signIns.push({ name: 'Vaultwarden', url: 'https://localhost:8384', user: '(not set up yet)', pass: '(press Set up the vault automatically)' });
   }
   const signInRows = signIns.map((l) =>
     `<tr><td style="padding:2px 10px 2px 0"><b>${esc(l.name)}</b>${l.url ? ` <a href="${l.url}" target="_blank" rel="noreferrer" style="font-size:11px">open</a>` : ''}</td><td style="padding:2px 10px 2px 0"><code style="user-select:all">${esc(l.user)}</code></td><td><code style="user-select:all">${esc(l.pass)}</code></td></tr>`);
   const rawSections = Object.entries(values).map(([stackName, vals]) => {
     const rows = Object.entries(vals ?? {}).filter(([, v]) => v).map(([name, value]) =>
       `<tr><td style="padding:2px 10px 2px 0"><code>${esc(name)}</code></td><td><code style="user-select:all">${esc(value)}</code></td></tr>`);
-    return rows.length ? `<div style="font-size:11px;color:var(--muted);margin:10px 0 4px">${esc((STACK_LABELS[stackName] ?? stackName).toUpperCase())}</div><div style="overflow-x:auto"><table style="font-size:12px">${rows.join('')}</table></div>` : '';
+    return rows.length ? `<div style="font-size:11px;color:var(--muted);margin:10px 0 4px">${esc(labelOf(stackName).toUpperCase())}</div><div style="overflow-x:auto"><table style="font-size:12px">${rows.join('')}</table></div>` : '';
   }).join('');
   box.innerHTML = `<p class="why">Shown on your request only — nothing here is logged. Click a value to select it.</p>
     <div class="m-cap" style="font-size:11px;color:var(--muted);margin:4px 0">SIGN-INS</div>
@@ -1932,20 +2065,10 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
   box.hidden = false;
   document.getElementById('btn-local-reveal').textContent = 'Hide secrets';
 });
-document.querySelectorAll('[data-envnuke]').forEach((btn) => btn.addEventListener('click', () => {
-  const stack = btn.dataset.envnuke;
-  const label = STACK_LABELS[stack];
-  if (!confirm(`Delete the ${label.toUpperCase()} environment COMPLETELY?\n\nThis stops its containers and removes its volumes INCLUDING its own database server (all of this environment's data), and revokes the bank consents THIS environment created at GoCardless. The other environment and the shared services are untouched — they run their own servers. The secret store stays, so a fresh Set up keeps the same passwords.`)) return;
-  streamLocal('/api/local/cleanup', { target: stack }, `delete ${label} (containers + volumes + GoCardless consents)`);
-}));
-document.getElementById('btn-local-nuke-shared')?.addEventListener('click', () => {
-  if (!confirm('Delete the SHARED SERVICES completely?\n\nThis removes GlitchTip (with its crash-report database), the vault, pgAdmin and munni-control, volumes included. The environments keep their own databases, but crash tracking and the cockpit stop until you run Set up again. The secret stores stay.')) return;
-  streamLocal('/api/local/cleanup', { target: SHARED_STACK }, 'delete the shared services (containers + volumes)');
-});
 document.getElementById('btn-local-nuke-all')?.addEventListener('click', async () => {
-  if (!confirm('Delete EVERYTHING — both environments AND the shared services?\n\nAll containers, volumes (every database), networks, and the bank consents both environments created at GoCardless. The secret stores stay, so a fresh Set up keeps the same passwords.')) return;
-  for (const name of ['munni-local-dev', 'munni-local-prod', SHARED_STACK]) {
-    await streamLocal('/api/local/cleanup', { target: name }, `delete ${STACK_LABELS[name]}`);
+  if (!confirm('Delete EVERYTHING — every environment AND the shared services?\n\nAll containers, volumes (every database), networks, and the bank consents the environments created at GoCardless. The secret stores stay, so a fresh Set up keeps the same passwords.')) return;
+  for (const name of [...S.envList.map((e) => e.stack), SHARED_STACK]) {
+    await streamLocal('/api/local/cleanup', { target: name }, `delete ${labelOf(name)}`);
   }
 });
 document.getElementById('btn-dev-nuke')?.addEventListener('click', () => {
@@ -1991,12 +2114,23 @@ document.getElementById('btn-native-local-publish')?.addEventListener('click', a
     say('auto-publish enabled ✓ — every future local build lands in the Play internal track by itself');
   } catch (e) { say('✗ ' + (e.message || e), false); }
 });
-document.getElementById('btn-native-local-android')?.addEventListener('click', async () => {
+/** items 1+2 of the native ruling: toggling the feature IS the trigger,
+ * and LAN mode flips on by itself — no localhost detour, no extra click */
+async function ensureLanMode() {
+  const lan = await (await hfetch('/api/local/lan')).json();
+  if (lan.current) return true;
+  const host = lan.candidates[0];
+  if (!host) { localLog('\nno LAN address found — are you on wifi/ethernet?\n'); return false; }
+  return streamLocal('/api/local/lan', { host }, `LAN mode on automatically (${host}) — phones must reach this machine`);
+}
+
+async function buildLocalAndroidFlow() {
   const btn = document.getElementById('btn-native-local-android');
   const say = (t, ok = true) => msg('msg-native-local', t, ok);
   if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card in step 3) — the build runs in your repo’s Actions.', false); return; }
   btn.disabled = true;
   try {
+    if (!(await ensureLanMode())) return;
     say('writing the LAN config into the GitHub environment "local"…');
     await writeLocalNativeEnv();
     const started = Date.now();
@@ -2035,17 +2169,35 @@ document.getElementById('btn-native-local-android')?.addEventListener('click', a
   } finally {
     btn.disabled = false;
   }
-});
-document.getElementById('btn-native-local-ios')?.addEventListener('click', async () => {
+}
+document.getElementById('btn-native-local-android')?.addEventListener('click', () => buildLocalAndroidFlow());
+
+async function dispatchLocalIosFlow() {
   if (!S.pat || !S.user) { localLog('\nConnect GitHub first (the GitHub card in step 3).\n'); return; }
   try {
+    if (!(await ensureLanMode())) return;
     await writeLocalNativeEnv();
     await dispatch('native-ios.yml', { environment: 'local' });
     localLog('\niOS build dispatched (environment local) — it signs and uploads to TestFlight (app record app.munni.local must exist in App Store Connect, one-time). Install/update it from the TestFlight app; it only works on this wifi. Follow the run under Actions.\n');
   } catch (e) {
     localLog(`\n✗ iOS dispatch: ${e.message || e}\n`);
   }
-});
+}
+document.getElementById('btn-native-local-ios')?.addEventListener('click', () => dispatchLocalIosFlow());
+
+/** toggling Android/iOS ON under local starts the whole chain by itself
+ * (LAN mode → env vars → CI build → Play/TestFlight); without the
+ * GitHub connection it queues and fires right after connecting */
+async function autoNativeFlow(kind) {
+  if (S.platform !== 'local' || !HELPER) return;
+  if (!S.pat || !S.user) {
+    msg('msg-native-local', 'connect GitHub (the card in step 3) — the build starts by itself once connected', false);
+    S.pendingNativeBuild = kind;
+    return;
+  }
+  if (kind === 'android') await buildLocalAndroidFlow();
+  else await dispatchLocalIosFlow();
+}
 document.querySelectorAll('[data-artifact]').forEach((btn) => btn.addEventListener('click', async () => {
   const name = btn.dataset.artifact;
   try {
@@ -2081,21 +2233,6 @@ document.getElementById('btn-local-vault-export')?.addEventListener('click', asy
   URL.revokeObjectURL(a.href);
   localLog('\nVault import file downloaded — in Vaultwarden: Tools → Import data → Bitwarden (json). Delete the file after importing.\n');
 });
-const localCheck = async (provider, values, msgId) => {
-  msg(msgId, 'checking…', true);
-  try {
-    const verdict = await checkCredentials(provider, values);
-    msg(msgId, `${verdict.ok ? '✓' : '✗'} ${verdict.detail}`, verdict.ok);
-  } catch (e) { msg(msgId, `✗ check failed: ${e.message}`, false); }
-};
-document.getElementById('btn-local-oobe-check')?.addEventListener('click', () => localCheck('logto-m2m', {
-  IAC_LOGTO_INFRA_M2M_ID: document.getElementById('in-m2m-id-prod').value.trim(),
-  IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById('in-m2m-secret-prod').value.trim(),
-}, 'msg-oobe-prod'));
-document.getElementById('btn-local-gt-check')?.addEventListener('click', () => localCheck('glitchtip-token', {
-  IAC_GLITCHTIP_API_TOKEN: document.getElementById('in-gt-prod').value.trim(),
-}, 'msg-gt-prod'));
-
 applyPlatform();
 applyDomain();
 </script>
