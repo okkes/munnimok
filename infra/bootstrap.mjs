@@ -127,6 +127,8 @@ async function localApplyShared() {
 
   const dir = renderStack(stack, values);
   console.log(`  rendered compose + .env (real values) → ${dir}`);
+  const runbook = renderLocalRunbook(stack, { minted, missingOperator });
+  console.log(`  runbook → ${runbook}`);
   console.log(`done. Next: cd ${dir} && docker compose --env-file .env.${stack.stack} -f docker-compose.${stack.stack}.yml up -d`);
   return 0;
 }

@@ -1,9 +1,13 @@
 # Local three-stack topology, Logto isolation & the admin split — plan
 
-Status: **PROPOSED** (2026-08-27, from live wizard feedback). Four
-connected redesigns the user asked for in one breath; they build on the
-approved 2026-07-24 amendment in docs/iac-plan.md (shared stack +
-per-env stacks, split admin) and re-rule one part of it (Logto).
+Status: **LS1–LS6 SHIPPED** (2026-08-27; approved same day from live
+wizard feedback). They build on the approved 2026-07-24 amendment in
+docs/iac-plan.md (shared stack + per-env stacks, split admin) and
+re-rule one part of it (Logto). LS7 (iac pair + NAS adopt the split)
+stays open. One deviation from the LS5 sketch, on a later user ruling:
+NO mode flag — the portal (apps/admin) and the cockpit (apps/control)
+are two completely separate apps in two separate images
+(munni-admin / munni-control).
 
 ## 1. Local goes three-stack: munni-local-dev / munni-local-prod / munni-local-shared
 
@@ -113,17 +117,20 @@ now concretized:
 
 ## Slices & order
 
-- LS1 render/stack support for `role:"shared"` + munni-local-shared
-  (glitchtip, vault, ocr, postgres) — env stacks point at it
-- LS2 munni-local-dev + munni-local-prod stack files; wizard stack
-  switcher + orchestration; migrate the current twin's data (or accept
-  a fresh start locally — data is minutes old)
-- LS3 Logto-per-env (render + bootstrap pair-logic retirement for
-  local; iac pair follows after local proves it)
-- LS4 GcRequisitions.RedirectOrigin column + attribution
-- LS5 admin split: MUNNI_ADMIN_MODE runtime switch, portal target
-  loses shared screens, control target gains quota/consents/inventory
-- LS6 control auth (control-admin role on the designated Logto) +
-  /control/* API surface
+- LS1 ✅ render/stack support for `role:"shared"` + munni-local-shared
+  (glitchtip, vault, ocr, postgres, control) — env stacks point at it
+- LS2 ✅ munni-local-dev + munni-local-prod stack files; wizard family
+  UI + one-button orchestration; twin data migrated (munni/logto dumps
+  → munni_prod/logto_prod on the shared postgres)
+- LS3 ✅ Logto-per-env locally (own logto per env stack, wizard seeds
+  the M2M in-database idempotently; iac pair follows with LS7)
+- LS4 ✅ GcRequisitions.RedirectOrigin column + attribution (also:
+  admin list env-scoped with foreignCount, delete refuses foreign)
+- LS5 ✅ admin split — re-ruled to TWO SEPARATE APPS (no runtime mode):
+  apps/admin stays the per-env portal; apps/control is the cockpit
+  (own codebase, image munni-control, own Logto app)
+- LS6 ✅ /control/* API surface (ping/consents/quota, admin-gated,
+  read-only — no delete by design); control app signs in via the
+  designated env's dedicated `control` Logto app
 - LS7 iac pair + NAS adopt the three-stack split (bundle channel
   `shared`, DSM rules, runbook)

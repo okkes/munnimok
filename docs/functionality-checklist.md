@@ -67,5 +67,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Space settings rows all lead somewhere sane; global settings: profile (account deletion narrates its progress), devices, language (EN/NL/TR), appearance cycle, export, push, tips
 - [ ] Scrolling a search list dismisses the keyboard; multi-field forms keep it while scrolling
 - [ ] PWA installs and updates; native shells build, deep-link back and capture photos
-- [ ] Hosted web/admin read their config at runtime (/runtime-config.js from container env) — one public image serves prod, staging, the iac pair and the local twin, each pointing at its own API/Logto/GlitchTip
+- [ ] Hosted web/admin read their config at runtime (/runtime-config.js from container env) — one public image serves prod, staging, the iac pair and the local stacks, each pointing at its own API/Logto/GlitchTip
+- [ ] Operator consoles are two separate apps: the admin PORTAL (per environment: users, diagnosis, admin grants, own-env bank consents with foreign-count note, quota) and the munni-CONTROL cockpit (shared level: every environment's consents grouped by origin, read-only, plus quota/health) — control never offers delete, the portal refuses deleting another environment's consent
+- [ ] Local three-stack family: shared services (postgres, GlitchTip, vault, OCR, control) + munni-local-prod (8380) + munni-local-dev (8480), each env with its own Logto; the setup wizard drives all of it with one button and cleanup purges only that stack's GoCardless consents
 - [ ] Offline end to end: everything works, syncs on return, conflicts converge
