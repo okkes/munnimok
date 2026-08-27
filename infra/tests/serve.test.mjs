@@ -144,7 +144,9 @@ test('logto-setup: inserts the M2M app via psql, hands the credential to bootstr
   await app2(fakeReq({ method: 'POST', url: '/api/local/logto-setup', token: 'tok', body: {} }), res);
   for (let i = 0; i < 50 && !res.ended; i++) await new Promise((r) => setTimeout(r, 10));
 
-  assert.equal(spawned.length, 3, 'expected psql → bootstrap → compose up');
+  // insert app → bootstrap → read m-admin secret (claim then SKIPS: the
+  // fake output is no credential, so no network is touched) → compose up
+  assert.equal(spawned.length, 4, 'expected psql insert → bootstrap → m-admin read → compose up');
   const psql = spawned[0];
   assert.equal(psql.cmd, 'docker');
   assert.ok(psql.args.includes('psql'));
@@ -159,10 +161,28 @@ test('logto-setup: inserts the M2M app via psql, hands the credential to bootstr
   assert.equal(id.length, 21);
   assert.equal(secret.length, 48);
   assert.ok(insertSql.includes(id), 'psql insert must carry the same app id');
+  assert.match(spawned[2].args.join(' '), /m-admin/);
   const stream = res.chunks.join('');
   assert.ok(!stream.includes(secret), 'the M2M secret leaked into the page stream');
+  assert.match(stream, /auto-claim skipped/);
   assert.match(stream, /\[exit 0\]/);
-  assert.deepEqual(spawned[2].args.slice(-2), ['up', '-d']);
+  assert.deepEqual(spawned[3].args.slice(-2), ['up', '-d']);
+});
+
+test('cleanup runs the destroy compose for the chosen stack (GC purge skips without creds)', async () => {
+  const runs2 = [];
+  const app2 = createApp({
+    token: 'tok',
+    probeImpl: async () => false,
+    runImpl: (res, cmd, cmdArgs, opts) => { runs2.push({ cmd, cmdArgs, opts }); res.writeHead(200, {}); res.end('[exit 0]\n'); },
+  });
+  const res = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/cleanup', token: 'tok', body: { target: 'dev' } }), res);
+  for (let i = 0; i < 50 && !res.ended; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(runs2.length, 1);
+  assert.match(runs2[0].cmdArgs.join(' '), /docker-compose\.local\.yml/);
+  assert.ok(runs2[0].cmdArgs.includes('-v'), 'volumes must be removed');
+  assert.ok(runs2[0].cmdArgs.includes('--remove-orphans'));
 });
 
 test('logto-setup fails loudly when bootstrap never reports the upsert', async () => {

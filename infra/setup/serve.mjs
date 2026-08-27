@@ -42,19 +42,72 @@ export const OPERATOR_NAMES = new Set(
 );
 
 const TWIN_COMPOSE = ['compose', '--env-file', '.env.munni-local', '-f', 'docker-compose.munni-local.yml'];
-/** fixed command allowlist — nothing here is caller-controlled */
+const DEV_COMPOSE = ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml'];
+/** fixed command allowlist — nothing here is caller-controlled. The
+ * heavyweight VERIFICATION tools (sonar, e2e, webkit) left this list on
+ * user ruling: they are development instruments, not setup steps. */
 export const TOOLS = {
   'twin-up': { cwd: RENDERED, cmd: 'docker', args: [...TWIN_COMPOSE, 'up', '-d'] },
   'twin-down': { cwd: RENDERED, cmd: 'docker', args: [...TWIN_COMPOSE, 'down'] },
-  'dev-up': { cwd: ROOT, cmd: 'docker', args: ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml', 'up', '-d', '--build'] },
-  'dev-down': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.local.yml', 'down'] },
-  'sonar-up': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.sonar.yml', 'up', '-d'] },
-  'sonar-down': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.sonar.yml', 'down'] },
-  'sonar-analyze': { cwd: ROOT, cmd: 'powershell', args: ['-ExecutionPolicy', 'Bypass', '-File', 'deploy/sonar/analyze.ps1'], winOnly: true },
-  'test-up': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.test.yml', 'up', '--build', '-d'] },
-  'test-down': { cwd: ROOT, cmd: 'docker', args: ['compose', '-f', 'deploy/docker-compose.test.yml', 'down'] },
-  'webkit-e2e': { cwd: ROOT, cmd: 'powershell', args: ['-ExecutionPolicy', 'Bypass', '-File', 'deploy/webkit-e2e.ps1'], winOnly: true },
+  // -v --remove-orphans: cleanup nukes volumes, network, strays — the
+  // wizard asks for explicit confirmation before calling these
+  'twin-destroy': { cwd: RENDERED, cmd: 'docker', args: [...TWIN_COMPOSE, 'down', '-v', '--remove-orphans'] },
+  'dev-up': { cwd: ROOT, cmd: 'docker', args: [...DEV_COMPOSE, 'up', '-d', '--build'] },
+  'dev-down': { cwd: ROOT, cmd: 'docker', args: [...DEV_COMPOSE, 'down'] },
+  'dev-destroy': { cwd: ROOT, cmd: 'docker', args: [...DEV_COMPOSE, 'down', '-v', '--remove-orphans'] },
 };
+
+/** the web origin each local stack hands to GoCardless as its consent
+ * redirect — the discriminator for which requisitions BELONG to it */
+const GC_REDIRECT_PREFIX = { twin: 'http://localhost:8380/', dev: 'http://localhost:5173/' };
+
+/** delete this stack's requisitions at GoCardless (shared account — only
+ * rows whose redirect carries the stack's own origin are touched) */
+async function purgeGcRequisitions(target, res) {
+  const values = loadLocalValues(loadStack('munni-local'));
+  if (!values.NAS_GOCARDLESS_SECRET_ID || !values.NAS_GOCARDLESS_SECRET_KEY) {
+    res.write('no GoCardless credentials in the store — nothing to purge there\n');
+    return true;
+  }
+  const tokenRes = await fetch('https://bankaccountdata.gocardless.com/api/v2/token/new/', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ secret_id: values.NAS_GOCARDLESS_SECRET_ID, secret_key: values.NAS_GOCARDLESS_SECRET_KEY }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!tokenRes.ok) { res.write(`GoCardless token mint failed (${tokenRes.status}) — skipping the provider purge\n`); return false; }
+  const { access } = await tokenRes.json();
+  const gc = (path, init = {}) => fetch(`https://bankaccountdata.gocardless.com/api/v2${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${access}`, accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  const list = await (await gc('/requisitions/?limit=100')).json();
+  const mine = (list.results ?? []).filter((r) => String(r.redirect ?? '').startsWith(GC_REDIRECT_PREFIX[target]));
+  if (!mine.length) { res.write('no requisitions at GoCardless belong to this stack — nothing to purge\n'); return true; }
+  let removed = 0;
+  for (const r of mine) {
+    const del = await gc(`/requisitions/${r.id}/`, { method: 'DELETE' });
+    if (del.ok || del.status === 404) { removed += 1; res.write(`  revoked ${r.institution_id} consent (${String(r.id).slice(0, 8)}…, was ${r.status})\n`); }
+    else res.write(`  could not delete ${String(r.id).slice(0, 8)}… (${del.status})\n`);
+  }
+  res.write(`GoCardless purge: ${removed}/${mine.length} of this stack's consents removed — nothing lingers on the shared account\n`);
+  return removed === mine.length;
+}
+
+async function cleanupEndpoint(req, res, runImpl) {
+  const body = await readBody(req);
+  const target = body.target === 'dev' ? 'dev' : 'twin';
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  res.write(`▶ clean up the ${target === 'twin' ? 'munni twin' : 'dev stack'} — first its GoCardless consents, then containers + volumes + network\n\n`);
+  try {
+    await purgeGcRequisitions(target, res);
+  } catch (e) {
+    res.write(`GoCardless purge failed (${e.message}) — continuing with the docker teardown\n`);
+  }
+  const tool = TOOLS[target === 'twin' ? 'twin-destroy' : 'dev-destroy'];
+  return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
+}
 
 const hostOk = (req) => /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host ?? '');
 
@@ -150,7 +203,13 @@ function vaultExportEndpoint(res) {
   if (values.IAC_LOGTO_INFRA_M2M_ID) {
     items.push(item('munni-local / Logto infra M2M', { username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto }));
   }
-  const covered = new Set(['GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_POSTGRES_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET', 'NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY']);
+  if (values.LOGTO_CONSOLE_USERNAME) {
+    items.push(item('munni-local / Logto console', { username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin }));
+  }
+  if (values.LOGTO_APP_ADMIN_USERNAME) {
+    items.push(item('munni-local / munni app (admin user)', { username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web }));
+  }
+  const covered = new Set(['GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_POSTGRES_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD', 'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY']);
   for (const [name, value] of Object.entries(values)) {
     if (covered.has(name) || !value) continue;
     items.push(item(`munni-local / ${name}`, { password: String(value), notes: 'from the munni setup wizard local store' }));
@@ -236,6 +295,90 @@ const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
    sign-in does not depend on it. ── */
 const LOGTO_MGMT_ROLE = 'Logto Management API access';
 
+const logtoToken = async (base, id, secret, resource) => {
+  const res = await fetch(`${base}/oidc/token`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      authorization: `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`,
+    },
+    body: new URLSearchParams({ grant_type: 'client_credentials', resource, scope: 'all' }).toString(),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`token ${res.status}`);
+  return (await res.json()).access_token;
+};
+const logtoApi = async (base, token, path, init = {}) => {
+  const res = await fetch(`${base}/api${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`${init.method ?? 'GET'} ${path} ${res.status}`);
+  return res.status === 204 ? null : res.json();
+};
+
+/** Claim the human accounts nobody wants to click together (user ruling):
+ * the Logto CONSOLE's first account (admin tenant, via the seeded m-admin
+ * machine app whose secret lives in the db we own) and the APP's first
+ * admin user (default tenant, via the infra credential — its id becomes
+ * NAS_ADMIN_SUBS automatically). Both skip cleanly when already present.
+ * Returns true when anything changed (the env then needs a re-render). */
+async function claimLogtoHumans(res, run, infra) {
+  const stack = loadStack('munni-local');
+  const secretStep = await run(res, 'read the console machine credential (inside postgres)', 'docker',
+    [...TWIN_COMPOSE, 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', 'logto', '-tAc',
+      "select secret from applications where tenant_id='admin' and id='m-admin';"],
+    { cwd: RENDERED, mask: () => '(captured)\n' });
+  const mSecret = secretStep.code === 0 ? secretStep.out.trim() : '';
+  if (!/^[0-9a-zA-Z_-]{16,}$/.test(mSecret)) {
+    res.write('could not read the console machine credential — account auto-claim skipped (claim the console by hand at :3202 when you like)\n');
+    return false;
+  }
+  let changed = false;
+
+  try {
+    const token = await logtoToken('http://localhost:3202', 'm-admin', mSecret, 'https://admin.logto.app/api');
+    const users = await logtoApi('http://localhost:3202', token, '/users?page_size=1');
+    if (users.length) {
+      res.write('Logto console already has its account — left untouched\n');
+    } else {
+      const password = randomBytes(12).toString('base64url');
+      const created = await logtoApi('http://localhost:3202', token, '/users', { method: 'POST', body: JSON.stringify({ username: 'admin', password }) });
+      const roles = await logtoApi('http://localhost:3202', token, '/roles?page_size=50');
+      const roleIds = roles.filter((r) => ['user', 'default:admin'].includes(r.name)).map((r) => r.id);
+      if (roleIds.length) await logtoApi('http://localhost:3202', token, `/users/${created.id}/roles`, { method: 'POST', body: JSON.stringify({ roleIds }) });
+      saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_CONSOLE_USERNAME: 'admin', LOGTO_CONSOLE_PASSWORD: password });
+      res.write(`Logto console claimed → http://localhost:3202 · username admin · password ${password}\n(kept in the local secret store — no Create-account screen left to click)\n`);
+      changed = true;
+    }
+  } catch (e) {
+    res.write(`console auto-claim failed (${e.message}) — claim it by hand at :3202 when you like\n`);
+  }
+
+  try {
+    const store = loadLocalValues(stack);
+    if (store.NAS_ADMIN_SUBS) {
+      res.write('app admin access already configured (NAS_ADMIN_SUBS set)\n');
+      return changed;
+    }
+    const token = await logtoToken('http://localhost:3201', infra.id, infra.secret, 'https://default.logto.app/api');
+    const users = await logtoApi('http://localhost:3201', token, '/users?page_size=1');
+    if (users.length) {
+      res.write('the app already has users — paste YOUR user id under Store admin access instead of auto-creating one\n');
+      return changed;
+    }
+    const password = randomBytes(12).toString('base64url');
+    const created = await logtoApi('http://localhost:3201', token, '/users', { method: 'POST', body: JSON.stringify({ username: 'munni-admin', password }) });
+    saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_APP_ADMIN_USERNAME: 'munni-admin', LOGTO_APP_ADMIN_PASSWORD: password, NAS_ADMIN_SUBS: created.id });
+    res.write(`munni admin user created → sign into the app as munni-admin · ${password}\nadmin access wired automatically (NAS_ADMIN_SUBS=${created.id})\n`);
+    return true;
+  } catch (e) {
+    res.write(`app-admin auto-create failed (${e.message}) — use Store admin access below after your first sign-up\n`);
+    return changed;
+  }
+}
+
 async function logtoSetupEndpoint(res, spawnImpl) {
   const stack = loadStack('munni-local');
   const values = loadLocalValues(stack);
@@ -273,8 +416,15 @@ async function logtoSetupEndpoint(res, spawnImpl) {
     return res.end('[exit 1]\n');
   }
 
+  // the human accounts: console + first app admin (skips whatever exists)
+  const changed = await claimLogtoHumans(res, run, { id, secret });
+  if (changed) {
+    await run(res, 'refresh the rendered env (admin access wired in)', process.execPath,
+      [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', 'munni-local'], { cwd: ROOT });
+  }
+
   const up = await run(res, 'restart web/admin with their sign-in config', 'docker', [...TWIN_COMPOSE, 'up', '-d'], { cwd: RENDERED });
-  res.write('\nDone. The Logto console (localhost:3202) still greets its create-account screen the first time — that login is YOURS to claim whenever you want to browse Logto itself; app sign-in works without it.\n');
+  res.write('\nDone. Sign-in is code, the console is claimed (login under Reveal secrets), and the app admin is wired.\n');
   return res.end(`\n[exit ${up.code === 0 ? 0 : 1}]\n`);
 }
 
@@ -350,6 +500,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
       if (req.method === 'POST' && url.pathname === '/api/local/tool') return await toolEndpoint(req, res, runImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/glitchtip-setup') return await glitchtipSetupEndpoint(res, spawnImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/logto-setup') return await logtoSetupEndpoint(res, spawnImpl);
+      if (req.method === 'POST' && url.pathname === '/api/local/cleanup') return await cleanupEndpoint(req, res, runImpl);
       if (req.method === 'GET' && url.pathname === '/api/local/secrets') return secretsEndpoint(res);
       if (req.method === 'GET' && url.pathname === '/api/local/vault-export') return vaultExportEndpoint(res);
       if (req.method === 'POST' && url.pathname === '/api/validate') return await validateEndpoint(req, res, validateImpl);

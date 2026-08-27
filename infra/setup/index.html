@@ -198,6 +198,7 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
         <button id="btn-local-setup">Set up &amp; start munni</button>
         <button class="ghost" data-local-tool="twin-down">Stop</button>
         <button class="ghost" id="btn-local-verify">Verify</button>
+        <button class="ghost" id="btn-local-nuke" style="color:var(--bad);border-color:var(--bad)">Delete this stack…</button>
       </div>
       <p class="why" id="local-links"></p>
     </div>
@@ -253,21 +254,18 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
       </details>
     </div>
 
-    <div class="card">
-      <h3>The dev stack &amp; tooling <span class="pill">on demand</span></h3>
-      <p class="why">The from-source DEV stack (API + Logto + Postgres in docker, the app via <code>npm run dev</code> with hot reload) and the heavyweight verification tools — all containerized, all one click.</p>
-      <div class="runrow">
-        <button class="ghost" data-local-tool="dev-up">Dev stack up</button>
-        <button class="ghost" data-local-tool="dev-down">Dev stack down</button>
-        <button class="ghost" data-local-tool="sonar-up">SonarQube up</button>
-        <button class="ghost" data-local-tool="sonar-analyze">Analyze web+api+admin</button>
-        <button class="ghost" data-local-tool="sonar-down">SonarQube down</button>
-        <button class="ghost" data-local-tool="test-up">e2e stack up</button>
-        <button class="ghost" data-local-tool="test-down">e2e stack down</button>
-        <button class="ghost" data-local-tool="webkit-e2e">WebKit lane</button>
+    <details class="how" style="margin:12px 0">
+      <summary>Developer extras — not needed to run munni</summary>
+      <div class="card" style="margin-top:8px">
+        <h3>The dev stack <span class="pill">develop against it</span></h3>
+        <p class="why">The from-source DEV loop: API + Logto + Postgres in docker, the app via <code>npm run dev</code> with hot reload (run that in a terminal — hot reload can't live in a container; details in <code>deploy/README.md</code>). Verification tooling (SonarQube, e2e, WebKit) stays in the repo's scripts — it belongs to development, not setup.</p>
+        <div class="runrow">
+          <button class="ghost" data-local-tool="dev-up">Dev stack up</button>
+          <button class="ghost" data-local-tool="dev-down">Dev stack down</button>
+          <button class="ghost" id="btn-dev-nuke" style="color:var(--bad);border-color:var(--bad)">Delete dev stack…</button>
+        </div>
       </div>
-      <p class="why">After "Dev stack up": run <code>npm run dev</code> in a terminal (hot reload can't live in a container) — details in <code>deploy/README.md</code>. Sonar dashboard: <a href="http://localhost:9000" target="_blank" rel="noreferrer">localhost:9000</a>.</p>
-    </div>
+    </details>
 
     <div class="card">
       <h3>Output</h3>
@@ -1743,11 +1741,34 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
   if (!box.hidden) { box.hidden = true; box.innerHTML = ''; document.getElementById('btn-local-reveal').textContent = 'Reveal secrets here'; return; }
   const res = await hfetch('/api/local/secrets');
   const { values } = await res.json();
-  const rows = Object.entries(values).filter(([, v]) => v).map(([name, value]) =>
-    `<tr><td style="padding:2px 10px 2px 0"><code>${name}</code></td><td><code style="user-select:all">${String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;')}</code></td></tr>`);
-  box.innerHTML = `<p class="why">Shown on your request only — nothing here is logged. Click a value to select it.</p><div style="overflow-x:auto"><table style="font-size:12px">${rows.join('')}</table></div>`;
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  // the SIGN-INS people actually type somewhere, assembled from the store
+  const signIns = [
+    { name: 'munni app (admin)', url: 'http://localhost:8380', user: values.LOGTO_APP_ADMIN_USERNAME, pass: values.LOGTO_APP_ADMIN_PASSWORD },
+    { name: 'Logto console', url: 'http://localhost:3202', user: values.LOGTO_CONSOLE_USERNAME, pass: values.LOGTO_CONSOLE_PASSWORD },
+    { name: 'GlitchTip', url: 'http://localhost:8383', user: values.GLITCHTIP_ADMIN_EMAIL, pass: values.GLITCHTIP_ADMIN_PASSWORD },
+    { name: 'Postgres', url: '', user: 'munni', pass: values.NAS_POSTGRES_PASSWORD },
+    { name: 'Vaultwarden', url: 'http://localhost:8384', user: '(your own account)', pass: '(master password lives in your head)' },
+  ].filter((l) => l.user && l.pass);
+  const signInRows = signIns.map((l) =>
+    `<tr><td style="padding:2px 10px 2px 0"><b>${esc(l.name)}</b>${l.url ? ` <a href="${l.url}" target="_blank" rel="noreferrer" style="font-size:11px">open</a>` : ''}</td><td style="padding:2px 10px 2px 0"><code style="user-select:all">${esc(l.user)}</code></td><td><code style="user-select:all">${esc(l.pass)}</code></td></tr>`);
+  const rawRows = Object.entries(values).filter(([, v]) => v).map(([name, value]) =>
+    `<tr><td style="padding:2px 10px 2px 0"><code>${esc(name)}</code></td><td><code style="user-select:all">${esc(value)}</code></td></tr>`);
+  box.innerHTML = `<p class="why">Shown on your request only — nothing here is logged. Click a value to select it.</p>
+    <div class="m-cap" style="font-size:11px;color:var(--muted);margin:4px 0">SIGN-INS</div>
+    <div style="overflow-x:auto"><table style="font-size:12px">${signInRows.join('') || '<tr><td class="why">none yet — run Set up first</td></tr>'}</table></div>
+    <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">RAW VALUES (tokens, keys, ids)</div>
+    <div style="overflow-x:auto"><table style="font-size:12px">${rawRows.join('')}</table></div>`;
   box.hidden = false;
   document.getElementById('btn-local-reveal').textContent = 'Hide secrets';
+});
+document.getElementById('btn-local-nuke')?.addEventListener('click', () => {
+  if (!confirm('Delete the munni twin COMPLETELY?\n\nThis stops every container and removes its volumes (all app data), its network, and revokes the bank consents THIS stack created at GoCardless. The secret store stays, so a fresh Set up keeps the same passwords.')) return;
+  streamLocal('/api/local/cleanup', { target: 'twin' }, 'delete the munni twin (containers + volumes + GoCardless consents)');
+});
+document.getElementById('btn-dev-nuke')?.addEventListener('click', () => {
+  if (!confirm('Delete the DEV stack completely?\n\nThis stops its containers and removes its volumes (dev database included), its network, and revokes the bank consents the dev app created at GoCardless.')) return;
+  streamLocal('/api/local/cleanup', { target: 'dev' }, 'delete the dev stack (containers + volumes + GoCardless consents)');
 });
 document.getElementById('btn-local-vault-export')?.addEventListener('click', async () => {
   const res = await hfetch('/api/local/vault-export');
