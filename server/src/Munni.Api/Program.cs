@@ -266,6 +266,7 @@ app.MapQuotes();
 app.MapRates();
 app.MapAccounts();
 app.MapAdmin(gcConfigured, bankingEnabled);
+app.MapControl(gcConfigured, bankingEnabled);
 app.MapCatalog();
 app.MapStoreSync();
 if (bankingEnabled) app.MapGoCardless();

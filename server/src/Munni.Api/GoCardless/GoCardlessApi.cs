@@ -59,7 +59,10 @@ public sealed record GcRequisitionListItem(
     [property: JsonPropertyName("institution_id")] string InstitutionId,
     [property: JsonPropertyName("created")] DateTimeOffset? Created,
     [property: JsonPropertyName("reference")] string? Reference,
-    [property: JsonPropertyName("accounts")] List<string> Accounts);
+    [property: JsonPropertyName("accounts")] List<string> Accounts,
+    // the redirect each environment stamped at creation — its origin is the
+    // per-consent environment marker the control cockpit attributes by
+    [property: JsonPropertyName("redirect")] string? Redirect = null);
 
 /// <summary>the per-account daily success budget GoCardless reports in rate-limit headers</summary>
 public sealed record GcRateInfo(int? Limit, int? Remaining, int? ResetSeconds);

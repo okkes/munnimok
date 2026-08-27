@@ -295,14 +295,18 @@ public static class AdminEndpoints
     /// normal sync traffic — the console shows remaining/reset per scope</summary>
     private static void MapQuota(IEndpointRouteBuilder group)
     {
-        group.MapGet("/quota", async (HttpContext http, AppDbContext db, IConfiguration config) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            var rows = await db.ProviderQuotas.OrderBy(q => q.Provider).ThenBy(q => q.Scope).ToListAsync();
-            return Results.Ok(rows
-                .Select(q => new ProviderQuotaDto(q.Provider, q.Scope, q.Limit, q.Remaining, q.ResetAtUtc, q.CapturedAtUtc))
-                .ToList());
-        });
+        group.MapGet("/quota", GetQuota);
+    }
+
+    /// <summary>shared with /control/quota: the snapshots describe the SHARED
+    /// provider account, so both consoles serve the identical payload</summary>
+    internal static async Task<IResult> GetQuota(HttpContext http, AppDbContext db, IConfiguration config)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        var rows = await db.ProviderQuotas.OrderBy(q => q.Provider).ThenBy(q => q.Scope).ToListAsync();
+        return Results.Ok(rows
+            .Select(q => new ProviderQuotaDto(q.Provider, q.Scope, q.Limit, q.Remaining, q.ResetAtUtc, q.CapturedAtUtc))
+            .ToList());
     }
 
     private static HashSet<string> BootstrapSubs(IConfiguration config) =>
@@ -314,7 +318,8 @@ public static class AdminEndpoints
     internal static Task<bool> IsAdminForCatalogAsync(HttpContext http, AppDbContext db, IConfiguration config)
         => IsAdminAsync(http, db, config);
 
-    private static async Task<bool> IsAdminAsync(HttpContext http, AppDbContext db, IConfiguration config)
+    // internal: the /control group (ControlEndpoints) shares this exact gate
+    internal static async Task<bool> IsAdminAsync(HttpContext http, AppDbContext db, IConfiguration config)
     {
         var user = await db.Users.FindAsync(http.GetUserId());
         if (user is null) return false;
