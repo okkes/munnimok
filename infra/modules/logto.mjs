@@ -1,5 +1,14 @@
 import { execFileSync } from 'node:child_process';
-import { loadStack } from './stack.mjs';
+import { lanHost, loadStack } from './stack.mjs';
+
+/** LAN mode: the localhost twin of a LAN-derived origin stays registered
+ * too, so browsing http://localhost:PORT keeps signing in while phones
+ * use the LAN address */
+const originVariants = (url) => {
+  const lan = lanHost();
+  if (!lan || !url?.includes(`//${lan}:`)) return [url];
+  return [url, url.replace(`//${lan}:`, '//localhost:')];
+};
 
 /**
  * Logto-as-code for one IaC pair. Talks to the PAIR's own Logto
@@ -41,15 +50,18 @@ async function api(logtoUrl, token, path, init = {}) {
  * via the hosted universal link /native-auth (scheme bounce as the
  * fallback) and signs out to /native-signed-out + scheme://signed-out. */
 export function appDefinitions(stack) {
-  const spa = (name, url) => ({
-    name,
-    type: 'SPA',
-    oidcClientMetadata: {
-      redirectUris: [`${url}/auth-callback`],
-      postLogoutRedirectUris: [url],
-    },
-    customClientMetadata: { corsAllowedOrigins: [url] },
-  });
+  const spa = (name, url) => {
+    const origins = originVariants(url);
+    return {
+      name,
+      type: 'SPA',
+      oidcClientMetadata: {
+        redirectUris: origins.map((o) => `${o}/auth-callback`),
+        postLogoutRedirectUris: origins,
+      },
+      customClientMetadata: { corsAllowedOrigins: origins },
+    };
+  };
   const native = {
     name: `${stack.stack} native`,
     type: 'Native',
@@ -196,6 +208,12 @@ export function writeBack(stack, apps) {
   setVar('VITE_LOGTO_ENDPOINT', pairLogtoUrl(stack));
   setVar('NATIVE_LOGTO_APP_ID_ANDROID', apps.native.id);
   setVar('NATIVE_LOGTO_APP_ID_IOS', apps.native.id);
+  // the native workflows read their whole stack config from these — a
+  // dispatched iac build baked EMPTY urls before (gap found 2026-08-28)
+  setVar('NATIVE_API_URL', stack.urls.api);
+  setVar('NATIVE_PUBLIC_ORIGIN', stack.urls.web);
+  setVar('NATIVE_LOGTO_ENDPOINT', pairLogtoUrl(stack));
+  setVar('NATIVE_LOGTO_RESOURCE', stack.urls.api);
   execFileSync('gh', ['secret', 'set', 'NAS_LOGTO_M2M_APP_ID', '--env', env, '--body', apps.m2m.id]);
   execFileSync('gh', ['secret', 'set', 'NAS_LOGTO_M2M_APP_SECRET', '--env', env, '--body', apps.m2m.secret]);
 }

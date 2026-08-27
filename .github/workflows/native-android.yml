@@ -19,9 +19,9 @@ on:
   workflow_dispatch:
     inputs:
       environment:
-        description: 'Target environment (empty = by branch)'
+        description: 'Target environment (empty = by branch; local = the wizard-managed LAN build)'
         type: choice
-        options: ['', iac-production, iac-staging]
+        options: ['', iac-production, iac-staging, local]
         default: ''
   push:
     branches: [master, dev]

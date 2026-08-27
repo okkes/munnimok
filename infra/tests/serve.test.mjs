@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-serve-test-'));
 process.env.MUNNI_RENDER_DIR = SCRATCH;
-const { createApp, OPERATOR_NAMES, TOOLS, LOCAL_STACKS } = await import('../setup/serve.mjs');
+const { createApp, lanCandidates, OPERATOR_NAMES, TOOLS, LOCAL_STACKS } = await import('../setup/serve.mjs');
 const { loadLocalValues, saveLocalValues } = await import('../modules/localstore.mjs');
 const { loadStack } = await import('../modules/stack.mjs');
 
@@ -309,6 +309,65 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
   const gt = exported.items.find((i) => i.name === 'munni local / GlitchTip console');
   assert.equal(gt.login.username, 'admin@munni.local');
   assert.ok(gt.login.uris[0].uri.includes('localhost:8383'));
+});
+
+test('lanCandidates ranks private IPv4 first and skips internal/v6', () => {
+  const fake = () => ({
+    lo: [{ family: 'IPv4', address: '127.0.0.1', internal: true }],
+    eth: [{ family: 'IPv6', address: 'fe80::1', internal: false }, { family: 'IPv4', address: '203.0.113.9', internal: false }],
+    wifi: [{ family: 'IPv4', address: '192.168.1.50', internal: false }],
+    vpn: [{ family: 'IPv4', address: '10.8.0.2', internal: false }],
+  });
+  assert.deepEqual(lanCandidates(fake), ['192.168.1.50', '10.8.0.2', '203.0.113.9']);
+});
+
+test('lan set: refuses an address this machine does not have; turning OFF re-renders + restarts the family', async () => {
+  const bad = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/lan', token: 'tok', body: { host: '203.0.113.7' } }), bad);
+  assert.equal(bad.statusCode, 400);
+
+  const spawned = [];
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'ok\n'), probeImpl: async () => false });
+  const res = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/lan', token: 'tok', body: { host: '' } }), res);
+  await settle(res);
+  // bootstrap + up for prod, dev, shared = 6 fixed spawns
+  assert.equal(spawned.length, 6);
+  assert.ok(spawned[0].args.join(' ').includes('--stack munni-local-prod'));
+  assert.ok(spawned[5].args.join(' ').includes('docker-compose.munni-local-shared.yml'));
+  assert.match(res.chunks.join(''), /LAN mode OFF/);
+  assert.match(res.chunks.join(''), /\[exit 0\]/);
+});
+
+test('native-config: LAN off means not ready, values stay out of reach until sign-in stored', async () => {
+  const res = fakeRes();
+  await app(fakeReq({ url: '/api/local/native-config', token: 'tok' }), res);
+  const body = JSON.parse(res.chunks.join(''));
+  assert.equal(body.environment, 'local');
+  assert.equal(body.ready, false);
+  assert.ok(body.missing.some((m) => /LAN mode is off/.test(m)));
+  assert.equal(body.variables.NATIVE_API_URL, 'http://localhost:8382');
+  assert.equal(body.variables.NATIVE_PUBLIC_ORIGIN, 'http://localhost:8380');
+});
+
+test('apk endpoint: artifact without an .apk inside fails honestly after the unzip step', async () => {
+  const spawned = [];
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'unzipped\n'), probeImpl: async () => false });
+  const res = fakeRes();
+  const req = fakeReq({ method: 'POST', url: '/api/local/apk', token: 'tok' });
+  // raw-body path: emit bytes then end (fakeReq only feeds JSON bodies)
+  req.on = (event, cb) => {
+    if (event === 'data') cb(Buffer.from('PK-not-really-a-zip'));
+    if (event === 'end') cb();
+    return req;
+  };
+  await app2(req, res);
+  await settle(res);
+  assert.equal(spawned.length, 1, 'one unzip attempt');
+  const stream = res.chunks.join('');
+  assert.match(stream, /artifact received/);
+  assert.match(stream, /no \.apk inside the artifact/);
+  assert.match(stream, /\[exit 1\]/);
 });
 
 test('glitchtip-setup mints in the SHARED stack and wires the chosen environment', async () => {

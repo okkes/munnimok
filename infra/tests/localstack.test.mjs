@@ -12,9 +12,10 @@ const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-infra-test-'));
 process.env.MUNNI_RENDER_DIR = SCRATCH;
 process.env.IAC_DOMAIN = 'example.test';
 
-const { loadStack, sharedOf } = await import('../modules/stack.mjs');
+const { lanHost, loadStack, sharedOf } = await import('../modules/stack.mjs');
 const { ensureLocalSecrets, familyValues, loadLocalValues, saveLocalValues } = await import('../modules/localstore.mjs');
 const { renderStack, templatePlaceholders } = await import('../modules/render.mjs');
+const { appDefinitions } = await import('../modules/logto.mjs');
 
 test.after(() => rmSync(SCRATCH, { recursive: true, force: true }));
 
@@ -131,6 +132,34 @@ test('env render: own logto, OWN postgres with a pgadmin alias, no glitchtip ser
   assert.ok(initdb.includes('CREATE DATABASE logto;'));
   const env = readFileSync(join(dir, '.env.munni-local-dev'), 'utf8');
   assert.ok(!env.includes('${'), 'placeholders survived the env render');
+});
+
+test('LAN mode: the marker file moves every local url onto the LAN host, localhost stays a twin', () => {
+  writeFileSync(join(SCRATCH, 'lan-host'), '192.168.1.50\n');
+  try {
+    assert.equal(lanHost(), '192.168.1.50');
+    const prod = loadStack('munni-local-prod');
+    assert.equal(prod.urls.web, 'http://192.168.1.50:8380');
+    assert.equal(prod.urls.logto, 'http://192.168.1.50:3201');
+    // sign-in accepts BOTH forms so host-browser use keeps working
+    const apps = appDefinitions(prod);
+    assert.deepEqual(apps.web.oidcClientMetadata.redirectUris, [
+      'http://192.168.1.50:8380/auth-callback',
+      'http://localhost:8380/auth-callback',
+    ]);
+    assert.ok(apps.web.customClientMetadata.corsAllowedOrigins.includes('http://localhost:8380'));
+    // the api's CORS carries the localhost twins too
+    const dir = renderStack(prod, familyValues(prod));
+    const compose = readFileSync(join(dir, 'docker-compose.munni-local-prod.yml'), 'utf8');
+    assert.ok(compose.includes('Cors__Origins__0: http://192.168.1.50:8380'));
+    assert.ok(compose.includes('http://localhost:8380'));
+    assert.ok(compose.includes('http://localhost:8381'));
+  } finally {
+    rmSync(join(SCRATCH, 'lan-host'), { force: true });
+  }
+  assert.equal(lanHost(), null);
+  assert.equal(loadStack('munni-local-prod').urls.web, 'http://localhost:8380', 'deleting the marker flips back');
+  renderStack(loadStack('munni-local-prod'), familyValues(loadStack('munni-local-prod'))); // leave a localhost render behind
 });
 
 test('iac render keeps the CI placeholder contract and the runtime-config overlay', () => {

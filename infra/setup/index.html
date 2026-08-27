@@ -301,16 +301,52 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
   <div class="msg" id="msg-subs"></div>
 </section>
 
-<section id="s-native" data-platform="nas">
-  <h2><span class="n">9</span> Native apps <span class="pill">store-mandated manual firsts</span></h2>
-  <p class="sub">Apple and Google both require the FIRST binary upload of a new app id to be manual. Everything before and after is CI.</p>
-  <div class="runrow"><button data-dispatch-native="native-android.yml:iac-production">Build Android (iac-prod)</button><button class="ghost" data-dispatch-native="native-android.yml:iac-staging">Android (iac-staging)</button><button data-dispatch-native="native-ios.yml:iac-production">Build iOS (iac-prod)</button><button class="ghost" data-dispatch-native="native-ios.yml:iac-staging">iOS (iac-staging)</button></div>
-  <div id="runs-native"></div>
-  <div class="msg" id="msg-native"></div>
-  <ol style="font-size:13px">
-    <li><b>Android</b>: download the signed <code>.aab</code> artifact from the green run → <a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → create app <code>app.munni.iac</code> → Internal testing → upload → grant the CI service account. Later uploads are CI.</li>
-    <li><b>iOS</b>: <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> → New App (bundle <code>app.munni.iac</code>) — the workflow's TestFlight lane takes over from build 2.</li>
-  </ol>
+<section id="s-native">
+  <h2><span class="n">9</span> Native apps <span class="pill" id="native-pill"></span></h2>
+  <p class="sub">Builds always run in GitHub CI — nothing compiles on this machine. Only the stores' one rule stays manual: the FIRST binary upload of a new app id.</p>
+
+  <div data-native-track="nas">
+    <div class="runrow"><button data-needs-feature="android" data-dispatch-native="native-android.yml:iac-production">Build Android (iac-prod)</button><button class="ghost" data-needs-feature="android" data-dispatch-native="native-android.yml:iac-staging">Android (iac-staging)</button><button data-needs-feature="ios" data-dispatch-native="native-ios.yml:iac-production">Build iOS (iac-prod)</button><button class="ghost" data-needs-feature="ios" data-dispatch-native="native-ios.yml:iac-staging">iOS (iac-staging)</button></div>
+    <div id="runs-native"></div>
+    <div class="runrow" data-needs-feature="android">
+      <button class="ghost" data-artifact="munni-android-release">Download signed .aab (newest green build)</button>
+      <button class="ghost" data-artifact="munni-android-debug">Download debug .apk</button>
+    </div>
+    <div class="msg" id="msg-native"></div>
+    <ol style="font-size:13px">
+      <li data-needs-feature="android"><b>Android</b>: the download lands as a ZIP — unzip it, then <a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → create the app → Internal testing → upload the <code>.aab</code> → grant the CI service account. Every later upload is CI.</li>
+      <li data-needs-feature="ios"><b>iOS</b>: <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> → New App — the workflow's TestFlight lane takes over from build 2.</li>
+    </ol>
+  </div>
+
+  <div data-native-track="local">
+    <div class="card">
+      <h3>Phone reachability (LAN mode) <span class="pill" id="lan-pill"></span></h3>
+      <p class="why">A phone cannot reach <code>localhost</code> — LAN mode moves the whole family onto this machine's wifi address (the localhost links keep working alongside). Everything re-renders automatically: sign-in redirect URIs, CORS, crash-report DSNs. Heads-up: if Windows Firewall asks, allow Docker for private networks; and give this machine a DHCP reservation — a changed address needs a rebuilt app.</p>
+      <div class="runrow">
+        <select id="lan-select" style="max-width:220px"></select>
+        <button id="btn-lan-on">Turn LAN mode on</button>
+        <button class="ghost" id="btn-lan-off">Back to localhost</button>
+      </div>
+    </div>
+
+    <div class="card" data-needs-feature="android">
+      <h3>Android on your phone <span class="pill" id="native-local-pill"></span></h3>
+      <p class="why">One button: this page writes the LAN config into the GitHub environment <code>local</code>, has CI build the APK against it, pulls the artifact back and hands your phone a direct download link over the wifi. Needs the GitHub connection from step 1 (use <i>Show it anyway</i> under the local note) — the build runs in YOUR repo's Actions.</p>
+      <div class="runrow">
+        <button id="btn-native-local-android">Build &amp; fetch the Android app</button>
+      </div>
+      <div class="msg" id="msg-native-local"></div>
+    </div>
+
+    <div class="card" data-needs-feature="ios">
+      <h3>iOS on your phone</h3>
+      <p class="why">Same LAN-baked build via CI (<code>environment: local</code>) — but Apple allows no sideloading, so installing goes through TestFlight: it needs the ASC key secrets and <code>IOS_BUILD_ENABLED=true</code>, and the upload appears in TestFlight on your phone. The build carries the LAN address, so it only works on your wifi.</p>
+      <div class="runrow">
+        <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
+      </div>
+    </div>
+  </div>
 </section>
 
 <section id="s-day2" data-platform="nas">
@@ -857,7 +893,7 @@ const S = {
   slug: LS.get('slug', 'okkes/munnimok'),
   ref: LS.get('ref', 'dev'),
   platform: LS.get('platform', 'nas'),
-  features: LS.get('features', { gocardless: true, enablebanking: false, logodev: false, fcm: false, google: false, apple: false, email: false }),
+  features: LS.get('features', { gocardless: true, enablebanking: false, logodev: false, fcm: false, google: false, apple: false, email: false, android: false, ios: false }),
   domain: LS.get('domain', ''),
   user: null,
   repoSecrets: new Set(),
@@ -877,6 +913,8 @@ const FEATURES = [
   { id: 'google', label: 'Sign in with Google', hint: 'social login button on the sign-in screen' },
   { id: 'apple', label: 'Sign in with Apple', hint: 'required by Apple if you ship the iOS app with any social login', targets: ['nas'], offHint: 'needs the https NAS track — Apple refuses http return URLs' },
   { id: 'email', label: 'Crash-report emails', hint: 'GlitchTip mails on new errors (needs an SMTP url); without it, reports stay in the UI' },
+  { id: 'android', label: 'Android app', hint: 'the native Android shell — CI builds and (once the keystore exists) publishes it; only the FIRST Play upload is manual, by store rule', localHint: 'CI bakes an APK that talks to THIS machine over your wifi (LAN mode) — sideload it on your phone, no store needed' },
+  { id: 'ios', label: 'iOS app', hint: 'the native iOS shell — CI signs and uploads straight to TestFlight (Apple allows no sideloading)', localHint: 'CI can bake a LAN build too, but installing still goes through TestFlight — Apple allows no sideloading' },
 ];
 
 /* credential cards (step 3) — what/why/how per provider */
@@ -1177,6 +1215,15 @@ async function refreshLocal() {
     setPill('local-shared-pill', sharedUp ? 'running ✓' : (shared.rendered ? 'set up — not running' : 'not set up yet'), sharedUp);
     const up = prod.services.web && prod.services.api;
     setPill('local-pill', up ? 'running ✓' : (prod.rendered ? 'set up — not running' : 'not set up yet'), up);
+    setPill('lan-pill', st.lan ? `on — ${st.lan}` : 'off (localhost only)', Boolean(st.lan));
+    const lanSel = document.getElementById('lan-select');
+    if (lanSel && !lanSel.options.length) {
+      try {
+        const lan = await (await hfetch('/api/local/lan')).json();
+        lanSel.innerHTML = lan.candidates.map((c) => `<option value="${c}"${c === lan.current ? ' selected' : ''}>${c}</option>`).join('')
+          || '<option value="">no LAN address found</option>';
+      } catch { /* helper hiccup — next refresh retries */ }
+    }
     renderStatus();
   } catch (e) {
     box.textContent = `helper unreachable (${e.message}) — restart infra/setup/start.cmd and reload`;
@@ -1223,7 +1270,13 @@ async function streamLocal(path, body, label) {
   localBusy = true;
   localLog(`\n▶ ${label}\n`);
   try {
-    const res = await hfetch(path, { method: 'POST', body: JSON.stringify(body) });
+    // a Blob body rides raw (artifact zips); everything else is JSON
+    const raw = body instanceof Blob;
+    const res = await hfetch(path, {
+      method: 'POST',
+      body: raw ? body : JSON.stringify(body),
+      headers: raw ? { 'content-type': 'application/zip' } : {},
+    });
     if (!res.ok || !res.body) { localLog(`helper error ${res.status}: ${await res.text()}\n`); return false; }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
@@ -1275,7 +1328,22 @@ function applyPlatform() {
     : "Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — this page encrypts them client-side (GitHub's sealed-box contract) and writes repository or environment secrets directly. Values are write-only from then on; the dots show presence, never content.";
   renderFeatures();
   renderCards();
+  renderNative();
   if (S.platform === 'local') refreshLocal();
+}
+
+/** the native section follows the android/ios FEATURE toggles and the
+ * platform: CI-dispatch track under nas, LAN-mode track under local */
+function renderNative() {
+  const nativeOn = Boolean(S.features.android || S.features.ios);
+  document.getElementById('s-native').classList.toggle('hide', !nativeOn);
+  document.querySelectorAll('[data-native-track]').forEach((el) => {
+    el.classList.toggle('hide', el.dataset.nativeTrack !== S.platform);
+  });
+  document.querySelectorAll('[data-needs-feature]').forEach((el) => {
+    el.classList.toggle('hide', !S.features[el.dataset.needsFeature]);
+  });
+  setPill('native-pill', S.platform === 'local' ? 'CI builds, your phone installs' : 'store-mandated manual firsts', false);
 }
 
 function applyDomain() {
@@ -1304,7 +1372,7 @@ function renderFeatures() {
   }).join('');
   FEATURES.forEach((f) => {
     document.getElementById('feat-' + f.id).addEventListener('change', (e) => {
-      S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); renderStatus();
+      S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); renderNative(); renderStatus();
     });
   });
 }
@@ -1877,6 +1945,102 @@ document.getElementById('btn-dev-nuke')?.addEventListener('click', () => {
   if (!confirm('Delete the from-source DEV LOOP completely?\n\nThis stops its containers and removes its volumes (dev database included), its network, and revokes the bank consents the dev app created at GoCardless.')) return;
   streamLocal('/api/local/cleanup', { target: 'devsource' }, 'delete the dev loop (containers + volumes + GoCardless consents)');
 });
+
+/* ── native apps: CI builds, phones install (LAN mode locally) ── */
+document.getElementById('btn-lan-on')?.addEventListener('click', () => {
+  const host = document.getElementById('lan-select').value;
+  if (!host) { localLog('\nno LAN address detected — are you on wifi/ethernet?\n'); return; }
+  streamLocal('/api/local/lan', { host }, `switch the family onto ${host} (re-render + restart everything)`);
+});
+document.getElementById('btn-lan-off')?.addEventListener('click', () =>
+  streamLocal('/api/local/lan', { host: '' }, 'switch the family back to localhost (re-render + restart everything)'));
+
+async function ghUpsertEnvVar(envName, name, value) {
+  const base = `/repos/${S.slug}/environments/${encodeURIComponent(envName)}/variables`;
+  try {
+    await gh(base, { method: 'POST', body: JSON.stringify({ name, value }) });
+  } catch {
+    await gh(`${base}/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify({ name, value }) });
+  }
+}
+async function writeLocalNativeEnv() {
+  const cfg = await (await hfetch('/api/local/native-config')).json();
+  if (!cfg.ready) throw new Error('not ready: ' + cfg.missing.join(' · '));
+  await ensureEnv('local');
+  for (const [name, value] of Object.entries(cfg.variables)) await ghUpsertEnvVar('local', name, value);
+  return cfg;
+}
+
+document.getElementById('btn-native-local-android')?.addEventListener('click', async () => {
+  const btn = document.getElementById('btn-native-local-android');
+  const say = (t, ok = true) => msg('msg-native-local', t, ok);
+  if (!S.pat || !S.user) { say('Connect GitHub first (step 1 → Show it anyway) — the build runs in your repo’s Actions.', false); return; }
+  btn.disabled = true;
+  try {
+    say('writing the LAN config into the GitHub environment "local"…');
+    await writeLocalNativeEnv();
+    const started = Date.now();
+    await dispatch('native-android.yml', { environment: 'local' });
+    say('build dispatched — CI is compiling the APK (usually 6-10 min)…');
+    let run = null;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 15000));
+      const runs = (await workflowRuns('native-android.yml'))?.workflow_runs ?? [];
+      run = runs.find((r2) => r2.event === 'workflow_dispatch' && new Date(r2.created_at).getTime() > started - 120000);
+      if (run) say(`build ${run.status === 'completed' ? run.conclusion : run.status} — run #${run.run_number}…`, run.conclusion !== 'failure');
+      if (run?.status === 'completed') break;
+      if (Date.now() - started > 30 * 60 * 1000) throw new Error('CI never finished within 30 minutes — check the Actions tab');
+    }
+    if (run.conclusion !== 'success') throw new Error(`the build ended ${run.conclusion} — open the run to see why`);
+    say('build green ✓ — fetching the APK artifact…');
+    const arts = await gh(`/repos/${S.slug}/actions/runs/${run.id}/artifacts`);
+    const art = (arts?.artifacts ?? []).find((a) => a.name === 'munni-android-debug');
+    if (!art) throw new Error('no munni-android-debug artifact on the run');
+    const zipRes = await fetch(art.archive_download_url, { headers: { authorization: 'Bearer ' + S.pat } });
+    if (!zipRes.ok) throw new Error(`artifact download failed (${zipRes.status})`);
+    const blob = await zipRes.blob();
+    say('artifact fetched — handing it to the helper for the phone link…');
+    const ok = await streamLocal('/api/local/apk', blob, 'unpack the APK + open the phone download link');
+    say(ok ? 'done — the phone download link is in the output box ✓' : 'the helper could not unpack it — see the output box', ok);
+  } catch (e) {
+    say('✗ ' + (e.message || e), false);
+  } finally {
+    btn.disabled = false;
+  }
+});
+document.getElementById('btn-native-local-ios')?.addEventListener('click', async () => {
+  if (!S.pat || !S.user) { localLog('\nConnect GitHub first (step 1 → Show it anyway).\n'); return; }
+  try {
+    await writeLocalNativeEnv();
+    await dispatch('native-ios.yml', { environment: 'local' });
+    localLog('\niOS build dispatched (environment local). With the ASC secrets and IOS_BUILD_ENABLED=true it lands in TestFlight on your phone; the build only works on this wifi. Follow it under Actions.\n');
+  } catch (e) {
+    localLog(`\n✗ iOS dispatch: ${e.message || e}\n`);
+  }
+});
+document.querySelectorAll('[data-artifact]').forEach((btn) => btn.addEventListener('click', async () => {
+  const name = btn.dataset.artifact;
+  try {
+    msg('msg-native', 'looking for the newest green Android build…', true);
+    const runs = (await workflowRuns('native-android.yml'))?.workflow_runs ?? [];
+    const run = runs.find((r) => r.status === 'completed' && r.conclusion === 'success');
+    if (!run) throw new Error('no green native-android run yet — build first');
+    const arts = await gh(`/repos/${S.slug}/actions/runs/${run.id}/artifacts`);
+    const art = (arts?.artifacts ?? []).find((a) => a.name === name);
+    if (!art) throw new Error(`run #${run.run_number} has no ${name} artifact${name.includes('release') ? ' — the signed lane needs the keystore secrets' : ''}`);
+    const zipRes = await fetch(art.archive_download_url, { headers: { authorization: 'Bearer ' + S.pat } });
+    if (!zipRes.ok) throw new Error(`download failed (${zipRes.status})`);
+    const blob = await zipRes.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name}.zip`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    msg('msg-native', `${name}.zip downloaded from run #${run.run_number} — unzip it for the binary ✓`, true);
+  } catch (e) {
+    msg('msg-native', '✗ ' + (e.message || e), false);
+  }
+}));
 document.getElementById('btn-local-vault-export')?.addEventListener('click', async () => {
   const res = await hfetch('/api/local/vault-export');
   const blob = new Blob([JSON.stringify(await res.json(), null, 2)], { type: 'application/json' });

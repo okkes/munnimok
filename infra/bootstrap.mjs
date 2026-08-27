@@ -148,6 +148,7 @@ async function localApplyLogto(values) {
     values.NAS_LOGTO_M2M_APP_SECRET = apps.m2m.secret;
     values.VITE_LOGTO_APP_ID = apps.web.id;
     values.VITE_LOGTO_APP_ID_ADMIN = apps.admin.id;
+    values.NATIVE_LOGTO_APP_ID = apps.native.id; // the CI native build bakes this
     // this env hosts munni-control's sign-in? its dedicated control
     // app id feeds the shared stack's render
     if (apps.control) {

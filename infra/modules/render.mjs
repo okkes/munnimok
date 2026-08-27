@@ -516,6 +516,17 @@ CONTROL_LOGTO_APP_ID=\${CONTROL_LOGTO_APP_ID}
 `;
 }
 
+/** browser origins the env api accepts — in LAN mode both the LAN and
+ * the localhost forms work (phones use LAN, the host browser either) */
+function corsOrigins(s) {
+  const origins = [s.urls.web, s.urls.admin];
+  if (s.target === 'local' && !s.urls.web.includes('//localhost:')) {
+    origins.push(`http://localhost:${s.ports.web}`, `http://localhost:${s.ports.admin}`);
+  }
+  origins.push('https://localhost', 'capacitor://localhost');
+  return origins;
+}
+
 function envLocalCompose(s) {
   const p = s.ports;
   const appChannel = s.appChannel ?? (s.role === 'prod' ? 'production' : 'staging');
@@ -596,10 +607,7 @@ services:
       Auth__MetadataAddress: http://logto:${p.logto}/oidc/.well-known/openid-configuration
       Auth__RequireHttps: "false"
       Auth__Audience: ${s.urls.api}
-      Cors__Origins__0: ${s.urls.web}
-      Cors__Origins__1: ${s.urls.admin}
-      Cors__Origins__2: https://localhost
-      Cors__Origins__3: capacitor://localhost
+${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       GoCardless__SecretId: \${GOCARDLESS_SECRET_ID}
       GoCardless__SecretKey: \${GOCARDLESS_SECRET_KEY}
       EnableBanking__ApplicationId: \${ENABLEBANKING_APPLICATION_ID:-}
