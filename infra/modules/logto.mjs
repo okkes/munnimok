@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { loadStack } from './stack.mjs';
 
 /**
  * Logto-as-code for one IaC pair. Talks to the PAIR's own Logto
@@ -58,12 +59,22 @@ export function appDefinitions(stack) {
     },
     customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'] },
   };
-  return {
+  const defs = {
     web: spa(`${stack.stack} web`, stack.urls.web),
     admin: spa(`${stack.stack} admin`, stack.urls.admin),
     native,
     m2m: { name: `${stack.stack} api m2m`, type: 'MachineToMachine' },
   };
+  // when this env powers munni-control (the shared-services cockpit),
+  // the cockpit gets its OWN app — a fully separate product, per the
+  // user's two-apps ruling — signing in against this env's Logto
+  if (stack.sharedStack) {
+    const shared = loadStack(stack.sharedStack);
+    if (shared.controlApi === stack.stack && shared.urls.control) {
+      defs.control = spa(`${stack.stack} control`, shared.urls.control);
+    }
+  }
+  return defs;
 }
 
 /** upsert-by-name; returns {web, admin, native, m2m} app records */

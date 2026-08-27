@@ -1,7 +1,10 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pairProd } from './stack.mjs';
+import { listStacks, loadStack, pairProd } from './stack.mjs';
+
+/** the docker network local env stacks share with munni-local-shared */
+export const LOCAL_SHARED_NET = 'munni-local-shared-net';
 
 // MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
 const OUT_DIR = process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
@@ -19,9 +22,31 @@ const OUT_DIR = process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(impor
  * secrets inline — nothing GitHub-side is involved for the local twin.
  */
 export function renderStack(stack, values) {
-  const pair = pairProd(stack);
   const dir = join(OUT_DIR, stack.stack);
   mkdirSync(join(dir, 'initdb'), { recursive: true });
+
+  if (stack.target === 'local' && stack.role === 'shared') {
+    // the local SHARED stack (plan LS1): postgres for every consumer,
+    // glitchtip, vault, ocr, munni-control
+    writeFileSync(join(dir, `docker-compose.${stack.stack}.yml`), sharedLocalCompose(stack));
+    writeFileSync(join(dir, `.env.${stack.stack}`), substitute(sharedLocalTemplate(stack), values));
+    const dbs = sharedConsumers(stack)
+      .flatMap((c) => [`CREATE DATABASE munni_${c.dbSuffix};`, `CREATE DATABASE logto_${c.dbSuffix};`])
+      .concat('CREATE DATABASE glitchtip;');
+    writeFileSync(join(dir, 'initdb', '01-create-databases.sql'), `${dbs.join('\n')}\n`);
+    return dir;
+  }
+
+  if (stack.target === 'local' && stack.sharedStack) {
+    // a local ENV stack (plan LS2/LS3): web/admin/api + its OWN logto,
+    // riding the shared stack over the shared network
+    writeFileSync(join(dir, `docker-compose.${stack.stack}.yml`), envLocalCompose(stack));
+    writeFileSync(join(dir, `.env.${stack.stack}`), substitute(envLocalTemplate(stack), values));
+    writeFileSync(join(dir, 'initdb', '01-create-databases.sql'), '-- databases live on the shared stack\n');
+    return dir;
+  }
+
+  const pair = pairProd(stack);
   writeFileSync(join(dir, `docker-compose.${stack.stack}.yml`), compose(stack, pair));
   writeFileSync(join(dir, `.env.${stack.stack}`), envFile(stack, values));
   // first postgres boot: side databases for the pair's shared services
@@ -31,6 +56,21 @@ export function renderStack(stack, values) {
   );
   return dir;
 }
+
+/** local env stacks that declared THIS stack as their shared home
+ * (stacks that fail to load — iac files needing IAC_DOMAIN — can never
+ * be local consumers, skip them) */
+export function sharedConsumers(sharedStack) {
+  return listStacks()
+    .filter((name) => name !== sharedStack.stack)
+    .map((name) => {
+      try { return loadStack(name); } catch { return null; }
+    })
+    .filter((s) => s?.sharedStack === sharedStack.stack);
+}
+
+const substitute = (text, values) =>
+  values ? text.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (_, name) => String(values[name] ?? '').replaceAll("'", '')) : text;
 
 function composeHeader(s) {
   const p = s.ports;
@@ -296,14 +336,288 @@ LOGODEV_PUBLIC_TOKEN=\${NAS_LOGODEV_PUBLIC_TOKEN}
  * can never drift.
  */
 export function templatePlaceholders(stack) {
-  return [...envTemplate(stack).matchAll(/\$\{([A-Z][A-Z0-9_]*)\}/g)].map((m) => m[1]);
+  let text;
+  if (stack.target === 'local' && stack.role === 'shared') text = sharedLocalTemplate(stack);
+  else if (stack.target === 'local' && stack.sharedStack) text = envLocalTemplate(stack);
+  else text = envTemplate(stack);
+  return [...text.matchAll(/\$\{([A-Z][A-Z0-9_]*)\}/g)].map((m) => m[1]);
 }
 
 function envFile(stack, values) {
   const text = envTemplate(stack);
-  if (!values) return text;
-  // local twin: substitute inline. Values are single-line by construction
-  // except the PEM/JSON entries, which the template single-quotes — keep
-  // any embedded single quotes out (dotenv cannot express them safely).
-  return text.replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (_, name) => String(values[name] ?? '').replaceAll("'", ''));
+  // values (local target): substitute inline. Values are single-line by
+  // construction except the PEM/JSON entries, which the template
+  // single-quotes — embedded single quotes stay out (dotenv limits).
+  return substitute(text, values);
+}
+
+/* ── the local three-stack topology (plan LS1-LS3) ─────────────────── */
+
+function sharedLocalCompose(s) {
+  const p = s.ports;
+  const control = loadStack(s.controlApi);
+  return `# ${s.stack} — RENDERED by infra/bootstrap.mjs, do not edit by hand.
+# The local machine's cross-environment services. Environment stacks join
+# the "${LOCAL_SHARED_NET}" network to reach postgres/glitchtip/ocr by
+# service name; only browser-facing ports are published.
+name: ${s.stack}
+
+networks:
+  shared:
+    name: ${LOCAL_SHARED_NET}
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: munni
+      POSTGRES_PASSWORD: \${POSTGRES_PASSWORD}
+      POSTGRES_DB: munni
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U munni"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [shared]
+
+  glitchtip-migrate:
+    image: glitchtip/glitchtip:latest
+    restart: "no"
+    command: ./manage.py migrate
+    environment: &glitchtip_env
+      DATABASE_URL: postgres://munni:\${POSTGRES_PASSWORD}@postgres:5432/glitchtip
+      REDIS_URL: redis://valkey:6379/0
+      SECRET_KEY: \${GLITCHTIP_SECRET_KEY}
+      GLITCHTIP_DOMAIN: ${s.urls.glitchtip}
+      EMAIL_URL: \${GLITCHTIP_EMAIL_URL:-consolemail://}
+      CELERY_WORKER_AUTOSCALE: "1,3"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [shared]
+
+  glitchtip:
+    image: glitchtip/glitchtip:latest
+    restart: unless-stopped
+    environment: *glitchtip_env
+    ports:
+      - "${p.glitchtip}:8000"
+    depends_on:
+      glitchtip-migrate:
+        condition: service_completed_successfully
+      valkey:
+        condition: service_started
+    networks: [shared]
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:latest
+    restart: unless-stopped
+    command: ./bin/run-celery-with-beat.sh
+    environment: *glitchtip_env
+    depends_on:
+      glitchtip-migrate:
+        condition: service_completed_successfully
+    networks: [shared]
+
+  valkey:
+    image: valkey/valkey:9-alpine
+    restart: unless-stopped
+    networks: [shared]
+
+  ocr:
+    image: hertzg/tesseract-server:latest
+    restart: unless-stopped
+    networks: [shared]
+
+  vaultwarden:
+    image: vaultwarden/server:latest
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${s.urls.vault}
+      SIGNUPS_ALLOWED: \${VAULT_SIGNUPS_ALLOWED:-true}
+    volumes:
+      - vaultdata:/data
+    ports:
+      - "${p.vault}:80"
+
+  # the shared-services cockpit (plan LS5): its OWN app + image (not the
+  # env dashboard), signed in through ${s.controlApi}'s Logto + API
+  control:
+    image: \${REGISTRY}/munni-control:\${TAG}
+    restart: unless-stopped
+    environment:
+      MUNNI_API_URL: ${control.urls.api}
+      MUNNI_LOGTO_ENDPOINT: ${control.urls.logto}
+      MUNNI_LOGTO_APP_ID: \${CONTROL_LOGTO_APP_ID}
+      MUNNI_LOGTO_RESOURCE: ${control.urls.api}
+    ports:
+      - "${p.control}:80"
+
+volumes:
+  pgdata:
+  vaultdata:
+`;
+}
+
+function sharedLocalTemplate(s) {
+  return `# ${s.stack} env (local: values inlined by bootstrap — never commit this file)
+REGISTRY=${s.registry}
+TAG=${s.channel}
+GHCR_USER=okkes
+GHCR_PAT=\${NAS_GHCR_PAT}
+
+POSTGRES_PASSWORD=\${NAS_POSTGRES_PASSWORD}
+GLITCHTIP_SECRET_KEY=\${NAS_GLITCHTIP_SECRET_KEY}
+GLITCHTIP_EMAIL_URL=\${NAS_GLITCHTIP_EMAIL_URL}
+
+# empty = signups OPEN (first account); set false once yours exists
+VAULT_SIGNUPS_ALLOWED=\${VAULT_SIGNUPS_ALLOWED}
+
+# munni-control's OWN Logto app id (registered in ${s.controlApi}'s Logto)
+CONTROL_LOGTO_APP_ID=\${CONTROL_LOGTO_APP_ID}
+`;
+}
+
+function envLocalCompose(s) {
+  const p = s.ports;
+  const appChannel = s.appChannel ?? (s.role === 'prod' ? 'production' : 'staging');
+  return `# ${s.stack} — RENDERED by infra/bootstrap.mjs, do not edit by hand.
+# A complete local environment (own web/admin/api + OWN Logto), riding
+# ${s.sharedStack} for postgres/glitchtip/ocr over "${LOCAL_SHARED_NET}"
+# (start the shared stack first — this one joins its network).
+name: ${s.stack}
+
+networks:
+  default: {}
+  shared:
+    external: true
+    name: ${LOCAL_SHARED_NET}
+
+services:
+  web:
+    image: \${REGISTRY}/munni-web:\${TAG}
+    restart: unless-stopped
+    environment:
+      MUNNI_API_URL: ${s.urls.api}
+      MUNNI_LOGTO_ENDPOINT: ${s.urls.logto}
+      MUNNI_LOGTO_APP_ID: \${WEB_LOGTO_APP_ID}
+      MUNNI_LOGTO_RESOURCE: ${s.urls.api}
+      MUNNI_GLITCHTIP_DSN: \${WEB_GLITCHTIP_DSN}
+      MUNNI_CHANNEL: ${appChannel}
+      MUNNI_NATIVE_SCHEME: ${s.native.scheme}
+      MUNNI_PUBLIC_ORIGIN: ${s.urls.web}
+    ports:
+      - "${p.web}:80"
+
+  admin:
+    image: \${REGISTRY}/munni-admin:\${TAG}
+    restart: unless-stopped
+    environment:
+      MUNNI_API_URL: ${s.urls.api}
+      MUNNI_LOGTO_ENDPOINT: ${s.urls.logto}
+      MUNNI_LOGTO_APP_ID: \${ADMIN_LOGTO_APP_ID}
+      MUNNI_LOGTO_RESOURCE: ${s.urls.api}
+      MUNNI_GLITCHTIP_DSN: \${ADMIN_GLITCHTIP_DSN}
+    ports:
+      - "${p.admin}:80"
+
+  api:
+    image: \${REGISTRY}/munni-api:\${TAG}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Db: Host=postgres;Database=munni_${s.dbSuffix};Username=munni;Password=\${POSTGRES_PASSWORD}
+      Db__AutoMigrate: "true"
+      Auth__Authority: ${s.urls.logto}/oidc
+      # localhost issuer for browsers; metadata fetched in-network over http
+      Auth__MetadataAddress: http://logto:${p.logto}/oidc/.well-known/openid-configuration
+      Auth__RequireHttps: "false"
+      Auth__Audience: ${s.urls.api}
+      Cors__Origins__0: ${s.urls.web}
+      Cors__Origins__1: ${s.urls.admin}
+      Cors__Origins__2: https://localhost
+      Cors__Origins__3: capacitor://localhost
+      GoCardless__SecretId: \${GOCARDLESS_SECRET_ID}
+      GoCardless__SecretKey: \${GOCARDLESS_SECRET_KEY}
+      EnableBanking__ApplicationId: \${ENABLEBANKING_APPLICATION_ID:-}
+      EnableBanking__PrivateKeyPem: \${ENABLEBANKING_PRIVATE_KEY_PEM:-}
+      Push__VapidPublicKey: \${PUSH_VAPID_PUBLIC_KEY:-}
+      Push__VapidPrivateKey: \${PUSH_VAPID_PRIVATE_KEY:-}
+      Push__Subject: \${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
+      Fcm__ServiceAccountJson: \${FCM_SERVICE_ACCOUNT_JSON:-}
+      Logos__SecretKey: \${LOGODEV_SECRET_KEY:-}
+      Logos__PublicToken: \${LOGODEV_PUBLIC_TOKEN:-}
+      Admin__Subs: \${ADMIN_SUBS:-}
+      # container-form DSN (glitchtip:8000 via the shared network) — the
+      # api cannot resolve the browser's localhost:8383 form
+      Sentry__Dsn: \${API_SENTRY_DSN:-}
+      Logto__M2mAppId: \${LOGTO_M2M_APP_ID:-}
+      Logto__M2mAppSecret: \${LOGTO_M2M_APP_SECRET:-}
+      BUILD_NUMBER: \${TAG}
+      Ocr__BaseUrl: http://ocr:8884
+    ports:
+      - "${p.api}:8080"
+    depends_on:
+      logto:
+        condition: service_started
+    networks: [default, shared]
+
+  logto:
+    image: svhd/logto:1.41
+    restart: unless-stopped
+    # SEED FIRST (see the iac render note): alteration-before-seed on an
+    # empty db half-creates tables and seed --swe then skips forever
+    entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
+    environment:
+      TRUST_PROXY_HEADER: "0"
+      DB_URL: postgres://munni:\${POSTGRES_PASSWORD}@postgres:5432/logto_${s.dbSuffix}
+      ENDPOINT: ${s.urls.logto}
+      ADMIN_ENDPOINT: ${s.urls.logtoAdmin}
+      PORT: "${p.logto}"
+      ADMIN_PORT: "${p.logtoAdmin}"
+    ports:
+      - "${p.logto}:${p.logto}"
+      - "${p.logtoAdmin}:${p.logtoAdmin}"
+    networks: [default, shared]
+`;
+}
+
+function envLocalTemplate(s) {
+  return `# ${s.stack} env (local: values inlined by bootstrap — never commit this file)
+REGISTRY=${s.registry}
+TAG=${s.channel}
+GHCR_USER=okkes
+GHCR_PAT=\${NAS_GHCR_PAT}
+
+POSTGRES_PASSWORD=\${NAS_POSTGRES_PASSWORD}
+
+LOGTO_M2M_APP_ID=\${NAS_LOGTO_M2M_APP_ID}
+LOGTO_M2M_APP_SECRET=\${NAS_LOGTO_M2M_APP_SECRET}
+
+WEB_LOGTO_APP_ID=\${VITE_LOGTO_APP_ID}
+ADMIN_LOGTO_APP_ID=\${VITE_LOGTO_APP_ID_ADMIN}
+WEB_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN}
+ADMIN_GLITCHTIP_DSN=\${VITE_GLITCHTIP_DSN_ADMIN}
+API_SENTRY_DSN=\${NAS_API_SENTRY_DSN}
+
+GOCARDLESS_SECRET_ID=\${NAS_GOCARDLESS_SECRET_ID}
+GOCARDLESS_SECRET_KEY=\${NAS_GOCARDLESS_SECRET_KEY}
+ENABLEBANKING_APPLICATION_ID=\${NAS_ENABLEBANKING_APPLICATION_ID}
+ENABLEBANKING_PRIVATE_KEY_PEM='\${NAS_ENABLEBANKING_PRIVATE_KEY_PEM}'
+
+ADMIN_SUBS=\${NAS_ADMIN_SUBS}
+
+PUSH_VAPID_PUBLIC_KEY=\${NAS_PUSH_VAPID_PUBLIC_KEY}
+PUSH_VAPID_PRIVATE_KEY=\${NAS_PUSH_VAPID_PRIVATE_KEY}
+PUSH_VAPID_SUBJECT=mailto:admin@localhost
+
+FCM_SERVICE_ACCOUNT_JSON='\${NAS_FCM_SERVICE_ACCOUNT_JSON}'
+
+LOGODEV_SECRET_KEY=\${NAS_LOGODEV_SECRET_KEY}
+LOGODEV_PUBLIC_TOKEN=\${NAS_LOGODEV_PUBLIC_TOKEN}
+`;
 }

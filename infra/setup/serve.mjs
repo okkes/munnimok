@@ -4,18 +4,20 @@
  * double-click infra/setup/start.cmd). Zero dependencies.
  *
  * It serves infra/setup/index.html on 127.0.0.1 and gives the page hands
- * on THIS machine: the wizard's local track stops printing commands and
- * instead runs them — bootstrap, docker compose up/down, the tooling
- * stacks — streaming their output live into the page. Without the helper
- * the same page still works from file:// as the guided manual.
+ * on THIS machine, now over the local THREE-STACK family (plan LS1-LS3):
+ * munni-local-shared (postgres, glitchtip, vault, ocr, munni-control)
+ * plus the munni-local-prod / munni-local-dev environments, each with its
+ * own Logto. Endpoints take a `stack` and stream every command's output
+ * into the page. Without the helper the page stays a guided manual.
  *
  * Security model (a localhost dev tool, but still):
  * - binds 127.0.0.1 only; Host header must be localhost/127.0.0.1;
  * - every /api call needs the per-run token the server injects into the
  *   page it serves (other local pages can't drive it);
- * - commands are a fixed allowlist — the ONLY caller-controlled data is
- *   operator secret VALUES, passed as env to bootstrap (never argv,
- *   never logged) and restricted to the manifest's operator names.
+ * - commands are a fixed allowlist over a fixed stack list — the ONLY
+ *   caller-controlled data is operator secret VALUES, passed as env to
+ *   bootstrap (never argv, never logged) and restricted to the
+ *   manifest's operator names.
  */
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
@@ -24,90 +26,54 @@ import { randomBytes } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST } from '../modules/secrets.mjs';
-import { loadLocalValues, saveLocalValues, localManifestEntries } from '../modules/localstore.mjs';
+import { familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from '../modules/localstore.mjs';
 import { loadStack } from '../modules/stack.mjs';
 import { validate } from '../modules/validate.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(DIR, '..', '..');
-// MUNNI_RENDER_DIR: same test override the render/localstore modules honor
-const RENDERED = process.env.MUNNI_RENDER_DIR
-  ? join(process.env.MUNNI_RENDER_DIR, 'munni-local')
-  : join(ROOT, 'infra', 'rendered', 'munni-local');
 const HTML = join(DIR, 'index.html');
+
+export const SHARED_STACK = 'munni-local-shared';
+export const LOCAL_ENVS = ['munni-local-prod', 'munni-local-dev'];
+export const LOCAL_STACKS = [SHARED_STACK, ...LOCAL_ENVS];
+
+// MUNNI_RENDER_DIR: same test override the render/localstore modules honor
+const renderedDir = (name) =>
+  process.env.MUNNI_RENDER_DIR ? join(process.env.MUNNI_RENDER_DIR, name) : join(ROOT, 'infra', 'rendered', name);
+const composeArgs = (name) => ['compose', '--env-file', `.env.${name}`, '-f', `docker-compose.${name}.yml`];
+const pickStack = (candidate, fallback = 'munni-local-prod') => (LOCAL_STACKS.includes(candidate) ? candidate : fallback);
+const pickEnv = (candidate) => (LOCAL_ENVS.includes(candidate) ? candidate : 'munni-local-prod');
 
 /** operator names the browser may hand to bootstrap via env */
 export const OPERATOR_NAMES = new Set(
   MANIFEST.secrets.filter((s) => s.owner === 'operator' && !['nas', 'ci'].includes(s.platform)).map((s) => s.name),
 );
 
-const TWIN_COMPOSE = ['compose', '--env-file', '.env.munni-local', '-f', 'docker-compose.munni-local.yml'];
-const DEV_COMPOSE = ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml'];
+const DEVSOURCE_COMPOSE = ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml'];
 /** fixed command allowlist — nothing here is caller-controlled. The
  * heavyweight VERIFICATION tools (sonar, e2e, webkit) left this list on
  * user ruling: they are development instruments, not setup steps. */
-export const TOOLS = {
-  'twin-up': { cwd: RENDERED, cmd: 'docker', args: [...TWIN_COMPOSE, 'up', '-d'] },
-  'twin-down': { cwd: RENDERED, cmd: 'docker', args: [...TWIN_COMPOSE, 'down'] },
-  // -v --remove-orphans: cleanup nukes volumes, network, strays — the
-  // wizard asks for explicit confirmation before calling these
-  'twin-destroy': { cwd: RENDERED, cmd: 'docker', args: [...TWIN_COMPOSE, 'down', '-v', '--remove-orphans'] },
-  'dev-up': { cwd: ROOT, cmd: 'docker', args: [...DEV_COMPOSE, 'up', '-d', '--build'] },
-  'dev-down': { cwd: ROOT, cmd: 'docker', args: [...DEV_COMPOSE, 'down'] },
-  'dev-destroy': { cwd: ROOT, cmd: 'docker', args: [...DEV_COMPOSE, 'down', '-v', '--remove-orphans'] },
+export const TOOLS = Object.fromEntries([
+  ...LOCAL_STACKS.flatMap((name) => [
+    [`${name}:up`, { cwd: renderedDir(name), cmd: 'docker', args: [...composeArgs(name), 'up', '-d'] }],
+    [`${name}:down`, { cwd: renderedDir(name), cmd: 'docker', args: [...composeArgs(name), 'down'] }],
+    // -v --remove-orphans: destroy nukes volumes, network, strays — the
+    // wizard asks for explicit confirmation before calling these
+    [`${name}:destroy`, { cwd: renderedDir(name), cmd: 'docker', args: [...composeArgs(name), 'down', '-v', '--remove-orphans'] }],
+  ]),
+  ['devsource:up', { cwd: ROOT, cmd: 'docker', args: [...DEVSOURCE_COMPOSE, 'up', '-d', '--build'] }],
+  ['devsource:down', { cwd: ROOT, cmd: 'docker', args: [...DEVSOURCE_COMPOSE, 'down'] }],
+  ['devsource:destroy', { cwd: ROOT, cmd: 'docker', args: [...DEVSOURCE_COMPOSE, 'down', '-v', '--remove-orphans'] }],
+]);
+
+/** the web origin each stack hands to GoCardless as its consent redirect
+ * — the discriminator for which requisitions BELONG to it */
+const GC_REDIRECT_PREFIX = {
+  'munni-local-prod': 'http://localhost:8380/',
+  'munni-local-dev': 'http://localhost:8480/',
+  devsource: 'http://localhost:5173/',
 };
-
-/** the web origin each local stack hands to GoCardless as its consent
- * redirect — the discriminator for which requisitions BELONG to it */
-const GC_REDIRECT_PREFIX = { twin: 'http://localhost:8380/', dev: 'http://localhost:5173/' };
-
-/** delete this stack's requisitions at GoCardless (shared account — only
- * rows whose redirect carries the stack's own origin are touched) */
-async function purgeGcRequisitions(target, res) {
-  const values = loadLocalValues(loadStack('munni-local'));
-  if (!values.NAS_GOCARDLESS_SECRET_ID || !values.NAS_GOCARDLESS_SECRET_KEY) {
-    res.write('no GoCardless credentials in the store — nothing to purge there\n');
-    return true;
-  }
-  const tokenRes = await fetch('https://bankaccountdata.gocardless.com/api/v2/token/new/', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ secret_id: values.NAS_GOCARDLESS_SECRET_ID, secret_key: values.NAS_GOCARDLESS_SECRET_KEY }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!tokenRes.ok) { res.write(`GoCardless token mint failed (${tokenRes.status}) — skipping the provider purge\n`); return false; }
-  const { access } = await tokenRes.json();
-  const gc = (path, init = {}) => fetch(`https://bankaccountdata.gocardless.com/api/v2${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${access}`, accept: 'application/json' },
-    signal: AbortSignal.timeout(15000),
-  });
-  const list = await (await gc('/requisitions/?limit=100')).json();
-  const mine = (list.results ?? []).filter((r) => String(r.redirect ?? '').startsWith(GC_REDIRECT_PREFIX[target]));
-  if (!mine.length) { res.write('no requisitions at GoCardless belong to this stack — nothing to purge\n'); return true; }
-  let removed = 0;
-  for (const r of mine) {
-    const del = await gc(`/requisitions/${r.id}/`, { method: 'DELETE' });
-    if (del.ok || del.status === 404) { removed += 1; res.write(`  revoked ${r.institution_id} consent (${String(r.id).slice(0, 8)}…, was ${r.status})\n`); }
-    else res.write(`  could not delete ${String(r.id).slice(0, 8)}… (${del.status})\n`);
-  }
-  res.write(`GoCardless purge: ${removed}/${mine.length} of this stack's consents removed — nothing lingers on the shared account\n`);
-  return removed === mine.length;
-}
-
-async function cleanupEndpoint(req, res, runImpl) {
-  const body = await readBody(req);
-  const target = body.target === 'dev' ? 'dev' : 'twin';
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  res.write(`▶ clean up the ${target === 'twin' ? 'munni twin' : 'dev stack'} — first its GoCardless consents, then containers + volumes + network\n\n`);
-  try {
-    await purgeGcRequisitions(target, res);
-  } catch (e) {
-    res.write(`GoCardless purge failed (${e.message}) — continuing with the docker teardown\n`);
-  }
-  const tool = TOOLS[target === 'twin' ? 'twin-destroy' : 'dev-destroy'];
-  return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
-}
 
 const hostOk = (req) => /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host ?? '');
 
@@ -120,9 +86,9 @@ async function probe(url) {
   }
 }
 
-function runToStream(res, cmd, args, { cwd, env } = {}) {
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  const child = spawn(cmd, args, { cwd: cwd ?? ROOT, env: env ?? process.env, shell: false });
+function runToStream(res, cmd, args, opts = {}) {
+  if (!res.headersSent) res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const child = spawn(cmd, args, { cwd: opts.cwd ?? ROOT, env: opts.env ?? process.env, shell: false });
   child.stdout.on('data', (d) => res.write(d));
   child.stderr.on('data', (d) => res.write(d));
   child.on('error', (e) => { res.write(`\n[helper] failed to start ${cmd}: ${e.message}\n`); res.end('[exit -1]\n'); });
@@ -138,11 +104,24 @@ const readBody = (req) =>
 
 const json = (res, status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 
+const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
+  new Promise((resolve) => {
+    res.write(`\n▶ ${label}\n`);
+    const child = spawnImpl(cmd, args, { cwd: opts.cwd ?? ROOT, env: opts.env ?? process.env, shell: false });
+    let out = '';
+    const forward = (d) => {
+      const s = String(d);
+      out += s;
+      res.write(opts.mask ? opts.mask(s) : s);
+    };
+    child.stdout.on('data', forward);
+    child.stderr.on('data', forward);
+    child.on('error', (e) => { res.write(`[helper] ${cmd} failed to start: ${e.message}\n`); resolve({ code: -1, out }); });
+    child.on('close', (code) => resolve({ code, out }));
+  });
+
+/* ── status ────────────────────────────────────────────────────────── */
 async function statusEndpoint(res, probeImpl) {
-  const stack = loadStack('munni-local');
-  const values = loadLocalValues(stack);
-  const stored = Object.keys(values).filter((k) => values[k]);
-  const required = localManifestEntries().filter((s) => !s.optional && s.owner === 'operator').map((s) => s.name);
   const docker = await new Promise((resolve) => {
     const c = spawn('docker', ['version', '--format', '{{.Server.Version}}'], { shell: false });
     let out = '';
@@ -150,80 +129,39 @@ async function statusEndpoint(res, probeImpl) {
     c.on('error', () => resolve({ ok: false }));
     c.on('close', (code) => resolve({ ok: code === 0, version: out.trim() }));
   });
-  const [web, api, logto, glitchtip, vault] = await Promise.all([
-    probeImpl(stack.urls.web),
-    probeImpl(`${stack.urls.api}/health`),
-    probeImpl(`${stack.urls.logto}/oidc/.well-known/openid-configuration`),
-    probeImpl(`${stack.urls.glitchtip}/api/0/`),
-    probeImpl(`${stack.urls.vault}/alive`),
-  ]);
-  return json(res, 200, {
-    docker,
-    rendered: existsSync(join(RENDERED, '.env.munni-local')),
-    stored,            // NAMES only — never values
-    required,
-    services: { web, api, logto, glitchtip, vault },
-    urls: stack.urls,
-  });
+  const stacks = {};
+  for (const name of LOCAL_STACKS) {
+    const stack = loadStack(name);
+    const services = {};
+    const probes = [];
+    if (stack.urls.web) probes.push(['web', probeImpl(stack.urls.web)]);
+    if (stack.urls.api) probes.push(['api', probeImpl(`${stack.urls.api}/health`)]);
+    if (stack.urls.logto) probes.push(['logto', probeImpl(`${stack.urls.logto}/oidc/.well-known/openid-configuration`)]);
+    if (stack.urls.glitchtip) probes.push(['glitchtip', probeImpl(`${stack.urls.glitchtip}/api/0/`)]);
+    if (stack.urls.vault) probes.push(['vault', probeImpl(`${stack.urls.vault}/alive`)]);
+    if (stack.urls.control) probes.push(['control', probeImpl(stack.urls.control)]);
+    for (const [key, p] of probes) services[key] = await p;
+    const own = loadLocalValues(stack);
+    stacks[name] = {
+      rendered: existsSync(join(renderedDir(name), `.env.${name}`)),
+      stored: Object.keys(own).filter((k) => own[k]), // NAMES only, never values
+      required: stackManifestEntries(stack).filter((s) => !s.optional && s.owner === 'operator').map((s) => s.name),
+      services,
+      urls: stack.urls,
+    };
+  }
+  return json(res, 200, { docker, stacks });
 }
 
-/* ── secret retrieval (docs/secrets-access-plan.md, local half): the
-   machine's own store IS readable — these endpoints surface it on
-   EXPLICIT request only. Values go to the page, never to any log. ── */
-function secretsEndpoint(res) {
-  const values = loadLocalValues(loadStack('munni-local'));
-  return json(res, 200, { values });
-}
-
-/** Bitwarden-importable JSON (web vault → Tools → Import → Bitwarden json).
- * VAPID keys stay out per the plan — no human ever types those. */
-function vaultExportEndpoint(res) {
-  const stack = loadStack('munni-local');
-  const values = loadLocalValues(stack);
-  const item = (name, { username = '', password = '', uri = '', notes = '' } = {}) => ({
-    type: 1,
-    name,
-    notes,
-    favorite: false,
-    login: { username, password, uris: uri ? [{ match: null, uri }] : [], totp: null },
-    collectionIds: null,
-  });
-  const items = [];
-  if (values.GLITCHTIP_ADMIN_EMAIL) {
-    items.push(item('munni-local / GlitchTip console', {
-      username: values.GLITCHTIP_ADMIN_EMAIL,
-      password: values.GLITCHTIP_ADMIN_PASSWORD ?? '',
-      uri: stack.urls.glitchtip,
-      notes: 'created by the munni setup wizard',
-    }));
-  }
-  if (values.NAS_POSTGRES_PASSWORD) {
-    items.push(item('munni-local / Postgres', { username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: 'db munni/logto/glitchtip inside the twin' }));
-  }
-  if (values.IAC_LOGTO_INFRA_M2M_ID) {
-    items.push(item('munni-local / Logto infra M2M', { username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto }));
-  }
-  if (values.LOGTO_CONSOLE_USERNAME) {
-    items.push(item('munni-local / Logto console', { username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin }));
-  }
-  if (values.LOGTO_APP_ADMIN_USERNAME) {
-    items.push(item('munni-local / munni app (admin user)', { username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web }));
-  }
-  const covered = new Set(['GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_POSTGRES_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD', 'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY']);
-  for (const [name, value] of Object.entries(values)) {
-    if (covered.has(name) || !value) continue;
-    items.push(item(`munni-local / ${name}`, { password: String(value), notes: 'from the munni setup wizard local store' }));
-  }
-  return json(res, 200, { encrypted: false, folders: [], items });
-}
-
+/* ── run bootstrap ─────────────────────────────────────────────────── */
 async function runEndpoint(req, res, runImpl) {
   const body = await readBody(req);
+  const stackName = pickStack(body.stack);
   const env = { ...process.env };
   for (const [name, value] of Object.entries(body.values ?? {})) {
     if (OPERATOR_NAMES.has(name) && typeof value === 'string' && value) env[name] = value;
   }
-  const args = [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', 'munni-local'];
+  const args = [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stackName];
   if (body.verify) args.push('--verify');
   return runImpl(res, process.execPath, args, { cwd: ROOT, env });
 }
@@ -232,19 +170,151 @@ async function toolEndpoint(req, res, runImpl) {
   const body = await readBody(req);
   const tool = TOOLS[body.tool];
   if (!tool) return json(res, 400, { error: 'unknown tool' });
-  if (tool.winOnly && process.platform !== 'win32') return json(res, 400, { error: 'this tool is windows-only here — run its script directly' });
   return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
 }
 
-/** every manifest operator name may carry a value INTO a validation —
- * transient use only, never stored, never logged */
-const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator').map((s) => s.name));
+/* ── zero-input Logto per environment (plans LS3 + earlier rounds):
+   insert the infra M2M app straight into THAT env's logto database on
+   the shared postgres, wire apps as code, claim the console + the app's
+   first admin user. Idempotent — the insert is ON CONFLICT DO NOTHING
+   with the STORED credential, so a fresh database gets re-seeded. ── */
+const LOGTO_MGMT_ROLE = 'Logto Management API access';
 
-/* ── GlitchTip zero-input setup (user: "glitchtip is deployed by the
-   process itself — fetch/generate these things automatically"). Locally
-   we own the container, so the first admin user AND the API token are
-   created INSIDE it via manage.py; the token then flows straight into
-   bootstrap (org + projects + DSN write-back) — nothing to paste. ── */
+const logtoToken = async (base, id, secret, resource) => {
+  const basic = Buffer.from(`${id}:${secret}`).toString('base64');
+  const res = await fetch(`${base}/oidc/token`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      authorization: `Basic ${basic}`,
+    },
+    body: new URLSearchParams({ grant_type: 'client_credentials', resource, scope: 'all' }).toString(),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`token ${res.status}`);
+  return (await res.json()).access_token;
+};
+const logtoApi = async (base, token, path, init = {}) => {
+  const res = await fetch(`${base}/api${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`${init.method ?? 'GET'} ${path} ${res.status}`);
+  return res.status === 204 ? null : res.json();
+};
+
+const sharedPsql = (db, sql) => [
+  ...composeArgs(SHARED_STACK), 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1',
+  ...sql.flatMap((s) => ['-c', s]),
+];
+
+async function claimLogtoHumans(res, run, stack, infra) {
+  const logtoDb = `logto_${stack.dbSuffix}`;
+  const secretStep = await run(res, 'read the console machine credential (inside postgres)', 'docker',
+    sharedPsql(logtoDb, ["select secret from applications where tenant_id='admin' and id='m-admin';"]).concat(),
+    { cwd: renderedDir(SHARED_STACK), mask: () => '(captured)\n' });
+  const mSecret = secretStep.code === 0 ? secretStep.out.trim() : '';
+  if (!/^[0-9a-zA-Z_-]{16,}$/.test(mSecret)) {
+    res.write('could not read the console machine credential — account auto-claim skipped\n');
+    return false;
+  }
+  let changed = false;
+  const adminBase = stack.urls.logtoAdmin;
+  try {
+    const token = await logtoToken(adminBase, 'm-admin', mSecret, 'https://admin.logto.app/api');
+    const users = await logtoApi(adminBase, token, '/users?page_size=1');
+    if (users.length) {
+      res.write('Logto console already has its account — left untouched\n');
+    } else {
+      const password = randomBytes(12).toString('base64url');
+      const created = await logtoApi(adminBase, token, '/users', { method: 'POST', body: JSON.stringify({ username: 'admin', password }) });
+      const roles = await logtoApi(adminBase, token, '/roles?page_size=50');
+      const roleIds = roles.filter((r) => ['user', 'default:admin'].includes(r.name)).map((r) => r.id);
+      if (roleIds.length) await logtoApi(adminBase, token, `/users/${created.id}/roles`, { method: 'POST', body: JSON.stringify({ roleIds }) });
+      saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_CONSOLE_USERNAME: 'admin', LOGTO_CONSOLE_PASSWORD: password });
+      res.write(`Logto console claimed → ${adminBase} · username admin · password ${password}\n(kept in the local secret store)\n`);
+      changed = true;
+    }
+  } catch (e) {
+    res.write(`console auto-claim failed (${e.message}) — claim it by hand at ${adminBase} when you like\n`);
+  }
+  try {
+    const store = loadLocalValues(stack);
+    if (store.NAS_ADMIN_SUBS) {
+      res.write('app admin access already configured (NAS_ADMIN_SUBS set)\n');
+      return changed;
+    }
+    const token = await logtoToken(stack.urls.logto, infra.id, infra.secret, 'https://default.logto.app/api');
+    const users = await logtoApi(stack.urls.logto, token, '/users?page_size=1');
+    if (users.length) {
+      res.write('the app already has users — paste YOUR user id under Store admin access instead\n');
+      return changed;
+    }
+    const password = randomBytes(12).toString('base64url');
+    const created = await logtoApi(stack.urls.logto, token, '/users', { method: 'POST', body: JSON.stringify({ username: 'munni-admin', password }) });
+    saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_APP_ADMIN_USERNAME: 'munni-admin', LOGTO_APP_ADMIN_PASSWORD: password, NAS_ADMIN_SUBS: created.id });
+    res.write(`munni admin user created → sign into the app as munni-admin · ${password}\nadmin access wired automatically (NAS_ADMIN_SUBS=${created.id})\n`);
+    return true;
+  } catch (e) {
+    res.write(`app-admin auto-create failed (${e.message}) — use Store admin access after your first sign-up\n`);
+    return changed;
+  }
+}
+
+async function logtoSetupEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  const stack = loadStack(pickEnv(body.stack));
+  const values = familyValues(stack);
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const run = stepRunner(spawnImpl);
+
+  // stored credential re-used verbatim; the INSERT is idempotent, so a
+  // freshly reseeded logto database gets the same credential back
+  const id = values.IAC_LOGTO_INFRA_M2M_ID ?? `infra${randomBytes(8).toString('hex')}`;
+  const secret = values.IAC_LOGTO_INFRA_M2M_SECRET ?? randomBytes(24).toString('hex');
+  const linkId = `link0${randomBytes(8).toString('hex')}`;
+  const logtoDb = `logto_${stack.dbSuffix}`;
+  const sqlApp = `insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('default', '${id}', 'infra (munni setup)', '${secret}', 'created by the munni setup wizard', 'MachineToMachine', '{"redirectUris":[],"postLogoutRedirectUris":[]}', '{}') on conflict (id) do nothing;`;
+  const sqlRole = `insert into applications_roles (tenant_id, id, application_id, role_id) select 'default', '${linkId}', '${id}', r.id from roles r where r.tenant_id = 'default' and r.name = '${LOGTO_MGMT_ROLE}' on conflict do nothing;`;
+  const ins = await run(res, `seed the infra M2M app inside ${stack.stack}'s Logto`, 'docker',
+    sharedPsql(logtoDb, [sqlApp, sqlRole]),
+    { cwd: renderedDir(SHARED_STACK), mask: (s) => s.replaceAll(secret, '(secret)') });
+  if (ins.code !== 0) {
+    res.write('\nAre the shared stack AND this environment running (step 4)? The logto dot must be green — then retry.\n');
+    return res.end('[exit 1]\n');
+  }
+  res.write(`\nInfra app id: ${id} — the secret goes straight into the local secret store, never shown.\n`);
+
+  const boot = await run(res, 'turn sign-in into code (apps, redirect URIs, API resource) + store the credential', process.execPath,
+    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack],
+    { cwd: ROOT, env: { ...process.env, IAC_LOGTO_INFRA_M2M_ID: id, IAC_LOGTO_INFRA_M2M_SECRET: secret } });
+  if (boot.code !== 0 || !/logto: apps upserted/.test(boot.out)) {
+    res.write('\nLogto did not accept the credential yet — wait for the logto dot to turn green, then press the button again (nothing is lost).\n');
+    return res.end('[exit 1]\n');
+  }
+
+  const changed = await claimLogtoHumans(res, run, stack, { id, secret });
+  if (changed) {
+    await run(res, 'refresh the rendered env (admin access wired in)', process.execPath,
+      [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack], { cwd: ROOT });
+  }
+  // this env powers munni-control? refresh the shared render too
+  if (loadStack(SHARED_STACK).controlApi === stack.stack) {
+    await run(res, 'wire munni-control to this sign-in', process.execPath,
+      [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
+    await run(res, 'restart the shared stack (control picks its app id up)', 'docker',
+      [...composeArgs(SHARED_STACK), 'up', '-d'], { cwd: renderedDir(SHARED_STACK) });
+  }
+
+  const up = await run(res, 'restart web/admin with their sign-in config', 'docker',
+    [...composeArgs(stack.stack), 'up', '-d'], { cwd: renderedDir(stack.stack) });
+  res.write('\nDone. Sign-in is code, the console is claimed (login under Reveal secrets), and the app admin is wired.\n');
+  return res.end(`\n[exit ${up.code === 0 ? 0 : 1}]\n`);
+}
+
+/* ── zero-input GlitchTip: the shared stack owns ONE admin + token; each
+   environment gets its own org projects + DSNs. ── */
 const GT_BOOTSTRAP_PY = `
 import os
 from django.contrib.auth import get_user_model
@@ -268,209 +338,162 @@ else:
 print('TOKEN:' + str(t.token))
 `;
 
-const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
-  new Promise((resolve) => {
-    res.write(`\n▶ ${label}\n`);
-    const child = spawnImpl(cmd, args, { cwd: opts.cwd ?? ROOT, env: opts.env ?? process.env, shell: false });
-    let out = '';
-    const forward = (d) => {
-      const s = String(d);
-      out += s;
-      res.write(opts.mask ? opts.mask(s) : s);
-    };
-    child.stdout.on('data', forward);
-    child.stderr.on('data', forward);
-    child.on('error', (e) => { res.write(`[helper] ${cmd} failed to start: ${e.message}\n`); resolve({ code: -1, out }); });
-    child.on('close', (code) => resolve({ code, out }));
-  });
-
-/* ── Logto zero-input sign-in setup (user: "is it necessary to do logto
-   manually?"). Locally we own Logto's database, and the seed already
-   ships a 'Logto Management API access' role in tenant `default` — so
-   the OOBE console visit reduces to ONE SQL insert: an M2M application
-   row plus its role link (proven live: token minted with scope=all,
-   management API answered). The credential then flows into bootstrap,
-   which turns apps/redirects/resources into code. The console's own
-   create-account screen stays for the human to claim later — app
-   sign-in does not depend on it. ── */
-const LOGTO_MGMT_ROLE = 'Logto Management API access';
-
-const logtoToken = async (base, id, secret, resource) => {
-  const res = await fetch(`${base}/oidc/token`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/x-www-form-urlencoded',
-      authorization: `Basic ${Buffer.from(`${id}:${secret}`).toString('base64')}`,
-    },
-    body: new URLSearchParams({ grant_type: 'client_credentials', resource, scope: 'all' }).toString(),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) throw new Error(`token ${res.status}`);
-  return (await res.json()).access_token;
-};
-const logtoApi = async (base, token, path, init = {}) => {
-  const res = await fetch(`${base}/api${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) throw new Error(`${init.method ?? 'GET'} ${path} ${res.status}`);
-  return res.status === 204 ? null : res.json();
-};
-
-/** Claim the human accounts nobody wants to click together (user ruling):
- * the Logto CONSOLE's first account (admin tenant, via the seeded m-admin
- * machine app whose secret lives in the db we own) and the APP's first
- * admin user (default tenant, via the infra credential — its id becomes
- * NAS_ADMIN_SUBS automatically). Both skip cleanly when already present.
- * Returns true when anything changed (the env then needs a re-render). */
-async function claimLogtoHumans(res, run, infra) {
-  const stack = loadStack('munni-local');
-  const secretStep = await run(res, 'read the console machine credential (inside postgres)', 'docker',
-    [...TWIN_COMPOSE, 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', 'logto', '-tAc',
-      "select secret from applications where tenant_id='admin' and id='m-admin';"],
-    { cwd: RENDERED, mask: () => '(captured)\n' });
-  const mSecret = secretStep.code === 0 ? secretStep.out.trim() : '';
-  if (!/^[0-9a-zA-Z_-]{16,}$/.test(mSecret)) {
-    res.write('could not read the console machine credential — account auto-claim skipped (claim the console by hand at :3202 when you like)\n');
-    return false;
-  }
-  let changed = false;
-
-  try {
-    const token = await logtoToken('http://localhost:3202', 'm-admin', mSecret, 'https://admin.logto.app/api');
-    const users = await logtoApi('http://localhost:3202', token, '/users?page_size=1');
-    if (users.length) {
-      res.write('Logto console already has its account — left untouched\n');
-    } else {
-      const password = randomBytes(12).toString('base64url');
-      const created = await logtoApi('http://localhost:3202', token, '/users', { method: 'POST', body: JSON.stringify({ username: 'admin', password }) });
-      const roles = await logtoApi('http://localhost:3202', token, '/roles?page_size=50');
-      const roleIds = roles.filter((r) => ['user', 'default:admin'].includes(r.name)).map((r) => r.id);
-      if (roleIds.length) await logtoApi('http://localhost:3202', token, `/users/${created.id}/roles`, { method: 'POST', body: JSON.stringify({ roleIds }) });
-      saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_CONSOLE_USERNAME: 'admin', LOGTO_CONSOLE_PASSWORD: password });
-      res.write(`Logto console claimed → http://localhost:3202 · username admin · password ${password}\n(kept in the local secret store — no Create-account screen left to click)\n`);
-      changed = true;
-    }
-  } catch (e) {
-    res.write(`console auto-claim failed (${e.message}) — claim it by hand at :3202 when you like\n`);
-  }
-
-  try {
-    const store = loadLocalValues(stack);
-    if (store.NAS_ADMIN_SUBS) {
-      res.write('app admin access already configured (NAS_ADMIN_SUBS set)\n');
-      return changed;
-    }
-    const token = await logtoToken('http://localhost:3201', infra.id, infra.secret, 'https://default.logto.app/api');
-    const users = await logtoApi('http://localhost:3201', token, '/users?page_size=1');
-    if (users.length) {
-      res.write('the app already has users — paste YOUR user id under Store admin access instead of auto-creating one\n');
-      return changed;
-    }
-    const password = randomBytes(12).toString('base64url');
-    const created = await logtoApi('http://localhost:3201', token, '/users', { method: 'POST', body: JSON.stringify({ username: 'munni-admin', password }) });
-    saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_APP_ADMIN_USERNAME: 'munni-admin', LOGTO_APP_ADMIN_PASSWORD: password, NAS_ADMIN_SUBS: created.id });
-    res.write(`munni admin user created → sign into the app as munni-admin · ${password}\nadmin access wired automatically (NAS_ADMIN_SUBS=${created.id})\n`);
-    return true;
-  } catch (e) {
-    res.write(`app-admin auto-create failed (${e.message}) — use Store admin access below after your first sign-up\n`);
-    return changed;
-  }
-}
-
-async function logtoSetupEndpoint(res, spawnImpl) {
-  const stack = loadStack('munni-local');
-  const values = loadLocalValues(stack);
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  const run = stepRunner(spawnImpl);
-
-  let id = values.IAC_LOGTO_INFRA_M2M_ID;
-  let secret = values.IAC_LOGTO_INFRA_M2M_SECRET;
-  if (id && secret) {
-    res.write('A stored infra credential already exists — re-applying it (no new app inserted).\n');
-  } else {
-    id = `infra${randomBytes(8).toString('hex')}`;          // 21 chars, column limit
-    secret = randomBytes(24).toString('hex');
-    const linkId = `link0${randomBytes(8).toString('hex')}`;
-    const sqlApp = `insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('default', '${id}', 'infra (munni setup)', '${secret}', 'created by the munni setup wizard', 'MachineToMachine', '{"redirectUris":[],"postLogoutRedirectUris":[]}', '{}') on conflict (id) do nothing;`;
-    const sqlRole = `insert into applications_roles (tenant_id, id, application_id, role_id) select 'default', '${linkId}', '${id}', r.id from roles r where r.tenant_id = 'default' and r.name = '${LOGTO_MGMT_ROLE}' on conflict do nothing;`;
-    const ins = await run(res, 'create the infra M2M app inside Logto (management role attached)', 'docker',
-      [...TWIN_COMPOSE, 'exec', '-T', 'postgres', 'psql', '-U', 'munni', '-d', 'logto', '-v', 'ON_ERROR_STOP=1', '-c', sqlApp, '-c', sqlRole],
-      { cwd: RENDERED, mask: (s) => s.replaceAll(secret, '(secret)') });
-    if (ins.code !== 0) {
-      res.write('\nIs munni running (step 4), and has Logto finished booting? The logto dot in the status card must be green — then retry.\n');
-      return res.end('[exit 1]\n');
-    }
-  }
-  res.write(`\nInfra app id: ${id} — the secret goes straight into the local secret store, never shown.\n`);
-
-  const boot = await run(res, 'turn sign-in into code (apps, redirect URIs, API resource) + store the credential', process.execPath,
-    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', 'munni-local'],
-    { cwd: ROOT, env: { ...process.env, IAC_LOGTO_INFRA_M2M_ID: id, IAC_LOGTO_INFRA_M2M_SECRET: secret } });
-  // bootstrap soft-fails logto errors (exit 0) — the upsert line is the
-  // real success marker; the credential is stored either way, so a retry
-  // after logto boots re-applies without inserting again
-  if (boot.code !== 0 || !/logto: apps upserted/.test(boot.out)) {
-    res.write('\nLogto did not accept the credential yet — wait for the logto dot to turn green, then press the button again (the credential is stored; nothing is lost).\n');
-    return res.end('[exit 1]\n');
-  }
-
-  // the human accounts: console + first app admin (skips whatever exists)
-  const changed = await claimLogtoHumans(res, run, { id, secret });
-  if (changed) {
-    await run(res, 'refresh the rendered env (admin access wired in)', process.execPath,
-      [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', 'munni-local'], { cwd: ROOT });
-  }
-
-  const up = await run(res, 'restart web/admin with their sign-in config', 'docker', [...TWIN_COMPOSE, 'up', '-d'], { cwd: RENDERED });
-  res.write('\nDone. Sign-in is code, the console is claimed (login under Reveal secrets), and the app admin is wired.\n');
-  return res.end(`\n[exit ${up.code === 0 ? 0 : 1}]\n`);
-}
-
-async function glitchtipSetupEndpoint(res, spawnImpl) {
-  const stack = loadStack('munni-local');
-  const values = loadLocalValues(stack);
-  const email = values.GLITCHTIP_ADMIN_EMAIL ?? 'admin@munni.local';
-  const password = values.GLITCHTIP_ADMIN_PASSWORD ?? randomBytes(12).toString('base64url');
-  saveLocalValues(stack, { ...values, GLITCHTIP_ADMIN_EMAIL: email, GLITCHTIP_ADMIN_PASSWORD: password });
+async function glitchtipSetupEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  const stack = loadStack(pickEnv(body.stack));
+  const shared = loadStack(SHARED_STACK);
+  const sharedValues = loadLocalValues(shared);
+  const email = sharedValues.GLITCHTIP_ADMIN_EMAIL ?? 'admin@munni.local';
+  const password = sharedValues.GLITCHTIP_ADMIN_PASSWORD ?? randomBytes(12).toString('base64url');
+  saveLocalValues(shared, { ...sharedValues, GLITCHTIP_ADMIN_EMAIL: email, GLITCHTIP_ADMIN_PASSWORD: password });
 
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
   const run = stepRunner(spawnImpl);
 
-  const mint = await run(res, 'create the GlitchTip admin + API token (inside the container)', 'docker',
-    [...TWIN_COMPOSE, 'exec', '-T', '-e', 'GT_ADMIN_EMAIL', '-e', 'GT_ADMIN_PASSWORD', 'glitchtip', './manage.py', 'shell', '-c', GT_BOOTSTRAP_PY],
+  const mint = await run(res, 'create the GlitchTip admin + API token (inside the shared stack)', 'docker',
+    [...composeArgs(SHARED_STACK), 'exec', '-T', '-e', 'GT_ADMIN_EMAIL', '-e', 'GT_ADMIN_PASSWORD', 'glitchtip', './manage.py', 'shell', '-c', GT_BOOTSTRAP_PY],
     {
-      cwd: RENDERED,
+      cwd: renderedDir(SHARED_STACK),
       env: { ...process.env, GT_ADMIN_EMAIL: email, GT_ADMIN_PASSWORD: password },
       mask: (s) => s.replace(/TOKEN:\S+/g, 'TOKEN:(captured)'),
     });
   if (mint.code !== 0) {
-    res.write('\nIs munni running? Use step 4 → Set up & start munni first, wait for GlitchTip to come up, then retry.\n');
+    res.write('\nIs the shared stack running? Use step 4 → Set up first, wait for GlitchTip, then retry.\n');
     return res.end('[exit 1]\n');
   }
   const token = /TOKEN:(\S+)/.exec(mint.out)?.[1];
   if (!token) {
-    res.write('\ncould not read the API token back from the container — use the manual fallback below\n');
+    res.write('\ncould not read the API token back from the container — use the manual fallback\n');
     return res.end('[exit 1]\n');
   }
-  res.write(`\nGlitchTip console login → email ${email} · password ${password}\n(also kept in infra/rendered/munni-local/.secrets.local.json — change it inside GlitchTip whenever you like)\n`);
+  res.write(`\nGlitchTip console login → email ${email} · password ${password}\n(kept in the local secret store — change it inside GlitchTip whenever you like)\n`);
 
-  const wire = await run(res, 'wire org, projects and DSNs (bootstrap)', process.execPath,
-    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', 'munni-local'],
+  const wire = await run(res, `wire ${stack.stack}'s org, projects and DSNs (bootstrap)`, process.execPath,
+    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack],
     { cwd: ROOT, env: { ...process.env, IAC_GLITCHTIP_API_TOKEN: token } });
   if (wire.code !== 0) return res.end('[exit 1]\n');
 
   const restart = await run(res, 'restart with the DSNs wired in (docker compose up -d)', 'docker',
-    [...TWIN_COMPOSE, 'up', '-d'], { cwd: RENDERED });
+    [...composeArgs(stack.stack), 'up', '-d'], { cwd: renderedDir(stack.stack) });
   return res.end(`\n[exit ${restart.code === 0 ? 0 : 1}]\n`);
 }
 
+/* ── cleanup: revoke the stack's own GoCardless consents, then remove
+   containers + volumes + network ── */
+async function purgeGcRequisitions(target, res) {
+  const values = familyValues(loadStack('munni-local-prod'));
+  if (!values.NAS_GOCARDLESS_SECRET_ID || !values.NAS_GOCARDLESS_SECRET_KEY) {
+    res.write('no GoCardless credentials in the store — nothing to purge there\n');
+    return true;
+  }
+  const prefix = GC_REDIRECT_PREFIX[target];
+  if (!prefix) { res.write('this stack creates no bank consents — skipping the provider purge\n'); return true; }
+  const tokenRes = await fetch('https://bankaccountdata.gocardless.com/api/v2/token/new/', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ secret_id: values.NAS_GOCARDLESS_SECRET_ID, secret_key: values.NAS_GOCARDLESS_SECRET_KEY }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!tokenRes.ok) { res.write(`GoCardless token mint failed (${tokenRes.status}) — skipping the provider purge\n`); return false; }
+  const { access } = await tokenRes.json();
+  const gc = (path, init = {}) => fetch(`https://bankaccountdata.gocardless.com/api/v2${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${access}`, accept: 'application/json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  const list = await (await gc('/requisitions/?limit=100')).json();
+  const mine = (list.results ?? []).filter((r) => String(r.redirect ?? '').startsWith(prefix));
+  if (!mine.length) { res.write('no requisitions at GoCardless belong to this stack — nothing to purge\n'); return true; }
+  let removed = 0;
+  for (const r of mine) {
+    const del = await gc(`/requisitions/${r.id}/`, { method: 'DELETE' });
+    if (del.ok || del.status === 404) { removed += 1; res.write(`  revoked ${r.institution_id} consent (${String(r.id).slice(0, 8)}…, was ${r.status})\n`); }
+    else res.write(`  could not delete ${String(r.id).slice(0, 8)}… (${del.status})\n`);
+  }
+  res.write(`GoCardless purge: ${removed}/${mine.length} of this stack's consents removed\n`);
+  return removed === mine.length;
+}
+
+async function cleanupEndpoint(req, res, runImpl) {
+  const body = await readBody(req);
+  const target = body.target === 'devsource' ? 'devsource' : pickStack(body.target);
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  res.write(`▶ clean up ${target} — GoCardless consents first, then containers + volumes + network\n\n`);
+  try {
+    await purgeGcRequisitions(target, res);
+  } catch (e) {
+    res.write(`GoCardless purge failed (${e.message}) — continuing with the docker teardown\n`);
+  }
+  const tool = TOOLS[`${target}:destroy`];
+  return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
+}
+
+/* ── secret retrieval (family-wide): the stores ARE readable — surfaced
+   on EXPLICIT request only; values go to the page, never to any log ── */
+function secretsEndpoint(res) {
+  const values = {};
+  for (const name of LOCAL_STACKS) {
+    values[name] = loadLocalValues(loadStack(name));
+  }
+  return json(res, 200, { values });
+}
+
+/** Bitwarden-importable JSON (web vault → Tools → Import → Bitwarden json).
+ * VAPID keys stay out per the plan — no human ever types those. */
+function vaultExportEndpoint(res) {
+  const item = (name, { username = '', password = '', uri = '', notes = '' } = {}) => ({
+    type: 1,
+    name,
+    notes,
+    favorite: false,
+    login: { username, password, uris: uri ? [{ match: null, uri }] : [], totp: null },
+    collectionIds: null,
+  });
+  const items = [];
+  const shared = loadLocalValues(loadStack(SHARED_STACK));
+  if (shared.GLITCHTIP_ADMIN_EMAIL) {
+    items.push(item('munni local / GlitchTip console', {
+      username: shared.GLITCHTIP_ADMIN_EMAIL,
+      password: shared.GLITCHTIP_ADMIN_PASSWORD ?? '',
+      uri: 'http://localhost:8383',
+      notes: 'created by the munni setup wizard',
+    }));
+  }
+  if (shared.NAS_POSTGRES_PASSWORD) {
+    items.push(item('munni local / Postgres', { username: 'munni', password: shared.NAS_POSTGRES_PASSWORD, notes: 'shared server: munni_*/logto_*/glitchtip databases' }));
+  }
+  const skip = new Set(['NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY']);
+  const covered = new Set(['GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_POSTGRES_PASSWORD']);
+  for (const stackName of LOCAL_STACKS) {
+    const stack = loadStack(stackName);
+    const values = loadLocalValues(stack);
+    if (values.LOGTO_CONSOLE_USERNAME) {
+      items.push(item(`${stackName} / Logto console`, { username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '' }));
+    }
+    if (values.LOGTO_APP_ADMIN_USERNAME) {
+      items.push(item(`${stackName} / munni app (admin user)`, { username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web ?? '' }));
+    }
+    if (values.IAC_LOGTO_INFRA_M2M_ID) {
+      items.push(item(`${stackName} / Logto infra M2M`, { username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '' }));
+    }
+    const localCovered = new Set([...covered, 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD', 'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET']);
+    for (const [name, value] of Object.entries(values)) {
+      if (localCovered.has(name) || skip.has(name) || !value) continue;
+      items.push(item(`${stackName} / ${name}`, { password: String(value), notes: 'from the munni setup wizard local store' }));
+    }
+  }
+  return json(res, 200, { encrypted: false, folders: [], items });
+}
+
+/** every manifest operator name may carry a value INTO a validation —
+ * transient use only, never stored, never logged */
+const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator').map((s) => s.name));
+
 async function validateEndpoint(req, res, validateImpl) {
   const body = await readBody(req);
-  // pasted field values win; the machine's own store fills the gaps so
-  // "Check" also re-verifies values stored earlier
-  const values = { ...loadLocalValues(loadStack('munni-local')) };
+  // pasted field values win; the family store fills the gaps so "Check"
+  // also re-verifies values stored earlier
+  const values = { ...familyValues(loadStack(pickEnv(body.stack))) };
   for (const [name, value] of Object.entries(body.values ?? {})) {
     if (VALIDATABLE_NAMES.has(name) && typeof value === 'string' && value) values[name] = value;
   }
@@ -498,8 +521,8 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
       if (req.method === 'GET' && url.pathname === '/api/local/status') return await statusEndpoint(res, probeImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/run') return await runEndpoint(req, res, runImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/tool') return await toolEndpoint(req, res, runImpl);
-      if (req.method === 'POST' && url.pathname === '/api/local/glitchtip-setup') return await glitchtipSetupEndpoint(res, spawnImpl);
-      if (req.method === 'POST' && url.pathname === '/api/local/logto-setup') return await logtoSetupEndpoint(res, spawnImpl);
+      if (req.method === 'POST' && url.pathname === '/api/local/glitchtip-setup') return await glitchtipSetupEndpoint(req, res, spawnImpl);
+      if (req.method === 'POST' && url.pathname === '/api/local/logto-setup') return await logtoSetupEndpoint(req, res, spawnImpl);
       if (req.method === 'POST' && url.pathname === '/api/local/cleanup') return await cleanupEndpoint(req, res, runImpl);
       if (req.method === 'GET' && url.pathname === '/api/local/secrets') return secretsEndpoint(res);
       if (req.method === 'GET' && url.pathname === '/api/local/vault-export') return vaultExportEndpoint(res);

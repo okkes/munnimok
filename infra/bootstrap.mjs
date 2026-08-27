@@ -18,9 +18,9 @@
  * ("UV_HANDLE_CLOSING", found live 2026-08-27 in --verify).
  */
 import { execFileSync } from 'node:child_process';
-import { listStacks, loadStack, pairProd } from './modules/stack.mjs';
+import { listStacks, loadStack, pairProd, sharedOf } from './modules/stack.mjs';
 import { ensureSecrets, verifySecrets } from './modules/secrets.mjs';
-import { ensureLocalSecrets, loadLocalValues, saveLocalValues, localManifestEntries } from './modules/localstore.mjs';
+import { ensureLocalSecrets, familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
 import { applyApps, applyBranding, applySocialConnectors, writeBack } from './modules/logto.mjs';
 import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
@@ -78,20 +78,25 @@ async function probe(label, url, ok = (r) => r.ok) {
 }
 
 async function probeAll() {
+  // probe what THIS stack addresses: its own services plus the shared
+  // stack's (for iac pairs sharedOf = the pair's prod twin, unchanged)
+  const shared = sharedOf(stack);
   let allUp = true;
-  allUp &= await probe('web', stack.urls.web);
-  allUp &= await probe('api', `${stack.urls.api}/health`);
-  allUp &= await probe('logto', `${pair.urls.logto}/oidc/.well-known/openid-configuration`);
-  allUp &= await probe('glitchtip', `${pair.urls.glitchtip}/api/0/`, (r) => r.status < 500);
-  allUp &= await probe('vault', `${pair.urls.vault}/alive`, (r) => r.status < 500);
+  if (stack.urls.web) allUp &= await probe('web', stack.urls.web);
+  if (stack.urls.api) allUp &= await probe('api', `${stack.urls.api}/health`);
+  const logtoUrl = stack.urls.logto ?? pair.urls.logto;
+  if (logtoUrl) allUp &= await probe('logto', `${logtoUrl}/oidc/.well-known/openid-configuration`);
+  if (shared.urls.glitchtip) allUp &= await probe('glitchtip', `${shared.urls.glitchtip}/api/0/`, (r) => r.status < 500);
+  if (shared.urls.vault) allUp &= await probe('vault', `${shared.urls.vault}/alive`, (r) => r.status < 500);
+  if (stack.urls.control) allUp &= await probe('control', stack.urls.control, (r) => r.status < 500);
   return allUp;
 }
 
-// ── target:"local" — the GitHub-free twin ──────────────────────────────
+// ── target:"local" — the GitHub-free stacks ────────────────────────────
 async function localVerify() {
   console.log(`verify ${stack.stack} (local)`);
-  const values = loadLocalValues(stack);
-  const missing = localManifestEntries()
+  const values = familyValues(stack);
+  const missing = stackManifestEntries(stack)
     .filter((s) => !s.optional && s.owner !== 'module' && !values[s.name])
     .map((s) => s.name);
   if (missing.length) console.log(`  ✗ values missing from the local store: ${missing.join(', ')}`);
@@ -100,49 +105,92 @@ async function localVerify() {
   return missing.length || !allUp ? 1 : 0;
 }
 
-async function localApply() {
-  console.log(`bootstrap ${stack.stack} (local twin — secrets in infra/rendered/${stack.stack}/.secrets.local.json)`);
+/** the SHARED local stack: mint its secrets, pull the control app id
+ * from the designated env's store, render — no logto of its own */
+async function localApplyShared() {
+  console.log(`bootstrap ${stack.stack} (local shared services)`);
   const { values, minted, missingOperator } = ensureLocalSecrets(stack, { rotate });
   if (minted.length) console.log(`  minted: ${minted.join(', ')}`);
   if (missingOperator.length) console.log(`  ⚠ operator values still missing (export them and re-run): ${missingOperator.join(', ')}`);
 
-  // Logto-as-code against localhost — needs the stack RUNNING, so first
-  // runs fall through gracefully to "start it, do the OOBE, re-run"
-  if (values.IAC_LOGTO_INFRA_M2M_ID && values.IAC_LOGTO_INFRA_M2M_SECRET) {
-    try {
-      const creds = { m2mId: values.IAC_LOGTO_INFRA_M2M_ID, m2mSecret: values.IAC_LOGTO_INFRA_M2M_SECRET };
-      const apps = await applyApps(pair, stack, creds);
-      values.NAS_LOGTO_M2M_APP_ID = apps.m2m.id;
-      values.NAS_LOGTO_M2M_APP_SECRET = apps.m2m.secret;
-      values.VITE_LOGTO_APP_ID = apps.web.id;
-      values.VITE_LOGTO_APP_ID_ADMIN = apps.admin.id;
-      saveLocalValues(stack, values);
-      console.log(`  logto: apps upserted (web ${apps.web.id}, admin ${apps.admin.id}, native ${apps.native.id})`);
-      const social = await applySocialConnectors(pair, creds).catch((e) => ({ applied: [], error: e.message }));
-      console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]` : '  logto: no social connector credentials — skipped');
-      const brand = await applyBranding(pair, creds).catch((e) => ({ error: e.message }));
-      console.log(brand.error ? `  logto: branding failed (${brand.error})` : '  logto: sign-in branded (munni logo + colors)');
-    } catch (e) {
-      console.log(`  logto: unreachable or failed (${e.message}) — is the stack up? docker compose up first, then re-run`);
-    }
-  } else {
-    console.log('  logto: waiting for the one manual OOBE step (see the runbook) — infra M2M credential not stored yet');
+  // munni-control has its OWN Logto app registered in the designated
+  // env's Logto — its id lands in that env's store once logto-setup ran
+  const controlEnv = loadStack(stack.controlApi);
+  const controlAppId = loadLocalValues(controlEnv).VITE_LOGTO_APP_ID_CONTROL;
+  if (controlAppId && values.CONTROL_LOGTO_APP_ID !== controlAppId) {
+    values.CONTROL_LOGTO_APP_ID = controlAppId;
+    saveLocalValues(stack, values);
+    console.log(`  control: signs in via ${stack.controlApi}'s control app (${controlAppId})`);
+  } else if (!controlAppId) {
+    console.log(`  control: waiting for ${stack.controlApi}'s sign-in setup — its control app id feeds munni-control`);
   }
 
-  if (values.IAC_GLITCHTIP_API_TOKEN) {
-    try {
-      const dsns = await applyGlitchTip(pair, stack, values.IAC_GLITCHTIP_API_TOKEN);
-      values.NAS_API_SENTRY_DSN = dsns.api;
-      values.VITE_GLITCHTIP_DSN = dsns.web;
-      values.VITE_GLITCHTIP_DSN_ADMIN = dsns.admin;
-      saveLocalValues(stack, values);
-      console.log('  glitchtip: org/projects ensured, DSNs stored');
-    } catch (e) {
-      console.log(`  glitchtip: apply failed (${e.message}) — is the stack up?`);
-    }
-  } else {
-    console.log('  glitchtip: waiting for IAC_GLITCHTIP_API_TOKEN (profile → Auth Tokens after first boot)');
+  const dir = renderStack(stack, values);
+  console.log(`  rendered compose + .env (real values) → ${dir}`);
+  console.log(`done. Next: cd ${dir} && docker compose --env-file .env.${stack.stack} -f docker-compose.${stack.stack}.yml up -d`);
+  return 0;
+}
+
+/** Logto-as-code against THIS env's own logto — needs it RUNNING, so
+ * first runs fall through gracefully to "start it, re-run" */
+async function localApplyLogto(values) {
+  if (!values.IAC_LOGTO_INFRA_M2M_ID || !values.IAC_LOGTO_INFRA_M2M_SECRET) {
+    console.log('  logto: waiting for the infra M2M credential (the wizard seeds it automatically)');
+    return;
   }
+  try {
+    const creds = { m2mId: values.IAC_LOGTO_INFRA_M2M_ID, m2mSecret: values.IAC_LOGTO_INFRA_M2M_SECRET };
+    const apps = await applyApps(pair, stack, creds);
+    values.NAS_LOGTO_M2M_APP_ID = apps.m2m.id;
+    values.NAS_LOGTO_M2M_APP_SECRET = apps.m2m.secret;
+    values.VITE_LOGTO_APP_ID = apps.web.id;
+    values.VITE_LOGTO_APP_ID_ADMIN = apps.admin.id;
+    // this env hosts munni-control's sign-in? its dedicated control
+    // app id feeds the shared stack's render
+    if (apps.control) {
+      values.VITE_LOGTO_APP_ID_CONTROL = apps.control.id;
+      values.CONTROL_LOGTO_APP_ID = apps.control.id;
+    }
+    saveLocalValues(stack, values);
+    console.log(`  logto: apps upserted (web ${apps.web.id}, admin ${apps.admin.id}, native ${apps.native.id})`);
+    const social = await applySocialConnectors(pair, creds).catch((e) => ({ applied: [], error: e.message }));
+    console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]` : '  logto: no social connector credentials — skipped');
+    const brand = await applyBranding(pair, creds).catch((e) => ({ error: e.message }));
+    console.log(brand.error ? `  logto: branding failed (${brand.error})` : '  logto: sign-in branded (munni logo + colors)');
+  } catch (e) {
+    console.log(`  logto: unreachable or failed (${e.message}) — is the stack up? docker compose up first, then re-run`);
+  }
+}
+
+async function localApplyGlitchtip(values) {
+  if (!values.IAC_GLITCHTIP_API_TOKEN) {
+    console.log('  glitchtip: waiting for IAC_GLITCHTIP_API_TOKEN (the wizard mints it automatically)');
+    return;
+  }
+  try {
+    const shared = sharedOf(stack);
+    const dsns = await applyGlitchTip(shared, stack, values.IAC_GLITCHTIP_API_TOKEN);
+    // the api container reaches glitchtip over the shared network, not
+    // the browser's published localhost port
+    values.NAS_API_SENTRY_DSN = stack.sharedStack ? dsns.api.replace(shared.urls.glitchtip, 'http://glitchtip:8000') : dsns.api; // NOSONAR S5332 — container-to-container on the private docker network
+    values.VITE_GLITCHTIP_DSN = dsns.web;
+    values.VITE_GLITCHTIP_DSN_ADMIN = dsns.admin;
+    saveLocalValues(stack, values);
+    console.log('  glitchtip: org/projects ensured, DSNs stored');
+  } catch (e) {
+    console.log(`  glitchtip: apply failed (${e.message}) — is the shared stack up?`);
+  }
+}
+
+async function localApply() {
+  if (stack.role === 'shared') return localApplyShared();
+  console.log(`bootstrap ${stack.stack} (local env — secrets in infra/rendered/${stack.stack}/.secrets.local.json)`);
+  const { values, minted, missingOperator } = ensureLocalSecrets(stack, { rotate });
+  if (minted.length) console.log(`  minted: ${minted.join(', ')}`);
+  if (missingOperator.length) console.log(`  ⚠ operator values still missing (export them and re-run): ${missingOperator.join(', ')}`);
+
+  await localApplyLogto(values);
+  await localApplyGlitchtip(values);
 
   // render LAST so the .env carries every write-back from this run
   const dir = renderStack(stack, values);

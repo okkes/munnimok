@@ -111,7 +111,7 @@ test('google + apple: the dummy-code trick — invalid_client is the ONLY failur
   assert.equal(badApple.ok, false);
 });
 
-test('local logto/glitchtip validators target the munni-local urls', async () => {
+test('local logto/glitchtip validators target the family stacks (prod logto, shared glitchtip)', async () => {
   const logto = capture(200);
   const okM2m = await validate('logto-m2m', { IAC_LOGTO_INFRA_M2M_ID: 'id', IAC_LOGTO_INFRA_M2M_SECRET: 's' }, { fetchImpl: logto.fetchImpl });
   assert.equal(okM2m.ok, true);

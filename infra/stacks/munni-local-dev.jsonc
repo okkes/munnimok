@@ -1,0 +1,35 @@
+// munni-local-dev — the local DEV environment (plan LS2): a complete,
+// isolated munni beside munni-local-prod, with its OWN Logto (plan LS3).
+// Same shared stack underneath. 84xx/33xx port blocks keep it clear of
+// prod (83xx/32xx) and of the from-source dev stack (8180/3001).
+{
+  "stack": "munni-local-dev",
+  "pair": "munni-local-dev",
+  "role": "prod", // self-paired: this env owns its own logto
+  "channel": "dev",
+  "target": "local",
+  "sharedStack": "munni-local-shared",
+  "dbSuffix": "dev",
+  "appChannel": "staging",
+
+  "domain": "localhost",
+  "ports": {
+    "web": 8480,
+    "admin": 8481,
+    "api": 8482,
+    "logto": 3301,
+    "logtoAdmin": 3302
+  },
+
+  "registry": "ghcr.io/okkes",
+
+  "native": {
+    "appId": "app.munni.local.dev",
+    "label": "munni local dev",
+    "scheme": "munni-local-dev"
+  },
+
+  "features": {
+    "telemetry": true
+  }
+}

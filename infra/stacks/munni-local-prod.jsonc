@@ -1,0 +1,39 @@
+// munni-local-prod — the local PRODUCTION-like environment (plan LS2):
+// its own web/admin/api and its OWN Logto (per-environment identity,
+// plan LS3 — isolated user pool, account deletion always safe). Rides
+// munni-local-shared for Postgres/GlitchTip/Vault/OCR. Keeps the former
+// munni-local twin's ports, so existing bank-consent redirects
+// (http://localhost:8380/gc-callback) stay valid.
+{
+  "stack": "munni-local-prod",
+  "pair": "munni-local-prod",
+  "role": "prod",
+  // dev-channel images until a release lands on master (`latest` still
+  // predates the runtime-config overlay) — flip to "latest" then
+  "channel": "dev",
+  "target": "local",
+  "sharedStack": "munni-local-shared",
+  "dbSuffix": "prod",
+  "appChannel": "production",
+
+  "domain": "localhost",
+  "ports": {
+    "web": 8380,
+    "admin": 8381,
+    "api": 8382,
+    "logto": 3201,
+    "logtoAdmin": 3202
+  },
+
+  "registry": "ghcr.io/okkes",
+
+  "native": {
+    "appId": "app.munni.local",
+    "label": "munni local",
+    "scheme": "munni-local"
+  },
+
+  "features": {
+    "telemetry": true
+  }
+}

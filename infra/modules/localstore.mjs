@@ -2,69 +2,163 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MANIFEST, generateValue, vapidPair } from './secrets.mjs';
+import { loadStack } from './stack.mjs';
 
 // MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
 const OUT_DIR = process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
 
 /**
- * Secret store for target:"local" stacks — the file-backed twin of the
- * GitHub Environment. Lives in infra/rendered/<stack>/.secrets.local.json
- * (gitignored with the rest of rendered/), so re-running bootstrap keeps
- * the postgres password and VAPID pair STABLE instead of re-minting over
- * live data. Operator values are absorbed from the process env whenever
- * present (e.g. `$env:NAS_GHCR_PAT='…'; node infra/bootstrap.mjs --stack
- * munni-local`) and remembered; module write-backs (logto, glitchtip)
- * land here through saveLocalValues.
+ * Secret stores for target:"local" stacks — file-backed twins of the
+ * GitHub Environments, one per stack under
+ * infra/rendered/<stack>/.secrets.local.json (gitignored). In the
+ * three-stack topology (plan LS1-LS3) values split by OWNERSHIP:
+ * family-wide roots and the shared services' own secrets live in the
+ * SHARED stack's store; per-environment values (logto apps/M2M, VAPID,
+ * admin subs, DSNs) live in each env stack's store. Env reads see the
+ * merged view; env writes of shared names land in the shared store.
  */
-const storeFile = (stack) => join(OUT_DIR, stack.stack, '.secrets.local.json');
+const storeFile = (stackName) => join(OUT_DIR, stackName, '.secrets.local.json');
 
-export function loadLocalValues(stack) {
-  const file = storeFile(stack);
-  return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {};
-}
+/** names owned by the FAMILY's shared stack (everything else is per-env) */
+export const SHARED_LOCAL_NAMES = new Set([
+  'NAS_GHCR_PAT',
+  'NAS_GOCARDLESS_SECRET_ID',
+  'NAS_GOCARDLESS_SECRET_KEY',
+  'NAS_ENABLEBANKING_APPLICATION_ID',
+  'NAS_ENABLEBANKING_PRIVATE_KEY_PEM',
+  'NAS_FCM_SERVICE_ACCOUNT_JSON',
+  'NAS_LOGODEV_SECRET_KEY',
+  'NAS_LOGODEV_PUBLIC_TOKEN',
+  'LOGTO_GOOGLE_CLIENT_ID',
+  'LOGTO_GOOGLE_CLIENT_SECRET',
+  'NAS_GLITCHTIP_EMAIL_URL',
+  'NAS_POSTGRES_PASSWORD',
+  'NAS_GLITCHTIP_SECRET_KEY',
+  'VAULT_SIGNUPS_ALLOWED',
+  'IAC_GLITCHTIP_API_TOKEN',
+  'GLITCHTIP_ADMIN_EMAIL',
+  'GLITCHTIP_ADMIN_PASSWORD',
+  'CONTROL_LOGTO_APP_ID',
+]);
 
-export function saveLocalValues(stack, values) {
-  const file = storeFile(stack);
+/** generated names the shared stack mints (env stacks never do) */
+const SHARED_GENERATED = new Set(['NAS_POSTGRES_PASSWORD', 'NAS_GLITCHTIP_SECRET_KEY']);
+
+const readStore = (stackName) => {
+  const file = storeFile(stackName);
+  return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
+};
+const writeStore = (stackName, values) => {
+  const file = storeFile(stackName);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, `${JSON.stringify(values, null, 2)}\n`);
   return values;
+};
+
+/** one-time migration from the retired single-twin store: shared names
+ * seed the shared stack's store, the rest seeds munni-local-prod (the
+ * twin's successor — same ports, same consents) */
+function legacySeed(stackName) {
+  const legacy = readStore('munni-local');
+  if (!legacy) return {};
+  if (stackName === 'munni-local-prod') {
+    return Object.fromEntries(Object.entries(legacy).filter(([k]) => !SHARED_LOCAL_NAMES.has(k)));
+  }
+  const stack = safeLoad(stackName);
+  if (stack?.role === 'shared') {
+    return Object.fromEntries(Object.entries(legacy).filter(([k]) => SHARED_LOCAL_NAMES.has(k)));
+  }
+  return {};
+}
+const safeLoad = (name) => {
+  try { return loadStack(name); } catch { return null; }
+};
+
+/** the stack's OWN stored values (plus the one-time legacy seed) */
+export function loadLocalValues(stack) {
+  const own = readStore(stack.stack);
+  if (own) return own;
+  const seeded = legacySeed(stack.stack);
+  return Object.keys(seeded).length ? writeStore(stack.stack, seeded) : {};
+}
+
+/** merged view an env stack renders with: shared values under its own */
+export function familyValues(stack) {
+  const own = loadLocalValues(stack);
+  if (!stack.sharedStack) return own;
+  const shared = readStore(stack.sharedStack) ?? legacySeedInto(stack.sharedStack);
+  return { ...shared, ...own };
+}
+const legacySeedInto = (sharedName) => {
+  const seeded = legacySeed(sharedName);
+  return Object.keys(seeded).length ? writeStore(sharedName, seeded) : {};
+};
+
+/** save: shared-owned names route to the family's shared store */
+export function saveLocalValues(stack, values) {
+  if (!stack.sharedStack) return writeStore(stack.stack, values);
+  const own = {};
+  const shared = readStore(stack.sharedStack) ?? {};
+  let sharedChanged = false;
+  for (const [name, value] of Object.entries(values)) {
+    if (SHARED_LOCAL_NAMES.has(name)) {
+      if (shared[name] !== value) { shared[name] = value; sharedChanged = true; }
+    } else {
+      own[name] = value;
+    }
+  }
+  if (sharedChanged) writeStore(stack.sharedStack, shared);
+  return writeStore(stack.stack, own);
 }
 
 /** manifest entries that apply to a local stack (nas/ci platforms skip) */
 export const localManifestEntries = () => MANIFEST.secrets.filter((s) => !['nas', 'ci'].includes(s.platform));
 
+/** the entries a PARTICULAR local stack is responsible for */
+export function stackManifestEntries(stack) {
+  const entries = localManifestEntries();
+  if (stack.role === 'shared') return entries.filter((e) => SHARED_LOCAL_NAMES.has(e.name));
+  if (stack.sharedStack) return entries.filter((e) => !SHARED_LOCAL_NAMES.has(e.name));
+  return entries;
+}
+
 /**
- * Mint every generated secret missing from the store, absorb operator
- * values offered via process.env, report which required operator values
- * are still absent. Mirrors ensureSecrets() against the local file.
+ * Mint the generated secrets THIS stack owns, absorb operator values
+ * offered via process.env (routed by ownership), report the required
+ * operator values still absent across the merged view.
  */
 export function ensureLocalSecrets(stack, { rotate = [] } = {}) {
-  const values = loadLocalValues(stack);
+  const values = familyValues(stack);
   const minted = [];
   const missingOperator = [];
+  const isShared = stack.role === 'shared';
 
-  const vapidNeeded =
-    rotate.includes('NAS_PUSH_VAPID_PUBLIC_KEY') || !values.NAS_PUSH_VAPID_PUBLIC_KEY || !values.NAS_PUSH_VAPID_PRIVATE_KEY;
-  if (vapidNeeded) {
-    const pair = vapidPair();
-    values.NAS_PUSH_VAPID_PUBLIC_KEY = pair.publicKey;
-    values.NAS_PUSH_VAPID_PRIVATE_KEY = pair.privateKey;
-    minted.push('NAS_PUSH_VAPID_PUBLIC_KEY', 'NAS_PUSH_VAPID_PRIVATE_KEY');
+  const ownsGenerated = (name) => (isShared ? SHARED_GENERATED.has(name) : !SHARED_GENERATED.has(name));
+
+  if (!isShared) {
+    const vapidNeeded =
+      rotate.includes('NAS_PUSH_VAPID_PUBLIC_KEY') || !values.NAS_PUSH_VAPID_PUBLIC_KEY || !values.NAS_PUSH_VAPID_PRIVATE_KEY;
+    if (vapidNeeded) {
+      const pair = vapidPair();
+      values.NAS_PUSH_VAPID_PUBLIC_KEY = pair.publicKey;
+      values.NAS_PUSH_VAPID_PRIVATE_KEY = pair.privateKey;
+      minted.push('NAS_PUSH_VAPID_PUBLIC_KEY', 'NAS_PUSH_VAPID_PRIVATE_KEY');
+    }
   }
 
   for (const entry of localManifestEntries()) {
     if (entry.name.startsWith('NAS_PUSH_VAPID_')) continue;
-    if (entry.owner === 'operator' && process.env[entry.name]) values[entry.name] = process.env[entry.name];
+    const ownedHere = isShared ? SHARED_LOCAL_NAMES.has(entry.name) : true; // env stacks absorb env names; shared names route on save
+    if (entry.owner === 'operator' && ownedHere && process.env[entry.name]) values[entry.name] = process.env[entry.name];
     const needed = rotate.includes(entry.name) || !values[entry.name];
     if (!needed) continue;
-    if (entry.owner === 'generated') {
+    if (entry.owner === 'generated' && ownsGenerated(entry.name)) {
       values[entry.name] = generateValue(entry.name);
       minted.push(entry.name);
-    } else if (entry.owner === 'operator' && !entry.optional) {
+    } else if (entry.owner === 'operator' && !entry.optional && stackManifestEntries(stack).some((e) => e.name === entry.name)) {
       missingOperator.push(entry.name);
     }
-    // owner === 'module': written back by logto/glitchtip via saveLocalValues
   }
   saveLocalValues(stack, values);
-  return { values, minted, missingOperator };
+  return { values: familyValues(stack), minted, missingOperator };
 }

@@ -191,7 +191,7 @@ export const VALIDATORS = {
   async 'logto-m2m'(values, fetchImpl) {
     const gap = need(values, ['IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET']);
     if (gap) return { ok: false, detail: gap };
-    const logto = loadStack('munni-local').urls.logto;
+    const logto = loadStack('munni-local-prod').urls.logto;
     const res = await fetchImpl(`${logto}/oidc/token`, {
       method: 'POST',
       headers: {
@@ -209,7 +209,7 @@ export const VALIDATORS = {
   async 'glitchtip-token'(values, fetchImpl) {
     const gap = need(values, ['IAC_GLITCHTIP_API_TOKEN']);
     if (gap) return { ok: false, detail: gap };
-    const glitchtip = loadStack('munni-local').urls.glitchtip;
+    const glitchtip = loadStack('munni-local-shared').urls.glitchtip;
     const res = await fetchImpl(`${glitchtip}/api/0/organizations/`, {
       headers: { authorization: `Bearer ${values.IAC_GLITCHTIP_API_TOKEN}` },
       signal: T(),

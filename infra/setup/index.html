@@ -168,7 +168,7 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 
 <section id="s-local" data-platform="local">
   <h2><span class="n">4</span> Run munni on this machine <span class="pill" id="local-pill"></span></h2>
-  <p class="sub">Two different stacks for two different jobs — plus the tooling containers. Nothing is installed on the host beyond Docker Desktop (and node, which this repo already needs).</p>
+  <p class="sub">Three stacks, one machine: <b>shared services</b> (postgres, GlitchTip, the vault, OCR, the munni-control cockpit) plus TWO complete munni environments — <b>production</b> at localhost:8380 (your real data) and <b>development</b> at localhost:8480 (safe to break). Each environment has its own sign-in service and its own databases; deleting one never touches the other. Nothing is installed on the host beyond Docker Desktop (and node, which this repo already needs).</p>
 
   <div class="card" id="local-nohelper" hidden>
     <h3>One double-click and this page does the work itself</h3>
@@ -176,10 +176,10 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
     <pre><button class="copy">copy</button><code>infra\setup\start.cmd        (double-click it — or: node infra/setup/serve.mjs)</code></pre>
     <details class="how"><summary>Manual fallback — the exact commands the helper would run</summary>
       <ol>
-        <li>Full twin: <code>$env:NAS_GHCR_PAT='&lt;read:packages PAT&gt;'; node infra/bootstrap.mjs --stack munni-local</code> then <code>cd infra/rendered/munni-local; docker compose --env-file .env.munni-local -f docker-compose.munni-local.yml up -d</code></li>
-        <li>Logto OOBE at localhost:3202 (M2M app <code>infra</code>) → <code>$env:IAC_LOGTO_INFRA_M2M_ID='…'; $env:IAC_LOGTO_INFRA_M2M_SECRET='…'; node infra/bootstrap.mjs --stack munni-local</code> → compose up -d again.</li>
-        <li>GlitchTip token → <code>$env:IAC_GLITCHTIP_API_TOKEN='…'</code> → re-run → up -d. Verify: <code>node infra/bootstrap.mjs --stack munni-local --verify</code></li>
-        <li>Dev stack: <code>docker compose --env-file deploy/env/.env.local -f deploy/docker-compose.local.yml up -d --build</code> + <code>npm run dev</code> (see deploy/README.md).</li>
+        <li>Shared services first: <code>$env:NAS_GHCR_PAT='&lt;read:packages PAT&gt;'; node infra/bootstrap.mjs --stack munni-local-shared</code> then <code>cd infra/rendered/munni-local-shared; docker compose --env-file .env.munni-local-shared -f docker-compose.munni-local-shared.yml up -d</code></li>
+        <li>Each environment: <code>node infra/bootstrap.mjs --stack munni-local-prod</code> (same for <code>munni-local-dev</code>) → <code>cd infra/rendered/&lt;stack&gt;</code> → compose up -d. Re-run bootstrap once its Logto answers so the sign-in apps land.</li>
+        <li>GlitchTip token → <code>$env:IAC_GLITCHTIP_API_TOKEN='…'</code> → re-run the env bootstrap → up -d. Verify: <code>node infra/bootstrap.mjs --stack munni-local-prod --verify</code></li>
+        <li>From-source dev loop: <code>docker compose --env-file deploy/env/.env.local -f deploy/docker-compose.local.yml up -d --build</code> + <code>npm run dev</code> (see deploy/README.md).</li>
         <li>Tooling: <code>deploy/docker-compose.sonar.yml</code> + <code>./deploy/sonar/analyze.ps1</code>; <code>deploy/docker-compose.test.yml</code>; <code>./deploy/webkit-e2e.ps1</code>.</li>
       </ol>
     </details>
@@ -192,54 +192,32 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
     </div>
 
     <div class="card">
-      <h3>The full local twin <span class="pill">whole product, released images</span></h3>
-      <p class="why">One button does the whole thing: mints the secrets, starts every container, waits for Logto and GlitchTip to come up and wires them in automatically — sign-in apps and crash tracking included, nothing else to click. Credentials from step 3 join in whenever you save them (before or after); pressing it again is always safe, it only fills gaps.</p>
+      <h3>Set up &amp; start everything <span class="pill">one button</span></h3>
+      <p class="why">One button does the whole family: mints the secrets, starts the <b>shared services</b>, then brings up <b>production</b> and <b>development</b> — waiting for each piece and wiring sign-in + crash tracking automatically, nothing else to click. Credentials from step 3 join in whenever you save them (before or after); pressing it again is always safe, it only fills gaps.</p>
       <div class="runrow">
         <button id="btn-local-setup">Set up &amp; start munni</button>
-        <button class="ghost" data-local-tool="twin-down">Stop</button>
+        <button class="ghost" id="btn-local-stopall">Stop everything</button>
         <button class="ghost" id="btn-local-verify">Verify</button>
-        <button class="ghost" id="btn-local-nuke" style="color:var(--bad);border-color:var(--bad)">Delete this stack…</button>
+        <button class="ghost" id="btn-local-nuke-all" style="color:var(--bad);border-color:var(--bad)">Delete everything…</button>
       </div>
       <p class="why" id="local-links"></p>
     </div>
 
-    <div class="card">
-      <h3>Sign-in (Logto) <span class="dot" data-localdot="NAS_LOGTO_M2M_APP_ID"></span> <span class="pill" id="local-signin-pill"></span></h3>
-      <p class="why">Configured automatically by step 4's Set up — when the dot is green, munni's sign-in is LIVE: open <a href="http://localhost:8380" target="_blank" rel="noreferrer">the app</a> and create your account there. Heads-up: the Logto console at <a href="http://localhost:3202" target="_blank" rel="noreferrer">localhost:3202</a> keeps showing its own “Create account” welcome — that page is Logto managing itself (optional, claim it whenever you like); it is NOT part of munni's setup and no munni step will make it disappear.</p>
-      <p class="msg bad" id="local-logto-warn" hidden>Logto isn't answering yet — run step 4's Set up first and wait for the logto dot above to turn green.</p>
-      <button class="ghost" id="btn-local-logto-auto">Re-run sign-in setup</button>
-      <label class="f" for="in-local-subs">NAS_ADMIN_SUBS — your Logto User ID, unlocks the admin console (optional: sign up in the app first, find the ID under User management at localhost:3202)</label>
-      <input type="text" id="in-local-subs" placeholder="usr_…" autocomplete="off"/>
-      <button class="ghost" id="btn-local-subs">Store admin access</button>
-      <details class="how"><summary>Manual fallback — bring your own M2M credential instead</summary>
-        <p>Console → Applications → Create → <b>Machine-to-machine</b> → name it <code>infra</code> → assign the <b>Logto Management API</b> role → paste:</p>
-        <div class="grid2">
-          <div><label class="f" for="in-local-m2m-id">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-local-m2m-id" autocomplete="off"/></div>
-          <div><label class="f" for="in-local-m2m-secret">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-local-m2m-secret" autocomplete="off"/></div>
-        </div>
-        <button id="btn-local-oobe">Apply sign-in setup</button>
-        <button class="ghost" id="btn-local-oobe-check">Check</button>
-        <div class="msg" id="msg-local-oobe"></div>
-      </details>
-    </div>
+    <div id="env-cards"></div>
 
     <div class="card">
-      <h3>Crash reports (GlitchTip, optional) <span class="dot" data-localdot="VITE_GLITCHTIP_DSN"></span> <span class="pill" id="local-gt-pill"></span></h3>
-      <p class="why">Configured automatically by step 4's Set up: it creates the first admin account INSIDE GlitchTip, mints the API token, creates the org + projects and wires every DSN in. The console login it generates (for <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a>) is printed in the output once and kept in the local secret store.</p>
-      <button class="ghost" id="btn-local-gt-auto">Re-run crash-tracking setup</button>
-      <details class="how"><summary>Manual fallback — bring your own account/token instead</summary>
-        <p>Register at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> → profile → <b>Auth Tokens</b> → create one → paste:</p>
-        <label class="f" for="in-local-gt">IAC_GLITCHTIP_API_TOKEN</label>
-        <input type="password" id="in-local-gt" autocomplete="off"/>
-        <button id="btn-local-gt">Apply crash tracking</button>
-        <button class="ghost" id="btn-local-gt-check">Check</button>
-        <div class="msg" id="msg-local-gt"></div>
-      </details>
+      <h3>Shared services <span class="pill" id="local-shared-pill"></span></h3>
+      <p class="why">The family's common ground, shared by both environments: postgres (separate databases per environment), GlitchTip crash tracking at <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a>, the Vaultwarden vault, receipt OCR — and <b>munni-control</b> at <a href="http://localhost:8385" target="_blank" rel="noreferrer">localhost:8385</a>, the cockpit that watches the shared GoCardless account across ALL environments (sign in with your production admin account).</p>
+      <div class="runrow">
+        <button class="ghost" data-local-tool="munni-local-shared:up">Start</button>
+        <button class="ghost" data-local-tool="munni-local-shared:down">Stop</button>
+        <button class="ghost" id="btn-local-nuke-shared" style="color:var(--bad);border-color:var(--bad)">Delete shared services…</button>
+      </div>
     </div>
 
     <div class="card">
       <h3>Your secrets &amp; the vault <span class="pill">read them back any time</span></h3>
-      <p class="why">Every generated or saved secret lives readable in this machine's gitignored store — and a <b>Vaultwarden</b> vault (the self-hosted Bitwarden server) runs inside the stack at <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> as the human copy, usable with the real Bitwarden apps/extension. Containers themselves keep reading env (third-party images know nothing else — the vault is for YOU, not for them).</p>
+      <p class="why">Every generated or saved secret lives readable in this machine's gitignored stores (one per stack, shared values kept once) — and a <b>Vaultwarden</b> vault (the self-hosted Bitwarden server) runs in the shared stack at <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> as the human copy, usable with the real Bitwarden apps/extension. Containers themselves keep reading env (third-party images know nothing else — the vault is for YOU, not for them).</p>
       <div class="runrow">
         <button class="ghost" id="btn-local-reveal">Reveal secrets here</button>
         <button class="ghost" id="btn-local-vault-export">Download vault import file</button>
@@ -257,12 +235,12 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
     <details class="how" style="margin:12px 0">
       <summary>Developer extras — not needed to run munni</summary>
       <div class="card" style="margin-top:8px">
-        <h3>The dev stack <span class="pill">develop against it</span></h3>
-        <p class="why">The from-source DEV loop: API + Logto + Postgres in docker, the app via <code>npm run dev</code> with hot reload (run that in a terminal — hot reload can't live in a container; details in <code>deploy/README.md</code>). Verification tooling (SonarQube, e2e, WebKit) stays in the repo's scripts — it belongs to development, not setup.</p>
+        <h3>The from-source dev loop <span class="pill">develop against it</span></h3>
+        <p class="why">API + Logto + Postgres in docker built from THIS checkout, the app via <code>npm run dev</code> with hot reload (run that in a terminal — hot reload can't live in a container; details in <code>deploy/README.md</code>). This is separate from the munni-local-dev environment above, which runs released images. Verification tooling (SonarQube, e2e, WebKit) stays in the repo's scripts — it belongs to development, not setup.</p>
         <div class="runrow">
-          <button class="ghost" data-local-tool="dev-up">Dev stack up</button>
-          <button class="ghost" data-local-tool="dev-down">Dev stack down</button>
-          <button class="ghost" id="btn-dev-nuke" style="color:var(--bad);border-color:var(--bad)">Delete dev stack…</button>
+          <button class="ghost" data-local-tool="devsource:up">Dev loop up</button>
+          <button class="ghost" data-local-tool="devsource:down">Dev loop down</button>
+          <button class="ghost" id="btn-dev-nuke" style="color:var(--bad);border-color:var(--bad)">Delete dev loop…</button>
         </div>
       </div>
     </details>
@@ -1134,6 +1112,37 @@ const hfetch = (path, init = {}) =>
   fetch(path, { ...init, headers: { 'x-setup-token': HELPER.token, ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
 let localBusy = false;
 
+/* the local family (plan LS1-LS3): shared services + two environments */
+const SHARED_STACK = 'munni-local-shared';
+const LOCAL_ENVS = [
+  { stack: 'munni-local-prod', short: 'prod', label: 'Production', web: 'http://localhost:8380', logtoAdmin: 'http://localhost:3202' },
+  { stack: 'munni-local-dev', short: 'dev', label: 'Development', web: 'http://localhost:8480', logtoAdmin: 'http://localhost:3302' },
+];
+const STACK_LABELS = { [SHARED_STACK]: 'shared services', 'munni-local-prod': 'production', 'munni-local-dev': 'development' };
+
+const setPill = (id, text, ok) => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'pill ' + (ok ? 'ok' : '');
+};
+
+function updateEnvCard(env, s) {
+  const stored = new Set(s.stored);
+  const up = s.services.web && s.services.api;
+  setPill(`env-pill-${env.short}`, up ? 'running ✓' : (s.rendered ? 'set up — not running' : 'not set up yet'), up);
+  const warn = document.getElementById(`env-logto-warn-${env.short}`);
+  if (warn) warn.hidden = Boolean(s.services.logto);
+  const signinDone = stored.has('NAS_LOGTO_M2M_APP_ID');
+  const sd = document.getElementById(`env-signin-dot-${env.short}`);
+  if (sd) sd.className = 'dot ' + (signinDone ? 'ok' : 'miss');
+  setPill(`env-signin-pill-${env.short}`, signinDone ? 'sign-in live ✓' : 'runs with Set up', signinDone);
+  const gtDone = stored.has('VITE_GLITCHTIP_DSN');
+  const gd = document.getElementById(`env-gt-dot-${env.short}`);
+  if (gd) gd.className = 'dot ' + (gtDone ? 'ok' : 'miss');
+  setPill(`env-gt-pill-${env.short}`, gtDone ? 'wired ✓' : 'runs with Set up', gtDone);
+}
+
 async function refreshLocal() {
   if (!HELPER) return;
   const box = document.getElementById('local-status');
@@ -1141,37 +1150,33 @@ async function refreshLocal() {
     const res = await hfetch('/api/local/status');
     if (!res.ok) throw new Error(`status ${res.status}`);
     const st = await res.json();
-    S.localStore = new Set(st.stored);
+    // the union of every stack's stored names drives the step-3 saved dots
+    S.localStore = new Set(Object.values(st.stacks).flatMap((s) => s.stored));
     const dot = (up) => `<span class="dot ${up ? 'ok' : 'miss'}"></span>`;
     const link = (label, up, url) => `${dot(up)} <a href="${url}" target="_blank" rel="noreferrer">${label}</a>`;
-    box.innerHTML = [
-      `${dot(st.docker.ok)} Docker ${st.docker.ok ? st.docker.version : '<b>not running — start Docker Desktop</b>'}`,
-      `${dot(st.rendered)} stack ${st.rendered ? 'rendered' : 'not set up yet'}`,
-      link('app', st.services.web, st.urls.web),
-      link('admin', st.services.web, st.urls.admin),
-      link('api', st.services.api, `${st.urls.api}/health`),
-      link('logto admin', st.services.logto, 'http://localhost:3202'),
-      link('glitchtip', st.services.glitchtip, st.urls.glitchtip),
-      link('vault', st.services.vault, st.urls.vault),
-    ].join(' &nbsp;·&nbsp; ');
+    const rows = [`${dot(st.docker.ok)} Docker ${st.docker.ok ? st.docker.version : '<b>not running — start Docker Desktop</b>'}`];
+    for (const [name, s] of Object.entries(st.stacks)) {
+      const parts = [`<b>${STACK_LABELS[name] ?? name}</b>`, `${dot(s.rendered)} ${s.rendered ? 'set up' : 'not set up yet'}`];
+      if (s.urls.web) {
+        parts.push(link('app', s.services.web, s.urls.web), link('admin', s.services.web, s.urls.admin),
+          link('api', s.services.api, `${s.urls.api}/health`), link('logto', s.services.logto, s.urls.logtoAdmin));
+      }
+      if (s.urls.glitchtip) {
+        parts.push(link('glitchtip', s.services.glitchtip, s.urls.glitchtip), link('vault', s.services.vault, s.urls.vault),
+          link('control', s.services.control, s.urls.control));
+      }
+      rows.push(parts.join(' &nbsp;·&nbsp; '));
+    }
+    box.innerHTML = rows.map((r) => `<div style="margin:2px 0">${r}</div>`).join('');
+    const prod = st.stacks['munni-local-prod'];
+    const shared = st.stacks[SHARED_STACK];
     document.getElementById('local-links').innerHTML =
-      `Once up: app <a href="${st.urls.web}" target="_blank" rel="noreferrer">${st.urls.web.replace('http://', '')}</a> · admin <a href="${st.urls.admin}" target="_blank" rel="noreferrer">:${new URL(st.urls.admin).port}</a> · api <a href="${st.urls.api}/health" target="_blank" rel="noreferrer">:${new URL(st.urls.api).port}/health</a>`;
-    document.querySelectorAll('[data-localdot]').forEach((el) => {
-      el.className = 'dot ' + (S.localStore.has(el.dataset.localdot) ? 'ok' : 'miss');
-    });
-    const pill = document.getElementById('local-pill');
-    const up = st.services.web && st.services.api;
-    pill.textContent = up ? 'running ✓' : (st.rendered ? 'set up — not running' : 'not set up yet');
-    pill.className = 'pill ' + (up ? 'ok' : '');
-    document.getElementById('local-logto-warn').hidden = st.services.logto;
-    const signinDone = st.stored.includes('NAS_LOGTO_M2M_APP_ID');
-    const signinPill = document.getElementById('local-signin-pill');
-    signinPill.textContent = signinDone ? 'app sign-in live ✓' : 'runs with step 4';
-    signinPill.className = 'pill ' + (signinDone ? 'ok' : '');
-    const gtDone2 = st.stored.includes('VITE_GLITCHTIP_DSN');
-    const gtPill = document.getElementById('local-gt-pill');
-    gtPill.textContent = gtDone2 ? 'wired ✓' : 'runs with step 4';
-    gtPill.className = 'pill ' + (gtDone2 ? 'ok' : '');
+      `Once up: production <a href="${prod.urls.web}" target="_blank" rel="noreferrer">localhost:8380</a> · development <a href="${st.stacks['munni-local-dev'].urls.web}" target="_blank" rel="noreferrer">localhost:8480</a> · control cockpit <a href="${shared.urls.control}" target="_blank" rel="noreferrer">localhost:8385</a>`;
+    for (const env of LOCAL_ENVS) updateEnvCard(env, st.stacks[env.stack]);
+    const sharedUp = shared.services.glitchtip && shared.services.vault;
+    setPill('local-shared-pill', sharedUp ? 'running ✓' : (shared.rendered ? 'set up — not running' : 'not set up yet'), sharedUp);
+    const up = prod.services.web && prod.services.api;
+    setPill('local-pill', up ? 'running ✓' : (prod.rendered ? 'set up — not running' : 'not set up yet'), up);
     renderStatus();
   } catch (e) {
     box.textContent = `helper unreachable (${e.message}) — restart infra/setup/start.cmd and reload`;
@@ -1194,14 +1199,14 @@ async function runLocalQuiet(body) {
   return ok;
 }
 
-/** poll /status until the named services answer (progress into the log) */
-async function waitForServices(need, label, timeoutMs = 300000) {
+/** poll /status until the named services of ONE stack answer */
+async function waitForServices(stackName, need, label, timeoutMs = 300000) {
   const started = Date.now();
   localLog(`\n▶ ${label}\n`);
   for (;;) {
     let st = null;
     try { st = await (await hfetch('/api/local/status')).json(); } catch { /* helper hiccup — keep polling */ }
-    const missing = st ? need.filter((k) => !st.services[k]) : need;
+    const missing = st ? need.filter((k) => !st.stacks[stackName].services[k]) : need;
     if (!missing.length) { localLog(`✓ ${label}\n`); return st; }
     if (Date.now() - started > timeoutMs) {
       localLog(`✗ ${label}: still waiting on ${missing.join(', ')} — check the output above / docker ps, then press Set up again (it resumes where it left off).\n`);
@@ -1675,64 +1680,143 @@ document.querySelectorAll('pre button.copy').forEach((btn) => btn.addEventListen
 document.getElementById('local-nohelper').hidden = Boolean(HELPER);
 document.getElementById('local-helper-ui').hidden = !HELPER;
 document.getElementById('btn-local-refresh')?.addEventListener('click', () => refreshLocal());
-/* the ONE local button: start everything, then wire Logto + GlitchTip in
-   automatically the moment they answer (user ruling: no extra clicks).
-   Idempotent — done parts are skipped, so re-pressing resumes/repairs. */
+
+/* per-environment cards — rendered ONCE at load (never re-rendered, so
+   typed values survive every refresh) */
+function envCardHtml(env) {
+  const s = env.short;
+  const role = env.stack === 'munni-local-prod'
+    ? 'The environment you USE — real accounts, real bank consents.'
+    : 'The environment you EXPERIMENT in — break it freely, production never notices.';
+  return `
+  <div class="card">
+    <h3>${env.label} environment <span class="pill" id="env-pill-${s}"></span></h3>
+    <p class="why">${role} App at <a href="${env.web}" target="_blank" rel="noreferrer">${env.web.replace('http://', '')}</a>. Sign-in (Logto), crash tracking, the Logto console account and the first admin user are all wired automatically by Set up — the logins land under Reveal secrets below. This environment's own Logto console lives at <a href="${env.logtoAdmin}" target="_blank" rel="noreferrer">${env.logtoAdmin.replace('http://', '')}</a>.</p>
+    <p class="msg bad" id="env-logto-warn-${s}" hidden>This environment's Logto isn't answering yet — press Set up (or Start) and wait for its logto dot to turn green.</p>
+    <div class="runrow">
+      <span style="align-self:center">Sign-in <span class="dot" id="env-signin-dot-${s}"></span> <span class="pill" id="env-signin-pill-${s}"></span></span>
+      <button class="ghost" data-signin="${env.stack}">Re-run sign-in setup</button>
+      <span style="align-self:center;margin-left:10px">Crash reports <span class="dot" id="env-gt-dot-${s}"></span> <span class="pill" id="env-gt-pill-${s}"></span></span>
+      <button class="ghost" data-gt="${env.stack}">Re-run crash tracking</button>
+    </div>
+    <div class="runrow">
+      <button class="ghost" data-envsetup="${env.stack}">Set up this environment</button>
+      <button class="ghost" data-local-tool="${env.stack}:up">Start</button>
+      <button class="ghost" data-local-tool="${env.stack}:down">Stop</button>
+      <button class="ghost" data-envnuke="${env.stack}" style="color:var(--bad);border-color:var(--bad)">Delete…</button>
+    </div>
+    <label class="f" for="in-subs-${s}">NAS_ADMIN_SUBS — a Logto User ID to grant admin access (optional: Set up creates the first admin automatically while the environment has no users)</label>
+    <input type="text" id="in-subs-${s}" placeholder="usr_…" autocomplete="off"/>
+    <button class="ghost" data-subs="${env.stack}">Store admin access</button>
+    <details class="how"><summary>Manual fallback — bring your own credentials instead</summary>
+      <p>Logto console (${env.logtoAdmin.replace('http://', '')}) → Applications → Create → <b>Machine-to-machine</b> → name it <code>infra</code> → assign the <b>Logto Management API</b> role → paste:</p>
+      <div class="grid2">
+        <div><label class="f" for="in-m2m-id-${s}">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-m2m-id-${s}" autocomplete="off"/></div>
+        <div><label class="f" for="in-m2m-secret-${s}">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-m2m-secret-${s}" autocomplete="off"/></div>
+      </div>
+      <button data-oobe="${env.stack}">Apply sign-in setup</button>${s === 'prod' ? ' <button class="ghost" id="btn-local-oobe-check">Check</button>' : ''}
+      <div class="msg" id="msg-oobe-${s}"></div>
+      <p style="margin-top:8px">GlitchTip runs in the shared stack — its token works for every environment. From <a href="http://localhost:8383" target="_blank" rel="noreferrer">localhost:8383</a> → profile → <b>Auth Tokens</b>:</p>
+      <label class="f" for="in-gt-${s}">IAC_GLITCHTIP_API_TOKEN</label>
+      <input type="password" id="in-gt-${s}" autocomplete="off"/>
+      <button data-gtapply="${env.stack}">Apply crash tracking</button>${s === 'prod' ? ' <button class="ghost" id="btn-local-gt-check">Check</button>' : ''}
+      <div class="msg" id="msg-gt-${s}"></div>
+    </details>
+  </div>`;
+}
+if (document.getElementById('env-cards')) document.getElementById('env-cards').innerHTML = LOCAL_ENVS.map(envCardHtml).join('');
+const shortOf = (stackName) => LOCAL_ENVS.find((e) => e.stack === stackName)?.short ?? 'prod';
+
+/** one environment, end to end: render → start → wait for ITS logto →
+ * wire sign-in + crash tracking (idempotent: done parts are skipped) */
+async function setupEnv(env) {
+  const label = STACK_LABELS[env.stack];
+  if (!(await streamLocal('/api/local/run', { stack: env.stack }, `mint secrets + render ${label}`))) return false;
+  if (!(await streamLocal('/api/local/tool', { tool: `${env.stack}:up` }, `start ${label} (first run pulls images — can take a while)`))) return false;
+  const st = await waitForServices(env.stack, ['logto'], `wait for ${label}'s sign-in service`);
+  if (!st) return false;
+  const stored = new Set(st.stacks[env.stack].stored);
+  if (!stored.has('NAS_LOGTO_M2M_APP_ID')) {
+    if (!(await streamLocal('/api/local/logto-setup', { stack: env.stack }, `wire ${label} sign-in (automatic)`))) return false;
+  } else {
+    localLog(`\n✓ ${label} sign-in already wired — skipped\n`);
+  }
+  if (!stored.has('VITE_GLITCHTIP_DSN')) {
+    if (!(await streamLocal('/api/local/glitchtip-setup', { stack: env.stack }, `wire ${label} crash tracking (automatic)`))) return false;
+  } else {
+    localLog(`\n✓ ${label} crash tracking already wired — skipped\n`);
+  }
+  return true;
+}
+
+/* the ONE local button: shared services first, then both environments —
+   each wired automatically the moment its pieces answer. Idempotent. */
 document.getElementById('btn-local-setup')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-local-setup');
   btn.disabled = true;
   try {
-    if (!(await streamLocal('/api/local/run', {}, 'mint secrets + render the stack'))) return;
-    if (!(await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'start the containers (first run pulls images — can take a while)'))) return;
-    const st = await waitForServices(['logto', 'glitchtip'], 'wait for Logto + GlitchTip to come up');
-    if (!st) return;
-    if (!st.stored.includes('NAS_LOGTO_M2M_APP_ID')) {
-      if (!(await streamLocal('/api/local/logto-setup', {}, 'wire sign-in (automatic)'))) return;
-    } else {
-      localLog('\n✓ sign-in already wired — skipped\n');
+    if (!(await streamLocal('/api/local/run', { stack: SHARED_STACK }, 'mint secrets + render the shared services'))) return;
+    if (!(await streamLocal('/api/local/tool', { tool: `${SHARED_STACK}:up` }, 'start the shared services (postgres, glitchtip, vault, ocr, control)'))) return;
+    if (!(await waitForServices(SHARED_STACK, ['glitchtip', 'vault'], 'wait for the shared services'))) return;
+    for (const env of LOCAL_ENVS) {
+      if (!(await setupEnv(env))) return;
     }
-    if (!st.stored.includes('VITE_GLITCHTIP_DSN')) {
-      if (!(await streamLocal('/api/local/glitchtip-setup', {}, 'wire crash tracking (automatic)'))) return;
-    } else {
-      localLog('\n✓ crash tracking already wired — skipped\n');
-    }
-    localLog('\n══ munni is ready → open http://localhost:8380 and create your account. ══\n(The page at localhost:3202 is Logto’s own optional console — its Create-account welcome is normal and not part of munni’s setup.)\n');
+    localLog('\n══ munni is ready ══\nproduction → http://localhost:8380 (create your account there)\ndevelopment → http://localhost:8480 (its accounts are separate on purpose)\ncontrol cockpit → http://localhost:8385 (sign in with the production admin)\n');
   } finally {
     btn.disabled = false;
     await refreshLocal();
   }
 });
-document.getElementById('btn-local-verify')?.addEventListener('click', () => streamLocal('/api/local/run', { verify: true }, 'verify munni-local'));
-document.getElementById('btn-local-logto-auto')?.addEventListener('click', () =>
-  streamLocal('/api/local/logto-setup', {}, 'set up sign-in (infra credential + apps as code, zero input)'));
-document.getElementById('btn-local-subs')?.addEventListener('click', async () => {
-  const subs = document.getElementById('in-local-subs').value.trim();
-  if (!subs) { localLog('\nPaste your Logto User ID first.\n'); return; }
-  if (await streamLocal('/api/local/run', { values: { NAS_ADMIN_SUBS: subs } }, 'store admin access (NAS_ADMIN_SUBS)')) {
-    await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'restart the api with admin access');
+document.querySelectorAll('[data-envsetup]').forEach((btn) => btn.addEventListener('click', async () => {
+  btn.disabled = true;
+  try { await setupEnv(LOCAL_ENVS.find((e) => e.stack === btn.dataset.envsetup)); }
+  finally { btn.disabled = false; await refreshLocal(); }
+}));
+document.getElementById('btn-local-stopall')?.addEventListener('click', async () => {
+  for (const name of ['munni-local-dev', 'munni-local-prod', SHARED_STACK]) {
+    await streamLocal('/api/local/tool', { tool: `${name}:down` }, `stop ${STACK_LABELS[name]}`);
   }
 });
-document.getElementById('btn-local-oobe')?.addEventListener('click', async () => {
+document.getElementById('btn-local-verify')?.addEventListener('click', async () => {
+  for (const name of [SHARED_STACK, 'munni-local-prod', 'munni-local-dev']) {
+    await streamLocal('/api/local/run', { stack: name, verify: true }, `verify ${STACK_LABELS[name]}`);
+  }
+});
+document.querySelectorAll('[data-signin]').forEach((btn) => btn.addEventListener('click', () =>
+  streamLocal('/api/local/logto-setup', { stack: btn.dataset.signin }, `set up ${STACK_LABELS[btn.dataset.signin]} sign-in (zero input)`)));
+document.querySelectorAll('[data-gt]').forEach((btn) => btn.addEventListener('click', () =>
+  streamLocal('/api/local/glitchtip-setup', { stack: btn.dataset.gt }, `set up ${STACK_LABELS[btn.dataset.gt]} crash tracking (zero input)`)));
+document.querySelectorAll('[data-subs]').forEach((btn) => btn.addEventListener('click', async () => {
+  const stack = btn.dataset.subs;
+  const subs = document.getElementById(`in-subs-${shortOf(stack)}`).value.trim();
+  if (!subs) { localLog('\nPaste a Logto User ID first.\n'); return; }
+  if (await streamLocal('/api/local/run', { stack, values: { NAS_ADMIN_SUBS: subs } }, `store ${STACK_LABELS[stack]} admin access`)) {
+    await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart the api with admin access');
+  }
+}));
+document.querySelectorAll('[data-oobe]').forEach((btn) => btn.addEventListener('click', async () => {
+  const stack = btn.dataset.oobe;
+  const s = shortOf(stack);
   const values = {
-    IAC_LOGTO_INFRA_M2M_ID: document.getElementById('in-local-m2m-id').value.trim(),
-    IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById('in-local-m2m-secret').value.trim(),
+    IAC_LOGTO_INFRA_M2M_ID: document.getElementById(`in-m2m-id-${s}`).value.trim(),
+    IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById(`in-m2m-secret-${s}`).value.trim(),
   };
   if (!values.IAC_LOGTO_INFRA_M2M_ID || !values.IAC_LOGTO_INFRA_M2M_SECRET) { localLog('\nBoth the app id and the secret are needed.\n'); return; }
-  if (await streamLocal('/api/local/run', { values }, 'apply sign-in setup (logto apps as code)')) {
-    document.getElementById('in-local-m2m-secret').value = '';
-    await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'restart web/admin with the new config');
+  if (await streamLocal('/api/local/run', { stack, values }, `apply ${STACK_LABELS[stack]} sign-in setup`)) {
+    document.getElementById(`in-m2m-secret-${s}`).value = '';
+    await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart web/admin with the new config');
   }
-});
-document.getElementById('btn-local-gt-auto')?.addEventListener('click', () =>
-  streamLocal('/api/local/glitchtip-setup', {}, 'set up crash tracking (admin + token + org + DSNs, zero input)'));
-document.getElementById('btn-local-gt')?.addEventListener('click', async () => {
-  const token = document.getElementById('in-local-gt').value.trim();
+}));
+document.querySelectorAll('[data-gtapply]').forEach((btn) => btn.addEventListener('click', async () => {
+  const stack = btn.dataset.gtapply;
+  const s = shortOf(stack);
+  const token = document.getElementById(`in-gt-${s}`).value.trim();
   if (!token) { localLog('\nPaste the GlitchTip token first.\n'); return; }
-  if (await streamLocal('/api/local/run', { values: { IAC_GLITCHTIP_API_TOKEN: token } }, 'apply crash tracking (org + projects + DSNs)')) {
-    document.getElementById('in-local-gt').value = '';
-    await streamLocal('/api/local/tool', { tool: 'twin-up' }, 'restart with the DSNs wired in');
+  if (await streamLocal('/api/local/run', { stack, values: { IAC_GLITCHTIP_API_TOKEN: token } }, `apply ${STACK_LABELS[stack]} crash tracking`)) {
+    document.getElementById(`in-gt-${s}`).value = '';
+    await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart with the DSNs wired in');
   }
-});
+}));
 document.querySelectorAll('[data-local-tool]').forEach((btn) => btn.addEventListener('click', () => {
   streamLocal('/api/local/tool', { tool: btn.dataset.localTool }, btn.textContent.trim());
 }));
@@ -1742,33 +1826,51 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
   const res = await hfetch('/api/local/secrets');
   const { values } = await res.json();
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  // the SIGN-INS people actually type somewhere, assembled from the store
-  const signIns = [
-    { name: 'munni app (admin)', url: 'http://localhost:8380', user: values.LOGTO_APP_ADMIN_USERNAME, pass: values.LOGTO_APP_ADMIN_PASSWORD },
-    { name: 'Logto console', url: 'http://localhost:3202', user: values.LOGTO_CONSOLE_USERNAME, pass: values.LOGTO_CONSOLE_PASSWORD },
-    { name: 'GlitchTip', url: 'http://localhost:8383', user: values.GLITCHTIP_ADMIN_EMAIL, pass: values.GLITCHTIP_ADMIN_PASSWORD },
-    { name: 'Postgres', url: '', user: 'munni', pass: values.NAS_POSTGRES_PASSWORD },
-    { name: 'Vaultwarden', url: 'http://localhost:8384', user: '(your own account)', pass: '(master password lives in your head)' },
-  ].filter((l) => l.user && l.pass);
+  const shared = values[SHARED_STACK] ?? {};
+  // the SIGN-INS people actually type somewhere, assembled per stack
+  const signIns = [];
+  for (const env of LOCAL_ENVS) {
+    const v = values[env.stack] ?? {};
+    if (v.LOGTO_APP_ADMIN_USERNAME && v.LOGTO_APP_ADMIN_PASSWORD) signIns.push({ name: `munni app — ${env.label.toLowerCase()} (admin)`, url: env.web, user: v.LOGTO_APP_ADMIN_USERNAME, pass: v.LOGTO_APP_ADMIN_PASSWORD });
+    if (v.LOGTO_CONSOLE_USERNAME && v.LOGTO_CONSOLE_PASSWORD) signIns.push({ name: `Logto console — ${env.label.toLowerCase()}`, url: env.logtoAdmin, user: v.LOGTO_CONSOLE_USERNAME, pass: v.LOGTO_CONSOLE_PASSWORD });
+  }
+  if (shared.GLITCHTIP_ADMIN_EMAIL && shared.GLITCHTIP_ADMIN_PASSWORD) signIns.push({ name: 'GlitchTip (family-wide)', url: 'http://localhost:8383', user: shared.GLITCHTIP_ADMIN_EMAIL, pass: shared.GLITCHTIP_ADMIN_PASSWORD });
+  if (shared.NAS_POSTGRES_PASSWORD) signIns.push({ name: 'Postgres (shared server)', url: '', user: 'munni', pass: shared.NAS_POSTGRES_PASSWORD });
+  signIns.push({ name: 'Vaultwarden', url: 'http://localhost:8384', user: '(your own account)', pass: '(master password lives in your head)' });
   const signInRows = signIns.map((l) =>
     `<tr><td style="padding:2px 10px 2px 0"><b>${esc(l.name)}</b>${l.url ? ` <a href="${l.url}" target="_blank" rel="noreferrer" style="font-size:11px">open</a>` : ''}</td><td style="padding:2px 10px 2px 0"><code style="user-select:all">${esc(l.user)}</code></td><td><code style="user-select:all">${esc(l.pass)}</code></td></tr>`);
-  const rawRows = Object.entries(values).filter(([, v]) => v).map(([name, value]) =>
-    `<tr><td style="padding:2px 10px 2px 0"><code>${esc(name)}</code></td><td><code style="user-select:all">${esc(value)}</code></td></tr>`);
+  const rawSections = Object.entries(values).map(([stackName, vals]) => {
+    const rows = Object.entries(vals ?? {}).filter(([, v]) => v).map(([name, value]) =>
+      `<tr><td style="padding:2px 10px 2px 0"><code>${esc(name)}</code></td><td><code style="user-select:all">${esc(value)}</code></td></tr>`);
+    return rows.length ? `<div style="font-size:11px;color:var(--muted);margin:10px 0 4px">${esc((STACK_LABELS[stackName] ?? stackName).toUpperCase())}</div><div style="overflow-x:auto"><table style="font-size:12px">${rows.join('')}</table></div>` : '';
+  }).join('');
   box.innerHTML = `<p class="why">Shown on your request only — nothing here is logged. Click a value to select it.</p>
     <div class="m-cap" style="font-size:11px;color:var(--muted);margin:4px 0">SIGN-INS</div>
-    <div style="overflow-x:auto"><table style="font-size:12px">${signInRows.join('') || '<tr><td class="why">none yet — run Set up first</td></tr>'}</table></div>
+    <div style="overflow-x:auto"><table style="font-size:12px">${signInRows.join('')}</table></div>
     <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">RAW VALUES (tokens, keys, ids)</div>
-    <div style="overflow-x:auto"><table style="font-size:12px">${rawRows.join('')}</table></div>`;
+    ${rawSections || '<p class="why">nothing stored yet — run Set up first</p>'}`;
   box.hidden = false;
   document.getElementById('btn-local-reveal').textContent = 'Hide secrets';
 });
-document.getElementById('btn-local-nuke')?.addEventListener('click', () => {
-  if (!confirm('Delete the munni twin COMPLETELY?\n\nThis stops every container and removes its volumes (all app data), its network, and revokes the bank consents THIS stack created at GoCardless. The secret store stays, so a fresh Set up keeps the same passwords.')) return;
-  streamLocal('/api/local/cleanup', { target: 'twin' }, 'delete the munni twin (containers + volumes + GoCardless consents)');
+document.querySelectorAll('[data-envnuke]').forEach((btn) => btn.addEventListener('click', () => {
+  const stack = btn.dataset.envnuke;
+  const label = STACK_LABELS[stack];
+  if (!confirm(`Delete the ${label.toUpperCase()} environment COMPLETELY?\n\nThis stops its containers and removes its volumes, and revokes the bank consents THIS environment created at GoCardless. The other environment and the shared services keep running; the secret store stays, so a fresh Set up keeps the same passwords.\n\nNote: its databases live on the shared postgres and are NOT dropped by this — delete the shared services too for a truly blank slate.`)) return;
+  streamLocal('/api/local/cleanup', { target: stack }, `delete ${label} (containers + volumes + GoCardless consents)`);
+}));
+document.getElementById('btn-local-nuke-shared')?.addEventListener('click', () => {
+  if (!confirm('Delete the SHARED SERVICES completely?\n\nThis removes postgres (BOTH environments’ databases!), GlitchTip, the vault and munni-control, volumes included. Both environments stop working until you run Set up again. The secret stores stay.')) return;
+  streamLocal('/api/local/cleanup', { target: SHARED_STACK }, 'delete the shared services (containers + volumes)');
+});
+document.getElementById('btn-local-nuke-all')?.addEventListener('click', async () => {
+  if (!confirm('Delete EVERYTHING — both environments AND the shared services?\n\nAll containers, volumes (every database), networks, and the bank consents both environments created at GoCardless. The secret stores stay, so a fresh Set up keeps the same passwords.')) return;
+  for (const name of ['munni-local-dev', 'munni-local-prod', SHARED_STACK]) {
+    await streamLocal('/api/local/cleanup', { target: name }, `delete ${STACK_LABELS[name]}`);
+  }
 });
 document.getElementById('btn-dev-nuke')?.addEventListener('click', () => {
-  if (!confirm('Delete the DEV stack completely?\n\nThis stops its containers and removes its volumes (dev database included), its network, and revokes the bank consents the dev app created at GoCardless.')) return;
-  streamLocal('/api/local/cleanup', { target: 'dev' }, 'delete the dev stack (containers + volumes + GoCardless consents)');
+  if (!confirm('Delete the from-source DEV LOOP completely?\n\nThis stops its containers and removes its volumes (dev database included), its network, and revokes the bank consents the dev app created at GoCardless.')) return;
+  streamLocal('/api/local/cleanup', { target: 'devsource' }, 'delete the dev loop (containers + volumes + GoCardless consents)');
 });
 document.getElementById('btn-local-vault-export')?.addEventListener('click', async () => {
   const res = await hfetch('/api/local/vault-export');
@@ -1788,12 +1890,12 @@ const localCheck = async (provider, values, msgId) => {
   } catch (e) { msg(msgId, `✗ check failed: ${e.message}`, false); }
 };
 document.getElementById('btn-local-oobe-check')?.addEventListener('click', () => localCheck('logto-m2m', {
-  IAC_LOGTO_INFRA_M2M_ID: document.getElementById('in-local-m2m-id').value.trim(),
-  IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById('in-local-m2m-secret').value.trim(),
-}, 'msg-local-oobe'));
+  IAC_LOGTO_INFRA_M2M_ID: document.getElementById('in-m2m-id-prod').value.trim(),
+  IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById('in-m2m-secret-prod').value.trim(),
+}, 'msg-oobe-prod'));
 document.getElementById('btn-local-gt-check')?.addEventListener('click', () => localCheck('glitchtip-token', {
-  IAC_GLITCHTIP_API_TOKEN: document.getElementById('in-local-gt').value.trim(),
-}, 'msg-local-gt'));
+  IAC_GLITCHTIP_API_TOKEN: document.getElementById('in-gt-prod').value.trim(),
+}, 'msg-gt-prod'));
 
 applyPlatform();
 applyDomain();
