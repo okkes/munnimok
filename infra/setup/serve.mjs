@@ -549,19 +549,53 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
 
 // ── main ───────────────────────────────────────────────────────────────
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-if (isMain) {
+
+const openBrowser = (url) => {
+  if (process.env.SETUP_NO_OPEN) return;
+  const openers = { win32: ['cmd', ['/c', 'start', '', url]], darwin: ['open', [url]] };
+  const [cmd, args] = openers[process.platform] ?? ['xdg-open', [url]];
+  spawn(cmd, args, { shell: false, stdio: 'ignore' }).on('error', () => {});
+};
+
+/** is the thing on this port ALREADY a munni helper? (double-started) */
+async function isRunningHelper(port) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(1500) });
+    return res.ok && /__SETUP_HELPER__/.test(await res.text());
+  } catch {
+    return false;
+  }
+}
+
+function startHelper(port, attemptsLeft) {
   const token = randomBytes(16).toString('hex');
-  const port = Number(process.env.SETUP_PORT ?? 8377);
   const server = createServer(createApp({ token }));
   server.requestTimeout = 0; // compose builds stream for many minutes
+  server.on('error', async (err) => {
+    if (err.code !== 'EADDRINUSE') throw err;
+    if (await isRunningHelper(port)) {
+      const url = `http://127.0.0.1:${port}/`;
+      console.log(`the munni setup helper is ALREADY running → ${url}`);
+      console.log('(opened it in your browser — nothing else to do. Close the other window first if you really want a fresh one.)');
+      openBrowser(url);
+      return; // exit 0 — this is the happy path, not an error
+    }
+    if (attemptsLeft > 0) {
+      console.log(`port ${port} is taken by something else — trying ${port + 1}`);
+      startHelper(port + 1, attemptsLeft - 1);
+      return;
+    }
+    console.error(`ports ${port - 3}-${port} are all taken. Free one (or set SETUP_PORT) and start me again.`);
+    process.exitCode = 1;
+  });
   server.listen(port, '127.0.0.1', () => {
     const url = `http://127.0.0.1:${port}/`;
     console.log(`munni setup helper ready → ${url}`);
     console.log('(the page it serves can now run the local setup for you; Ctrl+C stops the helper)');
-    if (!process.env.SETUP_NO_OPEN) {
-      const openers = { win32: ['cmd', ['/c', 'start', '', url]], darwin: ['open', [url]] };
-      const [cmd, args] = openers[process.platform] ?? ['xdg-open', [url]];
-      spawn(cmd, args, { shell: false, stdio: 'ignore' }).on('error', () => {});
-    }
+    openBrowser(url);
   });
+}
+
+if (isMain) {
+  startHelper(Number(process.env.SETUP_PORT ?? 8377), 3);
 }
