@@ -16,6 +16,9 @@ const REQUISITIONS = [
   { requisitionId: 'req-stale-0002', status: 'EX', institutionId: 'ASN_NL', created: null, accountCount: 0, stale: true, ownerSub: null },
   { requisitionId: 'req-fresh-0003', status: 'LN', institutionId: 'RABO_NL', created: new Date(Date.now() - 5 * 86_400_000).toISOString(), accountCount: 1, stale: false, ownerSub: 'sub-bob' },
 ];
+// the endpoint returns THIS environment's consents + a count of foreign
+// ones on the shared GoCardless account
+const requisitionList = (requisitions: typeof REQUISITIONS, foreignCount = 2) => ({ requisitions, foreignCount });
 const QUOTA = [
   { provider: 'gocardless', scope: 'accounts:transactions', limit: 4, remaining: 1, resetAtUtc: '2026-07-17T06:00:00Z', capturedAtUtc: '2026-07-16T06:00:00Z' },
 ];
@@ -53,7 +56,7 @@ const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /catalog': () => ({ body: CATALOG }),
   'GET /admin/ping': () => ({}),
   'GET /admin/users': () => ({ body: USERS }),
-  'GET /admin/gocardless/requisitions': () => ({ body: REQUISITIONS }),
+  'GET /admin/gocardless/requisitions': () => ({ body: requisitionList(REQUISITIONS) }),
   'GET /admin/quota': () => ({ body: QUOTA }),
   'GET /health': () => ({ body: HEALTH }),
 });
@@ -186,7 +189,7 @@ describe('AdminApp (test-auth mode)', () => {
     let requisitions = [...REQUISITIONS];
     const calls = scriptFetch({
       ...HAPPY_ROUTES(),
-      'GET /admin/gocardless/requisitions': () => ({ body: requisitions }),
+      'GET /admin/gocardless/requisitions': () => ({ body: requisitionList(requisitions) }),
       'DELETE /admin/gocardless/requisitions/req-stale-0002': () => {
         requisitions = requisitions.filter((r) => r.requisitionId !== 'req-stale-0002');
         return {};

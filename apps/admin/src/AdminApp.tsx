@@ -29,6 +29,13 @@ interface AdminRequisition {
   stale: boolean;
   ownerSub: string | null;
 }
+/** THIS environment's connections + a count of foreign ones (the GC
+ * account is shared across environments; foreign consents are neither
+ * listed nor deletable here) */
+interface AdminRequisitionList {
+  requisitions: AdminRequisition[];
+  foreignCount: number;
+}
 interface ProviderQuota {
   provider: string;
   scope: string;
@@ -124,6 +131,7 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   const [sub, setSub] = useState(() => localStorage.getItem('munni_admin_sub') ?? '');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requisitions, setRequisitions] = useState<AdminRequisition[] | null>(null);
+  const [foreignCount, setForeignCount] = useState(0);
   const [quota, setQuota] = useState<ProviderQuota[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
@@ -158,7 +166,11 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
       fetch(`${config.apiUrl}/health`).catch(() => null),
     ]);
     if (usersRes.ok) setUsers((await usersRes.json()) as AdminUser[]);
-    if (reqRes.ok) setRequisitions((await reqRes.json()) as AdminRequisition[]);
+    if (reqRes.ok) {
+      const list = (await reqRes.json()) as AdminRequisitionList;
+      setRequisitions(list.requisitions);
+      setForeignCount(list.foreignCount);
+    }
     if (quotaRes.ok) setQuota((await quotaRes.json()) as ProviderQuota[]);
     if (healthRes?.ok) setHealth((await healthRes.json()) as HealthInfo);
     const catalogRes = await call('/catalog').catch(() => null);
@@ -271,6 +283,7 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
         {!denied && screen === 'connections' && (
           <ConnectionsScreen
             requisitions={requisitions}
+            foreignCount={foreignCount}
             selected={selected}
             busy={busy}
             onToggle={(id) =>
@@ -517,12 +530,14 @@ function UsersScreen({
 
 function ConnectionsScreen({
   requisitions,
+  foreignCount,
   selected,
   busy,
   onToggle,
   onDeleteSelected,
 }: Readonly<{
   requisitions: AdminRequisition[] | null;
+  foreignCount: number;
   selected: Set<string>;
   busy: boolean;
   onToggle: (id: string) => void;
@@ -534,6 +549,16 @@ function ConnectionsScreen({
   return (
     <>
       <h1>Bank connections</h1>
+      <p className="muted">
+        This environment&apos;s consents only.
+        {foreignCount > 0 && (
+          <span data-testid="connections-foreign-note">
+            {' '}
+            {foreignCount} other connection{foreignCount === 1 ? '' : 's'} on the shared GoCardless account belong
+            {foreignCount === 1 ? 's' : ''} to other environments — manage those from their own admin.
+          </span>
+        )}
+      </p>
       <div className="toolbar">
         <label className="radio">
           <input
