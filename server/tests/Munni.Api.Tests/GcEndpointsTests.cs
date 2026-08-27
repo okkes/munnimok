@@ -227,6 +227,15 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             .ReadFromJsonAsync<CreateRequisitionResponse>();
         Assert.Contains(created!.Reference, created.Link);
 
+        // LS4: the consent records ITS environment (redirect origin) — the
+        // shared GC account is attributed per environment through this
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var row = await db.GcRequisitions.SingleAsync(r => r.Id == Guid.Parse(created.Reference));
+            Assert.Equal("https://app", row.RedirectOrigin);
+        }
+
         // completing an unknown reference is NotFound; the real one ingests
         Assert.Equal(HttpStatusCode.NotFound, (await client.PostAsync($"/gocardless/requisitions/{Guid.NewGuid()}/complete", null)).StatusCode);
         var complete = await (await client.PostAsync($"/gocardless/requisitions/{created.Reference}/complete", null))

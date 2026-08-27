@@ -19,6 +19,11 @@ public class GcRequisition
     /// shell — the hosted callback page reads it from the complete
     /// response to hand the user back into the app</summary>
     public string? AppScheme { get; set; }
+    /// <summary>origin of the consent's redirect url (e.g.
+    /// https://munni.example) — the GoCardless account is shared across
+    /// environments, and this is the per-consent environment marker the
+    /// shared-services cockpit attributes by (plan LS4)</summary>
+    public string? RedirectOrigin { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 

@@ -197,6 +197,9 @@ public static partial class GcEndpoints
                 Status = "created",
                 Provider = api.ProviderId,
                 AppScheme = request.AppScheme,
+                RedirectOrigin = Uri.TryCreate(request.RedirectUrl, UriKind.Absolute, out var redirect)
+                    ? redirect.GetLeftPart(UriPartial.Authority)
+                    : null,
             });
             await db.SaveChangesAsync();
             return Results.Ok(new CreateRequisitionResponse(reference.ToString(), created.Link));
