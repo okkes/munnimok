@@ -56,10 +56,16 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Resolve channel (dev branch + NATIVE_DEV_CHANNEL → staging app)
+      - name: Resolve channel (dev branch + NATIVE_DEV_CHANNEL → staging app; environment local → LAN app)
         id: channel
         run: |
-          if [ "${{ github.ref_name }}" = "dev" ] && [ "${{ vars.NATIVE_DEV_CHANNEL }}" = "true" ]; then
+          if [ "${{ inputs.environment }}" = "local" ]; then
+            # the wizard-managed LAN channel — its own ASC app record,
+            # delivered through TestFlight like the others
+            echo "bundle_id=app.munni.local" >> "$GITHUB_OUTPUT"
+            echo "scheme=munni-local" >> "$GITHUB_OUTPUT"
+            echo "display=munni local" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.ref_name }}" = "dev" ] && [ "${{ vars.NATIVE_DEV_CHANNEL }}" = "true" ]; then
             echo "bundle_id=app.munni.dev" >> "$GITHUB_OUTPUT"
             echo "scheme=munni-dev" >> "$GITHUB_OUTPUT"
             echo "display=munni dev" >> "$GITHUB_OUTPUT"
@@ -95,23 +101,35 @@ jobs:
       # as an xcodebuild argument — a command-line PRODUCT_BUNDLE_IDENTIFIER
       # applies to EVERY target (embedded Capacitor frameworks included) and
       # the upload dies with "CFBundleIdentifier Collision".
-      - name: Rebrand the shell for the staging app
-        if: steps.channel.outputs.bundle_id == 'app.munni.dev'
+      - name: Rebrand the shell for the staging / LAN app
+        if: steps.channel.outputs.bundle_id != 'app.munni'
         working-directory: apps/native/ios/App
+        env:
+          BUNDLE_ID: ${{ steps.channel.outputs.bundle_id }}
+          URL_SCHEME: ${{ steps.channel.outputs.scheme }}
+          DISPLAY_NAME: ${{ steps.channel.outputs.display }}
         run: |
-          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = app\.munni;/PRODUCT_BUNDLE_IDENTIFIER = app.munni.dev;/g' App.xcodeproj/project.pbxproj
-          grep -c "app.munni.dev" App.xcodeproj/project.pbxproj
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName munni dev" App/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLName app.munni.dev" App/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 munni-dev" App/Info.plist
-          # staging look: white leaf on brand green + the dev Firebase app
+          sed -i '' "s/PRODUCT_BUNDLE_IDENTIFIER = app\.munni;/PRODUCT_BUNDLE_IDENTIFIER = ${BUNDLE_ID};/g" App.xcodeproj/project.pbxproj
+          grep -c "$BUNDLE_ID" App.xcodeproj/project.pbxproj
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $DISPLAY_NAME" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLName $BUNDLE_ID" App/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 $URL_SCHEME" App/Info.plist
+          # non-prod look: white leaf on brand green
           sed -i '' 's/ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;/ASSETCATALOG_COMPILER_APPICON_NAME = "AppIcon-Dev";/g' App.xcodeproj/project.pbxproj
-          cp App/GoogleService-Info-Dev.plist App/GoogleService-Info.plist
-          # ONE associated domain per channel (universal-links plan §UL3):
-          # the dev app claims the test host only, so the OS never offers
-          # the prod app for a munni-dev login
-          /usr/libexec/PlistBuddy -c "Set :com.apple.developer.associated-domains:0 applinks:munni-test.okkes.synology.me" App/App.entitlements
-          /usr/libexec/PlistBuddy -c "Print :com.apple.developer.associated-domains" App/App.entitlements
+          if [ "$BUNDLE_ID" = "app.munni.dev" ]; then
+            # the dev Firebase app + ONE associated domain per channel
+            # (universal-links plan §UL3): the dev app claims the test host
+            # only, so the OS never offers the prod app for a munni-dev login
+            cp App/GoogleService-Info-Dev.plist App/GoogleService-Info.plist
+            /usr/libexec/PlistBuddy -c "Set :com.apple.developer.associated-domains:0 applinks:munni-test.okkes.synology.me" App/App.entitlements
+            /usr/libexec/PlistBuddy -c "Print :com.apple.developer.associated-domains" App/App.entitlements
+          else
+            # the LAN app has NO https host: it must claim no universal
+            # links at all (auth returns ride the munni-local:// scheme),
+            # and it keeps the prod Firebase plist (push stays inactive
+            # until app.munni.local is registered in Firebase)
+            /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.associated-domains" App/App.entitlements || true
+          fi
 
       # Apple requires the iOS 26 SDK for App Store Connect uploads; the
       # runner's default Xcode is older, so pick the newest installed one

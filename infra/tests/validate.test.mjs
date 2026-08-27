@@ -2,9 +2,18 @@
 // these specs pin the request shapes (endpoints, JWT headers/claims) and
 // the verdict mapping — with fetch faked and real freshly-minted keys.
 import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { validate } from '../modules/validate.mjs';
+
+// hermetic: the machine's real rendered/ (LAN-mode marker included)
+// must never leak into these urls
+const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-validate-test-'));
+process.env.MUNNI_RENDER_DIR = SCRATCH;
+const { validate } = await import('../modules/validate.mjs');
+test.after(() => rmSync(SCRATCH, { recursive: true, force: true }));
 
 const capture = (status, body = {}) => {
   const calls = [];

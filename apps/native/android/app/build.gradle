@@ -18,10 +18,14 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
-    // two store identities installable side by side: the production app
-    // (app.munni, munni://) and the staging app fed from the dev branch
-    // (app.munni.dev, munni-dev://). google-services.json must contain a
-    // client for each package (Firebase → add app → re-download).
+    // three store identities installable side by side: the production app
+    // (app.munni, munni://), the staging app fed from the dev branch
+    // (app.munni.dev, munni-dev://), and the wizard-managed LAN build
+    // (app.munni.local, munni-local:// — CI environment `local`, delivered
+    // through the Play internal track like the others). google-services
+    // clients live in google-services.json per package; the local flavor
+    // carries its own stub at src/local/google-services.json (replace it
+    // with a real Firebase download to activate push there).
     flavorDimensions += 'channel'
     productFlavors {
         prod {
@@ -32,6 +36,13 @@ android {
             dimension 'channel'
             applicationIdSuffix '.dev'
             manifestPlaceholders = [munniScheme: 'munni-dev', munniLabel: 'munni dev', munniHost: 'munni-test.okkes.synology.me']
+        }
+        local {
+            dimension 'channel'
+            applicationIdSuffix '.local'
+            // munniHost deliberately dead: the LAN build has no https host,
+            // and it must never claim the real apps' universal links
+            manifestPlaceholders = [munniScheme: 'munni-local', munniLabel: 'munni local', munniHost: 'local.munni.invalid']
         }
     }
     // release signing comes from CI env (repo secrets); local builds

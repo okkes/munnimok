@@ -243,20 +243,36 @@ Repo-level is fine for these (same app id serves prod + staging;
 scope them per environment only if you later want staging-only Logto
 apps).
 
-## 9. The LOCAL environment (added 2026-08-28) — wizard-managed
+## 9. The LOCAL store channel (added 2026-08-28) — wizard-managed
 
-Both native workflows accept `environment: local` on dispatch. The
-setup wizard's local track drives the whole flow: it turns on **LAN
-mode** (the local family re-renders onto the machine's `192.168.x.y`
-so a phone can reach web/api/Logto; localhost keeps working alongside),
-writes `NATIVE_API_URL`/`NATIVE_PUBLIC_ORIGIN`/`NATIVE_LOGTO_*` and the
-DSNs into the GitHub environment `local`, dispatches the build, pulls
-the `munni-android-debug` artifact back and serves the APK to the phone
-over the wifi (one-shot link on :8378). Caveats, stated in the wizard
-too: the build bakes the LAN address (a DHCP change needs a rebuild —
-reserve the address), the sideloaded APK carries the store app id
-(uninstall it before installing from Play), and iOS still goes through
-TestFlight — Apple allows no sideloading.
+The LAN build is a full THIRD store identity beside prod and dev:
+**`app.munni.local`** ("munni local", `munni-local://`, the staging
+icon) — Android product flavor `local` (own
+`src/local/google-services.json` stub; replace it with a real Firebase
+download to activate push) and the generalized iOS rebrand (associated
+domains stripped — the LAN app claims no universal links; auth returns
+ride the scheme).
+
+Both native workflows accept `environment: local` on dispatch and then
+build against the machine's LAN address. The wizard's local track
+drives everything: it turns on **LAN mode** (the family re-renders onto
+`192.168.x.y`; localhost keeps working alongside), writes
+`NATIVE_API_URL`/`NATIVE_PUBLIC_ORIGIN`/`NATIVE_LOGTO_*`/DSNs into the
+GitHub environment `local`, dispatches the build — and DELIVERY GOES
+THROUGH THE STORES like every other channel:
+
+- **Android** → Play **internal testing** track, auto-published once
+  `NATIVE_LOCAL_CHANNEL=true` (env `local` variable, the wizard's
+  "Enable auto-publish" button). The store-mandated first upload stays
+  manual ONCE: the wizard downloads the signed `.aab` from the first
+  green build → Play Console → create app `app.munni.local` → Internal
+  testing → upload → grant the CI service account.
+- **iOS** → TestFlight, after the one-time App Store Connect record
+  (New App, bundle `app.munni.local`).
+
+Caveats, stated in the wizard too: the build bakes the LAN address (a
+DHCP change needs a rebuild — reserve the address), and it only works
+on that wifi.
 
 ## What works today
 

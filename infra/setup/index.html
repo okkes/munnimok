@@ -331,17 +331,25 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
     </div>
 
     <div class="card" data-needs-feature="android">
-      <h3>Android on your phone <span class="pill" id="native-local-pill"></span></h3>
-      <p class="why">One button: this page writes the LAN config into the GitHub environment <code>local</code>, has CI build the APK against it, pulls the artifact back and hands your phone a direct download link over the wifi. Needs the GitHub connection from step 1 (use <i>Show it anyway</i> under the local note) — the build runs in YOUR repo's Actions.</p>
+      <h3>Android on your phone (via Play) <span class="pill" id="native-local-pill"></span></h3>
+      <p class="why">The LAN build is a store channel like the others — its own app id <code>app.munni.local</code>, delivered through the Play <b>internal testing</b> track. One button: this page writes the LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Needs the GitHub connection from step 1 (use <i>Show it anyway</i> under the local note). Only Google's one rule stays manual, ONCE: the first upload of a new app id.</p>
       <div class="runrow">
-        <button id="btn-native-local-android">Build &amp; fetch the Android app</button>
+        <button id="btn-native-local-android">Build the Android app (CI)</button>
+        <button class="ghost" id="btn-native-local-publish">Enable auto-publish</button>
       </div>
       <div class="msg" id="msg-native-local"></div>
+      <details class="how"><summary>The one-time Play setup (first build only)</summary>
+        <ol>
+          <li>Press <b>Build the Android app</b> — when it turns green, the signed <code>.aab</code> downloads here automatically (as a ZIP — unzip it).</li>
+          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code>app.munni.local</code> → Internal testing → upload that <code>.aab</code> → add yourself as tester → grant the CI service account access (like the other munni apps).</li>
+          <li>Press <b>Enable auto-publish</b> — every later build lands in the internal track by itself.</li>
+        </ol>
+      </details>
     </div>
 
     <div class="card" data-needs-feature="ios">
-      <h3>iOS on your phone</h3>
-      <p class="why">Same LAN-baked build via CI (<code>environment: local</code>) — but Apple allows no sideloading, so installing goes through TestFlight: it needs the ASC key secrets and <code>IOS_BUILD_ENABLED=true</code>, and the upload appears in TestFlight on your phone. The build carries the LAN address, so it only works on your wifi.</p>
+      <h3>iOS on your phone (via TestFlight)</h3>
+      <p class="why">Same LAN-baked store channel: bundle <code>app.munni.local</code>, built by CI (<code>environment: local</code>) and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> (New App, bundle <code>app.munni.local</code>); the upload needs the ASC key secrets and <code>IOS_BUILD_ENABLED=true</code>, both already in place. The build carries the LAN address, so it only works on your wifi.</p>
       <div class="runrow">
         <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
       </div>
@@ -913,8 +921,8 @@ const FEATURES = [
   { id: 'google', label: 'Sign in with Google', hint: 'social login button on the sign-in screen' },
   { id: 'apple', label: 'Sign in with Apple', hint: 'required by Apple if you ship the iOS app with any social login', targets: ['nas'], offHint: 'needs the https NAS track — Apple refuses http return URLs' },
   { id: 'email', label: 'Crash-report emails', hint: 'GlitchTip mails on new errors (needs an SMTP url); without it, reports stay in the UI' },
-  { id: 'android', label: 'Android app', hint: 'the native Android shell — CI builds and (once the keystore exists) publishes it; only the FIRST Play upload is manual, by store rule', localHint: 'CI bakes an APK that talks to THIS machine over your wifi (LAN mode) — sideload it on your phone, no store needed' },
-  { id: 'ios', label: 'iOS app', hint: 'the native iOS shell — CI signs and uploads straight to TestFlight (Apple allows no sideloading)', localHint: 'CI can bake a LAN build too, but installing still goes through TestFlight — Apple allows no sideloading' },
+  { id: 'android', label: 'Android app', hint: 'the native Android shell — CI builds and (once the keystore exists) publishes it; only the FIRST Play upload is manual, by store rule', localHint: 'its own store channel app.munni.local: CI bakes the build against THIS machine (LAN mode) and publishes it to the Play internal track' },
+  { id: 'ios', label: 'iOS app', hint: 'the native iOS shell — CI signs and uploads straight to TestFlight (Apple allows no sideloading)', localHint: 'its own store channel app.munni.local: CI bakes the LAN build and uploads it to TestFlight' },
 ];
 
 /* credential cards (step 3) — what/why/how per provider */
@@ -1270,13 +1278,7 @@ async function streamLocal(path, body, label) {
   localBusy = true;
   localLog(`\n▶ ${label}\n`);
   try {
-    // a Blob body rides raw (artifact zips); everything else is JSON
-    const raw = body instanceof Blob;
-    const res = await hfetch(path, {
-      method: 'POST',
-      body: raw ? body : JSON.stringify(body),
-      headers: raw ? { 'content-type': 'application/zip' } : {},
-    });
+    const res = await hfetch(path, { method: 'POST', body: JSON.stringify(body) });
     if (!res.ok || !res.body) { localLog(`helper error ${res.status}: ${await res.text()}\n`); return false; }
     const reader = res.body.getReader();
     const dec = new TextDecoder();
@@ -1971,6 +1973,19 @@ async function writeLocalNativeEnv() {
   return cfg;
 }
 
+const localPublishEnabled = async () => {
+  const v = await gh(`/repos/${S.slug}/environments/local/variables/NATIVE_LOCAL_CHANNEL`, { allow404: true });
+  return v?.value === 'true';
+};
+document.getElementById('btn-native-local-publish')?.addEventListener('click', async () => {
+  const say = (t, ok = true) => msg('msg-native-local', t, ok);
+  if (!S.pat || !S.user) { say('Connect GitHub first (step 1 → Show it anyway).', false); return; }
+  try {
+    await ensureEnv('local');
+    await ghUpsertEnvVar('local', 'NATIVE_LOCAL_CHANNEL', 'true');
+    say('auto-publish enabled ✓ — every future local build lands in the Play internal track by itself');
+  } catch (e) { say('✗ ' + (e.message || e), false); }
+});
 document.getElementById('btn-native-local-android')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-native-local-android');
   const say = (t, ok = true) => msg('msg-native-local', t, ok);
@@ -1981,7 +1996,7 @@ document.getElementById('btn-native-local-android')?.addEventListener('click', a
     await writeLocalNativeEnv();
     const started = Date.now();
     await dispatch('native-android.yml', { environment: 'local' });
-    say('build dispatched — CI is compiling the APK (usually 6-10 min)…');
+    say('build dispatched — CI is compiling (usually 6-10 min)…');
     let run = null;
     for (;;) {
       await new Promise((r) => setTimeout(r, 15000));
@@ -1992,16 +2007,24 @@ document.getElementById('btn-native-local-android')?.addEventListener('click', a
       if (Date.now() - started > 30 * 60 * 1000) throw new Error('CI never finished within 30 minutes — check the Actions tab');
     }
     if (run.conclusion !== 'success') throw new Error(`the build ended ${run.conclusion} — open the run to see why`);
-    say('build green ✓ — fetching the APK artifact…');
+    if (await localPublishEnabled()) {
+      say('build green ✓ — published to the Play internal track. Your phone picks it up from Play (internal testing) shortly.');
+      return;
+    }
+    // first build: hand over the signed bundle for the one-time manual upload
+    say('build green ✓ — fetching the signed .aab for the ONE-TIME Play upload…');
     const arts = await gh(`/repos/${S.slug}/actions/runs/${run.id}/artifacts`);
-    const art = (arts?.artifacts ?? []).find((a) => a.name === 'munni-android-debug');
-    if (!art) throw new Error('no munni-android-debug artifact on the run');
+    const art = (arts?.artifacts ?? []).find((a) => a.name === 'munni-android-release');
+    if (!art) throw new Error('no signed bundle on the run — are the ANDROID_KEYSTORE secrets in place?');
     const zipRes = await fetch(art.archive_download_url, { headers: { authorization: 'Bearer ' + S.pat } });
     if (!zipRes.ok) throw new Error(`artifact download failed (${zipRes.status})`);
     const blob = await zipRes.blob();
-    say('artifact fetched — handing it to the helper for the phone link…');
-    const ok = await streamLocal('/api/local/apk', blob, 'unpack the APK + open the phone download link');
-    say(ok ? 'done — the phone download link is in the output box ✓' : 'the helper could not unpack it — see the output box', ok);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'munni-android-release.zip';
+    a.click();
+    URL.revokeObjectURL(a.href);
+    say('signed bundle downloaded ✓ — unzip it, do the one-time Play upload (see the fold below), then press Enable auto-publish.');
   } catch (e) {
     say('✗ ' + (e.message || e), false);
   } finally {
@@ -2013,7 +2036,7 @@ document.getElementById('btn-native-local-ios')?.addEventListener('click', async
   try {
     await writeLocalNativeEnv();
     await dispatch('native-ios.yml', { environment: 'local' });
-    localLog('\niOS build dispatched (environment local). With the ASC secrets and IOS_BUILD_ENABLED=true it lands in TestFlight on your phone; the build only works on this wifi. Follow it under Actions.\n');
+    localLog('\niOS build dispatched (environment local) — it signs and uploads to TestFlight (app record app.munni.local must exist in App Store Connect, one-time). Install/update it from the TestFlight app; it only works on this wifi. Follow the run under Actions.\n');
   } catch (e) {
     localLog(`\n✗ iOS dispatch: ${e.message || e}\n`);
   }

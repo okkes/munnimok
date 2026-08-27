@@ -352,26 +352,6 @@ test('native-config: LAN off means not ready, values stay out of reach until sig
   assert.equal(body.variables.NATIVE_PUBLIC_ORIGIN, 'http://localhost:8380');
 });
 
-test('apk endpoint: artifact without an .apk inside fails honestly after the unzip step', async () => {
-  const spawned = [];
-  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'unzipped\n'), probeImpl: async () => false });
-  const res = fakeRes();
-  const req = fakeReq({ method: 'POST', url: '/api/local/apk', token: 'tok' });
-  // raw-body path: emit bytes then end (fakeReq only feeds JSON bodies)
-  req.on = (event, cb) => {
-    if (event === 'data') cb(Buffer.from('PK-not-really-a-zip'));
-    if (event === 'end') cb();
-    return req;
-  };
-  await app2(req, res);
-  await settle(res);
-  assert.equal(spawned.length, 1, 'one unzip attempt');
-  const stream = res.chunks.join('');
-  assert.match(stream, /artifact received/);
-  assert.match(stream, /no \.apk inside the artifact/);
-  assert.match(stream, /\[exit 1\]/);
-});
-
 test('glitchtip-setup mints in the SHARED stack and wires the chosen environment', async () => {
   const spawned = [];
   const app2 = createApp({

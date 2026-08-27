@@ -62,7 +62,13 @@ jobs:
       - name: Resolve branch and flavor
         id: env
         run: |
-          if [ "${{ github.ref }}" = "refs/heads/master" ]; then
+          if [ "${{ inputs.environment }}" = "local" ]; then
+            # the wizard-managed LAN channel: its own store identity
+            # (app.munni.local), delivered through Play like the others
+            echo "master=false" >> "$GITHUB_OUTPUT"
+            echo "flavor=local" >> "$GITHUB_OUTPUT"
+            echo "NATIVE_SCHEME=munni-local" >> "$GITHUB_ENV"
+          elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
             echo "master=true" >> "$GITHUB_OUTPUT"
             echo "flavor=prod" >> "$GITHUB_OUTPUT"
             echo "NATIVE_SCHEME=munni" >> "$GITHUB_ENV"
@@ -110,7 +116,8 @@ jobs:
         run: |
           echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
           NAME=$(node -p "require('./package.json').version")
-          [ "${{ steps.env.outputs.master }}" = "true" ] || NAME="$NAME-dev"
+          if [ "${{ steps.env.outputs.flavor }}" = "local" ]; then NAME="$NAME-local";
+          elif [ "${{ steps.env.outputs.master }}" != "true" ]; then NAME="$NAME-dev"; fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
       - name: Assemble debug APK
@@ -165,13 +172,15 @@ jobs:
       # ---- Play internal track ----
       # One-time, manual per app: create it in the Play Console and upload
       # the FIRST .aab by hand — the API only adds releases to existing apps.
-      # master → app.munni; dev (NATIVE_DEV_CHANNEL) → app.munni.dev.
+      # master → app.munni; dev (NATIVE_DEV_CHANNEL) → app.munni.dev;
+      # environment local (NATIVE_LOCAL_CHANNEL, wizard-managed) →
+      # app.munni.local, the LAN build.
       - name: Publish to Play internal track
-        if: ${{ (steps.env.outputs.master == 'true' || vars.NATIVE_DEV_CHANNEL == 'true') && steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' }}
+        if: ${{ steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' && (steps.env.outputs.master == 'true' || (steps.env.outputs.flavor == 'dev' && vars.NATIVE_DEV_CHANNEL == 'true') || (steps.env.outputs.flavor == 'local' && vars.NATIVE_LOCAL_CHANNEL == 'true')) }}
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: ${{ steps.env.outputs.master == 'true' && 'app.munni' || 'app.munni.dev' }}
+          packageName: ${{ steps.env.outputs.flavor == 'local' && 'app.munni.local' || (steps.env.outputs.master == 'true' && 'app.munni' || 'app.munni.dev') }}
           releaseFiles: apps/native/android/app/build/outputs/bundle/${{ steps.env.outputs.flavor }}Release/app-${{ steps.env.outputs.flavor }}-release.aab
           mappingFile: apps/native/android/app/build/outputs/mapping/${{ steps.env.outputs.flavor }}Release/mapping.txt
           track: internal
