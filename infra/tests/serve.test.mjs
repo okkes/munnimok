@@ -331,10 +331,12 @@ test('lan set: refuses an address this machine does not have; turning OFF re-ren
   const res = fakeRes();
   await app2(fakeReq({ method: 'POST', url: '/api/local/lan', token: 'tok', body: { host: '' } }), res);
   await settle(res);
-  // bootstrap + up for prod, dev, shared = 6 fixed spawns
+  // bootstrap + up for shared, prod, dev = 6 fixed spawns (shared FIRST —
+  // glitchtip must carry the new domain before envs ask it for DSNs)
   assert.equal(spawned.length, 6);
-  assert.ok(spawned[0].args.join(' ').includes('--stack munni-local-prod'));
-  assert.ok(spawned[5].args.join(' ').includes('docker-compose.munni-local-shared.yml'));
+  assert.ok(spawned[0].args.join(' ').includes('--stack munni-local-shared'));
+  assert.ok(spawned[2].args.join(' ').includes('--stack munni-local-prod'));
+  assert.ok(spawned[5].args.join(' ').includes('docker-compose.munni-local-dev.yml'));
   assert.match(res.chunks.join(''), /LAN mode OFF/);
   assert.match(res.chunks.join(''), /\[exit 0\]/);
 });

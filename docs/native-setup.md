@@ -243,6 +243,21 @@ Repo-level is fine for these (same app id serves prod + staging;
 scope them per environment only if you later want staging-only Logto
 apps).
 
+## 9. The LOCAL environment (added 2026-08-28) — wizard-managed
+
+Both native workflows accept `environment: local` on dispatch. The
+setup wizard's local track drives the whole flow: it turns on **LAN
+mode** (the local family re-renders onto the machine's `192.168.x.y`
+so a phone can reach web/api/Logto; localhost keeps working alongside),
+writes `NATIVE_API_URL`/`NATIVE_PUBLIC_ORIGIN`/`NATIVE_LOGTO_*` and the
+DSNs into the GitHub environment `local`, dispatches the build, pulls
+the `munni-android-debug` artifact back and serves the APK to the phone
+over the wifi (one-shot link on :8378). Caveats, stated in the wizard
+too: the build bakes the LAN address (a DHCP change needs a rebuild —
+reserve the address), the sideloaded APK carries the store app id
+(uninstall it before installing from Play), and iOS still goes through
+TestFlight — Apple allows no sideloading.
+
 ## What works today
 
 The debug APK runs fully offline (demo/offline identities), keeps data

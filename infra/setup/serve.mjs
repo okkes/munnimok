@@ -461,7 +461,7 @@ function lanGetEndpoint(res) {
 /** flip the whole local family between localhost and a LAN address:
  * write the marker, re-render every stack (urls, CORS, Logto redirect
  * URIs, DSNs all follow), restart the containers */
-async function lanSetEndpoint(req, res, spawnImpl) {
+async function lanSetEndpoint(req, res, spawnImpl, probeImpl) {
   const body = await readBody(req);
   const host = String(body.host ?? '').trim();
   if (host && !lanCandidates().includes(host)) return json(res, 400, { error: 'not one of this machine\'s addresses' });
@@ -475,12 +475,25 @@ async function lanSetEndpoint(req, res, spawnImpl) {
     rmSync(LAN_FILE(), { force: true });
     res.write('▶ LAN mode OFF — back to localhost-only\n');
   }
-  for (const name of [...LOCAL_ENVS, SHARED_STACK]) {
+  // SHARED first: glitchtip must run under the NEW domain before the env
+  // bootstraps ask it for DSNs (found live 2026-08-28: env-first kept
+  // the localhost DSN form in the LAN render)
+  for (const name of [SHARED_STACK, ...LOCAL_ENVS]) {
     const boot = await run(res, `re-render ${name}`, process.execPath,
       [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name], { cwd: ROOT });
     if (boot.code !== 0) return res.end('[exit 1]\n');
     const up = await run(res, `restart ${name}`, 'docker', [...composeArgs(name), 'up', '-d'], { cwd: renderedDir(name) });
     if (up.code !== 0) return res.end('[exit 1]\n');
+    if (name === SHARED_STACK && host) {
+      res.write('… waiting for glitchtip to answer on the new address\n');
+      const glitchtipUrl = `${loadStack(SHARED_STACK).urls.glitchtip}/api/0/`;
+      const deadline = Date.now() + 120000;
+      while (!(await probeImpl(glitchtipUrl))) {
+        if (Date.now() > deadline) { res.write('glitchtip never answered on the new address — check docker ps, then retry\n'); return res.end('[exit 1]\n'); }
+        await new Promise((r) => setTimeout(r, 4000));
+      }
+      res.write('✓ glitchtip is up on the new address\n');
+    }
   }
   if (host) {
     res.write(`\nDone. From your phone (same wifi): app → http://${host}:8380 · dev → http://${host}:8480\nIf the phone cannot reach it, allow Docker/vpnkit through the Windows firewall for private networks, and give this machine a DHCP reservation — a changed address needs a rebuilt app.\n`);
@@ -695,7 +708,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
       if (req.method === 'GET' && url.pathname === '/api/local/secrets') return secretsEndpoint(res);
       if (req.method === 'GET' && url.pathname === '/api/local/vault-export') return vaultExportEndpoint(res);
       if (req.method === 'GET' && url.pathname === '/api/local/lan') return lanGetEndpoint(res);
-      if (req.method === 'POST' && url.pathname === '/api/local/lan') return await lanSetEndpoint(req, res, spawnImpl);
+      if (req.method === 'POST' && url.pathname === '/api/local/lan') return await lanSetEndpoint(req, res, spawnImpl, probeImpl);
       if (req.method === 'GET' && url.pathname === '/api/local/native-config') return nativeConfigEndpoint(res);
       if (req.method === 'POST' && url.pathname === '/api/local/apk') return await apkEndpoint(req, res, spawnImpl);
       if (req.method === 'POST' && url.pathname === '/api/validate') return await validateEndpoint(req, res, validateImpl);
