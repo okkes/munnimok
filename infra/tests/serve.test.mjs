@@ -352,6 +352,57 @@ test('native-config: LAN off means not ready, values stay out of reach until sig
   assert.equal(body.variables.NATIVE_PUBLIC_ORIGIN, 'http://localhost:8380');
 });
 
+test('vault-setup: creates the account, imports the items, closes signups — idempotent on re-run', async () => {
+  const vaultCalls = [];
+  const vaultFetch = async (url, init = {}) => {
+    vaultCalls.push({ url, init });
+    if (url.includes('/identity/connect/token')) {
+      // first attempt: no account yet → login fails until registered
+      const registered = vaultCalls.some((c) => c.url.includes('/accounts/register'));
+      return registered
+        ? { ok: true, json: async () => ({ access_token: 'vault-token' }) }
+        : { ok: false, text: async () => 'invalid' };
+    }
+    return { ok: true, json: async () => ({}), text: async () => '' };
+  };
+  const spawned = [];
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'ok\n'), probeImpl: async () => false, vaultFetchImpl: vaultFetch });
+  const res = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/vault-setup', token: 'tok', body: {} }), res);
+  await settle(res);
+  const stream = res.chunks.join('');
+  assert.match(stream, /account created ✓/);
+  assert.match(stream, /items in the vault ✓/);
+  assert.match(stream, /\[exit 0\]/);
+  assert.ok(vaultCalls.some((c) => c.url.includes('/api/ciphers/purge')));
+  const imp = vaultCalls.find((c) => c.url.includes('/api/ciphers/import'));
+  assert.ok(imp, 'import was called');
+  assert.ok(JSON.parse(imp.init.body).ciphers.length >= 1, 'items were imported');
+  assert.equal(spawned.length, 2, 'signups close = bootstrap + up on the shared stack');
+  assert.ok(spawned[0].args.join(' ').includes('--stack munni-local-shared'));
+  const store = loadLocalValues(loadStack('munni-local-shared'));
+  assert.equal(store.VAULT_ADMIN_EMAIL, 'admin@munni.dev');
+  assert.ok(store.VAULT_MASTER_PASSWORD?.length >= 16);
+  assert.equal(store.VAULT_SIGNUPS_ALLOWED, 'false');
+  assert.ok(!stream.includes(store.VAULT_MASTER_PASSWORD), 'the master password leaked into the stream');
+
+  // second run: login succeeds straight away, signups already closed
+  const vaultCalls2 = [];
+  const vaultFetch2 = async (url, init = {}) => {
+    vaultCalls2.push({ url, init });
+    if (url.includes('/identity/connect/token')) return { ok: true, json: async () => ({ access_token: 'vault-token' }) };
+    return { ok: true, json: async () => ({}), text: async () => '' };
+  };
+  const spawned2 = [];
+  const app3 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned2, () => 'ok\n'), probeImpl: async () => false, vaultFetchImpl: vaultFetch2 });
+  const res2 = fakeRes();
+  await app3(fakeReq({ method: 'POST', url: '/api/local/vault-setup', token: 'tok', body: {} }), res2);
+  await settle(res2);
+  assert.match(res2.chunks.join(''), /account already exists/);
+  assert.equal(spawned2.length, 0, 'no re-render needed when signups are already closed');
+  assert.ok(!vaultCalls2.some((c) => c.url.includes('/accounts/register')), 'no second registration');
+});
+
 test('glitchtip-setup mints in the SHARED stack and wires the chosen environment', async () => {
   const spawned = [];
   const app2 = createApp({

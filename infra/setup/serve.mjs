@@ -30,6 +30,7 @@ import { MANIFEST } from '../modules/secrets.mjs';
 import { familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from '../modules/localstore.mjs';
 import { lanHost, loadStack } from '../modules/stack.mjs';
 import { validate } from '../modules/validate.mjs';
+import { buildAccount, buildCipher, vaultImport, vaultLogin, vaultPurge, vaultRegister } from '../modules/vault.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(DIR, '..', '..');
@@ -241,6 +242,14 @@ async function claimLogtoHumans(res, run, stack, infra) {
       saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_CONSOLE_USERNAME: 'admin', LOGTO_CONSOLE_PASSWORD: password });
       res.write(`Logto console claimed → ${adminBase} · username admin · password ${password}\n(kept in the local secret store)\n`);
       changed = true;
+    }
+    // an API-created account never flips the console out of its OOBE
+    // Register mode (found live: the page kept offering Create-account
+    // and refused the taken username) — force SignIn once a user exists
+    const exp = await logtoApi(adminBase, token, '/sign-in-exp');
+    if (exp.signInMode !== 'SignIn') {
+      await logtoApi(adminBase, token, '/sign-in-exp', { method: 'PATCH', body: JSON.stringify({ signInMode: 'SignIn' }) });
+      res.write('console switched to the LOGIN screen (register mode off)\n');
     }
   } catch (e) {
     res.write(`console auto-claim failed (${e.message}) — claim it by hand at ${adminBase} when you like\n`);
@@ -535,31 +544,26 @@ function secretsEndpoint(res) {
   return json(res, 200, { values });
 }
 
-/** Bitwarden-importable JSON (web vault → Tools → Import → Bitwarden json).
- * VAPID keys stay out per the plan — no human ever types those. */
-function vaultExportEndpoint(res) {
-  const item = (name, { username = '', password = '', uri = '', notes = '' } = {}) => ({
-    type: 1,
-    name,
-    notes,
-    favorite: false,
-    login: { username, password, uris: uri ? [{ match: null, uri }] : [], totp: null },
-    collectionIds: null,
-  });
+/** the family's sign-ins and raw values as PLAIN rows — the Bitwarden
+ * JSON export and the automatic in-vault import both build from this.
+ * VAPID keys stay out per the plan (no human ever types those); the
+ * vault's own master credential stays out of its own contents. */
+function buildVaultItems() {
   const items = [];
   const shared = loadLocalValues(loadStack(SHARED_STACK));
   if (shared.GLITCHTIP_ADMIN_EMAIL) {
-    items.push(item('munni local / GlitchTip console', {
+    items.push({
+      name: 'munni local / GlitchTip console',
       username: shared.GLITCHTIP_ADMIN_EMAIL,
       password: shared.GLITCHTIP_ADMIN_PASSWORD ?? '',
       uri: 'http://localhost:8383',
       notes: 'created by the munni setup wizard',
-    }));
+    });
   }
   if (shared.NAS_PGADMIN_PASSWORD) {
-    items.push(item('munni local / pgAdmin', { username: 'admin@munni.dev', password: shared.NAS_PGADMIN_PASSWORD, uri: 'http://localhost:8386', notes: 'one console over every database server in the family' }));
+    items.push({ name: 'munni local / pgAdmin', username: 'admin@munni.dev', password: shared.NAS_PGADMIN_PASSWORD, uri: 'http://localhost:8386', notes: 'one console over every database server in the family' });
   }
-  const skip = new Set(['NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY']);
+  const skip = new Set(['NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD']);
   const covered = new Set(['GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_PGADMIN_PASSWORD']);
   const pgNote = {
     [SHARED_STACK]: 'the glitchtip-db server (shared stack)',
@@ -570,24 +574,91 @@ function vaultExportEndpoint(res) {
     const stack = loadStack(stackName);
     const values = loadLocalValues(stack);
     if (values.NAS_POSTGRES_PASSWORD) {
-      items.push(item(`${stackName} / Postgres`, { username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: pgNote[stackName] ?? '' }));
+      items.push({ name: `${stackName} / Postgres`, username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: pgNote[stackName] ?? '' });
     }
     if (values.LOGTO_CONSOLE_USERNAME) {
-      items.push(item(`${stackName} / Logto console`, { username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '' }));
+      items.push({ name: `${stackName} / Logto console`, username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '' });
     }
     if (values.LOGTO_APP_ADMIN_USERNAME) {
-      items.push(item(`${stackName} / munni app (admin user)`, { username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web ?? '' }));
+      items.push({ name: `${stackName} / munni app (admin user)`, username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web ?? '' });
     }
     if (values.IAC_LOGTO_INFRA_M2M_ID) {
-      items.push(item(`${stackName} / Logto infra M2M`, { username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '' }));
+      items.push({ name: `${stackName} / Logto infra M2M`, username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '' });
     }
     const localCovered = new Set([...covered, 'NAS_POSTGRES_PASSWORD', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD', 'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET']);
     for (const [name, value] of Object.entries(values)) {
       if (localCovered.has(name) || skip.has(name) || !value) continue;
-      items.push(item(`${stackName} / ${name}`, { password: String(value), notes: 'from the munni setup wizard local store' }));
+      items.push({ name: `${stackName} / ${name}`, password: String(value), notes: 'from the munni setup wizard local store' });
     }
   }
+  return items;
+}
+
+/** Bitwarden-importable JSON (web vault → Tools → Import → Bitwarden json) */
+function vaultExportEndpoint(res) {
+  const items = buildVaultItems().map((r) => ({
+    type: 1,
+    name: r.name,
+    notes: r.notes ?? '',
+    favorite: false,
+    login: { username: r.username ?? '', password: r.password ?? '', uris: r.uri ? [{ match: null, uri: r.uri }] : [], totp: null },
+    collectionIds: null,
+  }));
   return json(res, 200, { encrypted: false, folders: [], items });
+}
+
+/** zero-input vault (user ruling): create the account with a GENERATED
+ * master password kept in the local store, refresh every secret item
+ * inside it (purge + import), then close signups. Re-runnable — a re-run
+ * re-syncs the items. */
+async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
+  const shared = loadStack(SHARED_STACK);
+  const values = loadLocalValues(shared);
+  // pgadmin-style resolvable-TLD address; any inbox-less email works
+  const email = values.VAULT_ADMIN_EMAIL ?? 'admin@munni.dev';
+  const password = values.VAULT_MASTER_PASSWORD ?? randomBytes(16).toString('base64url');
+  saveLocalValues(shared, { ...values, VAULT_ADMIN_EMAIL: email, VAULT_MASTER_PASSWORD: password });
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const base = shared.urls.vault;
+  res.write(`▶ vault account ${email} — sign in, create when missing\n`);
+  const account = buildAccount(email, password);
+  let token = await vaultLogin(base, email, account.hash, fetchImpl);
+  if (token) {
+    res.write('account already exists — signed in with the stored master password ✓\n');
+  } else {
+    const reg = await vaultRegister(base, account.register, fetchImpl);
+    if (!reg.ok) {
+      const text = await reg.text().catch(() => '');
+      res.write(`could not create the account (${reg.status})\n`);
+      if (/exist|registered/i.test(text)) res.write('an account for this email exists with a DIFFERENT master password — Delete shared services (wipes the vault volume) and re-run, or change VAULT_ADMIN_EMAIL in the store\n');
+      return res.end('[exit 1]\n');
+    }
+    res.write('account created ✓\n');
+    token = await vaultLogin(base, email, account.hash, fetchImpl);
+    if (!token) {
+      res.write('login failed right after registration — is the vault healthy (step 4 status)?\n');
+      return res.end('[exit 1]\n');
+    }
+  }
+  res.write('▶ refresh the secret items (purge + import)\n');
+  await vaultPurge(base, token, account.hash, fetchImpl);
+  const ciphers = buildVaultItems().map((r) => buildCipher(account.userKeys, r));
+  const imp = await vaultImport(base, token, ciphers, fetchImpl);
+  if (!imp.ok) {
+    res.write(`import failed (${imp.status} ${(await imp.text().catch(() => '')).slice(0, 200)})\n`);
+    return res.end('[exit 1]\n');
+  }
+  res.write(`${ciphers.length} items in the vault ✓ (re-running this refreshes them)\n`);
+  const v2 = loadLocalValues(shared);
+  if (v2.VAULT_SIGNUPS_ALLOWED !== 'false') {
+    saveLocalValues(shared, { ...v2, VAULT_SIGNUPS_ALLOWED: 'false' });
+    const run = stepRunner(spawnImpl);
+    await run(res, 'close vault signups (nobody else on the network can register)', process.execPath,
+      [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
+    await run(res, 'restart the shared stack', 'docker', [...composeArgs(SHARED_STACK), 'up', '-d'], { cwd: renderedDir(SHARED_STACK) });
+  }
+  res.write(`\nDone. Vault → ${base} · ${email} · master password under Reveal secrets.\n(Use it with the real Bitwarden apps/extension pointed at that server url.)\n`);
+  return res.end('\n[exit 0]\n');
 }
 
 /** every manifest operator name may carry a value INTO a validation —
@@ -615,7 +686,7 @@ function serveHtml(res, token) {
 }
 
 /** build the handler; spawn/probe/validate deps injectable for tests */
-export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn } = {}) {
+export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn, vaultFetchImpl = fetch } = {}) {
   return async function handle(req, res) {
     if (!hostOk(req)) return json(res, 403, { error: 'bad host' });
     const url = new URL(req.url, 'http://localhost');
@@ -631,6 +702,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
       if (req.method === 'POST' && url.pathname === '/api/local/cleanup') return await cleanupEndpoint(req, res, runImpl);
       if (req.method === 'GET' && url.pathname === '/api/local/secrets') return secretsEndpoint(res);
       if (req.method === 'GET' && url.pathname === '/api/local/vault-export') return vaultExportEndpoint(res);
+      if (req.method === 'POST' && url.pathname === '/api/local/vault-setup') return await vaultSetupEndpoint(req, res, spawnImpl, vaultFetchImpl);
       if (req.method === 'GET' && url.pathname === '/api/local/lan') return lanGetEndpoint(res);
       if (req.method === 'POST' && url.pathname === '/api/local/lan') return await lanSetEndpoint(req, res, spawnImpl, probeImpl);
       if (req.method === 'GET' && url.pathname === '/api/local/native-config') return nativeConfigEndpoint(res);

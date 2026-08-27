@@ -217,17 +217,18 @@ footer{color:var(--muted);font-size:12px;text-align:center;padding:20px}
 
     <div class="card">
       <h3>Your secrets &amp; the vault <span class="pill">read them back any time</span></h3>
-      <p class="why">Every generated or saved secret lives readable in this machine's gitignored stores (one per stack, shared values kept once) — and a <b>Vaultwarden</b> vault (the self-hosted Bitwarden server) runs in the shared stack at <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> as the human copy, usable with the real Bitwarden apps/extension. Containers themselves keep reading env (third-party images know nothing else — the vault is for YOU, not for them).</p>
+      <p class="why">Every generated or saved secret lives readable in this machine's gitignored stores (one per stack, shared values kept once) — and a <b>Vaultwarden</b> vault (the self-hosted Bitwarden server) runs in the shared stack at <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> as the human copy, usable with the real Bitwarden apps/extension. One button does the whole vault: creates the account with a generated master password (kept in the store, shown under Reveal), imports every sign-in and secret as real vault items, and closes signups. Re-press it any time to re-sync the items after setup changes.</p>
       <div class="runrow">
+        <button id="btn-local-vault-auto">Set up the vault automatically</button>
         <button class="ghost" id="btn-local-reveal">Reveal secrets here</button>
         <button class="ghost" id="btn-local-vault-export">Download vault import file</button>
       </div>
       <div id="local-secrets" hidden style="margin-top:8px"></div>
-      <details class="how"><summary>Putting them into the vault (2 minutes, once)</summary>
+      <details class="how"><summary>Manual fallback — your own account instead</summary>
         <ol>
-          <li>Open <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> → <b>Create account</b> — the master password you choose here is the ONE secret that lives only in your head.</li>
+          <li>Open <a href="http://localhost:8384" target="_blank" rel="noreferrer">localhost:8384</a> → <b>Create account</b> with a master password of your own (needs signups open: save <code>VAULT_SIGNUPS_ALLOWED=</code> empty and press Set up).</li>
           <li>Download the import file (button above) → in the vault: <b>Tools → Import data</b> → format <b>Bitwarden (json)</b> → select the file → Import.</li>
-          <li>Optional hardening: save <code>VAULT_SIGNUPS_ALLOWED=false</code> below (any card's Save works — or paste it in step 3) and press Set up again, so nobody else on your network can register.</li>
+          <li>Harden: save <code>VAULT_SIGNUPS_ALLOWED=false</code> and press Set up again.</li>
         </ol>
       </details>
     </div>
@@ -1911,7 +1912,11 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
     if (v.NAS_POSTGRES_PASSWORD) signIns.push({ name: `Postgres — ${env.label.toLowerCase()} (its own server)`, url: '', user: 'munni', pass: v.NAS_POSTGRES_PASSWORD });
   }
   if (shared.NAS_POSTGRES_PASSWORD) signIns.push({ name: 'Postgres — glitchtip-db (shared)', url: '', user: 'munni', pass: shared.NAS_POSTGRES_PASSWORD });
-  signIns.push({ name: 'Vaultwarden', url: 'http://localhost:8384', user: '(your own account)', pass: '(master password lives in your head)' });
+  if (shared.VAULT_ADMIN_EMAIL && shared.VAULT_MASTER_PASSWORD) {
+    signIns.push({ name: 'Vaultwarden (master password)', url: 'http://localhost:8384', user: shared.VAULT_ADMIN_EMAIL, pass: shared.VAULT_MASTER_PASSWORD });
+  } else {
+    signIns.push({ name: 'Vaultwarden', url: 'http://localhost:8384', user: '(not set up yet)', pass: '(press Set up the vault automatically)' });
+  }
   const signInRows = signIns.map((l) =>
     `<tr><td style="padding:2px 10px 2px 0"><b>${esc(l.name)}</b>${l.url ? ` <a href="${l.url}" target="_blank" rel="noreferrer" style="font-size:11px">open</a>` : ''}</td><td style="padding:2px 10px 2px 0"><code style="user-select:all">${esc(l.user)}</code></td><td><code style="user-select:all">${esc(l.pass)}</code></td></tr>`);
   const rawSections = Object.entries(values).map(([stackName, vals]) => {
@@ -2064,6 +2069,8 @@ document.querySelectorAll('[data-artifact]').forEach((btn) => btn.addEventListen
     msg('msg-native', '✗ ' + (e.message || e), false);
   }
 }));
+document.getElementById('btn-local-vault-auto')?.addEventListener('click', () =>
+  streamLocal('/api/local/vault-setup', {}, 'set up the vault (account + every secret imported + signups closed)'));
 document.getElementById('btn-local-vault-export')?.addEventListener('click', async () => {
   const res = await hfetch('/api/local/vault-export');
   const blob = new Blob([JSON.stringify(await res.json(), null, 2)], { type: 'application/json' });
