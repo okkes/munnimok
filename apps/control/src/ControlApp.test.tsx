@@ -67,6 +67,16 @@ describe('ControlApp (test-auth mode)', () => {
     fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'nobody' } });
     await screen.findByText(/not on the admin list/);
     expect(screen.queryByTestId('control-tiles')).toBeNull();
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+  });
+
+  it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the admin-list one', async () => {
+    scriptFetch({ 'GET /control/ping': () => ({ status: 500 }) });
+    render(<ControlApp config={CONFIG} getToken={null} />);
+    fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'anybody' } });
+    await screen.findByText(/did not answer/);
+    expect(screen.queryByText(/not on the admin list/)).toBeNull();
+    expect(screen.queryByTestId('control-tiles')).toBeNull();
   });
 
   it('shows the cockpit nav and overview: totals per environment plus env health', async () => {

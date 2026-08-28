@@ -83,6 +83,16 @@ describe('AdminApp (test-auth mode)', () => {
     fireEvent.change(screen.getByTestId('admin-sub'), { target: { value: 'nobody' } });
     await waitFor(() => expect(screen.getByText(/not on the admin list/)).toBeTruthy());
     expect(screen.queryByTestId('overview-tiles')).toBeNull();
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+  });
+
+  it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the admin-list one', async () => {
+    scriptFetch({ 'GET /admin/ping': () => ({ status: 500 }) });
+    render(<AdminApp config={CONFIG} getToken={null} />);
+    fireEvent.change(screen.getByTestId('admin-sub'), { target: { value: 'anybody' } });
+    await screen.findByText(/did not answer/);
+    expect(screen.queryByText(/not on the admin list/)).toBeNull();
+    expect(screen.queryByTestId('overview-tiles')).toBeNull();
   });
 
   it('overview shows tiles, the quota table with reset time, and capability chips', async () => {

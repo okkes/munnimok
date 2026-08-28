@@ -136,7 +136,11 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 'denied' = the api really said 403; 'unreachable' = the ping never
+  // got an answer (network/CORS/5xx) — one shared message made a blocked
+  // request read as "not an admin" (found live 2026-08-28, control twin)
   const [denied, setDenied] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -155,9 +159,11 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     [config.apiUrl, getToken, sub],
   );
 
+  const blocked = denied || unreachable;
   const reload = useCallback(async () => {
     const ping = await call('/admin/ping').catch(() => null);
-    setDenied(!ping?.ok);
+    setDenied(ping?.status === 403);
+    setUnreachable(!ping || (!ping.ok && ping.status !== 403));
     if (!ping?.ok) return;
     const [usersRes, reqRes, quotaRes, healthRes] = await Promise.all([
       call('/admin/users'),
@@ -253,18 +259,20 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
 
       <main className="content">
         {denied && <p className="denied">This account is not on the admin list.</p>}
+        {unreachable && <p className="denied">The admin API did not answer — is the environment running (and this origin allowed)?</p>}
+        {/* blocked: no data loaded — the empty screens would only mislead */}
         {error && (
           <p className="error" data-testid="admin-error">
             {error}
           </p>
         )}
-        {!denied && screen === 'overview' && (
+        {!blocked && screen === 'overview' && (
           <OverviewScreen users={users} requisitions={requisitions} quota={quota} health={health} />
         )}
-        {!denied && screen === 'catalog' && catalog && (
+        {!blocked && screen === 'catalog' && catalog && (
           <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
         )}
-        {!denied && screen === 'users' && (
+        {!blocked && screen === 'users' && (
           <UsersScreen
             users={users}
             busy={busy}
@@ -280,7 +288,7 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
             }}
           />
         )}
-        {!denied && screen === 'connections' && (
+        {!blocked && screen === 'connections' && (
           <ConnectionsScreen
             requisitions={requisitions}
             foreignCount={foreignCount}

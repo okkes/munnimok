@@ -84,7 +84,11 @@ export function ControlApp({ config, getToken }: Readonly<ControlAppProps>) {
   const [consents, setConsents] = useState<ControlConsent[] | null>(null);
   const [quota, setQuota] = useState<ProviderQuota[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
+  // 'denied' = the api really said 403; 'unreachable' = the ping never
+  // got an answer (network/CORS/5xx) — the two used to share one message
+  // and a blocked request read as "not an admin" (found live 2026-08-28)
   const [denied, setDenied] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
 
   const call = useCallback(
     async (path: string, init: RequestInit = {}) => {
@@ -103,7 +107,8 @@ export function ControlApp({ config, getToken }: Readonly<ControlAppProps>) {
 
   const reload = useCallback(async () => {
     const ping = await call('/control/ping').catch(() => null);
-    setDenied(!ping?.ok);
+    setDenied(ping?.status === 403);
+    setUnreachable(!ping || (!ping.ok && ping.status !== 403));
     if (!ping?.ok) return;
     const [consentsRes, quotaRes, healthRes] = await Promise.all([
       call('/control/consents'),
@@ -154,9 +159,10 @@ export function ControlApp({ config, getToken }: Readonly<ControlAppProps>) {
 
       <main className="content">
         {denied && <p className="denied">This account is not on the admin list.</p>}
-        {!denied && screen === 'overview' && <OverviewScreen consents={consents} health={health} />}
-        {!denied && screen === 'connections' && <ConsentsScreen consents={consents} />}
-        {!denied && screen === 'quota' && <QuotaScreen quota={quota} />}
+        {unreachable && <p className="denied">The control API did not answer — is the environment running (and this origin allowed)?</p>}
+        {!denied && !unreachable && screen === 'overview' && <OverviewScreen consents={consents} health={health} />}
+        {!denied && !unreachable && screen === 'connections' && <ConsentsScreen consents={consents} />}
+        {!denied && !unreachable && screen === 'quota' && <QuotaScreen quota={quota} />}
       </main>
     </div>
   );

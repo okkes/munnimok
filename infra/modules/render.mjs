@@ -574,6 +574,19 @@ function corsOrigins(s) {
   if (s.target === 'local' && !s.urls.web.includes('//localhost:')) {
     origins.push(`http://localhost:${s.ports.web}`, `http://localhost:${s.ports.admin}`);
   }
+  // munni-control signs into THIS env's api when it is the family's
+  // controlApi — its own origin must pass CORS too (found live
+  // 2026-08-28: the browser blocked /control/ping and the cockpit
+  // misread the failure as "not on the admin list")
+  if (s.sharedStack) {
+    const shared = loadStack(s.sharedStack);
+    if (shared.controlApi === s.stack && shared.urls.control) {
+      origins.push(shared.urls.control);
+      if (!shared.urls.control.includes('//localhost:')) {
+        origins.push(`http://localhost:${shared.ports.control}`);
+      }
+    }
+  }
   origins.push('https://localhost', 'capacitor://localhost');
   return origins;
 }

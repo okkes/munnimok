@@ -167,6 +167,10 @@ test('LAN mode: the marker file moves every local url onto https sslip.io hostna
     assert.ok(compose.includes('Cors__Origins__0: https://munni-prod.192-168-1-50.sslip.io'));
     assert.ok(compose.includes('http://localhost:8380'));
     assert.ok(compose.includes('http://localhost:8381'));
+    // munni-control lives on its OWN origin and calls this api — CORS
+    // must let it in (found live: blocked ping read as "not an admin")
+    assert.ok(compose.includes('https://control.192-168-1-50.sslip.io'), 'control origin in the api CORS');
+    assert.ok(compose.includes('http://localhost:8385'), 'control localhost twin in the api CORS');
     // logto sits behind the family Caddy now — it must trust the proxy
     assert.ok(compose.includes('TRUST_PROXY_HEADER: "1"'));
     // the family Caddy terminates tls for every env + shared service and

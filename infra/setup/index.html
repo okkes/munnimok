@@ -369,12 +369,9 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
   <div data-native-track="local">
     <div class="card">
       <h3>Phone reachability (LAN mode) <span class="pill" id="lan-pill"></span></h3>
-      <p class="why">A phone cannot reach <code>localhost</code> — LAN mode moves the whole family onto <b>https</b> hostnames on this machine's wifi address: <code>https://munni-&lt;env&gt;.&lt;ip-dashed&gt;.sslip.io</code> (sslip.io just echoes the IP back — no internet dependency beyond DNS; the localhost links keep working alongside). Real https means Enable Banking consents and secure phone traffic work locally. Everything re-renders automatically: sign-in redirect URIs, CORS, crash-report DSNs. EVERY device must trust the family's certificate ONCE — including this PC: browsers refuse fetches to untrusted-cert hostnames, so sign-in fails without it (clicking through the warning page is not enough). Turning LAN mode on installs it here automatically (confirm the one Windows dialog); use the button below to redo it, and phones download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → install <code>root.crt</code> as a CA certificate (iPhone: also enable it under Certificate Trust Settings). Heads-up: if Windows Firewall asks, allow Docker for private networks (incl. port 443); and give this machine a DHCP reservation — a changed address changes the hostnames and needs a rebuilt app.</p>
+      <p class="why">The network mode picks ITSELF — nothing to choose here. Plain <code>localhost</code> is the simple default; the moment a feature needs more (Android/iOS — a phone cannot reach localhost — or Enable Banking, which demands real https for its bank-consent redirect) the family moves onto <b>https</b> hostnames on this machine's wifi address: <code>https://munni-&lt;env&gt;.&lt;ip-dashed&gt;.sslip.io</code> (sslip.io just echoes the IP back; the localhost links keep working alongside). Untick those features and it drops back to localhost by itself. Everything re-renders automatically: sign-in redirect URIs, CORS, crash-report DSNs. In LAN mode EVERY device must trust the family's certificate ONCE — including this PC: browsers refuse fetches to untrusted-cert hostnames, so sign-in fails without it (clicking through the warning page is not enough). Switching on installs it here automatically (confirm the one Windows dialog; fully restart the browser afterwards so it picks the new root up); the button below redoes it, and phones download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → install <code>root.crt</code> as a CA certificate (iPhone: also enable it under Certificate Trust Settings). Heads-up: if Windows Firewall asks, allow Docker for private networks (incl. port 443); and give this machine a DHCP reservation — a changed address changes the hostnames and needs a rebuilt app.</p>
       <div class="runrow">
-        <select id="lan-select" style="max-width:220px"></select>
-        <button id="btn-lan-on">Turn LAN mode on</button>
         <button class="ghost" id="btn-trust-ca">Trust the certificate on this PC</button>
-        <button class="ghost" id="btn-lan-off">Back to localhost</button>
       </div>
     </div>
 
@@ -1205,8 +1202,13 @@ function renderStatus() {
    by it, the local track gains hands: it stores values, runs bootstrap
    and docker, and streams the output below. file:// keeps the guide. ── */
 const HELPER = globalThis.__SETUP_HELPER__ ?? null;
-const hfetch = (path, init = {}) =>
-  fetch(path, { ...init, headers: { 'x-setup-token': HELPER.token, ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
+const hfetch = async (path, init = {}) => {
+  const res = await fetch(path, { ...init, headers: { 'x-setup-token': HELPER.token, ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
+  // each helper run mints a fresh token — a page from a PREVIOUS run
+  // gets 401s that used to surface as puzzling undefined errors
+  if (res.status === 401) throw new Error('the setup helper was restarted — this tab holds its old token. Close the tab and reopen the page from start.cmd.');
+  return res;
+};
 let localBusy = false;
 
 /* the local family: shared services + ANY number of environments (the
@@ -1368,14 +1370,12 @@ async function refreshLocal() {
     const prod = st.stacks['munni-local-prod'];
     const up = Boolean(prod?.services.web && prod?.services.api);
     setPill('local-pill', up ? 'running ✓' : (prod?.rendered ? 'set up — not running' : 'not set up yet'), up);
-    setPill('lan-pill', st.lan ? `on — ${st.lan}` : 'off (localhost only)', Boolean(st.lan));
-    const lanSel = document.getElementById('lan-select');
-    if (lanSel && !lanSel.options.length) {
-      try {
-        const lan = await (await hfetch('/api/local/lan')).json();
-        lanSel.innerHTML = lan.candidates.map((c) => `<option value="${c}"${c === lan.current ? ' selected' : ''}>${c}</option>`).join('')
-          || '<option value="">no LAN address found</option>';
-      } catch { /* helper hiccup — next refresh retries */ }
+    setPill('lan-pill', st.lan ? `on — ${st.lan} (a feature needs it)` : 'off — simple localhost', Boolean(st.lan));
+    // the mode is automatic: reconcile ONCE per page load, and only for
+    // a set-up family (a first-time visitor must not trigger restarts)
+    if (!S.lanReconciled && S.platform === 'local' && prod?.rendered) {
+      S.lanReconciled = true;
+      reconcileLanMode().catch(() => {});
     }
     renderStatus();
   } catch (e) {
@@ -1522,10 +1522,13 @@ function renderFeatures() {
     <label for="feat-${f.id}"><b>${f.label}</b> — <span class="sub" style="display:inline">${hint}</span></label></div>`;
   }).join('');
   FEATURES.forEach((f) => {
-    document.getElementById('feat-' + f.id).addEventListener('change', (e) => {
+    document.getElementById('feat-' + f.id).addEventListener('change', async (e) => {
       S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); renderNative(); renderStatus();
-      // the toggle IS the trigger: android/ios ON under local → the CI
-      // build starts by itself (LAN mode included)
+      // the toggle IS the trigger (user ruling): the network mode follows
+      // the features by itself — LAN when a phone/https feature is on,
+      // plain localhost when none is — and android/ios ON starts the CI
+      // build without another click
+      if (S.platform === 'local' && HELPER) await reconcileLanMode().catch(() => {});
       if (e.target.checked && (f.id === 'android' || f.id === 'ios')) autoNativeFlow(f.id).catch(() => {});
     });
   });
@@ -2095,15 +2098,25 @@ document.getElementById('btn-dev-nuke')?.addEventListener('click', () => {
 });
 
 /* ── native apps: CI builds, phones install (LAN mode locally) ── */
-document.getElementById('btn-lan-on')?.addEventListener('click', () => {
-  const host = document.getElementById('lan-select').value;
-  if (!host) { localLog('\nno LAN address detected — are you on wifi/ethernet?\n'); return; }
-  streamLocal('/api/local/lan', { host }, `switch the family onto ${host} (re-render + restart everything)`);
-});
+/* the network mode is AUTOMATIC (user ruling 2026-08-28): localhost is
+ * the simple default; a feature that needs the network (phones cannot
+ * reach localhost; Enable Banking demands real https) flips the family
+ * to LAN, and unticking them all flips it back — no manual buttons */
+const needLanNow = () => S.platform === 'local' && Boolean(S.features.android || S.features.ios || S.features.enablebanking);
+async function reconcileLanMode() {
+  if (!HELPER || localBusy) return;
+  const lan = await (await hfetch('/api/local/lan')).json();
+  const need = needLanNow();
+  if (need && !lan.current) {
+    const host = lan.candidates?.[0];
+    if (!host) { localLog('\nno LAN address found — are you on wifi/ethernet?\n'); return; }
+    await streamLocal('/api/local/lan', { host }, `a phone/https feature is on — LAN mode turns on by itself (${host})`);
+  } else if (!need && lan.current) {
+    await streamLocal('/api/local/lan', { host: '' }, 'no feature needs the network — back to simple localhost by itself');
+  }
+}
 document.getElementById('btn-trust-ca')?.addEventListener('click', () =>
   streamLocal('/api/local/trust-ca', {}, 'trust the family certificate on this PC (one Windows dialog)'));
-document.getElementById('btn-lan-off')?.addEventListener('click', () =>
-  streamLocal('/api/local/lan', { host: '' }, 'switch the family back to localhost (re-render + restart everything)'));
 
 async function ghUpsertEnvVar(envName, name, value) {
   const base = `/repos/${S.slug}/environments/${encodeURIComponent(envName)}/variables`;
@@ -2146,7 +2159,7 @@ document.getElementById('btn-native-local-publish')?.addEventListener('click', a
 async function ensureLanMode() {
   const lan = await (await hfetch('/api/local/lan')).json();
   if (lan.current) return true;
-  const host = lan.candidates[0];
+  const host = lan.candidates?.[0];
   if (!host) { localLog('\nno LAN address found — are you on wifi/ethernet?\n'); return false; }
   return streamLocal('/api/local/lan', { host }, `LAN mode on automatically (${host}) — phones must reach this machine`);
 }
