@@ -159,6 +159,9 @@ test('LAN mode: the marker file moves every local url onto https sslip.io hostna
     const dir = renderStack(prod, familyValues(prod));
     const compose = readFileSync(join(dir, 'docker-compose.munni-local-prod.yml'), 'utf8');
     assert.ok(compose.includes('postgres-prod:'), 'unique pg service name under LAN mode too');
+    // PINNED tag: a floating postgres:18-alpine pull jumped image data
+    // layouts and re-initialized a live cluster (found live 2026-08-28)
+    assert.ok(compose.includes('image: postgres:18.6-alpine'), 'postgres image stays pinned');
     // the same unique-name rule covers every service on the shared net
     for (const svc of ['web-prod:', 'admin-prod:', 'api-prod:', 'logto-prod:']) {
       assert.ok(compose.includes(svc), `${svc} carries the env suffix (shared-net DNS collisions)`);

@@ -156,7 +156,7 @@ services:
     restart: unless-stopped
 
   postgres:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: munni
@@ -357,7 +357,7 @@ services:
   # GlitchTip's OWN database — nothing else lives on this server (the
   # environments each run their own postgres)
   glitchtip-db:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: munni
@@ -617,7 +617,7 @@ services:
   # only the per-env passwords stopped cross-environment writes). The
   # in-stack alias keeps "postgres" working for THIS stack's consumers.
   postgres-${shortName}:
-    image: postgres:18-alpine
+    image: postgres:18.6-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: munni
