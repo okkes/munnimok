@@ -490,6 +490,37 @@ test('dynamic environments: create validates + registers + renders; delete guard
   assert.ok(!LOCAL_STACKS().includes('munni-local-tst'), 'registry entry removed');
 });
 
+test('LAN mode: env create/delete refreshes the family Caddyfile + restarts the https proxy', async () => {
+  const { writeFileSync } = await import('node:fs');
+  writeFileSync(join(SCRATCH, 'lan-host'), '192.168.1.50\n');
+  try {
+    const spawned = [];
+    const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'ok\n'), probeImpl: async () => false });
+    const mk = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/envs', token: 'tok', body: { name: 'lnt' } }), mk);
+    await settle(mk);
+    // env bootstrap, shared bootstrap (Caddyfile), proxy restart
+    assert.equal(spawned.length, 3);
+    assert.ok(spawned[0].args.join(' ').includes('--stack munni-local-lnt'));
+    assert.ok(spawned[1].args.join(' ').includes('--stack munni-local-shared'));
+    assert.deepEqual(spawned[2].args.slice(-2), ['restart', 'family-tls']);
+    assert.match(mk.chunks.join(''), /\[exit 0\]/);
+
+    spawned.length = 0;
+    const del = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/envs/delete', token: 'tok', body: { name: 'lnt' } }), del);
+    await settle(del);
+    // teardown, shared bootstrap (dead hostnames drop), proxy restart
+    assert.equal(spawned.length, 3);
+    assert.ok(spawned[0].args.includes('-v'));
+    assert.ok(spawned[1].args.join(' ').includes('--stack munni-local-shared'));
+    assert.deepEqual(spawned[2].args.slice(-2), ['restart', 'family-tls']);
+    assert.ok(!LOCAL_STACKS().includes('munni-local-lnt'));
+  } finally {
+    rmSync(join(SCRATCH, 'lan-host'), { force: true });
+  }
+});
+
 test('glitchtip-setup mints in the SHARED stack and wires the chosen environment', async () => {
   const spawned = [];
   const app2 = createApp({

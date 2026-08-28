@@ -569,7 +569,19 @@ function nativeConfigEndpoint(res, url) {
    forgets it (user ruling 2026-08-28: any number of environments) ── */
 const RESERVED_ENV_NAMES = new Set(['shared', 'local']);
 
-async function envCreateEndpoint(req, res, runImpl) {
+/** LAN mode: the family Caddyfile enumerates the registry — a changed
+ * env list must re-render the shared stack and restart the tls proxy,
+ * or the new hostnames never resolve / dead ones 502 forever */
+async function refreshFamilyTls(res, spawnImpl) {
+  if (!lanHost()) return;
+  const run = stepRunner(spawnImpl);
+  await run(res, 'refresh the family Caddyfile (hostnames follow the registry)', process.execPath,
+    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
+  await run(res, 'restart the https proxy', 'docker',
+    [...composeArgs(SHARED_STACK), 'restart', 'family-tls'], { cwd: renderedDir(SHARED_STACK) });
+}
+
+async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
   const body = await readBody(req);
   const name = String(body.name ?? '').trim().toLowerCase();
   const channel = body.channel === 'latest' ? 'latest' : 'dev';
@@ -583,7 +595,15 @@ async function envCreateEndpoint(req, res, runImpl) {
   saveLocalEnvRegistry([...envs, { name, channel, slot }]);
   // render right away (mints its secrets, writes compose + env); the
   // wizard chains start + sign-in + crash wiring from here
-  return runImpl(res, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
+  if (!lanHost()) {
+    return runImpl(res, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
+  }
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const boot = await stepRunner(spawnImpl)(res, `render environment ${name}`, process.execPath,
+    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
+  if (boot.code !== 0) return res.end('[exit 1]\n');
+  await refreshFamilyTls(res, spawnImpl);
+  return res.end('\n[exit 0]\n');
 }
 
 async function envDeleteEndpoint(req, res, spawnImpl) {
@@ -606,6 +626,7 @@ async function envDeleteEndpoint(req, res, spawnImpl) {
   await stepRunner(spawnImpl)(res, 'containers + volumes + network', tool.cmd, tool.args, { cwd: tool.cwd });
   saveLocalEnvRegistry(localEnvRegistry().filter((e) => e.name !== name));
   rmSync(renderedDir(stackName), { recursive: true, force: true });
+  await refreshFamilyTls(res, spawnImpl);
   res.write(`\nenvironment ${name} deleted and forgotten (its secret store went with the rendered folder)\n`);
   res.write(`what CANNOT be deleted by API, in case you created them: the Play/App Store apps for app.munni.local.${name} (retire them in the consoles by hand) and any GitHub environment "local" variables still pointing at it (overwritten by the next native build)\n`);
   return res.end('\n[exit 0]\n');
@@ -830,7 +851,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/glitchtip-setup': (req, res) => glitchtipSetupEndpoint(req, res, spawnImpl),
     'POST /api/local/logto-setup': (req, res) => logtoSetupEndpoint(req, res, spawnImpl),
     'POST /api/local/cleanup': (req, res) => cleanupEndpoint(req, res, runImpl),
-    'POST /api/local/envs': (req, res) => envCreateEndpoint(req, res, runImpl),
+    'POST /api/local/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
     'POST /api/local/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl),
     'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
     'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),
