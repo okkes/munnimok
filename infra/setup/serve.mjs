@@ -377,7 +377,10 @@ async function glitchtipSetupEndpoint(req, res, spawnImpl) {
   const stack = loadStack(pickEnv(body.stack));
   const shared = loadStack(SHARED_STACK);
   const sharedValues = loadLocalValues(shared);
-  const email = sharedValues.GLITCHTIP_ADMIN_EMAIL ?? 'admin@munni.local';
+  // resolvable-TLD address like pgadmin/vault: GlitchTip 6.x (pydantic
+  // email validation) 500s on EVERY /users/me/ for a .local address —
+  // "the part after the @-sign is a special-use or reserved name"
+  const email = sharedValues.GLITCHTIP_ADMIN_EMAIL ?? 'admin@munni.dev';
   const password = sharedValues.GLITCHTIP_ADMIN_PASSWORD ?? randomBytes(12).toString('base64url');
   saveLocalValues(shared, { ...sharedValues, GLITCHTIP_ADMIN_EMAIL: email, GLITCHTIP_ADMIN_PASSWORD: password });
 
@@ -489,7 +492,7 @@ function lanGetEndpoint(res) {
 /** flip the whole local family between localhost and a LAN address:
  * write the marker, re-render every stack (urls, CORS, Logto redirect
  * URIs, DSNs all follow), restart the containers */
-async function lanSetEndpoint(req, res, spawnImpl, probeImpl) {
+async function lanSetEndpoint(req, res, spawnImpl, probeImpl, netFetchImpl) {
   const body = await readBody(req);
   const host = String(body.host ?? '').trim();
   if (host && !lanCandidates().includes(host)) return json(res, 400, { error: 'not one of this machine\'s addresses' });
@@ -524,6 +527,9 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl) {
     }
   }
   if (host) {
+    // this PC's browsers need the CA too (fetch to the logto hostname
+    // fails without it) — one Windows dialog, silent when already there
+    await installFamilyCa(res, run, netFetchImpl);
     const base = `${host.replaceAll('.', '-')}.sslip.io`;
     const envLine = localEnvRegistry().map((e) => `${e.name} → https://munni-${e.name}.${base}`).join(' · ');
     res.write(`\nDone. From your phone (same wifi): ${envLine}\nTrust the family's certificate once per device: download http://ca.${base} (root.crt), install it as a CA certificate (iPhone: also enable it under Certificate Trust Settings).\nIf the phone cannot reach it, allow Docker/vpnkit through the Windows firewall for private networks (incl. port 443), and give this machine a DHCP reservation — a changed address needs a rebuilt app.\n`);
@@ -531,6 +537,43 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl) {
     res.write('\nDone. Everything answers on localhost again.\n');
   }
   return res.end('\n[exit 0]\n');
+}
+
+/** trust the family CA in the DESKTOP browser too: an https page can be
+ * clicked through per-origin, but fetch() to the logto hostname just
+ * fails — sign-in breaks until the root is trusted (found live
+ * 2026-08-28). Downloads root.crt from the CA site and hands it to
+ * certutil (CurrentUser Root — Windows shows ONE consent dialog; a
+ * re-run with the cert already present is silent). */
+async function installFamilyCa(res, run, netFetchImpl) {
+  const lan = lanHost();
+  if (!lan) { res.write('LAN mode is off — no local CA to trust\n'); return false; }
+  const base = `${lan.replaceAll('.', '-')}.sslip.io`;
+  let crt;
+  try {
+    const crtRes = await netFetchImpl(`http://ca.${base}/root.crt`, { signal: AbortSignal.timeout(8000) });
+    if (!crtRes.ok) throw new Error(`status ${crtRes.status}`);
+    crt = await crtRes.text(); // Caddy's root.crt is PEM
+  } catch (e) {
+    res.write(`could not download http://ca.${base}/root.crt (${e.message}) — is the family running?\n`);
+    return false;
+  }
+  const file = join(renderedDir(SHARED_STACK), 'family-root.crt');
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, crt);
+  if (process.platform !== 'win32') {
+    res.write(`root certificate saved to ${file} — add it to this OS's trust store by hand (certutil is Windows-only)\n`);
+    return false;
+  }
+  res.write('if Windows asks to install a root certificate: that is the family CA — confirm it\n');
+  const add = await run(res, 'trust the family CA on this PC (certutil, CurrentUser Root)', 'certutil', ['-user', '-addstore', 'Root', file], { cwd: renderedDir(SHARED_STACK) });
+  return add.code === 0;
+}
+
+async function trustCaEndpoint(res, spawnImpl, netFetchImpl) {
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const ok = await installFamilyCa(res, stepRunner(spawnImpl), netFetchImpl);
+  return res.end(`\n[exit ${ok ? 0 : 1}]\n`);
 }
 
 /** what the wizard writes into the GitHub environment `local` so the
@@ -606,7 +649,28 @@ async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
   return res.end('\n[exit 0]\n');
 }
 
-async function envDeleteEndpoint(req, res, spawnImpl) {
+/** part of the delete cascade (user ruling 2026-08-28): the env's
+ * GlitchTip org (+ its projects/DSNs) dies with it — best-effort, the
+ * token only exists once crash tracking was wired */
+async function purgeGlitchtipOrg(stackName, res, fetchImpl = localAwareFetch) {
+  const token = familyValues(loadStack(SHARED_STACK)).IAC_GLITCHTIP_API_TOKEN;
+  if (!token) { res.write('no GlitchTip token in the store — skipping the org purge\n'); return; }
+  const base = loadStack(SHARED_STACK).urls.glitchtip;
+  try {
+    const del = await fetchImpl(`${base}/api/0/organizations/${stackName}/`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (del.ok || del.status === 204) res.write(`GlitchTip org ${stackName} deleted\n`);
+    else if (del.status === 404) res.write(`GlitchTip has no org ${stackName} — nothing to purge\n`);
+    else res.write(`GlitchTip org delete answered ${del.status} — remove it in the console if it lingers\n`);
+  } catch (e) {
+    res.write(`GlitchTip org purge failed (${e.message}) — remove it in the console if it lingers\n`);
+  }
+}
+
+async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
   const body = await readBody(req);
   const name = String(body.name ?? '').trim().toLowerCase();
   const stackName = `munni-local-${name}`;
@@ -616,12 +680,13 @@ async function envDeleteEndpoint(req, res, spawnImpl) {
     return json(res, 400, { error: 'munni-control and the native apps ride this environment — it cannot be deleted' });
   }
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  res.write(`▶ delete environment ${name} — GoCardless consents, containers + volumes, then forget it\n\n`);
+  res.write(`▶ delete environment ${name} — GoCardless consents, GlitchTip org, containers + volumes, then forget it\n\n`);
   try {
     await purgeGcRequisitions(stackName, res);
   } catch (e) {
     res.write(`GoCardless purge failed (${e.message}) — continuing with the docker teardown\n`);
   }
+  await purgeGlitchtipOrg(stackName, res, netFetchImpl);
   const tool = toolFor(`${stackName}:destroy`);
   await stepRunner(spawnImpl)(res, 'containers + volumes + network', tool.cmd, tool.args, { cwd: tool.cwd });
   saveLocalEnvRegistry(localEnvRegistry().filter((e) => e.name !== name));
@@ -843,7 +908,7 @@ function serveHtml(res, token) {
 }
 
 /** build the handler; spawn/probe/validate deps injectable for tests */
-export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn, vaultFetchImpl = insecureFetch } = {}) {
+export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn, vaultFetchImpl = insecureFetch, netFetchImpl = localAwareFetch } = {}) {
   const routes = {
     'GET /api/local/status': (req, res) => statusEndpoint(res, probeImpl),
     'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),
@@ -852,12 +917,13 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/logto-setup': (req, res) => logtoSetupEndpoint(req, res, spawnImpl),
     'POST /api/local/cleanup': (req, res) => cleanupEndpoint(req, res, runImpl),
     'POST /api/local/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
-    'POST /api/local/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl),
+    'POST /api/local/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
+    'POST /api/local/trust-ca': (req, res) => trustCaEndpoint(res, spawnImpl, netFetchImpl),
     'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
     'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),
     'POST /api/local/vault-setup': (req, res) => vaultSetupEndpoint(req, res, spawnImpl, vaultFetchImpl),
     'GET /api/local/lan': (req, res) => lanGetEndpoint(res),
-    'POST /api/local/lan': (req, res) => lanSetEndpoint(req, res, spawnImpl, probeImpl),
+    'POST /api/local/lan': (req, res) => lanSetEndpoint(req, res, spawnImpl, probeImpl, netFetchImpl),
     'GET /api/local/native-config': (req, res) => nativeConfigEndpoint(res, new URL(req.url, 'http://localhost')),
     'POST /api/validate': (req, res) => validateEndpoint(req, res, validateImpl),
   };

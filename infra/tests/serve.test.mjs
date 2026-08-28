@@ -289,7 +289,7 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
     NAS_PUSH_VAPID_PRIVATE_KEY: 'vapid-secret-x',
     NAS_GOCARDLESS_SECRET_ID: 'gc-id-1',
     NAS_PGADMIN_PASSWORD: 'pgadmin-pw-long',
-    GLITCHTIP_ADMIN_EMAIL: 'admin@munni.local',
+    GLITCHTIP_ADMIN_EMAIL: 'admin@munni.dev',
     // ≥12 chars: the glitchtip-setup endpoint REUSES a stored password,
     // and its own spec asserts real-password length
     GLITCHTIP_ADMIN_PASSWORD: 'pw-x-seeded-long',
@@ -299,7 +299,7 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
   await app(fakeReq({ url: '/api/local/secrets', token: 'tok' }), reveal);
   const revealed = JSON.parse(reveal.chunks.join('')).values;
   assert.equal(revealed['munni-local-shared'].NAS_GOCARDLESS_SECRET_ID, 'gc-id-1');
-  assert.equal(revealed['munni-local-shared'].GLITCHTIP_ADMIN_EMAIL, 'admin@munni.local');
+  assert.equal(revealed['munni-local-shared'].GLITCHTIP_ADMIN_EMAIL, 'admin@munni.dev');
   assert.equal(revealed['munni-local-prod'].NAS_PUSH_VAPID_PRIVATE_KEY, 'vapid-secret-x');
   assert.equal(revealed['munni-local-prod'].NAS_GOCARDLESS_SECRET_ID, undefined, 'shared names show under shared');
 
@@ -317,7 +317,7 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
   assert.ok(names.includes('NAS_GOCARDLESS_SECRET_ID'), 'plain names — folders carry the grouping now');
   assert.ok(!JSON.stringify(exported).includes('vapid-secret-x'), 'VAPID key leaked into the vault export');
   const gt = exported.items.find((i) => i.name === 'GlitchTip console');
-  assert.equal(gt.login.username, 'admin@munni.local');
+  assert.equal(gt.login.username, 'admin@munni.dev');
   assert.ok(gt.login.uris[0].uri.includes('localhost:8383'));
   // folder grouping (user request): shared items point at the shared folder
   const sharedFolder = exported.folders.find((f) => f.name === 'shared');
@@ -554,10 +554,63 @@ test('glitchtip-setup mints in the SHARED stack and wires the chosen environment
   const stream = res.chunks.join('');
   assert.ok(!stream.includes('gt_secret_token_123'), 'the API token leaked into the page stream');
   assert.match(stream, /TOKEN:\(captured\)/);
-  assert.match(stream, /console login → email admin@munni\.local · password \S+/);
+  assert.match(stream, /console login → email admin@munni\.dev · password \S+/);
   assert.match(stream, /\[exit 0\]/);
   // admin credentials live in the SHARED store (one console for the family)
+  // — a resolvable-TLD address: GlitchTip 6.x 500s on .local emails
   const store = loadLocalValues(loadStack('munni-local-shared'));
-  assert.equal(store.GLITCHTIP_ADMIN_EMAIL, 'admin@munni.local');
+  assert.equal(store.GLITCHTIP_ADMIN_EMAIL, 'admin@munni.dev');
   assert.ok(store.GLITCHTIP_ADMIN_PASSWORD?.length >= 12);
+});
+
+test('trust-ca: refuses without LAN; with LAN downloads root.crt and hands it to certutil', async () => {
+  const { writeFileSync: wf, readFileSync: rf } = await import('node:fs');
+  const spawned = [];
+  const fetched = [];
+  const netFetchImpl = async (url) => { fetched.push(url); return { ok: true, text: async () => 'PEM-CERT' }; };
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'ok\n'), probeImpl: async () => false, netFetchImpl });
+  const off = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/trust-ca', token: 'tok', body: {} }), off);
+  await settle(off);
+  assert.match(off.chunks.join(''), /LAN mode is off/);
+  assert.equal(spawned.length, 0);
+
+  wf(join(SCRATCH, 'lan-host'), '192.168.1.50\n');
+  try {
+    const on = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/trust-ca', token: 'tok', body: {} }), on);
+    await settle(on);
+    assert.equal(fetched[0], 'http://ca.192-168-1-50.sslip.io/root.crt');
+    assert.equal(rf(join(SCRATCH, 'munni-local-shared', 'family-root.crt'), 'utf8'), 'PEM-CERT');
+    if (process.platform === 'win32') {
+      assert.equal(spawned.length, 1);
+      assert.equal(spawned[0].cmd, 'certutil');
+      assert.deepEqual(spawned[0].args.slice(0, 3), ['-user', '-addstore', 'Root']);
+      assert.match(on.chunks.join(''), /\[exit 0\]/);
+    }
+  } finally {
+    rmSync(join(SCRATCH, 'lan-host'), { force: true });
+  }
+});
+
+test('env delete purges the GlitchTip org when a token exists', async () => {
+  const mk = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/envs', token: 'tok', body: { name: 'gtd' } }), mk);
+  const shared = loadStack('munni-local-shared');
+  const prev = loadLocalValues(shared);
+  saveLocalValues(shared, { ...prev, IAC_GLITCHTIP_API_TOKEN: 'gt_tok_1' });
+  const calls = [];
+  const netFetchImpl = async (url, init = {}) => { calls.push({ url, init }); return { ok: true, status: 204, text: async () => '' }; };
+  const spawned = [];
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'ok\n'), probeImpl: async () => false, netFetchImpl });
+  const del = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/envs/delete', token: 'tok', body: { name: 'gtd' } }), del);
+  await settle(del);
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0].url.endsWith('/api/0/organizations/munni-local-gtd/'));
+  assert.equal(calls[0].init.method, 'DELETE');
+  assert.equal(calls[0].init.headers.authorization, 'Bearer gt_tok_1');
+  assert.match(del.chunks.join(''), /GlitchTip org munni-local-gtd deleted/);
+  assert.ok(!LOCAL_STACKS().includes('munni-local-gtd'));
+  saveLocalValues(shared, prev); // the fake token must not leak into later tests
 });

@@ -369,10 +369,11 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
   <div data-native-track="local">
     <div class="card">
       <h3>Phone reachability (LAN mode) <span class="pill" id="lan-pill"></span></h3>
-      <p class="why">A phone cannot reach <code>localhost</code> — LAN mode moves the whole family onto <b>https</b> hostnames on this machine's wifi address: <code>https://munni-&lt;env&gt;.&lt;ip-dashed&gt;.sslip.io</code> (sslip.io just echoes the IP back — no internet dependency beyond DNS; the localhost links keep working alongside). Real https means Enable Banking consents and secure phone traffic work locally. Everything re-renders automatically: sign-in redirect URIs, CORS, crash-report DSNs. Once per device, trust the family's certificate: download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → install <code>root.crt</code> as a CA certificate (iPhone: also enable it under Certificate Trust Settings). Heads-up: if Windows Firewall asks, allow Docker for private networks (incl. port 443); and give this machine a DHCP reservation — a changed address changes the hostnames and needs a rebuilt app.</p>
+      <p class="why">A phone cannot reach <code>localhost</code> — LAN mode moves the whole family onto <b>https</b> hostnames on this machine's wifi address: <code>https://munni-&lt;env&gt;.&lt;ip-dashed&gt;.sslip.io</code> (sslip.io just echoes the IP back — no internet dependency beyond DNS; the localhost links keep working alongside). Real https means Enable Banking consents and secure phone traffic work locally. Everything re-renders automatically: sign-in redirect URIs, CORS, crash-report DSNs. EVERY device must trust the family's certificate ONCE — including this PC: browsers refuse fetches to untrusted-cert hostnames, so sign-in fails without it (clicking through the warning page is not enough). Turning LAN mode on installs it here automatically (confirm the one Windows dialog); use the button below to redo it, and phones download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → install <code>root.crt</code> as a CA certificate (iPhone: also enable it under Certificate Trust Settings). Heads-up: if Windows Firewall asks, allow Docker for private networks (incl. port 443); and give this machine a DHCP reservation — a changed address changes the hostnames and needs a rebuilt app.</p>
       <div class="runrow">
         <select id="lan-select" style="max-width:220px"></select>
         <button id="btn-lan-on">Turn LAN mode on</button>
+        <button class="ghost" id="btn-trust-ca">Trust the certificate on this PC</button>
         <button class="ghost" id="btn-lan-off">Back to localhost</button>
       </div>
     </div>
@@ -2099,6 +2100,8 @@ document.getElementById('btn-lan-on')?.addEventListener('click', () => {
   if (!host) { localLog('\nno LAN address detected — are you on wifi/ethernet?\n'); return; }
   streamLocal('/api/local/lan', { host }, `switch the family onto ${host} (re-render + restart everything)`);
 });
+document.getElementById('btn-trust-ca')?.addEventListener('click', () =>
+  streamLocal('/api/local/trust-ca', {}, 'trust the family certificate on this PC (one Windows dialog)'));
 document.getElementById('btn-lan-off')?.addEventListener('click', () =>
   streamLocal('/api/local/lan', { host: '' }, 'switch the family back to localhost (re-render + restart everything)'));
 
