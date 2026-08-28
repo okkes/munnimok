@@ -22,13 +22,13 @@ const need = (values, names) => {
   return missing.length ? `missing: ${missing.join(', ')}` : null;
 };
 
-function jwtRS256({ header, payload, pem }) {
+export function jwtRS256({ header, payload, pem }) {
   const input = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
   const sig = createSign('RSA-SHA256').update(input).end().sign(pem);
   return `${input}.${b64url(sig)}`;
 }
 
-function jwtES256({ header, payload, pem }) {
+export function jwtES256({ header, payload, pem }) {
   const input = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
   // JOSE wants the raw r‖s signature, not ASN.1
   const sig = cryptoSign('sha256', Buffer.from(input), { key: pem, dsaEncoding: 'ieee-p1363' });

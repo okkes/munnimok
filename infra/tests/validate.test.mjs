@@ -2,7 +2,7 @@
 // these specs pin the request shapes (endpoints, JWT headers/claims) and
 // the verdict mapping — with fetch faked and real freshly-minted keys.
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -12,6 +12,8 @@ import assert from 'node:assert/strict';
 // must never leak into these urls
 const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-validate-test-'));
 process.env.MUNNI_RENDER_DIR = SCRATCH;
+// the local validators resolve munni-local-prod — seed the registry
+writeFileSync(join(SCRATCH, 'local-envs.json'), JSON.stringify({ envs: [{ name: 'prod', channel: 'dev', slot: 0 }] }));
 const { validate } = await import('../modules/validate.mjs');
 test.after(() => rmSync(SCRATCH, { recursive: true, force: true }));
 

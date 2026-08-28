@@ -10,6 +10,11 @@ import assert from 'node:assert/strict';
 
 const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-serve-test-'));
 process.env.MUNNI_RENDER_DIR = SCRATCH;
+// no registry file = no environments now — seed the classic prod+dev pair
+(await import('node:fs')).writeFileSync(join(SCRATCH, 'local-envs.json'), JSON.stringify({ envs: [
+  { name: 'prod', channel: 'dev', slot: 0 },
+  { name: 'dev', channel: 'dev', slot: 1 },
+] }));
 const { createApp, lanCandidates, OPERATOR_NAMES, toolFor, LOCAL_STACKS } = await import('../setup/serve.mjs');
 const { loadLocalValues, saveLocalValues } = await import('../modules/localstore.mjs');
 const { loadStack } = await import('../modules/stack.mjs');
@@ -613,4 +618,62 @@ test('env delete purges the GlitchTip org when a token exists', async () => {
   assert.match(del.chunks.join(''), /GlitchTip org munni-local-gtd deleted/);
   assert.ok(!LOCAL_STACKS().includes('munni-local-gtd'));
   saveLocalValues(shared, prev); // the fake token must not leak into later tests
+});
+
+test('store-status: no creds reports so; with creds it mirrors the real Play/ASC calls', async () => {
+  const none = fakeRes();
+  await app(fakeReq({ url: '/api/local/store-status?stack=munni-local-prod', token: 'tok' }), none);
+  const bare = JSON.parse(none.chunks.join(''));
+  assert.equal(bare.play.state, 'no-creds');
+  assert.equal(bare.ios.state, 'no-creds');
+  assert.equal(bare.appId, 'app.munni.local.prod');
+
+  const { generateKeyPairSync } = await import('node:crypto');
+  const rsaPem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const ecPem = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const shared = loadStack('munni-local-shared');
+  const prev = loadLocalValues(shared);
+  saveLocalValues(shared, {
+    ...prev,
+    PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: 'ci@sa.test', token_uri: 'https://oauth2.googleapis.com/token', private_key: rsaPem, project_id: 'p' }),
+    ASC_KEY_ID: 'KEY1',
+    ASC_ISSUER_ID: 'ISS1',
+    ASC_KEY_P8: Buffer.from(ecPem).toString('base64'),
+  });
+  try {
+    const calls = [];
+    const netFetchImpl = async (url, init = {}) => {
+      calls.push({ url, init });
+      if (url.includes('oauth2.googleapis.com')) return { ok: true, status: 200, json: async () => ({ access_token: 'gtok' }) };
+      if (url.includes('androidpublisher')) return { ok: false, status: 404, json: async () => ({}) };
+      if (url.includes('appstoreconnect')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'app1' }] }) };
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl });
+    const res = fakeRes();
+    await app2(fakeReq({ url: '/api/local/store-status?stack=munni-local-prod', token: 'tok' }), res);
+    const body = JSON.parse(res.chunks.join(''));
+    assert.equal(body.play.state, 'missing-app', 'Play 404 on the edit = app not created yet');
+    assert.equal(body.ios.state, 'ready', 'ASC lists the bundle id');
+    assert.ok(calls.some((c) => c.url.includes('/applications/app.munni.local.prod/edits')));
+    assert.ok(calls.some((c) => c.url.includes('filter%5BbundleId%5D=app.munni.local.prod')));
+  } finally {
+    saveLocalValues(shared, prev);
+  }
+});
+
+// LAST on purpose: it empties the registry the other tests rely on
+test('delete-everything epilogue: forget-all empties the registry and removes the env stores', async () => {
+  const { existsSync: ex } = await import('node:fs');
+  assert.ok(LOCAL_STACKS().length > 1, 'environments exist before');
+  const res = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/envs/forget-all', token: 'tok', body: {} }), res);
+  const body = JSON.parse(res.chunks.join(''));
+  assert.ok(body.forgotten.includes('prod'));
+  assert.deepEqual(LOCAL_STACKS(), ['munni-local-shared'], 'only the shared stack remains');
+  assert.ok(!ex(join(SCRATCH, 'munni-local-prod')), 'prod rendered dir (its store included) is gone');
+  // native-config now refuses cleanly instead of crashing on a phantom env
+  const nc = fakeRes();
+  await app(fakeReq({ url: '/api/local/native-config', token: 'tok' }), nc);
+  assert.equal(nc.statusCode, 400);
 });

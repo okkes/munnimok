@@ -30,7 +30,7 @@ import { MANIFEST } from '../modules/secrets.mjs';
 import { familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from '../modules/localstore.mjs';
 import { insecureFetch, localAwareFetch } from '../modules/insecure-fetch.mjs';
 import { lanHost, loadStack, localEnvRegistry, saveLocalEnvRegistry } from '../modules/stack.mjs';
-import { validate } from '../modules/validate.mjs';
+import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
 import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultRegister } from '../modules/vault.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
@@ -418,7 +418,8 @@ async function glitchtipSetupEndpoint(req, res, spawnImpl) {
 /* ── cleanup: revoke the stack's own GoCardless consents, then remove
    containers + volumes + network ── */
 async function purgeGcRequisitions(target, res) {
-  const values = familyValues(loadStack('munni-local-prod'));
+  // GC credentials are SHARED-owned — never depend on an env existing
+  const values = familyValues(loadStack(SHARED_STACK));
   if (!values.NAS_GOCARDLESS_SECRET_ID || !values.NAS_GOCARDLESS_SECRET_KEY) {
     res.write('no GoCardless credentials in the store — nothing to purge there\n');
     return true;
@@ -576,10 +577,83 @@ async function trustCaEndpoint(res, spawnImpl, netFetchImpl) {
   return res.end(`\n[exit ${ok ? 0 : 1}]\n`);
 }
 
+/* ── store readiness (user ruling 2026-08-28: no manual Enable-publish
+   button — the wizard POLLS whether the operator did the one-time store
+   upload and flips auto-publish itself). The credentials live in the
+   local store; checks mirror what CI's publish steps really do. ── */
+async function playAppExists(values, appId, fetchImpl) {
+  if (!values.PLAY_SERVICE_ACCOUNT_JSON) return { state: 'no-creds' };
+  let sa;
+  try {
+    sa = JSON.parse(values.PLAY_SERVICE_ACCOUNT_JSON);
+  } catch {
+    return { state: 'error', detail: 'PLAY_SERVICE_ACCOUNT_JSON is not valid JSON' };
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = jwtRS256({
+    header: { alg: 'RS256', typ: 'JWT' },
+    payload: { iss: sa.client_email, scope: 'https://www.googleapis.com/auth/androidpublisher', aud: sa.token_uri, iat: now, exp: now + 300 },
+    pem: sa.private_key,
+  });
+  const tok = await fetchImpl(sa.token_uri, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!tok.ok) return { state: 'error', detail: `Google rejected the service account (${tok.status})` };
+  const { access_token: access } = await tok.json();
+  // a throwaway edit: succeeds only when the package exists AND the
+  // service account may publish it — exactly what the CI upload needs
+  const edit = await fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(appId)}/edits`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
+    body: '{}',
+    signal: AbortSignal.timeout(10000),
+  });
+  if (edit.ok) return { state: 'ready' };
+  if (edit.status === 404) return { state: 'missing-app' };
+  return { state: 'error', detail: `Play answered ${edit.status} — does the service account have release access?` };
+}
+
+async function ascAppExists(values, bundleId, fetchImpl) {
+  if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) return { state: 'no-creds' };
+  const now = Math.floor(Date.now() / 1000);
+  let jwt;
+  try {
+    jwt = jwtES256({
+      header: { alg: 'ES256', kid: values.ASC_KEY_ID, typ: 'JWT' },
+      payload: { iss: values.ASC_ISSUER_ID, aud: 'appstoreconnect-v1', iat: now, exp: now + 600 },
+      pem: Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8'),
+    });
+  } catch (e) {
+    return { state: 'error', detail: `the ASC .p8 does not parse (${e.message})` };
+  }
+  const res = await fetchImpl(`https://api.appstoreconnect.apple.com/v1/apps?filter%5BbundleId%5D=${encodeURIComponent(bundleId)}`, {
+    headers: { authorization: `Bearer ${jwt}` },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) return { state: 'error', detail: `App Store Connect answered ${res.status}` };
+  const body = await res.json();
+  return { state: (body.data ?? []).length ? 'ready' : 'missing-app' };
+}
+
+async function storeStatusEndpoint(res, url, fetchImpl) {
+  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
+  const stack = loadStack(pickEnv(url?.searchParams.get('stack')));
+  const values = familyValues(stack);
+  const [play, ios] = await Promise.all([
+    playAppExists(values, stack.native.appId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
+    ascAppExists(values, stack.native.appId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
+  ]);
+  return json(res, 200, { localEnv: stack.envName, appId: stack.native.appId, play, ios });
+}
+
 /** what the wizard writes into the GitHub environment `local` so the
  * EXISTING native workflows bake a build that talks to this machine —
  * per LOCAL environment (?stack=munni-local-<name>, default prod) */
 function nativeConfigEndpoint(res, url) {
+  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet — Set up & start munni first' });
   const stack = loadStack(pickEnv(url?.searchParams.get('stack')));
   const values = familyValues(stack);
   const lan = lanHost();
@@ -670,6 +744,21 @@ async function purgeGlitchtipOrg(stackName, res, fetchImpl = localAwareFetch) {
   }
 }
 
+/** Delete-everything epilogue (user ruling 2026-08-28: prod is not
+ * special — after the wipe NO environment exists; Set up & start
+ * recreates production). The wizard calls this after destroying every
+ * stack's containers; here the environments are FORGOTTEN: registry
+ * emptied, rendered dirs (each env's secret store included) removed.
+ * The shared store survives, so re-setup keeps the entered credentials. */
+function envsForgetAllEndpoint(res) {
+  const names = localEnvRegistry().map((e) => e.name);
+  for (const name of names) {
+    rmSync(renderedDir(`munni-local-${name}`), { recursive: true, force: true });
+  }
+  saveLocalEnvRegistry([]);
+  return json(res, 200, { forgotten: names });
+}
+
 async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
   const body = await readBody(req);
   const name = String(body.name ?? '').trim().toLowerCase();
@@ -743,6 +832,11 @@ const VAULT_PURPOSE = {
   LOGTO_GOOGLE_CLIENT_SECRET: 'Google OAuth client secret — pairs with the client id.',
   LOGTO_APPLE_CLIENT_ID: 'Apple Services ID for “Sign in with Apple”.',
   VAULT_SIGNUPS_ALLOWED: 'Wizard bookkeeping: whether this vault still accepts registrations (closed after setup).',
+  PLAY_SERVICE_ACCOUNT_JSON: 'Google Play service account (whole JSON file) — CI publishes builds with it; the wizard also uses it to detect when a store app exists.',
+  ASC_KEY_ID: 'App Store Connect API key id — with the issuer id + .p8, CI uploads to TestFlight and the wizard checks app records.',
+  ASC_ISSUER_ID: 'App Store Connect API issuer id — pairs with the key.',
+  ASC_KEY_P8: 'App Store Connect API private key (.p8, base64) — shown once at creation.',
+  APPLE_TEAM_ID: 'The 10-character Apple developer team id — signing and uploads name it.',
 };
 
 function vaultNote(name) {
@@ -959,6 +1053,8 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/cleanup': (req, res) => cleanupEndpoint(req, res, runImpl),
     'POST /api/local/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
     'POST /api/local/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
+    'POST /api/local/envs/forget-all': (req, res) => envsForgetAllEndpoint(res),
+    'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
     'POST /api/local/trust-ca': (req, res) => trustCaEndpoint(res, spawnImpl, netFetchImpl),
     'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
     'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),

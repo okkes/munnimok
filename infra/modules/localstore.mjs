@@ -41,6 +41,12 @@ export const SHARED_LOCAL_NAMES = new Set([
   'GLITCHTIP_ADMIN_EMAIL',
   'GLITCHTIP_ADMIN_PASSWORD',
   'CONTROL_LOGTO_APP_ID',
+  // store-publishing roots (one Play/ASC account serves every channel)
+  'PLAY_SERVICE_ACCOUNT_JSON',
+  'ASC_KEY_ID',
+  'ASC_ISSUER_ID',
+  'ASC_KEY_P8',
+  'APPLE_TEAM_ID',
 ]);
 
 /** generated names the shared stack mints (env stacks never do) */

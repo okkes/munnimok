@@ -11,6 +11,11 @@ import assert from 'node:assert/strict';
 const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-infra-test-'));
 process.env.MUNNI_RENDER_DIR = SCRATCH;
 process.env.IAC_DOMAIN = 'example.test';
+// no registry file = no environments now — seed the classic prod+dev pair
+writeFileSync(join(SCRATCH, 'local-envs.json'), JSON.stringify({ envs: [
+  { name: 'prod', channel: 'dev', slot: 0 },
+  { name: 'dev', channel: 'dev', slot: 1 },
+] }));
 
 const { lanHost, loadStack, sharedOf } = await import('../modules/stack.mjs');
 const { ensureLocalSecrets, familyValues, loadLocalValues, saveLocalValues } = await import('../modules/localstore.mjs');

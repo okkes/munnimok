@@ -44,14 +44,12 @@ function stripJsonc(text) {
  * family byte-for-byte, so existing machines migrate without a restart.
  */
 const ENV_REGISTRY_FILE = () => join(RENDER_DIR(), 'local-envs.json');
-const DEFAULT_ENVS = [
-  { name: 'prod', channel: 'dev', slot: 0 },
-  { name: 'dev', channel: 'dev', slot: 1 },
-];
 
 export function localEnvRegistry() {
   const file = ENV_REGISTRY_FILE();
-  if (!existsSync(file)) return DEFAULT_ENVS;
+  // no registry = no environments (user ruling 2026-08-28: Delete
+  // everything forgets prod too; Set up & start recreates it)
+  if (!existsSync(file)) return [];
   const envs = JSON.parse(readFileSync(file, 'utf8')).envs ?? [];
   return envs.filter((e) => /^[a-z]{2,5}$/.test(e.name) && Number.isInteger(e.slot));
 }

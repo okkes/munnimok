@@ -145,7 +145,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
     <label class="f" for="in-pat">fine-grained PAT (kept in memory only)</label>
     <input type="password" id="in-pat" placeholder="github_pat_…" autocomplete="off"/>
     <button id="btn-connect">Connect</button>
-    <button class="ghost" id="btn-fork" hidden>Create it as a fork of okkes/munnimok</button>
+    <button class="ghost" id="btn-fork" hidden>Create it as a copy of okkes/munnimok</button>
     <button class="ghost" id="btn-store-pat" disabled>Store as IAC_GH_PAT <span class="dot" data-dot="IAC_GH_PAT"></span></button>
     <button class="ghost" id="btn-refresh" disabled>Refresh status</button>
     <div class="msg" id="msg-connect"></div>
@@ -215,12 +215,13 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
       <div class="card-head">
         <span class="ico" data-ico="wand"></span>
         <div>
-          <h3>Set up &amp; start everything <span class="pill">one button</span></h3>
-          <p class="why">One button does the whole family: mints the secrets, starts the <b>shared services</b>, then brings up every environment — waiting for each piece and wiring sign-in, crash tracking and the vault automatically. Credentials from step 3 join in whenever you save them; pressing it again is always safe, it only fills gaps.</p>
+          <h3>Set up &amp; start everything <span class="pill">one button</span> <span class="pill" id="lan-pill"></span></h3>
+          <p class="why">One button does the whole family: mints the secrets, starts the <b>shared services</b>, creates the <b>production</b> environment when none exists yet, and brings everything up — waiting for each piece and wiring sign-in, crash tracking, the vault and (when a feature needs the network) the https mode with its certificate automatically: when Windows asks to trust a root certificate mid-setup, that is the family's own — approve it. Credentials from step 3 join in whenever you save them; pressing it again is always safe, it only fills gaps.</p>
           <div class="runrow">
             <button id="btn-local-setup">▶ Set up &amp; start munni</button>
             <button class="ghost" id="btn-local-stopall">Stop everything</button>
             <button class="ghost" id="btn-local-verify">Verify</button>
+            <button class="ghost" id="btn-trust-ca">Trust the certificate again</button>
             <button class="ghost danger" id="btn-local-nuke-all">Delete everything…</button>
           </div>
           <p class="why" id="local-links"></p>
@@ -367,37 +368,30 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
   </div>
 
   <div data-native-track="local">
-    <div class="card">
-      <h3>Phone reachability (LAN mode) <span class="pill" id="lan-pill"></span></h3>
-      <p class="why">The network mode picks ITSELF — nothing to choose here. Plain <code>localhost</code> is the simple default; the moment a feature needs more (Android/iOS — a phone cannot reach localhost — or Enable Banking, which demands real https for its bank-consent redirect) the family moves onto <b>https</b> hostnames on this machine's wifi address: <code>https://munni-&lt;env&gt;.&lt;ip-dashed&gt;.sslip.io</code> (sslip.io just echoes the IP back; the localhost links keep working alongside). Untick those features and it drops back to localhost by itself. Everything re-renders automatically: sign-in redirect URIs, CORS, crash-report DSNs. In LAN mode EVERY device must trust the family's certificate ONCE — including this PC: browsers refuse fetches to untrusted-cert hostnames, so sign-in fails without it (clicking through the warning page is not enough). Switching on installs it here automatically (confirm the one Windows dialog; fully restart the browser afterwards so it picks the new root up); the button below redoes it, and phones download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → install <code>root.crt</code> as a CA certificate (iPhone: also enable it under Certificate Trust Settings). Heads-up: if Windows Firewall asks, allow Docker for private networks (incl. port 443); and give this machine a DHCP reservation — a changed address changes the hostnames and needs a rebuilt app.</p>
-      <div class="runrow">
-        <button class="ghost" id="btn-trust-ca">Trust the certificate on this PC</button>
-      </div>
-    </div>
-
     <div class="card" data-needs-feature="android">
       <h3>Android on your phone (via Play) <span class="pill" id="native-local-pill"></span></h3>
-      <p class="why">Each environment is its own store channel — app id <code>app.munni.local.&lt;env&gt;</code>, delivered through the Play <b>internal testing</b> track, installable side by side. One button: this page writes that environment's LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Until the one-time Play setup is done the build SKIPS the upload (no red runs) and hands you the signed bundle instead. Needs the GitHub card in step 3.</p>
+      <p class="why">Each environment is its own store channel — app id <code>app.munni.local.&lt;env&gt;</code>, delivered through the Play <b>internal testing</b> track, installable side by side. One button: this page writes that environment's LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Until the one-time Play setup is done the build SKIPS the upload (no red runs) and hands you the signed bundle instead — and once you finish the upload, this page NOTICES by itself (it polls Play with the service-account credential from step 3) and turns publishing on, nothing to press. First time on a phone: install the family certificate once — download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → <code>root.crt</code> as a CA certificate. Needs the GitHub card in step 3.</p>
       <div class="runrow">
         <select id="native-env-select" style="max-width:170px"></select>
         <button id="btn-native-local-android">Build the Android app (CI)</button>
-        <button class="ghost" id="btn-native-local-publish">Enable auto-publish</button>
+        <span class="pill" id="play-status-pill"></span>
       </div>
       <div class="msg" id="msg-native-local"></div>
       <details class="how"><summary>The one-time Play setup (first build per environment)</summary>
         <ol>
           <li>Press <b>Build the Android app</b> — when it turns green, the signed <code>.aab</code> downloads here automatically (as a ZIP — unzip it).</li>
-          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code>app.munni.local.&lt;env&gt;</code> (matching the selector) → Internal testing → upload that <code>.aab</code> → add yourself as tester → grant the CI service account access (like the other munni apps).</li>
-          <li>Press <b>Enable auto-publish</b> — every later build of THIS environment lands in the internal track by itself.</li>
+          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code>app.munni.local.&lt;env&gt;</code> (matching the selector) → Internal testing → upload that <code>.aab</code> → add yourself as tester → grant the CI service account access.</li>
+          <li>That's it — this page detects the app within a few minutes and every later build of the environment lands in the internal track by itself.</li>
         </ol>
       </details>
     </div>
 
     <div class="card" data-needs-feature="ios">
       <h3>iOS on your phone (via TestFlight)</h3>
-      <p class="why">Same per-environment store channel: bundle <code>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id; the ASC key secrets and <code>IOS_BUILD_ENABLED=true</code> are already in place. The build carries the LAN address, so it only works on your wifi.</p>
+      <p class="why">Same per-environment store channel: bundle <code>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id — with the ASC key in step 3 this page checks for the record by itself (pill below). First time on an iPhone: install the family certificate once — download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → <code>root.crt</code>, then ALSO enable it under Settings → General → About → Certificate Trust Settings. The build carries the LAN address, so it only works on your wifi.</p>
       <div class="runrow">
         <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
+        <span class="pill" id="asc-status-pill"></span>
       </div>
     </div>
   </div>
@@ -1030,6 +1024,32 @@ const GROUPS = [
     ],
   },
   {
+    id: 'playstore', title: 'Google Play publishing', feature: 'android',
+    why: 'CI publishes the Android builds with a Play service account — and this page uses the SAME credential to notice when you finish a one-time store upload, so auto-publish turns on by itself.',
+    how: [
+      '<a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Settings → <b>API access</b> → create (or reuse) a Google Cloud service account, grant it <b>Release to testing tracks</b> on your munni apps.',
+      'In Google Cloud IAM, create a JSON key for that service account and paste the WHOLE downloaded file below.',
+    ],
+    fields: [
+      { name: 'PLAY_SERVICE_ACCOUNT_JSON', scope: 'repo', area: true },
+    ],
+  },
+  {
+    id: 'ascstore', title: 'App Store Connect key', feature: 'ios',
+    why: 'CI uploads iOS builds to TestFlight with an App Store Connect API key — and this page uses it to check when the app record exists.',
+    how: [
+      '<a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noreferrer">App Store Connect → Integrations</a> → generate an API key with <b>App Manager</b> access; note the Key ID and the Issuer ID shown above the list.',
+      'Download the <code>.p8</code> (offered ONCE), base64 it (PowerShell: <code>[Convert]::ToBase64String([IO.File]::ReadAllBytes("AuthKey.p8"))</code>) and paste the result.',
+      'The Team ID (10 characters) is under Membership details on developer.apple.com.',
+    ],
+    fields: [
+      { name: 'ASC_KEY_ID', scope: 'repo' },
+      { name: 'ASC_ISSUER_ID', scope: 'repo' },
+      { name: 'ASC_KEY_P8', scope: 'repo', area: true },
+      { name: 'APPLE_TEAM_ID', scope: 'repo' },
+    ],
+  },
+  {
     id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'fcm', check: 'fcm',
     why: 'Push notifications for the NATIVE apps route through FCM (web push uses self-minted VAPID keys — no Google involved there).',
     how: [
@@ -1370,10 +1390,26 @@ async function refreshLocal() {
     const prod = st.stacks['munni-local-prod'];
     const up = Boolean(prod?.services.web && prod?.services.api);
     setPill('local-pill', up ? 'running ✓' : (prod?.rendered ? 'set up — not running' : 'not set up yet'), up);
-    setPill('lan-pill', st.lan ? `on — ${st.lan} (a feature needs it)` : 'off — simple localhost', Boolean(st.lan));
+    setPill('lan-pill', st.lan ? `https on — ${st.lan}` : 'localhost mode', Boolean(st.lan));
+    // master buttons follow the FAMILY state (user ruling 2026-08-28):
+    // no Delete/Stop before anything exists; Set up only when it would
+    // actually do something
+    const anyRendered = Object.values(st.stacks).some((s) => s.rendered);
+    const anyRunning = Object.values(st.stacks).some((s) => Object.values(s.services).some(Boolean));
+    const allUp = sharedUp && S.envList.length > 0 && S.envList.every((e) => {
+      const s2 = st.stacks[e.stack];
+      return s2?.services.web && s2?.services.api && s2?.services.logto;
+    });
+    const setupBtn = document.getElementById('btn-local-setup');
+    if (!setupBtn.dataset.busy) setupBtn.disabled = allUp;
+    setupBtn.title = allUp ? 'everything is already up — use the environment cards for individual actions' : '';
+    document.getElementById('btn-local-stopall').hidden = !anyRunning;
+    document.getElementById('btn-local-verify').hidden = !anyRendered;
+    document.getElementById('btn-trust-ca').hidden = !st.lan;
+    document.getElementById('btn-local-nuke-all').hidden = !anyRendered;
     // the mode is automatic: reconcile ONCE per page load, and only for
     // a set-up family (a first-time visitor must not trigger restarts)
-    if (!S.lanReconciled && S.platform === 'local' && prod?.rendered) {
+    if (!S.lanReconciled && S.platform === 'local' && anyRendered) {
       S.lanReconciled = true;
       reconcileLanMode().catch(() => {});
     }
@@ -1764,7 +1800,7 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
       pill.textContent = 'repo does not exist yet';
       pill.className = 'pill warn';
       document.getElementById('btn-fork').hidden = false;
-      msg('msg-connect', `${S.slug} does not exist. I can create it as YOUR fork of ${UPSTREAM} — all branches, upstream link kept for pulling updates. The PAT must cover All repositories for this (see the token how-to).`, false);
+      msg('msg-connect', `${S.slug} does not exist. I can create it as YOUR copy of ${UPSTREAM} — all branches included (a fork when the owner differs, a template copy inside the same account). The PAT must cover All repositories for this (see the token how-to).`, false);
       return;
     }
     await connectRepo(repo);
@@ -1781,11 +1817,20 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
   try {
     if (!S.user) throw new Error('Connect first so I know who you are.');
     const [owner, name] = S.slug.split('/');
-    const body = { name, default_branch_only: false };
-    if (owner.toLowerCase() !== S.user.login.toLowerCase()) body.organization = owner;
-    await gh(`/repos/${UPSTREAM}/forks`, { method: 'POST', body: JSON.stringify(body) });
-    msg('msg-connect', 'Fork requested — GitHub copies the repository in the background, this usually takes a few seconds…', true);
-    pill.textContent = 'forking…';
+    const [upOwner] = UPSTREAM.split('/');
+    if (owner.toLowerCase() === upOwner.toLowerCase()) {
+      // GitHub cannot fork a repository into its OWN account — copy it
+      // through the template API instead (found live 2026-08-28: the
+      // fork request was accepted but nothing ever appeared)
+      await gh(`/repos/${UPSTREAM}`, { method: 'PATCH', body: JSON.stringify({ is_template: true }) });
+      await gh(`/repos/${UPSTREAM}/generate`, { method: 'POST', body: JSON.stringify({ owner, name, include_all_branches: true, description: 'munni (copied from the setup wizard)' }) });
+      msg('msg-connect', 'Copy requested (template generate — a fork cannot land in the same account) — this usually takes a few seconds…', true);
+    } else {
+      const body = { name, default_branch_only: false, organization: owner };
+      await gh(`/repos/${UPSTREAM}/forks`, { method: 'POST', body: JSON.stringify(body) });
+      msg('msg-connect', 'Fork requested — GitHub copies the repository in the background, this usually takes a few seconds…', true);
+    }
+    pill.textContent = 'copying…';
     pill.className = 'pill warn';
     let repo = null;
     for (let i = 0; i < 20; i++) {
@@ -1793,7 +1838,7 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
       repo = await gh(`/repos/${S.slug}`, { allow404: true });
       if (repo && (await gh(`/repos/${S.slug}/contents/.github/workflows/iac.yml?ref=${encodeURIComponent(repo.default_branch)}`, { allow404: true }))) break;
     }
-    if (!repo) throw new Error('the fork never appeared — check the PAT covers All repositories, then retry.');
+    if (!repo) throw new Error('the copy never appeared — check the PAT covers All repositories (Administration + Contents), then retry.');
     // workflows arrive disabled on forks — enable them so the buttons work
     await gh(`/repos/${S.slug}/actions/permissions`, { method: 'PUT', body: JSON.stringify({ enabled: true, allowed_actions: 'all' }) })
       .catch(() => msg('msg-connect', 'Fork ready, but Actions could not be enabled via the API — flip it on under the repo Settings → Actions.', false));
@@ -1934,11 +1979,22 @@ async function setupEnv(env) {
 document.getElementById('btn-local-setup')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-local-setup');
   btn.disabled = true;
+  btn.dataset.busy = '1'; // refreshLocal must not re-enable it mid-run
   try {
     if (!(await streamLocal('/api/local/run', { stack: SHARED_STACK }, 'mint secrets + render the shared services'))) return;
     if (!(await streamLocal('/api/local/tool', { tool: `${SHARED_STACK}:up` }, 'start the shared services (glitchtip, vault, ocr, control, pgadmin)'))) return;
     if (!(await waitForServices(SHARED_STACK, ['glitchtip', 'vault'], 'wait for the shared services'))) return;
     await refreshLocal(); // pick the env list up before walking it
+    // after Delete everything NO environment exists — production is
+    // recreated here automatically (user ruling 2026-08-28)
+    if (!S.envList.length) {
+      if (!(await streamLocal('/api/local/envs', { name: 'prod', channel: 'dev' }, 'create the production environment'))) return;
+      await refreshLocal();
+    }
+    // a phone/https feature turns the https mode (and its certificate,
+    // one Windows dialog) on as part of the setup — nothing separate
+    await reconcileLanMode().catch(() => {});
+    await refreshLocal();
     for (const env of S.envList) {
       if (!(await setupEnv(env))) return;
     }
@@ -1946,6 +2002,7 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
     const lines = S.envList.map((e) => `${envLabel(e.name)} → ${e.web}`).join('\n');
     localLog(`\n══ munni is ready ══\n${lines}\ncontrol cockpit → http://localhost:8385 (sign in with the production admin)\nvault → https://localhost:8384 (login under Reveal secrets)\n`);
   } finally {
+    delete btn.dataset.busy;
     btn.disabled = false;
     await refreshLocal();
   }
@@ -2087,10 +2144,22 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
   document.getElementById('btn-local-reveal').textContent = 'Hide secrets';
 });
 document.getElementById('btn-local-nuke-all')?.addEventListener('click', async () => {
-  if (!confirm('Delete EVERYTHING — every environment AND the shared services?\n\nAll containers, volumes (every database), networks, and the bank consents the environments created at GoCardless. The secret stores stay, so a fresh Set up keeps the same passwords.')) return;
+  if (!confirm('Delete EVERYTHING — every environment (production included) AND the shared services?\n\nAll containers, volumes (every database), networks, the bank consents the environments created at GoCardless — and the environments themselves are forgotten: a later Set up & start recreates production fresh. The credentials you entered in step 3 stay stored.\n\n(Store apps have no delete API: retire any app.munni.local.* in Play Console / App Store Connect by hand.)')) return;
+  const envNames = S.envList.map((e) => e.name);
   for (const name of [...S.envList.map((e) => e.stack), SHARED_STACK]) {
     await streamLocal('/api/local/cleanup', { target: name }, `delete ${labelOf(name)}`);
   }
+  try {
+    const fr = await (await hfetch('/api/local/envs/forget-all', { method: 'POST', body: '{}' })).json();
+    localLog(`\nenvironments forgotten: ${fr.forgotten.join(', ') || '(none)'} — Set up & start recreates production fresh\n`);
+  } catch (e) { localLog(`\ncould not forget the environments: ${e.message}\n`); }
+  // per-env GitHub publish flags die with their environments
+  if (S.pat && S.user) {
+    for (const name of envNames) {
+      try { await gh(`/repos/${S.slug}/environments/local/variables/${publishFlagName(name)}`, { method: 'DELETE' }); } catch { /* never set */ }
+    }
+  }
+  await refreshLocal();
 });
 document.getElementById('btn-dev-nuke')?.addEventListener('click', () => {
   if (!confirm('Delete the from-source DEV LOOP completely?\n\nThis stops its containers and removes its volumes (dev database included), its network, and revokes the bank consents the dev app created at GoCardless.')) return;
@@ -2120,10 +2189,12 @@ document.getElementById('btn-trust-ca')?.addEventListener('click', () =>
 
 async function ghUpsertEnvVar(envName, name, value) {
   const base = `/repos/${S.slug}/environments/${encodeURIComponent(envName)}/variables`;
+  // PATCH first: after the first build every variable exists, so the
+  // common path stays quiet (the old POST-first sprayed 409s in devtools)
   try {
-    await gh(base, { method: 'POST', body: JSON.stringify({ name, value }) });
-  } catch {
     await gh(`${base}/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify({ name, value }) });
+  } catch {
+    await gh(base, { method: 'POST', body: JSON.stringify({ name, value }) });
   }
 }
 const nativeTargetStack = () => document.getElementById('native-env-select')?.value || 'munni-local-prod';
@@ -2144,16 +2215,34 @@ const localPublishEnabled = async (env) => {
   const v = await gh(`/repos/${S.slug}/environments/local/variables/${publishFlagName(env)}`, { allow404: true });
   return v?.value === 'true';
 };
-document.getElementById('btn-native-local-publish')?.addEventListener('click', async () => {
-  const say = (t, ok = true) => msg('msg-native-local', t, ok);
-  if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card in step 3).', false); return; }
-  const env = nativeTargetEnv();
+
+/* no Enable-publish button (user ruling 2026-08-28): the page POLLS the
+ * stores with the step-3 credentials and flips the flag itself the
+ * moment the one-time manual upload exists */
+const STORE_POLL_MS = 3 * 60 * 1000;
+async function refreshStoreStatus() {
+  if (S.platform !== 'local' || !HELPER || !(S.features.android || S.features.ios)) return;
+  let st;
   try {
-    await ensureEnv('local');
-    await ghUpsertEnvVar('local', publishFlagName(env), 'true');
-    say(`auto-publish enabled for ${env} ✓ — every future ${env} build lands in the Play internal track by itself`);
-  } catch (e) { say('✗ ' + (e.message || e), false); }
-});
+    st = await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
+  } catch { return; }
+  if (st.error) return;
+  const pillText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'add the credential in step 3 to auto-detect' };
+  if (S.features.android) setPill('play-status-pill', pillText[st.play.state] ?? st.play.detail ?? st.play.state, st.play.state === 'ready');
+  if (S.features.ios) setPill('asc-status-pill', pillText[st.ios.state] ?? st.ios.detail ?? st.ios.state, st.ios.state === 'ready');
+  if (st.play.state === 'ready' && S.pat && S.user) {
+    try {
+      if (!(await localPublishEnabled(st.localEnv))) {
+        await ensureEnv('local');
+        await ghUpsertEnvVar('local', publishFlagName(st.localEnv), 'true');
+        msg('msg-native-local', `${st.appId} found at Play ✓ — auto-publish is ON for ${st.localEnv}; every build lands in the internal track by itself`, true);
+      }
+    } catch { /* connection hiccup — the next poll retries */ }
+  }
+}
+setInterval(() => { refreshStoreStatus().catch(() => {}); }, STORE_POLL_MS);
+document.getElementById('native-env-select')?.addEventListener('change', () => refreshStoreStatus().catch(() => {}));
+setTimeout(() => refreshStoreStatus().catch(() => {}), 4000);
 /** items 1+2 of the native ruling: toggling the feature IS the trigger,
  * and LAN mode flips on by itself — no localhost detour, no extra click */
 async function ensureLanMode() {
@@ -2204,7 +2293,8 @@ async function buildLocalAndroidFlow() {
     a.download = 'munni-android-release.zip';
     a.click();
     URL.revokeObjectURL(a.href);
-    say('signed bundle downloaded ✓ — unzip it, do the one-time Play upload (see the fold below), then press Enable auto-publish.');
+    say('signed bundle downloaded ✓ — unzip it and do the one-time Play upload (see the fold below); this page notices by itself and turns auto-publish on.');
+    refreshStoreStatus().catch(() => {});
   } catch (e) {
     say('✗ ' + (e.message || e), false);
   } finally {
