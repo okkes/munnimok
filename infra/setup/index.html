@@ -1024,7 +1024,7 @@ const GROUPS = [
     ],
   },
   {
-    id: 'playstore', title: 'Google Play publishing', feature: 'android',
+    id: 'playstore', title: 'Google Play publishing', feature: 'android', check: 'playstore',
     why: 'CI publishes the Android builds with a Play service account — and this page uses the SAME credential to notice when you finish a one-time store upload, so auto-publish turns on by itself.',
     how: [
       '<a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Settings → <b>API access</b> → create (or reuse) a Google Cloud service account, grant it <b>Release to testing tracks</b> on your munni apps.',
@@ -1035,7 +1035,7 @@ const GROUPS = [
     ],
   },
   {
-    id: 'ascstore', title: 'App Store Connect key', feature: 'ios',
+    id: 'ascstore', title: 'App Store Connect key', feature: 'ios', check: 'ascstore',
     why: 'CI uploads iOS builds to TestFlight with an App Store Connect API key — and this page uses it to check when the app record exists.',
     how: [
       '<a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noreferrer">App Store Connect → Integrations</a> → generate an API key with <b>App Manager</b> access; note the Key ID and the Issuer ID shown above the list.',
@@ -2230,15 +2230,26 @@ async function refreshStoreStatus() {
   const pillText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'add the credential in step 3 to auto-detect' };
   if (S.features.android) setPill('play-status-pill', pillText[st.play.state] ?? st.play.detail ?? st.play.state, st.play.state === 'ready');
   if (S.features.ios) setPill('asc-status-pill', pillText[st.ios.state] ?? st.ios.detail ?? st.ios.state, st.ios.state === 'ready');
-  if (st.play.state === 'ready' && S.pat && S.user) {
-    try {
-      if (!(await localPublishEnabled(st.localEnv))) {
-        await ensureEnv('local');
-        await ghUpsertEnvVar('local', publishFlagName(st.localEnv), 'true');
-        msg('msg-native-local', `${st.appId} found at Play ✓ — auto-publish is ON for ${st.localEnv}; every build lands in the internal track by itself`, true);
-      }
-    } catch { /* connection hiccup — the next poll retries */ }
-  }
+  if (!S.pat || !S.user) return;
+  try {
+    const flag = await localPublishEnabled(st.localEnv);
+    if (st.play.state === 'ready' && !flag) {
+      await ensureEnv('local');
+      await ghUpsertEnvVar('local', publishFlagName(st.localEnv), 'true');
+      msg('msg-native-local', `${st.appId} found at Play ✓ — auto-publish is ON for ${st.localEnv}; every build lands in the internal track by itself`, true);
+    } else if (st.play.state === 'missing-app' && flag) {
+      // the flag can lie (it survives store/db resets) — store reality wins
+      await ghUpsertEnvVar('local', publishFlagName(st.localEnv), 'false');
+      msg('msg-native-local', `${st.appId} does not exist at Play — auto-publish for ${st.localEnv} is off until the one-time upload appears (this page keeps watching)`, false);
+    }
+  } catch { /* connection hiccup — the next poll retries */ }
+}
+/** what the STORE says about the target env's Play app (flag-independent) */
+async function playStateFor(stack) {
+  try {
+    const st = await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(stack)}`)).json();
+    return st.error ? 'error' : st.play.state;
+  } catch { return 'error'; }
 }
 setInterval(() => { refreshStoreStatus().catch(() => {}); }, STORE_POLL_MS);
 document.getElementById('native-env-select')?.addEventListener('change', () => refreshStoreStatus().catch(() => {}));
@@ -2262,7 +2273,13 @@ async function buildLocalAndroidFlow() {
     if (!(await ensureLanMode())) return;
     say('writing the LAN config into the GitHub environment "local"…');
     const cfg = await writeLocalNativeEnv();
-    const publish = (await localPublishEnabled(cfg.localEnv)) ? 'auto' : 'skip';
+    // the STORE decides whether to publish (found live 2026-08-28: a
+    // stale flag claimed "published" while nothing existed at Play);
+    // the flag only breaks ties when no credential is stored to check
+    const playState = await playStateFor(nativeTargetStack());
+    let publish = 'skip';
+    if (playState === 'ready') publish = 'auto';
+    else if (playState === 'no-creds' && (await localPublishEnabled(cfg.localEnv))) publish = 'auto';
     const started = Date.now();
     await dispatch('native-android.yml', { environment: 'local', localEnv: cfg.localEnv, publish });
     say(`build dispatched for ${cfg.appId} (${publish === 'skip' ? 'upload skipped until the one-time Play setup' : 'auto-publish on'}) — CI is compiling (usually 6-10 min)…`);
@@ -2276,7 +2293,7 @@ async function buildLocalAndroidFlow() {
       if (Date.now() - started > 30 * 60 * 1000) throw new Error('CI never finished within 30 minutes — check the Actions tab');
     }
     if (run.conclusion !== 'success') throw new Error(`the build ended ${run.conclusion} — open the run to see why`);
-    if (await localPublishEnabled(cfg.localEnv)) {
+    if (publish === 'auto') {
       say('build green ✓ — published to the Play internal track. Your phone picks it up from Play (internal testing) shortly.');
       return;
     }

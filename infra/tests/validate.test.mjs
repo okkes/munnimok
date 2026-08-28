@@ -89,6 +89,38 @@ test('fcm: parses the service account, mints a jwt-bearer grant to its token_uri
   assert.match(missingField.detail, /lacks "private_key"/);
 });
 
+test('playstore: parses the service account and mints an androidpublisher-scoped grant', async () => {
+  const sa = { private_key: rsaPem(), client_email: 'ci@sa.test', token_uri: 'https://oauth2.googleapis.com/token' };
+  const { calls, fetchImpl } = capture(200, { access_token: 'x' });
+  const verdict = await validate('playstore', { PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify(sa) }, { fetchImpl });
+  assert.equal(verdict.ok, true);
+  assert.match(verdict.detail, /Play-publishing scope/);
+  const { payload } = decodeJwt(new URLSearchParams(calls[0].init.body).get('assertion'));
+  assert.match(payload.scope, /androidpublisher/);
+
+  const notJson = await validate('playstore', { PLAY_SERVICE_ACCOUNT_JSON: 'nope' }, { fetchImpl });
+  assert.match(notJson.detail, /not valid JSON/);
+  const rejected = await validate('playstore', { PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify(sa) }, { fetchImpl: capture(401, {}).fetchImpl });
+  assert.equal(rejected.ok, false);
+});
+
+test('ascstore: ES256 App Store Connect jwt against /v1/apps; team-id format guard', async () => {
+  const p8 = Buffer.from(ecPem()).toString('base64');
+  const { calls, fetchImpl } = capture(200, { data: [] });
+  const verdict = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: p8, APPLE_TEAM_ID: 'ABCDE12345' }, { fetchImpl });
+  assert.equal(verdict.ok, true);
+  assert.match(calls[0].url, /appstoreconnect\.apple\.com\/v1\/apps/);
+  const jwt = calls[0].init.headers.authorization.replace('Bearer ', '');
+  const { header, payload } = decodeJwt(jwt);
+  assert.equal(header.kid, 'K1');
+  assert.equal(payload.aud, 'appstoreconnect-v1');
+
+  const badTeam = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: p8, APPLE_TEAM_ID: 'nope' }, { fetchImpl });
+  assert.match(badTeam.detail, /10 letters/);
+  const badKey = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: 'AAAA' }, { fetchImpl });
+  assert.match(badKey.detail, /does not parse/);
+});
+
 test('logodev: swap detection first, then search (sk) + image (pk)', async () => {
   const swapped = await validate('logodev', { NAS_LOGODEV_SECRET_KEY: 'pk_x', NAS_LOGODEV_PUBLIC_TOKEN: 'sk_y' }, { fetchImpl: capture(200).fetchImpl });
   assert.equal(swapped.ok, false);

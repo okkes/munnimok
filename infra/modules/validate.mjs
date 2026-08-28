@@ -175,6 +175,70 @@ export const VALIDATORS = {
     return { ok: true, detail: `Apple recognized the client (dummy code rejected with "${body.error ?? res.status}", as expected)` };
   },
 
+  /** parse the Play service account + mint an androidpublisher-scoped
+   * token — the exact credential the CI publish step and the wizard's
+   * store-app detection use */
+  async playstore(values, fetchImpl) {
+    const gap = need(values, ['PLAY_SERVICE_ACCOUNT_JSON']);
+    if (gap) return { ok: false, detail: gap };
+    let sa;
+    try {
+      sa = JSON.parse(values.PLAY_SERVICE_ACCOUNT_JSON);
+    } catch {
+      return { ok: false, detail: 'not valid JSON — paste the WHOLE downloaded service-account file' };
+    }
+    for (const field of ['private_key', 'client_email', 'token_uri']) {
+      if (!sa[field]) return { ok: false, detail: `service-account JSON lacks "${field}" — wrong file?` };
+    }
+    const now = Math.floor(Date.now() / 1000);
+    let assertion;
+    try {
+      assertion = jwtRS256({
+        header: { alg: 'RS256', typ: 'JWT' },
+        payload: { iss: sa.client_email, scope: 'https://www.googleapis.com/auth/androidpublisher', aud: sa.token_uri, iat: now, exp: now + 300 },
+        pem: sa.private_key,
+      });
+    } catch (e) {
+      return { ok: false, detail: `the embedded private key does not parse (${e.message})` };
+    }
+    const res = await fetchImpl(sa.token_uri, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(),
+      signal: T(),
+    });
+    if (res.ok) return { ok: true, detail: `Google accepted the service account (${sa.client_email}) with Play-publishing scope` };
+    const body = (await res.text()).slice(0, 160);
+    return { ok: false, detail: `Google rejected the service account (${res.status}): ${body}` };
+  },
+
+  /** ES256 App Store Connect JWT against GET /v1/apps — the key CI
+   * uploads with and the wizard checks app records with */
+  async ascstore(values, fetchImpl) {
+    const gap = need(values, ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8']);
+    if (gap) return { ok: false, detail: gap };
+    if (values.APPLE_TEAM_ID && !/^[A-Z0-9]{10}$/i.test(values.APPLE_TEAM_ID)) {
+      return { ok: false, detail: 'the Team ID should be 10 letters/digits (developer.apple.com → Membership details)' };
+    }
+    const now = Math.floor(Date.now() / 1000);
+    let jwt;
+    try {
+      jwt = jwtES256({
+        header: { alg: 'ES256', kid: values.ASC_KEY_ID, typ: 'JWT' },
+        payload: { iss: values.ASC_ISSUER_ID, aud: 'appstoreconnect-v1', iat: now, exp: now + 600 },
+        pem: Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8'),
+      });
+    } catch (e) {
+      return { ok: false, detail: `the .p8 does not parse — paste its BASE64 (${e.message})` };
+    }
+    const res = await fetchImpl('https://api.appstoreconnect.apple.com/v1/apps?limit=1', {
+      headers: { authorization: `Bearer ${jwt}` },
+      signal: T(),
+    });
+    if (res.ok) return { ok: true, detail: 'App Store Connect accepted the key' };
+    return { ok: false, detail: `App Store Connect rejected it (${res.status}) — check Key ID, Issuer ID and the .p8 together` };
+  },
+
   /** a real DSM login + logout via the same module the bootstrap uses */
   async synology(values) {
     const gap = need(values, ['SYNOLOGY_URL', 'SYNOLOGY_USER', 'SYNOLOGY_PASS']);
