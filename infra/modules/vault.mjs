@@ -136,9 +136,12 @@ export const vaultPurge = (base, token, hash, fetchImpl = insecureFetch) =>
     body: JSON.stringify({ masterPasswordHash: hash }),
   });
 
-export const vaultImport = (base, token, ciphers, fetchImpl = insecureFetch) =>
-  fetchImpl(`${base}/api/ciphers/import`, {
+export const vaultImport = (base, token, payload, fetchImpl = insecureFetch) => {
+  // accepts either a bare cipher array or {ciphers, folders, folderRelationships}
+  const body = Array.isArray(payload) ? { ciphers: payload, folders: [], folderRelationships: [] } : payload;
+  return fetchImpl(`${base}/api/ciphers/import`, {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-    body: JSON.stringify({ ciphers, folders: [], folderRelationships: [] }),
+    body: JSON.stringify(body),
   });
+};

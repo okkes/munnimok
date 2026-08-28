@@ -1,5 +1,6 @@
 import { createSign, sign as cryptoSign } from 'node:crypto';
 import { dsmLogin, dsmLogout } from './dsm.mjs';
+import { localAwareFetch } from './insecure-fetch.mjs';
 import { loadStack } from './stack.mjs';
 
 /**
@@ -219,7 +220,10 @@ export const VALIDATORS = {
   },
 };
 
-export async function validate(provider, values, { fetchImpl = fetch } = {}) {
+// localAwareFetch: public providers stay strictly verified; the two
+// LOCAL validators (logto-m2m, glitchtip-token) hit our own family
+// urls, which under LAN mode are https signed by the local Caddy CA
+export async function validate(provider, values, { fetchImpl = localAwareFetch } = {}) {
   const fn = VALIDATORS[provider];
   if (!fn) return { ok: false, detail: `no validator for "${provider}"` };
   try {

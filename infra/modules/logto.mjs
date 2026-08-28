@@ -1,13 +1,13 @@
 import { execFileSync } from 'node:child_process';
+import { localAwareFetch } from './insecure-fetch.mjs';
 import { lanHost, loadStack } from './stack.mjs';
 
-/** LAN mode: the localhost twin of a LAN-derived origin stays registered
- * too, so browsing http://localhost:PORT keeps signing in while phones
- * use the LAN address */
-const originVariants = (url) => {
-  const lan = lanHost();
-  if (!lan || !url?.includes(`//${lan}:`)) return [url];
-  return [url, url.replace(`//${lan}:`, '//localhost:')];
+/** LAN mode: the plain-http localhost twin of every https sslip origin
+ * stays registered too, so browsing http://localhost:PORT keeps signing
+ * in while phones and Enable Banking use the https hostnames */
+const originVariants = (url, twinPort) => {
+  if (!lanHost() || !url?.startsWith('https://') || !twinPort) return [url];
+  return [url, `http://localhost:${twinPort}`];
 };
 
 /**
@@ -21,7 +21,7 @@ const originVariants = (url) => {
 const MGMT_RESOURCE = 'https://default.logto.app/api';
 
 async function mgmtToken(logtoUrl, m2mId, m2mSecret) {
-  const res = await fetch(`${logtoUrl}/oidc/token`, {
+  const res = await localAwareFetch(`${logtoUrl}/oidc/token`, {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
@@ -34,7 +34,7 @@ async function mgmtToken(logtoUrl, m2mId, m2mSecret) {
 }
 
 async function api(logtoUrl, token, path, init = {}) {
-  const res = await fetch(`${logtoUrl}/api${path}`, {
+  const res = await localAwareFetch(`${logtoUrl}/api${path}`, {
     ...init,
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
   });
@@ -50,8 +50,8 @@ async function api(logtoUrl, token, path, init = {}) {
  * via the hosted universal link /native-auth (scheme bounce as the
  * fallback) and signs out to /native-signed-out + scheme://signed-out. */
 export function appDefinitions(stack) {
-  const spa = (name, url) => {
-    const origins = originVariants(url);
+  const spa = (name, url, twinPort) => {
+    const origins = originVariants(url, twinPort);
     return {
       name,
       type: 'SPA',
@@ -72,8 +72,8 @@ export function appDefinitions(stack) {
     customClientMetadata: { corsAllowedOrigins: ['capacitor://localhost', 'https://localhost'] },
   };
   const defs = {
-    web: spa(`${stack.stack} web`, stack.urls.web),
-    admin: spa(`${stack.stack} admin`, stack.urls.admin),
+    web: spa(`${stack.stack} web`, stack.urls.web, stack.ports?.web),
+    admin: spa(`${stack.stack} admin`, stack.urls.admin, stack.ports?.admin),
     native,
     m2m: { name: `${stack.stack} api m2m`, type: 'MachineToMachine' },
   };
@@ -83,7 +83,7 @@ export function appDefinitions(stack) {
   if (stack.sharedStack) {
     const shared = loadStack(stack.sharedStack);
     if (shared.controlApi === stack.stack && shared.urls.control) {
-      defs.control = spa(`${stack.stack} control`, shared.urls.control);
+      defs.control = spa(`${stack.stack} control`, shared.urls.control, shared.ports?.control);
     }
   }
   return defs;
@@ -190,7 +190,7 @@ async function brandingImages(pairStack) {
     return { logoUrl: `${web}/icon-512.png`, favicon: `${web}/icon-192.png` };
   }
   const asDataUri = async (url) => {
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    const res = await localAwareFetch(url, { signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`icon fetch ${url} failed (${res.status})`);
     const type = res.headers.get('content-type') ?? 'image/png';
     return `data:${type};base64,${Buffer.from(await res.arrayBuffer()).toString('base64')}`;

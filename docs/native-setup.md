@@ -243,36 +243,52 @@ Repo-level is fine for these (same app id serves prod + staging;
 scope them per environment only if you later want staging-only Logto
 apps).
 
-## 9. The LOCAL store channel (added 2026-08-28) — wizard-managed
+## 9. The LOCAL store channels (added 2026-08-28) — wizard-managed
 
-The LAN build is a full THIRD store identity beside prod and dev:
-**`app.munni.local`** ("munni local", `munni-local://`, the staging
-icon) — Android product flavor `local` (own
+Every LOCAL ENVIRONMENT is its own store identity beside prod and dev:
+**`app.munni.local.<env>`** ("munni <env>", `munni-local[-<env>]://`,
+the staging icon) — Android product flavor `local` (own
 `src/local/google-services.json` stub; replace it with a real Firebase
-download to activate push) and the generalized iOS rebrand (associated
-domains stripped — the LAN app claims no universal links; auth returns
-ride the scheme).
+download to activate push), rebranded per environment by CI (`sed` over
+the stub + shortcuts before the build; iOS generalizes the bundle-id
+rebrand the same way, associated domains stripped — the LAN app claims
+no universal links; auth returns ride the scheme).
 
-Both native workflows accept `environment: local` on dispatch and then
-build against the machine's LAN address. The wizard's local track
-drives everything: it turns on **LAN mode** (the family re-renders onto
-`192.168.x.y`; localhost keeps working alongside), writes
-`NATIVE_API_URL`/`NATIVE_PUBLIC_ORIGIN`/`NATIVE_LOGTO_*`/DSNs into the
-GitHub environment `local`, dispatches the build — and DELIVERY GOES
-THROUGH THE STORES like every other channel:
+Both native workflows accept `environment: local` + `localEnv: <env>`
+(+ Android: `publish: auto|skip`) on dispatch and then build against
+the machine's LAN family. The wizard's local track drives everything:
+it turns on **LAN mode** — the family re-renders onto REAL https
+hostnames `https://munni-<env>.<ip-dashed>.sslip.io` behind one family
+Caddy with a locally-minted CA (localhost keeps working alongside;
+Enable Banking consents work locally because the redirect is genuine
+https) — writes `NATIVE_API_URL`/`NATIVE_PUBLIC_ORIGIN`/
+`NATIVE_LOGTO_*`/DSNs into the GitHub environment `local`, dispatches
+the build — and DELIVERY GOES THROUGH THE STORES like every other
+channel:
 
 - **Android** → Play **internal testing** track, auto-published once
-  `NATIVE_LOCAL_CHANNEL=true` (env `local` variable, the wizard's
-  "Enable auto-publish" button). The store-mandated first upload stays
-  manual ONCE: the wizard downloads the signed `.aab` from the first
-  green build → Play Console → create app `app.munni.local` → Internal
-  testing → upload → grant the CI service account.
-- **iOS** → TestFlight, after the one-time App Store Connect record
-  (New App, bundle `app.munni.local`).
+  `NATIVE_LOCAL_CHANNEL_<ENV>=true` (env `local` variable, the wizard's
+  per-environment "Enable auto-publish" button; the wizard resolves it
+  into the dispatch's `publish` input — until then builds pass with the
+  upload skipped, no red runs). The store-mandated first upload stays
+  manual ONCE PER ENVIRONMENT: the wizard downloads the signed `.aab`
+  from the first green build → Play Console → create app
+  `app.munni.local.<env>` → Internal testing → upload → grant the CI
+  service account.
+- **iOS** → TestFlight, after the one-time App Store Connect record per
+  environment (New App, bundle `app.munni.local.<env>`).
 
-Caveats, stated in the wizard too: the build bakes the LAN address (a
-DHCP change needs a rebuild — reserve the address), and it only works
-on that wifi.
+Phones must trust the family's CA once per device (download
+`http://ca.<ip-dashed>.sslip.io` → install root.crt; iPhone also
+enables it under Certificate Trust Settings). The local Android flavor
+ships a `network_security_config` that trusts user-installed CAs for
+exactly this; hosted flavors stay system-CAs-only.
+
+Caveats, stated in the wizard too: the build bakes the LAN hostnames (a
+DHCP change changes them — reserve the address), and it only works on
+that wifi. Deleting an environment cascades: containers + volumes, its
+GoCardless consents, its vault folder, its auto-publish flag — only the
+store apps themselves are manual (the stores have no delete API).
 
 ## What works today
 

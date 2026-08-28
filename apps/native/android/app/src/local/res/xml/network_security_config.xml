@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LOCAL flavor only: also trust USER-installed CAs. The munni-local
+     family serves https://munni-<env>.<lan-ip>.sslip.io behind a Caddy
+     that signs with a locally-minted CA; the operator installs that
+     root (download: http://ca.<lan-ip>.sslip.io) on the phone once and
+     every environment's https works. Cleartext stays off — the whole
+     family is https now. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

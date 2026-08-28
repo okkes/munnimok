@@ -74,8 +74,10 @@ function synthesizeLocalEnv(entry) {
     ports: { web: 8380 + 100 * s, admin: 8381 + 100 * s, api: 8382 + 100 * s, logto: 3201 + 100 * s, logtoAdmin: 3202 + 100 * s },
     registry: 'ghcr.io/okkes',
     native: {
-      appId: 'app.munni.local',
-      label: entry.name === 'prod' ? 'munni local' : `munni local ${entry.name}`,
+      // one store identity PER environment (user ruling 2026-08-28):
+      // app.munni.local.prod, app.munni.local.dev, … installable side by side
+      appId: `app.munni.local.${entry.name}`,
+      label: `munni ${entry.name}`,
       scheme: entry.name === 'prod' ? 'munni-local' : `munni-local-${entry.name}`,
     },
     features: { telemetry: true },
@@ -111,20 +113,35 @@ export function loadStack(name) {
     cfg.domain = process.env.IAC_DOMAIN;
   }
   if (cfg.stack !== name) throw new Error(`stack file ${file} declares "${cfg.stack}" — must match its filename`);
-  // target "local": everything on one host over plain http (Docker
-  // Desktop) — localhost, or the machine's LAN address in LAN mode —
-  // no DSM, no DDNS, no GitHub Environment. The VAULT stays on
-  // localhost even in LAN mode: the Bitwarden web client refuses plain
-  // http on any non-localhost origin ("All URLs must use HTTPS", found
-  // live 2026-08-28), and phone vault use would need TLS anyway.
+  // target "local": localhost plain-http by default; in LAN MODE the
+  // whole family moves onto REAL https hostnames —
+  // <service>.<ip-dashed>.sslip.io (wildcard DNS to the LAN address,
+  // user ruling 2026-08-28) behind one family Caddy with a local CA, so
+  // browsers get no mixed content and Enable Banking gets a registrable
+  // https redirect. The localhost http ports stay published as twins.
+  // The VAULT is https in BOTH modes (the Bitwarden web client refuses
+  // plain http outright).
   const local = cfg.target === 'local';
   const lan = local ? lanHost() : null;
-  const localHostFor = (key) => (key === 'vault' ? 'localhost' : (lan ?? 'localhost'));
-  // the vault is https even locally (Caddy sidecar with a local CA —
-  // the Bitwarden web client refuses plain http outright)
-  const localScheme = (key) => (key === 'vault' ? 'https' : 'http');
-  const host = (key) => (local ? localHostFor(key) : `${cfg.hosts[key]}.${cfg.domain}`);
-  const url = (key) => (local ? `${localScheme(key)}://${localHostFor(key)}:${cfg.ports[key]}` : `https://${host(key)}`);
+  const sslipBase = lan ? `${lan.replaceAll('.', '-')}.sslip.io` : null;
+  const envPart = cfg.envName ? `munni-${cfg.envName}` : null;
+  const sslipHost = (key) => {
+    if (envPart) {
+      const suffix = { web: '', admin: '-admin', api: '-api', logto: '-logto', logtoAdmin: '-logto-admin' }[key] ?? `-${key}`;
+      return `${envPart}${suffix}.${sslipBase}`;
+    }
+    return `${key === 'logtoAdmin' ? 'logto-admin' : key}.${sslipBase}`;
+  };
+  const host = (key) => {
+    if (!local) return `${cfg.hosts[key]}.${cfg.domain}`;
+    return sslipBase ? sslipHost(key) : 'localhost';
+  };
+  const url = (key) => {
+    if (!local) return `https://${host(key)}`;
+    if (sslipBase) return `https://${sslipHost(key)}`;
+    if (key === 'vault') return `https://localhost:${cfg.ports[key]}`;
+    return `http://localhost:${cfg.ports[key]}`;
+  };
   // a stack only gets urls for services it actually addresses (a shared
   // stack has no web/api; an env stack pointing at a shared stack has no
   // glitchtip of its own) — locally that is "port defined", hosted

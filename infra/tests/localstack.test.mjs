@@ -136,37 +136,55 @@ test('env render: own logto, OWN postgres with a pgadmin alias, no glitchtip ser
   assert.ok(!env.includes('${'), 'placeholders survived the env render');
 });
 
-test('LAN mode: the marker file moves every local url onto the LAN host, localhost stays a twin', () => {
+test('LAN mode: the marker file moves every local url onto https sslip.io hostnames, localhost stays a twin', () => {
   writeFileSync(join(SCRATCH, 'lan-host'), '192.168.1.50\n');
   try {
     assert.equal(lanHost(), '192.168.1.50');
     const prod = loadStack('munni-local-prod');
-    assert.equal(prod.urls.web, 'http://192.168.1.50:8380');
-    assert.equal(prod.urls.logto, 'http://192.168.1.50:3201');
+    assert.equal(prod.urls.web, 'https://munni-prod.192-168-1-50.sslip.io');
+    assert.equal(prod.urls.admin, 'https://munni-prod-admin.192-168-1-50.sslip.io');
+    assert.equal(prod.urls.api, 'https://munni-prod-api.192-168-1-50.sslip.io');
+    assert.equal(prod.urls.logto, 'https://munni-prod-logto.192-168-1-50.sslip.io');
     const shared = loadStack('munni-local-shared');
-    assert.equal(shared.urls.glitchtip, 'http://192.168.1.50:8383');
-    // the Bitwarden web client refuses http outright — the vault stays
-    // https://localhost even in LAN mode
-    assert.equal(shared.urls.vault, 'https://localhost:8384');
+    assert.equal(shared.urls.glitchtip, 'https://glitchtip.192-168-1-50.sslip.io');
+    assert.equal(shared.urls.vault, 'https://vault.192-168-1-50.sslip.io');
     // sign-in accepts BOTH forms so host-browser use keeps working
     const apps = appDefinitions(prod);
     assert.deepEqual(apps.web.oidcClientMetadata.redirectUris, [
-      'http://192.168.1.50:8380/auth-callback',
+      'https://munni-prod.192-168-1-50.sslip.io/auth-callback',
       'http://localhost:8380/auth-callback',
     ]);
     assert.ok(apps.web.customClientMetadata.corsAllowedOrigins.includes('http://localhost:8380'));
-    // the api's CORS carries the localhost twins too
+    // the api's CORS carries the https origin AND the localhost twins
     const dir = renderStack(prod, familyValues(prod));
     const compose = readFileSync(join(dir, 'docker-compose.munni-local-prod.yml'), 'utf8');
     assert.ok(compose.includes('postgres-prod:'), 'unique pg service name under LAN mode too');
-    assert.ok(compose.includes('Cors__Origins__0: http://192.168.1.50:8380'));
+    // the same unique-name rule covers every service on the shared net
+    for (const svc of ['web-prod:', 'admin-prod:', 'api-prod:', 'logto-prod:']) {
+      assert.ok(compose.includes(svc), `${svc} carries the env suffix (shared-net DNS collisions)`);
+    }
+    assert.ok(compose.includes('aliases: [logto]'), 'in-stack alias keeps plain names working');
+    assert.ok(compose.includes('Cors__Origins__0: https://munni-prod.192-168-1-50.sslip.io'));
     assert.ok(compose.includes('http://localhost:8380'));
     assert.ok(compose.includes('http://localhost:8381'));
+    // logto sits behind the family Caddy now — it must trust the proxy
+    assert.ok(compose.includes('TRUST_PROXY_HEADER: "1"'));
+    // the family Caddy terminates tls for every env + shared service and
+    // serves its root CA for phone installs
+    const sharedDir = renderStack(shared, familyValues(shared));
+    const caddy = readFileSync(join(sharedDir, 'Caddyfile'), 'utf8');
+    assert.ok(caddy.includes('local_certs'));
+    assert.ok(caddy.includes('https://munni-prod.192-168-1-50.sslip.io'));
+    assert.ok(caddy.includes('https://munni-prod-logto.192-168-1-50.sslip.io'));
+    assert.ok(caddy.includes('https://glitchtip.192-168-1-50.sslip.io'));
+    assert.ok(caddy.includes('https://localhost:8384'), 'vault keeps its localhost https site as a twin');
+    assert.ok(caddy.includes('http://ca.192-168-1-50.sslip.io'), 'root CA download site');
   } finally {
     rmSync(join(SCRATCH, 'lan-host'), { force: true });
   }
   assert.equal(lanHost(), null);
   assert.equal(loadStack('munni-local-prod').urls.web, 'http://localhost:8380', 'deleting the marker flips back');
+  assert.equal(loadStack('munni-local-shared').urls.vault, 'https://localhost:8384', 'vault stays https even without LAN');
   renderStack(loadStack('munni-local-prod'), familyValues(loadStack('munni-local-prod'))); // leave a localhost render behind
 });
 

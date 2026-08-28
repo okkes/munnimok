@@ -124,7 +124,7 @@ test('tools run only from the fixed per-stack allowlist', async () => {
   const good = fakeRes();
   await app(fakeReq({ method: 'POST', url: '/api/local/tool', token: 'tok', body: { tool: 'munni-local-shared:up' } }), good);
   assert.equal(runs.length, 1);
-  assert.deepEqual(runs[0].args.slice(-2), ['up', '-d']);
+  assert.deepEqual(runs[0].args.slice(-3), ['up', '-d', '--remove-orphans']);
   assert.ok(runs[0].args.join(' ').includes('docker-compose.munni-local-shared.yml'));
   // every family stack resolves up/down/destroy; devsource covers the
   // from-source dev flow; anything else refuses
@@ -191,7 +191,7 @@ test('logto-setup targets the chosen environment and reuses the stored credentia
   assert.ok(!stream.includes(secret), 'the M2M secret leaked into the page stream');
   assert.match(stream, /auto-claim skipped/);
   assert.match(stream, /\[exit 0\]/);
-  assert.deepEqual(spawned[3].args.slice(-2), ['up', '-d']);
+  assert.deepEqual(spawned[3].args.slice(-3), ['up', '-d', '--remove-orphans']);
   assert.ok(spawned[3].args.join(' ').includes('docker-compose.munni-local-dev.yml'));
 
   // fresh-database contract: with a credential in the store (the REAL
@@ -220,7 +220,7 @@ test('logto-setup on the control-owning environment refreshes the shared stack t
   assert.equal(spawned.length, 6, 'munni-control rides prod sign-in: the shared stack must re-render + restart');
   assert.ok(spawned[3].args.join(' ').includes('--stack munni-local-shared'));
   assert.ok(spawned[4].args.join(' ').includes('docker-compose.munni-local-shared.yml'));
-  assert.deepEqual(spawned[4].args.slice(-2), ['up', '-d']);
+  assert.deepEqual(spawned[4].args.slice(-3), ['up', '-d', '--remove-orphans']);
   assert.ok(spawned[5].args.join(' ').includes('docker-compose.munni-local-prod.yml'));
 });
 
@@ -312,13 +312,19 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
   const exported = JSON.parse(exportRes.chunks.join(''));
   assert.equal(exported.encrypted, false);
   const names = exported.items.map((i) => i.name);
-  assert.ok(names.includes('munni local / GlitchTip console'));
-  assert.ok(names.includes('munni local / pgAdmin'), 'pgAdmin login rides the export');
-  assert.ok(names.includes('munni-local-shared / NAS_GOCARDLESS_SECRET_ID'));
+  assert.ok(names.includes('GlitchTip console'));
+  assert.ok(names.includes('pgAdmin'), 'pgAdmin login rides the export');
+  assert.ok(names.includes('NAS_GOCARDLESS_SECRET_ID'), 'plain names — folders carry the grouping now');
   assert.ok(!JSON.stringify(exported).includes('vapid-secret-x'), 'VAPID key leaked into the vault export');
-  const gt = exported.items.find((i) => i.name === 'munni local / GlitchTip console');
+  const gt = exported.items.find((i) => i.name === 'GlitchTip console');
   assert.equal(gt.login.username, 'admin@munni.local');
   assert.ok(gt.login.uris[0].uri.includes('localhost:8383'));
+  // folder grouping (user request): shared items point at the shared folder
+  const sharedFolder = exported.folders.find((f) => f.name === 'shared');
+  assert.ok(sharedFolder, 'a "shared" folder exists in the export');
+  assert.equal(gt.folderId, sharedFolder.id);
+  const gcItem = exported.items.find((i) => i.name === 'NAS_GOCARDLESS_SECRET_ID');
+  assert.equal(gcItem.folderId, sharedFolder.id, 'GC secret lives in the shared folder (shared ownership)');
 });
 
 test('lanCandidates ranks private IPv4 first and skips internal/v6', () => {
@@ -382,12 +388,16 @@ test('vault-setup: creates the account, imports the items, closes signups — id
   await settle(res);
   const stream = res.chunks.join('');
   assert.match(stream, /account created ✓/);
-  assert.match(stream, /items in the vault ✓/);
+  assert.match(stream, /items in \d+ folders ✓/);
   assert.match(stream, /\[exit 0\]/);
   assert.ok(vaultCalls.some((c) => c.url.includes('/api/ciphers/purge')));
   const imp = vaultCalls.find((c) => c.url.includes('/api/ciphers/import'));
   assert.ok(imp, 'import was called');
-  assert.ok(JSON.parse(imp.init.body).ciphers.length >= 1, 'items were imported');
+  const impBody = JSON.parse(imp.init.body);
+  assert.ok(impBody.ciphers.length >= 1, 'items were imported');
+  assert.ok(impBody.folders.length >= 1, 'per-environment folders ride along');
+  assert.equal(impBody.folderRelationships.length, impBody.ciphers.length, 'every item lands in a folder');
+  assert.match(impBody.folders[0].name, /^2\./, 'folder names are encrypted EncStrings');
   assert.equal(spawned.length, 2, 'signups close = bootstrap + up on the shared stack');
   assert.ok(spawned[0].args.join(' ').includes('--stack munni-local-shared'));
   const store = loadLocalValues(loadStack('munni-local-shared'));
@@ -507,7 +517,7 @@ test('glitchtip-setup mints in the SHARED stack and wires the chosen environment
   assert.ok(boot.args.join(' ').includes('--stack munni-local-dev'));
   assert.equal(boot.opts.env.IAC_GLITCHTIP_API_TOKEN, 'gt_secret_token_123');
   // step 3: the env restarts with its DSNs
-  assert.deepEqual(spawned[2].args.slice(-2), ['up', '-d']);
+  assert.deepEqual(spawned[2].args.slice(-3), ['up', '-d', '--remove-orphans']);
   assert.ok(spawned[2].args.join(' ').includes('docker-compose.munni-local-dev.yml'));
 
   const stream = res.chunks.join('');

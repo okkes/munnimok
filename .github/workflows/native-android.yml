@@ -23,6 +23,15 @@ on:
         type: choice
         options: ['', iac-production, iac-staging, local]
         default: ''
+      localEnv:
+        description: 'Local environment name (with environment=local): prod, dev, …'
+        type: string
+        default: 'prod'
+      publish:
+        description: 'Play upload (auto = when configured; skip = build only, e.g. before the one-time store setup)'
+        type: choice
+        options: [auto, skip]
+        default: auto
   push:
     branches: [master, dev]
 
@@ -63,11 +72,17 @@ jobs:
         id: env
         run: |
           if [ "${{ inputs.environment }}" = "local" ]; then
-            # the wizard-managed LAN channel: its own store identity
-            # (app.munni.local), delivered through Play like the others
+            # the wizard-managed LAN channel: ONE store identity PER local
+            # environment (app.munni.local.<env>), delivered through Play
+            LOCAL_ENV="${{ inputs.localEnv || 'prod' }}"
+            SCHEME="munni-local"; [ "$LOCAL_ENV" = "prod" ] || SCHEME="munni-local-$LOCAL_ENV"
             echo "master=false" >> "$GITHUB_OUTPUT"
             echo "flavor=local" >> "$GITHUB_OUTPUT"
-            echo "NATIVE_SCHEME=munni-local" >> "$GITHUB_ENV"
+            echo "local_app_id=app.munni.local.$LOCAL_ENV" >> "$GITHUB_OUTPUT"
+            echo "NATIVE_SCHEME=$SCHEME" >> "$GITHUB_ENV"
+            echo "LOCAL_APP_ID=app.munni.local.$LOCAL_ENV" >> "$GITHUB_ENV"
+            echo "LOCAL_SCHEME=$SCHEME" >> "$GITHUB_ENV"
+            echo "LOCAL_LABEL=munni $LOCAL_ENV" >> "$GITHUB_ENV"
           elif [ "${{ github.ref }}" = "refs/heads/master" ]; then
             echo "master=true" >> "$GITHUB_OUTPUT"
             echo "flavor=prod" >> "$GITHUB_OUTPUT"
@@ -119,6 +134,17 @@ jobs:
           if [ "${{ steps.env.outputs.flavor }}" = "local" ]; then NAME="$NAME-local";
           elif [ "${{ steps.env.outputs.master }}" != "true" ]; then NAME="$NAME-dev"; fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Rebrand the local flavor for its environment
+        if: steps.env.outputs.flavor == 'local'
+        working-directory: apps/native/android/app/src/local
+        # static per-flavor files carry the identity too: the
+        # google-services stub must match the applicationId or the build
+        # fails, and shortcuts must target the real package/scheme
+        run: |
+          sed -i "s/app\.munni\.local\.prod/${LOCAL_APP_ID}/g" google-services.json
+          sed -i "s/app\.munni\.local\.prod/${LOCAL_APP_ID}/g; s/munni-local:/${LOCAL_SCHEME}:/g" res/xml/shortcuts.xml
+          grep -c "$LOCAL_APP_ID" google-services.json res/xml/shortcuts.xml
 
       - name: Assemble debug APK
         working-directory: apps/native/android
@@ -173,17 +199,28 @@ jobs:
       # One-time, manual per app: create it in the Play Console and upload
       # the FIRST .aab by hand — the API only adds releases to existing apps.
       # master → app.munni; dev (NATIVE_DEV_CHANNEL) → app.munni.dev;
-      # environment local (NATIVE_LOCAL_CHANNEL, wizard-managed) →
-      # app.munni.local, the LAN build.
+      # local → app.munni.local.<env>, PER-environment store channels: the
+      # wizard resolves its per-env NATIVE_LOCAL_CHANNEL_<ENV> flag into
+      # the publish input (auto|skip), so the gate here is input-driven.
       - name: Publish to Play internal track
-        if: ${{ steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' && (steps.env.outputs.master == 'true' || (steps.env.outputs.flavor == 'dev' && vars.NATIVE_DEV_CHANNEL == 'true') || (steps.env.outputs.flavor == 'local' && vars.NATIVE_LOCAL_CHANNEL == 'true')) }}
+        id: play
+        if: ${{ inputs.publish != 'skip' && steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' && (steps.env.outputs.master == 'true' || (steps.env.outputs.flavor == 'dev' && vars.NATIVE_DEV_CHANNEL == 'true') || steps.env.outputs.flavor == 'local') }}
+        # local channel: a missing Play app must not paint the run red —
+        # the store mandates a manual FIRST upload, the artifact is the
+        # deliverable until then (master/dev keep failing hard)
+        continue-on-error: ${{ steps.env.outputs.flavor == 'local' }}
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: ${{ steps.env.outputs.flavor == 'local' && 'app.munni.local' || (steps.env.outputs.master == 'true' && 'app.munni' || 'app.munni.dev') }}
+          packageName: ${{ steps.env.outputs.flavor == 'local' && steps.env.outputs.local_app_id || (steps.env.outputs.master == 'true' && 'app.munni' || 'app.munni.dev') }}
           releaseFiles: apps/native/android/app/build/outputs/bundle/${{ steps.env.outputs.flavor }}Release/app-${{ steps.env.outputs.flavor }}-release.aab
           mappingFile: apps/native/android/app/build/outputs/mapping/${{ steps.env.outputs.flavor }}Release/mapping.txt
           track: internal
           status: completed
         env:
           PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+
+      - name: Play upload verdict (local channel)
+        if: ${{ steps.env.outputs.flavor == 'local' && steps.play.outcome == 'failure' }}
+        run: |
+          echo "::warning title=Play upload skipped::${{ steps.env.outputs.local_app_id }} does not exist at Play yet (or the service account lacks access). One-time: Play Console → create the app → Internal testing → upload the .aab artifact from this run → grant the CI service account. Every later build publishes itself."

@@ -39,10 +39,17 @@ android {
         }
         local {
             dimension 'channel'
-            applicationIdSuffix '.local'
-            // munniHost deliberately dead: the LAN build has no https host,
-            // and it must never claim the real apps' universal links
-            manifestPlaceholders = [munniScheme: 'munni-local', munniLabel: 'munni local', munniHost: 'local.munni.invalid']
+            // ONE flavor, MANY store identities: CI feeds the target
+            // environment's id/scheme/label (app.munni.local.prod,
+            // app.munni.local.dev, … installable side by side).
+            // munniHost deliberately dead: the LAN build has no https
+            // host and must never claim the real apps' universal links.
+            applicationId System.getenv('LOCAL_APP_ID') ?: 'app.munni.local.prod'
+            manifestPlaceholders = [
+                munniScheme: System.getenv('LOCAL_SCHEME') ?: 'munni-local',
+                munniLabel: System.getenv('LOCAL_LABEL') ?: 'munni prod',
+                munniHost: 'local.munni.invalid'
+            ]
         }
     }
     // release signing comes from CI env (repo secrets); local builds

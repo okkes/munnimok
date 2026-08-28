@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { localAwareFetch } from './insecure-fetch.mjs';
 
 /**
  * GlitchTip-as-code (IAC8: "GlitchTip org/DSN creation has an API —
@@ -11,7 +12,7 @@ import { execFileSync } from 'node:child_process';
  */
 
 async function api(base, token, path, init = {}) {
-  const res = await fetch(`${base}/api/0${path}`, {
+  const res = await localAwareFetch(`${base}/api/0${path}`, {
     ...init,
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
     signal: AbortSignal.timeout(15000),

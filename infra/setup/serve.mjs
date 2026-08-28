@@ -28,10 +28,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST } from '../modules/secrets.mjs';
 import { familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from '../modules/localstore.mjs';
-import { insecureFetch } from '../modules/insecure-fetch.mjs';
+import { insecureFetch, localAwareFetch } from '../modules/insecure-fetch.mjs';
 import { lanHost, loadStack, localEnvRegistry, saveLocalEnvRegistry } from '../modules/stack.mjs';
 import { validate } from '../modules/validate.mjs';
-import { buildAccount, buildCipher, vaultImport, vaultLogin, vaultPurge, vaultRegister } from '../modules/vault.mjs';
+import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultRegister } from '../modules/vault.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(DIR, '..', '..');
@@ -70,7 +70,7 @@ export function toolFor(id) {
   if (!LOCAL_STACKS().includes(name)) return null;
   // -v --remove-orphans: destroy nukes volumes, network, strays — the
   // wizard asks for explicit confirmation before calling these
-  const args = { up: ['up', '-d'], down: ['down'], destroy: ['down', '-v', '--remove-orphans'] }[verb];
+  const args = { up: ['up', '-d', '--remove-orphans'], down: ['down'], destroy: ['down', '-v', '--remove-orphans'] }[verb];
   return { cwd: renderedDir(name), cmd: 'docker', args: [...composeArgs(name), ...args] };
 }
 
@@ -86,18 +86,9 @@ const hostOk = (req) => /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.hos
 
 async function probe(url) {
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(1500) });
+    const res = await localAwareFetch(url, { signal: AbortSignal.timeout(1500) });
     return res.status < 500;
   } catch {
-    // the vault's locally-minted certificate fails strict TLS — retry
-    // without verification for local https urls only
-    if (url.startsWith('https://localhost')) {
-      try {
-        return (await insecureFetch(url)).status < 500;
-      } catch {
-        return false;
-      }
-    }
     return false; // unreachable → down
   }
 }
@@ -137,6 +128,35 @@ const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
   });
 
 /* ── status ────────────────────────────────────────────────────────── */
+/** which health url each service key answers on */
+const SERVICE_PROBE_PATH = {
+  web: '',
+  api: '/health',
+  logto: '/oidc/.well-known/openid-configuration',
+  glitchtip: '/api/0/',
+  vault: '/alive',
+  control: '',
+  pgadmin: '/misc/ping',
+};
+
+async function stackStatus(name, probeImpl) {
+  const stack = loadStack(name);
+  const services = {};
+  for (const [key, path] of Object.entries(SERVICE_PROBE_PATH)) {
+    if (stack.urls[key]) services[key] = await probeImpl(`${stack.urls[key]}${path}`);
+  }
+  const own = loadLocalValues(stack);
+  return {
+    rendered: existsSync(join(renderedDir(name), `.env.${name}`)),
+    stored: Object.keys(own).filter((k) => own[k]), // NAMES only, never values
+    required: stackManifestEntries(stack).filter((s) => !s.optional && s.owner === 'operator').map((s) => s.name),
+    services,
+    urls: stack.urls,
+    envName: stack.envName ?? null,
+    channel: stack.channel,
+  };
+}
+
 async function statusEndpoint(res, probeImpl) {
   const docker = await new Promise((resolve) => {
     const c = spawn('docker', ['version', '--format', '{{.Server.Version}}'], { shell: false });
@@ -147,27 +167,7 @@ async function statusEndpoint(res, probeImpl) {
   });
   const stacks = {};
   for (const name of LOCAL_STACKS()) {
-    const stack = loadStack(name);
-    const services = {};
-    const probes = [];
-    if (stack.urls.web) probes.push(['web', probeImpl(stack.urls.web)]);
-    if (stack.urls.api) probes.push(['api', probeImpl(`${stack.urls.api}/health`)]);
-    if (stack.urls.logto) probes.push(['logto', probeImpl(`${stack.urls.logto}/oidc/.well-known/openid-configuration`)]);
-    if (stack.urls.glitchtip) probes.push(['glitchtip', probeImpl(`${stack.urls.glitchtip}/api/0/`)]);
-    if (stack.urls.vault) probes.push(['vault', probeImpl(`${stack.urls.vault}/alive`)]);
-    if (stack.urls.control) probes.push(['control', probeImpl(stack.urls.control)]);
-    if (stack.urls.pgadmin) probes.push(['pgadmin', probeImpl(`${stack.urls.pgadmin}/misc/ping`)]);
-    for (const [key, p] of probes) services[key] = await p;
-    const own = loadLocalValues(stack);
-    stacks[name] = {
-      rendered: existsSync(join(renderedDir(name), `.env.${name}`)),
-      stored: Object.keys(own).filter((k) => own[k]), // NAMES only, never values
-      required: stackManifestEntries(stack).filter((s) => !s.optional && s.owner === 'operator').map((s) => s.name),
-      services,
-      urls: stack.urls,
-      envName: stack.envName ?? null,
-      channel: stack.channel,
-    };
+    stacks[name] = await stackStatus(name, probeImpl);
   }
   return json(res, 200, { docker, stacks, lan: lanHost() });
 }
@@ -201,7 +201,7 @@ const LOGTO_MGMT_ROLE = 'Logto Management API access';
 
 const logtoToken = async (base, id, secret, resource) => {
   const basic = Buffer.from(`${id}:${secret}`).toString('base64');
-  const res = await fetch(`${base}/oidc/token`, {
+  const res = await localAwareFetch(`${base}/oidc/token`, {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
@@ -214,7 +214,7 @@ const logtoToken = async (base, id, secret, resource) => {
   return (await res.json()).access_token;
 };
 const logtoApi = async (base, token, path, init = {}) => {
-  const res = await fetch(`${base}/api${path}`, {
+  const res = await localAwareFetch(`${base}/api${path}`, {
     ...init,
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
     signal: AbortSignal.timeout(10000),
@@ -338,11 +338,11 @@ async function logtoSetupEndpoint(req, res, spawnImpl) {
     await run(res, 'wire munni-control to this sign-in', process.execPath,
       [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
     await run(res, 'restart the shared stack (control picks its app id up)', 'docker',
-      [...composeArgs(SHARED_STACK), 'up', '-d'], { cwd: renderedDir(SHARED_STACK) });
+      [...composeArgs(SHARED_STACK), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(SHARED_STACK) });
   }
 
   const up = await run(res, 'restart web/admin with their sign-in config', 'docker',
-    [...composeArgs(stack.stack), 'up', '-d'], { cwd: renderedDir(stack.stack) });
+    [...composeArgs(stack.stack), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(stack.stack) });
   res.write('\nDone. Sign-in is code — console and admin logins live under Reveal secrets.\n');
   return res.end(`\n[exit ${up.code === 0 ? 0 : 1}]\n`);
 }
@@ -408,7 +408,7 @@ async function glitchtipSetupEndpoint(req, res, spawnImpl) {
   if (wire.code !== 0) return res.end('[exit 1]\n');
 
   const restart = await run(res, 'restart with the DSNs wired in (docker compose up -d)', 'docker',
-    [...composeArgs(stack.stack), 'up', '-d'], { cwd: renderedDir(stack.stack) });
+    [...composeArgs(stack.stack), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(stack.stack) });
   return res.end(`\n[exit ${restart.code === 0 ? 0 : 1}]\n`);
 }
 
@@ -498,7 +498,7 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl) {
   if (host) {
     mkdirSync(dirname(LAN_FILE()), { recursive: true });
     writeFileSync(LAN_FILE(), `${host}\n`);
-    res.write(`▶ LAN mode ON — the family now lives on http://${host}:… (localhost keeps working alongside)\n`);
+    res.write(`▶ LAN mode ON — the family moves to https://munni-<env>.${host.replaceAll('.', '-')}.sslip.io hostnames (localhost keeps working alongside)\n`);
   } else {
     rmSync(LAN_FILE(), { force: true });
     res.write('▶ LAN mode OFF — back to localhost-only\n');
@@ -510,7 +510,7 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl) {
     const boot = await run(res, `re-render ${name}`, process.execPath,
       [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name], { cwd: ROOT });
     if (boot.code !== 0) return res.end('[exit 1]\n');
-    const up = await run(res, `restart ${name}`, 'docker', [...composeArgs(name), 'up', '-d'], { cwd: renderedDir(name) });
+    const up = await run(res, `restart ${name}`, 'docker', [...composeArgs(name), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(name) });
     if (up.code !== 0) return res.end('[exit 1]\n');
     if (name === SHARED_STACK && host) {
       res.write('… waiting for glitchtip to answer on the new address\n');
@@ -524,7 +524,9 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl) {
     }
   }
   if (host) {
-    res.write(`\nDone. From your phone (same wifi): app → http://${host}:8380 · dev → http://${host}:8480\nIf the phone cannot reach it, allow Docker/vpnkit through the Windows firewall for private networks, and give this machine a DHCP reservation — a changed address needs a rebuilt app.\n`);
+    const base = `${host.replaceAll('.', '-')}.sslip.io`;
+    const envLine = localEnvRegistry().map((e) => `${e.name} → https://munni-${e.name}.${base}`).join(' · ');
+    res.write(`\nDone. From your phone (same wifi): ${envLine}\nTrust the family's certificate once per device: download http://ca.${base} (root.crt), install it as a CA certificate (iPhone: also enable it under Certificate Trust Settings).\nIf the phone cannot reach it, allow Docker/vpnkit through the Windows firewall for private networks (incl. port 443), and give this machine a DHCP reservation — a changed address needs a rebuilt app.\n`);
   } else {
     res.write('\nDone. Everything answers on localhost again.\n');
   }
@@ -532,9 +534,10 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl) {
 }
 
 /** what the wizard writes into the GitHub environment `local` so the
- * EXISTING native workflows bake a build that talks to this machine */
-function nativeConfigEndpoint(res) {
-  const stack = loadStack('munni-local-prod');
+ * EXISTING native workflows bake a build that talks to this machine —
+ * per LOCAL environment (?stack=munni-local-<name>, default prod) */
+function nativeConfigEndpoint(res, url) {
+  const stack = loadStack(pickEnv(url?.searchParams.get('stack')));
   const values = familyValues(stack);
   const lan = lanHost();
   const dsn = values.VITE_GLITCHTIP_DSN ?? '';
@@ -549,8 +552,17 @@ function nativeConfigEndpoint(res) {
   };
   const missing = [];
   if (!lan) missing.push('LAN mode is off — a phone cannot reach localhost');
-  if (!variables.NATIVE_LOGTO_APP_ID) missing.push('sign-in setup has not stored the native app id yet — press Re-run sign-in setup on production once');
-  return json(res, 200, { environment: 'local', lanHost: lan, ready: missing.length === 0, missing, variables });
+  if (!variables.NATIVE_LOGTO_APP_ID) missing.push(`sign-in setup has not stored the native app id yet — press Re-run sign-in setup on ${stack.envName} once`);
+  return json(res, 200, {
+    environment: 'local',
+    localEnv: stack.envName,
+    appId: stack.native.appId,
+    scheme: stack.native.scheme,
+    lanHost: lan,
+    ready: missing.length === 0,
+    missing,
+    variables,
+  });
 }
 
 /* ── dynamic environments: "+" creates one, delete tears one down and
@@ -595,6 +607,7 @@ async function envDeleteEndpoint(req, res, spawnImpl) {
   saveLocalEnvRegistry(localEnvRegistry().filter((e) => e.name !== name));
   rmSync(renderedDir(stackName), { recursive: true, force: true });
   res.write(`\nenvironment ${name} deleted and forgotten (its secret store went with the rendered folder)\n`);
+  res.write(`what CANNOT be deleted by API, in case you created them: the Play/App Store apps for app.munni.local.${name} (retire them in the consoles by hand) and any GitHub environment "local" variables still pointing at it (overwritten by the next native build)\n`);
   return res.end('\n[exit 0]\n');
 }
 
@@ -610,22 +623,28 @@ function secretsEndpoint(res) {
 
 /** the family's sign-ins and raw values as PLAIN rows — the Bitwarden
  * JSON export and the automatic in-vault import both build from this.
- * VAPID keys stay out per the plan (no human ever types those); the
- * vault's own master credential stays out of its own contents. */
+ * Every row carries a FOLDER (one per environment + "shared") so the
+ * vault groups by environment instead of name prefixes (user ruling
+ * 2026-08-28). VAPID keys stay out per the plan; the vault's own master
+ * credential stays out of its own contents. */
+const vaultFolderOf = (stackName) => (stackName === SHARED_STACK ? 'shared' : stackName.replace('munni-local-', ''));
+
 function buildVaultItems() {
   const items = [];
-  const shared = loadLocalValues(loadStack(SHARED_STACK));
+  const sharedStack = loadStack(SHARED_STACK);
+  const shared = loadLocalValues(sharedStack);
   if (shared.GLITCHTIP_ADMIN_EMAIL) {
     items.push({
-      name: 'munni local / GlitchTip console',
+      folder: 'shared',
+      name: 'GlitchTip console',
       username: shared.GLITCHTIP_ADMIN_EMAIL,
       password: shared.GLITCHTIP_ADMIN_PASSWORD ?? '',
-      uri: 'http://localhost:8383',
+      uri: sharedStack.urls.glitchtip,
       notes: 'created by the munni setup wizard',
     });
   }
   if (shared.NAS_PGADMIN_PASSWORD) {
-    items.push({ name: 'munni local / pgAdmin', username: 'admin@munni.dev', password: shared.NAS_PGADMIN_PASSWORD, uri: 'http://localhost:8386', notes: 'one console over every database server in the family' });
+    items.push({ folder: 'shared', name: 'pgAdmin', username: 'admin@munni.dev', password: shared.NAS_PGADMIN_PASSWORD, uri: sharedStack.urls.pgadmin, notes: 'one console over every database server in the family' });
   }
   for (const stackName of LOCAL_STACKS()) {
     items.push(...stackVaultItems(stackName));
@@ -644,39 +663,44 @@ function stackVaultItems(stackName) {
   const items = [];
   const stack = loadStack(stackName);
   const values = loadLocalValues(stack);
+  const folder = vaultFolderOf(stackName);
   const pgNote = stackName === SHARED_STACK
     ? 'the glitchtip-db server (shared stack)'
-    : `${stackName.replace('munni-local-', '')}’s own postgres (munni + logto databases)`;
+    : `${folder}’s own postgres (munni + logto databases)`;
   if (values.NAS_POSTGRES_PASSWORD) {
-    items.push({ name: `${stackName} / Postgres`, username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: pgNote });
+    items.push({ folder, name: 'Postgres', username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: pgNote });
   }
   if (values.LOGTO_CONSOLE_USERNAME) {
-    items.push({ name: `${stackName} / Logto console`, username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '' });
+    items.push({ folder, name: 'Logto console', username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '' });
   }
   if (values.LOGTO_APP_ADMIN_USERNAME) {
-    items.push({ name: `${stackName} / munni app (admin user)`, username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web ?? '' });
+    items.push({ folder, name: 'munni app (admin user)', username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web ?? '' });
   }
   if (values.IAC_LOGTO_INFRA_M2M_ID) {
-    items.push({ name: `${stackName} / Logto infra M2M`, username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '' });
+    items.push({ folder, name: 'Logto infra M2M', username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '' });
   }
   for (const [name, value] of Object.entries(values)) {
     if (VAULT_COVERED_NAMES.has(name) || VAULT_SKIP_NAMES.has(name) || !value) continue;
-    items.push({ name: `${stackName} / ${name}`, password: String(value), notes: 'from the munni setup wizard local store' });
+    items.push({ folder, name, password: String(value), notes: 'from the munni setup wizard local store' });
   }
   return items;
 }
 
 /** Bitwarden-importable JSON (web vault → Tools → Import → Bitwarden json) */
 function vaultExportEndpoint(res) {
-  const items = buildVaultItems().map((r) => ({
+  const rows = buildVaultItems();
+  const folderNames = [...new Set(rows.map((r) => r.folder))];
+  const folders = folderNames.map((name, i) => ({ id: `f${i}`, name }));
+  const items = rows.map((r) => ({
     type: 1,
+    folderId: `f${folderNames.indexOf(r.folder)}`,
     name: r.name,
     notes: r.notes ?? '',
     favorite: false,
     login: { username: r.username ?? '', password: r.password ?? '', uris: r.uri ? [{ match: null, uri: r.uri }] : [], totp: null },
     collectionIds: null,
   }));
-  return json(res, 200, { encrypted: false, folders: [], items });
+  return json(res, 200, { encrypted: false, folders, items });
 }
 
 /** zero-input vault (user ruling): create the account with a GENERATED
@@ -692,7 +716,7 @@ async function reopenVaultSignups(res, run, base, fetchImpl) {
   saveLocalValues(shared, { ...v, VAULT_SIGNUPS_ALLOWED: '' });
   await run(res, 'reopen vault signups for the fresh vault (closed again right after)', process.execPath,
     [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
-  await run(res, 'restart the shared stack', 'docker', [...composeArgs(SHARED_STACK), 'up', '-d'], { cwd: renderedDir(SHARED_STACK) });
+  await run(res, 'restart the shared stack', 'docker', [...composeArgs(SHARED_STACK), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(SHARED_STACK) });
   const deadline = Date.now() + 90000;
   for (;;) {
     try {
@@ -702,6 +726,37 @@ async function reopenVaultSignups(res, run, base, fetchImpl) {
     if (Date.now() > deadline) return false;
     await new Promise((s) => setTimeout(s, 3000));
   }
+}
+
+/** sign in, or create the account — reopening signups once when a WIPED
+ * vault sits behind a store that still says signups-closed. Returns the
+ * access token, or null after writing the failure to the stream. */
+async function vaultEnsureAccount(res, run, base, account, fetchImpl) {
+  let token = await vaultLogin(base, account.register.email, account.hash, fetchImpl);
+  if (token) {
+    res.write('account already exists — signed in with the stored master password ✓\n');
+    return token;
+  }
+  let reg = await vaultRegister(base, account.register, fetchImpl);
+  if (!reg.ok) {
+    // vaultwarden's refusal is ambiguous ("Registration not allowed or
+    // user already exists") — closed signups from a previous run are
+    // the common cause; reopen once and retry before giving up
+    res.write(`registration refused (${reg.status}) — reopening signups once and retrying\n`);
+    if (!(await reopenVaultSignups(res, run, base, fetchImpl))) {
+      res.write('the vault never came back after the restart — check step 4 status, then retry\n');
+      return null;
+    }
+    reg = await vaultRegister(base, account.register, fetchImpl);
+  }
+  if (!reg.ok) {
+    res.write(`could not create the account (${reg.status})\nan account for this email exists with a DIFFERENT master password — Delete shared services (wipes the vault volume) and re-run, or change VAULT_ADMIN_EMAIL in the store\n`);
+    return null;
+  }
+  res.write('account created ✓\n');
+  token = await vaultLogin(base, account.register.email, account.hash, fetchImpl);
+  if (!token) res.write('login failed right after registration — is the vault healthy (step 4 status)?\n');
+  return token;
 }
 
 async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
@@ -716,48 +771,27 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
   const base = shared.urls.vault;
   res.write(`▶ vault account ${email} — sign in, create when missing\n`);
   const account = buildAccount(email, password);
-  let token = await vaultLogin(base, email, account.hash, fetchImpl);
-  if (token) {
-    res.write('account already exists — signed in with the stored master password ✓\n');
-  } else {
-    let reg = await vaultRegister(base, account.register, fetchImpl);
-    if (!reg.ok) {
-      // vaultwarden's refusal is ambiguous ("Registration not allowed or
-      // user already exists") — closed signups from a previous run are
-      // the common cause; reopen once and retry before giving up
-      res.write(`registration refused (${reg.status}) — reopening signups once and retrying\n`);
-      if (!(await reopenVaultSignups(res, run, base, fetchImpl))) {
-        res.write('the vault never came back after the restart — check step 4 status, then retry\n');
-        return res.end('[exit 1]\n');
-      }
-      reg = await vaultRegister(base, account.register, fetchImpl);
-    }
-    if (!reg.ok) {
-      res.write(`could not create the account (${reg.status})\nan account for this email exists with a DIFFERENT master password — Delete shared services (wipes the vault volume) and re-run, or change VAULT_ADMIN_EMAIL in the store\n`);
-      return res.end('[exit 1]\n');
-    }
-    res.write('account created ✓\n');
-    token = await vaultLogin(base, email, account.hash, fetchImpl);
-    if (!token) {
-      res.write('login failed right after registration — is the vault healthy (step 4 status)?\n');
-      return res.end('[exit 1]\n');
-    }
-  }
-  res.write('▶ refresh the secret items (purge + import)\n');
+  const token = await vaultEnsureAccount(res, run, base, account, fetchImpl);
+  if (!token) return res.end('[exit 1]\n');
+  res.write('▶ refresh the secret items (purge + import, grouped in per-environment folders)\n');
   await vaultPurge(base, token, account.hash, fetchImpl);
-  const ciphers = buildVaultItems().map((r) => buildCipher(account.userKeys, r));
-  const imp = await vaultImport(base, token, ciphers, fetchImpl);
+  const rows = buildVaultItems();
+  const folderNames = [...new Set(rows.map((r) => r.folder))];
+  const folders = folderNames.map((name) => ({ name: encString(account.userKeys, name) }));
+  const ciphers = rows.map((r) => buildCipher(account.userKeys, r));
+  const folderRelationships = rows.map((r, i) => ({ key: i, value: folderNames.indexOf(r.folder) }));
+  const imp = await vaultImport(base, token, { ciphers, folders, folderRelationships }, fetchImpl);
   if (!imp.ok) {
     res.write(`import failed (${imp.status} ${(await imp.text().catch(() => '')).slice(0, 200)})\n`);
     return res.end('[exit 1]\n');
   }
-  res.write(`${ciphers.length} items in the vault ✓ (re-running this refreshes them)\n`);
+  res.write(`${ciphers.length} items in ${folders.length} folders ✓ (re-running this refreshes them)\n`);
   const v2 = loadLocalValues(shared);
   if (v2.VAULT_SIGNUPS_ALLOWED !== 'false') {
     saveLocalValues(shared, { ...v2, VAULT_SIGNUPS_ALLOWED: 'false' });
     await run(res, 'close vault signups (nobody else on the network can register)', process.execPath,
       [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
-    await run(res, 'restart the shared stack', 'docker', [...composeArgs(SHARED_STACK), 'up', '-d'], { cwd: renderedDir(SHARED_STACK) });
+    await run(res, 'restart the shared stack', 'docker', [...composeArgs(SHARED_STACK), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(SHARED_STACK) });
   }
   res.write(`\nDone. Vault → ${base} · ${email} · master password under Reveal secrets.\n(Use it with the real Bitwarden apps/extension pointed at that server url.)\n`);
   return res.end('\n[exit 0]\n');
@@ -803,7 +837,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/vault-setup': (req, res) => vaultSetupEndpoint(req, res, spawnImpl, vaultFetchImpl),
     'GET /api/local/lan': (req, res) => lanGetEndpoint(res),
     'POST /api/local/lan': (req, res) => lanSetEndpoint(req, res, spawnImpl, probeImpl),
-    'GET /api/local/native-config': (req, res) => nativeConfigEndpoint(res),
+    'GET /api/local/native-config': (req, res) => nativeConfigEndpoint(res, new URL(req.url, 'http://localhost')),
     'POST /api/validate': (req, res) => validateEndpoint(req, res, validateImpl),
   };
   return async function handle(req, res) {

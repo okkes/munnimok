@@ -369,7 +369,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
   <div data-native-track="local">
     <div class="card">
       <h3>Phone reachability (LAN mode) <span class="pill" id="lan-pill"></span></h3>
-      <p class="why">A phone cannot reach <code>localhost</code> — LAN mode moves the whole family onto this machine's wifi address (the localhost links keep working alongside). Everything re-renders automatically: sign-in redirect URIs, CORS, crash-report DSNs. Heads-up: if Windows Firewall asks, allow Docker for private networks; and give this machine a DHCP reservation — a changed address needs a rebuilt app.</p>
+      <p class="why">A phone cannot reach <code>localhost</code> — LAN mode moves the whole family onto <b>https</b> hostnames on this machine's wifi address: <code>https://munni-&lt;env&gt;.&lt;ip-dashed&gt;.sslip.io</code> (sslip.io just echoes the IP back — no internet dependency beyond DNS; the localhost links keep working alongside). Real https means Enable Banking consents and secure phone traffic work locally. Everything re-renders automatically: sign-in redirect URIs, CORS, crash-report DSNs. Once per device, trust the family's certificate: download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → install <code>root.crt</code> as a CA certificate (iPhone: also enable it under Certificate Trust Settings). Heads-up: if Windows Firewall asks, allow Docker for private networks (incl. port 443); and give this machine a DHCP reservation — a changed address changes the hostnames and needs a rebuilt app.</p>
       <div class="runrow">
         <select id="lan-select" style="max-width:220px"></select>
         <button id="btn-lan-on">Turn LAN mode on</button>
@@ -379,24 +379,25 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
 
     <div class="card" data-needs-feature="android">
       <h3>Android on your phone (via Play) <span class="pill" id="native-local-pill"></span></h3>
-      <p class="why">The LAN build is a store channel like the others — its own app id <code>app.munni.local</code>, delivered through the Play <b>internal testing</b> track. One button: this page writes the LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Needs the GitHub card in step 3 (it appears there while Android/iOS is ticked). Only Google's one rule stays manual, ONCE: the first upload of a new app id.</p>
+      <p class="why">Each environment is its own store channel — app id <code>app.munni.local.&lt;env&gt;</code>, delivered through the Play <b>internal testing</b> track, installable side by side. One button: this page writes that environment's LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Until the one-time Play setup is done the build SKIPS the upload (no red runs) and hands you the signed bundle instead. Needs the GitHub card in step 3.</p>
       <div class="runrow">
+        <select id="native-env-select" style="max-width:170px"></select>
         <button id="btn-native-local-android">Build the Android app (CI)</button>
         <button class="ghost" id="btn-native-local-publish">Enable auto-publish</button>
       </div>
       <div class="msg" id="msg-native-local"></div>
-      <details class="how"><summary>The one-time Play setup (first build only)</summary>
+      <details class="how"><summary>The one-time Play setup (first build per environment)</summary>
         <ol>
           <li>Press <b>Build the Android app</b> — when it turns green, the signed <code>.aab</code> downloads here automatically (as a ZIP — unzip it).</li>
-          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code>app.munni.local</code> → Internal testing → upload that <code>.aab</code> → add yourself as tester → grant the CI service account access (like the other munni apps).</li>
-          <li>Press <b>Enable auto-publish</b> — every later build lands in the internal track by itself.</li>
+          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code>app.munni.local.&lt;env&gt;</code> (matching the selector) → Internal testing → upload that <code>.aab</code> → add yourself as tester → grant the CI service account access (like the other munni apps).</li>
+          <li>Press <b>Enable auto-publish</b> — every later build of THIS environment lands in the internal track by itself.</li>
         </ol>
       </details>
     </div>
 
     <div class="card" data-needs-feature="ios">
       <h3>iOS on your phone (via TestFlight)</h3>
-      <p class="why">Same LAN-baked store channel: bundle <code>app.munni.local</code>, built by CI (<code>environment: local</code>) and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> (New App, bundle <code>app.munni.local</code>); the upload needs the ASC key secrets and <code>IOS_BUILD_ENABLED=true</code>, both already in place. The build carries the LAN address, so it only works on your wifi.</p>
+      <p class="why">Same per-environment store channel: bundle <code>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id; the ASC key secrets and <code>IOS_BUILD_ENABLED=true</code> are already in place. The build carries the LAN address, so it only works on your wifi.</p>
       <div class="runrow">
         <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
       </div>
@@ -964,7 +965,7 @@ const S = {
 /* feature toggles → which credential groups show */
 const FEATURES = [
   { id: 'gocardless', label: 'Bank sync via GoCardless', hint: 'live transactions from 2500+ EU banks (read-only PSD2 AIS) — the heart of the product' },
-  { id: 'enablebanking', label: 'Enable Banking as a second bank provider', hint: 'optional fallback aggregator; banks missing at GoCardless', localHint: 'store + check credentials locally; the bank-consent redirect itself needs the hosted track (Enable Banking is https-only)' },
+  { id: 'enablebanking', label: 'Enable Banking as a second bank provider', hint: 'optional fallback aggregator; banks missing at GoCardless', localHint: 'Enable Banking is https-only — with LAN mode on the family serves real https (sslip.io hostnames), so the full bank-consent roundtrip works locally too' },
   { id: 'logodev', label: 'Merchant logos (logo.dev)', hint: 'brand logos on transactions and recurring costs' },
   { id: 'fcm', label: 'Native push notifications (Firebase FCM)', hint: 'push for the Android/iOS shells — web push works without this' },
   { id: 'google', label: 'Sign in with Google', hint: 'social login button on the sign-in screen' },
@@ -1020,7 +1021,7 @@ const GROUPS = [
       'Environment: <b>Sandbox</b> only reaches Enable Banking’s test banks — for real banks register a <b>production</b> application (Enable Banking may ask a few questions before enabling it).',
       {
         nas: 'Allowed <b>redirect URLs</b> — after the bank consent, munni returns the user to the app origin + <code>/gc-callback</code>. Register BOTH twins: <code class="dom-inline">https://munni-iac.&lt;domain&gt;/gc-callback</code> and <code class="dom-inline">https://munni-iac-test.&lt;domain&gt;/gc-callback</code>. An unregistered URL fails at connect time with a 403 that names the problem.',
-        local: 'Heads-up: Enable Banking accepts <b>https URLs only</b> — it refuses <code>http://localhost:8380/gc-callback</code> with “unsupported scheme”, so the full bank-consent roundtrip cannot run on the plain-http local twin. Register your future HOSTED urls instead (<code class="dom-inline">https://munni-iac.&lt;domain&gt;/gc-callback</code> and the -test twin) so one application serves both. Locally you can still store + <b>Check</b> the credentials — Check talks to the API directly, no redirect involved.',
+        local: 'Enable Banking accepts <b>https URLs only</b> — and with <b>LAN mode</b> on (step 9) the whole family IS https: <code>https://munni-&lt;env&gt;.&lt;ip-dashed&gt;.sslip.io</code>. Register the environments you test in, e.g. <code>https://munni-prod.192-168-2-2.sslip.io/gc-callback</code> — the LAN card prints your exact hostnames (a changed wifi address changes them, hence the DHCP reservation). In localhost-only mode the twins stay plain http, which Enable Banking refuses (“unsupported scheme”) — there you can still store + <b>Check</b> the credentials, which talks to the API directly. Registering your future hosted urls alongside (<code class="dom-inline">https://munni-iac.&lt;domain&gt;/gc-callback</code> + the -test twin) is fine — one application serves all of them.',
       },
       'Registering creates the application’s key pair — <b>download the private key (.pem)</b>; it is shown/offered ONCE. Paste its FULL contents below, BEGIN/END lines included.',
       'The <b>Application ID</b> (a UUID) is on the application’s page in the Control Panel after registration.',
@@ -1319,6 +1320,13 @@ function renderEnvCards(st) {
     box.dataset.signature = signature;
     box.innerHTML = list.map(envCardHtml).join('');
     applyIcons(box);
+    // the native build target follows the env list
+    const sel = document.getElementById('native-env-select');
+    if (sel) {
+      const cur = sel.value;
+      sel.innerHTML = list.map((e) => `<option value="${e.stack}">${envLabel(e.name)}</option>`).join('');
+      if (list.some((e) => e.stack === cur)) sel.value = cur;
+    }
   }
 }
 
@@ -1992,9 +2000,18 @@ document.getElementById('env-cards')?.addEventListener('click', async (e) => {
   } else if (act === 'gt') {
     streamLocal('/api/local/glitchtip-setup', { stack }, `wire ${label} crash tracking (zero input)`);
   } else if (act === 'nuke') {
-    if (!confirm(`Delete the ${label.toUpperCase()} environment COMPLETELY?\n\nContainers, volumes INCLUDING its database server, its GoCardless consents — and the environment itself disappears from this page. Other environments and the shared services are untouched.`)) return;
+    if (!confirm(`Delete the ${label.toUpperCase()} environment COMPLETELY?\n\nContainers, volumes INCLUDING its database server, its GoCardless consents, its vault folder — and the environment itself disappears from this page. Other environments and the shared services are untouched.\n\n(Store apps have no delete API: if app.munni.local.${s} exists in Play Console or App Store Connect, retire it there by hand.)`)) return;
     await streamLocal('/api/local/envs/delete', { name: s }, `delete environment ${s}`);
     await refreshLocal();
+    // cascade: the vault re-sync drops the deleted environment's folder
+    await streamLocal('/api/local/vault-setup', {}, 're-sync the vault (the deleted environment’s folder disappears)');
+    // cascade: the per-env Play auto-publish flag dies with the env
+    if (S.pat && S.user) {
+      try {
+        await gh(`/repos/${S.slug}/environments/local/variables/${publishFlagName(s)}`, { method: 'DELETE' });
+        localLog(`\nGitHub: dropped the ${publishFlagName(s)} auto-publish flag.\n`);
+      } catch { /* never set — nothing to drop */ }
+    }
   } else if (act === 'subs') {
     const subs = document.getElementById(`in-subs-${s}`).value.trim();
     if (!subs) { localLog('\nPaste a Logto User ID first.\n'); return; }
@@ -2093,25 +2110,32 @@ async function ghUpsertEnvVar(envName, name, value) {
     await gh(`${base}/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify({ name, value }) });
   }
 }
+const nativeTargetStack = () => document.getElementById('native-env-select')?.value || 'munni-local-prod';
+const nativeTargetEnv = () => nativeTargetStack().replace('munni-local-', '');
 async function writeLocalNativeEnv() {
-  const cfg = await (await hfetch('/api/local/native-config')).json();
+  const cfg = await (await hfetch(`/api/local/native-config?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
   if (!cfg.ready) throw new Error('not ready: ' + cfg.missing.join(' · '));
   await ensureEnv('local');
   for (const [name, value] of Object.entries(cfg.variables)) await ghUpsertEnvVar('local', name, value);
   return cfg;
 }
 
-const localPublishEnabled = async () => {
-  const v = await gh(`/repos/${S.slug}/environments/local/variables/NATIVE_LOCAL_CHANNEL`, { allow404: true });
+/* PER environment (each is its own Play app — app.munni.local.<env>):
+ * dev's first build must not auto-upload just because prod's store app
+ * already exists */
+const publishFlagName = (env) => `NATIVE_LOCAL_CHANNEL_${env.toUpperCase()}`;
+const localPublishEnabled = async (env) => {
+  const v = await gh(`/repos/${S.slug}/environments/local/variables/${publishFlagName(env)}`, { allow404: true });
   return v?.value === 'true';
 };
 document.getElementById('btn-native-local-publish')?.addEventListener('click', async () => {
   const say = (t, ok = true) => msg('msg-native-local', t, ok);
   if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card in step 3).', false); return; }
+  const env = nativeTargetEnv();
   try {
     await ensureEnv('local');
-    await ghUpsertEnvVar('local', 'NATIVE_LOCAL_CHANNEL', 'true');
-    say('auto-publish enabled ✓ — every future local build lands in the Play internal track by itself');
+    await ghUpsertEnvVar('local', publishFlagName(env), 'true');
+    say(`auto-publish enabled for ${env} ✓ — every future ${env} build lands in the Play internal track by itself`);
   } catch (e) { say('✗ ' + (e.message || e), false); }
 });
 /** items 1+2 of the native ruling: toggling the feature IS the trigger,
@@ -2132,10 +2156,11 @@ async function buildLocalAndroidFlow() {
   try {
     if (!(await ensureLanMode())) return;
     say('writing the LAN config into the GitHub environment "local"…');
-    await writeLocalNativeEnv();
+    const cfg = await writeLocalNativeEnv();
+    const publish = (await localPublishEnabled(cfg.localEnv)) ? 'auto' : 'skip';
     const started = Date.now();
-    await dispatch('native-android.yml', { environment: 'local' });
-    say('build dispatched — CI is compiling (usually 6-10 min)…');
+    await dispatch('native-android.yml', { environment: 'local', localEnv: cfg.localEnv, publish });
+    say(`build dispatched for ${cfg.appId} (${publish === 'skip' ? 'upload skipped until the one-time Play setup' : 'auto-publish on'}) — CI is compiling (usually 6-10 min)…`);
     let run = null;
     for (;;) {
       await new Promise((r) => setTimeout(r, 15000));
@@ -2146,7 +2171,7 @@ async function buildLocalAndroidFlow() {
       if (Date.now() - started > 30 * 60 * 1000) throw new Error('CI never finished within 30 minutes — check the Actions tab');
     }
     if (run.conclusion !== 'success') throw new Error(`the build ended ${run.conclusion} — open the run to see why`);
-    if (await localPublishEnabled()) {
+    if (await localPublishEnabled(cfg.localEnv)) {
       say('build green ✓ — published to the Play internal track. Your phone picks it up from Play (internal testing) shortly.');
       return;
     }
@@ -2176,9 +2201,9 @@ async function dispatchLocalIosFlow() {
   if (!S.pat || !S.user) { localLog('\nConnect GitHub first (the GitHub card in step 3).\n'); return; }
   try {
     if (!(await ensureLanMode())) return;
-    await writeLocalNativeEnv();
-    await dispatch('native-ios.yml', { environment: 'local' });
-    localLog('\niOS build dispatched (environment local) — it signs and uploads to TestFlight (app record app.munni.local must exist in App Store Connect, one-time). Install/update it from the TestFlight app; it only works on this wifi. Follow the run under Actions.\n');
+    const cfg = await writeLocalNativeEnv();
+    await dispatch('native-ios.yml', { environment: 'local', localEnv: cfg.localEnv });
+    localLog(`\niOS build dispatched for ${cfg.appId} — it signs and uploads to TestFlight (the app record with that bundle id must exist in App Store Connect, one-time). Install/update it from the TestFlight app; it only works on this wifi. Follow the run under Actions.\n`);
   } catch (e) {
     localLog(`\n✗ iOS dispatch: ${e.message || e}\n`);
   }

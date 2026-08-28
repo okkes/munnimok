@@ -24,6 +24,10 @@ on:
         type: choice
         options: ['', iac-production, iac-staging, local]
         default: ''
+      localEnv:
+        description: 'Local environment name (with environment=local): prod, dev, …'
+        type: string
+        default: 'prod'
   push:
     branches: [master, dev] # public repo: standard macOS runners are free
 
@@ -60,11 +64,13 @@ jobs:
         id: channel
         run: |
           if [ "${{ inputs.environment }}" = "local" ]; then
-            # the wizard-managed LAN channel — its own ASC app record,
-            # delivered through TestFlight like the others
-            echo "bundle_id=app.munni.local" >> "$GITHUB_OUTPUT"
-            echo "scheme=munni-local" >> "$GITHUB_OUTPUT"
-            echo "display=munni local" >> "$GITHUB_OUTPUT"
+            # the wizard-managed LAN channel — ONE ASC app record PER
+            # local environment, delivered through TestFlight
+            LOCAL_ENV="${{ inputs.localEnv || 'prod' }}"
+            SCHEME="munni-local"; [ "$LOCAL_ENV" = "prod" ] || SCHEME="munni-local-$LOCAL_ENV"
+            echo "bundle_id=app.munni.local.$LOCAL_ENV" >> "$GITHUB_OUTPUT"
+            echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
+            echo "display=munni $LOCAL_ENV" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref_name }}" = "dev" ] && [ "${{ vars.NATIVE_DEV_CHANNEL }}" = "true" ]; then
             echo "bundle_id=app.munni.dev" >> "$GITHUB_OUTPUT"
             echo "scheme=munni-dev" >> "$GITHUB_OUTPUT"

@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { loadStack, localEnvRegistry, pairProd } from './stack.mjs';
+import { lanHost, loadStack, localEnvRegistry, pairProd } from './stack.mjs';
 
 /** the docker network local env stacks share with munni-local-shared */
 export const LOCAL_SHARED_NET = 'munni-local-shared-net';
@@ -27,10 +27,11 @@ export function renderStack(stack, values) {
 
   if (stack.target === 'local' && stack.role === 'shared') {
     // the local SHARED stack (plan LS1): glitchtip (own db), vault, ocr,
-    // munni-control, pgAdmin over the whole family
+    // munni-control, pgAdmin — plus the family Caddy (https everywhere)
     writeFileSync(join(dir, `docker-compose.${stack.stack}.yml`), sharedLocalCompose(stack));
     writeFileSync(join(dir, `.env.${stack.stack}`), substitute(sharedLocalTemplate(stack), values));
     writeFileSync(join(dir, 'pgadmin-servers.json'), `${pgadminServers()}\n`);
+    writeFileSync(join(dir, 'Caddyfile'), familyCaddyfile(stack));
     return dir;
   }
 
@@ -429,18 +430,21 @@ services:
     volumes:
       - vaultdata:/data
 
-  # the Bitwarden web client refuses ANY plain-http url (found live
-  # 2026-08-28, upstream made https mandatory) — Caddy fronts the vault
-  # with a locally-minted certificate (its internal CA, persisted so the
-  # one-time browser accept sticks across restarts)
-  vault-tls:
+  # ONE Caddy for the family's https (local CA, persisted so the
+  # one-time trust sticks): always the vault (the Bitwarden web client
+  # refuses plain http), and in LAN mode every service as a REAL
+  # hostname — <name>.<ip-dashed>.sslip.io on 443 — so browsers get no
+  # mixed content and Enable Banking gets a registrable https redirect.
+  # http://ca.<base> serves the root certificate for one-time install.
+  family-tls:
     image: caddy:2-alpine
     restart: unless-stopped
-    command: caddy reverse-proxy --from https://localhost:${p.vault} --to http://vaultwarden:80 --internal-certs
     volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - vaulttls:/data
     ports:
-      - "${p.vault}:${p.vault}"
+      - "${p.vault}:${p.vault}"${lanHost() ? '\n      - "443:443"\n      - "80:80"' : ''}
+    networks: [default, shared]
 
   # the shared-services cockpit (plan LS5): its OWN app + image (not the
   # env dashboard), signed in through ${s.controlApi}'s Logto + API
@@ -483,6 +487,39 @@ volumes:
   vaulttls:
   pgadmindata:
 `;
+}
+
+/** the family Caddy: local-CA https for the vault always, and for EVERY
+ * service as a real sslip.io hostname when LAN mode is on */
+function familyCaddyfile(shared) {
+  const lan = lanHost();
+  const site = (address, proxy) => `${address} {\n\treverse_proxy ${proxy}\n}\n`;
+  // the vault's localhost site exists in BOTH modes (Bitwarden needs https)
+  let sites = site(`https://localhost:${shared.ports.vault}`, 'vaultwarden:80');
+  if (lan) {
+    const base = `${lan.replaceAll('.', '-')}.sslip.io`;
+    const envSites = localEnvRegistry().map((env) => {
+      const logtoPort = 3201 + 100 * env.slot;
+      // unique per-env SERVICE names on the shared net (web-prod, …)
+      const up = (svc, port) => `${svc}-${env.name}:${port}`;
+      return [
+        site(`https://munni-${env.name}.${base}`, up('web', 80)),
+        site(`https://munni-${env.name}-admin.${base}`, up('admin', 80)),
+        site(`https://munni-${env.name}-api.${base}`, up('api', 8080)),
+        site(`https://munni-${env.name}-logto.${base}`, up('logto', logtoPort)),
+        site(`https://munni-${env.name}-logto-admin.${base}`, up('logto', logtoPort + 1)),
+      ].join('');
+    }).join('');
+    // the root certificate stays downloadable over plain http for the
+    // one-time trust on phones/browsers (chicken-and-egg otherwise)
+    sites += envSites
+      + site(`https://glitchtip.${base}`, 'glitchtip:8000')
+      + site(`https://control.${base}`, 'control:80')
+      + site(`https://pgadmin.${base}`, 'pgadmin:80')
+      + site(`https://vault.${base}`, 'vaultwarden:80')
+      + `http://ca.${base} {\n\troot * /data/caddy/pki/authorities/local\n\tfile_server browse\n}\n`;
+  }
+  return `{\n\tlocal_certs\n}\n${sites}`;
 }
 
 /** pgAdmin's preregistered server list — one entry per database server
@@ -586,7 +623,13 @@ services:
         aliases: [postgres]
       shared: {}
 
-  web:
+  # web/admin/api/logto join the shared net so the family Caddy can front
+  # them with https hostnames in LAN mode — under the SAME unique-name
+  # rule as postgres above: a plain "web"/"api"/"logto" service name
+  # would register on the shared network for EVERY environment and
+  # round-robin lookups across them. Unique service names, in-stack
+  # aliases keep the plain names working for THIS stack's consumers.
+  web-${shortName}:
     image: \${REGISTRY}/munni-web:\${TAG}
     restart: unless-stopped
     environment:
@@ -600,8 +643,12 @@ services:
       MUNNI_PUBLIC_ORIGIN: ${s.urls.web}
     ports:
       - "${p.web}:80"
+    networks:
+      default:
+        aliases: [web]
+      shared: {}
 
-  admin:
+  admin-${shortName}:
     image: \${REGISTRY}/munni-admin:\${TAG}
     restart: unless-stopped
     environment:
@@ -612,8 +659,12 @@ services:
       MUNNI_GLITCHTIP_DSN: \${ADMIN_GLITCHTIP_DSN}
     ports:
       - "${p.admin}:80"
+    networks:
+      default:
+        aliases: [admin]
+      shared: {}
 
-  api:
+  api-${shortName}:
     image: \${REGISTRY}/munni-api:\${TAG}
     restart: unless-stopped
     environment:
@@ -649,18 +700,22 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
     depends_on:
       postgres-${shortName}:
         condition: service_healthy
-      logto:
+      logto-${shortName}:
         condition: service_started
-    networks: [default, shared]
+    networks:
+      default:
+        aliases: [api]
+      shared: {}
 
-  logto:
+  logto-${shortName}:
     image: svhd/logto:1.41
     restart: unless-stopped
     # SEED FIRST (see the iac render note): alteration-before-seed on an
     # empty db half-creates tables and seed --swe then skips forever
     entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
     environment:
-      TRUST_PROXY_HEADER: "0"
+      # LAN mode: logto sits behind the family Caddy on its https hostname
+      TRUST_PROXY_HEADER: "${lanHost() ? 1 : 0}"
       DB_URL: postgres://munni:\${POSTGRES_PASSWORD}@postgres:5432/logto
       ENDPOINT: ${s.urls.logto}
       ADMIN_ENDPOINT: ${s.urls.logtoAdmin}
@@ -672,7 +727,10 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
     depends_on:
       postgres-${shortName}:
         condition: service_healthy
-    networks: [default, shared]
+    networks:
+      default:
+        aliases: [logto]
+      shared: {}
 
 volumes:
   pgdata:

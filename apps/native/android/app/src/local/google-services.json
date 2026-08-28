@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:623925254075:android:a0797f2ede498956d6169e",
         "android_client_info": {
-          "package_name": "app.munni.local"
+          "package_name": "app.munni.local.prod"
         }
       },
       "oauth_client": [],
