@@ -370,7 +370,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
   <div data-native-track="local">
     <div class="card" data-needs-feature="android">
       <h3>Android on your phone (via Play) <span class="pill" id="native-local-pill"></span></h3>
-      <p class="why">Each environment is its own store channel — app id <code>app.munni.local.&lt;env&gt;</code>, delivered through the Play <b>internal testing</b> track, installable side by side. One button: this page writes that environment's LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Until the one-time Play setup is done the build SKIPS the upload (no red runs) and hands you the signed bundle instead — and once you finish the upload, this page NOTICES by itself (it polls Play with the service-account credential from step 3) and turns publishing on, nothing to press. First time on a phone: install the family certificate once — download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → <code>root.crt</code> as a CA certificate. Needs the GitHub card in step 3.</p>
+      <p class="why">Each environment is its own store channel — app id <code data-native-appid>app.munni.local.&lt;env&gt;</code>, delivered through the Play <b>internal testing</b> track, installable side by side. One button: this page writes that environment's LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Until the one-time Play setup is done the build SKIPS the upload (no red runs) and hands you the signed bundle instead — and once you finish the upload, this page NOTICES by itself (it polls Play with the service-account credential from step 3) and turns publishing on, nothing to press. First time on a phone: install the family certificate once — download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → <code>root.crt</code> as a CA certificate. Needs the GitHub card in step 3.</p>
       <div class="runrow">
         <select id="native-env-select" style="max-width:170px"></select>
         <button id="btn-native-local-android">Build the Android app (CI)</button>
@@ -380,7 +380,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
       <details class="how"><summary>The one-time Play setup (first build per environment)</summary>
         <ol>
           <li>Press <b>Build the Android app</b> — when it turns green, the signed <code>.aab</code> downloads here automatically (as a ZIP — unzip it).</li>
-          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code>app.munni.local.&lt;env&gt;</code> (matching the selector) → Internal testing → upload that <code>.aab</code> → add yourself as tester → grant the CI service account access.</li>
+          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code data-native-appid>app.munni.local.&lt;env&gt;</code> → Internal testing → upload that <code>.aab</code> → add yourself as tester → grant the CI service account access.</li>
           <li>That's it — this page detects the app within a few minutes and every later build of the environment lands in the internal track by itself.</li>
         </ol>
       </details>
@@ -388,7 +388,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
 
     <div class="card" data-needs-feature="ios">
       <h3>iOS on your phone (via TestFlight)</h3>
-      <p class="why">Same per-environment store channel: bundle <code>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id — with the ASC key in step 3 this page checks for the record by itself (pill below). First time on an iPhone: install the family certificate once — download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → <code>root.crt</code>, then ALSO enable it under Settings → General → About → Certificate Trust Settings. The build carries the LAN address, so it only works on your wifi.</p>
+      <p class="why">Same per-environment store channel: bundle <code data-native-appid>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id — with the ASC key in step 3 this page checks for the record by itself (pill below). First time on an iPhone: install the family certificate once — download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → <code>root.crt</code>, then ALSO enable it under Settings → General → About → Certificate Trust Settings. The build carries the LAN address, so it only works on your wifi.</p>
       <div class="runrow">
         <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
         <span class="pill" id="asc-status-pill"></span>
@@ -1536,6 +1536,7 @@ function renderNative() {
     el.classList.toggle('hide', !S.features[el.dataset.needsFeature]);
   });
   setPill('native-pill', S.platform === 'local' ? 'CI builds, your phone installs' : 'store-mandated manual firsts', false);
+  updateNativeAppIdLabels();
   // the GitHub card follows the same inputs: the NAS track always needs
   // it; the local track only when a CI-built feature (Android/iOS) is on
   const needGithub = S.platform === 'nas' || nativeOn;
@@ -2214,6 +2215,11 @@ async function ghUpsertEnvVar(envName, name, value) {
 }
 const nativeTargetStack = () => document.getElementById('native-env-select')?.value || 'munni-local-prod';
 const nativeTargetEnv = () => nativeTargetStack().replace('munni-local-', '');
+/** the copy speaks in the SELECTED environment's real app id, not <env> */
+function updateNativeAppIdLabels() {
+  const id = `app.munni.local.${nativeTargetEnv()}`;
+  document.querySelectorAll('[data-native-appid]').forEach((el) => { el.textContent = id; });
+}
 async function writeLocalNativeEnv() {
   const cfg = await (await hfetch(`/api/local/native-config?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
   if (!cfg.ready) throw new Error('not ready: ' + cfg.missing.join(' · '));
@@ -2242,9 +2248,11 @@ async function refreshStoreStatus() {
     st = await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
   } catch { return; }
   if (st.error) return;
+  updateNativeAppIdLabels();
   const pillText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'add the credential in step 3 to auto-detect' };
-  if (S.features.android) setPill('play-status-pill', pillText[st.play.state] ?? st.play.detail ?? st.play.state, st.play.state === 'ready');
-  if (S.features.ios) setPill('asc-status-pill', pillText[st.ios.state] ?? st.ios.detail ?? st.ios.state, st.ios.state === 'ready');
+  // a specific diagnosis (invite missing, app invisible…) beats the generic label
+  if (S.features.android) setPill('play-status-pill', st.play.detail ?? pillText[st.play.state] ?? st.play.state, st.play.state === 'ready');
+  if (S.features.ios) setPill('asc-status-pill', st.ios.detail ?? pillText[st.ios.state] ?? st.ios.state, st.ios.state === 'ready');
   if (!S.pat || !S.user) return;
   try {
     const flag = await localPublishEnabled(st.localEnv);
@@ -2267,7 +2275,8 @@ async function playStateFor(stack) {
   } catch { return 'error'; }
 }
 setInterval(() => { refreshStoreStatus().catch(() => {}); }, STORE_POLL_MS);
-document.getElementById('native-env-select')?.addEventListener('change', () => refreshStoreStatus().catch(() => {}));
+document.getElementById('native-env-select')?.addEventListener('change', () => { updateNativeAppIdLabels(); refreshStoreStatus().catch(() => {}); });
+updateNativeAppIdLabels();
 setTimeout(() => refreshStoreStatus().catch(() => {}), 4000);
 /** items 1+2 of the native ruling: toggling the feature IS the trigger,
  * and LAN mode flips on by itself — no localhost detour, no extra click */

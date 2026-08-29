@@ -657,6 +657,29 @@ test('store-status: no creds reports so; with creds it mirrors the real Play/ASC
     assert.equal(body.ios.state, 'ready', 'ASC lists the bundle id');
     assert.ok(calls.some((c) => c.url.includes('/applications/app.munni.local.prod/edits')));
     assert.ok(calls.some((c) => c.url.includes('filter%5BbundleId%5D=app.munni.local.prod')));
+
+    // 403 splits two ways (user request 2026-08-29): a sibling munni app
+    // answering non-403 proves the account link works → app just missing
+    const splitFetch = (siblingStatus) => async (url) => {
+      if (url.includes('oauth2.googleapis.com')) return { ok: true, status: 200, json: async () => ({ access_token: 'gtok' }) };
+      if (url.includes('/applications/app.munni.local.prod/')) return { ok: false, status: 403, json: async () => ({}) };
+      if (url.includes('androidpublisher')) return { ok: false, status: siblingStatus, json: async () => ({}) };
+      if (url.includes('appstoreconnect')) return { ok: true, status: 200, json: async () => ({ data: [] }) };
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    const visible = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: splitFetch(404) })(
+      fakeReq({ url: '/api/local/store-status?stack=munni-local-prod', token: 'tok' }), visible);
+    const vb = JSON.parse(visible.chunks.join(''));
+    assert.equal(vb.play.state, 'missing-app');
+    assert.match(vb.play.detail, /has Play access/);
+
+    const denied = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: splitFetch(403) })(
+      fakeReq({ url: '/api/local/store-status?stack=munni-local-prod', token: 'tok' }), denied);
+    const db2 = JSON.parse(denied.chunks.join(''));
+    assert.equal(db2.play.state, 'error');
+    assert.match(db2.play.detail, /NOT invited/);
   } finally {
     saveLocalValues(shared, prev);
   }

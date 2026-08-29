@@ -605,15 +605,28 @@ async function playAppExists(values, appId, fetchImpl) {
   const { access_token: access } = await tok.json();
   // a throwaway edit: succeeds only when the package exists AND the
   // service account may publish it — exactly what the CI upload needs
-  const edit = await fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(appId)}/edits`, {
+  const probe = (pkg) => fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/edits`, {
     method: 'POST',
     headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
     body: '{}',
     signal: AbortSignal.timeout(10000),
   });
+  const edit = await probe(appId);
   if (edit.ok) return { state: 'ready' };
   if (edit.status === 404) return { state: 'missing-app' };
-  if (edit.status === 403) return { state: 'error', detail: 'Play answered 403 — invite the service account under Play Console → Users and permissions (release access), or the app does not exist there yet' };
+  if (edit.status === 403) {
+    // Play answers 403 both for "not invited at all" and "this app is
+    // not visible to you" — probing the OTHER munni packages splits the
+    // two: any non-403 proves the account link works (user request
+    // 2026-08-29: say WHICH problem it is)
+    for (const other of ['app.munni', 'app.munni.dev']) {
+      const r2 = await probe(other).catch(() => null);
+      if (r2 && (r2.ok || r2.status === 404)) {
+        return { state: 'missing-app', detail: `the service account has Play access, but ${appId} is not visible to it — do the one-time upload to create the app (or, with per-app scoping, grant it under App permissions)` };
+      }
+    }
+    return { state: 'error', detail: 'the service account is NOT invited to the Play developer account yet — Play Console → Users and permissions → invite it with Release to testing tracks (guide step 2)' };
+  }
   return { state: 'error', detail: `Play answered ${edit.status} — does the service account have release access?` };
 }
 
