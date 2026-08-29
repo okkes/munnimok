@@ -613,6 +613,7 @@ async function playAppExists(values, appId, fetchImpl) {
   });
   if (edit.ok) return { state: 'ready' };
   if (edit.status === 404) return { state: 'missing-app' };
+  if (edit.status === 403) return { state: 'error', detail: 'Play answered 403 — invite the service account under Play Console → Users and permissions (release access), or the app does not exist there yet' };
   return { state: 'error', detail: `Play answered ${edit.status} — does the service account have release access?` };
 }
 

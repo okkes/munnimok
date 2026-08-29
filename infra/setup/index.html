@@ -1025,10 +1025,11 @@ const GROUPS = [
   },
   {
     id: 'playstore', title: 'Google Play publishing', feature: 'android', check: 'playstore',
-    why: 'CI publishes the Android builds with a Play service account — and this page uses the SAME credential to notice when you finish a one-time store upload, so auto-publish turns on by itself.',
+    why: 'CI publishes the Android builds with a Play service account — and this page uses the SAME credential to notice when you finish a one-time store upload, so auto-publish turns on by itself. One manual invite, once, is Google’s hard floor: the Play permissions API itself needs an already-invited admin credential, so the FIRST link can never be automated.',
     how: [
-      '<a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Settings → <b>API access</b> → create (or reuse) a Google Cloud service account, grant it <b>Release to testing tracks</b> on your munni apps.',
-      'In Google Cloud IAM, create a JSON key for that service account and paste the WHOLE downloaded file below.',
+      '<a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noreferrer">Google Cloud → IAM → Service accounts</a> → create one in any project (its own org is NOT needed) → copy its email (<code>…@…iam.gserviceaccount.com</code>). No “API access linking” in Play Console anymore — inviting the email is the whole link.',
+      '<a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → <b>Users and permissions</b> → Invite new user → that email. Recommended: ACCOUNT-level <b>Release to testing tracks</b> + <b>View app information</b> — releases-only (no financials, no user management), and every new munni channel (<code>app.munni.local.&lt;env&gt;</code>) is covered without re-inviting. Prefer per-app scoping? Grant under App permissions instead — but then each new environment needs a manual grant (per-app auto-granting via the API would require holding an even more powerful admin credential, which defeats the point).',
+      'Back in Google Cloud: the service account → <b>Keys</b> → Add key → <b>JSON</b> — paste the WHOLE downloaded file below.',
     ],
     fields: [
       { name: 'PLAY_SERVICE_ACCOUNT_JSON', scope: 'repo', area: true },
@@ -1106,16 +1107,23 @@ const GROUPS = [
 
 /* ── github api ── */
 async function gh(path, init = {}) {
-  const res = await fetch('https://api.github.com' + path, {
-    ...init,
-    headers: {
-      accept: 'application/vnd.github+json',
-      'x-github-api-version': '2022-11-28',
-      authorization: 'Bearer ' + S.pat,
-      ...(init.body ? { 'content-type': 'application/json' } : {}),
-      ...(init.headers || {}),
-    },
-  });
+  let res;
+  try {
+    res = await fetch('https://api.github.com' + path, {
+      ...init,
+      headers: {
+        accept: 'application/vnd.github+json',
+        'x-github-api-version': '2022-11-28',
+        authorization: 'Bearer ' + S.pat,
+        ...(init.body ? { 'content-type': 'application/json' } : {}),
+        ...(init.headers || {}),
+      },
+    });
+  } catch {
+    // fetch() rejecting = the call never reached GitHub — surface a
+    // diagnosis instead of the browser's bare "Failed to fetch"
+    throw new Error(`the browser blocked the GitHub call (${init.method || 'GET'} ${path}) before it left — offline, or an ad/privacy extension? Retry, or allow api.github.com for this page.`);
+  }
   if (res.status === 404 && init.allow404) return null;
   if (!res.ok) throw new Error(`${init.method || 'GET'} ${path} → ${res.status} ${(await res.text()).slice(0, 300)}`);
   if (res.status === 204) return null;
@@ -1136,7 +1144,10 @@ async function putSecretAt(base, name, value) {
 }
 const ensureEnv = (env) => gh(`/repos/${S.slug}/environments/${encodeURIComponent(env)}`, { method: 'PUT', body: '{}' });
 async function storeSecret(name, value, scope) {
-  if (scope === 'repo') { await putSecretAt(`/repos/${S.slug}`, name, value); return; }
+  // repository Actions secrets live under /actions/secrets — the bare
+  // /repos/{slug}/secrets path 404s (found live 2026-08-29: Store as
+  // IAC_GH_PAT never worked for the repo scope)
+  if (scope === 'repo') { await putSecretAt(`/repos/${S.slug}/actions`, name, value); return; }
   for (const env of ENVS) {
     await ensureEnv(env);
     await putSecretAt(`/repos/${S.slug}/environments/${encodeURIComponent(env)}`, name, value);
@@ -1824,6 +1835,10 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
       // fork request was accepted but nothing ever appeared)
       await gh(`/repos/${UPSTREAM}`, { method: 'PATCH', body: JSON.stringify({ is_template: true }) });
       await gh(`/repos/${UPSTREAM}/generate`, { method: 'POST', body: JSON.stringify({ owner, name, include_all_branches: true, description: 'munni (copied from the setup wizard)' }) });
+      // the copy's initial commits fire every push workflow into a repo
+      // that has no secrets yet — pause Actions ASAP to swallow that
+      // first wave; it is re-enabled below once the copy stands
+      await gh(`/repos/${S.slug}/actions/permissions`, { method: 'PUT', body: JSON.stringify({ enabled: false }) }).catch(() => {});
       msg('msg-connect', 'Copy requested (template generate — a fork cannot land in the same account) — this usually takes a few seconds…', true);
     } else {
       const body = { name, default_branch_only: false, organization: owner };
@@ -2301,7 +2316,7 @@ async function buildLocalAndroidFlow() {
     say('build green ✓ — fetching the signed .aab for the ONE-TIME Play upload…');
     const arts = await gh(`/repos/${S.slug}/actions/runs/${run.id}/artifacts`);
     const art = (arts?.artifacts ?? []).find((a) => a.name === 'munni-android-release');
-    if (!art) throw new Error('no signed bundle on the run — are the ANDROID_KEYSTORE secrets in place?');
+    if (!art) throw new Error('no signed bundle on the run — this repo has no ANDROID_KEYSTORE_* secrets yet (a fresh copy starts empty: secrets never ride along). Add the keystore secrets, or wait for the env-first workflows, which mint an upload keystore automatically.');
     const zipRes = await fetch(art.archive_download_url, { headers: { authorization: 'Bearer ' + S.pat } });
     if (!zipRes.ok) throw new Error(`artifact download failed (${zipRes.status})`);
     const blob = await zipRes.blob();
