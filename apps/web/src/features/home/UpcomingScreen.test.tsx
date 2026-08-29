@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderApp } from '@/test/harness';
 import { DEMO_SPACE_ID } from '@/db/seed';
 import { MunniDB } from '@/db/schema';
@@ -9,8 +9,15 @@ import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
 import { HlcClock } from '@/sync/hlc';
 
-// due TODAY on every calendar day (day-1 cadences lapse mid-month)
-const day = Math.min(new Date().getDate(), 28);
+// PINNED clock (Date only — timers stay real for waitFor): the old
+// min(today, 28) fixture put the due day in the PAST on the 29th-31st,
+// emptying the upcoming window — all five specs timed out on Aug 29
+vi.useFakeTimers({ toFake: ['Date'] });
+vi.setSystemTime(new Date('2026-08-15T10:00:00'));
+afterAll(() => vi.useRealTimers());
+
+// due TODAY (the pinned today, mid-month, on every real calendar day)
+const day = new Date().getDate();
 
 /** one recurring cost + one tracked loan plan, both due inside the
  *  window; fillerRecs adds same-day recurring costs on top (#334 r2:
