@@ -680,6 +680,24 @@ test('store-status: no creds reports so; with creds it mirrors the real Play/ASC
     const db2 = JSON.parse(denied.chunks.join(''));
     assert.equal(db2.play.state, 'error');
     assert.match(db2.play.detail, /NOT invited/);
+
+    // a 403 whose body says SERVICE_DISABLED = the API is off in the
+    // service account's own Cloud project — verdict carries the switch
+    const disabledFetch = async (url) => {
+      if (url.includes('oauth2.googleapis.com')) return { ok: true, status: 200, json: async () => ({ access_token: 'gtok' }) };
+      if (url.includes('androidpublisher')) {
+        return { ok: false, status: 403, json: async () => ({ error: { code: 403, message: 'Google Play Android Developer API has not been used in project 1 before or it is disabled.', details: [{ reason: 'SERVICE_DISABLED', metadata: { activationUrl: 'https://console.developers.google.com/apis/x' } }] } }) };
+      }
+      if (url.includes('appstoreconnect')) return { ok: true, status: 200, json: async () => ({ data: [] }) };
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    const off = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: disabledFetch })(
+      fakeReq({ url: '/api/local/store-status?stack=munni-local-prod', token: 'tok' }), off);
+    const ob = JSON.parse(off.chunks.join(''));
+    assert.equal(ob.play.state, 'error');
+    assert.match(ob.play.detail, /API is disabled .* Cloud project/);
+    assert.match(ob.play.detail, /console\.developers\.google\.com/);
   } finally {
     saveLocalValues(shared, prev);
   }

@@ -615,6 +615,15 @@ async function playAppExists(values, appId, fetchImpl) {
   if (edit.ok) return { state: 'ready' };
   if (edit.status === 404) return { state: 'missing-app' };
   if (edit.status === 403) {
+    // Google reuses 403 for a DISABLED API in the service account's own
+    // Cloud project (found live 2026-08-29: SERVICE_DISABLED while the
+    // Play-side permissions were fine) — the body names it exactly
+    const body = await edit.json().catch(() => ({}));
+    const disabled = body?.error?.details?.find((d) => d.reason === 'SERVICE_DISABLED');
+    if (disabled || /has not been used in project|it is disabled/.test(body?.error?.message ?? '')) {
+      const url = disabled?.metadata?.activationUrl ?? 'https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com';
+      return { state: 'error', detail: `the Google Play Android Developer API is disabled in the service account's Cloud project — enable it once (${url}), wait a few minutes, this page retries by itself` };
+    }
     // Play answers 403 both for "not invited at all" and "this app is
     // not visible to you" — probing the OTHER munni packages splits the
     // two: any non-403 proves the account link works (user request
