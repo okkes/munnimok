@@ -1998,16 +1998,17 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
   btn.disabled = true;
   btn.dataset.busy = '1'; // refreshLocal must not re-enable it mid-run
   try {
-    if (!(await streamLocal('/api/local/run', { stack: SHARED_STACK }, 'mint secrets + render the shared services'))) return;
-    if (!(await streamLocal('/api/local/tool', { tool: `${SHARED_STACK}:up` }, 'start the shared services (glitchtip, vault, ocr, control, pgadmin)'))) return;
-    if (!(await waitForServices(SHARED_STACK, ['glitchtip', 'vault'], 'wait for the shared services'))) return;
-    await refreshLocal(); // pick the env list up before walking it
+    await refreshLocal();
     // after Delete everything NO environment exists — production is
-    // recreated here automatically (user ruling 2026-08-28)
+    // recreated FIRST (user ruling 2026-08-28): the shared render
+    // references it as the control-owning environment
     if (!S.envList.length) {
       if (!(await streamLocal('/api/local/envs', { name: 'prod', channel: 'dev' }, 'create the production environment'))) return;
       await refreshLocal();
     }
+    if (!(await streamLocal('/api/local/run', { stack: SHARED_STACK }, 'mint secrets + render the shared services'))) return;
+    if (!(await streamLocal('/api/local/tool', { tool: `${SHARED_STACK}:up` }, 'start the shared services (glitchtip, vault, ocr, control, pgadmin)'))) return;
+    if (!(await waitForServices(SHARED_STACK, ['glitchtip', 'vault'], 'wait for the shared services'))) return;
     // a phone/https feature turns the https mode (and its certificate,
     // one Windows dialog) on as part of the setup — nothing separate
     await reconcileLanMode().catch(() => {});

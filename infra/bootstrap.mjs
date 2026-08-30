@@ -119,9 +119,15 @@ async function localApplyShared() {
   if (missingOperator.length) console.log(`  ⚠ operator values still missing (export them and re-run): ${missingOperator.join(', ')}`);
 
   // munni-control has its OWN Logto app registered in the designated
-  // env's Logto — its id lands in that env's store once logto-setup ran
-  const controlEnv = loadStack(stack.controlApi);
-  const controlAppId = loadLocalValues(controlEnv).VITE_LOGTO_APP_ID_CONTROL;
+  // env's Logto — its id lands in that env's store once logto-setup ran.
+  // After Delete-everything that env does not EXIST yet (empty registry,
+  // found live 2026-08-30) — the shared stack must still render.
+  let controlAppId = null;
+  try {
+    controlAppId = loadLocalValues(loadStack(stack.controlApi)).VITE_LOGTO_APP_ID_CONTROL;
+  } catch {
+    console.log(`  control: ${stack.controlApi} does not exist yet — Set up & start creates it, then its sign-in setup feeds munni-control`);
+  }
   if (controlAppId && values.CONTROL_LOGTO_APP_ID !== controlAppId) {
     values.CONTROL_LOGTO_APP_ID = controlAppId;
     saveLocalValues(stack, values);
