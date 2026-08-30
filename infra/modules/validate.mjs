@@ -221,15 +221,17 @@ export const VALIDATORS = {
       return { ok: false, detail: 'the Team ID should be 10 letters/digits (developer.apple.com → Membership details)' };
     }
     const now = Math.floor(Date.now() / 1000);
+    // stored base64 normally; a raw BEGIN/END paste works too
+    const rawP8 = values.ASC_KEY_P8.includes('BEGIN') ? values.ASC_KEY_P8 : Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8');
     let jwt;
     try {
       jwt = jwtES256({
         header: { alg: 'ES256', kid: values.ASC_KEY_ID, typ: 'JWT' },
         payload: { iss: values.ASC_ISSUER_ID, aud: 'appstoreconnect-v1', iat: now, exp: now + 600 },
-        pem: Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8'),
+        pem: rawP8,
       });
     } catch (e) {
-      return { ok: false, detail: `the .p8 does not parse — paste its BASE64 (${e.message})` };
+      return { ok: false, detail: `the .p8 does not parse — paste the WHOLE file content, BEGIN/END lines included (${e.message})` };
     }
     const res = await fetchImpl('https://api.appstoreconnect.apple.com/v1/apps?limit=1', {
       headers: { authorization: `Bearer ${jwt}` },

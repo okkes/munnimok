@@ -666,7 +666,8 @@ async function ascAppExists(values, bundleId, fetchImpl) {
     jwt = jwtES256({
       header: { alg: 'ES256', kid: values.ASC_KEY_ID, typ: 'JWT' },
       payload: { iss: values.ASC_ISSUER_ID, aud: 'appstoreconnect-v1', iat: now, exp: now + 600 },
-      pem: Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8'),
+      // stored base64 normally; a raw BEGIN/END paste works too
+      pem: values.ASC_KEY_P8.includes('BEGIN') ? values.ASC_KEY_P8 : Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8'),
     });
   } catch (e) {
     return { state: 'error', detail: `the ASC .p8 does not parse (${e.message})` };

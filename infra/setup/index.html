@@ -1040,7 +1040,7 @@ const GROUPS = [
     why: 'CI uploads iOS builds to TestFlight with an App Store Connect API key — and this page uses it to check when the app record exists.',
     how: [
       '<a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noreferrer">App Store Connect → Integrations</a> → generate an API key with <b>App Manager</b> access; note the Key ID and the Issuer ID shown above the list.',
-      'Download the <code>.p8</code> (offered ONCE), base64 it (PowerShell: <code>[Convert]::ToBase64String([IO.File]::ReadAllBytes("AuthKey.p8"))</code>) and paste the result.',
+      'Download the <code>.p8</code> (offered ONCE), open it in any text editor and paste its WHOLE content below — <code>-----BEGIN PRIVATE KEY-----</code> through <code>-----END PRIVATE KEY-----</code>. Conversion happens here automatically.',
       'The Team ID (10 characters) is under Membership details on developer.apple.com.',
     ],
     fields: [
@@ -1643,7 +1643,7 @@ async function storeGroup(id) {
   const card = document.querySelector(`[data-group="${id}"]`);
   const storeBtn = card.querySelector('[data-store-group]');
   const entries = [...card.querySelectorAll('[data-secret]')]
-    .map((el) => ({ name: el.dataset.secret, scope: el.dataset.scope, value: el.value.trim() }))
+    .map((el) => ({ name: el.dataset.secret, scope: el.dataset.scope, value: normalizeSecret(el.dataset.secret, el.value.trim()) }))
     .filter((e) => e.value);
   if (!entries.length) { msg('msg-group-' + id, 'Nothing to store — every field is empty.', false); return; }
 
@@ -1736,8 +1736,16 @@ async function checkCredentials(check, values) {
   return res.json();
 }
 
+/* accept what humans naturally paste; convert to the stored contract
+ * here (user request 2026-08-30: no by-hand base64 commands) */
+const FIELD_NORMALIZERS = {
+  // the .p8 is STORED base64 (CI decodes it) — accept the raw PEM as
+  // pasted straight from the downloaded AuthKey file
+  ASC_KEY_P8: (v) => (v.includes('BEGIN') ? btoa(v.replace(/\r\n/g, '\n') + '\n') : v),
+};
+const normalizeSecret = (name, value) => (FIELD_NORMALIZERS[name] ? FIELD_NORMALIZERS[name](value) : value);
 const cardValues = (card) =>
-  Object.fromEntries([...card.querySelectorAll('[data-secret]')].map((el) => [el.dataset.secret, el.value.trim()]).filter(([, v]) => v));
+  Object.fromEntries([...card.querySelectorAll('[data-secret]')].map((el) => [el.dataset.secret, normalizeSecret(el.dataset.secret, el.value.trim())]).filter(([, v]) => v));
 
 async function checkGroup(id) {
   const g = GROUPS.find((x) => x.id === id);

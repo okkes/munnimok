@@ -119,6 +119,9 @@ test('ascstore: ES256 App Store Connect jwt against /v1/apps; team-id format gua
   assert.match(badTeam.detail, /10 letters/);
   const badKey = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: 'AAAA' }, { fetchImpl });
   assert.match(badKey.detail, /does not parse/);
+  // a raw BEGIN/END paste (no base64) is accepted too
+  const rawPaste = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: ecPem() }, { fetchImpl });
+  assert.equal(rawPaste.ok, true);
 });
 
 test('logodev: swap detection first, then search (sk) + image (pk)', async () => {
