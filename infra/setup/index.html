@@ -1143,6 +1143,14 @@ async function putSecretAt(base, name, value) {
   });
 }
 const ensureEnv = (env) => gh(`/repos/${S.slug}/environments/${encodeURIComponent(env)}`, { method: 'PUT', body: '{}' });
+async function ghUpsertRepoVar(name, value) {
+  const base = `/repos/${S.slug}/actions/variables`;
+  try {
+    await gh(`${base}/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify({ name, value }) });
+  } catch {
+    await gh(base, { method: 'POST', body: JSON.stringify({ name, value }) });
+  }
+}
 async function storeSecret(name, value, scope) {
   // repository Actions secrets live under /actions/secrets — the bare
   // /repos/{slug}/secrets path 404s (found live 2026-08-29: Store as
@@ -1785,6 +1793,9 @@ async function connectRepo(repo) {
   }
   pill.textContent = `connected as ${S.user.login} ✓`;
   pill.className = 'pill ok';
+  // open the first-boot latch: a connected repo is being initialized —
+  // its push workflows (skipped until now on fresh copies) come alive
+  await ghUpsertRepoVar('MUNNI_INITIALIZED', 'true').catch(() => {});
   document.getElementById('btn-store-pat').disabled = false;
   document.getElementById('btn-refresh').disabled = false;
   msg('msg-connect', `Repo ${repo.full_name} ready (branch ${S.ref}). Loading live status…`, true);
@@ -2200,7 +2211,6 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
 });
 document.getElementById('btn-local-nuke-all')?.addEventListener('click', async () => {
   if (!confirm('Delete EVERYTHING — every environment (production included) AND the shared services?\n\nAll containers, volumes (every database), networks, the bank consents the environments created at GoCardless — and the environments themselves are forgotten: a later Set up & start recreates production fresh. The credentials you entered in step 3 stay stored.\n\nThe family certificate dies with the volumes: after the next Set up, this PC re-trusts automatically (one Windows dialog) and PHONES need the new root.crt installed again.\n\n(Store apps have no delete API: retire any app.munni.local.* in Play Console / App Store Connect by hand.)')) return;
-  const envNames = S.envList.map((e) => e.name);
   for (const name of [...S.envList.map((e) => e.stack), SHARED_STACK]) {
     await streamLocal('/api/local/cleanup', { target: name }, `delete ${labelOf(name)}`);
   }
@@ -2208,16 +2218,21 @@ document.getElementById('btn-local-nuke-all')?.addEventListener('click', async (
     const fr = await (await hfetch('/api/local/envs/forget-all', { method: 'POST', body: '{}' })).json();
     localLog(`\nenvironments forgotten: ${fr.forgotten.join(', ') || '(none)'} — Set up & start recreates production fresh\n`);
   } catch (e) { localLog(`\ncould not forget the environments: ${e.message}\n`); }
-  // per-env GitHub publish flags die with their environments — unless
-  // the whole REPO is already gone (users may delete it FIRST; the
-  // local teardown must shrug, not stumble — user report 2026-08-30)
+  // the GitHub environment `local` loses ALL its variables (NATIVE_*
+  // config + per-env publish flags — user report 2026-08-30: leftovers
+  // looked like a half-done delete); its SECRETS stay — the signing
+  // keystore must survive, or a re-setup would mint a new upload key
+  // that Play rejects. Unless the whole REPO is already gone (users may
+  // delete it FIRST; the local teardown must shrug, not stumble).
   if (S.pat && S.user) {
     try {
       const repoAlive = await gh(`/repos/${S.slug}`, { allow404: true });
       if (repoAlive) {
-        for (const name of envNames) {
-          try { await gh(`/repos/${S.slug}/environments/local/variables/${publishFlagName(name)}`, { method: 'DELETE' }); } catch { /* never set */ }
+        const lv = (await gh(`/repos/${S.slug}/environments/local/variables?per_page=100`, { allow404: true }))?.variables ?? [];
+        for (const v of lv) {
+          try { await gh(`/repos/${S.slug}/environments/local/variables/${encodeURIComponent(v.name)}`, { method: 'DELETE' }); } catch { /* raced */ }
         }
+        if (lv.length) localLog(`\nGitHub: cleared ${lv.length} variables from environment local (its secrets — the signing keystore — stay on purpose).\n`);
       } else {
         localLog(`\n${S.slug} no longer exists on GitHub — nothing left to clean there.\n`);
       }
@@ -2322,6 +2337,29 @@ async function playStateFor(stack) {
     return st.error ? 'error' : st.play.state;
   } catch { return 'error'; }
 }
+/** publishing credentials ride from the LOCAL store into the TARGET
+ * repo's environment `local` right before a dispatch needs them — a
+ * fresh copy has no secrets at all, and the store check alone made the
+ * wizard claim "published" while CI silently skipped the upload (found
+ * live 2026-08-30). Returns false when the store cannot supply them. */
+async function ensureLocalEnvSecrets(names, label) {
+  await ensureEnv('local');
+  const have = new Set(((await gh(`/repos/${S.slug}/environments/local/secrets?per_page=100`, { allow404: true }))?.secrets ?? []).map((x) => x.name));
+  const missing = names.filter((n) => !have.has(n));
+  if (!missing.length) return true;
+  const all = await (await hfetch('/api/local/secrets')).json();
+  const store = Object.assign({}, ...Object.values(all.values));
+  const absent = missing.filter((n) => !store[n]);
+  for (const n of missing) {
+    if (store[n]) await putSecretAt(`/repos/${S.slug}/environments/local`, n, store[n]);
+  }
+  if (absent.length) {
+    msg('msg-native-local', `${label} needs ${absent.join(', ')} — add it in step 3 first`, false);
+    return false;
+  }
+  localLog(`\n${label}: ${missing.join(', ')} written into the repo's environment local (from the machine store).\n`);
+  return true;
+}
 setInterval(() => { refreshStoreStatus().catch(() => {}); }, STORE_POLL_MS);
 document.getElementById('native-env-select')?.addEventListener('change', () => { updateNativeAppIdLabels(); refreshStoreStatus().catch(() => {}); });
 updateNativeAppIdLabels();
@@ -2352,6 +2390,8 @@ async function buildLocalAndroidFlow() {
     let publish = 'skip';
     if (playState === 'ready') publish = 'auto';
     else if (playState === 'no-creds' && (await localPublishEnabled(cfg.localEnv))) publish = 'auto';
+    // auto only means auto when the REPO can actually publish
+    if (publish === 'auto' && !(await ensureLocalEnvSecrets(['PLAY_SERVICE_ACCOUNT_JSON'], 'Play publishing'))) publish = 'skip';
     const started = Date.now();
     await dispatch('native-android.yml', { environment: 'local', localEnv: cfg.localEnv, publish });
     say(`build dispatched for ${cfg.appId} (${publish === 'skip' ? 'upload skipped until the one-time Play setup' : 'auto-publish on'}) — CI is compiling (usually 6-10 min)…`);
@@ -2397,6 +2437,9 @@ async function dispatchLocalIosFlow() {
   try {
     if (!(await ensureLanMode())) return;
     const cfg = await writeLocalNativeEnv();
+    // TestFlight upload credentials must live in THIS repo (fresh copies
+    // start secret-less) — best effort, the build still runs without
+    await ensureLocalEnvSecrets(['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8', 'APPLE_TEAM_ID'], 'TestFlight upload').catch(() => {});
     await dispatch('native-ios.yml', { environment: 'local', localEnv: cfg.localEnv });
     localLog(`\niOS build dispatched for ${cfg.appId} — it signs and uploads to TestFlight (the app record with that bundle id must exist in App Store Connect, one-time). Install/update it from the TestFlight app; it only works on this wifi. Follow the run under Actions.\n`);
   } catch (e) {

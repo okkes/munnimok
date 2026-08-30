@@ -21,6 +21,9 @@ permissions:
 
 jobs:
   api-tests:
+    # first-boot latch: fresh repo copies skip every run until the
+    # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
+    if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -41,6 +44,9 @@ jobs:
   # job below. The NAS (amd64) and a Raspberry Pi (arm64) pull the
   # same :dev/:latest tag and get their own layers.
   images:
+    # first-boot latch: fresh repo copies skip every run until the
+    # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
+    if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     needs: api-tests
     strategy:
       matrix:
@@ -169,6 +175,9 @@ jobs:
 
   # merge the per-arch pushes into the channel tags the hosts pull
   manifest:
+    # first-boot latch: fresh repo copies skip every run until the
+    # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
+    if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     needs: images
     runs-on: ubuntu-latest
     steps:

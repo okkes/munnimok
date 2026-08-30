@@ -56,8 +56,9 @@ jobs:
   deploy:
     # workflow_run: only when the image build actually succeeded;
     # push (infra-only) and manual dispatch always deploy — unless the
-    # dispatch asked for an iac channel (handled by deploy-iac below)
-    if: ${{ (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && (github.event_name != 'workflow_dispatch' || (inputs.channel || 'live') == 'live') }}
+    # dispatch asked for an iac channel (handled by deploy-iac below).
+    # First-boot latch: fresh copies skip until MUNNI_INITIALIZED.
+    if: ${{ vars.MUNNI_INITIALIZED == 'true' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') && (github.event_name != 'workflow_dispatch' || (inputs.channel || 'live') == 'live') }}
     runs-on: ubuntu-latest
     environment: ${{ (github.event.workflow_run.head_branch || github.ref_name) == 'master' && 'production' || 'staging' }}
     steps:
@@ -117,7 +118,7 @@ jobs:
   # setup wizard (or Actions UI). The poller (deploy/nas/apply.sh) unpacks
   # each into its own /volume1/docker/<stack>/ and composes it up there.
   deploy-iac:
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.channel || 'live') != 'live' }}
+    if: ${{ vars.MUNNI_INITIALIZED == 'true' && github.event_name == 'workflow_dispatch' && (inputs.channel || 'live') != 'live' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
