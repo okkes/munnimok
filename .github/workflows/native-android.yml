@@ -129,10 +129,19 @@ jobs:
           VITE_NATIVE_SCHEME: ${{ env.NATIVE_SCHEME }}
           VITE_CHANNEL: ${{ steps.env.outputs.master == 'true' && 'production' || 'staging' }}
 
-      - name: Compute version (code = commit count, name = release version)
+      - name: Compute version (code = commit count; local = seconds since 2026)
         id: version
         run: |
-          echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "${{ steps.env.outputs.flavor }}" = "local" ]; then
+            # dispatched local builds repeat the same commit — a commit
+            # count collides at Play ("Version code 1 has already been
+            # used", found live 2026-08-30 on a fresh copy). Seconds
+            # since 2026-01-01: unique, monotonic, fits Play's
+            # 2100000000 ceiling until 2092.
+            echo "code=$(( $(date +%s) - 1767225600 ))" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          fi
           NAME=$(node -p "require('./package.json').version")
           if [ "${{ steps.env.outputs.flavor }}" = "local" ]; then NAME="$NAME-local";
           elif [ "${{ steps.env.outputs.master }}" != "true" ]; then NAME="$NAME-dev"; fi
