@@ -2306,6 +2306,18 @@ const localPublishEnabled = async (env) => {
 const STORE_POLL_MS = 3 * 60 * 1000;
 async function refreshStoreStatus() {
   if (S.platform !== 'local' || !HELPER || !(S.features.android || S.features.ios)) return;
+  // NEVER probe while a build is publishing: the probe's throwaway Play
+  // edit expires the CI upload's edit (killed a real release 2026-08-30)
+  if (S.buildInFlight) return;
+  // …and once auto-publish is on there is nothing left to detect
+  if (S.pat && S.user && S.features.android) {
+    try {
+      if (await localPublishEnabled(nativeTargetEnv())) {
+        setPill('play-status-pill', 'auto-publish on ✓', true);
+        if (!S.features.ios) return;
+      }
+    } catch { /* connection hiccup — probe as usual */ }
+  }
   let st;
   try {
     st = await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
@@ -2379,6 +2391,7 @@ async function buildLocalAndroidFlow() {
   const say = (t, ok = true) => msg('msg-native-local', t, ok);
   if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card in step 3) — the build runs in your repo’s Actions.', false); return; }
   btn.disabled = true;
+  S.buildInFlight = true; // pause the store polls — their Play edits expire the upload's
   try {
     if (!(await ensureLanMode())) return;
     say('writing the LAN config into the GitHub environment "local"…');
@@ -2427,6 +2440,7 @@ async function buildLocalAndroidFlow() {
   } catch (e) {
     say('✗ ' + (e.message || e), false);
   } finally {
+    S.buildInFlight = false;
     btn.disabled = false;
   }
 }

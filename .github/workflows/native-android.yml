@@ -246,20 +246,23 @@ jobs:
         if: ${{ inputs.publish != 'skip' && steps.keystore.outputs.present == 'true' && env.PLAY_JSON != '' && (steps.env.outputs.master == 'true' || (steps.env.outputs.flavor == 'dev' && vars.NATIVE_DEV_CHANNEL == 'true') || steps.env.outputs.flavor == 'local') }}
         # local channel: a missing Play app must not paint the run red —
         # the store mandates a manual FIRST upload, the artifact is the
-        # deliverable until then (master/dev keep failing hard)
+        # deliverable until then (master/dev keep failing hard).
+        # Own publisher script (2026-08-30): the third-party action shipped
+        # deprecated inputs + ancient deps and died on concurrent-edit
+        # expiry; ours retries once on a fresh edit.
         continue-on-error: ${{ steps.env.outputs.flavor == 'local' }}
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
-          packageName: ${{ steps.env.outputs.flavor == 'local' && steps.env.outputs.local_app_id || (steps.env.outputs.master == 'true' && 'app.munni' || 'app.munni.dev') }}
-          releaseFiles: apps/native/android/app/build/outputs/bundle/${{ steps.env.outputs.flavor }}Release/app-${{ steps.env.outputs.flavor }}-release.aab
-          mappingFile: apps/native/android/app/build/outputs/mapping/${{ steps.env.outputs.flavor }}Release/mapping.txt
-          track: internal
-          status: completed
+        run: node .github/scripts/play-publish.mjs
         env:
           PLAY_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          PACKAGE: ${{ steps.env.outputs.flavor == 'local' && steps.env.outputs.local_app_id || (steps.env.outputs.master == 'true' && 'app.munni' || 'app.munni.dev') }}
+          AAB_PATH: apps/native/android/app/build/outputs/bundle/${{ steps.env.outputs.flavor }}Release/app-${{ steps.env.outputs.flavor }}-release.aab
+          MAPPING_PATH: apps/native/android/app/build/outputs/mapping/${{ steps.env.outputs.flavor }}Release/mapping.txt
+          TRACK: internal
 
       - name: Play upload verdict (local channel)
         if: ${{ steps.env.outputs.flavor == 'local' && steps.play.outcome == 'failure' }}
+        # the publish step's own log names the exact reason — this warning
+        # must not assert one cause for every failure (an expired edit got
+        # blamed on a missing app, 2026-08-30)
         run: |
-          echo "::warning title=Play upload skipped::${{ steps.env.outputs.local_app_id }} does not exist at Play yet (or the service account lacks access). One-time: Play Console → create the app → Internal testing → upload the .aab artifact from this run → grant the CI service account. Every later build publishes itself."
+          echo "::warning title=Play upload did not finish::Read the 'Publish to Play internal track' step above for the exact reason — no app record for ${{ steps.env.outputs.local_app_id }} yet, service account not invited, its Cloud project's Play API disabled, or a concurrent edit. The signed .aab artifact on this run is the manual fallback; once the store accepts, every later build publishes itself."

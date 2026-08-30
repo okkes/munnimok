@@ -604,15 +604,33 @@ async function playAppExists(values, appId, fetchImpl) {
   if (!tok.ok) return { state: 'error', detail: `Google rejected the service account (${tok.status})` };
   const { access_token: access } = await tok.json();
   // a throwaway edit: succeeds only when the package exists AND the
-  // service account may publish it — exactly what the CI upload needs
+  // service account may publish it — exactly what the CI upload needs.
+  // ALWAYS deleted right after: opening an edit EXPIRES any concurrent
+  // one, and a poll racing a CI publish killed a real upload (found
+  // live 2026-08-30: "This edit has expired")
   const probe = (pkg) => fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/edits`, {
     method: 'POST',
     headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
     body: '{}',
     signal: AbortSignal.timeout(10000),
   });
+  const dropEdit = async (pkg, res2) => {
+    try {
+      const { id } = await res2.json();
+      if (id) {
+        await fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/edits/${encodeURIComponent(id)}`, {
+          method: 'DELETE',
+          headers: { authorization: `Bearer ${access}` },
+          signal: AbortSignal.timeout(10000),
+        });
+      }
+    } catch { /* the edit dies on its own within minutes */ }
+  };
   const edit = await probe(appId);
-  if (edit.ok) return { state: 'ready' };
+  if (edit.ok) {
+    await dropEdit(appId, edit);
+    return { state: 'ready' };
+  }
   if (edit.status === 404) return { state: 'missing-app' };
   if (edit.status === 403) {
     // Google reuses 403 for a DISABLED API in the service account's own
@@ -630,6 +648,7 @@ async function playAppExists(values, appId, fetchImpl) {
     // 2026-08-29: say WHICH problem it is)
     for (const other of ['app.munni', 'app.munni.dev']) {
       const r2 = await probe(other).catch(() => null);
+      if (r2?.ok) await dropEdit(other, r2);
       if (r2 && (r2.ok || r2.status === 404)) {
         return { state: 'missing-app', detail: `the service account has Play access, but ${appId} is not visible to it — do the one-time upload to create the app (or, with per-app scoping, grant it under App permissions)` };
       }
