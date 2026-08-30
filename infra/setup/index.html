@@ -393,6 +393,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
         <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
         <span class="pill" id="asc-status-pill"></span>
       </div>
+      <div class="msg" id="msg-native-ios"></div>
     </div>
   </div>
 </section>
@@ -2455,17 +2456,43 @@ async function buildLocalAndroidFlow() {
 document.getElementById('btn-native-local-android')?.addEventListener('click', () => buildLocalAndroidFlow());
 
 async function dispatchLocalIosFlow() {
-  if (!S.pat || !S.user) { localLog('\nConnect GitHub first (the GitHub card in step 3).\n'); return; }
+  const say = (t, ok = true) => msg('msg-native-ios', t, ok);
+  const btn = document.getElementById('btn-native-local-ios');
+  if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card in step 3) — the build runs in your repo’s Actions.', false); return; }
+  btn.disabled = true;
   try {
-    if (!(await ensureLanMode())) return;
+    if (!(await ensureLanMode())) { say('LAN mode could not come up — see the output box.', false); return; }
     const cfg = await writeLocalNativeEnv();
+    // the iOS job is gated on IOS_BUILD_ENABLED — a fresh copy does not
+    // inherit it and the run silently SKIPS (found live 2026-08-30);
+    // asking for an iOS build IS the opt-in
+    await ghUpsertRepoVar('IOS_BUILD_ENABLED', 'true');
     // TestFlight upload credentials must live in THIS repo (fresh copies
     // start secret-less) — best effort, the build still runs without
     await ensureLocalEnvSecrets(['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8', 'APPLE_TEAM_ID'], 'TestFlight upload').catch(() => {});
+    const started = Date.now();
     await dispatch('native-ios.yml', { environment: 'local', localEnv: cfg.localEnv });
-    localLog(`\niOS build dispatched for ${cfg.appId} — it signs and uploads to TestFlight (the app record with that bundle id must exist in App Store Connect, one-time). Install/update it from the TestFlight app; it only works on this wifi. Follow the run under Actions.\n`);
+    say(`iOS build dispatched for ${cfg.appId} — CI signs and uploads to TestFlight (usually 15-25 min)…`);
+    let run = null;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 20000));
+      const runs = (await workflowRuns('native-ios.yml'))?.workflow_runs ?? [];
+      run = runs.find((r2) => r2.event === 'workflow_dispatch' && new Date(r2.created_at).getTime() > started - 120000);
+      if (run) say(`build ${run.status === 'completed' ? run.conclusion : run.status} — run #${run.run_number}…`, run.conclusion !== 'failure');
+      if (run?.status === 'completed') break;
+      if (Date.now() - started > 45 * 60 * 1000) throw new Error('CI never finished within 45 minutes — check the Actions tab');
+    }
+    if (run.conclusion === 'skipped') {
+      say('the iOS job was SKIPPED — its gates (IOS_BUILD_ENABLED, repo initialization) were off when it started. Both are set now: press Build again.', false);
+    } else if (run.conclusion === 'success') {
+      say(`build green ✓ — ${cfg.appId} is on its way to TestFlight (App Store Connect processes it for a few minutes). Install/update via the TestFlight app; the build only works on this wifi.`);
+    } else {
+      say(`the build ended ${run.conclusion} — open run #${run.run_number} under Actions for the reason (missing ASC app record? signing?).`, false);
+    }
   } catch (e) {
-    localLog(`\n✗ iOS dispatch: ${e.message || e}\n`);
+    say('✗ ' + (e.message || e), false);
+  } finally {
+    btn.disabled = false;
   }
 }
 document.getElementById('btn-native-local-ios')?.addEventListener('click', () => dispatchLocalIosFlow());
