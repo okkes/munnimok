@@ -948,7 +948,6 @@ const S = {
   pendingNativeBuild: null,
   repoSecrets: new Set(),
   envs: {},          // name -> { secrets:Set, vars:Set }
-  keys: {},          // sealed-box public keys per base path
   runs: { iac: [], nas: [], native: [] },
   localStore: new Set(),   // names present in the LOCAL secret store (via the helper)
   pollTimer: null,
@@ -1131,10 +1130,10 @@ async function gh(path, init = {}) {
   return res.json().catch(() => null);
 }
 
-async function publicKeyFor(base) {
-  if (!S.keys[base]) S.keys[base] = await gh(`${base}/secrets/public-key`);
-  return S.keys[base];
-}
+// NEVER cached: a deleted-and-recreated repo (same name!) carries a NEW
+// sealing key — a remembered one produces "improperly encrypted secret"
+// 422s (found live 2026-08-30). One extra GET per store is nothing.
+const publicKeyFor = (base) => gh(`${base}/secrets/public-key`);
 async function putSecretAt(base, name, value) {
   const pk = await publicKeyFor(base);
   const sealed = sealedBox(b64decode(pk.key), new TextEncoder().encode(value));
