@@ -206,10 +206,12 @@ function sharedServices(s, pair) {
       postgres:
         condition: service_healthy
 
-  glitchtip-migrate:
+  # migrations run INSIDE the web service (no one-shot migrate container
+  # lingering as "exited"); the worker waits until they are applied
+  glitchtip:
     image: glitchtip/glitchtip:latest
-    restart: "no"
-    command: ./manage.py migrate
+    restart: unless-stopped
+    command: sh -c "./manage.py migrate && ./bin/start.sh"
     environment: &glitchtip_env
       DATABASE_URL: postgres://munni:\${POSTGRES_PASSWORD}@postgres:5432/glitchtip
       REDIS_URL: redis://valkey:6379/0
@@ -217,30 +219,22 @@ function sharedServices(s, pair) {
       GLITCHTIP_DOMAIN: ${pair.urls.glitchtip}
       EMAIL_URL: \${GLITCHTIP_EMAIL_URL:-consolemail://}
       CELERY_WORKER_AUTOSCALE: "1,3"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-  glitchtip:
-    image: glitchtip/glitchtip:latest
-    restart: unless-stopped
-    environment: *glitchtip_env
     ports:
       - "${p.glitchtip}:8000"
     depends_on:
-      glitchtip-migrate:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       valkey:
         condition: service_started
 
   glitchtip-worker:
     image: glitchtip/glitchtip:latest
     restart: unless-stopped
-    command: ./bin/run-celery-with-beat.sh
+    command: sh -c "until ./manage.py migrate --check >/dev/null 2>&1; do sleep 3; done; ./bin/run-celery-with-beat.sh"
     environment: *glitchtip_env
     depends_on:
-      glitchtip-migrate:
-        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
 
   valkey:
     image: valkey/valkey:9-alpine
@@ -372,10 +366,13 @@ services:
       retries: 10
     networks: [shared]
 
-  glitchtip-migrate:
+  # migrations run INSIDE the web service (no one-shot migrate container
+  # lingering as "exited" in docker ps — user request 2026-08-30); the
+  # worker waits until they are applied
+  glitchtip:
     image: glitchtip/glitchtip:latest
-    restart: "no"
-    command: ./manage.py migrate
+    restart: unless-stopped
+    command: sh -c "./manage.py migrate && ./bin/start.sh"
     environment: &glitchtip_env
       DATABASE_URL: postgres://munni:\${POSTGRES_PASSWORD}@glitchtip-db:5432/glitchtip
       REDIS_URL: redis://valkey:6379/0
@@ -383,20 +380,11 @@ services:
       GLITCHTIP_DOMAIN: ${s.urls.glitchtip}
       EMAIL_URL: \${GLITCHTIP_EMAIL_URL:-consolemail://}
       CELERY_WORKER_AUTOSCALE: "1,3"
-    depends_on:
-      glitchtip-db:
-        condition: service_healthy
-    networks: [shared]
-
-  glitchtip:
-    image: glitchtip/glitchtip:latest
-    restart: unless-stopped
-    environment: *glitchtip_env
     ports:
       - "${p.glitchtip}:8000"
     depends_on:
-      glitchtip-migrate:
-        condition: service_completed_successfully
+      glitchtip-db:
+        condition: service_healthy
       valkey:
         condition: service_started
     networks: [shared]
@@ -404,11 +392,11 @@ services:
   glitchtip-worker:
     image: glitchtip/glitchtip:latest
     restart: unless-stopped
-    command: ./bin/run-celery-with-beat.sh
+    command: sh -c "until ./manage.py migrate --check >/dev/null 2>&1; do sleep 3; done; ./bin/run-celery-with-beat.sh"
     environment: *glitchtip_env
     depends_on:
-      glitchtip-migrate:
-        condition: service_completed_successfully
+      glitchtip-db:
+        condition: service_healthy
     networks: [shared]
 
   valkey:

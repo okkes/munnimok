@@ -1827,6 +1827,11 @@ document.getElementById('btn-connect').addEventListener('click', async () => {
 
 document.getElementById('btn-fork').addEventListener('click', async () => {
   const pill = document.getElementById('connect-pill');
+  // a mid-copy click on any of these reads as interrupting the copy —
+  // hold the whole card until the flow settles (user report 2026-08-30)
+  for (const id of ['btn-fork', 'btn-connect', 'btn-store-pat', 'btn-refresh']) {
+    document.getElementById(id).disabled = true;
+  }
   try {
     if (!S.user) throw new Error('Connect first so I know who you are.');
     const [owner, name] = S.slug.split('/');
@@ -1837,10 +1842,10 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
       // fork request was accepted but nothing ever appeared)
       await gh(`/repos/${UPSTREAM}`, { method: 'PATCH', body: JSON.stringify({ is_template: true }) });
       await gh(`/repos/${UPSTREAM}/generate`, { method: 'POST', body: JSON.stringify({ owner, name, include_all_branches: true, description: 'munni (copied from the setup wizard)' }) });
-      // the copy's initial commits fire every push workflow into a repo
-      // that has no secrets yet — pause Actions ASAP to swallow that
-      // first wave; it is re-enabled below once the copy stands
-      await gh(`/repos/${S.slug}/actions/permissions`, { method: 'PUT', body: JSON.stringify({ enabled: false }) }).catch(() => {});
+      // NEVER pause Actions during the copy (tried 2026-08-30: the
+      // workflows were permanently left out of the Actions index — no
+      // dispatches, no runs). The initial commits fire a wave of runs
+      // into a secretless repo; those failures are cosmetic.
       msg('msg-connect', 'Copy requested (template generate — a fork cannot land in the same account) — this usually takes a few seconds…', true);
     } else {
       const body = { name, default_branch_only: false, organization: owner };
@@ -1859,12 +1864,29 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
     // workflows arrive disabled on forks — enable them so the buttons work
     await gh(`/repos/${S.slug}/actions/permissions`, { method: 'PUT', body: JSON.stringify({ enabled: true, allowed_actions: 'all' }) })
       .catch(() => msg('msg-connect', 'Fork ready, but Actions could not be enabled via the API — flip it on under the repo Settings → Actions.', false));
+    // the ACTIONS INDEX registers the workflows a beat after the files
+    // land — dispatching before that 404s, so hold here until it fills
+    msg('msg-connect', 'Copy stands — waiting for GitHub to register its workflows…', true);
+    let indexed = 0;
+    for (let i = 0; i < 30; i++) {
+      const wfs = await gh(`/repos/${S.slug}/actions/workflows?per_page=1`, { allow404: true });
+      indexed = wfs?.total_count ?? 0;
+      if (indexed > 0) break;
+      await new Promise((r) => setTimeout(r, 3000));
+    }
+    if (!indexed) msg('msg-connect', 'GitHub has not registered the workflows yet — builds will 404 until it does. A tiny push to the repo (any commit) forces it; then press Refresh status.', false);
     document.getElementById('btn-fork').hidden = true;
     await connectRepo(repo);
   } catch (e) {
     pill.textContent = 'fork failed';
     pill.className = 'pill bad';
     msg('msg-connect', String(e.message || e), false);
+  } finally {
+    for (const id of ['btn-fork', 'btn-connect', 'btn-store-pat', 'btn-refresh']) {
+      document.getElementById(id).disabled = false;
+    }
+    document.getElementById('btn-store-pat').disabled = !S.user;
+    document.getElementById('btn-refresh').disabled = !S.user;
   }
 });
 document.getElementById('btn-store-pat').addEventListener('click', async () => {
@@ -2013,6 +2035,13 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
     // one Windows dialog) on as part of the setup — nothing separate
     await reconcileLanMode().catch(() => {});
     await refreshLocal();
+    // ALWAYS re-trust while https mode is on: Delete everything kills
+    // the CA volume, so a rebuilt family carries a NEW root — the flip
+    // alone would skip the install (found live 2026-08-30)
+    try {
+      const lanNow = await (await hfetch('/api/local/lan')).json();
+      if (lanNow.current) await streamLocal('/api/local/trust-ca', {}, 'trust the family certificate on this PC (new after a full delete — one Windows dialog)');
+    } catch { /* helper hiccup — the button on the card redoes it */ }
     for (const env of S.envList) {
       if (!(await setupEnv(env))) return;
     }
@@ -2162,7 +2191,7 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
   document.getElementById('btn-local-reveal').textContent = 'Hide secrets';
 });
 document.getElementById('btn-local-nuke-all')?.addEventListener('click', async () => {
-  if (!confirm('Delete EVERYTHING — every environment (production included) AND the shared services?\n\nAll containers, volumes (every database), networks, the bank consents the environments created at GoCardless — and the environments themselves are forgotten: a later Set up & start recreates production fresh. The credentials you entered in step 3 stay stored.\n\n(Store apps have no delete API: retire any app.munni.local.* in Play Console / App Store Connect by hand.)')) return;
+  if (!confirm('Delete EVERYTHING — every environment (production included) AND the shared services?\n\nAll containers, volumes (every database), networks, the bank consents the environments created at GoCardless — and the environments themselves are forgotten: a later Set up & start recreates production fresh. The credentials you entered in step 3 stay stored.\n\nThe family certificate dies with the volumes: after the next Set up, this PC re-trusts automatically (one Windows dialog) and PHONES need the new root.crt installed again.\n\n(Store apps have no delete API: retire any app.munni.local.* in Play Console / App Store Connect by hand.)')) return;
   const envNames = S.envList.map((e) => e.name);
   for (const name of [...S.envList.map((e) => e.stack), SHARED_STACK]) {
     await streamLocal('/api/local/cleanup', { target: name }, `delete ${labelOf(name)}`);
@@ -2171,11 +2200,20 @@ document.getElementById('btn-local-nuke-all')?.addEventListener('click', async (
     const fr = await (await hfetch('/api/local/envs/forget-all', { method: 'POST', body: '{}' })).json();
     localLog(`\nenvironments forgotten: ${fr.forgotten.join(', ') || '(none)'} — Set up & start recreates production fresh\n`);
   } catch (e) { localLog(`\ncould not forget the environments: ${e.message}\n`); }
-  // per-env GitHub publish flags die with their environments
+  // per-env GitHub publish flags die with their environments — unless
+  // the whole REPO is already gone (users may delete it FIRST; the
+  // local teardown must shrug, not stumble — user report 2026-08-30)
   if (S.pat && S.user) {
-    for (const name of envNames) {
-      try { await gh(`/repos/${S.slug}/environments/local/variables/${publishFlagName(name)}`, { method: 'DELETE' }); } catch { /* never set */ }
-    }
+    try {
+      const repoAlive = await gh(`/repos/${S.slug}`, { allow404: true });
+      if (repoAlive) {
+        for (const name of envNames) {
+          try { await gh(`/repos/${S.slug}/environments/local/variables/${publishFlagName(name)}`, { method: 'DELETE' }); } catch { /* never set */ }
+        }
+      } else {
+        localLog(`\n${S.slug} no longer exists on GitHub — nothing left to clean there.\n`);
+      }
+    } catch { /* offline or blocked — the local teardown already finished */ }
   }
   await refreshLocal();
 });
