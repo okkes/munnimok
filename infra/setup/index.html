@@ -377,11 +377,11 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
         <span class="pill" id="play-status-pill"></span>
       </div>
       <div class="msg" id="msg-native-local"></div>
-      <details class="how"><summary>The one-time Play setup (first build per environment)</summary>
+      <details class="how"><summary>The one-time Play setup (once per environment)</summary>
         <ol>
-          <li>Press <b>Build the Android app</b> — when it turns green, the signed <code>.aab</code> downloads here automatically (as a ZIP — unzip it).</li>
-          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code data-native-appid>app.munni.local.&lt;env&gt;</code> → Internal testing → upload that <code>.aab</code> → add yourself as tester → grant the CI service account access.</li>
-          <li>That's it — this page detects the app within a few minutes and every later build of the environment lands in the internal track by itself.</li>
+          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code data-native-appid>app.munni.local.&lt;env&gt;</code>. Creating the RECORD is the whole manual part — you can do it before any build exists.</li>
+          <li>This page detects the record within a few minutes (“store app found”) and turns auto-publish on — from then on every build, the FIRST included, uploads itself to Internal testing. Add yourself as a tester there once.</li>
+          <li>No record yet when a build turns green? The signed <code>.aab</code> downloads here as a fallback for a manual first upload.</li>
         </ol>
       </details>
     </div>
@@ -1864,13 +1864,22 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
     await gh(`/repos/${S.slug}/actions/permissions`, { method: 'PUT', body: JSON.stringify({ enabled: true, allowed_actions: 'all' }) })
       .catch(() => msg('msg-connect', 'Fork ready, but Actions could not be enabled via the API — flip it on under the repo Settings → Actions.', false));
     // the ACTIONS INDEX registers the workflows a beat after the files
-    // land — dispatching before that 404s, so hold here until it fills
+    // land — dispatching before that 404s, so hold here until it fills.
+    // If it stays empty, a disable→enable cycle resets the repo's
+    // Actions event pipeline (proven live 2026-08-30: pushes fired no
+    // runs and the index flapped until the toggle).
     msg('msg-connect', 'Copy stands — waiting for GitHub to register its workflows…', true);
     let indexed = 0;
     for (let i = 0; i < 30; i++) {
       const wfs = await gh(`/repos/${S.slug}/actions/workflows?per_page=1`, { allow404: true });
       indexed = wfs?.total_count ?? 0;
       if (indexed > 0) break;
+      if (i === 10) {
+        msg('msg-connect', 'Still no workflows registered — resetting the repo’s Actions pipeline (off/on) and retrying…', true);
+        await gh(`/repos/${S.slug}/actions/permissions`, { method: 'PUT', body: JSON.stringify({ enabled: false }) }).catch(() => {});
+        await new Promise((r) => setTimeout(r, 2000));
+        await gh(`/repos/${S.slug}/actions/permissions`, { method: 'PUT', body: JSON.stringify({ enabled: true, allowed_actions: 'all' }) }).catch(() => {});
+      }
       await new Promise((r) => setTimeout(r, 3000));
     }
     if (!indexed) msg('msg-connect', 'GitHub has not registered the workflows yet — builds will 404 until it does. A tiny push to the repo (any commit) forces it; then press Refresh status.', false);
