@@ -384,6 +384,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'login.changeLanguage': 'Dili değiştir',
   'login.langMore': 'Daha fazla',
   'login.terms': 'Devam ederek Şartlarımızı ve Gizlilik Politikamızı kabul etmiş olursunuz',
+  'login.trustCa': 'Bu ağın sertifikasına güven',
+  'login.trustCaHint': 'Giriş, tarayıcınızı açar ve tarayıcının bu ağa bir kez güvenmesi gerekir: root.crt dosyasını indirin ve CA sertifikası olarak yükleyin (Ayarlar → Güvenlik).',
   'login.or': 'veya',
   'login.signIn': 'Giriş yap',
   'login.welcomeFirst': 'Hoş geldiniz',

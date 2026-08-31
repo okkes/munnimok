@@ -382,6 +382,8 @@ export const en = {
   'login.changeLanguage': 'Change language',
   'login.langMore': 'More',
   'login.terms': 'By continuing you agree to our Terms & Privacy Policy',
+  'login.trustCa': 'Trust this network’s certificate',
+  'login.trustCaHint': 'Sign-in opens your browser, which must trust this network once: download root.crt and install it as a CA certificate (Settings → Security).',
   'login.or': 'or',
   'login.signIn': 'Sign in',
   'login.welcomeFirst': 'Welcome',

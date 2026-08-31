@@ -191,6 +191,7 @@ test('LAN mode: the marker file moves every local url onto https sslip.io hostna
     assert.ok(caddy.includes('https://glitchtip.192-168-1-50.sslip.io'));
     assert.ok(caddy.includes('https://localhost:8384'), 'vault keeps its localhost https site as a twin');
     assert.ok(caddy.includes('http://ca.192-168-1-50.sslip.io'), 'root CA download site');
+    assert.ok(caddy.includes('application/x-x509-ca-cert'), 'root.crt downloads as a certificate, not inline text');
   } finally {
     rmSync(join(SCRATCH, 'lan-host'), { force: true });
   }

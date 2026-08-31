@@ -384,6 +384,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'login.changeLanguage': 'Taal wijzigen',
   'login.langMore': 'Meer',
   'login.terms': 'Door door te gaan ga je akkoord met onze Voorwaarden & Privacybeleid',
+  'login.trustCa': 'Vertrouw het certificaat van dit netwerk',
+  'login.trustCaHint': 'Inloggen opent je browser, die dit netwerk één keer moet vertrouwen: download root.crt en installeer het als CA-certificaat (Instellingen → Beveiliging).',
   'login.or': 'of',
   'login.signIn': 'Aanmelden',
   'login.welcomeFirst': 'Welkom',

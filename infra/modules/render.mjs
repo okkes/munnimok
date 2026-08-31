@@ -505,7 +505,7 @@ function familyCaddyfile(shared) {
       + site(`https://control.${base}`, 'control:80')
       + site(`https://pgadmin.${base}`, 'pgadmin:80')
       + site(`https://vault.${base}`, 'vaultwarden:80')
-      + `http://ca.${base} {\n\troot * /data/caddy/pki/authorities/local\n\tfile_server browse\n}\n`;
+      + `http://ca.${base} {\n\troot * /data/caddy/pki/authorities/local\n\t# a certificate mime + attachment makes phones DOWNLOAD root.crt for\n\t# the installer instead of rendering the PEM as text (user ss 2026-08-31)\n\theader /root.crt Content-Type application/x-x509-ca-cert\n\theader /root.crt Content-Disposition "attachment; filename=munni-family-ca.crt"\n\tfile_server browse\n}\n`;
   }
   return `{\n\tlocal_certs\n}\n${sites}`;
 }

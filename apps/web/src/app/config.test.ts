@@ -77,4 +77,24 @@ describe('runtime config overlay', () => {
     const bare = await withOverlay(undefined);
     expect(bare.publicOrigin()).toBe(baked('VITE_PUBLIC_ORIGIN') || window.location.origin);
   });
+
+  it('localCaUrl: only LOCAL native builds on the sslip family get the CA download', async () => {
+    // a local build on the LAN family → the ca host of the same family
+    const local = await withOverlay({
+      NATIVE_SCHEME: 'munni-local',
+      PUBLIC_ORIGIN: 'https://munni-prod.192-168-2-2.sslip.io',
+    });
+    expect(local.localCaUrl()).toBe('http://ca.192-168-2-2.sslip.io/root.crt');
+    // per-env schemes count as local too
+    const dev = await withOverlay({
+      NATIVE_SCHEME: 'munni-local-dev',
+      PUBLIC_ORIGIN: 'https://munni-dev.192-168-2-2.sslip.io',
+    });
+    expect(dev.localCaUrl()).toBe('http://ca.192-168-2-2.sslip.io/root.crt');
+    // hosted builds and non-sslip origins stay silent
+    const hosted = await withOverlay({ NATIVE_SCHEME: 'munni', PUBLIC_ORIGIN: 'https://munni.example.test' });
+    expect(hosted.localCaUrl()).toBeNull();
+    const localButHosted = await withOverlay({ NATIVE_SCHEME: 'munni-local', PUBLIC_ORIGIN: 'https://munni.example.test' });
+    expect(localButHosted.localCaUrl()).toBeNull();
+  });
 });

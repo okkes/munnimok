@@ -61,3 +61,23 @@ export const logtoConfigured = Boolean(config.logto.endpoint && config.logto.app
  */
 export const publicOrigin = (): string =>
   runtime('PUBLIC_ORIGIN') ?? (((import.meta.env.VITE_PUBLIC_ORIGIN as string | undefined) ?? '') || window.location.origin);
+
+/**
+ * The family-CA download for LOCAL native builds, or null anywhere else.
+ * Sign-in rides the SYSTEM browser, which does not inherit the app's
+ * bundled trust anchor — the phone installs this root once (user
+ * request 2026-08-31: a login-screen button instead of a remembered
+ * url). Derived from the public origin: munni-<env>.<ip-dashed>.sslip.io
+ * → http://ca.<ip-dashed>.sslip.io/root.crt
+ */
+export const localCaUrl = (): string | null => {
+  if (!config.nativeScheme.startsWith('munni-local')) return null;
+  let host = '';
+  try {
+    host = new URL(publicOrigin()).hostname;
+  } catch {
+    return null;
+  }
+  if (!host.endsWith('.sslip.io')) return null;
+  return `http://ca.${host.split('.').slice(1).join('.')}/root.crt`;
+};

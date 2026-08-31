@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogto } from '@logto/react';
 import { LANG_NAMES, LANGS, useLang } from '@/i18n';
-import { logtoConfigured } from '@/app/config';
+import { localCaUrl, logtoConfigured } from '@/app/config';
 import { useSession } from '@/app/session';
 import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
@@ -151,6 +151,7 @@ export function LoginScreen() {
   const { login } = useSession();
   const navigate = useNavigate();
   const onLine = useOnLine();
+  const caUrl = localCaUrl();
   // offline mode is two full sub-SCREENS now (user ruling: info first,
   // then profile on its own screen); login modes must honor the browser
   // back button — manual pushState + popstate, since /login is one route
@@ -410,6 +411,24 @@ export function LoginScreen() {
               <Icon name="lock-outline" size={16} />
               {t('offline.loginBtn')}
             </Button>
+            {/* LOCAL builds only: sign-in opens the system browser, which
+                does not inherit the app's bundled trust anchor — one tap
+                fetches the family root instead of a remembered url */}
+            {caUrl && (
+              <div className="pt-1 text-center">
+                <button
+                  data-testid="login-trust-ca"
+                  onClick={() => window.open(caUrl, '_blank', 'noopener')}
+                  className="m-tap inline-flex items-center gap-1.5 border-none bg-transparent text-[12px] font-medium text-ink-3 underline"
+                >
+                  <Icon name="certificate-outline" size={14} />
+                  {t('login.trustCa')}
+                </button>
+                <p className="mt-1 text-[11px] leading-snug text-ink-4" data-testid="login-trust-ca-hint">
+                  {t('login.trustCaHint')}
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

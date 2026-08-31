@@ -8,10 +8,13 @@ import { renderApp } from '@/test/harness';
 // Local-first law also applies to demo/offline sign-in: zero network.
 const fetchSpy = vi.fn(() => Promise.reject(new Error('network disabled in test')));
 
-// deterministic regardless of the developer's .env.local
+// deterministic regardless of the developer's .env.local; localCaUrl is
+// steerable per test (LOCAL native builds get a trust-certificate button)
+const mockCaUrl = { value: null as string | null };
 vi.mock('@/app/config', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/app/config')>()),
   logtoConfigured: false,
+  localCaUrl: () => mockCaUrl.value,
 }));
 
 describe('LoginScreen', () => {
@@ -29,6 +32,28 @@ describe('LoginScreen', () => {
     expect(await screen.findByTestId('screen-home')).toBeTruthy();
     expect(readSessionIdentity()).toEqual({ kind: 'demo' });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('LOCAL builds offer the trust-certificate button; everything else stays clean', async () => {
+    mockCaUrl.value = null;
+    const first = renderApp('/login', { signedIn: false });
+    await screen.findByTestId('login-demo-btn');
+    expect(screen.queryByTestId('login-trust-ca')).toBeNull();
+    first.unmount();
+
+    mockCaUrl.value = 'http://ca.192-168-2-2.sslip.io/root.crt';
+    try {
+      const open = vi.fn();
+      vi.stubGlobal('open', open);
+      renderApp('/login', { signedIn: false });
+      const btn = await screen.findByTestId('login-trust-ca');
+      expect(screen.getByTestId('login-trust-ca-hint')).toBeTruthy();
+      fireEvent.click(btn);
+      expect(open).toHaveBeenCalledWith('http://ca.192-168-2-2.sslip.io/root.crt', '_blank', 'noopener');
+    } finally {
+      mockCaUrl.value = null;
+      vi.unstubAllGlobals();
+    }
   });
 
   it('carries the dark-mode top scrim so status icons and wordmark read on the light hero (#122)', async () => {
