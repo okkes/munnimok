@@ -374,8 +374,12 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
       <div class="runrow">
         <select id="native-env-select" style="max-width:170px"></select>
         <button id="btn-native-local-android">Build the Android app (CI)</button>
-        <button class="ghost" id="btn-new-store-package" title="rolls this environment onto a fresh package name — for when Play has pinned a lost upload key">New store package…</button>
         <span class="pill" id="play-status-pill"></span>
+      </div>
+      <div class="runrow" style="align-items:center">
+        <label class="f" for="native-suffix" style="margin:0">store package&nbsp;&nbsp;<code>app.munni.local.</code></label>
+        <input id="native-suffix" type="text" maxlength="30" style="max-width:120px" placeholder="prod" autocomplete="off"/>
+        <button class="ghost" id="btn-apply-package" title="a fresh package name — for when Play has pinned a lost upload key, or just to name it yourself">Apply package name</button>
       </div>
       <div class="msg" id="msg-native-local"></div>
       <details class="how"><summary>The one-time Play setup (once per environment)</summary>
@@ -2339,10 +2343,15 @@ function updateNativeAppIdLabels(authoritativeId) {
   const id = authoritativeId ?? `app.munni.local.${nativeTargetEnv()}`;
   document.querySelectorAll('[data-native-appid]').forEach((el) => { el.textContent = id; });
 }
-document.getElementById('btn-new-store-package')?.addEventListener('click', async () => {
+document.getElementById('btn-apply-package')?.addEventListener('click', async () => {
   const env = nativeTargetEnv();
-  if (!confirm(`Roll ${env}'s store package to a FRESH name (app.munni.local.${env}N)?\n\nFor when Play has pinned an upload key you no longer have: the environment, its data and sign-in stay untouched — only the package identity changes. You create the new Play record (this page detects it); retire the old one in the consoles whenever.`)) return;
-  await streamLocal('/api/local/new-store-package', { stack: nativeTargetStack() }, `roll ${env} onto a fresh store package`);
+  const suffix = document.getElementById('native-suffix').value.trim().toLowerCase();
+  if (!/^[a-z][a-z0-9]{1,29}$/.test(suffix)) {
+    msg('msg-native-local', 'the package suffix must be 2-30 letters/digits, starting with a letter (like prod2, phone, beta)', false);
+    return;
+  }
+  if (!confirm(`Set ${env}'s store package to app.munni.local.${suffix}?\n\nThe environment, its data and sign-in stay untouched — only the package identity changes. A NEW name needs its Play/ASC records created once (this page detects them); previously used names keep their store records.`)) return;
+  await streamLocal('/api/local/new-store-package', { stack: nativeTargetStack(), suffix }, `set ${env}'s store package to app.munni.local.${suffix}`);
   await refreshStoreStatus().catch(() => {});
 });
 async function writeLocalNativeEnv() {
@@ -2386,10 +2395,16 @@ async function refreshStoreStatus() {
   } catch { return; }
   if (st.error) return;
   updateNativeAppIdLabels(st.appId);
+  // the suffix field mirrors the real package — without stomping typing
+  const suffixEl = document.getElementById('native-suffix');
+  if (suffixEl && document.activeElement !== suffixEl && st.appId) {
+    suffixEl.value = st.appId.replace('app.munni.local.', '');
+  }
   const pillText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'add the credential in step 3 to auto-detect' };
-  // a specific diagnosis (invite missing, app invisible…) beats the generic label
-  if (S.features.android) setPill('play-status-pill', st.play.detail ?? pillText[st.play.state] ?? st.play.state, st.play.state === 'ready');
-  if (S.features.ios) setPill('asc-status-pill', st.ios.detail ?? pillText[st.ios.state] ?? st.ios.state, st.ios.state === 'ready');
+  // a specific diagnosis (invite missing, app invisible…) beats the
+  // generic label; a TRANSIENT provider hiccup keeps the last verdict
+  if (S.features.android && st.play.state !== 'transient') setPill('play-status-pill', st.play.detail ?? pillText[st.play.state] ?? st.play.state, st.play.state === 'ready');
+  if (S.features.ios && st.ios.state !== 'transient') setPill('asc-status-pill', st.ios.detail ?? pillText[st.ios.state] ?? st.ios.state, st.ios.state === 'ready');
   if (!S.pat || !S.user) return;
   try {
     const flag = await localPublishEnabled(st.localEnv);

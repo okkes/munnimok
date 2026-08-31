@@ -72,11 +72,13 @@ function synthesizeLocalEnv(entry) {
     ports: { web: 8380 + 100 * s, admin: 8381 + 100 * s, api: 8382 + 100 * s, logto: 3201 + 100 * s, logtoAdmin: 3202 + 100 * s },
     registry: 'ghcr.io/okkes',
     native: {
-      // one store identity PER environment (user ruling 2026-08-28):
-      // app.munni.local.prod, app.munni.local.dev, … installable side by
-      // side. appGen rolls a BURNED package (Play pins the first upload
-      // key per package forever) onto a fresh one: …local.prod2, …prod3
-      appId: `app.munni.local.${entry.name}${(entry.appGen ?? 1) > 1 ? entry.appGen : ''}`,
+      // one store identity PER environment (user ruling 2026-08-28),
+      // installable side by side. The SUFFIX is the operator's choice
+      // (user ruling 2026-08-31: no black-box numbering) — default is
+      // the environment name; a burned package (Play pins the first
+      // upload key per package forever) rolls to whatever they type.
+      // appGen is the legacy pre-suffix form, kept readable.
+      appId: `app.munni.local.${entry.appSuffix ?? `${entry.name}${(entry.appGen ?? 1) > 1 ? entry.appGen : ''}`}`,
       label: `munni ${entry.name}`,
       scheme: entry.name === 'prod' ? 'munni-local' : `munni-local-${entry.name}`,
     },

@@ -631,6 +631,9 @@ async function playAppExists(values, appId, fetchImpl) {
     await dropEdit(appId, edit);
     return { state: 'ready' };
   }
+  // Google's own hiccups must not masquerade as a config problem (a
+  // transient 503 wore the "release access?" hint, user report)
+  if (edit.status >= 500) return { state: 'transient', detail: `Play answered ${edit.status} — a hiccup on Google's side, retried on the next poll` };
   if (edit.status === 404) return { state: 'missing-app' };
   if (edit.status === 403) {
     // Google reuses 403 for a DISABLED API in the service account's own
@@ -680,6 +683,7 @@ async function ascAppExists(values, bundleId, fetchImpl) {
     headers: { authorization: `Bearer ${jwt}` },
     signal: AbortSignal.timeout(10000),
   });
+  if (res.status >= 500) return { state: 'transient', detail: `App Store Connect answered ${res.status} — a hiccup on Apple's side, retried on the next poll` };
   if (!res.ok) return { state: 'error', detail: `App Store Connect answered ${res.status}` };
   const body = await res.json();
   return { state: (body.data ?? []).length ? 'ready' : 'missing-app' };
@@ -753,11 +757,17 @@ async function newStorePackageEndpoint(req, res, spawnImpl) {
   const envs = localEnvRegistry();
   const entry = envs.find((e) => e.name === name);
   if (!entry) return json(res, 400, { error: `no environment named "${name}"` });
-  entry.appGen = (entry.appGen ?? 1) + 1;
+  // the OPERATOR names the package segment (no black-box numbering)
+  const suffix = String(body.suffix ?? '').trim().toLowerCase();
+  if (!/^[a-z][a-z0-9]{1,29}$/.test(suffix)) {
+    return json(res, 400, { error: 'the package suffix must be 2-30 characters, letters/digits, starting with a letter (like prod2, phone, beta)' });
+  }
+  entry.appSuffix = suffix;
+  delete entry.appGen; // superseded by the explicit suffix
   saveLocalEnvRegistry(envs);
   const newId = loadStack(`munni-local-${name}`).native.appId;
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  res.write(`▶ store package rolled → ${newId}\n(the old package keeps its Play record — retire it in the console whenever)\n\n`);
+  res.write(`▶ store package set → ${newId}\n(a previously used package keeps its store records — retire them in the consoles whenever)\n\n`);
   const run = stepRunner(spawnImpl);
   await run(res, `re-render ${name} with the new identity`, process.execPath,
     [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
