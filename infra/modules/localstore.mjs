@@ -47,6 +47,12 @@ export const SHARED_LOCAL_NAMES = new Set([
   'ASC_ISSUER_ID',
   'ASC_KEY_P8',
   'APPLE_TEAM_ID',
+  // the MACHINE-owned upload keystore (Play pins the first upload key
+  // forever — it must outlive every repo copy)
+  'ANDROID_KEYSTORE_BASE64',
+  'ANDROID_KEYSTORE_PASSWORD',
+  'ANDROID_KEY_ALIAS',
+  'ANDROID_KEY_PASSWORD',
 ]);
 
 /** generated names the shared stack mints (env stacks never do) */

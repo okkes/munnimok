@@ -767,6 +767,42 @@ test('ios-appid: registers the bundle id and its long-run capabilities via the A
   assert.match(bare.chunks.join(''), /not stored yet \(step 3\)/);
 });
 
+test('mint-keystore: mints once into the machine store (docker keytool), then reuses forever', async () => {
+  const { existsSync: ex2, readFileSync: rf2 } = await import('node:fs');
+  const shared = loadStack('munni-local-shared');
+  const prev = loadLocalValues(shared);
+  try {
+    const spawned = [];
+    const out = 'KEYSTORE_B64:QUJDS0VZ\n-----BEGIN CERTIFICATE-----\nMIIC\n-----END CERTIFICATE-----\n';
+    const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => out), probeImpl: async () => false });
+    const res = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/mint-keystore', token: 'tok', body: {} }), res);
+    await settle(res);
+    const stream = res.chunks.join('');
+    assert.match(stream, /minted into the machine store ✓/);
+    assert.match(stream, /\[exit 0\]/);
+    assert.ok(!stream.includes('QUJDS0VZ'), 'the keystore bytes leaked into the page stream');
+    assert.equal(spawned[0].cmd, 'docker');
+    assert.ok(spawned[0].args.includes('eclipse-temurin:21-jdk'));
+    const store = loadLocalValues(shared);
+    assert.equal(store.ANDROID_KEYSTORE_BASE64, 'QUJDS0VZ');
+    assert.equal(store.ANDROID_KEY_ALIAS, 'munni-upload');
+    assert.ok(store.ANDROID_KEYSTORE_PASSWORD?.length >= 32);
+    assert.equal(store.ANDROID_KEY_PASSWORD, store.ANDROID_KEYSTORE_PASSWORD);
+    assert.ok(ex2(join(SCRATCH, 'munni-local-shared', 'upload-cert.pem')), 'reset certificate written');
+    assert.match(rf2(join(SCRATCH, 'munni-local-shared', 'upload-cert.pem'), 'utf8'), /BEGIN CERTIFICATE/);
+
+    // second call: same key, no new mint
+    const again = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/mint-keystore', token: 'tok', body: {} }), again);
+    await settle(again);
+    assert.match(again.chunks.join(''), /already holds the upload keystore/);
+    assert.equal(spawned.length, 1, 'no second docker run');
+  } finally {
+    saveLocalValues(shared, prev);
+  }
+});
+
 // LAST on purpose: it empties the registry the other tests rely on
 test('delete-everything epilogue: forget-all empties the registry and removes the env stores', async () => {
   const { existsSync: ex } = await import('node:fs');

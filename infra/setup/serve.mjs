@@ -696,6 +696,51 @@ async function storeStatusEndpoint(res, url, fetchImpl) {
   return json(res, 200, { localEnv: stack.envName, appId: stack.native.appId, play, ios });
 }
 
+/* ── the MACHINE owns the upload keystore (user incident 2026-08-31:
+   deleting the repo destroyed the CI-minted keystore, the fresh repo
+   minted another, and Play pins the first upload key forever). Minted
+   ONCE here (JDK in a container, docker-tooling rule) into the shared
+   store; the wizard ships it into every repo's environment. ── */
+async function mintKeystoreEndpoint(req, res, spawnImpl) {
+  const shared = loadStack(SHARED_STACK);
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  if (loadLocalValues(shared).ANDROID_KEYSTORE_BASE64) {
+    res.write('the machine already holds the upload keystore — every repo signs with the same key ✓\n');
+    return res.end('[exit 0]\n');
+  }
+  const pass = randomBytes(24).toString('hex');
+  const run = stepRunner(spawnImpl);
+  const mint = await run(res, 'mint the upload keystore (JDK in a container — the first run pulls the image)', 'docker',
+    ['run', '--rm', '-e', `KS_PASS=${pass}`, 'eclipse-temurin:21-jdk', 'sh', '-c',
+      'keytool -genkeypair -keystore /tmp/u.ks -alias munni-upload -keyalg RSA -keysize 2048 -validity 10000 -storepass "$KS_PASS" -keypass "$KS_PASS" -dname "CN=munni upload key" >/dev/null 2>&1 && echo "KEYSTORE_B64:$(base64 -w0 /tmp/u.ks)" && keytool -exportcert -rfc -keystore /tmp/u.ks -alias munni-upload -storepass "$KS_PASS"'],
+    { cwd: ROOT, mask: (s) => s.replaceAll(pass, '(pass)').replace(/KEYSTORE_B64:\S+/g, 'KEYSTORE_B64:(captured)') });
+  if (mint.code !== 0) {
+    res.write('minting failed — is Docker running?\n');
+    return res.end('[exit 1]\n');
+  }
+  const b64 = /KEYSTORE_B64:(\S+)/.exec(mint.out)?.[1];
+  const cert = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/.exec(mint.out)?.[0];
+  if (!b64) {
+    res.write('could not read the keystore back from the container\n');
+    return res.end('[exit 1]\n');
+  }
+  saveLocalValues(shared, {
+    ...loadLocalValues(shared),
+    ANDROID_KEYSTORE_BASE64: b64,
+    ANDROID_KEYSTORE_PASSWORD: pass,
+    ANDROID_KEY_ALIAS: 'munni-upload',
+    ANDROID_KEY_PASSWORD: pass,
+  });
+  if (cert) {
+    const certFile = join(renderedDir(SHARED_STACK), 'upload-cert.pem');
+    mkdirSync(dirname(certFile), { recursive: true });
+    writeFileSync(certFile, `${cert}\n`);
+    res.write(`upload certificate → ${certFile} (only needed for a Play UPLOAD-KEY RESET)\n`);
+  }
+  res.write('upload keystore minted into the machine store ✓ — every repo, present and future, signs with the SAME key\n');
+  return res.end('[exit 0]\n');
+}
+
 /* ── Apple App ID as code (user request 2026-08-31: automate the
    identifier + capabilities; only the ASC "New App" record has no
    create-API). Registers bundle app.munni.local.<env> with the
@@ -961,6 +1006,10 @@ const VAULT_PURPOSE = {
   LOGTO_APPLE_CLIENT_ID: 'Apple Services ID for “Sign in with Apple”.',
   VAULT_SIGNUPS_ALLOWED: 'Wizard bookkeeping: whether this vault still accepts registrations (closed after setup).',
   PLAY_SERVICE_ACCOUNT_JSON: 'Google Play service account (whole JSON file) — CI publishes builds with it; the wizard also uses it to detect when a store app exists.',
+  ANDROID_KEYSTORE_BASE64: 'The upload keystore (base64) every Android build signs with — minted ONCE by the wizard and kept here because Play pins the first upload key forever; it must outlive any repo.',
+  ANDROID_KEYSTORE_PASSWORD: 'Password of the upload keystore (wizard-generated).',
+  ANDROID_KEY_ALIAS: 'Key alias inside the upload keystore (munni-upload).',
+  ANDROID_KEY_PASSWORD: 'Key password inside the upload keystore (same as the store password).',
   ASC_KEY_ID: 'App Store Connect API key id — with the issuer id + .p8, CI uploads to TestFlight and the wizard checks app records.',
   ASC_ISSUER_ID: 'App Store Connect API issuer id — pairs with the key.',
   ASC_KEY_P8: 'App Store Connect API private key (.p8, base64) — shown once at creation.',
@@ -1184,6 +1233,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/envs/forget-all': (req, res) => envsForgetAllEndpoint(res),
     'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
+    'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),
     'POST /api/local/trust-ca': (req, res) => trustCaEndpoint(res, spawnImpl, netFetchImpl),
     'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
     'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),

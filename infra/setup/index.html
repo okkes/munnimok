@@ -1429,17 +1429,19 @@ async function refreshLocal() {
     // actually do something
     const anyRendered = Object.values(st.stacks).some((s) => s.rendered);
     const anyRunning = Object.values(st.stacks).some((s) => Object.values(s.services).some(Boolean));
-    const allUp = sharedUp && S.envList.length > 0 && S.envList.every((e) => {
-      const s2 = st.stacks[e.stack];
-      return s2?.services.web && s2?.services.api && s2?.services.logto;
-    });
-    const setupBtn = document.getElementById('btn-local-setup');
-    if (!setupBtn.dataset.busy) setupBtn.disabled = allUp;
-    setupBtn.title = allUp ? 'everything is already up — use the environment cards for individual actions' : '';
-    document.getElementById('btn-local-stopall').hidden = !anyRunning;
-    document.getElementById('btn-local-verify').hidden = !anyRendered;
-    document.getElementById('btn-trust-ca').hidden = !st.lan;
-    document.getElementById('btn-local-nuke-all').hidden = !anyRendered;
+    if (!S.masterBusy) {
+      const allUp = sharedUp && S.envList.length > 0 && S.envList.every((e) => {
+        const s2 = st.stacks[e.stack];
+        return s2?.services.web && s2?.services.api && s2?.services.logto;
+      });
+      const setupBtn = document.getElementById('btn-local-setup');
+      if (!setupBtn.dataset.busy) setupBtn.disabled = allUp;
+      setupBtn.title = allUp ? 'everything is already up — use the environment cards for individual actions' : '';
+      document.getElementById('btn-local-stopall').hidden = !anyRunning;
+      document.getElementById('btn-local-verify').hidden = !anyRendered;
+      document.getElementById('btn-trust-ca').hidden = !st.lan;
+      document.getElementById('btn-local-nuke-all').hidden = !anyRendered;
+    }
     // the mode is automatic: reconcile ONCE per page load, and only for
     // a set-up family (a first-time visitor must not trigger restarts)
     if (!S.lanReconciled && S.platform === 'local' && anyRendered) {
@@ -2060,6 +2062,7 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
   const btn = document.getElementById('btn-local-setup');
   btn.disabled = true;
   btn.dataset.busy = '1'; // refreshLocal must not re-enable it mid-run
+  setMasterBusy(true);
   try {
     await refreshLocal();
     // after Delete everything NO environment exists — production is
@@ -2091,18 +2094,31 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
     localLog(`\n══ munni is ready ══\n${lines}\ncontrol cockpit → http://localhost:8385 (sign in with the production admin)\nvault → https://localhost:8384 (login under Reveal secrets)\n`);
   } finally {
     delete btn.dataset.busy;
+    setMasterBusy(false);
     btn.disabled = false;
     await refreshLocal();
   }
 });
 document.getElementById('btn-local-stopall')?.addEventListener('click', async () => {
-  for (const name of [...S.envList.map((e) => e.stack), SHARED_STACK]) {
-    await streamLocal('/api/local/tool', { tool: `${name}:down` }, `stop ${labelOf(name)}`);
+  setMasterBusy(true);
+  try {
+    for (const name of [...S.envList.map((e) => e.stack), SHARED_STACK]) {
+      await streamLocal('/api/local/tool', { tool: `${name}:down` }, `stop ${labelOf(name)}`);
+    }
+  } finally {
+    setMasterBusy(false);
+    await refreshLocal();
   }
 });
 document.getElementById('btn-local-verify')?.addEventListener('click', async () => {
-  for (const name of [SHARED_STACK, ...S.envList.map((e) => e.stack)]) {
-    await streamLocal('/api/local/run', { stack: name, verify: true }, `verify ${labelOf(name)}`);
+  setMasterBusy(true);
+  try {
+    for (const name of [SHARED_STACK, ...S.envList.map((e) => e.stack)]) {
+      await streamLocal('/api/local/run', { stack: name, verify: true }, `verify ${labelOf(name)}`);
+    }
+  } finally {
+    setMasterBusy(false);
+    await refreshLocal();
   }
 });
 
@@ -2233,6 +2249,8 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
 });
 document.getElementById('btn-local-nuke-all')?.addEventListener('click', async () => {
   if (!confirm('Delete EVERYTHING — every environment (production included) AND the shared services?\n\nAll containers, volumes (every database), networks, the bank consents the environments created at GoCardless — and the environments themselves are forgotten: a later Set up & start recreates production fresh. The credentials you entered in step 3 stay stored.\n\nThe family certificate dies with the volumes: after the next Set up, this PC re-trusts automatically (one Windows dialog) and PHONES need the new root.crt installed again.\n\n(Store apps have no delete API: retire any app.munni.local.* in Play Console / App Store Connect by hand.)')) return;
+  setMasterBusy(true);
+  try {
   for (const name of [...S.envList.map((e) => e.stack), SHARED_STACK]) {
     await streamLocal('/api/local/cleanup', { target: name }, `delete ${labelOf(name)}`);
   }
@@ -2260,7 +2278,10 @@ document.getElementById('btn-local-nuke-all')?.addEventListener('click', async (
       }
     } catch { /* offline or blocked — the local teardown already finished */ }
   }
-  await refreshLocal();
+  } finally {
+    setMasterBusy(false);
+    await refreshLocal();
+  }
 });
 document.getElementById('btn-dev-nuke')?.addEventListener('click', () => {
   if (!confirm('Delete the from-source DEV LOOP completely?\n\nThis stops its containers and removes its volumes (dev database included), its network, and revokes the bank consents the dev app created at GoCardless.')) return;
@@ -2268,6 +2289,17 @@ document.getElementById('btn-dev-nuke')?.addEventListener('click', () => {
 });
 
 /* ── native apps: CI builds, phones install (LAN mode locally) ── */
+/* master buttons lock as ONE ROW (user request 2026-08-31: Start must
+ * not be pressable mid-delete) — refreshLocal respects the lock */
+const MASTER_BUTTONS = ['btn-local-setup', 'btn-local-stopall', 'btn-local-verify', 'btn-trust-ca', 'btn-local-nuke-all'];
+function setMasterBusy(busy) {
+  S.masterBusy = busy;
+  for (const id of MASTER_BUTTONS) {
+    const b = document.getElementById(id);
+    if (b) b.disabled = busy;
+  }
+}
+
 /* the network mode is AUTOMATIC (user ruling 2026-08-28): localhost is
  * the simple default; a feature that needs the network (phones cannot
  * reach localhost; Enable Banking demands real https) flips the family
@@ -2418,6 +2450,11 @@ async function buildLocalAndroidFlow() {
     if (!(await ensureLanMode())) return;
     say('writing the LAN config into the GitHub environment "local"…');
     const cfg = await writeLocalNativeEnv();
+    // the MACHINE keystore signs every repo's builds (Play pins the
+    // first upload key forever — repo-minted keys died with deleted
+    // repos, 2026-08-31); mint once, then ship it into this repo
+    await streamLocal('/api/local/mint-keystore', {}, 'ensure the machine upload keystore (one key across every repo)');
+    await ensureLocalEnvSecrets(['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'], 'build signing').catch(() => {});
     // the STORE decides whether to publish (found live 2026-08-28: a
     // stale flag claimed "published" while nothing existed at Play);
     // the flag only breaks ties when no credential is stored to check
