@@ -658,17 +658,21 @@ async function playAppExists(values, appId, fetchImpl) {
   return { state: 'error', detail: `Play answered ${edit.status} — does the service account have release access?` };
 }
 
+/** ES256 App Store Connect token from the stored key (base64 or raw PEM) */
+function ascJwt(values) {
+  const now = Math.floor(Date.now() / 1000);
+  return jwtES256({
+    header: { alg: 'ES256', kid: values.ASC_KEY_ID, typ: 'JWT' },
+    payload: { iss: values.ASC_ISSUER_ID, aud: 'appstoreconnect-v1', iat: now, exp: now + 600 },
+    pem: values.ASC_KEY_P8.includes('BEGIN') ? values.ASC_KEY_P8 : Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8'),
+  });
+}
+
 async function ascAppExists(values, bundleId, fetchImpl) {
   if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) return { state: 'no-creds' };
-  const now = Math.floor(Date.now() / 1000);
   let jwt;
   try {
-    jwt = jwtES256({
-      header: { alg: 'ES256', kid: values.ASC_KEY_ID, typ: 'JWT' },
-      payload: { iss: values.ASC_ISSUER_ID, aud: 'appstoreconnect-v1', iat: now, exp: now + 600 },
-      // stored base64 normally; a raw BEGIN/END paste works too
-      pem: values.ASC_KEY_P8.includes('BEGIN') ? values.ASC_KEY_P8 : Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8'),
-    });
+    jwt = ascJwt(values);
   } catch (e) {
     return { state: 'error', detail: `the ASC .p8 does not parse (${e.message})` };
   }
@@ -690,6 +694,76 @@ async function storeStatusEndpoint(res, url, fetchImpl) {
     ascAppExists(values, stack.native.appId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
   ]);
   return json(res, 200, { localEnv: stack.envName, appId: stack.native.appId, play, ios });
+}
+
+/* ── Apple App ID as code (user request 2026-08-31: automate the
+   identifier + capabilities; only the ASC "New App" record has no
+   create-API). Registers bundle app.munni.local.<env> with the
+   LONG-RUN capabilities so nothing needs re-provisioning later. ── */
+const IOS_CAPABILITIES = [
+  ['PUSH_NOTIFICATIONS', 'push notifications (FCM later — tick now, never reprovision)'],
+  ['APPLE_ID_AUTH', 'Sign in with Apple (Apple requires it beside Google login)'],
+  ['ASSOCIATED_DOMAINS', 'associated domains (universal links on the hosted track)'],
+];
+
+async function iosAppIdEndpoint(req, res, fetchImpl) {
+  const body = await readBody(req);
+  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
+  const stack = loadStack(pickEnv(body.stack));
+  const values = familyValues(stack);
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) {
+    res.write('the App Store Connect key is not stored yet (step 3) — cannot register the App ID\n');
+    return res.end('[exit 1]\n');
+  }
+  let jwt;
+  try {
+    jwt = ascJwt(values);
+  } catch (e) {
+    res.write(`the ASC .p8 does not parse (${e.message})\n`);
+    return res.end('[exit 1]\n');
+  }
+  const asc = (path, init = {}) => fetchImpl(`https://api.appstoreconnect.apple.com/v1${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...init.headers },
+    signal: AbortSignal.timeout(15000),
+  });
+  const bundleId = stack.native.appId;
+  const list = await asc(`/bundleIds?filter%5Bidentifier%5D=${encodeURIComponent(bundleId)}`);
+  if (!list.ok) {
+    res.write(`App Store Connect answered ${list.status} listing bundle ids — is the key an App Manager key?\n`);
+    return res.end('[exit 1]\n');
+  }
+  let record = ((await list.json()).data ?? []).find((d) => d.attributes?.identifier === bundleId);
+  if (record) {
+    res.write(`App ID ${bundleId} already registered ✓\n`);
+  } else {
+    const created = await asc('/bundleIds', {
+      method: 'POST',
+      body: JSON.stringify({ data: { type: 'bundleIds', attributes: { identifier: bundleId, name: `munni ${stack.envName}`, platform: 'IOS' } } }),
+    });
+    if (!created.ok) {
+      res.write(`could not register ${bundleId} (${created.status}): ${(await created.text()).slice(0, 300)}\n`);
+      return res.end('[exit 1]\n');
+    }
+    record = (await created.json()).data;
+    res.write(`App ID ${bundleId} registered ✓\n`);
+  }
+  for (const [cap, why] of IOS_CAPABILITIES) {
+    const r = await asc('/bundleIdCapabilities', {
+      method: 'POST',
+      body: JSON.stringify({ data: {
+        type: 'bundleIdCapabilities',
+        attributes: { capabilityType: cap },
+        relationships: { bundleId: { data: { type: 'bundleIds', id: record.id } } },
+      } }),
+    });
+    // 409 = already enabled — exactly what we want on a re-run
+    if (r.ok || r.status === 409) res.write(`  capability ${cap} ✓ — ${why}\n`);
+    else res.write(`  capability ${cap} answered ${r.status} — enable it by hand if it is missing\n`);
+  }
+  res.write(`\nRemaining one-time (no API exists): App Store Connect → New App → pick ${bundleId} from the bundle-id dropdown. The APNs SSL certificate dialog is the LEGACY push path — never create those; push will use the team APNs key via Firebase.\n`);
+  return res.end('[exit 0]\n');
 }
 
 /** what the wizard writes into the GitHub environment `local` so the
@@ -1098,6 +1172,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
     'POST /api/local/envs/forget-all': (req, res) => envsForgetAllEndpoint(res),
     'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
+    'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/trust-ca': (req, res) => trustCaEndpoint(res, spawnImpl, netFetchImpl),
     'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
     'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),

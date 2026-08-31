@@ -703,6 +703,51 @@ test('store-status: no creds reports so; with creds it mirrors the real Play/ASC
   }
 });
 
+test('ios-appid: registers the bundle id and its long-run capabilities via the ASC API', async () => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const ecPem2 = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const shared = loadStack('munni-local-shared');
+  const prev = loadLocalValues(shared);
+  saveLocalValues(shared, { ...prev, ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS1', ASC_KEY_P8: Buffer.from(ecPem2).toString('base64') });
+  try {
+    const calls = [];
+    const netFetchImpl = async (url, init = {}) => {
+      calls.push({ url, init });
+      if (url.includes('/bundleIds?')) return { ok: true, status: 200, json: async () => ({ data: [] }) };
+      if (url.endsWith('/bundleIds')) return { ok: true, status: 201, json: async () => ({ data: { type: 'bundleIds', id: 'BID1' } }) };
+      if (url.endsWith('/bundleIdCapabilities')) {
+        const cap = JSON.parse(init.body).data.attributes.capabilityType;
+        return cap === 'ASSOCIATED_DOMAINS'
+          ? { ok: false, status: 409, json: async () => ({}), text: async () => 'exists' }
+          : { ok: true, status: 201, json: async () => ({}), text: async () => '' };
+      }
+      return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
+    };
+    const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl });
+    const res = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/ios-appid', token: 'tok', body: { stack: 'munni-local-prod' } }), res);
+    await settle(res);
+    const stream = res.chunks.join('');
+    assert.match(stream, /App ID app\.munni\.local\.prod registered ✓/);
+    assert.match(stream, /PUSH_NOTIFICATIONS ✓/);
+    assert.match(stream, /APPLE_ID_AUTH ✓/);
+    assert.match(stream, /ASSOCIATED_DOMAINS ✓/, 'a 409 (already enabled) counts as done');
+    assert.match(stream, /New App/);
+    assert.match(stream, /\[exit 0\]/);
+    const create = calls.find((c) => c.url.endsWith('/bundleIds') && c.init.method === 'POST');
+    assert.equal(JSON.parse(create.init.body).data.attributes.identifier, 'app.munni.local.prod');
+    assert.equal(calls.filter((c) => c.url.endsWith('/bundleIdCapabilities')).length, 3);
+  } finally {
+    saveLocalValues(shared, prev);
+  }
+
+  // without the key: a clear refusal, not a crash
+  const bare = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/ios-appid', token: 'tok', body: { stack: 'munni-local-prod' } }), bare);
+  await settle(bare);
+  assert.match(bare.chunks.join(''), /not stored yet \(step 3\)/);
+});
+
 // LAST on purpose: it empties the registry the other tests rely on
 test('delete-everything epilogue: forget-all empties the registry and removes the env stores', async () => {
   const { existsSync: ex } = await import('node:fs');

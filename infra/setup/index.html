@@ -394,6 +394,13 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
         <span class="pill" id="asc-status-pill"></span>
       </div>
       <div class="msg" id="msg-native-ios"></div>
+      <details class="how"><summary>The one-time App Store Connect setup (once per environment)</summary>
+        <ol>
+          <li>Nothing to click at developer.apple.com: pressing <b>Build</b> registers the App ID (bundle <code data-native-appid>app.munni.local.&lt;env&gt;</code>) through the API with the capabilities munni needs LONG-RUN — <b>Push Notifications</b> (for FCM later; ticking now means never re-provisioning), <b>Sign in with Apple</b> (Apple requires it beside Google login), <b>Associated Domains</b> (universal links on the hosted track). Apple Pay is NOT needed — munni only reads bank data.</li>
+          <li>If you ever open the identifier by hand: the “Push Notifications → Configure” dialog offering <b>APNs SSL certificates</b> is the LEGACY path — create nothing there, just Done. Push will use the team APNs <i>key</i> via Firebase.</li>
+          <li>The one step Apple gives no API for: <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> → <b>New App</b> → pick the pre-registered bundle id from the dropdown → create. The pill above detects the record and every build then uploads to TestFlight by itself.</li>
+        </ol>
+      </details>
     </div>
   </div>
 </section>
@@ -2467,6 +2474,9 @@ async function dispatchLocalIosFlow() {
     // inherit it and the run silently SKIPS (found live 2026-08-30);
     // asking for an iOS build IS the opt-in
     await ghUpsertRepoVar('IOS_BUILD_ENABLED', 'true');
+    // App ID + capabilities as code (only the ASC New-App record has no
+    // create-API) — best effort, the fold explains the manual fallback
+    await streamLocal('/api/local/ios-appid', { stack: nativeTargetStack() }, 'register the Apple App ID + capabilities (push, Sign in with Apple, associated domains)');
     // TestFlight upload credentials must live in THIS repo (fresh copies
     // start secret-less) — best effort, the build still runs without
     await ensureLocalEnvSecrets(['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8', 'APPLE_TEAM_ID'], 'TestFlight upload').catch(() => {});
