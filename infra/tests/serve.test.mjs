@@ -767,6 +767,32 @@ test('ios-appid: registers the bundle id and its long-run capabilities via the A
   assert.match(bare.chunks.join(''), /not stored yet \(step 3\)/);
 });
 
+test('new-store-package: bumps the generation, re-renders, and every consumer follows', async () => {
+  const mk = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/envs', token: 'tok', body: { name: 'roll' } }), mk);
+  assert.equal(loadStack('munni-local-roll').native.appId, 'app.munni.local.roll');
+  const spawned = [];
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => 'ok\n'), probeImpl: async () => false });
+  const res = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/new-store-package', token: 'tok', body: { stack: 'munni-local-roll' } }), res);
+  await settle(res);
+  const stream = res.chunks.join('');
+  assert.match(stream, /store package rolled → app\.munni\.local\.roll2/);
+  assert.match(stream, /\[exit 0\]/);
+  assert.equal(loadStack('munni-local-roll').native.appId, 'app.munni.local.roll2');
+  assert.ok(spawned[0].args.join(' ').includes('--stack munni-local-roll'), 're-render ran');
+  // …and native-config hands CI the generation-bearing id
+  const nc = fakeRes();
+  await app(fakeReq({ url: '/api/local/native-config?stack=munni-local-roll', token: 'tok' }), nc);
+  const body = JSON.parse(nc.chunks.join(''));
+  assert.equal(body.appId, 'app.munni.local.roll2');
+  assert.equal(body.variables.NATIVE_LOCAL_APP_ID, 'app.munni.local.roll2');
+  // cleanup: drop the throwaway env
+  const del = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/envs/delete', token: 'tok', body: { name: 'roll' } }), del);
+  await settle(del);
+});
+
 test('mint-keystore: mints once into the machine store (docker keytool), then reuses forever', async () => {
   const { existsSync: ex2, readFileSync: rf2 } = await import('node:fs');
   const shared = loadStack('munni-local-shared');

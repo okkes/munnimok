@@ -76,14 +76,19 @@ jobs:
         run: |
           if [ "${{ inputs.environment }}" = "local" ]; then
             # the wizard-managed LAN channel: ONE store identity PER local
-            # environment (app.munni.local.<env>), delivered through Play
+            # environment, delivered through Play. The package id comes
+            # from the environment variable (it carries the store-package
+            # GENERATION — app.munni.local.prod2 after a burned key); the
+            # name-derived form is only the no-wizard fallback.
             LOCAL_ENV="${{ inputs.localEnv || 'prod' }}"
             SCHEME="munni-local"; [ "$LOCAL_ENV" = "prod" ] || SCHEME="munni-local-$LOCAL_ENV"
+            LOCAL_APP_ID="${{ vars.NATIVE_LOCAL_APP_ID }}"
+            [ -n "$LOCAL_APP_ID" ] || LOCAL_APP_ID="app.munni.local.$LOCAL_ENV"
             echo "master=false" >> "$GITHUB_OUTPUT"
             echo "flavor=local" >> "$GITHUB_OUTPUT"
-            echo "local_app_id=app.munni.local.$LOCAL_ENV" >> "$GITHUB_OUTPUT"
+            echo "local_app_id=$LOCAL_APP_ID" >> "$GITHUB_OUTPUT"
             echo "NATIVE_SCHEME=$SCHEME" >> "$GITHUB_ENV"
-            echo "LOCAL_APP_ID=app.munni.local.$LOCAL_ENV" >> "$GITHUB_ENV"
+            echo "LOCAL_APP_ID=$LOCAL_APP_ID" >> "$GITHUB_ENV"
             echo "LOCAL_SCHEME=$SCHEME" >> "$GITHUB_ENV"
             echo "LOCAL_LABEL=munni $LOCAL_ENV" >> "$GITHUB_ENV"
           elif [ "${{ github.ref }}" = "refs/heads/master" ]; then

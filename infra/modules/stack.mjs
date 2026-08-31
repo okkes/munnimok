@@ -73,8 +73,10 @@ function synthesizeLocalEnv(entry) {
     registry: 'ghcr.io/okkes',
     native: {
       // one store identity PER environment (user ruling 2026-08-28):
-      // app.munni.local.prod, app.munni.local.dev, … installable side by side
-      appId: `app.munni.local.${entry.name}`,
+      // app.munni.local.prod, app.munni.local.dev, … installable side by
+      // side. appGen rolls a BURNED package (Play pins the first upload
+      // key per package forever) onto a fresh one: …local.prod2, …prod3
+      appId: `app.munni.local.${entry.name}${(entry.appGen ?? 1) > 1 ? entry.appGen : ''}`,
       label: `munni ${entry.name}`,
       scheme: entry.name === 'prod' ? 'munni-local' : `munni-local-${entry.name}`,
     },

@@ -374,6 +374,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
       <div class="runrow">
         <select id="native-env-select" style="max-width:170px"></select>
         <button id="btn-native-local-android">Build the Android app (CI)</button>
+        <button class="ghost" id="btn-new-store-package" title="rolls this environment onto a fresh package name — for when Play has pinned a lost upload key">New store package…</button>
         <span class="pill" id="play-status-pill"></span>
       </div>
       <div class="msg" id="msg-native-local"></div>
@@ -2332,11 +2333,18 @@ async function ghUpsertEnvVar(envName, name, value) {
 }
 const nativeTargetStack = () => document.getElementById('native-env-select')?.value || 'munni-local-prod';
 const nativeTargetEnv = () => nativeTargetStack().replace('munni-local-', '');
-/** the copy speaks in the SELECTED environment's real app id, not <env> */
-function updateNativeAppIdLabels() {
-  const id = `app.munni.local.${nativeTargetEnv()}`;
+/** the copy speaks in the SELECTED environment's real app id, not <env>
+ * — the helper's answer wins (it carries the store-package generation) */
+function updateNativeAppIdLabels(authoritativeId) {
+  const id = authoritativeId ?? `app.munni.local.${nativeTargetEnv()}`;
   document.querySelectorAll('[data-native-appid]').forEach((el) => { el.textContent = id; });
 }
+document.getElementById('btn-new-store-package')?.addEventListener('click', async () => {
+  const env = nativeTargetEnv();
+  if (!confirm(`Roll ${env}'s store package to a FRESH name (app.munni.local.${env}N)?\n\nFor when Play has pinned an upload key you no longer have: the environment, its data and sign-in stay untouched — only the package identity changes. You create the new Play record (this page detects it); retire the old one in the consoles whenever.`)) return;
+  await streamLocal('/api/local/new-store-package', { stack: nativeTargetStack() }, `roll ${env} onto a fresh store package`);
+  await refreshStoreStatus().catch(() => {});
+});
 async function writeLocalNativeEnv() {
   const cfg = await (await hfetch(`/api/local/native-config?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
   if (!cfg.ready) throw new Error('not ready: ' + cfg.missing.join(' · '));
@@ -2377,7 +2385,7 @@ async function refreshStoreStatus() {
     st = await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
   } catch { return; }
   if (st.error) return;
-  updateNativeAppIdLabels();
+  updateNativeAppIdLabels(st.appId);
   const pillText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'add the credential in step 3 to auto-detect' };
   // a specific diagnosis (invite missing, app invisible…) beats the generic label
   if (S.features.android) setPill('play-status-pill', st.play.detail ?? pillText[st.play.state] ?? st.play.state, st.play.state === 'ready');

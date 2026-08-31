@@ -66,10 +66,14 @@ jobs:
         run: |
           if [ "${{ inputs.environment }}" = "local" ]; then
             # the wizard-managed LAN channel — ONE ASC app record PER
-            # local environment, delivered through TestFlight
+            # local environment, delivered through TestFlight. The bundle
+            # id comes from the environment variable (it carries the
+            # store-package GENERATION); name-derived = no-wizard fallback
             LOCAL_ENV="${{ inputs.localEnv || 'prod' }}"
             SCHEME="munni-local"; [ "$LOCAL_ENV" = "prod" ] || SCHEME="munni-local-$LOCAL_ENV"
-            echo "bundle_id=app.munni.local.$LOCAL_ENV" >> "$GITHUB_OUTPUT"
+            BUNDLE_ID="${{ vars.NATIVE_LOCAL_APP_ID }}"
+            [ -n "$BUNDLE_ID" ] || BUNDLE_ID="app.munni.local.$LOCAL_ENV"
+            echo "bundle_id=$BUNDLE_ID" >> "$GITHUB_OUTPUT"
             echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
             echo "display=munni $LOCAL_ENV" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.ref_name }}" = "dev" ] && [ "${{ vars.NATIVE_DEV_CHANNEL }}" = "true" ]; then

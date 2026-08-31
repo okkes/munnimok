@@ -741,6 +741,30 @@ async function mintKeystoreEndpoint(req, res, spawnImpl) {
   return res.end('[exit 0]\n');
 }
 
+/* ── roll a BURNED store package (user request 2026-08-31: a new Play
+   app NOW instead of the two-day upload-key reset). Play pins the first
+   upload key per PACKAGE — bumping the generation gives the same
+   environment a fresh package (app.munni.local.prod → …prod2) while
+   its data, sign-in and urls stay untouched. ── */
+async function newStorePackageEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
+  const name = pickEnv(body.stack).replace('munni-local-', '');
+  const envs = localEnvRegistry();
+  const entry = envs.find((e) => e.name === name);
+  if (!entry) return json(res, 400, { error: `no environment named "${name}"` });
+  entry.appGen = (entry.appGen ?? 1) + 1;
+  saveLocalEnvRegistry(envs);
+  const newId = loadStack(`munni-local-${name}`).native.appId;
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  res.write(`▶ store package rolled → ${newId}\n(the old package keeps its Play record — retire it in the console whenever)\n\n`);
+  const run = stepRunner(spawnImpl);
+  await run(res, `re-render ${name} with the new identity`, process.execPath,
+    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
+  res.write(`\nNext: create the Play record for ${newId} (Play Console → Create app). This page detects it, and the FIRST build uploads itself — signed with the machine keystore, the key that never changes again.\n`);
+  return res.end('[exit 0]\n');
+}
+
 /* ── Apple App ID as code (user request 2026-08-31: automate the
    identifier + capabilities; only the ASC "New App" record has no
    create-API). Registers bundle app.munni.local.<env> with the
@@ -828,6 +852,9 @@ async function nativeConfigEndpoint(res, url, fetchImpl) {
     NATIVE_LOGTO_APP_ID: values.NATIVE_LOGTO_APP_ID ?? '',
     NATIVE_GLITCHTIP_DSN_ANDROID: dsn,
     NATIVE_GLITCHTIP_DSN_IOS: dsn,
+    // the AUTHORITATIVE package id (carries the store-package generation
+    // — the workflows must not re-derive it from the env name alone)
+    NATIVE_LOCAL_APP_ID: stack.native.appId,
   };
   const missing = [];
   if (!lan) missing.push('LAN mode is off — a phone cannot reach localhost');
@@ -1234,6 +1261,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),
+    'POST /api/local/new-store-package': (req, res) => newStorePackageEndpoint(req, res, spawnImpl),
     'POST /api/local/trust-ca': (req, res) => trustCaEndpoint(res, spawnImpl, netFetchImpl),
     'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
     'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),
