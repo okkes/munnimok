@@ -370,7 +370,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
   <div data-native-track="local">
     <div class="card" data-needs-feature="android">
       <h3>Android on your phone (via Play) <span class="pill" id="native-local-pill"></span></h3>
-      <p class="why">Each environment is its own store channel — app id <code data-native-appid>app.munni.local.&lt;env&gt;</code>, delivered through the Play <b>internal testing</b> track, installable side by side. One button: this page writes that environment's LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Until the one-time Play setup is done the build SKIPS the upload (no red runs) and hands you the signed bundle instead — and once you finish the upload, this page NOTICES by itself (it polls Play with the service-account credential from step 3) and turns publishing on, nothing to press. First time on a phone: install the family certificate once — download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → <code>root.crt</code> as a CA certificate. Needs the GitHub card in step 3.</p>
+      <p class="why">Each environment is its own store channel — app id <code data-native-appid>app.munni.local.&lt;env&gt;</code>, delivered through the Play <b>internal testing</b> track, installable side by side. One button: this page writes that environment's LAN config into the GitHub environment <code>local</code> and has CI build + publish it; your phone gets updates from Play like any app. Until the one-time Play setup is done the build SKIPS the upload (no red runs) and hands you the signed bundle instead — and once you finish the upload, this page NOTICES by itself (it polls Play with the service-account credential from step 3) and turns publishing on, nothing to press. The app <b>trusts the family certificate out of the box</b> — CI bakes it into the build, so nothing needs installing on the phone for the app itself. Only for using the phone's BROWSER against the https hostnames: download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> (mind the DASHES in the address, not dots). Needs the GitHub card in step 3.</p>
       <div class="runrow">
         <select id="native-env-select" style="max-width:170px"></select>
         <button id="btn-native-local-android">Build the Android app (CI)</button>
@@ -388,7 +388,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
 
     <div class="card" data-needs-feature="ios">
       <h3>iOS on your phone (via TestFlight)</h3>
-      <p class="why">Same per-environment store channel: bundle <code data-native-appid>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id — with the ASC key in step 3 this page checks for the record by itself (pill below). First time on an iPhone: install the family certificate once — download <code>http://ca.&lt;ip-dashed&gt;.sslip.io</code> → <code>root.crt</code>, then ALSO enable it under Settings → General → About → Certificate Trust Settings. The build carries the LAN address, so it only works on your wifi.</p>
+      <p class="why">Same per-environment store channel: bundle <code data-native-appid>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id — with the ASC key in step 3 this page checks for the record by itself (pill below). First time on an iPhone: install the family certificate once — download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> (DASHES in the address, not dots), then ALSO enable it under Settings → General → About → Certificate Trust Settings (iOS offers no in-app trust bundling — Apple's floor). The build carries the LAN address, so it only works on your wifi.</p>
       <div class="runrow">
         <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
         <span class="pill" id="asc-status-pill"></span>
@@ -1418,6 +1418,12 @@ async function refreshLocal() {
     const up = Boolean(prod?.services.web && prod?.services.api);
     setPill('local-pill', up ? 'running ✓' : (prod?.rendered ? 'set up — not running' : 'not set up yet'), up);
     setPill('lan-pill', st.lan ? `https on — ${st.lan}` : 'localhost mode', Boolean(st.lan));
+    // the CA download links print the REAL dashed hostname (a dotted
+    // guess dead-ends in an SSL error — user report 2026-08-31)
+    if (st.lan) {
+      const caUrl = `http://ca.${st.lan.replaceAll('.', '-')}.sslip.io`;
+      document.querySelectorAll('[data-ca-url]').forEach((a) => { a.href = caUrl; a.querySelector('code').textContent = caUrl; });
+    }
     // master buttons follow the FAMILY state (user ruling 2026-08-28):
     // no Delete/Stop before anything exists; Set up only when it would
     // actually do something

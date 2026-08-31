@@ -769,7 +769,7 @@ async function iosAppIdEndpoint(req, res, fetchImpl) {
 /** what the wizard writes into the GitHub environment `local` so the
  * EXISTING native workflows bake a build that talks to this machine —
  * per LOCAL environment (?stack=munni-local-<name>, default prod) */
-function nativeConfigEndpoint(res, url) {
+async function nativeConfigEndpoint(res, url, fetchImpl) {
   if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet — Set up & start munni first' });
   const stack = loadStack(pickEnv(url?.searchParams.get('stack')));
   const values = familyValues(stack);
@@ -786,6 +786,17 @@ function nativeConfigEndpoint(res, url) {
   };
   const missing = [];
   if (!lan) missing.push('LAN mode is off — a phone cannot reach localhost');
+  if (lan) {
+    // CI bakes the family root INTO the app (user request 2026-08-31:
+    // no manual certificate install on the phone for the app itself)
+    try {
+      const crt = await fetchImpl(`http://ca.${lan.replaceAll('.', '-')}.sslip.io/root.crt`, { signal: AbortSignal.timeout(8000) });
+      if (crt.ok) variables.NATIVE_FAMILY_CA_PEM = await crt.text();
+      else missing.push(`the family CA is not downloadable (status ${crt.status}) — is the family running? Without it the app build cannot bundle the certificate`);
+    } catch (e) {
+      missing.push(`the family CA is not downloadable (${e.message}) — is the family running? Without it the app build cannot bundle the certificate`);
+    }
+  }
   if (!variables.NATIVE_LOGTO_APP_ID) missing.push(`sign-in setup has not stored the native app id yet — press Re-run sign-in setup on ${stack.envName} once`);
   return json(res, 200, {
     environment: 'local',
@@ -1179,7 +1190,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/vault-setup': (req, res) => vaultSetupEndpoint(req, res, spawnImpl, vaultFetchImpl),
     'GET /api/local/lan': (req, res) => lanGetEndpoint(res),
     'POST /api/local/lan': (req, res) => lanSetEndpoint(req, res, spawnImpl, probeImpl, netFetchImpl),
-    'GET /api/local/native-config': (req, res) => nativeConfigEndpoint(res, new URL(req.url, 'http://localhost')),
+    'GET /api/local/native-config': (req, res) => nativeConfigEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
     'POST /api/validate': (req, res) => validateEndpoint(req, res, validateImpl),
   };
   return async function handle(req, res) {

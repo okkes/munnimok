@@ -147,6 +147,14 @@ jobs:
           elif [ "${{ steps.env.outputs.master }}" != "true" ]; then NAME="$NAME-dev"; fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
 
+      - name: Bake the family CA into the local flavor
+        if: steps.env.outputs.flavor == 'local' && vars.NATIVE_FAMILY_CA_PEM != ''
+        # the app then trusts the machine's https hostnames OUT OF THE BOX
+        # — no manual certificate install on the phone for the app itself
+        run: printf '%s\n' "$CA_PEM" > apps/native/android/app/src/local/res/raw/family_ca.pem
+        env:
+          CA_PEM: ${{ vars.NATIVE_FAMILY_CA_PEM }}
+
       - name: Rebrand the local flavor for its environment
         if: steps.env.outputs.flavor == 'local'
         working-directory: apps/native/android/app/src/local

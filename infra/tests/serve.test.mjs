@@ -371,6 +371,25 @@ test('native-config: LAN off means not ready, values stay out of reach until sig
   assert.ok(body.missing.some((m) => /LAN mode is off/.test(m)));
   assert.equal(body.variables.NATIVE_API_URL, 'http://localhost:8382');
   assert.equal(body.variables.NATIVE_PUBLIC_ORIGIN, 'http://localhost:8380');
+  assert.equal(body.variables.NATIVE_FAMILY_CA_PEM, undefined, 'no CA rider without LAN');
+});
+
+test('native-config under LAN: the family root rides along for the in-app trust anchor', async () => {
+  const { writeFileSync: wf } = await import('node:fs');
+  wf(join(SCRATCH, 'lan-host'), '192.168.1.50\n');
+  try {
+    const fetched = [];
+    const netFetchImpl = async (url) => { fetched.push(url); return { ok: true, status: 200, text: async () => 'PEM-ROOT' }; };
+    const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl });
+    const res = fakeRes();
+    await app2(fakeReq({ url: '/api/local/native-config?stack=munni-local-prod', token: 'tok' }), res);
+    const body = JSON.parse(res.chunks.join(''));
+    assert.equal(fetched[0], 'http://ca.192-168-1-50.sslip.io/root.crt');
+    assert.equal(body.variables.NATIVE_FAMILY_CA_PEM, 'PEM-ROOT');
+    assert.equal(body.variables.NATIVE_API_URL, 'https://munni-prod-api.192-168-1-50.sslip.io');
+  } finally {
+    rmSync(join(SCRATCH, 'lan-host'), { force: true });
+  }
 });
 
 test('vault-setup: creates the account, imports the items, closes signups — idempotent on re-run', async () => {
