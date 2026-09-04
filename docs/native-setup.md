@@ -276,7 +276,14 @@ channel:
   `app.munni.local.<env>` → Internal testing → upload → grant the CI
   service account.
 - **iOS** → TestFlight, after the one-time App Store Connect record per
-  environment (New App, bundle `app.munni.local.<env>`).
+  environment (New App, bundle `app.munni.local.<env>`). Until that
+  record exists the export dies with `error: exportArchive Error
+  Downloading App Information` — the local channel degrades it to a
+  warning (skipped-not-red, like Android's first upload) and the
+  wizard's ASC pill + build verdict name the missing record with the
+  exact bundle id. Local builds number themselves in seconds since
+  2026-01-01 (redispatching the same commit must not reuse a TestFlight
+  build number — same practice as the Android versionCode).
 
 Phones must trust the family's CA once per device (download
 `http://ca.<ip-dashed>.sslip.io` → install root.crt; iPhone also
@@ -286,9 +293,22 @@ exactly this; hosted flavors stay system-CAs-only.
 
 Caveats, stated in the wizard too: the build bakes the LAN hostnames (a
 DHCP change changes them — reserve the address), and it only works on
-that wifi. Deleting an environment cascades: containers + volumes, its
-GoCardless consents, its vault folder, its auto-publish flag — only the
-store apps themselves are manual (the stores have no delete API).
+that wifi. Deleting an environment (or everything) cascades: containers
+\+ volumes, its GoCardless consents, its vault folder, its auto-publish
+flag — plus an OPT-IN store retirement (offered when step-3 store
+credentials exist): the Play internal-testing track is cleared and the
+TestFlight builds are expired, so testers lose the app immediately.
+What no API can do: delete the store RECORDS — the Play app record, the
+ASC app record and the burned package name stay (remove never-published
+records by hand in the consoles; a later build re-publishes under the
+same identity). One exception: an `app.munni.local.*` bundle id that
+never got its ASC app record IS deleted from the developer portal.
+Delete-everything ends with a **cleanup verification**: containers,
+volumes, networks (matched by compose project `munni-local-*` — the
+from-source dev loop, project `munni-local`, and munni-sonar don't
+count), rendered folders, the registry and the LAN marker must all be
+gone; only then does the Delete button retire. The step-3 credential
+store and the upload keystore's reset certificate survive on purpose.
 
 ## What works today
 

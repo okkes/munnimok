@@ -834,16 +834,132 @@ test('mint-keystore: mints once into the machine store (docker keytool), then re
   }
 });
 
+test('store-retire: withdraws Play internal testing and expires TestFlight builds; skips without creds', async () => {
+  // no creds: an honest skip on both sides, still exit 0
+  const bare = fakeRes();
+  await app(fakeReq({ method: 'POST', url: '/api/local/store-retire', token: 'tok', body: { stack: 'munni-local-prod' } }), bare);
+  await settle(bare);
+  const bareOut = bare.chunks.join('');
+  assert.match(bareOut, /Play: no service account stored .* skipped/);
+  assert.match(bareOut, /TestFlight: no App Store Connect key stored .* skipped/);
+  assert.match(bareOut, /\[exit 0\]/);
+
+  const { generateKeyPairSync } = await import('node:crypto');
+  const rsaPem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const ecPem = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const shared = loadStack('munni-local-shared');
+  const prev = loadLocalValues(shared);
+  saveLocalValues(shared, {
+    ...prev,
+    PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: 'ci@sa.test', token_uri: 'https://oauth2.googleapis.com/token', private_key: rsaPem, project_id: 'p' }),
+    ASC_KEY_ID: 'KEY1',
+    ASC_ISSUER_ID: 'ISS1',
+    ASC_KEY_P8: Buffer.from(ecPem).toString('base64'),
+  });
+  try {
+    // app exists on both sides: track cleared + committed, builds expired
+    const calls = [];
+    const netFetchImpl = async (url, init = {}) => {
+      calls.push({ url, init });
+      if (url.includes('oauth2.googleapis.com')) return { ok: true, status: 200, json: async () => ({ access_token: 'gtok' }) };
+      if (url.endsWith('/edits') && init.method === 'POST') return { ok: true, status: 200, json: async () => ({ id: 'e1' }) };
+      if (url.includes('/tracks/internal')) return { ok: true, status: 200, json: async () => ({}) };
+      if (url.includes(':commit')) return { ok: true, status: 200, json: async () => ({}) };
+      if (url.includes('/apps?')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'app1' }] }) };
+      if (url.includes('/builds?')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'b1', attributes: { version: '42' } }] }) };
+      if (url.includes('/builds/b1')) return { ok: true, status: 200, json: async () => ({}) };
+      return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
+    };
+    const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl });
+    const res = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/store-retire', token: 'tok', body: { stack: 'munni-local-prod' } }), res);
+    await settle(res);
+    const out = res.chunks.join('');
+    assert.match(out, /internal testing withdrawn for app\.munni\.local\.prod/);
+    assert.match(out, /1\/1 builds expired/);
+    assert.match(out, /\[exit 0\]/);
+    const put = calls.find((c) => c.url.includes('/tracks/internal'));
+    assert.deepEqual(JSON.parse(put.init.body).releases, [], 'the internal track is cleared, not re-released');
+    const expire = calls.find((c) => c.url.includes('/builds/b1'));
+    assert.equal(JSON.parse(expire.init.body).data.attributes.expired, true);
+
+    // no ASC app record: the portal App ID registration is deleted instead
+    const calls2 = [];
+    const netFetch2 = async (url, init = {}) => {
+      calls2.push({ url, init });
+      if (url.includes('oauth2.googleapis.com')) return { ok: true, status: 200, json: async () => ({ access_token: 'gtok' }) };
+      if (url.endsWith('/edits') && init.method === 'POST') return { ok: false, status: 404, json: async () => ({}) };
+      if (url.includes('/apps?')) return { ok: true, status: 200, json: async () => ({ data: [] }) };
+      if (url.includes('/bundleIds?')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'BID1', attributes: { identifier: 'app.munni.local.prod' } }] }) };
+      if (url.includes('/bundleIds/BID1')) return { ok: true, status: 204, json: async () => ({}) };
+      return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
+    };
+    const res2 = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: netFetch2 })(
+      fakeReq({ method: 'POST', url: '/api/local/store-retire', token: 'tok', body: { stack: 'munni-local-prod' } }), res2);
+    await settle(res2);
+    const out2 = res2.chunks.join('');
+    assert.match(out2, /Play: app\.munni\.local\.prod does not exist there/);
+    assert.match(out2, /App ID registration app\.munni\.local\.prod was deleted/);
+    assert.match(out2, /\[exit 0\]/);
+    assert.ok(calls2.some((c) => c.url.includes('/bundleIds/BID1') && c.init.method === 'DELETE'));
+  } finally {
+    saveLocalValues(shared, prev);
+  }
+});
+
+test('cleanup-check: family docker resources count by compose PROJECT — the dev loop and munni-sonar do not', async () => {
+  const spawned = [];
+  const outputs = (n, args) => {
+    if (args[0] === 'ps') return 'munni-local-shared-vaultwarden-1\tmunni-local-shared\nmunni-local-api-1\tmunni-local\nkavita-1\tprojects\n';
+    if (args[0] === 'volume') return 'munni-local-shared_vaultdata\nmunni-local_pgdata\nmunni-sonar_sonar_data\n';
+    return 'munni-local-shared-net\nmunni-local_default\nbridge\n';
+  };
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, outputs), probeImpl: async () => false });
+  const res = fakeRes();
+  await app2(fakeReq({ url: '/api/local/cleanup-check', token: 'tok' }), res);
+  await settle(res);
+  const body = JSON.parse(res.chunks.join(''));
+  assert.equal(body.clean, false);
+  assert.ok(body.leftovers.includes('container munni-local-shared-vaultwarden-1'));
+  assert.ok(!body.leftovers.includes('container munni-local-api-1'), 'the from-source dev loop (project munni-local) is a different lifecycle');
+  assert.ok(body.leftovers.includes('volume munni-local-shared_vaultdata'));
+  assert.ok(!body.leftovers.includes('volume munni-local_pgdata'));
+  assert.ok(!body.leftovers.some((l) => l.includes('munni-sonar')), 'sonar tooling is not family residue');
+  assert.ok(body.leftovers.includes('network munni-local-shared-net'));
+  assert.ok(body.leftovers.includes('registry entry prod'), 'registry entries are leftovers too');
+});
+
 // LAST on purpose: it empties the registry the other tests rely on
-test('delete-everything epilogue: forget-all empties the registry and removes the env stores', async () => {
-  const { existsSync: ex } = await import('node:fs');
+test('delete-everything epilogue: forget-all wipes registry, env stores, LAN marker and the shared render — then cleanup-check reports CLEAN', async () => {
+  const { existsSync: ex, writeFileSync: wf } = await import('node:fs');
   assert.ok(LOCAL_STACKS().length > 1, 'environments exist before');
+  // residue that kept the wizard's Delete button armed (user report
+  // 2026-09-04): the LAN marker and the shared stack's render artifacts
+  wf(join(SCRATCH, 'lan-host'), '192.168.2.2\n');
+  wf(join(SCRATCH, 'munni-local-shared', '.env.munni-local-shared'), 'X=1\n');
+  wf(join(SCRATCH, 'munni-local-shared', 'Caddyfile'), '# tls\n');
   const res = fakeRes();
   await app(fakeReq({ method: 'POST', url: '/api/local/envs/forget-all', token: 'tok', body: {} }), res);
   const body = JSON.parse(res.chunks.join(''));
   assert.ok(body.forgotten.includes('prod'));
   assert.deepEqual(LOCAL_STACKS(), ['munni-local-shared'], 'only the shared stack remains');
   assert.ok(!ex(join(SCRATCH, 'munni-local-prod')), 'prod rendered dir (its store included) is gone');
+  assert.ok(!ex(join(SCRATCH, 'lan-host')), 'the LAN marker dies with the family');
+  assert.ok(!ex(join(SCRATCH, 'munni-local-shared', '.env.munni-local-shared')), 'the shared render is stripped');
+  assert.ok(!ex(join(SCRATCH, 'munni-local-shared', 'Caddyfile')));
+  assert.ok(ex(join(SCRATCH, 'munni-local-shared', '.secrets.local.json')), 'the credential store SURVIVES');
+  assert.ok(ex(join(SCRATCH, 'munni-local-shared', 'upload-cert.pem')), 'the upload keystore certificate SURVIVES');
+  // and the verification the wizard runs right after agrees: clean
+  const spawned = [];
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => ''), probeImpl: async () => false });
+  const chk = fakeRes();
+  await app2(fakeReq({ url: '/api/local/cleanup-check', token: 'tok' }), chk);
+  await settle(chk);
+  const verdict = JSON.parse(chk.chunks.join(''));
+  assert.equal(verdict.clean, true, `leftovers: ${verdict.leftovers?.join(', ')}`);
+  assert.ok(verdict.kept.includes('the step-3 credential store'));
+  assert.ok(verdict.kept.includes('the upload keystore certificate'));
   // native-config now refuses cleanly instead of crashing on a phantom env
   const nc = fakeRes();
   await app(fakeReq({ url: '/api/local/native-config', token: 'tok' }), nc);

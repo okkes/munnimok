@@ -1412,7 +1412,11 @@ async function refreshLocal() {
     box.innerHTML = rows.map((r) => `<div style="margin:2px 0">${r}</div>`).join('');
     renderEnvCards(st);
     const shared = st.stacks[SHARED_STACK];
-    document.getElementById('local-links').innerHTML = ['Once up:',
+    const anyRendered = Object.values(st.stacks).some((s) => s.rendered);
+    const anyRunning = Object.values(st.stacks).some((s) => Object.values(s.services).some(Boolean));
+    const links = document.getElementById('local-links');
+    links.hidden = !anyRendered; // a wiped machine shows no dead links
+    links.innerHTML = ['Once up:',
       ...S.envList.map((e) => `<a class="chiplink" href="${e.web}" target="_blank" rel="noreferrer"><b>${envLabel(e.name)}</b> ${e.web.replace('http://', '')}</a>`),
       `<a class="chiplink" href="${shared.urls.control}" target="_blank" rel="noreferrer"><b>control</b> ${shared.urls.control.replace('http://', '')}</a>`,
     ].join(' ');
@@ -1432,8 +1436,6 @@ async function refreshLocal() {
     // master buttons follow the FAMILY state (user ruling 2026-08-28):
     // no Delete/Stop before anything exists; Set up only when it would
     // actually do something
-    const anyRendered = Object.values(st.stacks).some((s) => s.rendered);
-    const anyRunning = Object.values(st.stacks).some((s) => Object.values(s.services).some(Boolean));
     if (!S.masterBusy) {
       const allUp = sharedUp && S.envList.length > 0 && S.envList.every((e) => {
         const s2 = st.stacks[e.stack];
@@ -2170,7 +2172,10 @@ document.getElementById('env-cards')?.addEventListener('click', async (e) => {
   } else if (act === 'gt') {
     streamLocal('/api/local/glitchtip-setup', { stack }, `wire ${label} crash tracking (zero input)`);
   } else if (act === 'nuke') {
-    if (!confirm(`Delete the ${label.toUpperCase()} environment COMPLETELY?\n\nContainers, volumes INCLUDING its database server, its GoCardless consents, its vault folder — and the environment itself disappears from this page. Other environments and the shared services are untouched.\n\n(Store apps have no delete API: if app.munni.local.${s} exists in Play Console or App Store Connect, retire it there by hand.)`)) return;
+    if (!confirm(`Delete the ${label.toUpperCase()} environment COMPLETELY?\n\nContainers, volumes INCLUDING its database server, its GoCardless consents, its vault folder — and the environment itself disappears from this page. Other environments and the shared services are untouched.`)) return;
+    if (storeCredsStored() && confirm(`Also retire ${label}'s store app (Play internal testing + TestFlight)?\n\nOK: its app.munni.local.* package is withdrawn from Play internal testing and its TestFlight builds are expired — TESTERS LOSE THE APP IMMEDIATELY. The store records and the package name stay (neither store has a delete API); a later build re-publishes under the same identity.\n\nCancel: the stores are left untouched.`)) {
+      await streamLocal('/api/local/store-retire', { stack }, `retire ${label}'s store app (Play internal + TestFlight)`);
+    }
     await streamLocal('/api/local/envs/delete', { name: s }, `delete environment ${s}`);
     await refreshLocal();
     // cascade: the vault re-sync drops the deleted environment's folder
@@ -2253,9 +2258,18 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
   document.getElementById('btn-local-reveal').textContent = 'Hide secrets';
 });
 document.getElementById('btn-local-nuke-all')?.addEventListener('click', async () => {
-  if (!confirm('Delete EVERYTHING — every environment (production included) AND the shared services?\n\nAll containers, volumes (every database), networks, the bank consents the environments created at GoCardless — and the environments themselves are forgotten: a later Set up & start recreates production fresh. The credentials you entered in step 3 stay stored.\n\nThe family certificate dies with the volumes: after the next Set up, this PC re-trusts automatically (one Windows dialog) and PHONES need the new root.crt installed again.\n\n(Store apps have no delete API: retire any app.munni.local.* in Play Console / App Store Connect by hand.)')) return;
+  if (!confirm('Delete EVERYTHING — every environment (production included) AND the shared services?\n\nAll containers, volumes (every database), networks, the bank consents the environments created at GoCardless — and the environments themselves are forgotten: a later Set up & start recreates production fresh. The credentials you entered in step 3 stay stored.\n\nThe family certificate dies with the volumes: after the next Set up, this PC re-trusts automatically (one Windows dialog) and PHONES need the new root.crt installed again.\n\nThe delete ends with a cleanup check — this button retires itself once everything is really gone.')) return;
+  // optional store retirement (user request 2026-09-04): only offered
+  // when step-3 store credentials exist to act with
+  const retire = storeCredsStored() && S.envList.length > 0
+    && confirm('Also retire the store apps (Play internal testing + TestFlight)?\n\nOK: every environment\'s app.munni.local.* package is withdrawn from Play internal testing and its TestFlight builds are expired — TESTERS LOSE THE APP IMMEDIATELY. The store records and package names stay (neither store has a delete API); a later build re-publishes under the same identity.\n\nCancel: the stores are left untouched.');
   setMasterBusy(true);
   try {
+  if (retire) {
+    for (const e of S.envList) {
+      await streamLocal('/api/local/store-retire', { stack: e.stack }, `retire ${envLabel(e.name)}'s store app (Play internal + TestFlight)`);
+    }
+  }
   for (const name of [...S.envList.map((e) => e.stack), SHARED_STACK]) {
     await streamLocal('/api/local/cleanup', { target: name }, `delete ${labelOf(name)}`);
   }
@@ -2283,6 +2297,17 @@ document.getElementById('btn-local-nuke-all')?.addEventListener('click', async (
       }
     } catch { /* offline or blocked — the local teardown already finished */ }
   }
+  // the delete ends with a VERIFICATION (user request 2026-09-04): only
+  // a confirmed-clean machine retires the Delete button; leftovers keep
+  // it armed and are named so a re-press can finish the job
+  try {
+    const chk = await (await hfetch('/api/local/cleanup-check')).json();
+    if (chk.clean) {
+      localLog(`\n✓ cleanup verified: no family containers, volumes, networks, renders or registry entries remain — the Delete button retires until something exists again.${chk.kept.length ? ` Kept on purpose: ${chk.kept.join(' + ')}.` : ''}\n`);
+    } else {
+      localLog(`\n✗ the cleanup left traces — Delete everything stays available; press it again to finish:\n${chk.leftovers.map((l) => `  · ${l}`).join('\n')}\n`);
+    }
+  } catch (e) { localLog(`\ncleanup check failed (${e.message}) — verify with docker ps yourself\n`); }
   } finally {
     setMasterBusy(false);
     await refreshLocal();
@@ -2294,6 +2319,10 @@ document.getElementById('btn-dev-nuke')?.addEventListener('click', () => {
 });
 
 /* ── native apps: CI builds, phones install (LAN mode locally) ── */
+/** step-3 store credentials present? (drives the optional retire offer
+ * on delete — no credentials means nothing could act at the stores) */
+const storeCredsStored = () => Boolean(S.localStore?.has('PLAY_SERVICE_ACCOUNT_JSON')
+  || (S.localStore?.has('ASC_KEY_ID') && S.localStore?.has('ASC_ISSUER_ID') && S.localStore?.has('ASC_KEY_P8')));
 /* master buttons lock as ONE ROW (user request 2026-08-31: Start must
  * not be pressable mid-delete) — refreshLocal respects the lock */
 const MASTER_BUTTONS = ['btn-local-setup', 'btn-local-stopall', 'btn-local-verify', 'btn-trust-ca', 'btn-local-nuke-all'];
@@ -2400,11 +2429,15 @@ async function refreshStoreStatus() {
   if (suffixEl && document.activeElement !== suffixEl && st.appId) {
     suffixEl.value = st.appId.replace('app.munni.local.', '');
   }
-  const pillText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'add the credential in step 3 to auto-detect' };
+  const playText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'add the credential in step 3 to auto-detect' };
+  // iOS has no manual first upload — the one thing Apple keeps manual is
+  // the New App record (found live 2026-09-04: the export dies with
+  // "Error Downloading App Information" until it exists)
+  const iosText = { ready: 'app record found ✓', 'missing-app': `create the app record once: App Store Connect → Apps → ＋ → New App (iOS, bundle ${st.appId}) — detected here when it exists`, 'no-creds': 'add the ASC key in step 3 to auto-detect' };
   // a specific diagnosis (invite missing, app invisible…) beats the
   // generic label; a TRANSIENT provider hiccup keeps the last verdict
-  if (S.features.android && st.play.state !== 'transient') setPill('play-status-pill', st.play.detail ?? pillText[st.play.state] ?? st.play.state, st.play.state === 'ready');
-  if (S.features.ios && st.ios.state !== 'transient') setPill('asc-status-pill', st.ios.detail ?? pillText[st.ios.state] ?? st.ios.state, st.ios.state === 'ready');
+  if (S.features.android && st.play.state !== 'transient') setPill('play-status-pill', st.play.detail ?? playText[st.play.state] ?? st.play.state, st.play.state === 'ready');
+  if (S.features.ios && st.ios.state !== 'transient') setPill('asc-status-pill', st.ios.detail ?? iosText[st.ios.state] ?? st.ios.state, st.ios.state === 'ready');
   if (!S.pat || !S.user) return;
   try {
     const flag = await localPublishEnabled(st.localEnv);
@@ -2561,7 +2594,15 @@ async function dispatchLocalIosFlow() {
     if (run.conclusion === 'skipped') {
       say('the iOS job was SKIPPED — its gates (IOS_BUILD_ENABLED, repo initialization) were off when it started. Both are set now: press Build again.', false);
     } else if (run.conclusion === 'success') {
-      say(`build green ✓ — ${cfg.appId} is on its way to TestFlight (App Store Connect processes it for a few minutes). Install/update via the TestFlight app; the build only works on this wifi.`);
+      // green can still mean "upload skipped" — the workflow degrades a
+      // missing ASC app record to a warning; the STORE tells the truth
+      let iosState = 'ready';
+      try { iosState = (await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(nativeTargetStack())}`)).json()).ios?.state ?? 'ready'; } catch { /* poll again later */ }
+      if (iosState === 'missing-app') {
+        say(`build green ✓ — but App Store Connect has no app record for ${cfg.appId} yet, so the TestFlight upload was skipped (Apple keeps this one step manual). Create it once: appstoreconnect.apple.com → Apps → ＋ → New App (iOS, bundle ${cfg.appId}, any name/SKU), then press Build again.`, false);
+      } else {
+        say(`build green ✓ — ${cfg.appId} is on its way to TestFlight (App Store Connect processes it for a few minutes). Install/update via the TestFlight app; the build only works on this wifi.`);
+      }
     } else {
       say(`the build ended ${run.conclusion} — open run #${run.run_number} under Actions for the reason (missing ASC app record? signing?).`, false);
     }

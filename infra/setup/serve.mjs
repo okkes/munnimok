@@ -21,7 +21,7 @@
  */
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -581,13 +581,14 @@ async function trustCaEndpoint(res, spawnImpl, netFetchImpl) {
    button — the wizard POLLS whether the operator did the one-time store
    upload and flips auto-publish itself). The credentials live in the
    local store; checks mirror what CI's publish steps really do. ── */
-async function playAppExists(values, appId, fetchImpl) {
-  if (!values.PLAY_SERVICE_ACCOUNT_JSON) return { state: 'no-creds' };
+/** androidpublisher access token from the stored service account —
+ * throws with the exact operator-facing diagnosis on failure */
+async function playAccessToken(values, fetchImpl) {
   let sa;
   try {
     sa = JSON.parse(values.PLAY_SERVICE_ACCOUNT_JSON);
   } catch {
-    return { state: 'error', detail: 'PLAY_SERVICE_ACCOUNT_JSON is not valid JSON' };
+    throw new Error('PLAY_SERVICE_ACCOUNT_JSON is not valid JSON');
   }
   const now = Math.floor(Date.now() / 1000);
   const assertion = jwtRS256({
@@ -601,8 +602,18 @@ async function playAppExists(values, appId, fetchImpl) {
     body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(),
     signal: AbortSignal.timeout(10000),
   });
-  if (!tok.ok) return { state: 'error', detail: `Google rejected the service account (${tok.status})` };
-  const { access_token: access } = await tok.json();
+  if (!tok.ok) throw new Error(`Google rejected the service account (${tok.status})`);
+  return (await tok.json()).access_token;
+}
+
+async function playAppExists(values, appId, fetchImpl) {
+  if (!values.PLAY_SERVICE_ACCOUNT_JSON) return { state: 'no-creds' };
+  let access;
+  try {
+    access = await playAccessToken(values, fetchImpl);
+  } catch (e) {
+    return { state: 'error', detail: e.message };
+  }
   // a throwaway edit: succeeds only when the package exists AND the
   // service account may publish it — exactly what the CI upload needs.
   // ALWAYS deleted right after: opening an edit EXPIRES any concurrent
@@ -698,6 +709,102 @@ async function storeStatusEndpoint(res, url, fetchImpl) {
     ascAppExists(values, stack.native.appId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
   ]);
   return json(res, 200, { localEnv: stack.envName, appId: stack.native.appId, play, ios });
+}
+
+/* ── OPT-IN store retirement on delete (user request 2026-09-04):
+   neither store offers a delete API for apps, but the DISTRIBUTION can
+   be pulled — Play internal-testing releases withdrawn, TestFlight
+   builds expired (testers lose the app immediately). Records and the
+   package name stay; only ever touches app.munni.local.* packages. ── */
+async function storeRetireEndpoint(req, res, netFetchImpl) {
+  const body = await readBody(req);
+  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist' });
+  const stack = loadStack(pickEnv(body.stack));
+  const appId = stack.native.appId;
+  if (!appId.startsWith('app.munni.local.')) return json(res, 400, { error: `refusing to touch ${appId} — only app.munni.local.* packages can be retired here` });
+  const values = familyValues(stack);
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  res.write(`▶ retire ${appId} at the stores — distribution is withdrawn; the records themselves have no delete API\n\n`);
+  let ok = true;
+  if (!values.PLAY_SERVICE_ACCOUNT_JSON) {
+    res.write('Play: no service account stored (step 3) — skipped\n');
+  } else {
+    try {
+      const access = await playAccessToken(values, netFetchImpl);
+      const api = (path, init = {}) => netFetchImpl(
+        `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(appId)}${path}`,
+        { ...init, headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(15000) },
+      );
+      const edit = await api('/edits', { method: 'POST', body: '{}' });
+      if (edit.status === 404 || edit.status === 403) {
+        res.write(`Play: ${appId} does not exist there (or is not visible to the service account) — nothing to retire\n`);
+      } else if (!edit.ok) {
+        ok = false;
+        res.write(`Play: opening an edit failed (${edit.status})\n`);
+      } else {
+        const { id } = await edit.json();
+        const trk = await api(`/edits/${id}/tracks/internal`, { method: 'PUT', body: JSON.stringify({ track: 'internal', releases: [] }) });
+        if (!trk.ok) {
+          ok = false;
+          res.write(`Play: clearing the internal track failed (${trk.status})\n`);
+          await api(`/edits/${id}`, { method: 'DELETE' }).catch(() => {});
+        } else {
+          // some accounts refuse the plain commit for review-exempt
+          // changes — the retry mirrors what the Console itself does
+          let commit = await api(`/edits/${id}:commit`, { method: 'POST' });
+          if (!commit.ok) commit = await api(`/edits/${id}:commit?changesNotSentForReview=true`, { method: 'POST' });
+          if (commit.ok) {
+            res.write(`Play: internal testing withdrawn for ${appId} ✓ — testers lose it now. The app record and the package name STAY (Google has no delete API; a never-published app can be removed by hand in Play Console, but the package name is burned either way).\n`);
+          } else {
+            ok = false;
+            res.write(`Play: committing the withdrawal failed (${commit.status})\n`);
+          }
+        }
+      }
+    } catch (e) {
+      ok = false;
+      res.write(`Play: ${e.message}\n`);
+    }
+  }
+  if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) {
+    res.write('TestFlight: no App Store Connect key stored (step 3) — skipped\n');
+  } else {
+    try {
+      const jwt = ascJwt(values);
+      const asc = (path, init = {}) => netFetchImpl(`https://api.appstoreconnect.apple.com/v1${path}`, {
+        ...init, headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(15000),
+      });
+      const appsRes = await asc(`/apps?filter%5BbundleId%5D=${encodeURIComponent(appId)}&limit=2`);
+      if (!appsRes.ok) throw new Error(`App Store Connect answered ${appsRes.status}`);
+      const app = ((await appsRes.json()).data ?? [])[0];
+      if (app) {
+        const builds = ((await (await asc(`/builds?filter%5Bapp%5D=${encodeURIComponent(app.id)}&filter%5Bexpired%5D=false&limit=200`)).json()).data) ?? [];
+        let expired = 0;
+        for (const b of builds) {
+          const p = await asc(`/builds/${b.id}`, { method: 'PATCH', body: JSON.stringify({ data: { type: 'builds', id: b.id, attributes: { expired: true } } }) });
+          if (p.ok) expired += 1;
+          else { ok = false; res.write(`TestFlight: expiring build ${b.attributes?.version ?? b.id} failed (${p.status})\n`); }
+        }
+        res.write(`TestFlight: ${expired}/${builds.length} builds expired for ${appId} ✓ — testers lose it now. The App Store Connect app record STAYS (Apple has no delete API; a never-published app can be removed by hand under App Information → Remove App).\n`);
+      } else {
+        // no app record — but the developer-portal App ID registration
+        // (the wizard creates it as code) CAN be deleted while unused
+        const bids = ((await (await asc(`/bundleIds?filter%5Bidentifier%5D=${encodeURIComponent(appId)}&limit=200`)).json()).data) ?? [];
+        const bid = bids.find((d) => d.attributes?.identifier === appId);
+        if (!bid) {
+          res.write(`TestFlight: nothing at Apple for ${appId} — no app record, no App ID registration\n`);
+        } else {
+          const del = await asc(`/bundleIds/${bid.id}`, { method: 'DELETE' });
+          if (del.ok || del.status === 204) res.write(`TestFlight: no app record existed — the App ID registration ${appId} was deleted from the developer portal ✓ (fully freed on Apple's side)\n`);
+          else { ok = false; res.write(`TestFlight: deleting the App ID registration failed (${del.status}) — remove it by hand at developer.apple.com → Identifiers\n`); }
+        }
+      }
+    } catch (e) {
+      ok = false;
+      res.write(`TestFlight: ${e.message}\n`);
+    }
+  }
+  return res.end(`\n[exit ${ok ? 0 : 1}]\n`);
 }
 
 /* ── the MACHINE owns the upload keystore (user incident 2026-08-31:
@@ -959,14 +1066,74 @@ async function purgeGlitchtipOrg(stackName, res, fetchImpl = localAwareFetch) {
  * recreates production). The wizard calls this after destroying every
  * stack's containers; here the environments are FORGOTTEN: registry
  * emptied, rendered dirs (each env's secret store included) removed.
- * The shared store survives, so re-setup keeps the entered credentials. */
+ * The LAN marker and the shared RENDER die too (user report 2026-09-04:
+ * their leftovers kept the https pill and the Delete button armed after
+ * a wipe) — only the machine-owned survivors stay: the step-3
+ * credential store and the upload keystore's reset certificate. */
+const NUKE_SURVIVORS = ['.secrets.local.json', 'upload-cert.pem'];
 function envsForgetAllEndpoint(res) {
   const names = localEnvRegistry().map((e) => e.name);
   for (const name of names) {
     rmSync(renderedDir(`munni-local-${name}`), { recursive: true, force: true });
   }
   saveLocalEnvRegistry([]);
-  return json(res, 200, { forgotten: names });
+  rmSync(LAN_FILE(), { force: true });
+  const sharedDir = renderedDir(SHARED_STACK);
+  if (existsSync(sharedDir)) {
+    for (const f of readdirSync(sharedDir)) {
+      if (!NUKE_SURVIVORS.includes(f)) rmSync(join(sharedDir, f), { recursive: true, force: true });
+    }
+  }
+  return json(res, 200, { forgotten: names, kept: NUKE_SURVIVORS.filter((f) => existsSync(join(sharedDir, f))) });
+}
+
+/** post-wipe verification (user request 2026-09-04): name what is STILL
+ * there, so the wizard can honestly retire the Delete button — or keep
+ * it armed with the leftovers listed. Docker resources are matched by
+ * their compose PROJECT (family projects are munni-local-<something>;
+ * the from-source dev loop's project is exactly `munni-local` and
+ * munni-sonar is different tooling — neither counts). */
+async function cleanupCheckEndpoint(res, spawnImpl) {
+  const dockerLines = (args) => new Promise((resolve) => {
+    const c = spawnImpl('docker', args, { shell: false });
+    let out = '';
+    c.stdout.on('data', (d) => { out += d; });
+    c.stderr?.on?.('data', () => {});
+    c.on('error', () => resolve(null));
+    c.on('close', (code) => resolve(code === 0 ? out.split('\n').map((s) => s.trim()).filter(Boolean) : null));
+  });
+  const [containers, volumes, networks] = await Promise.all([
+    dockerLines(['ps', '-a', '--format', '{{.Names}}\t{{.Label "com.docker.compose.project"}}']),
+    dockerLines(['volume', 'ls', '--format', '{{.Name}}']),
+    dockerLines(['network', 'ls', '--format', '{{.Name}}']),
+  ]);
+  const leftovers = [];
+  if (!containers || !volumes || !networks) leftovers.push('docker did not answer — containers/volumes could not be verified');
+  for (const line of containers ?? []) {
+    const [name, project] = line.split('\t');
+    if (project?.startsWith('munni-local-')) leftovers.push(`container ${name}`);
+  }
+  for (const n of volumes ?? []) if (n.startsWith('munni-local-')) leftovers.push(`volume ${n}`);
+  for (const n of networks ?? []) if (n.startsWith('munni-local-')) leftovers.push(`network ${n}`);
+  for (const e of localEnvRegistry()) leftovers.push(`registry entry ${e.name}`);
+  const base = dirname(LAN_FILE());
+  if (existsSync(base)) {
+    for (const d of readdirSync(base)) {
+      if (!d.startsWith('munni-local-')) continue;
+      if (d === SHARED_STACK) {
+        for (const f of readdirSync(renderedDir(SHARED_STACK))) {
+          if (!NUKE_SURVIVORS.includes(f)) leftovers.push(`shared render file ${f}`);
+        }
+      } else {
+        leftovers.push(`rendered folder ${d}`);
+      }
+    }
+  }
+  if (existsSync(LAN_FILE())) leftovers.push('LAN marker (https mode)');
+  const kept = [];
+  if (existsSync(join(renderedDir(SHARED_STACK), '.secrets.local.json'))) kept.push('the step-3 credential store');
+  if (existsSync(join(renderedDir(SHARED_STACK), 'upload-cert.pem'))) kept.push('the upload keystore certificate');
+  return json(res, 200, { clean: leftovers.length === 0, leftovers, kept });
 }
 
 async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
@@ -992,7 +1159,7 @@ async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
   rmSync(renderedDir(stackName), { recursive: true, force: true });
   await refreshFamilyTls(res, spawnImpl);
   res.write(`\nenvironment ${name} deleted and forgotten (its secret store went with the rendered folder)\n`);
-  res.write(`what CANNOT be deleted by API, in case you created them: the Play/App Store apps for app.munni.local.${name} (retire them in the consoles by hand) and any GitHub environment "local" variables still pointing at it (overwritten by the next native build)\n`);
+  res.write(`what CANNOT be deleted by API: the STORE RECORDS for its app.munni.local.* package (the wizard's retire option withdraws the distribution — the records themselves go by hand in the consoles) and any GitHub environment "local" variables still pointing at it (overwritten by the next native build)\n`);
   return res.end('\n[exit 0]\n');
 }
 
@@ -1268,6 +1435,8 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
     'POST /api/local/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
     'POST /api/local/envs/forget-all': (req, res) => envsForgetAllEndpoint(res),
+    'GET /api/local/cleanup-check': (req, res) => cleanupCheckEndpoint(res, spawnImpl),
+    'POST /api/local/store-retire': (req, res) => storeRetireEndpoint(req, res, netFetchImpl),
     'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),

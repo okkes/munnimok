@@ -184,14 +184,21 @@ jobs:
           retention-days: 14
 
       # ---- Apple key present: archive, sign automatically, upload to TestFlight ----
-      - name: Compute build number (commit count; dev gets .1 suffix)
+      - name: Compute build number (commit count; dev gets .1 suffix; local counts seconds)
         if: steps.asc.outputs.present == 'true'
         id: version
         run: |
-          CODE=$(git rev-list --count HEAD)
-          # same sha on both branches (post-merge sync) would otherwise
-          # upload the same build number twice → "Redundant Binary Upload"
-          [ "${{ github.ref_name }}" = "dev" ] && CODE="$CODE.1"
+          if [ "${{ inputs.environment }}" = "local" ]; then
+            # redispatching the same commit must not reuse a build number
+            # (TestFlight refuses the duplicate) — count seconds since
+            # 2026-01-01, the same practice the Android versionCode uses
+            CODE=$(( $(date +%s) - 1767225600 ))
+          else
+            CODE=$(git rev-list --count HEAD)
+            # same sha on both branches (post-merge sync) would otherwise
+            # upload the same build number twice → "Redundant Binary Upload"
+            [ "${{ github.ref_name }}" = "dev" ] && CODE="$CODE.1"
+          fi
           echo "code=$CODE" >> "$GITHUB_OUTPUT"
           echo "name=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
 
@@ -293,6 +300,19 @@ jobs:
           if [ "$status" -ne 0 ] && grep -q "Upload limit reached" "$RUNNER_TEMP/export.log"; then
             echo "::warning title=TestFlight upload skipped::Apple's daily upload limit is reached — the build archived and signed fine; the next quiet day's push uploads again."
             exit 0
+          fi
+          # "Error Downloading App Information" = App Store Connect has
+          # no app record for this bundle id yet — the ONE step Apple
+          # keeps manual (no create-API). For the wizard's local channel
+          # that is the expected first-run state (skipped-not-red, like
+          # Android's first upload); hosted channels stay red but say why.
+          if [ "$status" -ne 0 ] && grep -q "Error Downloading App Information" "$RUNNER_TEMP/export.log"; then
+            MSG="App Store Connect has no app record for ${{ steps.channel.outputs.bundle_id }} — create it once (appstoreconnect.apple.com → Apps → ＋ → New App, platform iOS, bundle ${{ steps.channel.outputs.bundle_id }}, any name/SKU), then rebuild."
+            if [ "${{ inputs.environment }}" = "local" ]; then
+              echo "::warning title=TestFlight upload skipped::$MSG The build itself archived and signed fine."
+              exit 0
+            fi
+            echo "::error title=Missing App Store Connect app record::$MSG"
           fi
           exit "$status"
         env:
