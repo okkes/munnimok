@@ -1,9 +1,9 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, gotoGlobalSettings, shot, teardown } from '../helpers/base.js';
+import { VARIANTS, createPage, base, freshCamtFixture, gotoGlobalSettings, shot, teardown } from '../helpers/base.js';
 
-const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/camt053-sample.xml');
+// date-freshened copy — the static file ages out of the default
+// two-month attach history window (2026-09-06 incident)
+const FIXTURE = freshCamtFixture();
 
 // --- Tests ------------------------------------------------------------------
 

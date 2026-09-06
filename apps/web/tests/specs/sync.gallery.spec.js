@@ -1,9 +1,9 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, gotoGlobalSettings, gotoSpaces, shot, teardown, syncApiUp } from '../helpers/base.js';
+import { VARIANTS, createPage, base, freshCamtFixture, gotoGlobalSettings, gotoSpaces, shot, teardown, syncApiUp } from '../helpers/base.js';
 
-const CAMT_FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/camt053-sample.xml');
+// date-freshened copy — the static file ages out of the default
+// two-month attach history window (2026-09-06 incident)
+const CAMT_FIXTURE = freshCamtFixture();
 
 // Two-device sync e2e against the real API + Postgres
 // (deploy/docker-compose.test.yml). Skips when the stack isn't running.

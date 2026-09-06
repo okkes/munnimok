@@ -11,6 +11,31 @@ for (const d of [SHOTS_DIR, VIDEOS_DIR]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
+/** The CAMT fixture must not age: the attach flow's default history
+ * window is DEFAULT_HISTORY_MONTHS back from TODAY, and a static file
+ * silently falls out of it (found 2026-09-06: the newest booking, Jul 5,
+ * left the two-month window overnight — sync-a6's shared feed came up
+ * empty while the app behaved correctly). Every ISO date in the file is
+ * shifted by one common delta so the newest lands 3 days ago — spacing,
+ * ordering and dedupe identity within a run stay intact. */
+export function freshCamtFixture() {
+  const xml = fs.readFileSync(path.join(ROOT, 'fixtures', 'camt053-sample.xml'), 'utf8');
+  const dates = [...xml.matchAll(/\d{4}-\d{2}-\d{2}/g)].map((m) => m[0]);
+  const newest = dates.reduce((a, b) => (a > b ? a : b));
+  const target = new Date();
+  target.setDate(target.getDate() - 3);
+  const deltaDays = Math.round((target.getTime() - new Date(`${newest}T00:00:00Z`).getTime()) / 86400000);
+  const shifted = xml.replace(/\d{4}-\d{2}-\d{2}/g, (d) => {
+    const dt = new Date(`${d}T00:00:00Z`);
+    dt.setUTCDate(dt.getUTCDate() + deltaDays);
+    return dt.toISOString().slice(0, 10);
+  });
+  const out = path.join(ROOT, 'results', 'camt053-fresh.xml');
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, shifted);
+  return out;
+}
+
 // All test variants: language × theme × viewport.
 // id format: '{lang}-{theme}-{viewport}'
 // Single default variant: EN, light, mobile.
