@@ -646,6 +646,7 @@ test('store-status: no creds reports so; with creds it mirrors the real Play/ASC
   assert.equal(bare.play.state, 'no-creds');
   assert.equal(bare.ios.state, 'no-creds');
   assert.equal(bare.appId, 'app.munni.local.prod');
+  assert.equal(bare.iosAppId, 'app.munni.local.prod', 'the iOS bundle follows the Android id until named apart');
 
   const { generateKeyPairSync } = await import('node:crypto');
   const rsaPem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
@@ -785,17 +786,45 @@ test('new-store-package: the operator names the suffix, re-render follows, consu
   assert.match(stream, /store package set → app\.munni\.local\.phone2/);
   assert.match(stream, /\[exit 0\]/);
   assert.equal(loadStack('munni-local-roll').native.appId, 'app.munni.local.phone2');
+  assert.equal(loadStack('munni-local-roll').native.iosAppId, 'app.munni.local.phone2', 'iOS follows Android by default');
   assert.ok(spawned[0].args.join(' ').includes('--stack munni-local-roll'), 're-render ran');
-  // …and native-config hands CI the chosen id
+
+  // the iOS bundle may DIVERGE (Play burns package names, ASC does not)
+  const iosRes = fakeRes();
+  await app2(fakeReq({ method: 'POST', url: '/api/local/new-store-package', token: 'tok', body: { stack: 'munni-local-roll', suffix: 'ipad', platform: 'ios' } }), iosRes);
+  await settle(iosRes);
+  assert.match(iosRes.chunks.join(''), /iOS bundle id set → app\.munni\.local\.ipad/);
+  assert.equal(loadStack('munni-local-roll').native.appId, 'app.munni.local.phone2', 'the Android package is untouched');
+  assert.equal(loadStack('munni-local-roll').native.iosAppId, 'app.munni.local.ipad');
+
+  // …and native-config hands CI BOTH chosen ids
   const nc = fakeRes();
   await app(fakeReq({ url: '/api/local/native-config?stack=munni-local-roll', token: 'tok' }), nc);
   const body = JSON.parse(nc.chunks.join(''));
   assert.equal(body.appId, 'app.munni.local.phone2');
+  assert.equal(body.iosAppId, 'app.munni.local.ipad');
   assert.equal(body.variables.NATIVE_LOCAL_APP_ID, 'app.munni.local.phone2');
+  assert.equal(body.variables.NATIVE_LOCAL_APP_ID_IOS, 'app.munni.local.ipad');
   // cleanup: drop the throwaway env
   const del = fakeRes();
   await app2(fakeReq({ method: 'POST', url: '/api/local/envs/delete', token: 'tok', body: { name: 'roll' } }), del);
   await settle(del);
+});
+
+test('gh-pat: a working GitHub token persists into the shared store; an empty one refuses', async () => {
+  const shared = loadStack('munni-local-shared');
+  const prev = loadLocalValues(shared);
+  try {
+    const bad = fakeRes();
+    await app(fakeReq({ method: 'POST', url: '/api/local/gh-pat', token: 'tok', body: { pat: '  ' } }), bad);
+    assert.equal(bad.statusCode, 400);
+    const res = fakeRes();
+    await app(fakeReq({ method: 'POST', url: '/api/local/gh-pat', token: 'tok', body: { pat: 'github_pat_test123' } }), res);
+    assert.equal(res.statusCode, 200);
+    assert.equal(loadLocalValues(shared).IAC_GH_PAT, 'github_pat_test123');
+  } finally {
+    saveLocalValues(shared, prev);
+  }
 });
 
 test('mint-keystore: mints once into the machine store (docker keytool), then reuses forever', async () => {

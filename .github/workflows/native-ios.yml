@@ -71,7 +71,9 @@ jobs:
             # store-package GENERATION); name-derived = no-wizard fallback
             LOCAL_ENV="${{ inputs.localEnv || 'prod' }}"
             SCHEME="munni-local"; [ "$LOCAL_ENV" = "prod" ] || SCHEME="munni-local-$LOCAL_ENV"
-            BUNDLE_ID="${{ vars.NATIVE_LOCAL_APP_ID }}"
+            # iOS may carry its OWN bundle id (Play burns package names,
+            # ASC records do not — the two can diverge per environment)
+            BUNDLE_ID="${{ vars.NATIVE_LOCAL_APP_ID_IOS || vars.NATIVE_LOCAL_APP_ID }}"
             [ -n "$BUNDLE_ID" ] || BUNDLE_ID="app.munni.local.$LOCAL_ENV"
             echo "bundle_id=$BUNDLE_ID" >> "$GITHUB_OUTPUT"
             echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
@@ -313,6 +315,13 @@ jobs:
               exit 0
             fi
             echo "::error title=Missing App Store Connect app record::$MSG"
+          fi
+          # "Cloud signing permission error" = the ASC API key's role
+          # cannot use Apple's cloud-managed Distribution certificate.
+          # A misconfiguration, not a first-run state: stays red, but
+          # says exactly which switch to flip.
+          if [ "$status" -ne 0 ] && grep -q "Cloud signing permission error" "$RUNNER_TEMP/export.log"; then
+            echo "::error title=ASC key cannot cloud-sign::The App Store Connect API key cannot create/use the cloud-managed Apple Distribution certificate. Fix once: App Store Connect → Users and Access → Integrations → this key → role Admin (or App Manager WITH 'Access to Cloud Managed Distribution Certificate' ticked), wait a minute, rebuild. Alternative: import a real Apple Distribution certificate as secrets APPLE_DEV_CERT_P12 + APPLE_DEV_CERT_PASSWORD."
           fi
           exit "$status"
         env:

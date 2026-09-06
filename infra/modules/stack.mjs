@@ -79,6 +79,11 @@ function synthesizeLocalEnv(entry) {
       // upload key per package forever) rolls to whatever they type.
       // appGen is the legacy pre-suffix form, kept readable.
       appId: `app.munni.local.${entry.appSuffix ?? `${entry.name}${(entry.appGen ?? 1) > 1 ? entry.appGen : ''}`}`,
+      // the iOS bundle id may DIVERGE (user request 2026-09-06): Play
+      // burns package names (pinned upload key) while ASC records live
+      // on — Android can roll to prod2 while iOS keeps prod. Default:
+      // follow the Android id.
+      iosAppId: `app.munni.local.${entry.iosSuffix ?? entry.appSuffix ?? `${entry.name}${(entry.appGen ?? 1) > 1 ? entry.appGen : ''}`}`,
       label: `munni ${entry.name}`,
       scheme: entry.name === 'prod' ? 'munni-local' : `munni-local-${entry.name}`,
     },

@@ -38,6 +38,9 @@ export const SHARED_LOCAL_NAMES = new Set([
   'VAULT_ADMIN_EMAIL',
   'VAULT_MASTER_PASSWORD',
   'IAC_GLITCHTIP_API_TOKEN',
+  // the wizard's GitHub token (user request 2026-09-06: persisted like
+  // every other step-3 credential — reconnects by itself)
+  'IAC_GH_PAT',
   'GLITCHTIP_ADMIN_EMAIL',
   'GLITCHTIP_ADMIN_PASSWORD',
   'CONTROL_LOGTO_APP_ID',

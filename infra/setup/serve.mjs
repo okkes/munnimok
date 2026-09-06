@@ -706,9 +706,9 @@ async function storeStatusEndpoint(res, url, fetchImpl) {
   const values = familyValues(stack);
   const [play, ios] = await Promise.all([
     playAppExists(values, stack.native.appId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
-    ascAppExists(values, stack.native.appId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
+    ascAppExists(values, stack.native.iosAppId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
   ]);
-  return json(res, 200, { localEnv: stack.envName, appId: stack.native.appId, play, ios });
+  return json(res, 200, { localEnv: stack.envName, appId: stack.native.appId, iosAppId: stack.native.iosAppId, play, ios });
 }
 
 /* ── OPT-IN store retirement on delete (user request 2026-09-04):
@@ -721,10 +721,13 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
   if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist' });
   const stack = loadStack(pickEnv(body.stack));
   const appId = stack.native.appId;
-  if (!appId.startsWith('app.munni.local.')) return json(res, 400, { error: `refusing to touch ${appId} — only app.munni.local.* packages can be retired here` });
+  const iosAppId = stack.native.iosAppId;
+  if (!appId.startsWith('app.munni.local.') || !iosAppId.startsWith('app.munni.local.')) {
+    return json(res, 400, { error: `refusing to touch ${appId} / ${iosAppId} — only app.munni.local.* packages can be retired here` });
+  }
   const values = familyValues(stack);
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  res.write(`▶ retire ${appId} at the stores — distribution is withdrawn; the records themselves have no delete API\n\n`);
+  res.write(`▶ retire ${appId === iosAppId ? appId : `${appId} (Play) + ${iosAppId} (TestFlight)`} at the stores — distribution is withdrawn; the records themselves have no delete API\n\n`);
   let ok = true;
   if (!values.PLAY_SERVICE_ACCOUNT_JSON) {
     res.write('Play: no service account stored (step 3) — skipped\n');
@@ -774,7 +777,7 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
       const asc = (path, init = {}) => netFetchImpl(`https://api.appstoreconnect.apple.com/v1${path}`, {
         ...init, headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(15000),
       });
-      const appsRes = await asc(`/apps?filter%5BbundleId%5D=${encodeURIComponent(appId)}&limit=2`);
+      const appsRes = await asc(`/apps?filter%5BbundleId%5D=${encodeURIComponent(iosAppId)}&limit=2`);
       if (!appsRes.ok) throw new Error(`App Store Connect answered ${appsRes.status}`);
       const app = ((await appsRes.json()).data ?? [])[0];
       if (app) {
@@ -785,17 +788,17 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
           if (p.ok) expired += 1;
           else { ok = false; res.write(`TestFlight: expiring build ${b.attributes?.version ?? b.id} failed (${p.status})\n`); }
         }
-        res.write(`TestFlight: ${expired}/${builds.length} builds expired for ${appId} ✓ — testers lose it now. The App Store Connect app record STAYS (Apple has no delete API; a never-published app can be removed by hand under App Information → Remove App).\n`);
+        res.write(`TestFlight: ${expired}/${builds.length} builds expired for ${iosAppId} ✓ — testers lose it now. The App Store Connect app record STAYS (Apple has no delete API; a never-published app can be removed by hand under App Information → Remove App).\n`);
       } else {
         // no app record — but the developer-portal App ID registration
         // (the wizard creates it as code) CAN be deleted while unused
-        const bids = ((await (await asc(`/bundleIds?filter%5Bidentifier%5D=${encodeURIComponent(appId)}&limit=200`)).json()).data) ?? [];
-        const bid = bids.find((d) => d.attributes?.identifier === appId);
+        const bids = ((await (await asc(`/bundleIds?filter%5Bidentifier%5D=${encodeURIComponent(iosAppId)}&limit=200`)).json()).data) ?? [];
+        const bid = bids.find((d) => d.attributes?.identifier === iosAppId);
         if (!bid) {
-          res.write(`TestFlight: nothing at Apple for ${appId} — no app record, no App ID registration\n`);
+          res.write(`TestFlight: nothing at Apple for ${iosAppId} — no app record, no App ID registration\n`);
         } else {
           const del = await asc(`/bundleIds/${bid.id}`, { method: 'DELETE' });
-          if (del.ok || del.status === 204) res.write(`TestFlight: no app record existed — the App ID registration ${appId} was deleted from the developer portal ✓ (fully freed on Apple's side)\n`);
+          if (del.ok || del.status === 204) res.write(`TestFlight: no app record existed — the App ID registration ${iosAppId} was deleted from the developer portal ✓ (fully freed on Apple's side)\n`);
           else { ok = false; res.write(`TestFlight: deleting the App ID registration failed (${del.status}) — remove it by hand at developer.apple.com → Identifiers\n`); }
         }
       }
@@ -864,21 +867,33 @@ async function newStorePackageEndpoint(req, res, spawnImpl) {
   const envs = localEnvRegistry();
   const entry = envs.find((e) => e.name === name);
   if (!entry) return json(res, 400, { error: `no environment named "${name}"` });
-  // the OPERATOR names the package segment (no black-box numbering)
+  // the OPERATOR names the package segment (no black-box numbering);
+  // Android and iOS may diverge (user request 2026-09-06: a Play-burned
+  // package rolls while the existing ASC record keeps its bundle)
+  const platform = body.platform === 'ios' ? 'ios' : 'android';
   const suffix = String(body.suffix ?? '').trim().toLowerCase();
   if (!/^[a-z][a-z0-9]{1,29}$/.test(suffix)) {
     return json(res, 400, { error: 'the package suffix must be 2-30 characters, letters/digits, starting with a letter (like prod2, phone, beta)' });
   }
-  entry.appSuffix = suffix;
-  delete entry.appGen; // superseded by the explicit suffix
+  if (platform === 'ios') {
+    entry.iosSuffix = suffix;
+  } else {
+    entry.appSuffix = suffix;
+    delete entry.appGen; // superseded by the explicit suffix
+  }
   saveLocalEnvRegistry(envs);
-  const newId = loadStack(`munni-local-${name}`).native.appId;
+  const native = loadStack(`munni-local-${name}`).native;
+  const newId = platform === 'ios' ? native.iosAppId : native.appId;
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  res.write(`▶ store package set → ${newId}\n(a previously used package keeps its store records — retire them in the consoles whenever)\n\n`);
+  res.write(`▶ ${platform === 'ios' ? 'iOS bundle id' : 'store package'} set → ${newId}\n(a previously used package keeps its store records — retire them in the consoles whenever)\n\n`);
   const run = stepRunner(spawnImpl);
   await run(res, `re-render ${name} with the new identity`, process.execPath,
     [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
-  res.write(`\nNext: create the Play record for ${newId} (Play Console → Create app). This page detects it, and the FIRST build uploads itself — signed with the machine keystore, the key that never changes again.\n`);
+  if (platform === 'ios') {
+    res.write(`\nNext: the App ID registers itself on the next iOS build; create the App Store Connect record for ${newId} (New App) if it does not exist yet — this page detects it.\n`);
+  } else {
+    res.write(`\nNext: create the Play record for ${newId} (Play Console → Create app). This page detects it, and the FIRST build uploads itself — signed with the machine keystore, the key that never changes again.\n`);
+  }
   return res.end('[exit 0]\n');
 }
 
@@ -914,7 +929,7 @@ async function iosAppIdEndpoint(req, res, fetchImpl) {
     headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...init.headers },
     signal: AbortSignal.timeout(15000),
   });
-  const bundleId = stack.native.appId;
+  const bundleId = stack.native.iosAppId;
   const list = await asc(`/bundleIds?filter%5Bidentifier%5D=${encodeURIComponent(bundleId)}`);
   if (!list.ok) {
     res.write(`App Store Connect answered ${list.status} listing bundle ids — is the key an App Manager key?\n`);
@@ -969,9 +984,11 @@ async function nativeConfigEndpoint(res, url, fetchImpl) {
     NATIVE_LOGTO_APP_ID: values.NATIVE_LOGTO_APP_ID ?? '',
     NATIVE_GLITCHTIP_DSN_ANDROID: dsn,
     NATIVE_GLITCHTIP_DSN_IOS: dsn,
-    // the AUTHORITATIVE package id (carries the store-package generation
-    // — the workflows must not re-derive it from the env name alone)
+    // the AUTHORITATIVE package ids (carry the store-package choices —
+    // the workflows must not re-derive them from the env name alone);
+    // Android and iOS may diverge (Play burns package names, ASC not)
     NATIVE_LOCAL_APP_ID: stack.native.appId,
+    NATIVE_LOCAL_APP_ID_IOS: stack.native.iosAppId,
   };
   const missing = [];
   if (!lan) missing.push('LAN mode is off — a phone cannot reach localhost');
@@ -991,6 +1008,7 @@ async function nativeConfigEndpoint(res, url, fetchImpl) {
     environment: 'local',
     localEnv: stack.envName,
     appId: stack.native.appId,
+    iosAppId: stack.native.iosAppId,
     scheme: stack.native.scheme,
     lanHost: lan,
     ready: missing.length === 0,
@@ -1163,6 +1181,19 @@ async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
   return res.end('\n[exit 0]\n');
 }
 
+/** persist the GitHub PAT like every other step-3 credential (user
+ * request 2026-09-06: no re-pasting on every visit). Saved into the
+ * shared machine store; the wizard reads it back and reconnects itself
+ * on the next load. */
+async function ghPatEndpoint(req, res) {
+  const body = await readBody(req);
+  const pat = String(body.pat ?? '').trim();
+  if (!pat) return json(res, 400, { error: 'no token given' });
+  const shared = loadStack(SHARED_STACK);
+  saveLocalValues(shared, { ...loadLocalValues(shared), IAC_GH_PAT: pat });
+  return json(res, 200, { ok: true });
+}
+
 /* ── secret retrieval (family-wide): the stores ARE readable — surfaced
    on EXPLICIT request only; values go to the page, never to any log ── */
 function secretsEndpoint(res) {
@@ -1214,6 +1245,7 @@ const VAULT_PURPOSE = {
   ANDROID_KEYSTORE_PASSWORD: 'Password of the upload keystore (wizard-generated).',
   ANDROID_KEY_ALIAS: 'Key alias inside the upload keystore (munni-upload).',
   ANDROID_KEY_PASSWORD: 'Key password inside the upload keystore (same as the store password).',
+  IAC_GH_PAT: 'Fine-grained GitHub token the wizard connects and dispatches CI builds with — saved so the GitHub card reconnects by itself.',
   ASC_KEY_ID: 'App Store Connect API key id — with the issuer id + .p8, CI uploads to TestFlight and the wizard checks app records.',
   ASC_ISSUER_ID: 'App Store Connect API issuer id — pairs with the key.',
   ASC_KEY_P8: 'App Store Connect API private key (.p8, base64) — shown once at creation.',
@@ -1442,6 +1474,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),
     'POST /api/local/new-store-package': (req, res) => newStorePackageEndpoint(req, res, spawnImpl),
     'POST /api/local/trust-ca': (req, res) => trustCaEndpoint(res, spawnImpl, netFetchImpl),
+    'POST /api/local/gh-pat': (req, res) => ghPatEndpoint(req, res),
     'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
     'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),
     'POST /api/local/vault-setup': (req, res) => vaultSetupEndpoint(req, res, spawnImpl, vaultFetchImpl),

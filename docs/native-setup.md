@@ -283,7 +283,20 @@ channel:
   wizard's ASC pill + build verdict name the missing record with the
   exact bundle id. Local builds number themselves in seconds since
   2026-01-01 (redispatching the same commit must not reuse a TestFlight
-  build number — same practice as the Android versionCode).
+  build number — same practice as the Android versionCode). The iOS
+  bundle id has its OWN wizard field and CI variable
+  (`NATIVE_LOCAL_APP_ID_IOS`, falling back to the Android id): Play
+  burns package names when an upload key is lost while ASC records live
+  on, so Android may roll to `prod2` while iOS keeps `prod`. The
+  export additionally needs the ASC key to hold cloud-signing rights —
+  role **Admin** (or App Manager + "Access to Cloud Managed
+  Distribution Certificate"); without it the export fails with `Cloud
+  signing permission error` / `No signing certificate "iOS
+  Distribution"`, and CI names that fix. Creating the app RECORD stays
+  manual at BOTH stores by design of their APIs (automation like
+  fastlane produce drives an interactive Apple-ID session with 2FA —
+  not CI-able); a pending Program License Agreement must be accepted by
+  the Account Holder or store operations fail account-wide.
 
 Phones must trust the family's CA once per device (download
 `http://ca.<ip-dashed>.sslip.io` → install root.crt; iPhone also

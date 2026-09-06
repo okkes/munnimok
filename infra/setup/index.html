@@ -130,7 +130,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
   <div class="card" id="connect-card">
     <h3>GitHub — the build &amp; deploy engine <span class="pill" id="connect-pill">not connected</span></h3>
     <p class="why" id="connect-why-nas">The whole NAS pipeline lives in your repo's Actions: one fine-grained token drives this page live and is stored as <code>IAC_GH_PAT</code> so the bootstrap workflow can manage environments too. Point it at a repo that carries munni — or at a name that doesn't exist yet, and this page forks <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically.</p>
-    <p class="why" id="connect-why-local" hidden>This card only appears because Android/iOS is ticked: the native apps are BUILT by GitHub CI (never on this machine), so those builds need your repo's Actions. Everything else on the local track stays GitHub-free. Same token rules as the NAS track; a nonexistent repo name gets forked from <code>okkes/munnimok</code>.</p>
+    <p class="why" id="connect-why-local" hidden>This card only appears because Android/iOS is ticked: the native apps are BUILT by GitHub CI (never on this machine), so those builds need your repo's Actions. Everything else on the local track stays GitHub-free. Same token rules as the NAS track; a nonexistent repo name gets forked from <code>okkes/munnimok</code>. After a successful Connect the token is saved in this machine's gitignored store like every other step-3 credential — the next visit reconnects by itself.</p>
     <div id="connect-body">
     <details class="how"><summary>How to create the token (2 minutes)</summary>
       <ol>
@@ -142,7 +142,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
     </details>
     <label class="f" for="in-slug">repository (owner/name)</label>
     <input type="text" id="in-slug"/>
-    <label class="f" for="in-pat">fine-grained PAT (kept in memory only)</label>
+    <label class="f" for="in-pat">fine-grained PAT (saved on this machine when the helper runs; memory-only otherwise)</label>
     <input type="password" id="in-pat" placeholder="github_pat_…" autocomplete="off"/>
     <button id="btn-connect">Connect</button>
     <button class="ghost" id="btn-fork" hidden>Create it as a copy of okkes/munnimok</button>
@@ -393,17 +393,23 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
 
     <div class="card" data-needs-feature="ios">
       <h3>iOS on your phone (via TestFlight)</h3>
-      <p class="why">Same per-environment store channel: bundle <code data-native-appid>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id — with the ASC key in step 3 this page checks for the record by itself (pill below). First time on an iPhone: install the family certificate once — download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> (DASHES in the address, not dots), then ALSO enable it under Settings → General → About → Certificate Trust Settings (iOS offers no in-app trust bundling — Apple's floor). The build carries the LAN address, so it only works on your wifi.</p>
+      <p class="why">Same per-environment store channel: bundle <code data-native-appid-ios>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. The bundle id has its OWN field below: it may differ from the Android package (Play burns package names when an upload key is lost; App Store Connect records live on — Android can roll to <code>prod2</code> while iOS keeps <code>prod</code>). One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id — with the ASC key in step 3 this page checks for the record by itself (pill below). First time on an iPhone: install the family certificate once — download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> (DASHES in the address, not dots), then ALSO enable it under Settings → General → About → Certificate Trust Settings (iOS offers no in-app trust bundling — Apple's floor). The build carries the LAN address, so it only works on your wifi.</p>
       <div class="runrow">
         <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
         <span class="pill" id="asc-status-pill"></span>
       </div>
+      <div class="runrow" style="align-items:center">
+        <label class="f" for="native-suffix-ios" style="margin:0">iOS bundle&nbsp;&nbsp;<code>app.munni.local.</code></label>
+        <input id="native-suffix-ios" type="text" maxlength="30" style="max-width:120px" placeholder="prod" autocomplete="off"/>
+        <button class="ghost" id="btn-apply-package-ios" title="name the iOS bundle yourself — it may stay on an existing ASC record while the Android package rolls">Apply bundle id</button>
+      </div>
       <div class="msg" id="msg-native-ios"></div>
       <details class="how"><summary>The one-time App Store Connect setup (once per environment)</summary>
         <ol>
-          <li>Nothing to click at developer.apple.com: pressing <b>Build</b> registers the App ID (bundle <code data-native-appid>app.munni.local.&lt;env&gt;</code>) through the API with the capabilities munni needs LONG-RUN — <b>Push Notifications</b> (for FCM later; ticking now means never re-provisioning), <b>Sign in with Apple</b> (Apple requires it beside Google login), <b>Associated Domains</b> (universal links on the hosted track). Apple Pay is NOT needed — munni only reads bank data.</li>
+          <li>Nothing to click at developer.apple.com: pressing <b>Build</b> registers the App ID (bundle <code data-native-appid-ios>app.munni.local.&lt;env&gt;</code>) through the API with the capabilities munni needs LONG-RUN — <b>Push Notifications</b> (for FCM later; ticking now means never re-provisioning), <b>Sign in with Apple</b> (Apple requires it beside Google login), <b>Associated Domains</b> (universal links on the hosted track). Apple Pay is NOT needed — munni only reads bank data.</li>
           <li>If you ever open the identifier by hand: the “Push Notifications → Configure” dialog offering <b>APNs SSL certificates</b> is the LEGACY path — create nothing there, just Done. Push will use the team APNs <i>key</i> via Firebase.</li>
-          <li>The one step Apple gives no API for: <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> → <b>New App</b> → pick the pre-registered bundle id from the dropdown → create. The pill above detects the record and every build then uploads to TestFlight by itself.</li>
+          <li>The one step neither store gives an API for is creating the app RECORD (tools that automate it drive an interactive Apple-ID sign-in with 2FA — impossible from CI; same at Google, Play's Create-app is Console-only): <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> → <b>New App</b> → platform iOS, any name, pick the pre-registered bundle id from the dropdown, <b>SKU</b> = anything unique (the bundle id itself works), User Access <b>Full Access</b> → create. The pill above detects the record and every build then uploads to TestFlight by itself.</li>
+          <li>Two account-side switches that block uploads when off: a pending <b>Program License Agreement</b> banner must be accepted by the Account Holder (appstoreconnect → the yellow banner), and the step-3 ASC key needs cloud-signing rights — <b>Users and Access → Integrations → the key → role Admin</b> (or App Manager with “Access to Cloud Managed Distribution Certificate”). Without it the export dies with “Cloud signing permission error / No signing certificate iOS Distribution”.</li>
         </ol>
       </details>
     </div>
@@ -1824,6 +1830,9 @@ async function connectRepo(repo) {
   }
   pill.textContent = `connected as ${S.user.login} ✓`;
   pill.className = 'pill ok';
+  // a WORKING token is worth keeping (user request 2026-09-06: no
+  // re-pasting per visit) — into the machine store, like all of step 3
+  if (HELPER && S.pat) hfetch('/api/local/gh-pat', { method: 'POST', body: JSON.stringify({ pat: S.pat }) }).catch(() => {});
   // open the first-boot latch: a connected repo is being initialized —
   // its push workflows (skipped until now on fresh copies) come alive
   await ghUpsertRepoVar('MUNNI_INITIALIZED', 'true').catch(() => {});
@@ -2366,23 +2375,33 @@ async function ghUpsertEnvVar(envName, name, value) {
 }
 const nativeTargetStack = () => document.getElementById('native-env-select')?.value || 'munni-local-prod';
 const nativeTargetEnv = () => nativeTargetStack().replace('munni-local-', '');
-/** the copy speaks in the SELECTED environment's real app id, not <env>
- * — the helper's answer wins (it carries the store-package generation) */
-function updateNativeAppIdLabels(authoritativeId) {
+/** the copy speaks in the SELECTED environment's real app ids, not <env>
+ * — the helper's answer wins (it carries the store-package choices);
+ * Android and iOS labels are separate (the ids may diverge) */
+function updateNativeAppIdLabels(authoritativeId, authoritativeIosId) {
   const id = authoritativeId ?? `app.munni.local.${nativeTargetEnv()}`;
+  const iosId = authoritativeIosId ?? authoritativeId ?? `app.munni.local.${nativeTargetEnv()}`;
   document.querySelectorAll('[data-native-appid]').forEach((el) => { el.textContent = id; });
+  document.querySelectorAll('[data-native-appid-ios]').forEach((el) => { el.textContent = iosId; });
 }
-document.getElementById('btn-apply-package')?.addEventListener('click', async () => {
+/** shared apply-flow for both platform package fields (user request
+ * 2026-09-06: iOS names its bundle too — Play burns package names while
+ * ASC records live on, so the two identities may part ways) */
+async function applyStorePackage(platform, inputId, msgId, noun) {
   const env = nativeTargetEnv();
-  const suffix = document.getElementById('native-suffix').value.trim().toLowerCase();
+  const suffix = document.getElementById(inputId).value.trim().toLowerCase();
   if (!/^[a-z][a-z0-9]{1,29}$/.test(suffix)) {
-    msg('msg-native-local', 'the package suffix must be 2-30 letters/digits, starting with a letter (like prod2, phone, beta)', false);
+    msg(msgId, 'the package suffix must be 2-30 letters/digits, starting with a letter (like prod2, phone, beta)', false);
     return;
   }
-  if (!confirm(`Set ${env}'s store package to app.munni.local.${suffix}?\n\nThe environment, its data and sign-in stay untouched — only the package identity changes. A NEW name needs its Play/ASC records created once (this page detects them); previously used names keep their store records.`)) return;
-  await streamLocal('/api/local/new-store-package', { stack: nativeTargetStack(), suffix }, `set ${env}'s store package to app.munni.local.${suffix}`);
+  if (!confirm(`Set ${env}'s ${noun} to app.munni.local.${suffix}?\n\nThe environment, its data and sign-in stay untouched — only this store identity changes. A NEW name needs its store record created once (this page detects it); previously used names keep their records.`)) return;
+  await streamLocal('/api/local/new-store-package', { stack: nativeTargetStack(), suffix, platform }, `set ${env}'s ${noun} to app.munni.local.${suffix}`);
   await refreshStoreStatus().catch(() => {});
-});
+}
+document.getElementById('btn-apply-package')?.addEventListener('click', () =>
+  applyStorePackage('android', 'native-suffix', 'msg-native-local', 'store package'));
+document.getElementById('btn-apply-package-ios')?.addEventListener('click', () =>
+  applyStorePackage('ios', 'native-suffix-ios', 'msg-native-ios', 'iOS bundle id'));
 async function writeLocalNativeEnv() {
   const cfg = await (await hfetch(`/api/local/native-config?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
   if (!cfg.ready) throw new Error('not ready: ' + cfg.missing.join(' · '));
@@ -2423,17 +2442,21 @@ async function refreshStoreStatus() {
     st = await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
   } catch { return; }
   if (st.error) return;
-  updateNativeAppIdLabels(st.appId);
-  // the suffix field mirrors the real package — without stomping typing
+  updateNativeAppIdLabels(st.appId, st.iosAppId);
+  // the suffix fields mirror the real packages — without stomping typing
   const suffixEl = document.getElementById('native-suffix');
   if (suffixEl && document.activeElement !== suffixEl && st.appId) {
     suffixEl.value = st.appId.replace('app.munni.local.', '');
+  }
+  const suffixIosEl = document.getElementById('native-suffix-ios');
+  if (suffixIosEl && document.activeElement !== suffixIosEl && (st.iosAppId ?? st.appId)) {
+    suffixIosEl.value = (st.iosAppId ?? st.appId).replace('app.munni.local.', '');
   }
   const playText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'add the credential in step 3 to auto-detect' };
   // iOS has no manual first upload — the one thing Apple keeps manual is
   // the New App record (found live 2026-09-04: the export dies with
   // "Error Downloading App Information" until it exists)
-  const iosText = { ready: 'app record found ✓', 'missing-app': `create the app record once: App Store Connect → Apps → ＋ → New App (iOS, bundle ${st.appId}) — detected here when it exists`, 'no-creds': 'add the ASC key in step 3 to auto-detect' };
+  const iosText = { ready: 'app record found ✓', 'missing-app': `create the app record once: App Store Connect → Apps → ＋ → New App (iOS, bundle ${st.iosAppId ?? st.appId}) — detected here when it exists`, 'no-creds': 'add the ASC key in step 3 to auto-detect' };
   // a specific diagnosis (invite missing, app invisible…) beats the
   // generic label; a TRANSIENT provider hiccup keeps the last verdict
   if (S.features.android && st.play.state !== 'transient') setPill('play-status-pill', st.play.detail ?? playText[st.play.state] ?? st.play.state, st.play.state === 'ready');
@@ -2579,9 +2602,10 @@ async function dispatchLocalIosFlow() {
     // TestFlight upload credentials must live in THIS repo (fresh copies
     // start secret-less) — best effort, the build still runs without
     await ensureLocalEnvSecrets(['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8', 'APPLE_TEAM_ID'], 'TestFlight upload').catch(() => {});
+    const iosId = cfg.iosAppId ?? cfg.appId;
     const started = Date.now();
     await dispatch('native-ios.yml', { environment: 'local', localEnv: cfg.localEnv });
-    say(`iOS build dispatched for ${cfg.appId} — CI signs and uploads to TestFlight (usually 15-25 min)…`);
+    say(`iOS build dispatched for ${iosId} — CI signs and uploads to TestFlight (usually 15-25 min)…`);
     let run = null;
     for (;;) {
       await new Promise((r) => setTimeout(r, 20000));
@@ -2599,12 +2623,12 @@ async function dispatchLocalIosFlow() {
       let iosState = 'ready';
       try { iosState = (await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(nativeTargetStack())}`)).json()).ios?.state ?? 'ready'; } catch { /* poll again later */ }
       if (iosState === 'missing-app') {
-        say(`build green ✓ — but App Store Connect has no app record for ${cfg.appId} yet, so the TestFlight upload was skipped (Apple keeps this one step manual). Create it once: appstoreconnect.apple.com → Apps → ＋ → New App (iOS, bundle ${cfg.appId}, any name/SKU), then press Build again.`, false);
+        say(`build green ✓ — but App Store Connect has no app record for ${iosId} yet, so the TestFlight upload was skipped (Apple keeps this one step manual). Create it once: appstoreconnect.apple.com → Apps → ＋ → New App (iOS, bundle ${iosId}, any name/SKU — the bundle id works as the SKU), then press Build again.`, false);
       } else {
-        say(`build green ✓ — ${cfg.appId} is on its way to TestFlight (App Store Connect processes it for a few minutes). Install/update via the TestFlight app; the build only works on this wifi.`);
+        say(`build green ✓ — ${iosId} is on its way to TestFlight (App Store Connect processes it for a few minutes). Install/update via the TestFlight app; the build only works on this wifi.`);
       }
     } else {
-      say(`the build ended ${run.conclusion} — open run #${run.run_number} under Actions for the reason (missing ASC app record? signing?).`, false);
+      say(`the build ended ${run.conclusion} — open run #${run.run_number} under Actions: its top annotation names the reason (missing app record, cloud-signing permission on the ASC key, …).`, false);
     }
   } catch (e) {
     say('✗ ' + (e.message || e), false);
@@ -2664,6 +2688,24 @@ document.getElementById('btn-local-vault-export')?.addEventListener('click', asy
 });
 applyPlatform();
 applyDomain();
+/* a stored GitHub token reconnects by itself (user request 2026-09-06)
+ * — the field is prefilled either way, so Connect is one click when the
+ * repo name was cleared */
+(async function restoreGhSession() {
+  if (!HELPER) return;
+  try {
+    const all = await (await hfetch('/api/local/secrets')).json();
+    const pat = Object.assign({}, ...Object.values(all.values)).IAC_GH_PAT;
+    const field = document.getElementById('in-pat');
+    if (!pat || field.value) return;
+    field.value = pat;
+    S.pat = pat;
+    if (S.slug && /^[^/\s]+\/[^/\s]+$/.test(S.slug)) {
+      msg('msg-connect', 'reconnecting with the token saved on this machine…', true);
+      document.getElementById('btn-connect').click();
+    }
+  } catch { /* helper hiccup — the manual flow still works */ }
+})();
 </script>
 </body>
 </html>
