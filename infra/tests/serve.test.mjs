@@ -993,4 +993,20 @@ test('delete-everything epilogue: forget-all wipes registry, env stores, LAN mar
   const nc = fakeRes();
   await app(fakeReq({ url: '/api/local/native-config', token: 'tok' }), nc);
   assert.equal(nc.statusCode, 400);
+  // …and Check still works with ZERO environments (user report
+  // 2026-09-08: the ascstore check answered 500 "unknown stack" mid
+  // delete/recreate) — the endpoint falls back to the SHARED store.
+  // The REAL validator runs here: neither path below touches the network
+  const appReal = createApp({ token: 'tok', probeImpl: async () => false });
+  const val = fakeRes();
+  await appReal(fakeReq({ method: 'POST', url: '/api/validate', token: 'tok', body: { provider: 'ascstore', values: {} } }), val);
+  assert.equal(val.statusCode, 200, val.chunks.join(''));
+  const ascVerdict = JSON.parse(val.chunks.join(''));
+  assert.equal(ascVerdict.ok, false);
+  assert.match(ascVerdict.detail, /missing/, 'a real verdict, not an unknown-stack crash');
+  // a validator that NEEDS an environment says so instead of throwing
+  const m2m = fakeRes();
+  await appReal(fakeReq({ method: 'POST', url: '/api/validate', token: 'tok', body: { provider: 'logto-m2m', values: { IAC_LOGTO_INFRA_M2M_ID: 'x', IAC_LOGTO_INFRA_M2M_SECRET: 'y' } } }), m2m);
+  assert.equal(m2m.statusCode, 200);
+  assert.match(JSON.parse(m2m.chunks.join('')).detail, /no local environment exists yet/);
 });

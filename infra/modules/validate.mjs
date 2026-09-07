@@ -1,7 +1,7 @@
 import { createSign, sign as cryptoSign } from 'node:crypto';
 import { dsmLogin, dsmLogout } from './dsm.mjs';
 import { localAwareFetch } from './insecure-fetch.mjs';
-import { loadStack } from './stack.mjs';
+import { loadStack, localEnvRegistry } from './stack.mjs';
 
 /**
  * Credential validators for the setup wizard (user request: "whenever I
@@ -258,7 +258,11 @@ export const VALIDATORS = {
   async 'logto-m2m'(values, fetchImpl) {
     const gap = need(values, ['IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET']);
     if (gap) return { ok: false, detail: gap };
-    const logto = loadStack('munni-local-prod').urls.logto;
+    // the registry names the environments (no hardcoded "prod" — it may
+    // not exist mid-recreate, or at all under custom names)
+    const envs = localEnvRegistry();
+    if (!envs.length) return { ok: false, detail: 'no local environment exists yet — Set up & start munni first, then re-check' };
+    const logto = loadStack(`munni-local-${envs[0].name}`).urls.logto;
     const res = await fetchImpl(`${logto}/oidc/token`, {
       method: 'POST',
       headers: {

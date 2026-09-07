@@ -1438,8 +1438,13 @@ const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'op
 async function validateEndpoint(req, res, validateImpl) {
   const body = await readBody(req);
   // pasted field values win; the family store fills the gaps so "Check"
-  // also re-verifies values stored earlier
-  const values = { ...familyValues(loadStack(pickEnv(body.stack))) };
+  // also re-verifies values stored earlier. With NO environment in the
+  // registry (mid-delete/recreate — user report 2026-09-08: the check
+  // answered 500 "unknown stack") the SHARED store still holds the
+  // credentials: fall back to the shared stack instead of throwing on
+  // a phantom env.
+  const stackName = LOCAL_ENVS().length ? pickEnv(body.stack) : SHARED_STACK;
+  const values = { ...familyValues(loadStack(stackName)) };
   for (const [name, value] of Object.entries(body.values ?? {})) {
     if (VALIDATABLE_NAMES.has(name) && typeof value === 'string' && value) values[name] = value;
   }

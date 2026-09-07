@@ -1761,7 +1761,16 @@ async function checkCredentials(check, values) {
   if (check.startsWith('browser:')) return BROWSER_VALIDATORS[check.slice(8)](values);
   if (!HELPER) return { ok: false, noHelper: true, detail: 'this provider blocks browser calls — start the local helper (infra\\setup\\start.cmd) and this page can check it for real; the value is verified on first use either way' };
   const res = await hfetch('/api/validate', { method: 'POST', body: JSON.stringify({ provider: check, values }) });
-  if (!res.ok) return { ok: false, unreachable: true, detail: `helper error ${res.status}` };
+  if (!res.ok) {
+    // the helper's error body names the real problem — a bare status
+    // number sent the user hunting (report 2026-09-08)
+    let detail = `helper error ${res.status}`;
+    try {
+      const b = await res.json();
+      if (b?.error) detail += `: ${b.error}`;
+    } catch { /* not json — keep the bare status */ }
+    return { ok: false, unreachable: true, detail };
+  }
   return res.json();
 }
 
