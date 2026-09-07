@@ -540,7 +540,7 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl, netFetchImpl) {
     await installFamilyCa(res, run, netFetchImpl);
     const base = `${host.replaceAll('.', '-')}.sslip.io`;
     const envLine = localEnvRegistry().map((e) => `${e.name} → https://munni-${e.name}.${base}`).join(' · ');
-    res.write(`\nDone. From your phone (same wifi): ${envLine}\nTrust the family's certificate once per device: download http://ca.${base} (root.crt), install it as a CA certificate (iPhone: also enable it under Certificate Trust Settings).\nIf the phone cannot reach it, allow Docker/vpnkit through the Windows firewall for private networks (incl. port 443), and give this machine a DHCP reservation — a changed address needs a rebuilt app.\n`);
+    res.write(`\nDone. From your phone (same wifi): ${envLine}\nTrust the family's certificate once per device: download http://ca.${base} (root.crt). Android: install it as a CA certificate (Settings → Security). iPhone: Settings → Profile Downloaded → Install, THEN Settings → General → About → Certificate Trust Settings → switch the root fully on (both steps, or sign-in fails).\nIf the phone cannot reach it, allow Docker/vpnkit through the Windows firewall for private networks (incl. port 443), and give this machine a DHCP reservation — a changed address needs a rebuilt app.\n`);
   } else {
     res.write('\nDone. Everything answers on localhost again.\n');
   }

@@ -393,7 +393,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
 
     <div class="card" data-needs-feature="ios">
       <h3>iOS on your phone (via TestFlight)</h3>
-      <p class="why">Same per-environment store channel: bundle <code data-native-appid-ios>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. The bundle id has its OWN field below: it may differ from the Android package (Play burns package names when an upload key is lost; App Store Connect records live on — Android can roll to <code>prod2</code> while iOS keeps <code>prod</code>). One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id — with the ASC key in step 3 this page checks for the record by itself (pill below). First time on an iPhone: install the family certificate once — download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> (DASHES in the address, not dots), then ALSO enable it under Settings → General → About → Certificate Trust Settings (iOS offers no in-app trust bundling — Apple's floor). The build carries the LAN address, so it only works on your wifi.</p>
+      <p class="why">Same per-environment store channel: bundle <code data-native-appid-ios>app.munni.local.&lt;env&gt;</code> (the selector above picks the environment), built by CI and uploaded straight to TestFlight — install and update it from the TestFlight app. The bundle id has its OWN field below: it may differ from the Android package (Play burns package names when an upload key is lost; App Store Connect records live on — Android can roll to <code>prod2</code> while iOS keeps <code>prod</code>). One-time first per environment: create the app record in <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> with that bundle id — with the ASC key in step 3 this page checks for the record by itself (pill below). First time on an iPhone: install the family certificate once — download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> (DASHES in the address, not dots). iOS saves it as a pending profile: Settings → <b>Profile Downloaded</b> (top of Settings; or General → VPN &amp; Device Management) → Install, THEN Settings → General → About → <b>Certificate Trust Settings</b> → switch the root fully on — BOTH steps, or sign-in fails (iOS offers no in-app trust bundling — Apple's floor). The build carries the LAN address, so it only works on your wifi.</p>
       <div class="runrow">
         <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
         <span class="pill" id="asc-status-pill"></span>
@@ -2413,7 +2413,10 @@ document.getElementById('btn-apply-package-ios')?.addEventListener('click', () =
   applyStorePackage('ios', 'native-suffix-ios', 'msg-native-ios', 'iOS bundle id'));
 async function writeLocalNativeEnv() {
   const cfg = await (await hfetch(`/api/local/native-config?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
-  if (!cfg.ready) throw new Error('not ready: ' + cfg.missing.join(' · '));
+  // a refused answer ({error}) has no missing[] — surface it as-is
+  // (user ss 2026-09-08: "Cannot read properties of undefined")
+  if (cfg.error) throw new Error(cfg.error);
+  if (!cfg.ready) throw new Error('not ready: ' + (cfg.missing ?? []).join(' · '));
   await ensureEnv('local');
   for (const [name, value] of Object.entries(cfg.variables)) await ghUpsertEnvVar('local', name, value);
   return cfg;

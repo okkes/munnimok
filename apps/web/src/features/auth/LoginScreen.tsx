@@ -80,13 +80,28 @@ function useOnLine(): boolean {
 function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   const { t } = useLang();
   const { signIn } = useLogto();
+  const [failed, setFailed] = useState<string | null>(null);
+  const caUrl = localCaUrl();
   return (
     <>
       <Button
         variant="primary"
         data-testid="login-signin-btn"
         disabled={!onLine}
-        onClick={() => void signIn(callbackUri())}
+        onClick={() => {
+          setFailed(null);
+          // a rejected signIn used to vanish (iOS report 2026-09-08:
+          // "nothing happens" — the in-webview OIDC discovery fetch died
+          // on the not-yet-trusted family certificate). Name it on
+          // screen AND report it — a native user has no devtools.
+          signIn(callbackUri()).catch((err: unknown) => {
+            const e = err instanceof Error ? err : new Error(String(err));
+            void import('@/lib/report')
+              .then(({ reportError }) => reportError('auth', e))
+              .catch(() => {});
+            setFailed(e.message || e.name);
+          });
+        }}
       >
         {t('login.signIn')}
       </Button>
@@ -94,6 +109,12 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
         <p className="flex items-center justify-center gap-1.5 text-center text-[12px] text-ink-3" data-testid="login-offline-note">
           <Icon name="wifi-off" size={13} color="var(--m-warning)" />
           {t('login.offlineNote')}
+        </p>
+      )}
+      {failed !== null && (
+        <p className="text-center text-[12px] leading-relaxed text-ink-3" data-testid="login-signin-error">
+          <Icon name="alert-circle-outline" size={13} color="var(--m-warning)" /> {t('login.signInFailed')} {failed}
+          {caUrl ? ` — ${t('login.signInFailedCaHint')}` : ''}
         </p>
       )}
     </>

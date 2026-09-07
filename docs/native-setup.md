@@ -299,10 +299,16 @@ channel:
   the Account Holder or store operations fail account-wide.
 
 Phones must trust the family's CA once per device (download
-`http://ca.<ip-dashed>.sslip.io` → install root.crt; iPhone also
-enables it under Certificate Trust Settings). The local Android flavor
-ships a `network_security_config` that trusts user-installed CAs for
-exactly this; hosted flavors stay system-CAs-only.
+`http://ca.<ip-dashed>.sslip.io` → root.crt). Android: install it as a
+CA certificate (Settings → Security). iPhone: the download lands as a
+PENDING profile — Settings → **Profile Downloaded** (or General → VPN &
+Device Management) → Install, then Settings → General → About →
+**Certificate Trust Settings** → full trust; both steps, or the in-app
+OIDC discovery fetch dies on TLS and the sign-in button appears dead
+(2026-09-08 report — the login screen now surfaces that failure with
+the exact hint). The local Android flavor ships a
+`network_security_config` that trusts user-installed CAs for exactly
+this; hosted flavors stay system-CAs-only.
 
 Caveats, stated in the wizard too: the build bakes the LAN hostnames (a
 DHCP change changes them — reserve the address), and it only works on
