@@ -414,6 +414,18 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
         </ol>
       </details>
     </div>
+
+    <div class="card" data-needs-feature="fcm">
+      <h3>Push notifications (Firebase) — wired by the Build buttons</h3>
+      <p class="why">Push lives HERE because it rides the app builds: pressing <b>Build</b> above Firebase-enables the Play service account's own Cloud project, registers this environment's Android/iOS apps, bakes their config into the builds and reuses that same service account as the sender — the step-3 Firebase card fills itself, and the push pill on the Android card names whatever still blocks. Until everything is granted, builds stay green with push inactive.</p>
+      <details class="how"><summary>The one-time floors (Google's + Apple's, once ever)</summary>
+        <ol>
+          <li>Enable the <b>Firebase Management API</b> in the service account's Cloud project — the Build output prints the exact activation link when it is off.</li>
+          <li>Grant the Play service account the <b>Firebase Admin</b> role: <a href="https://console.cloud.google.com/iam-admin/iam" target="_blank" rel="noreferrer">console.cloud.google.com → IAM</a> → edit the munni service account → add role → wait a minute → Build again (same class as the Play invite — the first grant is Google's floor).</li>
+          <li>iOS push only: upload the APNs key once — Firebase console → Project settings → Cloud Messaging → Apple app configuration (Apple's floor).</li>
+        </ol>
+      </details>
+    </div>
   </div>
 </section>
 
@@ -1072,11 +1084,10 @@ const GROUPS = [
   },
   {
     id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'fcm', check: 'fcm',
-    why: 'Push notifications for the NATIVE apps route through FCM (web push uses self-minted VAPID keys — no Google involved there). On the LOCAL track this card fills ITSELF: pressing Build Firebase-enables the Play service account’s own Cloud project, registers each environment’s apps, bakes their config into the builds and reuses that same service account as the sender — one credential drives Play AND push.',
+    why: 'The SERVER’s push sender credential (web push uses self-minted VAPID keys — no Google involved there). On the LOCAL track there is nothing to paste: it fills itself when you press Build in the native step below — the full push story (and its two one-time grants) lives THERE, next to the apps it depends on.',
     how: [
-      'One-time (Google’s floor, same class as the Play invite): grant the Play service account the <b>Firebase Admin</b> role — <a href="https://console.cloud.google.com/iam-admin/iam" target="_blank" rel="noreferrer">console.cloud.google.com → IAM</a> → edit the munni service account → add role → wait a minute. The push pill on the Android card then flips on the next Build.',
-      'iOS push additionally needs the APNs key uploaded once: Firebase console → Project settings → Cloud Messaging → Apple app configuration (Apple’s floor).',
-      'Manual fallback (e.g. the NAS track, or a separate sender): console.firebase.google.com → project → Service accounts → Generate new private key → paste the JSON here. The NAS_ in the name is historical — the environment-first secrets arc renames it.',
+      'Manual paste is only for the NAS track or a deliberately separate sender: console.firebase.google.com → project → Service accounts → Generate new private key → paste the JSON here.',
+      'The NAS_ in the name is historical — the environment-first secrets arc renames it.',
     ],
     fields: [{ name: 'NAS_FCM_SERVICE_ACCOUNT_JSON', scope: 'repo', area: true }],
   },
