@@ -46,8 +46,15 @@ export const LOCAL_STACKS = () => [SHARED_STACK, ...LOCAL_ENVS()];
 const renderedDir = (name) =>
   process.env.MUNNI_RENDER_DIR ? join(process.env.MUNNI_RENDER_DIR, name) : join(ROOT, 'infra', 'rendered', name);
 const composeArgs = (name) => ['compose', '--env-file', `.env.${name}`, '-f', `docker-compose.${name}.yml`];
-const pickStack = (candidate, fallback = 'munni-local-prod') => (LOCAL_STACKS().includes(candidate) ? candidate : fallback);
-const pickEnv = (candidate) => (LOCAL_ENVS().includes(candidate) ? candidate : 'munni-local-prod');
+/** stack routing with honest fallbacks: the named stack when it exists,
+ * else the FIRST registry environment, else the shared stack. The old
+ * hardcoded munni-local-prod fallback crashed every consumer while the
+ * registry was empty (mid delete/recreate — user reports 2026-09-08:
+ * first Check, then Save died on bootstrap's unknown-stack throw) and
+ * would equally crash a registry without a literal "prod". */
+const pickStack = (candidate) => (LOCAL_STACKS().includes(candidate) ? candidate : (LOCAL_ENVS()[0] ?? SHARED_STACK));
+/** env-only variant: callers guard LOCAL_ENVS().length before calling */
+const pickEnv = (candidate) => (LOCAL_ENVS().includes(candidate) ? candidate : LOCAL_ENVS()[0]);
 
 /** operator names the browser may hand to bootstrap via env */
 export const OPERATOR_NAMES = new Set(
@@ -1438,13 +1445,10 @@ const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'op
 async function validateEndpoint(req, res, validateImpl) {
   const body = await readBody(req);
   // pasted field values win; the family store fills the gaps so "Check"
-  // also re-verifies values stored earlier. With NO environment in the
-  // registry (mid-delete/recreate — user report 2026-09-08: the check
-  // answered 500 "unknown stack") the SHARED store still holds the
-  // credentials: fall back to the shared stack instead of throwing on
-  // a phantom env.
-  const stackName = LOCAL_ENVS().length ? pickEnv(body.stack) : SHARED_STACK;
-  const values = { ...familyValues(loadStack(stackName)) };
+  // also re-verifies values stored earlier — via pickStack, so a
+  // registry with no environments (mid delete/recreate) still reads
+  // the surviving SHARED store instead of throwing on a phantom env
+  const values = { ...familyValues(loadStack(pickStack(body.stack))) };
   for (const [name, value] of Object.entries(body.values ?? {})) {
     if (VALIDATABLE_NAMES.has(name) && typeof value === 'string' && value) values[name] = value;
   }

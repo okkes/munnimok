@@ -335,7 +335,15 @@ function envFile(stack, values) {
 
 function sharedLocalCompose(s) {
   const p = s.ports;
-  const control = loadStack(s.controlApi);
+  // the control cockpit rides ONE environment's api/logto — mid
+  // delete/recreate that env may not exist yet (user report 2026-09-08:
+  // a step-3 Save re-rendered shared against an empty registry and
+  // died here). Render placeholders; Set up & start creates the env
+  // FIRST and re-renders the real values.
+  let control = null;
+  try {
+    control = loadStack(s.controlApi);
+  } catch { /* not created yet */ }
   return `# ${s.stack} — RENDERED by infra/bootstrap.mjs, do not edit by hand.
 # The local machine's cross-environment services. Environment stacks join
 # the "${LOCAL_SHARED_NET}" network to reach glitchtip/ocr by service
@@ -440,10 +448,10 @@ services:
     image: \${REGISTRY}/munni-control:\${TAG}
     restart: unless-stopped
     environment:
-      MUNNI_API_URL: ${control.urls.api}
-      MUNNI_LOGTO_ENDPOINT: ${control.urls.logto}
+      MUNNI_API_URL: ${control?.urls.api ?? ''}
+      MUNNI_LOGTO_ENDPOINT: ${control?.urls.logto ?? ''}
       MUNNI_LOGTO_APP_ID: \${CONTROL_LOGTO_APP_ID}
-      MUNNI_LOGTO_RESOURCE: ${control.urls.api}
+      MUNNI_LOGTO_RESOURCE: ${control?.urls.api ?? ''}
     ports:
       - "${p.control}:80"
 

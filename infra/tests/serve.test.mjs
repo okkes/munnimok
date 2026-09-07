@@ -1009,4 +1009,9 @@ test('delete-everything epilogue: forget-all wipes registry, env stores, LAN mar
   await appReal(fakeReq({ method: 'POST', url: '/api/validate', token: 'tok', body: { provider: 'logto-m2m', values: { IAC_LOGTO_INFRA_M2M_ID: 'x', IAC_LOGTO_INFRA_M2M_SECRET: 'y' } } }), m2m);
   assert.equal(m2m.statusCode, 200);
   assert.match(JSON.parse(m2m.chunks.join('')).detail, /no local environment exists yet/);
+  // SAVE routes to the shared stack too (second 2026-09-08 report: the
+  // step-3 Save spawned bootstrap on the phantom prod env and died)
+  runs.length = 0;
+  await app(fakeReq({ method: 'POST', url: '/api/local/run', token: 'tok', body: { values: { NAS_GHCR_PAT: 'x' } } }), fakeRes());
+  assert.ok(runs[0].args.join(' ').includes('--stack munni-local-shared'), 'zero environments → the shared stack takes the save');
 });

@@ -216,3 +216,18 @@ test('iac render keeps the CI placeholder contract and the runtime-config overla
     assert.ok(placeholders.includes(name), `${name} missing from the iac env template`);
   }
 });
+
+test('shared render survives an EMPTY registry (mid delete/recreate) — control values become placeholders', () => {
+  // user report 2026-09-08: a step-3 Save re-rendered shared with zero
+  // environments and died on the control env's loadStack
+  const prev = readFileSync(join(SCRATCH, 'local-envs.json'), 'utf8');
+  try {
+    writeFileSync(join(SCRATCH, 'local-envs.json'), JSON.stringify({ envs: [] }));
+    const shared = loadStack('munni-local-shared');
+    const dir = renderStack(shared, familyValues(shared));
+    const compose = readFileSync(join(dir, 'docker-compose.munni-local-shared.yml'), 'utf8');
+    assert.match(compose, /MUNNI_API_URL:\s*\n/, 'control rides an env that does not exist yet — empty until Set up re-renders');
+  } finally {
+    writeFileSync(join(SCRATCH, 'local-envs.json'), prev);
+  }
+});
