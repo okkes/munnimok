@@ -248,11 +248,22 @@ apps).
 Every LOCAL ENVIRONMENT is its own store identity beside prod and dev:
 **`app.munni.local.<env>`** ("munni <env>", `munni-local[-<env>]://`,
 the staging icon) — Android product flavor `local` (own
-`src/local/google-services.json` stub; replace it with a real Firebase
-download to activate push), rebranded per environment by CI (`sed` over
-the stub + shortcuts before the build; iOS generalizes the bundle-id
-rebrand the same way, associated domains stripped — the LAN app claims
-no universal links; auth returns ride the scheme).
+`src/local/google-services.json` stub), rebranded per environment by CI
+(`sed` over the stub + shortcuts before the build; iOS generalizes the
+bundle-id rebrand the same way, associated domains stripped — the LAN
+app claims no universal links; auth returns ride the scheme). **Push is
+wired as code** (2026-09-08): pressing Build runs the wizard's
+`firebase-setup` — the Play service account's own Cloud project is
+Firebase-enabled via the Management API, the env's Android/iOS apps are
+registered there, and `native-config` hands CI the real
+google-services.json / GoogleService-Info.plist
+(`NATIVE_GOOGLE_SERVICES_B64` / `NATIVE_IOS_FIREBASE_PLIST_B64`) to
+bake over the stubs; the same service account doubles as the FCM
+sender (auto-copied into `NAS_FCM_SERVICE_ACCOUNT_JSON`). One-time
+floors: grant that service account the **Firebase Admin** role in IAM,
+and for iOS push upload the APNs key once (Firebase console → Cloud
+Messaging). Until then the stub keeps builds green with push inactive
+and the Android card's push pill names the exact blocker.
 
 Both native workflows accept `environment: local` + `localEnv: <env>`
 (+ Android: `publish: auto|skip`) on dispatch and then build against

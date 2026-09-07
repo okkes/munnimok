@@ -667,6 +667,9 @@ test('store-status: no creds reports so; with creds it mirrors the real Play/ASC
       if (url.includes('oauth2.googleapis.com')) return { ok: true, status: 200, json: async () => ({ access_token: 'gtok' }) };
       if (url.includes('androidpublisher')) return { ok: false, status: 404, json: async () => ({}) };
       if (url.includes('appstoreconnect')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'app1' }] }) };
+      if (url.includes('/androidApps?')) return { ok: true, status: 200, json: async () => ({ apps: [{ appId: 'A1', packageName: 'app.munni.local.prod' }] }) };
+      if (url.includes('/iosApps?')) return { ok: true, status: 200, json: async () => ({ apps: [{ appId: 'I1', bundleId: 'app.munni.local.prod' }] }) };
+      if (url.endsWith('/projects/p')) return { ok: true, status: 200, json: async () => ({ projectId: 'p' }) };
       return { ok: false, status: 500, json: async () => ({}) };
     };
     const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl });
@@ -675,6 +678,7 @@ test('store-status: no creds reports so; with creds it mirrors the real Play/ASC
     const body = JSON.parse(res.chunks.join(''));
     assert.equal(body.play.state, 'missing-app', 'Play 404 on the edit = app not created yet');
     assert.equal(body.ios.state, 'ready', 'ASC lists the bundle id');
+    assert.equal(body.firebase.state, 'ready', 'project firebase-enabled + both apps registered = push wired');
     assert.ok(calls.some((c) => c.url.includes('/applications/app.munni.local.prod/edits')));
     assert.ok(calls.some((c) => c.url.includes('filter%5BbundleId%5D=app.munni.local.prod')));
 
@@ -932,6 +936,70 @@ test('store-retire: withdraws Play internal testing and expires TestFlight build
     assert.match(out2, /App ID registration app\.munni\.local\.prod was deleted/);
     assert.match(out2, /\[exit 0\]/);
     assert.ok(calls2.some((c) => c.url.includes('/bundleIds/BID1') && c.init.method === 'DELETE'));
+  } finally {
+    saveLocalValues(shared, prev);
+  }
+});
+
+test('firebase as code: setup enables the project, registers both apps, copies the sender credential; refusals name the role', async () => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const rsaPem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const shared = loadStack('munni-local-shared');
+  const prev = loadLocalValues(shared);
+  saveLocalValues(shared, {
+    ...prev,
+    PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: 'ci@sa.test', token_uri: 'https://oauth2.googleapis.com/token', private_key: rsaPem, project_id: 'p' }),
+  });
+  try {
+    const calls = [];
+    let androidLists = 0;
+    const netFetchImpl = async (url, init = {}) => {
+      calls.push({ url, init });
+      if (url.includes('oauth2.googleapis.com')) return { ok: true, status: 200, json: async () => ({ access_token: 'gtok' }) };
+      if (url.includes('/projects/p:addFirebase')) return { ok: true, status: 200, json: async () => ({ name: 'operations/o1', done: true }) };
+      if (url.endsWith('/projects/p')) return { ok: true, status: 200, json: async () => ({ projectId: 'p' }) };
+      if (url.includes('/androidApps?')) {
+        androidLists += 1;
+        return { ok: true, status: 200, json: async () => ({ apps: androidLists > 1 ? [{ appId: 'A1', packageName: 'app.munni.local.prod' }] : [] }) };
+      }
+      if (url.endsWith('/androidApps') && init.method === 'POST') return { ok: true, status: 200, json: async () => ({ name: 'operations/o2', done: true }) };
+      if (url.includes('/androidApps/A1/config')) return { ok: true, status: 200, json: async () => ({ configFileContents: 'R1M=' }) };
+      if (url.includes('/iosApps?')) return { ok: true, status: 200, json: async () => ({ apps: [{ appId: 'I1', bundleId: 'app.munni.local.prod' }] }) };
+      if (url.includes('/iosApps/I1/config')) return { ok: true, status: 200, json: async () => ({ configFileContents: 'UEw=' }) };
+      return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
+    };
+    const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl });
+    const res = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/firebase-setup', token: 'tok', body: { stack: 'munni-local-prod' } }), res);
+    await settle(res);
+    const out = res.chunks.join('');
+    assert.match(out, /Firebase project p ✓/);
+    assert.match(out, /registered as a Firebase android app ✓/);
+    assert.match(out, /app\.munni\.local\.prod already registered ✓/, 'the iOS app was already there');
+    assert.match(out, /sender credential: the api sends push with the SAME service account — stored ✓/);
+    assert.match(out, /APNs key/);
+    assert.match(out, /\[exit 0\]/);
+    assert.equal(loadLocalValues(shared).NAS_FCM_SERVICE_ACCOUNT_JSON, loadLocalValues(shared).PLAY_SERVICE_ACCOUNT_JSON);
+
+    // …and native-config now carries both configs for CI to bake
+    const nc = fakeRes();
+    await app2(fakeReq({ url: '/api/local/native-config?stack=munni-local-prod', token: 'tok' }), nc);
+    const body = JSON.parse(nc.chunks.join(''));
+    assert.equal(body.variables.NATIVE_GOOGLE_SERVICES_B64, 'R1M=');
+    assert.equal(body.variables.NATIVE_IOS_FIREBASE_PLIST_B64, 'UEw=');
+
+    // the classic refusal: no Firebase Admin role → the fix is NAMED
+    const denyFetch = async (url) => {
+      if (url.includes('oauth2.googleapis.com')) return { ok: true, status: 200, json: async () => ({ access_token: 'gtok' }) };
+      return { ok: false, status: 403, json: async () => ({ error: { message: 'The caller does not have permission' } }), text: async () => '' };
+    };
+    const deny = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: denyFetch })(
+      fakeReq({ method: 'POST', url: '/api/local/firebase-setup', token: 'tok', body: { stack: 'munni-local-prod' } }), deny);
+    await settle(deny);
+    const denyOut = deny.chunks.join('');
+    assert.match(denyOut, /Firebase Admin role/);
+    assert.match(denyOut, /\[exit 1\]/);
   } finally {
     saveLocalValues(shared, prev);
   }

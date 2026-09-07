@@ -171,6 +171,17 @@ jobs:
           sed -i "s/app\.munni\.local\.prod/${LOCAL_APP_ID}/g; s/munni-local:/${LOCAL_SCHEME}:/g" res/xml/shortcuts.xml
           grep -c "$LOCAL_APP_ID" google-services.json res/xml/shortcuts.xml
 
+      # the wizard's Firebase automation hands the REAL config as a
+      # variable — push works out of the box. MUST run AFTER the rebrand
+      # sed above: its app.munni.local.prod pattern would mangle a real
+      # config's prod2-style package. Without the variable the stub
+      # keeps the build green with push inactive.
+      - name: Bake the Firebase config into the local flavor
+        if: steps.env.outputs.flavor == 'local' && vars.NATIVE_GOOGLE_SERVICES_B64 != ''
+        run: echo "$GS_B64" | base64 -d > apps/native/android/app/src/local/google-services.json
+        env:
+          GS_B64: ${{ vars.NATIVE_GOOGLE_SERVICES_B64 }}
+
       - name: Assemble debug APK
         working-directory: apps/native/android
         # chmod: the repo lives on Windows dev machines — never trust the exec bit

@@ -375,6 +375,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
         <select id="native-env-select" style="max-width:170px"></select>
         <button id="btn-native-local-android">Build the Android app (CI)</button>
         <span class="pill" id="play-status-pill"></span>
+        <span class="pill" id="fcm-status-pill" hidden></span>
       </div>
       <div class="runrow" style="align-items:center">
         <label class="f" for="native-suffix" style="margin:0">store package&nbsp;&nbsp;<code>app.munni.local.</code></label>
@@ -1071,11 +1072,11 @@ const GROUPS = [
   },
   {
     id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'fcm', check: 'fcm',
-    why: 'Push notifications for the NATIVE apps route through FCM (web push uses self-minted VAPID keys — no Google involved there).',
+    why: 'Push notifications for the NATIVE apps route through FCM (web push uses self-minted VAPID keys — no Google involved there). On the LOCAL track this card fills ITSELF: pressing Build Firebase-enables the Play service account’s own Cloud project, registers each environment’s apps, bakes their config into the builds and reuses that same service account as the sender — one credential drives Play AND push.',
     how: [
-      'console.firebase.google.com → create/open a project (any name; no Android/iOS app registration is needed for THIS step).',
-      'Project settings (gear) → <b>Service accounts</b> → Generate new private key → a JSON file downloads — paste its WHOLE contents here.',
-      'This JSON is only the SERVER’s sender credential; the native apps’ own google-services/plist files are a separate step of the native build docs.',
+      'One-time (Google’s floor, same class as the Play invite): grant the Play service account the <b>Firebase Admin</b> role — <a href="https://console.cloud.google.com/iam-admin/iam" target="_blank" rel="noreferrer">console.cloud.google.com → IAM</a> → edit the munni service account → add role → wait a minute. The push pill on the Android card then flips on the next Build.',
+      'iOS push additionally needs the APNs key uploaded once: Firebase console → Project settings → Cloud Messaging → Apple app configuration (Apple’s floor).',
+      'Manual fallback (e.g. the NAS track, or a separate sender): console.firebase.google.com → project → Service accounts → Generate new private key → paste the JSON here. The NAS_ in the name is historical — the environment-first secrets arc renames it.',
     ],
     fields: [{ name: 'NAS_FCM_SERVICE_ACCOUNT_JSON', scope: 'repo', area: true }],
   },
@@ -2473,6 +2474,14 @@ async function refreshStoreStatus() {
   // generic label; a TRANSIENT provider hiccup keeps the last verdict
   if (S.features.android && st.play.state !== 'transient') setPill('play-status-pill', st.play.detail ?? playText[st.play.state] ?? st.play.state, st.play.state === 'ready');
   if (S.features.ios && st.ios.state !== 'transient') setPill('asc-status-pill', st.ios.detail ?? iosText[st.ios.state] ?? st.ios.state, st.ios.state === 'ready');
+  // push readiness (Firebase as code, 2026-09-08): named states beat a
+  // silent stub — the classic blocker is the one-time role grant
+  const fcmPill = document.getElementById('fcm-status-pill');
+  if (fcmPill && st.firebase && st.firebase.state !== 'transient') {
+    const fcmText = { ready: 'push wired (Firebase) ✓', 'missing-app': 'push stubbed — Build registers the Firebase apps', 'no-creds': 'push stubbed — needs the Play service account (step 3)' };
+    fcmPill.hidden = false;
+    setPill('fcm-status-pill', st.firebase.detail ?? fcmText[st.firebase.state] ?? st.firebase.state, st.firebase.state === 'ready');
+  }
   if (!S.pat || !S.user) return;
   try {
     const flag = await localPublishEnabled(st.localEnv);
@@ -2539,6 +2548,10 @@ async function buildLocalAndroidFlow() {
   S.buildInFlight = true; // pause the store polls — their Play edits expire the upload's
   try {
     if (!(await ensureLanMode())) return;
+    // push as code (user ruling 2026-09-08): Firebase project + app
+    // registration + configs, best-effort — a refusal (role not granted
+    // yet) streams its exact fix and the build continues with the stub
+    await streamLocal('/api/local/firebase-setup', { stack: nativeTargetStack() }, 'wire Firebase push (project + app registrations + configs, zero input)');
     say('writing the LAN config into the GitHub environment "local"…');
     const cfg = await writeLocalNativeEnv();
     // the MACHINE keystore signs every repo's builds (Play pins the
@@ -2603,6 +2616,8 @@ async function dispatchLocalIosFlow() {
   btn.disabled = true;
   try {
     if (!(await ensureLanMode())) { say('LAN mode could not come up — see the output box.', false); return; }
+    // Firebase push wiring first (best-effort, same as the Android flow)
+    await streamLocal('/api/local/firebase-setup', { stack: nativeTargetStack() }, 'wire Firebase push (project + app registrations + configs, zero input)');
     const cfg = await writeLocalNativeEnv();
     // the iOS job is gated on IOS_BUILD_ENABLED — a fresh copy does not
     // inherit it and the run silently SKIPS (found live 2026-08-30);

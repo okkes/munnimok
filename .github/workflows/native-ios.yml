@@ -138,11 +138,21 @@ jobs:
             /usr/libexec/PlistBuddy -c "Print :com.apple.developer.associated-domains" App/App.entitlements
           else
             # the LAN app has NO https host: it must claim no universal
-            # links at all (auth returns ride the munni-local:// scheme),
-            # and it keeps the prod Firebase plist (push stays inactive
-            # until app.munni.local is registered in Firebase)
+            # links at all (auth returns ride the munni-local:// scheme);
+            # its Firebase plist is baked in the next step when the
+            # wizard's automation supplied one (else the prod plist
+            # stays and push is inactive)
             /usr/libexec/PlistBuddy -c "Delete :com.apple.developer.associated-domains" App/App.entitlements || true
           fi
+
+      # the wizard's Firebase automation hands the REAL per-environment
+      # plist as a variable — push works once the APNs key is uploaded
+      - name: Bake the Firebase config for the LAN app
+        if: inputs.environment == 'local' && vars.NATIVE_IOS_FIREBASE_PLIST_B64 != ''
+        working-directory: apps/native/ios/App
+        run: echo "$PLIST_B64" | base64 -d > App/GoogleService-Info.plist
+        env:
+          PLIST_B64: ${{ vars.NATIVE_IOS_FIREBASE_PLIST_B64 }}
 
       # Apple requires the iOS 26 SDK for App Store Connect uploads; the
       # runner's default Xcode is older, so pick the newest installed one

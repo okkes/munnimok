@@ -588,9 +588,11 @@ async function trustCaEndpoint(res, spawnImpl, netFetchImpl) {
    button — the wizard POLLS whether the operator did the one-time store
    upload and flips auto-publish itself). The credentials live in the
    local store; checks mirror what CI's publish steps really do. ── */
-/** androidpublisher access token from the stored service account —
- * throws with the exact operator-facing diagnosis on failure */
-async function playAccessToken(values, fetchImpl) {
+/** Google access token from the stored Play service account, for any
+ * scope — the SAME credential drives the Play checks AND (once granted
+ * the Firebase Admin role) the Firebase Management API. Throws with the
+ * exact operator-facing diagnosis on failure. */
+async function googleAccessToken(values, scope, fetchImpl) {
   let sa;
   try {
     sa = JSON.parse(values.PLAY_SERVICE_ACCOUNT_JSON);
@@ -600,7 +602,7 @@ async function playAccessToken(values, fetchImpl) {
   const now = Math.floor(Date.now() / 1000);
   const assertion = jwtRS256({
     header: { alg: 'RS256', typ: 'JWT' },
-    payload: { iss: sa.client_email, scope: 'https://www.googleapis.com/auth/androidpublisher', aud: sa.token_uri, iat: now, exp: now + 300 },
+    payload: { iss: sa.client_email, scope, aud: sa.token_uri, iat: now, exp: now + 300 },
     pem: sa.private_key,
   });
   const tok = await fetchImpl(sa.token_uri, {
@@ -610,7 +612,11 @@ async function playAccessToken(values, fetchImpl) {
     signal: AbortSignal.timeout(10000),
   });
   if (!tok.ok) throw new Error(`Google rejected the service account (${tok.status})`);
-  return (await tok.json()).access_token;
+  return { access: (await tok.json()).access_token, projectId: sa.project_id, clientEmail: sa.client_email };
+}
+
+async function playAccessToken(values, fetchImpl) {
+  return (await googleAccessToken(values, 'https://www.googleapis.com/auth/androidpublisher', fetchImpl)).access;
 }
 
 async function playAppExists(values, appId, fetchImpl) {
@@ -707,15 +713,44 @@ async function ascAppExists(values, bundleId, fetchImpl) {
   return { state: (body.data ?? []).length ? 'ready' : 'missing-app' };
 }
 
+/** is push WIRED for this env? project firebase-enabled + both apps
+ * registered → the builds bake real configs and the sender works */
+async function firebaseState(values, stack, fetchImpl) {
+  if (!values.PLAY_SERVICE_ACCOUNT_JSON) return { state: 'no-creds' };
+  let access;
+  let projectId;
+  let clientEmail;
+  try {
+    ({ access, projectId, clientEmail } = await googleAccessToken(values, 'https://www.googleapis.com/auth/cloud-platform', fetchImpl));
+  } catch (e) {
+    return { state: 'error', detail: e.message };
+  }
+  const fb = fbFetcher(access, fetchImpl);
+  const proj = await fb(`/projects/${projectId}`);
+  if (proj.status >= 500) return { state: 'transient', detail: `Firebase answered ${proj.status} — retried on the next poll` };
+  if (!proj.ok) return { state: 'missing-app', detail: await fbExplain(proj, projectId, clientEmail) };
+  const [aList, iList] = await Promise.all([
+    fb(`/projects/${projectId}/androidApps?pageSize=100`).then((r) => r.json()).then((b) => b.apps ?? []),
+    fb(`/projects/${projectId}/iosApps?pageSize=100`).then((r) => r.json()).then((b) => b.apps ?? []),
+  ]);
+  const missing = [];
+  if (!aList.some((a) => a.packageName === stack.native.appId)) missing.push(stack.native.appId);
+  if (!iList.some((a) => a.bundleId === stack.native.iosAppId)) missing.push(`${stack.native.iosAppId} (iOS)`);
+  return missing.length
+    ? { state: 'missing-app', detail: `not registered at Firebase yet: ${missing.join(', ')} — pressing Build registers them` }
+    : { state: 'ready' };
+}
+
 async function storeStatusEndpoint(res, url, fetchImpl) {
   if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
   const stack = loadStack(pickEnv(url?.searchParams.get('stack')));
   const values = familyValues(stack);
-  const [play, ios] = await Promise.all([
+  const [play, ios, firebase] = await Promise.all([
     playAppExists(values, stack.native.appId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
     ascAppExists(values, stack.native.iosAppId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
+    firebaseState(values, stack, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
   ]);
-  return json(res, 200, { localEnv: stack.envName, appId: stack.native.appId, iosAppId: stack.native.iosAppId, play, ios });
+  return json(res, 200, { localEnv: stack.envName, appId: stack.native.appId, iosAppId: stack.native.iosAppId, play, ios, firebase });
 }
 
 /* ── OPT-IN store retirement on delete (user request 2026-09-04):
@@ -815,6 +850,117 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
     }
   }
   return res.end(`\n[exit ${ok ? 0 : 1}]\n`);
+}
+
+/* ── Firebase push as code (user ruling 2026-09-08: automate — no
+   separate project, no separate credential). The Play service account's
+   OWN Cloud project becomes the Firebase project via the Management
+   API; each environment's Android/iOS apps are registered there and
+   their config files ride to CI as variables. The one-time Google
+   floor: grant that service account the Firebase Admin role. ── */
+const FB_BASE = 'https://firebase.googleapis.com/v1beta1';
+const fbFetcher = (access, fetchImpl) => (path, init = {}) => fetchImpl(`${FB_BASE}${path}`, {
+  ...init,
+  headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json', ...init.headers },
+  signal: AbortSignal.timeout(20000),
+});
+
+/** name the two classic refusals precisely (mirrors the Play pattern) */
+async function fbExplain(r, projectId, clientEmail) {
+  const body = await r.json().catch(() => ({}));
+  const disabled = body?.error?.details?.find((d) => d.reason === 'SERVICE_DISABLED');
+  if (disabled || /has not been used in project|it is disabled/.test(body?.error?.message ?? '')) {
+    const url = disabled?.metadata?.activationUrl ?? `https://console.cloud.google.com/apis/library/firebase.googleapis.com?project=${projectId}`;
+    return `the Firebase Management API is disabled in ${projectId} — enable it once (${url}), wait a few minutes, retry`;
+  }
+  if (r.status === 403) {
+    return `${clientEmail} lacks Firebase rights on ${projectId} — grant it the Firebase Admin role once (https://console.cloud.google.com/iam-admin/iam?project=${projectId}), wait a minute, retry`;
+  }
+  return body?.error?.message ?? `status ${r.status}`;
+}
+
+/** poll a long-running Firebase operation to completion */
+async function fbOpWait(fb, opRes) {
+  let op = await opRes.json();
+  const deadline = Date.now() + 90000;
+  while (!op.done) {
+    if (Date.now() > deadline) throw new Error('the Firebase operation never finished — retry in a minute');
+    await new Promise((r) => setTimeout(r, 2000));
+    op = await (await fb(`/${op.name}`)).json();
+  }
+  if (op.error) throw new Error(op.error.message ?? 'operation failed');
+  return op;
+}
+
+/** get-or-create one Firebase app (android|ios) and return its config */
+async function fbEnsureApp(fb, res, projectId, kind, id, label) {
+  const coll = kind === 'android' ? 'androidApps' : 'iosApps';
+  const field = kind === 'android' ? 'packageName' : 'bundleId';
+  const list = async () => (((await (await fb(`/projects/${projectId}/${coll}?pageSize=100`)).json()).apps) ?? []);
+  let app = (await list()).find((a) => a[field] === id);
+  if (!app) {
+    const created = await fb(`/projects/${projectId}/${coll}`, { method: 'POST', body: JSON.stringify({ [field]: id, displayName: label }) });
+    if (!created.ok) throw new Error(`registering ${id} failed: ${(await created.text()).slice(0, 300)}`);
+    await fbOpWait(fb, created);
+    app = (await list()).find((a) => a[field] === id);
+    if (!app) throw new Error(`${id} did not appear after registration — retry in a minute`);
+    res.write(`  ${id} registered as a Firebase ${kind} app ✓\n`);
+  } else {
+    res.write(`  ${id} already registered ✓\n`);
+  }
+  const cfg = await fb(`/projects/${projectId}/${coll}/${app.appId}/config`);
+  if (!cfg.ok) throw new Error(`could not fetch ${id}'s config (${cfg.status})`);
+  return (await cfg.json()).configFileContents; // base64 of the file
+}
+
+async function firebaseSetupEndpoint(req, res, netFetchImpl) {
+  const body = await readBody(req);
+  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
+  const stack = loadStack(pickEnv(body.stack));
+  const values = familyValues(stack);
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  res.write(`▶ Firebase push for ${stack.envName} — project, app registrations and configs, all as code\n\n`);
+  if (!values.PLAY_SERVICE_ACCOUNT_JSON) {
+    res.write('the Play service account is not stored yet (step 3) — the SAME credential drives Firebase\n');
+    return res.end('[exit 1]\n');
+  }
+  try {
+    const { access, projectId, clientEmail } = await googleAccessToken(values, 'https://www.googleapis.com/auth/cloud-platform', netFetchImpl);
+    const fb = fbFetcher(access, netFetchImpl);
+    const proj = await fb(`/projects/${projectId}`);
+    if (proj.ok) {
+      res.write(`Firebase project ${projectId} ✓\n`);
+    } else {
+      // a bare Cloud project answers 403/404 here — adding Firebase to
+      // it is exactly the console's "create project" without the console
+      res.write(`${projectId} is not a Firebase project yet — adding Firebase to it…\n`);
+      const add = await fb(`/projects/${projectId}:addFirebase`, { method: 'POST', body: '{}' });
+      if (!add.ok) {
+        res.write(`could not add Firebase: ${await fbExplain(add, projectId, clientEmail)}\n`);
+        return res.end('[exit 1]\n');
+      }
+      await fbOpWait(fb, add);
+      res.write(`Firebase enabled on ${projectId} ✓\n`);
+    }
+    await fbEnsureApp(fb, res, projectId, 'android', stack.native.appId, `munni ${stack.envName} android`);
+    res.write('  google-services.json ready — the next Android build bakes it in (push active)\n');
+    await fbEnsureApp(fb, res, projectId, 'ios', stack.native.iosAppId, `munni ${stack.envName} ios`);
+    res.write('  GoogleService-Info.plist ready — the next iOS build bakes it in\n');
+    // the API's SENDER credential: same service account, zero extra input
+    const shared = loadStack(SHARED_STACK);
+    const sharedValues = loadLocalValues(shared);
+    if (!sharedValues.NAS_FCM_SERVICE_ACCOUNT_JSON) {
+      saveLocalValues(shared, { ...sharedValues, NAS_FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON });
+      res.write('sender credential: the api sends push with the SAME service account — stored ✓ (press Set up & start once so the api container picks it up)\n');
+    } else {
+      res.write('sender credential: already stored ✓\n');
+    }
+    res.write('\nRemaining manual floor for iOS push only: upload the APNs key once — Firebase console → Project settings → Cloud Messaging → Apple app configuration.\n');
+    return res.end('\n[exit 0]\n');
+  } catch (e) {
+    res.write(`${e.message}\n`);
+    return res.end('[exit 1]\n');
+  }
 }
 
 /* ── the MACHINE owns the upload keystore (user incident 2026-08-31:
@@ -1011,6 +1157,28 @@ async function nativeConfigEndpoint(res, url, fetchImpl) {
     }
   }
   if (!variables.NATIVE_LOGTO_APP_ID) missing.push(`sign-in setup has not stored the native app id yet — press Re-run sign-in setup on ${stack.envName} once`);
+  // Firebase configs ride along when the apps are REGISTERED (the build
+  // flows run firebase-setup first; this only reads — never creates).
+  // Absent configs are not blocking: the stub keeps builds green with
+  // push inactive, and the wizard's push pill names the reason.
+  if (values.PLAY_SERVICE_ACCOUNT_JSON) {
+    try {
+      const { access, projectId } = await googleAccessToken(values, 'https://www.googleapis.com/auth/cloud-platform', fetchImpl);
+      const fb = fbFetcher(access, fetchImpl);
+      const aList = ((await (await fb(`/projects/${projectId}/androidApps?pageSize=100`)).json()).apps) ?? [];
+      const aApp = aList.find((a) => a.packageName === stack.native.appId);
+      if (aApp) {
+        const cfg = await fb(`/projects/${projectId}/androidApps/${aApp.appId}/config`);
+        if (cfg.ok) variables.NATIVE_GOOGLE_SERVICES_B64 = (await cfg.json()).configFileContents;
+      }
+      const iList = ((await (await fb(`/projects/${projectId}/iosApps?pageSize=100`)).json()).apps) ?? [];
+      const iApp = iList.find((a) => a.bundleId === stack.native.iosAppId);
+      if (iApp) {
+        const cfg = await fb(`/projects/${projectId}/iosApps/${iApp.appId}/config`);
+        if (cfg.ok) variables.NATIVE_IOS_FIREBASE_PLIST_B64 = (await cfg.json()).configFileContents;
+      }
+    } catch { /* push stays stubbed — firebase-setup names the reason */ }
+  }
   return json(res, 200, {
     environment: 'local',
     localEnv: stack.envName,
@@ -1479,6 +1647,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'GET /api/local/cleanup-check': (req, res) => cleanupCheckEndpoint(res, spawnImpl),
     'POST /api/local/store-retire': (req, res) => storeRetireEndpoint(req, res, netFetchImpl),
     'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
+    'POST /api/local/firebase-setup': (req, res) => firebaseSetupEndpoint(req, res, netFetchImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),
     'POST /api/local/new-store-package': (req, res) => newStorePackageEndpoint(req, res, spawnImpl),
