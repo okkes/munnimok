@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
@@ -33,6 +33,9 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
  * per-period bar chart, composition bar, and main-category cards that
  * unfold into their sub categories (legacy ScreenExpenses parity).
  */
+/** #355: per-kind period memory — survives navigation, dies with the tab */
+const PERIOD_MEMO = new Map<string, number>();
+
 export function OverviewScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
@@ -49,7 +52,21 @@ export function OverviewScreen() {
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, PERIOD_COUNT),
     [space?.periodType, space?.periodDay],
   );
-  const [periodIndex, setPeriodIndex] = useState(PERIOD_COUNT - 1);
+  // #355: the chosen period survives the category/transaction detour —
+  // a module-level memo per kind (session-scoped, like the tx filters);
+  // detours change OTHER screens' periods without touching this one
+  const [periodIndex, setPeriodIndexState] = useState(() => PERIOD_MEMO.get(kind) ?? PERIOD_COUNT - 1);
+  const setPeriodIndex = (i: number) => {
+    PERIOD_MEMO.set(kind, i);
+    setPeriodIndexState(i);
+  };
+  // kind switches keep the component mounted — adopt that kind's memory
+  const lastKind = useRef(kind);
+  useEffect(() => {
+    if (lastKind.current === kind) return;
+    lastKind.current = kind;
+    setPeriodIndexState(PERIOD_MEMO.get(kind) ?? PERIOD_COUNT - 1);
+  }, [kind]);
 
   const accountsById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
 

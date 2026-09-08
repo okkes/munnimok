@@ -14,12 +14,15 @@ interface BarChartProps {
   valueLabels?: string[];
 }
 
-/** selectable period bars, each carrying its amount on top */
+/** selectable period bars, each carrying its amount on top.
+ *  #354: the chart caps its own width and centers — full-bleed desktop
+ *  containers made slab-wide bars with unreadable 8px sums; on lg the
+ *  labels grow instead of the bars */
 export function BarChart({ values, labels, selected, onSelect, height = 90, accent = 'var(--m-accent)', valueLabels }: BarChartProps) {
   const max = Math.max(...values.map((v) => Math.abs(v)), 1);
-  const reserve = valueLabels ? 46 : 34; // label row above the bar needs its share
+  const reserve = valueLabels ? 50 : 38; // label rows around the bar need their share
   return (
-    <div className="flex items-end gap-1.5" style={{ height }} data-testid="overview-barchart">
+    <div className="mx-auto flex w-full max-w-[520px] items-end justify-center gap-1.5 lg:gap-3" style={{ height }} data-testid="overview-barchart">
       {values.map((value, i) => {
         const active = i === selected;
         const barHeight = Math.max((Math.abs(value) / max) * (height - reserve), 3);
@@ -28,11 +31,13 @@ export function BarChart({ values, labels, selected, onSelect, height = 90, acce
             key={labels[i]}
             data-testid={`overview-bar-${i}`}
             onClick={() => onSelect(i)}
-            className="m-tap flex min-w-0 flex-1 flex-col items-center justify-end gap-1 border-none bg-transparent p-0"
+            className="m-tap flex min-w-0 max-w-[72px] flex-1 flex-col items-center justify-end gap-1 border-none bg-transparent p-0"
             style={{ height: '100%' }}
           >
             {valueLabels?.[i] && value !== 0 && (
-              <span className={`m-num max-w-full truncate text-[8px] leading-none ${active ? 'font-semibold text-ink' : 'text-ink-4'}`}>
+              <span
+                className={`m-num max-w-full truncate text-[8px] leading-none lg:text-[11px] ${active ? 'font-semibold text-ink' : 'text-ink-4'}`}
+              >
                 {valueLabels[i]}
               </span>
             )}
@@ -45,7 +50,7 @@ export function BarChart({ values, labels, selected, onSelect, height = 90, acce
                 animationDelay: `${i * 45}ms`,
               }}
             />
-            <span className={`max-w-full truncate text-[9px] ${active ? 'font-semibold text-ink' : 'text-ink-4'}`}>
+            <span className={`max-w-full truncate text-[9px] lg:text-[11px] ${active ? 'font-semibold text-ink' : 'text-ink-4'}`}>
               {labels[i]}
             </span>
           </button>

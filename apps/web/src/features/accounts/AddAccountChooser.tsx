@@ -238,7 +238,8 @@ export function AddAccountChooser({
   };
 
   const createManual = () => {
-    const cents = parseCents(balance || '0');
+    // #342: funding pots always start at zero — the field is not shown
+    const cents = newType === 'funding' ? 0 : parseCents(balance || '0');
     if (!newType || saveDisabled || cents === null) return;
     const id = repo.newId();
     void repo.upsert('account', spaceId, id, {
@@ -344,6 +345,9 @@ export function AddAccountChooser({
               />
               {/* #195 r2 (user): the blocker sits AT the field */}
               <FormBlockerNote show={nameBad} text={t('form.needName')} testId="chooser-acctform-save-blocker" />
+              {/* #342: a funding pot has no balance of its own to ask
+                  for — it counts nowhere and starts at zero */}
+              {newType !== 'funding' && (
               <div className="flex gap-2">
                 {/* #327 r3 (user): each half owns its corners of the
                     clipping frame so the inset focus ring hugs the
@@ -378,6 +382,7 @@ export function AddAccountChooser({
                   className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(balanceBad)}`}
                 />
               </div>
+              )}
               <FormBlockerNote show={!nameBad && balanceBad} text={t('form.needAmount')} testId="chooser-acctform-save-blocker" />
               <div className="m-cap px-1">{t('space.currency')}</div>
               <div className="flex gap-2 overflow-x-auto pb-1">

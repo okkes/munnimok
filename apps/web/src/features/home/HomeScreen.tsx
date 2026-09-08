@@ -1233,7 +1233,13 @@ export function HomeScreen() {
               key={tx.id}
               tx={tx}
               showDate
-              onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+              onClick={() => {
+                // #358: the list BEHIND the detail must match this block
+                // — arrive with the New lens on (desktop shows both
+                // panes at once; mobile finds it on back)
+                presetTxFilters({ newOnly: true });
+                void navigate({ to: '/transactions/$txId', params: { txId: tx.id } });
+              }}
             />
           ))}
         </div>
