@@ -82,3 +82,10 @@ describe('typed-splits v2 special families (approved table 2026-08-05)', () => {
     expect(isSpecialCategory({ id: 'custom1', parentId: 'custom_main' })).toBe(false);
   });
 });
+
+describe('uncategorized reads gray everywhere (#353)', () => {
+  it('carries an explicit gray so no surface falls back to a palette color', () => {
+    expect(CATEGORY_BY_ID.get(UNCATEGORIZED_ID)?.color).toBe('#8A94A6');
+    expect(CATEGORY_BY_ID.get('general')?.color).toBe('#8A94A6');
+  });
+});

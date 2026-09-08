@@ -19,8 +19,11 @@ export interface BuiltinCategory {
 }
 
 export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
-  {"id":"general","nameKey":"cat.general","icon":"help-circle-outline","isParent":true,"hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
-  {"id":"uncategorized","parentId":"general","nameKey":"cat.uncategorized","icon":"help-circle-outline","hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
+  // gray by DESIGN (#353): uncategorized must read as "no category yet"
+  // on every surface — without a color here each call site invented its
+  // own fallback (palette colors in charts, accents in drills)
+  {"id":"general","nameKey":"cat.general","icon":"help-circle-outline","color":"#8A94A6","isParent":true,"hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
+  {"id":"uncategorized","parentId":"general","nameKey":"cat.uncategorized","icon":"help-circle-outline","color":"#8A94A6","hidden":true,"txTypes":["expense","income","saving","transfer","investment","debtPayment","adjustment"],"direction":"both"},
   // reimbursement redesign (2026-07-24, docs/reimbursement-redesign.md):
   // a LOCKED system main — no user subs, no edits. `reimburse` keeps its
   // historical id (old rows keep resolving) but now reads as "received
