@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
@@ -44,6 +44,10 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
  * the old forward to the filtered Transactions tab, which lost the
  * analysis context.
  */
+/** #351/#355: the drill's session period memory — the back door from a
+ *  transaction page carries no ?from */
+const DRILL_PERIOD_MEMO = new Map<string, number>();
+
 export function CategoryDrillScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
@@ -51,9 +55,11 @@ export function CategoryDrillScreen() {
   const { from } = useSearch({ strict: false }) as { from?: string };
   const cats = useCategories();
   const navigate = useNavigate();
-  // #168 r5 (user): rows go STRAIGHT to the transaction page — pushed,
-  // so the browser back lands right back on this drill
-  const openTx = (txId: string) => void navigate({ to: '/transactions/$txId', params: { txId } });
+  // #351 (user): the transaction opens UNDER the overview tree — at lg
+  // this drill stays the master pane beside the detail (the recurring
+  // tx/$txId precedent); on mobile, back lands right back here
+  const openTx = (txId: string) =>
+    void navigate({ to: '/overview/$kind/$catId/tx/$txId', params: { kind, catId, txId }, search: { from } });
 
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const accounts = useSpaceAccounts();
@@ -63,12 +69,18 @@ export function CategoryDrillScreen() {
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, PERIOD_COUNT),
     [space?.periodType, space?.periodDay],
   );
-  // land on the period the overview was looking at (falls back to current)
+  // land on the period the overview was looking at; without ?from (the
+  // back door from a transaction page, #351) the drill's own memory
+  // wins over snapping to the current period
+  const memoKey = `${kind}:${catId}`;
   const initialIndex = useMemo(() => {
     const found = from ? periods.findIndex((p) => p.start === from) : -1;
-    return found >= 0 ? found : PERIOD_COUNT - 1;
-  }, [periods, from]);
+    return found >= 0 ? found : (DRILL_PERIOD_MEMO.get(memoKey) ?? PERIOD_COUNT - 1);
+  }, [periods, from, memoKey]);
   const [periodIndex, setPeriodIndex] = useState(initialIndex);
+  useEffect(() => {
+    DRILL_PERIOD_MEMO.set(memoKey, periodIndex);
+  }, [memoKey, periodIndex]);
   // the space row loads async: the first render computes periods with
   // default month boundaries, so a custom period start makes `from`
   // unmatchable and the drill snapped back to the CURRENT period (user

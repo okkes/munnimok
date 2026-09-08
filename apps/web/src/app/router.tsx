@@ -237,9 +237,26 @@ const trendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/trends
 const categoryDrillRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/overview/$kind/$catId',
-  component: CategoryDrillScreen,
+  // #351 (user): a master-detail host — at lg a tapped transaction opens
+  // in the right pane while this drill stays put
+  component: () => <MasterDetailLayout list={<CategoryDrillScreen />} />,
   // the overview hands over its selected period
   validateSearch: (search: Record<string, unknown>): { from?: string } => ({
+    from: typeof search.from === 'string' ? search.from : undefined,
+  }),
+});
+/** #351: the transaction page under the overview tree (the recurring
+ *  tx/$txId precedent) — back returns to the drill, period intact */
+function OverviewTxDetail() {
+  const { kind, catId } = overviewTxRoute.useParams();
+  return <TxDetailScreen backTo={`/overview/${kind}/${catId}`} />;
+}
+const overviewTxRoute = createRoute({
+  getParentRoute: () => categoryDrillRoute,
+  path: 'tx/$txId',
+  component: OverviewTxDetail,
+  validateSearch: (search: Record<string, unknown>): { part?: string; from?: string } => ({
+    ...(typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {}),
     from: typeof search.from === 'string' ? search.from : undefined,
   }),
 });
@@ -274,7 +291,7 @@ export const routeTree = rootRoute.addChildren([
     profileRoute,
     devicesRoute,
     overviewRoute,
-    categoryDrillRoute,
+    categoryDrillRoute.addChildren([overviewTxRoute]),
     budgetsRoute.addChildren([budgetDetailRoute]),
     budgetNewRoute,
     budgetEditRoute,

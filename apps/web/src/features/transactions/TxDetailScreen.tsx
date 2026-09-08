@@ -1991,7 +1991,7 @@ function DetailAccountBlock({
 // #168 r5 (user): `backTo` is where LEAVING the detail lands (panes
 // close, Esc, delete) — the /recurring/tx/$txId mount passes /recurring
 // so the recurring list keeps the master pane; mobile back stays history.
-export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?: '/transactions' | '/recurring' }> = {}) { // NOSONAR(S3776)
+export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?: string }> = {}) { // NOSONAR(S3776)
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
   const { txId } = useParams({ strict: false }) as { txId: string };
