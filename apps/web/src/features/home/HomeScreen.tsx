@@ -199,6 +199,15 @@ function renderExploreList(
   );
 }
 
+/** #361: the entrance fade plays ONCE per session — replaying it on
+ *  every tab return read as the whole screen reloading */
+let homeFadedOnce = false;
+function homeFadeClass(): string {
+  if (homeFadedOnce) return '';
+  homeFadedOnce = true;
+  return 'm-fade';
+}
+
 export function HomeScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -222,7 +231,7 @@ export function HomeScreen() {
     if (needsOnboarding?.value === true) void navigate({ to: '/onboarding' });
   }, [needsOnboarding, navigate]);
 
-  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId], undefined, `space:${spaceId}`);
   const currency = space?.currency ?? accounts?.[0]?.currency ?? 'EUR';
   // the band total is convert-then-sum (currency plan): into the display
   // currency when set, else the ledger currency — no more silent numeric
@@ -419,7 +428,7 @@ export function HomeScreen() {
   const { rendered: renderedBlocks, twoColumns } = resolveRenderedBlocks(visibleBlocks, blockRenderers, allTxs !== undefined);
 
   return (
-    <div className="m-fade relative flex h-full flex-col" data-testid="screen-home">
+    <div className={`${homeFadeClass()} relative flex h-full flex-col`} data-testid="screen-home">
       {/* ≤3 trailing actions (redesign §2H): customize moved to the end of
           the block list, where the blocks actually live */}
       <AppBar

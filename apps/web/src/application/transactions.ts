@@ -18,13 +18,15 @@ export type { SpaceAccount, SpaceTx, TxTransformFields };
 /** every transaction the active space sees (legacy + attached feeds), unsorted */
 export function useSpaceTransactions(): SpaceTx[] | undefined {
   const { store, spaceId } = useData();
-  return useQuery(store, async () => visibleTransactions(store, spaceId), [spaceId]);
+  // #361: remount cache — tab returns render the last rows instantly
+  return useQuery(store, async () => visibleTransactions(store, spaceId), [spaceId], undefined, `spaceTx:${spaceId}`);
 }
 
 /** every account the active space sees (legacy + attached), with link info */
 export function useSpaceAccounts(): SpaceAccount[] | undefined {
   const { store, spaceId } = useData();
-  return useQuery(store, async () => visibleAccounts(store, spaceId), [spaceId]);
+  // #361: remount cache — tab returns render the last rows instantly
+  return useQuery(store, async () => visibleAccounts(store, spaceId), [spaceId], undefined, `spaceAccts:${spaceId}`);
 }
 
 /** the space's FULL stored history, gates lifted — recurring detection

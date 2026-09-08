@@ -34,6 +34,9 @@ export function useRecurrings(): RecurringRow[] | undefined {
       return rows;
     },
     [spaceId],
+    // #361: remount cache — tab returns render the last rows instantly
+    undefined,
+    `recurrings:${spaceId}`,
   );
 }
 

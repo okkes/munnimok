@@ -8,6 +8,7 @@ import { LogtoAppProvider } from '@/features/auth/logto';
 import { LangProvider } from '@/i18n';
 import { ThemeProvider } from '@/app/theme';
 import { DataProvider } from '@/app/data';
+import { __clearQueryCache } from '@/db/useQuery';
 import { useSession } from '@/app/session';
 import type { Identity } from '@/app/session';
 
@@ -35,6 +36,7 @@ export function renderWithProviders(ui: ReactElement) {
  */
 export function renderWithData(ui: ReactElement) {
   localStorage.setItem('munni_lang', 'en');
+  __clearQueryCache(); // #361: no cross-test row bleed (fresh dbs, same ids)
   useSession.setState({ identity: { kind: 'demo' } });
   return render(ui, {
     wrapper: ({ children }: { children: ReactNode }) => (
@@ -54,6 +56,9 @@ export function renderWithData(ui: ReactElement) {
  */
 export function renderApp(path: string, { signedIn = true, identity }: { signedIn?: boolean; identity?: Identity } = {}) {
   localStorage.setItem('munni_lang', 'en');
+  // #361: specs re-seed fresh databases under the same space id — the
+  // remount cache must not carry rows across renders
+  __clearQueryCache();
   if (identity) useSession.getState().login(identity);
   else if (signedIn) useSession.getState().login({ kind: 'demo' });
   else useSession.getState().logout();
@@ -111,6 +116,7 @@ const bootstrapSpaceOp = (space: NonNullable<UserAppOptions['spaces']>[number]) 
 
 export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 'Personal' }], api = {} }: UserAppOptions = {}) {
   localStorage.setItem('munni_lang', 'en');
+  __clearQueryCache(); // #361: no cross-test row bleed (fresh dbs, same ids)
   useSession.getState().login({ kind: 'user', sub: USER_TEST_SUB, testAuth: true });
 
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
