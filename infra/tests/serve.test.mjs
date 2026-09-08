@@ -964,11 +964,17 @@ test('firebase as code: setup finds the project, registers both apps, copies the
       }
       if (url.endsWith('/androidApps') && init.method === 'POST') return { ok: true, status: 200, json: async () => ({ name: 'operations/o2', done: true }) };
       if (url.includes('/androidApps/A1/config')) return { ok: true, status: 200, json: async () => ({ configFileContents: 'R1M=' }) };
-      if (url.includes('/iosApps?')) return { ok: true, status: 200, json: async () => ({ apps: [{ appId: 'I1', bundleId: 'app.munni.local.prod' }] }) };
+      // a stale display name from before the track rode in the label
+      if (url.includes('/iosApps?')) return { ok: true, status: 200, json: async () => ({ apps: [{ appId: 'I1', bundleId: 'app.munni.local.prod', displayName: 'munni prod ios' }] }) };
+      if (url.includes('/iosApps/I1?updateMask=displayName') && init.method === 'PATCH') return { ok: true, status: 200, json: async () => ({}) };
       if (url.includes('/iosApps/I1/config')) return { ok: true, status: 200, json: async () => ({ configFileContents: 'UEw=' }) };
+      if (url.endsWith('/health')) return { ok: true, status: 200, json: async () => ({ capabilities: { fcm: true } }) };
       return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
     };
-    const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl });
+    const spawned = [];
+    const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl, spawnImpl: scriptedSpawn(spawned, () => 'ok\n') });
+    const envFile = join(SCRATCH, 'munni-local-prod', '.env.munni-local-prod');
+    rmSync(envFile, { force: true });
     const res = fakeRes();
     await app2(fakeReq({ method: 'POST', url: '/api/local/firebase-setup', token: 'tok', body: { stack: 'munni-local-prod' } }), res);
     await settle(res);
@@ -976,10 +982,30 @@ test('firebase as code: setup finds the project, registers both apps, copies the
     assert.match(out, /Firebase project p ✓/);
     assert.match(out, /registered as a Firebase android app ✓/);
     assert.match(out, /app\.munni\.local\.prod already registered ✓/, 'the iOS app was already there');
+    assert.match(out, /renamed to "munni local prod ios" ✓/, 'the track rides into the console chip name');
+    const created = calls.find((c) => c.url.endsWith('/androidApps') && c.init.method === 'POST');
+    assert.equal(JSON.parse(created.init.body).displayName, 'munni local prod android');
     assert.match(out, /sender credential: the api sends push with the SAME service account — stored ✓/);
+    // …and the api actually CARRIES it: re-render + up, then /health says fcm
+    assert.match(out, /re-render prod with the sender credential/);
+    assert.match(out, /restart prod so the api picks the sender up/);
+    assert.match(out, /the api reports native push \(fcm\) ✓/);
     assert.match(out, /APNs key/);
     assert.match(out, /\[exit 0\]/);
+    assert.ok(spawned.some((s) => s.args.includes('--stack') && s.args.includes('munni-local-prod')), 'bootstrap re-rendered the env');
+    assert.ok(spawned.some((s) => s.cmd === 'docker' && s.args.includes('up') && s.args.includes('docker-compose.munni-local-prod.yml')), 'the env stack came up again');
     assert.equal(loadLocalValues(shared).NAS_FCM_SERVICE_ACCOUNT_JSON, loadLocalValues(shared).PLAY_SERVICE_ACCOUNT_JSON);
+
+    // an env already carrying the credential is left alone (no restart on every Build)
+    (await import('node:fs')).mkdirSync(join(SCRATCH, 'munni-local-prod'), { recursive: true });
+    (await import('node:fs')).writeFileSync(envFile, "FCM_SERVICE_ACCOUNT_JSON='{\"client_email\":\"ci@sa.test\"}'\n");
+    const before = spawned.length;
+    const again = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/firebase-setup', token: 'tok', body: { stack: 'munni-local-prod' } }), again);
+    await settle(again);
+    assert.match(again.chunks.join(''), /sender: the prod api environment already carries it ✓/);
+    assert.equal(spawned.length, before, 'nothing spawned when the env already carries the sender');
+    rmSync(envFile, { force: true });
 
     // …and native-config now carries both configs for CI to bake
     const nc = fakeRes();
@@ -1013,15 +1039,16 @@ test('firebase as code: a bare Cloud project gets Firebase added; the enable rig
     details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'AUTH_PERMISSION_DENIED', domain: 'serviceusage.googleapis.com', metadata: { service: 'serviceusage.googleapis.com', permission: 'serviceusage.services.enable' } }],
   });
   const apps = (url) => {
-    if (url.includes('/androidApps?')) return ok({ apps: [{ appId: 'A1', packageName: 'app.munni.local.prod' }] });
+    if (url.includes('/androidApps?')) return ok({ apps: [{ appId: 'A1', packageName: 'app.munni.local.prod', displayName: 'munni local prod android' }] });
     if (url.includes('/androidApps/A1/config')) return ok({ configFileContents: 'R1M=' });
-    if (url.includes('/iosApps?')) return ok({ apps: [{ appId: 'I1', bundleId: 'app.munni.local.prod' }] });
+    if (url.includes('/iosApps?')) return ok({ apps: [{ appId: 'I1', bundleId: 'app.munni.local.prod', displayName: 'munni local prod ios' }] });
     if (url.includes('/iosApps/I1/config')) return ok({ configFileContents: 'UEw=' });
+    if (url.endsWith('/health')) return ok({ capabilities: { fcm: true } });
     return null;
   };
   const setup = async (fetchImpl) => {
     const res = fakeRes();
-    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: fetchImpl })(
+    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: fetchImpl, spawnImpl: scriptedSpawn([], () => 'ok\n') })(
       fakeReq({ method: 'POST', url: '/api/local/firebase-setup', token: 'tok', body: { stack: 'munni-local-prod' } }), res);
     await settle(res);
     return res.chunks.join('');

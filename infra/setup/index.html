@@ -1085,6 +1085,7 @@ const GROUPS = [
     id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'fcm', check: 'fcm',
     why: 'The SERVER’s push sender credential (web push uses self-minted VAPID keys — no Google involved there). On the LOCAL track there is nothing to paste: it fills itself when you press Build in the native step below — the full push story (and its two one-time grants) lives THERE, next to the apps it depends on.',
     how: [
+      'One-time (Google’s floor, same class as the Play invite): grant the Play service account TWO roles — console.cloud.google.com → IAM → edit the munni service account → add Firebase Admin (apps, configs, sending) AND Service Usage Admin (adding Firebase to its Cloud project needs serviceusage.services.enable, which Firebase Admin lacks) → wait a minute. The next Build then wires everything and restarts this environment’s api with the sender credential.',
       'Manual paste is only for the NAS track or a deliberately separate sender: console.firebase.google.com → project → Service accounts → Generate new private key → paste the JSON here.',
       'The NAS_ in the name is historical — the environment-first secrets arc renames it.',
     ],

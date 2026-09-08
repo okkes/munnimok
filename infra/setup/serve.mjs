@@ -992,13 +992,62 @@ async function fbEnsureApp(fb, res, projectId, kind, id, label) {
     res.write(`  ${id} registered as a Firebase ${kind} app ✓\n`);
   } else {
     res.write(`  ${id} already registered ✓\n`);
+    if (app.displayName !== label) {
+      // the console chips show the DISPLAY name — the track belongs in it
+      // (user 2026-09-08: 'munni prod' is ambiguous beside the nas twins)
+      const renamed = await fb(`/projects/${projectId}/${coll}/${app.appId}?updateMask=displayName`, { method: 'PATCH', body: JSON.stringify({ displayName: label }) });
+      res.write(renamed.ok ? `  renamed to "${label}" ✓\n` : `  (could not rename it to "${label}" — Firebase answered ${renamed.status}; cosmetic, carrying on)\n`);
+    }
   }
   const cfg = await fb(`/projects/${projectId}/${coll}/${app.appId}/config`);
   if (!cfg.ok) throw new Error(`could not fetch ${id}'s config (${cfg.status})`);
   return (await cfg.json()).configFileContents; // base64 of the file
 }
 
-async function firebaseSetupEndpoint(req, res, netFetchImpl) {
+/** the env's api must CARRY the sender: re-render + up when its rendered
+ * env lacks the credential, then take the api's own word from /health.
+ * Found live 2026-09-08: 'stored ✓' printed while the api still ran
+ * with an empty Fcm__ServiceAccountJson — friend requests reached the
+ * in-app bell, the phone stayed silent (the routing sender reports
+ * success for a transport that is not configured). */
+async function applySenderToApi(res, stack, clientEmail, spawnImpl, fetchImpl) {
+  const envFile = join(renderedDir(stack.stack), `.env.${stack.stack}`);
+  if (existsSync(envFile) && readFileSync(envFile, 'utf8').includes(clientEmail)) {
+    res.write(`sender: the ${stack.envName} api environment already carries it ✓\n`);
+    return true;
+  }
+  const run = stepRunner(spawnImpl);
+  const render = await run(res, `re-render ${stack.envName} with the sender credential`, process.execPath,
+    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack], { cwd: ROOT });
+  if (render.code !== 0) {
+    res.write('the re-render failed — the api keeps running WITHOUT a sender until Set up & start succeeds\n');
+    return false;
+  }
+  const up = await run(res, `restart ${stack.envName} so the api picks the sender up`, 'docker',
+    [...composeArgs(stack.stack), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(stack.stack) });
+  if (up.code !== 0) {
+    res.write('the restart failed — is Docker running? (Set up & start retries it)\n');
+    return false;
+  }
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline) {
+    try {
+      const health = await fetchImpl(`${stack.urls.api}/health`, { signal: AbortSignal.timeout(5000) });
+      if (health.ok && (await health.json())?.capabilities?.fcm === true) {
+        res.write('the api reports native push (fcm) ✓\n');
+        return true;
+      }
+    } catch { /* still starting */ }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  res.write(`the api did not report fcm within 90 s — check ${stack.urls.api}/health and the api logs\n`);
+  return false;
+}
+
+/** Firebase console chips show these — the TRACK belongs in the name */
+const fbLabel = (stack, kind) => `munni local ${stack.envName} ${kind}`;
+
+async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
   const body = await readBody(req);
   if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
   const stack = loadStack(pickEnv(body.stack));
@@ -1025,19 +1074,20 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl) {
         : `${projectId} is not a Firebase project yet — adding Firebase to it…\n`);
       if (!(await fbAddFirebase(res, fb, access, projectId, clientEmail, apiOff, netFetchImpl))) return res.end('[exit 1]\n');
     }
-    await fbEnsureApp(fb, res, projectId, 'android', stack.native.appId, `munni ${stack.envName} android`);
+    await fbEnsureApp(fb, res, projectId, 'android', stack.native.appId, fbLabel(stack, 'android'));
     res.write('  google-services.json ready — the next Android build bakes it in (push active)\n');
-    await fbEnsureApp(fb, res, projectId, 'ios', stack.native.iosAppId, `munni ${stack.envName} ios`);
+    await fbEnsureApp(fb, res, projectId, 'ios', stack.native.iosAppId, fbLabel(stack, 'ios'));
     res.write('  GoogleService-Info.plist ready — the next iOS build bakes it in\n');
     // the API's SENDER credential: same service account, zero extra input
     const shared = loadStack(SHARED_STACK);
     const sharedValues = loadLocalValues(shared);
     if (!sharedValues.NAS_FCM_SERVICE_ACCOUNT_JSON) {
       saveLocalValues(shared, { ...sharedValues, NAS_FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON });
-      res.write('sender credential: the api sends push with the SAME service account — stored ✓ (press Set up & start once so the api container picks it up)\n');
+      res.write('sender credential: the api sends push with the SAME service account — stored ✓\n');
     } else {
       res.write('sender credential: already stored ✓\n');
     }
+    if (!(await applySenderToApi(res, stack, clientEmail, spawnImpl, netFetchImpl))) return res.end('[exit 1]\n');
     res.write('\nRemaining manual floor for iOS push only: upload the APNs key once — Firebase console → Project settings → Cloud Messaging → Apple app configuration.\n');
     return res.end('\n[exit 0]\n');
   } catch (e) {
@@ -1177,7 +1227,7 @@ async function iosAppIdEndpoint(req, res, fetchImpl) {
   } else {
     const created = await asc('/bundleIds', {
       method: 'POST',
-      body: JSON.stringify({ data: { type: 'bundleIds', attributes: { identifier: bundleId, name: `munni ${stack.envName}`, platform: 'IOS' } } }),
+      body: JSON.stringify({ data: { type: 'bundleIds', attributes: { identifier: bundleId, name: `munni local ${stack.envName}`, platform: 'IOS' } } }),
     });
     if (!created.ok) {
       res.write(`could not register ${bundleId} (${created.status}): ${(await created.text()).slice(0, 300)}\n`);
@@ -1730,7 +1780,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'GET /api/local/cleanup-check': (req, res) => cleanupCheckEndpoint(res, spawnImpl),
     'POST /api/local/store-retire': (req, res) => storeRetireEndpoint(req, res, netFetchImpl),
     'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
-    'POST /api/local/firebase-setup': (req, res) => firebaseSetupEndpoint(req, res, netFetchImpl),
+    'POST /api/local/firebase-setup': (req, res) => firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),
     'POST /api/local/new-store-package': (req, res) => newStorePackageEndpoint(req, res, spawnImpl),

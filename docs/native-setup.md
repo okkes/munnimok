@@ -259,7 +259,12 @@ registered there, and `native-config` hands CI the real
 google-services.json / GoogleService-Info.plist
 (`NATIVE_GOOGLE_SERVICES_B64` / `NATIVE_IOS_FIREBASE_PLIST_B64`) to
 bake over the stubs; the same service account doubles as the FCM
-sender (auto-copied into `NAS_FCM_SERVICE_ACCOUNT_JSON`). One-time
+sender (auto-copied into `NAS_FCM_SERVICE_ACCOUNT_JSON`, and the env is
+re-rendered + brought up again whenever its api does not carry it yet —
+`/health` must answer `fcm: true`, found live 2026-09-08: the stored
+credential never reached a running api). The Firebase apps are named
+`munni local <env> android|ios` (the Apple App ID `munni local <env>`)
+so the local track reads apart from the hosted twins. One-time
 floors: grant that service account the **Firebase Admin** AND the
 **Service Usage Admin** roles in IAM — adding Firebase to a Cloud
 project switches APIs on, which Google gates behind
