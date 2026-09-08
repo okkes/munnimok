@@ -1884,15 +1884,19 @@ export function ReviewScreen() {
   // cycle, and an identity-keyed reset kept re-arming boxes the user had
   // just cleared (iOS ss 2026-07-28). When a sync genuinely changes the
   // list mid-card, new arrivals join checked and the user's unchecks
-  // survive — the visible count stays honest either way.
+  // survive — but ONLY within the same card: a NEW card always starts
+  // at select-all (#340 — overlapping sibling sets carried unchecks
+  // from the previous card into the next).
   const similarKey = useMemo(() => similar.map((s) => s.id).sort((a, b) => a.localeCompare(b)).join(','), [similar]);
-  const prevSimilarIds = useRef<ReadonlySet<string>>(new Set());
+  const prevSimilar = useRef<{ cardId: string | null; ids: ReadonlySet<string> }>({ cardId: null, ids: new Set() });
   useEffect(() => {
     const ids = similarKey ? similarKey.split(',') : [];
-    const prev = prevSimilarIds.current;
-    prevSimilarIds.current = new Set(ids);
-    setBulkSelected((sel) => new Set(ids.filter((id) => (prev.has(id) ? sel.has(id) : true))));
-  }, [similarKey]);
+    const prev = prevSimilar.current;
+    const cardId = tx?.id ?? null;
+    prevSimilar.current = { cardId, ids: new Set(ids) };
+    const sameCard = prev.cardId === cardId;
+    setBulkSelected((sel) => new Set(ids.filter((id) => (sameCard && prev.ids.has(id) ? sel.has(id) : true))));
+  }, [similarKey, tx?.id]);
 
   // #326 (user): quick-creating the counterparty account mid-review —
   // the ask's Create door mounts the chooser itself, so the card stages

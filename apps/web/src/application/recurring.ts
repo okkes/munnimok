@@ -173,7 +173,16 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
     if (cycles.has(cycle)) continue; // one payment per billing cycle
     cycles.add(cycle);
     linkedCycles.set(rec.id, cycles);
-    await writeTxTransform(repo, tx, { recurringId: rec.id });
+    // #360: the recurring OWNS the category — the auto-link adopts it
+    // (and the counterparty) like a manual link does, but the row STAYS
+    // unreviewed: the machine guessed, the user still confirms
+    const refile =
+      rec.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
+        ? { catId: rec.catId }
+        : {};
+    const counter =
+      rec.linkedAccountId && tx.linkedAccountId !== rec.linkedAccountId ? { linkedAccountId: rec.linkedAccountId } : {};
+    await writeTxTransform(repo, tx, { recurringId: rec.id, ...refile, ...counter });
     linked++;
   }
   return linked;

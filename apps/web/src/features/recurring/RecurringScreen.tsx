@@ -388,6 +388,21 @@ export function RecurringScreen() {
             onShowTxs={() => {
               if (selectedDot) setPeriodSheet({ seriesIndex: selectedDot.seriesIndex, monthIdx: selectedDot.pointIndex });
             }}
+            // #357: a month with nothing behind the door disables it —
+            // paid months check the actual links; estimate months list
+            // expected items, so any active recurring keeps it live
+            showTxsEnabled={
+              !!selectedDot &&
+              (isEstimateMonth(selectedDot.seriesIndex, selectedDot.pointIndex, chartYear, today)
+                ? (recs ?? []).some((r) => r.active === 1)
+                : (recs ?? []).some(
+                    (r) =>
+                      r.active === 1 &&
+                      (linkedByRec.get(r.id) ?? []).some((l) =>
+                        l.date.startsWith(`${chartYear}-${String(selectedDot.pointIndex + 1).padStart(2, '0')}`),
+                      ),
+                  ))
+            }
             // #168 r5 (user): an estimate month's door promises recurring
             // costs, not transactions — matching what the sheet will list
             estimateSelected={
@@ -436,6 +451,7 @@ function RecurringChartCard({
   selected,
   onSelect,
   onShowTxs,
+  showTxsEnabled,
   estimateSelected,
   money,
   monthNameOf,
@@ -451,6 +467,8 @@ function RecurringChartCard({
   selected: { seriesIndex: number; pointIndex: number } | null;
   onSelect: (seriesIndex: number, pointIndex: number) => void;
   onShowTxs: () => void;
+  /** #357: nothing behind the door → the button disables, not a dead end */
+  showTxsEnabled: boolean;
   /** #168 r5 (user): the selected dot is an ESTIMATE month — the door
    *  promises recurring costs instead of transactions */
   estimateSelected: boolean;
@@ -522,7 +540,7 @@ function RecurringChartCard({
           </span>
           {/* #168 r4 (user): the door wears its arrow; r5: it names the
               story behind it — payments, or a future month's estimates */}
-          <Button size="sm" variant="outline" data-testid="recurring-chart-txs" onClick={onShowTxs}>
+          <Button size="sm" variant="outline" data-testid="recurring-chart-txs" onClick={onShowTxs} disabled={!showTxsEnabled}>
             {t(estimateSelected ? 'recurring.showRecs' : 'recurring.showTxs')}
             <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
           </Button>

@@ -60,6 +60,21 @@ describe('insight detectors', () => {
     expect(priceCreep(base({ recurrings: [rec({})], txs: tiny }))).toHaveLength(0);
   });
 
+  it('funding-filed recurrings get no leak advice — moved money, not spent (#356)', () => {
+    const charges = [
+      tx({ recurringId: 'r1', amountCents: -1399, date: '2026-03-01' }),
+      tx({ recurringId: 'r1', amountCents: -1399, date: '2026-04-01' }),
+      tx({ recurringId: 'r1', amountCents: -1599, date: '2026-06-01' }),
+      tx({ recurringId: 'r1', amountCents: -1599, date: '2026-07-01' }),
+    ];
+    expect(priceCreep(base({ recurrings: [rec({ catId: 'fundingOut' })], txs: charges }))).toHaveLength(0);
+    const pots = [
+      rec({ id: 'r1', name: 'Family pot', catId: 'fundingOut' }),
+      rec({ id: 'r2', name: 'Shared pot', catId: 'fundingOut', amountCents: 999 }),
+    ];
+    expect(subscriptionOverlap(base({ recurrings: pots }))).toHaveLength(0);
+  });
+
   it('subscription overlap groups by main category', () => {
     const subs = [
       rec({ id: 'r1', name: 'Netflix', catId: 'streaming' }),

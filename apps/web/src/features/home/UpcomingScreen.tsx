@@ -58,6 +58,12 @@ export function UpcomingScreen() {
 
   const fmtShort = (iso: string) =>
     new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
+  // #347: the date alone made the reader do the math — say the days too
+  const dueLabel = (iso: string) => {
+    const n = Math.max(0, Math.round((new Date(iso).getTime() - new Date(today).getTime()) / 86_400_000));
+    const rel = n === 0 ? t('upcoming.dueToday') : n === 1 ? t('upcoming.dueTomorrow') : t('upcoming.dueInDays', { n });
+    return `${fmtShort(iso)} · ${rel}`;
+  };
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-upcoming">
@@ -89,7 +95,7 @@ export function UpcomingScreen() {
                   <RecurringVisual rec={rec} size={16} active={false} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
-                    <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
+                    <span className="block text-[11px] text-ink-4">{dueLabel(nextDue)}</span>
                   </span>
                   {/* #334 r2 (user): unsigned — one sign story for both kinds */}
                   <span className="m-num text-[13px] font-semibold text-ink">{fmt(upcomingRecAmountCents(rec), currency)}</span>
@@ -113,7 +119,7 @@ export function UpcomingScreen() {
                   <LoanFace loan={loan} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-ink">{loan.name}</span>
-                    <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
+                    <span className="block text-[11px] text-ink-4">{dueLabel(nextDue)}</span>
                   </span>
                   <span className="m-num text-[13px] font-semibold text-ink">{fmt(upcomingLoanAmountCents(loan), currency)}</span>
                 </button>
