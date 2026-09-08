@@ -399,7 +399,15 @@ function AccountPickSheet({
 /** exactly ONE manual account picks itself; with several, the user
  *  chooses explicitly — a silent first-account default booked rows on
  *  the wrong account (user redesign 2026-07-31) */
-const soleAccountId = (writable: readonly AccountRow[]): string | null => (writable.length === 1 ? writable[0].id : null);
+/** the account that picks itself: the single REAL manual account — the
+ *  #348 cash wallet joins `writable` as a choice but must not break the
+ *  self-pick every space relied on; with no real account it stands in */
+const soleAccountId = (writable: readonly AccountRow[]): string | null => {
+  const real = writable.filter((a) => !a.defaultFor);
+  if (real.length === 1) return real[0].id;
+  if (real.length === 0 && writable.length === 1) return writable[0].id;
+  return null;
+};
 
 /** #228 (user): removing the counterparty resets a special category —
  *  the movement story ends with its account (S3776: out of the form) */
