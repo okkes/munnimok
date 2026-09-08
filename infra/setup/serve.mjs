@@ -590,7 +590,8 @@ async function trustCaEndpoint(res, spawnImpl, netFetchImpl) {
    local store; checks mirror what CI's publish steps really do. ── */
 /** Google access token from the stored Play service account, for any
  * scope — the SAME credential drives the Play checks AND (once granted
- * the Firebase Admin role) the Firebase Management API. Throws with the
+ * the Firebase Admin + Service Usage Admin roles) the Firebase
+ * Management API. Throws with the
  * exact operator-facing diagnosis on failure. */
 async function googleAccessToken(values, scope, fetchImpl) {
   let sa;
@@ -728,7 +729,16 @@ async function firebaseState(values, stack, fetchImpl) {
   const fb = fbFetcher(access, fetchImpl);
   const proj = await fb(`/projects/${projectId}`);
   if (proj.status >= 500) return { state: 'transient', detail: `Firebase answered ${proj.status} — retried on the next poll` };
-  if (!proj.ok) return { state: 'missing-app', detail: await fbExplain(proj, projectId, clientEmail) };
+  if (proj.status === 404) {
+    // a bare Cloud project (the Management API IS on — off answers 403):
+    // Build adds Firebase, IF the account may switch services on. The
+    // no-op enable is the honest probe and changes nothing here
+    const en = await enableService(access, projectId, FB_API, fetchImpl);
+    return en.ok
+      ? { state: 'missing-app', detail: `push stubbed — ${projectId} is not a Firebase project yet; Build adds Firebase to it` }
+      : { state: 'error', detail: await suExplain(en, projectId, clientEmail, FB_API) };
+  }
+  if (!proj.ok) return { state: 'error', detail: fbExplain(proj.status, await googleError(proj), projectId, clientEmail) };
   const [aList, iList] = await Promise.all([
     fb(`/projects/${projectId}/androidApps?pageSize=100`).then((r) => r.json()).then((b) => b.apps ?? []),
     fb(`/projects/${projectId}/iosApps?pageSize=100`).then((r) => r.json()).then((b) => b.apps ?? []),
@@ -857,39 +867,114 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
    OWN Cloud project becomes the Firebase project via the Management
    API; each environment's Android/iOS apps are registered there and
    their config files ride to CI as variables. The one-time Google
-   floor: grant that service account the Firebase Admin role. ── */
+   floor: grant that service account the Firebase Admin role AND the
+   Service Usage Admin role — adding Firebase to a Cloud project switches
+   APIs on, which Google gates behind serviceusage.services.enable, and
+   Firebase Admin does NOT carry that permission (found live 2026-09-08:
+   role granted, addFirebase still 403 — the old text blamed the wrong
+   role). By hand instead: add Firebase to the project once in the
+   Firebase console, after which Firebase Admin alone is enough. ── */
 const FB_BASE = 'https://firebase.googleapis.com/v1beta1';
+const SU_BASE = 'https://serviceusage.googleapis.com/v1';
+const FB_API = 'firebase.googleapis.com';
+const iamUrl = (projectId) => `https://console.cloud.google.com/iam-admin/iam?project=${projectId}`;
 const fbFetcher = (access, fetchImpl) => (path, init = {}) => fetchImpl(`${FB_BASE}${path}`, {
   ...init,
   headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json', ...init.headers },
   signal: AbortSignal.timeout(20000),
 });
 
-/** name the two classic refusals precisely (mirrors the Play pattern) */
-async function fbExplain(r, projectId, clientEmail) {
-  const body = await r.json().catch(() => ({}));
-  const disabled = body?.error?.details?.find((d) => d.reason === 'SERVICE_DISABLED');
-  if (disabled || /has not been used in project|it is disabled/.test(body?.error?.message ?? '')) {
-    const url = disabled?.metadata?.activationUrl ?? `https://console.cloud.google.com/apis/library/firebase.googleapis.com?project=${projectId}`;
-    return `the Firebase Management API is disabled in ${projectId} — enable it once (${url}), wait a few minutes, retry`;
-  }
+/** Google's error envelope, or {} when the body is not JSON */
+const googleError = async (r) => (await r.json().catch(() => ({})))?.error ?? {};
+/** the SERVICE_DISABLED detail (or {} when only the message says so) */
+const serviceDisabled = (err) => err.details?.find((d) => d.reason === 'SERVICE_DISABLED')
+  ?? (/has not been used in project|it is disabled/.test(err.message ?? '') ? {} : null);
+/** the permission Google itself names in a refusal (ErrorInfo metadata) */
+const deniedPermission = (err) => err.details?.find((d) => d.reason === 'AUTH_PERMISSION_DENIED')?.metadata?.permission;
+const ROLE_FOR = { 'serviceusage.services.enable': 'Service Usage Admin role' };
+
+/** switch an API on in the service account's own Cloud project — a
+ * no-op when it already is, which makes it the one honest probe for
+ * serviceusage.services.enable BEFORE addFirebase burns a 403 */
+const enableService = (access, projectId, service, fetchImpl) => fetchImpl(`${SU_BASE}/projects/${projectId}/services/${service}:enable`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
+  body: '{}',
+  signal: AbortSignal.timeout(20000),
+});
+
+/** name enableService's refusal precisely — the role gap, both ways out */
+async function suExplain(r, projectId, clientEmail, service) {
+  const err = await googleError(r);
   if (r.status === 403) {
-    return `${clientEmail} lacks Firebase rights on ${projectId} — grant it the Firebase Admin role once (https://console.cloud.google.com/iam-admin/iam?project=${projectId}), wait a minute, retry`;
+    const perm = deniedPermission(err) ?? 'serviceusage.services.enable';
+    return `${clientEmail} may not switch APIs on in ${projectId} (${perm} — the Firebase Admin role does NOT carry it). One-time, pick one: grant it the Service Usage Admin role beside Firebase Admin (${iamUrl(projectId)}), wait a minute, Build again — or add Firebase to ${projectId} by hand once (https://console.firebase.google.com → Add project → choose the existing Cloud project ${projectId}), after which Firebase Admin alone is enough`;
   }
-  return body?.error?.message ?? `status ${r.status}`;
+  return `Google refused switching on ${service} in ${projectId} (${r.status}): ${err.message ?? 'no detail'}`;
 }
 
-/** poll a long-running Firebase operation to completion */
-async function fbOpWait(fb, opRes) {
+/** name the classic Firebase Management API refusals precisely */
+function fbExplain(status, err, projectId, clientEmail) {
+  const disabled = serviceDisabled(err);
+  if (disabled) {
+    const url = disabled.metadata?.activationUrl ?? `https://console.cloud.google.com/apis/library/${FB_API}?project=${projectId}`;
+    return `the Firebase Management API is disabled in ${projectId} — Build switches it on by itself once ${clientEmail} holds the Service Usage Admin role; or enable it by hand (${url}), wait a few minutes, retry`;
+  }
+  const perm = deniedPermission(err);
+  if (perm) {
+    return `${clientEmail} lacks ${perm} on ${projectId} — grant it the ${ROLE_FOR[perm] ?? `role that carries ${perm}`} (${iamUrl(projectId)}), wait a minute, retry`;
+  }
+  if (status === 403) {
+    return `${clientEmail} lacks Firebase rights on ${projectId}${err.message ? ` (Google: ${err.message})` : ''} — grant it the Firebase Admin role once (${iamUrl(projectId)}), wait a minute, retry`;
+  }
+  return err.message ?? `status ${status}`;
+}
+
+/** poll a long-running Google operation (Firebase, Service Usage) to completion */
+async function opWait(getOp, opRes, what) {
   let op = await opRes.json();
   const deadline = Date.now() + 90000;
-  while (!op.done) {
-    if (Date.now() > deadline) throw new Error('the Firebase operation never finished — retry in a minute');
+  while (op.name && !op.done) {
+    if (Date.now() > deadline) throw new Error(`${what} never finished — retry in a minute`);
     await new Promise((r) => setTimeout(r, 2000));
-    op = await (await fb(`/${op.name}`)).json();
+    op = await (await getOp(op.name)).json();
   }
-  if (op.error) throw new Error(op.error.message ?? 'operation failed');
+  if (op.error) throw new Error(op.error.message ?? `${what} failed`);
   return op;
+}
+const fbOpWait = (fb, opRes) => opWait((name) => fb(`/${name}`), opRes, 'the Firebase operation');
+const suOpWait = (access, opRes, fetchImpl) => opWait(
+  (name) => fetchImpl(`${SU_BASE}/${name}`, { headers: { authorization: `Bearer ${access}` }, signal: AbortSignal.timeout(20000) }),
+  opRes, 'switching the API on',
+);
+
+/** turn the bare Cloud project into a Firebase project: API on (a no-op
+ * probe of the enable right when it already is), then addFirebase — a
+ * freshly switched-on API takes Google a moment to notice */
+async function fbAddFirebase(res, fb, access, projectId, clientEmail, apiOff, fetchImpl) {
+  const en = await enableService(access, projectId, FB_API, fetchImpl);
+  if (!en.ok) {
+    res.write(`could not add Firebase: ${await suExplain(en, projectId, clientEmail, FB_API)}\n`);
+    return false;
+  }
+  await suOpWait(access, en, fetchImpl);
+  if (apiOff) res.write('Firebase Management API enabled ✓\n');
+  const attempt = () => fb(`/projects/${projectId}:addFirebase`, { method: 'POST', body: '{}' });
+  let add = await attempt();
+  let err = add.ok ? null : await googleError(add);
+  for (let left = apiOff ? 12 : 0; left > 0 && err && serviceDisabled(err); left -= 1) {
+    if (left === 12) res.write('Google needs a moment to notice the switch — waiting…\n');
+    await new Promise((r) => setTimeout(r, 5000));
+    add = await attempt();
+    err = add.ok ? null : await googleError(add);
+  }
+  if (err) {
+    res.write(`could not add Firebase: ${fbExplain(add.status, err, projectId, clientEmail)}\n`);
+    return false;
+  }
+  await fbOpWait(fb, add);
+  res.write(`Firebase enabled on ${projectId} ✓\n`);
+  return true;
 }
 
 /** get-or-create one Firebase app (android|ios) and return its config */
@@ -931,16 +1016,14 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl) {
     if (proj.ok) {
       res.write(`Firebase project ${projectId} ✓\n`);
     } else {
-      // a bare Cloud project answers 403/404 here — adding Firebase to
-      // it is exactly the console's "create project" without the console
-      res.write(`${projectId} is not a Firebase project yet — adding Firebase to it…\n`);
-      const add = await fb(`/projects/${projectId}:addFirebase`, { method: 'POST', body: '{}' });
-      if (!add.ok) {
-        res.write(`could not add Firebase: ${await fbExplain(add, projectId, clientEmail)}\n`);
-        return res.end('[exit 1]\n');
-      }
-      await fbOpWait(fb, add);
-      res.write(`Firebase enabled on ${projectId} ✓\n`);
+      // a bare Cloud project answers 404 here (403 SERVICE_DISABLED while
+      // the Management API is off) — adding Firebase to it is exactly the
+      // console's "create project" without the console
+      const apiOff = Boolean(serviceDisabled(await googleError(proj)));
+      res.write(apiOff
+        ? `the Firebase Management API is off in ${projectId} — switching it on…\n`
+        : `${projectId} is not a Firebase project yet — adding Firebase to it…\n`);
+      if (!(await fbAddFirebase(res, fb, access, projectId, clientEmail, apiOff, netFetchImpl))) return res.end('[exit 1]\n');
     }
     await fbEnsureApp(fb, res, projectId, 'android', stack.native.appId, `munni ${stack.envName} android`);
     res.write('  google-services.json ready — the next Android build bakes it in (push active)\n');

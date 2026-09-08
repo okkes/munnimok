@@ -260,10 +260,15 @@ google-services.json / GoogleService-Info.plist
 (`NATIVE_GOOGLE_SERVICES_B64` / `NATIVE_IOS_FIREBASE_PLIST_B64`) to
 bake over the stubs; the same service account doubles as the FCM
 sender (auto-copied into `NAS_FCM_SERVICE_ACCOUNT_JSON`). One-time
-floors: grant that service account the **Firebase Admin** role in IAM,
-and for iOS push upload the APNs key once (Firebase console → Cloud
-Messaging). Until then the stub keeps builds green with push inactive
-and the Android card's push pill names the exact blocker.
+floors: grant that service account the **Firebase Admin** AND the
+**Service Usage Admin** roles in IAM — adding Firebase to a Cloud
+project switches APIs on, which Google gates behind
+`serviceusage.services.enable`, a permission Firebase Admin does NOT
+carry (found live 2026-09-08; by hand instead: add Firebase to the
+project once in the Firebase console, then Firebase Admin alone is
+enough) — and for iOS push upload the APNs key once (Firebase console
+→ Cloud Messaging). Until then the stub keeps builds green with push
+inactive and the Android card's push pill names the exact blocker.
 
 Both native workflows accept `environment: local` + `localEnv: <env>`
 (+ Android: `publish: auto|skip`) on dispatch and then build against

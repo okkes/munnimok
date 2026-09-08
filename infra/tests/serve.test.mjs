@@ -941,7 +941,7 @@ test('store-retire: withdraws Play internal testing and expires TestFlight build
   }
 });
 
-test('firebase as code: setup enables the project, registers both apps, copies the sender credential; refusals name the role', async () => {
+test('firebase as code: setup finds the project, registers both apps, copies the sender credential', async () => {
   const { generateKeyPairSync } = await import('node:crypto');
   const rsaPem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
   const shared = loadStack('munni-local-shared');
@@ -987,19 +987,124 @@ test('firebase as code: setup enables the project, registers both apps, copies t
     const body = JSON.parse(nc.chunks.join(''));
     assert.equal(body.variables.NATIVE_GOOGLE_SERVICES_B64, 'R1M=');
     assert.equal(body.variables.NATIVE_IOS_FIREBASE_PLIST_B64, 'UEw=');
+    // refusals: see the bare-Cloud-project test below
+  } finally {
+    saveLocalValues(shared, prev);
+  }
+});
 
-    // the classic refusal: no Firebase Admin role → the fix is NAMED
-    const denyFetch = async (url) => {
-      if (url.includes('oauth2.googleapis.com')) return { ok: true, status: 200, json: async () => ({ access_token: 'gtok' }) };
-      return { ok: false, status: 403, json: async () => ({ error: { message: 'The caller does not have permission' } }), text: async () => '' };
+test('firebase as code: a bare Cloud project gets Firebase added; the enable right is probed FIRST and its gap names the Service Usage Admin role', async () => {
+  const { generateKeyPairSync } = await import('node:crypto');
+  const rsaPem = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  const shared = loadStack('munni-local-shared');
+  const prev = loadLocalValues(shared);
+  saveLocalValues(shared, {
+    ...prev,
+    PLAY_SERVICE_ACCOUNT_JSON: JSON.stringify({ client_email: 'ci@sa.test', token_uri: 'https://oauth2.googleapis.com/token', private_key: rsaPem, project_id: 'p' }),
+  });
+  const ok = (body) => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
+  const fail = (status, error) => ({ ok: false, status, json: async () => ({ error }), text: async () => JSON.stringify({ error }) });
+  const ENABLE = '/projects/p/services/firebase.googleapis.com:enable';
+  const bare = fail(404, { code: 404, message: 'Requested entity was not found.' });
+  // Google's real answer (captured live 2026-09-08) with Firebase Admin granted
+  const denied = fail(403, {
+    message: 'Permission denied to enable service [firebase.googleapis.com]',
+    status: 'PERMISSION_DENIED',
+    details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'AUTH_PERMISSION_DENIED', domain: 'serviceusage.googleapis.com', metadata: { service: 'serviceusage.googleapis.com', permission: 'serviceusage.services.enable' } }],
+  });
+  const apps = (url) => {
+    if (url.includes('/androidApps?')) return ok({ apps: [{ appId: 'A1', packageName: 'app.munni.local.prod' }] });
+    if (url.includes('/androidApps/A1/config')) return ok({ configFileContents: 'R1M=' });
+    if (url.includes('/iosApps?')) return ok({ apps: [{ appId: 'I1', bundleId: 'app.munni.local.prod' }] });
+    if (url.includes('/iosApps/I1/config')) return ok({ configFileContents: 'UEw=' });
+    return null;
+  };
+  const setup = async (fetchImpl) => {
+    const res = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: fetchImpl })(
+      fakeReq({ method: 'POST', url: '/api/local/firebase-setup', token: 'tok', body: { stack: 'munni-local-prod' } }), res);
+    await settle(res);
+    return res.chunks.join('');
+  };
+  try {
+    // (1) bare project, the account may switch services on → no-op enable, addFirebase, apps
+    const calls = [];
+    const out1 = await setup(async (url) => {
+      calls.push(url);
+      if (url.includes('oauth2.googleapis.com')) return ok({ access_token: 'gtok' });
+      if (url.endsWith('/projects/p')) return bare;
+      if (url.endsWith(ENABLE)) return ok({ name: 'operations/su1', done: true });
+      if (url.includes('/projects/p:addFirebase')) return ok({ name: 'operations/o1', done: true });
+      return apps(url) ?? fail(500, {});
+    });
+    assert.match(out1, /p is not a Firebase project yet — adding Firebase to it/);
+    assert.match(out1, /Firebase enabled on p ✓/);
+    assert.match(out1, /\[exit 0\]/);
+    assert.ok(calls.findIndex((u) => u.endsWith(ENABLE)) < calls.findIndex((u) => u.includes(':addFirebase')), 'the enable probe runs BEFORE addFirebase');
+
+    // (2) the Management API is off and the account may switch it on → done in-line, no manual click
+    const out2 = await setup(async (url) => {
+      if (url.includes('oauth2.googleapis.com')) return ok({ access_token: 'gtok' });
+      if (url.endsWith('/projects/p')) return fail(403, { message: 'Firebase Management API has not been used in project 1 before or it is disabled.', details: [{ reason: 'SERVICE_DISABLED', metadata: { activationUrl: 'https://console.developers.google.com/apis/api/firebase.googleapis.com/overview?project=1' } }] });
+      if (url.endsWith(ENABLE)) return ok({ name: 'operations/su2', done: true });
+      if (url.includes('/projects/p:addFirebase')) return ok({ name: 'operations/o2', done: true });
+      return apps(url) ?? fail(500, {});
+    });
+    assert.match(out2, /the Firebase Management API is off in p — switching it on/);
+    assert.match(out2, /Firebase Management API enabled ✓/);
+    assert.match(out2, /Firebase enabled on p ✓/);
+    assert.match(out2, /\[exit 0\]/);
+
+    // (3) THE live refusal (2026-09-08): Firebase Admin granted, Google still says
+    // no — the enable right is the gap; the text names it and both ways out
+    const calls3 = [];
+    const out3 = await setup(async (url) => {
+      calls3.push(url);
+      if (url.includes('oauth2.googleapis.com')) return ok({ access_token: 'gtok' });
+      if (url.endsWith('/projects/p')) return bare;
+      if (url.endsWith(ENABLE)) return denied;
+      return fail(500, {});
+    });
+    assert.match(out3, /serviceusage\.services\.enable — the Firebase Admin role does NOT carry it/);
+    assert.match(out3, /Service Usage Admin role beside Firebase Admin/);
+    assert.match(out3, /iam-admin\/iam\?project=p/);
+    assert.match(out3, /add Firebase to p by hand once/);
+    assert.match(out3, /\[exit 1\]/);
+    assert.ok(!calls3.some((u) => u.includes(':addFirebase')), 'no addFirebase attempt behind a known gap');
+    assert.doesNotMatch(out3, /lacks Firebase rights/, 'the old wrong-role diagnosis is gone');
+
+    // (4) no Firebase rights at all: the probe passes, addFirebase itself
+    // refuses → Firebase Admin IS the fix, and Google's own words show
+    const out4 = await setup(async (url) => {
+      if (url.includes('oauth2.googleapis.com')) return ok({ access_token: 'gtok' });
+      if (url.endsWith(ENABLE)) return ok({ name: 'operations/su4', done: true });
+      return fail(403, { message: 'The caller does not have permission' });
+    });
+    assert.match(out4, /grant it the Firebase Admin role once/);
+    assert.match(out4, /Google: The caller does not have permission/);
+    assert.match(out4, /\[exit 1\]/);
+
+    // …and the push pill (store-status) tells the same story BEFORE Build is pressed
+    const status = async (fetchImpl) => {
+      const res = fakeRes();
+      await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: fetchImpl })(
+        fakeReq({ url: '/api/local/store-status?stack=munni-local-prod', token: 'tok' }), res);
+      return JSON.parse(res.chunks.join('')).firebase;
     };
-    const deny = fakeRes();
-    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: denyFetch })(
-      fakeReq({ method: 'POST', url: '/api/local/firebase-setup', token: 'tok', body: { stack: 'munni-local-prod' } }), deny);
-    await settle(deny);
-    const denyOut = deny.chunks.join('');
-    assert.match(denyOut, /Firebase Admin role/);
-    assert.match(denyOut, /\[exit 1\]/);
+    const bareStatus = (enable) => async (url) => {
+      if (url.includes('oauth2.googleapis.com')) return ok({ access_token: 'gtok' });
+      if (url.endsWith('/projects/p')) return bare;
+      if (url.endsWith(ENABLE)) return enable;
+      if (url.includes('appstoreconnect')) return ok({ data: [] });
+      return fail(404, {});
+    };
+    const willAdd = await status(bareStatus(ok({ name: 'operations/su5', done: true })));
+    assert.equal(willAdd.state, 'missing-app');
+    assert.match(willAdd.detail, /p is not a Firebase project yet; Build adds Firebase to it/);
+    const blocked = await status(bareStatus(denied));
+    assert.equal(blocked.state, 'error');
+    assert.match(blocked.detail, /Service Usage Admin role/);
+    assert.doesNotMatch(blocked.detail, /Requested entity was not found/, 'the raw 404 text never reaches the pill');
   } finally {
     saveLocalValues(shared, prev);
   }
