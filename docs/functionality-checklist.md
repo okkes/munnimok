@@ -19,12 +19,12 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Leave a space; history start date moves with honest consequences
 
 ## Home
-- [ ] Balance band modes and per-account picks; blocks render, reorder, hide; a sparse desktop home centers one wider column
+- [ ] Balance band modes and per-account picks (safe-to-spend converts through the display lens); blocks render, reorder, hide; a sparse desktop home centers one wider column; tab returns render instantly (remount cache, one-shot fade); the debts block has no see-all (the card is the door); a new-transaction row arrives with the New lens on
 - [ ] Quick-add FAB reaches all six doors
 - [ ] Review nudge, new transactions, upcoming costs and notifications reflect reality; see-all lands on the Upcoming page (recurring + loan dues together)
 
 ## Transactions
-- [ ] List: search (title + amount, highlighted), quick filters, filter sheet; filters survive a detail detour
+- [ ] List: search (title + amount, highlighted), quick filters, filter sheet; filters survive a detail detour; with linked shown separately, same-day pairs sit together as one visual unit
 - [ ] Transfer pairs collapse to one row; per-account view keeps both legs
 - [ ] Add/edit a manual transaction end to end (amount math, account, category, counterparty — required for movement categories, date guard)
 - [ ] Detail: recategorize, rename, counterparty set/remove, recurring/event links, notes, receipt, customize sections, delete
@@ -32,23 +32,23 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Reimbursements: link both directions (with clamping errors), parts included; unlink restores
 
 ## Review
-- [ ] Walk the queue: category, counterparty (movement confirms require one), counter-transaction, recurring, event, notes, split — confirm and skip
-- [ ] Memory pre-fills return; bulk "apply to similar" applies what it promised; the per-sibling counter queue holds the deck and counts down
+- [ ] Walk the queue: split leads the card, then category, counterparty (movement confirms require one; the row hides after an explicit plain filing), counter-transaction, recurring + event (appear once a category stands), notes — confirm and skip; titles wrap in full; the category picker can filter BY counter account (pick suggests that account)
+- [ ] Memory pre-fills return; bulk "apply to similar" applies what it promised and resets to select-all on every new card; the per-sibling counter queue holds the deck and counts down
 
 ## Categories
 - [ ] Browse and search the picker (parent names match, ◆ filter); manage: create/edit/delete customs with impact warnings; locked families refuse subs
 - [ ] Account-typed rows only offer categories that fit
 
 ## Recurring & debts
-- [ ] Detection inbox → accept walks the occurrence review; linked charges take the category
-- [ ] Ranges (period/next/year) tell the truth; the year chart plots paid-to-now and estimate-from-now with tappable dots
+- [ ] Detection inbox → accept walks the occurrence review; linked charges take the category (auto-attached ones adopt it too but stay unreviewed); patterns are per-account, one suggestion per steady amount, cross-account echoes deduped, each card names its source account; the recurring form quick-creates its counterparty and shows account faces
+- [ ] Ranges (period/next/year) tell the truth; the year chart plots paid-to-now and estimate-from-now with tappable dots (Show transactions disables when a month has nothing behind it); Upcoming rows say the days left
 - [ ] A loan account shows debt, plan, payments and payoff; lender detection lands on Debts
 
 ## Accounts & banks
 - [ ] Global overview: two segments — the global pool and collapsible per-space cards (closed by default); defaults fold, echoes jump to the real row, archived shares say who stopped sharing; an unattached account offers "Attach to this space"
 - [ ] Connect a bank (choice, consent, callback, nightly fetch, reconnect); imports (bank chooser, preview, progress, result → explicit attach); an import beside a bank link stays its OWN account until the explicit merge (which runs the reconcile)
 - [ ] Attach/detach per space with type (the attach door lands on the final step; shared spaces warn before attach); rename locally vs globally; type change re-reviews that space only
-- [ ] Edit an account (a manual balance edit records an adjustment transaction); delete manual and bank-fed accounts cleanly
+- [ ] Edit an account (a manual balance edit records an adjustment transaction); delete manual and bank-fed accounts cleanly; the CASH WALLET default takes hand entries and can be deleted (no heal-back; the explicit Default pick revives it); funding pots create without a balance question
 
 ## Plans (budgets, goals, allocation, events)
 - [ ] Budget lifecycle: create with categories, thresholds warn, carry-over works
@@ -56,7 +56,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Events: create, attach transactions (select-all screen), per-day costs and drill
 
 ## Portfolio, insights & receipts
-- [ ] Holdings buy/sell and valuation; overview/trends/insights drill correctly
+- [ ] Holdings buy/sell and valuation; overview/trends/insights drill correctly; a drill's transaction opens INSIDE the overview (right pane at lg) and the chosen period survives the detour; uncategorized reads gray everywhere; funding-filed recurrings get no leak advice
 - [ ] Receipt capture (camera/webcam/upload) links to transactions; shopping connections pull receipts
 
 ## Splits (bill splitting) & friends
@@ -65,7 +65,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 
 ## Settings & platform
 - [ ] Space settings rows all lead somewhere sane; global settings: profile (account deletion narrates its progress), devices, language (EN/NL/TR), appearance cycle, export, push, tips
-- [ ] Scrolling a search list dismisses the keyboard; multi-field forms keep it while scrolling
+- [ ] Scrolling a search list dismisses the keyboard (the closing relayout waits for the finger to lift — no mid-scroll jump); multi-field forms keep it while scrolling
 - [ ] PWA installs and updates; native shells build, deep-link back and capture photos
 - [ ] Native deployment from the wizard: Android/iOS feature toggles; hosted track dispatches CI + downloads the signed .aab/.apk artifacts in-page for the store-mandated first upload; local track = LAN mode (family on https://munni-<env>.<ip-dashed>.sslip.io hostnames behind one local-CA Caddy — real https, so Enable Banking consents work locally; localhost twin kept for sign-in/CORS; CA download at http://ca.<base> for phones) + a store channel PER environment app.munni.local.<env> — CI builds against the GitHub environment `local` (localEnv + publish inputs; per-env NATIVE_LOCAL_CHANNEL_<ENV> gate, first upload manual once per env, skipped-not-red until then) and delivers via the Play internal track and TestFlight
 - [ ] Vault secrets grouped in per-environment folders (shared/prod/…): plain item names, folder = environment; every item carries an explanatory note (what it is for, wizard-generated vs operator-entered, rotation); re-sync refreshes, environment delete drops its folder + its GlitchTip org

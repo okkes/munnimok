@@ -18,6 +18,37 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '2.28.0',
+    date: '2026-09-08',
+    items: [
+      {
+        en: 'The review card grew up: long titles wrap instead of being cut, the split door leads (one story or several?), recurring and event rows appear once a category stands, and the counter-account row shows only where it means something. New: no idea what to call a payment? Filter the category picker BY the account the money went to — your pick then suggests that account. And "apply to similar" starts fresh on every card again.',
+        nl: 'De beoordeelkaart is volwassen geworden: lange titels lopen door in plaats van afgekapt te worden, de splitsdeur gaat voorop (één verhaal of meerdere?), terugkerend en gebeurtenis verschijnen zodra er een categorie staat, en de tegenrekening-rij toont alleen waar die iets betekent. Nieuw: geen idee hoe een betaling te noemen? Filter de categoriekiezer OP de rekening waar het geld heen ging — je keuze stelt die rekening dan voor. En "ook toepassen op vergelijkbare" begint weer fris op elke kaart.',
+        tr: 'İnceleme kartı olgunlaştı: uzun başlıklar kesilmek yerine alt satıra iner, bölme kapısı önde (tek hikâye mi, birkaç mı?), düzenli gider ve etkinlik satırları bir kategori seçilince belirir ve karşı hesap satırı yalnızca anlamlı olduğu yerde görünür. Yeni: ödemeye ne ad vereceğini bilmiyor musun? Kategori seçiciyi paranın GİTTİĞİ hesaba göre filtrele — seçimin o hesabı önerir. Ve "benzerlere de uygula" her kartta yeniden tam seçili başlar.',
+      },
+      {
+        en: 'Recurring costs got sharper eyes: patterns are found per account (no more twin suggestions from a transfer echo), one merchant charging several steady amounts becomes several suggestions, each card names the account it lives on, and a newly attached charge takes the recurring cost’s category by itself — while staying unreviewed for your confirmation. Upcoming payments say the days left, and the counterparty can be created right from the recurring form.',
+        nl: 'Vaste lasten kregen scherpere ogen: patronen worden per rekening gevonden (geen dubbele suggesties meer door een overboekingsecho), één winkel met meerdere vaste bedragen wordt meerdere suggesties, elke kaart noemt de rekening waarop hij leeft, en een net gekoppelde afschrijving neemt zelf de categorie van de vaste last over — maar blijft onbeoordeeld voor jouw bevestiging. Aankomende betalingen tonen de resterende dagen, en de tegenrekening maak je nu direct vanuit het formulier aan.',
+        tr: 'Düzenli giderlerin gözleri keskinleşti: desenler hesap başına bulunur (transfer yankısından ikiz öneri yok), birkaç sabit tutar çeken tek satıcı birkaç öneri olur, her kart yaşadığı hesabı söyler ve yeni bağlanan bir çekim düzenli giderin kategorisini kendiliğinden alır — ama onayın için incelenmemiş kalır. Yaklaşan ödemeler kalan günü söyler ve karşı hesap artık formun içinden oluşturulur.',
+      },
+      {
+        en: 'The overview keeps its place: opening a transaction stays inside the overview (on desktop it opens beside the list), your chosen period survives every detour, uncategorized is calm gray everywhere, the period bars read better on wide screens, and linked transfer legs shown separately now sit together as one visual pair.',
+        nl: 'Het overzicht houdt zijn plek: een transactie openen blijft binnen het overzicht (op desktop opent die ernaast), je gekozen periode overleeft elk uitstapje, zonder-categorie is overal rustig grijs, de periodebalken lezen beter op brede schermen, en apart getoonde gekoppelde overboekingsbenen staan nu samen als één visueel paar.',
+        tr: 'Genel bakış yerini korur: bir işlemi açmak genel bakışın içinde kalır (masaüstünde yanında açılır), seçtiğin dönem her sapmadan sağ çıkar, kategorisiz her yerde sakin gri, dönem çubukları geniş ekranda daha iyi okunur ve ayrı gösterilen bağlantılı transfer bacakları artık tek görsel çift olarak yan yana durur.',
+      },
+      {
+        en: 'Home settles down: returning to the tab shows your data instantly instead of a reload flash, safe to spend follows your display currency like everything else, tapping a new transaction lands on the list already filtered to New, and the redundant see-all on the debts block is gone.',
+        nl: 'Home komt tot rust: terugkeren naar het tabblad toont je gegevens direct in plaats van een herlaadflits, vrij te besteden volgt je weergavevaluta zoals al het andere, tikken op een nieuwe transactie landt op de lijst al gefilterd op Nieuw, en de overbodige alles-tonen op het schuldenblok is weg.',
+        tr: 'Ana ekran duruldu: sekmeye dönünce verilerin yeniden yükleme parlaması yerine anında görünür, harcanabilir tutar diğer her şey gibi görüntü para birimini izler, yeni bir işleme dokununca liste zaten Yeni süzgeciyle açılır ve borç bloğundaki gereksiz tümünü gör kalktı.',
+      },
+      {
+        en: 'Small comforts: the default cash account is the Cash Wallet now — it takes hand-entered transactions and can even be deleted; creating a funding pot no longer asks for a balance; the logo picker keeps one steady size; and scrolling away from the keyboard no longer jolts the screen mid-scroll.',
+        nl: 'Klein comfort: de standaard contantrekening is nu de Contante portemonnee — die neemt handmatige transacties aan en kan zelfs verwijderd worden; een potje aanmaken vraagt niet meer om een saldo; de logokiezer houdt één vast formaat; en wegscrollen van het toetsenbord schokt het scherm niet meer midden in de scroll.',
+        tr: 'Küçük konforlar: varsayılan nakit hesabı artık Nakit Cüzdanı — elle girilen işlemleri kabul eder ve silinebilir bile; ortak kasa oluştururken bakiye sorulmaz; logo seçici tek sabit boyutta kalır; ve klavyeden kaydırarak uzaklaşmak ekranı kaydırmanın ortasında sarsmaz.',
+      },
+    ],
+  },
+  {
     version: '2.27.0',
     date: '2026-08-02',
     items: [
