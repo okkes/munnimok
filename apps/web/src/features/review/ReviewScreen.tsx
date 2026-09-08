@@ -13,7 +13,7 @@ import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withCats, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
 import { kindOf, standardTypeFor } from '@/domain/txKind';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, isMovementCat, specialCatType } from '@/domain/categories';
-import { accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
+import { COUNTERABLE_ACCOUNT_TYPES, accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
 import { partNetCents } from '@/domain/reimbursement';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import type { DefaultFamily } from '@/application/defaultAccounts';
@@ -1637,6 +1637,10 @@ export function ReviewScreen() {
   // shows the row's own note); written with the confirm, bulk included
   const [noteDraft, setNoteDraft] = useState<string | null>(null);
   const [bulkSelected, setBulkSelected] = useState<ReadonlySet<string>>(new Set());
+  // #339: true once the USER filed a plain (non-special) category on
+  // this card — the counterparty row retires then (a prediction alone
+  // keeps the #228 counter-first door open)
+  const [pickedPlainCat, setPickedPlainCat] = useState(false);
   // deck animation (user request): keep the outgoing card's markup as a
   // ghost that flies out left while the next card slides in from the right
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -1869,6 +1873,7 @@ export function ReviewScreen() {
     setPickWarn(null);
     setCounterTxOpen(false);
     eventTouched.current = false;
+    setPickedPlainCat(false);
   });
   // the pick is bound to ITS counter account — re-picking or detaching
   // the counterparty (or the editor clearing the link) drops it
@@ -1938,9 +1943,19 @@ export function ReviewScreen() {
   }, [chosenRec?.id, chosenRec?.catId]);
   const recurringAllowedCats = chosenRec?.catId ? [chosenRec.catId, EXPECTED_REIMBURSE_ID] : undefined;
 
+  // #339 (user): recurring/event rows only mean something once a real
+  // category stands — like the loan row's counter-type gate
+  const catChosen = !!draft?.catId && draft.catId !== UNCATEGORIZED_ID;
   const counterRowDoors = buildCounterRowDoors({
     draft,
-    locked: draft?.txType === 'adjustment' || !!recurringAllowedCats,
+    // #339 (user): a category the user EXPLICITLY filed as plain (gift,
+    // groceries…) has no counter account — the row hides. A mere
+    // prediction keeps the counter-first door open (#228), and special
+    // filings (investment/saving/debt/funding) keep the row anyway.
+    locked:
+      draft?.txType === 'adjustment' ||
+      !!recurringAllowedCats ||
+      (pickedPlainCat && catChosen && !specialCatType(draft.catId)),
     amountCents: tx?.amountCents,
     cats,
     setCounterAskCat,
@@ -2024,6 +2039,9 @@ export function ReviewScreen() {
    *  entry CLEARS the row link too — the editor owns the whole story. */
   const stageSingleEntry = (entry: CatsApplyEntry) => {
     if (!draft) return;
+    // #339: an EXPLICIT plain filing retires the counterparty row —
+    // predictions and other stagings leave the counter-first door open
+    setPickedPlainCat(entry.catId !== UNCATEGORIZED_ID && !specialCatType(entry.catId));
     const next = { ...withCategory(withSplits(draft, undefined), entry.catId, cats), cats: settledCatsFor(entry.catId) };
     setStagedDraft({ ...next, linkedAccountId: entry.linkedAccountId });
   };
@@ -2208,9 +2226,11 @@ export function ReviewScreen() {
                   {new Intl.DateTimeFormat(LOCALES[lang], { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(tx.date))}
                   {cardAccount && <span> · {cardAccount.name}</span>}
                 </div>
-                <div className="mt-0.5 flex items-baseline justify-between gap-3">
-                  <span className="min-w-0 flex-1 truncate text-[16px] font-semibold text-ink">{txTitle(tx)}</span>
-                  <span className="m-num shrink-0 text-[18px] text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</span>
+                {/* #339 (user): the title WRAPS instead of truncating —
+                    the amount stays aligned to the first line */}
+                <div className="mt-0.5 flex items-start justify-between gap-3">
+                  <span className="min-w-0 flex-1 text-[16px] leading-snug font-semibold break-words text-ink">{txTitle(tx)}</span>
+                  <span className="m-num shrink-0 text-[18px] leading-snug text-ink">{fmtCents(tx.amountCents, tx.currency, lang, { sign: true })}</span>
                 </div>
                 {tx.description && (
                   // tap to read everything — the clamp sits on an INNER
@@ -2237,6 +2257,20 @@ export function ReviewScreen() {
                   Multi-part (#126 r3): these rows vanish — each PART
                   carries its own story on the deck. */}
               <div data-testid="review-cats">
+                {/* #339 (user re-ruling over #249): the split door leads
+                    now — first question: one story or several? */}
+                {!multiPart && (
+                  <button
+                    data-testid="review-split-row"
+                    onClick={requestSplit}
+                    className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
+                  >
+                    <Icon name="call-split" size={18} color="var(--m-ink-3)" />
+                    <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
+                    <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+                  </button>
+                )}
+
                 <CardCategoryRows
                   draft={draft}
                   fallbackCat={cat}
@@ -2248,7 +2282,10 @@ export function ReviewScreen() {
                   counterTx={counterTxRow}
                 />
 
-                {!multiPart && (
+                {/* #339 (user): recurring + event rows appear once a
+                    category is chosen — like the loan row, they only
+                    mean something under an applicable filing */}
+                {!multiPart && catChosen && (
                   <DebtOrRecurringRow
                     isLoanCounter={isLoanCounter}
                     recMatch={recMatch}
@@ -2260,7 +2297,7 @@ export function ReviewScreen() {
                   />
                 )}
 
-                {!multiPart && (
+                {!multiPart && catChosen && (
                   <button
                     data-testid="review-event-row"
                     onClick={() => setEventPickOpen(true)}
@@ -2297,20 +2334,6 @@ export function ReviewScreen() {
                   </div>
                 )}
 
-                {/* #249 (user): the split door comes LAST — categories,
-                    counterparty, recurring and event lead; splitting is
-                    the escape hatch, not the second suggestion */}
-                {!multiPart && (
-                  <button
-                    data-testid="review-split-row"
-                    onClick={requestSplit}
-                    className="m-tap flex w-full items-center gap-2.5 border-none bg-transparent px-4 py-2.5 text-left text-[14px] text-ink"
-                  >
-                    <Icon name="call-split" size={18} color="var(--m-ink-3)" />
-                    <span className="min-w-0 flex-1 truncate">{t('split.title')}</span>
-                    <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
-                  </button>
-                )}
               </div>
 
               {/* contextual offers keep their chip shape under the rows.
@@ -2454,6 +2477,11 @@ export function ReviewScreen() {
           // #275: the create-category door stashes the deck's place —
           // the detour returns to THIS card with the editor reopened
           onCreateCustomNav={() => setReviewReturn({ skippedIds: [...skipped], txId: tx.id, reopenCats: true })}
+          // #339 (user): pick-by-counter — "I know where the money went,
+          // not what to call it": counter-able accounts as filter chips
+          counterPickAccounts={(spaceAccounts ?? [])
+            .filter((a) => a.id !== tx.accountId && !a.archived && COUNTERABLE_ACCOUNT_TYPES.has(a.type))
+            .map((a) => ({ id: a.id, name: a.name, type: a.type }))}
           onApply={(entries) => {
             if (entries.length === 1) {
               stageSingleEntry(entries[0]);
@@ -2461,6 +2489,7 @@ export function ReviewScreen() {
             }
             const full = settledCatEntry ? [...entries, settledCatEntry] : entries;
             const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
+            setPickedPlainCat(!specialCatType(primary.catId)); // #339: a spread is a plain filing
             setStagedDraft({ ...withCats(draft, full), catId: primary.catId, linkedAccountId: undefined });
           }}
         />

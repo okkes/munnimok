@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
 import { REIMBURSED_ID, isSpecialCategory, mainCatOf, specialCatType } from '@/domain/categories';
-import { allowedSpecialCats } from '@/domain/txType';
+import { allowedSpecialCats, counterTypesFor } from '@/domain/txType';
 import { kindOf } from '@/domain/txKind';
 import { useLang } from '@/i18n';
 import { Highlight } from '@/ui/Highlight';
@@ -51,16 +51,26 @@ interface CategoryPickerProps {
    *  callback clears the counter through the host's own detach mechanics
    *  and the picker un-narrows in place */
   onClearCounter?: () => void;
+  /** #339 (user): pick-by-counter — chips narrowing the catalog to
+   *  categories that can point at that account (the inverse of #322's
+   *  narrowing; for "I know where the money went, not what to call it") */
+  counterAccounts?: readonly { id: string; name: string; type: AccountType }[];
+  /** with a chip active, the pick reports the account too — the host
+   *  preselects it in the counterparty ask (all mint semantics intact) */
+  onPickWithCounter?: (catId: string, accountId: string) => void;
 }
 
 /** Bottom sheet listing the catalog (built-in + custom) grouped by parent, with search. */
-export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, onCreateCustomNav, onClearCounter }: Readonly<CategoryPickerProps>) {
+export function CategoryPicker({ open, onOpenChange, selectedId, onPick, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, onCreateCustomNav, onClearCounter, counterAccounts, onPickWithCounter }: Readonly<CategoryPickerProps>) {
   const { t } = useLang();
   const cats = useCategories();
   const navigate = useNavigate();
   const [query, setQuery] = useState('');
   // #246 (user): one tap to see only the ◆ special categories
   const [specialOnly, setSpecialOnly] = useState(false);
+  // #339: the active pick-by-counter chip
+  const [counterAcct, setCounterAcct] = useState<string | null>(null);
+  const counterAcctType = counterAccounts?.find((a) => a.id === counterAcct)?.type;
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -97,16 +107,20 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
           .filter((c) => !allowedMovement || specialCatType(c.id) === undefined || allowedMovement.has(c.id))
           .filter((c) => !noSpecials || specialCatType(c.id) === undefined)
           .filter((c) => !specialOnly || isSpecialCategory(c))
+          // #339: an active counter chip keeps only categories whose
+          // family may point at that account type
+          .filter((c) => !counterAcctType || (counterTypesFor(c.id)?.includes(counterAcctType) ?? false))
           .filter((c) => !excludeIds?.includes(c.id))
           .filter((c) => !onlyIds || onlyIds.includes(c.id))
           .filter((c) => !q || parentMatch || catName(c, t).toLowerCase().includes(q)),
         };
       })
       .filter((g) => g.children.length > 0);
-  }, [cats, query, t, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, specialOnly]);
+  }, [cats, query, t, direction, txType, sourceAccountType, excludeIds, onlyIds, noSpecials, specialOnly, counterAcctType]);
 
   const pick = (catId: string) => {
-    onPick(catId);
+    if (counterAcct && onPickWithCounter) onPickWithCounter(catId, counterAcct);
+    else onPick(catId);
     onOpenChange(false);
     setQuery('');
   };
@@ -127,6 +141,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
     if (!open) return;
     resetCollapse();
     setSpecialOnly(false);
+    setCounterAcct(null); // #339: the chip resets with the lens/search
     setQuery('');
     if (listRef.current) listRef.current.scrollTop = 0;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -158,6 +173,36 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
         data-testid="catpicker-list"
         onScroll={onListScroll}
       >
+      {/* #339 (user): pick-by-counter — "I know WHERE the money went,
+          not what to call it": a chip narrows to categories that can
+          point at that account, and the later pick suggests it */}
+      {counterAccounts && counterAccounts.length > 0 && (
+        <div className="mt-1 mb-1" data-testid="catpicker-counter-filter">
+          <div className="flex items-center gap-1.5 px-1 text-[11px] font-semibold text-ink-4">
+            {t('cats.counterFilter')}
+            <span title={t('cats.counterFilterHint')} aria-label={t('cats.counterFilterHint')}>
+              <Icon name="information-outline" size={13} color="var(--m-ink-4)" />
+            </span>
+          </div>
+          <div className="mt-1 flex gap-2 overflow-x-auto pb-1">
+            {counterAccounts.map((a) => (
+              <Chip
+                key={a.id}
+                testId={`catpicker-counter-${a.id}`}
+                selected={counterAcct === a.id}
+                onClick={() => setCounterAcct((v) => (v === a.id ? null : a.id))}
+              >
+                {a.name}
+              </Chip>
+            ))}
+          </div>
+          {counterAcct && (
+            <p className="px-1 pt-0.5 text-[11px] text-ink-4" data-testid="catpicker-counter-note">
+              {t('cats.counterFilterActive')}
+            </p>
+          )}
+        </div>
+      )}
       {/* #322 (user): the narrowed list says WHY and offers the way out —
           detaching the counterparty right here frees the whole catalog
           without a trip back to the counter row */}

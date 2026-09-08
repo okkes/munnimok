@@ -261,6 +261,7 @@ export function CatsSheet({
   askDisabled = false,
   anchor,
   onCreateCustomNav,
+  counterPickAccounts,
   onApply,
 }: Readonly<{
   open: boolean;
@@ -287,6 +288,9 @@ export function CatsSheet({
   anchor?: { id: string; date: string };
   /** #275: forwarded to the picker's create-custom door */
   onCreateCustomNav?: () => void;
+  /** #339 (user): pick-by-counter chips in the category picker — for
+   *  "I know where the money went, not what to call it" (review) */
+  counterPickAccounts?: readonly { id: string; name: string; type: AccountType }[];
   onApply: (entries: CatsApplyEntry[]) => void;
 }>) {
   const { t, lang } = useLang();
@@ -300,6 +304,8 @@ export function CatsSheet({
   // (an unlinked transfer is unrepresentable, same rule as whole rows)
   const [counterFor, setCounterFor] = useState<number | null>(null);
   const rollbackRef = useRef<{ index: number; catId: string; linkedAccountId?: string; transferPeerId?: string } | null>(null);
+  // #339: the pick-by-counter chip's account — preselected in the ask
+  const preferredCounter = useRef<string | null>(null);
   // focusing empties the field so typing replaces; blurring an untouched
   // empty field restores the stashed value (split-editor behavior)
   const [focusStash, setFocusStash] = useState<{ index: number; amount: string } | null>(null);
@@ -323,10 +329,36 @@ export function CatsSheet({
     setCounterFor(null);
     setAttempted(false);
     rollbackRef.current = null;
+    preferredCounter.current = null;
     // deliberately only on open: the sheet owns its rows while open
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, subject?.id]);
 
+  /** one pick path for both callbacks (with/without a counter hint) */
+  const applyPick = (catId: string) => {
+    if (pickerFor === null) return;
+    const prev = entries[pickerFor];
+    if (prev?.catId === catId) return;
+    // #218: a pick the linked counter can also mean keeps the link
+    const kept = keepLinkPatch(prev, catId, accounts);
+    if (kept) {
+      patchEntry(pickerFor, kept);
+      return;
+    }
+    // a NEW category starts a fresh story — the old entry's link
+    // never rides along; a lone ◆ pick asks its counterparty right
+    // away — the subject-level question (#228)
+    patchEntry(pickerFor, { catId, linkedAccountId: undefined, transferPeerId: undefined });
+    const ask = askDisabled || entries.length > 1 ? null : counterAskFor(catId);
+    if (ask) {
+      // ◆ Transfer is mandatory: dismissing the ask rolls the pick
+      // back; families and funding may stay bare (deliberate)
+      rollbackRef.current = ask.mandatory
+        ? { index: pickerFor, catId: prev?.catId ?? UNCATEGORIZED_ID, linkedAccountId: prev?.linkedAccountId, transferPeerId: prev?.transferPeerId }
+        : null;
+      setCounterFor(pickerFor);
+    }
+  };
   const valueOf = (entry: CatEntry) => (mode === 'pct' ? parsePct(entry.amount) : (parseCents(entry.amount) ?? 0));
   /** the entry's share in CENTS — anchors the pick-existing fork */
   const centsOf = (entry: CatEntry) => {
@@ -657,30 +689,15 @@ export function CatsSheet({
               }
             : undefined
         }
-        onPick={(catId) => {
-          if (pickerFor === null) return;
-          const prev = entries[pickerFor];
-          if (prev?.catId === catId) return;
-          // #218: a pick the linked counter can also mean keeps the link
-          const kept = keepLinkPatch(prev, catId, accounts);
-          if (kept) {
-            patchEntry(pickerFor, kept);
-            return;
-          }
-          // a NEW category starts a fresh story — the old entry's link
-          // never rides along; a lone ◆ pick asks its counterparty right
-          // away — the subject-level question (#228)
-          patchEntry(pickerFor, { catId, linkedAccountId: undefined, transferPeerId: undefined });
-          const ask = askDisabled || entries.length > 1 ? null : counterAskFor(catId);
-          if (ask) {
-            // ◆ Transfer is mandatory: dismissing the ask rolls the pick
-            // back; families and funding may stay bare (deliberate)
-            rollbackRef.current = ask.mandatory
-              ? { index: pickerFor, catId: prev?.catId ?? UNCATEGORIZED_ID, linkedAccountId: prev?.linkedAccountId, transferPeerId: prev?.transferPeerId }
-              : null;
-            setCounterFor(pickerFor);
-          }
+        counterAccounts={counterPickAccounts}
+        onPickWithCounter={(catId, accountId) => {
+          // #339: the pick-by-counter chip rides into the ask below as
+          // the preselected answer — one confirming tap, every mint
+          // semantic intact
+          preferredCounter.current = accountId;
+          applyPick(catId);
         }}
+        onPick={applyPick}
       />
       <EntryCounterAsk
         counterFor={counterFor}
@@ -693,6 +710,7 @@ export function CatsSheet({
         direction={direction}
         anchor={anchor}
         centsOf={centsOf}
+        preferredId={preferredCounter.current ?? undefined}
       />
     </>
   );
@@ -712,6 +730,7 @@ function EntryCounterAsk({
   direction,
   anchor,
   centsOf,
+  preferredId,
 }: Readonly<{
   counterFor: number | null;
   setCounterFor: (next: number | null) => void;
@@ -723,6 +742,10 @@ function EntryCounterAsk({
   direction: 'debit' | 'credit';
   anchor?: { id: string; date: string };
   centsOf: (entry: CatEntry) => number;
+  /** #339: the pick-by-counter chip's account — shown preselected (the
+   *  confirming tap runs the full choose semantics; no detach door
+   *  appears, since no real link stands yet) */
+  preferredId?: string;
 }>) {
   const counterEntry = counterFor === null ? undefined : entries[counterFor];
   const counterAsk = counterEntry && !askDisabled ? counterAskFor(counterEntry.catId) : null;
@@ -743,7 +766,7 @@ function EntryCounterAsk({
         setCounterFor(null);
       }}
       excludeAccountId={excludeAccountId}
-      currentLinkedId={counterEntry?.linkedAccountId}
+      currentLinkedId={counterEntry?.linkedAccountId ?? preferredId}
       defaultFamily={counterAsk?.defaultFamily}
       counterTypes={counterAsk?.counterTypes}
       onDetach={

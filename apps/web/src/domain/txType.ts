@@ -129,6 +129,19 @@ export function counterTypesForFamily(family: TxType): readonly AccountType[] | 
   }
 }
 
+/** #339: account types that can stand as SOME family's counterparty —
+ *  the union of the table above; drives the pick-by-counter chips */
+export const COUNTERABLE_ACCOUNT_TYPES: ReadonlySet<AccountType> = new Set([
+  'savings',
+  'loan',
+  'mortgage',
+  'credit',
+  'brokerage',
+  'funding',
+  'checking',
+  'cash',
+]);
+
 /** the per-CATEGORY read of the same table — the ATM pair points at
  *  cash wallets specifically; undefined = no counterparty applies */
 export function counterTypesFor(catId: string): readonly AccountType[] | undefined {
