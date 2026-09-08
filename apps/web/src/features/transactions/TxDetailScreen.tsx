@@ -2235,8 +2235,9 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
   };
   // #221: a DEFAULT account's ledger is system-managed — its rows (the
   // minted mirror legs and balance adjustments) are read-only; they are
-  // managed from the ORIGIN transaction, or by adjusting the balance
-  const onDefaultLedger = !!account?.defaultFor;
+  // managed from the ORIGIN transaction, or by adjusting the balance.
+  // #348: the cash wallet takes hand entries, so its rows stay editable
+  const onDefaultLedger = !!account?.defaultFor && account.defaultFor !== 'cash';
   // a credit that self-filed as Reimbursed keeps that category as long
   // as any link lives (user rule) — unlink first, then recategorize
   const categoryLocked = (tx.catId === REIMBURSED_ID && givenOut > 0) || onDefaultLedger;

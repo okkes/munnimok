@@ -1250,7 +1250,7 @@ export const en = {
   'acct.defaultLoan': 'Default loan',
   'acct.defaultInvest': 'Default investments',
   'acct.defaultTransfer': 'Default bank account',
-  'acct.defaultCash': 'Default cash',
+  'acct.defaultCash': 'Cash wallet',
   'acct.defaultFunding': 'Default shared pot',
   'tx.defaultLedgerLocked': 'Managed by munni',
   'split.partCatsTitle': 'Categories for this part',

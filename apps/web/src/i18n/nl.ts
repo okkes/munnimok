@@ -1252,7 +1252,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'acct.defaultLoan': 'Standaard lening',
   'acct.defaultInvest': 'Standaard beleggingen',
   'acct.defaultTransfer': 'Standaard bankrekening',
-  'acct.defaultCash': 'Standaard contant',
+  'acct.defaultCash': 'Contante portemonnee',
   'acct.defaultFunding': 'Standaard pot',
   'tx.defaultLedgerLocked': 'Beheerd door munni',
   'split.partsSection': 'Gesplitste transacties',

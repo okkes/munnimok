@@ -309,6 +309,11 @@ interface SheetProps {
   /** #311 r3 (user): data-dense sheets may take the desktop width —
    *  the dialog widens; the mobile sheet is untouched */
   wide?: boolean;
+  /** #344 (user): content that toggles per keystroke (search results,
+   *  conditional sections) made the auto-height desktop dialog pump —
+   *  `steady` pins the dialog to the requested size instead of growing
+   *  with content. The mobile sheet is height-locked either way. */
+  steady?: boolean;
 }
 
 /**
@@ -342,6 +347,8 @@ interface DesktopDialogProps {
   footer?: ReactNode;
   /** #311 r3: the widened desktop shape for data-dense sheets */
   wide?: boolean;
+  /** #344: pin the dialog to the requested height (no content growth) */
+  steady?: boolean;
   /** USER dismissal request (backdrop/ESC) — the owner decides whether
    *  it closes, asks about unsaved edits, or is tutorial-locked */
   onDismiss: () => void;
@@ -349,7 +356,7 @@ interface DesktopDialogProps {
 
 /** desktop (2026-07-18 fix): a plain centered dialog — vaul's drawer
  *  transforms fought the centered layout and pinned it to the top */
-function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, wide, onDismiss }: Readonly<DesktopDialogProps>) {
+function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, wide, steady, onDismiss }: Readonly<DesktopDialogProps>) {
   // enter/exit: grow from the click point, shrink back to it
   const [phase, setPhase] = useState<'closed' | 'hidden' | 'open'>('closed');
   const originRef = useRef({ x: 0, y: 0 });
@@ -415,7 +422,9 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
           // large screens. The size still sets a floor so short content
           // keeps a recognizable shape; the ceiling is viewport-relative.
           // (The MOBILE sheet keeps its mount-locked height — hard rule.)
-          height: 'auto',
+          // #344: `steady` opts out of the growth — content that toggles
+          // per keystroke made the dialog pump between floor and ceiling
+          height: steady && fixedHeight !== undefined ? fixedHeight : 'auto',
           minHeight: fixedHeight === undefined ? undefined : Math.round(fixedHeight * 0.6),
           maxHeight: 'min(85dvh, 900px)',
           // grow from the source, shrink back to it — the covered-parent
@@ -453,7 +462,7 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
  * cancelling inputs mid-typing, user report); stacked sheets lock their
  * parents automatically. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, size, height, footer, dirty, busyNote, wide }: Readonly<SheetProps>) {
+export function Sheet({ open, onOpenChange, title, children, size, height, footer, dirty, busyNote, wide, steady }: Readonly<SheetProps>) {
   const { t } = useLang();
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
@@ -623,7 +632,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   if (panel) {
     return (
       <>
-        <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} wide={wide} onDismiss={requestDismiss}>
+        <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} wide={wide} steady={steady} onDismiss={requestDismiss}>
           {busyBanner}
           {children}
         </DesktopDialog>

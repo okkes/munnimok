@@ -46,11 +46,19 @@ export async function ensureDefaultAccount(
 ): Promise<string> {
   const id = defaultAccountId(spaceId, family);
   const existing = await store.get('account', id);
-  if (existing?.deleted === 0) return existing.id;
-  const space = await store.get('space', spaceId);
   const lang = getCurrentLang();
+  const freshName = DICTS[lang]?.[NAME_KEYS[family]] ?? en[NAME_KEYS[family]];
+  if (existing?.deleted === 0) {
+    // #348: pre-rename cash wallets heal to the new name — but only
+    // when the row still wears an old DICT name (a user rename stands)
+    if (family === 'cash' && OLD_CASH_NAMES.has(existing.name) && existing.name !== freshName) {
+      await repo.upsert('account', spaceId, id, { name: freshName });
+    }
+    return existing.id;
+  }
+  const space = await store.get('space', spaceId);
   await repo.upsert('account', spaceId, id, {
-    name: DICTS[lang]?.[NAME_KEYS[family]] ?? en[NAME_KEYS[family]],
+    name: freshName,
     type: FAMILY_ACCOUNT_TYPE[family],
     source: 'manual',
     currency: space?.currency ?? 'EUR',
@@ -60,10 +68,22 @@ export async function ensureDefaultAccount(
   return id;
 }
 
+/** #348: the cash default's pre-rename dict names (all languages) */
+const OLD_CASH_NAMES = new Set(['Default cash', 'Standaard contant', 'Varsayılan nakit']);
+
 /** #221: the full set for ONE space — space creation calls this so the
  *  defaults exist from birth */
 export async function ensureSpaceDefaultAccounts(store: StorageBackend, repo: Repo, spaceId: string): Promise<void> {
-  for (const family of DEFAULT_FAMILIES) await ensureDefaultAccount(store, repo, spaceId, family);
+  for (const family of DEFAULT_FAMILIES) {
+    // #348: the cash wallet is DELETABLE — a deliberate delete must not
+    // heal back on boot. Explicit doors (the counterparty "Default"
+    // pick) call ensureDefaultAccount directly and still revive it.
+    if (family === 'cash') {
+      const existing = await store.get('account', defaultAccountId(spaceId, 'cash'));
+      if (existing && existing.deleted !== 0) continue;
+    }
+    await ensureDefaultAccount(store, repo, spaceId, family);
+  }
 }
 
 /** #221: every live space heals on boot — pre-existing spaces, joined

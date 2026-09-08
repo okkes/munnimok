@@ -637,8 +637,12 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   // feeds are the bank's and imported (camt/csv) accounts are the next
   // upload's; manual entries there would duplicate or contradict them.
   // #221: the DEFAULT accounts' ledgers are system-managed (mirror legs
-  // + balance adjustments) — never a hand-entry target.
-  const writable = useMemo(() => (accounts ?? []).filter((a) => a.source === 'manual' && !a.defaultFor), [accounts]);
+  // + balance adjustments) — never a hand-entry target. #348 exception:
+  // the CASH WALLET is the user's own pocket — hand entries welcome.
+  const writable = useMemo(
+    () => (accounts ?? []).filter((a) => a.source === 'manual' && (!a.defaultFor || a.defaultFor === 'cash')),
+    [accounts],
+  );
   const recurrings = useRecurrings();
 
   // (re)fill when opened — keyed on the row's ID, not the object:

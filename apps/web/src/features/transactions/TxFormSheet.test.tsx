@@ -270,11 +270,11 @@ describe('TxFormSheet (demo identity)', () => {
 
     fireEvent.click(screen.getByTestId('tx-add'));
     await screen.findByTestId('txform-save');
-    // demo_save is the ONLY manual account left → it picks itself on the
-    // field; the picker sheet never offers the bank-synced demo_main
-    await waitFor(() => expect(screen.getByTestId('txform-account').textContent).toContain('Demo Savings'), { timeout: 5000 });
     fireEvent.click(screen.getByTestId('txform-account'));
+    // #348: the cash wallet counts as writable too now, so two manual
+    // targets remain; the bank-synced account is still never offered
     await screen.findByTestId('txform-account-demo_save');
+    await screen.findByTestId('txform-account-defaultacct_cash_demo_space');
     expect(screen.queryByTestId('txform-account-demo_main')).toBeNull();
   });
 

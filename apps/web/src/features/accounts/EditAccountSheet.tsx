@@ -403,8 +403,10 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
             {t('action.save')}
           </Button>
           {/* #221: the default accounts are the space's fixtures — no
-              delete door; their balance stays adjustable above */}
-          {manual && !account?.defaultFor && (
+              delete door; their balance stays adjustable above.
+              #348: the cash wallet is the user's own — deletable (and
+              the boot heal no longer re-mints a deliberate delete) */}
+          {manual && (!account?.defaultFor || account.defaultFor === 'cash') && (
             <Button variant="danger" data-testid="acctedit-delete" onClick={() => setConfirmRemove(true)}>
               {t('action.delete')}
             </Button>

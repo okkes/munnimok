@@ -1252,7 +1252,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'acct.defaultLoan': 'Varsayılan kredi',
   'acct.defaultInvest': 'Varsayılan yatırım',
   'acct.defaultTransfer': 'Varsayılan banka hesabı',
-  'acct.defaultCash': 'Varsayılan nakit',
+  'acct.defaultCash': 'Nakit cüzdanı',
   'acct.defaultFunding': 'Varsayılan ortak kasa',
   'tx.defaultLedgerLocked': 'munni tarafından yönetilir',
   'split.partsSection': 'Bölünmüş işlemler',

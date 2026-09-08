@@ -9,7 +9,11 @@ import { propagateRecurringCategory, useRecurringOps } from '@/application/recur
 import { useSpaceAccounts } from '@/application/transactions';
 import { specialCatType } from '@/domain/categories';
 import { counterTypesFor } from '@/domain/txType';
+import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
+// #343: one account face for the whole app — logo when set, else the
+// type icon in the account's color (shared with home's upcoming rows)
+import { LoanFace } from '@/features/home/UpcomingScreen';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import type { RecurringEvery, RecurringKind, RecurringRow } from '@/db/types';
@@ -174,6 +178,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   const [catPickerOpen, setCatPickerOpen] = useState(false);
   // #274: the counterparty pick for special categories
   const [counterPickerOpen, setCounterPickerOpen] = useState(false);
+  // #341: quick-create — the same full chooser the transaction flow has
+  const [counterChooserOpen, setCounterChooserOpen] = useState(false);
   const [debtIntent, setDebtIntent] = useState(false);
   // what the category was when the sheet opened -- propagation fires
   // only on a real change
@@ -563,7 +569,9 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               }}
               className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[14px] text-ink"
             >
-              <Icon name="bank-outline" size={18} color="var(--m-accent-deep)" />
+              {/* #343: the account's real face — logo if set, not a
+                  generic bank icon */}
+              <LoanFace loan={acct} />
               <span className="min-w-0 flex-1 truncate">{acct.name}</span>
               {form?.linkedAccountId === acct.id && <Icon name="check" size={16} color="var(--m-accent-deep)" />}
             </button>
@@ -573,6 +581,16 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
               {t('recurring.counterEmpty')}
             </p>
           )}
+          {/* #341: the creation door — same full chooser as the
+              transaction flow (bank connect, import, or manual) */}
+          <button
+            data-testid="recform-counter-create"
+            onClick={() => setCounterChooserOpen(true)}
+            className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-accent-deep"
+          >
+            <Icon name="plus-circle-outline" size={18} />
+            {t('tx.counterFullSetup')}
+          </button>
           {form?.linkedAccountId && (
             <Button
               variant="outline"
@@ -587,6 +605,18 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
           )}
         </div>
       </Sheet>
+      {/* #341: chooser as a SIBLING, never nested (#241 — portal order);
+          the type grid narrows to what the category's matrix allows */}
+      <AddAccountChooser
+        open={counterChooserOpen}
+        onOpenChange={setCounterChooserOpen}
+        manualTypes={form?.catId ? (counterTypesFor(form.catId) ?? undefined) : undefined}
+        onCreated={(account) => {
+          if (form) setForm({ ...form, linkedAccountId: account.id });
+          setCounterChooserOpen(false);
+          setCounterPickerOpen(false);
+        }}
+      />
       {debtIntent && form && (
         <DebtHandoffInterstitial
           onStay={() => setDebtIntent(false)}

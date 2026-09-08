@@ -158,7 +158,9 @@ export function BrandIconPicker({ open, onOpenChange, onPick, initialQuery = '' 
 
   return (
     <>
-    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.iconTitle')} size="tall" dragHandle>
+    {/* #344: steady — search results and conditional sections toggle per
+        keystroke, and the growing dialog pumped between sizes */}
+    <Sheet open={open} onOpenChange={onOpenChange} title={t('recurring.iconTitle')} size="tall" steady dragHandle>
       <div className="flex flex-col gap-3 pt-1">
         {/* the field arrives prefilled with the cost's name — #234: the
             shared SearchField (this picker's pattern, generalized) */}
