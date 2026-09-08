@@ -1132,17 +1132,12 @@ export function HomeScreen() {
 
   function renderDebtsBlock() {
     if (activeDebts.length === 0) return null; // Explore carries the door (#121 v2)
+    // no see-all here (#337): the card below IS the whole door — both
+    // led to the same /debts screen
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
           <span>{t('debts.title')}</span>
-          <button
-            data-testid="home-seeall-debts"
-            onClick={() => void navigate({ to: '/debts' })}
-            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
-          >
-            {t('action.seeAll')}
-          </button>
         </div>
         <button
           data-testid="home-debts"
