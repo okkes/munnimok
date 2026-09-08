@@ -79,6 +79,11 @@ function editedVsSeed(
   );
 }
 
+/** #348: manual accounts delete — the cash wallet included; the other
+ *  defaults are the space's fixtures. S3776. */
+const deletableAccount = (manual: boolean, defaultFor?: string): boolean =>
+  manual && (!defaultFor || defaultFor === 'cash');
+
 export function EditAccountSheet({ account, onClose }: Readonly<{ account: AccountRow | null; onClose: () => void }>) {
   const { t, lang } = useLang();
   const { store, repo } = useData();
@@ -406,7 +411,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
               delete door; their balance stays adjustable above.
               #348: the cash wallet is the user's own — deletable (and
               the boot heal no longer re-mints a deliberate delete) */}
-          {manual && (!account?.defaultFor || account.defaultFor === 'cash') && (
+          {deletableAccount(manual, account?.defaultFor) && (
             <Button variant="danger" data-testid="acctedit-delete" onClick={() => setConfirmRemove(true)}>
               {t('action.delete')}
             </Button>

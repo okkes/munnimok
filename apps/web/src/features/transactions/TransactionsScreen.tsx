@@ -200,6 +200,55 @@ function edgeOf(index: number, count: number): TxRowEdge {
   return 'none';
 }
 
+/** the byId + reverse peer indexes over one list (S3776 helpers) */
+function peerIndexes(matched: readonly TransactionRow[]) {
+  const byId = new Map(matched.map((item) => [item.id, item]));
+  // #237 r2: one-way pairs read their peer through the reverse index
+  const reverse = new Map<string, TransactionRow>();
+  for (const row of matched) {
+    if (row.transferPeerId && byId.has(row.transferPeerId)) reverse.set(row.transferPeerId, row);
+  }
+  const peerOf = (item: TransactionRow) => (item.transferPeerId ? byId.get(item.transferPeerId) : undefined) ?? reverse.get(item.id);
+  return { peerOf };
+}
+
+/** #237 (user decision "a"): a pair collapses to ONE row — the outgoing
+ *  leg, or for a SAME-SIGN wallet pair the real purchase (the transfer
+ *  leg hides). S3776: out of the list memo. */
+function collapseTransferPairs(matched: TransactionRow[]): TransactionRow[] {
+  const { peerOf } = peerIndexes(matched);
+  return matched.filter((item) => {
+    const peer = peerOf(item);
+    if (!peer) return true;
+    if (Math.sign(peer.amountCents) === Math.sign(item.amountCents)) {
+      return !(kindOf(item.txType) === 'transfer' && kindOf(peer.txType) !== 'transfer');
+    }
+    return item.amountCents <= 0;
+  });
+}
+
+/** #352: same-day legs sit together, outgoing first. S3776. */
+function pairAdjacentLegs(matched: TransactionRow[]): TransactionRow[] {
+  const { peerOf } = peerIndexes(matched);
+  const placed = new Set<string>();
+  const ordered: TransactionRow[] = [];
+  for (const item of matched) {
+    if (placed.has(item.id)) continue;
+    const peer = peerOf(item);
+    if (peer && !placed.has(peer.id) && peer.date === item.date) {
+      const out = item.amountCents <= 0 ? item : peer;
+      const back = out === item ? peer : item;
+      ordered.push(out, back);
+      placed.add(out.id);
+      placed.add(back.id);
+    } else {
+      ordered.push(item);
+      placed.add(item.id);
+    }
+  }
+  return ordered;
+}
+
 function groupByDate(txs: TransactionRow[]): [string, TransactionRow[]][] {
   const groups = new Map<string, TransactionRow[]>();
   for (const tx of txs) {
@@ -305,55 +354,13 @@ export function TransactionsScreen() {
     // paired transfers are ONE event (arc 1): the incoming leg hides when
     // its outgoing peer is listed too — unless an account filter is on
     // (a per-account view needs its own leg for the running story).
-    // #237 (user decision "a"): a SAME-SIGN wallet pair hides its
-    // TRANSFER leg instead — the real purchase stays, counted once.
     // #243 r2 (user): the chip does NOT narrow — it shows the full list
     // with every pair's legs standing separately (collapse off).
-    if (filters.accountIds.size === 0 && !counterOnly) {
-      const byId = new Map(matched.map((item) => [item.id, item]));
-      // #237 r2: one-way pairs collapse too — the pointed-at row reads
-      // its peer through the reverse index
-      const reverse = new Map<string, TransactionRow>();
-      for (const row of matched) {
-        if (row.transferPeerId && byId.has(row.transferPeerId)) reverse.set(row.transferPeerId, row);
-      }
-      matched = matched.filter((item) => {
-        const peer = (item.transferPeerId ? byId.get(item.transferPeerId) : undefined) ?? reverse.get(item.id);
-        if (!peer) return true;
-        if (Math.sign(peer.amountCents) === Math.sign(item.amountCents)) {
-          return !(kindOf(item.txType) === 'transfer' && kindOf(peer.txType) !== 'transfer');
-        }
-        return item.amountCents <= 0;
-      });
-    }
+    if (filters.accountIds.size === 0 && !counterOnly) matched = collapseTransferPairs(matched);
     matched.sort((a, b) => b.date.localeCompare(a.date));
     // #352: with the legs standing separately, a SAME-DAY pair sits
     // together (outgoing first) — the date sort alone scattered them
-    // between unrelated rows
-    if (counterOnly) {
-      const byId = new Map(matched.map((item) => [item.id, item]));
-      const reverse = new Map<string, TransactionRow>();
-      for (const row of matched) {
-        if (row.transferPeerId && byId.has(row.transferPeerId)) reverse.set(row.transferPeerId, row);
-      }
-      const placed = new Set<string>();
-      const ordered: typeof matched = [];
-      for (const item of matched) {
-        if (placed.has(item.id)) continue;
-        const peer = (item.transferPeerId ? byId.get(item.transferPeerId) : undefined) ?? reverse.get(item.id);
-        if (peer && !placed.has(peer.id) && peer.date === item.date) {
-          const out = item.amountCents <= 0 ? item : peer;
-          const back = out === item ? peer : item;
-          ordered.push(out, back);
-          placed.add(out.id);
-          placed.add(back.id);
-        } else {
-          ordered.push(item);
-          placed.add(item.id);
-        }
-      }
-      matched = ordered;
-    }
+    if (counterOnly) matched = pairAdjacentLegs(matched);
     return matched.slice(0, 200);
   }, [allTxs, query, filters, uncatOnly, unsettledOnly, counterOnly, newOnly, newIds, catIds]);
 
@@ -477,6 +484,21 @@ export function TransactionsScreen() {
               i += 1;
             }
           }
+          // S2004: the row renderer lives at THIS level, not inside the
+          // list map — pair units render two rows through one function
+          const renderRow = (item: TransactionRow, listIndex: number) => (
+            <TxRow
+              key={item.id}
+              tx={item}
+              highlight={query}
+              selected={item.id === openTxId}
+              edge={edgeOf(listIndex, list.length)}
+              accountName={accountNames.get(item.accountId)}
+              givenCents={givenByCredit.get(item.id) ?? 0}
+              transferNote={peerNotes.get(item.id)}
+              onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: item.id } })}
+            />
+          );
           return (
           <div key={date}>
             {/* sticky (D2): the group's date stays readable while its rows scroll */}
@@ -520,19 +542,6 @@ export function TransactionsScreen() {
                     />
                   );
                 }
-                const row = (item: (typeof list)[number]) => (
-                  <TxRow
-                    key={item.id}
-                    tx={item}
-                    highlight={query}
-                    selected={item.id === openTxId}
-                    edge={edgeOf(listIndex, list.length)}
-                    accountName={accountNames.get(item.accountId)}
-                    givenCents={givenByCredit.get(item.id) ?? 0}
-                    transferNote={peerNotes.get(item.id)}
-                    onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: item.id } })}
-                  />
-                );
                 if (pairTops.has(tx.id)) {
                   // #352: the two legs share a soft inset + a tie label
                   // (the linked-parts pattern, applied to transfer pairs)
@@ -543,13 +552,13 @@ export function TransactionsScreen() {
                         {t('tx.linkedPair')}
                       </div>
                       <div className="rounded-card bg-bg px-2">
-                        {row(tx)}
-                        {row(list[listIndex + 1])}
+                        {renderRow(tx, listIndex)}
+                        {renderRow(list[listIndex + 1], listIndex)}
                       </div>
                     </div>
                   );
                 }
-                return row(tx);
+                return renderRow(tx, listIndex);
               })}
             </div>
           </div>

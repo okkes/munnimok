@@ -386,8 +386,10 @@ export function HomeScreen() {
   const spendableBand = bandMode === 'spendable';
   const bandCents = spendableBand ? (forecast?.cents ?? null) : bandTotal.cents;
   const bandApprox = !spendableBand && bandTotal.approximate ? '≈ ' : '';
-  const bandLabel =
-    bandCents === null ? '—' : spendableBand ? fmt(bandCents, currency) : `${bandApprox}${fmtCents(bandCents, bandCurrency, lang)}`;
+  let bandLabel = '—';
+  if (bandCents !== null) {
+    bandLabel = spendableBand ? fmt(bandCents, currency) : `${bandApprox}${fmtCents(bandCents, bandCurrency, lang)}`;
+  }
 
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them

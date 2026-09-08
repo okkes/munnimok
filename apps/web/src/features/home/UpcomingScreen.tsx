@@ -61,7 +61,9 @@ export function UpcomingScreen() {
   // #347: the date alone made the reader do the math — say the days too
   const dueLabel = (iso: string) => {
     const n = Math.max(0, Math.round((new Date(iso).getTime() - new Date(today).getTime()) / 86_400_000));
-    const rel = n === 0 ? t('upcoming.dueToday') : n === 1 ? t('upcoming.dueTomorrow') : t('upcoming.dueInDays', { n });
+    let rel = t('upcoming.dueInDays', { n });
+    if (n === 0) rel = t('upcoming.dueToday');
+    else if (n === 1) rel = t('upcoming.dueTomorrow');
     return `${fmtShort(iso)} · ${rel}`;
   };
 

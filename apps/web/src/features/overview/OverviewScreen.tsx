@@ -55,17 +55,17 @@ export function OverviewScreen() {
   // #355: the chosen period survives the category/transaction detour —
   // a module-level memo per kind (session-scoped, like the tx filters);
   // detours change OTHER screens' periods without touching this one
-  const [periodIndex, setPeriodIndexState] = useState(() => PERIOD_MEMO.get(kind) ?? PERIOD_COUNT - 1);
-  const setPeriodIndex = (i: number) => {
+  const [periodIndex, setPeriodIndex] = useState(() => PERIOD_MEMO.get(kind) ?? PERIOD_COUNT - 1);
+  const selectPeriod = (i: number) => {
     PERIOD_MEMO.set(kind, i);
-    setPeriodIndexState(i);
+    setPeriodIndex(i);
   };
   // kind switches keep the component mounted — adopt that kind's memory
   const lastKind = useRef(kind);
   useEffect(() => {
     if (lastKind.current === kind) return;
     lastKind.current = kind;
-    setPeriodIndexState(PERIOD_MEMO.get(kind) ?? PERIOD_COUNT - 1);
+    setPeriodIndex(PERIOD_MEMO.get(kind) ?? PERIOD_COUNT - 1);
   }, [kind]);
 
   const accountsById = useMemo(() => new Map((accounts ?? []).map((a) => [a.id, a])), [accounts]);
@@ -129,7 +129,7 @@ export function OverviewScreen() {
             values={barValues}
             labels={barLabels}
             selected={periodIndex}
-            onSelect={setPeriodIndex}
+            onSelect={selectPeriod}
             accent={KIND_ACCENT[kind]}
             valueLabels={barValues.map((v) => fmt(v, currency))}
           />

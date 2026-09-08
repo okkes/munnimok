@@ -166,6 +166,16 @@ interface RecurringFormSheetProps {
  * tab (add), the detail screen (edit) and the suggestions screen
  * (accept). Owns its pickers and persistence.
  */
+/** #274: the accounts a category's counter matrix allows. S3776. */
+function counterChoicesFor<T extends { type: import('@/db/types').AccountType }>(
+  catId: string | undefined,
+  accounts: readonly T[] | undefined,
+): T[] {
+  if (!catId || !specialCatType(catId)) return [];
+  const allowed = counterTypesFor(catId);
+  return (accounts ?? []).filter((acct) => !allowed || allowed.includes(acct.type));
+}
+
 export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAccepted }: Readonly<RecurringFormSheetProps>) {
   const { t, lang } = useLang();
   const ops = useRecurringOps();
@@ -216,12 +226,9 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
   const baselineRef = useRef('');
   const dirty = form !== null && JSON.stringify(form) !== baselineRef.current;
   const blockerKey = form === null ? null : blockerKeyFor(form);
-  // #274: which accounts the category's counter matrix allows
-  const counterChoices = (() => {
-    if (!form?.catId || !specialCatType(form.catId)) return [];
-    const allowed = counterTypesFor(form.catId);
-    return (accounts ?? []).filter((acct) => !allowed || allowed.includes(acct.type));
-  })();
+  // #274: which accounts the category's counter matrix allows (S3776:
+  // resolved outside the component)
+  const counterChoices = counterChoicesFor(form?.catId, accounts);
   // #195 rings, precomputed once (S3776: the JSX kept re-branching)
   const { nameBad, amountBad, dateBad } = recformRings(attempted, form);
 

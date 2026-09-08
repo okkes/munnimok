@@ -178,7 +178,8 @@ export function detectRecurring(
   // beside the real expense) suggests once — more occurrences win, then
   // the fresher series
   const suggestions: RecurringSuggestion[] = [];
-  for (const s of candidates.sort((a, b) => b.count - a.count || b.lastDate.localeCompare(a.lastDate))) {
+  const ranked = [...candidates].sort((a, b) => b.count - a.count || b.lastDate.localeCompare(a.lastDate));
+  for (const s of ranked) {
     const echo = suggestions.some(
       (kept) =>
         kept.merchantKey === s.merchantKey &&

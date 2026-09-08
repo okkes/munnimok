@@ -138,6 +138,16 @@ export function useRecurringOps(): RecurringOps {
 const reconcilableRow = (tx: SpaceTx): boolean =>
   !tx.recurringId && tx.amountCents < 0 && (tx.txType === 'expense' || tx.txType === 'funding');
 
+/** #360: the facts a freshly auto-linked row adopts from its recurring —
+ *  category (unless reimbursement-filed) and counterparty; the row stays
+ *  unreviewed, the user still confirms. S3776. */
+const adoptionPatch = (rec: RecurringRow, tx: SpaceTx): { catId?: string; linkedAccountId?: string } => ({
+  ...(rec.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
+    ? { catId: rec.catId }
+    : {}),
+  ...(rec.linkedAccountId && tx.linkedAccountId !== rec.linkedAccountId ? { linkedAccountId: rec.linkedAccountId } : {}),
+});
+
 /**
  * Auto-link unlinked expenses to active recurrings by merchant pattern:
  * same normalized merchant, amount within 25% of the estimate, at most
@@ -183,16 +193,7 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
     if (cycles.has(cycle)) continue; // one payment per billing cycle
     cycles.add(cycle);
     linkedCycles.set(rec.id, cycles);
-    // #360: the recurring OWNS the category — the auto-link adopts it
-    // (and the counterparty) like a manual link does, but the row STAYS
-    // unreviewed: the machine guessed, the user still confirms
-    const refile =
-      rec.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
-        ? { catId: rec.catId }
-        : {};
-    const counter =
-      rec.linkedAccountId && tx.linkedAccountId !== rec.linkedAccountId ? { linkedAccountId: rec.linkedAccountId } : {};
-    await writeTxTransform(repo, tx, { recurringId: rec.id, ...refile, ...counter });
+    await writeTxTransform(repo, tx, { recurringId: rec.id, ...adoptionPatch(rec, tx) });
     linked++;
   }
   return linked;

@@ -90,7 +90,7 @@ describe('display currency lens (demo identity, manual rates)', () => {
     const band = await screen.findByTestId('home-total-balance');
     await waitFor(
       () => {
-        expect(band.textContent === '—').toBe(false);
+        expect(band.textContent).not.toBe('—');
         expect(band.textContent).toMatch(/₺|TRY/);
       },
       { timeout: 5000 },
