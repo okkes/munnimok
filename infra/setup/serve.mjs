@@ -29,9 +29,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST } from '../modules/secrets.mjs';
 import { familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from '../modules/localstore.mjs';
 import { insecureFetch, localAwareFetch } from '../modules/insecure-fetch.mjs';
-import { lanHost, loadStack, localEnvRegistry, saveLocalEnvRegistry } from '../modules/stack.mjs';
+import { lanHost, loadAutonomy, loadStack, localEnvRegistry, saveAutonomy, saveLocalEnvRegistry } from '../modules/stack.mjs';
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
 import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultRegister } from '../modules/vault.mjs';
+import { zipEntry } from '../modules/zip.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(DIR, '..', '..');
@@ -176,7 +177,8 @@ async function statusEndpoint(res, probeImpl) {
   for (const name of LOCAL_STACKS()) {
     stacks[name] = await stackStatus(name, probeImpl);
   }
-  return json(res, 200, { docker, stacks, lan: lanHost() });
+  const { enabled, lastCheckAt, lastResult } = loadAutonomy();
+  return json(res, 200, { docker, stacks, lan: lanHost(), autonomy: { enabled, lastCheckAt, lastResult, running: autonomyRunning } });
 }
 
 /* ── run bootstrap ─────────────────────────────────────────────────── */
@@ -1546,6 +1548,8 @@ const VAULT_PURPOSE = {
   NAS_LOGODEV_PUBLIC_TOKEN: 'logo.dev publishable token (client-side logo images).',
   LOGTO_GOOGLE_CLIENT_ID: 'Google OAuth client id for “Sign in with Google”.',
   LOGTO_GOOGLE_CLIENT_SECRET: 'Google OAuth client secret — pairs with the client id.',
+  APPLE_DEV_CERT_P12: 'The machine’s persistent Apple Development certificate (.p12, base64) — CI imports it instead of minting a throwaway one per build (no more “certificate revoked” mails).',
+  APPLE_DEV_CERT_PASSWORD: 'Password of that .p12 — minted here before the certificate; the mint workflow encrypts with it.',
   LOGTO_APPLE_CLIENT_ID: 'Apple Services ID for “Sign in with Apple”.',
   VAULT_SIGNUPS_ALLOWED: 'Wizard bookkeeping: whether this vault still accepts registrations (closed after setup).',
   PLAY_SERVICE_ACCOUNT_JSON: 'Google Play service account (whole JSON file) — CI publishes builds with it; the wizard also uses it to detect when a store app exists.',
@@ -1765,8 +1769,259 @@ function serveHtml(res, token) {
   res.end(html);
 }
 
+/* ── the MACHINE owns the Apple Development certificate (same ruling as
+   the upload keystore; user report 2026-09-08: every local iOS build
+   minted a throwaway cert and pruned the older ones — each prune an
+   Apple "certificate revoked" email). Minted ONCE by the repo's
+   mint-apple-cert workflow (a macOS runner: its p12s import cleanly),
+   pulled back here from the run artifact, shipped into every repo's
+   environment local by the wizard before an iOS build. ── */
+const APPLE_CERT_ARTIFACT = 'apple-dev-cert-p12';
+const APPLE_CERT_FILE = 'APPLE_DEV_CERT_P12.b64';
+
+function appleCertStatusEndpoint(res) {
+  const v = loadLocalValues(loadStack(SHARED_STACK));
+  return json(res, 200, { present: Boolean(v.APPLE_DEV_CERT_P12 && v.APPLE_DEV_CERT_PASSWORD), password: Boolean(v.APPLE_DEV_CERT_PASSWORD) });
+}
+
+/** the p12 password is minted HERE first — the mint workflow encrypts with it */
+function appleCertPasswordEndpoint(res) {
+  const shared = loadStack(SHARED_STACK);
+  const v = loadLocalValues(shared);
+  if (!v.APPLE_DEV_CERT_PASSWORD) saveLocalValues(shared, { ...v, APPLE_DEV_CERT_PASSWORD: randomBytes(24).toString('hex') });
+  return json(res, 200, { ok: true });
+}
+
+/** pull the minted p12 out of the workflow run's artifact into the store */
+async function appleCertImportEndpoint(req, res, netFetchImpl) {
+  const body = await readBody(req);
+  const slug = String(body.slug ?? '');
+  const runId = Number(body.runId);
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isInteger(runId) || runId <= 0) {
+    res.write('need the repo slug and the mint run id\n');
+    return res.end('[exit 1]\n');
+  }
+  const shared = loadStack(SHARED_STACK);
+  const values = loadLocalValues(shared);
+  if (!values.IAC_GH_PAT) {
+    res.write('no GitHub token in the machine store — press Store as IAC_GH_PAT in step 3 first\n');
+    return res.end('[exit 1]\n');
+  }
+  const api = (path, init = {}) => netFetchImpl(`https://api.github.com${path}`, {
+    ...init,
+    headers: { authorization: `Bearer ${values.IAC_GH_PAT}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...init.headers },
+    signal: AbortSignal.timeout(30000),
+  });
+  try {
+    const list = await api(`/repos/${slug}/actions/runs/${runId}/artifacts`);
+    if (!list.ok) throw new Error(`GitHub answered ${list.status} listing the run's artifacts`);
+    const art = ((await list.json()).artifacts ?? []).find((a) => a.name === APPLE_CERT_ARTIFACT);
+    if (!art) throw new Error(`run ${runId} carries no ${APPLE_CERT_ARTIFACT} artifact — did the mint job fail? (its Preflight names the missing secret)`);
+    // the archive url 302s to blob storage, which refuses a forwarded
+    // Authorization header — hop by hand
+    const hop = await api(`/repos/${slug}/actions/artifacts/${art.id}/zip`, { redirect: 'manual' });
+    const location = hop.headers?.get?.('location');
+    const zipRes = location ? await netFetchImpl(location, { signal: AbortSignal.timeout(60000) }) : hop;
+    if (!zipRes.ok) throw new Error(`artifact download failed (${zipRes.status})`);
+    const b64 = zipEntry(Buffer.from(await zipRes.arrayBuffer()), APPLE_CERT_FILE).toString('utf8').trim();
+    if (!/^[A-Za-z0-9+/=]{100,}$/.test(b64)) throw new Error('the artifact does not look like a base64 p12');
+    saveLocalValues(shared, { ...loadLocalValues(shared), APPLE_DEV_CERT_P12: b64 });
+    res.write(`Apple Development certificate stored in the machine store ✓ — every repo's iOS builds sign with it from now on; nothing gets minted or revoked anymore (Apple expires it after a year: delete APPLE_DEV_CERT_P12 from the store to re-mint)\n`);
+    return res.end('[exit 0]\n');
+  } catch (e) {
+    res.write(`${e.message}\n`);
+    return res.end('[exit 1]\n');
+  }
+}
+
+/* ── keeps itself up to date (user ruling 2026-09-08: the wizard is a
+   ONE-TIME bootstrap — afterwards CI/CD must update everything). The NAS
+   pulls a bundle through the DSM poller; a PC cannot be pushed to
+   either, so the helper IS the poller: fetch this checkout's branch,
+   fast-forward when the tree is clean, re-render every stack after a
+   pull, pull the (mutable channel) images, bring the family up, and
+   restart itself once its own code moved. Nothing is pushed here. ── */
+const AUTONOMY_TASK = 'munni local helper';
+const AUTONOMY_MIN_MINUTES = 2;
+let autonomyRunning = false;
+let autonomyLastLog = '';
+let autonomyTimer = null;
+let autonomyDeps = null; // set by main only — tests never arm timers
+let autonomyNextAt = null;
+
+/** run a command quietly and hand back its output */
+const capture = (spawnImpl, cmd, args, opts = {}) => stepRunner(spawnImpl)({ write() {} }, '', cmd, args, opts);
+
+async function autonomyCycle(res, spawnImpl, restartImpl) {
+  const log = { text: '' };
+  const out = { write(s) { log.text = (log.text + String(s)).slice(-20000); res?.write(s); } };
+  if (autonomyRunning) {
+    out.write('an update check is already running\n');
+    return { code: 1 };
+  }
+  autonomyRunning = true;
+  const run = stepRunner(spawnImpl);
+  const git = (label, args) => run(out, label, 'git', args, { cwd: ROOT });
+  const result = { at: new Date().toISOString(), branch: null, pulled: false, paused: null, changed: [], failed: [] };
+  try {
+    result.branch = (await git('which branch does this checkout follow?', ['rev-parse', '--abbrev-ref', 'HEAD'])).out.trim() || 'HEAD';
+    const dirty = (await git('uncommitted changes?', ['status', '--porcelain', '--untracked-files=no'])).out.trim();
+    const fetched = await git(`fetch origin/${result.branch}`, ['fetch', '--quiet', 'origin', result.branch]);
+    if (fetched.code !== 0) {
+      result.paused = 'origin unreachable (offline?) — images still update';
+    } else {
+      const behind = Number((await git('commits behind origin', ['rev-list', '--count', `HEAD..origin/${result.branch}`])).out.trim()) || 0;
+      if (behind && dirty) {
+        result.paused = `${behind} new commit(s) on origin/${result.branch}, but this checkout has uncommitted changes (${dirty.split('\n').length} file(s)) — the pull waits for a clean tree; images still update`;
+      } else if (behind) {
+        const pull = await git(`pull ${behind} commit(s) (fast-forward only)`, ['pull', '--ff-only', '--quiet', 'origin', result.branch]);
+        if (pull.code === 0) result.pulled = true;
+        else result.paused = 'the pull failed (diverged history?) — fix it by hand, images still update';
+      } else {
+        out.write(`up to date with origin/${result.branch}\n`);
+      }
+    }
+    for (const name of LOCAL_STACKS()) {
+      if (!existsSync(join(renderedDir(name), `.env.${name}`))) {
+        out.write(`${name}: not set up yet — skipped\n`);
+        continue;
+      }
+      if (result.pulled) {
+        // templates only change through a pull — re-render from the store then
+        const render = await run(out, `re-render ${name}`, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name], { cwd: ROOT });
+        if (render.code !== 0) {
+          result.failed.push(`${name} (render)`);
+          continue;
+        }
+      }
+      const pull = await run(out, `pull ${name}'s images (channel tags move)`, 'docker', [...composeArgs(name), 'pull', '--quiet'], { cwd: renderedDir(name) });
+      if (pull.code !== 0) result.failed.push(`${name} (image pull)`);
+      const up = await run(out, `bring ${name} up`, 'docker', [...composeArgs(name), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(name) });
+      if (up.code !== 0) result.failed.push(`${name} (up)`);
+      for (const m of up.out.matchAll(/Container (\S+)\s+(?:Recreated|Started)/g)) {
+        if (!result.changed.includes(m[1])) result.changed.push(m[1]);
+      }
+    }
+    saveAutonomy({ ...loadAutonomy(), lastCheckAt: result.at, lastResult: result });
+    const verdict = [
+      result.paused ? `paused: ${result.paused}` : (result.pulled ? 'code pulled' : 'code unchanged'),
+      result.changed.length ? `restarted: ${result.changed.join(', ')}` : 'containers unchanged',
+      ...(result.failed.length ? [`FAILED: ${result.failed.join(', ')}`] : []),
+    ].join('; ');
+    out.write(`\n${verdict}\n`);
+    if (result.pulled && restartImpl) {
+      out.write('the helper restarts itself to run the new code — reload this page in a few seconds\n');
+      setTimeout(restartImpl, 1500);
+    }
+    return { code: result.failed.length ? 1 : 0, result };
+  } finally {
+    autonomyLastLog = log.text;
+    autonomyRunning = false;
+  }
+}
+
+function rearmAutonomy() {
+  if (!autonomyDeps) return;
+  clearInterval(autonomyTimer);
+  autonomyTimer = null;
+  autonomyNextAt = null;
+  const state = loadAutonomy();
+  if (!state.enabled) return;
+  const every = Math.max(AUTONOMY_MIN_MINUTES, Number(state.intervalMinutes) || 10) * 60000;
+  const tick = () => {
+    autonomyNextAt = new Date(Date.now() + every).toISOString();
+    return autonomyCycle(null, autonomyDeps.spawnImpl, autonomyDeps.restartImpl).catch(() => {});
+  };
+  autonomyTimer = setInterval(tick, every);
+  autonomyTimer.unref?.();
+  // a logon start (or turning it on) applies what landed meanwhile soon,
+  // not a full interval later
+  setTimeout(tick, 45000).unref?.();
+  autonomyNextAt = new Date(Date.now() + 45000).toISOString();
+}
+
+/** main hands the real spawn + the self-restart in; tests never call this */
+export function armAutonomy(deps) {
+  autonomyDeps = deps;
+  rearmAutonomy();
+}
+
+// Task Scheduler through the built-in PowerShell module: schtasks.exe
+// refuses an ONLOGON trigger without elevation ("Access is denied",
+// found live 2026-09-08), Register-ScheduledTask registers a task for
+// the current user's own logon as a plain user
+const PS = 'powershell.exe';
+const psArgs = (script) => ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script];
+const taskExists = async (spawnImpl) => process.platform === 'win32'
+  ? (await capture(spawnImpl, PS, psArgs(`Get-ScheduledTask -TaskName '${AUTONOMY_TASK}' -ErrorAction Stop | Out-Null`), { cwd: ROOT })).code === 0
+  : null;
+
+async function autonomyStatusEndpoint(res, spawnImpl) {
+  const state = loadAutonomy();
+  const branch = (await capture(spawnImpl, 'git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ROOT })).out.trim() || null;
+  return json(res, 200, {
+    ...state,
+    running: autonomyRunning,
+    armed: Boolean(autonomyTimer),
+    nextCheckAt: autonomyNextAt,
+    logonTask: await taskExists(spawnImpl),
+    branch,
+    checkout: ROOT,
+    lastLog: autonomyLastLog.slice(-4000),
+  });
+}
+
+async function autonomySetEndpoint(req, res) {
+  const body = await readBody(req);
+  const state = loadAutonomy();
+  if (typeof body.enabled === 'boolean') state.enabled = body.enabled;
+  if (Number.isFinite(Number(body.intervalMinutes)) && Number(body.intervalMinutes) >= AUTONOMY_MIN_MINUTES) state.intervalMinutes = Math.round(Number(body.intervalMinutes));
+  saveAutonomy(state);
+  rearmAutonomy();
+  return json(res, 200, { ...state, armed: Boolean(autonomyTimer), nextCheckAt: autonomyNextAt });
+}
+
+async function autonomyRunEndpoint(res, spawnImpl, restartImpl) {
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const { code } = await autonomyCycle(res, spawnImpl, restartImpl);
+  return res.end(`\n[exit ${code}]\n`);
+}
+
+/** Task Scheduler (built-in, current user, no admin): the helper starts
+ * at every logon from autonomy.cmd — minimized, no browser tab */
+async function autonomyLogonEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  if (process.platform !== 'win32') {
+    res.write('the logon task is Windows-only (Task Scheduler) — on macOS/Linux start the helper from a login item or a user service\n');
+    return res.end('[exit 1]\n');
+  }
+  const run = stepRunner(spawnImpl);
+  if (body.install === false) {
+    const del = await run(res, 'remove the logon task', PS, psArgs(`Unregister-ScheduledTask -TaskName '${AUTONOMY_TASK}' -Confirm:$false -ErrorAction Stop`), { cwd: ROOT });
+    if (del.code === 0) res.write('the helper no longer starts at logon (a running one keeps running until you close it)\n');
+    return res.end(`\n[exit ${del.code === 0 ? 0 : 1}]\n`);
+  }
+  const cmdFile = join(DIR, 'autonomy.cmd').replaceAll("'", "''");
+  const script = [
+    '$t = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME',
+    `$a = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument ('/c start /min ' + [char]34 + 'munni helper' + [char]34 + ' ' + [char]34 + '${cmdFile}' + [char]34)`,
+    '$p = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited',
+    `Register-ScheduledTask -TaskName '${AUTONOMY_TASK}' -Trigger $t -Action $a -Principal $p -Force -ErrorAction Stop | Out-Null`,
+    "'registered'",
+  ].join('; ');
+  const create = await run(res, 'register the logon task (Task Scheduler, current user, no admin needed)', PS, psArgs(script), { cwd: ROOT });
+  if (create.code !== 0) {
+    res.write('registering failed — open Task Scheduler once to see whether tasks may be created for this user\n');
+    return res.end('[exit 1]\n');
+  }
+  res.write(`the helper now starts at every logon from ${cmdFile} (minimized window, no browser tab) — with automatic updates on it keeps the family current by itself\n`);
+  return res.end('[exit 0]\n');
+}
+
 /** build the handler; spawn/probe/validate deps injectable for tests */
-export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn, vaultFetchImpl = insecureFetch, netFetchImpl = localAwareFetch } = {}) {
+export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn, vaultFetchImpl = insecureFetch, netFetchImpl = localAwareFetch, restartImpl = null } = {}) {
   const routes = {
     'GET /api/local/status': (req, res) => statusEndpoint(res, probeImpl),
     'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),
@@ -1783,6 +2038,13 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/firebase-setup': (req, res) => firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),
+    'GET /api/local/apple-cert': (req, res) => appleCertStatusEndpoint(res),
+    'POST /api/local/apple-cert/password': (req, res) => appleCertPasswordEndpoint(res),
+    'POST /api/local/apple-cert/import': (req, res) => appleCertImportEndpoint(req, res, netFetchImpl),
+    'GET /api/local/autonomy': (req, res) => autonomyStatusEndpoint(res, spawnImpl),
+    'POST /api/local/autonomy': (req, res) => autonomySetEndpoint(req, res),
+    'POST /api/local/autonomy/run': (req, res) => autonomyRunEndpoint(res, spawnImpl, restartImpl),
+    'POST /api/local/autonomy/logon': (req, res) => autonomyLogonEndpoint(req, res, spawnImpl),
     'POST /api/local/new-store-package': (req, res) => newStorePackageEndpoint(req, res, spawnImpl),
     'POST /api/local/trust-ca': (req, res) => trustCaEndpoint(res, spawnImpl, netFetchImpl),
     'POST /api/local/gh-pat': (req, res) => ghPatEndpoint(req, res),
@@ -1830,9 +2092,28 @@ async function isRunningHelper(port) {
   }
 }
 
+/** hand over to a fresh process running the just-pulled code: stop
+ * listening first (the double-start guard would otherwise see THIS
+ * helper and exit the new one), let the event loop drain, and fall back
+ * to a hard exit only if something keeps it alive */
+function restartHelper(server) {
+  clearInterval(autonomyTimer);
+  autonomyTimer = null;
+  server.close();
+  server.closeAllConnections?.();
+  spawn(process.execPath, [fileURLToPath(import.meta.url)], {
+    detached: true,
+    stdio: 'ignore',
+    shell: false,
+    env: { ...process.env, SETUP_NO_OPEN: '1', SETUP_RESTART_WAIT: '1500' },
+  }).unref();
+  setTimeout(() => process.exit(0), 3000).unref();
+}
+
 function startHelper(port, attemptsLeft) {
   const token = randomBytes(16).toString('hex');
-  const server = createServer(createApp({ token }));
+  let server = null;
+  server = createServer(createApp({ token, restartImpl: () => restartHelper(server) }));
   server.requestTimeout = 0; // compose builds stream for many minutes
   server.on('error', async (err) => {
     if (err.code !== 'EADDRINUSE') throw err;
@@ -1856,9 +2137,12 @@ function startHelper(port, attemptsLeft) {
     console.log(`munni setup helper ready → ${url}`);
     console.log('(the page it serves can now run the local setup for you; Ctrl+C stops the helper)');
     openBrowser(url);
+    armAutonomy({ spawnImpl: spawn, restartImpl: () => restartHelper(server) });
+    if (loadAutonomy().enabled) console.log('automatic updates are ON — this helper keeps the local family current by itself');
   });
 }
 
 if (isMain) {
-  startHelper(Number(process.env.SETUP_PORT ?? 8377), 3);
+  // a self-restart waits for its predecessor to let go of the port
+  setTimeout(() => startHelper(Number(process.env.SETUP_PORT ?? 8377), 3), Number(process.env.SETUP_RESTART_WAIT ?? 0));
 }

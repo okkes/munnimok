@@ -1137,6 +1137,183 @@ test('firebase as code: a bare Cloud project gets Firebase added; the enable rig
   }
 });
 
+test('apple cert: the machine mints the p12 password, pulls the minted certificate out of the run artifact, refuses without a token', async () => {
+  const { zipBuild } = await import('../modules/zip.mjs');
+  const shared = loadStack('munni-local-shared');
+  const prev = loadLocalValues(shared);
+  const { APPLE_DEV_CERT_P12: _p12, APPLE_DEV_CERT_PASSWORD: _pw, IAC_GH_PAT: _pat, ...bare } = prev;
+  saveLocalValues(shared, bare);
+  try {
+    const status = async (app2) => {
+      const res = fakeRes();
+      await app2(fakeReq({ url: '/api/local/apple-cert', token: 'tok' }), res);
+      return JSON.parse(res.chunks.join(''));
+    };
+    assert.deepEqual(await status(app), { present: false, password: false });
+
+    const pw = fakeRes();
+    await app(fakeReq({ method: 'POST', url: '/api/local/apple-cert/password', token: 'tok' }), pw);
+    const minted = loadLocalValues(shared).APPLE_DEV_CERT_PASSWORD;
+    assert.match(minted, /^[0-9a-f]{48}$/, 'a 24-byte hex password lands in the machine store');
+    await app(fakeReq({ method: 'POST', url: '/api/local/apple-cert/password', token: 'tok' }), fakeRes());
+    assert.equal(loadLocalValues(shared).APPLE_DEV_CERT_PASSWORD, minted, 'minting twice keeps the first password');
+    assert.deepEqual(await status(app), { present: false, password: true });
+
+    // no GitHub token in the store → the import names the fix
+    const noPat = fakeRes();
+    await app(fakeReq({ method: 'POST', url: '/api/local/apple-cert/import', token: 'tok', body: { slug: 'me/munni', runId: 42 } }), noPat);
+    await settle(noPat);
+    assert.match(noPat.chunks.join(''), /no GitHub token in the machine store/);
+    assert.match(noPat.chunks.join(''), /\[exit 1\]/);
+
+    saveLocalValues(shared, { ...loadLocalValues(shared), IAC_GH_PAT: 'ghp_test' });
+    const b64 = 'MIIKAQIBAzCCCscGCSqGSIb3DQEHAaCCCrgEggq0'.repeat(4);
+    const calls = [];
+    const netFetchImpl = async (url, init = {}) => {
+      calls.push({ url, init });
+      if (url.endsWith('/actions/runs/42/artifacts')) return { ok: true, status: 200, json: async () => ({ artifacts: [{ id: 7, name: 'apple-dev-cert-p12' }] }) };
+      if (url.endsWith('/actions/artifacts/7/zip')) return { ok: false, status: 302, headers: { get: (k) => (k === 'location' ? 'https://blob.example/7.zip' : null) } };
+      if (url === 'https://blob.example/7.zip') return { ok: true, status: 200, arrayBuffer: async () => zipBuild({ 'APPLE_DEV_CERT_P12.b64': `${b64}\n` }) };
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl });
+    const imp = fakeRes();
+    await app2(fakeReq({ method: 'POST', url: '/api/local/apple-cert/import', token: 'tok', body: { slug: 'me/munni', runId: 42 } }), imp);
+    await settle(imp);
+    const out = imp.chunks.join('');
+    assert.match(out, /Apple Development certificate stored in the machine store ✓/);
+    assert.match(out, /\[exit 0\]/);
+    assert.equal(loadLocalValues(shared).APPLE_DEV_CERT_P12, b64, 'the artifact content (trimmed) is the store value');
+    assert.equal(calls[0].init.headers.authorization, 'Bearer ghp_test', 'the machine token lists the artifacts');
+    assert.equal(calls[1].init.redirect, 'manual', 'the blob hop is taken WITHOUT the token');
+    assert.equal(calls[2].init.headers, undefined);
+    assert.deepEqual(await status(app2), { present: true, password: true });
+
+    // a run without the artifact (mint job failed) → named, exit 1
+    const none = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ artifacts: [] }) }) })(
+      fakeReq({ method: 'POST', url: '/api/local/apple-cert/import', token: 'tok', body: { slug: 'me/munni', runId: 43 } }), none);
+    await settle(none);
+    assert.match(none.chunks.join(''), /carries no apple-dev-cert-p12 artifact/);
+    assert.match(none.chunks.join(''), /\[exit 1\]/);
+  } finally {
+    saveLocalValues(shared, prev);
+  }
+});
+
+test('autonomy: settings persist; a check fetches, pulls only on a clean tree, re-renders after a pull, pulls images and brings the family up; the logon task rides schtasks', async () => {
+  const { mkdirSync, writeFileSync } = await import('node:fs');
+  const { loadAutonomy, saveAutonomy } = await import('../modules/stack.mjs');
+  const envFiles = ['munni-local-shared', 'munni-local-prod'].map((n) => join(SCRATCH, n, `.env.${n}`));
+  for (const f of envFiles) { mkdirSync(join(f, '..'), { recursive: true }); writeFileSync(f, 'X=1\n'); }
+  const prevState = loadAutonomy();
+  try {
+    // off by default; turning it on persists (timers are main's business — none here)
+    const st0 = fakeRes();
+    await app(fakeReq({ url: '/api/local/autonomy', token: 'tok' }), st0);
+    const s0 = JSON.parse(st0.chunks.join(''));
+    assert.equal(s0.enabled, false);
+    assert.equal(s0.intervalMinutes, 10);
+    const on = fakeRes();
+    await app(fakeReq({ method: 'POST', url: '/api/local/autonomy', token: 'tok', body: { enabled: true, intervalMinutes: 1 } }), on);
+    assert.equal(loadAutonomy().enabled, true);
+    assert.equal(loadAutonomy().intervalMinutes, 10, 'below the floor the interval stays');
+    await app(fakeReq({ method: 'POST', url: '/api/local/autonomy', token: 'tok', body: { intervalMinutes: 30 } }), fakeRes());
+    assert.equal(loadAutonomy().intervalMinutes, 30);
+
+    const cycle = async ({ dirty, behind }) => {
+      const spawned = [];
+      let restarted = 0;
+      const outputs = (n, args) => {
+        if (args[0] === 'rev-parse') return 'dev\n';
+        if (args[0] === 'status') return dirty ? ' M apps/web/tests/screenshots/x.png\n' : '';
+        if (args[0] === 'rev-list') return `${behind}\n`;
+        if (args.includes('up')) return ' Container munni-local-prod-api-prod-1  Recreated\n Container munni-local-prod-web-prod-1  Running\n';
+        return '';
+      };
+      const app2 = createApp({ token: 'tok', probeImpl: async () => false, spawnImpl: scriptedSpawn(spawned, outputs), restartImpl: () => { restarted += 1; } });
+      const res = fakeRes();
+      await app2(fakeReq({ method: 'POST', url: '/api/local/autonomy/run', token: 'tok' }), res);
+      await settle(res);
+      return { out: res.chunks.join(''), spawned, restarted: () => restarted };
+    };
+
+    // clean tree, 2 commits behind → pull, re-render both set-up stacks, images, up
+    const a = await cycle({ dirty: false, behind: 2 });
+    const gitArgs = a.spawned.filter((s) => s.cmd === 'git').map((s) => s.args[0]);
+    assert.deepEqual(gitArgs, ['rev-parse', 'status', 'fetch', 'rev-list', 'pull']);
+    assert.ok(a.spawned.some((s) => s.cmd === 'git' && s.args.includes('--ff-only')), 'fast-forward only');
+    const renders = a.spawned.filter((s) => s.args.includes('--stack')).map((s) => s.args.at(-1));
+    assert.deepEqual(renders, ['munni-local-shared', 'munni-local-prod'], 'set-up stacks re-render after a pull; the dev env (never rendered) is skipped');
+    assert.ok(a.spawned.some((s) => s.cmd === 'docker' && s.args.includes('pull') && s.args.includes('docker-compose.munni-local-prod.yml')), 'images pulled');
+    assert.ok(a.spawned.some((s) => s.cmd === 'docker' && s.args.includes('up') && s.args.includes('docker-compose.munni-local-shared.yml')), 'family brought up');
+    assert.match(a.out, /munni-local-dev: not set up yet — skipped/);
+    assert.match(a.out, /code pulled; restarted: munni-local-prod-api-prod-1/);
+    assert.match(a.out, /the helper restarts itself/);
+    assert.match(a.out, /\[exit 0\]/);
+    const saved = loadAutonomy().lastResult;
+    assert.equal(saved.pulled, true);
+    assert.deepEqual(saved.changed, ['munni-local-prod-api-prod-1']);
+
+    // dirty tree, commits waiting → the pull pauses, images still update, no re-render, no restart
+    const b = await cycle({ dirty: true, behind: 3 });
+    assert.ok(!b.spawned.some((s) => s.cmd === 'git' && s.args[0] === 'pull'), 'no pull on a dirty tree');
+    assert.ok(!b.spawned.some((s) => s.args.includes('--stack')), 'no re-render without new code');
+    assert.ok(b.spawned.some((s) => s.cmd === 'docker' && s.args.includes('pull')), 'images still pulled');
+    assert.match(b.out, /paused: 3 new commit\(s\) on origin\/dev, but this checkout has uncommitted changes \(1 file\(s\)\)/);
+    assert.doesNotMatch(b.out, /restarts itself/);
+    assert.equal(loadAutonomy().lastResult.paused.startsWith('3 new commit'), true);
+
+    // up to date → nothing pulled, nothing re-rendered
+    const c = await cycle({ dirty: false, behind: 0 });
+    assert.match(c.out, /up to date with origin\/dev/);
+    assert.match(c.out, /code unchanged/);
+
+    // status carries the checkout facts the card shows
+    const st = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, spawnImpl: scriptedSpawn([], (n, args) => (args[0] === 'rev-parse' ? 'dev\n' : '')) })(
+      fakeReq({ url: '/api/local/autonomy', token: 'tok' }), st);
+    const s1 = JSON.parse(st.chunks.join(''));
+    assert.equal(s1.branch, 'dev');
+    assert.equal(s1.enabled, true);
+    assert.equal(s1.running, false);
+    assert.equal(s1.armed, false, 'tests never arm the timer');
+    assert.equal(s1.logonTask, process.platform === 'win32' ? true : null);
+
+    // the logon task: Task Scheduler on Windows, a clear no on other platforms
+    const spawned = [];
+    const logon = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, spawnImpl: scriptedSpawn(spawned, () => 'SUCCESS\n') })(
+      fakeReq({ method: 'POST', url: '/api/local/autonomy/logon', token: 'tok', body: { install: true } }), logon);
+    await settle(logon);
+    const lo = logon.chunks.join('');
+    if (process.platform === 'win32') {
+      // the ScheduledTasks module, not schtasks.exe: an ONLOGON trigger
+      // through schtasks needs elevation (Access is denied, live 2026-09-08)
+      const create = spawned.find((s) => s.cmd === 'powershell.exe');
+      const script = create.args.at(-1);
+      assert.ok(create.args.includes('-NonInteractive'));
+      assert.match(script, /New-ScheduledTaskTrigger -AtLogOn -User \$env:USERNAME/);
+      assert.match(script, /-LogonType Interactive -RunLevel Limited/);
+      assert.match(script, /Register-ScheduledTask -TaskName 'munni local helper'/);
+      assert.match(script, /autonomy\.cmd/);
+      assert.match(lo, /starts at every logon/);
+      assert.match(lo, /\[exit 0\]/);
+      const off = fakeRes();
+      await createApp({ token: 'tok', probeImpl: async () => false, spawnImpl: scriptedSpawn(spawned, () => '') })(
+        fakeReq({ method: 'POST', url: '/api/local/autonomy/logon', token: 'tok', body: { install: false } }), off);
+      await settle(off);
+      assert.match(spawned.at(-1).args.at(-1), /Unregister-ScheduledTask -TaskName 'munni local helper'/);
+    } else {
+      assert.match(lo, /Windows-only/);
+      assert.match(lo, /\[exit 1\]/);
+    }
+  } finally {
+    saveAutonomy(prevState);
+    for (const f of envFiles) rmSync(f, { force: true });
+  }
+});
+
 test('cleanup-check: family docker resources count by compose PROJECT — the dev loop and munni-sonar do not', async () => {
   const spawned = [];
   const outputs = (n, args) => {

@@ -229,6 +229,22 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
       </div>
     </div>
 
+    <div class="card">
+      <div class="card-head">
+        <span class="ico" data-ico="pulse"></span>
+        <div>
+          <h3>Keeps itself up to date <span class="pill" id="autonomy-pill"></span></h3>
+          <p class="why">The setup above is a ONE-TIME bootstrap. From then on this helper is the PC’s counterpart of the NAS deploy poller: every <span id="autonomy-interval">10</span> minutes it fetches this checkout’s branch, fast-forwards when the working tree is clean, re-renders every stack from the machine store after a pull, pulls the newest image of each channel and brings the family up again — restarting itself when its own code moved. Nothing is pushed to this PC; it pulls, exactly like the NAS. Register it at logon and it runs without this page (the store credentials never leave the machine).</p>
+          <div class="runrow">
+            <button id="btn-autonomy-toggle">Turn automatic updates on</button>
+            <button class="ghost" id="btn-autonomy-run">Check for updates now</button>
+            <button class="ghost" id="btn-autonomy-logon">Run the helper at logon</button>
+          </div>
+          <div class="why" id="autonomy-status">checking…</div>
+        </div>
+      </div>
+    </div>
+
     <div id="env-cards"></div>
 
     <div class="card">
@@ -999,7 +1015,7 @@ const FEATURES = [
   { id: 'logodev', label: 'Merchant logos (logo.dev)', hint: 'brand logos on transactions and recurring costs' },
   { id: 'fcm', label: 'Native push notifications (Firebase FCM)', hint: 'push for the Android/iOS shells — web push works without this' },
   { id: 'google', label: 'Sign in with Google', hint: 'social login button on the sign-in screen' },
-  { id: 'apple', label: 'Sign in with Apple', hint: 'required by Apple if you ship the iOS app with any social login', targets: ['nas'], offHint: 'needs the https NAS track — Apple refuses http return URLs' },
+  { id: 'apple', label: 'Sign in with Apple', hint: 'required by Apple if you ship the iOS app with any social login', localHint: 'Apple accepts https return URLs only — LAN mode (real https hostnames) turns on by itself; register each environment’s return URL in the Apple Services ID (the Apple card in step 3 lists them)' },
   { id: 'email', label: 'Crash-report emails', hint: 'GlitchTip mails on new errors (needs an SMTP url); without it, reports stay in the UI' },
   { id: 'android', label: 'Android app', hint: 'the native Android shell — CI builds and (once the keystore exists) publishes it; only the FIRST Play upload is manual, by store rule', localHint: 'its own store channel app.munni.local: CI bakes the build against THIS machine (LAN mode) and publishes it to the Play internal track' },
   { id: 'ios', label: 'iOS app', hint: 'the native iOS shell — CI signs and uploads straight to TestFlight (Apple allows no sideloading)', localHint: 'its own store channel app.munni.local: CI bakes the LAN build and uploads it to TestFlight' },
@@ -1126,9 +1142,12 @@ const GROUPS = [
     ],
   },
   {
-    id: 'apple', title: 'Apple sign-in', feature: 'apple', targets: ['nas'], check: 'apple',
-    why: 'Sign in with Apple for web + iOS. Requires an Apple Developer membership.',
-    how: ['developer.apple.com → Identifiers → new <b>Services ID</b> — its identifier is the client ID below. Enable Sign in with Apple.', 'Return URL: <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/apple-universal</code>', 'Keys → create a key with Sign in with Apple → note the Key ID, download the .p8 (paste its contents).', 'Team ID: top right of the developer console (Membership).'],
+    id: 'apple', title: 'Apple sign-in', feature: 'apple', check: 'apple',
+    why: 'Sign in with Apple for web + iOS. Requires an Apple Developer membership. One Services ID + key serves every environment of the family.',
+    how: ['developer.apple.com → Identifiers → new <b>Services ID</b> — its identifier is the client ID below. Enable Sign in with Apple.',
+      { nas: 'Return URL: <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/apple-universal</code>',
+        local: 'Return URLs (one per environment — Apple takes several on one Services ID; LAN mode must be on, which the toggle does by itself): <span id="apple-local-return-urls"><i>shown once the environments are set up</i></span>. A changed wifi address changes them — hence the DHCP reservation.' },
+      'Keys → create a key with Sign in with Apple (tick APNs on the same key if you want iOS push — one .p8 serves both) → note the Key ID, download the .p8 (paste its contents).', 'Team ID: top right of the developer console (Membership).'],
     fields: [
       { name: 'LOGTO_APPLE_CLIENT_ID', scope: 'pair', ph: 'e.g. app.munni.iac.signin' },
       { name: 'LOGTO_APPLE_TEAM_ID', scope: 'pair' },
@@ -1411,6 +1430,54 @@ function renderEnvCards(st) {
   }
 }
 
+/** the Apple card lists every environment's Logto return URL — Apple
+ * refuses http, so only https (LAN mode) hosts qualify */
+function fillAppleReturnUrls(st = S.stacksStatus) {
+  const span = document.getElementById('apple-local-return-urls');
+  if (!span || !st) return;
+  const urls = Object.values(st.stacks)
+    .filter((s) => s.urls?.logto && s.urls.logto.startsWith('https://'))
+    .map((s) => `<code>${s.urls.logto}/callback/apple-universal</code>`);
+  span.innerHTML = urls.length ? urls.join(' &nbsp;·&nbsp; ') : '<i>turn LAN mode on first (tick Sign in with Apple, Android, iOS or Enable Banking) — localhost hosts are http, which Apple refuses</i>';
+}
+
+/* ── keeps itself up to date: the helper's self-update loop + logon task ── */
+const fmtWhen = (iso) => (iso ? new Date(iso).toLocaleString() : 'never');
+async function refreshAutonomy() {
+  if (!HELPER) return;
+  try {
+    const a = await (await hfetch('/api/local/autonomy')).json();
+    S.autonomy = a;
+    setPill('autonomy-pill', a.enabled ? (a.running ? 'checking…' : 'on ✓') : 'off', a.enabled);
+    document.getElementById('autonomy-interval').textContent = String(a.intervalMinutes ?? 10);
+    document.getElementById('btn-autonomy-toggle').textContent = a.enabled ? 'Turn automatic updates off' : 'Turn automatic updates on';
+    const logonBtn = document.getElementById('btn-autonomy-logon');
+    logonBtn.textContent = a.logonTask ? 'Stop running at logon' : 'Run the helper at logon';
+    logonBtn.hidden = a.logonTask === null; // not Windows
+    const r = a.lastResult;
+    const lines = [`Checkout: <code>${a.checkout}</code> on <b>${a.branch ?? '?'}</b> · at logon: <b>${a.logonTask === null ? 'n/a' : (a.logonTask ? 'yes ✓' : 'no')}</b>`];
+    lines.push(`Last check: ${fmtWhen(a.lastCheckAt)}${r ? ` — ${r.paused ? `<b>paused</b>: ${r.paused}` : (r.pulled ? 'code pulled' : 'code unchanged')}; ${r.changed?.length ? `restarted ${r.changed.join(', ')}` : 'containers unchanged'}${r.failed?.length ? ` · <b>failed</b>: ${r.failed.join(', ')}` : ''}` : ''}`);
+    if (a.enabled) lines.push(`Next check: ${a.nextCheckAt ? fmtWhen(a.nextCheckAt) : 'when the helper runs'}`);
+    else lines.push('Off — new releases reach this PC only when you press Set up & start (or Check for updates now).');
+    document.getElementById('autonomy-status').innerHTML = lines.join('<br/>');
+  } catch { /* helper away — the status card says so */ }
+}
+document.getElementById('btn-autonomy-toggle')?.addEventListener('click', async () => {
+  const on = !(S.autonomy?.enabled);
+  await hfetch('/api/local/autonomy', { method: 'POST', body: JSON.stringify({ enabled: on }) });
+  localLog(on ? '\nautomatic updates ON — the first check runs within a minute, then every 10 minutes (register the helper at logon so it runs without this page)\n' : '\nautomatic updates OFF\n');
+  await refreshAutonomy();
+});
+document.getElementById('btn-autonomy-run')?.addEventListener('click', async () => {
+  await streamLocal('/api/local/autonomy/run', {}, 'check for updates now (fetch → pull when clean → images → up)');
+  await refreshAutonomy();
+});
+document.getElementById('btn-autonomy-logon')?.addEventListener('click', async () => {
+  const install = !(S.autonomy?.logonTask);
+  await streamLocal('/api/local/autonomy/logon', { install }, install ? 'register the helper as a logon task' : 'remove the logon task');
+  await refreshAutonomy();
+});
+
 async function refreshLocal() {
   if (!HELPER) return;
   const box = document.getElementById('local-status');
@@ -1437,6 +1504,9 @@ async function refreshLocal() {
     }
     box.innerHTML = rows.map((r) => `<div style="margin:2px 0">${r}</div>`).join('');
     renderEnvCards(st);
+    S.stacksStatus = st;
+    fillAppleReturnUrls(st);
+    refreshAutonomy().catch(() => {});
     const shared = st.stacks[SHARED_STACK];
     const anyRendered = Object.values(st.stacks).some((s) => s.rendered);
     const anyRunning = Object.values(st.stacks).some((s) => Object.values(s.services).some(Boolean));
@@ -1628,7 +1698,7 @@ function renderFeatures() {
   }).join('');
   FEATURES.forEach((f) => {
     document.getElementById('feat-' + f.id).addEventListener('change', async (e) => {
-      S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); renderNative(); renderStatus();
+      S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); fillAppleReturnUrls(); renderNative(); renderStatus();
       // the toggle IS the trigger (user ruling): the network mode follows
       // the features by itself — LAN when a phone/https feature is on,
       // plain localhost when none is — and android/ios ON starts the CI
@@ -2376,7 +2446,7 @@ function setMasterBusy(busy) {
  * the simple default; a feature that needs the network (phones cannot
  * reach localhost; Enable Banking demands real https) flips the family
  * to LAN, and unticking them all flips it back — no manual buttons */
-const needLanNow = () => S.platform === 'local' && Boolean(S.features.android || S.features.ios || S.features.enablebanking);
+const needLanNow = () => S.platform === 'local' && Boolean(S.features.android || S.features.ios || S.features.enablebanking || S.features.apple);
 async function reconcileLanMode() {
   if (!HELPER || localBusy) return;
   const lan = await (await hfetch('/api/local/lan')).json();
@@ -2637,6 +2707,10 @@ async function dispatchLocalIosFlow() {
     if (!(await ensureLanMode())) { say('LAN mode could not come up — see the output box.', false); return; }
     // Firebase push wiring first (best-effort, same as the Android flow)
     await streamLocal('/api/local/firebase-setup', { stack: nativeTargetStack() }, 'wire Firebase push (project + app registrations + configs, zero input)');
+    // the MACHINE's Apple signing certificate (once ever) — without it
+    // CI mints a throwaway cert per build and Apple mails a revocation
+    // for every prune (user report 2026-09-08)
+    await ensureAppleCert().catch((e) => localLog(`✗ signing certificate: ${e.message} — this build signs with a throwaway one\n`));
     const cfg = await writeLocalNativeEnv();
     // the iOS job is gated on IOS_BUILD_ENABLED — a fresh copy does not
     // inherit it and the run silently SKIPS (found live 2026-08-30);
@@ -2683,6 +2757,43 @@ async function dispatchLocalIosFlow() {
   }
 }
 document.getElementById('btn-native-local-ios')?.addEventListener('click', () => dispatchLocalIosFlow());
+
+/** the MACHINE owns the Apple Development certificate (same ruling as
+ * the upload keystore): minted ONCE through the repo's mint workflow (a
+ * macOS runner — its p12s import cleanly), pulled back into the machine
+ * store by the helper, shipped into every repo's environment local. With
+ * it in place CI imports instead of minting, and the prune step (each
+ * revocation an Apple email) never runs. */
+async function ensureAppleCert() {
+  const st = await (await hfetch('/api/local/apple-cert')).json();
+  if (!st.present) {
+    localLog('\n▶ mint the machine Apple signing certificate (once ever — ends the certificate-revoked emails)\n');
+    await hfetch('/api/local/apple-cert/password', { method: 'POST' });
+    if (!(await ensureLocalEnvSecrets(['APPLE_DEV_CERT_PASSWORD', 'ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8'], 'certificate minting'))) return false;
+    const started = Date.now();
+    try {
+      await dispatch('mint-apple-cert.yml', { environment: 'local' });
+    } catch (e) {
+      // a copy that predates the environment input still carries the
+      // workflow — dispatched bare it reads repository-level secrets only
+      if (!/422/.test(e.message)) throw e;
+      localLog('this repo’s mint workflow predates the environment input (sync the workflows from upstream to fix for good) — dispatching it plainly\n');
+      await dispatch('mint-apple-cert.yml', {});
+    }
+    localLog('mint dispatched — a macOS runner makes the key, App Store Connect signs it (usually 2-4 min; Apple mails ONE last revocation for the old throwaway certs)…\n');
+    let run = null;
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 15000));
+      const runs = (await workflowRuns('mint-apple-cert.yml'))?.workflow_runs ?? [];
+      run = runs.find((r2) => r2.event === 'workflow_dispatch' && new Date(r2.created_at).getTime() > started - 120000);
+      if (run?.status === 'completed') break;
+      if (Date.now() - started > 15 * 60 * 1000) { localLog('the mint never finished within 15 minutes — check the Actions tab; this build signs with a throwaway certificate\n'); return false; }
+    }
+    if (run.conclusion !== 'success') { localLog(`the mint ended ${run.conclusion} — open run #${run.run_number} (its Preflight names a missing secret); this build signs with a throwaway certificate\n`); return false; }
+    if (!(await streamLocal('/api/local/apple-cert/import', { slug: S.slug, runId: run.id }, 'store the minted certificate in the machine store'))) return false;
+  }
+  return ensureLocalEnvSecrets(['APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD'], 'persistent signing certificate');
+}
 
 /** toggling Android/iOS ON under local starts the whole chain by itself
  * (LAN mode → env vars → CI build → Play/TestFlight); without the

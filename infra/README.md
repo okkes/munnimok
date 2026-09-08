@@ -168,6 +168,24 @@ GlitchTip token steps against `localhost`. This is distinct from the
 from-source DEV stack (`deploy/docker-compose.local.yml`) — the wizard's
 local track covers both.
 
+### Day-2 on the local track: it keeps itself up to date
+
+The wizard is a ONE-TIME bootstrap. Afterwards the helper is the PC's
+counterpart of the NAS deploy poller (nothing can push to a PC, so it
+pulls): with **automatic updates** on (card in step 4) it fetches the
+checkout's branch every 10 minutes, fast-forwards when the working tree
+is clean (a dirty dev checkout pauses the pull and says so — run the
+autonomous helper from a clean clone), re-renders every stack from the
+machine store after a pull, pulls the newest image of each channel
+(channel tags move; `up` alone never re-pulls), brings the family up and
+restarts itself when its own code moved. **Run the helper at logon**
+registers a Task Scheduler entry (current user, no admin) that starts
+`infra/setup/autonomy.cmd` minimized, without a browser tab. The machine
+store never leaves the PC. Native apps update through the stores on
+their own; the machine-owned Apple Development certificate (minted once
+by the first iOS build through `mint-apple-cert.yml`) keeps CI from
+minting and revoking throwaway certificates.
+
 ---
 
 ## Day-2: how it stays healthy
@@ -180,3 +198,6 @@ local track covers both.
   redeploy afterwards.
 - Retrieving generated passwords: see docs/secrets-access-plan.md —
   GitHub secrets are write-only by design.
+- Local track: the helper's update loop (above) — its card shows the
+  last verdict (pulled / paused and why / containers recreated), and
+  "Check for updates now" runs one cycle on demand.

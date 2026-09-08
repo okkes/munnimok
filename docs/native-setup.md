@@ -146,6 +146,17 @@ dispatch, the artifact content goes into `APPLE_DEV_CERT_P12`
 run once on 2026-07-16 — rerun it only if the cert ever expires
 (1 year) or gets revoked.
 
+On the LOCAL track the wizard does all of this by itself (2026-09-08):
+the first iOS build mints the certificate through the same workflow
+(dispatched into the GitHub environment `local` — the workflow gained an
+`environment` input for that), the helper pulls the run artifact back
+into the machine store (`APPLE_DEV_CERT_P12` + `APPLE_DEV_CERT_PASSWORD`,
+family-wide like the upload keystore) and the wizard ships both into
+every repo's environment `local` before each build — CI imports instead
+of minting, the prune step never runs, the revocation mails stop. Apple
+expires the certificate after a year: delete `APPLE_DEV_CERT_P12` from
+the store and the next build mints again.
+
 ## 6. The dedicated staging apps (`app.munni.dev`) — your checklist
 
 The code side is DONE: an Android `dev` product flavor and an iOS
@@ -282,6 +293,14 @@ project → Cloud Messaging → Apple app configuration for
 then on the iPhone switch notifications on in munni's settings: nothing
 registers by itself, and the simulator cannot receive push. A missing
 APNs key surfaces in the api log as `THIRD_PARTY_AUTH_ERROR`.
+Sign in with Apple works on the local track too (2026-09-08): LAN mode
+serves real https, which Apple demands — tick the feature (LAN mode
+follows by itself), paste the Services ID + key in step 3 (family-wide),
+and register every environment's return URL
+`https://munni-<env>-logto.<ip-dashed>.sslip.io/callback/apple-universal`
+in the Services ID (the Apple card lists them; a changed wifi address
+changes them). Headless re-renders feed the stored social credentials to
+the Logto connector module, so the wizard's values are not needed.
 
 Both native workflows accept `environment: local` + `localEnv: <env>`
 (+ Android: `publish: auto|skip`) on dispatch and then build against
