@@ -112,8 +112,31 @@ function useKeyboardOpen(): boolean {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let cancelReveal: (() => void) | null = null;
+    // #312 (user): scrolling blurs the field and the keyboard slides
+    // away — but the relayout (tab bar back, scrollport pad removed)
+    // fired MID-GESTURE and the screen jumped under the finger. While a
+    // touch is down, the close waits for the finger to lift: the list
+    // keeps scrolling as if nothing happened, then ONE calm relayout.
+    let touchDown = false;
+    let pendingClose = false;
+    const settleClose = () => {
+      pendingClose = false;
+      if (!isEditable(document.activeElement)) {
+        setOpen(false);
+        restoreScrollportPad();
+      }
+    };
+    const onTouchStart = () => {
+      touchDown = true;
+    };
+    const onTouchEnd = () => {
+      touchDown = false;
+      // a beat after lift-off — the momentum handoff stays smooth
+      if (pendingClose) setTimeout(settleClose, 60);
+    };
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return;
+      pendingClose = false;
       setOpen(true);
       cancelReveal?.();
       // where the sheet library still owns the keyboard (non-iOS,
@@ -126,16 +149,24 @@ function useKeyboardOpen(): boolean {
     const onFocusOut = () => {
       // focus often hops field-to-field — only a settled blur closes
       setTimeout(() => {
-        if (!isEditable(document.activeElement)) {
-          setOpen(false);
-          restoreScrollportPad();
+        if (isEditable(document.activeElement)) return;
+        if (touchDown) {
+          pendingClose = true; // the scroll owns the screen right now
+          return;
         }
+        settleClose();
       }, 100);
     };
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', onTouchEnd, { passive: true });
     window.addEventListener('focusin', onFocusIn);
     window.addEventListener('focusout', onFocusOut);
     return () => {
       cancelReveal?.();
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchEnd);
       window.removeEventListener('focusin', onFocusIn);
       window.removeEventListener('focusout', onFocusOut);
     };
