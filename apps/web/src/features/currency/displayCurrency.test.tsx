@@ -71,6 +71,33 @@ describe('display currency lens (demo identity, manual rates)', () => {
     expect(fetchSpy).not.toHaveBeenCalled(); // demo identity: no /me push
   }, 15_000);
 
+  it('safe-to-spend follows the display lens like every other band mode (#349)', async () => {
+    renderApp('/profile');
+    fireEvent.click(await screen.findByTestId('profile-display-currency'));
+    fireEvent.click(await screen.findByTestId('display-currency-TRY'));
+    const rate = await screen.findByTestId('manual-rate-EUR');
+    fireEvent.change(rate, { target: { value: '40' } });
+    fireEvent.blur(rate);
+    fireEvent.click(screen.getByTestId('profile-save'));
+    await screen.findByText('Saved');
+
+    cleanup();
+    renderApp('/home');
+    fireEvent.click(await screen.findByTestId('home-balance-band'));
+    fireEvent.click(screen.getByTestId('band-mode-spendable'));
+    // demo data carries a salary pattern, so the forecast renders a
+    // number — converted and marked, not pinned to the ledger euro
+    const band = await screen.findByTestId('home-total-balance');
+    await waitFor(
+      () => {
+        expect(band.textContent === '—').toBe(false);
+        expect(band.textContent).toMatch(/₺|TRY/);
+      },
+      { timeout: 5000 },
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  }, 15_000);
+
   it('without a display currency nothing changes and nothing is marked', async () => {
     renderApp('/home');
     const band = await screen.findByTestId('home-total-balance');

@@ -51,7 +51,7 @@ import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { budgetDaysLeft } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
-import { sumCents } from '@/lib/rates';
+import { convertCents, sumCents } from '@/lib/rates';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { setDisplayCurrency } from '@/features/currency/displayCurrencyPref';
 import { CURRENCIES } from '@/domain/countries';
@@ -334,11 +334,20 @@ export function HomeScreen() {
     return toAllocateCents(window, allTxs ?? [], accountsById, allocations);
   }, [allocations, space?.periodType, space?.periodDay, allTxs, accounts]);
 
-  // cash-flow forecast (F1): shows nothing rather than a wrong number
+  // cash-flow forecast (F1): shows nothing rather than a wrong number.
+  // #349: mixed-currency accounts summed RAW made the liquid base lie —
+  // convert each balance into the ledger currency first (a missing rate
+  // keeps the raw figure; still better than dropping the account)
   const forecast = useMemo(() => {
     if (!accounts || !allTxs || !recurrings) return null;
+    const day = display?.cache.days.latest;
+    const converted = accounts.map((a) =>
+      a.currency && a.currency !== currency
+        ? { ...a, balanceCents: convertCents(a.balanceCents, a.currency, currency, day, display?.manual) ?? a.balanceCents }
+        : a,
+    );
     return safeToSpend({
-      accounts,
+      accounts: converted,
       txs: allTxs,
       recurrings,
       allocations,
@@ -346,7 +355,7 @@ export function HomeScreen() {
       period,
       today: localToday(),
     });
-  }, [accounts, allTxs, recurrings, allocations, cats, period]);
+  }, [accounts, allTxs, recurrings, allocations, cats, period, currency, display]);
   const [forecastOpen, setForecastOpen] = useState(false);
 
   // #142 (user): only "Picked accounts" takes toggles — its include list
@@ -361,13 +370,15 @@ export function HomeScreen() {
     await repo.upsert('space', spaceId, spaceId, { balanceBandAccounts: next });
   };
 
-  // spendable rides the forecast (ledger currency, no conversion lens);
-  // no payday/liquid yet → an honest dash beats a wrong number
+  // spendable rides the forecast (summed in the LEDGER currency above);
+  // no payday/liquid yet → an honest dash beats a wrong number.
+  // #349: it renders through the same display lens as every other money
+  // on this card — the raw fmtCents pinned it to the ledger currency
   const spendableBand = bandMode === 'spendable';
   const bandCents = spendableBand ? (forecast?.cents ?? null) : bandTotal.cents;
   const bandApprox = !spendableBand && bandTotal.approximate ? '≈ ' : '';
-  const bandShownCurrency = spendableBand ? currency : bandCurrency;
-  const bandLabel = bandCents === null ? '—' : `${bandApprox}${fmtCents(bandCents, bandShownCurrency, lang)}`;
+  const bandLabel =
+    bandCents === null ? '—' : spendableBand ? fmt(bandCents, currency) : `${bandApprox}${fmtCents(bandCents, bandCurrency, lang)}`;
 
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them
