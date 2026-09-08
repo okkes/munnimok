@@ -413,6 +413,14 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
           <li>Two account-side switches that block uploads when off: a pending <b>Program License Agreement</b> banner must be accepted by the Account Holder (appstoreconnect → the yellow banner), and the step-3 ASC key needs cloud-signing rights — <b>Users and Access → Integrations → the key → role Admin</b> (or App Manager with “Access to Cloud Managed Distribution Certificate”). Without it the export dies with “Cloud signing permission error / No signing certificate iOS Distribution”.</li>
         </ol>
       </details>
+      <details class="how"><summary>iOS push — the one-time floor (Apple’s key + Google’s console, once per team)</summary>
+        <ol>
+          <li>Create an <b>APNs key</b> once per team: <a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">developer.apple.com → Keys</a> → ＋ → tick <b>Apple Push Notifications service (APNs)</b> (tick <b>Sign in with Apple</b> on the same key if you plan that too — one <code>.p8</code> serves both) → download the <code>.p8</code>, note its <b>Key ID</b>. The step-3 App Store Connect key is a DIFFERENT key type — it cannot push.</li>
+          <li>Hand it to Firebase — the one push step Google offers no API for: <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer">Firebase console</a> → the Play service account’s own Cloud project → Project settings → <b>Cloud Messaging</b> → Apple app configuration → the app named <code>munni local &lt;env&gt; ios</code> → <b>APNs Authentication Key → Upload</b>: the .p8, its Key ID, your Team ID (step 3). One key covers every environment’s iOS app.</li>
+          <li>On the iPhone: install the newest TestFlight build (Build bakes the Firebase config in — the push pill on the Android card says when push is wired), open munni → Settings → switch <b>notifications</b> on → allow the iOS prompt. That registers the device with the api; nothing registers on its own, and the simulator cannot receive push.</li>
+          <li>Test with a friend request from another account: the iPhone shows a banner. When it stays silent, the api log names Google’s answer — a missing APNs key reads as <code>THIRD_PARTY_AUTH_ERROR</code>.</li>
+        </ol>
+      </details>
     </div>
 
     <div class="card" data-needs-feature="fcm">
@@ -421,7 +429,7 @@ button.danger{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,tra
       <details class="how"><summary>The one-time floors (Google's + Apple's, once ever)</summary>
         <ol>
           <li>Grant the Play service account TWO roles: <a href="https://console.cloud.google.com/iam-admin/iam" target="_blank" rel="noreferrer">console.cloud.google.com → IAM</a> → edit the munni service account → add <b>Firebase Admin</b> (registers the apps, reads their configs, sends push) and <b>Service Usage Admin</b> (lets Build switch the Firebase Management API on and add Firebase to the Cloud project — Google gates that behind <code>serviceusage.services.enable</code>, which Firebase Admin does NOT include) → wait a minute → Build again (same class as the Play invite — the first grant is Google's floor). Rather not widen the account? Do the two clicks by hand once instead: enable the Firebase Management API (the Build output prints the link) and add Firebase to the project in the Firebase console (Add project → choose the existing Cloud project) — then Firebase Admin alone is enough.</li>
-          <li>iOS push only: upload the APNs key once — Firebase console → Project settings → Cloud Messaging → Apple app configuration (Apple's floor).</li>
+          <li>iOS push only: create an APNs key once and upload it in the Firebase console — the iOS card’s “iOS push” fold walks through it (Apple’s floor; Google offers no API for the upload).</li>
         </ol>
       </details>
     </div>

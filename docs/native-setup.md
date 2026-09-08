@@ -274,6 +274,14 @@ project once in the Firebase console, then Firebase Admin alone is
 enough) — and for iOS push upload the APNs key once (Firebase console
 → Cloud Messaging). Until then the stub keeps builds green with push
 inactive and the Android card's push pill names the exact blocker.
+iOS push in full (the wizard's iOS card carries the same fold): create
+an APNs key at developer.apple.com → Keys (tick APNs; the same `.p8`
+may carry Sign in with Apple), upload it in the Firebase console →
+project → Cloud Messaging → Apple app configuration for
+`munni local <env> ios` (Key ID + Team ID — no API exists for this),
+then on the iPhone switch notifications on in munni's settings: nothing
+registers by itself, and the simulator cannot receive push. A missing
+APNs key surfaces in the api log as `THIRD_PARTY_AUTH_ERROR`.
 
 Both native workflows accept `environment: local` + `localEnv: <env>`
 (+ Android: `publish: auto|skip`) on dispatch and then build against
