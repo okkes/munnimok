@@ -1900,6 +1900,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'tx.uncategorizedFilter': 'Kategorisiz',
   'tx.unsettledFilter': 'Bekleyen geri ödemeler',
   'tx.counterFilter': 'Bağlantılıları ayrı göster',
+  'tx.linkedPair': 'Bağlantılı transfer',
   'tx.newFilter': 'Yeni',
   'tx.counterAccount': 'Karşı taraf',
   'tx.counterAccountHint': 'Yalnızca bu alana bağlı hesaplar gösterilir.',

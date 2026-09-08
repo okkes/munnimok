@@ -1900,6 +1900,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'tx.uncategorizedFilter': 'Ongecategoriseerd',
   'tx.unsettledFilter': 'Openstaande vergoedingen',
   'tx.counterFilter': 'Gekoppelde apart tonen',
+  'tx.linkedPair': 'Gekoppelde overboeking',
   'tx.newFilter': 'Nieuw',
   'tx.counterAccount': 'Tegenpartij',
   'tx.counterAccountHint': 'Alleen rekeningen die aan deze ruimte gekoppeld zijn, worden getoond.',

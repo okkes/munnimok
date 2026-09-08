@@ -327,6 +327,33 @@ export function TransactionsScreen() {
       });
     }
     matched.sort((a, b) => b.date.localeCompare(a.date));
+    // #352: with the legs standing separately, a SAME-DAY pair sits
+    // together (outgoing first) — the date sort alone scattered them
+    // between unrelated rows
+    if (counterOnly) {
+      const byId = new Map(matched.map((item) => [item.id, item]));
+      const reverse = new Map<string, TransactionRow>();
+      for (const row of matched) {
+        if (row.transferPeerId && byId.has(row.transferPeerId)) reverse.set(row.transferPeerId, row);
+      }
+      const placed = new Set<string>();
+      const ordered: typeof matched = [];
+      for (const item of matched) {
+        if (placed.has(item.id)) continue;
+        const peer = (item.transferPeerId ? byId.get(item.transferPeerId) : undefined) ?? reverse.get(item.id);
+        if (peer && !placed.has(peer.id) && peer.date === item.date) {
+          const out = item.amountCents <= 0 ? item : peer;
+          const back = out === item ? peer : item;
+          ordered.push(out, back);
+          placed.add(out.id);
+          placed.add(back.id);
+        } else {
+          ordered.push(item);
+          placed.add(item.id);
+        }
+      }
+      matched = ordered;
+    }
     return matched.slice(0, 200);
   }, [allTxs, query, filters, uncatOnly, unsettledOnly, counterOnly, newOnly, newIds, catIds]);
 
@@ -438,13 +465,27 @@ export function TransactionsScreen() {
             }
           />
         )}
-        {groups.map(([date, list]) => (
+        {groups.map(([date, list]) => {
+          // #352: adjacent mutually-linked same-day legs render as ONE
+          // visual unit (the reorder above guarantees the adjacency)
+          const pairTops = new Set<string>();
+          for (let i = 0; i < list.length - 1; i += 1) {
+            const row = list[i];
+            const next = list[i + 1];
+            if ((row.transferPeerId === next.id || next.transferPeerId === row.id) && row.date === next.date) {
+              pairTops.add(row.id);
+              i += 1;
+            }
+          }
+          return (
           <div key={date}>
             {/* sticky (D2): the group's date stays readable while its rows scroll */}
             <div className="m-cap sticky top-0 z-10 -mx-1 mt-4 mb-1 bg-bg px-2 py-1">{fmtDay(date)}</div>
             {/* #198: hairline dividers between rows — every tx list */}
             <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1">
               {list.map((tx, listIndex) => {
+                // the pair's SECOND leg renders inside the first's unit
+                if (listIndex > 0 && pairTops.has(list[listIndex - 1].id)) return null;
                 // #126 r5: a real split doesn't show its container in the
                 // list — the sub-transactions stand as rows of their own,
                 // the shared rail linking them; each opens its own page
@@ -479,23 +520,41 @@ export function TransactionsScreen() {
                     />
                   );
                 }
-                return (
+                const row = (item: (typeof list)[number]) => (
                   <TxRow
-                    key={tx.id}
-                    tx={tx}
+                    key={item.id}
+                    tx={item}
                     highlight={query}
-                    selected={tx.id === openTxId}
+                    selected={item.id === openTxId}
                     edge={edgeOf(listIndex, list.length)}
-                    accountName={accountNames.get(tx.accountId)}
-                    givenCents={givenByCredit.get(tx.id) ?? 0}
-                    transferNote={peerNotes.get(tx.id)}
-                    onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+                    accountName={accountNames.get(item.accountId)}
+                    givenCents={givenByCredit.get(item.id) ?? 0}
+                    transferNote={peerNotes.get(item.id)}
+                    onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: item.id } })}
                   />
                 );
+                if (pairTops.has(tx.id)) {
+                  // #352: the two legs share a soft inset + a tie label
+                  // (the linked-parts pattern, applied to transfer pairs)
+                  return (
+                    <div key={tx.id} className="py-1.5" data-testid={`tx-pair-${tx.id}`}>
+                      <div className="mb-0.5 flex items-center gap-1.5 px-1 text-[10px] font-semibold tracking-wide text-accent-deep uppercase">
+                        <Icon name="swap-horizontal" size={12} color="var(--m-accent-deep)" />
+                        {t('tx.linkedPair')}
+                      </div>
+                      <div className="rounded-card bg-bg px-2">
+                        {row(tx)}
+                        {row(list[listIndex + 1])}
+                      </div>
+                    </div>
+                  );
+                }
+                return row(tx);
               })}
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

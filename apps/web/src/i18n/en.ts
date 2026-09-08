@@ -1898,6 +1898,7 @@ export const en = {
   'tx.uncategorizedFilter': 'Uncategorized',
   'tx.unsettledFilter': 'Unsettled reimbursements',
   'tx.counterFilter': 'Show linked separately',
+  'tx.linkedPair': 'Linked transfer',
   'tx.newFilter': 'New',
   'tx.counterAccount': 'Counterparty',
   'tx.counterAccountHint': 'Only accounts attached to this space are shown.',
