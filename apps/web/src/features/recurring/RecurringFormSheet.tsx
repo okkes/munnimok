@@ -107,13 +107,19 @@ export const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
   merchantKey: s.merchantKey,
 });
 
-// #195: the first failing requirement names the blocker
-const blockerKeyFor = (form: FormState): 'form.needName' | 'form.needAmount' | 'form.needDate' | null => {
+// #195: the first failing requirement names the blocker (null form =
+// closed sheet, nothing blocks)
+const blockerKeyFor = (form: FormState | null): 'form.needName' | 'form.needAmount' | 'form.needDate' | null => {
+  if (form === null) return null;
   if (!form.name.trim()) return 'form.needName';
   if (!form.amount) return 'form.needAmount';
   if (form.custom && !form.firstDue) return 'form.needDate';
   return null;
 };
+
+/** dirty vs the seed baseline (S3776: out of the component) */
+const formDirty = (form: FormState | null, baseline: string): boolean =>
+  form !== null && JSON.stringify(form) !== baseline;
 
 /** stable reseed key: the record's identity, 'new' for drafts (S3776) */
 const seedKeyOf = (initial: FormState | null): string | null => (initial === null ? null : (initial.id ?? 'new'));
@@ -238,8 +244,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
   const baselineRef = useRef('');
-  const dirty = form !== null && JSON.stringify(form) !== baselineRef.current;
-  const blockerKey = form === null ? null : blockerKeyFor(form);
+  const dirty = formDirty(form, baselineRef.current);
+  const blockerKey = blockerKeyFor(form);
   // #274: which accounts the category's counter matrix allows (S3776:
   // resolved outside the component)
   const counterChoices = counterChoicesFor(form?.catId, accounts);
