@@ -216,4 +216,45 @@ describe('detectRecurring', () => {
     }));
     expect(detectRecurring(linked, { today: '2026-07-08' })).toEqual([]);
   });
+
+  it('#346: one merchant with several steady amounts yields one pattern PER amount', () => {
+    const txs = [
+      ...monthly(['2026-04-03', '2026-05-03', '2026-06-03', '2026-07-03'], -3200, 'ODIDO'),
+      ...monthly(['2026-04-15', '2026-05-15', '2026-06-16', '2026-07-15'], -8912, 'ODIDO'),
+      ...monthly(['2026-04-20', '2026-05-21', '2026-06-20', '2026-07-20'], -2500, 'ODIDO'),
+    ];
+    const found = detectRecurring(txs, { today: '2026-07-22' });
+    expect(found.map((s) => s.amountCents).sort((a, b) => a - b)).toEqual([2500, 3200, 8912]);
+    // mixed amounts used to poison the single median and detect NOTHING
+    expect(new Set(found.map((s) => s.key)).size).toBe(3);
+  });
+
+  it('#346: dismissing one amount tier leaves the siblings standing; a bare merchant key still kills all', () => {
+    const txs = [
+      ...monthly(['2026-04-03', '2026-05-03', '2026-06-03', '2026-07-03'], -3200, 'ODIDO'),
+      ...monthly(['2026-04-15', '2026-05-15', '2026-06-15', '2026-07-15'], -8912, 'ODIDO'),
+    ];
+    const one = detectRecurring(txs, { today: '2026-07-16', excludeKeys: new Set(['odido@3200']) });
+    expect(one.map((s) => s.amountCents)).toEqual([8912]);
+    expect(detectRecurring(txs, { today: '2026-07-16', excludeKeys: new Set(['odido']) })).toEqual([]);
+  });
+
+  it('#345: patterns live on ONE account, and a cross-account echo suggests once (stronger series wins)', () => {
+    const onMain = monthly(['2026-04-07', '2026-05-07', '2026-06-07', '2026-07-07'], -2500, 'PAYPAL').map((t) => ({
+      ...t,
+      accountId: 'main',
+    }));
+    const onPaypal = monthly(['2026-05-08', '2026-06-08', '2026-07-08'], -2500, 'PAYPAL').map((t) => ({
+      ...t,
+      accountId: 'paypal',
+    }));
+    const found = detectRecurring([...onMain, ...onPaypal], { today: '2026-07-10' });
+    expect(found).toHaveLength(1);
+    expect(found[0].accountId).toBe('main'); // 4 occurrences beat 3
+    // and a rhythm never forms ACROSS accounts: two half-series on two
+    // accounts (alternating months each) stay silent
+    const altA = monthly(['2026-03-07', '2026-05-07', '2026-07-07'], -1399, 'SPLITSUB').map((t) => ({ ...t, accountId: 'a' }));
+    const altB = monthly(['2026-04-07', '2026-06-07'], -1399, 'SPLITSUB').map((t) => ({ ...t, accountId: 'b' }));
+    expect(detectRecurring([...altA, ...altB], { today: '2026-07-08' })).toEqual([]);
+  });
 });

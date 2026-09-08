@@ -44,6 +44,7 @@ export function RecurringSuggestionsScreen() {
   const currency = space?.currency ?? 'EUR';
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
+  const accountName = (id?: string) => (id ? (accounts ?? []).find((a) => a.id === id)?.name : undefined);
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -82,7 +83,7 @@ export function RecurringSuggestionsScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {suggestions.map((s) => (
-          <div key={s.merchantKey} className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid={`recsuggest-card-${s.merchantKey}`}>
+          <div key={s.key} className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid={`recsuggest-card-${s.merchantKey}`}>
             <div className="flex items-center gap-3 px-4 pt-3.5">
               <Tile icon="autorenew" />
               <span className="min-w-0 flex-1">
@@ -90,6 +91,8 @@ export function RecurringSuggestionsScreen() {
                 <span className="block text-[11px] text-ink-3">
                   {t(s.every === 'year' ? 'recurring.patternYearly' : 'recurring.patternMonthly')} ·{' '}
                   {t('recurring.confidence', { n: s.confidence })}
+                  {/* #345: which account the rhythm lives on */}
+                  {accountName(s.accountId) ? ` · ${accountName(s.accountId)}` : ''}
                 </span>
               </span>
               <span className="font-mono text-[15px] font-semibold text-ink">{money(s.amountCents)}</span>
@@ -120,7 +123,7 @@ export function RecurringSuggestionsScreen() {
                 variant="outline"
                 size="sm"
                 className="flex-1"
-                onClick={() => void ops.dismissSuggestion(s.merchantKey)}
+                onClick={() => void ops.dismissSuggestion(s.key)}
               >
                 {t('recurring.notRecurring')}
               </Button>

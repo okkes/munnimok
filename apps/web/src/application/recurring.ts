@@ -151,7 +151,14 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
   if (recs.length === 0) return 0;
 
   const txs = await visibleTransactions(store, spaceId);
-  const byKey = new Map(recs.map((r) => [r.merchantKey!, r]));
+  // #346: one merchant may carry SEVERAL recurrings (amount tiers) —
+  // the amount match below picks the right one
+  const byKey = new Map<string, RecurringRow[]>();
+  for (const r of recs) {
+    const list = byKey.get(r.merchantKey!) ?? [];
+    list.push(r);
+    byKey.set(r.merchantKey!, list);
+  }
 
   const linkedCycles = new Map<string, Set<string>>();
   for (const tx of txs) {
@@ -169,8 +176,8 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
     // #126 r7: a split container never takes a row-level recurring link —
     // its parts carry their own (linked by hand from the part surfaces)
     if ((tx.splits ?? []).filter((s) => s.catId !== 'reimbursed').length > 1) continue;
-    const rec = byKey.get(merchantKey(tx.merchant));
-    if (!rec || !recurringAmountMatches(rec, tx.amountCents)) continue;
+    const rec = (byKey.get(merchantKey(tx.merchant)) ?? []).find((r) => recurringAmountMatches(r, tx.amountCents));
+    if (!rec) continue;
     const cycle = cycleKeyOf(rec, tx.date);
     const cycles = linkedCycles.get(rec.id) ?? new Set();
     if (cycles.has(cycle)) continue; // one payment per billing cycle
