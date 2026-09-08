@@ -166,6 +166,20 @@ interface RecurringFormSheetProps {
  * tab (add), the detail screen (edit) and the suggestions screen
  * (accept). Owns its pickers and persistence.
  */
+/** v2: the recurring's amount and rhythm are the loan's PAYMENT plan
+ *  (they were never its original size); #190: the due day rides along.
+ *  S3776. */
+function debtHandoffFrom(form: FormState) {
+  const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
+  return {
+    name: form.name.trim() || undefined,
+    paymentCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
+    paymentEvery: form.every,
+    paymentDay: form.every !== 'week' ? form.dueDay || undefined : undefined,
+    merchantKey: form.merchantKey ?? undefined,
+  };
+}
+
 /** #274: the accounts a category's counter matrix allows. S3776. */
 function counterChoicesFor<T extends { type: import('@/db/types').AccountType }>(
   catId: string | undefined,
@@ -628,17 +642,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
         <DebtHandoffInterstitial
           onStay={() => setDebtIntent(false)}
           onContinue={() => {
-            const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
-            // v2: the recurring's amount and rhythm are the loan's
-            // PAYMENT plan (they were never its original size)
-            setDebtHandoff({
-              name: form.name.trim() || undefined,
-              paymentCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
-              paymentEvery: form.every,
-              // #190: the due day rides along into the payment plan
-              paymentDay: form.every !== 'week' ? form.dueDay || undefined : undefined,
-              merchantKey: form.merchantKey ?? undefined,
-            });
+            setDebtHandoff(debtHandoffFrom(form));
             setDebtIntent(false);
             onClose();
             void navigate({ to: '/debts' });

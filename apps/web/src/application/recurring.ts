@@ -138,6 +138,21 @@ export function useRecurringOps(): RecurringOps {
 const reconcilableRow = (tx: SpaceTx): boolean =>
   !tx.recurringId && tx.amountCents < 0 && (tx.txType === 'expense' || tx.txType === 'funding');
 
+/** which billing cycles each recurring already has a linked payment in
+ *  (one payment per cycle). S3776. */
+function linkedCyclesOf(txs: readonly SpaceTx[], recs: readonly RecurringRow[]): Map<string, Set<string>> {
+  const cycles = new Map<string, Set<string>>();
+  for (const tx of txs) {
+    if (!tx.recurringId) continue;
+    const rec = recs.find((r) => r.id === tx.recurringId);
+    if (!rec) continue;
+    const set = cycles.get(rec.id) ?? new Set<string>();
+    set.add(cycleKeyOf(rec, tx.date));
+    cycles.set(rec.id, set);
+  }
+  return cycles;
+}
+
 /** #360: the facts a freshly auto-linked row adopts from its recurring —
  *  category (unless reimbursement-filed) and counterparty; the row stays
  *  unreviewed, the user still confirms. S3776. */
@@ -170,15 +185,7 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
     byKey.set(r.merchantKey!, list);
   }
 
-  const linkedCycles = new Map<string, Set<string>>();
-  for (const tx of txs) {
-    if (!tx.recurringId) continue;
-    const rec = recs.find((r) => r.id === tx.recurringId);
-    if (!rec) continue;
-    const set = linkedCycles.get(rec.id) ?? new Set();
-    set.add(cycleKeyOf(rec, tx.date));
-    linkedCycles.set(rec.id, set);
-  }
+  const linkedCycles = linkedCyclesOf(txs, recs);
 
   let linked = 0;
   for (const tx of [...txs].sort((a, b) => a.date.localeCompare(b.date))) {
