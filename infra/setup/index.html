@@ -302,7 +302,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
       <ol>
         <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer">github.com/settings/personal-access-tokens/new</a>.</li>
         <li><b>Repository access</b>: Only select repositories → your munni repo. (If you want this page to CREATE the repo as a fork, pick <b>All repositories</b> instead — a fine-grained token can't pre-select a repo that doesn't exist yet.)</li>
-        <li><b>Repository permissions</b>: Administration <b>Read and write</b> · Secrets <b>Read and write</b> · Variables <b>Read and write</b> · Actions <b>Read and write</b> · Contents <b>Read-only</b>.</li>
+        <li><b>Repository permissions</b>: Administration <b>Read and write</b> · Secrets <b>Read and write</b> · Variables <b>Read and write</b> · Actions <b>Read and write</b> · Contents <b>Read and write</b> · Workflows <b>Read and write</b> (the last two let this page keep a copy’s pipeline files in step with upstream).</li>
         <li>Generate, copy the <code>github_pat_…</code> value and paste it below. Set a long expiry — rotating it means redoing only this step.</li>
       </ol>
     </details>
@@ -314,6 +314,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
     <button class="ghost" id="btn-fork" hidden>Create it as a copy of okkes/munnimok</button>
 
     <button class="ghost" id="btn-refresh" disabled>Refresh status</button>
+    <button class="ghost" id="btn-sync-pipeline" disabled title="copies the pipeline files (.github, deploy, infra) from okkes/munnimok into this repo’s branches wherever they differ — a copy never rots">Sync pipeline from upstream</button>
     <div class="msg" id="msg-connect"></div>
     </div>
     </div>
@@ -338,9 +339,10 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
   <div id="runs-nas"></div>
   <div class="msg" id="msg-nas"></div>
   <div class="card">
-    <h3>Still manual on the NAS (once) — two DSM clicks</h3>
-    <p class="why">The DSM firewall API is too fragile to automate safely, so bootstrap only PROBES these. Reverse-proxy rules, in contrast, are created by the workflow itself.</p>
+    <h3>Still manual on the NAS (once) — three DSM screens</h3>
+    <p class="why">What the two workflows do: <b>Bootstrap</b> (the step above) mints the environments AND writes every reverse-proxy rule through the DSM API — its output line <code>dsm: reverse-proxy apply failed</code> means the deploy account may not use DSM (code 402/119): Control Panel → User &amp; Group → the deploy user → Applications → allow DSM + File Station, administrators group, then run Bootstrap again. <b>Deploy</b> only uploads the bundle; the poller below applies it within five minutes. The certificate needs nothing: DSM’s own wildcard from DDNS (<code class="dom">*.&lt;domain&gt;</code>) covers every host — for an own domain see docs/iac-plan.md §4 (acme.sh). The DSM firewall API is too fragile to automate safely, so bootstrap only PROBES the firewall.</p>
     <ol class="steps">
+      <li><b>The poller</b> (once per NAS): Control Panel → Task Scheduler → Create → Scheduled Task → User-defined script · user <code>root</code> · daily, repeat every 5 minutes · run: <code>cd /volume1/docker/munni &amp;&amp; cp apply.sh .apply.run &amp;&amp; sh .apply.run</code> (adjust the share; deploy/nas/README.md). Until it exists, uploaded bundles just sit in the published folder.</li>
       <li>Control Panel → Security → Firewall: <b>allow 172.16.0.0/12</b> (the docker bridge — Logto self-fetches through the host gateway).</li>
       <li>Restrict <code class="dom">munni-iac-admin.&lt;domain&gt;</code> and <code class="dom">logto-iac-admin.&lt;domain&gt;</code> to LAN only.</li>
     </ol>
@@ -1143,6 +1145,7 @@ const S = {
   recentlyStored: new Map(), // names stored this visit → the chip flips at once, whatever a listing says (2026-09-10)
   caTrust: null,           // the helper's verdict on the family root in this user's Root store
   registry: null,          // the helper's verdict on anonymous image pulls (public images need no token)
+  defaultBranch: null,     // the connected repo's default branch (workflows register from it)
   pollTimer: null,
 };
 
@@ -1179,9 +1182,11 @@ const GROUPS = [
     ],
   },
   {
-    id: 'ghcr', title: 'Container registry pulls', check: 'browser:ghcr', optional: true,
-    why: 'The munni images on ghcr.io are public — the host pulls them without any token, and this tile confirms that by itself. A token only matters for PRIVATE images (a private copy publishing its own): then docker logs into ghcr.io with it.',
-    how: ['Nothing, normally: the helper checks anonymous pulls and marks this tile as not needed.', 'Private images only: github.com/settings/tokens (classic) → Generate new token → scope read:packages. A fine-grained token cannot log into ghcr, so the GitHub connection token is reused here only when it is a classic one with that scope (checked at Connect).'],
+    // one token is the rule (user ruling 2026-09-10): this tile exists only
+    // when the helper has proven the images PRIVATE — the munni images are public
+    id: 'ghcr', title: 'Container registry pulls', check: 'browser:ghcr', optional: true, when: () => S.registry?.public === false,
+    why: 'The munni images on ghcr.io are public — the host pulls them without any token. This tile appears only because the helper found the images PRIVATE (a private copy publishing its own): then docker logs into ghcr.io with this token.',
+    how: ['github.com/settings/tokens (classic) → Generate new token → scope read:packages. A fine-grained token cannot log into ghcr, so the GitHub connection token is reused here only when it is a classic one with that scope (checked at Connect).'],
     fields: [{ name: 'NAS_GHCR_PAT', scope: 'repo', secret: true }],
   },
   {
@@ -1314,7 +1319,7 @@ const PHASE_OF = { playstore: 'later', ascstore: 'later', fcm: 'later', google: 
  * what needs it — the stepper and the rail decide the order */
 const KIND_ORDER = ['Connections', 'Bank providers', 'Stores & signing', 'Sign-in providers', 'Extras'];
 const KIND_HINT = {
-  Connections: 'GitHub for the phones’ CI builds, the registry for pulling images',
+  Connections: 'GitHub for the phones’ CI builds and the deploys — one token, stored as IAC_GH_PAT at Connect',
   'Bank providers': 'read-only PSD2 access — the heart of the product',
   'Stores & signing': 'CI publishes with these; the machine keeps the signing keys itself',
   'Sign-in providers': 'credentials only — every environment registers its own callback in its workspace',
@@ -1598,6 +1603,75 @@ async function selectRecommended() {
   LS.set('features', S.features);
   renderCards(); fillDynamicCopy(); renderNative(); renderStatus();
   if (S.platform === 'local' && HELPER) await reconcileLanMode().catch(() => {});
+}
+
+/* ── a copy's pipeline follows upstream (2026-09-10): the workflows, the
+   deploy scripts and infra/ are compared blob by blob with okkes/munnimok
+   @dev and the differing files are written onto the copy's branches (a
+   FORK merges upstream through GitHub instead). App code stays the copy's
+   own — it is the pipeline that must not rot. ── */
+const PIPELINE_PATHS = ['.github/', 'deploy/', 'infra/'];
+const pipelineSkip = (p) => p.startsWith('infra/rendered/') || p.startsWith('infra/setup/') || p.startsWith('infra/tests/') || p.endsWith('.md');
+async function pipelineDrift() {
+  // GitHub serves trees and contents from a cache that lags a fresh
+  // commit by seconds — a throwaway query param sidesteps it
+  const [up, mine] = await Promise.all([
+    gh(`/repos/${UPSTREAM}/git/trees/dev?recursive=1&nocache=${Date.now()}`),
+    gh(`/repos/${S.slug}/git/trees/${encodeURIComponent(S.ref)}?recursive=1&nocache=${Date.now()}`),
+  ]);
+  const pick = (t) => new Map((t?.tree ?? []).filter((e) => e.type === 'blob' && PIPELINE_PATHS.some((p) => e.path.startsWith(p)) && !pipelineSkip(e.path)).map((e) => [e.path, e.sha]));
+  const a = pick(up);
+  const b = pick(mine);
+  return [...a].filter(([p, sha]) => b.get(p) !== sha).map(([path, sha]) => ({ path, sha }));
+}
+async function syncPipeline({ repo = null } = {}) {
+  if (S.slug.toLowerCase() === UPSTREAM.toLowerCase()) return;
+  requireConnection();
+  const branches = [...new Set([S.ref, S.defaultBranch].filter(Boolean))];
+  const isFork = Boolean(repo?.fork ?? false);
+  if (isFork) {
+    // GitHub merges a fork from its parent — real git history, no file copies
+    for (const branch of branches) await gh(`/repos/${S.slug}/merge-upstream`, { method: 'POST', body: JSON.stringify({ branch }) });
+    msg('msg-connect', `Fork synced from ${UPSTREAM} (${branches.join(' + ')}) ✓`, true);
+    return;
+  }
+  msg('msg-connect', `comparing the pipeline files with ${UPSTREAM}…`, true);
+  const drift = await pipelineDrift();
+  if (!drift.length) { msg('msg-connect', `Pipeline files match ${UPSTREAM} ✓ (workflows, deploy scripts, infra).`, true); return; }
+  const current = (path, branch) => gh(`/repos/${S.slug}/contents/${path}?ref=${encodeURIComponent(branch)}&nocache=${Date.now()}`, { allow404: true });
+  let written = 0;
+  const names = [];
+  for (const f of drift) {
+    const blob = await gh(`/repos/${UPSTREAM}/git/blobs/${f.sha}`);
+    const content = String(blob.content ?? '').replace(/\n/g, '');
+    for (const branch of branches) {
+      let cur = await current(f.path, branch);
+      if (cur?.sha === f.sha) continue;
+      // one retry: a 409 means the file moved under us (a sync seconds
+      // ago that the tree listing had not caught up with) — re-read, and
+      // skip when it already carries upstream's blob
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          await gh(`/repos/${S.slug}/contents/${f.path}`, { method: 'PUT', body: JSON.stringify({ message: `chore(pipeline): sync ${f.path} from ${UPSTREAM}`, content, branch, ...(cur?.sha ? { sha: cur.sha } : {}) }) });
+          written++;
+          if (!names.includes(f.path)) names.push(f.path);
+          break;
+        } catch (e) {
+          if (/409/.test(e.message) && attempt === 0) {
+            cur = await current(f.path, branch);
+            if (cur?.sha === f.sha) break;
+            continue;
+          }
+          if (/40[34]/.test(e.message) && f.path.startsWith('.github/workflows/')) throw new Error(`${f.path}: the token cannot write workflow files — give it Contents AND Workflows: read and write (the token how-to), then Sync pipeline again`);
+          if (/40[34]/.test(e.message)) throw new Error(`${f.path}: the token cannot write to this repo — give it Contents: read and write`);
+          throw e;
+        }
+      }
+    }
+  }
+  if (!written) { msg('msg-connect', `Pipeline files match ${UPSTREAM} ✓ (workflows, deploy scripts, infra).`, true); return; }
+  msg('msg-connect', `Pipeline synced from ${UPSTREAM}: ${names.length} file${names.length === 1 ? '' : 's'} (${names.map((p) => p.split('/').pop()).slice(0, 6).join(', ')}${names.length > 6 ? ', …' : ''}) written on ${branches.join(' + ')} ✓ — the copy's workflows and deploys now run the current pipeline.`, true);
+  refresh().catch(() => {});
 }
 
 /* the connection token doubles as the registry token when it can (user
@@ -2541,6 +2615,7 @@ const msg = (id, text, ok) => {
 function groupVisible(g) {
   if (!(g.targets ?? ['nas', 'local']).includes(S.platform)) return false;
   if (g.feature && !S.features[g.feature]) return false;
+  if (g.when && !g.when()) return false;
   return true;
 }
 
@@ -2973,12 +3048,18 @@ async function connectRepo(repo) {
   } catch (e) {
     patNote = ` Storing the token as IAC_GH_PAT failed (${e.message}) — the token needs Secrets: read and write.`;
   }
+  S.defaultBranch = repo.default_branch ?? null;
   document.getElementById('btn-refresh').disabled = false;
+  document.getElementById('btn-sync-pipeline').disabled = S.slug.toLowerCase() === UPSTREAM.toLowerCase();
   msg('msg-connect', `Repo ${repo.full_name} ready (branch ${S.ref}). Loading live status…`, true);
   await refresh();
   await checkManifest();
   msg('msg-connect', `Repo ${repo.full_name} ready (branch ${S.ref}). Live status loaded — dots and pills below reflect reality.${patNote}`, !patNote.includes('failed'));
   adoptPatForRegistry().catch(() => {});
+  // a copy made by this page (or a fork of upstream) follows upstream's
+  // pipeline by itself — a snapshot that never moved is how a deploy
+  // demanded a token upstream had made optional (2026-09-10)
+  if (repo.fork || /copied from the setup wizard/.test(repo.description ?? '')) syncPipeline({ repo }).catch((e) => msg('msg-connect', `pipeline sync from ${UPSTREAM} failed: ${e.message}`, false));
   // a native toggle that waited on this connection fires now
   if (S.pendingNativeBuild) {
     const kind = S.pendingNativeBuild;
@@ -3016,7 +3097,7 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
   const pill = document.getElementById('connect-pill');
   // a mid-copy click on any of these reads as interrupting the copy —
   // hold the whole card until the flow settles (user report 2026-08-30)
-  for (const id of ['btn-fork', 'btn-connect', 'btn-refresh']) {
+  for (const id of ['btn-fork', 'btn-connect', 'btn-refresh', 'btn-sync-pipeline']) {
     document.getElementById(id).disabled = true;
   }
   try {
@@ -3078,7 +3159,7 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
     pill.className = 'pill bad';
     msg('msg-connect', String(e.message || e), false);
   } finally {
-    for (const id of ['btn-fork', 'btn-connect', 'btn-refresh']) {
+    for (const id of ['btn-fork', 'btn-connect', 'btn-refresh', 'btn-sync-pipeline']) {
       document.getElementById(id).disabled = false;
     }
     document.getElementById('btn-refresh').disabled = !S.user;
@@ -3086,6 +3167,7 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
 });
 
 document.getElementById('btn-refresh').addEventListener('click', () => refresh().then(checkManifest).catch((e) => msg('msg-connect', String(e.message || e), false)));
+document.getElementById('btn-sync-pipeline').addEventListener('click', () => syncPipeline({}).catch((e) => msg('msg-connect', `pipeline sync from ${UPSTREAM} failed: ${e.message}`, false)));
 
 document.querySelectorAll('[data-platform-pick]').forEach((el) => el.addEventListener('click', () => {
   S.platform = el.dataset.platformPick;

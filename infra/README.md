@@ -56,9 +56,15 @@ runbook (`munni-iac.<domain>`, `munni-iac-test.<domain>`, …).
 ## Part B1 — NAS track
 
 **B1-1 (once per NAS).** Make sure the deploy account (SYNOLOGY_USER)
-has DSM *administrator* rights — the reverse-proxy module needs them.
-The IaC workflow creates every reverse-proxy rule via the DSM API. Only
-two things stay manual (the workflow's verify step probes both):
+has DSM *administrator* rights and may use the DSM and File Station
+applications (User & Group → Applications) — the reverse-proxy module
+signs in to DSM itself; a `dsm: reverse-proxy apply failed` line in the
+bootstrap output (codes 402/119) is exactly that permission missing.
+The IaC workflow creates every reverse-proxy rule via the DSM API. The
+poller that applies uploaded bundles is a DSM Task Scheduler entry you
+create once (deploy/nas/README.md §5: user root, every 5 minutes,
+`cd /volume1/docker/munni && cp apply.sh .apply.run && sh .apply.run`).
+Only two more things stay manual (the workflow's verify step probes both):
 - Firewall: allow `172.16.0.0/12` in the access profile; restrict the
   `*-admin` hosts to LAN.
 - Certificate: the `*.synology.me` wildcard from DSM covers the hosts;
@@ -210,9 +216,15 @@ proves it with an anonymous pull and the tile reads "Not needed") never
 count as blocking, and *Skip for now* counts an integration as done
 everywhere (chip, health, rail, stepper) until a value is saved or the
 skip is undone. Connecting GitHub stores the connection token as
-`IAC_GH_PAT` by itself (no separate button), and reuses it as the
-registry token when the images turn out private and the token is a
-classic one with read:packages. The header, the stepper and the output
+`IAC_GH_PAT` by itself (no separate button) — ONE token: the registry
+tile only exists when the helper finds the images private (then a
+classic PAT with read:packages, or the connection token when it is one).
+A copy made by the wizard follows upstream's pipeline: at Connect (and
+via *Sync pipeline from upstream*) the workflows, deploy scripts and
+infra/ are compared blob by blob with okkes/munnimok@dev and written
+onto the copy's branches where they differ (a fork is merged through
+GitHub instead) — the app code stays the copy's own; the token needs
+Contents + Workflows read and write for that. The header, the stepper and the output
 drawer share the main column's width. On the local track the helper
 also reads this user's Windows Root store while the family runs, so
 "Trust the family certificate on this PC" is a detected fact, not a
