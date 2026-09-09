@@ -2744,6 +2744,18 @@ function closeManage({ keepOpen = false } = {}) {
   manageOpen = null;
   if (!keepOpen && dlg.open) dlg.close();
 }
+/* a successful Save is the end of the errand: the popup closes by itself
+   (user ruling 2026-09-10) — the chip on the tile already says Saved, the
+   verdict lands under the health card */
+function storedClosesPopup(g, verdictNote = '') {
+  if (manageOpen !== g.id) return;
+  renderStatus();
+  setTimeout(() => {
+    if (manageOpen !== g.id) return;
+    dismissManage();
+    msg('msg-health', `${g.title}: stored ✓${verdictNote}`, true);
+  }, 700);
+}
 /* the browser's back button closes the popup like any other screen */
 function dismissManage() {
   if (history.state?.manage) history.back();
@@ -2791,6 +2803,7 @@ async function storeGroup(id) {
       msg('msg-group-' + id, `Saved ✓ — kept in this machine's gitignored store; the family reads it (running containers pick it up on the next Set up)${verdictNote}`, true);
       entries.forEach((e) => S.recentlyStored.set(e.name, Date.now()));
       if (S.skipped.has(id)) setSkipped(id, false);
+      storedClosesPopup(g, verdictNote);
       await refreshLocal();
     } else {
       msg('msg-group-' + id, 'Saving failed — details in the step-4 output box.', false);
@@ -2805,6 +2818,7 @@ async function storeGroup(id) {
     msg('msg-group-' + id, `Stored ${entries.map((e) => e.name).join(', ')} ✓ (values are write-only from here on)${verdictNote}`, true);
     entries.forEach((e) => S.recentlyStored.set(e.name, Date.now()));
     if (S.skipped.has(id)) setSkipped(id, false);
+    storedClosesPopup(g, verdictNote);
     await refresh();
   } catch (e) { msg('msg-group-' + id, String(e.message || e), false); }
 }
