@@ -123,7 +123,7 @@ env — one public image serves every stack).
 **C2. Google sign-in (optional, once).** Google Cloud console →
 Credentials → Create OAuth client (Web) → authorized redirect URI
 `https://logto-iac.<domain>/callback/google-universal` → store
-`LOGTO_GOOGLE_CLIENT_ID` + `LOGTO_GOOGLE_CLIENT_SECRET` (wizard step 3)
+`LOGTO_GOOGLE_CLIENT_ID` + `LOGTO_GOOGLE_CLIENT_SECRET` (the wizard's Google tile)
 → re-run the workflow. The connector + sign-in-experience wiring is code.
 
 **C3. Apple sign-in (optional, once).** Apple developer portal →
@@ -191,21 +191,23 @@ verified with the provider), Phones (its Android/iOS builds and store
 records) and Access tabs. A sticky stepper and a status rail read the
 same facts and name the next step. Design: `docs/wizard-family-env-plan.md`.
 
-Since 2026-09-10 the feature and credential steps are **tiles**: step 2
-is a grid of feature tiles (brand mark, toggle, one-line purpose, tags,
-and the live state of the feature's credentials with a jump to the tile
-that needs them; *Select recommended* turns the recommended set on).
-Step 3 opens with an **Integration health** card — one line per
-integration the picked features need, its state (Needs setup ·
-Configured · Checked ✓ · Needs attention · Check failed · Optional ·
-Skipped), and *Check all*, which has the helper re-verify every saved
-value against its provider without the page seeing a secret — followed
-by the integration tiles themselves, grouped by kind; a tile expands in
-place to the full explainer and form. Optional integrations (the
-crash-mail SMTP url) never count as blocking, and every tile carries
-*Skip for now*, which counts it as done everywhere (chip, health, rail,
-stepper) until a value is saved or the skip is undone. The header, the
-stepper and the output drawer share the main column's width.
+Since 2026-09-10 features and their accounts are ONE step of **tiles**
+(*Features & accounts*): it opens with an **Integration health** card —
+one line per integration the picked features need, its state (Needs
+setup · Configured · Checked ✓ · Needs attention · Check failed ·
+Optional · Skipped), and *Check all*, which has the helper re-verify
+every saved value against its provider without the page seeing a
+secret — followed by one grid: a tile per connection (GitHub, the
+registry; domain and Synology on the NAS track) and a tile per feature
+(brand mark, toggle, one-line purpose, tags, the chip of its account).
+*Manage* on a tile opens that account in place — what the service is,
+why munni needs it, where the values come from, the fields, Save /
+Check / Skip — one tile at a time so the grid stays a grid; *Select
+recommended* turns the recommended set on. Optional integrations (the
+crash-mail SMTP url) never count as blocking, and *Skip for now* counts
+an integration as done everywhere (chip, health, rail, stepper) until a
+value is saved or the skip is undone. The header, the stepper and the
+output drawer share the main column's width.
 
 ### Day-2 on the local track: it keeps itself up to date
 

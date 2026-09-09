@@ -790,7 +790,7 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
   res.write(`▶ retire ${appId === iosAppId ? appId : `${appId} (Play) + ${iosAppId} (TestFlight)`} at the stores — distribution is withdrawn; the records themselves have no delete API\n\n`);
   let ok = true;
   if (!values.PLAY_SERVICE_ACCOUNT_JSON) {
-    res.write('Play: no service account stored (step 3) — skipped\n');
+    res.write('Play: no service account stored (Features & accounts) — skipped\n');
   } else {
     try {
       const access = await playAccessToken(values, netFetchImpl);
@@ -830,7 +830,7 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
     }
   }
   if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) {
-    res.write('TestFlight: no App Store Connect key stored (step 3) — skipped\n');
+    res.write('TestFlight: no App Store Connect key stored (Features & accounts) — skipped\n');
   } else {
     try {
       const jwt = ascJwt(values);
@@ -1063,7 +1063,7 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
   res.write(`▶ Firebase push for ${stack.envName} — project, app registrations and configs, all as code\n\n`);
   if (!values.PLAY_SERVICE_ACCOUNT_JSON) {
-    res.write('the Play service account is not stored yet (step 3) — the SAME credential drives Firebase\n');
+    res.write('the Play service account is not stored yet (Features & accounts) — the SAME credential drives Firebase\n');
     return res.end('[exit 1]\n');
   }
   try {
@@ -1214,7 +1214,7 @@ async function iosAppIdEndpoint(req, res, fetchImpl) {
   const values = familyValues(stack);
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
   if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) {
-    res.write('the App Store Connect key is not stored yet (step 3) — cannot register the App ID\n');
+    res.write('the App Store Connect key is not stored yet (Features & accounts) — cannot register the App ID\n');
     return res.end('[exit 1]\n');
   }
   let jwt;
@@ -1882,7 +1882,7 @@ async function appleCertImportEndpoint(req, res, netFetchImpl) {
   const shared = loadStack(SHARED_STACK);
   const values = loadLocalValues(shared);
   if (!values.IAC_GH_PAT) {
-    res.write('no GitHub token in the machine store — press Store as IAC_GH_PAT in step 3 first\n');
+    res.write('no GitHub token in the machine store — press Store as IAC_GH_PAT on the GitHub tile first\n');
     return res.end('[exit 1]\n');
   }
   const api = (path, init = {}) => netFetchImpl(`https://api.github.com${path}`, {

@@ -813,7 +813,7 @@ test('ios-appid: registers the bundle id and its long-run capabilities via the A
   const bare = fakeRes();
   await app(fakeReq({ method: 'POST', url: '/api/local/ios-appid', token: 'tok', body: { stack: 'munni-local-prod' } }), bare);
   await settle(bare);
-  assert.match(bare.chunks.join(''), /not stored yet \(step 3\)/);
+  assert.match(bare.chunks.join(''), /not stored yet \(Features & accounts\)/);
 });
 
 test('new-store-package: the operator names the suffix, re-render follows, consumers see it', async () => {
