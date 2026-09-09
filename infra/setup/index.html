@@ -125,6 +125,58 @@ ol.steps>li::before{content:counter(s);position:absolute;left:0;top:6px;width:20
 #log-drawer pre{margin:0 auto;border:0;border-radius:0;max-width:980px;max-height:38vh;overflow:auto;white-space:pre-wrap;display:none}
 #log-drawer.open pre{display:block}
 body.has-drawer main{padding-bottom:120px}
+/* ── family/environment pass 2026-09-09: stepper, two-column layout, status rail, credential rows, workspaces ── */
+main{max-width:none;padding:18px 0 80px}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:0 20px;max-width:1300px;margin:0 auto;padding:0 16px}
+#rail{position:sticky;top:76px;align-self:start;padding-top:16px;max-height:calc(100vh - 150px);overflow:auto}
+#rail .card{margin:0 0 14px}
+#rail h3{margin:0 0 8px;font-size:15px}
+@media(max-width:1100px){.layout{grid-template-columns:1fr}#rail{position:static;padding-top:0}}
+.stepper{position:sticky;top:0;z-index:15;background:var(--bg);border-bottom:1px solid var(--line);display:flex;gap:6px;overflow-x:auto;padding:8px 16px}
+.step{display:flex;align-items:center;gap:8px;text-decoration:none;color:var(--ink);padding:6px 10px;border-radius:12px;min-width:150px;flex:1 1 150px;border:1px solid transparent}
+.step:hover{border-color:var(--line);background:var(--card)}
+.step .sn{flex:0 0 26px;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;background:var(--chip);color:var(--muted)}
+.step.done .sn{background:var(--ok);color:#fff}
+.step.progress .sn{background:var(--brand);color:#f2efe7}
+.step .st{display:flex;flex-direction:column;min-width:0;font-size:12px;line-height:1.25}
+.step .st b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step .st small{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.step .pill{margin-left:auto;white-space:nowrap}
+.rail-top{display:flex;gap:12px;align-items:center}
+.ring{width:56px;height:56px;flex:0 0 56px}
+.rail-counters{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:12px 0;text-align:center}
+.rail-counters div{border:1px solid var(--line);border-radius:10px;padding:8px 4px}
+.rail-counters b{display:block;font-size:15px}
+.rail-counters small{color:var(--muted);font-size:11px}
+.rail-h{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:700;margin:12px 0 4px}
+.rail-list{list-style:none;margin:0;padding:0}
+.rail-item{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:12px;cursor:pointer}
+.rail-item:first-child{border-top:0}
+.rail-item>span:nth-child(2){flex:1;min-width:0;display:flex;flex-direction:column}
+.rail-item small{color:var(--muted)}
+.rail-item .chev{color:var(--muted)}
+.rail-next{margin-top:12px;border-top:1px solid var(--line);padding-top:10px;font-size:13px}
+.rail-next small{color:var(--muted);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+.rail-next button{width:100%;margin:6px 0 0}
+.crow{padding:0}
+.crow-h{display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer}
+.crow-h .ico{width:34px;height:34px;flex-basis:34px;margin:0}
+.crow-h .ico svg{width:17px;height:17px}
+.crow-t{flex:1;min-width:0}
+.crow-t b{font-size:14px}
+.crow-vars{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.crow .chev{color:var(--muted);transition:transform .15s}
+.crow.open .chev{transform:rotate(180deg)}
+.crow-b{display:none;padding:0 16px 14px;border-top:1px solid var(--line)}
+.crow.open .crow-b{display:block}
+.crow-b .why{margin-top:10px}
+.ws .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:10px 0 12px;flex-wrap:wrap}
+.ws .tab{background:transparent;color:var(--muted);border:0;border-bottom:2px solid transparent;border-radius:0;margin:0;padding:8px 12px;font-weight:600}
+.ws .tab.sel{color:var(--brand-ink);border-bottom-color:var(--brand-ink)}
+.ws .tab .pill{margin-left:6px}
+.ws .tab-body>.card{margin:10px 0}
+.reg{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}
+.reg-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
 </style>
 </head>
 <body>
@@ -132,9 +184,11 @@ body.has-drawer main{padding-bottom:120px}
   <h1>munni setup</h1>
   <p>From a clean checkout to a running munni ecosystem — accounts, secrets, bootstrap and deploys, guided and automated. The NAS track drives api.github.com from your browser; the local track hands the work to a small helper on this machine. Steps run top to bottom; what stays yours is listed under “What's left for you”.</p>
 </header>
+<nav id="stepper" class="stepper" aria-label="setup steps"></nav>
+<div class="layout">
 <main>
 
-<section id="s-platform">
+<section id="s-platform" data-step="Choose host">
   <h2><span class="n">1</span> Where will munni run?</h2>
   <p class="sub">The choice filters everything below to the steps that platform actually needs.</p>
   <div class="platforms">
@@ -144,14 +198,14 @@ body.has-drawer main{padding-bottom:120px}
   </div>
 </section>
 
-<section id="s-features">
+<section id="s-features" data-step="Enable features">
   <h2><span class="n">2</span> Which features do you want?</h2>
   <p class="sub">Everything else works out of the box (offline-first app, web push, sync). These need third-party accounts — untick what you don't want and its credentials disappear from Accounts &amp; credentials. Phones and https features switch the local family to LAN mode by themselves.</p>
   <div id="features"></div>
 </section>
 
-<section id="s-creds">
-  <h2><span class="n">3</span> Accounts &amp; credentials <span class="pill" id="creds-pill"></span></h2>
+<section id="s-creds" data-step="Add credentials">
+  <h2><span class="n">3</span> <span id="creds-title">Accounts &amp; credentials</span> <span class="pill" id="creds-pill"></span></h2>
   <p class="sub" id="creds-sub"></p>
 
   <div class="card" id="connect-card">
@@ -183,7 +237,7 @@ body.has-drawer main{padding-bottom:120px}
   <div class="msg" id="msg-manifest"></div>
 </section>
 
-<section id="s-bootstrap" data-platform="nas">
+<section id="s-bootstrap" data-platform="nas" data-step="Bootstrap">
   <h2><span class="n">4</span> First bootstrap <span class="pill" id="bootstrap-pill"></span></h2>
   <p class="sub">One workflow run per stack: creates the GitHub Environment, mints every generated secret (postgres password, VAPID pair, GlitchTip key…), renders compose + env and uploads a personalized runbook as the run artifact. Re-running is always safe — it only fills gaps.</p>
   <div class="runrow"><button data-dispatch-iac="munni-iac-prod">Bootstrap munni-iac-prod</button><button data-dispatch-iac="munni-iac-staging">Bootstrap munni-iac-staging</button><button class="ghost" data-dispatch-iac-verify="munni-iac-prod">Verify prod</button><button class="ghost" data-dispatch-iac-verify="munni-iac-staging">Verify staging</button></div>
@@ -191,7 +245,7 @@ body.has-drawer main{padding-bottom:120px}
   <div class="msg" id="msg-iac"></div>
 </section>
 
-<section id="s-deploy" data-platform="nas">
+<section id="s-deploy" data-platform="nas" data-step="Deploy">
   <h2><span class="n">5</span> Deploy to the NAS</h2>
   <p class="sub">The deploy workflow renders each twin from its environment, bundles it and uploads via the FileStation API; the NAS poller (runs every ~5 min) unpacks it into <code>/volume1/docker/&lt;stack&gt;/</code> and starts the containers. No SSH at any point.</p>
   <div class="runrow"><button data-dispatch-nas="iac-both">Deploy both twins</button><button class="ghost" data-dispatch-nas="iac-prod">Only prod</button><button class="ghost" data-dispatch-nas="iac-staging">Only staging</button></div>
@@ -208,8 +262,8 @@ body.has-drawer main{padding-bottom:120px}
   </div>
 </section>
 
-<section id="s-local" data-platform="local">
-  <h2><span class="n">4</span> Run munni on this machine <span class="pill" id="local-pill"></span></h2>
+<section id="s-local" data-platform="local" data-step="Start the family">
+  <h2><span class="n">4</span> Start the family <span class="pill" id="local-pill"></span></h2>
   <p class="sub">One machine, one family: <b>shared services</b> (GlitchTip, the vault, OCR, the munni-control cockpit, pgAdmin) plus any number of complete munni environments — <b>production</b> for your real data and, if you like, others to experiment in. Each environment runs its OWN sign-in service and its OWN database server with its own password — deleting one never touches another. Nothing is installed on the host beyond Docker Desktop (and node, which this repo already needs). Addresses: <span id="local-intro-envs">localhost ports until a phone or https feature switches the family to LAN mode (real https hostnames)</span>.</p>
 
   <div class="card" id="local-nohelper" hidden>
@@ -242,8 +296,8 @@ body.has-drawer main{padding-bottom:120px}
       <div class="card-head">
         <span class="ico" data-ico="list"></span>
         <div>
-          <h3>What's left for you <span class="pill" id="todo-pill"></span></h3>
-          <p class="why">Everything this page can do, it does by itself. This list is only what stays yours — in the order to do it, detected wherever a provider lets us check, a checkbox where it does not. “open” jumps to the card with the exact clicks.</p>
+          <h3>What's left for the family <span class="pill" id="todo-pill"></span></h3>
+          <p class="why">Everything this page can do, it does by itself. This list is only what stays yours at the FAMILY level — in order, detected wherever a provider lets us check, a checkbox where it does not. Each environment lists its own steps in its workspace below. “open” jumps to the card with the exact clicks.</p>
           <ul class="todo" id="local-todo"></ul>
         </div>
       </div>
@@ -283,23 +337,6 @@ body.has-drawer main{padding-bottom:120px}
       </div>
     </div>
 
-    <div id="env-cards"></div>
-
-    <div class="card">
-      <div class="card-head">
-        <span class="ico" data-ico="plus"></span>
-        <div>
-          <h3>Add an environment</h3>
-          <p class="why">Any number, side by side — each with its own sign-in, its own database server, its own ports. Name it and pick which releases it follows; it spins up and wires itself.</p>
-          <div class="runrow">
-            <input type="text" id="env-add-name" maxlength="5" placeholder="test, acc, stg…" style="max-width:170px"/>
-            <select id="env-add-channel" style="max-width:190px"><option value="dev">dev releases</option><option value="latest">main releases</option></select>
-            <button id="btn-env-add">＋ Add &amp; start</button>
-          </div>
-          <div class="msg" id="msg-env-add"></div>
-        </div>
-      </div>
-    </div>
 
     <div class="card">
       <div class="card-head">
@@ -350,7 +387,30 @@ body.has-drawer main{padding-bottom:120px}
   </div>
 </section>
 
-<section id="s-logto" data-platform="nas">
+<section id="s-envs" data-platform="local" data-step="Environments">
+  <h2><span class="n">5</span> Environments <span class="pill" id="envs-pill"></span></h2>
+  <p class="sub">Each environment is a full munni of its own — isolated sign-in, database and addresses. Its workspace holds everything that carries ITS name: the registrations at Google, Apple and Enable Banking, its phones and store records, its admin access. Family-wide things (credentials, shared services, the network mode) stay in the step above.</p>
+
+    <div class="card">
+      <div class="card-head">
+        <span class="ico" data-ico="plus"></span>
+        <div>
+          <h3>Add an environment</h3>
+          <p class="why">Any number, side by side — each with its own sign-in, its own database server, its own ports. Name it and pick which releases it follows; it spins up and wires itself.</p>
+          <div class="runrow">
+            <input type="text" id="env-add-name" maxlength="5" placeholder="test, acc, stg…" style="max-width:170px"/>
+            <select id="env-add-channel" style="max-width:190px"><option value="dev">dev releases</option><option value="latest">main releases</option></select>
+            <button id="btn-env-add">＋ Add &amp; start</button>
+          </div>
+          <div class="msg" id="msg-env-add"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="env-cards"></div>
+</section>
+
+<section id="s-logto" data-platform="nas" data-step="Sign-in service">
   <h2><span class="n">6</span> Sign-in service (Logto) — the ONE manual auth step <span class="pill" id="logto-pill"></span></h2>
   <p class="sub">Logto is the self-hosted identity provider the pair owns (accounts, sessions, Google/Apple sign-in). Its very first admin user can't be scripted (no headless OOBE upstream yet) — but it's one visit, and everything after it is code.</p>
   <ol class="steps">
@@ -366,10 +426,10 @@ body.has-drawer main{padding-bottom:120px}
   <button class="ghost" data-dispatch-iac="munni-iac-prod">Re-run prod bootstrap</button>
   <button class="ghost" data-dispatch-iac="munni-iac-staging">Re-run staging bootstrap</button>
   <div class="msg" id="msg-logto"></div>
-  <p class="why">After the re-runs, web/admin/native apps + redirect URIs + API resources exist in Logto and their ids are written back to the environments automatically (<span class="dot" data-dot="var:VITE_LOGTO_APP_ID"></span> <code>VITE_LOGTO_APP_ID</code> appearing = done). Deploy again (the Deploy step) so the frontends pick them up. Google/Apple sign-in from step 3 is wired in the same runs.</p>
+  <p class="why">After the re-runs, web/admin/native apps + redirect URIs + API resources exist in Logto and their ids are written back to the environments automatically (<span class="dot" data-dot="var:VITE_LOGTO_APP_ID"></span> <code>VITE_LOGTO_APP_ID</code> appearing = done). Deploy again (the Deploy step) so the frontends pick them up. Google/Apple sign-in from the credentials step is wired in the same runs — the connectors live under fixed ids (<code>google-universal</code>, <code>apple-universal</code>), so the callbacks on the sign-in cards are exact; a connector created earlier under a random id is replaced by the next bootstrap, after which the registration at Google/Apple must carry the fixed-id callback.</p>
 </section>
 
-<section id="s-glitchtip" data-platform="nas">
+<section id="s-glitchtip" data-platform="nas" data-step="Crash reports">
   <h2><span class="n">7</span> Crash reports (GlitchTip) <span class="pill" id="gt-pill"></span></h2>
   <p class="sub">Self-hosted error tracking for app, admin and API. One account + one token — the org, the projects and every DSN are code after that.</p>
   <ol class="steps">
@@ -385,7 +445,7 @@ body.has-drawer main{padding-bottom:120px}
   <p class="why">The re-run creates org + per-stack projects and writes the DSNs back (<span class="dot" data-dot="var:VITE_GLITCHTIP_DSN"></span> <code>VITE_GLITCHTIP_DSN</code> appearing = done). Deploy again afterwards.</p>
 </section>
 
-<section id="s-admin" data-platform="nas">
+<section id="s-admin" data-platform="nas" data-step="Admin access">
   <h2><span class="n">8</span> Your admin access</h2>
   <p class="sub">The admin console and diagnosis endpoints only answer to listed OIDC subject ids. Your sub exists once you've signed into the app for the first time.</p>
   <ol class="steps">
@@ -399,7 +459,7 @@ body.has-drawer main{padding-bottom:120px}
   <div class="msg" id="msg-subs"></div>
 </section>
 
-<section id="s-native">
+<section id="s-native" data-step="Native apps">
   <h2><span class="n">9</span> Native apps <span class="pill" id="native-pill"></span></h2>
   <p class="sub">Builds always run in GitHub CI — nothing compiles on this machine. Only the stores' one rule stays manual: the FIRST binary upload of a new app id.</p>
 
@@ -417,84 +477,9 @@ body.has-drawer main{padding-bottom:120px}
     </ol>
   </div>
 
-  <div data-native-track="local">
-    <div class="envpick"><b>Environment</b> <select id="native-env-select"></select> <span class="envtag">every build, store record, app id and callback below belongs to this environment</span></div>
-    <div class="card" data-needs-feature="android">
-      <h3>Android on your phone (via Play) <span class="pill" id="native-local-pill"></span></h3>
-      <p class="why">Each environment is its own store channel: package <code data-native-appid>app.munni.local.&lt;env&gt;</code> on the Play <b>internal testing</b> track, installable side by side with the others. <b>Build</b> writes this environment's LAN config into the GitHub environment <code>local</code>; CI compiles, signs with the machine's upload key, wires push and publishes — the phone then updates through Play like any app. Until the Play record exists the upload is skipped (green run, signed bundle offered here); once the record shows up, publishing turns on by itself. The app trusts the family certificate out of the box — CI bakes it in.</p>
-      <div class="runrow">
-        <button id="btn-native-local-android">Build the Android app (CI)</button>
-        <span class="pill" id="play-status-pill"></span>
-        <span class="pill" id="fcm-status-pill" hidden></span>
-      </div>
-      <div class="runrow" style="align-items:center">
-        <label class="f" for="native-suffix" style="margin:0">store package&nbsp;&nbsp;<code>app.munni.local.</code></label>
-        <input id="native-suffix" type="text" maxlength="30" style="max-width:120px" placeholder="prod" autocomplete="off"/>
-        <button class="ghost" id="btn-apply-package" title="a fresh package name — for when Play has pinned a lost upload key, or just to name it yourself">Apply package name</button>
-      </div>
-      <div class="msg" id="msg-native-local"></div>
-      <details class="how"><summary>The one-time Play setup (once per environment)</summary>
-        <ol>
-          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code data-native-appid>app.munni.local.&lt;env&gt;</code>. Creating the RECORD is the whole manual part — you can do it before any build exists.</li>
-          <li>This page detects the record within a few minutes (“store app found”) and turns auto-publish on — from then on every build, the FIRST included, uploads itself to Internal testing. Add yourself as a tester there once.</li>
-          <li>No record yet when a build turns green? The signed <code>.aab</code> downloads here as a fallback for a manual first upload.</li>
-          <li>Only for using the phone's BROWSER against the https hostnames (the app itself needs nothing): download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> (DASHES in the address, not dots) and install it as a user certificate.</li>
-        </ol>
-      </details>
-    </div>
-
-    <div class="card" data-needs-feature="ios">
-      <h3>iOS on your phone (via TestFlight)</h3>
-      <p class="why">Same channel logic: bundle <code data-native-appid-ios>app.munni.local.&lt;env&gt;</code>, built by CI, signed with the machine's Apple certificate (minted once — no more revocation mails) and uploaded straight to TestFlight; install and update it from the TestFlight app. The bundle id has its own field below because it may differ from the Android package (Play burns package names when an upload key is lost; App Store Connect records live on). One-time per environment: the App Store Connect app record — with the App Store Connect key saved, the pill below detects it. The build carries the LAN address, so it only works on your wifi.</p>
-      <details class="how"><summary>First time on an iPhone — the family certificate (once per phone)</summary>
-        <ol>
-          <li>Download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> in Safari (DASHES in the address, not dots). iOS saves it as a pending profile.</li>
-          <li>Settings → <b>Profile Downloaded</b> (top of Settings; or General → VPN &amp; Device Management) → Install.</li>
-          <li>THEN Settings → General → About → <b>Certificate Trust Settings</b> → switch the root fully on. Both steps, or sign-in fails — iOS offers no in-app trust bundling (Apple's floor).</li>
-        </ol>
-      </details>
-      <div class="runrow">
-        <button class="ghost" id="btn-native-local-ios">Build iOS for this machine (CI → TestFlight)</button>
-        <span class="pill" id="asc-status-pill"></span>
-      </div>
-      <div class="runrow" style="align-items:center">
-        <label class="f" for="native-suffix-ios" style="margin:0">iOS bundle&nbsp;&nbsp;<code>app.munni.local.</code></label>
-        <input id="native-suffix-ios" type="text" maxlength="30" style="max-width:120px" placeholder="prod" autocomplete="off"/>
-        <button class="ghost" id="btn-apply-package-ios" title="name the iOS bundle yourself — it may stay on an existing ASC record while the Android package rolls">Apply bundle id</button>
-      </div>
-      <div class="msg" id="msg-native-ios"></div>
-      <details class="how"><summary>The one-time App Store Connect setup (once per environment)</summary>
-        <ol>
-          <li>Nothing to click at developer.apple.com: pressing <b>Build</b> registers the App ID (bundle <code data-native-appid-ios>app.munni.local.&lt;env&gt;</code>) through the API with the capabilities munni needs LONG-RUN — <b>Push Notifications</b> (for FCM later; ticking now means never re-provisioning), <b>Sign in with Apple</b> (Apple requires it beside Google login), <b>Associated Domains</b> (universal links on the hosted track). Apple Pay is NOT needed — munni only reads bank data.</li>
-          <li>If you ever open the identifier by hand: the “Push Notifications → Configure” dialog offering <b>APNs SSL certificates</b> is the LEGACY path — create nothing there, just Done. Push will use the team APNs <i>key</i> via Firebase.</li>
-          <li>The one step neither store gives an API for is creating the app RECORD (tools that automate it drive an interactive Apple-ID sign-in with 2FA — impossible from CI; same at Google, Play's Create-app is Console-only): <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> → <b>New App</b> → platform iOS, any name, pick the pre-registered bundle id from the dropdown, <b>SKU</b> = anything unique (the bundle id itself works), User Access <b>Full Access</b> → create. The pill above detects the record and every build then uploads to TestFlight by itself.</li>
-          <li>Two account-side switches that block uploads when off: a pending <b>Program License Agreement</b> banner must be accepted by the Account Holder (appstoreconnect → the yellow banner), and the step-3 ASC key needs cloud-signing rights — <b>Users and Access → Integrations → the key → role Admin</b> (or App Manager with “Access to Cloud Managed Distribution Certificate”). Without it the export dies with “Cloud signing permission error / No signing certificate iOS Distribution”.</li>
-        </ol>
-      </details>
-      <details class="how"><summary>iOS push — the one-time floor (Apple’s key + Google’s console, once per team)</summary>
-        <ol>
-          <li>Create an <b>APNs key</b> once per team: <a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">developer.apple.com → Keys</a> → ＋ → tick <b>Apple Push Notifications service (APNs)</b> (tick <b>Sign in with Apple</b> on the same key if you plan that too — one <code>.p8</code> serves both) → download the <code>.p8</code>, note its <b>Key ID</b>. The step-3 App Store Connect key is a DIFFERENT key type — it cannot push.</li>
-          <li>Hand it to Firebase — the one push step Google offers no API for: <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer">Firebase console</a> → the Play service account’s own Cloud project → Project settings → <b>Cloud Messaging</b> → Apple app configuration → the app named <code>munni local &lt;env&gt; ios</code> → <b>APNs Authentication Key → Upload</b>: the .p8, its Key ID, your Team ID (the App Store Connect card). One key covers every environment’s iOS app.</li>
-          <li>On the iPhone: install the newest TestFlight build (Build bakes the Firebase config in — the push pill on the Android card says when push is wired), open munni → Settings → switch <b>notifications</b> on → allow the iOS prompt. That registers the device with the api; nothing registers on its own, and the simulator cannot receive push.</li>
-          <li>Test with a friend request from another account: the iPhone shows a banner. When it stays silent, the api log names Google’s answer — a missing APNs key reads as <code>THIRD_PARTY_AUTH_ERROR</code>.</li>
-        </ol>
-      </details>
-    </div>
-
-    <div class="card" data-needs-feature="fcm">
-      <h3>Push notifications (Firebase) — wired by the Build buttons</h3>
-      <p class="why">Push lives HERE because it rides the app builds: pressing <b>Build</b> above Firebase-enables the Play service account's own Cloud project, registers this environment's Android/iOS apps, bakes their config into the builds and reuses that same service account as the sender — the Firebase card under Accounts &amp; credentials fills itself, and the push pill on the Android card names whatever still blocks. Until everything is granted, builds stay green with push inactive.</p>
-      <details class="how"><summary>The one-time floors (Google's + Apple's, once ever)</summary>
-        <ol>
-          <li>Grant the Play service account TWO roles: <a href="https://console.cloud.google.com/iam-admin/iam" target="_blank" rel="noreferrer">console.cloud.google.com → IAM</a> → edit the munni service account → add <b>Firebase Admin</b> (registers the apps, reads their configs, sends push) and <b>Service Usage Admin</b> (lets Build switch the Firebase Management API on and add Firebase to the Cloud project — Google gates that behind <code>serviceusage.services.enable</code>, which Firebase Admin does NOT include) → wait a minute → Build again (same class as the Play invite — the first grant is Google's floor). Rather not widen the account? Do the two clicks by hand once instead: enable the Firebase Management API (the Build output prints the link) and add Firebase to the project in the Firebase console (Add project → choose the existing Cloud project) — then Firebase Admin alone is enough.</li>
-          <li>iOS push only: create an APNs key once and upload it in the Firebase console — the iOS card’s “iOS push” fold walks through it (Apple’s floor; Google offers no API for the upload).</li>
-        </ol>
-      </details>
-    </div>
-  </div>
 </section>
 
-<section id="s-day2" data-platform="nas">
+<section id="s-day2" data-platform="nas" data-step="Day-2">
   <h2><span class="n">10</span> Day-2: keeping it healthy</h2>
   <ul style="font-size:13px">
     <li>Pushes touching <code>infra/</code> re-VERIFY both stacks automatically (no writes).</li>
@@ -514,6 +499,11 @@ body.has-drawer main{padding-bottom:120px}
 
 <footer>munni infra setup · this file lives at <code>infra/setup/index.html</code> · text fallback: <code>infra/README.md</code></footer>
 </main>
+<aside id="rail">
+  <div class="card" id="rail-status"><h3>Setup status</h3><div id="rail-body" class="why">checking…</div></div>
+  <div class="card" id="rail-help"><h3>Stuck? The text versions</h3><p class="why">This page in prose: <code>infra/README.md</code> · phones: <code>docs/native-setup.md</code> · why the page is shaped like this: <code>docs/wizard-family-env-plan.md</code>. Every button's output streams into the drawer at the bottom.</p></div>
+</aside>
+</div>
 
 <!-- the helper's output: always in reach, never in the way — every button streams here -->
 <div id="log-drawer" hidden>
@@ -1053,6 +1043,9 @@ const S = {
   envs: {},          // name -> { secrets:Set, vars:Set }
   runs: { iac: [], nas: [], native: [] },
   localStore: new Set(),   // names present in the LOCAL secret store (via the helper)
+  storeStatusByEnv: {},    // store-status verdicts per environment name
+  regVerdicts: {},         // registration verdicts per environment name → provider
+  rowState: {},            // credential rows the operator opened/closed this visit
   pollTimer: null,
 };
 
@@ -1115,7 +1108,7 @@ const GROUPS = [
       'Environment: <b>Sandbox</b> only reaches Enable Banking’s test banks — for real banks register a <b>production</b> application (Enable Banking may ask a few questions before enabling it).',
       {
         nas: 'Allowed <b>redirect URLs</b> — after the bank consent, munni returns the user to the app origin + <code>/gc-callback</code>. Register BOTH twins: <code class="dom-inline">https://munni-iac.&lt;domain&gt;/gc-callback</code> and <code class="dom-inline">https://munni-iac-test.&lt;domain&gt;/gc-callback</code>. An unregistered URL fails at connect time with a 403 that names the problem.',
-        local: 'Allowed <b>redirect URLs</b> — Enable Banking accepts https only, and with LAN mode on (a phone or https feature turns it on by itself) every environment has one; register each you test in: <span id="eb-local-redirects"><i>shown once the environments are set up</i></span> A changed wifi address changes them — hence the DHCP reservation. In localhost-only mode the family is plain http, which Enable Banking refuses (“unsupported scheme”) — storing + <b>Check</b> still works there. Registering your future hosted urls alongside (<code class="dom-inline">https://munni-iac.&lt;domain&gt;/gc-callback</code> + the -test twin) is fine — one application serves all of them.',
+        local: 'Allowed <b>redirect URLs</b>: Enable Banking accepts https only — each environment lists its exact URL under Registrations in its workspace below (LAN mode, which a phone or https feature turns on by itself, gives every environment one). In localhost-only mode the family is plain http, which Enable Banking refuses (“unsupported scheme”) — storing + <b>Check</b> still works there. Registering your future hosted urls alongside (<code class="dom-inline">https://munni-iac.&lt;domain&gt;/gc-callback</code> + the -test twin) is fine — one application serves all of them.',
       },
       'Registering creates the application’s key pair — <b>download the private key (.pem)</b>; it is shown/offered ONCE. Paste its FULL contents below, BEGIN/END lines included.',
       'The <b>Application ID</b> (a UUID) is on the application’s page in the Control Panel after registration.',
@@ -1180,7 +1173,7 @@ const GROUPS = [
       'Then <a data-gcp-link="client" href="https://console.cloud.google.com/apis/credentials/oauthclient" target="_blank" rel="noreferrer">Create OAuth client ID</a> → type <b>Web application</b>.',
       {
         nas: 'Authorized <b>redirect URI</b> (this is Logto’s Google callback): <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/google-universal</code>',
-        local: 'Authorized <b>redirect URIs</b> — one per environment, Google takes several on one client (localhost is allowed; with LAN mode on the https one below is the live one): <span id="google-local-redirects"><i>shown once the environments are set up</i></span>',
+        local: 'Authorized <b>redirect URIs</b>: one per environment, Google takes several on one client — each environment lists its exact URI (with a copy button) and verifies it under Registrations in its workspace below.',
       },
       'Paste the client ID + client secret here. <b>Check</b> (and Save) then asks Google whether every redirect URI above is registered — a missing one is named.',
     ],
@@ -1195,12 +1188,12 @@ const GROUPS = [
     how: ['Apple keeps this manual (its App Store Connect API stops at bundle ids, certificates and profiles — no Services IDs, no keys), once per family. Apple’s own “Finish Setting up Sign in with Apple” banner lists four steps; here is what each means for munni: ① <b>Enable App ID</b> — done by the iOS Build (the App ID is registered as the primary one). ② <b>Create Service ID for Web Authentication</b> — the ONLY place that takes domains + return URLs. ③ <b>Create Key</b> — the .p8 pasted below. ④ <b>Register Email Sources</b> — SKIP: that is Apple’s private email relay for mailing users, munni never mails through it, and an sslip.io domain fails its SPF check by design (remove it there if you added one).',
       'The Services ID (Apple’s ②): <a href="https://developer.apple.com/account/resources/identifiers/list/serviceId" target="_blank" rel="noreferrer">Identifiers → Services IDs</a> → ＋ → Services IDs → identifier (this becomes the client ID below, e.g. <code>app.munni.local.signin</code>) → Register → open it → tick <b>Sign in with Apple</b> → <b>Configure</b>: primary App ID = the munni App ID, then the domains + return URLs:',
       { nas: 'Domain: <code class="dom-inline">logto-iac.&lt;domain&gt;</code> · Return URL: <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/apple-universal</code>',
-        local: 'Domains and return URLs — one pair per environment, Apple takes several on one Services ID (LAN mode must be on, which the toggle does by itself): <span id="apple-local-return-urls"><i>shown once the environments are set up</i></span> A changed wifi address changes them — hence the DHCP reservation. No domain verification file is needed anymore; Save the Services ID and it is live.' },
+        local: 'Domains and return URLs: one pair per environment, Apple takes several on one Services ID — each environment lists its exact pair (copy buttons) and verifies it under Registrations in its workspace below. A changed wifi address changes them — hence the DHCP reservation. No domain verification file is needed anymore; Save the Services ID and it is live.' },
       'The key (Apple’s ③): <a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">Keys</a> → ＋ → tick <b>Sign in with Apple</b> (Configure → the primary App ID) and <b>APNs</b> on the same key — one .p8 serves both, the same file goes to Firebase for iOS push → Register → <b>Download</b> the .p8 right there (Apple hands it out exactly once; a lost file means revoke + new key) → note the <b>Key ID</b> → paste the file contents below.',
       'Team ID: taken from the TestFlight card when stored there — otherwise top right of the developer console (Membership). <b>Check</b> (and Save) then asks Apple whether every return URL above is accepted.'],
     fields: [
       { name: 'LOGTO_APPLE_CLIENT_ID', scope: 'pair', ph: 'the Services ID identifier (NOT the App ID), e.g. app.munni.local.signin' },
-      { name: 'LOGTO_APPLE_TEAM_ID', scope: 'pair', ph: 'empty = the TestFlight card’s Team ID' },
+      { name: 'LOGTO_APPLE_TEAM_ID', scope: 'pair', optional: true, ph: 'empty = the TestFlight card’s Team ID' },
       { name: 'LOGTO_APPLE_KEY_ID', scope: 'pair' },
       { name: 'LOGTO_APPLE_PRIVATE_KEY', scope: 'pair', area: true },
     ],
@@ -1217,6 +1210,28 @@ const GROUPS = [
  * once it runs (phones need GitHub + the app ids, sign-in needs the
  * environments' callbacks) — the cards render under that heading */
 const PHASE_OF = { playstore: 'later', ascstore: 'later', fcm: 'later', google: 'later', apple: 'later' };
+/* the credential rows group by KIND (what they connect), each row says
+ * what needs it — the stepper and the rail decide the order */
+const KIND_ORDER = ['Connections', 'Bank providers', 'Stores & signing', 'Sign-in providers', 'Extras'];
+const KIND_HINT = {
+  Connections: 'GitHub for the phones’ CI builds, the registry for pulling images',
+  'Bank providers': 'read-only PSD2 access — the heart of the product',
+  'Stores & signing': 'CI publishes with these; the machine keeps the signing keys itself',
+  'Sign-in providers': 'credentials only — every environment registers its own callback in its workspace',
+  Extras: 'nice to have',
+};
+const FAMILY_KIND = { domain: 'Connections', synology: 'Connections', ghcr: 'Connections', gocardless: 'Bank providers', enablebanking: 'Bank providers', playstore: 'Stores & signing', ascstore: 'Stores & signing', google: 'Sign-in providers', apple: 'Sign-in providers', logodev: 'Extras', email: 'Extras', fcm: 'Extras' };
+const NEEDED_FOR = { domain: 'every link', synology: 'deploys', ghcr: 'Set up & start (pulling images)', gocardless: 'bank sync', enablebanking: 'the second bank provider', playstore: 'Android builds + store checks', ascstore: 'iOS builds + store checks', google: 'Sign in with Google', apple: 'Sign in with Apple', logodev: 'merchant logos', email: 'crash-report mails', fcm: 'push on the NAS track' };
+const ICON_OF = { domain: 'globe', synology: 'server', ghcr: 'layers', gocardless: 'bank', enablebanking: 'bank', playstore: 'store', ascstore: 'store', google: 'id', apple: 'id', logodev: 'image', email: 'mail', fcm: 'bell' };
+const rowSaved = (g) => {
+  const fields = g.fields.filter((f) => !f.optional);
+  const saved = fields.filter((f) => secretPresent(f.name, true)).length;
+  return { saved, total: fields.length, complete: saved === fields.length };
+};
+const rowChip = (g) => {
+  const { saved, total, complete } = rowSaved(g);
+  return complete ? '<span class="pill ok">Saved ✓</span>' : (saved ? `<span class="pill warn">${saved}/${total} saved</span>` : '<span class="pill warn">Missing</span>');
+};
 
 /* ── github api ── */
 async function gh(path, init = {}) {
@@ -1344,10 +1359,19 @@ function renderStatus() {
   const gtDone = ENVS.every((env) => S.envs[env]?.vars?.has('VITE_GLITCHTIP_DSN'));
   el('gt-pill').textContent = gtDone ? 'DSNs written back ✓' : 'pending token';
   el('gt-pill').className = 'pill ' + (gtDone ? 'ok' : '');
+  document.querySelectorAll('.crow').forEach((row) => {
+    const g = GROUPS.find((x) => x.id === row.dataset.group);
+    const chip = row.querySelector('[data-chip]');
+    if (g && chip) chip.innerHTML = rowChip(g);
+    // a row the operator never touched folds once its values are saved
+    if (g && S.rowState[g.id] === undefined) row.classList.toggle('open', !rowSaved(g).complete);
+  });
   const required = GROUPS.filter(groupVisible).flatMap((g) => g.fields).filter((f) => !f.optional);
   const missing = required.filter((f) => !secretPresent(f.name, true));
   el('creds-pill').textContent = missing.length ? `${required.length - missing.length}/${required.length} stored` : 'all stored ✓';
   el('creds-pill').className = 'pill ' + (missing.length ? 'warn' : 'ok');
+  // the stepper and the rail read the same verdicts
+  if (typeof renderTodo === 'function') renderTodo();
 }
 
 /* ── the LOCAL HELPER (infra/setup/serve.mjs) — when this page is served
@@ -1371,6 +1395,14 @@ const labelOf = (stackName) => (stackName === SHARED_STACK ? 'shared services' :
 
 /* minimalist line icons (stroke = brand ink, dark-mode safe) */
 const ICONS = {
+  key: '<svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12 20 3M16 7l2 2M13 10l2 2"/></svg>',
+  bank: '<svg viewBox="0 0 24 24"><path d="M3 10 12 4l9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18"/></svg>',
+  store: '<svg viewBox="0 0 24 24"><path d="M4 9 5.5 4h13L20 9M4 9h16v11H4zM10 20v-5h4v5"/></svg>',
+  id: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2.5"/><path d="M14 10h4M14 14h4M5.5 17.5c.8-1.5 2-2 3.5-2s2.7.5 3.5 2"/></svg>',
+  image: '<svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="m21 16-5-5-8 8"/></svg>',
+  mail: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="m3 8 9 6 9-6"/></svg>',
+  bell: '<svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/></svg>',
+  globe: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></svg>',
   list: '<svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></svg>',
   wand: '<svg viewBox="0 0 24 24"><path d="M6 18 18 6M14 6h4v4M5 5l1.5 1.5M4 11h2M11 4v2"/></svg>',
   server: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h.01M8 16.5h.01"/></svg>',
@@ -1391,29 +1423,199 @@ const setPill = (id, text, ok) => {
   el.className = 'pill ' + (ok ? 'ok' : '');
 };
 
+/* ── environment workspaces (docs/wizard-family-env-plan.md): one card
+   per environment — a header with its lifecycle, then Overview ·
+   Registrations · Phones · Access. Everything that carries THIS
+   environment's name lives here; the family's shared things stay above. ── */
+const WS_OPEN = () => LS.get('ws-open', {});
+const REG_DONE = () => LS.get('reg-done', {});
+const envByName = (name) => S.envList.find((e) => e.name === name);
+const gcpClientLink = () => `https://console.cloud.google.com/apis/credentials/oauthclient${S.googleProject ? `?project=${encodeURIComponent(S.googleProject)}` : ''}`;
+
 function updateEnvCard(env, s) {
   const stored = new Set(s.stored);
   const up = s.services.web && s.services.api;
-  setPill(`env-pill-${env.name}`, up ? 'running ✓' : (s.rendered ? 'set up — not running' : 'not set up yet'), up);
+  const name = env.name;
+  setPill(`env-pill-${name}`, up ? 'running ✓' : (s.rendered ? 'set up — not running' : 'not set up yet'), up);
   const card = document.querySelector(`[data-envcard="${env.stack}"]`);
   if (card) {
     // state-aware actions: only the option that makes sense shows
     card.querySelector('[data-act="start"]')?.classList.toggle('hide', up);
     card.querySelector('[data-act="stop"]')?.classList.toggle('hide', !up);
   }
-  const warn = document.getElementById(`env-logto-warn-${env.name}`);
+  const links = document.getElementById(`env-links-${name}`);
+  if (links) {
+    const dot = (ok) => `<span class="dot ${ok ? 'ok' : 'miss'}"></span>`;
+    const link = (label, ok, url) => `<a class="chiplink" href="${url}" target="_blank" rel="noreferrer">${dot(ok)} <b>${label}</b> ${url.replace(/^https?:\/\//, '')}</a>`;
+    links.innerHTML = [link('app', s.services.web, s.urls.web), link('admin', s.services.web, s.urls.admin), link('api', s.services.api, `${s.urls.api}/health`), link('logto', s.services.logto, s.urls.logtoAdmin)].join(' ');
+  }
+  const warn = document.getElementById(`env-logto-warn-${name}`);
   if (warn) warn.hidden = Boolean(s.services.logto);
   const signinDone = stored.has('NAS_LOGTO_M2M_APP_ID');
-  const sd = document.getElementById(`env-signin-dot-${env.name}`);
+  const sd = document.getElementById(`env-signin-dot-${name}`);
   if (sd) sd.className = 'dot ' + (signinDone ? 'ok' : 'miss');
-  setPill(`env-signin-pill-${env.name}`, signinDone ? 'live ✓' : 'runs with Set up', signinDone);
+  setPill(`env-signin-pill-${name}`, signinDone ? 'live ✓' : 'runs with Set up', signinDone);
   const gtDone = stored.has('VITE_GLITCHTIP_DSN');
-  const gd = document.getElementById(`env-gt-dot-${env.name}`);
+  const gd = document.getElementById(`env-gt-dot-${name}`);
   if (gd) gd.className = 'dot ' + (gtDone ? 'ok' : 'miss');
-  setPill(`env-gt-pill-${env.name}`, gtDone ? 'wired ✓' : 'runs with Set up', gtDone);
+  setPill(`env-gt-pill-${name}`, gtDone ? 'wired ✓' : 'runs with Set up', gtDone);
 }
 
-function envCardHtml(env) {
+/** the Access tab: admin access + the manual sign-in / crash-tracking fallbacks */
+function accessHtml(env) {
+  const s = env.name;
+  const gt = S.stacksStatus?.stacks?.[SHARED_STACK]?.urls?.glitchtip ?? 'http://localhost:8383';
+  return `
+    <label class="f" for="in-subs-${s}">NAS_ADMIN_SUBS — a Logto User ID to grant admin access (Set up creates the first admin automatically while the environment has no users)</label>
+    <input type="text" id="in-subs-${s}" placeholder="usr_…" autocomplete="off"/>
+    <button class="ghost" data-act="subs" data-stack="${env.stack}">Store admin access</button>
+    <button class="ghost" data-act="signin" data-stack="${env.stack}">Re-run sign-in setup</button>
+    <button class="ghost" data-act="gt" data-stack="${env.stack}">Re-run crash tracking</button>
+    <p style="margin-top:8px;font-size:13px">Bring your own Logto M2M credential (console → Applications → Machine-to-machine, role <b>Logto Management API</b>):</p>
+    <div class="grid2">
+      <div><label class="f" for="in-m2m-id-${s}">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-m2m-id-${s}" autocomplete="off"/></div>
+      <div><label class="f" for="in-m2m-secret-${s}">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-m2m-secret-${s}" autocomplete="off"/></div>
+    </div>
+    <button data-act="oobe" data-stack="${env.stack}">Apply sign-in setup</button>
+    <label class="f" for="in-gt-${s}">IAC_GLITCHTIP_API_TOKEN (family-wide, from <a href="${gt}" target="_blank" rel="noreferrer">GlitchTip</a> → Auth Tokens)</label>
+    <input type="password" id="in-gt-${s}" autocomplete="off"/>
+    <button data-act="gtapply" data-stack="${env.stack}">Apply crash tracking</button>
+    <div class="msg" id="msg-oobe-${s}"></div>`;
+}
+
+/** the Phones tab: the Android and iOS cards bound to THIS environment */
+function phonesHtml(env) {
+  const s = env.name;
+  if (!S.features.android && !S.features.ios) return '<p class="why">No phone feature is ticked — Enable features above adds Android and iOS.</p>';
+  const android = !S.features.android ? '' : `
+    <div class="card" data-needs-feature="android">
+      <h3>Android on your phone (via Play) <span class="pill" id="native-local-pill-${s}"></span></h3>
+      <p class="why">This environment's own store channel: package <code data-native-appid data-env="${s}">app.munni.local.${s}</code> on the Play <b>internal testing</b> track, installable side by side with the others. <b>Build</b> writes this environment's LAN config into the GitHub environment <code>local</code>; CI compiles, signs with the machine's upload key, wires push and publishes — the phone then updates through Play like any app. Until the Play record exists the upload is skipped (green run, signed bundle offered here); once the record shows up, publishing turns on by itself. The app trusts the family certificate out of the box — CI bakes it in.</p>
+      <div class="runrow">
+        <button data-native-build="android" data-env="${s}">Build the Android app (CI)</button>
+        <span class="pill" id="play-status-pill-${s}"></span>
+        <span class="pill" id="fcm-status-pill-${s}" hidden></span>
+      </div>
+      <div class="runrow" style="align-items:center">
+        <label class="f" for="native-suffix-${s}" style="margin:0">store package&nbsp;&nbsp;<code>app.munni.local.</code></label>
+        <input id="native-suffix-${s}" type="text" maxlength="30" style="max-width:120px" placeholder="${s}" autocomplete="off"/>
+        <button class="ghost" data-apply-package="android" data-env="${s}" title="a fresh package name — for when Play has pinned a lost upload key, or just to name it yourself">Apply package name</button>
+      </div>
+      <div class="msg" id="msg-native-local-${s}"></div>
+      <details class="how"><summary>The one-time Play setup (once per environment)</summary>
+        <ol>
+          <li><a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → Create app → package <code data-native-appid data-env="${s}">app.munni.local.${s}</code>. Creating the RECORD is the whole manual part — you can do it before any build exists.</li>
+          <li>This page detects the record within a few minutes (“store app found”) and turns auto-publish on — from then on every build, the FIRST included, uploads itself to Internal testing. Add yourself as a tester there once.</li>
+          <li>No record yet when a build turns green? The signed <code>.aab</code> downloads here as a fallback for a manual first upload.</li>
+          <li>Only for using the phone's BROWSER against the https hostnames (the app itself needs nothing): download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> (DASHES in the address, not dots) and install it as a user certificate.</li>
+        </ol>
+      </details>
+    </div>`;
+  const ios = !S.features.ios ? '' : `
+    <div class="card" data-needs-feature="ios">
+      <h3>iOS on your phone (via TestFlight)</h3>
+      <p class="why">Same channel logic: bundle <code data-native-appid-ios data-env="${s}">app.munni.local.${s}</code>, built by CI, signed with the machine's Apple certificate (minted once — no more revocation mails) and uploaded straight to TestFlight; install and update it from the TestFlight app. The bundle id has its own field below because it may differ from the Android package (Play burns package names when an upload key is lost; App Store Connect records live on). One-time per environment: the App Store Connect app record — with the App Store Connect key saved, the pill below detects it. The build carries the LAN address, so it only works on your wifi.</p>
+      <details class="how"><summary>First time on an iPhone — the family certificate (once per phone)</summary>
+        <ol>
+          <li>Download <a data-ca-url href="#" target="_blank" rel="noreferrer"><code>http://ca.&lt;ip-dashed&gt;.sslip.io</code></a> → <code>root.crt</code> in Safari (DASHES in the address, not dots). iOS saves it as a pending profile.</li>
+          <li>Settings → <b>Profile Downloaded</b> (top of Settings; or General → VPN &amp; Device Management) → Install.</li>
+          <li>THEN Settings → General → About → <b>Certificate Trust Settings</b> → switch the root fully on. Both steps, or sign-in fails — iOS offers no in-app trust bundling (Apple's floor).</li>
+        </ol>
+      </details>
+      <div class="runrow">
+        <button class="ghost" data-native-build="ios" data-env="${s}">Build iOS for this machine (CI → TestFlight)</button>
+        <span class="pill" id="asc-status-pill-${s}"></span>
+      </div>
+      <div class="runrow" style="align-items:center">
+        <label class="f" for="native-suffix-ios-${s}" style="margin:0">iOS bundle&nbsp;&nbsp;<code>app.munni.local.</code></label>
+        <input id="native-suffix-ios-${s}" type="text" maxlength="30" style="max-width:120px" placeholder="${s}" autocomplete="off"/>
+        <button class="ghost" data-apply-package="ios" data-env="${s}" title="name the iOS bundle yourself — it may stay on an existing ASC record while the Android package rolls">Apply bundle id</button>
+      </div>
+      <div class="msg" id="msg-native-ios-${s}"></div>
+      <details class="how"><summary>The one-time App Store Connect setup (once per environment)</summary>
+        <ol>
+          <li>Nothing to click at developer.apple.com: pressing <b>Build</b> registers the App ID (bundle <code data-native-appid-ios data-env="${s}">app.munni.local.${s}</code>) through the API with the capabilities munni needs LONG-RUN — <b>Push Notifications</b> (for FCM later; ticking now means never re-provisioning), <b>Sign in with Apple</b> as the primary App ID (keys and Services IDs attach to it), <b>Associated Domains</b> (universal links on the hosted track). Apple Pay is NOT needed — munni only reads bank data.</li>
+          <li>If you ever open the identifier by hand: the “Push Notifications → Configure” dialog offering <b>APNs SSL certificates</b> is the LEGACY path — create nothing there, just Done. Push will use the team APNs <i>key</i> via Firebase.</li>
+          <li>The one step neither store gives an API for is creating the app RECORD (tools that automate it drive an interactive Apple-ID sign-in with 2FA — impossible from CI; same at Google, Play's Create-app is Console-only): <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> → <b>New App</b> → platform iOS, any name, pick the pre-registered bundle id from the dropdown, <b>SKU</b> = anything unique (the bundle id itself works), User Access <b>Full Access</b> → create. The pill above detects the record and every build then uploads to TestFlight by itself.</li>
+          <li>Two account-side switches that block uploads when off: a pending <b>Program License Agreement</b> banner must be accepted by the Account Holder (appstoreconnect → the yellow banner), and the App Store Connect key needs cloud-signing rights — <b>Users and Access → Integrations → the key → role Admin</b> (or App Manager with “Access to Cloud Managed Distribution Certificate”). Without it the export dies with “Cloud signing permission error / No signing certificate iOS Distribution”.</li>
+        </ol>
+      </details>
+      <details class="how"><summary>iOS push — the one-time floor (Apple’s key + Google’s console, once per team)</summary>
+        <ol>
+          <li>Create an <b>APNs key</b> once per team: <a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">developer.apple.com → Keys</a> → ＋ → tick <b>Apple Push Notifications service (APNs)</b> (tick <b>Sign in with Apple</b> on the same key if you plan that too — one <code>.p8</code> serves both) → download the <code>.p8</code>, note its <b>Key ID</b>. The App Store Connect key is a DIFFERENT key type — it cannot push.</li>
+          <li>Hand it to Firebase — the one push step Google offers no API for: <a href="https://console.firebase.google.com" target="_blank" rel="noreferrer">Firebase console</a> → the Play service account’s own Cloud project → Project settings → <b>Cloud Messaging</b> → Apple app configuration → the app named <code>munni local ${s} ios</code> → <b>APNs Authentication Key → Upload</b>: the .p8, its Key ID, your Team ID (the App Store Connect card). One key covers every environment’s iOS app.</li>
+          <li>On the iPhone: install the newest TestFlight build (Build bakes the Firebase config in — the push pill on the Android card says when push is wired), open munni → Settings → switch <b>notifications</b> on → allow the iOS prompt. That registers the device with the api; nothing registers on its own, and the simulator cannot receive push.</li>
+          <li>Test with a friend request from another account: the iPhone shows a banner. When it stays silent, the api log names Google’s answer — a missing APNs key reads as <code>THIRD_PARTY_AUTH_ERROR</code>.</li>
+        </ol>
+      </details>
+    </div>`;
+  const push = !S.features.fcm ? '' : `
+    <p class="why">Push rides the builds: Build Firebase-enables the Play service account's project, registers this environment's apps and bakes their config in — the push pill on the Android card says what is wired. The one-time floors are family-wide and sit in the family list: the two IAM roles (Firebase card) and, for iOS, the APNs key in the Firebase console.</p>`;
+  return android + ios + push;
+}
+
+/** the Registrations tab: what carries THIS environment's name at the providers */
+const regBlock = (s, provider, title, where, href, values, verifiable) => `
+  <div class="reg" data-reg="${provider}" data-env="${s}">
+    <div class="reg-h"><b>${title}</b> <span class="pill" id="reg-pill-${provider}-${s}">not checked yet</span></div>
+    <div class="why">Where: <a href="${href}" target="_blank" rel="noreferrer">${where}</a></div>
+    ${values.map(copyBlock).join('')}
+    <div class="runrow">${verifiable
+      ? `<button class="ghost" data-verify="${provider}" data-env="${s}">Verify with ${provider === 'google' ? 'Google' : 'Apple'}</button><span class="envtag">asks the provider about this environment's URL only — no user, nothing changes</span>`
+      : `<label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-reg-done="${provider}" data-env="${s}" ${REG_DONE()[`${s}:${provider}`] ? 'checked' : ''}/> registered there (Enable Banking offers no way to verify)</label>`}</div>
+  </div>`;
+const regNote = (title, text) => `<div class="reg"><div class="reg-h"><b>${title}</b> <span class="pill">needs https</span></div><div class="why">${text}</div></div>`;
+function registrationsHtml(env) {
+  const s = env.name;
+  const st = S.stacksStatus?.stacks?.[env.stack];
+  const logto = st?.urls?.logto ?? '';
+  const web = st?.urls?.web ?? env.web;
+  const https = (u) => typeof u === 'string' && u.startsWith('https://');
+  const blocks = [];
+  if (S.features.google) {
+    blocks.push(regBlock(s, 'google', 'Google — authorized redirect URI', S.googleProject ? `the OAuth client in project ${S.googleProject}` : 'the OAuth client (Google sign-in card)', gcpClientLink(), [`${logto}/callback/google-universal`], true));
+  }
+  if (S.features.apple) {
+    blocks.push(https(logto)
+      ? regBlock(s, 'apple', 'Apple — domain + return URL on the Services ID', 'Identifiers → Services IDs → Sign in with Apple → Configure', 'https://developer.apple.com/account/resources/identifiers/list/serviceId', [new URL(logto).host, `${logto}/callback/apple-universal`], true)
+      : regNote('Apple — domain + return URL', 'Apple accepts https only — LAN mode turns on with the Sign in with Apple, Android, iOS or Enable Banking feature; the URL appears here then.'));
+  }
+  if (S.features.enablebanking) {
+    blocks.push(https(web)
+      ? regBlock(s, 'enablebanking', 'Enable Banking — allowed redirect URL', 'Control Panel → Applications → your application', 'https://enablebanking.com/cp/applications', [`${web}/gc-callback`], false)
+      : regNote('Enable Banking — allowed redirect URL', 'Enable Banking accepts https only — LAN mode turns on with a phone or https feature; the URL appears here then.'));
+  }
+  return blocks.length ? blocks.join('') : '<p class="why">No ticked feature needs a registration for this environment — bank sync via GoCardless registers nothing.</p>';
+}
+function renderRegistrations(env) {
+  const box = document.getElementById(`reg-${env.name}`);
+  if (!box) return;
+  box.innerHTML = registrationsHtml(env);
+  for (const provider of Object.keys(S.regVerdicts[env.name] ?? {})) applyRegPill(env.name, provider);
+}
+function applyRegPill(s, provider) {
+  const v = S.regVerdicts[s]?.[provider];
+  if (!v) return;
+  const text = v.ok && !v.warn ? 'registered ✓' : (v.warn ? `refused — ${v.detail}` : `✗ ${v.detail}`);
+  setPill(`reg-pill-${provider}-${s}`, text.slice(0, 240), v.ok && !v.warn);
+}
+async function verifyRegistration(env, provider) {
+  const s = env.name;
+  const logto = S.stacksStatus?.stacks?.[env.stack]?.urls?.logto ?? '';
+  setPill(`reg-pill-${provider}-${s}`, 'asking…', false);
+  let verdict;
+  try {
+    const res = await hfetch('/api/validate', { method: 'POST', body: JSON.stringify({ provider, values: {}, redirectUris: [`${logto}/callback/${provider}-universal`] }) });
+    verdict = await res.json();
+  } catch (e) {
+    verdict = { ok: false, unreachable: true, detail: e.message };
+  }
+  (S.regVerdicts[s] ??= {})[provider] = verdict;
+  applyRegPill(s, provider);
+  renderTodo();
+}
+
+function envWorkspaceHtml(env) {
   const s = env.name;
   const roles = {
     prod: 'The environment you USE — real accounts, real bank consents.',
@@ -1421,18 +1623,16 @@ function envCardHtml(env) {
   };
   const role = roles[s] ?? 'A full munni environment of its own — isolated sign-in, database and ports.';
   const deletable = env.stack !== 'munni-local-prod';
+  const open = WS_OPEN()[s] ?? (s === 'prod');
   return `
-  <div class="card" data-envcard="${env.stack}">
+  <div class="card ws" data-envcard="${env.stack}" data-env="${s}">
     <div class="card-head">
       <span class="ico" data-ico="server"></span>
       <div>
         <h3>${envLabel(s)} <span class="pill" id="env-pill-${s}"></span> <span class="envtag">${env.channel === 'latest' ? 'main releases' : 'dev releases'}</span></h3>
-        <p class="why">${role} App at <a href="${env.web}" target="_blank" rel="noreferrer">${env.web.replace('http://', '')}</a> · Logto console <a href="${env.logtoAdmin}" target="_blank" rel="noreferrer">${env.logtoAdmin.replace('http://', '')}</a> — sign-in, crash tracking, console and admin user all wired by Set up; logins under Reveal secrets.</p>
+        <p class="why">${role}</p>
+        <div class="why" id="env-links-${s}"></div>
         <p class="msg bad" id="env-logto-warn-${s}" hidden>This environment's Logto isn't answering yet — Start it (or Set up) and wait for its dot to turn green.</p>
-        <div class="statline">
-          <span>Sign-in <span class="dot" id="env-signin-dot-${s}"></span> <span class="pill" id="env-signin-pill-${s}"></span></span>
-          <span>Crash reports <span class="dot" id="env-gt-dot-${s}"></span> <span class="pill" id="env-gt-pill-${s}"></span></span>
-        </div>
         <div class="runrow">
           <button class="ghost hide" data-act="start" data-stack="${env.stack}">▶ Start</button>
           <button class="ghost hide" data-act="stop" data-stack="${env.stack}">■ Stop</button>
@@ -1440,51 +1640,103 @@ function envCardHtml(env) {
           ${deletable
             ? `<button class="ghost danger" data-act="nuke" data-stack="${env.stack}">Delete…</button>`
             : '<span class="envtag" title="munni-control and the native apps ride this environment">not deletable</span>'}
+          <button class="ghost" data-ws-toggle="${s}" style="margin-left:auto">${open ? 'Collapse' : 'Expand'}</button>
         </div>
-        <details class="how"><summary>Admin access &amp; manual fallback</summary>
-          <label class="f" for="in-subs-${s}">NAS_ADMIN_SUBS — a Logto User ID to grant admin access (Set up creates the first admin automatically while the environment has no users)</label>
-          <input type="text" id="in-subs-${s}" placeholder="usr_…" autocomplete="off"/>
-          <button class="ghost" data-act="subs" data-stack="${env.stack}">Store admin access</button>
-          <button class="ghost" data-act="signin" data-stack="${env.stack}">Re-run sign-in setup</button>
-          <button class="ghost" data-act="gt" data-stack="${env.stack}">Re-run crash tracking</button>
-          <p style="margin-top:8px;font-size:13px">Bring your own Logto M2M credential (console → Applications → Machine-to-machine, role <b>Logto Management API</b>):</p>
-          <div class="grid2">
-            <div><label class="f" for="in-m2m-id-${s}">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-m2m-id-${s}" autocomplete="off"/></div>
-            <div><label class="f" for="in-m2m-secret-${s}">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-m2m-secret-${s}" autocomplete="off"/></div>
-          </div>
-          <button data-act="oobe" data-stack="${env.stack}">Apply sign-in setup</button>
-          <label class="f" for="in-gt-${s}">IAC_GLITCHTIP_API_TOKEN (family-wide, from <a href="${S.stacksStatus?.stacks?.[SHARED_STACK]?.urls?.glitchtip ?? 'http://localhost:8383'}" target="_blank" rel="noreferrer">GlitchTip</a> → Auth Tokens)</label>
-          <input type="password" id="in-gt-${s}" autocomplete="off"/>
-          <button data-act="gtapply" data-stack="${env.stack}">Apply crash tracking</button>
-          <div class="msg" id="msg-oobe-${s}"></div>
-        </details>
       </div>
+    </div>
+    <div class="ws-body" id="ws-body-${s}" ${open ? '' : 'hidden'}>
+      <div class="tabs" role="tablist">
+        <button class="tab sel" data-tab="overview" data-env="${s}">Overview</button>
+        <button class="tab" data-tab="registrations" data-env="${s}">Registrations <span class="pill" id="tabpill-registrations-${s}"></span></button>
+        <button class="tab" data-tab="phones" data-env="${s}">Phones <span class="pill" id="tabpill-phones-${s}"></span></button>
+        <button class="tab" data-tab="access" data-env="${s}">Access</button>
+      </div>
+      <div class="tab-body" data-tab="overview" data-env="${s}">
+        <div class="statline">
+          <span>Sign-in <span class="dot" id="env-signin-dot-${s}"></span> <span class="pill" id="env-signin-pill-${s}"></span></span>
+          <span>Crash reports <span class="dot" id="env-gt-dot-${s}"></span> <span class="pill" id="env-gt-pill-${s}"></span></span>
+          <span>Push <span class="pill" id="env-push-pill-${s}">not checked yet</span></span>
+          <span>Store records <span class="pill" id="env-store-pill-${s}">not checked yet</span></span>
+        </div>
+        <p class="why" style="margin-top:8px">What this environment still needs from you — in order:</p>
+        <ul class="todo" id="env-todo-${s}"></ul>
+      </div>
+      <div class="tab-body hide" data-tab="registrations" data-env="${s}">
+        <p class="why">Credentials are family-wide; what carries THIS environment's name must be registered at the provider once. Verify asks the provider about this environment only.</p>
+        <div id="reg-${s}"></div>
+      </div>
+      <div class="tab-body hide" data-tab="phones" data-env="${s}">${phonesHtml(env)}</div>
+      <div class="tab-body hide" data-tab="access" data-env="${s}">${accessHtml(env)}</div>
     </div>
   </div>`;
 }
 
-/** re-render the env cards ONLY when the environment LIST changes —
- * typed values survive every ordinary refresh */
-function renderEnvCards(st) {
+/** re-render the workspaces ONLY when the environment LIST (or what
+ * shapes it: features, network mode) changes — typed values survive
+ * every ordinary refresh; registrations re-render on each refresh
+ * (they hold no input and follow the network mode) */
+function renderWorkspaces(st) {
+  S.stacksStatus = st; // the registrations read the environments' urls from here
+  S.googleProject = st.googleProject ?? S.googleProject ?? null;
   const list = Object.entries(st.stacks)
     .filter(([, s]) => s.envName)
     .map(([stackName, s]) => ({ stack: stackName, name: s.envName, channel: s.channel, web: s.urls.web, logtoAdmin: s.urls.logtoAdmin }));
   S.envList = list;
-  const signature = JSON.stringify(list);
+  const signature = JSON.stringify([list, S.features, st.lan]);
   const box = document.getElementById('env-cards');
   if (box && box.dataset.signature !== signature) {
     box.dataset.signature = signature;
-    box.innerHTML = list.map(envCardHtml).join('');
+    box.innerHTML = list.length ? list.map(envWorkspaceHtml).join('') : '<p class="why">No environment yet — <b>Set up &amp; start</b> in the family step creates production; more can be added above.</p>';
     applyIcons(box);
-    // the native build target follows the env list
-    const sel = document.getElementById('native-env-select');
-    if (sel) {
-      const cur = sel.value;
-      sel.innerHTML = list.map((e) => `<option value="${e.stack}">${envLabel(e.name)}</option>`).join('');
-      if (list.some((e) => e.stack === cur)) sel.value = cur;
-    }
   }
+  for (const env of list) renderRegistrations(env);
+  setPill('envs-pill', list.length ? `${list.length} environment${list.length > 1 ? 's' : ''}` : 'none yet', list.length > 0);
 }
+function switchTab(s, tab) {
+  document.querySelectorAll(`.tab[data-env="${s}"]`).forEach((t) => t.classList.toggle('sel', t.dataset.tab === tab));
+  document.querySelectorAll(`.tab-body[data-env="${s}"]`).forEach((b) => b.classList.toggle('hide', b.dataset.tab !== tab));
+}
+/* workspace interactions: ONE delegated listener survives every re-render */
+document.getElementById('env-cards')?.addEventListener('click', async (e) => {
+  const tab = e.target.closest('.tab');
+  if (tab) { switchTab(tab.dataset.env, tab.dataset.tab); return; }
+  const tog = e.target.closest('[data-ws-toggle]');
+  if (tog) {
+    const s = tog.dataset.wsToggle;
+    const body = document.getElementById(`ws-body-${s}`);
+    body.hidden = !body.hidden;
+    tog.textContent = body.hidden ? 'Expand' : 'Collapse';
+    const m = WS_OPEN();
+    m[s] = !body.hidden;
+    LS.set('ws-open', m);
+    return;
+  }
+  const build = e.target.closest('[data-native-build]');
+  if (build) {
+    const env = envByName(build.dataset.env);
+    if (!env) return;
+    if (build.dataset.nativeBuild === 'android') buildLocalAndroidFlow(env);
+    else dispatchLocalIosFlow(env);
+    return;
+  }
+  const pkg = e.target.closest('[data-apply-package]');
+  if (pkg) { const env = envByName(pkg.dataset.env); if (env) applyStorePackage(pkg.dataset.applyPackage, env); return; }
+  const ver = e.target.closest('[data-verify]');
+  if (ver) {
+    const env = envByName(ver.dataset.env);
+    if (!env) return;
+    ver.disabled = true;
+    try { await verifyRegistration(env, ver.dataset.verify); } finally { ver.disabled = false; }
+  }
+});
+document.getElementById('env-cards')?.addEventListener('change', (e) => {
+  const cb = e.target.closest('[data-reg-done]');
+  if (!cb) return;
+  const m = REG_DONE();
+  m[`${cb.dataset.env}:${cb.dataset.regDone}`] = cb.checked;
+  LS.set('reg-done', m);
+  renderTodo();
+});
 
 /** every environment's Logto callback for a social connector; Apple
  * refuses http, so its list keeps only the https (LAN mode) hosts */
@@ -1495,24 +1747,6 @@ function callbackUrlsFor(target) {
     .map((s) => `${s.urls.logto}/callback/${target}`);
 }
 const copyBlock = (text) => `<pre style="margin:4px 0"><button class="copy">copy</button><code>${text}</code></pre>`;
-
-/** the Apple card lists every environment's domain + return URL */
-function fillAppleReturnUrls() {
-  const span = document.getElementById('apple-local-return-urls');
-  if (!span || !S.stacksStatus) return;
-  const urls = callbackUrlsFor('apple-universal');
-  span.innerHTML = urls.length
-    ? urls.map((u) => copyBlock(`${new URL(u).host}`) + copyBlock(u)).join('')
-    : '<i>turn LAN mode on first (tick Sign in with Apple, Android, iOS or Enable Banking) — localhost hosts are http, which Apple refuses.</i>';
-}
-
-/** the Google card lists every environment's redirect URI */
-function fillGoogleRedirects() {
-  const span = document.getElementById('google-local-redirects');
-  if (!span || !S.stacksStatus) return;
-  const urls = callbackUrlsFor('google-universal');
-  span.innerHTML = urls.length ? urls.map(copyBlock).join('') : '<i>shown once the environments are set up</i>';
-}
 
 /** the Google console links carry the Play service account's project */
 function fillGoogleProjectLinks() {
@@ -1529,15 +1763,8 @@ function fillGoogleProjectLinks() {
  * shared services' addresses (they move with the network mode), the
  * environment list in the intro, and the what's-left list */
 function fillDynamicCopy() {
-  fillAppleReturnUrls();
-  fillGoogleRedirects();
   fillGoogleProjectLinks();
   const st = S.stacksStatus;
-  const eb = document.getElementById('eb-local-redirects');
-  if (eb && st) {
-    const urls = S.envList.map((e) => `${e.web}/gc-callback`).filter((u) => u.startsWith('https://'));
-    eb.innerHTML = urls.length ? urls.map(copyBlock).join('') : '<i>turn LAN mode on first (tick Android, iOS, Sign in with Apple — or Enable Banking itself) — localhost is http, which Enable Banking refuses.</i>';
-  }
   const shared = st?.stacks?.[SHARED_STACK];
   const links = document.getElementById('shared-links');
   if (links && shared) {
@@ -1557,12 +1784,14 @@ function fillDynamicCopy() {
   renderTodo();
 }
 
-/* ── the guiding list: what stays the operator's, in order — detected
-   where a provider lets us check, a checkbox where it does not ── */
+/* ── the guiding lists: what stays the operator's — the FAMILY's once,
+   each ENVIRONMENT's on its own — detected where a provider lets us
+   check, a checkbox where it does not; the stepper and the status rail
+   read the same lists ── */
 const todoDone = () => LS.get('todo-done', {});
-function todoItems() {
+const anyStore = (pick) => S.envList.map((e) => S.storeStatusByEnv[e.name]).filter(Boolean).map(pick);
+function familyTodoItems() {
   const st = S.stacksStatus;
-  const ss = S.storeStatus;
   const f = S.features;
   const has = (n) => S.localStore.has(n);
   const lan = Boolean(st?.lan);
@@ -1575,9 +1804,11 @@ function todoItems() {
   const missingSetup = GROUPS.filter(groupVisible)
     .filter((g) => (PHASE_OF[g.id] ?? 'setup') === 'setup')
     .flatMap((g) => g.fields).filter((x) => !x.optional && !has(x.name)).map((x) => x.name);
+  const plays = anyStore((ss) => ss.play).filter(Boolean);
+  const fbs = anyStore((ss) => ss.firebase).filter(Boolean);
   const items = [
     { id: 'docker', title: 'Docker Desktop running', detail: 'the whole family lives in containers', state: st ? st.docker.ok : null, href: '#s-local' },
-    { id: 'creds', title: 'Credentials for the features you ticked', detail: missingSetup.length ? `still missing: ${missingSetup.join(', ')}` : 'every value the family needs before it starts is saved', state: st ? missingSetup.length === 0 : null, href: '#s-creds' },
+    { id: 'creds', title: 'Credentials the family needs before it starts', detail: missingSetup.length ? `still missing: ${missingSetup.join(', ')}` : 'every value the family reads at start is saved', state: st ? missingSetup.length === 0 : null, href: '#s-creds' },
     { id: 'setup', title: 'Press Set up & start', detail: 'shared services, every environment, sign-in, crash tracking, the vault — one button, safe to repeat', state: st ? sharedUp && envsUp : null, href: '#btn-local-setup' },
   ];
   if (lan) items.push({ id: 'trust-pc', title: 'Trust the family certificate on this PC', detail: 'Set up does it (one Windows dialog); redo it after Delete everything', manual: true, href: '#btn-trust-ca' });
@@ -1585,57 +1816,196 @@ function todoItems() {
   if (f.android) {
     items.push(
       { id: 'play-sa', title: 'Play service account saved', detail: 'the Google Play publishing card', state: has('PLAY_SERVICE_ACCOUNT_JSON'), href: '[data-group="playstore"]' },
-      { id: 'play-invite', title: 'Invite the service account in Play Console', detail: 'Users and permissions → Release to testing tracks', state: ss?.play ? !(ss.play.state === 'error' && /NOT invited/.test(ss.play.detail ?? '')) : null, href: '[data-group="playstore"]' },
-      { id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Google’s floor for push as code — Build names the exact gap', state: ss?.firebase ? ['ready', 'missing-app'].includes(ss.firebase.state) : null, href: '#s-native' },
-      { id: 'play-record', title: `Create the Play app record${ss?.appId ? ` ${ss.appId}` : ''}`, detail: 'Play Console → Create app; this page notices and turns publishing on', state: ss?.play ? ss.play.state === 'ready' : null, href: '#btn-native-local-android' },
+      { id: 'play-invite', title: 'Invite the service account in Play Console', detail: 'Users and permissions → Release to testing tracks', state: plays.length ? !plays.some((p) => p.state === 'error' && /NOT invited/.test(p.detail ?? '')) : null, href: '[data-group="playstore"]' },
     );
   }
-  if (f.ios) {
-    items.push(
-      { id: 'asc-key', title: 'App Store Connect key saved', detail: 'the App Store Connect card', state: has('ASC_KEY_ID') && has('ASC_KEY_P8'), href: '[data-group="ascstore"]' },
-      { id: 'asc-record', title: `Create the App Store Connect record${ss?.iosAppId ? ` ${ss.iosAppId}` : ''}`, detail: 'New App with the pre-registered bundle id', state: ss?.ios ? ss.ios.state === 'ready' : null, href: '#btn-native-local-ios' },
-    );
-    if (f.fcm) items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'iOS push only — Google offers no API for it', manual: true, href: '#btn-native-local-ios' });
-  }
-  if (f.google) items.push({ id: 'google', title: 'Google OAuth client + redirect URIs', detail: 'the Google sign-in card — Check verifies every callback', state: has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET'), href: '[data-group="google"]' });
-  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key', detail: 'the Apple sign-in card — Check verifies every return URL', state: has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY'), href: '[data-group="apple"]' });
-  if (lan && phones) items.push({ id: 'phone-ca', title: 'Trust the family certificate on the phone', detail: 'only for the phone’s browser — the apps trust it out of the box', manual: true, href: '#s-native' });
+  if (phones && f.fcm) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Google’s floor for push as code — Build names the exact gap', state: fbs.length ? fbs.every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]' });
+  if (f.ios) items.push({ id: 'asc-key', title: 'App Store Connect key saved', detail: 'the App Store Connect card', state: has('ASC_KEY_ID') && has('ASC_KEY_P8'), href: '[data-group="ascstore"]' });
+  if (f.ios && f.fcm) items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'team-wide, iOS push only — Google offers no API for it', manual: true, href: '[data-group="fcm"]' });
+  if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in card — each environment registers its redirect URI in its workspace', state: has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET'), href: '[data-group="google"]' });
+  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: 'the Apple sign-in card — each environment registers its return URL in its workspace', state: has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY'), href: '[data-group="apple"]' });
+  if (lan && phones) items.push({ id: 'phone-ca', title: 'Trust the family certificate on the phone', detail: 'only for the phone’s browser — the apps trust it out of the box', manual: true, href: '#s-envs' });
   items.push({ id: 'autonomy', title: 'Automatic updates on + the helper at logon', detail: 'after that the family keeps itself current without this page', state: Boolean(S.autonomy?.enabled && S.autonomy?.logonTask), href: '#btn-autonomy-toggle' });
   const done = todoDone();
   return items.map((it) => ({ ...it, done: it.manual ? Boolean(done[it.id]) : it.state === true }));
 }
-function renderTodo() {
-  const ul = document.getElementById('local-todo');
-  if (!ul || !HELPER || S.platform !== 'local') return;
-  const items = todoItems();
-  ul.innerHTML = items.map((it, i) => `
+function envTodoItems(env) {
+  const s = env.name;
+  const f = S.features;
+  const ss = S.storeStatusByEnv[s];
+  const st = S.stacksStatus?.stacks?.[env.stack];
+  const https = (u) => typeof u === 'string' && u.startsWith('https://');
+  const v = S.regVerdicts[s] ?? {};
+  const regState = (provider) => (v[provider] ? Boolean(v[provider].ok && !v[provider].warn) : null);
+  const items = [];
+  const jump = (tab, sel) => ({ tab, sel });
+  if (f.google) items.push({ id: `reg-google-${s}`, title: 'Register the Google redirect URI', detail: 'Registrations → Verify with Google tells', state: regState('google'), tab: 'registrations', env: s });
+  if (f.apple) items.push({ id: `reg-apple-${s}`, title: 'Register the Apple domain + return URL', detail: https(st?.urls?.logto) ? 'Registrations → Verify with Apple tells' : 'needs LAN mode (https) first', state: https(st?.urls?.logto) ? regState('apple') : false, tab: 'registrations', env: s });
+  if (f.enablebanking) items.push({ id: `reg-eb-${s}`, title: 'Register the Enable Banking redirect URL', detail: 'Registrations → tick when done (no API to verify)', manual: true, manualKey: `${s}:enablebanking`, tab: 'registrations', env: s });
+  if (f.android) items.push({ id: `play-record-${s}`, title: `Create the Play app record${ss?.appId ? ` ${ss.appId}` : ''}`, detail: 'Play Console → Create app; this page notices and turns publishing on', state: ss?.play ? ss.play.state === 'ready' : null, tab: 'phones', env: s });
+  if (f.ios) items.push({ id: `asc-record-${s}`, title: `Create the App Store Connect record${ss?.iosAppId ? ` ${ss.iosAppId}` : ''}`, detail: 'New App with the pre-registered bundle id', state: ss?.ios ? ss.ios.state === 'ready' : null, tab: 'phones', env: s });
+  if ((f.android || f.ios) && f.fcm) items.push({ id: `push-${s}`, title: 'Push wired (Firebase apps registered)', detail: 'Build does it once the family roles are granted', state: ss?.firebase ? ss.firebase.state === 'ready' : null, soft: true, tab: 'phones', env: s });
+  const regDone = REG_DONE();
+  return items.map((it) => ({ ...it, done: it.manual ? Boolean(regDone[it.manualKey]) : it.state === true }));
+}
+function todoLi(it, i, jumpAttr) {
+  const status = it.manual
+    ? `<label style="font-size:12px;display:flex;align-items:center"><input type="checkbox" data-todo="${it.manualKey ? '' : it.id}" data-reg-key="${it.manualKey ?? ''}" ${it.done ? 'checked' : ''}/>done</label>`
+    : `<span class="pill ${it.done ? 'ok' : (it.state === null ? '' : 'warn')}">${it.done ? 'done ✓' : (it.state === null ? 'not checked yet' : (it.soft ? 'pending' : 'to do'))}</span>`;
+  return `
     <li class="${it.done ? 'done' : ''}">
       <span class="num">${it.done ? '✓' : i + 1}</span>
       <div class="body"><div class="t">${it.title}</div><div class="d">${it.detail}</div></div>
-      <span class="st">${it.manual
-        ? `<label style="font-size:12px;display:flex;align-items:center"><input type="checkbox" data-todo="${it.id}" ${it.done ? 'checked' : ''}/>done</label>`
-        : `<span class="pill ${it.done ? 'ok' : (it.state === null ? '' : 'warn')}">${it.done ? 'done ✓' : (it.state === null ? 'not checked yet' : 'to do')}</span>`}<a class="chiplink" href="#" data-jump="${it.href}">open</a></span>
-    </li>`).join('');
-  ul.querySelectorAll('[data-todo]').forEach((cb) => cb.addEventListener('change', () => {
-    const m = todoDone();
-    m[cb.dataset.todo] = cb.checked;
-    LS.set('todo-done', m);
+      <span class="st">${status}<a class="chiplink" href="#" ${jumpAttr}>open</a></span>
+    </li>`;
+}
+function renderTodo() {
+  if (!HELPER || S.platform !== 'local') { renderStepper(); renderRail([]); return; }
+  const ul = document.getElementById('local-todo');
+  const family = familyTodoItems();
+  if (ul) ul.innerHTML = family.map((it, i) => todoLi(it, i, `data-jump="${it.href}"`)).join('');
+  for (const env of S.envList) {
+    const items = envTodoItems(env);
+    const box = document.getElementById(`env-todo-${env.name}`);
+    if (box) box.innerHTML = items.length ? items.map((it, i) => todoLi(it, i, `data-jump-tab="${it.tab}" data-env="${env.name}"`)).join('') : '<li><div class="body"><div class="d">nothing — this environment needs no manual step with the ticked features</div></div></li>';
+    const regs = items.filter((it) => it.id.startsWith('reg-'));
+    const phones = items.filter((it) => !it.id.startsWith('reg-'));
+    setPill(`tabpill-registrations-${env.name}`, regs.length ? `${regs.filter((it) => it.done).length}/${regs.length}` : '', regs.length > 0 && regs.every((it) => it.done));
+    setPill(`tabpill-phones-${env.name}`, phones.length ? `${phones.filter((it) => it.done).length}/${phones.length}` : '', phones.length > 0 && phones.every((it) => it.done));
+  }
+  document.querySelectorAll('[data-todo]').forEach((cb) => cb.addEventListener('change', () => {
+    if (cb.dataset.regKey) {
+      const m = REG_DONE();
+      m[cb.dataset.regKey] = cb.checked;
+      LS.set('reg-done', m);
+      const box = document.querySelector(`[data-reg-done][data-env="${cb.dataset.regKey.split(':')[0]}"]`);
+      if (box) box.checked = cb.checked;
+    } else {
+      const m = todoDone();
+      m[cb.dataset.todo] = cb.checked;
+      LS.set('todo-done', m);
+    }
     renderTodo();
   }));
-  ul.querySelectorAll('[data-jump]').forEach((a) => a.addEventListener('click', (e) => {
+  document.querySelectorAll('[data-jump]').forEach((a) => a.addEventListener('click', (e) => {
     e.preventDefault();
-    const target = document.querySelector(a.dataset.jump);
-    if (!target) return;
-    const card = target.closest('.card') ?? target;
-    card.querySelector('details.how')?.setAttribute('open', '');
-    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    jumpTo(a.dataset.jump);
   }));
-  const doneCount = items.filter((it) => it.done).length;
-  setPill('todo-pill', doneCount === items.length ? 'nothing left ✓' : `${doneCount} of ${items.length} done`, doneCount === items.length);
+  document.querySelectorAll('[data-jump-tab]').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
+    const s = a.dataset.env;
+    const body = document.getElementById(`ws-body-${s}`);
+    if (body?.hidden) document.querySelector(`[data-ws-toggle="${s}"]`)?.click();
+    switchTab(s, a.dataset.jumpTab);
+    document.querySelector(`[data-envcard][data-env="${s}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }));
+  const doneCount = family.filter((it) => it.done).length;
+  setPill('todo-pill', doneCount === family.length ? 'nothing left ✓' : `${doneCount} of ${family.length} done`, doneCount === family.length);
+  renderStepper();
+  renderRail(family);
+}
+function jumpTo(selector) {
+  const target = document.querySelector(selector);
+  if (!target) return;
+  const row = target.closest('.crow');
+  if (row) { row.classList.add('open'); S.rowState[row.dataset.group] = true; }
+  const card = target.closest('.card') ?? target;
+  card.querySelector('details.how')?.setAttribute('open', '');
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-/* ── keeps itself up to date: the helper's self-update loop + logon task ── */
-const fmtWhen = (iso) => (iso ? new Date(iso).toLocaleString() : 'never');
+/* ── the stepper: one chip per visible section, state from the same facts ── */
+function stepStates() {
+  const st = S.stacksStatus;
+  const required = GROUPS.filter(groupVisible).flatMap((g) => g.fields).filter((x) => !x.optional);
+  const saved = required.filter((x) => secretPresent(x.name, true)).length;
+  const family = S.platform === 'local' && HELPER ? familyTodoItems() : [];
+  const setupDone = family.find((i) => i.id === 'setup')?.done;
+  const envs = S.envList;
+  const envItems = envs.flatMap(envTodoItems);
+  const featureCount = FEATURES.filter((f) => S.features[f.id]).length;
+  const fixed = {
+    's-platform': { state: 'done', sub: S.platform === 'local' ? 'This machine' : 'Synology NAS' },
+    's-features': { state: 'done', sub: `${featureCount} of ${FEATURES.length} selected` },
+    's-creds': { state: saved === required.length ? 'done' : (saved ? 'progress' : 'todo'), sub: `${saved} of ${required.length} stored` },
+    's-local': { state: setupDone ? 'done' : (st?.stacks?.[SHARED_STACK]?.rendered ? 'progress' : 'todo'), sub: setupDone ? 'family running' : (HELPER ? 'shared services + production' : 'start the helper') },
+    's-envs': { state: envs.length ? (envItems.every((i) => i.done) ? 'done' : 'progress') : 'todo', sub: envs.length ? `${envs.length} environment${envs.length > 1 ? 's' : ''}${envItems.length ? ` · ${envItems.filter((i) => i.done).length}/${envItems.length} done` : ''}` : 'created by Set up & start' },
+  };
+  // only VISIBLE sections count; the NAS ones carry their verdict in the header pill
+  const out = {};
+  document.querySelectorAll('main > section').forEach((sec) => {
+    if (sec.classList.contains('hide') || !sec.querySelector(':scope > h2 .n')) return;
+    if (fixed[sec.id]) { out[sec.id] = fixed[sec.id]; return; }
+    const pill = sec.querySelector(':scope > h2 .pill');
+    const text = pill?.textContent.trim() ?? '';
+    const informational = !pill || pill.id === 'native-pill';
+    const state = pill?.classList.contains('ok') ? 'done' : (text && !/^(pending|not|no )/i.test(text) ? 'progress' : 'todo');
+    out[sec.id] = { state: informational ? 'none' : state, sub: text };
+  });
+  return out;
+}
+function renderStepper() {
+  const nav = document.getElementById('stepper');
+  if (!nav) return;
+  const states = stepStates();
+  let n = 0;
+  const chips = { done: 'Complete', progress: 'In progress', todo: 'Not started', none: '' };
+  nav.innerHTML = [...document.querySelectorAll('main > section')].filter((sec) => !sec.classList.contains('hide') && sec.querySelector(':scope > h2 .n')).map((sec) => {
+    n += 1;
+    const s = states[sec.id] ?? { state: 'none', sub: '' };
+    const title = sec.dataset.step ?? sec.querySelector('h2')?.childNodes[2]?.textContent?.trim() ?? sec.id;
+    return `<a class="step ${s.state}" href="#${sec.id}"><span class="sn">${s.state === 'done' ? '✓' : n}</span><span class="st"><b>${n}. ${title}</b><small>${s.sub || ''}</small></span>${chips[s.state] ? `<span class="pill ${s.state === 'done' ? 'ok' : (s.state === 'progress' ? 'warn' : '')}">${chips[s.state]}</span>` : ''}</a>`;
+  }).join('');
+  S.stepStates = states;
+}
+
+/* ── the status rail: progress, counters, what blocks, what is optional, the next step ── */
+function renderRail(family = null) {
+  const body = document.getElementById('rail-body');
+  if (!body) return;
+  const states = S.stepStates ?? stepStates();
+  const steps = Object.values(states).filter((s) => s.state !== 'none');
+  const doneSteps = steps.filter((s) => s.state === 'done').length;
+  const pct = steps.length ? Math.round((doneSteps / steps.length) * 100) : 0;
+  const required = GROUPS.filter(groupVisible).flatMap((g) => g.fields).filter((x) => !x.optional);
+  const saved = required.filter((x) => secretPresent(x.name, true)).length;
+  const envs = S.envList;
+  const running = envs.filter((e) => { const s = S.stacksStatus?.stacks?.[e.stack]; return s?.services.web && s?.services.api; }).length;
+  const apps = envs.flatMap((e) => { const ss = S.storeStatusByEnv[e.name]; return [S.features.android ? ss?.play?.state === 'ready' : null, S.features.ios ? ss?.ios?.state === 'ready' : null].filter((x) => x !== null); });
+  const items = S.platform === 'local' && HELPER ? [...(family ?? familyTodoItems()).map((it) => ({ ...it, scope: 'family' })), ...envs.flatMap((e) => envTodoItems(e).map((it) => ({ ...it, scope: e.name })))] : [];
+  const blocking = items.filter((it) => !it.done && !it.manual && !it.soft && it.state !== null);
+  const unknown = items.filter((it) => !it.done && !it.manual && it.state === null);
+  const optional = items.filter((it) => !it.done && (it.manual || it.soft));
+  const next = blocking[0] ?? unknown[0] ?? optional[0] ?? null;
+  const li = (it) => `<li class="rail-item" data-rail-jump="${it.scope === 'family' ? `jump:${it.href}` : `tab:${it.scope}:${it.tab}`}"><span class="dot ${it.done ? 'ok' : (it.manual || it.state === null ? 'opt' : 'miss')}"></span><span><b>${it.title}</b><small>${it.scope === 'family' ? 'family' : envLabel(it.scope)}</small></span><span class="chev">›</span></li>`;
+  const ring = `<svg class="ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="var(--line)" stroke-width="4"/><circle cx="22" cy="22" r="18" fill="none" stroke="var(--ok)" stroke-width="4" stroke-linecap="round" stroke-dasharray="${(113.1 * pct / 100).toFixed(1)} 113.1" transform="rotate(-90 22 22)"/></svg>`;
+  body.innerHTML = `
+    <div class="rail-top">${ring}<div><b>${doneSteps}/${steps.length} steps</b><div class="why" style="margin:0">${doneSteps === steps.length && steps.length ? 'Everything is in place.' : 'Complete the remaining steps to finish the setup.'}</div></div></div>
+    <div class="rail-counters">
+      <div><b>${saved} / ${required.length}</b><small>secrets saved</small></div>
+      <div><b>${envs.length}</b><small>environment${envs.length === 1 ? '' : 's'}${envs.length ? ` · ${running} running` : ''}</small></div>
+      <div><b>${apps.filter(Boolean).length}${apps.length ? ` / ${apps.length}` : ''}</b><small>mobile app${apps.length === 1 ? '' : 's'} at the stores</small></div>
+    </div>
+    ${S.platform === 'local' && HELPER ? `
+    <div class="rail-h"><span class="dot miss"></span> Blocking (${blocking.length})</div>
+    <ul class="rail-list">${blocking.slice(0, 5).map(li).join('') || '<li class="rail-item"><span class="dot ok"></span><span><b>nothing blocks</b><small>every detected step is done</small></span></li>'}</ul>
+    ${unknown.length ? `<div class="rail-h"><span class="dot"></span> Not checked yet (${unknown.length})</div><ul class="rail-list">${unknown.slice(0, 3).map(li).join('')}</ul>` : ''}
+    <div class="rail-h"><span class="dot opt"></span> Optional / by hand (${optional.length})</div>
+    <ul class="rail-list">${optional.slice(0, 4).map(li).join('') || '<li class="rail-item"><span class="dot ok"></span><span><b>all ticked</b></span></li>'}</ul>
+    <div class="rail-next">${next ? `<small>Next step</small><b>${next.title}</b><div class="why" style="margin:2px 0 8px">${next.detail}</div><button data-rail-jump="${next.scope === 'family' ? `jump:${next.href}` : `tab:${next.scope}:${next.tab}`}">Continue setup →</button>` : '<small>Next step</small><b>Nothing left — enjoy munni.</b>'}</div>` : `
+    <div class="rail-next"><small>Next step</small><b>${S.platform === 'local' ? 'Start the local helper' : 'Follow the steps top to bottom'}</b><div class="why" style="margin:2px 0 0">${S.platform === 'local' ? 'double-click infra\\setup\\start.cmd — this rail then reads the machine' : 'each section carries its own verdict pill'}</div></div>`}`;
+  body.querySelectorAll('[data-rail-jump]').forEach((el) => el.addEventListener('click', () => {
+    const [kind, a, b] = el.dataset.railJump.split(':');
+    if (kind === 'jump') jumpTo(el.dataset.railJump.slice(5));
+    else {
+      const body2 = document.getElementById(`ws-body-${a}`);
+      if (body2?.hidden) document.querySelector(`[data-ws-toggle="${a}"]`)?.click();
+      switchTab(a, b);
+      document.querySelector(`[data-envcard][data-env="${a}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }));
+}
+
 async function refreshAutonomy() {
   if (!HELPER) return;
   try {
@@ -1696,7 +2066,7 @@ async function refreshLocal() {
       rows.push(parts.join(' &nbsp;·&nbsp; '));
     }
     box.innerHTML = rows.map((r) => `<div style="margin:2px 0">${r}</div>`).join('');
-    renderEnvCards(st);
+    renderWorkspaces(st);
     S.stacksStatus = st;
     S.googleProject = st.googleProject ?? null;
     fillDynamicCopy();
@@ -1868,8 +2238,9 @@ function applyPlatform() {
   });
   // GitHub is optional for the local track — fold the connect section away
   document.getElementById('creds-sub').textContent = S.platform === 'local'
-    ? 'Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Save — with the local helper running, they land in a gitignored secret store on THIS machine (GitHub is not involved for the local twin) and step 4 uses them.'
+    ? 'Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Save — with the local helper running, they land in a gitignored secret store on THIS machine (GitHub is not involved for the local twin) and the family reads them when it starts. Rows fold once saved; the chip says what is still missing.'
     : "Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — this page encrypts them client-side (GitHub's sealed-box contract) and writes repository or environment secrets directly. Values are write-only from then on; the dots show presence, never content.";
+  document.getElementById('creds-title').textContent = S.platform === 'local' ? 'Family credentials — once per machine' : 'Accounts & credentials';
   renderFeatures();
   renderCards();
   renderNative();
@@ -1882,7 +2253,8 @@ function applyPlatform() {
  * platform: CI-dispatch track under nas, LAN-mode track under local */
 function renderNative() {
   const nativeOn = Boolean(S.features.android || S.features.ios);
-  document.getElementById('s-native').classList.toggle('hide', !nativeOn);
+  // the local track builds phones inside each environment's workspace
+  document.getElementById('s-native').classList.toggle('hide', !(nativeOn && S.platform === 'nas'));
   document.querySelectorAll('[data-native-track]').forEach((el) => {
     el.classList.toggle('hide', el.dataset.nativeTrack !== S.platform);
   });
@@ -1890,7 +2262,8 @@ function renderNative() {
     el.classList.toggle('hide', !S.features[el.dataset.needsFeature]);
   });
   setPill('native-pill', S.platform === 'local' ? 'CI builds, your phone installs' : 'store-mandated manual firsts', false);
-  updateNativeAppIdLabels();
+  // the local track's labels live per workspace; store-status refines them
+  for (const env of S.envList) updateNativeAppIdLabels(env);
   // the GitHub card follows the same inputs: the NAS track always needs
   // it; the local track only when a CI-built feature (Android/iOS) is on
   const needGithub = S.platform === 'nas' || nativeOn;
@@ -1957,13 +2330,18 @@ function renderCards() {
     [...wrap.querySelectorAll('.card')].filter((c) => c.querySelector('details.how')?.open).map((c) => c.dataset.group),
   );
   const visible = GROUPS.filter(groupVisible);
-  const phaseOf = (g) => PHASE_OF[g.id] ?? 'setup';
-  const header = (phase) => (phase === 'setup'
-    ? `<div class="phase" data-phase="setup">${local ? 'Before Set up &amp; start' : 'Before the first bootstrap'}<small>${local ? 'saved on this machine — the family reads them when it starts; add more later any time' : 'stored as GitHub secrets'}</small></div>`
-    : `<div class="phase" data-phase="later">${local ? 'After the family runs — phones and social sign-in' : 'Phones and social sign-in'}<small>${local ? 'these need the running environments (app ids, callbacks) and, for phones, your GitHub repo' : 'CI builds need your GitHub repo'}</small></div>`);
-  const cardHtml = (g) => `
-    <div class="card" data-group="${g.id}">
-      <h3>${g.title} ${g.fields.map((f) => `<span class="dot" data-dot="${f.name}" data-carddot="1" ${f.optional ? 'data-opt="1"' : ''}></span>`).join('')}</h3>
+  const kindOf = (g) => FAMILY_KIND[g.id] ?? 'Extras';
+  const header = (kind) => `<div class="phase" data-kind="${kind}">${kind}<small>${KIND_HINT[kind] ?? ''}</small></div>`;
+  const cardHtml = (g) => {
+    const open = S.rowState[g.id] ?? !rowSaved(g).complete;
+    return `
+    <div class="card crow ${open ? 'open' : ''}" data-group="${g.id}">
+      <div class="crow-h" data-row-toggle="${g.id}">
+        <span class="ico" data-ico="${ICON_OF[g.id] ?? 'key'}"></span>
+        <div class="crow-t"><b>${g.title}</b><div class="crow-vars">${g.fields.map((f) => f.name).join(' · ')}${NEEDED_FOR[g.id] ? ` — needed for ${NEEDED_FOR[g.id]}` : ''}</div></div>
+        <span data-chip>${rowChip(g)}</span><span class="chev">▾</span>
+      </div>
+      <div class="crow-b">
       <p class="why">${g.why}</p>
       <details class="how"><summary>Where these values come from</summary><ol>${howSteps(g).map((h) => `<li>${h}</li>`).join('')}</ol></details>
       ${g.fields.map((f) => `
@@ -1973,23 +2351,27 @@ function renderCards() {
       <button data-store-group="${g.id}">${local ? 'Save' : 'Store'}</button>${g.check ? `
       <button class="ghost" data-check-group="${g.id}">Check</button>` : ''}
       <div class="msg" id="msg-group-${g.id}"></div>
+      </div>
     </div>`;
-  const setup = visible.filter((g) => phaseOf(g) === 'setup');
-  const later = visible.filter((g) => phaseOf(g) === 'later');
+  };
   const nativeOn = Boolean(S.features.android || S.features.ios);
-  wrap.innerHTML = (setup.length ? header('setup') + setup.map(cardHtml).join('') : '')
-    + (later.length || (local && nativeOn) ? header('later') : '')
-    + later.map(cardHtml).join('');
-  // the GitHub card is a "before" item on the NAS track and a "later"
-  // one on the local track (only the phones need it there)
+  wrap.innerHTML = KIND_ORDER.map((kind) => {
+    const rows = visible.filter((g) => kindOf(g) === kind);
+    if (!rows.length && !(kind === 'Connections' && (S.platform === 'nas' || nativeOn))) return '';
+    return header(kind) + rows.map(cardHtml).join('');
+  }).join('');
+  applyIcons(wrap);
+  // the GitHub card is the first connection (shown on the NAS track, and on the local track once a phone is ticked)
   const connect = document.getElementById('connect-card');
-  if (connect) {
-    const laterHeader = wrap.querySelector('[data-phase="later"]');
-    const setupHeader = wrap.querySelector('[data-phase="setup"]');
-    if (local && laterHeader) laterHeader.after(connect);
-    else if (!local && setupHeader) setupHeader.after(connect);
-    else wrap.before(connect);
-  }
+  const connHeader = wrap.querySelector('[data-kind="Connections"]');
+  if (connect && connHeader) connHeader.after(connect);
+  else if (connect) wrap.before(connect);
+  wrap.querySelectorAll('[data-row-toggle]').forEach((h) => h.addEventListener('click', (e) => {
+    if (e.target.closest('a, button, input, textarea, label')) return;
+    const row = h.closest('.crow');
+    row.classList.toggle('open');
+    S.rowState[h.dataset.rowToggle] = row.classList.contains('open');
+  }));
   wrap.querySelectorAll('[data-store-group]').forEach((btn) => btn.addEventListener('click', () => storeGroup(btn.dataset.storeGroup)));
   wrap.querySelectorAll('[data-check-group]').forEach((btn) => btn.addEventListener('click', () => checkGroup(btn.dataset.checkGroup)));
   // any edit resets a pending "Store anyway" back to the validating Store
@@ -2154,6 +2536,8 @@ async function checkManifest() {
     const known = new Set([
       ...GROUPS.flatMap((g) => g.fields.map((f) => f.name)),
       'IAC_GH_PAT', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET', 'IAC_GLITCHTIP_API_TOKEN', 'NAS_ADMIN_SUBS',
+      // machine-owned / wizard-managed — never pasted
+      'VAULT_SIGNUPS_ALLOWED', 'APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD',
     ]);
     const uncovered = manifest.secrets.filter((s) => s.owner === 'operator' && !known.has(s.name)).map((s) => s.name);
     msg('msg-manifest', uncovered.length
@@ -2730,37 +3114,34 @@ async function ghUpsertEnvVar(envName, name, value) {
     await gh(base, { method: 'POST', body: JSON.stringify({ name, value }) });
   }
 }
-const nativeTargetStack = () => document.getElementById('native-env-select')?.value || 'munni-local-prod';
-const nativeTargetEnv = () => nativeTargetStack().replace('munni-local-', '');
-/** the copy speaks in the SELECTED environment's real app ids, not <env>
- * — the helper's answer wins (it carries the store-package choices);
- * Android and iOS labels are separate (the ids may diverge) */
-function updateNativeAppIdLabels(authoritativeId, authoritativeIosId) {
-  const id = authoritativeId ?? `app.munni.local.${nativeTargetEnv()}`;
-  const iosId = authoritativeIosId ?? authoritativeId ?? `app.munni.local.${nativeTargetEnv()}`;
-  document.querySelectorAll('[data-native-appid]').forEach((el) => { el.textContent = id; });
-  document.querySelectorAll('[data-native-appid-ios]').forEach((el) => { el.textContent = iosId; });
+/* ── native apps per ENVIRONMENT (each workspace's Phones tab): CI
+   builds, phones install — the card IS the environment, no picker ── */
+function updateNativeAppIdLabels(env, authoritativeId, authoritativeIosId) {
+  const s = env.name;
+  const id = authoritativeId ?? `app.munni.local.${s}`;
+  const iosId = authoritativeIosId ?? authoritativeId ?? `app.munni.local.${s}`;
+  document.querySelectorAll(`[data-native-appid][data-env="${s}"]`).forEach((el) => { el.textContent = id; });
+  document.querySelectorAll(`[data-native-appid-ios][data-env="${s}"]`).forEach((el) => { el.textContent = iosId; });
 }
 /** shared apply-flow for both platform package fields (user request
  * 2026-09-06: iOS names its bundle too — Play burns package names while
  * ASC records live on, so the two identities may part ways) */
-async function applyStorePackage(platform, inputId, msgId, noun) {
-  const env = nativeTargetEnv();
+async function applyStorePackage(platform, env) {
+  const s = env.name;
+  const inputId = platform === 'ios' ? `native-suffix-ios-${s}` : `native-suffix-${s}`;
+  const msgId = platform === 'ios' ? `msg-native-ios-${s}` : `msg-native-local-${s}`;
+  const noun = platform === 'ios' ? 'iOS bundle id' : 'store package';
   const suffix = document.getElementById(inputId).value.trim().toLowerCase();
   if (!/^[a-z][a-z0-9]{1,29}$/.test(suffix)) {
     msg(msgId, 'the package suffix must be 2-30 letters/digits, starting with a letter (like prod2, phone, beta)', false);
     return;
   }
-  if (!confirm(`Set ${env}'s ${noun} to app.munni.local.${suffix}?\n\nThe environment, its data and sign-in stay untouched — only this store identity changes. A NEW name needs its store record created once (this page detects it); previously used names keep their records.`)) return;
-  await streamLocal('/api/local/new-store-package', { stack: nativeTargetStack(), suffix, platform }, `set ${env}'s ${noun} to app.munni.local.${suffix}`);
+  if (!confirm(`Set ${s}'s ${noun} to app.munni.local.${suffix}?\n\nThe environment, its data and sign-in stay untouched — only this store identity changes. A NEW name needs its store record created once (Play Console / App Store Connect); the previous record keeps existing at the store.`)) return;
+  await streamLocal('/api/local/new-store-package', { stack: env.stack, suffix, platform }, `set ${s}'s ${noun} to app.munni.local.${suffix}`);
   await refreshStoreStatus().catch(() => {});
 }
-document.getElementById('btn-apply-package')?.addEventListener('click', () =>
-  applyStorePackage('android', 'native-suffix', 'msg-native-local', 'store package'));
-document.getElementById('btn-apply-package-ios')?.addEventListener('click', () =>
-  applyStorePackage('ios', 'native-suffix-ios', 'msg-native-ios', 'iOS bundle id'));
-async function writeLocalNativeEnv() {
-  const cfg = await (await hfetch(`/api/local/native-config?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
+async function writeLocalNativeEnv(env) {
+  const cfg = await (await hfetch(`/api/local/native-config?stack=${encodeURIComponent(env.stack)}`)).json();
   // a refused answer ({error}) has no missing[] — surface it as-is
   // (user ss 2026-09-08: "Cannot read properties of undefined")
   if (cfg.error) throw new Error(cfg.error);
@@ -2780,72 +3161,71 @@ const localPublishEnabled = async (env) => {
 };
 
 /* no Enable-publish button (user ruling 2026-08-28): the page POLLS the
- * stores with the step-3 credentials and flips the flag itself the
- * moment the one-time manual upload exists */
+ * stores with the family credentials and flips the flag itself the
+ * moment the one-time manual upload exists — for EVERY environment */
 const STORE_POLL_MS = 3 * 60 * 1000;
 async function refreshStoreStatus() {
   if (S.platform !== 'local' || !HELPER || !(S.features.android || S.features.ios)) return;
   // NEVER probe while a build is publishing: the probe's throwaway Play
   // edit expires the CI upload's edit (killed a real release 2026-08-30)
   if (S.buildInFlight) return;
-  // …and once auto-publish is on there is nothing left to detect
-  if (S.pat && S.user && S.features.android) {
-    try {
-      if (await localPublishEnabled(nativeTargetEnv())) {
-        setPill('play-status-pill', 'auto-publish on ✓', true);
-        if (!S.features.ios) return;
-      }
-    } catch { /* connection hiccup — probe as usual */ }
-  }
-  let st;
-  try {
-    st = await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(nativeTargetStack())}`)).json();
-  } catch { return; }
-  if (st.error) return;
-  S.storeStatus = st;
-  renderTodo();
-  updateNativeAppIdLabels(st.appId, st.iosAppId);
-  // the suffix fields mirror the real packages — without stomping typing
-  const suffixEl = document.getElementById('native-suffix');
-  if (suffixEl && document.activeElement !== suffixEl && st.appId) {
-    suffixEl.value = st.appId.replace('app.munni.local.', '');
-  }
-  const suffixIosEl = document.getElementById('native-suffix-ios');
-  if (suffixIosEl && document.activeElement !== suffixIosEl && (st.iosAppId ?? st.appId)) {
-    suffixIosEl.value = (st.iosAppId ?? st.appId).replace('app.munni.local.', '');
-  }
-  const playText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'save the Play service account (Accounts & credentials) to auto-detect' };
-  // iOS has no manual first upload — the one thing Apple keeps manual is
-  // the New App record (found live 2026-09-04: the export dies with
-  // "Error Downloading App Information" until it exists)
-  const iosText = { ready: 'app record found ✓', 'missing-app': `create the app record once: App Store Connect → Apps → ＋ → New App (iOS, bundle ${st.iosAppId ?? st.appId}) — detected here when it exists`, 'no-creds': 'save the App Store Connect key (Accounts & credentials) to auto-detect' };
-  // a specific diagnosis (invite missing, app invisible…) beats the
-  // generic label; a TRANSIENT provider hiccup keeps the last verdict
-  if (S.features.android && st.play.state !== 'transient') setPill('play-status-pill', st.play.detail ?? playText[st.play.state] ?? st.play.state, st.play.state === 'ready');
-  if (S.features.ios && st.ios.state !== 'transient') setPill('asc-status-pill', st.ios.detail ?? iosText[st.ios.state] ?? st.ios.state, st.ios.state === 'ready');
-  // push readiness (Firebase as code, 2026-09-08): named states beat a
-  // silent stub — the classic blocker is the one-time role grant
-  const fcmPill = document.getElementById('fcm-status-pill');
-  if (fcmPill && st.firebase && st.firebase.state !== 'transient') {
-    const fcmText = { ready: 'push wired (Firebase) ✓', 'missing-app': 'push stubbed — Build registers the Firebase apps', 'no-creds': 'push stubbed — needs the Play service account (Accounts & credentials)' };
-    fcmPill.hidden = false;
-    setPill('fcm-status-pill', st.firebase.detail ?? fcmText[st.firebase.state] ?? st.firebase.state, st.firebase.state === 'ready');
-  }
-  if (!S.pat || !S.user) return;
-  try {
-    const flag = await localPublishEnabled(st.localEnv);
-    if (st.play.state === 'ready' && !flag) {
-      await ensureEnv('local');
-      await ghUpsertEnvVar('local', publishFlagName(st.localEnv), 'true');
-      msg('msg-native-local', `${st.appId} found at Play ✓ — auto-publish is ON for ${st.localEnv}; every build lands in the internal track by itself`, true);
-    } else if (st.play.state === 'missing-app' && flag) {
-      // the flag can lie (it survives store/db resets) — store reality wins
-      await ghUpsertEnvVar('local', publishFlagName(st.localEnv), 'false');
-      msg('msg-native-local', `${st.appId} does not exist at Play — auto-publish for ${st.localEnv} is off until the one-time upload appears (this page keeps watching)`, false);
+  for (const env of S.envList) {
+    const s = env.name;
+    // …and once auto-publish is on there is nothing left to detect for Play
+    let flagOn = false;
+    if (S.pat && S.user && S.features.android) {
+      try { flagOn = await localPublishEnabled(s); } catch { /* connection hiccup — probe as usual */ }
+      if (flagOn) setPill(`play-status-pill-${s}`, 'auto-publish on ✓', true);
     }
-  } catch { /* connection hiccup — the next poll retries */ }
+    let st;
+    try {
+      st = await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(env.stack)}`)).json();
+    } catch { continue; }
+    if (st.error) continue;
+    S.storeStatusByEnv[s] = st;
+    updateNativeAppIdLabels(env, st.appId, st.iosAppId);
+    // the suffix fields mirror the real packages — without stomping typing
+    const suffixEl = document.getElementById(`native-suffix-${s}`);
+    if (suffixEl && document.activeElement !== suffixEl && st.appId) suffixEl.value = st.appId.replace('app.munni.local.', '');
+    const suffixIosEl = document.getElementById(`native-suffix-ios-${s}`);
+    if (suffixIosEl && document.activeElement !== suffixIosEl && (st.iosAppId ?? st.appId)) suffixIosEl.value = (st.iosAppId ?? st.appId).replace('app.munni.local.', '');
+    const playText = { ready: 'store app found ✓', 'missing-app': 'waiting for the one-time store upload…', 'no-creds': 'save the Play service account (family credentials) to auto-detect' };
+    // iOS has no manual first upload — the one thing Apple keeps manual is
+    // the New App record (found live 2026-09-04: the export dies with
+    // "Error Downloading App Information" until it exists)
+    const iosText = { ready: 'app record found ✓', 'missing-app': `create the app record once: App Store Connect → Apps → ＋ → New App (iOS, bundle ${st.iosAppId ?? st.appId}) — detected here when it exists`, 'no-creds': 'save the App Store Connect key (family credentials) to auto-detect' };
+    // a specific diagnosis (invite missing, app invisible…) beats the
+    // generic label; a TRANSIENT provider hiccup keeps the last verdict
+    if (S.features.android && st.play.state !== 'transient' && !flagOn) setPill(`play-status-pill-${s}`, st.play.detail ?? playText[st.play.state] ?? st.play.state, st.play.state === 'ready');
+    if (S.features.ios && st.ios.state !== 'transient') setPill(`asc-status-pill-${s}`, st.ios.detail ?? iosText[st.ios.state] ?? st.ios.state, st.ios.state === 'ready');
+    // push readiness (Firebase as code, 2026-09-08): named states beat a
+    // silent stub — the classic blocker is the one-time role grant
+    const fcmPill = document.getElementById(`fcm-status-pill-${s}`);
+    if (fcmPill && st.firebase && st.firebase.state !== 'transient') {
+      const fcmText = { ready: 'push wired (Firebase) ✓', 'missing-app': 'push stubbed — Build registers the Firebase apps', 'no-creds': 'push stubbed — needs the Play service account (family credentials)' };
+      fcmPill.hidden = false;
+      setPill(`fcm-status-pill-${s}`, st.firebase.detail ?? fcmText[st.firebase.state] ?? st.firebase.state, st.firebase.state === 'ready');
+      setPill(`env-push-pill-${s}`, st.firebase.state === 'ready' ? 'wired ✓' : (fcmText[st.firebase.state] ? 'stubbed' : 'blocked'), st.firebase.state === 'ready');
+    }
+    const records = [S.features.android ? st.play.state === 'ready' || flagOn : null, S.features.ios ? st.ios.state === 'ready' : null].filter((x) => x !== null);
+    setPill(`env-store-pill-${s}`, records.length ? `${records.filter(Boolean).length}/${records.length} found` : '—', records.length > 0 && records.every(Boolean));
+    if (!S.pat || !S.user) continue;
+    try {
+      const flag = await localPublishEnabled(st.localEnv);
+      if (st.play.state === 'ready' && !flag) {
+        await ensureEnv('local');
+        await ghUpsertEnvVar('local', publishFlagName(st.localEnv), 'true');
+        msg(`msg-native-local-${s}`, `${st.appId} found at Play ✓ — auto-publish is ON for ${st.localEnv}; every build lands in the internal track by itself`, true);
+      } else if (st.play.state === 'missing-app' && flag) {
+        // the flag can lie (it survives store/db resets) — store reality wins
+        await ghUpsertEnvVar('local', publishFlagName(st.localEnv), 'false');
+        msg(`msg-native-local-${s}`, `${st.appId} does not exist at Play — auto-publish for ${st.localEnv} is off until the one-time upload appears (this page keeps watching)`, false);
+      }
+    } catch { /* connection hiccup — the next poll retries */ }
+  }
+  renderTodo();
 }
-/** what the STORE says about the target env's Play app (flag-independent) */
+/** what the STORE says about an env's Play app (flag-independent) */
 async function playStateFor(stack) {
   try {
     const st = await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(stack)}`)).json();
@@ -2869,15 +3249,13 @@ async function ensureLocalEnvSecrets(names, label) {
     if (store[n]) await putSecretAt(`/repos/${S.slug}/environments/local`, n, store[n]);
   }
   if (absent.length) {
-    msg('msg-native-local', `${label} needs ${absent.join(', ')} — save it under Accounts & credentials first`, false);
+    localLog(`\n✗ ${label} needs ${absent.join(', ')} — save it under the family credentials first\n`);
     return false;
   }
   localLog(`\n${label}: ${missing.join(', ')} written into the repo's environment local (from the machine store).\n`);
   return true;
 }
 setInterval(() => { refreshStoreStatus().catch(() => {}); }, STORE_POLL_MS);
-document.getElementById('native-env-select')?.addEventListener('change', () => { updateNativeAppIdLabels(); refreshStoreStatus().catch(() => {}); });
-updateNativeAppIdLabels();
 setTimeout(() => refreshStoreStatus().catch(() => {}), 4000);
 /** items 1+2 of the native ruling: toggling the feature IS the trigger,
  * and LAN mode flips on by itself — no localhost detour, no extra click */
@@ -2889,20 +3267,21 @@ async function ensureLanMode() {
   return streamLocal('/api/local/lan', { host }, `LAN mode on automatically (${host}) — phones must reach this machine`);
 }
 
-async function buildLocalAndroidFlow() {
-  const btn = document.getElementById('btn-native-local-android');
-  const say = (t, ok = true) => msg('msg-native-local', t, ok);
-  if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card under Accounts & credentials) — the build runs in your repo’s Actions.', false); return; }
-  btn.disabled = true;
+async function buildLocalAndroidFlow(env) {
+  const s = env.name;
+  const btn = document.querySelector(`[data-native-build="android"][data-env="${s}"]`);
+  const say = (t, ok = true) => msg(`msg-native-local-${s}`, t, ok);
+  if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card under the family credentials) — the build runs in your repo’s Actions.', false); return; }
+  if (btn) btn.disabled = true;
   S.buildInFlight = true; // pause the store polls — their Play edits expire the upload's
   try {
     if (!(await ensureLanMode())) return;
     // push as code (user ruling 2026-09-08): Firebase project + app
     // registration + configs, best-effort — a refusal (role not granted
     // yet) streams its exact fix and the build continues with the stub
-    await streamLocal('/api/local/firebase-setup', { stack: nativeTargetStack() }, 'wire Firebase push (project + app registrations + configs, zero input)');
+    await streamLocal('/api/local/firebase-setup', { stack: env.stack }, `wire ${envLabel(s)}'s Firebase push (project + app registrations + configs, zero input)`);
     say('writing the LAN config into the GitHub environment "local"…');
-    const cfg = await writeLocalNativeEnv();
+    const cfg = await writeLocalNativeEnv(env);
     // the MACHINE keystore signs every repo's builds (Play pins the
     // first upload key forever — repo-minted keys died with deleted
     // repos, 2026-08-31); mint once, then ship it into this repo
@@ -2911,7 +3290,7 @@ async function buildLocalAndroidFlow() {
     // the STORE decides whether to publish (found live 2026-08-28: a
     // stale flag claimed "published" while nothing existed at Play);
     // the flag only breaks ties when no credential is stored to check
-    const playState = await playStateFor(nativeTargetStack());
+    const playState = await playStateFor(env.stack);
     let publish = 'skip';
     if (playState === 'ready') publish = 'auto';
     else if (playState === 'no-creds' && (await localPublishEnabled(cfg.localEnv))) publish = 'auto';
@@ -2953,32 +3332,32 @@ async function buildLocalAndroidFlow() {
     say('✗ ' + (e.message || e), false);
   } finally {
     S.buildInFlight = false;
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
-document.getElementById('btn-native-local-android')?.addEventListener('click', () => buildLocalAndroidFlow());
 
-async function dispatchLocalIosFlow() {
-  const say = (t, ok = true) => msg('msg-native-ios', t, ok);
-  const btn = document.getElementById('btn-native-local-ios');
-  if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card under Accounts & credentials) — the build runs in your repo’s Actions.', false); return; }
-  btn.disabled = true;
+async function dispatchLocalIosFlow(env) {
+  const s = env.name;
+  const say = (t, ok = true) => msg(`msg-native-ios-${s}`, t, ok);
+  const btn = document.querySelector(`[data-native-build="ios"][data-env="${s}"]`);
+  if (!S.pat || !S.user) { say('Connect GitHub first (the GitHub card under the family credentials) — the build runs in your repo’s Actions.', false); return; }
+  if (btn) btn.disabled = true;
   try {
     if (!(await ensureLanMode())) { say('LAN mode could not come up — see the output box.', false); return; }
     // Firebase push wiring first (best-effort, same as the Android flow)
-    await streamLocal('/api/local/firebase-setup', { stack: nativeTargetStack() }, 'wire Firebase push (project + app registrations + configs, zero input)');
+    await streamLocal('/api/local/firebase-setup', { stack: env.stack }, `wire ${envLabel(s)}'s Firebase push (project + app registrations + configs, zero input)`);
     // the MACHINE's Apple signing certificate (once ever) — without it
     // CI mints a throwaway cert per build and Apple mails a revocation
     // for every prune (user report 2026-09-08)
     await ensureAppleCert().catch((e) => localLog(`✗ signing certificate: ${e.message} — this build signs with a throwaway one\n`));
-    const cfg = await writeLocalNativeEnv();
+    const cfg = await writeLocalNativeEnv(env);
     // the iOS job is gated on IOS_BUILD_ENABLED — a fresh copy does not
     // inherit it and the run silently SKIPS (found live 2026-08-30);
     // asking for an iOS build IS the opt-in
     await ghUpsertRepoVar('IOS_BUILD_ENABLED', 'true');
     // App ID + capabilities as code (only the ASC New-App record has no
     // create-API) — best effort, the fold explains the manual fallback
-    await streamLocal('/api/local/ios-appid', { stack: nativeTargetStack() }, 'register the Apple App ID + capabilities (push, Sign in with Apple, associated domains)');
+    await streamLocal('/api/local/ios-appid', { stack: env.stack }, 'register the Apple App ID + capabilities (push, Sign in with Apple as primary, associated domains)');
     // TestFlight upload credentials must live in THIS repo (fresh copies
     // start secret-less) — best effort, the build still runs without
     await ensureLocalEnvSecrets(['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8', 'APPLE_TEAM_ID'], 'TestFlight upload').catch(() => {});
@@ -3001,7 +3380,7 @@ async function dispatchLocalIosFlow() {
       // green can still mean "upload skipped" — the workflow degrades a
       // missing ASC app record to a warning; the STORE tells the truth
       let iosState = 'ready';
-      try { iosState = (await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(nativeTargetStack())}`)).json()).ios?.state ?? 'ready'; } catch { /* poll again later */ }
+      try { iosState = (await (await hfetch(`/api/local/store-status?stack=${encodeURIComponent(env.stack)}`)).json()).ios?.state ?? 'ready'; } catch { /* poll again later */ }
       if (iosState === 'missing-app') {
         say(`build green ✓ — but App Store Connect has no app record for ${iosId} yet, so the TestFlight upload was skipped (Apple keeps this one step manual). Create it once: appstoreconnect.apple.com → Apps → ＋ → New App (iOS, bundle ${iosId}, any name/SKU — the bundle id works as the SKU), then press Build again.`, false);
       } else {
@@ -3013,10 +3392,9 @@ async function dispatchLocalIosFlow() {
   } catch (e) {
     say('✗ ' + (e.message || e), false);
   } finally {
-    btn.disabled = false;
+    if (btn) btn.disabled = false;
   }
 }
-document.getElementById('btn-native-local-ios')?.addEventListener('click', () => dispatchLocalIosFlow());
 
 /** the MACHINE owns the Apple Development certificate (same ruling as
  * the upload keystore): minted ONCE through the repo's mint workflow (a
@@ -3056,17 +3434,20 @@ async function ensureAppleCert() {
 }
 
 /** toggling Android/iOS ON under local starts the whole chain by itself
- * (LAN mode → env vars → CI build → Play/TestFlight); without the
- * GitHub connection it queues and fires right after connecting */
+ * for the PRODUCTION environment (LAN mode → env vars → CI build →
+ * Play/TestFlight); other environments build from their own Phones tab;
+ * without the GitHub connection it queues and fires right after connecting */
 async function autoNativeFlow(kind) {
   if (S.platform !== 'local' || !HELPER) return;
+  const env = S.envList[0];
+  if (!env) { localLog('\nno environment yet — Set up & start creates production; its Phones tab builds from there\n'); return; }
   if (!S.pat || !S.user) {
-    msg('msg-native-local', 'connect GitHub (the card under Accounts & credentials) — the build starts by itself once connected', false);
+    localLog('\nconnect GitHub (the card under the family credentials) — the build starts by itself once connected\n');
     S.pendingNativeBuild = kind;
     return;
   }
-  if (kind === 'android') await buildLocalAndroidFlow();
-  else await dispatchLocalIosFlow();
+  if (kind === 'android') await buildLocalAndroidFlow(env);
+  else await dispatchLocalIosFlow(env);
 }
 document.querySelectorAll('[data-artifact]').forEach((btn) => btn.addEventListener('click', async () => {
   const name = btn.dataset.artifact;

@@ -180,6 +180,17 @@ GlitchTip token steps against `localhost`. This is distinct from the
 from-source DEV stack (`deploy/docker-compose.local.yml`) — the wizard's
 local track covers both.
 
+### How the page is organised (2026-09-09)
+
+Two levels, mirroring how the machine store routes values: the
+**family** (credentials once per machine, grouped by kind; the shared
+services, network mode and updater) and one **workspace per
+environment** with Overview, Registrations (the Google/Apple callbacks
+and the Enable Banking redirect that carry that environment's name,
+verified with the provider), Phones (its Android/iOS builds and store
+records) and Access tabs. A sticky stepper and a status rail read the
+same facts and name the next step. Design: `docs/wizard-family-env-plan.md`.
+
 ### Day-2 on the local track: it keeps itself up to date
 
 The wizard is a ONE-TIME bootstrap. Afterwards the helper is the PC's

@@ -1,7 +1,12 @@
 # Setup wizard: the family and its environments (design, 2026-09-09)
 
-Status: proposal for review — nothing built yet. Applies to the local
-track first; the NAS track keeps its current sections until slice S5.
+Status: slices S1–S4 built on 2026-09-09 (decisions taken as proposed:
+tabs, APNs in the family list, features family-level, NAS parity
+later). The visual direction came from the operator's inspiration
+screenshot: a sticky stepper with state chips, a status rail with
+counters, blocking / not-checked / optional lists and a next-step
+action, compact credential rows grouped by kind. The NAS track keeps its
+sections until slice S5, but shares the stepper, the rail and the rows.
 
 ## Why
 

@@ -146,6 +146,10 @@ dispatch, the artifact content goes into `APPLE_DEV_CERT_P12`
 run once on 2026-07-16 — rerun it only if the cert ever expires
 (1 year) or gets revoked.
 
+The workflow now takes an `environment` input (default `local`, added
+for the wizard); on the NAS track dispatch it as is — repository-level
+secrets are visible from any environment.
+
 On the LOCAL track the wizard does all of this by itself (2026-09-08):
 the first iOS build mints the certificate through the same workflow
 (dispatched into the GitHub environment `local` — the workflow gained an
