@@ -1185,8 +1185,12 @@ test('apple cert: the machine mints the p12 password, pulls the minted certifica
   const { zipBuild } = await import('../modules/zip.mjs');
   const shared = loadStack('munni-local-shared');
   const prev = loadLocalValues(shared);
-  const { APPLE_DEV_CERT_P12: _p12, APPLE_DEV_CERT_PASSWORD: _pw, IAC_GH_PAT: _pat, ...bare } = prev;
-  saveLocalValues(shared, bare);
+  const { APPLE_DEV_CERT_P12: _p12, APPLE_DEV_CERT_PASSWORD: _pw, APPLE_DEV_CERT_SERIAL: _sn, IAC_GH_PAT: _pat, ...bare } = prev;
+  // fake App Store Connect credentials: the status endpoint asks Apple
+  // (mocked below) whether the stored certificate is still listed
+  const { generateKeyPairSync } = await import('node:crypto');
+  const ecPem = generateKeyPairSync('ec', { namedCurve: 'prime256v1' }).privateKey.export({ type: 'pkcs8', format: 'pem' });
+  saveLocalValues(shared, { ...bare, ASC_KEY_ID: 'K9', ASC_ISSUER_ID: 'ISS9', ASC_KEY_P8: Buffer.from(ecPem).toString('base64') });
   try {
     const status = async (app2) => {
       const res = fakeRes();
@@ -1217,7 +1221,8 @@ test('apple cert: the machine mints the p12 password, pulls the minted certifica
       calls.push({ url, init });
       if (url.endsWith('/actions/runs/42/artifacts')) return { ok: true, status: 200, json: async () => ({ artifacts: [{ id: 7, name: 'apple-dev-cert-p12' }] }) };
       if (url.endsWith('/actions/artifacts/7/zip')) return { ok: false, status: 302, headers: { get: (k) => (k === 'location' ? 'https://blob.example/7.zip' : null) } };
-      if (url === 'https://blob.example/7.zip') return { ok: true, status: 200, arrayBuffer: async () => zipBuild({ 'APPLE_DEV_CERT_P12.b64': `${b64}\n` }) };
+      if (url === 'https://blob.example/7.zip') return { ok: true, status: 200, arrayBuffer: async () => zipBuild({ 'APPLE_DEV_CERT_P12.b64': `${b64}\n`, 'APPLE_DEV_CERT_SERIAL.txt': '0abc123\n' }) };
+      if (url.startsWith('https://api.appstoreconnect.apple.com/v1/certificates')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'CERT1', attributes: { serialNumber: 'ABC123', expirationDate: '2099-01-01T00:00:00.000+00:00' } }] }) };
       return { ok: false, status: 500, json: async () => ({}) };
     };
     const app2 = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl });
@@ -1231,7 +1236,15 @@ test('apple cert: the machine mints the p12 password, pulls the minted certifica
     assert.equal(calls[0].init.headers.authorization, 'Bearer ghp_test', 'the machine token lists the artifacts');
     assert.equal(calls[1].init.redirect, 'manual', 'the blob hop is taken WITHOUT the token');
     assert.equal(calls[2].init.headers, undefined);
-    assert.deepEqual(await status(app2), { present: true, password: true });
+    assert.equal(loadLocalValues(shared).APPLE_DEV_CERT_SERIAL, 'ABC123', 'the serial file rides along (leading zeros dropped, upper-cased)');
+    assert.deepEqual(await status(app2), { present: true, password: true, serial: 'ABC123', apple: { state: 'valid', expires: '2099-01-01T00:00:00.000+00:00', id: 'CERT1' } });
+
+    // Apple no longer lists the serial (revoked) → the wizard forgets the
+    // certificate and mints again; the password stays
+    const gone = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ data: [{ id: 'OTHER', attributes: { serialNumber: 'FFFF', expirationDate: '2099-01-01T00:00:00.000+00:00' } }] }) }) });
+    assert.equal((await status(gone)).apple.state, 'missing');
+    await app(fakeReq({ method: 'POST', url: '/api/local/apple-cert/forget', token: 'tok' }), fakeRes());
+    assert.deepEqual(await status(app), { present: false, password: true }, 'forgetting drops the p12 and its serial, keeps the password');
 
     // a run without the artifact (mint job failed) → named, exit 1
     const none = fakeRes();

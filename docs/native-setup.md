@@ -154,12 +154,32 @@ On the LOCAL track the wizard does all of this by itself (2026-09-08):
 the first iOS build mints the certificate through the same workflow
 (dispatched into the GitHub environment `local` — the workflow gained an
 `environment` input for that), the helper pulls the run artifact back
-into the machine store (`APPLE_DEV_CERT_P12` + `APPLE_DEV_CERT_PASSWORD`,
-family-wide like the upload keystore) and the wizard ships both into
-every repo's environment `local` before each build — CI imports instead
-of minting, the prune step never runs, the revocation mails stop. Apple
-expires the certificate after a year: delete `APPLE_DEV_CERT_P12` from
-the store and the next build mints again.
+into the machine store (`APPLE_DEV_CERT_P12` + `APPLE_DEV_CERT_PASSWORD`
++ the certificate's serial, family-wide like the upload keystore) and
+the wizard ships both secrets into every repo's environment `local`
+before each build, rewriting them so a stale same-name copy cannot
+linger. Before a build the helper asks Apple by serial whether the
+machine's certificate is still listed; a revoked or expired one is
+forgotten and minted again without a click.
+
+**One certificate per Apple team (learned 2026-09-09).** Development
+certificates are team-wide, and the mint's cleanup of throwaway
+certificates cannot tell a persistent one apart from junk — so the whole
+team runs on ONE persistent certificate, and every place the secret
+lives must hold the same p12: the repository-level secret (the hosted
+track), each environment that overrides it (`staging`, `production`,
+`local`), the machine store and every template copy's environment
+`local`. The first wizard mint cleared the deck blindly, revoked the
+hosted track's July certificate, and every hosted build after it
+silently minted a throwaway (the imported p12 was dead and the prune
+sweep was skipped in "persistent" mode) until Apple refused the twelfth.
+Since then: the mint protects the certificate its environment still
+holds (`PROTECT_SERIALS` in `asc-prune.js`), the iOS workflow reads the
+p12's serial, fails fast with the repair when Apple no longer lists it
+(`asc-cert-check.js`) and runs the prune as a sweep that revokes only
+throwaways other builds left behind, and a wizard build on a repo that
+already holds `APPLE_DEV_CERT_P12` at repository level does not mint at
+all — the environment falls back to that secret.
 
 ## 6. The dedicated staging apps (`app.munni.dev`) — your checklist
 

@@ -32,7 +32,7 @@ import { insecureFetch, localAwareFetch } from '../modules/insecure-fetch.mjs';
 import { lanHost, loadAutonomy, loadStack, localEnvRegistry, saveAutonomy, saveLocalEnvRegistry } from '../modules/stack.mjs';
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
 import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultRegister } from '../modules/vault.mjs';
-import { zipEntry } from '../modules/zip.mjs';
+import { zipEntry, zipNames } from '../modules/zip.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(DIR, '..', '..');
@@ -1578,6 +1578,7 @@ const VAULT_PURPOSE = {
   LOGTO_GOOGLE_CLIENT_SECRET: 'Google OAuth client secret — pairs with the client id.',
   APPLE_DEV_CERT_P12: 'The machine’s persistent Apple Development certificate (.p12, base64) — CI imports it instead of minting a throwaway one per build (no more “certificate revoked” mails).',
   APPLE_DEV_CERT_PASSWORD: 'Password of that .p12 — minted here before the certificate; the mint workflow encrypts with it.',
+  APPLE_DEV_CERT_SERIAL: 'Serial of that certificate — the wizard asks Apple by serial whether it is still valid before each iOS build.',
   LOGTO_APPLE_CLIENT_ID: 'Apple Services ID for “Sign in with Apple”.',
   VAULT_SIGNUPS_ALLOWED: 'Wizard bookkeeping: whether this vault still accepts registrations (closed after setup).',
   PLAY_SERVICE_ACCOUNT_JSON: 'Google Play service account (whole JSON file) — CI publishes builds with it; the wizard also uses it to detect when a store app exists.',
@@ -1814,10 +1815,50 @@ function serveHtml(res, token) {
    environment local by the wizard before an iOS build. ── */
 const APPLE_CERT_ARTIFACT = 'apple-dev-cert-p12';
 const APPLE_CERT_FILE = 'APPLE_DEV_CERT_P12.b64';
+const APPLE_CERT_SERIAL_FILE = 'APPLE_DEV_CERT_SERIAL.txt';
+const normSerial = (s) => String(s ?? '').trim().toUpperCase().replace(/^0+/, '');
 
-function appleCertStatusEndpoint(res) {
+/** does Apple still list the machine's certificate? A revoked or expired
+ *  p12 imports without a word and CI would mint throwaways until Apple's
+ *  cap (2026-09-09: the wizard's first mint had wiped the hosted track's
+ *  certificate; ten piled up in a day) — matched by serial */
+async function appleCertAtApple(values, fetchImpl) {
+  if (!values.APPLE_DEV_CERT_SERIAL) return { state: 'unknown' }; // imported before the mint recorded serials
+  if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) return { state: 'no-creds' };
+  try {
+    const res = await fetchImpl('https://api.appstoreconnect.apple.com/v1/certificates?filter%5BcertificateType%5D=DEVELOPMENT,IOS_DEVELOPMENT&limit=200', {
+      headers: { authorization: `Bearer ${ascJwt(values)}` },
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) return { state: 'error', detail: `App Store Connect answered ${res.status}` };
+    const want = normSerial(values.APPLE_DEV_CERT_SERIAL);
+    const hit = ((await res.json()).data ?? []).find((c) => normSerial(c.attributes?.serialNumber) === want);
+    if (!hit) return { state: 'missing' };
+    const expires = hit.attributes.expirationDate;
+    if (new Date(expires).getTime() < Date.now()) return { state: 'expired', expires };
+    return { state: 'valid', expires, id: hit.id };
+  } catch (e) {
+    return { state: 'error', detail: e.message };
+  }
+}
+
+async function appleCertStatusEndpoint(res, fetchImpl) {
   const v = loadLocalValues(loadStack(SHARED_STACK));
-  return json(res, 200, { present: Boolean(v.APPLE_DEV_CERT_P12 && v.APPLE_DEV_CERT_PASSWORD), password: Boolean(v.APPLE_DEV_CERT_PASSWORD) });
+  const out = { present: Boolean(v.APPLE_DEV_CERT_P12 && v.APPLE_DEV_CERT_PASSWORD), password: Boolean(v.APPLE_DEV_CERT_PASSWORD) };
+  if (v.APPLE_DEV_CERT_SERIAL) out.serial = v.APPLE_DEV_CERT_SERIAL;
+  if (out.present) out.apple = await appleCertAtApple(v, fetchImpl);
+  return json(res, 200, out);
+}
+
+/** Apple revoked or expired the machine's certificate: drop it so the
+ *  next iOS build mints again (the wizard calls this by itself) */
+function appleCertForgetEndpoint(res) {
+  const shared = loadStack(SHARED_STACK);
+  const next = { ...loadLocalValues(shared) };
+  delete next.APPLE_DEV_CERT_P12;
+  delete next.APPLE_DEV_CERT_SERIAL;
+  saveLocalValues(shared, next);
+  return json(res, 200, { ok: true });
 }
 
 /** the p12 password is minted HERE first — the mint workflow encrypts with it */
@@ -1860,10 +1901,17 @@ async function appleCertImportEndpoint(req, res, netFetchImpl) {
     const location = hop.headers?.get?.('location');
     const zipRes = location ? await netFetchImpl(location, { signal: AbortSignal.timeout(60000) }) : hop;
     if (!zipRes.ok) throw new Error(`artifact download failed (${zipRes.status})`);
-    const b64 = zipEntry(Buffer.from(await zipRes.arrayBuffer()), APPLE_CERT_FILE).toString('utf8').trim();
+    const zip = Buffer.from(await zipRes.arrayBuffer());
+    const b64 = zipEntry(zip, APPLE_CERT_FILE).toString('utf8').trim();
     if (!/^[A-Za-z0-9+/=]{100,}$/.test(b64)) throw new Error('the artifact does not look like a base64 p12');
-    saveLocalValues(shared, { ...loadLocalValues(shared), APPLE_DEV_CERT_P12: b64 });
-    res.write(`Apple Development certificate stored in the machine store ✓ — every repo's iOS builds sign with it from now on; nothing gets minted or revoked anymore (Apple expires it after a year: delete APPLE_DEV_CERT_P12 from the store to re-mint)\n`);
+    // the serial rides along since 2026-09-09 (older mints: none → the
+    // validity check reports unknown; CI's own check still guards)
+    const serial = zipNames(zip).includes(APPLE_CERT_SERIAL_FILE) ? normSerial(zipEntry(zip, APPLE_CERT_SERIAL_FILE).toString('utf8')) : '';
+    const next = { ...loadLocalValues(shared), APPLE_DEV_CERT_P12: b64 };
+    delete next.APPLE_DEV_CERT_SERIAL;
+    if (serial) next.APPLE_DEV_CERT_SERIAL = serial;
+    saveLocalValues(shared, next);
+    res.write(`Apple Development certificate stored in the machine store ✓${serial ? ` (serial ${serial})` : ''} — every repo's iOS builds sign with it from now on (the whole Apple team shares this one certificate); nothing gets minted or revoked anymore. Apple expires it after a year — the wizard notices and mints again by itself\n`);
     return res.end('[exit 0]\n');
   } catch (e) {
     res.write(`${e.message}\n`);
@@ -2074,8 +2122,9 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/firebase-setup': (req, res) => firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),
-    'GET /api/local/apple-cert': (req, res) => appleCertStatusEndpoint(res),
+    'GET /api/local/apple-cert': (req, res) => appleCertStatusEndpoint(res, netFetchImpl),
     'POST /api/local/apple-cert/password': (req, res) => appleCertPasswordEndpoint(res),
+    'POST /api/local/apple-cert/forget': (req, res) => appleCertForgetEndpoint(res),
     'POST /api/local/apple-cert/import': (req, res) => appleCertImportEndpoint(req, res, netFetchImpl),
     'GET /api/local/autonomy': (req, res) => autonomyStatusEndpoint(res, spawnImpl),
     'POST /api/local/autonomy': (req, res) => autonomySetEndpoint(req, res),

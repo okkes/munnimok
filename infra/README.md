@@ -206,8 +206,12 @@ registers a Task Scheduler entry (current user, no admin) that starts
 `infra/setup/autonomy.cmd` minimized, without a browser tab. The machine
 store never leaves the PC. Native apps update through the stores on
 their own; the machine-owned Apple Development certificate (minted once
-by the first iOS build through `mint-apple-cert.yml`) keeps CI from
-minting and revoking throwaway certificates.
+by the first iOS build through `mint-apple-cert.yml`, shared by the whole
+Apple team — the hosted repo-level secret, every environment and the
+machine store hold the same p12; CI refuses to build with a revoked one
+instead of minting throwaways, and the wizard re-mints by itself when
+Apple no longer lists it) keeps CI from minting and revoking throwaway
+certificates.
 
 ---
 

@@ -2573,7 +2573,7 @@ async function checkManifest() {
       ...GROUPS.flatMap((g) => g.fields.map((f) => f.name)),
       'IAC_GH_PAT', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET', 'IAC_GLITCHTIP_API_TOKEN', 'NAS_ADMIN_SUBS',
       // machine-owned / wizard-managed — never pasted
-      'VAULT_SIGNUPS_ALLOWED', 'APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD',
+      'VAULT_SIGNUPS_ALLOWED', 'APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD', 'APPLE_DEV_CERT_SERIAL',
     ]);
     const uncovered = manifest.secrets.filter((s) => s.owner === 'operator' && !known.has(s.name)).map((s) => s.name);
     msg('msg-manifest', uncovered.length
@@ -3273,10 +3273,13 @@ async function playStateFor(stack) {
  * fresh copy has no secrets at all, and the store check alone made the
  * wizard claim "published" while CI silently skipped the upload (found
  * live 2026-08-30). Returns false when the store cannot supply them. */
-async function ensureLocalEnvSecrets(names, label) {
+async function ensureLocalEnvSecrets(names, label, { force = false } = {}) {
   await ensureEnv('local');
   const have = new Set(((await gh(`/repos/${S.slug}/environments/local/secrets?per_page=100`, { allow404: true }))?.secrets ?? []).map((x) => x.name));
-  const missing = names.filter((n) => !have.has(n));
+  // force: rewrite even when the name exists — a stale copy under the
+  // right name is exactly how an environment kept a revoked certificate
+  // (2026-09-09)
+  const missing = force ? names.slice() : names.filter((n) => !have.has(n));
   if (!missing.length) return true;
   const all = await (await hfetch('/api/local/secrets')).json();
   const store = Object.assign({}, ...Object.values(all.values));
@@ -3439,8 +3442,26 @@ async function dispatchLocalIosFlow(env) {
  * it in place CI imports instead of minting, and the prune step (each
  * revocation an Apple email) never runs. */
 async function ensureAppleCert() {
-  const st = await (await hfetch('/api/local/apple-cert')).json();
+  let st = await (await hfetch('/api/local/apple-cert')).json();
+  // Apple no longer lists the machine's certificate (revoked or expired):
+  // such a p12 imports without a word and CI would mint throwaways until
+  // Apple's cap — forget it and mint again
+  if (st.present && (st.apple?.state === 'missing' || st.apple?.state === 'expired')) {
+    localLog(`\nthe machine's Apple certificate (serial ${st.serial}) is ${st.apple.state === 'expired' ? 'expired' : 'no longer listed by Apple (revoked)'} — forgetting it and minting a new one\n`);
+    await hfetch('/api/local/apple-cert/forget', { method: 'POST' });
+    st = await (await hfetch('/api/local/apple-cert')).json();
+  }
   if (!st.present) {
+    // a repo that already holds a persistent certificate at repository
+    // level (the hosted track's) signs the local build with it as well —
+    // environment secrets fall back to repository secrets — and a mint
+    // here would REVOKE it under every other build (2026-09-08: the
+    // hosted track lost its certificate to the wizard's first mint)
+    const repoHeld = await gh(`/repos/${S.slug}/actions/secrets/APPLE_DEV_CERT_P12`, { allow404: true }).catch(() => null);
+    if (repoHeld) {
+      localLog('\nsigning certificate: this repo already holds a persistent one at repository level — the local build signs with it, nothing is minted (a dead one is named by the build itself)\n');
+      return true;
+    }
     localLog('\n▶ mint the machine Apple signing certificate (once ever — ends the certificate-revoked emails)\n');
     await hfetch('/api/local/apple-cert/password', { method: 'POST' });
     if (!(await ensureLocalEnvSecrets(['APPLE_DEV_CERT_PASSWORD', 'ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8'], 'certificate minting'))) return false;
@@ -3465,8 +3486,12 @@ async function ensureAppleCert() {
     }
     if (run.conclusion !== 'success') { localLog(`the mint ended ${run.conclusion} — open run #${run.run_number} (its Preflight names a missing secret); this build signs with a throwaway certificate\n`); return false; }
     if (!(await streamLocal('/api/local/apple-cert/import', { slug: S.slug, runId: run.id }, 'store the minted certificate in the machine store'))) return false;
+  } else if (st.apple?.state === 'valid') {
+    localLog(`signing certificate: the machine's, valid until ${String(st.apple.expires).slice(0, 10)}\n`);
   }
-  return ensureLocalEnvSecrets(['APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD'], 'persistent signing certificate');
+  // the machine's certificate IS what environment local signs with —
+  // always rewrite both (a stale same-name copy is invisible otherwise)
+  return ensureLocalEnvSecrets(['APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD'], 'persistent signing certificate', { force: true });
 }
 
 /** toggling Android/iOS ON under local starts the whole chain by itself

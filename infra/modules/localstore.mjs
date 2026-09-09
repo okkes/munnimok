@@ -67,6 +67,7 @@ export const SHARED_LOCAL_NAMES = new Set([
   // Apple stops mailing "certificate revoked", 2026-09-08)
   'APPLE_DEV_CERT_P12',
   'APPLE_DEV_CERT_PASSWORD',
+  'APPLE_DEV_CERT_SERIAL',
 ]);
 
 /** generated names the shared stack mints (env stacks never do) */
