@@ -1128,13 +1128,13 @@ const GROUPS = [
     id: 'google', title: 'Google sign-in', feature: 'google', check: 'google',
     why: 'An OAuth client that lets Logto offer "Continue with Google". Wired into the sign-in screen automatically once stored.',
     how: [
-      'console.cloud.google.com → create/pick any project → APIs &amp; Services. First time: configure the <b>OAuth consent screen</b> (External, app name + your email) — Google requires it before clients can exist.',
-      'Credentials → Create credentials → <b>OAuth client ID</b> → type <b>Web application</b>.',
+      'Two clicks Google keeps manual (it offers no API that creates a consent screen or an OAuth client — only Identity-Aware-Proxy clients, unusable for sign-in): <a data-gcp-link="consent" href="https://console.cloud.google.com/apis/credentials/consent" target="_blank" rel="noreferrer">OAuth consent screen</a> in <span data-gcp-project>any Cloud project</span> — first time only: External, app name + your email.',
+      'Then <a data-gcp-link="client" href="https://console.cloud.google.com/apis/credentials/oauthclient" target="_blank" rel="noreferrer">Create OAuth client ID</a> → type <b>Web application</b>.',
       {
         nas: 'Authorized <b>redirect URI</b> (this is Logto’s Google callback): <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/google-universal</code>',
-        local: 'Authorized <b>redirect URI</b> (this is the LOCAL Logto’s Google callback — Google allows localhost): <code>http://localhost:3201/callback/google-universal</code>',
+        local: 'Authorized <b>redirect URIs</b> — one per environment, Google takes several on one client (localhost is allowed; with LAN mode on the https one below is the live one): <span id="google-local-redirects"><i>shown once the environments are set up</i></span>',
       },
-      'Copy the client ID + client secret.',
+      'Paste the client ID + client secret here. <b>Check</b> (and Save) then asks Google whether every redirect URI above is registered — a missing one is named.',
     ],
     fields: [
       { name: 'LOGTO_GOOGLE_CLIENT_ID', scope: 'pair' },
@@ -1144,13 +1144,14 @@ const GROUPS = [
   {
     id: 'apple', title: 'Apple sign-in', feature: 'apple', check: 'apple',
     why: 'Sign in with Apple for web + iOS. Requires an Apple Developer membership. One Services ID + key serves every environment of the family.',
-    how: ['developer.apple.com → Identifiers → new <b>Services ID</b> — its identifier is the client ID below. Enable Sign in with Apple.',
-      { nas: 'Return URL: <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/apple-universal</code>',
-        local: 'Return URLs (one per environment — Apple takes several on one Services ID; LAN mode must be on, which the toggle does by itself): <span id="apple-local-return-urls"><i>shown once the environments are set up</i></span>. A changed wifi address changes them — hence the DHCP reservation.' },
-      'Keys → create a key with Sign in with Apple (tick APNs on the same key if you want iOS push — one .p8 serves both) → note the Key ID, download the .p8 (paste its contents).', 'Team ID: top right of the developer console (Membership).'],
+    how: ['Apple keeps this manual (its App Store Connect API stops at bundle ids, certificates and profiles — no Services IDs, no keys), once per family: <a href="https://developer.apple.com/account/resources/identifiers/list/serviceId" target="_blank" rel="noreferrer">developer.apple.com → Identifiers → Services IDs</a> → ＋ → its identifier is the client ID below → enable <b>Sign in with Apple</b> → Configure with the domains + return URLs below.',
+      { nas: 'Domain: <code class="dom-inline">logto-iac.&lt;domain&gt;</code> · Return URL: <code class="dom-inline">https://logto-iac.&lt;domain&gt;/callback/apple-universal</code>',
+        local: 'Domains and return URLs — one pair per environment, Apple takes several on one Services ID (LAN mode must be on, which the toggle does by itself): <span id="apple-local-return-urls"><i>shown once the environments are set up</i></span> A changed wifi address changes them — hence the DHCP reservation.' },
+      '<a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">Keys</a> → ＋ → tick <b>Sign in with Apple</b> (and APNs on the same key if you want iOS push — one .p8 serves both) → note the Key ID, download the .p8 (paste its contents).',
+      'Team ID: taken from the TestFlight card when stored there — otherwise top right of the developer console (Membership). <b>Check</b> (and Save) then asks Apple whether every return URL above is accepted.'],
     fields: [
       { name: 'LOGTO_APPLE_CLIENT_ID', scope: 'pair', ph: 'e.g. app.munni.iac.signin' },
-      { name: 'LOGTO_APPLE_TEAM_ID', scope: 'pair' },
+      { name: 'LOGTO_APPLE_TEAM_ID', scope: 'pair', ph: 'empty = the TestFlight card’s Team ID' },
       { name: 'LOGTO_APPLE_KEY_ID', scope: 'pair' },
       { name: 'LOGTO_APPLE_PRIVATE_KEY', scope: 'pair', area: true },
     ],
@@ -1430,16 +1431,46 @@ function renderEnvCards(st) {
   }
 }
 
-/** the Apple card lists every environment's Logto return URL — Apple
- * refuses http, so only https (LAN mode) hosts qualify */
-function fillAppleReturnUrls(st = S.stacksStatus) {
-  const span = document.getElementById('apple-local-return-urls');
-  if (!span || !st) return;
-  const urls = Object.values(st.stacks)
-    .filter((s) => s.urls?.logto && s.urls.logto.startsWith('https://'))
-    .map((s) => `<code>${s.urls.logto}/callback/apple-universal</code>`);
-  span.innerHTML = urls.length ? urls.join(' &nbsp;·&nbsp; ') : '<i>turn LAN mode on first (tick Sign in with Apple, Android, iOS or Enable Banking) — localhost hosts are http, which Apple refuses</i>';
+/** every environment's Logto callback for a social connector; Apple
+ * refuses http, so its list keeps only the https (LAN mode) hosts */
+function callbackUrlsFor(target) {
+  if (S.platform !== 'local') return S.domain ? [`https://logto-iac.${S.domain}/callback/${target}`] : [];
+  return Object.values(S.stacksStatus?.stacks ?? {})
+    .filter((s) => s.urls?.logto && (target !== 'apple-universal' || s.urls.logto.startsWith('https://')))
+    .map((s) => `${s.urls.logto}/callback/${target}`);
 }
+const copyBlock = (text) => `<pre style="margin:4px 0"><button class="copy">copy</button><code>${text}</code></pre>`;
+
+/** the Apple card lists every environment's domain + return URL */
+function fillAppleReturnUrls() {
+  const span = document.getElementById('apple-local-return-urls');
+  if (!span || !S.stacksStatus) return;
+  const urls = callbackUrlsFor('apple-universal');
+  span.innerHTML = urls.length
+    ? urls.map((u) => copyBlock(`${new URL(u).host}`) + copyBlock(u)).join('')
+    : '<i>turn LAN mode on first (tick Sign in with Apple, Android, iOS or Enable Banking) — localhost hosts are http, which Apple refuses.</i>';
+}
+
+/** the Google card lists every environment's redirect URI */
+function fillGoogleRedirects() {
+  const span = document.getElementById('google-local-redirects');
+  if (!span || !S.stacksStatus) return;
+  const urls = callbackUrlsFor('google-universal');
+  span.innerHTML = urls.length ? urls.map(copyBlock).join('') : '<i>shown once the environments are set up</i>';
+}
+
+/** the Google console links carry the Play service account's project */
+function fillGoogleProjectLinks() {
+  const project = S.googleProject;
+  document.querySelectorAll('[data-gcp-link]').forEach((a) => {
+    const base = a.dataset.gcpLink === 'consent' ? 'https://console.cloud.google.com/apis/credentials/consent' : 'https://console.cloud.google.com/apis/credentials/oauthclient';
+    a.href = project ? `${base}?project=${encodeURIComponent(project)}` : base;
+  });
+  document.querySelectorAll('[data-gcp-project]').forEach((el) => {
+    el.innerHTML = project ? `the Play service account’s project <code>${project}</code> (link pre-selects it)` : 'any Cloud project (the Play service account’s one, once stored, keeps everything together)';
+  });
+}
+function fillSocialCards() { fillAppleReturnUrls(); fillGoogleRedirects(); fillGoogleProjectLinks(); }
 
 /* ── keeps itself up to date: the helper's self-update loop + logon task ── */
 const fmtWhen = (iso) => (iso ? new Date(iso).toLocaleString() : 'never');
@@ -1505,7 +1536,8 @@ async function refreshLocal() {
     box.innerHTML = rows.map((r) => `<div style="margin:2px 0">${r}</div>`).join('');
     renderEnvCards(st);
     S.stacksStatus = st;
-    fillAppleReturnUrls(st);
+    S.googleProject = st.googleProject ?? null;
+    fillSocialCards();
     refreshAutonomy().catch(() => {});
     const shared = st.stacks[SHARED_STACK];
     const anyRendered = Object.values(st.stacks).some((s) => s.rendered);
@@ -1698,7 +1730,7 @@ function renderFeatures() {
   }).join('');
   FEATURES.forEach((f) => {
     document.getElementById('feat-' + f.id).addEventListener('change', async (e) => {
-      S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); fillAppleReturnUrls(); renderNative(); renderStatus();
+      S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); fillSocialCards(); renderNative(); renderStatus();
       // the toggle IS the trigger (user ruling): the network mode follows
       // the features by itself — LAN when a phone/https feature is on,
       // plain localhost when none is — and android/ios ON starts the CI
@@ -1780,7 +1812,7 @@ async function storeGroup(id) {
         storeBtn.textContent = 'Store anyway';
         return;
       }
-      verdictNote = verdict?.ok ? ` — checked ✓ (${verdict.detail})` : (verdict ? ` — could not verify: ${verdict.detail}` : '');
+      verdictNote = verdict?.ok ? (verdict.warn ? ` — stored, but: ${verdict.detail}` : ` — checked ✓ (${verdict.detail})`) : (verdict ? ` — could not verify: ${verdict.detail}` : '');
     } catch { verdictNote = ' — could not verify (check failed)'; }
   }
   delete storeBtn.dataset.force;
@@ -1850,7 +1882,9 @@ async function checkCredentials(check, values) {
   if (!check) return null;
   if (check.startsWith('browser:')) return BROWSER_VALIDATORS[check.slice(8)](values);
   if (!HELPER) return { ok: false, noHelper: true, detail: 'this provider blocks browser calls — start the local helper (infra\\setup\\start.cmd) and this page can check it for real; the value is verified on first use either way' };
-  const res = await hfetch('/api/validate', { method: 'POST', body: JSON.stringify({ provider: check, values }) });
+  // Google/Apple also judge every environment's callback — no user needed
+  const redirectUris = check === 'google' ? callbackUrlsFor('google-universal') : (check === 'apple' ? callbackUrlsFor('apple-universal') : []);
+  const res = await hfetch('/api/validate', { method: 'POST', body: JSON.stringify({ provider: check, values, redirectUris }) });
   if (!res.ok) {
     // the helper's error body names the real problem — a bare status
     // number sent the user hunting (report 2026-09-08)
@@ -1883,7 +1917,9 @@ async function checkGroup(id) {
   msg('msg-group-' + id, 'checking…', true);
   try {
     const verdict = await checkCredentials(g.check, cardValues(card));
-    msg('msg-group-' + id, `${verdict.ok ? '✓' : '✗'} ${verdict.detail}`, verdict.ok);
+    // a warning (credentials fine, a callback unregistered) reads as a to-do, not a pass
+    const fine = verdict.ok && !verdict.warn;
+    msg('msg-group-' + id, `${fine ? '✓' : (verdict.warn ? '⚠' : '✗')} ${verdict.detail}`, fine);
   } catch (e) {
     msg('msg-group-' + id, `✗ check failed: ${e.message}`, false);
   } finally {
@@ -2141,12 +2177,15 @@ document.getElementById('btn-rotate').addEventListener('click', async () => {
   } catch (e) { msg('msg-rotate', String(e.message || e), false); }
 });
 
-document.querySelectorAll('pre button.copy').forEach((btn) => btn.addEventListener('click', async () => {
+// delegated: the social cards render their copy buttons later
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest?.('pre button.copy');
+  if (!btn) return;
   const code = btn.parentElement.querySelector('code')?.innerText ?? '';
   try { await navigator.clipboard.writeText(code); btn.textContent = 'copied ✓'; }
   catch { btn.textContent = 'select + copy manually'; }
   setTimeout(() => { btn.textContent = 'copy'; }, 1600);
-}));
+});
 
 /* local-track buttons (helper mode) */
 document.getElementById('local-nohelper').hidden = Boolean(HELPER);

@@ -178,7 +178,13 @@ async function statusEndpoint(res, probeImpl) {
     stacks[name] = await stackStatus(name, probeImpl);
   }
   const { enabled, lastCheckAt, lastResult } = loadAutonomy();
-  return json(res, 200, { docker, stacks, lan: lanHost(), autonomy: { enabled, lastCheckAt, lastResult, running: autonomyRunning } });
+  // the Google console links point at the Play service account's own
+  // project — the OAuth client belongs next to the Firebase apps
+  let googleProject = null;
+  try {
+    googleProject = JSON.parse(loadLocalValues(loadStack(SHARED_STACK)).PLAY_SERVICE_ACCOUNT_JSON ?? 'null')?.project_id ?? null;
+  } catch { /* no or malformed service account — generic links */ }
+  return json(res, 200, { docker, stacks, lan: lanHost(), googleProject, autonomy: { enabled, lastCheckAt, lastResult, running: autonomyRunning } });
 }
 
 /* ── run bootstrap ─────────────────────────────────────────────────── */
@@ -1757,7 +1763,12 @@ async function validateEndpoint(req, res, validateImpl) {
   for (const [name, value] of Object.entries(body.values ?? {})) {
     if (VALIDATABLE_NAMES.has(name) && typeof value === 'string' && value) values[name] = value;
   }
-  return json(res, 200, await validateImpl(String(body.provider ?? ''), values));
+  // the sign-in callbacks the page wants judged alongside the credentials
+  // (Google/Apple answer a redirect check without a user)
+  const redirectUris = (Array.isArray(body.redirectUris) ? body.redirectUris : [])
+    .filter((u) => typeof u === 'string' && /^https?:\/\/[^\s"'<>]+$/.test(u))
+    .slice(0, 12);
+  return json(res, 200, await validateImpl(String(body.provider ?? ''), values, { redirectUris }));
 }
 
 function serveHtml(res, token) {

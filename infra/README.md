@@ -91,6 +91,18 @@ the Pi.
 
 ## Part C — auth + observability (once per PAIR)
 
+Social sign-in stays a paste, by provider design: Google has no API that
+creates a consent screen or an OAuth client (only Identity-Aware-Proxy
+clients, unusable for sign-in) and Apple's App Store Connect API stops
+at bundle ids, certificates and profiles (no Services IDs, no keys). The
+wizard does everything around it: the Google card deep-links both
+console pages into the Play service account's project, both cards list
+every environment's callback (domain + return URL for Apple) with copy
+buttons, the Apple Team ID is taken from the TestFlight card, and
+Check/Save ask Google and Apple whether each callback is registered —
+both authorization endpoints judge a redirect without a user, so a
+missing one is named before the first sign-in ever fails.
+
 **C1. Logto OOBE (the ONE manual auth step).** Wizard step 6 — open
 `https://logto-iac-admin.<domain>` → create the admin user →
 Applications → Create → *Machine-to-machine* → name `infra` → assign

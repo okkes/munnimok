@@ -124,7 +124,7 @@ export const VALIDATORS = {
   },
 
   /** dummy-code trick: invalid_client = bad creds, any other error = client is real */
-  async google(values, fetchImpl) {
+  async google(values, fetchImpl, { redirectUris = [] } = {}) {
     const gap = need(values, ['LOGTO_GOOGLE_CLIENT_ID', 'LOGTO_GOOGLE_CLIENT_SECRET']);
     if (gap) return { ok: false, detail: gap };
     const res = await fetchImpl('https://oauth2.googleapis.com/token', {
@@ -141,11 +141,17 @@ export const VALIDATORS = {
     });
     const body = await res.json().catch(() => ({}));
     if (body.error === 'invalid_client') return { ok: false, detail: 'Google says invalid_client — the id/secret pair is wrong' };
-    return { ok: true, detail: `Google recognized the OAuth client (dummy code rejected with "${body.error ?? res.status}", as expected)` };
+    const refused = await refusedRedirects(googleRedirectProbe, values.LOGTO_GOOGLE_CLIENT_ID, redirectUris, fetchImpl);
+    if (refused.length) {
+      return { ok: true, warn: true, detail: `the client is real, but Google refuses ${refused.map((p) => `${p.uri} (${p.code})`).join(', ')} — add it under Authorized redirect URIs of the OAuth client, then Check again` };
+    }
+    return { ok: true, detail: `Google recognized the OAuth client${redirectUris.length ? ` and accepts all ${redirectUris.length} redirect URI(s)` : ''} (dummy code rejected with "${body.error ?? res.status}", as expected)` };
   },
 
   /** ES256 client-secret JWT + the same dummy-code trick against Apple */
-  async apple(values, fetchImpl) {
+  async apple(raw, fetchImpl, { redirectUris = [] } = {}) {
+    // the Team ID is the TestFlight card's Team ID — one membership
+    const values = { ...raw, LOGTO_APPLE_TEAM_ID: raw.LOGTO_APPLE_TEAM_ID || raw.APPLE_TEAM_ID };
     const gap = need(values, ['LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_TEAM_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY']);
     if (gap) return { ok: false, detail: gap };
     const now = Math.floor(Date.now() / 1000);
@@ -172,7 +178,11 @@ export const VALIDATORS = {
     });
     const body = await res.json().catch(() => ({}));
     if (body.error === 'invalid_client') return { ok: false, detail: 'Apple says invalid_client — check Services ID, Team ID, Key ID and the .p8 contents together' };
-    return { ok: true, detail: `Apple recognized the client (dummy code rejected with "${body.error ?? res.status}", as expected)` };
+    const refused = await refusedRedirects(appleRedirectProbe, values.LOGTO_APPLE_CLIENT_ID, redirectUris, fetchImpl);
+    if (refused.length) {
+      return { ok: true, warn: true, detail: `the client is real, but Apple refuses ${refused.map((p) => `${p.uri} (${p.code})`).join(', ')} — add the domain + return URL to the Services ID (Sign in with Apple → Configure), then Check again` };
+    }
+    return { ok: true, detail: `Apple recognized the client${redirectUris.length ? ` and accepts all ${redirectUris.length} return URL(s)` : ''} (dummy code rejected with "${body.error ?? res.status}", as expected)` };
   },
 
   /** parse the Play service account + mint an androidpublisher-scoped
@@ -290,14 +300,50 @@ export const VALIDATORS = {
   },
 };
 
+/* ── redirect registration probes (user ask 2026-09-09: automate the
+   OAuth setup — neither Google nor Apple offers an API that CREATES a
+   client / Services ID, but both authorization endpoints judge a
+   redirect WITHOUT a user, so the wizard can at least verify every
+   environment's callback the moment the credentials are pasted). ── */
+
+/** Google: a refused request 302s to /signin/oauth/error whose authError
+ * is a base64url proto that starts with the error code
+ * (redirect_uri_mismatch, invalid_client, …); an accepted one lands on
+ * the sign-in page instead */
+async function googleRedirectProbe(clientId, uri, fetchImpl) {
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(uri)}&response_type=code&scope=openid`;
+  const res = await fetchImpl(url, { redirect: 'manual', signal: T() });
+  const location = res.headers?.get?.('location') ?? '';
+  if (!location.includes('/signin/oauth/error')) return { uri, ok: true };
+  const raw = /authError=([^&]+)/.exec(location)?.[1] ?? '';
+  const decoded = Buffer.from(decodeURIComponent(raw).replaceAll('-', '+').replaceAll('_', '/'), 'base64').toString('latin1');
+  return { uri, ok: false, code: /([a-z][a-z_]{4,})/.exec(decoded)?.[1] ?? 'refused' };
+}
+
+/** Apple: the authorize page embeds {"errorCode":"invalid_client"} (or
+ * another code) when it will not proceed; a clean sign-in page otherwise */
+async function appleRedirectProbe(clientId, uri, fetchImpl) {
+  const url = `https://appleid.apple.com/auth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(uri)}&response_type=code&response_mode=form_post&scope=name%20email`;
+  const res = await fetchImpl(url, { redirect: 'manual', signal: T() });
+  const text = res.status >= 300 && res.status < 400 ? (res.headers?.get?.('location') ?? '') : await res.text();
+  const code = /"errorCode":"([a-z_]+)"/.exec(text)?.[1] ?? /[?&]error=([a-z_]+)/.exec(text)?.[1];
+  return code ? { uri, ok: false, code } : { uri, ok: true };
+}
+
+/** every refused uri — a probe that cannot be reached counts as accepted (never block on Google's hiccup) */
+async function refusedRedirects(probe, clientId, uris, fetchImpl) {
+  const results = await Promise.all(uris.map((uri) => probe(clientId, uri, fetchImpl).catch(() => ({ uri, ok: true }))));
+  return results.filter((r) => !r.ok);
+}
+
 // localAwareFetch: public providers stay strictly verified; the two
 // LOCAL validators (logto-m2m, glitchtip-token) hit our own family
 // urls, which under LAN mode are https signed by the local Caddy CA
-export async function validate(provider, values, { fetchImpl = localAwareFetch } = {}) {
+export async function validate(provider, values, { fetchImpl = localAwareFetch, redirectUris = [] } = {}) {
   const fn = VALIDATORS[provider];
   if (!fn) return { ok: false, detail: `no validator for "${provider}"` };
   try {
-    return await fn(values ?? {}, fetchImpl);
+    return await fn(values ?? {}, fetchImpl, { redirectUris });
   } catch (e) {
     return { ok: false, unreachable: true, detail: `could not reach the provider (${e.cause?.code ?? e.message})` };
   }

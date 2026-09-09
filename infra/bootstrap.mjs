@@ -174,6 +174,8 @@ async function localApplyLogto(values) {
     for (const name of ['LOGTO_GOOGLE_CLIENT_ID', 'LOGTO_GOOGLE_CLIENT_SECRET', 'LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_TEAM_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY']) {
       if (!process.env[name] && values[name]) process.env[name] = values[name];
     }
+    // one Apple membership: the TestFlight card's Team ID serves Sign in with Apple too
+    if (!process.env.LOGTO_APPLE_TEAM_ID && values.APPLE_TEAM_ID) process.env.LOGTO_APPLE_TEAM_ID = values.APPLE_TEAM_ID;
     const social = await applySocialConnectors(pair, creds).catch((e) => ({ applied: [], error: e.message }));
     console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]` : '  logto: no social connector credentials — skipped');
     const brand = await applyBranding(pair, creds).catch((e) => ({ error: e.message }));

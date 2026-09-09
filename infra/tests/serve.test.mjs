@@ -51,7 +51,7 @@ const app = createApp({
   token: 'tok',
   probeImpl: async () => false,
   runImpl: (res, cmd, args, opts) => { runs.push({ cmd, args, opts }); res.writeHead(200, {}); res.end('[exit 0]\n'); },
-  validateImpl: async (provider, values) => { validations.push({ provider, values }); return { ok: true, detail: 'fake' }; },
+  validateImpl: async (provider, values, opts) => { validations.push({ provider, values, opts }); return { ok: true, detail: 'fake' }; },
 });
 
 /** fake child-process factory for the multi-step endpoints */
@@ -150,11 +150,13 @@ test('validate passes only manifest operator names through, merged over the stor
   const res = fakeRes();
   await app(fakeReq({
     method: 'POST', url: '/api/validate', token: 'tok',
-    body: { provider: 'gocardless', values: { NAS_GOCARDLESS_SECRET_ID: 'id1', PATH: 'evil', RANDOM: 'x', SYNOLOGY_URL: 'https://nas:5001' } },
+    body: { provider: 'gocardless', values: { NAS_GOCARDLESS_SECRET_ID: 'id1', PATH: 'evil', RANDOM: 'x', SYNOLOGY_URL: 'https://nas:5001' }, redirectUris: ['https://munni-prod-logto.192-168-2-2.sslip.io/callback/google-universal', 'javascript:alert(1)', 'ftp://x/y', 42, 'http://localhost:3201/callback/google-universal'] },
   }), res);
   assert.equal(res.statusCode, 200);
   assert.equal(validations.length, 1);
   assert.equal(validations[0].provider, 'gocardless');
+  // only http(s) callbacks reach the validator's redirect probes
+  assert.deepEqual(validations[0].opts.redirectUris, ['https://munni-prod-logto.192-168-2-2.sslip.io/callback/google-universal', 'http://localhost:3201/callback/google-universal']);
   assert.equal(validations[0].values.NAS_GOCARDLESS_SECRET_ID, 'id1');
   // SYNOLOGY_* are operator names (NAS platform) — allowed for validation
   assert.equal(validations[0].values.SYNOLOGY_URL, 'https://nas:5001');
