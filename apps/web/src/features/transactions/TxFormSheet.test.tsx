@@ -115,12 +115,15 @@ describe('TxFormSheet (demo identity)', () => {
     fireEvent.click(await screen.findByTestId('catpicker-savingDeposit'));
     await screen.findByTestId('counter-default');
     fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'));
+    // a loaded CI runner (coverage on) can take longer than RTL's 1 s
+    // default to settle the pick — the file's other waits allow 5 s too
+    // (flaked once in CI, 2026-09-09)
+    await waitFor(() => expect(screen.getAllByTestId('part-cats-editor').at(-1)!.getAttribute('data-counter')).toBe('demo_save'), { timeout: 5000 });
     expect((screen.getByTestId('part-cat-add') as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByTestId('part-cat-one-special')).toBeTruthy();
     fireEvent.click(screen.getByTestId('part-cat-save'));
     // the answer landed at the FORM level — the counterparty row says so
-    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings'));
+    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings'), { timeout: 5000 });
     fireEvent.click(screen.getByTestId('txform-save'));
 
     const { MunniDB } = await import('@/db/schema');
