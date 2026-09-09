@@ -275,7 +275,10 @@ describe('TxFormSheet (demo identity)', () => {
     // targets remain; the bank-synced account is still never offered
     await screen.findByTestId('txform-account-demo_save');
     await screen.findByTestId('txform-account-defaultacct_cash_demo_space');
-    expect(screen.queryByTestId('txform-account-demo_main')).toBeNull();
+    // the synced flag was written through a SECOND db handle: the live
+    // query may still hold the pre-write row for a tick, so the absence
+    // is awaited like the presences above (flaked once in CI, 2026-09-09)
+    await waitFor(() => expect(screen.queryByTestId('txform-account-demo_main')).toBeNull());
   });
 
   it('a manual-counter transfer writes the mirror; the list collapses the pair', async () => {
