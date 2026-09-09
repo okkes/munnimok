@@ -177,7 +177,7 @@ async function localApplyLogto(values) {
     // one Apple membership: the TestFlight card's Team ID serves Sign in with Apple too
     if (!process.env.LOGTO_APPLE_TEAM_ID && values.APPLE_TEAM_ID) process.env.LOGTO_APPLE_TEAM_ID = values.APPLE_TEAM_ID;
     const social = await applySocialConnectors(pair, creds).catch((e) => ({ applied: [], error: e.message }));
-    console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]` : '  logto: no social connector credentials — skipped');
+    console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]${social.renamed?.length ? ` — moved under their fixed ids (${social.renamed.join(', ')}); callbacks: ${Object.values(social.callbacks).join(', ')}` : ''}` : `  logto: no social connector credentials — skipped${social.error ? ` (${social.error})` : ''}`);
     const brand = await applyBranding(pair, creds).catch((e) => ({ error: e.message }));
     console.log(brand.error ? `  logto: branding failed (${brand.error})` : '  logto: sign-in branded (munni logo + colors)');
   } catch (e) {

@@ -736,16 +736,28 @@ test('ios-appid: registers the bundle id and its long-run capabilities via the A
   const prev = loadLocalValues(shared);
   saveLocalValues(shared, { ...prev, ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS1', ASC_KEY_P8: Buffer.from(ecPem2).toString('base64') });
   try {
+    // App Store Connect in a box: the capability LIST is the truth —
+    // ASSOCIATED_DOMAINS pre-exists, APPLE_ID_AUTH exists WITHOUT its
+    // primary setting (the live 2026-09-09 state: keys found no App ID)
     const calls = [];
+    const caps = [
+      { id: 'BID1_ASSOCIATED_DOMAINS', attributes: { capabilityType: 'ASSOCIATED_DOMAINS', settings: null } },
+      { id: 'BID1_APPLE_ID_AUTH', attributes: { capabilityType: 'APPLE_ID_AUTH', settings: null } },
+    ];
     const netFetchImpl = async (url, init = {}) => {
       calls.push({ url, init });
       if (url.includes('/bundleIds?')) return { ok: true, status: 200, json: async () => ({ data: [] }) };
       if (url.endsWith('/bundleIds')) return { ok: true, status: 201, json: async () => ({ data: { type: 'bundleIds', id: 'BID1' } }) };
-      if (url.endsWith('/bundleIdCapabilities')) {
-        const cap = JSON.parse(init.body).data.attributes.capabilityType;
-        return cap === 'ASSOCIATED_DOMAINS'
-          ? { ok: false, status: 409, json: async () => ({}), text: async () => 'exists' }
-          : { ok: true, status: 201, json: async () => ({}), text: async () => '' };
+      if (url.endsWith('/bundleIds/BID1/bundleIdCapabilities')) return { ok: true, status: 200, json: async () => ({ data: caps }) };
+      if (url.endsWith('/bundleIdCapabilities') && init.method === 'POST') {
+        const { capabilityType, settings } = JSON.parse(init.body).data.attributes;
+        caps.push({ id: `BID1_${capabilityType}`, attributes: { capabilityType, settings: settings ?? null } });
+        return { ok: true, status: 201, json: async () => ({}), text: async () => '' };
+      }
+      if (url.includes('/bundleIdCapabilities/') && init.method === 'PATCH') {
+        const { settings } = JSON.parse(init.body).data.attributes;
+        caps.find((c) => url.endsWith(c.id)).attributes.settings = settings;
+        return { ok: true, status: 200, json: async () => ({}), text: async () => '' };
       }
       return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
     };
@@ -755,14 +767,42 @@ test('ios-appid: registers the bundle id and its long-run capabilities via the A
     await settle(res);
     const stream = res.chunks.join('');
     assert.match(stream, /App ID app\.munni\.local\.prod registered ✓/);
-    assert.match(stream, /PUSH_NOTIFICATIONS ✓/);
-    assert.match(stream, /APPLE_ID_AUTH ✓/);
-    assert.match(stream, /ASSOCIATED_DOMAINS ✓/, 'a 409 (already enabled) counts as done');
+    assert.match(stream, /PUSH_NOTIFICATIONS enabled ✓/);
+    assert.match(stream, /APPLE_ID_AUTH completed ✓ — Sign in with Apple as the PRIMARY App ID/);
+    assert.match(stream, /ASSOCIATED_DOMAINS ✓/, 'listed = done, no request needed');
     assert.match(stream, /New App/);
     assert.match(stream, /\[exit 0\]/);
     const create = calls.find((c) => c.url.endsWith('/bundleIds') && c.init.method === 'POST');
     assert.equal(JSON.parse(create.init.body).data.attributes.identifier, 'app.munni.local.prod');
-    assert.equal(calls.filter((c) => c.url.endsWith('/bundleIdCapabilities')).length, 3);
+    const posts = calls.filter((c) => c.url.endsWith('/bundleIdCapabilities') && c.init.method === 'POST');
+    assert.deepEqual(posts.map((c) => JSON.parse(c.init.body).data.attributes.capabilityType), ['PUSH_NOTIFICATIONS'], 'only the missing one is created');
+    const patch = calls.find((c) => c.url.endsWith('/bundleIdCapabilities/BID1_APPLE_ID_AUTH') && c.init.method === 'PATCH');
+    assert.deepEqual(JSON.parse(patch.init.body).data.attributes.settings, [{ key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] }], 'the primary-app consent rides the update');
+
+    // a second run finds everything complete: no mutation at all
+    const again = fakeRes();
+    const before = calls.length;
+    await app2(fakeReq({ method: 'POST', url: '/api/local/ios-appid', token: 'tok', body: { stack: 'munni-local-prod' } }), again);
+    await settle(again);
+    assert.ok(!calls.slice(before).some((c) => c.init.method === 'POST' && c.url.includes('bundleIdCapabilities')));
+    assert.ok(!calls.slice(before).some((c) => c.init.method === 'PATCH'));
+    assert.match(again.chunks.join(''), /APPLE_ID_AUTH ✓/);
+
+    // Apple refusing an entity (409 with nothing recorded) is NOT "already enabled"
+    const refusing = async (url, init = {}) => {
+      if (url.includes('/bundleIds?')) return { ok: true, status: 200, json: async () => ({ data: [{ id: 'BID2', attributes: { identifier: 'app.munni.local.prod' } }] }) };
+      if (url.endsWith('/bundleIds/BID2/bundleIdCapabilities')) return { ok: true, status: 200, json: async () => ({ data: [] }) };
+      if (init.method === 'POST') return { ok: false, status: 409, json: async () => ({}), text: async () => 'ENTITY_ERROR' };
+      return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
+    };
+    const refused = fakeRes();
+    await createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: refusing })(
+      fakeReq({ method: 'POST', url: '/api/local/ios-appid', token: 'tok', body: { stack: 'munni-local-prod' } }), refused);
+    await settle(refused);
+    const rs = refused.chunks.join('');
+    assert.match(rs, /APPLE_ID_AUTH NOT enabled \(Apple answered 409: ENTITY_ERROR\)/);
+    assert.match(rs, /Enable as a primary App ID/);
+    assert.match(rs, /\[exit 1\]/);
   } finally {
     saveLocalValues(shared, prev);
   }

@@ -1196,10 +1196,16 @@ async function newStorePackageEndpoint(req, res, spawnImpl) {
    create-API). Registers bundle app.munni.local.<env> with the
    LONG-RUN capabilities so nothing needs re-provisioning later. ── */
 const IOS_CAPABILITIES = [
-  ['PUSH_NOTIFICATIONS', 'push notifications (FCM later — tick now, never reprovision)'],
-  ['APPLE_ID_AUTH', 'Sign in with Apple (Apple requires it beside Google login)'],
-  ['ASSOCIATED_DOMAINS', 'associated domains (universal links on the hosted track)'],
+  ['PUSH_NOTIFICATIONS', 'push notifications (FCM later — tick now, never reprovision)', null],
+  // Sign in with Apple only EXISTS with the primary-app consent setting:
+  // without it Apple records nothing, keys and Services IDs find "no
+  // identifiers available", and the API answers 409 — which the loop
+  // used to read as "already enabled" (found live 2026-09-09)
+  ['APPLE_ID_AUTH', 'Sign in with Apple as the PRIMARY App ID (keys and Services IDs attach to it)', [{ key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] }]],
+  ['ASSOCIATED_DOMAINS', 'associated domains (universal links on the hosted track)', null],
 ];
+const isPrimaryAppleId = (cap) => (cap.attributes?.settings ?? [])
+  .some((s) => s.key === 'APPLE_ID_AUTH_APP_CONSENT' && (s.options ?? []).some((o) => o.key === 'PRIMARY_APP_CONSENT'));
 
 async function iosAppIdEndpoint(req, res, fetchImpl) {
   const body = await readBody(req);
@@ -1244,21 +1250,37 @@ async function iosAppIdEndpoint(req, res, fetchImpl) {
     record = (await created.json()).data;
     res.write(`App ID ${bundleId} registered ✓\n`);
   }
-  for (const [cap, why] of IOS_CAPABILITIES) {
-    const r = await asc('/bundleIdCapabilities', {
-      method: 'POST',
-      body: JSON.stringify({ data: {
-        type: 'bundleIdCapabilities',
-        attributes: { capabilityType: cap },
-        relationships: { bundleId: { data: { type: 'bundleIds', id: record.id } } },
-      } }),
-    });
-    // 409 = already enabled — exactly what we want on a re-run
-    if (r.ok || r.status === 409) res.write(`  capability ${cap} ✓ — ${why}\n`);
-    else res.write(`  capability ${cap} answered ${r.status} — enable it by hand if it is missing\n`);
+  // the LIST is the truth about what Apple recorded — a 409 means
+  // "already there" OR "entity refused", and only the list tells them apart
+  const listCaps = async () => (((await (await asc(`/bundleIds/${record.id}/bundleIdCapabilities`)).json()).data) ?? []);
+  let have = await listCaps();
+  let ok = true;
+  for (const [cap, why, settings] of IOS_CAPABILITIES) {
+    const existing = have.find((c) => c.attributes?.capabilityType === cap);
+    const complete = (c) => c && (!settings || isPrimaryAppleId(c));
+    if (complete(existing)) {
+      res.write(`  capability ${cap} ✓ — ${why}\n`);
+      continue;
+    }
+    const attributes = settings ? { capabilityType: cap, settings } : { capabilityType: cap };
+    const r = existing
+      ? await asc(`/bundleIdCapabilities/${existing.id}`, { method: 'PATCH', body: JSON.stringify({ data: { type: 'bundleIdCapabilities', id: existing.id, attributes } }) })
+      : await asc('/bundleIdCapabilities', { method: 'POST', body: JSON.stringify({ data: { type: 'bundleIdCapabilities', attributes, relationships: { bundleId: { data: { type: 'bundleIds', id: record.id } } } } }) });
+    if (r.ok) {
+      res.write(`  capability ${cap} ${existing ? 'completed' : 'enabled'} ✓ — ${why}\n`);
+      continue;
+    }
+    const detail = (await r.text().catch(() => '')).slice(0, 200);
+    have = await listCaps();
+    if (complete(have.find((c) => c.attributes?.capabilityType === cap))) {
+      res.write(`  capability ${cap} ✓ — ${why}\n`);
+    } else {
+      ok = false;
+      res.write(`  capability ${cap} NOT enabled (Apple answered ${r.status}${detail ? `: ${detail}` : ''}) — by hand: developer.apple.com → Identifiers → ${bundleId}${settings ? ' → Sign in with Apple → Configure → Enable as a primary App ID' : ''}\n`);
+    }
   }
   res.write(`\nRemaining one-time (no API exists): App Store Connect → New App → pick ${bundleId} from the bundle-id dropdown. The APNs SSL certificate dialog is the LEGACY push path — never create those; push will use the team APNs key via Firebase.\n`);
-  return res.end('[exit 0]\n');
+  return res.end(`[exit ${ok ? 0 : 1}]\n`);
 }
 
 /** what the wizard writes into the GitHub environment `local` so the
