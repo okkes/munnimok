@@ -67,9 +67,13 @@ create once (deploy/nas/README.md §5: user root, every 5 minutes,
 Only two more things stay manual (the workflow's verify step probes both):
 - Firewall: allow `172.16.0.0/12` in the access profile; restrict the
   `*-admin` hosts to LAN.
-- Certificate: the `*.synology.me` wildcard from DSM covers the hosts;
-  for own domains run acme.sh with the `synology_dsm` deploy hook (see
-  docs/iac-plan.md §4).
+- Certificate: every reverse-proxy host is https, so DSM needs a
+  certificate that covers `*.<domain>` — the DDNS default covers only
+  `<domain>` itself (found live 2026-09-10). Once: Control Panel →
+  Security → Certificate → Add → Let's Encrypt → the DDNS domain WITH
+  the wildcard option → set as default. Own domains: acme.sh with the
+  `synology_dsm` deploy hook (docs/iac-plan.md §4). `--verify` names
+  every host the certificate misses.
 
 **B1-2 (once per stack — one workflow click).** Wizard step 5, or
 Actions → *Deploy to NAS* → Run workflow → channel `iac-prod` /
@@ -221,8 +225,9 @@ tile only exists when the helper finds the images private (then a
 classic PAT with read:packages, or the connection token when it is one).
 A copy made by the wizard follows upstream's pipeline: at Connect (and
 via *Sync pipeline from upstream*) the workflows, deploy scripts and
-infra/ are compared blob by blob with okkes/munnimok@dev and written
-onto the copy's branches where they differ (a fork is merged through
+the whole infra/ tree (tests and helper included — the copy's bootstrap
+runs those tests) are compared blob by blob with okkes/munnimok@dev and
+written onto the copy's branches where they differ (a fork is merged through
 GitHub instead) — the app code stays the copy's own; the token needs
 Contents + Workflows read and write for that. The header, the stepper and the output
 drawer share the main column's width. On the local track the helper
