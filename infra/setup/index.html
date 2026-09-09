@@ -177,6 +177,13 @@ main{max-width:none;padding:18px 0 80px}
 .ws .tab-body>.card{margin:10px 0}
 .reg{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}
 .reg-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+/* ── after a jump the exact spot pulses once the scroll has settled ── */
+section,.card,.crow,.reg,details.how,.statline,#local-status{scroll-margin-top:72px}
+@keyframes munni-flash-tint{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand-ink) 50%,transparent);background-color:color-mix(in srgb,var(--brand-ink) 14%,transparent)}45%{box-shadow:0 0 0 10px color-mix(in srgb,var(--brand-ink) 0%,transparent);background-color:color-mix(in srgb,var(--brand-ink) 14%,transparent)}100%{box-shadow:0 0 0 0 transparent;background-color:transparent}}
+@keyframes munni-flash-ring{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand-ink) 75%,transparent)}35%{box-shadow:0 0 0 12px color-mix(in srgb,var(--brand-ink) 0%,transparent)}55%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand-ink) 60%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
+.flash{animation:munni-flash-tint 2.4s ease-out 1;border-radius:12px;position:relative;z-index:1}
+button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation:munni-flash-ring 2.4s ease-out 1}
+@media(prefers-reduced-motion:reduce){.flash,button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation-duration:.8s}}
 </style>
 </head>
 <body>
@@ -1806,25 +1813,26 @@ function familyTodoItems() {
     .flatMap((g) => g.fields).filter((x) => !x.optional && !has(x.name)).map((x) => x.name);
   const plays = anyStore((ss) => ss.play).filter(Boolean);
   const fbs = anyStore((ss) => ss.firebase).filter(Boolean);
+  const firstMissingRow = GROUPS.filter(groupVisible).find((g) => (PHASE_OF[g.id] ?? 'setup') === 'setup' && g.fields.some((x) => !x.optional && !has(x.name)));
   const items = [
-    { id: 'docker', title: 'Docker Desktop running', detail: 'the whole family lives in containers', state: st ? st.docker.ok : null, href: '#s-local' },
-    { id: 'creds', title: 'Credentials the family needs before it starts', detail: missingSetup.length ? `still missing: ${missingSetup.join(', ')}` : 'every value the family reads at start is saved', state: st ? missingSetup.length === 0 : null, href: '#s-creds' },
+    { id: 'docker', title: 'Docker Desktop running', detail: 'the whole family lives in containers', state: st ? st.docker.ok : null, href: '#local-status' },
+    { id: 'creds', title: 'Credentials the family needs before it starts', detail: missingSetup.length ? `still missing: ${missingSetup.join(', ')}` : 'every value the family reads at start is saved', state: st ? missingSetup.length === 0 : null, href: firstMissingRow ? `[data-group="${firstMissingRow.id}"]` : '#s-creds' },
     { id: 'setup', title: 'Press Set up & start', detail: 'shared services, every environment, sign-in, crash tracking, the vault — one button, safe to repeat', state: st ? sharedUp && envsUp : null, href: '#btn-local-setup' },
   ];
   if (lan) items.push({ id: 'trust-pc', title: 'Trust the family certificate on this PC', detail: 'Set up does it (one Windows dialog); redo it after Delete everything', manual: true, href: '#btn-trust-ca' });
-  if (phones) items.push({ id: 'github', title: 'Connect GitHub', detail: 'the phones are built by your repo’s Actions', state: Boolean(S.pat && S.user), href: '#connect-card' });
+  if (phones) items.push({ id: 'github', title: 'Connect GitHub', detail: 'the phones are built by your repo’s Actions', state: Boolean(S.pat && S.user), href: '#connect-card', spot: '#btn-connect' });
   if (f.android) {
     items.push(
-      { id: 'play-sa', title: 'Play service account saved', detail: 'the Google Play publishing card', state: has('PLAY_SERVICE_ACCOUNT_JSON'), href: '[data-group="playstore"]' },
-      { id: 'play-invite', title: 'Invite the service account in Play Console', detail: 'Users and permissions → Release to testing tracks', state: plays.length ? !plays.some((p) => p.state === 'error' && /NOT invited/.test(p.detail ?? '')) : null, href: '[data-group="playstore"]' },
+      { id: 'play-sa', title: 'Play service account saved', detail: 'the Google Play publishing card', state: has('PLAY_SERVICE_ACCOUNT_JSON'), href: '[data-group="playstore"]', spot: '#field-PLAY_SERVICE_ACCOUNT_JSON' },
+      { id: 'play-invite', title: 'Invite the service account in Play Console', detail: 'Users and permissions → Release to testing tracks', state: plays.length ? !plays.some((p) => p.state === 'error' && /NOT invited/.test(p.detail ?? '')) : null, href: '[data-group="playstore"]', spot: '[data-group="playstore"] details.how' },
     );
   }
-  if (phones && f.fcm) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Google’s floor for push as code — Build names the exact gap', state: fbs.length ? fbs.every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]' });
-  if (f.ios) items.push({ id: 'asc-key', title: 'App Store Connect key saved', detail: 'the App Store Connect card', state: has('ASC_KEY_ID') && has('ASC_KEY_P8'), href: '[data-group="ascstore"]' });
-  if (f.ios && f.fcm) items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'team-wide, iOS push only — Google offers no API for it', manual: true, href: '[data-group="fcm"]' });
-  if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in card — each environment registers its redirect URI in its workspace', state: has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET'), href: '[data-group="google"]' });
-  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: 'the Apple sign-in card — each environment registers its return URL in its workspace', state: has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY'), href: '[data-group="apple"]' });
-  if (lan && phones) items.push({ id: 'phone-ca', title: 'Trust the family certificate on the phone', detail: 'only for the phone’s browser — the apps trust it out of the box', manual: true, href: '#s-envs' });
+  if (phones && f.fcm) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Google’s floor for push as code — Build names the exact gap', state: fbs.length ? fbs.every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
+  if (f.ios) items.push({ id: 'asc-key', title: 'App Store Connect key saved', detail: 'the App Store Connect card', state: has('ASC_KEY_ID') && has('ASC_KEY_P8'), href: '[data-group="ascstore"]', spot: '#field-ASC_KEY_P8' });
+  if (f.ios && f.fcm) items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'team-wide, iOS push only — Google offers no API for it', manual: true, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
+  if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in card — each environment registers its redirect URI in its workspace', state: has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET'), href: '[data-group="google"]', spot: '#field-LOGTO_GOOGLE_CLIENT_ID' });
+  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: 'the Apple sign-in card — each environment registers its return URL in its workspace', state: has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });
+  if (lan && phones && S.envList[0]) items.push({ id: 'phone-ca', title: 'Trust the family certificate on the phone', detail: 'only for the phone’s browser — the apps trust it out of the box', manual: true, tab: 'phones', env: S.envList[0].name, sel: '[data-ca-url]' });
   items.push({ id: 'autonomy', title: 'Automatic updates on + the helper at logon', detail: 'after that the family keeps itself current without this page', state: Boolean(S.autonomy?.enabled && S.autonomy?.logonTask), href: '#btn-autonomy-toggle' });
   const done = todoDone();
   return items.map((it) => ({ ...it, done: it.manual ? Boolean(done[it.id]) : it.state === true }));
@@ -1839,16 +1847,16 @@ function envTodoItems(env) {
   const regState = (provider) => (v[provider] ? Boolean(v[provider].ok && !v[provider].warn) : null);
   const items = [];
   const jump = (tab, sel) => ({ tab, sel });
-  if (f.google) items.push({ id: `reg-google-${s}`, title: 'Register the Google redirect URI', detail: 'Registrations → Verify with Google tells', state: regState('google'), tab: 'registrations', env: s });
-  if (f.apple) items.push({ id: `reg-apple-${s}`, title: 'Register the Apple domain + return URL', detail: https(st?.urls?.logto) ? 'Registrations → Verify with Apple tells' : 'needs LAN mode (https) first', state: https(st?.urls?.logto) ? regState('apple') : false, tab: 'registrations', env: s });
-  if (f.enablebanking) items.push({ id: `reg-eb-${s}`, title: 'Register the Enable Banking redirect URL', detail: 'Registrations → tick when done (no API to verify)', manual: true, manualKey: `${s}:enablebanking`, tab: 'registrations', env: s });
-  if (f.android) items.push({ id: `play-record-${s}`, title: `Create the Play app record${ss?.appId ? ` ${ss.appId}` : ''}`, detail: 'Play Console → Create app; this page notices and turns publishing on', state: ss?.play ? ss.play.state === 'ready' : null, tab: 'phones', env: s });
-  if (f.ios) items.push({ id: `asc-record-${s}`, title: `Create the App Store Connect record${ss?.iosAppId ? ` ${ss.iosAppId}` : ''}`, detail: 'New App with the pre-registered bundle id', state: ss?.ios ? ss.ios.state === 'ready' : null, tab: 'phones', env: s });
-  if ((f.android || f.ios) && f.fcm) items.push({ id: `push-${s}`, title: 'Push wired (Firebase apps registered)', detail: 'Build does it once the family roles are granted', state: ss?.firebase ? ss.firebase.state === 'ready' : null, soft: true, tab: 'phones', env: s });
+  if (f.google) items.push({ id: `reg-google-${s}`, title: 'Register the Google redirect URI', detail: 'Registrations → Verify with Google tells', state: regState('google'), tab: 'registrations', env: s, sel: '.reg[data-reg="google"]' });
+  if (f.apple) items.push({ id: `reg-apple-${s}`, title: 'Register the Apple domain + return URL', detail: https(st?.urls?.logto) ? 'Registrations → Verify with Apple tells' : 'needs LAN mode (https) first', state: https(st?.urls?.logto) ? regState('apple') : false, tab: 'registrations', env: s, sel: '.reg[data-reg="apple"], .reg' });
+  if (f.enablebanking) items.push({ id: `reg-eb-${s}`, title: 'Register the Enable Banking redirect URL', detail: 'Registrations → tick when done (no API to verify)', manual: true, manualKey: `${s}:enablebanking`, tab: 'registrations', env: s, sel: '.reg[data-reg="enablebanking"]' });
+  if (f.android) items.push({ id: `play-record-${s}`, title: `Create the Play app record${ss?.appId ? ` ${ss.appId}` : ''}`, detail: 'Play Console → Create app; this page notices and turns publishing on', state: ss?.play ? ss.play.state === 'ready' : null, tab: 'phones', env: s, sel: '[data-needs-feature="android"] details.how' });
+  if (f.ios) items.push({ id: `asc-record-${s}`, title: `Create the App Store Connect record${ss?.iosAppId ? ` ${ss.iosAppId}` : ''}`, detail: 'New App with the pre-registered bundle id', state: ss?.ios ? ss.ios.state === 'ready' : null, tab: 'phones', env: s, sel: '[data-needs-feature="ios"] details.how:nth-of-type(2)' });
+  if ((f.android || f.ios) && f.fcm) items.push({ id: `push-${s}`, title: 'Push wired (Firebase apps registered)', detail: 'Build does it once the family roles are granted', state: ss?.firebase ? ss.firebase.state === 'ready' : null, soft: true, tab: 'phones', env: s, sel: `#fcm-status-pill-${s}` });
   const regDone = REG_DONE();
   return items.map((it) => ({ ...it, done: it.manual ? Boolean(regDone[it.manualKey]) : it.state === true }));
 }
-function todoLi(it, i, jumpAttr) {
+function todoLi(it, i) {
   const status = it.manual
     ? `<label style="font-size:12px;display:flex;align-items:center"><input type="checkbox" data-todo="${it.manualKey ? '' : it.id}" data-reg-key="${it.manualKey ?? ''}" ${it.done ? 'checked' : ''}/>done</label>`
     : `<span class="pill ${it.done ? 'ok' : (it.state === null ? '' : 'warn')}">${it.done ? 'done ✓' : (it.state === null ? 'not checked yet' : (it.soft ? 'pending' : 'to do'))}</span>`;
@@ -1856,18 +1864,18 @@ function todoLi(it, i, jumpAttr) {
     <li class="${it.done ? 'done' : ''}">
       <span class="num">${it.done ? '✓' : i + 1}</span>
       <div class="body"><div class="t">${it.title}</div><div class="d">${it.detail}</div></div>
-      <span class="st">${status}<a class="chiplink" href="#" ${jumpAttr}>open</a></span>
+      <span class="st">${status}<a class="chiplink" href="#" ${jumpAttr(it)}>open</a></span>
     </li>`;
 }
 function renderTodo() {
   if (!HELPER || S.platform !== 'local') { renderStepper(); renderRail([]); return; }
   const ul = document.getElementById('local-todo');
   const family = familyTodoItems();
-  if (ul) ul.innerHTML = family.map((it, i) => todoLi(it, i, `data-jump="${it.href}"`)).join('');
+  if (ul) ul.innerHTML = family.map((it, i) => todoLi(it, i)).join('');
   for (const env of S.envList) {
     const items = envTodoItems(env);
     const box = document.getElementById(`env-todo-${env.name}`);
-    if (box) box.innerHTML = items.length ? items.map((it, i) => todoLi(it, i, `data-jump-tab="${it.tab}" data-env="${env.name}"`)).join('') : '<li><div class="body"><div class="d">nothing — this environment needs no manual step with the ticked features</div></div></li>';
+    if (box) box.innerHTML = items.length ? items.map((it, i) => todoLi(it, i)).join('') : '<li><div class="body"><div class="d">nothing — this environment needs no manual step with the ticked features</div></div></li>';
     const regs = items.filter((it) => it.id.startsWith('reg-'));
     const phones = items.filter((it) => !it.id.startsWith('reg-'));
     setPill(`tabpill-registrations-${env.name}`, regs.length ? `${regs.filter((it) => it.done).length}/${regs.length}` : '', regs.length > 0 && regs.every((it) => it.done));
@@ -1887,32 +1895,70 @@ function renderTodo() {
     }
     renderTodo();
   }));
-  document.querySelectorAll('[data-jump]').forEach((a) => a.addEventListener('click', (e) => {
-    e.preventDefault();
-    jumpTo(a.dataset.jump);
-  }));
-  document.querySelectorAll('[data-jump-tab]').forEach((a) => a.addEventListener('click', (e) => {
-    e.preventDefault();
-    const s = a.dataset.env;
-    const body = document.getElementById(`ws-body-${s}`);
-    if (body?.hidden) document.querySelector(`[data-ws-toggle="${s}"]`)?.click();
-    switchTab(s, a.dataset.jumpTab);
-    document.querySelector(`[data-envcard][data-env="${s}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }));
   const doneCount = family.filter((it) => it.done).length;
   setPill('todo-pill', doneCount === family.length ? 'nothing left ✓' : `${doneCount} of ${family.length} done`, doneCount === family.length);
   renderStepper();
   renderRail(family);
 }
-function jumpTo(selector) {
+/* ── jumps scroll first, then pulse the exact spot (user request
+   2026-09-09: "highlight after the scroll animation is done") ── */
+function afterScroll(cb) {
+  let fired = false;
+  const fire = () => { if (fired) return; fired = true; document.removeEventListener('scrollend', fire); cb(); };
+  document.addEventListener('scrollend', fire, { once: true });
+  setTimeout(fire, 800); // browsers without scrollend, or nothing to scroll
+}
+function flash(el) {
+  if (!el) return;
+  el.classList.remove('flash');
+  void el.offsetWidth; // restart the animation when the same spot is hit twice
+  el.classList.add('flash');
+  el.addEventListener('animationend', () => el.classList.remove('flash'), { once: true });
+}
+/** reveal whatever hides the spot (a folded row, a closed fold), scroll its card in, pulse the spot */
+function revealSpot(spot) {
+  const row = spot.closest('.crow');
+  if (row) { row.classList.add('open'); S.rowState[row.dataset.group] = true; }
+  spot.closest('details')?.setAttribute('open', '');
+  if (spot.matches('details')) spot.setAttribute('open', '');
+}
+function jumpTo(selector, { flashSelector } = {}) {
   const target = document.querySelector(selector);
   if (!target) return;
-  const row = target.closest('.crow');
-  if (row) { row.classList.add('open'); S.rowState[row.dataset.group] = true; }
+  const spot = (flashSelector && document.querySelector(flashSelector)) ?? target;
+  revealSpot(target);
+  revealSpot(spot);
   const card = target.closest('.card') ?? target;
-  card.querySelector('details.how')?.setAttribute('open', '');
-  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const anchor = card.matches('section') ? card : card;
+  anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const pulse = spot === card && card.matches('section') ? (card.querySelector(':scope > h2') ?? card) : spot;
+  afterScroll(() => flash(pulse));
 }
+function jumpToTab(s, tab, sel) {
+  const body = document.getElementById(`ws-body-${s}`);
+  if (body?.hidden) document.querySelector(`[data-ws-toggle="${s}"]`)?.click();
+  switchTab(s, tab);
+  const ws = document.querySelector(`[data-envcard][data-env="${s}"]`);
+  if (!ws) return;
+  const spot = (sel && ws.querySelector(sel)) ?? ws.querySelector(`.tab[data-tab="${tab}"]`);
+  if (spot) revealSpot(spot);
+  (spot?.closest('.card') ?? ws).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  afterScroll(() => flash(spot));
+}
+/** one encoding for every jump on the page: family spots and environment tabs */
+const jumpAttr = (it) => `data-go="${encodeURIComponent(JSON.stringify(it.tab ? { k: 'tab', env: it.env, tab: it.tab, sel: it.sel ?? null } : { k: 'jump', href: it.href, spot: it.spot ?? null }))}"`;
+function go(encoded) {
+  let j;
+  try { j = JSON.parse(decodeURIComponent(encoded)); } catch { return; }
+  if (j.k === 'tab') jumpToTab(j.env, j.tab, j.sel ?? undefined);
+  else jumpTo(j.href, { flashSelector: j.spot ?? undefined });
+}
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-go]');
+  if (!el) return;
+  e.preventDefault();
+  go(el.dataset.go);
+});
 
 /* ── the stepper: one chip per visible section, state from the same facts ── */
 function stepStates() {
@@ -1954,7 +2000,7 @@ function renderStepper() {
     n += 1;
     const s = states[sec.id] ?? { state: 'none', sub: '' };
     const title = sec.dataset.step ?? sec.querySelector('h2')?.childNodes[2]?.textContent?.trim() ?? sec.id;
-    return `<a class="step ${s.state}" href="#${sec.id}"><span class="sn">${s.state === 'done' ? '✓' : n}</span><span class="st"><b>${n}. ${title}</b><small>${s.sub || ''}</small></span>${chips[s.state] ? `<span class="pill ${s.state === 'done' ? 'ok' : (s.state === 'progress' ? 'warn' : '')}">${chips[s.state]}</span>` : ''}</a>`;
+    return `<a class="step ${s.state}" href="#${sec.id}" ${jumpAttr({ href: `#${sec.id}` })}><span class="sn">${s.state === 'done' ? '✓' : n}</span><span class="st"><b>${n}. ${title}</b><small>${s.sub || ''}</small></span>${chips[s.state] ? `<span class="pill ${s.state === 'done' ? 'ok' : (s.state === 'progress' ? 'warn' : '')}">${chips[s.state]}</span>` : ''}</a>`;
   }).join('');
   S.stepStates = states;
 }
@@ -1977,7 +2023,7 @@ function renderRail(family = null) {
   const unknown = items.filter((it) => !it.done && !it.manual && it.state === null);
   const optional = items.filter((it) => !it.done && (it.manual || it.soft));
   const next = blocking[0] ?? unknown[0] ?? optional[0] ?? null;
-  const li = (it) => `<li class="rail-item" data-rail-jump="${it.scope === 'family' ? `jump:${it.href}` : `tab:${it.scope}:${it.tab}`}"><span class="dot ${it.done ? 'ok' : (it.manual || it.state === null ? 'opt' : 'miss')}"></span><span><b>${it.title}</b><small>${it.scope === 'family' ? 'family' : envLabel(it.scope)}</small></span><span class="chev">›</span></li>`;
+  const li = (it) => `<li class="rail-item" ${jumpAttr(it)}><span class="dot ${it.done ? 'ok' : (it.manual || it.state === null ? 'opt' : 'miss')}"></span><span><b>${it.title}</b><small>${it.scope === 'family' ? 'family' : envLabel(it.scope)}</small></span><span class="chev">›</span></li>`;
   const ring = `<svg class="ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="18" fill="none" stroke="var(--line)" stroke-width="4"/><circle cx="22" cy="22" r="18" fill="none" stroke="var(--ok)" stroke-width="4" stroke-linecap="round" stroke-dasharray="${(113.1 * pct / 100).toFixed(1)} 113.1" transform="rotate(-90 22 22)"/></svg>`;
   body.innerHTML = `
     <div class="rail-top">${ring}<div><b>${doneSteps}/${steps.length} steps</b><div class="why" style="margin:0">${doneSteps === steps.length && steps.length ? 'Everything is in place.' : 'Complete the remaining steps to finish the setup.'}</div></div></div>
@@ -1992,18 +2038,8 @@ function renderRail(family = null) {
     ${unknown.length ? `<div class="rail-h"><span class="dot"></span> Not checked yet (${unknown.length})</div><ul class="rail-list">${unknown.slice(0, 3).map(li).join('')}</ul>` : ''}
     <div class="rail-h"><span class="dot opt"></span> Optional / by hand (${optional.length})</div>
     <ul class="rail-list">${optional.slice(0, 4).map(li).join('') || '<li class="rail-item"><span class="dot ok"></span><span><b>all ticked</b></span></li>'}</ul>
-    <div class="rail-next">${next ? `<small>Next step</small><b>${next.title}</b><div class="why" style="margin:2px 0 8px">${next.detail}</div><button data-rail-jump="${next.scope === 'family' ? `jump:${next.href}` : `tab:${next.scope}:${next.tab}`}">Continue setup →</button>` : '<small>Next step</small><b>Nothing left — enjoy munni.</b>'}</div>` : `
+    <div class="rail-next">${next ? `<small>Next step</small><b>${next.title}</b><div class="why" style="margin:2px 0 8px">${next.detail}</div><button ${jumpAttr(next)}>Continue setup →</button>` : '<small>Next step</small><b>Nothing left — enjoy munni.</b>'}</div>` : `
     <div class="rail-next"><small>Next step</small><b>${S.platform === 'local' ? 'Start the local helper' : 'Follow the steps top to bottom'}</b><div class="why" style="margin:2px 0 0">${S.platform === 'local' ? 'double-click infra\\setup\\start.cmd — this rail then reads the machine' : 'each section carries its own verdict pill'}</div></div>`}`;
-  body.querySelectorAll('[data-rail-jump]').forEach((el) => el.addEventListener('click', () => {
-    const [kind, a, b] = el.dataset.railJump.split(':');
-    if (kind === 'jump') jumpTo(el.dataset.railJump.slice(5));
-    else {
-      const body2 = document.getElementById(`ws-body-${a}`);
-      if (body2?.hidden) document.querySelector(`[data-ws-toggle="${a}"]`)?.click();
-      switchTab(a, b);
-      document.querySelector(`[data-envcard][data-env="${a}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }));
 }
 
 async function refreshAutonomy() {
