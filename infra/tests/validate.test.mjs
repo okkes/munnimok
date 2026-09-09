@@ -193,8 +193,21 @@ test('google + apple: every callback the page names is judged too — a refused 
   const a = await validate('apple', appleValues, { fetchImpl: apple, redirectUris: uris.map((u) => u.replace('google', 'apple')) });
   assert.equal(a.ok, true);
   assert.equal(a.warn, true);
-  assert.match(a.detail, /munni-dev-logto\S* \(invalid_client\)/);
+  assert.match(a.detail, /munni-dev-logto\S* \(invalid_client: Invalid client\.\)/, 'Apple’s own message rides along');
   assert.match(a.detail, /Services ID/);
+  // the live 2026-09-09 mix-up: the App ID pasted as client id — named before Apple is even asked
+  const mixup = await validate('apple', { ...appleValues, LOGTO_APPLE_CLIENT_ID: 'app.munni.local.prod' }, { fetchImpl: apple, iosAppIds: ['app.munni', 'app.munni.local.prod'] });
+  assert.equal(mixup.ok, false);
+  assert.match(mixup.detail, /app\.munni\.local\.prod is the App ID .* needs the SERVICES ID identifier/);
+  // Apple's invalid_request (unsaved configuration, or a non-Services client) gets its own hint
+  const unsaved = async (url) => {
+    if (url.startsWith('https://appleid.apple.com/auth/token')) return { ok: false, status: 400, json: async () => ({ error: 'invalid_grant' }) };
+    return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{"direct":{"errorMessage":"Invalid client id or web redirect url.","errorCode":"invalid_request"}}' };
+  };
+  const u = await validate('apple', appleValues, { fetchImpl: unsaved, redirectUris: [uris[0]] });
+  assert.equal(u.warn, true);
+  assert.match(u.detail, /invalid_request: Invalid client id or web redirect url\./);
+  assert.match(u.detail, /never saved \(Configure → Done → Continue → Save\)/);
   const missingTeam = await validate('apple', { ...appleValues, APPLE_TEAM_ID: undefined }, { fetchImpl: apple });
   assert.equal(missingTeam.ok, false, 'no Team ID anywhere → named as missing');
   assert.match(missingTeam.detail, /LOGTO_APPLE_TEAM_ID/);

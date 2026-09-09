@@ -1790,7 +1790,10 @@ async function validateEndpoint(req, res, validateImpl) {
   const redirectUris = (Array.isArray(body.redirectUris) ? body.redirectUris : [])
     .filter((u) => typeof u === 'string' && /^https?:\/\/[^\s"'<>]+$/.test(u))
     .slice(0, 12);
-  return json(res, 200, await validateImpl(String(body.provider ?? ''), values, { redirectUris }));
+  // the family's app bundle ids — an App ID pasted as Apple client id is
+  // the classic mix-up, and only the helper knows the ids to compare
+  const iosAppIds = [...new Set(['app.munni', 'app.munni.dev', ...LOCAL_ENVS().map((name) => loadStack(name).native?.iosAppId).filter(Boolean)])];
+  return json(res, 200, await validateImpl(String(body.provider ?? ''), values, { redirectUris, iosAppIds }));
 }
 
 function serveHtml(res, token) {

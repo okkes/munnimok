@@ -157,6 +157,8 @@ test('validate passes only manifest operator names through, merged over the stor
   assert.equal(validations[0].provider, 'gocardless');
   // only http(s) callbacks reach the validator's redirect probes
   assert.deepEqual(validations[0].opts.redirectUris, ['https://munni-prod-logto.192-168-2-2.sslip.io/callback/google-universal', 'http://localhost:3201/callback/google-universal']);
+  // …and the family's app bundle ids ride along (an App ID pasted as Apple client id is named)
+  assert.deepEqual(validations[0].opts.iosAppIds, ['app.munni', 'app.munni.dev', 'app.munni.local.prod', 'app.munni.local.dev']);
   assert.equal(validations[0].values.NAS_GOCARDLESS_SECRET_ID, 'id1');
   // SYNOLOGY_* are operator names (NAS platform) — allowed for validation
   assert.equal(validations[0].values.SYNOLOGY_URL, 'https://nas:5001');

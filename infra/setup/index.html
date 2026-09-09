@@ -1151,7 +1151,7 @@ const GROUPS = [
       '③ <a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">Keys</a> → ＋ → tick <b>Sign in with Apple</b> (Configure → the primary App ID) and <b>APNs</b> on the same key — one .p8 serves both, the same file goes to Firebase for iOS push → Register → <b>Download</b> the .p8 right there (Apple hands it out exactly once; a lost file means revoke + new key) → note the <b>Key ID</b> → paste the file contents below.',
       'Team ID: taken from the TestFlight card when stored there — otherwise top right of the developer console (Membership). <b>Check</b> (and Save) then asks Apple whether every return URL above is accepted.'],
     fields: [
-      { name: 'LOGTO_APPLE_CLIENT_ID', scope: 'pair', ph: 'e.g. app.munni.iac.signin' },
+      { name: 'LOGTO_APPLE_CLIENT_ID', scope: 'pair', ph: 'the Services ID identifier (NOT the App ID), e.g. app.munni.local.signin' },
       { name: 'LOGTO_APPLE_TEAM_ID', scope: 'pair', ph: 'empty = the TestFlight card’s Team ID' },
       { name: 'LOGTO_APPLE_KEY_ID', scope: 'pair' },
       { name: 'LOGTO_APPLE_PRIVATE_KEY', scope: 'pair', area: true },

@@ -149,11 +149,17 @@ export const VALIDATORS = {
   },
 
   /** ES256 client-secret JWT + the same dummy-code trick against Apple */
-  async apple(raw, fetchImpl, { redirectUris = [] } = {}) {
+  async apple(raw, fetchImpl, { redirectUris = [], iosAppIds = [] } = {}) {
     // the Team ID is the TestFlight card's Team ID — one membership
     const values = { ...raw, LOGTO_APPLE_TEAM_ID: raw.LOGTO_APPLE_TEAM_ID || raw.APPLE_TEAM_ID };
     const gap = need(values, ['LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_TEAM_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY']);
     if (gap) return { ok: false, detail: gap };
+    // the App ID passes the token check (native flow) yet can never carry
+    // a return URL — Apple's web flow wants the SERVICES ID (user pasted
+    // app.munni.local.prod, found live 2026-09-09: invalid_request)
+    if (iosAppIds.includes(values.LOGTO_APPLE_CLIENT_ID)) {
+      return { ok: false, detail: `${values.LOGTO_APPLE_CLIENT_ID} is the App ID (the app bundle) — Sign in with Apple on the web needs the SERVICES ID identifier: developer.apple.com → Identifiers → Services IDs, the one whose Sign in with Apple configuration carries the domain + return URL (e.g. app.munni.local.signin)` };
+    }
     const now = Math.floor(Date.now() / 1000);
     let clientSecret;
     try {
@@ -180,7 +186,11 @@ export const VALIDATORS = {
     if (body.error === 'invalid_client') return { ok: false, detail: 'Apple says invalid_client — check Services ID, Team ID, Key ID and the .p8 contents together' };
     const refused = await refusedRedirects(appleRedirectProbe, values.LOGTO_APPLE_CLIENT_ID, redirectUris, fetchImpl);
     if (refused.length) {
-      return { ok: true, warn: true, detail: `the client is real, but Apple refuses ${refused.map((p) => `${p.uri} (${p.code})`).join(', ')} — add the domain + return URL to the Services ID (Sign in with Apple → Configure), then Check again` };
+      const named = refused.map((p) => `${p.uri} (${p.code}${p.message ? `: ${p.message}` : ''})`).join(', ');
+      const hint = refused.some((p) => p.code === 'invalid_request')
+        ? 'Apple answers invalid_request when the client id is not a Services ID, or when the Services ID’s web configuration was never saved (Configure → Done → Continue → Save)'
+        : 'add the domain + return URL to the Services ID (Sign in with Apple → Configure → Done → Continue → Save)';
+      return { ok: true, warn: true, detail: `the client is real, but Apple refuses ${named} — ${hint}, then Check again` };
     }
     return { ok: true, detail: `Apple recognized the client${redirectUris.length ? ` and accepts all ${redirectUris.length} return URL(s)` : ''} (dummy code rejected with "${body.error ?? res.status}", as expected)` };
   },
@@ -327,7 +337,8 @@ async function appleRedirectProbe(clientId, uri, fetchImpl) {
   const res = await fetchImpl(url, { redirect: 'manual', signal: T() });
   const text = res.status >= 300 && res.status < 400 ? (res.headers?.get?.('location') ?? '') : await res.text();
   const code = /"errorCode":"([a-z_]+)"/.exec(text)?.[1] ?? /[?&]error=([a-z_]+)/.exec(text)?.[1];
-  return code ? { uri, ok: false, code } : { uri, ok: true };
+  const message = /"errorMessage":"([^"]{1,120})"/.exec(text)?.[1];
+  return code ? { uri, ok: false, code, message } : { uri, ok: true };
 }
 
 /** every refused uri — a probe that cannot be reached counts as accepted (never block on Google's hiccup) */
@@ -339,11 +350,11 @@ async function refusedRedirects(probe, clientId, uris, fetchImpl) {
 // localAwareFetch: public providers stay strictly verified; the two
 // LOCAL validators (logto-m2m, glitchtip-token) hit our own family
 // urls, which under LAN mode are https signed by the local Caddy CA
-export async function validate(provider, values, { fetchImpl = localAwareFetch, redirectUris = [] } = {}) {
+export async function validate(provider, values, { fetchImpl = localAwareFetch, redirectUris = [], iosAppIds = [] } = {}) {
   const fn = VALIDATORS[provider];
   if (!fn) return { ok: false, detail: `no validator for "${provider}"` };
   try {
-    return await fn(values ?? {}, fetchImpl, { redirectUris });
+    return await fn(values ?? {}, fetchImpl, { redirectUris, iosAppIds });
   } catch (e) {
     return { ok: false, unreachable: true, detail: `could not reach the provider (${e.cause?.code ?? e.message})` };
   }
