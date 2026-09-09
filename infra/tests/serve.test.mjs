@@ -280,7 +280,8 @@ test('status reports per-stack store NAMES, requirements and probes — never va
   assert.equal(body.stacks['munni-local-prod'].channel, 'dev');
   const shared = body.stacks['munni-local-shared'];
   assert.deepEqual(shared.services, { glitchtip: false, vault: false, control: false, pgadmin: false });
-  assert.ok(shared.required.includes('NAS_GHCR_PAT'), 'family roots are the shared stack\'s asks');
+  assert.ok(Array.isArray(shared.required), 'family roots are the shared stack\'s asks');
+  assert.ok(!shared.required.includes('NAS_GHCR_PAT'), 'the registry token is optional (the munni images are public) — never a family ask (2026-09-10)');
   const prod = body.stacks['munni-local-prod'];
   assert.deepEqual(prod.services, { web: false, api: false, logto: false });
   assert.ok(!prod.required.includes('NAS_GHCR_PAT'), 'env stacks must not re-ask for shared names');
@@ -1448,4 +1449,32 @@ test('delete-everything epilogue: forget-all wipes registry, env stores, LAN mar
   runs.length = 0;
   await app(fakeReq({ method: 'POST', url: '/api/local/run', token: 'tok', body: { values: { NAS_GHCR_PAT: 'x' } } }), fakeRes());
   assert.ok(runs[0].args.join(' ').includes('--stack munni-local-shared'), 'zero environments → the shared stack takes the save');
+});
+
+test('ca trust + registry: fingerprints compare hex-only on the sha1 line; the registry probe reads anonymous pulls; unknown when unreachable', async () => {
+  const { caListingHasFingerprint } = await import('../setup/serve.mjs');
+  const fp = 'AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01';
+  assert.equal(caListingHasFingerprint('Cert Hash(sha1): ab cd ef 01 23 45 67 89 ab cd ef 01 23 45 67 89 ab cd ef 01\n', fp), true, 'spaced hex (older certutil)');
+  assert.equal(caListingHasFingerprint('Cert Hash(sha1): abcdef0123456789abcdef0123456789abcdef01', fp), true, 'compact hex');
+  assert.equal(caListingHasFingerprint('Cert Hash(sha1): 0000000000000000000000000000000000000000', fp), false);
+  assert.equal(caListingHasFingerprint('Cert Hash(sha256): abcdef0123456789abcdef0123456789abcdef01', fp), false, 'only the sha1 line counts');
+  assert.equal(caListingHasFingerprint('', fp), false);
+
+  const body = async (app2, path) => { const res = fakeRes(); await app2(fakeReq({ url: path, token: 'tok' }), res); return JSON.parse(res.chunks.join('')); };
+  const withToken = (manifest) => async (url) => (url.includes('/token?') ? { ok: true, status: 200, json: async () => ({ token: 'anon' }) } : manifest);
+  const pub = await body(createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: withToken({ ok: true, status: 200 }) }), '/api/local/registry?force=1');
+  assert.equal(pub.public, true);
+  assert.match(pub.detail, /public/);
+  assert.match(pub.image, /^ghcr\.io\/.+\/munni-web$/);
+  const priv = await body(createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: withToken({ ok: false, status: 401 }) }), '/api/local/registry?force=1');
+  assert.equal(priv.public, false);
+  assert.match(priv.detail, /401.*read:packages/);
+  const down = await body(createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: async () => { throw new Error('offline'); } }), '/api/local/registry?force=1');
+  assert.equal(down.public, null);
+  assert.match(down.detail, /could not reach/);
+
+  // the trust probe: without LAN mode, off Windows, or with the CA site down the verdict is unknown — never a false "trusted"
+  const trust = await body(createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: async () => ({ ok: false, status: 503 }) }), '/api/local/ca-trust?force=1');
+  assert.equal(trust.trusted, null);
+  assert.match(trust.reason, /LAN mode is off|not Windows|not up/);
 });

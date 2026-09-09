@@ -35,6 +35,25 @@ export function jwtES256({ header, payload, pem }) {
   return `${input}.${b64url(sig)}`;
 }
 
+/* DSM's SYNO.API.Auth error codes, as the operator meets them (2026-09-10:
+   a bare {"code":402} sent the user hunting) */
+export const DSM_LOGIN_ADVICE = {
+  400: 'no such account, or the password is wrong',
+  401: 'the account is disabled (DSM → Control Panel → User & Group)',
+  402: 'permission denied — the account exists but may not sign in to DSM: Control Panel → User & Group → the deploy user → Applications → allow DSM and File Station; and it must be in the administrators group (reverse-proxy rules need admin rights)',
+  403: '2-step verification is on for this account — turn it off for the deploy user (the login API cannot answer an OTP prompt)',
+  404: 'the 2-step verification code was rejected — turn 2FA off for the deploy user',
+  406: 'DSM enforces 2-factor authentication for this account — exempt the deploy user (Control Panel → Security → Account)',
+  407: 'this address is blocked by DSM auto-block (Control Panel → Security → Account → Auto Block)',
+  408: 'the password expired and this account cannot change it',
+  409: 'the password expired — change it in DSM first',
+  410: 'DSM demands a password change on first sign-in — sign in once in the browser',
+};
+export const dsmLoginAdvice = (message) => {
+  const code = Number(/"code":\s*(\d+)/.exec(String(message ?? ''))?.[1]);
+  return DSM_LOGIN_ADVICE[code] ? ` — code ${code}: ${DSM_LOGIN_ADVICE[code]}` : '';
+};
+
 export const VALIDATORS = {
   /** POST token/new — the exact call GoCardlessApi makes */
   async gocardless(values, fetchImpl) {
@@ -279,12 +298,13 @@ export const VALIDATORS = {
   async synology(values) {
     const gap = need(values, ['SYNOLOGY_URL', 'SYNOLOGY_USER', 'SYNOLOGY_PASS']);
     if (gap) return { ok: false, detail: gap };
+    if (values.SYNOLOGY_PATH && !values.SYNOLOGY_PATH.startsWith('/')) return { ok: false, detail: `SYNOLOGY_PATH must be absolute — the shared-folder path bundles land in, e.g. /docker/munni/published (yours: ${values.SYNOLOGY_PATH})` };
     try {
       const { sid } = await dsmLogin(values.SYNOLOGY_URL, values.SYNOLOGY_USER, values.SYNOLOGY_PASS);
       await dsmLogout(values.SYNOLOGY_URL, sid);
       return { ok: true, detail: 'DSM accepted the login (remember: the account needs admin rights, 2FA off)' };
     } catch (e) {
-      return { ok: false, detail: `DSM refused the login: ${e.message}` };
+      return { ok: false, detail: `DSM refused the login: ${e.message}${dsmLoginAdvice(e.message)}` };
     }
   },
 

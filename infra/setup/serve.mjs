@@ -22,7 +22,7 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, X509Certificate } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -589,7 +589,72 @@ async function installFamilyCa(res, run, netFetchImpl) {
 async function trustCaEndpoint(res, spawnImpl, netFetchImpl) {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
   const ok = await installFamilyCa(res, stepRunner(spawnImpl), netFetchImpl);
+  caTrustMemo = { at: 0, value: null }; // the next probe reads the store afresh
   return res.end(`\n[exit ${ok ? 0 : 1}]\n`);
+}
+
+/* ── is the family CA trusted on THIS PC? (user request 2026-09-10: no
+   manual tick — with the CA site up, compare the root's fingerprint with
+   the CurrentUser Root store). Memoized a minute; trust-ca busts it. ── */
+let caTrustMemo = { at: 0, value: null };
+/** certutil prints one "Cert Hash(sha1): …" line per certificate — with or
+ *  without spaces depending on the Windows build; compare hex only */
+export function caListingHasFingerprint(listing, fingerprint) {
+  const want = String(fingerprint ?? '').replace(/[^0-9a-f]/gi, '').toLowerCase();
+  return want.length === 40 && String(listing ?? '').split(/\r?\n/).some((line) => /sha1/i.test(line) && line.replace(/[^0-9a-f]/gi, '').toLowerCase().includes(want));
+}
+async function caTrustState(netFetchImpl, spawnImpl, { force = false } = {}) {
+  const lan = lanHost();
+  if (!lan) return { trusted: null, reason: 'LAN mode is off — no family certificate to trust' };
+  if (process.platform !== 'win32') return { trusted: null, reason: 'not Windows — trust the root by hand' };
+  if (!force && caTrustMemo.value && Date.now() - caTrustMemo.at < 60000) return caTrustMemo.value;
+  const remember = (value) => { caTrustMemo = { at: Date.now(), value }; return value; };
+  const base = `${lan.replaceAll('.', '-')}.sslip.io`;
+  let pem;
+  try {
+    const r = await netFetchImpl(`http://ca.${base}/root.crt`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) throw new Error(`status ${r.status}`);
+    pem = await r.text();
+  } catch (e) {
+    return remember({ trusted: null, reason: `the family CA site is not up (${e.message}) — known once the family runs` });
+  }
+  let fingerprint;
+  try {
+    fingerprint = new X509Certificate(pem).fingerprint;
+  } catch (e) {
+    return remember({ trusted: null, reason: `root.crt is unreadable (${e.message})` });
+  }
+  const listing = await capture(spawnImpl, 'certutil', ['-user', '-store', 'Root']);
+  const trusted = caListingHasFingerprint(listing.out, fingerprint);
+  return remember({ trusted, fingerprint: fingerprint.replaceAll(':', '').slice(0, 12).toLowerCase(), reason: trusted ? 'the family root is in this user’s Root store' : 'the family root is not in this user’s Root store yet — Trust the certificate again installs it' });
+}
+async function caTrustEndpoint(res, url, netFetchImpl, spawnImpl) {
+  return json(res, 200, await caTrustState(netFetchImpl, spawnImpl, { force: url.searchParams.get('force') === '1' }));
+}
+
+/* ── are the munni images public? Then no registry token is needed to
+   pull them (user request 2026-09-10: stop asking for a second token).
+   An anonymous pull token + a manifest HEAD, memoized ten minutes. ── */
+let registryMemo = { at: 0, value: null };
+async function registryState(netFetchImpl, { force = false } = {}) {
+  if (!force && registryMemo.value && Date.now() - registryMemo.at < 600000) return registryMemo.value;
+  const registry = loadStack(SHARED_STACK).registry ?? 'ghcr.io/okkes';
+  const repo = `${registry.replace(/^ghcr\.io\//, '')}/munni-web`;
+  const remember = (value) => { registryMemo = { at: Date.now(), value }; return value; };
+  try {
+    const t = await netFetchImpl(`https://ghcr.io/token?scope=repository:${repo}:pull`, { signal: AbortSignal.timeout(8000) });
+    const token = t.ok ? (await t.json())?.token : null;
+    const m = token
+      ? await netFetchImpl(`https://ghcr.io/v2/${repo}/manifests/latest`, { method: 'HEAD', headers: { authorization: `Bearer ${token}`, accept: 'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' }, signal: AbortSignal.timeout(8000) })
+      : null;
+    const isPublic = Boolean(m?.ok);
+    return remember({ public: isPublic, image: `ghcr.io/${repo}`, detail: isPublic ? `the munni images (ghcr.io/${repo.split('/')[0]}/…) are public — no registry token is needed to pull them` : `ghcr.io answered ${m?.status ?? t.status} for an anonymous pull of ${repo} — private images need a classic PAT with read:packages` });
+  } catch (e) {
+    return remember({ public: null, image: `ghcr.io/${repo}`, detail: `could not reach ghcr.io (${e.message})` });
+  }
+}
+async function registryEndpoint(res, url, netFetchImpl) {
+  return json(res, 200, await registryState(netFetchImpl, { force: url.searchParams.get('force') === '1' }));
 }
 
 /* ── store readiness (user ruling 2026-08-28: no manual Enable-publish
@@ -2132,6 +2197,8 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/autonomy/logon': (req, res) => autonomyLogonEndpoint(req, res, spawnImpl),
     'POST /api/local/new-store-package': (req, res) => newStorePackageEndpoint(req, res, spawnImpl),
     'POST /api/local/trust-ca': (req, res) => trustCaEndpoint(res, spawnImpl, netFetchImpl),
+    'GET /api/local/ca-trust': (req, res) => caTrustEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl, spawnImpl),
+    'GET /api/local/registry': (req, res) => registryEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
     'POST /api/local/gh-pat': (req, res) => ghPatEndpoint(req, res),
     'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
     'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),

@@ -137,6 +137,16 @@ test('logodev: swap detection first, then search (sk) + image (pk)', async () =>
   assert.match(calls[1].url, /img\.logo\.dev\/google\.com\?token=pk_y/);
 });
 
+test('synology: DSM error codes come with advice; a relative path is refused before any login', async () => {
+  const { dsmLoginAdvice } = await import('../modules/validate.mjs');
+  assert.match(dsmLoginAdvice('DSM SYNO.API.Auth.login failed: {"code":402}'), /code 402: permission denied/);
+  assert.match(dsmLoginAdvice('DSM SYNO.API.Auth.login failed: {"code":400}'), /password is wrong/);
+  assert.equal(dsmLoginAdvice('DSM SYNO.API.Auth.login failed: {"code":999}'), '');
+  const rel = await validate('synology', { SYNOLOGY_URL: 'https://nas.example:5001', SYNOLOGY_USER: 'deploy', SYNOLOGY_PASS: 'x', SYNOLOGY_PATH: 'docker/munni/published' });
+  assert.equal(rel.ok, false);
+  assert.match(rel.detail, /must be absolute/);
+});
+
 test('ghcr: the registry token must authenticate AND carry read:packages', async () => {
   const mk = (status, scopes) => async () => ({ ok: status < 400, status, headers: { get: (k) => (k === 'x-oauth-scopes' ? scopes : null) }, json: async () => ({ login: 'okkes' }) });
   const missing = await validate('ghcr', {}, { fetchImpl: mk(200, 'read:packages') });

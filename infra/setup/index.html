@@ -194,7 +194,7 @@ header{padding:20px 0}
 #log-drawer pre{padding-left:16px;padding-right:16px}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin:8px 0 14px}
 .tile{margin:0;display:flex;flex-direction:column;position:relative}
-.tile.open{grid-column:1/-1}
+
 .tile-h{display:flex;align-items:flex-start;gap:12px;padding:14px 16px 0}
 .tile-h .sp{flex:1}
 .tile-t{display:block;font-size:14px;font-weight:600;padding:10px 16px 0;cursor:pointer}
@@ -229,6 +229,18 @@ header{padding:20px 0}
 .tile-f button.mini{margin:0 0 0 auto;padding:5px 12px;font-size:12px}
 .tile-h [data-chip]{align-self:center}
 .tile.feat:not(.on) .tile-t,.tile.feat:not(.on) .tile-d{opacity:.75}
+.tile-h{align-items:center}
+/* Manage is a popup (2026-09-10): the tile's form moves in and back out — nothing on the page shifts */
+dialog.manage{width:min(820px,calc(100vw - 32px));max-height:calc(100vh - 48px);border:1px solid var(--line);border-radius:16px;padding:0;background:var(--card);color:var(--ink);box-shadow:0 20px 60px rgba(0,0,0,.35);overflow:hidden}
+dialog.manage::backdrop{background:rgba(0,0,0,.45)}
+.manage-h{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.manage-h .manage-t{flex:1;min-width:0}
+.manage-h .manage-t b{font-size:15px}
+.manage-h button{margin:0}
+#manage-body{max-height:calc(100vh - 140px);overflow:auto;padding:4px 18px 16px}
+#manage-body .crow-b{display:block;padding:8px 0 0}
+body:has(dialog.manage[open]){overflow:hidden}
+html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the gutter stays) */
 .health-h{display:flex;align-items:center;gap:12px}
 .health-h>div{flex:1;min-width:0}
 .health-h button{margin:0}
@@ -282,7 +294,7 @@ header{padding:20px 0}
     <div class="tile-t">GitHub — the build &amp; deploy engine</div>
     <div class="tile-d">needed for CI builds and deploys · <code>IAC_GH_PAT</code></div>
     <div class="tile-f"><span class="tag info">Connection</span><button class="ghost mini" data-manage="github">Manage</button></div>
-    <div class="crow-b">
+    <div class="crow-b" data-body="github">
     <p class="why" id="connect-why-nas">The whole NAS pipeline lives in your repo's Actions: one fine-grained token drives this page live and is stored as <code>IAC_GH_PAT</code> so the bootstrap workflow can manage environments too. Point it at a repo that carries munni — or at a name that doesn't exist yet, and this page forks <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically.</p>
     <p class="why" id="connect-why-local" hidden>This tile only appears because Android/iOS is ticked: the native apps are BUILT by GitHub CI (never on this machine), so those builds need your repo's Actions. Everything else on the local track stays GitHub-free. Same token rules as the NAS track; a nonexistent repo name gets forked from <code>okkes/munnimok</code>. After a successful Connect the token is saved in this machine's gitignored store like every other credential on this step — the next visit reconnects by itself.</p>
     <div id="connect-body">
@@ -300,7 +312,7 @@ header{padding:20px 0}
     <input type="password" id="in-pat" placeholder="github_pat_…" autocomplete="off"/>
     <button id="btn-connect">Connect</button>
     <button class="ghost" id="btn-fork" hidden>Create it as a copy of okkes/munnimok</button>
-    <button class="ghost" id="btn-store-pat" disabled>Store as IAC_GH_PAT <span class="dot" data-dot="IAC_GH_PAT"></span></button>
+
     <button class="ghost" id="btn-refresh" disabled>Refresh status</button>
     <div class="msg" id="msg-connect"></div>
     </div>
@@ -387,7 +399,7 @@ header{padding:20px 0}
             <button id="btn-local-setup">▶ Set up &amp; start munni</button>
             <button class="ghost" id="btn-local-stopall">Stop everything</button>
             <button class="ghost" id="btn-local-verify">Verify</button>
-            <button class="ghost" id="btn-trust-ca">Trust the certificate again</button>
+            <button class="ghost" id="btn-trust-ca">Trust the certificate again</button> <span class="pill" id="trust-pill" title="read from this user's Root store while the family runs"></span>
             <button class="ghost danger" id="btn-local-nuke-all">Delete everything…</button>
           </div>
           <p class="why" id="local-links"></p>
@@ -584,6 +596,12 @@ header{padding:20px 0}
   <div class="bar" id="log-bar"><b>Output</b> <span id="log-state">idle — every button streams its output here, live</span> <span class="pill" id="log-toggle">show</span></div>
   <pre id="local-log">idle — every button streams its output here live</pre>
 </div>
+
+<!-- Manage: an account's explainer + form in a popup, nothing on the page moves (user ruling 2026-09-10) -->
+<dialog id="manage-dialog" class="manage" aria-labelledby="manage-title">
+  <div class="manage-h"><span class="bico" id="manage-ico" data-bico="key"></span><div class="manage-t"><b id="manage-title"></b><div class="why" style="margin:0" id="manage-sub"></div></div><button class="ghost" id="manage-close">Close</button></div>
+  <div id="manage-body"></div>
+</dialog>
 
 <script>
 /* ── vendored crypto (unmodified upstream sources) ─────────────────────
@@ -1122,6 +1140,9 @@ const S = {
   rowState: {},            // credential rows the operator opened/closed this visit
   skipped: new Set(LS.get('skipped', [])), // integrations the operator skipped — counted as done (2026-09-10)
   verdicts: {},            // the last Check verdict per integration (feeds the health card)
+  recentlyStored: new Map(), // names stored this visit → the chip flips at once, whatever a listing says (2026-09-10)
+  caTrust: null,           // the helper's verdict on the family root in this user's Root store
+  registry: null,          // the helper's verdict on anonymous image pulls (public images need no token)
   pollTimer: null,
 };
 
@@ -1158,9 +1179,9 @@ const GROUPS = [
     ],
   },
   {
-    id: 'ghcr', title: 'Container registry pulls', check: 'browser:ghcr',
-    why: 'The host (NAS or this machine) logs into ghcr.io to pull the munni images. A minimal read-only token keeps that safe.',
-    how: ['Open github.com/settings/tokens (classic) → Generate new token → scope: read:packages only.', 'Fine-grained tokens do not reliably work for ghcr docker login yet — use classic here.'],
+    id: 'ghcr', title: 'Container registry pulls', check: 'browser:ghcr', optional: true,
+    why: 'The munni images on ghcr.io are public — the host pulls them without any token, and this tile confirms that by itself. A token only matters for PRIVATE images (a private copy publishing its own): then docker logs into ghcr.io with it.',
+    how: ['Nothing, normally: the helper checks anonymous pulls and marks this tile as not needed.', 'Private images only: github.com/settings/tokens (classic) → Generate new token → scope read:packages. A fine-grained token cannot log into ghcr, so the GitHub connection token is reused here only when it is a classic one with that scope (checked at Connect).'],
     fields: [{ name: 'NAS_GHCR_PAT', scope: 'repo', secret: true }],
   },
   {
@@ -1316,7 +1337,8 @@ const rowChip = (g) => {
   const { saved, total, complete } = rowSaved(g);
   if (complete) return '<span class="pill ok">Saved ✓</span>';
   if (saved) return `<span class="pill warn">${saved}/${total} saved</span>`;
-  return g.optional ? '<span class="pill">Optional</span>' : '<span class="pill warn">Missing</span>';
+  if (g.id === 'ghcr' && S.registry?.public === true) return '<span class="pill ok">Not needed ✓</span>';
+  return isOptional(g) ? '<span class="pill">Optional</span>' : '<span class="pill warn">Missing</span>';
 };
 
 /* ── github api ── */
@@ -1384,15 +1406,21 @@ const workflowRuns = (file) =>
 async function refresh() {
   if (!S.pat) return;
   const names = (r, key) => new Set((r?.[key] ?? []).map((x) => x.name));
+  // environments that do not exist yet used to 404 twice each on every
+  // poll (console noise, user report 2026-09-10): list them once, ask
+  // only the ones that exist
+  const envList = await gh(`/repos/${S.slug}/environments?per_page=100`, { allow404: true }).catch(() => null);
+  const known = envList ? ENVS.filter((env) => (envList.environments ?? []).some((e) => e.name === env)) : ENVS;
   const [repoSecrets, ...perEnv] = await Promise.all([
     gh(`/repos/${S.slug}/actions/secrets?per_page=100`, { allow404: true }),
-    ...ENVS.flatMap((env) => [
+    ...known.flatMap((env) => [
       gh(`/repos/${S.slug}/environments/${env}/secrets?per_page=100`, { allow404: true }),
       gh(`/repos/${S.slug}/environments/${env}/variables?per_page=100`, { allow404: true }),
     ]),
   ]);
   S.repoSecrets = names(repoSecrets, 'secrets');
-  ENVS.forEach((env, i) => {
+  ENVS.forEach((env) => { S.envs[env] = { secrets: new Set(), vars: new Set() }; });
+  known.forEach((env, i) => {
     S.envs[env] = { secrets: names(perEnv[i * 2], 'secrets'), vars: names(perEnv[i * 2 + 1], 'variables') };
   });
   const [iacRuns, nasRuns, andRuns, iosRuns] = await Promise.all([
@@ -1410,6 +1438,9 @@ function scheduleLivePoll() {
 }
 
 function secretPresent(name, cardScoped = false) {
+  // a value stored this visit counts at once — the chip never waits for
+  // a listing (user report 2026-09-10: "Missing" right after Store)
+  if ((S.recentlyStored.get(name) ?? 0) > Date.now() - 300000) return true;
   // credential-card dots under the LOCAL platform reflect the machine's
   // own store (via the helper), never GitHub
   if (cardScoped && S.platform === 'local') return S.localStore.has(name);
@@ -1449,13 +1480,16 @@ function renderStatus() {
     const g = GROUPS.find((x) => x.id === row.dataset.group);
     const chip = row.querySelector('[data-chip]');
     if (g && chip) chip.innerHTML = rowChip(g);
-    const skipBtn = row.querySelector('[data-skip-group]');
+    const skipBtn = row.querySelector('[data-skip-group]') ?? (g && manageOpen === g.id ? document.querySelector('#manage-body [data-skip-group]') : null);
     if (g && skipBtn) skipBtn.textContent = S.skipped.has(g.id) ? 'Skipped — undo' : 'Skip for now';
-    // tiles stay as the operator left them (Manage opens one at a time);
-    // the GitHub tile alone opens by itself until it is connected
-    if (row.dataset.group === 'github' && S.rowState.github === undefined) row.classList.toggle('open', !(S.pat && S.user));
-    updateManage(row);
   });
+  const trustPill = el('trust-pill');
+  if (trustPill) {
+    const t = S.caTrust;
+    trustPill.textContent = t?.trusted === true ? 'trusted on this PC ✓' : (t?.trusted === false ? 'not trusted on this PC' : (t?.reason ?? ''));
+    trustPill.className = 'pill ' + (t?.trusted === true ? 'ok' : (t?.trusted === false ? 'warn' : ''));
+    trustPill.title = t?.reason ?? '';
+  }
   const required = requiredFields();
   const missing = required.filter((f) => !secretPresent(f.name, true));
   el('creds-pill').textContent = missing.length ? `${required.length - missing.length}/${required.length} stored` : 'all stored ✓';
@@ -1540,7 +1574,11 @@ const escAttr = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&qu
 /* ── skip: an integration the operator does not want right now counts as
    done — tiles, health card, rail and stepper agree (user ruling
    2026-09-10: the crash-mail url must never read as a blocker) ── */
-const groupRequired = (g) => !g.optional && !S.skipped.has(g.id);
+/* the registry token is optional unless the helper proved the images private */
+const isOptional = (g) => (g.id === 'ghcr' ? S.registry?.public !== false : Boolean(g.optional));
+const groupRequired = (g) => !isOptional(g) && !S.skipped.has(g.id);
+/* the tile's form — inside the Manage popup while it is open */
+const groupCard = (id) => document.querySelector(`#manage-body [data-body="${id}"]`) ?? document.querySelector(`[data-group="${id}"]`);
 const requiredFields = () => GROUPS.filter(groupVisible).filter(groupRequired).flatMap((g) => g.fields).filter((f) => !f.optional);
 function setSkipped(id, on) {
   if (on) S.skipped.add(id); else S.skipped.delete(id);
@@ -1550,8 +1588,7 @@ function toggleSkip(id) {
   const g = GROUPS.find((x) => x.id === id);
   const on = !S.skipped.has(id);
   setSkipped(id, on);
-  const row = document.querySelector(`[data-group="${id}"]`);
-  if (row) { row.classList.toggle('open', !on); S.rowState[id] = !on; }
+  if (on) dismissManage(); // skipping is a decision — the popup goes, the chip says Skipped
   msg('msg-group-' + id, on ? `Skipped — ${g?.title ?? id} counts as done for now${g?.optional ? '; the family starts without it' : ''}. Undo any time.` : 'Back on the list.', true);
   renderStatus();
 }
@@ -1561,6 +1598,18 @@ async function selectRecommended() {
   LS.set('features', S.features);
   renderCards(); fillDynamicCopy(); renderNative(); renderStatus();
   if (S.platform === 'local' && HELPER) await reconcileLanMode().catch(() => {});
+}
+
+/* the connection token doubles as the registry token when it can (user
+   ruling 2026-09-10) — only worth anything for PRIVATE images */
+async function adoptPatForRegistry() {
+  if (!S.pat || S.registry?.public !== false || secretPresent('NAS_GHCR_PAT', true)) return;
+  const v = await BROWSER_VALIDATORS.ghcr({ NAS_GHCR_PAT: S.pat }).catch(() => null);
+  if (!v?.ok) { msg('msg-group-ghcr', `the images are private and the GitHub token cannot pull them (${v?.detail ?? 'check failed'}) — a classic PAT with read:packages is needed here`, false); return; }
+  if (S.platform === 'local') { if (!(await runLocalQuiet({ values: { NAS_GHCR_PAT: S.pat } }))) return; } else await storeSecret('NAS_GHCR_PAT', S.pat, 'repo');
+  S.recentlyStored.set('NAS_GHCR_PAT', Date.now());
+  msg('msg-group-ghcr', 'the GitHub token has read:packages — stored as NAS_GHCR_PAT as well ✓', true);
+  renderStatus();
 }
 
 /* ── integration health: one line per integration the picked features
@@ -1576,7 +1625,8 @@ function healthOf(g) {
     return { cls: 'ok', label: 'Configured', title: v?.detail };
   }
   if (saved) return { cls: 'warn', label: 'Incomplete' };
-  return g.optional ? { cls: '', label: 'Optional' } : { cls: 'warn', label: 'Needs setup' };
+  if (g.id === 'ghcr' && S.registry?.public === true) return { cls: 'ok', label: 'Public images ✓', title: S.registry.detail };
+  return isOptional(g) ? { cls: '', label: 'Optional' } : { cls: 'warn', label: 'Needs setup' };
 }
 function renderHealth() {
   const list = document.getElementById('health-list');
@@ -1600,7 +1650,7 @@ function renderHealth() {
 async function checkAll() {
   const btn = document.getElementById('btn-check-all');
   const jobs = GROUPS.filter(groupVisible).filter((g) => g.check && !S.skipped.has(g.id) && rowSaved(g).complete).map((g) => {
-    const card = document.querySelector(`[data-group="${g.id}"]`);
+    const card = groupCard(g.id);
     const values = card ? cardValues(card) : {};
     // browser-side format checks need the value in the page — stored
     // secrets never come back, so those stay "Configured"; the registry
@@ -2026,7 +2076,14 @@ function familyTodoItems() {
     { id: 'creds', title: 'Credentials the family needs before it starts', detail: missingSetup.length ? `still missing: ${missingSetup.join(', ')}` : 'every value the family reads at start is saved', state: st ? missingSetup.length === 0 : null, href: firstMissingRow ? `[data-group="${firstMissingRow.id}"]` : '#s-features' },
     { id: 'setup', title: 'Press Set up & start', detail: 'shared services, every environment, sign-in, crash tracking, the vault — one button, safe to repeat', state: st ? sharedUp && envsUp : null, href: '#btn-local-setup' },
   ];
-  if (lan) items.push({ id: 'trust-pc', title: 'Trust the family certificate on this PC', detail: 'Set up does it (one Windows dialog); redo it after Delete everything', manual: true, href: '#btn-trust-ca' });
+  if (lan) {
+    // read from this user's Root store while the CA site is up (2026-09-10);
+    // a manual tick only where the helper cannot tell (other OS, family down)
+    const t = S.caTrust;
+    items.push(t && t.trusted !== null
+      ? { id: 'trust-pc', title: 'Trust the family certificate on this PC', detail: t.reason, state: t.trusted, href: '#btn-trust-ca' }
+      : { id: 'trust-pc', title: 'Trust the family certificate on this PC', detail: `${t?.reason ?? 'checked once the family runs'} — Set up does it (one Windows dialog)`, manual: true, href: '#btn-trust-ca' });
+  }
   if (phones) items.push({ id: 'github', title: 'Connect GitHub', detail: 'the phones are built by your repo’s Actions', state: Boolean(S.pat && S.user), href: '#connect-card', spot: '#btn-connect' });
   if (f.android) {
     items.push(
@@ -2125,7 +2182,7 @@ function flash(el) {
 /** reveal whatever hides the spot (a folded row, a closed fold), scroll its card in, pulse the spot */
 function revealSpot(spot) {
   const row = spot.closest('.crow');
-  if (row) openTile(row.dataset.group, true);
+  if (row) openManage(row.dataset.group);
   spot.closest('details')?.setAttribute('open', '');
   if (spot.matches('details')) spot.setAttribute('open', '');
 }
@@ -2135,6 +2192,14 @@ function jumpTo(selector, { flashSelector } = {}) {
   const spot = (flashSelector && document.querySelector(flashSelector)) ?? target;
   revealSpot(target);
   revealSpot(spot);
+  // the spot lives in the Manage popup now: scroll and pulse THERE
+  const dlg = document.getElementById('manage-dialog');
+  if (dlg?.open) {
+    const inside = spot.closest('dialog[open]') ? spot : (document.querySelector('#manage-body .crow-b') ?? dlg);
+    inside.scrollIntoView({ behavior: 'smooth', block: inside === spot ? 'center' : 'start' });
+    afterScroll(() => flash(inside));
+    return;
+  }
   const card = target.closest('.card') ?? target;
   const anchor = card.matches('section') ? card : card;
   anchor.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -2311,6 +2376,14 @@ async function refreshLocal() {
     renderWorkspaces(st);
     S.stacksStatus = st;
     S.googleProject = st.googleProject ?? null;
+    // the helper reads this user's Root store and probes ghcr.io (both
+    // memoized there) — the family list and the registry tile follow
+    const [trust, registry] = await Promise.all([
+      hfetch('/api/local/ca-trust').then((r) => r.json()).catch(() => null),
+      hfetch('/api/local/registry').then((r) => r.json()).catch(() => null),
+    ]);
+    S.caTrust = trust;
+    S.registry = registry;
     fillDynamicCopy();
     refreshAutonomy().then(renderTodo).catch(() => {});
     const shared = st.stacks[SHARED_STACK];
@@ -2561,9 +2634,9 @@ function renderCards() {
   // the account form behind Manage: what the service is, why munni needs
   // it, where the values come from, the fields, Save / Check / Skip
   const bodyHtml = (g) => `
-      <div class="crow-b">
+      <div class="crow-b" data-body="${g.id}">
       <div class="crow-vars">${g.fields.map((f) => f.name).join(' · ')}</div>
-      <p class="why">${g.why}${g.optional ? ' <b>Optional</b> — skip it below and it counts as done.' : ''}</p>
+      <p class="why">${g.why}${isOptional(g) ? ' <b>Optional</b> — skip it below and it counts as done.' : ''}</p>
       <details class="how"><summary>Where these values come from</summary><ol>${howSteps(g).map((h) => `<li>${h}</li>`).join('')}</ol></details>
       ${g.fields.map((f) => `
         <label class="f" for="field-${f.name}">${f.name} <span class="envtag">${scopeTag(f)}</span></label>
@@ -2581,21 +2654,23 @@ function renderCards() {
     const off = f ? !(f.targets ?? ['nas', 'local']).includes(S.platform) : false;
     const on = f ? Boolean(S.features[f.id]) && !off : true;
     const managed = Boolean(g && on);
-    const open = managed && Boolean(S.rowState[g.id]);
     const hint = f ? (off ? f.offHint : ((local && f.localHint) || f.hint)) : `needed for ${NEEDED_FOR[g.id] ?? g.title}`;
     const tags = f ? (f.tags ?? []) : ['Connection'];
     return `
-    <div class="card tile ${f ? 'feat' : 'int'} crow ${on ? 'on' : ''} ${off ? 'off' : ''} ${open ? 'open' : ''}" ${f ? `data-feature="${f.id}"` : ''} ${g ? `data-group="${g.id}"` : ''}>
+    <div class="card tile ${f ? 'feat' : 'int'} crow ${on ? 'on' : ''} ${off ? 'off' : ''}" ${f ? `data-feature="${f.id}"` : ''} ${g ? `data-group="${g.id}"` : ''}>
       <div class="tile-h"><span class="bico" data-bico="${BRAND_OF[f?.id ?? g.id] ?? 'key'}"></span><span class="sp"></span>${managed ? `<span data-chip>${rowChip(g)}</span>` : ''}${f ? `<label class="switch"><input type="checkbox" id="feat-${f.id}" ${on ? 'checked' : ''} ${off ? 'disabled' : ''}/><span class="sw"></span></label>` : ''}</div>
       ${f ? `<label class="tile-t" for="feat-${f.id}">${f.label}</label>` : `<div class="tile-t">${g.title}</div>`}
       <div class="tile-d">${hint ?? ''}</div>
-      <div class="tile-f">${tags.map((t) => `<span class="tag ${TAG_CLS[t] ?? ''}">${t}</span>`).join('')}${managed ? `<button class="ghost mini" data-manage="${g.id}">${open ? 'Close' : 'Manage'}</button>` : ''}</div>
+      <div class="tile-f">${tags.map((t) => `<span class="tag ${TAG_CLS[t] ?? ''}">${t}</span>`).join('')}${managed ? `<button class="ghost mini" data-manage="${g.id}">Manage</button>` : ''}</div>
       ${managed ? bodyHtml(g) : ''}
     </div>`;
   };
   const connections = GROUPS.filter((g) => !g.feature && groupVisible(g)).map((g) => ({ g }));
   const features = FEATURES.map((f) => ({ f, g: GROUPS.find((g) => g.feature === f.id && (g.targets ?? ['nas', 'local']).includes(S.platform)) ?? null }));
   wrap.innerHTML = [...connections, ...features].map(tileHtml).join('');
+  // a popup that is open keeps ITS form (typed values live there) — the
+  // freshly rendered twin inside the tile goes
+  if (manageOpen) wrap.querySelector(`[data-group="${manageOpen}"] .crow-b`)?.remove();
   applyIcons(wrap);
   applyBrandIcons(wrap);
   // the GitHub tile leads the grid (NAS track, and the local track once a phone is ticked)
@@ -2617,7 +2692,7 @@ function renderCards() {
     wrap.dataset.manageBound = '1';
     wrap.addEventListener('click', (e) => {
       const b = e.target.closest('[data-manage]');
-      if (b) openTile(b.dataset.manage);
+      if (b) openManage(b.dataset.manage);
     });
   }
   wrap.querySelectorAll('[data-store-group]').forEach((btn) => btn.addEventListener('click', () => storeGroup(btn.dataset.storeGroup)));
@@ -2638,30 +2713,47 @@ function renderCards() {
   renderStatus();
 }
 
-/* Manage opens one tile at a time (it spans the grid) — the grid stays a grid */
-function updateManage(row) {
-  const b = row.querySelector('[data-manage]');
-  if (b) b.textContent = row.classList.contains('open') ? 'Close' : 'Manage';
+/* ── Manage = a popup (user ruling 2026-09-10: nothing on the page moves).
+   The tile's form is MOVED into the dialog and back on close — the same
+   nodes, so typed values, listeners and ids survive. ── */
+let manageOpen = null;
+function openManage(id) {
+  const tile = document.querySelector(`[data-group="${id}"]`);
+  const body = tile?.querySelector('.crow-b') ?? (manageOpen === id ? document.querySelector('#manage-body .crow-b') : null);
+  if (!tile || !body) return;
+  const dlg = document.getElementById('manage-dialog');
+  if (manageOpen && manageOpen !== id) closeManage({ keepOpen: true });
+  document.getElementById('manage-body').appendChild(body);
+  document.getElementById('manage-title').textContent = tile.querySelector('.tile-t')?.textContent.trim() ?? id;
+  document.getElementById('manage-sub').textContent = tile.querySelector('.tile-d')?.textContent.trim() ?? '';
+  document.getElementById('manage-ico').dataset.bico = tile.querySelector('.bico')?.dataset.bico ?? 'key';
+  applyBrandIcons(dlg);
+  manageOpen = id;
+  if (!dlg.open) {
+    dlg.showModal();
+    history.pushState({ manage: id }, '');
+  }
+  document.getElementById('manage-body').scrollTop = 0;
 }
-function openTile(id, open) {
-  const row = document.querySelector(`[data-group="${id}"]`);
-  if (!row) return;
-  const next = open ?? !row.classList.contains('open');
-  if (next) document.querySelectorAll('#cred-cards .tile.open').forEach((t) => {
-    if (t === row) return;
-    t.classList.remove('open');
-    S.rowState[t.dataset.group] = false;
-    updateManage(t);
-  });
-  row.classList.toggle('open', next);
-  S.rowState[id] = next;
-  updateManage(row);
-  if (next) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+function closeManage({ keepOpen = false } = {}) {
+  const dlg = document.getElementById('manage-dialog');
+  const body = document.querySelector('#manage-body .crow-b');
+  const tile = manageOpen ? document.querySelector(`[data-group="${manageOpen}"]`) : null;
+  if (body && tile) tile.appendChild(body);
+  else body?.remove();
+  manageOpen = null;
+  if (!keepOpen && dlg.open) dlg.close();
 }
+/* the browser's back button closes the popup like any other screen */
+function dismissManage() {
+  if (history.state?.manage) history.back();
+  else closeManage();
+}
+window.addEventListener('popstate', () => { if (document.getElementById('manage-dialog')?.open) closeManage(); });
 
 async function storeGroup(id) {
   const g = GROUPS.find((x) => x.id === id);
-  const card = document.querySelector(`[data-group="${id}"]`);
+  const card = groupCard(id);
   const storeBtn = card.querySelector('[data-store-group]');
   const entries = [...card.querySelectorAll('[data-secret]')]
     .map((el) => ({ name: el.dataset.secret, scope: el.dataset.scope, value: normalizeSecret(el.dataset.secret, el.value.trim()) }))
@@ -2697,6 +2789,7 @@ async function storeGroup(id) {
     if (ok) {
       card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
       msg('msg-group-' + id, `Saved ✓ — kept in this machine's gitignored store; the family reads it (running containers pick it up on the next Set up)${verdictNote}`, true);
+      entries.forEach((e) => S.recentlyStored.set(e.name, Date.now()));
       if (S.skipped.has(id)) setSkipped(id, false);
       await refreshLocal();
     } else {
@@ -2710,6 +2803,7 @@ async function storeGroup(id) {
     for (const e of entries) await storeSecret(e.name, e.value, e.scope);
     card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
     msg('msg-group-' + id, `Stored ${entries.map((e) => e.name).join(', ')} ✓ (values are write-only from here on)${verdictNote}`, true);
+    entries.forEach((e) => S.recentlyStored.set(e.name, Date.now()));
     if (S.skipped.has(id)) setSkipped(id, false);
     await refresh();
   } catch (e) { msg('msg-group-' + id, String(e.message || e), false); }
@@ -2786,7 +2880,7 @@ const cardValues = (card) =>
 
 async function checkGroup(id) {
   const g = GROUPS.find((x) => x.id === id);
-  const card = document.querySelector(`[data-group="${id}"]`);
+  const card = groupCard(id);
   const btn = card.querySelector('[data-check-group]');
   btn.disabled = true;
   msg('msg-group-' + id, 'checking…', true);
@@ -2826,6 +2920,9 @@ async function checkManifest() {
 const UPSTREAM = 'okkes/munnimok';
 document.getElementById('btn-check-all').addEventListener('click', () => checkAll().catch((e) => msg('msg-health', `✗ ${e.message}`, false)));
 document.getElementById('btn-feat-recommended').addEventListener('click', () => selectRecommended().catch(() => {}));
+document.getElementById('manage-close').addEventListener('click', dismissManage);
+document.getElementById('manage-dialog').addEventListener('cancel', (e) => { e.preventDefault(); dismissManage(); });
+document.getElementById('manage-dialog').addEventListener('click', (e) => { if (e.target === e.currentTarget) dismissManage(); });
 document.getElementById('in-slug').value = S.slug;
 document.getElementById('in-slug').addEventListener('input', (e) => { S.slug = e.target.value.trim(); LS.set('slug', S.slug); document.getElementById('btn-fork').hidden = true; });
 
@@ -2846,17 +2943,28 @@ async function connectRepo(repo) {
   pill.textContent = `connected as ${S.user.login} ✓`;
   pill.className = 'pill ok';
   // a WORKING token is worth keeping (user request 2026-09-06: no
-  // re-pasting per visit) — into the machine store, like all of step 3
+  // re-pasting per visit) — into the machine store, like every credential
   if (HELPER && S.pat) hfetch('/api/local/gh-pat', { method: 'POST', body: JSON.stringify({ pat: S.pat }) }).catch(() => {});
   // open the first-boot latch: a connected repo is being initialized —
   // its push workflows (skipped until now on fresh copies) come alive
   await ghUpsertRepoVar('MUNNI_INITIALIZED', 'true').catch(() => {});
-  document.getElementById('btn-store-pat').disabled = false;
+  // the connection token IS IAC_GH_PAT (user ruling 2026-09-10): stored as
+  // the repository secret right away — workflows that write secrets back
+  // (keystore mint, bootstrap) need it; no separate button
+  let patNote = '';
+  try {
+    await storeSecret('IAC_GH_PAT', S.pat, 'repo');
+    S.recentlyStored.set('IAC_GH_PAT', Date.now());
+    patNote = ' The token is stored as IAC_GH_PAT.';
+  } catch (e) {
+    patNote = ` Storing the token as IAC_GH_PAT failed (${e.message}) — the token needs Secrets: read and write.`;
+  }
   document.getElementById('btn-refresh').disabled = false;
   msg('msg-connect', `Repo ${repo.full_name} ready (branch ${S.ref}). Loading live status…`, true);
   await refresh();
   await checkManifest();
-  msg('msg-connect', `Repo ${repo.full_name} ready (branch ${S.ref}). Live status loaded — dots and pills below reflect reality.`, true);
+  msg('msg-connect', `Repo ${repo.full_name} ready (branch ${S.ref}). Live status loaded — dots and pills below reflect reality.${patNote}`, !patNote.includes('failed'));
+  adoptPatForRegistry().catch(() => {});
   // a native toggle that waited on this connection fires now
   if (S.pendingNativeBuild) {
     const kind = S.pendingNativeBuild;
@@ -2894,7 +3002,7 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
   const pill = document.getElementById('connect-pill');
   // a mid-copy click on any of these reads as interrupting the copy —
   // hold the whole card until the flow settles (user report 2026-08-30)
-  for (const id of ['btn-fork', 'btn-connect', 'btn-store-pat', 'btn-refresh']) {
+  for (const id of ['btn-fork', 'btn-connect', 'btn-refresh']) {
     document.getElementById(id).disabled = true;
   }
   try {
@@ -2956,21 +3064,13 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
     pill.className = 'pill bad';
     msg('msg-connect', String(e.message || e), false);
   } finally {
-    for (const id of ['btn-fork', 'btn-connect', 'btn-store-pat', 'btn-refresh']) {
+    for (const id of ['btn-fork', 'btn-connect', 'btn-refresh']) {
       document.getElementById(id).disabled = false;
     }
-    document.getElementById('btn-store-pat').disabled = !S.user;
     document.getElementById('btn-refresh').disabled = !S.user;
   }
 });
-document.getElementById('btn-store-pat').addEventListener('click', async () => {
-  try {
-    requireConnection();
-    await storeSecret('IAC_GH_PAT', S.pat, 'repo');
-    msg('msg-connect', 'PAT stored as IAC_GH_PAT ✓ — the bootstrap workflow can now manage environments and secrets.', true);
-    await refresh();
-  } catch (e) { msg('msg-connect', String(e.message || e), false); }
-});
+
 document.getElementById('btn-refresh').addEventListener('click', () => refresh().then(checkManifest).catch((e) => msg('msg-connect', String(e.message || e), false)));
 
 document.querySelectorAll('[data-platform-pick]').forEach((el) => el.addEventListener('click', () => {
@@ -3598,7 +3698,7 @@ async function buildLocalAndroidFlow(env) {
     say('build green ✓ — fetching the signed .aab for the ONE-TIME Play upload…');
     const arts = await gh(`/repos/${S.slug}/actions/runs/${run.id}/artifacts`);
     const art = (arts?.artifacts ?? []).find((a) => a.name === 'munni-android-release');
-    if (!art) throw new Error('no signed bundle on the run — this repo has neither ANDROID_KEYSTORE_* secrets nor IAC_GH_PAT (a fresh copy starts empty: secrets never ride along). Press Store as IAC_GH_PAT on the GitHub card and rebuild — the workflow then MINTS an upload keystore automatically and keeps it as environment secrets.');
+    if (!art) throw new Error('no signed bundle on the run — this repo has neither ANDROID_KEYSTORE_* secrets nor IAC_GH_PAT (a fresh copy starts empty: secrets never ride along). Connect GitHub (Manage on the GitHub tile — the token is stored as IAC_GH_PAT by itself) and rebuild — the workflow then MINTS an upload keystore automatically and keeps it as environment secrets.');
     const zipRes = await fetch(art.archive_download_url, { headers: { authorization: 'Bearer ' + S.pat } });
     if (!zipRes.ok) throw new Error(`artifact download failed (${zipRes.status})`);
     const blob = await zipRes.blob();

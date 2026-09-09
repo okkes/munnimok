@@ -30,7 +30,7 @@ secrets, if doing it by hand):
 | `IAC_DOMAIN` | your DDNS domain (e.g. `xxxx.synology.me`) |
 | `IAC_GH_PAT` | fine-grained PAT, THIS repo, permissions: Administration RW + Secrets RW + Variables RW + Actions RW (bootstrap writes environment secrets — `GITHUB_TOKEN` cannot; the wizard also dispatches workflows with it) |
 | `SYNOLOGY_URL` / `_USER` / `_PASS` / `_PATH` | DSM deploy account (FileStation + reverse-proxy writes; admin rights, 2FA off) — shared with deploy-nas.yml |
-| `NAS_GHCR_PAT` | PAT with read:packages (image pulls) |
+| `NAS_GHCR_PAT` | optional — the munni images are public; a classic PAT with read:packages only for private images |
 | `NAS_GOCARDLESS_SECRET_ID` / `_KEY` | GoCardless portal |
 | optional: `NAS_ENABLEBANKING_*`, `NAS_FCM_SERVICE_ACCOUNT_JSON`, `NAS_LOGODEV_*`, `LOGTO_GOOGLE_*`, `LOGTO_APPLE_*` | as per feature |
 
@@ -200,14 +200,24 @@ every saved value against its provider without the page seeing a
 secret — followed by one grid: a tile per connection (GitHub, the
 registry; domain and Synology on the NAS track) and a tile per feature
 (brand mark, toggle, one-line purpose, tags, the chip of its account).
-*Manage* on a tile opens that account in place — what the service is,
+*Manage* on a tile opens that account in a popup — what the service is,
 why munni needs it, where the values come from, the fields, Save /
-Check / Skip — one tile at a time so the grid stays a grid; *Select
-recommended* turns the recommended set on. Optional integrations (the
-crash-mail SMTP url) never count as blocking, and *Skip for now* counts
-an integration as done everywhere (chip, health, rail, stepper) until a
-value is saved or the skip is undone. The header, the stepper and the
-output drawer share the main column's width.
+Check / Skip — nothing on the page moves (Escape, the backdrop, Close
+and the browser's back button all close it); *Select recommended* turns
+the recommended set on. Optional integrations (the crash-mail SMTP url;
+the registry token, because the munni images are public — the helper
+proves it with an anonymous pull and the tile reads "Not needed") never
+count as blocking, and *Skip for now* counts an integration as done
+everywhere (chip, health, rail, stepper) until a value is saved or the
+skip is undone. Connecting GitHub stores the connection token as
+`IAC_GH_PAT` by itself (no separate button), and reuses it as the
+registry token when the images turn out private and the token is a
+classic one with read:packages. The header, the stepper and the output
+drawer share the main column's width. On the local track the helper
+also reads this user's Windows Root store while the family runs, so
+"Trust the family certificate on this PC" is a detected fact, not a
+tick; DSM login failures come with the meaning of the code (402 =
+the deploy account may not sign in to DSM; fix under Applications).
 
 ### Day-2 on the local track: it keeps itself up to date
 
