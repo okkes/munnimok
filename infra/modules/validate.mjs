@@ -110,6 +110,20 @@ export const VALIDATORS = {
   },
 
   /** sk_ search auth + pk_ image fetch — mirrors LogoEndpoints incl. the swap check */
+  /** the registry pull token — GitHub names the user and the scopes of a
+   *  classic PAT; the page's own check needs the pasted value, this twin
+   *  lets "Check all" verify the STORED one through the helper */
+  async ghcr(values, fetchImpl) {
+    const gap = need(values, ['NAS_GHCR_PAT']);
+    if (gap) return { ok: false, detail: gap };
+    const res = await fetchImpl('https://api.github.com/user', { headers: { authorization: `Bearer ${values.NAS_GHCR_PAT}`, accept: 'application/vnd.github+json' }, signal: T() });
+    if (!res.ok) return { ok: false, detail: `GitHub rejected the token (${res.status})` };
+    const scopes = res.headers?.get?.('x-oauth-scopes') ?? '';
+    const login = (await res.json()).login;
+    if (!/(read|write):packages/.test(scopes)) return { ok: false, detail: `the token authenticates as ${login} but lacks read:packages (scopes: ${scopes || 'none — is it fine-grained? use classic here'})` };
+    return { ok: true, detail: `valid — ${login}, scopes: ${scopes}` };
+  },
+
   async logodev(values, fetchImpl) {
     const gap = need(values, ['NAS_LOGODEV_SECRET_KEY', 'NAS_LOGODEV_PUBLIC_TOKEN']);
     if (gap) return { ok: false, detail: gap };

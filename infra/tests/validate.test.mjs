@@ -137,6 +137,21 @@ test('logodev: swap detection first, then search (sk) + image (pk)', async () =>
   assert.match(calls[1].url, /img\.logo\.dev\/google\.com\?token=pk_y/);
 });
 
+test('ghcr: the registry token must authenticate AND carry read:packages', async () => {
+  const mk = (status, scopes) => async () => ({ ok: status < 400, status, headers: { get: (k) => (k === 'x-oauth-scopes' ? scopes : null) }, json: async () => ({ login: 'okkes' }) });
+  const missing = await validate('ghcr', {}, { fetchImpl: mk(200, 'read:packages') });
+  assert.equal(missing.ok, false);
+  const rejected = await validate('ghcr', { NAS_GHCR_PAT: 'ghp_x' }, { fetchImpl: mk(401, '') });
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.detail, /401/);
+  const noScope = await validate('ghcr', { NAS_GHCR_PAT: 'ghp_x' }, { fetchImpl: mk(200, 'repo') });
+  assert.equal(noScope.ok, false);
+  assert.match(noScope.detail, /read:packages/);
+  const good = await validate('ghcr', { NAS_GHCR_PAT: 'ghp_x' }, { fetchImpl: mk(200, 'read:packages, repo') });
+  assert.equal(good.ok, true);
+  assert.match(good.detail, /okkes/);
+});
+
 test('google + apple: the dummy-code trick — invalid_client is the ONLY failure', async () => {
   const badGoogle = await validate('google', { LOGTO_GOOGLE_CLIENT_ID: 'a', LOGTO_GOOGLE_CLIENT_SECRET: 'b' }, { fetchImpl: capture(401, { error: 'invalid_client' }).fetchImpl });
   assert.equal(badGoogle.ok, false);

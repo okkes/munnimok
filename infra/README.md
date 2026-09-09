@@ -191,6 +191,22 @@ verified with the provider), Phones (its Android/iOS builds and store
 records) and Access tabs. A sticky stepper and a status rail read the
 same facts and name the next step. Design: `docs/wizard-family-env-plan.md`.
 
+Since 2026-09-10 the feature and credential steps are **tiles**: step 2
+is a grid of feature tiles (brand mark, toggle, one-line purpose, tags,
+and the live state of the feature's credentials with a jump to the tile
+that needs them; *Select recommended* turns the recommended set on).
+Step 3 opens with an **Integration health** card — one line per
+integration the picked features need, its state (Needs setup ·
+Configured · Checked ✓ · Needs attention · Check failed · Optional ·
+Skipped), and *Check all*, which has the helper re-verify every saved
+value against its provider without the page seeing a secret — followed
+by the integration tiles themselves, grouped by kind; a tile expands in
+place to the full explainer and form. Optional integrations (the
+crash-mail SMTP url) never count as blocking, and every tile carries
+*Skip for now*, which counts it as done everywhere (chip, health, rail,
+stepper) until a value is saved or the skip is undone. The header, the
+stepper and the output drawer share the main column's width.
+
 ### Day-2 on the local track: it keeps itself up to date
 
 The wizard is a ONE-TIME bootstrap. Afterwards the helper is the PC's

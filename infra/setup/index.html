@@ -184,12 +184,79 @@ section,.card,.crow,.reg,details.how,.statline,#local-status{scroll-margin-top:7
 .flash{animation:munni-flash-tint 2.4s ease-out 1;border-radius:12px;position:relative;z-index:1}
 button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation:munni-flash-ring 2.4s ease-out 1}
 @media(prefers-reduced-motion:reduce){.flash,button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation-duration:.8s}}
+/* ── tiles pass 2026-09-10: one page width, feature tiles, integration health, integration tiles, skip ── */
+.wrap{max-width:1300px;margin:0 auto;padding:0 16px}
+header{padding:20px 0}
+.stepper{display:block;padding:8px 0;overflow:visible}
+.stepper .steps{display:flex;gap:6px;overflow-x:auto;max-width:1300px;margin:0 auto;padding:0 16px}
+#log-drawer .bar,#log-drawer pre{max-width:1300px}
+#log-drawer .bar{padding:7px 16px}
+#log-drawer pre{padding-left:16px;padding-right:16px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px;margin:8px 0 14px}
+.tile{margin:0;display:flex;flex-direction:column;position:relative}
+.tile.open{grid-column:1/-1}
+.tile-h{display:flex;align-items:flex-start;gap:12px;padding:14px 16px 0}
+.tile-h .sp{flex:1}
+.tile-t{display:block;font-size:14px;font-weight:600;padding:10px 16px 0;cursor:pointer}
+.tile-d{color:var(--muted);font-size:12.5px;padding:2px 16px 0;flex:1}
+.tile-f{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:10px 16px 14px}
+.tile-f .live{display:contents}
+.tag{font-size:11px;border-radius:20px;padding:2px 9px;background:var(--chip);color:var(--muted)}
+.tag.ok{background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok)}
+.tag.warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+.tag.info{background:color-mix(in srgb,var(--brand-ink) 16%,transparent);color:var(--brand-ink)}
+.tile-go{margin-left:auto;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap}
+.bico{flex:0 0 40px;width:40px;height:40px;border-radius:11px;background:var(--chip);display:flex;align-items:center;justify-content:center;overflow:hidden}
+.bico svg{width:24px;height:24px}
+.bico svg.line{stroke:var(--brand-ink);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.bico .lm{font-weight:800;font-size:13px;letter-spacing:-.02em;color:#fff;font-family:system-ui,Segoe UI,Roboto,sans-serif}
+.bico.sm{flex-basis:26px;width:26px;height:26px;border-radius:7px}
+.bico.sm svg{width:16px;height:16px}
+.bico.sm .lm{font-size:8px}
+.switch{position:relative;display:inline-block;width:40px;height:22px;flex:0 0 40px;margin:0}
+.switch input{position:absolute;opacity:0;width:0;height:0;margin:0}
+.switch .sw{position:absolute;inset:0;border-radius:22px;background:var(--line);transition:background .15s;cursor:pointer}
+.switch .sw::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.switch input:checked+.sw{background:var(--brand)}
+.switch input:checked+.sw::after{transform:translateX(18px)}
+.switch input:disabled+.sw{opacity:.4;cursor:not-allowed}
+.tile.feat.on{border-color:color-mix(in srgb,var(--brand-ink) 45%,var(--line))}
+.tile.feat.off{opacity:.55}
+.feat-actions{display:flex;justify-content:flex-end;margin:-6px 0 4px}
+.feat-actions button{margin:0}
+.tile.int .crow-h{padding:14px 16px;align-items:flex-start}
+.tile.int .crow-h .bico{margin-top:-2px}
+.tile.int .crow-vars{white-space:normal}
+.tile.int .crow-b{padding:12px 16px 14px}
+.tile.int:not(.open) .crow-h{cursor:pointer}
+.health-h{display:flex;align-items:center;gap:12px}
+.health-h>div{flex:1;min-width:0}
+.health-h button{margin:0}
+.health-list{list-style:none;margin:10px 0 0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:0 24px}
+.health-list li{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid var(--line);font-size:13px;cursor:pointer}
+.health-list .hn{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.health-list .hs{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}
+.health-list .hs.ok{color:var(--ok)} .health-list .hs.warn{color:var(--warn)} .health-list .hs.bad{color:var(--bad)}
+.dot.warn{background:var(--warn);opacity:1}
+/* folded integration tiles: mark + chip on the first row, the title on its own row — a 3-column grid leaves no room for four things side by side */
+.tile.int .crow-h{display:grid;grid-template-columns:auto 1fr auto auto;grid-template-areas:"ico sp chip chev" "t t t t";gap:8px 10px;align-items:center}
+.tile.int .crow-h .bico{grid-area:ico;margin:0}
+.tile.int .crow-h [data-chip]{grid-area:chip}
+.tile.int .crow-h .chev{grid-area:chev}
+.tile.int .crow-h .crow-t{grid-area:t}
+.tile.int .crow-h .crow-vars{font-family:inherit;font-size:12.5px}
+/* many steps (the NAS track has ten) scroll sideways instead of crushing their labels: natural width, never shrink */
+.step{flex:1 0 auto}
+@media(max-width:1100px){.step .pill{display:none}}
+@media(max-width:700px){.tiles{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
+  <div class="wrap">
   <h1>munni setup</h1>
   <p>From a clean checkout to a running munni ecosystem — accounts, secrets, bootstrap and deploys, guided and automated. The NAS track drives api.github.com from your browser; the local track hands the work to a small helper on this machine. Steps run top to bottom; what stays yours is listed under “What's left for you”.</p>
+  </div>
 </header>
 <nav id="stepper" class="stepper" aria-label="setup steps"></nav>
 <div class="layout">
@@ -208,15 +275,27 @@ button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation:munni
 <section id="s-features" data-step="Enable features">
   <h2><span class="n">2</span> Which features do you want?</h2>
   <p class="sub">Everything else works out of the box (offline-first app, web push, sync). These need third-party accounts — untick what you don't want and its credentials disappear from Accounts &amp; credentials. Phones and https features switch the local family to LAN mode by themselves.</p>
-  <div id="features"></div>
+  <div class="feat-actions"><button class="ghost" id="btn-feat-recommended" title="turns the recommended features on (nothing is turned off)">Select recommended</button></div>
+  <div id="features" class="tiles"></div>
 </section>
 
 <section id="s-creds" data-step="Add credentials">
   <h2><span class="n">3</span> <span id="creds-title">Accounts &amp; credentials</span> <span class="pill" id="creds-pill"></span></h2>
   <p class="sub" id="creds-sub"></p>
 
-  <div class="card" id="connect-card">
-    <h3>GitHub — the build &amp; deploy engine <span class="pill" id="connect-pill">not connected</span></h3>
+  <div class="card" id="health-card">
+    <div class="health-h"><span class="ico" data-ico="pulse"></span><div><b>Integration health</b><div class="why" style="margin:0" id="health-sub">checking…</div></div><button class="ghost" id="btn-check-all">Check all</button></div>
+    <ul class="health-list" id="health-list"></ul>
+    <div class="msg" id="msg-health"></div>
+  </div>
+
+  <div class="card crow tile int open" id="connect-card" data-group="github">
+    <div class="crow-h" data-row-toggle="github">
+      <span class="bico" data-bico="github"></span>
+      <div class="crow-t"><b>GitHub — the build &amp; deploy engine</b><div class="crow-vars">needed for CI builds and deploys · IAC_GH_PAT</div></div>
+      <span data-chip><span class="pill" id="connect-pill">not connected</span></span><span class="chev">▾</span>
+    </div>
+    <div class="crow-b">
     <p class="why" id="connect-why-nas">The whole NAS pipeline lives in your repo's Actions: one fine-grained token drives this page live and is stored as <code>IAC_GH_PAT</code> so the bootstrap workflow can manage environments too. Point it at a repo that carries munni — or at a name that doesn't exist yet, and this page forks <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically.</p>
     <p class="why" id="connect-why-local" hidden>This card only appears because Android/iOS is ticked: the native apps are BUILT by GitHub CI (never on this machine), so those builds need your repo's Actions. Everything else on the local track stays GitHub-free. Same token rules as the NAS track; a nonexistent repo name gets forked from <code>okkes/munnimok</code>. After a successful Connect the token is saved in this machine's gitignored store like every other step-3 credential — the next visit reconnects by itself.</p>
     <div id="connect-body">
@@ -237,6 +316,7 @@ button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation:munni
     <button class="ghost" id="btn-store-pat" disabled>Store as IAC_GH_PAT <span class="dot" data-dot="IAC_GH_PAT"></span></button>
     <button class="ghost" id="btn-refresh" disabled>Refresh status</button>
     <div class="msg" id="msg-connect"></div>
+    </div>
     </div>
   </div>
 
@@ -1053,20 +1133,22 @@ const S = {
   storeStatusByEnv: {},    // store-status verdicts per environment name
   regVerdicts: {},         // registration verdicts per environment name → provider
   rowState: {},            // credential rows the operator opened/closed this visit
+  skipped: new Set(LS.get('skipped', [])), // integrations the operator skipped — counted as done (2026-09-10)
+  verdicts: {},            // the last Check verdict per integration (feeds the health card)
   pollTimer: null,
 };
 
 /* feature toggles → which credential groups show */
 const FEATURES = [
-  { id: 'gocardless', label: 'Bank sync via GoCardless', hint: 'live transactions from 2500+ EU banks (read-only PSD2 AIS) — the heart of the product' },
-  { id: 'enablebanking', label: 'Enable Banking as a second bank provider', hint: 'optional fallback aggregator; banks missing at GoCardless', localHint: 'Enable Banking is https-only — with LAN mode on the family serves real https (sslip.io hostnames), so the full bank-consent roundtrip works locally too' },
-  { id: 'logodev', label: 'Merchant logos (logo.dev)', hint: 'brand logos on transactions and recurring costs' },
-  { id: 'fcm', label: 'Native push notifications (Firebase FCM)', hint: 'push for the Android/iOS shells — web push works without this' },
-  { id: 'google', label: 'Sign in with Google', hint: 'social login button on the sign-in screen' },
-  { id: 'apple', label: 'Sign in with Apple', hint: 'required by Apple if you ship the iOS app with any social login', localHint: 'Apple accepts https return URLs only — LAN mode (real https hostnames) turns on by itself; register each environment’s return URL in the Apple Services ID (the Apple card under Accounts &amp; credentials lists them)' },
-  { id: 'email', label: 'Crash-report emails', hint: 'GlitchTip mails on new errors (needs an SMTP url); without it, reports stay in the UI' },
-  { id: 'android', label: 'Android app', hint: 'the native Android shell — CI builds and (once the keystore exists) publishes it; only the FIRST Play upload is manual, by store rule', localHint: 'its own store channel app.munni.local: CI bakes the build against THIS machine (LAN mode) and publishes it to the Play internal track' },
-  { id: 'ios', label: 'iOS app', hint: 'the native iOS shell — CI signs and uploads straight to TestFlight (Apple allows no sideloading)', localHint: 'its own store channel app.munni.local: CI bakes the LAN build and uploads it to TestFlight' },
+  { id: 'gocardless', label: 'Bank sync via GoCardless', tags: ['Recommended'], rec: true, hint: 'live transactions from 2500+ EU banks (read-only PSD2 AIS) — the heart of the product' },
+  { id: 'enablebanking', label: 'Enable Banking as a second bank provider', tags: ['Optional'], hint: 'optional fallback aggregator; banks missing at GoCardless', localHint: 'Enable Banking is https-only — with LAN mode on the family serves real https (sslip.io hostnames), so the full bank-consent roundtrip works locally too' },
+  { id: 'logodev', label: 'Merchant logos (logo.dev)', tags: ['Recommended'], rec: true, hint: 'brand logos on transactions and recurring costs' },
+  { id: 'fcm', label: 'Native push notifications (Firebase FCM)', tags: ['With the apps'], hint: 'push for the Android/iOS shells — web push works without this' },
+  { id: 'google', label: 'Sign in with Google', tags: ['Popular'], rec: true, hint: 'social login button on the sign-in screen' },
+  { id: 'apple', label: 'Sign in with Apple', tags: ['Optional'], hint: 'required by Apple if you ship the iOS app with any social login', localHint: 'Apple accepts https return URLs only — LAN mode (real https hostnames) turns on by itself; register each environment’s return URL in the Apple Services ID (the Apple tile under Accounts &amp; credentials lists them)' },
+  { id: 'email', label: 'Crash-report emails', tags: ['Optional'], hint: 'GlitchTip mails on new errors through an SMTP url — without it, reports simply stay in the web UI; the family starts either way' },
+  { id: 'android', label: 'Android app', tags: ['App distribution'], hint: 'the native Android shell — CI builds and (once the keystore exists) publishes it; only the FIRST Play upload is manual, by store rule', localHint: 'its own store channel app.munni.local: CI bakes the build against THIS machine (LAN mode) and publishes it to the Play internal track' },
+  { id: 'ios', label: 'iOS app', tags: ['App distribution'], hint: 'the native iOS shell — CI signs and uploads straight to TestFlight (Apple allows no sideloading)', localHint: 'its own store channel app.munni.local: CI bakes the LAN build and uploads it to TestFlight' },
 ];
 
 /* credential cards (step 3) — what/why/how per provider */
@@ -1206,10 +1288,13 @@ const GROUPS = [
     ],
   },
   {
-    id: 'email', title: 'Crash-report emails', feature: 'email', check: 'browser:emailUrl',
-    why: 'GlitchTip sends "new issue" mails through this SMTP url. Leave unset and reports simply stay in the web UI.',
-    how: ['Format: smtp://USER:PASSWORD@HOST:PORT (smtps:// for TLS). Any mailbox provider works.'],
-    fields: [{ name: 'NAS_GLITCHTIP_EMAIL_URL', scope: 'pair', ph: 'smtp://user:pass@smtp.example.com:587' }],
+    id: 'email', title: 'Crash-report emails', feature: 'email', check: 'browser:emailUrl', optional: true,
+    why: 'GlitchTip sends "new issue" mails through this SMTP url. Leave it unset and reports simply stay in the web UI — the family starts either way.',
+    how: [
+      'Format: <code>smtp://USER:PASSWORD@HOST:PORT</code> — <code>smtps://</code> for STARTTLS (port 587), <code>smtp+ssl://</code> for implicit TLS (port 465). It is a URL, not a mail address: an <code>@</code> inside the user name is written as <code>%40</code>.',
+      'Gmail: Google Account → Security → 2-Step Verification → <b>App passwords</b> → create one, then <code>smtps://you%40gmail.com:APP-PASSWORD@smtp.gmail.com:587</code>. Any mailbox provider works the same way.',
+    ],
+    fields: [{ name: 'NAS_GLITCHTIP_EMAIL_URL', scope: 'pair', ph: 'smtps://you%40gmail.com:app-password@smtp.gmail.com:587' }],
   },
 ];
 
@@ -1230,14 +1315,21 @@ const KIND_HINT = {
 const FAMILY_KIND = { domain: 'Connections', synology: 'Connections', ghcr: 'Connections', gocardless: 'Bank providers', enablebanking: 'Bank providers', playstore: 'Stores & signing', ascstore: 'Stores & signing', google: 'Sign-in providers', apple: 'Sign-in providers', logodev: 'Extras', email: 'Extras', fcm: 'Extras' };
 const NEEDED_FOR = { domain: 'every link', synology: 'deploys', ghcr: 'Set up & start (pulling images)', gocardless: 'bank sync', enablebanking: 'the second bank provider', playstore: 'Android builds + store checks', ascstore: 'iOS builds + store checks', google: 'Sign in with Google', apple: 'Sign in with Apple', logodev: 'merchant logos', email: 'crash-report mails', fcm: 'push on the NAS track' };
 const ICON_OF = { domain: 'globe', synology: 'server', ghcr: 'layers', gocardless: 'bank', enablebanking: 'bank', playstore: 'store', ascstore: 'store', google: 'id', apple: 'id', logodev: 'image', email: 'mail', fcm: 'bell' };
+/* the brand mark each feature / integration tile carries (user ruling
+   2026-09-10: recognisable at a glance, not generic) */
+const BRAND_OF = { gocardless: 'gocardless', enablebanking: 'enablebanking', logodev: 'logodev', fcm: 'firebase', google: 'google', apple: 'apple', email: 'mail', android: 'android', ios: 'testflight', playstore: 'play', ascstore: 'appstore', github: 'github', ghcr: 'ghcr', synology: 'synology', domain: 'globe' };
+const TAG_CLS = { Recommended: 'ok', Popular: 'info', 'App distribution': 'info', 'With the apps': 'info', Optional: '' };
 const rowSaved = (g) => {
   const fields = g.fields.filter((f) => !f.optional);
   const saved = fields.filter((f) => secretPresent(f.name, true)).length;
   return { saved, total: fields.length, complete: saved === fields.length };
 };
 const rowChip = (g) => {
+  if (S.skipped.has(g.id)) return '<span class="pill">Skipped</span>';
   const { saved, total, complete } = rowSaved(g);
-  return complete ? '<span class="pill ok">Saved ✓</span>' : (saved ? `<span class="pill warn">${saved}/${total} saved</span>` : '<span class="pill warn">Missing</span>');
+  if (complete) return '<span class="pill ok">Saved ✓</span>';
+  if (saved) return `<span class="pill warn">${saved}/${total} saved</span>`;
+  return g.optional ? '<span class="pill">Optional</span>' : '<span class="pill warn">Missing</span>';
 };
 
 /* ── github api ── */
@@ -1370,13 +1462,19 @@ function renderStatus() {
     const g = GROUPS.find((x) => x.id === row.dataset.group);
     const chip = row.querySelector('[data-chip]');
     if (g && chip) chip.innerHTML = rowChip(g);
-    // a row the operator never touched folds once its values are saved
-    if (g && S.rowState[g.id] === undefined) row.classList.toggle('open', !rowSaved(g).complete);
+    const skipBtn = row.querySelector('[data-skip-group]');
+    if (g && skipBtn) skipBtn.textContent = S.skipped.has(g.id) ? 'Skipped — undo' : 'Skip for now';
+    // a tile the operator never touched folds once its values are saved,
+    // when it was skipped, or when it is optional and still empty
+    if (g && S.rowState[g.id] === undefined) row.classList.toggle('open', !rowSaved(g).complete && !S.skipped.has(g.id) && !g.optional);
+    if (row.dataset.group === 'github' && S.rowState.github === undefined) row.classList.toggle('open', !(S.pat && S.user));
   });
-  const required = GROUPS.filter(groupVisible).flatMap((g) => g.fields).filter((f) => !f.optional);
+  const required = requiredFields();
   const missing = required.filter((f) => !secretPresent(f.name, true));
   el('creds-pill').textContent = missing.length ? `${required.length - missing.length}/${required.length} stored` : 'all stored ✓';
   el('creds-pill').className = 'pill ' + (missing.length ? 'warn' : 'ok');
+  renderFeatureTags();
+  renderHealth();
   // the stepper and the rail read the same verdicts
   if (typeof renderTodo === 'function') renderTodo();
 }
@@ -1421,6 +1519,147 @@ const ICONS = {
 };
 function applyIcons(root = document) {
   root.querySelectorAll('[data-ico]').forEach((el) => { el.innerHTML = ICONS[el.dataset.ico] ?? ''; });
+}
+
+/* ── brand marks for the tiles (inline SVG; a lettermark where the brand
+   is a wordmark). Each carries its own ground so it reads as an app icon
+   in light and dark mode alike. ── */
+const BRAND_ICONS = {
+  google: { bg: '#fff', svg: '<svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>' },
+  apple: { bg: '#fff', svg: '<svg viewBox="0 0 24 24"><path fill="#000" d="M16.365 1.43c0 1.14-.493 2.27-1.177 3.08-.744.9-1.99 1.57-2.987 1.57-.12 0-.23-.02-.3-.03-.01-.06-.04-.22-.04-.39 0-1.15.572-2.27 1.206-2.98.804-.94 2.142-1.64 3.248-1.68.03.13.05.28.05.43zm4.565 15.71c-.03.07-.463 1.58-1.518 3.12-.945 1.34-1.94 2.71-3.43 2.71-1.517 0-1.9-.88-3.63-.88-1.698 0-2.302.91-3.67.91-1.377 0-2.332-1.26-3.428-2.8-1.287-1.82-2.323-4.63-2.323-7.28 0-4.28 2.797-6.55 5.552-6.55 1.448 0 2.675.95 3.6.95.865 0 2.222-1.01 3.902-1.01.613 0 2.886.06 4.374 2.19-.13.09-2.383 1.37-2.383 4.19 0 3.26 2.854 4.42 2.955 4.45z"/></svg>' },
+  android: { bg: '#fff', svg: '<svg viewBox="0 0 24 24"><path fill="#3DDC84" d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85a.637.637 0 0 0-.83.22l-1.88 3.24a11.43 11.43 0 0 0-8.94 0L5.65 5.67a.643.643 0 0 0-.87-.2c-.28.18-.37.54-.22.83L6.4 9.48A10.81 10.81 0 0 0 1 18h22a10.81 10.81 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg>' },
+  firebase: { bg: '#fff', svg: '<svg viewBox="0 0 24 24"><path fill="#FFA000" d="M4.2 17.4 6.8 2.9c.1-.5.7-.6.9-.2l2.7 5.1-6.2 9.6z"/><path fill="#F57C00" d="m4.2 17.4 8.6-7.7-2.4-4.6-6.2 12.3z"/><path fill="#FFCA28" d="M4.2 17.4 15.4 6.2c.4-.4 1-.1 1.1.4L19 17.4l-6.4 3.6c-.4.2-.9.2-1.3 0l-7.1-3.6z"/></svg>' },
+  github: { bg: '#fff', svg: '<svg viewBox="0 0 24 24"><path fill="#181717" d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>' },
+  ghcr: { bg: '#24292f', svg: '<svg viewBox="0 0 24 24"><path fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round" d="m12 3 8 4.5v9L12 21l-8-4.5v-9L12 3zM4 7.5l8 4.5 8-4.5M12 12v9"/></svg>' },
+  play: { bg: '#fff', svg: '<svg viewBox="0 0 24 24"><path fill="#00D7FE" d="M3.6 2.4 13.3 12 3.6 21.6c-.3-.2-.6-.6-.6-1.1V3.5c0-.5.3-.9.6-1.1z"/><path fill="#00F076" d="M16.4 8.9 13.3 12 3.6 2.4c.3-.2.8-.2 1.2 0l11.6 6.5z"/><path fill="#FF3A44" d="m16.4 15.1-11.6 6.5c-.4.2-.9.2-1.2 0L13.3 12l3.1 3.1z"/><path fill="#FFD400" d="M20.6 10.8c.6.3.6 1.1 0 1.4l-4.2 2.9L13.3 12l3.1-3.1 4.2 1.9z"/></svg>' },
+  appstore: { bg: '#1C7CF6', svg: '<svg viewBox="0 0 24 24"><path fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" d="M8.6 16.6 13.9 7.4M9.6 7.4l5.6 9.7M6 13.4h12M7.3 17.5l-.6 1M17.3 18.5l-.6-1"/></svg>' },
+  testflight: { bg: '#1C7CF6', svg: '<svg viewBox="0 0 24 24"><path fill="#fff" d="m3.5 11.2 16.3-6.8c.6-.3 1.2.3 1 .9L16.3 20.6c-.2.6-1 .7-1.4.2l-3.3-4.3-3.9 2.8.8-4.6 8.2-7.5-9.8 6.2-3.5-1.3c-.6-.2-.6-1 .1-1.3z"/></svg>' },
+  mail: { bg: '#D44638', svg: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2" fill="none" stroke="#fff" stroke-width="1.8"/><path d="m3 8 9 6 9-6" fill="none" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>' },
+  gocardless: { bg: '#0C1B33', svg: '<span class="lm">GC</span>' },
+  enablebanking: { bg: '#0A7D6E', svg: '<span class="lm">EB</span>' },
+  logodev: { bg: '#6D28D9', svg: '<span class="lm">L.</span>' },
+  synology: { bg: '#2F2F2F', svg: '<span class="lm">SYN</span>' },
+  globe: { bg: 'var(--chip)', svg: ICONS.globe.replace('<svg', '<svg class="line"') },
+  key: { bg: 'var(--chip)', svg: ICONS.key.replace('<svg', '<svg class="line"') },
+};
+function applyBrandIcons(root = document) {
+  root.querySelectorAll('[data-bico]').forEach((el) => {
+    const b = BRAND_ICONS[el.dataset.bico] ?? BRAND_ICONS.key;
+    el.innerHTML = b.svg;
+    el.style.background = b.bg;
+  });
+}
+const escAttr = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+
+/* ── skip: an integration the operator does not want right now counts as
+   done — tiles, health card, rail and stepper agree (user ruling
+   2026-09-10: the crash-mail url must never read as a blocker) ── */
+const groupRequired = (g) => !g.optional && !S.skipped.has(g.id);
+const requiredFields = () => GROUPS.filter(groupVisible).filter(groupRequired).flatMap((g) => g.fields).filter((f) => !f.optional);
+function setSkipped(id, on) {
+  if (on) S.skipped.add(id); else S.skipped.delete(id);
+  LS.set('skipped', [...S.skipped]);
+}
+function toggleSkip(id) {
+  const g = GROUPS.find((x) => x.id === id);
+  const on = !S.skipped.has(id);
+  setSkipped(id, on);
+  const row = document.querySelector(`[data-group="${id}"]`);
+  if (row) { row.classList.toggle('open', !on); S.rowState[id] = !on; }
+  msg('msg-group-' + id, on ? `Skipped — ${g?.title ?? id} counts as done for now${g?.optional ? '; the family starts without it' : ''}. Undo any time.` : 'Back on the list.', true);
+  renderStatus();
+}
+
+/* ── feature tiles carry the live state of their credentials ── */
+function renderFeatureTags() {
+  FEATURES.forEach((f) => {
+    const el = document.querySelector(`[data-feat-tag="${f.id}"]`);
+    if (!el) return;
+    const on = Boolean(S.features[f.id]) && (f.targets ?? ['nas', 'local']).includes(S.platform);
+    document.querySelector(`[data-feature="${f.id}"]`)?.classList.toggle('on', on);
+    if (!on) { el.innerHTML = ''; return; }
+    const groups = GROUPS.filter((g) => g.feature === f.id && groupVisible(g));
+    if (!groups.length) { el.innerHTML = ''; return; }
+    const open = groups.filter((g) => !rowSaved(g).complete && !S.skipped.has(g.id) && !g.optional);
+    if (!open.length) {
+      el.innerHTML = groups.every((g) => rowSaved(g).complete) ? '<span class="tag ok">Ready ✓</span>' : `<span class="tag">${groups.some((g) => S.skipped.has(g.id)) ? 'Skipped' : 'Optional'}</span>`;
+      return;
+    }
+    el.innerHTML = `<span class="tag warn">Needs credentials</span><a class="tile-go" href="#" ${jumpAttr({ href: `[data-group="${open[0].id}"]` })}>Set up →</a>`;
+  });
+}
+async function selectRecommended() {
+  FEATURES.forEach((f) => { if (f.rec && (f.targets ?? ['nas', 'local']).includes(S.platform)) S.features[f.id] = true; });
+  LS.set('features', S.features);
+  renderFeatures(); renderCards(); fillDynamicCopy(); renderNative(); renderStatus();
+  if (S.platform === 'local' && HELPER) await reconcileLanMode().catch(() => {});
+}
+
+/* ── integration health: one line per integration the picked features
+   need, the state each is in, and Check all — the helper re-verifies
+   saved values against every provider without the page ever seeing them ── */
+function healthOf(g) {
+  if (S.skipped.has(g.id)) return { cls: '', label: 'Skipped' };
+  const { saved, complete } = rowSaved(g);
+  const v = S.verdicts[g.id];
+  if (complete) {
+    if (v?.checking) return { cls: '', label: 'Checking…' };
+    if (v && !v.unreachable) return v.ok ? (v.warn ? { cls: 'warn', label: 'Needs attention', title: v.detail } : { cls: 'ok', label: 'Checked ✓', title: v.detail }) : { cls: 'bad', label: 'Check failed', title: v.detail };
+    return { cls: 'ok', label: 'Configured', title: v?.detail };
+  }
+  if (saved) return { cls: 'warn', label: 'Incomplete' };
+  return g.optional ? { cls: '', label: 'Optional' } : { cls: 'warn', label: 'Needs setup' };
+}
+function renderHealth() {
+  const list = document.getElementById('health-list');
+  if (!list) return;
+  const rows = [];
+  const connect = document.getElementById('connect-card');
+  if (connect && !connect.classList.contains('hide')) rows.push({ name: 'GitHub (CI builds & deploys)', icon: 'github', href: '#connect-card', spot: '#btn-connect', ...(S.pat && S.user ? { cls: 'ok', label: 'Connected' } : { cls: 'warn', label: 'Not connected' }) });
+  GROUPS.filter(groupVisible).forEach((g) => rows.push({ name: g.title, icon: BRAND_OF[g.id] ?? 'key', href: `[data-group="${g.id}"]`, ...healthOf(g) }));
+  const dotOf = (cls) => (cls === 'ok' ? 'ok' : (cls === 'bad' ? 'miss' : (cls === 'warn' ? 'warn' : 'opt')));
+  list.innerHTML = rows.map((r) => `<li ${jumpAttr(r)} title="${escAttr(r.title ?? '')}"><span class="bico sm" data-bico="${r.icon}"></span><span class="hn">${r.name}</span><span class="hs ${r.cls}"><i class="dot ${dotOf(r.cls)}"></i>${r.label}</span></li>`).join('');
+  applyBrandIcons(list);
+  applyIcons(document.getElementById('health-card'));
+  const ready = rows.filter((r) => r.cls === 'ok').length;
+  const attention = rows.filter((r) => r.cls === 'warn' || r.cls === 'bad').length;
+  const rest = rows.length - ready - attention;
+  const sub = document.getElementById('health-sub');
+  if (sub) sub.textContent = rows.length ? `${ready} of ${rows.length} ready${attention ? ` · ${attention} need${attention === 1 ? 's' : ''} attention` : ''}${rest ? ` · ${rest} optional or skipped` : ''}` : 'no integrations for the features you picked';
+  const btn = document.getElementById('btn-check-all');
+  if (btn) btn.title = HELPER ? 'asks every provider whether the saved values work — the helper reads the machine store, this page never sees a value' : 'start the local helper (infra\\setup\\start.cmd) to check providers';
+}
+async function checkAll() {
+  const btn = document.getElementById('btn-check-all');
+  const jobs = GROUPS.filter(groupVisible).filter((g) => g.check && !S.skipped.has(g.id) && rowSaved(g).complete).map((g) => {
+    const card = document.querySelector(`[data-group="${g.id}"]`);
+    const values = card ? cardValues(card) : {};
+    // browser-side format checks need the value in the page — stored
+    // secrets never come back, so those stay "Configured"; the registry
+    // token has a helper-side twin that reads the store
+    const provider = g.check === 'browser:ghcr' && HELPER ? 'ghcr' : g.check;
+    if (provider.startsWith('browser:') && !Object.keys(values).length) return null;
+    return { g, provider, values };
+  }).filter(Boolean);
+  if (!jobs.length) { msg('msg-health', HELPER ? 'Nothing to check yet — save an integration first.' : 'Providers block browser calls — start the local helper (infra\\setup\\start.cmd) and Check all asks each of them for real.', Boolean(HELPER)); return; }
+  btn.disabled = true;
+  jobs.forEach(({ g }) => { S.verdicts[g.id] = { checking: true }; });
+  renderHealth();
+  await Promise.all(jobs.map(async ({ g, provider, values }) => {
+    try {
+      const verdict = await checkCredentials(provider, values);
+      S.verdicts[g.id] = verdict ?? { ok: false, detail: 'cannot check here' };
+      const fine = Boolean(verdict?.ok && !verdict.warn);
+      msg('msg-group-' + g.id, `${fine ? '✓' : (verdict?.warn ? '⚠' : '✗')} ${verdict?.detail ?? ''}`, fine);
+    } catch (e) {
+      S.verdicts[g.id] = { ok: false, detail: e.message };
+    }
+    renderHealth();
+  }));
+  const bad = jobs.filter(({ g }) => !S.verdicts[g.id]?.ok).length;
+  const warn = jobs.filter(({ g }) => S.verdicts[g.id]?.ok && S.verdicts[g.id]?.warn).length;
+  msg('msg-health', `Checked ${jobs.length} integration${jobs.length === 1 ? '' : 's'}: ${jobs.length - bad - warn} fine${warn ? `, ${warn} need attention` : ''}${bad ? `, ${bad} failed` : ''} — every tile carries its verdict.`, !bad);
+  btn.disabled = false;
 }
 
 const setPill = (id, text, ok) => {
@@ -1808,12 +2047,12 @@ function familyTodoItems() {
     return s?.services.web && s?.services.api && s?.services.logto;
   });
   const sharedUp = Boolean(st?.stacks?.[SHARED_STACK]?.services.glitchtip);
-  const missingSetup = GROUPS.filter(groupVisible)
-    .filter((g) => (PHASE_OF[g.id] ?? 'setup') === 'setup')
-    .flatMap((g) => g.fields).filter((x) => !x.optional && !has(x.name)).map((x) => x.name);
+  // optional integrations (the crash-mail url) and skipped ones never block the start (2026-09-10)
+  const setupGroups = GROUPS.filter(groupVisible).filter(groupRequired).filter((g) => (PHASE_OF[g.id] ?? 'setup') === 'setup');
+  const missingSetup = setupGroups.flatMap((g) => g.fields).filter((x) => !x.optional && !has(x.name)).map((x) => x.name);
   const plays = anyStore((ss) => ss.play).filter(Boolean);
   const fbs = anyStore((ss) => ss.firebase).filter(Boolean);
-  const firstMissingRow = GROUPS.filter(groupVisible).find((g) => (PHASE_OF[g.id] ?? 'setup') === 'setup' && g.fields.some((x) => !x.optional && !has(x.name)));
+  const firstMissingRow = setupGroups.find((g) => g.fields.some((x) => !x.optional && !has(x.name)));
   const items = [
     { id: 'docker', title: 'Docker Desktop running', detail: 'the whole family lives in containers', state: st ? st.docker.ok : null, href: '#local-status' },
     { id: 'creds', title: 'Credentials the family needs before it starts', detail: missingSetup.length ? `still missing: ${missingSetup.join(', ')}` : 'every value the family reads at start is saved', state: st ? missingSetup.length === 0 : null, href: firstMissingRow ? `[data-group="${firstMissingRow.id}"]` : '#s-creds' },
@@ -1823,15 +2062,15 @@ function familyTodoItems() {
   if (phones) items.push({ id: 'github', title: 'Connect GitHub', detail: 'the phones are built by your repo’s Actions', state: Boolean(S.pat && S.user), href: '#connect-card', spot: '#btn-connect' });
   if (f.android) {
     items.push(
-      { id: 'play-sa', title: 'Play service account saved', detail: 'the Google Play publishing card', state: has('PLAY_SERVICE_ACCOUNT_JSON'), href: '[data-group="playstore"]', spot: '#field-PLAY_SERVICE_ACCOUNT_JSON' },
+      { id: 'play-sa', title: 'Play service account saved', detail: 'the Google Play publishing card', state: has('PLAY_SERVICE_ACCOUNT_JSON') || S.skipped.has('playstore'), href: '[data-group="playstore"]', spot: '#field-PLAY_SERVICE_ACCOUNT_JSON' },
       { id: 'play-invite', title: 'Invite the service account in Play Console', detail: 'Users and permissions → Release to testing tracks', state: plays.length ? !plays.some((p) => p.state === 'error' && /NOT invited/.test(p.detail ?? '')) : null, href: '[data-group="playstore"]', spot: '[data-group="playstore"] details.how' },
     );
   }
   if (phones && f.fcm) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Google’s floor for push as code — Build names the exact gap', state: fbs.length ? fbs.every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
-  if (f.ios) items.push({ id: 'asc-key', title: 'App Store Connect key saved', detail: 'the App Store Connect card', state: has('ASC_KEY_ID') && has('ASC_KEY_P8'), href: '[data-group="ascstore"]', spot: '#field-ASC_KEY_P8' });
+  if (f.ios) items.push({ id: 'asc-key', title: 'App Store Connect key saved', detail: 'the App Store Connect card', state: (has('ASC_KEY_ID') && has('ASC_KEY_P8')) || S.skipped.has('ascstore'), href: '[data-group="ascstore"]', spot: '#field-ASC_KEY_P8' });
   if (f.ios && f.fcm) items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'team-wide, iOS push only — Google offers no API for it', manual: true, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
-  if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in card — each environment registers its redirect URI in its workspace', state: has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET'), href: '[data-group="google"]', spot: '#field-LOGTO_GOOGLE_CLIENT_ID' });
-  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: 'the Apple sign-in card — each environment registers its return URL in its workspace', state: has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });
+  if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in card — each environment registers its redirect URI in its workspace', state: (has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET')) || S.skipped.has('google'), href: '[data-group="google"]', spot: '#field-LOGTO_GOOGLE_CLIENT_ID' });
+  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: 'the Apple sign-in card — each environment registers its return URL in its workspace', state: (has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY')) || S.skipped.has('apple'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });
   if (lan && phones && S.envList[0]) items.push({ id: 'phone-ca', title: 'Trust the family certificate on the phone', detail: 'only for the phone’s browser — the apps trust it out of the box', manual: true, tab: 'phones', env: S.envList[0].name, sel: '[data-ca-url]' });
   items.push({ id: 'autonomy', title: 'Automatic updates on + the helper at logon', detail: 'after that the family keeps itself current without this page', state: Boolean(S.autonomy?.enabled && S.autonomy?.logonTask), href: '#btn-autonomy-toggle' });
   const done = todoDone();
@@ -1963,7 +2202,7 @@ document.addEventListener('click', (e) => {
 /* ── the stepper: one chip per visible section, state from the same facts ── */
 function stepStates() {
   const st = S.stacksStatus;
-  const required = GROUPS.filter(groupVisible).flatMap((g) => g.fields).filter((x) => !x.optional);
+  const required = requiredFields();
   const saved = required.filter((x) => secretPresent(x.name, true)).length;
   const family = S.platform === 'local' && HELPER ? familyTodoItems() : [];
   const setupDone = family.find((i) => i.id === 'setup')?.done;
@@ -1996,12 +2235,12 @@ function renderStepper() {
   const states = stepStates();
   let n = 0;
   const chips = { done: 'Complete', progress: 'In progress', todo: 'Not started', none: '' };
-  nav.innerHTML = [...document.querySelectorAll('main > section')].filter((sec) => !sec.classList.contains('hide') && sec.querySelector(':scope > h2 .n')).map((sec) => {
+  nav.innerHTML = '<div class="steps">' + [...document.querySelectorAll('main > section')].filter((sec) => !sec.classList.contains('hide') && sec.querySelector(':scope > h2 .n')).map((sec) => {
     n += 1;
     const s = states[sec.id] ?? { state: 'none', sub: '' };
     const title = sec.dataset.step ?? sec.querySelector('h2')?.childNodes[2]?.textContent?.trim() ?? sec.id;
     return `<a class="step ${s.state}" href="#${sec.id}" ${jumpAttr({ href: `#${sec.id}` })}><span class="sn">${s.state === 'done' ? '✓' : n}</span><span class="st"><b>${n}. ${title}</b><small>${s.sub || ''}</small></span>${chips[s.state] ? `<span class="pill ${s.state === 'done' ? 'ok' : (s.state === 'progress' ? 'warn' : '')}">${chips[s.state]}</span>` : ''}</a>`;
-  }).join('');
+  }).join('') + '</div>';
   S.stepStates = states;
 }
 
@@ -2013,7 +2252,7 @@ function renderRail(family = null) {
   const steps = Object.values(states).filter((s) => s.state !== 'none');
   const doneSteps = steps.filter((s) => s.state === 'done').length;
   const pct = steps.length ? Math.round((doneSteps / steps.length) * 100) : 0;
-  const required = GROUPS.filter(groupVisible).flatMap((g) => g.fields).filter((x) => !x.optional);
+  const required = requiredFields();
   const saved = required.filter((x) => secretPresent(x.name, true)).length;
   const envs = S.envList;
   const running = envs.filter((e) => { const s = S.stacksStatus?.stacks?.[e.stack]; return s?.services.web && s?.services.api; }).length;
@@ -2274,8 +2513,8 @@ function applyPlatform() {
   });
   // GitHub is optional for the local track — fold the connect section away
   document.getElementById('creds-sub').textContent = S.platform === 'local'
-    ? 'Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Save — with the local helper running, they land in a gitignored secret store on THIS machine (GitHub is not involved for the local twin) and the family reads them when it starts. Rows fold once saved; the chip says what is still missing.'
-    : "Each card explains what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — this page encrypts them client-side (GitHub's sealed-box contract) and writes repository or environment secrets directly. Values are write-only from then on; the dots show presence, never content.";
+    ? 'Every integration is a tile: its chip says what it still needs; open one for what the service is, why munni needs it and exactly where the values come from. Paste, hit Save — with the local helper running, they land in a gitignored secret store on THIS machine (GitHub is not involved for the local twin) and the family reads them when it starts. Tiles fold once saved; Skip for now counts an integration as done until you come back to it.'
+    : "Every integration is a tile: its chip says what it still needs; open one for what the service is, why munni needs it and exactly where the values come from. Paste, hit Store — this page encrypts them client-side (GitHub's sealed-box contract) and writes repository or environment secrets directly. Values are write-only from then on; the dots show presence, never content. Skip for now counts an integration as done until you come back to it.";
   document.getElementById('creds-title').textContent = S.platform === 'local' ? 'Family credentials — once per machine' : 'Accounts & credentials';
   renderFeatures();
   renderCards();
@@ -2327,13 +2566,21 @@ function applyDomain() {
 }
 
 function renderFeatures() {
-  document.getElementById('features').innerHTML = FEATURES.map((f) => {
+  const wrap = document.getElementById('features');
+  wrap.className = 'tiles';
+  wrap.innerHTML = FEATURES.map((f) => {
     const off = !(f.targets ?? ['nas', 'local']).includes(S.platform);
+    const on = Boolean(S.features[f.id]) && !off;
     const hint = off ? f.offHint : ((S.platform === 'local' && f.localHint) || f.hint);
     return `
-    <div class="feature" ${off ? 'style="opacity:.5"' : ''}><input type="checkbox" id="feat-${f.id}" ${S.features[f.id] && !off ? 'checked' : ''} ${off ? 'disabled' : ''}/>
-    <label for="feat-${f.id}"><b>${f.label}</b> — <span class="sub" style="display:inline">${hint}</span></label></div>`;
+    <div class="card tile feat ${on ? 'on' : ''} ${off ? 'off' : ''}" data-feature="${f.id}">
+      <div class="tile-h"><span class="bico" data-bico="${BRAND_OF[f.id] ?? 'key'}"></span><span class="sp"></span><label class="switch"><input type="checkbox" id="feat-${f.id}" ${on ? 'checked' : ''} ${off ? 'disabled' : ''}/><span class="sw"></span></label></div>
+      <label class="tile-t" for="feat-${f.id}">${f.label}</label>
+      <div class="tile-d">${hint}</div>
+      <div class="tile-f">${(f.tags ?? []).map((t) => `<span class="tag ${TAG_CLS[t] ?? ''}">${t}</span>`).join('')}<span class="live" data-feat-tag="${f.id}"></span></div>
+    </div>`;
   }).join('');
+  applyBrandIcons(wrap);
   FEATURES.forEach((f) => {
     document.getElementById('feat-' + f.id).addEventListener('change', async (e) => {
       S.features[f.id] = e.target.checked; LS.set('features', S.features); renderCards(); fillDynamicCopy(); renderNative(); renderStatus();
@@ -2345,6 +2592,7 @@ function renderFeatures() {
       if (e.target.checked && (f.id === 'android' || f.id === 'ios')) autoNativeFlow(f.id).catch(() => {});
     });
   });
+  renderFeatureTags();
 }
 
 function renderCards() {
@@ -2357,6 +2605,10 @@ function renderCards() {
   // strings apply everywhere, {nas, local} objects resolve here
   const howSteps = (g) => g.how.map((h) => (typeof h === 'string' ? h : h[S.platform])).filter(Boolean);
   const wrap = document.getElementById('cred-cards');
+  // the GitHub tile is static markup that lives INSIDE the grid once
+  // rendered — pull it out before the grid is rebuilt or innerHTML eats it
+  const connect = document.getElementById('connect-card');
+  if (connect && wrap.contains(connect)) wrap.before(connect);
   // re-rendering (feature toggles, platform switch) must never eat what
   // the user already typed: snapshot values + open explainers, restore after
   const typed = Object.fromEntries(
@@ -2369,16 +2621,17 @@ function renderCards() {
   const kindOf = (g) => FAMILY_KIND[g.id] ?? 'Extras';
   const header = (kind) => `<div class="phase" data-kind="${kind}">${kind}<small>${KIND_HINT[kind] ?? ''}</small></div>`;
   const cardHtml = (g) => {
-    const open = S.rowState[g.id] ?? !rowSaved(g).complete;
+    const open = S.rowState[g.id] ?? (!rowSaved(g).complete && !S.skipped.has(g.id) && !g.optional);
     return `
-    <div class="card crow ${open ? 'open' : ''}" data-group="${g.id}">
+    <div class="card crow tile int ${open ? 'open' : ''}" data-group="${g.id}">
       <div class="crow-h" data-row-toggle="${g.id}">
-        <span class="ico" data-ico="${ICON_OF[g.id] ?? 'key'}"></span>
-        <div class="crow-t"><b>${g.title}</b><div class="crow-vars">${g.fields.map((f) => f.name).join(' · ')}${NEEDED_FOR[g.id] ? ` — needed for ${NEEDED_FOR[g.id]}` : ''}</div></div>
+        <span class="bico" data-bico="${BRAND_OF[g.id] ?? 'key'}"></span>
+        <div class="crow-t"><b>${g.title}</b><div class="crow-vars">${NEEDED_FOR[g.id] ? `needed for ${NEEDED_FOR[g.id]}` : g.fields.map((f) => f.name).join(' · ')}</div></div>
         <span data-chip>${rowChip(g)}</span><span class="chev">▾</span>
       </div>
       <div class="crow-b">
-      <p class="why">${g.why}</p>
+      <div class="crow-vars" style="margin-top:8px">${g.fields.map((f) => f.name).join(' · ')}</div>
+      <p class="why">${g.why}${g.optional ? ' <b>Optional</b> — skip it below and it counts as done.' : ''}</p>
       <details class="how"><summary>Where these values come from</summary><ol>${howSteps(g).map((h) => `<li>${h}</li>`).join('')}</ol></details>
       ${g.fields.map((f) => `
         <label class="f" for="field-${f.name}">${f.name} <span class="envtag">${scopeTag(f)}</span></label>
@@ -2386,6 +2639,7 @@ function renderCards() {
                  : `<input id="field-${f.name}" type="${f.secret ? 'password' : 'text'}" data-secret="${f.name}" data-scope="${f.scope}" placeholder="${f.ph ?? ''}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''} autocomplete="off"/>`}`).join('')}
       <button data-store-group="${g.id}">${local ? 'Save' : 'Store'}</button>${g.check ? `
       <button class="ghost" data-check-group="${g.id}">Check</button>` : ''}
+      <button class="ghost" data-skip-group="${g.id}" title="counts this integration as done for now — undo any time">${S.skipped.has(g.id) ? 'Skipped — undo' : 'Skip for now'}</button>
       <div class="msg" id="msg-group-${g.id}"></div>
       </div>
     </div>`;
@@ -2394,14 +2648,15 @@ function renderCards() {
   wrap.innerHTML = KIND_ORDER.map((kind) => {
     const rows = visible.filter((g) => kindOf(g) === kind);
     if (!rows.length && !(kind === 'Connections' && (S.platform === 'nas' || nativeOn))) return '';
-    return header(kind) + rows.map(cardHtml).join('');
+    return header(kind) + `<div class="tiles" data-kind-grid="${kind}">${rows.map(cardHtml).join('')}</div>`;
   }).join('');
   applyIcons(wrap);
-  // the GitHub card is the first connection (shown on the NAS track, and on the local track once a phone is ticked)
-  const connect = document.getElementById('connect-card');
-  const connHeader = wrap.querySelector('[data-kind="Connections"]');
-  if (connect && connHeader) connHeader.after(connect);
+  applyBrandIcons(wrap);
+  // the GitHub tile leads the Connections grid (NAS track, and the local track once a phone is ticked)
+  const connGrid = wrap.querySelector('[data-kind-grid="Connections"]');
+  if (connect && connGrid) connGrid.prepend(connect);
   else if (connect) wrap.before(connect);
+  if (connect) applyBrandIcons(connect); // static markup — painted here, not with the grid
   wrap.querySelectorAll('[data-row-toggle]').forEach((h) => h.addEventListener('click', (e) => {
     if (e.target.closest('a, button, input, textarea, label')) return;
     const row = h.closest('.crow');
@@ -2410,6 +2665,7 @@ function renderCards() {
   }));
   wrap.querySelectorAll('[data-store-group]').forEach((btn) => btn.addEventListener('click', () => storeGroup(btn.dataset.storeGroup)));
   wrap.querySelectorAll('[data-check-group]').forEach((btn) => btn.addEventListener('click', () => checkGroup(btn.dataset.checkGroup)));
+  wrap.querySelectorAll('[data-skip-group]').forEach((btn) => btn.addEventListener('click', () => toggleSkip(btn.dataset.skipGroup)));
   // any edit resets a pending "Store anyway" back to the validating Store
   wrap.querySelectorAll('.card').forEach((card) => card.addEventListener('input', () => {
     const store = card.querySelector('[data-store-group]');
@@ -2442,6 +2698,7 @@ async function storeGroup(id) {
     msg('msg-group-' + id, 'checking the values first…', true);
     try {
       const verdict = await checkCredentials(g.check, cardValues(card));
+      if (verdict && !verdict.noHelper) { S.verdicts[g.id] = verdict; renderHealth(); }
       if (verdict && !verdict.ok && !verdict.unreachable && !verdict.noHelper) {
         msg('msg-group-' + id, `✗ not stored — ${verdict.detail}`, false);
         storeBtn.dataset.force = '1';
@@ -2462,6 +2719,7 @@ async function storeGroup(id) {
     if (ok) {
       card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
       msg('msg-group-' + id, `Saved ✓ — kept in this machine's gitignored store; the family reads it (running containers pick it up on the next Set up)${verdictNote}`, true);
+      if (S.skipped.has(id)) setSkipped(id, false);
       await refreshLocal();
     } else {
       msg('msg-group-' + id, 'Saving failed — details in the step-4 output box.', false);
@@ -2474,6 +2732,7 @@ async function storeGroup(id) {
     for (const e of entries) await storeSecret(e.name, e.value, e.scope);
     card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
     msg('msg-group-' + id, `Stored ${entries.map((e) => e.name).join(', ')} ✓ (values are write-only from here on)${verdictNote}`, true);
+    if (S.skipped.has(id)) setSkipped(id, false);
     await refresh();
   } catch (e) { msg('msg-group-' + id, String(e.message || e), false); }
 }
@@ -2507,9 +2766,11 @@ const BROWSER_VALIDATORS = {
   },
   async emailUrl(values) {
     const u = values.NAS_GLITCHTIP_EMAIL_URL ?? '';
-    return /^smtps?:\/\/[^:@\s]+(:[^@\s]*)?@[^:@\s]+:\d+\/?$/.test(u)
+    // a bare mail address is the classic paste (2026-09-10) — say what the field really takes
+    if (/^[^\s@:/]+@[^\s@:/]+\.[a-z]+$/i.test(u)) return { ok: false, detail: 'that is a mail ADDRESS — this field takes the SMTP url of the mailbox that sends, e.g. smtps://you%40gmail.com:APP-PASSWORD@smtp.gmail.com:587 (the @ inside the user name written as %40)' };
+    return /^(smtps?|smtp\+tls|smtp\+ssl):\/\/[^:@\s]+(:[^@\s]*)?@[^:@\s]+:\d+\/?$/.test(u)
       ? { ok: true, detail: 'well-formed smtp url (delivery itself is proven by the first GlitchTip mail)' }
-      : { ok: false, detail: 'expected smtp://USER:PASSWORD@HOST:PORT (or smtps://)' };
+      : { ok: false, detail: 'expected smtp://USER:PASSWORD@HOST:PORT (smtps:// or smtp+ssl:// for TLS; an @ inside the user name as %40)' };
   },
 };
 
@@ -2553,6 +2814,7 @@ async function checkGroup(id) {
   msg('msg-group-' + id, 'checking…', true);
   try {
     const verdict = await checkCredentials(g.check, cardValues(card));
+    if (!verdict.noHelper) { S.verdicts[g.id] = verdict; renderHealth(); }
     // a warning (credentials fine, a callback unregistered) reads as a to-do, not a pass
     const fine = verdict.ok && !verdict.warn;
     msg('msg-group-' + id, `${fine ? '✓' : (verdict.warn ? '⚠' : '✗')} ${verdict.detail}`, fine);
@@ -2584,6 +2846,8 @@ async function checkManifest() {
 
 /* ── wire up ── */
 const UPSTREAM = 'okkes/munnimok';
+document.getElementById('btn-check-all').addEventListener('click', () => checkAll().catch((e) => msg('msg-health', `✗ ${e.message}`, false)));
+document.getElementById('btn-feat-recommended').addEventListener('click', () => selectRecommended().catch(() => {}));
 document.getElementById('in-slug').value = S.slug;
 document.getElementById('in-slug').addEventListener('input', (e) => { S.slug = e.target.value.trim(); LS.set('slug', S.slug); document.getElementById('btn-fork').hidden = true; });
 
