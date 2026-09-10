@@ -77,11 +77,16 @@ quotes — the template quotes it), `NAS_GOCARDLESS_SECRET_ID`,
    - `…/docker/munni` — the live stack
    - `…/docker/munni/published` — where GitHub drops new bundles
 
-4. **Bootstrap `apply.sh`** once: copy it from this folder to
-   `…/docker/munni/apply.sh`. After that it self-updates from every
-   bundle — this is the only manual upload, ever.
+4. **`apply.sh`** — nothing to do since 2026-09-10: every deploy uploads
+   it into the live dir (the parent of `SYNOLOGY_PATH`) through the
+   FileStation API, and the bootstrap's poller task runs a throwaway
+   copy of it. By hand only if you run without the workflows: copy it
+   from this folder to `…/docker/munni/apply.sh`.
 
-5. **DSM Task Scheduler** → Create → Scheduled Task → User-defined script:
+5. **DSM Task Scheduler** — created by the IaC bootstrap (root, every 5
+   minutes, `cd <live> && cp apply.sh .apply.run && MUNNI_LIVE_DIR="<live>" sh .apply.run`)
+   once the deploy account is an administrator. By hand, the same:
+   Create → Scheduled Task → User-defined script:
    - User: `root` (needs docker)
    - Schedule: daily, **repeat every 5 minutes**
    - Run command (the copy makes self-update safe — tar must never

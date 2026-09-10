@@ -25,7 +25,7 @@ import { applyApps, applyBranding, applySocialConnectors, writeBack } from './mo
 import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
-import { applyReverseProxy } from './modules/dsm.mjs';
+import { applyReverseProxy, ensureWildcardCertificate, ensurePollerTask, inspectNas, dsmAdvice } from './modules/dsm.mjs';
 import { localAwareFetch } from './modules/insecure-fetch.mjs';
 
 const args = process.argv.slice(2);
@@ -243,6 +243,17 @@ async function ciVerify() {
   if (missing.length) console.log(`  ✗ secrets missing from ${stack.githubEnvironment}: ${missing.join(', ')}`);
   else console.log(`  ✓ secrets manifest satisfied (${stack.githubEnvironment})`);
   if (unmanaged.length) console.log(`  ! unmanaged secrets present (add to manifest or remove): ${unmanaged.join(', ')}`);
+  // what the NAS holds (read-only): the wildcard certificate and the poller task
+  const { SYNOLOGY_URL, SYNOLOGY_USER, SYNOLOGY_PASS, SYNOLOGY_PATH } = process.env;
+  if (SYNOLOGY_URL && SYNOLOGY_USER && SYNOLOGY_PASS) {
+    try {
+      const nas = await inspectNas({ url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS }, { domain: stack.domain, publishedPath: SYNOLOGY_PATH ?? '' });
+      console.log(nas.wildcard ? `  ${nas.wildcard.isDefault ? '✓' : '!'} dsm: wildcard certificate ${nas.wildcard.id}${nas.wildcard.isDefault ? ' is the default' : ' exists but is NOT the default'}` : '  ✗ dsm: no wildcard certificate — bootstrap (apply) requests one through DSM');
+      console.log(nas.task ? `  ${nas.task.enabled ? '✓' : '!'} dsm: poller task exists${nas.task.enabled ? '' : ' but is disabled'} (live dir ${nas.liveDir})` : `  ✗ dsm: no poller task — bootstrap (apply) creates it (live dir ${nas.liveDir})`);
+    } catch (e) {
+      console.log(`  ✗ dsm: could not read the NAS (${e.message})${dsmAdvice(e)}`);
+    }
+  }
   const allUp = await probeAll();
   return missing.length || !allUp ? 1 : 0;
 }
@@ -300,18 +311,46 @@ async function ciApply() {
     console.log('  glitchtip: waiting for IAC_GLITCHTIP_API_TOKEN (see the runbook) — org/DSNs not ensured yet');
   }
 
-  // DSM reverse proxy as code — runs whenever the deploy account creds
-  // are in the shell (CI injects SYNOLOGY_*; locally: export them)
-  const { SYNOLOGY_URL, SYNOLOGY_USER, SYNOLOGY_PASS } = process.env;
+  // DSM as code — runs whenever the deploy account creds are in the
+  // shell (CI injects SYNOLOGY_*; locally: export them): the reverse-proxy
+  // rules, the wildcard certificate the https hosts need, the Task
+  // Scheduler poller that applies uploaded bundles (2026-09-10). Every
+  // call is administrator-only: the ONE manual step is the account.
+  const { SYNOLOGY_URL, SYNOLOGY_USER, SYNOLOGY_PASS, SYNOLOGY_PATH } = process.env;
   if (SYNOLOGY_URL && SYNOLOGY_USER && SYNOLOGY_PASS) {
+    const creds = { url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS };
+    let dsmOk = true;
     try {
-      const result = await applyReverseProxy(stack, { url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS });
+      const result = await applyReverseProxy(stack, creds);
       console.log(`  dsm: reverse proxy created=[${result.created}] updated=[${result.updated}] unchanged=${result.unchanged.length}`);
     } catch (e) {
-      console.log(`  dsm: reverse-proxy apply failed (${e.message}) — check the deploy account's DSM admin rights`);
+      dsmOk = false;
+      console.log(`  dsm: reverse-proxy apply failed (${e.message})${dsmAdvice(e) || ' — check the deploy account\'s DSM admin rights'}`);
+    }
+    if (dsmOk) {
+      try {
+        // Let's Encrypt wants a contact; the DDNS domain's own mailbox name is the honest default
+        const email = process.env.IAC_ACME_EMAIL || `admin@${stack.domain}`;
+        const cert = await ensureWildcardCertificate(creds, { domain: stack.domain, probeHost: stack.host('web'), email });
+        console.log(`  dsm: certificate ${cert.state} — ${cert.detail}`);
+      } catch (e) {
+        console.log(`  dsm: wildcard certificate not ensured (${e.message})${dsmAdvice(e)}`);
+      }
+      if (SYNOLOGY_PATH) {
+        try {
+          const task = await ensurePollerTask(creds, { publishedPath: SYNOLOGY_PATH });
+          console.log(`  dsm: poller task ${task.state} — ${task.detail}`);
+        } catch (e) {
+          console.log(`  dsm: poller task not ensured (${e.message})${dsmAdvice(e)}`);
+        }
+      } else {
+        console.log('  dsm: SYNOLOGY_PATH not in env — the poller task is not ensured this run');
+      }
+    } else {
+      console.log('  dsm: certificate + poller task skipped until the deploy account may use DSM');
     }
   } else {
-    console.log('  dsm: SYNOLOGY_URL/USER/PASS not in env — reverse-proxy rules not applied this run');
+    console.log('  dsm: SYNOLOGY_URL/USER/PASS not in env — reverse-proxy rules, certificate and poller task not applied this run');
   }
 
   const runbook = renderRunbook(stack, { minted, missingOperator });

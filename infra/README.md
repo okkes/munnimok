@@ -57,13 +57,19 @@ runbook (`munni-iac.<domain>`, `munni-iac-test.<domain>`, …).
 
 **B1-1 (once per NAS).** Make sure the deploy account (SYNOLOGY_USER)
 has DSM *administrator* rights and may use the DSM and File Station
-applications (User & Group → Applications) — the reverse-proxy module
-signs in to DSM itself; a `dsm: reverse-proxy apply failed` line in the
-bootstrap output (codes 402/119) is exactly that permission missing.
-The IaC workflow creates every reverse-proxy rule via the DSM API. The
-poller that applies uploaded bundles is a DSM Task Scheduler entry you
-create once (deploy/nas/README.md §5: user root, every 5 minutes,
-`cd /volume1/docker/munni && cp apply.sh .apply.run && sh .apply.run`).
+applications (User & Group → the user → Applications; a group's Deny
+beats Allow) — every NAS step below is admin-only on DSM, and no
+account can grant itself those rights (that is why this one step is
+yours). A `dsm: … failed` line in the bootstrap output with code 402
+(DSM application denied) or 119/105 (not an administrator) is exactly
+that. With the account right, the IaC workflow does the rest through
+the DSM API, idempotently on every run: every reverse-proxy rule, the
+wildcard Let's Encrypt certificate (`<domain>;*.<domain>`, requested
+through DSM's own wizard call and set as default — the DDNS default
+covers only `<domain>` itself), and the poller task (root, every 5
+minutes, in the live dir next to `SYNOLOGY_PATH`, running a throwaway
+copy of `apply.sh`, which every deploy uploads there). Optional secret
+`IAC_ACME_EMAIL` is the Let's Encrypt contact (default `admin@<domain>`).
 The wizard's **NAS readiness** card (Deploy step, with the helper running)
 probes every reverse-proxy host from outside and names the step each one
 still misses — DNS, the wildcard certificate, the rule (DSM answers Web
@@ -73,13 +79,11 @@ both twins by itself. Only two more things stay manual (the workflow's
 verify step probes both):
 - Firewall: allow `172.16.0.0/12` in the access profile; restrict the
   `*-admin` hosts to LAN.
-- Certificate: every reverse-proxy host is https, so DSM needs a
-  certificate that covers `*.<domain>` — the DDNS default covers only
-  `<domain>` itself (found live 2026-09-10). Once: Control Panel →
-  Security → Certificate → Add → Let's Encrypt → the DDNS domain WITH
-  the wildcard option → set as default. Own domains: acme.sh with the
-  `synology_dsm` deploy hook (docs/iac-plan.md §4). `--verify` names
-  every host the certificate misses.
+- Certificate: automated for Synology DDNS domains (above); own domains
+  need acme.sh with the `synology_dsm` deploy hook (docs/iac-plan.md §4)
+  because only Synology's DDNS can validate a wildcard. `--verify` names
+  every host the certificate misses and reports the certificate and
+  poller task DSM holds.
 
 **B1-2 (once per stack — one workflow click).** Wizard step 5, or
 Actions → *Deploy to NAS* → Run workflow → channel `iac-prod` /

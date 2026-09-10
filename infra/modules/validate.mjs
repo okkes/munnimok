@@ -40,7 +40,7 @@ export function jwtES256({ header, payload, pem }) {
 export const DSM_LOGIN_ADVICE = {
   400: 'no such account, or the password is wrong',
   401: 'the account is disabled (DSM → Control Panel → User & Group)',
-  402: 'permission denied — the account exists but may not sign in to DSM: Control Panel → User & Group → the deploy user → Applications → allow DSM and File Station; and it must be in the administrators group (reverse-proxy rules need admin rights)',
+  402: 'the DSM application is denied for this account (its password is right): Control Panel → User & Group → the deploy user → Applications → DSM: Allow (a group Deny beats Allow) — and put it in the administrators group (User groups tab): every step bootstrap automates on the NAS is admin-only',
   403: '2-step verification is on for this account — turn it off for the deploy user (the login API cannot answer an OTP prompt)',
   404: 'the 2-step verification code was rejected — turn 2FA off for the deploy user',
   406: 'DSM enforces 2-factor authentication for this account — exempt the deploy user (Control Panel → Security → Account)',
