@@ -79,13 +79,17 @@ quotes — the template quotes it), `NAS_GOCARDLESS_SECRET_ID`,
 
 4. **`apply.sh`** — nothing to do since 2026-09-10: every deploy uploads
    it into the live dir (the parent of `SYNOLOGY_PATH`) through the
-   FileStation API, and the bootstrap's poller task runs a throwaway
-   copy of it. By hand only if you run without the workflows: copy it
+   FileStation API — so does the prod twin's bootstrap before it creates
+   the poller task, which runs a throwaway copy of it. By hand only if
+   you run without the workflows: copy it
    from this folder to `…/docker/munni/apply.sh`.
 
-5. **DSM Task Scheduler** — created by the IaC bootstrap (root, every 5
-   minutes, `cd <live> && cp apply.sh .apply.run && MUNNI_LIVE_DIR="<live>" sh .apply.run`)
-   once the deploy account is an administrator. By hand, the same:
+5. **DSM Task Scheduler** — created by the prod twin's IaC bootstrap (root,
+   every 5 minutes, `cd "<live>" && cp apply.sh .apply.run && MUNNI_LIVE_DIR="<live>" MUNNI_PUBLISHED_DIR="<live>/published" sh .apply.run`)
+   once the deploy account is an administrator; `<live>` is the PARENT of
+   `SYNOLOGY_PATH`, resolved through the share's real path (never a
+   guessed volume — an unresolvable share leaves an existing task alone).
+   By hand, the same:
    Create → Scheduled Task → User-defined script:
    - User: `root` (needs docker)
    - Schedule: daily, **repeat every 5 minutes**

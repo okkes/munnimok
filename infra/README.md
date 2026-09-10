@@ -66,17 +66,26 @@ that. With the account right, the IaC workflow does the rest through
 the DSM API, idempotently on every run: every reverse-proxy rule, the
 wildcard Let's Encrypt certificate (`<domain>;*.<domain>`, requested
 through DSM's own wizard call and set as default — the DDNS default
-covers only `<domain>` itself), and the poller task (root, every 5
-minutes, in the live dir next to `SYNOLOGY_PATH`, running a throwaway
-copy of `apply.sh`, which every deploy uploads there). Optional secret
+covers only `<domain>` itself — and the stack's rules are bound to it,
+because DSM keeps a rule on the certificate it was created with), the
+live dir (`apply.sh` + the published folder; the live dir is the PARENT
+of `SYNOLOGY_PATH`, one rule everywhere), and the poller task (root,
+every 5 minutes, running a throwaway copy of `apply.sh`, which every
+deploy re-uploads). The prod twin owns those NAS-wide pieces; the
+staging run only binds its own rules to the certificate it finds. The
+wizard dispatches the prod twin with `chain=staging,deploy-both`: a
+green run bootstraps the staging twin and then deploys both — no click
+left after the account fix (the Bootstrap button chains `deploy` for its
+twin; iac.yml serializes runs per stack). A NAS step failing for anything
+but the account's rights makes the run red. Optional secret
 `IAC_ACME_EMAIL` is the Let's Encrypt contact (default `admin@<domain>`).
 The wizard's **NAS readiness** card (Deploy step, with the helper running)
 probes every reverse-proxy host from outside and names the step each one
 still misses — DNS, the wildcard certificate, the rule (DSM answers Web
 Station's page when none matches), the applied bundle (a rule answering
-502) — and a Synology check that DSM accepts dispatches Bootstrap for
-both twins by itself. Only two more things stay manual (the workflow's
-verify step probes both):
+502) — and a Synology check that DSM accepts dispatches Bootstrap by
+itself (after the secrets are stored). Only two more things stay manual
+(the workflow's verify step probes both):
 - Firewall: allow `172.16.0.0/12` in the access profile; restrict the
   `*-admin` hosts to LAN.
 - Certificate: automated for Synology DDNS domains (above); own domains
