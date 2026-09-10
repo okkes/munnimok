@@ -64,7 +64,13 @@ The IaC workflow creates every reverse-proxy rule via the DSM API. The
 poller that applies uploaded bundles is a DSM Task Scheduler entry you
 create once (deploy/nas/README.md §5: user root, every 5 minutes,
 `cd /volume1/docker/munni && cp apply.sh .apply.run && sh .apply.run`).
-Only two more things stay manual (the workflow's verify step probes both):
+The wizard's **NAS readiness** card (Deploy step, with the helper running)
+probes every reverse-proxy host from outside and names the step each one
+still misses — DNS, the wildcard certificate, the rule (DSM answers Web
+Station's page when none matches), the applied bundle (a rule answering
+502) — and a Synology check that DSM accepts dispatches Bootstrap for
+both twins by itself. Only two more things stay manual (the workflow's
+verify step probes both):
 - Firewall: allow `172.16.0.0/12` in the access profile; restrict the
   `*-admin` hosts to LAN.
 - Certificate: every reverse-proxy host is https, so DSM needs a
