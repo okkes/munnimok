@@ -73,12 +73,17 @@ of `SYNOLOGY_PATH`, one rule everywhere), and the poller task (root,
 every 5 minutes, running a throwaway copy of `apply.sh`, which every
 deploy re-uploads). The prod twin owns those NAS-wide pieces; the
 staging run only binds its own rules to the certificate it finds. The
-wizard dispatches the prod twin with `chain=staging,deploy-both`: a
+wizard dispatches the prod twin with `chain=staging,deploy-both` (once
+the SYNOLOGY_* secrets are stored — the run reads them from GitHub): a
 green run bootstraps the staging twin and then deploys both — no click
 left after the account fix (the Bootstrap button chains `deploy` for its
-twin; iac.yml serializes runs per stack). A NAS step failing for anything
-but the account's rights makes the run red. Optional secret
-`IAC_ACME_EMAIL` is the Let's Encrypt contact (default `admin@<domain>`).
+twin; iac.yml serializes applies per stack, verifies collapse in a group
+of their own). A NAS step failing for anything but the account's rights
+makes the run red — including a Let's Encrypt request still running when
+the six-minute wait ends (the next run adopts the certificate; never
+re-request by hand, every request counts against the 5-per-week limit).
+Optional secret `IAC_ACME_EMAIL` is the Let's Encrypt contact (default
+`admin@<domain>`).
 The wizard's **NAS readiness** card (Deploy step, with the helper running)
 probes every reverse-proxy host from outside and names the step each one
 still misses — DNS, the wildcard certificate, the rule (DSM answers Web
