@@ -607,11 +607,18 @@ async function ciCleanup() {
       const suffix = owner ? 'prod' : 'staging';
       const stamp = `VERSION_IAC_${suffix.toUpperCase()}`;
       const marker = `.applied_version_iac_${suffix}`;
+      // a live dir that is already gone (an earlier pair cleanup) means nothing to poll for
+      const liveDirPresent = await readLiveFile(creds, { publishedPath: SYNOLOGY_PATH, file: 'apply.sh' }).then(() => true).catch(() => false);
+      if (!liveDirPresent) console.log('  live dir already gone — no containers or folder to remove through the poller');
       // the poller copies apply.sh fresh every cycle: put the current one there first, or an older
-      // script takes the stamp for a version and re-applies the bundle (found live 2026-09-16)
-      const applyScript = readFileSync(new URL('../deploy/nas/apply.sh', import.meta.url), 'utf8');
-      await step('poller script (current apply.sh)', () => ensureLiveDir(creds, { publishedPath: SYNOLOGY_PATH, applyScript }));
-      const asked = await step('containers + folder (via the poller)', () => requestRemoval(creds, { publishedPath: SYNOLOGY_PATH, stamp }));
+      // script takes the stamp for a version and re-applies the bundle (found live 2026-09-16);
+      // a transient upload failure is a warning — the marker check below still decides
+      if (liveDirPresent) {
+        const applyScript = readFileSync(new URL('../deploy/nas/apply.sh', import.meta.url), 'utf8');
+        try { const r = await ensureLiveDir(creds, { publishedPath: SYNOLOGY_PATH, applyScript }); console.log(`  ✓ poller script (current apply.sh): ${r.detail}`); }
+        catch (e) { console.log(`  ! poller script not refreshed (${e.message}) — the poller runs the one it has`); }
+      }
+      const asked = liveDirPresent ? await step('containers + folder (via the poller)', () => requestRemoval(creds, { publishedPath: SYNOLOGY_PATH, stamp })) : null;
       if (asked) {
         const started = Date.now();
         let done = false;
@@ -624,15 +631,15 @@ async function ciCleanup() {
         if (!done) failed++;
         else removed.push('containers + folder');
         await printPollerLog(creds, SYNOLOGY_PATH);
-        if (owner) {
-          // the pair's pieces go once nothing else polls
-          const staging = await readLiveFile(creds, { publishedPath: SYNOLOGY_PATH, file: '.applied_version_iac_staging' }).then((r) => r.text.trim()).catch(() => null);
-          if (!staging || staging === 'removed') {
-            if (await step('poller task', () => removePollerTask(creds))) removed.push('poller task');
-            if (await step('live dir', () => removeLiveDir(creds, { publishedPath: SYNOLOGY_PATH }))) removed.push('live dir');
-          } else {
-            console.log(`  poller task + live dir kept — the staging twin is still applied there (${staging}); clean it up too, or clean up the pair`);
-          }
+      }
+      if (owner) {
+        // the pair's pieces go once nothing else polls
+        const staging = liveDirPresent ? await readLiveFile(creds, { publishedPath: SYNOLOGY_PATH, file: '.applied_version_iac_staging' }).then((r) => r.text.trim()).catch(() => null) : null;
+        if (!staging || staging === 'removed') {
+          if (await step('poller task', () => removePollerTask(creds))) removed.push('poller task');
+          if (liveDirPresent && await step('live dir', () => removeLiveDir(creds, { publishedPath: SYNOLOGY_PATH }))) removed.push('live dir');
+        } else {
+          console.log(`  poller task + live dir kept — the staging twin is still applied there (${staging}); clean it up too, or clean up the pair`);
         }
       }
     } else {
@@ -643,7 +650,12 @@ async function ciCleanup() {
   }
   // the environment goes last: everything above still needed its secrets
   await step('GitHub environment', async () => {
-    execFileSync('gh', ['api', '-X', 'DELETE', `repos/{owner}/{repo}/environments/${encodeURIComponent(stack.githubEnvironment)}`], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
+    try {
+      execFileSync('gh', ['api', '-X', 'DELETE', `repos/{owner}/{repo}/environments/${encodeURIComponent(stack.githubEnvironment)}`], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
+    } catch (e) {
+      if (!/404|Not Found/.test(String(e.stderr ?? e.message))) throw e;
+      return { detail: `${stack.githubEnvironment} was already gone` };
+    }
     return { detail: `${stack.githubEnvironment} deleted (its secrets and variables with it)` };
   });
   removed.push('GitHub environment');

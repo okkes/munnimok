@@ -46,7 +46,7 @@ export const DSM_CODE_ADVICE = {
   402: 'DSM refused the login for the application it names (its password is right): either the account may not use it — Control Panel → User & Group → the deploy user → Applications → DSM: Allow, File Station: Allow (a group Deny beats Allow), and the administrators group (User groups tab) for the Control Panel APIs — or the login named a session DSM does not know (found live 2026-09-16: "Core" is refused for every account; the bootstrap names none, like DSM\'s own UI); --verify prints which login shapes DSM accepts',
   105: 'DSM treats this session as a non-administrator (its own init data says is_admin=false — verify prints it): Control Panel APIs are admin-only. Check User & Group → the deploy user → Edit → User groups → the administrators group is ticked AND saved, then sign in to DSM as this account once in a browser on the LAN: an administrator\'s desktop there but not here means Adaptive MFA (Control Panel → Security → Account; on by default for administrators without 2FA — a sign-in from GitHub\'s runners is "risky" and, with no e-mail on the account, gets a plain user\'s session): switch it off for administrators, or enroll the account in 2FA and give the pipeline its OTP secret (not supported yet)',
   119: 'DSM did not recognise the session for this call (119 = "SID not found"): the sid and the SynoToken must ride the query string / the X-SYNO-TOKEN header (DSM 7.3 does not read them from a POST body — found live 2026-09-16), or the session expired; --verify prints which call shapes DSM accepts',
-  103: 'DSM wants its CSRF token beside the sid (SynoToken) — the login must use enable_syno_token=yes',
+  103: 'the API method does not exist in this form (103) — the version or the method name is wrong for this DSM',
   4800: 'DSM rejected the task parameters (4800) — the message only shows in /var/log/synoscgi.log on the NAS',
   5524: 'Let’s Encrypt’s rate limit for this name is used up (5 certificates per exact name set per week) — wait a week; never delete and re-request',
   5503: 'Let’s Encrypt could not validate the domain — with a Synology DDNS name the validation runs through Synology; otherwise port 80 must reach the NAS',
@@ -889,8 +889,10 @@ export async function removePollerTask(creds, { fetchImpl = fetch, name = POLLER
     try {
       await s.call('SYNO.Core.TaskScheduler', 3, 'delete', { id: JSON.stringify([found.id]), real_owner: real });
     } catch (e) {
-      // a root task may want the confirmed API (like create/set)
-      if (!isTransport(e) && dsmCode(e) !== 105 && dsmCode(e) !== 101) throw e;
+      // a root task is deleted through its owner API behind the password
+      // confirm, like create/set (found live 2026-09-16: the plain delete
+      // answers 103 "method does not exist" for it)
+      if (isTransport(e)) throw e;
       const token = (await s.call('SYNO.Core.User.PasswordConfirm', 2, 'auth', { password: creds.pass })).SynoConfirmPWToken;
       await s.call('SYNO.Core.TaskScheduler.Root', 4, 'delete', { id: JSON.stringify([found.id]), real_owner: real, SynoConfirmPWToken: token });
     }

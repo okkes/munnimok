@@ -745,7 +745,7 @@ test('cleanup: the stack\'s rules go by uuid, the poller task by id (root API as
   assert.deepEqual(a.calls.filter((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.delete').map((c) => c.params.uuids), ['["u1"]', '["u2"]'], 'never the other rule');
   const t = dsm({
     'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 42, name: POLLER_TASK_NAME, owner: 'root', real_owner: 'root' }] }),
-    'SYNO.Core.TaskScheduler.delete': fail(105),
+    'SYNO.Core.TaskScheduler.delete': fail(103),
     'SYNO.Core.User.PasswordConfirm.auth': ok({ SynoConfirmPWToken: 'CONFIRM' }),
     'SYNO.Core.TaskScheduler.Root.delete': ok({}),
   });
@@ -753,7 +753,8 @@ test('cleanup: the stack\'s rules go by uuid, the poller task by id (root API as
   assert.equal(task.state, 'removed');
   const rootDel = t.calls.find((c) => c.key === 'SYNO.Core.TaskScheduler.Root.delete');
   assert.equal(rootDel.params.id, '[42]');
-  assert.equal(rootDel.params.SynoConfirmPWToken, 'CONFIRM', 'a refused plain delete falls back to the confirmed root API');
+  assert.equal(rootDel.params.SynoConfirmPWToken, 'CONFIRM', 'a refused plain delete (103 "method does not exist" for a root task) falls back to the confirmed root API');
+  assert.match(dsmAdvice(new Error('DSM x failed: {"code":103}')), /method does not exist/);
   const none = dsm({ 'SYNO.Core.TaskScheduler.list': ok({ tasks: [] }) });
   assert.equal((await removePollerTask(CREDS, { fetchImpl: none.fetchImpl })).state, 'absent');
   const fs = dsm({ 'SYNO.FileStation.Delete.delete': ok({}) });
