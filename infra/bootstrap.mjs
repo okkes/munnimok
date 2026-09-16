@@ -290,6 +290,7 @@ async function ciVerify() {
       }
       console.log(nas.task ? `  ${nas.task.enabled ? '✓' : '!'} dsm: poller task exists${nas.task.enabled ? '' : ' but is disabled'}${nas.liveDir ? ` (live dir ${nas.liveDir})` : ''}` : `  ✗ dsm: no poller task — the prod twin's bootstrap (apply) creates it${nas.liveDir ? ` (live dir ${nas.liveDir})` : ''}`);
       if (nas.liveDirError) console.log(`  ! dsm: ${nas.liveDirError}`);
+      if (nas.ruleShape) console.log(`  i dsm: reverse-proxy rules as DSM lists them — ${JSON.stringify(nas.ruleShape)}`);
     } catch (e) {
       console.log(`  ✗ dsm: could not read the NAS (${e.message})${dsmAdvice(e)}`);
       state = { dsm: dsmRefusal(e) };

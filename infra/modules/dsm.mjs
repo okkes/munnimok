@@ -604,8 +604,13 @@ export async function inspectNas(creds, { domain, publishedPath, hosts = [], fet
       liveDirError = e.message;
     }
     let bindings = null;
+    let ruleShape = null;
     if (pick && hosts.length) {
       const entries = (await s.read('SYNO.Core.AppPortal.ReverseProxy', 1, 'list').catch(() => ({}))).entries ?? [];
+      // field names only (a rule's fqdn is the domain): the binding and the
+      // verify match rules by `uuid` — if DSM names the id otherwise, every
+      // rule collapses onto one map key (seen live 2026-09-16: 1 of 7 bound)
+      ruleShape = entries.length ? { rules: entries.length, keys: Object.keys(entries[0]).sort(), frontend: Object.keys(entries[0].frontend ?? {}).sort(), withUuid: entries.filter((e) => typeof e.uuid === 'string' && e.uuid).length } : { rules: 0 };
       const uuidHost = new Map(entries.filter((e) => hosts.includes(e.frontend?.fqdn)).map((e) => [e.uuid, e.frontend.fqdn]));
       const onWildcard = new Set((pick.services ?? []).filter((x) => x.subscriber === 'ReverseProxy').map((x) => x.service));
       const known = [...uuidHost.values()];
@@ -621,6 +626,7 @@ export async function inspectNas(creds, { domain, publishedPath, hosts = [], fet
       liveDir,
       liveDirError,
       bindings,
+      ruleShape,
     };
   } finally {
     await s.logout();
