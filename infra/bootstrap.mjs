@@ -62,7 +62,7 @@ function envSecret(env, name) {
 /** what the NAS did with the bundles: the poller's own log, last lines (no SSH) */
 async function printPollerLog(creds, publishedPath) {
   try {
-    const log = await readPollerLog(creds, { publishedPath });
+    const log = await readPollerLog(creds, { publishedPath, lines: 60 });
     console.log(`  i dsm: poller log ${log.path} (${log.bytes} bytes, last ${log.lines.length} lines):`);
     for (const l of log.lines) console.log(`      ${l}`);
   } catch (e) {
