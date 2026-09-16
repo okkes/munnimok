@@ -753,11 +753,13 @@ test('cleanup: the stack\'s rules go by uuid, the poller task by id (root API as
   const t = dsm({
     'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 42, name: POLLER_TASK_NAME, owner: 'root', real_owner: 'root' }] }),
     // DSM 7.3's own 4800 message: "tasks must be an array of {id, real_owner}"
-    'SYNO.Core.TaskScheduler.delete': (p) => (p.tasks === '[{"id":42,"real_owner":"root"}]' && p.version === '4' ? ok({}) : fail(4800, { errors: { msg: 'tasks must be an array of {id, real_owner}' } })),
+    // v4 has no delete (103); the version that has it wants tasks=[{id, real_owner}]
+    'SYNO.Core.TaskScheduler.delete': (p) => (p.version === '4' ? fail(103) : (p.tasks === '[{"id":42,"real_owner":"root"}]' ? ok({}) : fail(4800, { errors: { msg: 'tasks must be an array of {id, real_owner}' } }))),
   });
   const task = await removePollerTask(CREDS, { fetchImpl: t.fetchImpl });
   assert.equal(task.state, 'removed');
-  assert.equal(t.calls.filter((c) => c.key === 'SYNO.Core.TaskScheduler.delete').length, 1, 'one call, the shape DSM 7.3 wants');
+  assert.match(task.detail, /v3\)$/, 'the sweep stops at the first version that has the method');
+  assert.deepEqual(t.calls.filter((c) => c.key === 'SYNO.Core.TaskScheduler.delete').map((c) => c.params.version), ['4', '3'], 'downwards from the newest, every call in DSM\'s shape');
   assert.ok(!t.calls.some((c) => c.key === 'SYNO.Core.User.PasswordConfirm.auth'), 'no password confirm for a delete');
   assert.match(dsmAdvice(new Error('DSM x failed: {"code":103}')), /method does not exist/);
   const none = dsm({ 'SYNO.Core.TaskScheduler.list': ok({ tasks: [] }) });

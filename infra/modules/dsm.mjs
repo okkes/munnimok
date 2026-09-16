@@ -888,12 +888,22 @@ export async function removePollerTask(creds, { fetchImpl = fetch, name = POLLER
     const found = tasks.find((t) => t.name === name);
     if (!found) return { state: 'absent', detail: `no Task Scheduler entry "${name}"` };
     const real = found.real_owner || found.owner || 'root';
-    // DSM 7.3 deletes tasks with SYNO.Core.TaskScheduler v4 `delete`, whose
-    // one parameter is `tasks`: an array of {id, real_owner} — DSM's own
-    // 4800 message spelled it out on 2026-09-16 (v3, and the Root API's
-    // delete, answer 103: no such method). Root tasks included, no confirm.
-    await s.call('SYNO.Core.TaskScheduler', 4, 'delete', { tasks: JSON.stringify([{ id: found.id, real_owner: real }]) });
-    return { state: 'removed', id: found.id, detail: `Task Scheduler entry "${name}" (${found.id}) deleted` };
+    // DSM 7.3 deletes tasks with SYNO.Core.TaskScheduler `delete` whose one
+    // parameter is `tasks`: an array of {id, real_owner} — DSM's own 4800
+    // message spelled the shape out on 2026-09-16, while v4 (and the Root
+    // API) answer 103 "no such method": the version that has it is found
+    // by sweeping downwards. Root tasks included, no password confirm.
+    const tried = [];
+    for (const v of [4, 3, 2, 1]) {
+      try {
+        await s.call('SYNO.Core.TaskScheduler', v, 'delete', { tasks: JSON.stringify([{ id: found.id, real_owner: real }]) });
+        return { state: 'removed', id: found.id, detail: `Task Scheduler entry "${name}" (${found.id}) deleted (SYNO.Core.TaskScheduler v${v})` };
+      } catch (e) {
+        if (isTransport(e) || dsmCode(e) !== 103) throw e;
+        tried.push(`v${v}`);
+      }
+    }
+    throw new Error(`no delete method on SYNO.Core.TaskScheduler (tried ${tried.join(', ')}) — delete "${name}" by hand in Control Panel → Task Scheduler`);
   } finally {
     await s.logout();
   }
