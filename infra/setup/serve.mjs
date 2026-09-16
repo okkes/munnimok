@@ -1931,7 +1931,7 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
 
 /** every manifest operator name may carry a value INTO a validation —
  * transient use only, never stored, never logged */
-const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator').map((s) => s.name));
+const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator' || /^IAC_LOGTO_[A-Z]+_M2M_(ID|SECRET)$/.test(s.name)).map((s) => s.name));
 
 async function validateEndpoint(req, res, validateImpl) {
   const body = await readBody(req);

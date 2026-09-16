@@ -245,6 +245,11 @@ jobs:
           NAS_PUSH_VAPID_PRIVATE_KEY: ${{ secrets.NAS_PUSH_VAPID_PRIVATE_KEY }}
           NAS_PUSH_VAPID_PUBLIC_KEY: ${{ secrets.NAS_PUSH_VAPID_PUBLIC_KEY }}
           VAULT_SIGNUPS_ALLOWED: ${{ secrets.VAULT_SIGNUPS_ALLOWED }}
+          # the Logto seed the poller applies on the NAS (prod twin's env only; empty for staging)
+          IAC_LOGTO_INFRA_M2M_ID: ${{ secrets.IAC_LOGTO_INFRA_M2M_ID }}
+          IAC_LOGTO_INFRA_M2M_SECRET: ${{ secrets.IAC_LOGTO_INFRA_M2M_SECRET }}
+          IAC_LOGTO_ADMIN_M2M_ID: ${{ secrets.IAC_LOGTO_ADMIN_M2M_ID }}
+          IAC_LOGTO_ADMIN_M2M_SECRET: ${{ secrets.IAC_LOGTO_ADMIN_M2M_SECRET }}
           VITE_GLITCHTIP_DSN: ${{ vars.VITE_GLITCHTIP_DSN }}
           VITE_GLITCHTIP_DSN_ADMIN: ${{ vars.VITE_GLITCHTIP_DSN_ADMIN }}
           VITE_LOGTO_APP_ID: ${{ vars.VITE_LOGTO_APP_ID }}

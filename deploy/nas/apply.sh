@@ -147,6 +147,17 @@ apply_channel_dir VERSION_IAC_PROD munni-deploy-iac-prod.tgz .applied_version_ia
 apply_channel_dir VERSION_IAC_STAGING munni-deploy-iac-staging.tgz .applied_version_iac_staging \
   munni-iac-staging docker-compose.munni-iac-staging.yml || rc=1
 # one status line to stdout: the DSM Run Result then always tells what
+# a Logto seed that could not run yet (Logto still booting the first time,
+# update.sh left .logto-seed-pending) is retried every cycle
+for dir in munni-iac-prod munni-iac-staging; do
+  d="$(dirname "$LIVE")/$dir"
+  if [ -f "$d/.logto-seed-pending" ] && [ -f "$d/update.sh" ]; then
+    compose="$(ls "$d"/docker-compose.*.yml 2>/dev/null | head -n 1)"
+    log "logto seed pending in $dir — retrying"
+    (cd "$d" && sh ./update.sh --logto-seed "$(basename "$compose")") >>"$LOG" 2>&1 || log "logto seed retry in $dir failed — next cycle"
+  fi
+done
+
 # state the cycle LEFT things in, even when nothing changed
 echo "cycle done rc=$rc prod=$(cat "$LIVE/.applied_version" 2>/dev/null || echo none) staging=$(cat "$LIVE/.applied_version_staging" 2>/dev/null || echo none) iac-prod=$(cat "$LIVE/.applied_version_iac_prod" 2>/dev/null || echo none) iac-staging=$(cat "$LIVE/.applied_version_iac_staging" 2>/dev/null || echo none)"
 exit $rc

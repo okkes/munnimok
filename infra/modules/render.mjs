@@ -278,6 +278,15 @@ POSTGRES_PASSWORD=\${NAS_POSTGRES_PASSWORD}
 LOGTO_API_RESOURCE=${s.urls.api}
 LOGTO_M2M_APP_ID=\${NAS_LOGTO_M2M_APP_ID}
 LOGTO_M2M_APP_SECRET=\${NAS_LOGTO_M2M_APP_SECRET}
+${s.sharedServices ? `
+# Logto seed — the NAS poller inserts these machine credentials into Logto's own
+# database once (idempotent upsert by name), so sign-in needs no console visit:
+# infra = the Management API (apps, connectors, users), admin = the console's first admin
+LOGTO_SEED_INFRA_ID=\${IAC_LOGTO_INFRA_M2M_ID}
+LOGTO_SEED_INFRA_SECRET=\${IAC_LOGTO_INFRA_M2M_SECRET}
+LOGTO_SEED_ADMIN_ID=\${IAC_LOGTO_ADMIN_M2M_ID}
+LOGTO_SEED_ADMIN_SECRET=\${IAC_LOGTO_ADMIN_M2M_SECRET}
+` : ''}
 
 # frontend runtime-config (written back by the logto + glitchtip modules)
 WEB_LOGTO_APP_ID=\${VITE_LOGTO_APP_ID}
