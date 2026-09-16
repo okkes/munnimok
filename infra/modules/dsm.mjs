@@ -15,9 +15,15 @@
  *     dialog DSM shows for root scripts)
  * Auth: SYNOLOGY_URL/USER/PASS env (the deploy account). Every call
  * here is administrator-only on DSM — a non-admin account gets 105/119,
- * an account whose DSM application is denied gets 402 at login; both
- * are named by dsmAdvice(). Nothing below can grant an account those
- * rights: that is the ONE manual step (Control Panel → User & Group).
+ * an account that may not use the application a login names gets 402;
+ * both are named by dsmAdvice(). Nothing below can grant an account
+ * those rights: that is the ONE manual step (Control Panel → User &
+ * Group). The login itself names NO session/application (like DSM's own
+ * UI): a name DSM does not know — "Core", which this module used until
+ * 2026-09-16 — is refused with 402 for EVERY account (found live on DSM
+ * 7.3.2-86009 Update 4 with a correct account: v7/v6 session=Core
+ * refused, no session and session=FileStation accepted). probeLoginShapes() prints that matrix
+ * whenever the login is refused again.
  *
  * Ownership: the pair's prod twin owns the NAS-wide resources (one
  * certificate, one live dir, one poller task per NAS — both twins share
@@ -37,7 +43,7 @@
 
 /** DSM error codes as the operator meets them (the ONE text for 402 — validate.mjs reuses it) */
 export const DSM_CODE_ADVICE = {
-  402: 'the DSM application is denied for this account (its password is right): Control Panel → User & Group → the deploy user → Applications → DSM: Allow, File Station: Allow (a group Deny beats Allow) — and put it in the administrators group (User groups tab): every step bootstrap automates on the NAS is admin-only',
+  402: 'DSM refused the login for the application it names (its password is right): either the account may not use it — Control Panel → User & Group → the deploy user → Applications → DSM: Allow, File Station: Allow (a group Deny beats Allow), and the administrators group (User groups tab) for the Control Panel APIs — or the login named a session DSM does not know (found live 2026-09-16: "Core" is refused for every account; the bootstrap names none, like DSM\'s own UI); --verify prints which login shapes DSM accepts',
   105: 'the account is not in the administrators group — Control Panel APIs are admin-only: User & Group → the deploy user → User groups → administrators',
   119: 'DSM refused the session for this API — the account is not in the administrators group (User & Group → the deploy user → User groups → administrators)',
   103: 'DSM wants its CSRF token beside the sid (SynoToken) — the login must use enable_syno_token=yes',
@@ -124,34 +130,37 @@ async function dsmUpload(base, sid, path, content, name, fetchImpl = fetch, { ti
   return dsmRequest(`${base}/webapi/entry.cgi?_sid=${encodeURIComponent(sid)}`, { method: 'POST', body: form, signal: AbortSignal.timeout(timeoutMs) }, 'SYNO.FileStation.Upload.upload', fetchImpl);
 }
 
-export async function dsmLogin(base, account, passwd, fetchImpl = fetch, { session = 'Core', retry = [], sleepImpl = sleep } = {}) {
+export async function dsmLogin(base, account, passwd, fetchImpl = fetch, { session = null, retry = [], sleepImpl = sleep } = {}) {
   // enable_syno_token: DSM 7 wants the CSRF token beside the sid on
-  // state-changing entry.cgi calls (per the documented v7 auth flow)
+  // state-changing entry.cgi calls (per the documented v7 auth flow).
+  // session: only for a real DSM application (FileStation for uploads);
+  // the Control Panel APIs log in without one, like DSM's own UI — a
+  // name DSM does not know is refused with 402 (found live 2026-09-16)
   const data = await dsmCall(base, 'auth.cgi', {
     api: 'SYNO.API.Auth',
     version: '7',
     method: 'login',
     account,
     passwd,
-    session,
+    ...(session ? { session } : {}),
     format: 'sid',
     enable_syno_token: 'yes',
   }, fetchImpl, { retry, sleepImpl });
   return { sid: data.sid, token: data.synotoken };
 }
 
-export async function dsmLogout(base, sid, fetchImpl = fetch, session = 'Core') {
-  await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: '7', method: 'logout', session, _sid: sid }, fetchImpl).catch(() => undefined);
+export async function dsmLogout(base, sid, fetchImpl = fetch, session = null) {
+  await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: '7', method: 'logout', ...(session ? { session } : {}), _sid: sid }, fetchImpl).catch(() => undefined);
 }
 
 /**
  * one logged-in session: call(api, version, method, params, opts) with
  * sid + token; read() = the same with the restart-proof retry (reads are
  * safe to repeat, writes are not — a repeated create duplicates);
- * upload() for FileStation files; and a logout. `session` names the DSM
- * application (Core for Control Panel APIs, FileStation for files).
+ * upload() for FileStation files; and a logout. `session` names a DSM
+ * application (FileStation for files); none for the Control Panel APIs.
  */
-export async function dsmSession({ url, user, pass }, fetchImpl = fetch, { session = 'Core', retry = DSM_RETRY, sleepImpl = sleep } = {}) {
+export async function dsmSession({ url, user, pass }, fetchImpl = fetch, { session = null, retry = DSM_RETRY, sleepImpl = sleep } = {}) {
   const base = url.replace(/\/$/, '');
   const { sid, token } = await dsmLogin(base, user, pass, fetchImpl, { session, retry, sleepImpl });
   const auth = { _sid: sid, ...(token ? { SynoToken: token } : {}) };
@@ -616,17 +625,18 @@ export function summarizeNas(nas, hostsTotal = 0) {
 
 /**
  * Which login shapes DSM accepts for this account — printed when the
- * module's own login (v7, session=Core, SynoToken) is refused although
- * the account looks right. Found live 2026-09-16: an account with DSM +
- * File Station allowed AND in administrators still got 402 here while
- * the deploy script's login (v6, session=FileStation) worked all along,
- * so the shape, not the account, was the suspect. Every accepted session
- * is logged out again. Returns [{label, ok, code?, transport?}].
+ * module's own login (v7, no session, SynoToken) is refused although the
+ * account looks right. Found live 2026-09-16: an account with DSM + File
+ * Station allowed AND in administrators got 402 from the shape this
+ * module used to send (session=Core, v7 and v6 alike) while the deploy
+ * script's (v6, session=FileStation) and DSM's own (no session) worked —
+ * the shape, not the account, was the culprit. Every accepted session is
+ * logged out again. Returns [{label, ok, code?, transport?}].
  */
 export const LOGIN_SHAPES = [
-  { label: 'v7 session=Core (bootstrap)', params: { version: '7', session: 'Core', enable_syno_token: 'yes' } },
+  { label: 'v7 no session (bootstrap)', params: { version: '7', enable_syno_token: 'yes' } },
+  { label: 'v7 session=Core (the old bootstrap)', params: { version: '7', session: 'Core', enable_syno_token: 'yes' } },
   { label: 'v7 session=Core no token', params: { version: '7', session: 'Core' } },
-  { label: 'v7 no session', params: { version: '7', enable_syno_token: 'yes' } },
   { label: 'v7 session=FileStation', params: { version: '7', session: 'FileStation', enable_syno_token: 'yes' } },
   { label: 'v6 session=Core', params: { version: '6', session: 'Core' } },
   { label: 'v6 session=FileStation (upload.sh)', params: { version: '6', session: 'FileStation' } },

@@ -61,8 +61,12 @@ applications (User & Group → the user → Applications; a group's Deny
 beats Allow) — every NAS step below is admin-only on DSM, and no
 account can grant itself those rights (that is why this one step is
 yours). A `dsm: … failed` line in the bootstrap output with code 402
-(DSM application denied) or 119/105 (not an administrator) is exactly
-that. With the account right, the IaC workflow does the rest through
+(the account may not use the application the login names) or 119/105
+(not an administrator) is exactly that — but check the `login shapes`
+line `--verify` prints on a 402 first: DSM 7.3.2 refuses a session name
+it does not know with the same 402 (found live 2026-09-16 with a correct
+account: `session=Core` refused, no session and `FileStation` accepted),
+which is why the bootstrap logs in without one, like DSM's own UI. With the account right, the IaC workflow does the rest through
 the DSM API, idempotently on every run: every reverse-proxy rule, the
 wildcard Let's Encrypt certificate (`<domain>;*.<domain>`, requested
 through DSM's own wizard call and set as default — the DDNS default
@@ -270,8 +274,11 @@ Contents + Workflows read and write for that. The header, the stepper and the ou
 drawer share the main column's width. On the local track the helper
 also reads this user's Windows Root store while the family runs, so
 "Trust the family certificate on this PC" is a detected fact, not a
-tick; DSM login failures come with the meaning of the code (402 =
-the deploy account may not sign in to DSM; fix under Applications).
+tick; DSM login failures come with the meaning of the code (402 = the
+application the login names is denied for the account — or unknown to
+DSM: `session=Core` was refused for a correct account on DSM 7.3.2 on
+2026-09-16, so the bootstrap logs in without a session name now and
+`--verify` prints which login shapes DSM accepts).
 
 ### Day-2 on the local track: it keeps itself up to date
 

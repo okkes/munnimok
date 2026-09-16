@@ -139,7 +139,7 @@ test('logodev: swap detection first, then search (sk) + image (pk)', async () =>
 
 test('synology: DSM error codes come with advice; a relative path is refused before any login', async () => {
   const { dsmLoginAdvice } = await import('../modules/validate.mjs');
-  assert.match(dsmLoginAdvice('DSM SYNO.API.Auth.login failed: {"code":402}'), /code 402: the DSM application is denied/);
+  assert.match(dsmLoginAdvice('DSM SYNO.API.Auth.login failed: {"code":402}'), /code 402: DSM refused the login for the application it names/);
   assert.match(dsmLoginAdvice('DSM SYNO.API.Auth.login failed: {"code":400}'), /password is wrong/);
   assert.equal(dsmLoginAdvice('DSM SYNO.API.Auth.login failed: {"code":999}'), '');
   const rel = await validate('synology', { SYNOLOGY_URL: 'https://nas.example:5001', SYNOLOGY_USER: 'deploy', SYNOLOGY_PASS: 'x', SYNOLOGY_PATH: 'docker/munni/published' });
@@ -160,7 +160,7 @@ test('synology: a DSM that never answers reads as unreachable (stored with a war
   const refused = await validate('synology', vals, { fetchImpl: async () => ({ status: 200, json: async () => ({ success: false, error: { code: 402 } }) }) });
   assert.equal(refused.ok, false);
   assert.ok(!refused.unreachable, 'a DSM answer is a refusal, not an outage');
-  assert.match(refused.detail, /code 402: the DSM application is denied/);
+  assert.match(refused.detail, /code 402: DSM refused the login for the application it names/);
 });
 
 test('ghcr: the registry token must authenticate AND carry read:packages', async () => {

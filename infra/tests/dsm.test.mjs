@@ -22,7 +22,7 @@ function dsm(routes) {
     if (u.searchParams.get('_sid')) p._sid = u.searchParams.get('_sid');
     const key = `${p.api}.${p.method}`;
     calls.push({ url, key, params: p, init });
-    if (p.api === 'SYNO.API.Auth' && p.method === 'login') return { json: async () => ({ success: true, data: { sid: `SID-${p.session}`, synotoken: 'TOK' } }) };
+    if (p.api === 'SYNO.API.Auth' && p.method === 'login') return { json: async () => ({ success: true, data: { sid: `SID-${p.session ?? 'DSM'}`, synotoken: 'TOK' } }) };
     if (p.api === 'SYNO.API.Auth' && p.method === 'logout') return { json: async () => ({ success: true }) };
     const r = routes[key];
     if (!r) return { json: async () => ({ success: false, error: { code: 103 } }) };
@@ -53,14 +53,17 @@ test('dsm: every call rides the sid AND the SynoToken; error codes come with the
   assert.deepEqual(out.created, ['web.nas.example', 'api.nas.example']);
   assert.deepEqual(out.updated, ['admin.nas.example']);
   const list = calls.find((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.list');
-  assert.equal(list.params._sid, 'SID-Core');
+  assert.equal(list.params._sid, 'SID-DSM');
   assert.equal(list.params.SynoToken, 'TOK');
   assert.equal(calls[0].params.enable_syno_token, 'yes');
+  assert.equal('session' in calls[0].params, false, 'the Control Panel login names no session — DSM refuses names it does not know with 402 (found live 2026-09-16)');
+  assert.equal('session' in calls.at(-1).params, false, 'nor does its logout');
   const update = JSON.parse(calls.find((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.update').params.entry);
   assert.equal(update.uuid, 'a1');
   assert.equal(update.frontend.acl_id, 'lan-only', 'the LAN-only profile the operator set is kept');
   assert.equal(update.backend.port, 8291);
-  assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /DSM application is denied/);
+  assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /application it names/);
+  assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /session DSM does not know/, '402 names the other cause too');
   assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /administrators group/, '402 names the admin step too — one text with validate.mjs');
   assert.match(dsmAdvice(new Error('DSM x failed: {"code":119}')), /administrators group/);
   assert.match(dsmAdvice(new Error('DSM x failed: {"code":5524}')), /rate limit/);
@@ -593,7 +596,7 @@ test('login shapes: when DSM refuses the bootstrap login, every other shape is t
   const logouts = seen.filter((p) => p.method === 'logout');
   assert.equal(logouts.length, shapes.filter((s) => s.ok).length, 'every accepted session is logged out');
   assert.equal(logouts.find((p) => p.version === '6' && p.session === 'FileStation')._sid, 'S-6-FileStation');
-  assert.match(describeLoginShapes(shapes), /v7 session=Core \(bootstrap\): refused 402; .*v6 session=FileStation \(upload\.sh\): ok/);
+  assert.match(describeLoginShapes(shapes), /^v7 no session \(bootstrap\): ok; v7 session=Core \(the old bootstrap\): refused 402; .*v6 session=FileStation \(upload\.sh\): ok/);
   const down = await probeLoginShapes(CREDS, async () => { throw netErr('ECONNREFUSED'); }, LOGIN_SHAPES.slice(0, 1));
   assert.equal(down[0].transport, true);
   assert.match(describeLoginShapes(down), /no answer/);
