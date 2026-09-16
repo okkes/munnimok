@@ -605,7 +605,7 @@ test('login shapes: when DSM refuses the bootstrap login, every other shape is t
   const logouts = seen.filter((p) => p.method === 'logout');
   assert.equal(logouts.length, shapes.filter((s) => s.ok).length, 'every accepted session is logged out');
   assert.equal(logouts.find((p) => p.version === '6' && p.session === 'FileStation')._sid, 'S-6-FileStation');
-  assert.match(describeLoginShapes(shapes), /^v7 no session, token asked in URL\+body \(bootstrap\): ok \(token\); v7 no session, token asked in body: ok \(NO token\); entry\.cgi login \(acme\.sh\): ok \(token\); v7 session=Core \(the old bootstrap\): refused 402; .*v6 session=FileStation \(upload\.sh\): ok \(token\)/);
+  assert.match(describeLoginShapes(shapes), /^v7 no session, token asked in URL\+body \(bootstrap\): ok \(token\); v7 no session, token asked in body: ok \(NO token\); entry\.cgi login \(acme\.sh\): ok \(token\); v7 session=Core \(the old bootstrap\): refused 402; .*v6 session=FileStation \(upload\.sh\): ok \(NO token\)/);
   const down = await probeLoginShapes(CREDS, async () => { throw netErr('ECONNREFUSED'); }, LOGIN_SHAPES.slice(0, 1));
   assert.equal(down[0].transport, true);
   assert.match(describeLoginShapes(down), /no answer/);
