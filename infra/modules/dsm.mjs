@@ -855,3 +855,72 @@ export async function readLiveFile(creds, { publishedPath, file, fetchImpl = fet
     await s.logout();
   }
 }
+
+/* ── cleanup (2026-09-17): what bootstrap --cleanup takes off the NAS ──── */
+
+/** delete the stack's reverse-proxy rules (matched by source FQDN); returns {removed, absent} */
+export async function removeReverseProxy(stack, creds, fetchImpl = fetch, opts = {}) {
+  const s = await dsmSession(creds, fetchImpl, opts);
+  try {
+    const entries = (await s.read('SYNO.Core.AppPortal.ReverseProxy', 1, 'list')).entries ?? [];
+    const removed = [];
+    const absent = [];
+    for (const rule of proxyRules(stack)) {
+      const match = entries.find((e) => e.frontend?.fqdn === rule.host && ruleId(e));
+      if (!match) { absent.push(rule.host); continue; }
+      // DSM's own dialog deletes by uuid list (the shape the Go operator captured)
+      await s.call('SYNO.Core.AppPortal.ReverseProxy', 1, 'delete', { uuids: JSON.stringify([ruleId(match)]) });
+      removed.push(rule.host);
+    }
+    return { removed, absent };
+  } finally {
+    await s.logout();
+  }
+}
+
+/** delete the poller task (pair cleanup: nothing left to poll); returns {state: removed | absent} */
+export async function removePollerTask(creds, { fetchImpl = fetch, name = POLLER_TASK_NAME, sleepImpl = sleep } = {}) {
+  const s = await dsmSession(creds, fetchImpl, { sleepImpl });
+  try {
+    const tasks = (await s.read('SYNO.Core.TaskScheduler', 3, 'list', { sort_by: 'name', sort_direction: 'ASC', offset: '0', limit: '500' })).tasks ?? [];
+    const found = tasks.find((t) => t.name === name);
+    if (!found) return { state: 'absent', detail: `no Task Scheduler entry "${name}"` };
+    const real = found.real_owner || found.owner || 'root';
+    try {
+      await s.call('SYNO.Core.TaskScheduler', 3, 'delete', { id: JSON.stringify([found.id]), real_owner: real });
+    } catch (e) {
+      // a root task may want the confirmed API (like create/set)
+      if (!isTransport(e) && dsmCode(e) !== 105 && dsmCode(e) !== 101) throw e;
+      const token = (await s.call('SYNO.Core.User.PasswordConfirm', 2, 'auth', { password: creds.pass })).SynoConfirmPWToken;
+      await s.call('SYNO.Core.TaskScheduler.Root', 4, 'delete', { id: JSON.stringify([found.id]), real_owner: real, SynoConfirmPWToken: token });
+    }
+    return { state: 'removed', id: found.id, detail: `Task Scheduler entry "${name}" (${found.id}) deleted` };
+  } finally {
+    await s.logout();
+  }
+}
+
+/** delete the live dir (the parent of SYNOLOGY_PATH) with everything in it — pair cleanup, after the task is gone */
+export async function removeLiveDir(creds, { publishedPath, fetchImpl = fetch, sleepImpl = sleep } = {}) {
+  const parts = publishedPathParts(publishedPath);
+  const s = await dsmSession(creds, fetchImpl, { session: 'FileStation', sleepImpl });
+  try {
+    // SYNO.FileStation.Delete v2 "delete" is the blocking variant (no start/status polling)
+    await s.call('SYNO.FileStation.Delete', 2, 'delete', { path: JSON.stringify([parts.liveSharePath]), recursive: 'true' }, { timeoutMs: 120000 });
+    return { state: 'removed', detail: `${parts.liveSharePath} deleted (apply.sh, deploy.log, the published folder)` };
+  } finally {
+    await s.logout();
+  }
+}
+
+/** ask the poller to remove a twin: the stamp becomes "remove" (apply.sh tears the containers and the folder down) */
+export async function requestRemoval(creds, { publishedPath, stamp, fetchImpl = fetch, sleepImpl = sleep } = {}) {
+  const parts = publishedPathParts(publishedPath);
+  const s = await dsmSession(creds, fetchImpl, { session: 'FileStation', sleepImpl });
+  try {
+    await s.upload(parts.publishedSharePath, 'remove\n', stamp);
+    return { state: 'requested', detail: `${parts.publishedSharePath}/${stamp} = remove — the poller removes the twin within five minutes` };
+  } finally {
+    await s.logout();
+  }
+}

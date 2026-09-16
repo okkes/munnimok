@@ -110,3 +110,17 @@ test('glitchtipAnswers: a 200 with the token means the seed landed; 401 or no an
   assert.equal(await glitchtipAnswers(pair, 'tok', async () => ({ ok: false, status: 401 })), false);
   assert.equal(await glitchtipAnswers(pair, 'tok', async () => { throw new Error('ECONNREFUSED'); }), false);
 });
+
+import { removeProjects } from '../modules/glitchtip.mjs';
+test('removeProjects: the stack\'s three projects go from the pair\'s org; others stay', async () => {
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, method: init.method ?? 'GET' });
+    if (url.endsWith('/organizations/')) return { ok: true, status: 200, json: async () => [{ slug: 'munni-iac', name: 'munni-iac' }] };
+    if (url.endsWith('/organizations/munni-iac/projects/')) return { ok: true, status: 200, json: async () => [{ slug: 'munni-iac-staging-pwa', name: 'munni-iac-staging-pwa' }, { slug: 'munni-iac-staging-api', name: 'munni-iac-staging-api' }, { slug: 'munni-iac-prod-pwa', name: 'munni-iac-prod-pwa' }] };
+    return { ok: true, status: 204 };
+  };
+  const r = await removeProjects({ urls: { glitchtip: 'http://gt.test' }, pair: 'munni-iac' }, { stack: 'munni-iac-staging' }, 'tok', fetchImpl);
+  assert.deepEqual(r, { removed: ['munni-iac-staging-pwa', 'munni-iac-staging-api'], absent: ['munni-iac-staging-admin'] });
+  assert.deepEqual(calls.filter((c) => c.method === 'DELETE').map((c) => c.url), ['http://gt.test/api/0/projects/munni-iac/munni-iac-staging-pwa/', 'http://gt.test/api/0/projects/munni-iac/munni-iac-staging-api/']);
+});

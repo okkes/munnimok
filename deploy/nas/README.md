@@ -40,6 +40,15 @@ ready for leaves a pending marker the next cycle retries. Everything is
 logged to `deploy.log` — `--verify` and Deploy's after-apply step print
 its tail through FileStation, so nothing needs SSH.
 
+## Removal
+
+`bootstrap --cleanup` (the wizard's Clean up) uploads a stamp reading
+`remove`: the next cycle stops the twin's containers (`docker compose
+down -v --remove-orphans` with its env file), deletes its folder, bundle
+and stamp, and writes `removed` into the marker so the workflow can tell.
+A pair cleanup then deletes the poller task and the live dir through the
+DSM API.
+
 ## Locks and markers
 
 `.apply.lock2` + `.apply.pid` (flock; a wedged holder is killed by age),

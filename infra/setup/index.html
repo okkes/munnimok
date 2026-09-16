@@ -338,6 +338,12 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
   <div class="runrow"><button data-dispatch-nas="iac-both">Deploy both twins</button><button class="ghost" data-dispatch-nas="iac-prod">Only prod</button><button class="ghost" data-dispatch-nas="iac-staging">Only staging</button></div>
   <div id="runs-nas"></div>
   <div class="msg" id="msg-nas"></div>
+  <!-- cleanup as code (2026-09-17): everything a twin created goes, through one confirmed click -->
+  <div class="card" id="nas-cleanup">
+    <div class="health-h"><span class="ico" data-ico="trash"></span><div><b>Clean up</b><div class="why" style="margin:0">Takes a twin OFF the NAS and GitHub: its reverse-proxy rules, its containers + volumes + folder (the poller does it within five minutes), its Logto apps and GlitchTip projects, its GitHub environment with every secret and written-back id. Cleaning up the pair also removes the poller task and the live dir. The wildcard certificate stays. Store records (App Store Connect, Play) have no delete API — the one thing left to you.</div></div></div>
+    <div class="runrow"><button class="ghost" data-cleanup="munni-iac-staging">Clean up staging twin</button><button class="ghost" data-cleanup="munni-iac-prod">Clean up prod twin</button><button class="ghost" data-cleanup="pair">Clean up the pair</button></div>
+    <div class="msg" id="msg-cleanup"></div>
+  </div>
   <!-- seen from outside, without any DSM credential: which one-time step each host still misses (2026-09-10) -->
   <div class="card" id="nas-ready" hidden>
     <div class="health-h"><span class="ico" data-ico="pulse"></span><div><b>NAS readiness</b><div class="why" style="margin:0" id="nas-ready-sub">probing the hosts…</div></div><button id="btn-nas-bootstrap" title="Run Bootstrap for the prod twin now — it chains the staging twin and then Deploy for both">Bootstrap now</button><button class="ghost" id="btn-nas-probe">Probe again</button></div>
@@ -1594,6 +1600,7 @@ const ICONS = {
   lock: '<svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>',
   pulse: '<svg viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 4 12L16 12h5"/></svg>',
+  trash: '<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12h10l1-12M9 7V4h6v3"/></svg>',
   phone: '<svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 17.5h2"/></svg>',
 };
 function applyIcons(root = document) {
@@ -3269,6 +3276,19 @@ const UPSTREAM = 'okkes/munnimok';
 document.getElementById('btn-check-all').addEventListener('click', () => checkAll().catch((e) => msg('msg-health', `✗ ${e.message}`, false)));
 document.getElementById('btn-feat-recommended').addEventListener('click', () => selectRecommended().catch(() => {}));
 document.getElementById('btn-nas-probe').addEventListener('click', () => refreshNasReadiness({ force: true }).catch(() => {}));
+document.querySelectorAll('[data-cleanup]').forEach((btn) => btn.addEventListener('click', async () => {
+  const what = btn.dataset.cleanup;
+  const label = what === 'pair' ? 'the pair (both twins, the poller task and the live dir)' : what;
+  const typed = window.prompt(`This removes ${label} from the NAS and GitHub. Type ${what === 'pair' ? 'pair' : what} to confirm.`);
+  if (typed !== (what === 'pair' ? 'pair' : what)) { msg('msg-cleanup', 'nothing removed', true); return; }
+  try {
+    requireConnection();
+    if (what === 'pair') await dispatch('iac.yml', { stack: 'munni-iac-staging', cleanup: 'true', chain: 'cleanup-prod' });
+    else await dispatch('iac.yml', { stack: what, cleanup: 'true' });
+    msg('msg-cleanup', `Cleanup dispatched for ${label} — the runs appear under step 4; the readiness card shows the NAS emptying (the poller needs up to five minutes per twin).`, true);
+    setTimeout(() => refresh().catch(() => {}), 3000);
+  } catch (e) { msg('msg-cleanup', String(e.message || e), false); }
+}));
 document.getElementById('btn-nas-bootstrap').addEventListener('click', async () => {
   // the same guarded dispatch a green Synology check makes — for the case
   // the account was fixed in DSM without retyping anything here

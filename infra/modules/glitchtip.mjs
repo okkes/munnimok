@@ -88,3 +88,26 @@ export async function glitchtipAnswers(pairStack, token, fetchImpl = fetch) {
     return false;
   }
 }
+
+/** delete the stack's projects (pwa, api, admin) in the pair's org; returns {removed, absent} */
+export async function removeProjects(pairStack, stack, token, fetchImpl = fetch) {
+  const base = `${pairStack.urls.glitchtip}/api/0`;
+  const call = async (path, init = {}) => {
+    const res = await fetchImpl(`${base}${path}`, { ...init, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...(init.headers ?? {}) }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok && res.status !== 204) throw new Error(`glitchtip ${init.method ?? 'GET'} ${path} failed (${res.status})`);
+    return res.status === 204 ? null : res.json();
+  };
+  // the org is whichever one holds the stack's projects (the pair's, by construction)
+  const orgs = await call('/organizations/');
+  const wanted = ['pwa', 'api', 'admin'].map((suffix) => `${stack.stack}-${suffix}`);
+  const removed = [];
+  for (const org of orgs) {
+    const projects = await call(`/organizations/${org.slug}/projects/`);
+    for (const p of projects) {
+      if (!wanted.includes(p.name) && !wanted.includes(p.slug)) continue;
+      await call(`/projects/${org.slug}/${p.slug}/`, { method: 'DELETE' });
+      removed.push(p.name);
+    }
+  }
+  return { removed, absent: wanted.filter((n) => !removed.includes(n)) };
+}

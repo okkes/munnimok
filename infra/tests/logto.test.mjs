@@ -116,3 +116,22 @@ test('ensureAppAdmin: the app\'s first user is created once with a generated pas
   const has = fakeTenants({ appUsers: [{ id: 'first-user' }] });
   assert.deepEqual(await ensureAppAdmin(twoTenants, { m2mId: 'infrax', m2mSecret: 's' }, { fetchImpl: has.fetchImpl }), { created: null, existing: true, sub: 'first-user' });
 });
+
+import { removeApps, appDefinitions } from '../modules/logto.mjs';
+import { loadStack } from '../modules/stack.mjs';
+test('removeApps: the stack\'s apps and its API resource are deleted by name/indicator, nothing else', async () => {
+  process.env.IAC_DOMAIN ??= 'nas.example';
+  const stackDef = loadStack('munni-iac-staging');
+  const names = new Set(Object.values(appDefinitions(stackDef)).map((d) => d.name));
+  const calls = [];
+  const fetchImpl = async (url, init = {}) => {
+    calls.push({ url, method: init.method ?? 'GET' });
+    if (url.endsWith('/oidc/token')) return ok({ access_token: 't' });
+    if (url.includes('/api/applications?')) return ok([...names].slice(0, 2).map((n, i) => ({ id: `a${i}`, name: n })).concat([{ id: 'keep', name: 'other stack web' }]));
+    if (url.includes('/api/resources?')) return ok([{ id: 'r1', indicator: stackDef.urls.api }, { id: 'r2', indicator: 'https://other.test' }]);
+    return { ok: true, status: 204, text: async () => '' };
+  };
+  const r = await removeApps({ urls: { logto: 'http://logto.test' } }, stackDef, { m2mId: 'm', m2mSecret: 's' }, { fetchImpl });
+  assert.equal(r.removed.length, 3, 'two apps + the resource');
+  assert.deepEqual(calls.filter((c) => c.method === 'DELETE').map((c) => c.url), ['http://logto.test/api/applications/a0', 'http://logto.test/api/applications/a1', 'http://logto.test/api/resources/r1']);
+});

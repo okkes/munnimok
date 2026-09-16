@@ -74,3 +74,30 @@ test('logto seed: without the admin credential only the default tenant is seeded
   assert.ok(!notReady.calls.some((c) => c.includes('ON_ERROR_STOP=1')), 'no insert before the roles exist');
   assert.equal(notReady.calls.filter((c) => c.includes('select count(*) from roles')).length, 60, 'the wait is bounded');
 });
+
+test('apply.sh: a stamp reading "remove" stops the twin\'s containers with its env file, deletes its folder, bundle and stamp, and marks it removed', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'munni-remove-'));
+  const live = join(dir, 'munni-iac');
+  const twin = join(dir, 'munni-iac-staging');
+  execFileSync('mkdir', ['-p', join(live, 'published'), twin, join(dir, 'bin')]);
+  copyFileSync(new URL('../../deploy/nas/apply.sh', import.meta.url), join(live, 'apply.sh'));
+  writeFileSync(join(twin, 'docker-compose.munni-iac-staging.yml'), 'services: {}\n');
+  writeFileSync(join(twin, '.env.staging'), 'X=1\n');
+  writeFileSync(join(live, 'published', 'VERSION_IAC_STAGING'), 'remove\n');
+  writeFileSync(join(live, 'published', 'munni-deploy-iac-staging.tgz'), 'not really a tarball');
+  writeFileSync(join(live, '.applied_version_iac_staging'), 'abc.1\n');
+  const log = join(dir, 'docker.log');
+  writeFileSync(log, '');
+  writeFileSync(join(dir, 'bin', 'docker'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_LOG"\nexit 0\n');
+  chmodSync(join(dir, 'bin', 'docker'), 0o755);
+  writeFileSync(join(dir, 'bin', 'flock'), '#!/bin/sh\nexit 0\n');
+  chmodSync(join(dir, 'bin', 'flock'), 0o755);
+  const env = { ...process.env, PATH: `${join(dir, 'bin')}:${process.env.PATH}`, FAKE_LOG: log, MUNNI_LIVE_DIR: live, MUNNI_PUBLISHED_DIR: join(live, 'published') };
+  execFileSync('sh', ['./apply.sh'], { cwd: live, env, encoding: 'utf8' });
+  const docker = readFileSync(log, 'utf8');
+  assert.match(docker, /compose --env-file \.env\.staging -f docker-compose\.munni-iac-staging\.yml down -v --remove-orphans/);
+  assert.ok(!existsSync(twin), 'the twin folder is gone');
+  assert.ok(!existsSync(join(live, 'published', 'munni-deploy-iac-staging.tgz')) && !existsSync(join(live, 'published', 'VERSION_IAC_STAGING')), 'bundle + stamp gone');
+  assert.equal(readFileSync(join(live, '.applied_version_iac_staging'), 'utf8').trim(), 'removed');
+  assert.match(readFileSync(join(live, 'deploy.log'), 'utf8'), /munni-iac-staging removed/);
+});

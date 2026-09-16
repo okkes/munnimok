@@ -72,11 +72,26 @@ apply_channel_dir() { # apply_channel_dir STAMP BUNDLE MARKER DIR COMPOSE
   # carries its own update.sh; markers stay in $LIVE with the others.
   stamp="$1"; bundle="$2"; marker="$3"; dir="$4"; compose="$5"
   [ -f "$PUBLISHED/$stamp" ] || return 0
-  new="$(cat "$PUBLISHED/$stamp")"
+  new="$(cat "$PUBLISHED/$stamp" | tr -d '[:space:]')"
   old="$(cat "$LIVE/$marker" 2>/dev/null || echo none)"
   [ "$new" = "$old" ] && return 0
 
   target="$(dirname "$LIVE")/$dir"
+  # cleanup as code (2026-09-17): a stamp reading "remove" (bootstrap --cleanup
+  # uploads it) stops the twin's containers, drops its volumes and deletes
+  # its folder and bundle; the marker says "removed" so the wizard can tell
+  if [ "$new" = "remove" ]; then
+    if [ -d "$target" ]; then
+      envf=".env"; case "$compose" in *staging*) [ -f "$target/.env.staging" ] && envf=".env.staging" ;; esac
+      log "removal requested for $dir — stopping its containers and deleting $target"
+      (cd "$target" && docker compose --env-file "$envf" -f "$compose" down -v --remove-orphans) >>"$LOG" 2>&1 || log "compose down failed for $dir (continuing with the folder)"
+      rm -rf "$target"
+    fi
+    rm -f "$PUBLISHED/$bundle" "$PUBLISHED/$stamp"
+    echo removed >"$LIVE/$marker"
+    log "$dir removed"
+    return 0
+  fi
   mkdir -p "$target"
   log "new deploy $stamp=$new (was $old) — unpacking $bundle into $target"
   if ! tar -xzf "$PUBLISHED/$bundle" -C "$target"; then

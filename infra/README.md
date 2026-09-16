@@ -121,6 +121,17 @@ itself (after the secrets are stored). Only two more things stay manual
   every host the certificate misses and reports the certificate and
   poller task DSM holds.
 
+**Cleanup (any time, one confirmed click).** Wizard step 5 → *Clean up*
+(a twin, or the pair): `bootstrap --cleanup` removes the stack's Logto
+apps + API resource and GlitchTip projects (a staging twin's; the prod
+twin hosts both, they go with its containers), its reverse-proxy rules,
+its containers + volumes + folder on the NAS (the poller acts on a stamp
+reading "remove" and confirms with the marker `removed`), and its GitHub
+environment with every secret and written-back id; cleaning up the pair
+(staging first, then `chain=cleanup-prod`) also removes the poller task
+and the live dir. The wildcard certificate stays. Store records (App
+Store Connect, Play) have no delete API — the one thing left to you.
+
 **B1-2 (once per stack — one workflow click).** Wizard step 5, or
 Actions → *Deploy to NAS* → Run workflow → channel `iac-prod` /
 `iac-staging` / `iac-both`. The workflow renders the stack from its

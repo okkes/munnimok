@@ -6,6 +6,7 @@
  *   node infra/bootstrap.mjs --stack munni-iac-prod --verify   # probe reality, no writes
  *   node infra/bootstrap.mjs --stack munni-iac-prod --rotate NAS_GLITCHTIP_SECRET_KEY
  *   node infra/bootstrap.mjs --stack munni-iac-prod --render-only  # compose+env template only, no gh (the NAS bundle job)
+ *   node infra/bootstrap.mjs --stack munni-iac-staging --cleanup   # take the stack OFF the NAS + GitHub (the wizard's Clean up)
  *   node infra/bootstrap.mjs --stack munni-local               # local twin: secrets live in a gitignored file, .env renders with real values
  *   node infra/bootstrap.mjs --list
  *
@@ -21,13 +22,13 @@ import { execFileSync } from 'node:child_process';
 import { listStacks, loadStack, pairProd, sharedOf } from './modules/stack.mjs';
 import { ensureSecrets, pairEnvironments, verifySecrets } from './modules/secrets.mjs';
 import { ensureLocalSecrets, familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
-import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAppAdmin, logtoAnswers, writeBack } from './modules/logto.mjs';
+import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAppAdmin, logtoAnswers, removeApps, writeBack } from './modules/logto.mjs';
 import { vaultReplaceFolder } from './modules/vault.mjs';
-import { applyGlitchTip, glitchtipAnswers, writeBackDsns } from './modules/glitchtip.mjs';
+import { applyGlitchTip, glitchtipAnswers, removeProjects, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
 import { appendFileSync, readFileSync } from 'node:fs';
-import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas, probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes, readPollerLog } from './modules/dsm.mjs';
+import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas, probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes, readPollerLog, readLiveFile, removeReverseProxy, removePollerTask, removeLiveDir, requestRemoval } from './modules/dsm.mjs';
 import { localAwareFetch } from './modules/insecure-fetch.mjs';
 
 const args = process.argv.slice(2);
@@ -560,6 +561,96 @@ async function ciApply() {
   return 0;
 }
 
+/**
+ * Cleanup as code (2026-09-17, user ruling: an environment on the NAS is
+ * cleaned up through the wizard, everything it created goes): the
+ * stack's Logto apps + API resource and GlitchTip projects (a staging
+ * twin's — the prod twin hosts both, they go with its containers), its
+ * reverse-proxy rules, its containers + volumes + folder on the NAS (the
+ * poller acts on a stamp reading "remove"), and its GitHub environment.
+ * The pair's shared pieces — the poller task and the live dir — go with
+ * the prod twin once no staging twin is left on the NAS. The wildcard
+ * certificate stays (DSM's own, harmless). Store records (App Store
+ * Connect, Play) have no delete API: named as the one manual leftover.
+ */
+async function ciCleanup() {
+  console.log(`cleanup ${stack.stack} (pair ${stack.pair}, role ${stack.role})`);
+  const owner = stack.role === 'prod';
+  let failed = 0;
+  const step = async (label, fn) => {
+    try {
+      const r = await fn();
+      console.log(`  ✓ ${label}: ${r.detail ?? `removed ${(r.removed ?? []).join(', ') || 'nothing'}${r.absent?.length ? ` (absent: ${r.absent.join(', ')})` : ''}`}`);
+      return r;
+    } catch (e) {
+      failed++;
+      console.log(`  ✗ ${label} failed (${e.message})${dsmAdvice(e)}`);
+      return null;
+    }
+  };
+  if (!owner) {
+    const creds = { m2mId: process.env.IAC_LOGTO_INFRA_M2M_ID, m2mSecret: process.env.IAC_LOGTO_INFRA_M2M_SECRET };
+    if (creds.m2mId && creds.m2mSecret) await step('logto apps + API resource', () => removeApps(pair, stack, creds));
+    else console.log('  logto: no infra credential in this environment — apps left (an own Logto, or never wired)');
+    if (process.env.IAC_GLITCHTIP_API_TOKEN) await step('glitchtip projects', () => removeProjects(pair, stack, process.env.IAC_GLITCHTIP_API_TOKEN));
+    else console.log('  glitchtip: no API token in this environment — projects left');
+  } else {
+    console.log('  logto + glitchtip: run inside this twin — they go with its containers');
+  }
+  const { SYNOLOGY_URL, SYNOLOGY_USER, SYNOLOGY_PASS, SYNOLOGY_PATH } = process.env;
+  const removed = [];
+  if (SYNOLOGY_URL && SYNOLOGY_USER && SYNOLOGY_PASS) {
+    const creds = { url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS };
+    const rules = await step('reverse-proxy rules', () => removeReverseProxy(stack, creds));
+    if (rules) removed.push(...rules.removed.map((h) => `rule ${h}`));
+    if (SYNOLOGY_PATH) {
+      const suffix = owner ? 'prod' : 'staging';
+      const stamp = `VERSION_IAC_${suffix.toUpperCase()}`;
+      const marker = `.applied_version_iac_${suffix}`;
+      const asked = await step('containers + folder (via the poller)', () => requestRemoval(creds, { publishedPath: SYNOLOGY_PATH, stamp }));
+      if (asked) {
+        const started = Date.now();
+        let done = false;
+        while (Date.now() - started < 10 * 60000) {
+          const seen = await readLiveFile(creds, { publishedPath: SYNOLOGY_PATH, file: marker }).then((r) => r.text.trim()).catch(() => null);
+          if (seen === 'removed') { done = true; break; }
+          await new Promise((r) => setTimeout(r, 30000));
+        }
+        console.log(done ? `  ✓ the poller removed ${stack.stack}'s containers, volumes and folder (${Math.round((Date.now() - started) / 1000)} s)` : `  ✗ the poller has not confirmed the removal within ten minutes — its log below; the stamp stays "remove", so the next cycle still does it`);
+        if (!done) failed++;
+        else removed.push('containers + folder');
+        await printPollerLog(creds, SYNOLOGY_PATH);
+        if (owner) {
+          // the pair's pieces go once nothing else polls
+          const staging = await readLiveFile(creds, { publishedPath: SYNOLOGY_PATH, file: '.applied_version_iac_staging' }).then((r) => r.text.trim()).catch(() => null);
+          if (!staging || staging === 'removed') {
+            if (await step('poller task', () => removePollerTask(creds))) removed.push('poller task');
+            if (await step('live dir', () => removeLiveDir(creds, { publishedPath: SYNOLOGY_PATH }))) removed.push('live dir');
+          } else {
+            console.log(`  poller task + live dir kept — the staging twin is still applied there (${staging}); clean it up too, or clean up the pair`);
+          }
+        }
+      }
+    } else {
+      console.log('  dsm: SYNOLOGY_PATH not in env — the containers and the folder are not touched');
+    }
+  } else {
+    console.log('  dsm: SYNOLOGY_URL/USER/PASS not in env — nothing on the NAS is touched');
+  }
+  // the environment goes last: everything above still needed its secrets
+  await step('GitHub environment', async () => {
+    execFileSync('gh', ['api', '-X', 'DELETE', `repos/{owner}/{repo}/environments/${encodeURIComponent(stack.githubEnvironment)}`], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
+    return { detail: `${stack.githubEnvironment} deleted (its secrets and variables with it)` };
+  });
+  removed.push('GitHub environment');
+  try {
+    execFileSync('gh', ['variable', 'set', 'IAC_NAS_STATE', '--body', JSON.stringify({ at: new Date().toISOString(), stack: stack.stack, mode: 'cleanup', removed, failed })], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
+  } catch { /* the wizard keeps the last state */ }
+  console.log('  native apps: App Store Connect / Play Console records have no delete API — remove them by hand if this twin had its own; the CI channel is gone with the environment');
+  console.log(failed ? `✗ ${failed} cleanup step${failed === 1 ? '' : 's'} failed — see above; re-run to retry (every step is idempotent)` : `done. ${stack.stack} is off the NAS and GitHub.`);
+  return failed ? 1 : 0;
+}
+
 if (flag('render-only')) {
   // compose + env TEMPLATE, nothing else — no gh, no modules. The
   // deploy-nas bundle job uses this before render-env.sh substitutes.
@@ -567,6 +658,8 @@ if (flag('render-only')) {
   console.log(`rendered compose + env template → ${dir}`);
 } else if (stack.target === 'local') {
   process.exitCode = flag('verify') ? await localVerify() : await localApply();
+} else if (flag('cleanup')) {
+  process.exitCode = await ciCleanup();
 } else {
   process.exitCode = flag('verify') ? await ciVerify() : await ciApply();
 }

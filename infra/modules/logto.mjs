@@ -294,3 +294,22 @@ export async function logtoAnswers(pairStack, { m2mId, m2mSecret }, fetchImpl = 
     return false;
   }
 }
+
+/** delete the stack's apps (by their code names) and its API resource on the pair's Logto; returns {removed, absent} */
+export async function removeApps(pairStack, stack, { m2mId, m2mSecret }, { fetchImpl = localAwareFetch } = {}) {
+  const logtoUrl = pairStack.urls.logto;
+  const token = await mgmtToken(logtoUrl, m2mId, m2mSecret, fetchImpl);
+  const existing = await api(logtoUrl, token, '/applications?page_size=100', {}, fetchImpl);
+  const removed = [];
+  const absent = [];
+  for (const def of Object.values(appDefinitions(stack))) {
+    const match = existing.find((a) => a.name === def.name);
+    if (!match) { absent.push(def.name); continue; }
+    await api(logtoUrl, token, `/applications/${match.id}`, { method: 'DELETE' }, fetchImpl);
+    removed.push(def.name);
+  }
+  const resources = await api(logtoUrl, token, '/resources?page_size=100', {}, fetchImpl);
+  const res = resources.find((r) => r.indicator === stack.urls.api);
+  if (res) { await api(logtoUrl, token, `/resources/${res.id}`, { method: 'DELETE' }, fetchImpl); removed.push(`resource ${stack.urls.api}`); }
+  return { removed, absent };
+}

@@ -20,9 +20,13 @@ on:
         type: string
         default: ''
       chain:
-        description: 'After a green apply, run next (comma-separated, in order): staging (the twin; prod only), deploy (this twin), deploy-both'
+        description: 'After a green apply, run next (comma-separated, in order): staging (the twin; prod only), deploy (this twin), deploy-both, cleanup-prod (after a staging cleanup: the pair)'
         type: string
         default: ''
+      cleanup:
+        description: 'CLEAN UP this stack instead: its rules, containers + folder on the NAS (via the poller), Logto apps / GlitchTip projects, its GitHub environment; the prod twin also removes the poller task + live dir once no staging twin is left'
+        type: boolean
+        default: false
   push:
     branches: [dev]
     paths: ['infra/**', '.github/workflows/iac.yml']
@@ -75,6 +79,9 @@ jobs:
           fi
           if [ -n "${{ inputs.rotate }}" ] && [ "${#FLAGS[@]}" -eq 0 ]; then
             FLAGS+=(--rotate "${{ inputs.rotate }}")
+          fi
+          if [ "${{ inputs.cleanup }}" = "true" ] && [ "${#FLAGS[@]}" -eq 0 ]; then
+            FLAGS+=(--cleanup)
           fi
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           rc=0
@@ -141,6 +148,7 @@ jobs:
           name: iac-${{ matrix.stack }}-${{ github.run_number }}
           path: infra/rendered/${{ matrix.stack }}/
           retention-days: 30
+          if-no-files-found: ignore # a cleanup renders nothing
       # LAST: a chain that cannot be dispatched must not cost the runbook above
       - name: Chain the next run
         # the wizard dispatches the prod twin with chain=staging,deploy-both:
@@ -166,6 +174,9 @@ jobs:
             deploy-both)
               gh workflow run deploy-nas.yml --ref "$GITHUB_REF_NAME" -f channel=iac-both
               echo "chained: Deploy both twins" >> "$GITHUB_STEP_SUMMARY" ;;
+            cleanup-prod)
+              gh workflow run iac.yml --ref "$GITHUB_REF_NAME" -f stack=munni-iac-prod -f cleanup=true
+              echo "chained: Clean up munni-iac-prod (the pair's poller task + live dir go with it)" >> "$GITHUB_STEP_SUMMARY" ;;
             *)
               echo "::warning::unknown chain step '$head' — nothing chained" ;;
           esac

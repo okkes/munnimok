@@ -733,3 +733,39 @@ test('readLiveFile: the stamp marker of the live dir comes through FileStation r
   assert.equal(r.text.trim(), 'abc123');
   await assert.rejects(readLiveFile(CREDS, { publishedPath: '/docker/munni-iac/published', file: 'missing', fetchImpl: nas }), /"code":408/);
 });
+
+import { removeReverseProxy, removePollerTask, removeLiveDir, requestRemoval } from '../modules/dsm.mjs';
+test('cleanup: the stack\'s rules go by uuid, the poller task by id (root API as the fallback), the live dir through FileStation, and a removal is a stamp reading "remove"', async () => {
+  const a = dsm({
+    'SYNO.Core.AppPortal.ReverseProxy.list': ok({ entries: [{ UUID: 'u1', frontend: { fqdn: 'web.nas.example' } }, { UUID: 'u2', frontend: { fqdn: 'api.nas.example' } }, { UUID: 'u9', frontend: { fqdn: 'other.nas.example' } }] }),
+    'SYNO.Core.AppPortal.ReverseProxy.delete': ok({}),
+  });
+  const rules = await removeReverseProxy(stack, CREDS, a.fetchImpl);
+  assert.deepEqual(rules, { removed: ['web.nas.example', 'api.nas.example'], absent: ['admin.nas.example'] });
+  assert.deepEqual(a.calls.filter((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.delete').map((c) => c.params.uuids), ['["u1"]', '["u2"]'], 'never the other rule');
+  const t = dsm({
+    'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 42, name: POLLER_TASK_NAME, owner: 'root', real_owner: 'root' }] }),
+    'SYNO.Core.TaskScheduler.delete': fail(105),
+    'SYNO.Core.User.PasswordConfirm.auth': ok({ SynoConfirmPWToken: 'CONFIRM' }),
+    'SYNO.Core.TaskScheduler.Root.delete': ok({}),
+  });
+  const task = await removePollerTask(CREDS, { fetchImpl: t.fetchImpl });
+  assert.equal(task.state, 'removed');
+  const rootDel = t.calls.find((c) => c.key === 'SYNO.Core.TaskScheduler.Root.delete');
+  assert.equal(rootDel.params.id, '[42]');
+  assert.equal(rootDel.params.SynoConfirmPWToken, 'CONFIRM', 'a refused plain delete falls back to the confirmed root API');
+  const none = dsm({ 'SYNO.Core.TaskScheduler.list': ok({ tasks: [] }) });
+  assert.equal((await removePollerTask(CREDS, { fetchImpl: none.fetchImpl })).state, 'absent');
+  const fs = dsm({ 'SYNO.FileStation.Delete.delete': ok({}) });
+  const dir = await removeLiveDir(CREDS, { publishedPath: '/docker/munni-iac/published', fetchImpl: fs.fetchImpl });
+  assert.equal(dir.state, 'removed');
+  const del = fs.calls.find((c) => c.key === 'SYNO.FileStation.Delete.delete');
+  assert.equal(del.params.path, '["/docker/munni-iac"]', 'the live dir, not only the published folder');
+  assert.equal(del.params._sid, 'SID-FileStation');
+  const up = dsm({ 'SYNO.FileStation.Upload.upload': ok({}) });
+  const req = await requestRemoval(CREDS, { publishedPath: '/docker/munni-iac/published', stamp: 'VERSION_IAC_STAGING', fetchImpl: up.fetchImpl });
+  assert.equal(req.state, 'requested');
+  const upload = up.calls.find((c) => c.key === 'SYNO.FileStation.Upload.upload');
+  assert.equal(upload.params.path, '/docker/munni-iac/published');
+  assert.equal(await upload.init.body.get('file').text(), 'remove\n');
+});
