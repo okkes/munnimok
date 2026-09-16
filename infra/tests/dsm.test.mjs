@@ -60,6 +60,7 @@ test('dsm: every call rides the sid AND the SynoToken; error codes come with the
   assert.equal(list.init.headers['X-SYNO-TOKEN'], 'TOK', 'and the token the header');
   assert.match(calls.at(-1).url, /auth\.cgi\?_sid=SID-DSM$/, 'the logout carries the sid in the query too');
   assert.equal(calls[0].params.enable_syno_token, 'yes');
+  assert.match(calls[0].url, /\/webapi\/auth\.cgi\?enable_syno_token=yes$/, 'the token is asked for in the URL too (acme.sh does; DSM may only read it there)');
   assert.equal('session' in calls[0].params, false, 'the Control Panel login names no session — DSM refuses names it does not know with 402 (found live 2026-09-16)');
   assert.equal('session' in calls.at(-1).params, false, 'nor does its logout');
   const update = JSON.parse(calls.find((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.update').params.entry);
@@ -592,17 +593,19 @@ test('login shapes: when DSM refuses the bootstrap login, every other shape is t
     if (p.method === 'logout') return { json: async () => ({ success: true }) };
     // this DSM refuses session=Core on v7 only
     if (p.version === '7' && p.session === 'Core') return { json: async () => fail(402) };
-    return { json: async () => ({ success: true, data: { sid: `S-${p.version}-${p.session ?? 'none'}` } }) };
+    return { json: async () => ({ success: true, data: { sid: `S-${p.version}-${p.session ?? 'none'}`, ...(new URL(url).searchParams.get('enable_syno_token') === 'yes' ? { synotoken: 'T' } : {}) } }) };
   };
   const shapes = await probeLoginShapes(CREDS, picky);
   assert.equal(shapes.length, LOGIN_SHAPES.length);
   assert.deepEqual(shapes.filter((s) => !s.ok).map((s) => s.code), [402, 402], 'the two v7/Core shapes are refused with their code');
-  assert.ok(shapes.find((s) => s.label.startsWith('v7 no session')).ok);
+  assert.ok(shapes.find((s) => s.label.startsWith('v7 no session, token asked in URL')).ok);
+  assert.equal(shapes.find((s) => s.label.startsWith('v7 no session, token asked in URL')).token, true, 'a token came back when asked for in the URL');
+  assert.equal(shapes.find((s) => s.label.startsWith('v7 no session, token asked in body')).token, false, 'this DSM issues none for a body-only ask — and the line says so');
   assert.ok(shapes.find((s) => s.label.startsWith('v6 session=FileStation')).ok);
   const logouts = seen.filter((p) => p.method === 'logout');
   assert.equal(logouts.length, shapes.filter((s) => s.ok).length, 'every accepted session is logged out');
   assert.equal(logouts.find((p) => p.version === '6' && p.session === 'FileStation')._sid, 'S-6-FileStation');
-  assert.match(describeLoginShapes(shapes), /^v7 no session \(bootstrap\): ok; v7 session=Core \(the old bootstrap\): refused 402; .*v6 session=FileStation \(upload\.sh\): ok/);
+  assert.match(describeLoginShapes(shapes), /^v7 no session, token asked in URL\+body \(bootstrap\): ok \(token\); v7 no session, token asked in body: ok \(NO token\); entry\.cgi login \(acme\.sh\): ok \(token\); v7 session=Core \(the old bootstrap\): refused 402; .*v6 session=FileStation \(upload\.sh\): ok \(token\)/);
   const down = await probeLoginShapes(CREDS, async () => { throw netErr('ECONNREFUSED'); }, LOGIN_SHAPES.slice(0, 1));
   assert.equal(down[0].transport, true);
   assert.match(describeLoginShapes(down), /no answer/);
@@ -622,16 +625,20 @@ test('call shapes: when a read answers 119 after an accepted login, every way of
   };
   const shapes = await probeCallShapes(CREDS, strict);
   assert.deepEqual(shapes.map((s) => [s.label, s.ok, s.code ?? null]), [
+    ['login issued a token', true, null],
     ['sid+token in body', false, 119],
     ['sid+token in query', true, null],
     ['sid in query + X-SYNO-TOKEN', true, null],
     ['sid in body + X-SYNO-TOKEN', false, 119],
     ['cookie id=sid + X-SYNO-TOKEN', true, null],
+    ['sid in query, no token', false, 119],
+    ['SYNO.Core.System info (sid in query + X-SYNO-TOKEN)', true, null],
   ]);
-  assert.equal(CALL_SHAPES.length, 5);
+  assert.equal(CALL_SHAPES.length, 7);
+  assert.equal(seen.find((x) => x.p.api === 'SYNO.Core.System')?.p.method, 'info', 'the second admin API is really called');
   assert.equal(seen.filter((x) => x.p.method === 'login').length, 1, 'one login for the whole probe');
   assert.equal(seen.filter((x) => x.p.method === 'logout').length, 1, 'and one logout');
-  assert.match(describeLoginShapes(shapes), /^sid\+token in body: refused 119; sid\+token in query: ok; /);
+  assert.match(describeLoginShapes(shapes), /^login issued a token: ok; sid\+token in body: refused 119; sid\+token in query: ok; /);
   // the session the module hands out passes such a DSM
   const s = await dsmSession(CREDS, strict);
   assert.deepEqual(await s.read('SYNO.Core.Certificate.CRT', 1, 'list'), { certificates: [] });

@@ -137,6 +137,8 @@ export async function dsmLogin(base, account, passwd, fetchImpl = fetch, { sessi
   // session: only for a real DSM application (FileStation for uploads);
   // the Control Panel APIs log in without one, like DSM's own UI — a
   // name DSM does not know is refused with 402 (found live 2026-09-16)
+  // enable_syno_token rides the URL as well as the body: acme.sh's hook
+  // sends it in both, and a token is only worth having if DSM issues one
   const data = await dsmCall(base, 'auth.cgi', {
     api: 'SYNO.API.Auth',
     version: '7',
@@ -146,7 +148,7 @@ export async function dsmLogin(base, account, passwd, fetchImpl = fetch, { sessi
     ...(session ? { session } : {}),
     format: 'sid',
     enable_syno_token: 'yes',
-  }, fetchImpl, { retry, sleepImpl });
+  }, fetchImpl, { retry, sleepImpl, query: { enable_syno_token: 'yes' } });
   return { sid: data.sid, token: data.synotoken };
 }
 
@@ -641,7 +643,9 @@ export function summarizeNas(nas, hostsTotal = 0) {
  * logged out again. Returns [{label, ok, code?, transport?}].
  */
 export const LOGIN_SHAPES = [
-  { label: 'v7 no session (bootstrap)', params: { version: '7', enable_syno_token: 'yes' } },
+  { label: 'v7 no session, token asked in URL+body (bootstrap)', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
+  { label: 'v7 no session, token asked in body', params: { version: '7', enable_syno_token: 'yes' } },
+  { label: 'entry.cgi login (acme.sh)', path: 'entry.cgi', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
   { label: 'v7 session=Core (the old bootstrap)', params: { version: '7', session: 'Core', enable_syno_token: 'yes' } },
   { label: 'v7 session=Core no token', params: { version: '7', session: 'Core' } },
   { label: 'v7 session=FileStation', params: { version: '7', session: 'FileStation', enable_syno_token: 'yes' } },
@@ -653,9 +657,9 @@ export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, s
   const out = [];
   for (const s of shapes) {
     try {
-      const data = await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', method: 'login', account: user, passwd: pass, format: 'sid', ...s.params }, fetchImpl);
-      out.push({ label: s.label, ok: true });
-      await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: s.params.version, method: 'logout', ...(s.params.session ? { session: s.params.session } : {}), _sid: data.sid }, fetchImpl).catch(() => undefined);
+      const data = await dsmCall(base, s.path ?? 'auth.cgi', { api: 'SYNO.API.Auth', method: 'login', account: user, passwd: pass, format: 'sid', ...s.params }, fetchImpl, { query: s.query ?? null });
+      out.push({ label: s.label, ok: true, token: Boolean(data.synotoken) });
+      await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: s.params.version, method: 'logout', ...(s.params.session ? { session: s.params.session } : {}), _sid: data.sid }, fetchImpl, { query: { _sid: data.sid } }).catch(() => undefined);
     } catch (e) {
       out.push({ label: s.label, ok: false, code: dsmCode(e) || null, transport: isTransport(e) });
     }
@@ -663,7 +667,7 @@ export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, s
   return out;
 }
 /** one line for the verify output */
-export const describeLoginShapes = (shapes) => shapes.map((s) => `${s.label}: ${s.ok ? 'ok' : (s.transport ? 'no answer' : `refused ${s.code ?? '?'}`)}`).join('; ');
+export const describeLoginShapes = (shapes) => shapes.map((s) => `${s.label}: ${s.ok ? `ok${s.token === undefined ? '' : (s.token ? ' (token)' : ' (NO token)')}` : (s.transport ? 'no answer' : `refused ${s.code ?? '?'}`)}`).join('; ');
 
 /**
  * How a logged-in call may carry the sid + CSRF token — tried when a read
@@ -678,17 +682,19 @@ export const CALL_SHAPES = [
   { label: 'sid in query + X-SYNO-TOKEN', build: (a) => ({ body: {}, query: { _sid: a._sid }, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
   { label: 'sid in body + X-SYNO-TOKEN', build: (a) => ({ body: { _sid: a._sid }, query: null, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
   { label: 'cookie id=sid + X-SYNO-TOKEN', build: (a) => ({ body: {}, query: null, headers: { cookie: `id=${a._sid}`, 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
+  { label: 'sid in query, no token', build: (a) => ({ body: {}, query: { _sid: a._sid }, headers: null }) },
+  { label: 'SYNO.Core.System info (sid in query + X-SYNO-TOKEN)', api: { api: 'SYNO.Core.System', version: '1', method: 'info' }, build: (a) => ({ body: {}, query: { _sid: a._sid }, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
 ];
 export async function probeCallShapes({ url, user, pass }, fetchImpl = fetch, shapes = CALL_SHAPES) {
   const base = url.replace(/\/$/, '');
   const { sid, token } = await dsmLogin(base, user, pass, fetchImpl);
   const auth = { _sid: sid, ...(token ? { SynoToken: token } : {}) };
-  const out = [];
+  const out = [{ label: 'login issued a token', ok: Boolean(token) }];
   try {
     for (const s of shapes) {
       const { body, query, headers } = s.build(auth);
       try {
-        await dsmCall(base, 'entry.cgi', { api: 'SYNO.Core.Certificate.CRT', version: '1', method: 'list', ...body }, fetchImpl, { query, headers });
+        await dsmCall(base, 'entry.cgi', { ...(s.api ?? { api: 'SYNO.Core.Certificate.CRT', version: '1', method: 'list' }), ...body }, fetchImpl, { query, headers });
         out.push({ label: s.label, ok: true });
       } catch (e) {
         out.push({ label: s.label, ok: false, code: dsmCode(e) || null, transport: isTransport(e) });

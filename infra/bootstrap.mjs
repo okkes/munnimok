@@ -293,16 +293,19 @@ async function ciVerify() {
     } catch (e) {
       console.log(`  ✗ dsm: could not read the NAS (${e.message})${dsmAdvice(e)}`);
       state = { dsm: dsmRefusal(e) };
-      if (isPermissionError(e)) {
-        // the account looks right but DSM refuses THIS login shape? name the shapes it accepts
-        const shapes = await probeLoginShapes({ url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS });
+      if (dsmCode(e)) {
+        // DSM answered a refusal for an account that may well be right: name
+        // the login shapes it accepts (and whether each issues a token) and
+        // the ways of carrying the session it reads — evidence, not a guess
+        const creds = { url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS };
+        const shapes = await probeLoginShapes(creds);
         console.log(`  ! dsm: login shapes — ${describeLoginShapes(shapes)}`);
         state.dsm.shapes = shapes;
-      } else if (dsmCode(e) === 119) {
-        // the login was accepted but a read says "SID not found"? name the call shapes DSM reads
-        const shapes = await probeCallShapes({ url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS }).catch((e2) => [{ label: 'probe', ok: false, code: dsmCode(e2) || null, transport: isTransport(e2) }]);
-        console.log(`  ! dsm: call shapes — ${describeLoginShapes(shapes)}`);
-        state.dsm.callShapes = shapes;
+        if (shapes.some((s) => s.ok)) {
+          const calls = await probeCallShapes(creds).catch((e2) => [{ label: 'probe', ok: false, code: dsmCode(e2) || null, transport: isTransport(e2) }]);
+          console.log(`  ! dsm: call shapes — ${describeLoginShapes(calls)}`);
+          state.dsm.callShapes = calls;
+        }
       }
     }
     publishNasState({ mode: 'verify', ...state });
