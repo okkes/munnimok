@@ -145,3 +145,61 @@ export const vaultImport = (base, token, payload, fetchImpl = insecureFetch) => 
     body: JSON.stringify(body),
   });
 };
+
+/** GET /api/sync — the account's profile (with its encrypted user key), folders and ciphers */
+export async function vaultSync(base, token, fetchImpl = insecureFetch) {
+  const res = await fetchImpl(`${base}/api/sync?excludeDomains=true`, { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`vault sync ${res.status}`);
+  return res.json();
+}
+
+/** an EXISTING account's user key: the profile's key, encrypted under the stretched master key */
+export function userKeysOf(email, password, profileKey) {
+  return splitSymKey(decString(stretchKey(masterKey(email, password)), profileKey));
+}
+
+export const vaultDeleteCipher = (base, token, id, fetchImpl = insecureFetch) =>
+  fetchImpl(`${base}/api/ciphers/${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
+
+/**
+ * ONE folder of the vault as code (part 4 of Logto OOBE on the NAS): sign
+ * in — register the account when it does not exist yet (signups must be
+ * open then) — and replace every item of the named folder with `items`
+ * ({name, username, password, uri, notes}); other folders are the
+ * operator's and stay untouched. Encrypts with the account's real user
+ * key (the profile's, decrypted), so an account made earlier by hand or by
+ * the helper reads the items too. Returns {registered, folder, replaced, imported}.
+ */
+export async function vaultReplaceFolder(base, { email, password, folder, items }, fetchImpl = insecureFetch) {
+  const account = buildAccount(email, password);
+  let token = await vaultLogin(base, email, account.hash, fetchImpl);
+  let registered = false;
+  if (!token) {
+    const reg = await vaultRegister(base, account.register, fetchImpl);
+    if (!reg.ok) throw new Error(`vault: no account for ${email} and registration refused (${reg.status}) — signups closed (VAULT_SIGNUPS_ALLOWED) or an account with a different master password`);
+    registered = true;
+    token = await vaultLogin(base, email, account.hash, fetchImpl);
+    if (!token) throw new Error('vault: login failed right after registration');
+  }
+  const sync = await vaultSync(base, token, fetchImpl);
+  const profileKey = sync.profile?.key ?? sync.Profile?.Key;
+  const keys = registered ? account.userKeys : userKeysOf(email, password, profileKey);
+  const folders = sync.folders ?? sync.Folders ?? [];
+  const nameOf = (f) => { try { return decString(keys, f.name ?? f.Name).toString('utf8'); } catch { return null; } };
+  const existing = folders.find((f) => nameOf(f) === folder);
+  const existingId = existing ? (existing.id ?? existing.Id) : null;
+  let replaced = 0;
+  for (const c of (sync.ciphers ?? sync.Ciphers ?? [])) {
+    if (existingId && (c.folderId ?? c.FolderId) === existingId) {
+      const del = await vaultDeleteCipher(base, token, c.id ?? c.Id, fetchImpl);
+      if (del.ok) replaced++;
+    }
+  }
+  const ciphers = items.map((it) => ({ ...buildCipher(keys, it), folderId: existingId }));
+  const payload = existingId
+    ? { ciphers, folders: [], folderRelationships: [] }
+    : { ciphers, folders: [{ name: encString(keys, folder) }], folderRelationships: items.map((_, i) => ({ key: i, value: 0 })) };
+  const imp = await vaultImport(base, token, payload, fetchImpl);
+  if (!imp.ok) throw new Error(`vault import failed (${imp.status})`);
+  return { registered, folder, replaced, imported: items.length };
+}

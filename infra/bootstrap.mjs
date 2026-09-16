@@ -19,9 +19,10 @@
  */
 import { execFileSync } from 'node:child_process';
 import { listStacks, loadStack, pairProd, sharedOf } from './modules/stack.mjs';
-import { ensureSecrets, verifySecrets } from './modules/secrets.mjs';
+import { ensureSecrets, pairEnvironments, verifySecrets } from './modules/secrets.mjs';
 import { ensureLocalSecrets, familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
-import { applyApps, applyBranding, applySocialConnectors, writeBack } from './modules/logto.mjs';
+import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAppAdmin, logtoAnswers, writeBack } from './modules/logto.mjs';
+import { vaultReplaceFolder } from './modules/vault.mjs';
 import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
@@ -94,6 +95,48 @@ function publishNasState(state) {
     console.log('  dsm: NAS verdict published for the wizard (repo variable IAC_NAS_STATE)');
   } catch (e) {
     console.log(`  dsm: NAS verdict not published (${String(e.stderr ?? e.message).trim().split('\n')[0]}) — the wizard keeps the last one`);
+  }
+}
+
+/** a pair-scoped write-back: the same value into every environment of the pair */
+function setPairSecret(name, value) {
+  for (const env of pairEnvironments(stack)) execFileSync('gh', ['secret', 'set', name, '--env', env, '--body', value]);
+}
+
+/**
+ * The pair's vault keeps every credential the bootstrap mints (part 4 of
+ * Logto OOBE on the NAS): one folder named after the prod twin, replaced
+ * on every run from what this run knows — the values CI injects from the
+ * environment plus whatever was created a moment ago. Needs the vault
+ * account the wizard's Vault tile stores (VAULT_ADMIN_EMAIL +
+ * VAULT_MASTER_PASSWORD); without it the credentials stay write-only in
+ * GitHub. Returns stored | no-account | failed.
+ */
+async function keepInVault(fresh = []) {
+  const email = process.env.VAULT_ADMIN_EMAIL;
+  const password = process.env.VAULT_MASTER_PASSWORD;
+  if (!email || !password || !pair.urls.vault) {
+    console.log('  vault: no VAULT_ADMIN_EMAIL/VAULT_MASTER_PASSWORD in the environment — the wizard\'s Vault tile stores them; until then the minted credentials live only in GitHub (write-only)');
+    return 'no-account';
+  }
+  const e = process.env;
+  const byName = new Map();
+  const add = (item) => { if (item.password || item.username) byName.set(item.name, item); };
+  if (e.LOGTO_CONSOLE_USERNAME) add({ name: 'Logto console', username: e.LOGTO_CONSOLE_USERNAME, password: e.LOGTO_CONSOLE_PASSWORD ?? '', uri: pair.urls.logtoAdmin, notes: 'The pair\'s Logto admin console — created by the IaC bootstrap.' });
+  if (e.LOGTO_APP_ADMIN_USERNAME) add({ name: 'munni app (admin user)', username: e.LOGTO_APP_ADMIN_USERNAME, password: e.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: pair.urls.web, notes: 'The app\'s first user — the admin area lets it in (NAS_ADMIN_SUBS). Created by the IaC bootstrap.' });
+  if (e.IAC_LOGTO_INFRA_M2M_ID) add({ name: 'Logto infra M2M', username: e.IAC_LOGTO_INFRA_M2M_ID, password: e.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: pair.urls.logto, notes: 'Machine credential the bootstrap uses for Logto-as-code (Management API). Minted by bootstrap, seeded by the NAS poller.' });
+  if (e.IAC_LOGTO_ADMIN_M2M_ID) add({ name: 'Logto admin-tenant M2M', username: e.IAC_LOGTO_ADMIN_M2M_ID, password: e.IAC_LOGTO_ADMIN_M2M_SECRET ?? '', uri: pair.urls.logtoAdmin, notes: 'Machine credential that claimed the console admin. Minted by bootstrap, seeded by the NAS poller.' });
+  if (e.NAS_POSTGRES_PASSWORD) add({ name: `Postgres (${stack.stack})`, username: 'munni', password: e.NAS_POSTGRES_PASSWORD, notes: 'The twin\'s database server (munni, logto, glitchtip databases). Minted by bootstrap.' });
+  for (const item of fresh) add(item);
+  const items = [...byName.values()];
+  if (!items.length) return 'no-account';
+  try {
+    const r = await vaultReplaceFolder(pair.urls.vault, { email, password, folder: pair.stack, items }, localAwareFetch);
+    console.log(`  vault: ${r.imported} credentials kept in folder "${r.folder}" at ${pair.urls.vault}${r.registered ? ' (account created — close signups with VAULT_SIGNUPS_ALLOWED=false when you like)' : ''}`);
+    return 'stored';
+  } catch (err) {
+    console.log(`  vault: not stored (${err.message}) — retried next run`);
+    return 'failed';
   }
 }
 
@@ -282,6 +325,15 @@ async function ciVerify() {
   if (missing.length) console.log(`  ✗ secrets missing from ${stack.githubEnvironment}: ${missing.join(', ')}`);
   else console.log(`  ✓ secrets manifest satisfied (${stack.githubEnvironment})`);
   if (unmanaged.length) console.log(`  ! unmanaged secrets present (add to manifest or remove): ${unmanaged.join(', ')}`);
+  // sign-in as code: is the minted credential seeded into Logto yet?
+  const creds = { m2mId: process.env.IAC_LOGTO_INFRA_M2M_ID, m2mSecret: process.env.IAC_LOGTO_INFRA_M2M_SECRET };
+  const logtoState = { credential: Boolean(creds.m2mId && creds.m2mSecret), seeded: false };
+  if (logtoState.credential) {
+    logtoState.seeded = await logtoAnswers(pair, creds);
+    console.log(logtoState.seeded ? '  ✓ logto: answers with the infra credential (seeded)' : '  ✗ logto: does not answer with the infra credential yet — the NAS poller seeds it on the next deploy');
+  } else {
+    console.log('  ✗ logto: no infra credential in this environment — bootstrap (apply) mints it');
+  }
   // what the NAS holds (read-only): the wildcard certificate and the poller task
   const { SYNOLOGY_URL, SYNOLOGY_USER, SYNOLOGY_PASS, SYNOLOGY_PATH } = process.env;
   if (SYNOLOGY_URL && SYNOLOGY_USER && SYNOLOGY_PASS) {
@@ -325,7 +377,7 @@ async function ciVerify() {
         }
       }
     }
-    publishNasState({ mode: 'verify', ...state });
+    publishNasState({ mode: 'verify', ...state, logto: logtoState });
   }
   const allUp = await probeAll();
   return missing.length || !allUp ? 1 : 0;
@@ -334,35 +386,77 @@ async function ciVerify() {
 async function ciApply() {
   console.log(`bootstrap ${stack.stack} (pair ${stack.pair}, role ${stack.role})`);
 
-  const { minted, missingOperator } = ensureSecrets(stack, { rotate });
+  const { minted, missingOperator, waitingForProd = [] } = ensureSecrets(stack, { rotate });
   if (minted.length) console.log(`  minted: ${minted.join(', ')}`);
+  if (waitingForProd.length) console.log(`  ⏳ pair secrets the prod twin mints, not in this environment yet: ${waitingForProd.join(', ')}`);
   if (missingOperator.length) console.log(`  ⚠ operator secrets still missing: ${missingOperator.join(', ')}`);
 
   const dir = renderStack(stack);
   console.log(`  rendered compose + env → ${dir}`);
 
-  // Logto-as-code runs only once the pair's infra credential exists
-  const infraEnv = pair.githubEnvironment;
-  if (envSecret(infraEnv, 'IAC_LOGTO_INFRA_M2M_ID')) {
-    const creds = {
-      m2mId: process.env.IAC_LOGTO_INFRA_M2M_ID,
-      m2mSecret: process.env.IAC_LOGTO_INFRA_M2M_SECRET,
-    };
-    if (creds.m2mId && creds.m2mSecret) {
+  // Logto-as-code (Logto OOBE on the NAS, 2026-09-17): the pair's machine
+  // credentials are MINTED above and seeded into Logto's database by the
+  // NAS poller on the next Deploy; until Logto answers with them this run
+  // waits — Deploy re-runs the bootstrap once the seed has landed. Then:
+  // apps as code (both twins), and on the prod twin the humans — the
+  // console's first admin, the app's first user (the admin area's subject)
+  // — with every credential kept in the pair's vault.
+  const creds = { m2mId: process.env.IAC_LOGTO_INFRA_M2M_ID, m2mSecret: process.env.IAC_LOGTO_INFRA_M2M_SECRET };
+  const logtoState = { credential: Boolean(creds.m2mId && creds.m2mSecret), seeded: false, wired: false, console: null, appAdmin: null, vault: null };
+  if (!logtoState.credential) {
+    console.log(minted.includes('IAC_LOGTO_INFRA_M2M_ID')
+      ? '  logto: infra credential minted this run — the next Deploy seeds it into Logto on the NAS and re-runs this bootstrap'
+      : '  logto: no infra credential in this environment yet (the prod twin mints it for the pair)');
+  } else {
+    try {
       const apps = await applyApps(pair, stack, creds);
+      logtoState.seeded = true;
       writeBack(stack, apps);
+      logtoState.wired = true;
       console.log(`  logto: apps upserted (web ${apps.web.id}, admin ${apps.admin.id}, native ${apps.native.id})`);
       if (stack.role === 'prod') {
         const social = await applySocialConnectors(pair, creds).catch((e) => ({ applied: [], error: e.message }));
         console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]` : `  logto: no social connector credentials in env — skipped${social.error ? ` (${social.error})` : ''}`);
         const brand = await applyBranding(pair, creds).catch((e) => ({ error: e.message }));
         console.log(brand.error ? `  logto: branding failed (${brand.error})` : `  logto: sign-in branded (munni logo + colors)`);
+        const fresh = [];
+        const adminCreds = { adminId: process.env.IAC_LOGTO_ADMIN_M2M_ID, adminSecret: process.env.IAC_LOGTO_ADMIN_M2M_SECRET };
+        if (adminCreds.adminId && adminCreds.adminSecret) {
+          try {
+            const c = await claimConsole(pair, adminCreds);
+            if (c.created) {
+              setPairSecret('LOGTO_CONSOLE_USERNAME', c.created.username);
+              setPairSecret('LOGTO_CONSOLE_PASSWORD', c.created.password);
+              fresh.push({ name: 'Logto console', username: c.created.username, password: c.created.password, uri: pair.urls.logtoAdmin, notes: 'The pair\'s Logto admin console — created by the IaC bootstrap.' });
+            }
+            logtoState.console = c.created ? 'created' : 'existing';
+            console.log(c.created ? `  logto: console admin created (username admin) — its password is in ${pair.githubEnvironment} (LOGTO_CONSOLE_PASSWORD) and the vault${c.modeSet ? '; console switched to sign-in' : ''}` : '  logto: the console already has its admin — left alone');
+          } catch (e) {
+            logtoState.console = 'failed';
+            console.log(`  logto: console admin not claimed (${e.message}) — claim it by hand at ${pair.urls.logtoAdmin} if you want the console; retried next run`);
+          }
+        } else {
+          console.log('  logto: no admin-tenant credential in this run yet — the console admin is claimed next run');
+        }
+        try {
+          const a = await ensureAppAdmin(pair, creds);
+          if (a.created) {
+            setPairSecret('LOGTO_APP_ADMIN_USERNAME', a.created.username);
+            setPairSecret('LOGTO_APP_ADMIN_PASSWORD', a.created.password);
+            fresh.push({ name: 'munni app (admin user)', username: a.created.username, password: a.created.password, uri: pair.urls.web, notes: 'The app\'s first user — the admin area lets it in (NAS_ADMIN_SUBS). Created by the IaC bootstrap.' });
+          }
+          if (a.sub && !process.env.NAS_ADMIN_SUBS) setPairSecret('NAS_ADMIN_SUBS', a.sub);
+          logtoState.appAdmin = a.created ? 'created' : 'existing';
+          console.log(a.created ? `  logto: app admin user created (munni_admin) — admin access wired (NAS_ADMIN_SUBS=${a.sub}); password in ${pair.githubEnvironment} (LOGTO_APP_ADMIN_PASSWORD) and the vault` : `  logto: the app has users — its first one is the admin area's subject${process.env.NAS_ADMIN_SUBS ? '' : ` (NAS_ADMIN_SUBS=${a.sub} written)`}`);
+        } catch (e) {
+          logtoState.appAdmin = 'failed';
+          console.log(`  logto: app admin not ensured (${e.message}) — retried next run`);
+        }
+        logtoState.vault = await keepInVault(fresh);
       }
-    } else {
-      console.log('  logto: infra credential exists in GitHub but not in this shell — export IAC_LOGTO_INFRA_M2M_ID/SECRET to apply apps locally (CI injects them)');
+    } catch (e) {
+      console.log(`  logto: not answering with the infra credential yet (${e.message}) — the NAS poller seeds it on the first deploy; Deploy re-runs this bootstrap once it has`);
     }
-  } else {
-    console.log(`  logto: waiting for the one manual OOBE step (see the runbook) — infra M2M credential not stored yet`);
   }
 
   // GlitchTip-as-code (IAC8): once the pair's operator token exists, the
@@ -439,11 +533,11 @@ async function ciApply() {
     }
     if (refusal) {
       nasOutcome = 'blocked';
-      publishNasState({ mode: 'apply', dsm: refusal });
+      publishNasState({ mode: 'apply', dsm: refusal, logto: logtoState });
     } else {
       nasOutcome = 'applied';
       // what the NAS holds after this run, in the shape --verify publishes
-      if (owner) publishNasState({ mode: 'apply', ...(await inspectNas(creds, { domain: stack.domain, publishedPath: SYNOLOGY_PATH ?? '', hosts }).then((nas) => summarizeNas(nas, hosts.length)).catch((e) => ({ dsm: dsmRefusal(e) }))) });
+      if (owner) publishNasState({ mode: 'apply', ...(await inspectNas(creds, { domain: stack.domain, publishedPath: SYNOLOGY_PATH ?? '', hosts }).then((nas) => summarizeNas(nas, hosts.length)).catch((e) => ({ dsm: dsmRefusal(e) }))), logto: logtoState });
     }
   } else {
     console.log('  dsm: SYNOLOGY_URL/USER/PASS not in env — reverse-proxy rules, certificate and poller task not applied this run');

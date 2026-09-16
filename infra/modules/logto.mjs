@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import { localAwareFetch } from './insecure-fetch.mjs';
 import { lanHost, loadStack } from './stack.mjs';
 
@@ -19,15 +20,17 @@ const originVariants = (url, twinPort) => {
  */
 
 const MGMT_RESOURCE = 'https://default.logto.app/api';
+/** the admin tenant's Management API — the console's users live there */
+export const ADMIN_RESOURCE = 'https://admin.logto.app/api';
 
-async function mgmtToken(logtoUrl, m2mId, m2mSecret, fetchImpl = localAwareFetch) {
+async function mgmtToken(logtoUrl, m2mId, m2mSecret, fetchImpl = localAwareFetch, resource = MGMT_RESOURCE) {
   const res = await fetchImpl(`${logtoUrl}/oidc/token`, {
     method: 'POST',
     headers: {
       'content-type': 'application/x-www-form-urlencoded',
       authorization: `Basic ${Buffer.from(`${m2mId}:${m2mSecret}`).toString('base64')}`,
     },
-    body: new URLSearchParams({ grant_type: 'client_credentials', resource: MGMT_RESOURCE, scope: 'all' }),
+    body: new URLSearchParams({ grant_type: 'client_credentials', resource, scope: 'all' }),
   });
   if (!res.ok) throw new Error(`logto token failed (${res.status}): ${await res.text()}`);
   return (await res.json()).access_token;
@@ -232,4 +235,62 @@ export function writeBack(stack, apps) {
 
 function pairLogtoUrl(stack) {
   return stack.urls.logto;
+}
+
+/**
+ * The console's first admin, as code (part 3 of Logto OOBE on the NAS):
+ * with the admin-tenant machine credential the NAS seeded (m-admin's
+ * roles), create the console user `admin` with a generated password once,
+ * give it the console's roles, and switch the console from Register to
+ * SignIn — an API-created account never flips it by itself (found live on
+ * the local track). Idempotent: an existing console user is left alone.
+ * Returns {created: {username, password, id} | null, existing, modeSet}.
+ */
+export async function claimConsole(pairStack, { adminId, adminSecret }, { fetchImpl = localAwareFetch, password = null } = {}) {
+  const base = pairStack.urls.logtoAdmin;
+  const token = await mgmtToken(base, adminId, adminSecret, fetchImpl, ADMIN_RESOURCE);
+  const users = await api(base, token, '/users?page_size=1', {}, fetchImpl);
+  let created = null;
+  if (!users.length) {
+    const pw = password ?? randomBytes(12).toString('base64url');
+    const user = await api(base, token, '/users', { method: 'POST', body: JSON.stringify({ username: 'admin', password: pw }) }, fetchImpl);
+    const roles = await api(base, token, '/roles?page_size=50', {}, fetchImpl);
+    const roleIds = roles.filter((r) => ['user', 'default:admin'].includes(r.name)).map((r) => r.id);
+    if (roleIds.length) await api(base, token, `/users/${user.id}/roles`, { method: 'POST', body: JSON.stringify({ roleIds }) }, fetchImpl);
+    created = { username: 'admin', password: pw, id: user.id };
+  }
+  const exp = await api(base, token, '/sign-in-exp', {}, fetchImpl);
+  let modeSet = false;
+  if (exp?.signInMode !== 'SignIn') {
+    await api(base, token, '/sign-in-exp', { method: 'PATCH', body: JSON.stringify({ signInMode: 'SignIn' }) }, fetchImpl);
+    modeSet = true;
+  }
+  return { created, existing: users.length > 0, modeSet };
+}
+
+/**
+ * The app's first user = the admin of the admin portal (NAS_ADMIN_SUBS is
+ * its subject): created once with a generated password through the infra
+ * credential; an app that already has users keeps its first user as the
+ * subject. Logto usernames match /^[A-Z_a-z]\w*$/ — no hyphens.
+ * Returns {created: {username, password, id} | null, existing, sub}.
+ */
+export async function ensureAppAdmin(pairStack, { m2mId, m2mSecret }, { fetchImpl = localAwareFetch, password = null } = {}) {
+  const base = pairStack.urls.logto;
+  const token = await mgmtToken(base, m2mId, m2mSecret, fetchImpl);
+  const users = await api(base, token, '/users?page_size=1', {}, fetchImpl);
+  if (users.length) return { created: null, existing: true, sub: users[0].id };
+  const pw = password ?? randomBytes(12).toString('base64url');
+  const user = await api(base, token, '/users', { method: 'POST', body: JSON.stringify({ username: 'munni_admin', password: pw }) }, fetchImpl);
+  return { created: { username: 'munni_admin', password: pw, id: user.id }, existing: false, sub: user.id };
+}
+
+/** true once Logto issues a token for the infra credential — the NAS seed has landed */
+export async function logtoAnswers(pairStack, { m2mId, m2mSecret }, fetchImpl = localAwareFetch) {
+  try {
+    await mgmtToken(pairStack.urls.logto, m2mId, m2mSecret, fetchImpl);
+    return true;
+  } catch {
+    return false;
+  }
 }

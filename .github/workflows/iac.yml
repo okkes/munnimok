@@ -98,6 +98,18 @@ jobs:
           IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
           IAC_LOGTO_INFRA_M2M_ID: ${{ secrets.IAC_LOGTO_INFRA_M2M_ID }}
           IAC_LOGTO_INFRA_M2M_SECRET: ${{ secrets.IAC_LOGTO_INFRA_M2M_SECRET }}
+          # the admin-tenant credential (claims the console admin), the humans it created, the admin subject — all written back by earlier runs
+          IAC_LOGTO_ADMIN_M2M_ID: ${{ secrets.IAC_LOGTO_ADMIN_M2M_ID }}
+          IAC_LOGTO_ADMIN_M2M_SECRET: ${{ secrets.IAC_LOGTO_ADMIN_M2M_SECRET }}
+          LOGTO_CONSOLE_USERNAME: ${{ secrets.LOGTO_CONSOLE_USERNAME }}
+          LOGTO_CONSOLE_PASSWORD: ${{ secrets.LOGTO_CONSOLE_PASSWORD }}
+          LOGTO_APP_ADMIN_USERNAME: ${{ secrets.LOGTO_APP_ADMIN_USERNAME }}
+          LOGTO_APP_ADMIN_PASSWORD: ${{ secrets.LOGTO_APP_ADMIN_PASSWORD }}
+          NAS_ADMIN_SUBS: ${{ secrets.NAS_ADMIN_SUBS }}
+          NAS_POSTGRES_PASSWORD: ${{ secrets.NAS_POSTGRES_PASSWORD }}
+          # the pair's vault account (the wizard's Vault tile) — every minted credential is kept there
+          VAULT_ADMIN_EMAIL: ${{ secrets.VAULT_ADMIN_EMAIL }}
+          VAULT_MASTER_PASSWORD: ${{ secrets.VAULT_MASTER_PASSWORD }}
           IAC_GLITCHTIP_API_TOKEN: ${{ secrets.IAC_GLITCHTIP_API_TOKEN }}
           LOGTO_GOOGLE_CLIENT_ID: ${{ secrets.LOGTO_GOOGLE_CLIENT_ID }}
           LOGTO_GOOGLE_CLIENT_SECRET: ${{ secrets.LOGTO_GOOGLE_CLIENT_SECRET }}
