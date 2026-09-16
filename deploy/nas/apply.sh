@@ -74,13 +74,14 @@ apply_channel_dir() { # apply_channel_dir STAMP BUNDLE MARKER DIR COMPOSE
   [ -f "$PUBLISHED/$stamp" ] || return 0
   new="$(cat "$PUBLISHED/$stamp" | tr -d '[:space:]')"
   old="$(cat "$LIVE/$marker" 2>/dev/null || echo none)"
-  [ "$new" = "$old" ] && return 0
-
   target="$(dirname "$LIVE")/$dir"
   # cleanup as code (2026-09-17): a stamp reading "remove" (bootstrap --cleanup
   # uploads it) stops the twin's containers, drops its volumes and deletes
-  # its folder and bundle; the marker says "removed" so the wizard can tell
+  # its folder and bundle; the marker says "removed" so the wizard can tell.
+  # Checked BEFORE the nothing-new shortcut: a marker that already reads
+  # "remove" (an older script took it for a version) must still remove.
   if [ "$new" = "remove" ]; then
+    [ "$old" = "removed" ] && return 0
     if [ -d "$target" ]; then
       envf=".env"; case "$compose" in *staging*) [ -f "$target/.env.staging" ] && envf=".env.staging" ;; esac
       log "removal requested for $dir — stopping its containers and deleting $target"
@@ -92,6 +93,7 @@ apply_channel_dir() { # apply_channel_dir STAMP BUNDLE MARKER DIR COMPOSE
     log "$dir removed"
     return 0
   fi
+  [ "$new" = "$old" ] && return 0
   mkdir -p "$target"
   log "new deploy $stamp=$new (was $old) — unpacking $bundle into $target"
   if ! tar -xzf "$PUBLISHED/$bundle" -C "$target"; then

@@ -607,6 +607,10 @@ async function ciCleanup() {
       const suffix = owner ? 'prod' : 'staging';
       const stamp = `VERSION_IAC_${suffix.toUpperCase()}`;
       const marker = `.applied_version_iac_${suffix}`;
+      // the poller copies apply.sh fresh every cycle: put the current one there first, or an older
+      // script takes the stamp for a version and re-applies the bundle (found live 2026-09-16)
+      const applyScript = readFileSync(new URL('../deploy/nas/apply.sh', import.meta.url), 'utf8');
+      await step('poller script (current apply.sh)', () => ensureLiveDir(creds, { publishedPath: SYNOLOGY_PATH, applyScript }));
       const asked = await step('containers + folder (via the poller)', () => requestRemoval(creds, { publishedPath: SYNOLOGY_PATH, stamp }));
       if (asked) {
         const started = Date.now();

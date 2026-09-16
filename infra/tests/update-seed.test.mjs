@@ -85,7 +85,7 @@ test('apply.sh: a stamp reading "remove" stops the twin\'s containers with its e
   writeFileSync(join(twin, '.env.staging'), 'X=1\n');
   writeFileSync(join(live, 'published', 'VERSION_IAC_STAGING'), 'remove\n');
   writeFileSync(join(live, 'published', 'munni-deploy-iac-staging.tgz'), 'not really a tarball');
-  writeFileSync(join(live, '.applied_version_iac_staging'), 'abc.1\n');
+  writeFileSync(join(live, '.applied_version_iac_staging'), 'remove\n'); // an older script wrote the stamp into the marker
   const log = join(dir, 'docker.log');
   writeFileSync(log, '');
   writeFileSync(join(dir, 'bin', 'docker'), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FAKE_LOG"\nexit 0\n');
@@ -100,4 +100,8 @@ test('apply.sh: a stamp reading "remove" stops the twin\'s containers with its e
   assert.ok(!existsSync(join(live, 'published', 'munni-deploy-iac-staging.tgz')) && !existsSync(join(live, 'published', 'VERSION_IAC_STAGING')), 'bundle + stamp gone');
   assert.equal(readFileSync(join(live, '.applied_version_iac_staging'), 'utf8').trim(), 'removed');
   assert.match(readFileSync(join(live, 'deploy.log'), 'utf8'), /munni-iac-staging removed/);
+  // a second cycle: the marker says "removed" and the stamp is gone — nothing happens
+  writeFileSync(log, '');
+  execFileSync('sh', ['./apply.sh'], { cwd: live, env, encoding: 'utf8' });
+  assert.equal(readFileSync(log, 'utf8'), '', 'no docker call once removed');
 });
