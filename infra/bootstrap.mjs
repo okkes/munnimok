@@ -26,7 +26,7 @@ import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
 import { appendFileSync, readFileSync } from 'node:fs';
-import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas } from './modules/dsm.mjs';
+import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas, probeLoginShapes, describeLoginShapes } from './modules/dsm.mjs';
 import { localAwareFetch } from './modules/insecure-fetch.mjs';
 
 const args = process.argv.slice(2);
@@ -293,6 +293,12 @@ async function ciVerify() {
     } catch (e) {
       console.log(`  ✗ dsm: could not read the NAS (${e.message})${dsmAdvice(e)}`);
       state = { dsm: dsmRefusal(e) };
+      if (isPermissionError(e)) {
+        // the account looks right but DSM refuses THIS login shape? name the shapes it accepts
+        const shapes = await probeLoginShapes({ url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS });
+        console.log(`  ! dsm: login shapes — ${describeLoginShapes(shapes)}`);
+        state.dsm.shapes = shapes;
+      }
     }
     publishNasState({ mode: 'verify', ...state });
   }

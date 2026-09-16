@@ -613,3 +613,37 @@ export function summarizeNas(nas, hostsTotal = 0) {
     bindings: nas.bindings ? { bound: nas.bindings.bound.length, elsewhere: nas.bindings.elsewhere.length, noRule: nas.bindings.noRule.length, total: hostsTotal } : null,
   };
 }
+
+/**
+ * Which login shapes DSM accepts for this account — printed when the
+ * module's own login (v7, session=Core, SynoToken) is refused although
+ * the account looks right. Found live 2026-09-16: an account with DSM +
+ * File Station allowed AND in administrators still got 402 here while
+ * the deploy script's login (v6, session=FileStation) worked all along,
+ * so the shape, not the account, was the suspect. Every accepted session
+ * is logged out again. Returns [{label, ok, code?, transport?}].
+ */
+export const LOGIN_SHAPES = [
+  { label: 'v7 session=Core (bootstrap)', params: { version: '7', session: 'Core', enable_syno_token: 'yes' } },
+  { label: 'v7 session=Core no token', params: { version: '7', session: 'Core' } },
+  { label: 'v7 no session', params: { version: '7', enable_syno_token: 'yes' } },
+  { label: 'v7 session=FileStation', params: { version: '7', session: 'FileStation', enable_syno_token: 'yes' } },
+  { label: 'v6 session=Core', params: { version: '6', session: 'Core' } },
+  { label: 'v6 session=FileStation (upload.sh)', params: { version: '6', session: 'FileStation' } },
+];
+export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, shapes = LOGIN_SHAPES) {
+  const base = url.replace(/\/$/, '');
+  const out = [];
+  for (const s of shapes) {
+    try {
+      const data = await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', method: 'login', account: user, passwd: pass, format: 'sid', ...s.params }, fetchImpl);
+      out.push({ label: s.label, ok: true });
+      await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: s.params.version, method: 'logout', ...(s.params.session ? { session: s.params.session } : {}), _sid: data.sid }, fetchImpl).catch(() => undefined);
+    } catch (e) {
+      out.push({ label: s.label, ok: false, code: dsmCode(e) || null, transport: isTransport(e) });
+    }
+  }
+  return out;
+}
+/** one line for the verify output */
+export const describeLoginShapes = (shapes) => shapes.map((s) => `${s.label}: ${s.ok ? 'ok' : (s.transport ? 'no answer' : `refused ${s.code ?? '?'}`)}`).join('; ');

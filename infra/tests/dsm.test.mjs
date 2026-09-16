@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import {
   applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, resolveLiveDir, publishedPathParts,
   dsmAdvice, dsmLogin, dsmSession, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid, summarizeNas,
+  probeLoginShapes, describeLoginShapes, LOGIN_SHAPES,
 } from '../modules/dsm.mjs';
 
 const CREDS = { url: 'https://nas.example:5001/', user: 'deploy', pass: 'pw' };
@@ -572,4 +573,28 @@ test('poller task: a hand-made poller under another name is adopted (renamed, po
   const digest = summarizeNas({ wildcard: { id: 'w', isDefault: true, expired: false, validTill: 'Dec  9 00:00:00 2036 GMT' }, task: { id: 5, enabled: false }, liveDir: '/volume1/docker/munni', liveDirError: null, bindings: { bound: ['web.nas.example'], elsewhere: ['api.nas.example'], noRule: [] } }, 3);
   assert.deepEqual(digest, { dsm: { ok: true }, wildcard: { isDefault: true, expired: false, validTill: 'Dec  9 00:00:00 2036 GMT' }, task: { enabled: false }, liveDir: '/volume1/docker/munni', bindings: { bound: 1, elsewhere: 1, noRule: 0, total: 3 } });
   assert.ok(!JSON.stringify(digest).includes('nas.example'));
+});
+
+test('login shapes: when DSM refuses the bootstrap login, every other shape is tried, accepted ones are logged out, and the verdict names each', async () => {
+  const seen = [];
+  const picky = async (url, init) => {
+    const p = Object.fromEntries(new URLSearchParams(init.body));
+    seen.push(p);
+    if (p.method === 'logout') return { json: async () => ({ success: true }) };
+    // this DSM refuses session=Core on v7 only
+    if (p.version === '7' && p.session === 'Core') return { json: async () => fail(402) };
+    return { json: async () => ({ success: true, data: { sid: `S-${p.version}-${p.session ?? 'none'}` } }) };
+  };
+  const shapes = await probeLoginShapes(CREDS, picky);
+  assert.equal(shapes.length, LOGIN_SHAPES.length);
+  assert.deepEqual(shapes.filter((s) => !s.ok).map((s) => s.code), [402, 402], 'the two v7/Core shapes are refused with their code');
+  assert.ok(shapes.find((s) => s.label.startsWith('v7 no session')).ok);
+  assert.ok(shapes.find((s) => s.label.startsWith('v6 session=FileStation')).ok);
+  const logouts = seen.filter((p) => p.method === 'logout');
+  assert.equal(logouts.length, shapes.filter((s) => s.ok).length, 'every accepted session is logged out');
+  assert.equal(logouts.find((p) => p.version === '6' && p.session === 'FileStation')._sid, 'S-6-FileStation');
+  assert.match(describeLoginShapes(shapes), /v7 session=Core \(bootstrap\): refused 402; .*v6 session=FileStation \(upload\.sh\): ok/);
+  const down = await probeLoginShapes(CREDS, async () => { throw netErr('ECONNREFUSED'); }, LOGIN_SHAPES.slice(0, 1));
+  assert.equal(down[0].transport, true);
+  assert.match(describeLoginShapes(down), /no answer/);
 });
