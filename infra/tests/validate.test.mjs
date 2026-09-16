@@ -274,3 +274,20 @@ test('network failures come back as unreachable, unknown providers refuse', asyn
   const unknown = await validate('rm -rf', {});
   assert.match(unknown.detail, /no validator/);
 });
+
+test('synology: the check says whether DSM treats the session as an administrator from this PC — a plain-user session is stored with a warning and never dispatches', async () => {
+  const vals = { SYNOLOGY_URL: 'https://nas.example:5001', SYNOLOGY_USER: 'deploy', SYNOLOGY_PASS: 'x' };
+  const dsm = (isAdmin) => async (url, init) => {
+    const p = Object.fromEntries(new URLSearchParams(init.body));
+    return { status: 200, json: async () => ({ success: true, data: p.api === 'SYNO.Core.Desktop.Initdata' ? { Session: { is_admin: isAdmin } } : { sid: 'S', synotoken: 'T' } }) };
+  };
+  const admin = await validate('synology', vals, { fetchImpl: dsm(true) });
+  assert.equal(admin.ok, true);
+  assert.equal(admin.admin, true);
+  assert.match(admin.detail, /administrator from this PC ✓/);
+  const plain = await validate('synology', vals, { fetchImpl: dsm(false) });
+  assert.equal(plain.ok, true);
+  assert.equal(plain.warn, true);
+  assert.equal(plain.admin, false);
+  assert.match(plain.detail, /NON-administrator from this PC.*Adaptive MFA/);
+});

@@ -591,13 +591,17 @@ test('login shapes: when DSM refuses the bootstrap login, every other shape is t
     const p = Object.fromEntries(new URLSearchParams(init.body));
     seen.push(p);
     if (p.method === 'logout') return { json: async () => ({ success: true }) };
+    // every v7 session is an administrator's here, the v6 one a plain user's
+    if (p.api === 'SYNO.Core.Desktop.Initdata') return { json: async () => ok({ Session: { is_admin: String(p._sid).startsWith('S-7') } }) };
     // this DSM refuses session=Core on v7 only
     if (p.version === '7' && p.session === 'Core') return { json: async () => fail(402) };
     return { json: async () => ({ success: true, data: { sid: `S-${p.version}-${p.session ?? 'none'}`, ...(new URL(url).searchParams.get('enable_syno_token') === 'yes' ? { synotoken: 'T' } : {}) } }) };
   };
   const shapes = await probeLoginShapes(CREDS, picky);
   assert.equal(shapes.length, LOGIN_SHAPES.length);
-  assert.deepEqual(shapes.filter((s) => !s.ok).map((s) => s.code), [402, 402], 'the two v7/Core shapes are refused with their code');
+  assert.deepEqual(shapes.filter((s) => !s.ok).map((s) => s.code), [402], 'the v7/Core shape is refused with its code');
+  assert.equal(shapes.find((s) => s.label.startsWith('v7 entry.cgi, no session')).admin, true, 'every accepted session is asked whether DSM treats it as an administrator');
+  assert.equal(shapes.find((s) => s.label.startsWith('v6 session=FileStation')).admin, false);
   assert.ok(shapes.find((s) => s.label.startsWith('v7 entry.cgi, no session')).ok);
   assert.equal(shapes.find((s) => s.label.startsWith('v7 entry.cgi, no session')).token, true, 'a token came back when asked for in the URL');
   assert.equal(shapes.find((s) => s.label.startsWith('v6 session=FileStation')).token, false, 'the upload script never asks in the URL — and the line says so');
@@ -605,7 +609,7 @@ test('login shapes: when DSM refuses the bootstrap login, every other shape is t
   const logouts = seen.filter((p) => p.method === 'logout');
   assert.equal(logouts.length, shapes.filter((s) => s.ok).length, 'every accepted session is logged out');
   assert.equal(logouts.find((p) => p.version === '6' && p.session === 'FileStation')._sid, 'S-6-FileStation');
-  assert.match(describeLoginShapes(shapes), /^v7 entry\.cgi, no session \(bootstrap\): ok \(token\); v7 auth\.cgi, no session: ok \(token\); v7 session=Core \(the old bootstrap\): refused 402; .*v6 session=FileStation \(upload\.sh\): ok \(NO token\)/);
+  assert.match(describeLoginShapes(shapes), /^v7 entry\.cgi, no session \(bootstrap\): ok \(token, admin\); v7 auth\.cgi, no session: ok \(token, admin\); v7 entry\.cgi \+ device token asked: ok \(token, admin\); v7 entry\.cgi \+ client=browser: ok \(token, admin\); v7 session=Core \(the old bootstrap\): refused 402; v7 session=FileStation: ok \(NO token, admin\); v6 session=FileStation \(upload\.sh\): ok \(NO token, NOT admin\)$/);
   const down = await probeLoginShapes(CREDS, async () => { throw netErr('ECONNREFUSED'); }, LOGIN_SHAPES.slice(0, 1));
   assert.equal(down[0].transport, true);
   assert.match(describeLoginShapes(down), /no answer/);

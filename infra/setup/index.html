@@ -1732,7 +1732,7 @@ function renderNasReadiness() {
   const ci = S.nasState;
   const THEN = ' Then press Bootstrap now (above) — or Check on the Synology tile.';
   const ciWhen = ci?.at ? ` (IaC ${ci.mode === 'apply' ? 'bootstrap' : 'verify'} run ${ago(ci.at)})` : '';
-  if (v && !v.checking) row('Deploy account may use DSM', v.ok ? 'ok' : 'bad', v.ok ? 'DSM accepts the login ✓' : 'refused', v.ok ? '' : `${v.detail}.${THEN}`, { href: '[data-group="synology"]' });
+  if (v && !v.checking) row('Deploy account may use DSM', v.ok ? (v.admin === false ? 'bad' : 'ok') : 'bad', v.ok ? (v.admin === false ? 'accepted, but NOT an administrator from this PC' : `DSM accepts the login ✓${v.admin === true ? ' (administrator from this PC)' : ''}`) : 'refused', v.ok && v.admin !== false ? '' : `${v.detail}.${THEN}`, { href: '[data-group="synology"]' });
   else if (ci?.dsm) {
     const d = ci.dsm;
     const label = d.ok ? `DSM accepted the login ✓${ciWhen}` : (d.transport ? `DSM unreachable from GitHub${ciWhen}` : `refused (DSM code ${d.code ?? '?'})${ciWhen}`);
@@ -1779,6 +1779,8 @@ const SYNOLOGY_SECRETS = ['SYNOLOGY_URL', 'SYNOLOGY_USER', 'SYNOLOGY_PASS', 'SYN
 async function bootstrapAfterSynology() {
   if (S.platform !== 'nas') return { dispatched: false, reason: '' };
   if (!S.pat || !S.user) return { dispatched: false, reason: 'connect GitHub first (the GitHub tile) — then Store here and Bootstrap runs itself' };
+  // a session DSM treats as a plain user's is refused every NAS step (105) — nothing to run yet
+  if (S.verdicts.synology?.admin === false) return { dispatched: false, reason: 'DSM treats the deploy account as a NON-administrator from this PC — Bootstrap would be refused the same way (105); the readiness card says what to check' };
   // the run reads SYNOLOGY_* from GitHub: a green Check on values that are
   // only typed must NOT dispatch — the Store that follows does it
   if (!SYNOLOGY_SECRETS.every((n) => secretPresent(n, true))) return { dispatched: false, reason: 'press Store: the run reads these values from GitHub, so Bootstrap follows the Store by itself' };

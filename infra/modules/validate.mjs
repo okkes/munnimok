@@ -1,5 +1,5 @@
 import { createSign, sign as cryptoSign } from 'node:crypto';
-import { dsmLogin, dsmLogout, DSM_CODE_ADVICE, isTransport, publishedPathParts } from './dsm.mjs';
+import { dsmSession, DSM_CODE_ADVICE, isTransport, publishedPathParts } from './dsm.mjs';
 import { localAwareFetch } from './insecure-fetch.mjs';
 import { loadStack, localEnvRegistry } from './stack.mjs';
 
@@ -304,9 +304,16 @@ export const VALIDATORS = {
       try { publishedPathParts(values.SYNOLOGY_PATH); } catch (e) { return { ok: false, detail: e.message }; }
     }
     try {
-      const { sid } = await dsmLogin(values.SYNOLOGY_URL, values.SYNOLOGY_USER, values.SYNOLOGY_PASS, fetchImpl);
-      await dsmLogout(values.SYNOLOGY_URL, sid, fetchImpl);
-      return { ok: true, detail: 'DSM accepted the login (remember: the account needs admin rights, 2FA off)' };
+      const s = await dsmSession({ url: values.SYNOLOGY_URL, user: values.SYNOLOGY_USER, pass: values.SYNOLOGY_PASS }, fetchImpl, { retry: [] });
+      // does DSM treat the session as an administrator from THIS machine? its
+      // own desktop init data says — the Control Panel APIs bootstrap needs
+      // answer 105 to a session it does not (found live 2026-09-16: the same
+      // account was an administrator in a LAN browser and not from GitHub)
+      let admin = null;
+      try { const init = await s.call('SYNO.Core.Desktop.Initdata', 1, 'get'); admin = typeof init?.Session?.is_admin === 'boolean' ? init.Session.is_admin : null; } catch { admin = null; }
+      await s.logout();
+      if (admin === false) return { ok: true, warn: true, admin, detail: 'DSM accepted the login but treats the session as a NON-administrator from this PC (its init data says is_admin=false) — the Control Panel APIs bootstrap needs answer 105 to such a session: check Control Panel → Security → Account (Adaptive MFA challenges administrators without 2FA by e-mail — this account has none; 2FA enforcement) and that the administrators group is ticked and saved' };
+      return { ok: true, admin, detail: `DSM accepted the login${admin === true ? ' and treats the session as an administrator from this PC ✓ (the readiness card shows what the IaC run gets from GitHub)' : ' (remember: the account needs admin rights, 2FA off)'}` };
     } catch (e) {
       if (isTransport(e)) return { ok: false, unreachable: true, detail: `could not reach DSM at ${values.SYNOLOGY_URL} (${e.message}) — is the NAS up, the port right, the firewall open for this machine?` };
       return { ok: false, detail: `DSM refused the login: ${e.message}${dsmLoginAdvice(e.message)}` };

@@ -649,10 +649,10 @@ export function summarizeNas(nas, hostsTotal = 0) {
 export const LOGIN_SHAPES = [
   { label: 'v7 entry.cgi, no session (bootstrap)', path: 'entry.cgi', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
   { label: 'v7 auth.cgi, no session', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
+  { label: 'v7 entry.cgi + device token asked', path: 'entry.cgi', params: { version: '7', enable_syno_token: 'yes', enable_device_token: 'yes', device_name: 'munni-bootstrap' }, query: { enable_syno_token: 'yes' } },
+  { label: 'v7 entry.cgi + client=browser', path: 'entry.cgi', params: { version: '7', enable_syno_token: 'yes', client: 'browser' }, query: { enable_syno_token: 'yes' } },
   { label: 'v7 session=Core (the old bootstrap)', params: { version: '7', session: 'Core', enable_syno_token: 'yes' } },
-  { label: 'v7 session=Core no token', params: { version: '7', session: 'Core' } },
   { label: 'v7 session=FileStation', params: { version: '7', session: 'FileStation', enable_syno_token: 'yes' } },
-  { label: 'v6 session=Core', params: { version: '6', session: 'Core' } },
   { label: 'v6 session=FileStation (upload.sh)', params: { version: '6', session: 'FileStation' } },
 ];
 export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, shapes = LOGIN_SHAPES) {
@@ -661,7 +661,14 @@ export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, s
   for (const s of shapes) {
     try {
       const data = await dsmCall(base, s.path ?? 'auth.cgi', { api: 'SYNO.API.Auth', method: 'login', account: user, passwd: pass, format: 'sid', ...s.params }, fetchImpl, { query: s.query ?? null });
-      out.push({ label: s.label, ok: true, token: Boolean(data.synotoken) });
+      // does DSM treat THIS session as an administrator? its own desktop init data says
+      let admin = null;
+      if (data.sid) {
+        const auth = { _sid: data.sid, ...(data.synotoken ? { SynoToken: data.synotoken } : {}) };
+        const init = await dsmCall(base, 'entry.cgi', { api: 'SYNO.Core.Desktop.Initdata', version: '1', method: 'get', ...auth }, fetchImpl, { query: auth, headers: data.synotoken ? { 'X-SYNO-TOKEN': data.synotoken } : null }).catch(() => null);
+        admin = typeof init?.Session?.is_admin === 'boolean' ? init.Session.is_admin : null;
+      }
+      out.push({ label: s.label, ok: true, token: Boolean(data.synotoken), admin });
       await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: s.params.version, method: 'logout', ...(s.params.session ? { session: s.params.session } : {}), _sid: data.sid }, fetchImpl, { query: { _sid: data.sid } }).catch(() => undefined);
     } catch (e) {
       out.push({ label: s.label, ok: false, code: dsmCode(e) || null, transport: isTransport(e) });
@@ -670,7 +677,11 @@ export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, s
   return out;
 }
 /** one line for the verify output */
-export const describeLoginShapes = (shapes) => shapes.map((s) => `${s.label}: ${s.ok ? `ok${s.token === undefined ? '' : (s.token ? ' (token)' : ' (NO token)')}` : (s.transport ? 'no answer' : `refused ${s.code ?? '?'}`)}`).join('; ');
+export const describeLoginShapes = (shapes) => shapes.map((s) => {
+  if (!s.ok) return `${s.label}: ${s.transport ? 'no answer' : `refused ${s.code ?? '?'}`}`;
+  const notes = [...(s.token === undefined ? [] : [s.token ? 'token' : 'NO token']), ...(typeof s.admin === 'boolean' ? [s.admin ? 'admin' : 'NOT admin'] : [])];
+  return `${s.label}: ok${notes.length ? ` (${notes.join(', ')})` : ''}`;
+}).join('; ');
 
 /**
  * Which session DSM grants the Control Panel APIs to, and how a call may
@@ -761,7 +772,7 @@ export async function probeSessionFacts({ url, user, pass }, fetchImpl = fetch, 
   try {
     const init = await outcome(() => call('SYNO.Core.Desktop.Initdata', 1, 'get'));
     const session = init.Session ?? init.session ?? {};
-    out.initdata = init.error ? init : { keys: Object.keys(init).sort(), sessionKeys: Object.keys(session).sort(), session: facts(session), actionPrivilege: facts(init.ActionPrivilege), appPrivilege: facts(init.AppPrivilege) };
+    out.initdata = init.error ? init : { keys: Object.keys(init).sort(), sessionKeys: Object.keys(session).sort(), session: { ...facts(session), ...(typeof session.authType === 'string' && /^[a-z_]{1,24}$/i.test(session.authType) ? { authType: session.authType } : {}) }, actionPrivilege: facts(init.ActionPrivilege), appPrivilege: facts(init.AppPrivilege) };
     const wanted = ['SYNO.Core.Certificate.CRT', 'SYNO.Core.Certificate', 'SYNO.Core.Certificate.Service', 'SYNO.Core.Certificate.LetsEncrypt', 'SYNO.Core.AppPortal.ReverseProxy', 'SYNO.Core.TaskScheduler', 'SYNO.Core.TaskScheduler.Root', 'SYNO.Core.Desktop.Initdata', 'SYNO.API.Auth'];
     const info = await outcome(() => dsmCall(base, 'entry.cgi', { api: 'SYNO.API.Info', version: '1', method: 'query', query: 'all' }, fetchImpl));
     out.apis = info.error ? info : Object.fromEntries(wanted.map((k) => [k, info[k] ? `${info[k].minVersion}-${info[k].maxVersion}` : 'absent']));
