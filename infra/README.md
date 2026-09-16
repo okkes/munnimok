@@ -162,22 +162,25 @@ Check/Save ask Google and Apple whether each callback is registered —
 both authorization endpoints judge a redirect without a user, so a
 missing one is named before the first sign-in ever fails.
 
-**C1. Logto OOBE (the ONE manual auth step).** Wizard step 6 — open
-`https://logto-iac-admin.<domain>` → create the admin user →
-Applications → Create → *Machine-to-machine* → name `infra` → assign
-the Logto Management API role (all permissions). Paste its id/secret
-into the wizard (it stores them in BOTH iac environments), or:
-
-```sh
-gh secret set IAC_LOGTO_INFRA_M2M_ID --env iac-production   # and --env iac-staging
-gh secret set IAC_LOGTO_INFRA_M2M_SECRET --env iac-production
-```
-
-Re-run the IaC workflow for BOTH stacks — apps, redirect URIs, CORS,
-API resources and the account-deletion M2M app are now code, and the
-ids land in the GitHub environments automatically. Deploy again so the
-frontends pick them up (they read runtime config from their container
-env — one public image serves every stack).
+**C1. Logto — nothing manual (2026-09-17).** Wizard step 6 is a status
+card. The prod twin's bootstrap mints two machine credentials for the
+pair (`IAC_LOGTO_INFRA_M2M_*` for the Management API, `IAC_LOGTO_ADMIN_M2M_*`
+for the console's admin tenant) into both environments; the first Deploy
+of the prod twin carries them in its `.env` and the NAS poller inserts
+them into Logto's own database (`deploy/update.sh`, idempotent — a seed
+Logto is not ready for is retried every cycle). Deploy then waits for
+the poller (`deploy/nas/after-apply.mjs`), sees Logto accept the
+credential and runs the bootstrap once more, which turns sign-in into
+code: web/admin/native apps, redirect URIs, CORS, API resources and the
+account-deletion M2M app, their ids written back; the console's admin
+(`admin`, password in `LOGTO_CONSOLE_PASSWORD`); the app's first user
+(`munni_admin`, the admin area's subject `NAS_ADMIN_SUBS`); every
+credential in the pair's vault (C4b). That run chains the staging twin
+and Deploy again so the frontends pick the ids up — the loop ends by
+itself once `VITE_LOGTO_APP_ID` exists. By hand only for an own Logto:
+the old three steps sit under "Doing it by hand" in step 6, and
+`gh secret set IAC_LOGTO_INFRA_M2M_ID/SECRET --env iac-production`
+(and `--env iac-staging`) replaces the minted credential.
 
 **C2. Google sign-in (optional, once).** Google Cloud console →
 Credentials → Create OAuth client (Web) → authorized redirect URI

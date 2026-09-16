@@ -62,17 +62,20 @@ for it). The NAS poller unpacks the bundle into
 \`/volume1/docker/${stack.stack}/\` and runs \`docker compose up -d\` there —
 no SSH, no manual copying.
 ${isProdTwin ? `
-## 3. Logto OOBE (ONCE per pair — the single manual auth step)
+## 3. Logto — nothing manual (2026-09-17)
 
-1. Open ${stack.urls.logtoAdmin} → create the admin user.
-2. Applications → Create → Machine-to-machine → name it \`infra\`,
-   assign the Logto Management API role (all permissions).
-3. Store its credentials:
-   \`gh secret set IAC_LOGTO_INFRA_M2M_ID --env ${stack.githubEnvironment}\` and
-   \`gh secret set IAC_LOGTO_INFRA_M2M_SECRET --env ${stack.githubEnvironment}\`.
-4. Re-run \`bootstrap --stack ${stack.stack}\` — the logto module now
-   creates web/admin/native/m2m apps + the API resource as code and
-   writes the ids back to the GitHub Environment.
+This bootstrap minted two machine credentials for the pair
+(IAC_LOGTO_INFRA_M2M_* for the Management API, IAC_LOGTO_ADMIN_M2M_* for
+the console's admin tenant) into both environments. The first Deploy of
+this twin carries them in its .env; the NAS poller inserts them into
+Logto's own database (deploy/update.sh, idempotent) and Deploy runs this
+bootstrap once more as soon as Logto answers with them. That run creates
+web/admin/native/m2m apps + the API resource as code, writes the ids back,
+claims the console's admin (username \`admin\`, LOGTO_CONSOLE_PASSWORD),
+creates the app's first user (\`munni_admin\`, LOGTO_APP_ADMIN_PASSWORD —
+the admin area's subject, NAS_ADMIN_SUBS) and keeps every credential in
+the pair's vault (§4b). By hand only for an own Logto: the wizard's step 6
+folds the old three steps under "Doing it by hand".
 ` : `
 ## 3. Logto apps
 
@@ -91,13 +94,16 @@ module creates the org + per-stack projects and writes every DSN back
 ## 4b. Secrets vault (once per pair — the HUMAN copy)
 
 Vaultwarden runs at ${pair.urls.vault} (LAN-restrict it in the DSM
-firewall like the *-admin hosts). Open it → Create account (the master
-password is the one secret that lives only in your head) → then store
-\`VAULT_SIGNUPS_ALLOWED=false\` as a pair secret and redeploy so
-registration closes. Generated GitHub secrets stay write-only — put the
-credentials you'll want to look up (GlitchTip login, pgadmin, the infra
-M2M) into the vault as you create them; the automated write-back of
-minted values (plan SA2) is still on the roadmap.
+firewall like the *-admin hosts). Store the account you want there once
+— the wizard's Vault tile, or \`gh secret set VAULT_ADMIN_EMAIL\` +
+\`gh secret set VAULT_MASTER_PASSWORD\` (pair secrets): bootstrap creates
+the account with them (while registration is open) and keeps every
+credential it mints in a folder named \`${pair.stack}\` — the Logto
+console login, the app admin, both machine credentials, the twin's
+Postgres password — replacing that folder on every run and leaving your
+own folders alone. Then store \`VAULT_SIGNUPS_ALLOWED=false\` and redeploy
+so registration closes. GlitchTip's login and pgadmin are still yours to
+add.
 
 ## 5. Native apps (first upload is Apple/Google-mandated manual)
 

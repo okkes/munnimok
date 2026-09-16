@@ -507,14 +507,21 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
 </section>
 
 <section id="s-logto" data-platform="nas" data-step="Sign-in service">
-  <h2><span class="n">6</span> Sign-in service (Logto) — the ONE manual auth step <span class="pill" id="logto-pill"></span></h2>
-  <p class="sub">Logto is the self-hosted identity provider the pair owns (accounts, sessions, Google/Apple sign-in). Its very first admin user can't be scripted (no headless OOBE upstream yet) — but it's one visit, and everything after it is code.</p>
-  <ol class="steps">
-    <li>Open <a href="#" class="dom-link" data-host="logto-iac-admin">logto-iac-admin.&lt;domain&gt;</a> → create the admin user (this is YOUR console login, not an app user).</li>
-    <li>Applications → Create → <b>Machine-to-machine</b> → name it <code>infra</code> → assign the <b>Logto Management API</b> role (all permissions).</li>
-    <li>Paste the app's id + secret here and store — they land in both iac environments:</li>
-  </ol>
-  <div class="grid2">
+  <h2><span class="n">6</span> Sign-in service (Logto) — automated <span class="pill" id="logto-pill"></span></h2>
+  <p class="sub">Logto is the self-hosted identity provider the pair owns (accounts, sessions, Google/Apple sign-in). Nothing here is manual any more (2026-09-17): Bootstrap mints two machine credentials, the first Deploy seeds them into Logto’s own database on the NAS (the poller), and the bootstrap that Deploy runs afterwards turns sign-in into code — apps and redirect URIs, the console’s admin, the app’s first user (your admin access), and every credential in the pair’s vault. Deploy and Bootstrap take turns by themselves until it is done.</p>
+  <div class="card" id="logto-auto">
+    <div class="health-h"><span class="ico" data-ico="pulse"></span><div><b>Sign-in setup</b><div class="why" style="margin:0" id="logto-auto-sub">…</div></div></div>
+    <ul class="health-list" id="logto-auto-list"></ul>
+    <div class="why" id="logto-auto-fix" hidden></div>
+  </div>
+  <details class="why">
+    <summary>Doing it by hand instead (an own Logto, or a seed that never landed)</summary>
+    <ol class="steps">
+      <li>Open <a href="#" class="dom-link" data-host="logto-iac-admin">logto-iac-admin.&lt;domain&gt;</a> → create the admin user (this is YOUR console login, not an app user).</li>
+      <li>Applications → Create → <b>Machine-to-machine</b> → name it <code>infra</code> → assign the <b>Logto Management API</b> role (all permissions).</li>
+      <li>Paste the app’s id + secret here and store — they replace the minted ones in both iac environments:</li>
+    </ol>
+    <div class="grid2">
     <div><label class="f" for="in-m2m-id">IAC_LOGTO_INFRA_M2M_ID <span class="dot" data-dot="IAC_LOGTO_INFRA_M2M_ID"></span></label><input type="text" id="in-m2m-id" autocomplete="off"/></div>
     <div><label class="f" for="in-m2m-secret">IAC_LOGTO_INFRA_M2M_SECRET <span class="dot" data-dot="IAC_LOGTO_INFRA_M2M_SECRET"></span></label><input type="password" id="in-m2m-secret" autocomplete="off"/></div>
   </div>
@@ -522,6 +529,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
   <button class="ghost" data-dispatch-iac="munni-iac-prod">Re-run prod bootstrap</button>
   <button class="ghost" data-dispatch-iac="munni-iac-staging">Re-run staging bootstrap</button>
   <div class="msg" id="msg-logto"></div>
+  </details>
   <p class="why">After the re-runs, web/admin/native apps + redirect URIs + API resources exist in Logto and their ids are written back to the environments automatically (<span class="dot" data-dot="var:VITE_LOGTO_APP_ID"></span> <code>VITE_LOGTO_APP_ID</code> appearing = done). Deploy again (the Deploy step) so the frontends pick them up. Google/Apple sign-in from the credentials step is wired in the same runs — the connectors live under fixed ids (<code>google-universal</code>, <code>apple-universal</code>), so the callbacks on the sign-in cards are exact; a connector created earlier under a random id is replaced by the next bootstrap, after which the registration at Google/Apple must carry the fixed-id callback.</p>
 </section>
 
@@ -1193,6 +1201,15 @@ const GROUPS = [
     ],
   },
   {
+    id: 'vault', title: 'Secrets vault (Vaultwarden)', targets: ['nas'], optional: true,
+    why: 'The pair runs its own Vaultwarden (vault-iac.<domain>). With an account here, every credential Bootstrap mints — the Logto console login, the app admin, both machine credentials, the twin’s Postgres — is kept in it, in a folder named after the prod twin. Without one they stay write-only in GitHub.',
+    how: ['Choose the e-mail and the master password of the vault account: Bootstrap creates the account with them (registration is open until you set VAULT_SIGNUPS_ALLOWED=false) and signs in with them on every run.', 'Store, then let the next Bootstrap of the prod twin fill the vault; open vault-iac.<domain> with the same login to read everything.'],
+    fields: [
+      { name: 'VAULT_ADMIN_EMAIL', scope: 'pair', ph: 'you@example.com' },
+      { name: 'VAULT_MASTER_PASSWORD', scope: 'pair', secret: true },
+    ],
+  },
+  {
     // one token is the rule (user ruling 2026-09-10): this tile exists only
     // when the helper has proven the images PRIVATE — the munni images are public
     id: 'ghcr', title: 'Container registry pulls', check: 'browser:ghcr', optional: true, when: () => S.registry?.public === false,
@@ -1455,6 +1472,7 @@ async function refresh() {
   const nasStateVar = await gh(`/repos/${S.slug}/actions/variables/IAC_NAS_STATE`, { allow404: true }).catch(() => null);
   try { S.nasState = nasStateVar?.value ? JSON.parse(nasStateVar.value) : null; } catch { S.nasState = null; }
   renderNasReadiness();
+  renderLogtoAuto();
   renderStatus();
   scheduleLivePoll();
 }
@@ -1499,8 +1517,10 @@ function renderStatus() {
   el('bootstrap-pill').textContent = envsReady ? 'environments minted ✓' : 'not bootstrapped yet';
   el('bootstrap-pill').className = 'pill ' + (envsReady ? 'ok' : '');
   const logtoDone = ENVS.every((env) => S.envs[env]?.secrets?.has('NAS_LOGTO_M2M_APP_ID'));
-  el('logto-pill').textContent = logtoDone ? 'apps are code ✓' : 'pending OOBE';
+  const logtoMinted = Boolean(S.envs['iac-production']?.secrets?.has('IAC_LOGTO_INFRA_M2M_ID'));
+  el('logto-pill').textContent = logtoDone ? 'apps are code ✓' : (logtoMinted ? 'in progress — no click needed' : 'pending Bootstrap');
   el('logto-pill').className = 'pill ' + (logtoDone ? 'ok' : '');
+  renderLogtoAuto();
   const gtDone = ENVS.every((env) => S.envs[env]?.vars?.has('VITE_GLITCHTIP_DSN'));
   el('gt-pill').textContent = gtDone ? 'DSNs written back ✓' : 'pending token';
   el('gt-pill').className = 'pill ' + (gtDone ? 'ok' : '');
@@ -1721,6 +1741,37 @@ async function refreshNasReadiness({ force = false } = {}) {
     S.nasProbe = res.ok ? await res.json() : null;
   } catch { S.nasProbe = null; }
   renderNasReadiness();
+}
+/* ── sign-in setup (step 6, 2026-09-17): what GitHub holds (minted
+   credentials, written-back ids and humans) plus what the prod twin's last
+   run published about Logto (seeded, console, app admin, vault) ── */
+function renderLogtoAuto() {
+  const list = document.getElementById('logto-auto-list');
+  const sub = document.getElementById('logto-auto-sub');
+  const fix = document.getElementById('logto-auto-fix');
+  if (!list || !sub) return;
+  const prodS = S.envs['iac-production']?.secrets ?? new Set();
+  const lg = S.nasState?.logto ?? null;
+  const rows = [];
+  const row = (name, cls, label, title, jump) => rows.push({ name, cls, label, title, jump });
+  const minted = prodS.has('IAC_LOGTO_INFRA_M2M_ID');
+  row('Machine credentials minted', minted ? 'ok' : '', minted ? 'in both environments ✓' : 'not yet', minted ? '' : 'Bootstrap (the prod twin) mints them — press Bootstrap now on the readiness card or Bootstrap under step 4', { href: '#s-bootstrap' });
+  row('Seeded into Logto on the NAS', lg ? (lg.seeded ? 'ok' : (lg.credential ? 'warn' : '')) : '', lg?.seeded ? 'Logto answers with them ✓' : (lg?.credential ? 'not yet — the next Deploy seeds them (poller)' : 'unknown'), lg && !lg.seeded && lg.credential ? 'the poller inserts the credentials after the first Deploy of the prod twin; Deploy then runs Bootstrap again by itself' : '', { href: '#s-deploy' });
+  const wired = ENVS.every((env) => S.envs[env]?.vars?.has('VITE_LOGTO_APP_ID'));
+  row('Apps are code', wired ? 'ok' : '', wired ? 'ids written back ✓' : 'not yet', wired ? '' : 'the bootstrap that follows the seed upserts web/admin/native apps and writes their ids back', { href: '#s-bootstrap' });
+  const consoleDone = prodS.has('LOGTO_CONSOLE_USERNAME');
+  row('Console admin', consoleDone ? 'ok' : (lg?.console === 'failed' ? 'warn' : ''), consoleDone ? 'created (username admin) ✓' : (lg?.console === 'failed' ? 'could not be claimed' : 'not yet'), consoleDone ? 'the password is in the vault (and LOGTO_CONSOLE_PASSWORD of both environments)' : (lg?.console === 'failed' ? 'claim it by hand at logto-iac-admin.<domain> if you want the console — everything else works without it' : ''), { href: '#s-logto' });
+  const admin = prodS.has('NAS_ADMIN_SUBS');
+  row('App admin + admin access', admin ? 'ok' : '', admin ? 'munni_admin, admin area wired ✓' : 'not yet', admin ? 'sign in to the app as munni_admin (password in the vault) — the admin area lets it in; add other users\' subjects to NAS_ADMIN_SUBS by hand' : '', { href: '#s-admin' });
+  const vaultAccount = prodS.has('VAULT_MASTER_PASSWORD');
+  const v = lg?.vault;
+  row('Credentials in the vault', v === 'stored' ? 'ok' : (v === 'failed' ? 'bad' : (vaultAccount ? '' : 'warn')), v === 'stored' ? 'kept in the pair\'s vault ✓' : (v === 'failed' ? 'the last run could not store them' : (vaultAccount ? 'next run' : 'no vault account yet')), v === 'stored' ? '' : (vaultAccount ? 'the next Bootstrap of the prod twin fills the folder named after it' : 'store the Vault tile (VAULT_ADMIN_EMAIL + VAULT_MASTER_PASSWORD) under step 2 — until then the minted passwords are write-only in GitHub'), { href: '[data-group="vault"]' });
+  list.innerHTML = rows.map((r) => `<li ${r.jump ? jumpAttr(r.jump) : ''} title="${escAttr(r.title ?? '')}"><span class="hn">${r.name}</span><span class="hs ${r.cls}"><i class="dot ${r.cls === 'ok' ? 'ok' : (r.cls === 'bad' ? 'miss' : (r.cls === 'warn' ? 'warn' : 'opt'))}"></i>${r.label}</span></li>`).join('');
+  applyIcons(document.getElementById('logto-auto'));
+  const todo = rows.filter((r) => (r.cls === 'bad' || r.cls === 'warn') && r.title);
+  if (fix) { fix.hidden = !todo.length; fix.innerHTML = todo.map((r) => `<div><b>${escAttr(r.name)}</b> — ${escAttr(r.title)}</div>`).join(''); }
+  const open = rows.filter((r) => r.cls !== 'ok').length;
+  sub.textContent = open ? `${open} of ${rows.length} still open — Deploy and Bootstrap take turns by themselves; anything for you is written under the rows` : 'sign-in is code — the vault holds every login';
 }
 const ago = (iso) => { const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000); return s < 90 ? 'just now' : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
 function renderNasReadiness() {
