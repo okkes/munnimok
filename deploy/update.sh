@@ -60,7 +60,19 @@ esac
 # name makes r1 markers invalid so those volumes get redone
 PG_MARKER="pg18-restored-r2-$(basename "$COMPOSE_FILE" .yml).ok"
 PG_RESTORE=""
+# what the "old" volume really holds: a major is only migrated FROM 17.
+# The iac twins keep their PostgreSQL 18 data in a volume named pgdata
+# (found live 2026-09-16: this guard took each twin down, started a 17
+# server on 18-format data, died on it, and did that every cycle — 502 on
+# every host). 17 keeps PG_VERSION at the volume root, 18 under
+# <major>/docker (the image's versioned data layout); no file = no data.
+pg_data_version() {
+  docker run --rm -v "$1":/d alpine:3 sh -c 'v=$(cat /d/PG_VERSION 2>/dev/null || cat /d/*/docker/PG_VERSION 2>/dev/null | head -n 1); echo "${v:-none}"' 2>/dev/null || echo unknown
+}
 if docker volume inspect "${PG_PROJECT}_${PG_OLD}" >/dev/null 2>&1 && [ ! -f "$PG_MARKER" ]; then
+  PG_OLD_VERSION="$(pg_data_version "${PG_PROJECT}_${PG_OLD}")"
+  case "$PG_OLD_VERSION" in
+  17)
   echo "postgres 17->18: migrating (old volume present, no completion marker)"
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
   # a half-migrated new volume (failed or RACED attempt — the 2026-07-17
@@ -79,6 +91,13 @@ if docker volume inspect "${PG_PROJECT}_${PG_OLD}" >/dev/null 2>&1 && [ ! -f "$P
   docker exec munni-pg17-dump pg_dumpall -U munni > "$PG_RESTORE"
   docker rm -f munni-pg17-dump >/dev/null
   [ -s "$PG_RESTORE" ] || { echo "pg dump came out empty — refusing to continue" >&2; exit 1; }
+  ;;
+  18)
+    echo "postgres: ${PG_PROJECT}_${PG_OLD} already holds PostgreSQL 18 data — nothing to migrate"
+    date > "$PG_MARKER" ;;
+  *)
+    echo "postgres: ${PG_PROJECT}_${PG_OLD} holds no PostgreSQL data to migrate (PG_VERSION=$PG_OLD_VERSION) — compose initialises it" ;;
+  esac
 fi
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
