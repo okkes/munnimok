@@ -90,7 +90,14 @@ quotes — the template quotes it), `NAS_GOCARDLESS_SECRET_ID`,
    you run without the workflows: copy it
    from this folder to `…/docker/munni/apply.sh`.
 
-5. **DSM Task Scheduler** — created by the prod twin's IaC bootstrap (root,
+5. **DSM Task Scheduler** — ensured by the pipelines themselves through
+   the DSM API, one task per live dir: the live pipeline's deploy job
+   creates `munni deploy poller (live)` in its own live dir on every
+   deploy (`deploy/nas/ensure-poller.mjs`; a hand-made task for that dir
+   is adopted, one for another dir left alone), the prod twin's IaC
+   bootstrap creates `munni deploy poller` in the twins' dir. Both need
+   the deploy account to be a DSM administrator; the live job only warns
+   when it is not. The IaC one in detail — created by the prod twin's IaC bootstrap (root,
    every 5 minutes, `cd "<live>" && cp apply.sh .apply.run && MUNNI_LIVE_DIR="<live>" MUNNI_PUBLISHED_DIR="<live>/published" sh .apply.run`)
    once the deploy account is an administrator; `<live>` is the PARENT of
    `SYNOLOGY_PATH`, resolved through the share's real path (never a

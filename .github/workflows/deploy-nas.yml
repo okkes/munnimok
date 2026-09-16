@@ -75,6 +75,9 @@ jobs:
         with:
           # bundle the files as they are on the branch that built the images
           ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
 
       - name: Live channel configured?
         id: live
@@ -162,6 +165,19 @@ jobs:
           bash deploy/nas/upload.sh \
             "$RUNNER_TEMP/${{ steps.bundle.outputs.bundle }}" \
             "$RUNNER_TEMP/${{ steps.bundle.outputs.stamp }}"
+        env:
+          SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
+          SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
+          SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
+          SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
+
+      - name: Ensure the poller task (DSM Task Scheduler, through the API)
+        # the live pipeline owns its own poller in its own live dir — the
+        # counterpart of what the IaC prod twin's bootstrap does for the
+        # twins' dir. Needs an administrator deploy account; a refusal is a
+        # warning (the task may exist by hand), any other failure is red.
+        if: ${{ steps.live.outputs.skip != 'true' }}
+        run: node deploy/nas/ensure-poller.mjs --name "munni deploy poller (live)"
         env:
           SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}

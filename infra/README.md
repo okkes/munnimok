@@ -101,8 +101,12 @@ host names): the wizard's readiness card shows it as its first row with
 the exact DSM clicks written under the rows, and its **Bootstrap now**
 button dispatches the chained run — no retyping in the tile. A verify
 you dispatch (`verify_only`) is red while gaps remain; pushes only warn.
-A poller made by hand (the README one-liner, any name) is adopted by
-bootstrap — renamed, pointed at the resolved dirs — never doubled.
+A poller made by hand (the README one-liner, any name) for the SAME live
+dir is adopted by bootstrap — renamed, pointed at the resolved dirs —
+never doubled; one for another dir is another pipeline's and stays as it
+is. The legacy live pipeline ensures its own task the same way on every
+deploy (`deploy/nas/ensure-poller.mjs`, name `munni deploy poller (live)`),
+so no poller is ever created by hand.
 The wizard's **NAS readiness** card (Deploy step, with the helper running)
 probes every reverse-proxy host from outside and names the step each one
 still misses — DNS, the wildcard certificate, the rule (DSM answers Web
