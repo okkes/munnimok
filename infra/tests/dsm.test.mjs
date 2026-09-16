@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, resolveLiveDir, publishedPathParts,
   dsmAdvice, dsmLogin, dsmSession, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid, summarizeNas,
-  probeLoginShapes, probeCallShapes, describeLoginShapes, describeCallShapes, LOGIN_SHAPES, CALL_SHAPES, SESSION_SHAPES,
+  probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes, LOGIN_SHAPES, CALL_SHAPES, SESSION_SHAPES,
 } from '../modules/dsm.mjs';
 
 const CREDS = { url: 'https://nas.example:5001/', user: 'deploy', pass: 'pw' };
@@ -641,4 +641,31 @@ test('call shapes: when a read is refused after an accepted login, sessions made
   // the session the module hands out passes such a DSM
   const s = await dsmSession(CREDS, strict);
   assert.deepEqual(await s.read('SYNO.Core.Certificate.CRT', 1, 'list'), { certificates: [] });
+});
+
+test('session facts: what DSM says about a refused session — flags and versions only, never a string value; one login, one logout', async () => {
+  const seen = [];
+  const dsm73 = async (url, init) => {
+    const p = Object.fromEntries(new URLSearchParams(init.body));
+    seen.push(p);
+    const r = (data) => ({ json: async () => ({ success: true, data }) });
+    if (p.api === 'SYNO.API.Auth' && p.method === 'login') return r({ sid: 'S', synotoken: 'T', account: 'deploy', is_portal_port: false, ik_message: '' });
+    if (p.api === 'SYNO.API.Auth') return r({});
+    if (p.api === 'SYNO.Core.Desktop.Initdata') return r({ Session: { is_admin: false, user: 'deploy', otp_enforced: true, expire_time: 7 }, ServerTime: 1, Feature: {} });
+    if (p.api === 'SYNO.Core.OTP.EnforcePolicy') return r({ enforce_option: 'admin', enabled: true, users: ['secret name'] });
+    if (p.api === 'SYNO.API.Info') return r({ 'SYNO.Core.Certificate.CRT': { minVersion: 1, maxVersion: 2, path: 'entry.cgi' }, 'SYNO.API.Auth': { minVersion: 1, maxVersion: 7 } });
+    if (p.api === 'SYNO.Core.Certificate.CRT') return { json: async () => fail(105) };
+    return { json: async () => fail(102) };
+  };
+  const facts = await probeSessionFacts(CREDS, dsm73);
+  assert.deepEqual(facts.loginKeys, ['account', 'ik_message', 'is_portal_port', 'sid', 'synotoken']);
+  assert.deepEqual(facts.initdata.session, { is_admin: false, otp_enforced: true, expire_time: 7 }, 'the session flags, no user name');
+  assert.deepEqual(facts.initdata.keys, ['Feature', 'ServerTime', 'Session']);
+  assert.deepEqual(facts.enforcePolicy, { enforce_option: 'admin', enabled: true }, 'the policy without its user list');
+  assert.equal(facts.apis['SYNO.Core.Certificate.CRT'], '1-2');
+  assert.equal(facts.apis['SYNO.Core.TaskScheduler'], 'absent');
+  assert.deepEqual(facts.crtListAtMax, { error: 105 }, 'the newest version is tried too');
+  assert.ok(!JSON.stringify(facts).includes('deploy') && !JSON.stringify(facts).includes('secret name'), 'no string value leaves the NAS');
+  assert.equal(seen.filter((p) => p.method === 'login').length, 1);
+  assert.equal(seen.filter((p) => p.method === 'logout').length, 1);
 });

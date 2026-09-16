@@ -26,7 +26,7 @@ import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
 import { appendFileSync, readFileSync } from 'node:fs';
-import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas, probeLoginShapes, probeCallShapes, describeLoginShapes, describeCallShapes } from './modules/dsm.mjs';
+import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas, probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes } from './modules/dsm.mjs';
 import { localAwareFetch } from './modules/insecure-fetch.mjs';
 
 const args = process.argv.slice(2);
@@ -305,6 +305,10 @@ async function ciVerify() {
           const calls = await probeCallShapes(creds).catch((e2) => [{ label: 'probe', ok: false, code: dsmCode(e2) || null, transport: isTransport(e2) }]);
           console.log(`  ! dsm: call shapes —\n     ${describeCallShapes(calls)}`);
           state.dsm.callShapes = calls;
+          // and what DSM says about such a session (2FA enforcement, admin flag, API versions)
+          const facts = await probeSessionFacts(creds).catch((e2) => ({ error: dsmCode(e2) || e2.message }));
+          console.log(`  ! dsm: session facts — ${JSON.stringify(facts)}`);
+          state.dsm.facts = facts;
         }
       }
     }

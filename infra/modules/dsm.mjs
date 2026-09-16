@@ -734,3 +734,39 @@ export function describeCallShapes(list) {
   }
   return [...groups].map(([session, calls]) => `${session}: ${describeLoginShapes(calls)}`).join('\n     ');
 }
+
+/**
+ * What DSM itself says about the deploy account's session — read when the
+ * Control Panel APIs refuse it (105) although the login is accepted and
+ * the account is an administrator: the login answer's field names, the
+ * session flags of DSM's own desktop init data (is_admin and every
+ * otp/force flag), the 2-factor enforcement policy (DSM 7.3 can enforce
+ * 2FA for administrators, and an administrator without it then gets a
+ * session limited to 2FA enrollment — every other API answers 105), and
+ * the versions DSM offers for the APIs bootstrap uses. Booleans and
+ * numbers only, never a string value. One login, one logout.
+ */
+export async function probeSessionFacts({ url, user, pass }, fetchImpl = fetch) {
+  const base = url.replace(/\/$/, '');
+  const facts = {};
+  const raw = await dsmCall(base, 'entry.cgi', { api: 'SYNO.API.Auth', version: '7', method: 'login', account: user, passwd: pass, format: 'sid', enable_syno_token: 'yes' }, fetchImpl, { query: { enable_syno_token: 'yes' } });
+  facts.loginKeys = Object.keys(raw ?? {}).sort();
+  const auth = { _sid: raw.sid, ...(raw.synotoken ? { SynoToken: raw.synotoken } : {}) };
+  const carry = { query: auth, headers: raw.synotoken ? { 'X-SYNO-TOKEN': raw.synotoken } : null };
+  const call = (api, version, method, params = {}) => dsmCall(base, 'entry.cgi', { api, version: String(version), method, ...params, ...auth }, fetchImpl, carry);
+  const outcome = async (fn) => { try { return await fn(); } catch (e) { return { error: dsmCode(e) || (isTransport(e) ? 'no answer' : e.message) }; } };
+  const flags = (o) => Object.fromEntries(Object.entries(o ?? {}).filter(([k, v]) => (typeof v === 'boolean' || typeof v === 'number') && /admin|otp|force|enforce|expire|lock|portal/i.test(k)));
+  try {
+    const init = await outcome(() => call('SYNO.Core.Desktop.Initdata', 1, 'get'));
+    facts.initdata = init.error ? init : { keys: Object.keys(init).sort(), session: flags(init.Session ?? init.session), top: flags(init) };
+    facts.enforcePolicy = await outcome(async () => { const r = await call('SYNO.Core.OTP.EnforcePolicy', 1, 'get'); return Object.fromEntries(Object.entries(r ?? {}).filter(([, v]) => typeof v !== 'object' && typeof v !== 'string' || /^(none|admin|all|group|specific|custom)$/i.test(String(v)))); });
+    const wanted = ['SYNO.Core.Certificate.CRT', 'SYNO.Core.Certificate', 'SYNO.Core.Certificate.Service', 'SYNO.Core.Certificate.LetsEncrypt', 'SYNO.Core.AppPortal.ReverseProxy', 'SYNO.Core.TaskScheduler', 'SYNO.Core.TaskScheduler.Root', 'SYNO.Core.OTP.EnforcePolicy', 'SYNO.Core.Desktop.Initdata', 'SYNO.API.Auth'];
+    const info = await outcome(() => dsmCall(base, 'entry.cgi', { api: 'SYNO.API.Info', version: '1', method: 'query', query: wanted.join(',') }, fetchImpl));
+    facts.apis = info.error ? info : Object.fromEntries(wanted.map((k) => [k, info[k] ? `${info[k].minVersion}-${info[k].maxVersion}` : 'absent']));
+    const max = Number(info?.['SYNO.Core.Certificate.CRT']?.maxVersion);
+    if (max > 1) facts.crtListAtMax = await outcome(async () => { await call('SYNO.Core.Certificate.CRT', max, 'list'); return { ok: true, version: max }; });
+  } finally {
+    await dsmLogout(base, raw.sid, fetchImpl);
+  }
+  return facts;
+}
