@@ -41,11 +41,12 @@ const NOT_COVERED = async () => ({ covers: false, code: 'ERR_TLS_CERT_ALTNAME_IN
 const OLD = { id: 'old1', desc: 'nas.example', is_default: true, subject: { common_name: 'nas.example', sub_alt_name: ['nas.example'] }, valid_till: 'Oct 20 17:39:26 2036 GMT', services: [] };
 const WILD = { id: 'wild1', desc: 'nas.example;*.nas.example', is_default: false, subject: { common_name: 'nas.example', sub_alt_name: ['nas.example', '*.nas.example'] }, valid_till: 'Dec  9 00:00:00 2036 GMT', services: [] };
 const RULE_U1 = { display_name: 'web.nas.example', display_name_i18n: '', isPkg: false, multiple_cert: true, owner: 'root', service: 'u1', subscriber: 'ReverseProxy', user_setable: true };
-const RULES = ok({ entries: [{ uuid: 'u1', frontend: { fqdn: 'web.nas.example' } }, { uuid: 'u9', frontend: { fqdn: 'other.nas.example' } }] });
+// DSM 7.3 lists the id as UUID; a lowercase uuid (older captures) still counts
+const RULES = ok({ entries: [{ UUID: 'u1', frontend: { fqdn: 'web.nas.example' } }, { uuid: 'u9', frontend: { fqdn: 'other.nas.example' } }] });
 
 test('dsm: every call rides the sid AND the SynoToken; error codes come with the operator advice; a hand-set access profile survives an update', async () => {
   const { calls, fetchImpl } = dsm({
-    'SYNO.Core.AppPortal.ReverseProxy.list': ok({ entries: [{ uuid: 'a1', frontend: { fqdn: 'admin.nas.example', acl_id: 'lan-only' }, backend: { port: 1 } }] }),
+    'SYNO.Core.AppPortal.ReverseProxy.list': ok({ entries: [{ UUID: 'a1', frontend: { fqdn: 'admin.nas.example', acl_id: 'lan-only' }, backend: { port: 1 } }] }),
     'SYNO.Core.AppPortal.ReverseProxy.create': ok({}),
     'SYNO.Core.AppPortal.ReverseProxy.update': ok({}),
   });
@@ -64,7 +65,7 @@ test('dsm: every call rides the sid AND the SynoToken; error codes come with the
   assert.equal('session' in calls[0].params, false, 'the Control Panel login names no session — DSM refuses names it does not know with 402 (found live 2026-09-16)');
   assert.equal('session' in calls.at(-1).params, false, 'nor does its logout');
   const update = JSON.parse(calls.find((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.update').params.entry);
-  assert.equal(update.uuid, 'a1');
+  assert.equal(update.UUID, 'a1');
   assert.equal(update.frontend.acl_id, 'lan-only', 'the LAN-only profile the operator set is kept');
   assert.equal(update.backend.port, 8291);
   assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /application it names/);
@@ -516,7 +517,7 @@ test('inspectNas + tlsCovers: read-only views the verify step prints — certifi
     'SYNO.Core.Certificate.CRT.list': ok({ certificates: [{ id: 'w', desc: 'd;*.d', is_default: true, subject: { common_name: 'd' }, valid_till: 'Dec  9 00:00:00 2036 GMT', services: [{ service: 'u1', subscriber: 'ReverseProxy' }] }] }),
     'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 9, name: POLLER_TASK_NAME, enable: true }] }),
     'SYNO.FileStation.List.list_share': fail(119),
-    'SYNO.Core.AppPortal.ReverseProxy.list': ok({ entries: [{ uuid: 'u1', frontend: { fqdn: 'web.d' } }, { uuid: 'u2', frontend: { fqdn: 'api.d' } }] }),
+    'SYNO.Core.AppPortal.ReverseProxy.list': ok({ entries: [{ UUID: 'u1', frontend: { fqdn: 'web.d' } }, { UUID: 'u2', frontend: { fqdn: 'api.d' } }] }),
   });
   const view = await inspectNas(CREDS, { domain: 'd', publishedPath: '/docker/munni/published', hosts: ['web.d', 'api.d', 'admin.d'], fetchImpl: a.fetchImpl, sleepImpl: noWait });
   assert.deepEqual(view.wildcard, { id: 'w', isDefault: true, expired: false, validTill: 'Dec  9 00:00:00 2036 GMT' });

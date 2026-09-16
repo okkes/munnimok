@@ -198,6 +198,9 @@ export async function dsmSession({ url, user, pass }, fetchImpl = fetch, { sessi
 
 /* ── reverse proxy ───────────────────────────────────────────────────── */
 
+/** DSM 7.3 lists a rule's id as `UUID` (found live 2026-09-16: 0 of 21 rules carried a lowercase uuid, so every rule collapsed onto one map key and 1 of 7 got bound); older captures say `uuid` */
+const ruleId = (e) => e?.UUID ?? e?.uuid ?? null;
+
 /** the reverse-proxy rules a stack needs: source https host -> local port */
 export function proxyRules(stack) {
   const rules = [
@@ -242,7 +245,7 @@ export async function applyReverseProxy(stack, creds, fetchImpl = fetch, opts = 
         out.created.push(rule.host);
       } else if (match.backend?.port !== rule.port) {
         // keep an access-control profile the operator set by hand (LAN-only admin hosts)
-        await s.call('SYNO.Core.AppPortal.ReverseProxy', 1, 'update', { entry: JSON.stringify({ ...desired, frontend: { ...desired.frontend, acl_id: match.frontend?.acl_id ?? null }, uuid: match.uuid }) });
+        await s.call('SYNO.Core.AppPortal.ReverseProxy', 1, 'update', { entry: JSON.stringify({ ...desired, frontend: { ...desired.frontend, acl_id: match.frontend?.acl_id ?? null }, UUID: ruleId(match) }) });
         out.updated.push(rule.host);
       } else {
         out.unchanged.push(rule.host);
@@ -293,7 +296,7 @@ const listCerts = async (s) => (await s.read('SYNO.Core.Certificate.CRT', 1, 'li
 export async function bindRulesToCertificate(s, { certId, hosts }) {
   if (!hosts?.length) return { bound: 0, migrated: [], unbound: [] };
   const entries = (await s.read('SYNO.Core.AppPortal.ReverseProxy', 1, 'list')).entries ?? [];
-  const uuidHost = new Map(entries.filter((e) => hosts.includes(e.frontend?.fqdn)).map((e) => [e.uuid, e.frontend.fqdn]));
+  const uuidHost = new Map(entries.filter((e) => hosts.includes(e.frontend?.fqdn) && ruleId(e)).map((e) => [ruleId(e), e.frontend.fqdn]));
   const settings = [];
   const seen = new Set();
   for (const c of await listCerts(s)) {
@@ -610,8 +613,8 @@ export async function inspectNas(creds, { domain, publishedPath, hosts = [], fet
       // field names only (a rule's fqdn is the domain): the binding and the
       // verify match rules by `uuid` — if DSM names the id otherwise, every
       // rule collapses onto one map key (seen live 2026-09-16: 1 of 7 bound)
-      ruleShape = entries.length ? { rules: entries.length, keys: Object.keys(entries[0]).sort(), frontend: Object.keys(entries[0].frontend ?? {}).sort(), withUuid: entries.filter((e) => typeof e.uuid === 'string' && e.uuid).length } : { rules: 0 };
-      const uuidHost = new Map(entries.filter((e) => hosts.includes(e.frontend?.fqdn)).map((e) => [e.uuid, e.frontend.fqdn]));
+      ruleShape = entries.length ? { rules: entries.length, keys: Object.keys(entries[0]).sort(), frontend: Object.keys(entries[0].frontend ?? {}).sort(), withId: entries.filter((e) => ruleId(e)).length } : { rules: 0 };
+      const uuidHost = new Map(entries.filter((e) => hosts.includes(e.frontend?.fqdn) && ruleId(e)).map((e) => [ruleId(e), e.frontend.fqdn]));
       const onWildcard = new Set((pick.services ?? []).filter((x) => x.subscriber === 'ReverseProxy').map((x) => x.service));
       const known = [...uuidHost.values()];
       bindings = {
