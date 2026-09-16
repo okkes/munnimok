@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, resolveLiveDir, publishedPathParts,
   dsmAdvice, dsmLogin, dsmSession, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid, summarizeNas,
-  probeLoginShapes, describeLoginShapes, LOGIN_SHAPES,
+  probeLoginShapes, probeCallShapes, describeLoginShapes, LOGIN_SHAPES, CALL_SHAPES,
 } from '../modules/dsm.mjs';
 
 const CREDS = { url: 'https://nas.example:5001/', user: 'deploy', pass: 'pw' };
@@ -55,6 +55,10 @@ test('dsm: every call rides the sid AND the SynoToken; error codes come with the
   const list = calls.find((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.list');
   assert.equal(list.params._sid, 'SID-DSM');
   assert.equal(list.params.SynoToken, 'TOK');
+  // DSM 7.3 reads the sid + CSRF token from the query string / the header, not the POST body (119 otherwise — found live 2026-09-16)
+  assert.match(list.url, /\/webapi\/entry\.cgi\?_sid=SID-DSM&SynoToken=TOK$/, 'the sid and the token ride the query string');
+  assert.equal(list.init.headers['X-SYNO-TOKEN'], 'TOK', 'and the token the header');
+  assert.match(calls.at(-1).url, /auth\.cgi\?_sid=SID-DSM$/, 'the logout carries the sid in the query too');
   assert.equal(calls[0].params.enable_syno_token, 'yes');
   assert.equal('session' in calls[0].params, false, 'the Control Panel login names no session — DSM refuses names it does not know with 402 (found live 2026-09-16)');
   assert.equal('session' in calls.at(-1).params, false, 'nor does its logout');
@@ -65,11 +69,13 @@ test('dsm: every call rides the sid AND the SynoToken; error codes come with the
   assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /application it names/);
   assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /session DSM does not know/, '402 names the other cause too');
   assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /administrators group/, '402 names the admin step too — one text with validate.mjs');
-  assert.match(dsmAdvice(new Error('DSM x failed: {"code":119}')), /administrators group/);
+  assert.match(dsmAdvice(new Error('DSM x failed: {"code":119}')), /SID not found/);
+  assert.match(dsmAdvice(new Error('DSM x failed: {"code":105}')), /administrators group/);
   assert.match(dsmAdvice(new Error('DSM x failed: {"code":5524}')), /rate limit/);
   assert.equal(dsmAdvice(new Error('nothing')), '');
   // the account's rights are the ONE manual step: those codes never redden a run
-  for (const code of [402, 105, 119]) assert.equal(isPermissionError(new Error(`DSM x failed: {"code":${code}}`)), true, `${code} is the account's rights`);
+  for (const code of [402, 105]) assert.equal(isPermissionError(new Error(`DSM x failed: {"code":${code}}`)), true, `${code} is the account's rights`);
+  assert.equal(isPermissionError(new Error('DSM x failed: {"code":119}')), false, '119 is a session the call did not carry right — a real failure, never "fix the account"');
   assert.equal(isPermissionError(new Error('DSM x failed: {"code":5524}')), false);
 });
 
@@ -368,7 +374,7 @@ test('live dir: ONE rule — the parent of SYNOLOGY_PATH — resolved through th
   assert.deepEqual(await resolveLiveDir(s, 'docker/munni/published'), { share: 'docker', publishedSharePath: '/docker/munni/published', liveSharePath: '/docker/munni', rest: ['munni'], leaf: 'published', liveDir: '/volume2/docker/munni', publishedDir: '/volume2/docker/munni/published' });
   assert.equal((await resolveLiveDir(s, '/docker/munni/')).liveDir, '/volume2/docker', 'no /published suffix magic: the parent of the last segment');
   await assert.rejects(resolveLiveDir({ call: async () => ({ shares: [] }) }, '/docker/munni/published'), /no shared folder named "docker"/);
-  await assert.rejects(resolveLiveDir({ call: async () => { throw new Error('DSM SYNO.FileStation.List.list_share failed: {"code":119}'); } }, '/docker/munni/published'), /could not resolve the real path .*administrators group.*not touched/);
+  await assert.rejects(resolveLiveDir({ call: async () => { throw new Error('DSM SYNO.FileStation.List.list_share failed: {"code":119}'); } }, '/docker/munni/published'), /could not resolve the real path .*SID not found.*not touched/);
   // FileStation may refuse the Core session: with creds, a FileStation session is tried
   const fsOnly = dsm({ 'SYNO.FileStation.List.list_share': (p) => (p._sid === 'SID-FileStation' ? ok(shares) : fail(119)) });
   const core = await dsmSession(CREDS, fsOnly.fetchImpl, { sleepImpl: noWait });
@@ -600,4 +606,33 @@ test('login shapes: when DSM refuses the bootstrap login, every other shape is t
   const down = await probeLoginShapes(CREDS, async () => { throw netErr('ECONNREFUSED'); }, LOGIN_SHAPES.slice(0, 1));
   assert.equal(down[0].transport, true);
   assert.match(describeLoginShapes(down), /no answer/);
+});
+
+test('call shapes: when a read answers 119 after an accepted login, every way of carrying the sid + token is tried and named; one login, one logout', async () => {
+  const seen = [];
+  const strict = async (url, init) => {
+    const u = new URL(url);
+    const p = Object.fromEntries(new URLSearchParams(init.body));
+    seen.push({ url, p, headers: init.headers ?? {} });
+    if (p.api === 'SYNO.API.Auth') return { json: async () => ({ success: true, data: { sid: 'SID', synotoken: 'TOK' } }) };
+    // this DSM reads the sid from the query string or the id cookie, never the body — and wants the token in the header or the query
+    const sidOk = u.searchParams.get('_sid') === 'SID' || /\bid=SID\b/.test(String(init.headers?.cookie ?? ''));
+    const tokenOk = u.searchParams.get('SynoToken') === 'TOK' || init.headers?.['X-SYNO-TOKEN'] === 'TOK';
+    return { json: async () => (sidOk && tokenOk ? ok({ certificates: [] }) : fail(119)) };
+  };
+  const shapes = await probeCallShapes(CREDS, strict);
+  assert.deepEqual(shapes.map((s) => [s.label, s.ok, s.code ?? null]), [
+    ['sid+token in body', false, 119],
+    ['sid+token in query', true, null],
+    ['sid in query + X-SYNO-TOKEN', true, null],
+    ['sid in body + X-SYNO-TOKEN', false, 119],
+    ['cookie id=sid + X-SYNO-TOKEN', true, null],
+  ]);
+  assert.equal(CALL_SHAPES.length, 5);
+  assert.equal(seen.filter((x) => x.p.method === 'login').length, 1, 'one login for the whole probe');
+  assert.equal(seen.filter((x) => x.p.method === 'logout').length, 1, 'and one logout');
+  assert.match(describeLoginShapes(shapes), /^sid\+token in body: refused 119; sid\+token in query: ok; /);
+  // the session the module hands out passes such a DSM
+  const s = await dsmSession(CREDS, strict);
+  assert.deepEqual(await s.read('SYNO.Core.Certificate.CRT', 1, 'list'), { certificates: [] });
 });

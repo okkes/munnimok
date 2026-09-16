@@ -126,7 +126,7 @@ jobs:
         # staging follows (it binds its rules to the certificate prod just
         # ensured), then Deploy for both — no click left after the account fix
         # …and never over a NAS that refused the deploy account: bootstrap
-        # reports nas=blocked (402/105/119) and a Deploy would only fail at
+        # reports nas=blocked (402/105) and a Deploy would only fail at
         # the FileStation login — the step after this one says so instead
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.chain != '' && steps.boot.outputs.nas != 'blocked' }}
         run: |
@@ -153,5 +153,5 @@ jobs:
       - name: Chain skipped — the deploy account may not use DSM
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.chain != '' && steps.boot.outputs.nas == 'blocked' }}
         run: |
-          echo "::notice::nothing chained — DSM refused the deploy account (402/105/119), so the NAS holds none of this run's rules, certificate or poller yet. Fix the account (Control Panel → User & Group → the deploy user → Applications: DSM + File Station allowed; User groups: administrators), then run Bootstrap again."
+          echo "::notice::nothing chained — DSM refused the deploy account (402/105), so the NAS holds none of this run's rules, certificate or poller yet. Fix the account (Control Panel → User & Group → the deploy user → Applications: DSM + File Station allowed; User groups: administrators), then run Bootstrap again."
           echo "chain skipped: the deploy account may not use DSM yet — the wizard's readiness card (Deploy step) shows the exact clicks; Bootstrap again afterwards" >> "$GITHUB_STEP_SUMMARY"

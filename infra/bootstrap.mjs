@@ -26,7 +26,7 @@ import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
 import { appendFileSync, readFileSync } from 'node:fs';
-import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas, probeLoginShapes, describeLoginShapes } from './modules/dsm.mjs';
+import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas, probeLoginShapes, probeCallShapes, describeLoginShapes } from './modules/dsm.mjs';
 import { localAwareFetch } from './modules/insecure-fetch.mjs';
 
 const args = process.argv.slice(2);
@@ -298,6 +298,11 @@ async function ciVerify() {
         const shapes = await probeLoginShapes({ url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS });
         console.log(`  ! dsm: login shapes — ${describeLoginShapes(shapes)}`);
         state.dsm.shapes = shapes;
+      } else if (dsmCode(e) === 119) {
+        // the login was accepted but a read says "SID not found"? name the call shapes DSM reads
+        const shapes = await probeCallShapes({ url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS }).catch((e2) => [{ label: 'probe', ok: false, code: dsmCode(e2) || null, transport: isTransport(e2) }]);
+        console.log(`  ! dsm: call shapes — ${describeLoginShapes(shapes)}`);
+        state.dsm.callShapes = shapes;
       }
     }
     publishNasState({ mode: 'verify', ...state });

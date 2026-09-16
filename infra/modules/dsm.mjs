@@ -14,7 +14,7 @@
  *     poller, root-owned: a password-confirm token stands in for the
  *     dialog DSM shows for root scripts)
  * Auth: SYNOLOGY_URL/USER/PASS env (the deploy account). Every call
- * here is administrator-only on DSM — a non-admin account gets 105/119,
+ * here is administrator-only on DSM — a non-admin account gets 105,
  * an account that may not use the application a login names gets 402;
  * both are named by dsmAdvice(). Nothing below can grant an account
  * those rights: that is the ONE manual step (Control Panel → User &
@@ -45,14 +45,14 @@
 export const DSM_CODE_ADVICE = {
   402: 'DSM refused the login for the application it names (its password is right): either the account may not use it — Control Panel → User & Group → the deploy user → Applications → DSM: Allow, File Station: Allow (a group Deny beats Allow), and the administrators group (User groups tab) for the Control Panel APIs — or the login named a session DSM does not know (found live 2026-09-16: "Core" is refused for every account; the bootstrap names none, like DSM\'s own UI); --verify prints which login shapes DSM accepts',
   105: 'the account is not in the administrators group — Control Panel APIs are admin-only: User & Group → the deploy user → User groups → administrators',
-  119: 'DSM refused the session for this API — the account is not in the administrators group (User & Group → the deploy user → User groups → administrators)',
+  119: 'DSM did not recognise the session for this call (119 = "SID not found"): the sid and the SynoToken must ride the query string / the X-SYNO-TOKEN header (DSM 7.3 does not read them from a POST body — found live 2026-09-16), or the session expired; --verify prints which call shapes DSM accepts',
   103: 'DSM wants its CSRF token beside the sid (SynoToken) — the login must use enable_syno_token=yes',
   4800: 'DSM rejected the task parameters (4800) — the message only shows in /var/log/synoscgi.log on the NAS',
   5524: 'Let’s Encrypt’s rate limit for this name is used up (5 certificates per exact name set per week) — wait a week; never delete and re-request',
   5503: 'Let’s Encrypt could not validate the domain — with a Synology DDNS name the validation runs through Synology; otherwise port 80 must reach the NAS',
 };
 /** the codes that mean "fix the account", not "the step failed" */
-export const DSM_PERMISSION_CODES = [402, 105, 119];
+export const DSM_PERMISSION_CODES = [402, 105];
 export const dsmCode = (err) => Number(/"code":\s*(\d+)/.exec(String(err?.message ?? err ?? ''))?.[1]);
 export function dsmAdvice(err) {
   const code = dsmCode(err);
@@ -100,13 +100,14 @@ async function dsmRequest(url, init, label, fetchImpl) {
 }
 
 /** one form-encoded call; `retry` = delays (ms) between attempts, spent only on transport errors */
-async function dsmCall(base, path, params, fetchImpl = fetch, { timeoutMs = 30000, retry = [], sleepImpl = sleep } = {}) {
+async function dsmCall(base, path, params, fetchImpl = fetch, { timeoutMs = 30000, retry = [], sleepImpl = sleep, query = null, headers = null } = {}) {
   const label = `${params.api}.${params.method}`;
+  const url = `${base}/webapi/${path}${query ? `?${new URLSearchParams(query)}` : ''}`;
   for (let attempt = 0; ; attempt++) {
     try {
-      return await dsmRequest(`${base}/webapi/${path}`, {
+      return await dsmRequest(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        headers: { 'content-type': 'application/x-www-form-urlencoded', ...(headers ?? {}) },
         body: new URLSearchParams(params),
         signal: AbortSignal.timeout(timeoutMs),
       }, label, fetchImpl);
@@ -150,7 +151,7 @@ export async function dsmLogin(base, account, passwd, fetchImpl = fetch, { sessi
 }
 
 export async function dsmLogout(base, sid, fetchImpl = fetch, session = null) {
-  await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: '7', method: 'logout', ...(session ? { session } : {}), _sid: sid }, fetchImpl).catch(() => undefined);
+  await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: '7', method: 'logout', ...(session ? { session } : {}), _sid: sid }, fetchImpl, { query: { _sid: sid } }).catch(() => undefined);
 }
 
 /**
@@ -164,7 +165,13 @@ export async function dsmSession({ url, user, pass }, fetchImpl = fetch, { sessi
   const base = url.replace(/\/$/, '');
   const { sid, token } = await dsmLogin(base, user, pass, fetchImpl, { session, retry, sleepImpl });
   const auth = { _sid: sid, ...(token ? { SynoToken: token } : {}) };
-  const call = (api, version, method, params = {}, opts = {}) => dsmCall(base, 'entry.cgi', { api, version: String(version), method, ...params, ...auth }, fetchImpl, { sleepImpl, ...opts });
+  // the sid and the CSRF token ride the QUERY STRING and the X-SYNO-TOKEN
+  // header (what DSM's own UI and upload.sh do): DSM 7.3 does not read
+  // them from a POST body — a body-only sid answered 119 "SID not found"
+  // on the first Control Panel read (found live 2026-09-16). The body
+  // carries them too; DSM ignores what it does not read.
+  const carry = { query: auth, headers: token ? { 'X-SYNO-TOKEN': token } : null };
+  const call = (api, version, method, params = {}, opts = {}) => dsmCall(base, 'entry.cgi', { api, version: String(version), method, ...params, ...auth }, fetchImpl, { sleepImpl, ...carry, ...opts });
   return {
     base,
     sid,
@@ -657,3 +664,38 @@ export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, s
 }
 /** one line for the verify output */
 export const describeLoginShapes = (shapes) => shapes.map((s) => `${s.label}: ${s.ok ? 'ok' : (s.transport ? 'no answer' : `refused ${s.code ?? '?'}`)}`).join('; ');
+
+/**
+ * How a logged-in call may carry the sid + CSRF token — tried when a read
+ * answers 119 ("SID not found") although the login was accepted, so the
+ * verify output names the shapes DSM reads instead of guessing. Each
+ * shape makes one read-only call (the certificate list); one login, one
+ * logout. Returns [{label, ok, code?, transport?}].
+ */
+export const CALL_SHAPES = [
+  { label: 'sid+token in body', build: (a) => ({ body: a, query: null, headers: null }) },
+  { label: 'sid+token in query', build: (a) => ({ body: {}, query: a, headers: null }) },
+  { label: 'sid in query + X-SYNO-TOKEN', build: (a) => ({ body: {}, query: { _sid: a._sid }, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
+  { label: 'sid in body + X-SYNO-TOKEN', build: (a) => ({ body: { _sid: a._sid }, query: null, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
+  { label: 'cookie id=sid + X-SYNO-TOKEN', build: (a) => ({ body: {}, query: null, headers: { cookie: `id=${a._sid}`, 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
+];
+export async function probeCallShapes({ url, user, pass }, fetchImpl = fetch, shapes = CALL_SHAPES) {
+  const base = url.replace(/\/$/, '');
+  const { sid, token } = await dsmLogin(base, user, pass, fetchImpl);
+  const auth = { _sid: sid, ...(token ? { SynoToken: token } : {}) };
+  const out = [];
+  try {
+    for (const s of shapes) {
+      const { body, query, headers } = s.build(auth);
+      try {
+        await dsmCall(base, 'entry.cgi', { api: 'SYNO.Core.Certificate.CRT', version: '1', method: 'list', ...body }, fetchImpl, { query, headers });
+        out.push({ label: s.label, ok: true });
+      } catch (e) {
+        out.push({ label: s.label, ok: false, code: dsmCode(e) || null, transport: isTransport(e) });
+      }
+    }
+  } finally {
+    await dsmLogout(base, sid, fetchImpl);
+  }
+  return out;
+}

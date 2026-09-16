@@ -61,7 +61,7 @@ applications (User & Group → the user → Applications; a group's Deny
 beats Allow) — every NAS step below is admin-only on DSM, and no
 account can grant itself those rights (that is why this one step is
 yours). A `dsm: … failed` line in the bootstrap output with code 402
-(the account may not use the application the login names) or 119/105
+(the account may not use the application the login names) or 105
 (not an administrator) is exactly that — but check the `login shapes`
 line `--verify` prints on a 402 first: DSM 7.3.2 refuses a session name
 it does not know with the same 402 (found live 2026-09-16 with a correct
@@ -88,7 +88,7 @@ the six-minute wait ends (the next run adopts the certificate; never
 re-request by hand, every request counts against the 5-per-week limit).
 Optional secret `IAC_ACME_EMAIL` is the Let's Encrypt contact (default
 `admin@<domain>`).
-A run DSM refuses (402/105/119) stays green for the Logto/GlitchTip work
+A run DSM refuses (402/105) stays green for the Logto/GlitchTip work
 it did, but chains NOTHING (step output `nas=blocked`, a notice in the
 summary) — a Deploy over a NAS without rules would only fail at the
 FileStation login. Every verify/apply of the prod twin publishes the
