@@ -888,28 +888,12 @@ export async function removePollerTask(creds, { fetchImpl = fetch, name = POLLER
     const found = tasks.find((t) => t.name === name);
     if (!found) return { state: 'absent', detail: `no Task Scheduler entry "${name}"` };
     const real = found.real_owner || found.owner || 'root';
-    // DSM 7.3 answers 103 "method does not exist" to `delete` on
-    // SYNO.Core.TaskScheduler v3 AND on SYNO.Core.TaskScheduler.Root v4
-    // (found live 2026-09-16), so the version is swept on both APIs — a 103
-    // costs nothing, any other answer is the truth. The Root API rides the
-    // password-confirm token like create/set.
-    const attempts = [];
-    let token = null;
-    const shapes = [
-      ...[4, 3, 2, 1].map((v) => ({ api: 'SYNO.Core.TaskScheduler', v, root: false })),
-      ...[4, 3, 2, 1].map((v) => ({ api: 'SYNO.Core.TaskScheduler.Root', v, root: true })),
-    ];
-    for (const shape of shapes) {
-      try {
-        if (shape.root && !token) token = (await s.call('SYNO.Core.User.PasswordConfirm', 2, 'auth', { password: creds.pass })).SynoConfirmPWToken;
-        await s.call(shape.api, shape.v, 'delete', { id: JSON.stringify([found.id]), real_owner: real, ...(shape.root ? { SynoConfirmPWToken: token } : {}) });
-        return { state: 'removed', id: found.id, detail: `Task Scheduler entry "${name}" (${found.id}) deleted (${shape.api} v${shape.v})` };
-      } catch (e) {
-        if (isTransport(e) || dsmCode(e) !== 103) throw e;
-        attempts.push(`${shape.api} v${shape.v}`);
-      }
-    }
-    throw new Error(`no delete method on any task API version (tried ${attempts.join(', ')}) — delete "${name}" by hand in Control Panel → Task Scheduler`);
+    // DSM 7.3 deletes tasks with SYNO.Core.TaskScheduler v4 `delete`, whose
+    // one parameter is `tasks`: an array of {id, real_owner} — DSM's own
+    // 4800 message spelled it out on 2026-09-16 (v3, and the Root API's
+    // delete, answer 103: no such method). Root tasks included, no confirm.
+    await s.call('SYNO.Core.TaskScheduler', 4, 'delete', { tasks: JSON.stringify([{ id: found.id, real_owner: real }]) });
+    return { state: 'removed', id: found.id, detail: `Task Scheduler entry "${name}" (${found.id}) deleted` };
   } finally {
     await s.logout();
   }

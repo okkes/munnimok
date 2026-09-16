@@ -752,17 +752,13 @@ test('cleanup: the stack\'s rules go by uuid, the poller task by id (root API as
   assert.deepEqual(a.calls.filter((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.delete').map((c) => c.params.uuids), ['["u1"]', '["u2"]'], 'never the other rule');
   const t = dsm({
     'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 42, name: POLLER_TASK_NAME, owner: 'root', real_owner: 'root' }] }),
-    'SYNO.Core.TaskScheduler.delete': fail(103),
-    'SYNO.Core.User.PasswordConfirm.auth': ok({ SynoConfirmPWToken: 'CONFIRM' }),
-    'SYNO.Core.TaskScheduler.Root.delete': ok({}),
+    // DSM 7.3's own 4800 message: "tasks must be an array of {id, real_owner}"
+    'SYNO.Core.TaskScheduler.delete': (p) => (p.tasks === '[{"id":42,"real_owner":"root"}]' && p.version === '4' ? ok({}) : fail(4800, { errors: { msg: 'tasks must be an array of {id, real_owner}' } })),
   });
   const task = await removePollerTask(CREDS, { fetchImpl: t.fetchImpl });
   assert.equal(task.state, 'removed');
-  assert.equal(t.calls.filter((c) => c.key === 'SYNO.Core.TaskScheduler.delete').length, 4, 'every version of the plain API is tried on 103');
-  const rootDel = t.calls.find((c) => c.key === 'SYNO.Core.TaskScheduler.Root.delete');
-  assert.equal(rootDel.params.id, '[42]');
-  assert.equal(rootDel.params.version, '4', 'the root API starts at its newest version');
-  assert.equal(rootDel.params.SynoConfirmPWToken, 'CONFIRM', 'a refused plain delete (103 "method does not exist" for a root task) falls back to the confirmed root API');
+  assert.equal(t.calls.filter((c) => c.key === 'SYNO.Core.TaskScheduler.delete').length, 1, 'one call, the shape DSM 7.3 wants');
+  assert.ok(!t.calls.some((c) => c.key === 'SYNO.Core.User.PasswordConfirm.auth'), 'no password confirm for a delete');
   assert.match(dsmAdvice(new Error('DSM x failed: {"code":103}')), /method does not exist/);
   const none = dsm({ 'SYNO.Core.TaskScheduler.list': ok({ tasks: [] }) });
   assert.equal((await removePollerTask(CREDS, { fetchImpl: none.fetchImpl })).state, 'absent');
