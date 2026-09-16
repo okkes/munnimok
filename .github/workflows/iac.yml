@@ -111,6 +111,7 @@ jobs:
           VAULT_ADMIN_EMAIL: ${{ secrets.VAULT_ADMIN_EMAIL }}
           VAULT_MASTER_PASSWORD: ${{ secrets.VAULT_MASTER_PASSWORD }}
           IAC_GLITCHTIP_API_TOKEN: ${{ secrets.IAC_GLITCHTIP_API_TOKEN }}
+          IAC_GLITCHTIP_ADMIN_PASSWORD: ${{ secrets.IAC_GLITCHTIP_ADMIN_PASSWORD }}
           LOGTO_GOOGLE_CLIENT_ID: ${{ secrets.LOGTO_GOOGLE_CLIENT_ID }}
           LOGTO_GOOGLE_CLIENT_SECRET: ${{ secrets.LOGTO_GOOGLE_CLIENT_SECRET }}
           LOGTO_APPLE_CLIENT_ID: ${{ secrets.LOGTO_APPLE_CLIENT_ID }}
@@ -124,6 +125,14 @@ jobs:
           SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
           # Let's Encrypt contact for the wildcard certificate DSM requests (optional)
           IAC_ACME_EMAIL: ${{ secrets.IAC_ACME_EMAIL }}
+      - name: Mask the domain in the artifact (this repository is public — the domain is a secret)
+        if: ${{ !cancelled() }}
+        run: |
+          if [ -n "${IAC_DOMAIN:-}" ] && [ -d "infra/rendered/${{ matrix.stack }}" ]; then
+            grep -rlF --null -- "$IAC_DOMAIN" "infra/rendered/${{ matrix.stack }}" | xargs -0 -r sed -i "s/$IAC_DOMAIN/<domain>/g"
+          fi
+        env:
+          IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
       - name: Upload rendered stack + runbook
         # a red apply (a NAS step failed) rendered it too — keep it
         if: ${{ !cancelled() }}

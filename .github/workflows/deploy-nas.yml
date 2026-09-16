@@ -256,6 +256,8 @@ jobs:
           IAC_LOGTO_INFRA_M2M_SECRET: ${{ secrets.IAC_LOGTO_INFRA_M2M_SECRET }}
           IAC_LOGTO_ADMIN_M2M_ID: ${{ secrets.IAC_LOGTO_ADMIN_M2M_ID }}
           IAC_LOGTO_ADMIN_M2M_SECRET: ${{ secrets.IAC_LOGTO_ADMIN_M2M_SECRET }}
+          IAC_GLITCHTIP_ADMIN_PASSWORD: ${{ secrets.IAC_GLITCHTIP_ADMIN_PASSWORD }}
+          IAC_GLITCHTIP_API_TOKEN: ${{ secrets.IAC_GLITCHTIP_API_TOKEN }}
           VITE_GLITCHTIP_DSN: ${{ vars.VITE_GLITCHTIP_DSN }}
           VITE_GLITCHTIP_DSN_ADMIN: ${{ vars.VITE_GLITCHTIP_DSN_ADMIN }}
           VITE_LOGTO_APP_ID: ${{ vars.VITE_LOGTO_APP_ID }}
@@ -298,10 +300,11 @@ jobs:
           IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
           IAC_LOGTO_INFRA_M2M_ID: ${{ secrets.IAC_LOGTO_INFRA_M2M_ID }}
           IAC_LOGTO_INFRA_M2M_SECRET: ${{ secrets.IAC_LOGTO_INFRA_M2M_SECRET }}
-      - name: Sign-in not wired yet — run the IaC bootstrap once more (it chains staging + Deploy)
-        if: ${{ matrix.stack == 'munni-iac-prod' && steps.applied.outputs.logto == 'answers' && vars.VITE_LOGTO_APP_ID == '' }}
+          IAC_GLITCHTIP_API_TOKEN: ${{ secrets.IAC_GLITCHTIP_API_TOKEN }}
+      - name: Sign-in or crash reports not wired yet — run the IaC bootstrap once more (it chains staging + Deploy)
+        if: ${{ matrix.stack == 'munni-iac-prod' && ((steps.applied.outputs.logto == 'answers' && vars.VITE_LOGTO_APP_ID == '') || (steps.applied.outputs.glitchtip == 'answers' && vars.VITE_GLITCHTIP_DSN == '')) }}
         run: |
           gh workflow run iac.yml --ref "$GITHUB_REF_NAME" -f stack=munni-iac-prod -f chain=staging,deploy-both
-          echo "chained: Bootstrap munni-iac-prod (Logto is seeded, sign-in not wired yet) → staging → Deploy both" >> "$GITHUB_STEP_SUMMARY"
+          echo "chained: Bootstrap munni-iac-prod (a seed landed, its write-back is missing) → staging → Deploy both" >> "$GITHUB_STEP_SUMMARY"
         env:
           GH_TOKEN: ${{ secrets.IAC_GH_PAT || secrets.GITHUB_TOKEN }}

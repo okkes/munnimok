@@ -23,7 +23,7 @@ import { ensureSecrets, pairEnvironments, verifySecrets } from './modules/secret
 import { ensureLocalSecrets, familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
 import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAppAdmin, logtoAnswers, writeBack } from './modules/logto.mjs';
 import { vaultReplaceFolder } from './modules/vault.mjs';
-import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
+import { applyGlitchTip, glitchtipAnswers, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
 import { appendFileSync, readFileSync } from 'node:fs';
@@ -50,15 +50,6 @@ if (!stackName) {
 const stack = loadStack(stackName);
 const pair = pairProd(stack);
 const rotate = (value('rotate') ?? '').split(',').filter(Boolean);
-
-function envSecret(env, name) {
-  try {
-    const out = execFileSync('gh', ['api', `repos/{owner}/{repo}/environments/${encodeURIComponent(env)}/secrets/${name}`], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-    return JSON.parse(out).name === name;
-  } catch {
-    return false;
-  }
-}
 
 /** what the NAS did with the bundles: the poller's own log, last lines (no SSH) */
 async function printPollerLog(creds, publishedPath) {
@@ -127,6 +118,8 @@ async function keepInVault(fresh = []) {
   if (e.IAC_LOGTO_INFRA_M2M_ID) add({ name: 'Logto infra M2M', username: e.IAC_LOGTO_INFRA_M2M_ID, password: e.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: pair.urls.logto, notes: 'Machine credential the bootstrap uses for Logto-as-code (Management API). Minted by bootstrap, seeded by the NAS poller.' });
   if (e.IAC_LOGTO_ADMIN_M2M_ID) add({ name: 'Logto admin-tenant M2M', username: e.IAC_LOGTO_ADMIN_M2M_ID, password: e.IAC_LOGTO_ADMIN_M2M_SECRET ?? '', uri: pair.urls.logtoAdmin, notes: 'Machine credential that claimed the console admin. Minted by bootstrap, seeded by the NAS poller.' });
   if (e.NAS_POSTGRES_PASSWORD) add({ name: `Postgres (${stack.stack})`, username: 'munni', password: e.NAS_POSTGRES_PASSWORD, notes: 'The twin\'s database server (munni, logto, glitchtip databases). Minted by bootstrap.' });
+  if (e.IAC_GLITCHTIP_ADMIN_PASSWORD) add({ name: 'GlitchTip', username: `admin@${pair.domain}`, password: e.IAC_GLITCHTIP_ADMIN_PASSWORD, uri: pair.urls.glitchtip, notes: 'GlitchTip admin (crash reports) — created inside the container by the NAS poller from the password bootstrap minted.' });
+  if (e.IAC_GLITCHTIP_API_TOKEN) add({ name: 'GlitchTip API token', username: 'bootstrap', password: e.IAC_GLITCHTIP_API_TOKEN, uri: pair.urls.glitchtip, notes: 'The API token the bootstrap uses for GlitchTip-as-code (org, projects, DSNs). Minted by bootstrap, created by the NAS poller.' });
   for (const item of fresh) add(item);
   const items = [...byName.values()];
   if (!items.length) return 'no-account';
@@ -334,6 +327,14 @@ async function ciVerify() {
   } else {
     console.log('  ✗ logto: no infra credential in this environment — bootstrap (apply) mints it');
   }
+  const gtToken = process.env.IAC_GLITCHTIP_API_TOKEN;
+  const glitchtipState = { credential: Boolean(gtToken), seeded: false };
+  if (gtToken) {
+    glitchtipState.seeded = await glitchtipAnswers(pair, gtToken);
+    console.log(glitchtipState.seeded ? '  ✓ glitchtip: accepts the API token (seeded)' : '  ✗ glitchtip: does not accept the API token yet — the NAS poller creates it on the next deploy');
+  } else {
+    console.log('  ✗ glitchtip: no API token in this environment — bootstrap (apply) mints it');
+  }
   // what the NAS holds (read-only): the wildcard certificate and the poller task
   const { SYNOLOGY_URL, SYNOLOGY_USER, SYNOLOGY_PASS, SYNOLOGY_PATH } = process.env;
   if (SYNOLOGY_URL && SYNOLOGY_USER && SYNOLOGY_PASS) {
@@ -377,7 +378,7 @@ async function ciVerify() {
         }
       }
     }
-    publishNasState({ mode: 'verify', ...state, logto: logtoState });
+    publishNasState({ mode: 'verify', ...state, logto: logtoState, glitchtip: glitchtipState });
   }
   const allUp = await probeAll();
   return missing.length || !allUp ? 1 : 0;
@@ -403,6 +404,7 @@ async function ciApply() {
   // — with every credential kept in the pair's vault.
   const creds = { m2mId: process.env.IAC_LOGTO_INFRA_M2M_ID, m2mSecret: process.env.IAC_LOGTO_INFRA_M2M_SECRET };
   const logtoState = { credential: Boolean(creds.m2mId && creds.m2mSecret), seeded: false, wired: false, console: null, appAdmin: null, vault: null };
+  const freshCreds = []; // created this run — the vault step below keeps them
   if (!logtoState.credential) {
     console.log(minted.includes('IAC_LOGTO_INFRA_M2M_ID')
       ? '  logto: infra credential minted this run — the next Deploy seeds it into Logto on the NAS and re-runs this bootstrap'
@@ -419,7 +421,6 @@ async function ciApply() {
         console.log(social.applied.length ? `  logto: social connectors applied [${social.applied}]` : `  logto: no social connector credentials in env — skipped${social.error ? ` (${social.error})` : ''}`);
         const brand = await applyBranding(pair, creds).catch((e) => ({ error: e.message }));
         console.log(brand.error ? `  logto: branding failed (${brand.error})` : `  logto: sign-in branded (munni logo + colors)`);
-        const fresh = [];
         const adminCreds = { adminId: process.env.IAC_LOGTO_ADMIN_M2M_ID, adminSecret: process.env.IAC_LOGTO_ADMIN_M2M_SECRET };
         if (adminCreds.adminId && adminCreds.adminSecret) {
           try {
@@ -427,7 +428,7 @@ async function ciApply() {
             if (c.created) {
               setPairSecret('LOGTO_CONSOLE_USERNAME', c.created.username);
               setPairSecret('LOGTO_CONSOLE_PASSWORD', c.created.password);
-              fresh.push({ name: 'Logto console', username: c.created.username, password: c.created.password, uri: pair.urls.logtoAdmin, notes: 'The pair\'s Logto admin console — created by the IaC bootstrap.' });
+              freshCreds.push({ name: 'Logto console', username: c.created.username, password: c.created.password, uri: pair.urls.logtoAdmin, notes: 'The pair\'s Logto admin console — created by the IaC bootstrap.' });
             }
             logtoState.console = c.created ? 'created' : 'existing';
             console.log(c.created ? `  logto: console admin created (username admin) — its password is in ${pair.githubEnvironment} (LOGTO_CONSOLE_PASSWORD) and the vault${c.modeSet ? '; console switched to sign-in' : ''}` : '  logto: the console already has its admin — left alone');
@@ -443,7 +444,7 @@ async function ciApply() {
           if (a.created) {
             setPairSecret('LOGTO_APP_ADMIN_USERNAME', a.created.username);
             setPairSecret('LOGTO_APP_ADMIN_PASSWORD', a.created.password);
-            fresh.push({ name: 'munni app (admin user)', username: a.created.username, password: a.created.password, uri: pair.urls.web, notes: 'The app\'s first user — the admin area lets it in (NAS_ADMIN_SUBS). Created by the IaC bootstrap.' });
+            freshCreds.push({ name: 'munni app (admin user)', username: a.created.username, password: a.created.password, uri: pair.urls.web, notes: 'The app\'s first user — the admin area lets it in (NAS_ADMIN_SUBS). Created by the IaC bootstrap.' });
           }
           if (a.sub && !process.env.NAS_ADMIN_SUBS) setPairSecret('NAS_ADMIN_SUBS', a.sub);
           logtoState.appAdmin = a.created ? 'created' : 'existing';
@@ -452,32 +453,36 @@ async function ciApply() {
           logtoState.appAdmin = 'failed';
           console.log(`  logto: app admin not ensured (${e.message}) — retried next run`);
         }
-        logtoState.vault = await keepInVault(fresh);
       }
     } catch (e) {
       console.log(`  logto: not answering with the infra credential yet (${e.message}) — the NAS poller seeds it on the first deploy; Deploy re-runs this bootstrap once it has`);
     }
   }
 
-  const infraEnv = pair.githubEnvironment;
-  // GlitchTip-as-code (IAC8): once the pair's operator token exists, the
-  // org/team/per-stack projects are ensured and the DSNs written back —
-  // runbook §4 becomes a no-op. Soft-fails: GlitchTip may not be booted yet.
-  if (envSecret(infraEnv, 'IAC_GLITCHTIP_API_TOKEN')) {
-    if (process.env.IAC_GLITCHTIP_API_TOKEN) {
-      try {
-        const dsns = await applyGlitchTip(pair, stack, process.env.IAC_GLITCHTIP_API_TOKEN);
-        writeBackDsns(stack, dsns);
-        console.log(`  glitchtip: org/projects ensured, DSNs written back (${stack.stack}-pwa/-api/-admin)`);
-      } catch (e) {
-        console.log(`  glitchtip: apply failed (${e.message}) — retried on the next run`);
-      }
-    } else {
-      console.log('  glitchtip: token exists in GitHub but not in this shell — export IAC_GLITCHTIP_API_TOKEN to apply locally (CI injects it)');
-    }
+  // GlitchTip as code (2026-09-17): the admin's password and the API token
+  // are MINTED above and created inside the container by the NAS poller on
+  // the next Deploy; until GlitchTip accepts the token this run waits —
+  // Deploy re-runs the bootstrap. Then the org, the team, per-stack projects
+  // and their DSNs are ensured and written back (runbook §4 is a no-op).
+  const gtToken = process.env.IAC_GLITCHTIP_API_TOKEN;
+  const glitchtipState = { credential: Boolean(gtToken), seeded: false, wired: false };
+  if (!gtToken) {
+    console.log(minted.includes('IAC_GLITCHTIP_API_TOKEN')
+      ? '  glitchtip: admin + API token minted this run — the next Deploy creates them in GlitchTip on the NAS and re-runs this bootstrap'
+      : '  glitchtip: no API token in this environment yet (the prod twin mints it for the pair)');
   } else {
-    console.log('  glitchtip: waiting for IAC_GLITCHTIP_API_TOKEN (see the runbook) — org/DSNs not ensured yet');
+    try {
+      const dsns = await applyGlitchTip(pair, stack, gtToken);
+      glitchtipState.seeded = true;
+      writeBackDsns(stack, dsns);
+      glitchtipState.wired = true;
+      console.log(`  glitchtip: org/projects ensured, DSNs written back (${stack.stack}-pwa/-api/-admin)`);
+    } catch (e) {
+      console.log(`  glitchtip: does not accept the minted token yet (${e.message}) — the NAS poller creates it on the next deploy; Deploy re-runs this bootstrap once it has`);
+    }
   }
+  // the pair's vault keeps everything this run knows (prod twin)
+  if (stack.role === 'prod') logtoState.vault = await keepInVault(freshCreds);
 
   // DSM as code — runs whenever the deploy account creds are in the
   // shell (CI injects SYNOLOGY_*; locally: export them): the reverse-proxy
@@ -534,11 +539,11 @@ async function ciApply() {
     }
     if (refusal) {
       nasOutcome = 'blocked';
-      publishNasState({ mode: 'apply', dsm: refusal, logto: logtoState });
+      publishNasState({ mode: 'apply', dsm: refusal, logto: logtoState, glitchtip: glitchtipState });
     } else {
       nasOutcome = 'applied';
       // what the NAS holds after this run, in the shape --verify publishes
-      if (owner) publishNasState({ mode: 'apply', ...(await inspectNas(creds, { domain: stack.domain, publishedPath: SYNOLOGY_PATH ?? '', hosts }).then((nas) => summarizeNas(nas, hosts.length)).catch((e) => ({ dsm: dsmRefusal(e) }))), logto: logtoState });
+      if (owner) publishNasState({ mode: 'apply', ...(await inspectNas(creds, { domain: stack.domain, publishedPath: SYNOLOGY_PATH ?? '', hosts }).then((nas) => summarizeNas(nas, hosts.length)).catch((e) => ({ dsm: dsmRefusal(e) }))), logto: logtoState, glitchtip: glitchtipState });
     }
   } else {
     console.log('  dsm: SYNOLOGY_URL/USER/PASS not in env — reverse-proxy rules, certificate and poller task not applied this run');

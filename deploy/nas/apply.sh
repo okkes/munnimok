@@ -147,14 +147,15 @@ apply_channel_dir VERSION_IAC_PROD munni-deploy-iac-prod.tgz .applied_version_ia
 apply_channel_dir VERSION_IAC_STAGING munni-deploy-iac-staging.tgz .applied_version_iac_staging \
   munni-iac-staging docker-compose.munni-iac-staging.yml || rc=1
 # one status line to stdout: the DSM Run Result then always tells what
-# a Logto seed that could not run yet (Logto still booting the first time,
-# update.sh left .logto-seed-pending) is retried every cycle
+# a Logto or GlitchTip seed that could not run yet (still booting the first
+# time; update.sh left .logto-seed-pending / .glitchtip-seed-pending) is
+# retried every cycle
 for dir in munni-iac-prod munni-iac-staging; do
   d="$(dirname "$LIVE")/$dir"
-  if [ -f "$d/.logto-seed-pending" ] && [ -f "$d/update.sh" ]; then
+  if { [ -f "$d/.logto-seed-pending" ] || [ -f "$d/.glitchtip-seed-pending" ]; } && [ -f "$d/update.sh" ]; then
     compose="$(ls "$d"/docker-compose.*.yml 2>/dev/null | head -n 1)"
-    log "logto seed pending in $dir — retrying"
-    (cd "$d" && sh ./update.sh --logto-seed "$(basename "$compose")") >>"$LOG" 2>&1 || log "logto seed retry in $dir failed — next cycle"
+    log "seed pending in $dir — retrying"
+    (cd "$d" && sh ./update.sh --seed "$(basename "$compose")") >>"$LOG" 2>&1 || log "seed retry in $dir failed — next cycle"
   fi
 done
 

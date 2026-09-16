@@ -82,14 +82,19 @@ folds the old three steps under "Doing it by hand".
 Nothing manual — the pair's OOBE happened on ${pair.stack}; re-running
 bootstrap creates this stack's apps through the same infra credential.
 `}
-## 4. GlitchTip (after first boot — one account + one token)
+## 4. GlitchTip — nothing manual (2026-09-17)
 
-Open ${pair.urls.glitchtip} → register the first account → profile →
-Auth Tokens → create a token → store it once per pair:
-\`gh secret set IAC_GLITCHTIP_API_TOKEN --env ${pair.githubEnvironment}\`
-(the setup wizard does this for you). Re-run bootstrap — the glitchtip
-module creates the org + per-stack projects and writes every DSN back
-(NAS_API_SENTRY_DSN secret, VITE_GLITCHTIP_DSN/_ADMIN variables) itself.
+This bootstrap minted the admin's password (IAC_GLITCHTIP_ADMIN_PASSWORD,
+account admin@${pair.domain}) and an API token (IAC_GLITCHTIP_API_TOKEN)
+for the pair. The first Deploy of the prod twin carries them in its .env;
+the NAS poller creates the superuser and the token inside the container
+(deploy/update.sh, idempotent) and Deploy runs this bootstrap once more
+as soon as GlitchTip accepts the token. That run creates the org, the
+team and the per-stack projects and writes every DSN back
+(NAS_API_SENTRY_DSN secret, VITE_GLITCHTIP_DSN/_ADMIN variables); the
+login and the token are kept in the pair's vault (§4b). By hand only for
+an own GlitchTip: the wizard's step 7 folds the token paste under "Doing
+it by hand".
 
 ## 4b. Secrets vault (once per pair — the HUMAN copy)
 

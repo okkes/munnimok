@@ -11,6 +11,7 @@ test('generateValue: Logto machine credentials take Logto\'s shapes (21-char id 
   assert.match(admin, /^admin[0-9a-f]{16}$/);
   assert.equal(infra.length, 21, 'Logto stores application ids in a 21-character column');
   assert.match(generateValue('IAC_LOGTO_INFRA_M2M_SECRET'), /^[0-9a-f]{48}$/);
+  assert.match(generateValue('IAC_GLITCHTIP_API_TOKEN'), /^[0-9a-f]{40}$/, 'GlitchTip tokens are 40 hex characters');
   assert.match(generateValue('NAS_GLITCHTIP_SECRET_KEY'), /^[A-Za-z0-9_-]{43}$/);
   assert.notEqual(generateValue('IAC_LOGTO_INFRA_M2M_ID'), infra, 'random every time');
   assert.throws(() => generateValue('NAS_PUSH_VAPID_PUBLIC_KEY'), /pair/);

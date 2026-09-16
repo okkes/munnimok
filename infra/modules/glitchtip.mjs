@@ -78,3 +78,13 @@ export function writeBackDsns(stack, dsns) {
   execFileSync('gh', ['variable', 'set', 'VITE_GLITCHTIP_DSN', '--env', env, '--body', dsns.web]);
   execFileSync('gh', ['variable', 'set', 'VITE_GLITCHTIP_DSN_ADMIN', '--env', env, '--body', dsns.admin]);
 }
+
+/** true once GlitchTip accepts the token — the NAS seed has landed */
+export async function glitchtipAnswers(pairStack, token, fetchImpl = fetch) {
+  try {
+    const res = await fetchImpl(`${pairStack.urls.glitchtip}/api/0/organizations/`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}

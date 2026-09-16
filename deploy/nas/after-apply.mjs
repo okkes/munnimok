@@ -10,13 +10,15 @@
  *   node deploy/nas/after-apply.mjs --stack munni-iac-prod --stamp <sha>
  *
  * Env: SYNOLOGY_URL/USER/PASS/PATH, IAC_DOMAIN, IAC_LOGTO_INFRA_M2M_ID/SECRET.
- * Step outputs (GITHUB_OUTPUT): applied=true|false, logto=answers|silent|no-credential.
+ * Step outputs (GITHUB_OUTPUT): applied=true|false, logto=answers|silent|no-credential,
+ * glitchtip=answers|silent|no-credential (the same for the GlitchTip API token).
  * Never red: what it learns is printed; the next verify shows the rest.
  */
 import { appendFileSync } from 'node:fs';
 import { readLiveFile, readPollerLog } from '../../infra/modules/dsm.mjs';
 import { loadStack, pairProd } from '../../infra/modules/stack.mjs';
 import { logtoAnswers } from '../../infra/modules/logto.mjs';
+import { glitchtipAnswers } from '../../infra/modules/glitchtip.mjs';
 
 const args = process.argv.slice(2);
 const arg = (name, fallback) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : fallback; };
@@ -73,4 +75,19 @@ if (!SYNOLOGY_URL || !SYNOLOGY_USER || !SYNOLOGY_PASS || !SYNOLOGY_PATH || !stam
     console.log('no infra credential in this environment yet (the prod twin\'s bootstrap mints it) — nothing to check');
   }
   out('logto', logto);
+  // …and GlitchTip with the minted API token
+  const gtToken = process.env.IAC_GLITCHTIP_API_TOKEN;
+  let glitchtip = 'no-credential';
+  if (gtToken && process.env.IAC_DOMAIN) {
+    const pair = pairProd(loadStack(stackName));
+    const until = Date.now() + (applied ? logtoWaitMs : 0);
+    glitchtip = 'silent';
+    do {
+      if (await glitchtipAnswers(pair, gtToken)) { glitchtip = 'answers'; break; }
+      if (Date.now() >= until) break;
+      await sleep(pollMs);
+    } while (true);
+    console.log(glitchtip === 'answers' ? 'glitchtip accepts the API token — the seed has landed' : 'glitchtip does not accept the API token yet — the poller creates it once GlitchTip has migrated; a later bootstrap picks it up');
+  }
+  out('glitchtip', glitchtip);
 }

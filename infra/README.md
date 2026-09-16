@@ -196,12 +196,19 @@ with Sign in with Apple → store `LOGTO_APPLE_TEAM_ID`,
 `LOGTO_APPLE_KEY_ID`, `LOGTO_APPLE_PRIVATE_KEY` (the .p8 contents) →
 re-run the workflow.
 
-**C4. GlitchTip (one account + one token).** Wizard step 7 — open
-`https://glitchtip-iac.<domain>` → register the first account → profile
-→ Auth Tokens → create → store as `IAC_GLITCHTIP_API_TOKEN` (both iac
-environments). Re-run the workflow: the glitchtip module creates the
-org + per-stack projects and writes every DSN back itself
-(`NAS_API_SENTRY_DSN` secret, `VITE_GLITCHTIP_DSN`/`_ADMIN` variables).
+**C4. GlitchTip — nothing manual (2026-09-17).** Wizard step 7 is a status
+card. The prod twin's bootstrap mints the admin's password
+(`IAC_GLITCHTIP_ADMIN_PASSWORD`, account `admin@<domain>`) and an API
+token (`IAC_GLITCHTIP_API_TOKEN`) for the pair; the first Deploy of the
+prod twin carries them in its `.env` and the NAS poller creates the
+superuser and the token inside the container (`deploy/update.sh`, a
+Django shell, idempotent). Deploy waits for GlitchTip to accept the
+token and runs the bootstrap once more, which creates the org, the team
+and the per-stack projects and writes every DSN back
+(`NAS_API_SENTRY_DSN` secret, `VITE_GLITCHTIP_DSN`/`_ADMIN` variables),
+then chains staging and Deploy so the frontends pick them up. The login
+and the token are kept in the pair's vault (C4b). By hand only for an
+own GlitchTip: the token paste sits under "Doing it by hand" in step 7.
 
 ---
 

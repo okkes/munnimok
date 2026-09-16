@@ -35,6 +35,8 @@ export function generateValue(name) {
   // column), a secret up to 64 — the shapes the local track's seed uses
   if (/^IAC_LOGTO_[A-Z]+_M2M_ID$/.test(name)) return `${name.includes('ADMIN') ? 'admin' : 'infra'}${randomBytes(8).toString('hex')}`;
   if (/^IAC_LOGTO_[A-Z]+_M2M_SECRET$/.test(name)) return randomBytes(24).toString('hex');
+  // GlitchTip API tokens are 40 hex characters (its own generator's shape)
+  if (name === 'IAC_GLITCHTIP_API_TOKEN') return randomBytes(20).toString('hex');
   return b64url(randomBytes(32));
 }
 

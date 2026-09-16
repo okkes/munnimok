@@ -99,3 +99,14 @@ test('applyGlitchTip surfaces API failures with status and body', async () => {
     globalThis.fetch = realFetch;
   }
 });
+
+import { glitchtipAnswers } from '../modules/glitchtip.mjs';
+test('glitchtipAnswers: a 200 with the token means the seed landed; 401 or no answer means not yet', async () => {
+  const pair = { urls: { glitchtip: 'http://gt.test' } };
+  const seen = [];
+  const ok = async (url, init) => { seen.push({ url, auth: init.headers.authorization }); return { ok: true }; };
+  assert.equal(await glitchtipAnswers(pair, 'tok', ok), true);
+  assert.deepEqual(seen, [{ url: 'http://gt.test/api/0/organizations/', auth: 'Bearer tok' }]);
+  assert.equal(await glitchtipAnswers(pair, 'tok', async () => ({ ok: false, status: 401 })), false);
+  assert.equal(await glitchtipAnswers(pair, 'tok', async () => { throw new Error('ECONNREFUSED'); }), false);
+});

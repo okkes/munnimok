@@ -13,7 +13,7 @@ cd "$(dirname "$0")"
 # --logto-seed: only the Logto seed below (the poller retries a seed that
 # could not run yet — Logto still booting for the first time)
 MODE=apply
-if [ "${1:-}" = "--logto-seed" ]; then MODE=seed; shift; fi
+if [ "${1:-}" = "--logto-seed" ] || [ "${1:-}" = "--seed" ]; then MODE=seed; shift; fi
 COMPOSE_FILE="${1:-docker-compose.yml}"
 case "$COMPOSE_FILE" in
   *staging*) ENV_FILE=".env.staging"; [ -f "$ENV_FILE" ] || ENV_FILE=".env" ;;
@@ -77,8 +77,59 @@ logto_seed() {
     touch .logto-seed-pending
   fi
 }
+# ── GlitchTip admin + API token as code (2026-09-17): the bundle's env carries
+#    the admin password and the API token the IaC bootstrap minted; create
+#    the superuser and the token inside the container once (idempotent — an
+#    existing user or token is left alone) so the bootstrap can write the
+#    DSNs back without anyone registering by hand. Waits for GlitchTip's
+#    migrations; a seed that cannot run yet leaves .glitchtip-seed-pending,
+#    which the poller retries every cycle.
+glitchtip_seed() {
+  GT_EMAIL="$(env_val GLITCHTIP_SEED_EMAIL)"; GT_PASSWORD="$(env_val GLITCHTIP_SEED_PASSWORD)"; GT_TOKEN="$(env_val GLITCHTIP_SEED_TOKEN)"
+  if [ -z "$GT_EMAIL" ] || [ -z "$GT_PASSWORD" ] || [ -z "$GT_TOKEN" ]; then return 0; fi
+  grep -q '^  glitchtip:' "$COMPOSE_FILE" || return 0
+  ready=0
+  for _ in $(seq 1 60); do
+    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T glitchtip ./manage.py migrate --check >/dev/null 2>&1; then ready=1; break; fi
+    sleep 10
+  done
+  if [ "$ready" -ne 1 ]; then
+    echo "glitchtip seed: GlitchTip has not applied its migrations yet — retried next cycle"
+    touch .glitchtip-seed-pending
+    return 0
+  fi
+  GT_PY='
+import os
+from django.contrib.auth import get_user_model
+from apps.api_tokens.models import APIToken
+email = os.environ["GT_ADMIN_EMAIL"]
+password = os.environ["GT_ADMIN_PASSWORD"]
+token = os.environ["GT_TOKEN"]
+U = get_user_model()
+u = U.objects.filter(email=email).first()
+if u is None:
+    u = U.objects.create_superuser(email, password)
+    print("USER:created")
+else:
+    print("USER:existing")
+if APIToken.objects.filter(token=token).exists():
+    print("TOKEN:existing")
+else:
+    flags = getattr(APIToken._meta.get_field("scopes"), "flags", []) or []
+    APIToken.objects.create(user=u, token=token, scopes=(1 << len(flags)) - 1)
+    print("TOKEN:created")
+'
+  if GT_ADMIN_EMAIL="$GT_EMAIL" GT_ADMIN_PASSWORD="$GT_PASSWORD" GT_TOKEN="$GT_TOKEN" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T -e GT_ADMIN_EMAIL -e GT_ADMIN_PASSWORD -e GT_TOKEN glitchtip ./manage.py shell -c "$GT_PY"; then
+    echo "glitchtip seed: admin + API token in place — the next IaC bootstrap writes the DSNs back"
+    rm -f .glitchtip-seed-pending
+  else
+    echo "glitchtip seed FAILED — retried next cycle"
+    touch .glitchtip-seed-pending
+  fi
+}
 if [ "$MODE" = "seed" ]; then
   logto_seed
+  glitchtip_seed
   exit 0
 fi
 
@@ -192,7 +243,7 @@ fi
 # don't die before the status dump below — it captures WHY up failed
 UP_RC=0
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d || UP_RC=$?
-[ "$UP_RC" -eq 0 ] && logto_seed
+[ "$UP_RC" -eq 0 ] && { logto_seed; glitchtip_seed; }
 docker image prune -f
 
 # ── post-deploy status dump (survives container recreation; readable via

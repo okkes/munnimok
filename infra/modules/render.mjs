@@ -286,6 +286,11 @@ LOGTO_SEED_INFRA_ID=\${IAC_LOGTO_INFRA_M2M_ID}
 LOGTO_SEED_INFRA_SECRET=\${IAC_LOGTO_INFRA_M2M_SECRET}
 LOGTO_SEED_ADMIN_ID=\${IAC_LOGTO_ADMIN_M2M_ID}
 LOGTO_SEED_ADMIN_SECRET=\${IAC_LOGTO_ADMIN_M2M_SECRET}
+# GlitchTip seed — the poller creates this admin and this API token inside the
+# container once (idempotent); the bootstrap then writes the DSNs back
+GLITCHTIP_SEED_EMAIL=admin@${s.domain}
+GLITCHTIP_SEED_PASSWORD=\${IAC_GLITCHTIP_ADMIN_PASSWORD}
+GLITCHTIP_SEED_TOKEN=\${IAC_GLITCHTIP_API_TOKEN}
 ` : ''}
 
 # frontend runtime-config (written back by the logto + glitchtip modules)

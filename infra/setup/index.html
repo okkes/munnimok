@@ -534,19 +534,27 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
 </section>
 
 <section id="s-glitchtip" data-platform="nas" data-step="Crash reports">
-  <h2><span class="n">7</span> Crash reports (GlitchTip) <span class="pill" id="gt-pill"></span></h2>
-  <p class="sub">Self-hosted error tracking for app, admin and API. One account + one token — the org, the projects and every DSN are code after that.</p>
-  <ol class="steps">
-    <li>Open <a href="#" class="dom-link" data-host="glitchtip-iac">glitchtip-iac.&lt;domain&gt;</a> → register the first account.</li>
-    <li>Profile → <b>Auth Tokens</b> → create a token → paste:</li>
-  </ol>
-  <label class="f" for="in-gt-token">IAC_GLITCHTIP_API_TOKEN <span class="dot" data-dot="IAC_GLITCHTIP_API_TOKEN"></span></label>
+  <h2><span class="n">7</span> Crash reports (GlitchTip) — automated <span class="pill" id="gt-pill"></span></h2>
+  <p class="sub">Self-hosted error tracking for app, admin and API. Nothing here is manual any more (2026-09-17): Bootstrap mints the admin’s password and an API token, the first Deploy creates both inside GlitchTip on the NAS (the poller), and the bootstrap that Deploy runs afterwards creates the organisation, the per-stack projects and writes every DSN back. Deploy and Bootstrap take turns by themselves until it is done.</p>
+  <div class="card" id="gt-auto">
+    <div class="health-h"><span class="ico" data-ico="pulse"></span><div><b>Crash-report setup</b><div class="why" style="margin:0" id="gt-auto-sub">…</div></div></div>
+    <ul class="health-list" id="gt-auto-list"></ul>
+    <div class="why" id="gt-auto-fix" hidden></div>
+  </div>
+  <details class="why">
+    <summary>Doing it by hand instead (an own GlitchTip, or a seed that never landed)</summary>
+    <ol class="steps">
+      <li>Open <a href="#" class="dom-link" data-host="glitchtip-iac">glitchtip-iac.&lt;domain&gt;</a> → register the first account.</li>
+      <li>Profile → <b>Auth Tokens</b> → create a token → paste — it replaces the minted one in both iac environments:</li>
+    </ol>
+    <label class="f" for="in-gt-token">IAC_GLITCHTIP_API_TOKEN <span class="dot" data-dot="IAC_GLITCHTIP_API_TOKEN"></span></label>
   <input type="password" id="in-gt-token" autocomplete="off"/>
   <button id="btn-store-gt">Store token</button>
   <button class="ghost" data-dispatch-iac="munni-iac-prod">Re-run prod bootstrap</button>
   <button class="ghost" data-dispatch-iac="munni-iac-staging">Re-run staging bootstrap</button>
   <div class="msg" id="msg-gt"></div>
-  <p class="why">The re-run creates org + per-stack projects and writes the DSNs back (<span class="dot" data-dot="var:VITE_GLITCHTIP_DSN"></span> <code>VITE_GLITCHTIP_DSN</code> appearing = done). Deploy again afterwards.</p>
+  </details>
+  <p class="why">The bootstrap creates org + per-stack projects and writes the DSNs back (<span class="dot" data-dot="var:VITE_GLITCHTIP_DSN"></span> <code>VITE_GLITCHTIP_DSN</code> appearing = done); the Deploy it chains hands them to the frontends. The admin login (admin@&lt;domain&gt;) and the token live in the pair’s vault once the Vault tile is stored.</p>
 </section>
 
 <section id="s-admin" data-platform="nas" data-step="Admin access">
@@ -1473,6 +1481,7 @@ async function refresh() {
   try { S.nasState = nasStateVar?.value ? JSON.parse(nasStateVar.value) : null; } catch { S.nasState = null; }
   renderNasReadiness();
   renderLogtoAuto();
+  renderGlitchtipAuto();
   renderStatus();
   scheduleLivePoll();
 }
@@ -1522,8 +1531,10 @@ function renderStatus() {
   el('logto-pill').className = 'pill ' + (logtoDone ? 'ok' : '');
   renderLogtoAuto();
   const gtDone = ENVS.every((env) => S.envs[env]?.vars?.has('VITE_GLITCHTIP_DSN'));
-  el('gt-pill').textContent = gtDone ? 'DSNs written back ✓' : 'pending token';
+  const gtMinted = Boolean(S.envs['iac-production']?.secrets?.has('IAC_GLITCHTIP_API_TOKEN'));
+  el('gt-pill').textContent = gtDone ? 'DSNs written back ✓' : (gtMinted ? 'in progress — no click needed' : 'pending Bootstrap');
   el('gt-pill').className = 'pill ' + (gtDone ? 'ok' : '');
+  renderGlitchtipAuto();
   document.querySelectorAll('.crow').forEach((row) => {
     const g = GROUPS.find((x) => x.id === row.dataset.group);
     const chip = row.querySelector('[data-chip]');
@@ -1772,6 +1783,31 @@ function renderLogtoAuto() {
   if (fix) { fix.hidden = !todo.length; fix.innerHTML = todo.map((r) => `<div><b>${escAttr(r.name)}</b> — ${escAttr(r.title)}</div>`).join(''); }
   const open = rows.filter((r) => r.cls !== 'ok').length;
   sub.textContent = open ? `${open} of ${rows.length} still open — Deploy and Bootstrap take turns by themselves; anything for you is written under the rows` : 'sign-in is code — the vault holds every login';
+}
+/* ── crash-report setup (step 7, 2026-09-17): the same shape as sign-in ── */
+function renderGlitchtipAuto() {
+  const list = document.getElementById('gt-auto-list');
+  const sub = document.getElementById('gt-auto-sub');
+  const fix = document.getElementById('gt-auto-fix');
+  if (!list || !sub) return;
+  const prodS = S.envs['iac-production']?.secrets ?? new Set();
+  const gt = S.nasState?.glitchtip ?? null;
+  const rows = [];
+  const row = (name, cls, label, title, jump) => rows.push({ name, cls, label, title, jump });
+  const minted = prodS.has('IAC_GLITCHTIP_API_TOKEN');
+  row('Admin + API token minted', minted ? 'ok' : '', minted ? 'in both environments ✓' : 'not yet', minted ? '' : 'Bootstrap (the prod twin) mints them — press Bootstrap now on the readiness card or Bootstrap under step 4', { href: '#s-bootstrap' });
+  row('Created inside GlitchTip on the NAS', gt ? (gt.seeded ? 'ok' : (gt.credential ? 'warn' : '')) : '', gt?.seeded ? 'GlitchTip accepts the token ✓' : (gt?.credential ? 'not yet — the next Deploy creates them (poller)' : 'unknown'), gt && !gt.seeded && gt.credential ? 'the poller creates the admin and the token after the first Deploy of the prod twin; Deploy then runs Bootstrap again by itself' : '', { href: '#s-deploy' });
+  const wired = ENVS.every((env) => S.envs[env]?.vars?.has('VITE_GLITCHTIP_DSN'));
+  row('Org, projects and DSNs are code', wired ? 'ok' : '', wired ? 'DSNs written back ✓' : 'not yet', wired ? '' : 'the bootstrap that follows the seed creates the org + per-stack projects and writes the DSNs back; the Deploy it chains hands them to the frontends', { href: '#s-bootstrap' });
+  const v = S.nasState?.logto?.vault;
+  const vaultAccount = prodS.has('VAULT_MASTER_PASSWORD');
+  row('Login + token in the vault', v === 'stored' ? 'ok' : (v === 'failed' ? 'bad' : (vaultAccount ? '' : 'warn')), v === 'stored' ? 'kept in the pair\'s vault ✓' : (v === 'failed' ? 'the last run could not store them' : (vaultAccount ? 'next run' : 'no vault account yet')), v === 'stored' ? '' : (vaultAccount ? 'the next Bootstrap of the prod twin fills the folder named after it' : 'store the Vault tile (VAULT_ADMIN_EMAIL + VAULT_MASTER_PASSWORD) under step 2 — until then admin@<domain>\'s password is write-only in GitHub'), { href: '[data-group="vault"]' });
+  list.innerHTML = rows.map((r) => `<li ${r.jump ? jumpAttr(r.jump) : ''} title="${escAttr(r.title ?? '')}"><span class="hn">${r.name}</span><span class="hs ${r.cls}"><i class="dot ${r.cls === 'ok' ? 'ok' : (r.cls === 'bad' ? 'miss' : (r.cls === 'warn' ? 'warn' : 'opt'))}"></i>${r.label}</span></li>`).join('');
+  applyIcons(document.getElementById('gt-auto'));
+  const todo = rows.filter((r) => (r.cls === 'bad' || r.cls === 'warn') && r.title);
+  if (fix) { fix.hidden = !todo.length; fix.innerHTML = todo.map((r) => `<div><b>${escAttr(r.name)}</b> — ${escAttr(r.title)}</div>`).join(''); }
+  const open = rows.filter((r) => r.cls !== 'ok').length;
+  sub.textContent = open ? `${open} of ${rows.length} still open — Deploy and Bootstrap take turns by themselves; anything for you is written under the rows` : 'crash reports are code — the vault holds the login';
 }
 const ago = (iso) => { const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000); return s < 90 ? 'just now' : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
 function renderNasReadiness() {
