@@ -188,6 +188,7 @@ export async function dsmSession({ url, user, pass }, fetchImpl = fetch, { sessi
   return {
     base,
     sid,
+    token,
     session,
     call,
     read: (api, version, method, params = {}, opts = {}) => call(api, version, method, params, { retry, ...opts }),
@@ -817,4 +818,34 @@ export async function probeSessionFacts({ url, user, pass }, fetchImpl = fetch, 
     await dsmLogout(base, raw.sid, fetchImpl);
   }
   return out;
+}
+
+/**
+ * The poller's own log — the last lines of <live>/deploy.log, read through
+ * FileStation (SYNO.FileStation.Download, mode open: the raw file, not a
+ * JSON envelope) — so a bootstrap or verify run shows what the NAS did
+ * with the bundles: unpacked, composed up, or failed and why. No SSH.
+ * Returns {path, lines, bytes}; a missing log is an error (code 408).
+ */
+export async function readPollerLog(creds, { publishedPath, lines = 15, fetchImpl = fetch, sleepImpl = sleep, maxBytes = 65536 } = {}) {
+  const parts = publishedPathParts(publishedPath);
+  const s = await dsmSession(creds, fetchImpl, { session: 'FileStation', sleepImpl });
+  try {
+    const path = `${parts.liveSharePath}/deploy.log`;
+    const query = new URLSearchParams({ api: 'SYNO.FileStation.Download', version: '2', method: 'download', path: JSON.stringify([path]), mode: 'open', _sid: s.sid, ...(s.token ? { SynoToken: s.token } : {}) });
+    let res;
+    try {
+      res = await fetchImpl(`${s.base}/webapi/entry.cgi?${query}`, { method: 'GET', headers: s.token ? { 'X-SYNO-TOKEN': s.token } : {}, signal: AbortSignal.timeout(30000) });
+    } catch (e) {
+      throw new DsmTransportError(`DSM SYNO.FileStation.Download.download: no answer (${e.cause?.code ?? e.name ?? e.message})`, { cause: e });
+    }
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = JSON.parse(text); } catch { /* the raw file — what we want */ }
+    if (parsed && typeof parsed === 'object' && parsed.success === false) throw new Error(`DSM SYNO.FileStation.Download.download failed: ${JSON.stringify(parsed.error)}`);
+    const tail = text.slice(-maxBytes).split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean).slice(-lines);
+    return { path, lines: tail, bytes: text.length };
+  } finally {
+    await s.logout();
+  }
 }

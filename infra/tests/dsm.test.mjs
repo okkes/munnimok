@@ -6,6 +6,7 @@ import {
   applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, resolveLiveDir, publishedPathParts,
   dsmAdvice, dsmLogin, dsmSession, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid, summarizeNas,
   probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes, LOGIN_SHAPES, CALL_SHAPES, SESSION_SHAPES,
+  readPollerLog,
 } from '../modules/dsm.mjs';
 
 const CREDS = { url: 'https://nas.example:5001/', user: 'deploy', pass: 'pw' };
@@ -689,4 +690,30 @@ test('session facts: what DSM says about a refused session — flags, versions a
   assert.ok(!JSON.stringify(facts).includes('deploy') && !JSON.stringify(facts).includes('secret name') && !JSON.stringify(facts).includes('x@y.z'), 'no free string leaves the NAS');
   assert.equal(seen.filter((p) => p.method === 'login').length, 1);
   assert.equal(seen.filter((p) => p.method === 'logout').length, 1);
+});
+
+test('poller log: the last lines of <live>/deploy.log come through FileStation as the raw file (sid + token in the query, token in the header); a missing log is DSM\'s error, not an empty tail', async () => {
+  const seen = [];
+  const nas = (logText) => async (url, init) => {
+    const u = new URL(url);
+    const p = { ...Object.fromEntries(u.searchParams), ...Object.fromEntries(new URLSearchParams(init?.body ?? '')) };
+    seen.push({ p, headers: init?.headers ?? {} });
+    if (p.api === 'SYNO.API.Auth' && p.method === 'login') return { json: async () => ({ success: true, data: { sid: 'FS', synotoken: 'TOK' } }) };
+    if (p.api === 'SYNO.API.Auth') return { json: async () => ({ success: true }) };
+    if (p.api === 'SYNO.FileStation.Download') return { text: async () => (logText ?? JSON.stringify({ success: false, error: { code: 408 } })) };
+    return { json: async () => fail(102) };
+  };
+  const text = Array.from({ length: 20 }, (_, i) => `2026-09-16 15:1${i % 10}:00 line ${i + 1}`).join('\n') + '\n';
+  const log = await readPollerLog(CREDS, { publishedPath: '/docker/munni-iac/published', fetchImpl: nas(text), lines: 3 });
+  assert.equal(log.path, '/docker/munni-iac/deploy.log', 'the log sits in the live dir, the parent of the published folder');
+  assert.deepEqual(log.lines, ['2026-09-16 15:17:00 line 18', '2026-09-16 15:18:00 line 19', '2026-09-16 15:19:00 line 20']);
+  const dl = seen.find((x) => x.p.api === 'SYNO.FileStation.Download');
+  assert.equal(dl.p.mode, 'open');
+  assert.equal(dl.p.path, '["/docker/munni-iac/deploy.log"]');
+  assert.equal(dl.p._sid, 'FS');
+  assert.equal(dl.p.SynoToken, 'TOK');
+  assert.equal(dl.headers['X-SYNO-TOKEN'], 'TOK');
+  assert.equal(seen.find((x) => x.p.method === 'login').p.session, 'FileStation', 'a FileStation session reads files');
+  assert.equal(seen.filter((x) => x.p.method === 'logout').length, 1);
+  await assert.rejects(readPollerLog(CREDS, { publishedPath: '/docker/munni-iac/published', fetchImpl: nas(null) }), /"code":408/);
 });

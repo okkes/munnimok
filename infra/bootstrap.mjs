@@ -26,7 +26,7 @@ import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
 import { appendFileSync, readFileSync } from 'node:fs';
-import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas, probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes } from './modules/dsm.mjs';
+import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas, probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes, readPollerLog } from './modules/dsm.mjs';
 import { localAwareFetch } from './modules/insecure-fetch.mjs';
 
 const args = process.argv.slice(2);
@@ -56,6 +56,17 @@ function envSecret(env, name) {
     return JSON.parse(out).name === name;
   } catch {
     return false;
+  }
+}
+
+/** what the NAS did with the bundles: the poller's own log, last lines (no SSH) */
+async function printPollerLog(creds, publishedPath) {
+  try {
+    const log = await readPollerLog(creds, { publishedPath });
+    console.log(`  i dsm: poller log ${log.path} (${log.bytes} bytes, last ${log.lines.length} lines):`);
+    for (const l of log.lines) console.log(`      ${l}`);
+  } catch (e) {
+    console.log(`  ! dsm: poller log not readable (${e.message})${dsmAdvice(e)} — no cycle has run in this live dir yet, or the account may not read it`);
   }
 }
 
@@ -291,6 +302,7 @@ async function ciVerify() {
       console.log(nas.task ? `  ${nas.task.enabled ? '✓' : '!'} dsm: poller task exists${nas.task.enabled ? '' : ' but is disabled'}${nas.liveDir ? ` (live dir ${nas.liveDir})` : ''}` : `  ✗ dsm: no poller task — the prod twin's bootstrap (apply) creates it${nas.liveDir ? ` (live dir ${nas.liveDir})` : ''}`);
       if (nas.liveDirError) console.log(`  ! dsm: ${nas.liveDirError}`);
       if (nas.ruleShape) console.log(`  i dsm: reverse-proxy rules as DSM lists them — ${JSON.stringify(nas.ruleShape)}`);
+      if (SYNOLOGY_PATH) await printPollerLog({ url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS }, SYNOLOGY_PATH);
     } catch (e) {
       console.log(`  ✗ dsm: could not read the NAS (${e.message})${dsmAdvice(e)}`);
       state = { dsm: dsmRefusal(e) };
@@ -420,6 +432,7 @@ async function ciApply() {
         const applyScript = readFileSync(new URL('../deploy/nas/apply.sh', import.meta.url), 'utf8');
         await nasStep('live dir', () => ensureLiveDir(creds, { publishedPath: SYNOLOGY_PATH, applyScript }));
         await nasStep('poller task', () => ensurePollerTask(creds, { publishedPath: SYNOLOGY_PATH }));
+        await printPollerLog(creds, SYNOLOGY_PATH);
       }
     } else {
       console.log('  dsm: certificate, live dir and poller task skipped until the deploy account may use DSM');
