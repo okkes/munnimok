@@ -31,7 +31,9 @@
 # Secrets required (besides the NAS_* env values):
 #   SYNOLOGY_URL       e.g. https://<your-nas-domain>:5001
 #   SYNOLOGY_USER      a dedicated DSM account (FileStation write perm,
-#                      2FA OFF — the login API can't do interactive OTP)
+#                      2FA OFF — the login API can't do interactive OTP;
+#                      Adaptive MFA matters only for the IaC bootstrap's
+#                      Control Panel calls, see infra/README.md B1-1)
 #   SYNOLOGY_PASS      that account's password
 #   SYNOLOGY_PATH      target folder, e.g. /docker/munni/published
 name: Deploy to NAS

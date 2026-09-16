@@ -29,7 +29,7 @@ secrets, if doing it by hand):
 |---|---|
 | `IAC_DOMAIN` | your DDNS domain (e.g. `xxxx.synology.me`) |
 | `IAC_GH_PAT` | fine-grained PAT, THIS repo, permissions: Administration RW + Secrets RW + Variables RW + Actions RW (bootstrap writes environment secrets — `GITHUB_TOKEN` cannot; the wizard also dispatches workflows with it) |
-| `SYNOLOGY_URL` / `_USER` / `_PASS` / `_PATH` | DSM deploy account (FileStation + reverse-proxy writes; admin rights, 2FA off) — shared with deploy-nas.yml |
+| `SYNOLOGY_URL` / `_USER` / `_PASS` / `_PATH` | DSM deploy account (FileStation + reverse-proxy writes; admin rights, 2FA off AND Adaptive MFA off for administrators — B1-1) — shared with deploy-nas.yml |
 | `NAS_GHCR_PAT` | optional — the munni images are public; a classic PAT with read:packages only for private images |
 | `NAS_GOCARDLESS_SECRET_ID` / `_KEY` | GoCardless portal |
 | optional: `NAS_ENABLEBANKING_*`, `NAS_FCM_SERVICE_ACCOUNT_JSON`, `NAS_LOGODEV_*`, `LOGTO_GOOGLE_*`, `LOGTO_APPLE_*` | as per feature |
@@ -60,7 +60,11 @@ has DSM *administrator* rights and may use the DSM and File Station
 applications (User & Group → the user → Applications; a group's Deny
 beats Allow) — every NAS step below is admin-only on DSM, and no
 account can grant itself those rights (that is why this one step is
-yours). A `dsm: … failed` line in the bootstrap output with code 402
+yours). And switch **Adaptive MFA** off for administrators (Control
+Panel → Security → Account): DSM applies Adaptive MFA by default to every administrator without 2FA, treats a sign-in from GitHub's runners as risky (external network, unknown device) and, with no e-mail on the account to send the code to, grants a plain user's session — every Control Panel API then answers 105 while File Station uploads still work (found live 2026-09-16); DSM's own init data
+says `is_admin=false` for such a session and `--verify` prints it per
+login shape. The alternative — 2FA on for the account with its OTP
+secret in the pipeline — is not supported yet. A `dsm: … failed` line in the bootstrap output with code 402
 (the account may not use the application the login names) or 105
 (not an administrator) is exactly that — but check the `login shapes`
 line `--verify` prints on a 402 first: DSM 7.3.2 refuses a session name

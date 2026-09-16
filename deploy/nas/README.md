@@ -75,7 +75,7 @@ quotes — the template quotes it), `NAS_GOCARDLESS_SECRET_ID`,
 
 2. **Dedicated deploy account** (Control Panel → User): e.g. `github-deploy`,
    member of a group with **FileStation** access and write permission to
-   the target shared folder only. **Turn 2-Step Verification OFF** for this
+   the target shared folder only. **Turn 2-Step Verification OFF** (and, for the IaC bootstrap's Control Panel work, **Adaptive MFA off** for administrators under Control Panel → Security → Account — DSM applies it by default to administrators without 2FA and treats a sign-in from GitHub as risky; infra/README.md B1-1) for this
    account — the login API cannot answer an interactive OTP. Give it no
    other privileges.
 
