@@ -717,3 +717,19 @@ test('poller log: the last lines of <live>/deploy.log come through FileStation a
   assert.equal(seen.filter((x) => x.p.method === 'logout').length, 1);
   await assert.rejects(readPollerLog(CREDS, { publishedPath: '/docker/munni-iac/published', fetchImpl: nas(null) }), /"code":408/);
 });
+
+import { readLiveFile } from '../modules/dsm.mjs';
+test('readLiveFile: the stamp marker of the live dir comes through FileStation raw — what after-apply waits for', async () => {
+  const nas = async (url, init) => {
+    const u = new URL(url);
+    const p = { ...Object.fromEntries(u.searchParams), ...Object.fromEntries(new URLSearchParams(init?.body ?? '')) };
+    if (p.api === 'SYNO.API.Auth' && p.method === 'login') return { json: async () => ({ success: true, data: { sid: 'FS', synotoken: 'TOK' } }) };
+    if (p.api === 'SYNO.API.Auth') return { json: async () => ({ success: true }) };
+    if (p.api === 'SYNO.FileStation.Download') return { text: async () => (p.path === '["/docker/munni-iac/.applied_version_iac_prod"]' ? 'abc123\n' : JSON.stringify({ success: false, error: { code: 408 } })) };
+    return { json: async () => fail(102) };
+  };
+  const r = await readLiveFile(CREDS, { publishedPath: '/docker/munni-iac/published', file: '.applied_version_iac_prod', fetchImpl: nas });
+  assert.equal(r.path, '/docker/munni-iac/.applied_version_iac_prod');
+  assert.equal(r.text.trim(), 'abc123');
+  await assert.rejects(readLiveFile(CREDS, { publishedPath: '/docker/munni-iac/published', file: 'missing', fetchImpl: nas }), /"code":408/);
+});

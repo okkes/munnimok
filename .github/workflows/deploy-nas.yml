@@ -60,6 +60,7 @@ on:
 
 permissions:
   contents: read
+  actions: write # deploy-iac re-runs the IaC bootstrap once the NAS has seeded Logto (GITHUB_TOKEN fallback)
 
 jobs:
   deploy:
@@ -255,6 +256,7 @@ jobs:
           VITE_LOGTO_APP_ID: ${{ vars.VITE_LOGTO_APP_ID }}
           VITE_LOGTO_APP_ID_ADMIN: ${{ vars.VITE_LOGTO_APP_ID_ADMIN }}
       - name: Upload to Synology FileStation (bundle first, stamp last)
+        id: upload
         run: |
           set -euo pipefail
           # the poller rides along (see the live job above)
@@ -272,3 +274,29 @@ jobs:
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
           SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
           SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
+
+      # ── no click left (2026-09-17): the prod twin's first Deploy carries the
+      # Logto seed; once the poller applied it and Logto answers with the minted
+      # credential, the bootstrap runs once more and turns sign-in into code
+      # (apps, console admin, app admin, vault) — it chains staging + Deploy
+      # again so the frontends pick the app ids up. Ends by itself: the
+      # written-back VITE_LOGTO_APP_ID means sign-in is wired.
+      - name: Wait for the poller, read its log, and see whether Logto is seeded
+        id: applied
+        if: ${{ matrix.stack == 'munni-iac-prod' }}
+        run: node deploy/nas/after-apply.mjs --stack "${{ matrix.stack }}" --stamp "${{ github.sha }}"
+        env:
+          SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
+          SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
+          SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
+          SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
+          IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
+          IAC_LOGTO_INFRA_M2M_ID: ${{ secrets.IAC_LOGTO_INFRA_M2M_ID }}
+          IAC_LOGTO_INFRA_M2M_SECRET: ${{ secrets.IAC_LOGTO_INFRA_M2M_SECRET }}
+      - name: Sign-in not wired yet — run the IaC bootstrap once more (it chains staging + Deploy)
+        if: ${{ matrix.stack == 'munni-iac-prod' && steps.applied.outputs.logto == 'answers' && vars.VITE_LOGTO_APP_ID == '' }}
+        run: |
+          gh workflow run iac.yml --ref "$GITHUB_REF_NAME" -f stack=munni-iac-prod -f chain=staging,deploy-both
+          echo "chained: Bootstrap munni-iac-prod (Logto is seeded, sign-in not wired yet) → staging → Deploy both" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ secrets.IAC_GH_PAT || secrets.GITHUB_TOKEN }}

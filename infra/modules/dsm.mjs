@@ -828,10 +828,17 @@ export async function probeSessionFacts({ url, user, pass }, fetchImpl = fetch, 
  * Returns {path, lines, bytes}; a missing log is an error (code 408).
  */
 export async function readPollerLog(creds, { publishedPath, lines = 15, fetchImpl = fetch, sleepImpl = sleep, maxBytes = 65536 } = {}) {
+  const { path, text } = await readLiveFile(creds, { publishedPath, file: 'deploy.log', fetchImpl, sleepImpl });
+  const tail = text.slice(-maxBytes).split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean).slice(-lines);
+  return { path, lines: tail, bytes: text.length };
+}
+
+/** one file of the live dir (the parent of SYNOLOGY_PATH), raw, through FileStation — {path, text}; a missing file is DSM's error (408) */
+export async function readLiveFile(creds, { publishedPath, file, fetchImpl = fetch, sleepImpl = sleep } = {}) {
   const parts = publishedPathParts(publishedPath);
   const s = await dsmSession(creds, fetchImpl, { session: 'FileStation', sleepImpl });
   try {
-    const path = `${parts.liveSharePath}/deploy.log`;
+    const path = `${parts.liveSharePath}/${file}`;
     const query = new URLSearchParams({ api: 'SYNO.FileStation.Download', version: '2', method: 'download', path: JSON.stringify([path]), mode: 'open', _sid: s.sid, ...(s.token ? { SynoToken: s.token } : {}) });
     let res;
     try {
@@ -843,8 +850,7 @@ export async function readPollerLog(creds, { publishedPath, lines = 15, fetchImp
     let parsed = null;
     try { parsed = JSON.parse(text); } catch { /* the raw file — what we want */ }
     if (parsed && typeof parsed === 'object' && parsed.success === false) throw new Error(`DSM SYNO.FileStation.Download.download failed: ${JSON.stringify(parsed.error)}`);
-    const tail = text.slice(-maxBytes).split('\n').map((l) => l.replace(/\r$/, '')).filter(Boolean).slice(-lines);
-    return { path, lines: tail, bytes: text.length };
+    return { path, text };
   } finally {
     await s.logout();
   }
