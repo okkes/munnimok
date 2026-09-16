@@ -104,9 +104,8 @@ you dispatch (`verify_only`) is red while gaps remain; pushes only warn.
 A poller made by hand (the README one-liner, any name) for the SAME live
 dir is adopted by bootstrap — renamed, pointed at the resolved dirs —
 never doubled; one for another dir is another pipeline's and stays as it
-is. The legacy live pipeline ensures its own task the same way on every
-deploy (`deploy/nas/ensure-poller.mjs`, name `munni deploy poller (live)`),
-so no poller is ever created by hand.
+is. (The legacy live pipeline was archived on 2026-09-17 — tag
+`archive/legacy-cicd`; the twins are the only NAS deployment now.)
 The wizard's **NAS readiness** card (Deploy step, with the helper running)
 probes every reverse-proxy host from outside and names the step each one
 still misses — DNS, the wildcard certificate, the rule (DSM answers Web

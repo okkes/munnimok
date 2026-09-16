@@ -1,11 +1,10 @@
 #!/bin/sh
-# munni update script for the Synology NAS (run as root):
-#   bash /volume1/docker/munni/update.sh                            # production (.env)
-#   bash /volume1/docker/munni/update.sh docker-compose.staging.yml # staging
+# munni update script for the Synology NAS (run as root) — one IaC twin:
+#   sh /volume1/docker/munni-iac-prod/update.sh docker-compose.munni-iac-prod.yml
+#   sh /volume1/docker/munni-iac-staging/update.sh docker-compose.munni-iac-staging.yml
 # Invoked by deploy/nas/apply.sh when GitHub publishes a new bundle, or
-# by hand. Compose reads the env file via --env-file; staging uses
-# .env.staging when present and falls back to the production .env
-# (the staging compose only needs a subset of its keys).
+# by hand. Compose reads the env file via --env-file; a *staging* compose
+# uses .env.staging when present and falls back to .env.
 # Re-authenticates to GHCR from the env file on every run, so it keeps
 # working even if /root/.docker/config.json is ever wiped (DSM upgrade).
 set -eu
@@ -146,20 +145,9 @@ mkdir -p import-watch
 #    data directory. Dump everything with a throwaway 17 server reading
 #    the old volume, let 18 initialise the new volume, restore after up.
 #    The old volume stays untouched as the rollback.
-case "$COMPOSE_FILE" in
-  *staging*)
-    # ONLY the live staging stack shares the prod folder under the
-    # munni-staging compose project. Any other folder (the iac twins,
-    # whose compose files also match *staging*) is its own project with
-    # default volume names — without this guard an iac-staging deploy
-    # would inspect/remove the LIVE staging volumes.
-    if [ "$(basename "$(pwd)")" = "munni" ]; then
-      PG_PROJECT="munni-staging"; PG_OLD="pgdata_staging"; PG_NEW="pgdata18_staging"
-    else
-      PG_PROJECT="$(basename "$(pwd)")"; PG_OLD="pgdata"; PG_NEW="pgdata18"
-    fi ;;
-  *) PG_PROJECT="$(basename "$(pwd)")"; PG_OLD="pgdata"; PG_NEW="pgdata18" ;;
-esac
+# every twin is its own compose project in its own folder (the legacy live
+# stacks, which shared one folder, were archived on 2026-09-17)
+PG_PROJECT="$(basename "$(pwd)")"; PG_OLD="pgdata"; PG_NEW="pgdata18"
 # r2: the r1 attempt restored into the image's TEMPORARY bootstrap
 # server (first-boot init) and died at its shutdown — the versioned
 # name makes r1 markers invalid so those volumes get redone

@@ -26,13 +26,6 @@ function passedBy(workflow, jobId) {
 
 const WORKFLOW = read('.github/workflows/deploy-nas.yml');
 
-test('deploy-nas: the live channel passes every placeholder of deploy/env/.env.nas by name, as a secret', () => {
-  const passed = passedBy(WORKFLOW, 'deploy');
-  for (const name of placeholders(read('deploy/env/.env.nas'))) {
-    assert.equal(passed.get(name), 'secrets', `${name}: add "${name}: \${{ secrets.${name} }}" to the deploy job's env in deploy-nas.yml`);
-  }
-});
-
 test('deploy-nas: the iac channel passes every placeholder of both rendered twins — NAS_* as secrets, VITE_* as the written-back variables', () => {
   process.env.IAC_DOMAIN ??= 'nas.example';
   const passed = passedBy(WORKFLOW, 'deploy-iac');
