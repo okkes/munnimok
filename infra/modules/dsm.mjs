@@ -850,6 +850,8 @@ export async function readLiveFile(creds, { publishedPath, file, fetchImpl = fet
     let parsed = null;
     try { parsed = JSON.parse(text); } catch { /* the raw file — what we want */ }
     if (parsed && typeof parsed === 'object' && parsed.success === false) throw new Error(`DSM SYNO.FileStation.Download.download failed: ${JSON.stringify(parsed.error)}`);
+    // a missing file comes back as DSM's HTML error page, not as JSON (found live 2026-09-16)
+    if ((typeof res.status === 'number' && res.status >= 400) || /^\s*<(!doctype|html)/i.test(text)) throw new Error(`DSM SYNO.FileStation.Download.download failed: no such file ${path}${typeof res.status === 'number' ? ` (HTTP ${res.status})` : ''}`);
     return { path, text };
   } finally {
     await s.logout();

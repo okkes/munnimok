@@ -732,6 +732,13 @@ test('readLiveFile: the stamp marker of the live dir comes through FileStation r
   assert.equal(r.path, '/docker/munni-iac/.applied_version_iac_prod');
   assert.equal(r.text.trim(), 'abc123');
   await assert.rejects(readLiveFile(CREDS, { publishedPath: '/docker/munni-iac/published', file: 'missing', fetchImpl: nas }), /"code":408/);
+  // DSM answers a missing file with its HTML error page — that is not content
+  const html = async (url, init) => {
+    const p = { ...Object.fromEntries(new URL(url).searchParams), ...Object.fromEntries(new URLSearchParams(init?.body ?? '')) };
+    if (p.api === 'SYNO.API.Auth') return { json: async () => ({ success: true, data: { sid: 'FS', synotoken: 'TOK' } }) };
+    return { status: 404, text: async () => '<!DOCTYPE html><html><body>Not found</body></html>' };
+  };
+  await assert.rejects(readLiveFile(CREDS, { publishedPath: '/docker/munni-iac/published', file: '.applied_version_iac_staging', fetchImpl: html }), /no such file .*\.applied_version_iac_staging/);
 });
 
 import { removeReverseProxy, removePollerTask, removeLiveDir, requestRemoval } from '../modules/dsm.mjs';
