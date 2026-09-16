@@ -1155,6 +1155,7 @@ const S = {
   registry: null,          // the helper's verdict on anonymous image pulls (public images need no token)
   nasProbe: null,          // the helper's outside-in probe of the NAS hosts (NAS track)
   nasState: null,          // the NAS verdict the prod twin's last IaC run published (repo variable IAC_NAS_STATE)
+  repoSecretDates: null,   // name → updated_at of every repo secret (the run signs in with THOSE values)
   defaultBranch: null,     // the connected repo's default branch (workflows register from it)
   pollTimer: null,
 };
@@ -1437,6 +1438,10 @@ async function refresh() {
     ]),
   ]);
   S.repoSecrets = names(repoSecrets, 'secrets');
+  // when each repo secret was last written: the run signs in with THAT value,
+  // whatever was typed since (2026-09-16: four SYNOLOGY_* from July stayed
+  // behind a Store the 402 had blocked — a different DSM account for months)
+  S.repoSecretDates = new Map((repoSecrets?.secrets ?? []).map((x) => [x.name, x.updated_at]));
   ENVS.forEach((env) => { S.envs[env] = { secrets: new Set(), vars: new Set() }; });
   known.forEach((env, i) => {
     S.envs[env] = { secrets: names(perEnv[i * 2], 'secrets'), vars: names(perEnv[i * 2 + 1], 'variables') };
@@ -1741,6 +1746,13 @@ function renderNasReadiness() {
     if (d.ok) row('Poller task on the NAS', ci.task ? (ci.task.enabled ? 'ok' : 'warn') : 'bad', ci.task ? (ci.task.enabled ? `every 5 minutes ✓${ciWhen}` : `exists but disabled${ciWhen}`) : `missing${ciWhen}`, ci.task?.enabled ? '' : 'Bootstrap (the prod twin) creates or re-enables it — press Bootstrap now', { href: '#s-bootstrap' });
   }
   else row('Deploy account may use DSM', '', 'not checked yet', 'press Bootstrap now: the run publishes how DSM answered the account (or Manage → Check on the Synology tile)', { href: '[data-group="synology"]' });
+  // the values the run signs in with are GitHub's — say how old they are
+  const dates = SYNOLOGY_SECRETS.map((n) => S.repoSecretDates?.get(n)).filter(Boolean);
+  if (dates.length) {
+    const oldest = dates.sort()[0];
+    const stale = (v && !v.checking && v.ok && v.admin === true && ci?.dsm && !ci.dsm.ok);
+    row('Synology secrets in GitHub', stale ? 'warn' : '', `stored ${ago(oldest)}${dates.length < SYNOLOGY_SECRETS.length ? ` (${dates.length} of ${SYNOLOGY_SECRETS.length})` : ''}`, `the IaC run signs in with these stored values, not with what is typed on the tile${stale ? ' — this PC accepts the typed account as an administrator while the run is refused: press Store on the Synology tile to replace the stored ones' : ' (retype and Store on the Synology tile to replace them)'}`, { href: '[data-group="synology"]' });
+  }
   if (!p) { row('Hosts', '', 'probe pending', '', null); }
   else {
     const s = p.summary;
