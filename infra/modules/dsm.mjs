@@ -139,7 +139,11 @@ export async function dsmLogin(base, account, passwd, fetchImpl = fetch, { sessi
   // name DSM does not know is refused with 402 (found live 2026-09-16)
   // enable_syno_token rides the URL as well as the body: acme.sh's hook
   // sends it in both, and a token is only worth having if DSM issues one
-  const data = await dsmCall(base, 'auth.cgi', {
+  // entry.cgi, not auth.cgi: SYNO.API.Info names entry.cgi as the path of
+  // SYNO.API.Auth on DSM 7 (auth.cgi is the DSM 6 path upload.sh still
+  // uses for its FileStation session) — acme.sh and Home Assistant log in
+  // there and their admin sessions read the Control Panel APIs
+  const data = await dsmCall(base, 'entry.cgi', {
     api: 'SYNO.API.Auth',
     version: '7',
     method: 'login',
@@ -153,7 +157,7 @@ export async function dsmLogin(base, account, passwd, fetchImpl = fetch, { sessi
 }
 
 export async function dsmLogout(base, sid, fetchImpl = fetch, session = null) {
-  await dsmCall(base, 'auth.cgi', { api: 'SYNO.API.Auth', version: '7', method: 'logout', ...(session ? { session } : {}), _sid: sid }, fetchImpl, { query: { _sid: sid } }).catch(() => undefined);
+  await dsmCall(base, 'entry.cgi', { api: 'SYNO.API.Auth', version: '7', method: 'logout', ...(session ? { session } : {}), _sid: sid }, fetchImpl, { query: { _sid: sid } }).catch(() => undefined);
 }
 
 /**
@@ -643,9 +647,8 @@ export function summarizeNas(nas, hostsTotal = 0) {
  * logged out again. Returns [{label, ok, code?, transport?}].
  */
 export const LOGIN_SHAPES = [
-  { label: 'v7 no session, token asked in URL+body (bootstrap)', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
-  { label: 'v7 no session, token asked in body', params: { version: '7', enable_syno_token: 'yes' } },
-  { label: 'entry.cgi login (acme.sh)', path: 'entry.cgi', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
+  { label: 'v7 entry.cgi, no session (bootstrap)', path: 'entry.cgi', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
+  { label: 'v7 auth.cgi, no session', params: { version: '7', enable_syno_token: 'yes' }, query: { enable_syno_token: 'yes' } },
   { label: 'v7 session=Core (the old bootstrap)', params: { version: '7', session: 'Core', enable_syno_token: 'yes' } },
   { label: 'v7 session=Core no token', params: { version: '7', session: 'Core' } },
   { label: 'v7 session=FileStation', params: { version: '7', session: 'FileStation', enable_syno_token: 'yes' } },
@@ -670,38 +673,64 @@ export async function probeLoginShapes({ url, user, pass }, fetchImpl = fetch, s
 export const describeLoginShapes = (shapes) => shapes.map((s) => `${s.label}: ${s.ok ? `ok${s.token === undefined ? '' : (s.token ? ' (token)' : ' (NO token)')}` : (s.transport ? 'no answer' : `refused ${s.code ?? '?'}`)}`).join('; ');
 
 /**
- * How a logged-in call may carry the sid + CSRF token — tried when a read
- * answers 119 ("SID not found") although the login was accepted, so the
- * verify output names the shapes DSM reads instead of guessing. Each
- * shape makes one read-only call (the certificate list); one login, one
- * logout. Returns [{label, ok, code?, transport?}].
+ * Which session DSM grants the Control Panel APIs to, and how a call may
+ * carry it — tried when a read is refused (105/119) although the login
+ * was accepted, so the verify output names what DSM reads instead of a
+ * guess. Sessions are created four ways (the login path DSM 7 names for
+ * SYNO.API.Auth vs the DSM 6 one, sid vs cookie format); each makes the
+ * same read-only call (the certificate list) carried three ways: the
+ * bootstrap's (sid + token in the query, token in the header), acme.sh's
+ * (sid in the body, token in the header) and DSM's own UI's (id cookie,
+ * token in the header). One logout per session. Flat list of
+ * {label, ok, code?, transport?, token?}; describeCallShapes groups it.
  */
-export const CALL_SHAPES = [
-  { label: 'sid+token in body', build: (a) => ({ body: a, query: null, headers: null }) },
-  { label: 'sid+token in query', build: (a) => ({ body: {}, query: a, headers: null }) },
-  { label: 'sid in query + X-SYNO-TOKEN', build: (a) => ({ body: {}, query: { _sid: a._sid }, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
-  { label: 'sid in body + X-SYNO-TOKEN', build: (a) => ({ body: { _sid: a._sid }, query: null, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
-  { label: 'cookie id=sid + X-SYNO-TOKEN', build: (a) => ({ body: {}, query: null, headers: { cookie: `id=${a._sid}`, 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
-  { label: 'sid in query, no token', build: (a) => ({ body: {}, query: { _sid: a._sid }, headers: null }) },
-  { label: 'SYNO.Core.System info (sid in query + X-SYNO-TOKEN)', api: { api: 'SYNO.Core.System', version: '1', method: 'info' }, build: (a) => ({ body: {}, query: { _sid: a._sid }, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
+export const SESSION_SHAPES = [
+  { label: 'entry.cgi format=sid (bootstrap)', path: 'entry.cgi', params: { format: 'sid' } },
+  { label: 'entry.cgi format=cookie', path: 'entry.cgi', params: { format: 'cookie' } },
+  { label: 'auth.cgi format=sid', path: 'auth.cgi', params: { format: 'sid' } },
+  { label: 'auth.cgi format=cookie', path: 'auth.cgi', params: { format: 'cookie' } },
 ];
-export async function probeCallShapes({ url, user, pass }, fetchImpl = fetch, shapes = CALL_SHAPES) {
+export const CALL_SHAPES = [
+  { label: 'sid+token in query + X-SYNO-TOKEN (bootstrap)', build: (a) => ({ body: {}, query: a, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
+  { label: 'sid in body + X-SYNO-TOKEN (acme.sh)', build: (a) => ({ body: { _sid: a._sid }, query: null, headers: { 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
+  { label: 'cookie id=sid + X-SYNO-TOKEN (DSM UI)', build: (a) => ({ body: {}, query: null, headers: { cookie: `id=${a._sid}`, 'X-SYNO-TOKEN': a.SynoToken ?? '' } }) },
+];
+export async function probeCallShapes({ url, user, pass }, fetchImpl = fetch, { sessions = SESSION_SHAPES, shapes = CALL_SHAPES } = {}) {
   const base = url.replace(/\/$/, '');
-  const { sid, token } = await dsmLogin(base, user, pass, fetchImpl);
-  const auth = { _sid: sid, ...(token ? { SynoToken: token } : {}) };
-  const out = [{ label: 'login issued a token', ok: Boolean(token) }];
-  try {
-    for (const s of shapes) {
-      const { body, query, headers } = s.build(auth);
-      try {
-        await dsmCall(base, 'entry.cgi', { ...(s.api ?? { api: 'SYNO.Core.Certificate.CRT', version: '1', method: 'list' }), ...body }, fetchImpl, { query, headers });
-        out.push({ label: s.label, ok: true });
-      } catch (e) {
-        out.push({ label: s.label, ok: false, code: dsmCode(e) || null, transport: isTransport(e) });
-      }
+  const out = [];
+  for (const ss of sessions) {
+    let data;
+    try {
+      data = await dsmCall(base, ss.path, { api: 'SYNO.API.Auth', version: '7', method: 'login', account: user, passwd: pass, enable_syno_token: 'yes', ...ss.params }, fetchImpl, { query: { enable_syno_token: 'yes' } });
+    } catch (e) {
+      out.push({ label: `${ss.label} → login`, ok: false, code: dsmCode(e) || null, transport: isTransport(e) });
+      continue;
     }
-  } finally {
-    await dsmLogout(base, sid, fetchImpl);
+    out.push({ label: `${ss.label} → login`, ok: true, token: Boolean(data.synotoken) });
+    const auth = { _sid: data.sid ?? '', ...(data.synotoken ? { SynoToken: data.synotoken } : {}) };
+    try {
+      for (const s of shapes) {
+        const { body, query, headers } = s.build(auth);
+        try {
+          await dsmCall(base, 'entry.cgi', { api: 'SYNO.Core.Certificate.CRT', version: '1', method: 'list', ...body }, fetchImpl, { query, headers });
+          out.push({ label: `${ss.label} → ${s.label}`, ok: true });
+        } catch (e) {
+          out.push({ label: `${ss.label} → ${s.label}`, ok: false, code: dsmCode(e) || null, transport: isTransport(e) });
+        }
+      }
+    } finally {
+      await dsmCall(base, ss.path, { api: 'SYNO.API.Auth', version: '7', method: 'logout', _sid: auth._sid }, fetchImpl, { query: { _sid: auth._sid }, headers: { cookie: `id=${auth._sid}` } }).catch(() => undefined);
+    }
   }
   return out;
+}
+/** one line per session */
+export function describeCallShapes(list) {
+  const groups = new Map();
+  for (const x of list) {
+    const [session, call] = x.label.split(' → ');
+    if (!groups.has(session)) groups.set(session, []);
+    groups.get(session).push({ ...x, label: call });
+  }
+  return [...groups].map(([session, calls]) => `${session}: ${describeLoginShapes(calls)}`).join('\n     ');
 }
