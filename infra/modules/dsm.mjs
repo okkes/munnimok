@@ -888,17 +888,28 @@ export async function removePollerTask(creds, { fetchImpl = fetch, name = POLLER
     const found = tasks.find((t) => t.name === name);
     if (!found) return { state: 'absent', detail: `no Task Scheduler entry "${name}"` };
     const real = found.real_owner || found.owner || 'root';
-    try {
-      await s.call('SYNO.Core.TaskScheduler', 3, 'delete', { id: JSON.stringify([found.id]), real_owner: real });
-    } catch (e) {
-      // a root task is deleted through its owner API behind the password
-      // confirm, like create/set (found live 2026-09-16: the plain delete
-      // answers 103 "method does not exist" for it)
-      if (isTransport(e)) throw e;
-      const token = (await s.call('SYNO.Core.User.PasswordConfirm', 2, 'auth', { password: creds.pass })).SynoConfirmPWToken;
-      await s.call('SYNO.Core.TaskScheduler.Root', 4, 'delete', { id: JSON.stringify([found.id]), real_owner: real, SynoConfirmPWToken: token });
+    // DSM 7.3 answers 103 "method does not exist" to `delete` on
+    // SYNO.Core.TaskScheduler v3 AND on SYNO.Core.TaskScheduler.Root v4
+    // (found live 2026-09-16), so the version is swept on both APIs — a 103
+    // costs nothing, any other answer is the truth. The Root API rides the
+    // password-confirm token like create/set.
+    const attempts = [];
+    let token = null;
+    const shapes = [
+      ...[4, 3, 2, 1].map((v) => ({ api: 'SYNO.Core.TaskScheduler', v, root: false })),
+      ...[4, 3, 2, 1].map((v) => ({ api: 'SYNO.Core.TaskScheduler.Root', v, root: true })),
+    ];
+    for (const shape of shapes) {
+      try {
+        if (shape.root && !token) token = (await s.call('SYNO.Core.User.PasswordConfirm', 2, 'auth', { password: creds.pass })).SynoConfirmPWToken;
+        await s.call(shape.api, shape.v, 'delete', { id: JSON.stringify([found.id]), real_owner: real, ...(shape.root ? { SynoConfirmPWToken: token } : {}) });
+        return { state: 'removed', id: found.id, detail: `Task Scheduler entry "${name}" (${found.id}) deleted (${shape.api} v${shape.v})` };
+      } catch (e) {
+        if (isTransport(e) || dsmCode(e) !== 103) throw e;
+        attempts.push(`${shape.api} v${shape.v}`);
+      }
     }
-    return { state: 'removed', id: found.id, detail: `Task Scheduler entry "${name}" (${found.id}) deleted` };
+    throw new Error(`no delete method on any task API version (tried ${attempts.join(', ')}) — delete "${name}" by hand in Control Panel → Task Scheduler`);
   } finally {
     await s.logout();
   }

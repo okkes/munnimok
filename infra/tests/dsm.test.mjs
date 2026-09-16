@@ -758,8 +758,10 @@ test('cleanup: the stack\'s rules go by uuid, the poller task by id (root API as
   });
   const task = await removePollerTask(CREDS, { fetchImpl: t.fetchImpl });
   assert.equal(task.state, 'removed');
+  assert.equal(t.calls.filter((c) => c.key === 'SYNO.Core.TaskScheduler.delete').length, 4, 'every version of the plain API is tried on 103');
   const rootDel = t.calls.find((c) => c.key === 'SYNO.Core.TaskScheduler.Root.delete');
   assert.equal(rootDel.params.id, '[42]');
+  assert.equal(rootDel.params.version, '4', 'the root API starts at its newest version');
   assert.equal(rootDel.params.SynoConfirmPWToken, 'CONFIRM', 'a refused plain delete (103 "method does not exist" for a root task) falls back to the confirmed root API');
   assert.match(dsmAdvice(new Error('DSM x failed: {"code":103}')), /method does not exist/);
   const none = dsm({ 'SYNO.Core.TaskScheduler.list': ok({ tasks: [] }) });
