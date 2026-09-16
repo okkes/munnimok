@@ -123,7 +123,11 @@ jobs:
           # tip — constant across dev pushes, so the NAS poller saw
           # "nothing new" and staging froze (2026-07-24). Stamp with the
           # commit that actually built the images.
-          echo "${{ github.event.workflow_run.head_sha || github.sha }}" > "$RUNNER_TEMP/stamp.txt"
+          # <sha>.<run number>: a deploy is NEW every time it runs — the rendered
+          # env changes between deploys of one commit (written-back ids, secrets)
+          # and the poller must apply it (found live 2026-09-16: a re-deploy with
+          # the same stamp left the frontends without their Logto app ids)
+          echo "${{ github.event.workflow_run.head_sha || github.sha }}.${{ github.run_number }}" > "$RUNNER_TEMP/stamp.txt"
         env:
           # every placeholder of deploy/env/.env.nas, by name (see the header)
           NAS_ADMIN_SUBS: ${{ secrets.NAS_ADMIN_SUBS }}
@@ -220,7 +224,8 @@ jobs:
           fi
           bash deploy/nas/render-env.sh "$SRC/.env.${{ matrix.stack }}" "$STAGE/$ENV_NAME"
           tar -czf "$RUNNER_TEMP/$BUNDLE" -C "$STAGE" .
-          echo "${{ github.sha }}" > "$RUNNER_TEMP/$STAMP"
+          # <sha>.<run number> — see the live job: every deploy is new to the poller
+          echo "${{ github.sha }}.${{ github.run_number }}" > "$RUNNER_TEMP/$STAMP"
           echo "bundle=$BUNDLE" >> "$GITHUB_OUTPUT"
           echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
         env:
@@ -284,7 +289,7 @@ jobs:
       - name: Wait for the poller, read its log, and see whether Logto is seeded
         id: applied
         if: ${{ matrix.stack == 'munni-iac-prod' }}
-        run: node deploy/nas/after-apply.mjs --stack "${{ matrix.stack }}" --stamp "${{ github.sha }}"
+        run: node deploy/nas/after-apply.mjs --stack "${{ matrix.stack }}" --stamp "${{ github.sha }}.${{ github.run_number }}"
         env:
           SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
