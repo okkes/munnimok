@@ -459,6 +459,7 @@ async function ciApply() {
     }
   }
 
+  const infraEnv = pair.githubEnvironment;
   // GlitchTip-as-code (IAC8): once the pair's operator token exists, the
   // org/team/per-stack projects are ensured and the DSNs written back —
   // runbook §4 becomes a no-op. Soft-fails: GlitchTip may not be booted yet.
