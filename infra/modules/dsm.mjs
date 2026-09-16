@@ -530,26 +530,38 @@ export async function ensurePollerTask(creds, { publishedPath, fetchImpl = fetch
     const tasks = (await s.read('SYNO.Core.TaskScheduler', 3, 'list', { sort_by: 'name', sort_direction: 'ASC', offset: '0', limit: '500' })).tasks ?? [];
     let found = tasks.find((t) => t.name === name);
     const ownerOf = (t) => t.real_owner || t.owner || 'root';
-    // a poller made by hand (the README's one-liner, under any name) is
-    // adopted — renamed and pointed at the resolved dirs — never doubled:
-    // two tasks would take turns on the same live dir
-    if (!found) {
+    let dirs;
+    let dirsError = null;
+    try {
+      dirs = await resolveLiveDir(s, publishedPath, { creds, fetchImpl, sleepImpl });
+    } catch (e) {
+      dirsError = e;
+    }
+    // a poller made by hand for THIS live dir (the README's one-liner,
+    // under any name) is adopted — renamed and pointed at the resolved
+    // dirs — never doubled: two tasks would take turns on one dir. A
+    // poller for ANOTHER dir is another pipeline's (the legacy live app's,
+    // say) and is left exactly as it is: on 2026-09-16 the first real run
+    // re-pointed the legacy "Munni Deploy" task at the IaC dir
+    if (!found && dirs) {
       for (const t of tasks) {
         if (t.type && t.type !== 'script') continue;
         const cur = await s.read('SYNO.Core.TaskScheduler', 4, 'get', { id: String(t.id), real_owner: ownerOf(t) }).catch(() => null);
-        if (/cp apply\.sh \.apply\.run/.test(String(cur?.extra?.script ?? ''))) { found = { ...t, adopted: true }; break; }
+        const script = String(cur?.extra?.script ?? '');
+        if (!/cp apply\.sh \.apply\.run/.test(script)) continue;
+        const itsDir = liveDirOf(script) ?? /cd\s+"?([^\s"&;]+)"?/.exec(script)?.[1] ?? null;
+        if (itsDir && itsDir.replace(/\/+$/, '') !== dirs.liveDir) continue;
+        found = { ...t, adopted: true };
+        break;
       }
     }
     const real = found ? ownerOf(found) : 'root';
     const currentOf = async () => (found ? s.read('SYNO.Core.TaskScheduler', 4, 'get', { id: String(found.id), real_owner: real }).catch(() => null) : null);
-    let dirs;
-    try {
-      dirs = await resolveLiveDir(s, publishedPath, { creds, fetchImpl, sleepImpl });
-    } catch (e) {
-      if (!found) throw e;
+    if (dirsError) {
+      if (!found) throw dirsError;
       const current = await currentOf();
       const dir = liveDirOf(current?.extra?.script);
-      return { state: 'present', id: found.id, liveDir: dir, untouched: true, detail: `Task Scheduler entry "${name}" left as it is (runs in ${dir ?? 'an unknown dir'}) — ${e.message}` };
+      return { state: 'present', id: found.id, liveDir: dir, untouched: true, detail: `Task Scheduler entry "${name}" left as it is (runs in ${dir ?? 'an unknown dir'}) — ${dirsError.message}` };
     }
     const { liveDir, publishedDir } = dirs;
     const script = pollerScript(liveDir, publishedDir);

@@ -576,6 +576,18 @@ test('poller task: a hand-made poller under another name is adopted (renamed, po
   });
   const adopted = await ensurePollerTask(CREDS, { publishedPath: '/docker/munni/published', fetchImpl: a.fetchImpl });
   assert.equal(adopted.state, 'adopted');
+  // …but a hand-made poller for ANOTHER live dir is another pipeline's: left alone, ours is created beside it
+  const other = dsm({
+    'SYNO.FileStation.List.list_share': shares,
+    'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 5, name: 'Munni Deploy', owner: 'root', real_owner: 'root' }] }),
+    'SYNO.Core.TaskScheduler.get': ok({ id: 5, enable: true, extra: { script: 'cd /volume1/docker/munni && cp apply.sh .apply.run && sh .apply.run' } }),
+    'SYNO.Core.User.PasswordConfirm.auth': ok({ SynoConfirmPWToken: 'CONFIRM' }),
+    'SYNO.Core.TaskScheduler.Root.create': ok({ id: 8 }),
+  });
+  const beside = await ensurePollerTask(CREDS, { publishedPath: '/docker/munni-iac/published', fetchImpl: other.fetchImpl });
+  assert.equal(beside.state, 'created', 'the legacy poller in /volume1/docker/munni is not ours');
+  assert.equal(beside.id, 8);
+  assert.ok(!other.calls.some((c) => c.key === 'SYNO.Core.TaskScheduler.Root.set'), 'the other pipeline’s task is never touched');
   assert.equal(adopted.id, 5);
   assert.ok(!a.calls.some((c) => c.key === 'SYNO.Core.TaskScheduler.Root.create'), 'no second poller');
   const set = a.calls.find((c) => c.key === 'SYNO.Core.TaskScheduler.Root.set');
