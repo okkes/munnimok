@@ -76,8 +76,22 @@ jobs:
           # bundle the files as they are on the branch that built the images
           ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
 
+      - name: Live channel configured?
+        id: live
+        # a wizard copy runs only the IaC twins (deploy-iac below): it holds
+        # no live-channel secrets, and a push touching deploy/** — the wizard's
+        # pipeline sync, say — must not go red for that (2026-09-16)
+        run: |
+          if [ -z "${NAS_POSTGRES_PASSWORD:-}" ]; then
+            echo "::notice::live channel not configured (no NAS_POSTGRES_PASSWORD secret) — this repository deploys only the IaC twins; nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          NAS_POSTGRES_PASSWORD: ${{ secrets.NAS_POSTGRES_PASSWORD }}
+
       - name: Assemble the deploy bundle
         id: bundle
+        if: ${{ steps.live.outputs.skip != 'true' }}
         run: |
           set -euo pipefail
           BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
@@ -130,6 +144,7 @@ jobs:
           NAS_PUSH_VAPID_PUBLIC_KEY: ${{ secrets.NAS_PUSH_VAPID_PUBLIC_KEY }}
 
       - name: Upload to Synology FileStation (bundle first, stamp last)
+        if: ${{ steps.live.outputs.skip != 'true' }}
         run: |
           set -euo pipefail
           cp "$RUNNER_TEMP/bundle.tgz" "$RUNNER_TEMP/${{ steps.bundle.outputs.bundle }}"
