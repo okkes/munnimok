@@ -357,8 +357,12 @@ export async function ensureWildcardCertificate(creds, { domain, probeHost, emai
     if (!owner) return { state: 'absent', detail: `${why}; no valid wildcard certificate on DSM yet — the prod twin's bootstrap requests it (one per NAS); this twin binds its rules on its next run` };
     const gone = expired.length ? ` (the wildcard DSM held, ${newest(expired).id}, expired ${newest(expired).valid_till})` : '';
     const started = Date.now();
+    // DSM's wizard call is synchronous and slow (its own UI waits six
+    // minutes). Only a request DSM never answered is waited out — a
+    // request DSM refused (rate limit 5524, validation 5503) is final and
+    // must NOT be repeated: every request counts against the rate limit
+    let outlived = null;
     try {
-      // DSM's wizard call is synchronous and slow (its own UI waits six minutes)
       await s.call('SYNO.Core.Certificate.LetsEncrypt', 1, 'create', {
         desc: JSON.stringify(names),
         domain_name: JSON.stringify(names),
@@ -366,29 +370,28 @@ export async function ensureWildcardCertificate(creds, { domain, probeHost, emai
         as_default: 'true',
       }, { timeoutMs: LE_WAIT_MS });
     } catch (e) {
-      // only a request DSM never answered is waited out — a request DSM
-      // refused (rate limit 5524, validation 5503) is final and must NOT be
-      // repeated: every request counts against the rate limit
       if (!isTransport(e)) throw e;
-      // DSM answering 504 means the request is STILL RUNNING (its own UI
-      // says so), so one immediate list always comes back empty: poll the
-      // list for the rest of the six minutes instead of deciding too early
-      let later = [];
-      for (let i = 0; ; i++) {
-        later = wild(await listCerts(s).catch(() => [])).filter((c) => certValid(c));
-        if (later.length || i >= pollTries || Date.now() - started >= LE_WAIT_MS) break;
-        await sleepImpl(pollMs);
-      }
-      if (later.length) {
-        const c = newest(later);
-        return { state: 'created', id: c.id, detail: `${why}; Let's Encrypt certificate for ${names} arrived (the request outlived the wait: ${e.message})${gone}${await bindNote(c.id)}` };
-      }
-      // not done: a green run here would chain Deploy over rules that still
-      // serve the old certificate — fail, and let the next run pick it up
-      throw new Error(`the Let's Encrypt request for ${names} is still running on the NAS after the wait (${e.message}) — check Control Panel → Security → Certificate; the next bootstrap run adopts it and binds the rules, so never re-request by hand (5 requests per name set per week)`);
+      outlived = e;
     }
-    const c = newest(wild(await listCerts(s).catch(() => [])).filter((x) => certValid(x)));
-    return { state: 'created', id: c?.id ?? null, detail: `${why}; Let's Encrypt certificate for ${names} requested through DSM and set as default${gone}${c ? await bindNote(c.id) : ''}; DSM restarts its web server, the hosts serve it within a minute` };
+    // DSM answering 504 means the request is STILL RUNNING (its own UI
+    // says so), and even an answered create may list the certificate a
+    // moment later (the web server restarts on a default change): poll the
+    // list for what is left of the six minutes instead of deciding too
+    // early — "created" without the binding would chain Deploy over rules
+    // that still serve the old certificate
+    let later = [];
+    for (let i = 0; ; i++) {
+      later = wild(await listCerts(s).catch(() => [])).filter((c) => certValid(c));
+      if (later.length || i >= pollTries || Date.now() - started >= LE_WAIT_MS) break;
+      await sleepImpl(pollMs);
+    }
+    if (!later.length) {
+      // not done: fail, and let the next run adopt whatever lands
+      throw new Error(`the Let's Encrypt request for ${names} is still running on the NAS after the wait (${outlived ? outlived.message : 'DSM answered, but its list holds no wildcard certificate yet'}) — check Control Panel → Security → Certificate; the next bootstrap run adopts it and binds the rules, so never re-request by hand (5 requests per name set per week)`);
+    }
+    const c = newest(later);
+    const how = outlived ? `arrived (the request outlived the wait: ${outlived.message})` : 'requested through DSM and set as default';
+    return { state: 'created', id: c.id, detail: `${why}; Let's Encrypt certificate for ${names} ${how}${gone}${await bindNote(c.id)}; DSM restarts its web server, the hosts serve it within a minute` };
   } finally {
     await s.logout();
   }
@@ -493,8 +496,19 @@ export async function ensurePollerTask(creds, { publishedPath, fetchImpl = fetch
   const s = await dsmSession(creds, fetchImpl, { sleepImpl });
   try {
     const tasks = (await s.read('SYNO.Core.TaskScheduler', 3, 'list', { sort_by: 'name', sort_direction: 'ASC', offset: '0', limit: '500' })).tasks ?? [];
-    const found = tasks.find((t) => t.name === name);
-    const real = found ? (found.real_owner || found.owner || 'root') : 'root';
+    let found = tasks.find((t) => t.name === name);
+    const ownerOf = (t) => t.real_owner || t.owner || 'root';
+    // a poller made by hand (the README's one-liner, under any name) is
+    // adopted — renamed and pointed at the resolved dirs — never doubled:
+    // two tasks would take turns on the same live dir
+    if (!found) {
+      for (const t of tasks) {
+        if (t.type && t.type !== 'script') continue;
+        const cur = await s.read('SYNO.Core.TaskScheduler', 4, 'get', { id: String(t.id), real_owner: ownerOf(t) }).catch(() => null);
+        if (/cp apply\.sh \.apply\.run/.test(String(cur?.extra?.script ?? ''))) { found = { ...t, adopted: true }; break; }
+      }
+    }
+    const real = found ? ownerOf(found) : 'root';
     const currentOf = async () => (found ? s.read('SYNO.Core.TaskScheduler', 4, 'get', { id: String(found.id), real_owner: real }).catch(() => null) : null);
     let dirs;
     try {
@@ -531,8 +545,9 @@ export async function ensurePollerTask(creds, { publishedPath, fetchImpl = fetch
     };
     if (found) {
       const current = await currentOf();
-      if (current?.extra?.script === script && (current.enable ?? true)) return { state: 'present', id: found.id, liveDir, detail: `Task Scheduler already runs "${name}" every 5 minutes in ${liveDir}` };
+      if (!found.adopted && current?.extra?.script === script && (current.enable ?? true)) return { state: 'present', id: found.id, liveDir, detail: `Task Scheduler already runs "${name}" every 5 minutes in ${liveDir}` };
       await withRetry('set', { id: String(found.id), real_owner: real });
+      if (found.adopted) return { state: 'adopted', id: found.id, liveDir, detail: `hand-made Task Scheduler entry "${found.name}" adopted as "${name}" (root, every 5 minutes, all day) in ${liveDir} — one poller per NAS, never two` };
       return { state: 'updated', id: found.id, liveDir, detail: `Task Scheduler entry "${name}" updated to run in ${liveDir}` };
     }
     const created = await withRetry('create', {});
@@ -581,4 +596,20 @@ export async function inspectNas(creds, { domain, publishedPath, hosts = [], fet
   } finally {
     await s.logout();
   }
+}
+
+/**
+ * The secret-free digest of inspectNas() the wizard's readiness card reads
+ * (repo variable IAC_NAS_STATE, written by the prod twin's every verify
+ * and apply): flags and counts only, never a host name — the domain is a
+ * secret and repository variables are not.
+ */
+export function summarizeNas(nas, hostsTotal = 0) {
+  return {
+    dsm: { ok: true },
+    wildcard: nas.wildcard ? { isDefault: nas.wildcard.isDefault, expired: nas.wildcard.expired, validTill: nas.wildcard.validTill } : null,
+    task: nas.task ? { enabled: nas.task.enabled } : null,
+    liveDir: nas.liveDir ?? null,
+    bindings: nas.bindings ? { bound: nas.bindings.bound.length, elsewhere: nas.bindings.elsewhere.length, noRule: nas.bindings.noRule.length, total: hostsTotal } : null,
+  };
 }

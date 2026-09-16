@@ -27,12 +27,18 @@ FCM_SERVICE_ACCOUNT_JSON='${NAS_FCM_SERVICE_ACCOUNT_JSON}'
 ```
 
 CI renders it with `render-env.sh`: each placeholder is filled from the
-**same-named GitHub secret**, resolved through the job's **GitHub
-Environment** — the deploy job runs in `production` (master) or
-`staging` (dev), so ONE secret name can carry a different value per
-stack, and repo-level secrets act as the shared default for both.
-Master renders `.env`, dev renders `.env.staging` from the same
-template. Adding a key = template line + secret; no workflow change.
+**same-named GitHub secret**, which the workflow passes as an env var
+**named explicitly** in `deploy-nas.yml` (2026-09-16: no
+`toJSON(secrets)` — dumping the whole secrets context is the pattern
+GitHub's scanner holds public-repo runs for, and that hold silently
+stopped every deploy from 2026-09-08 to 09-15). The secret is resolved
+through the job's **GitHub Environment** — the deploy job runs in
+`production` (master) or `staging` (dev), so ONE secret name can carry
+a different value per stack, and repo-level secrets act as the shared
+default for both. Master renders `.env`, dev renders `.env.staging`
+from the same template. Adding a key = template line + secret + one
+`env:` line in the workflow; `infra/tests/deploy-nas.test.mjs` fails on
+a placeholder the workflow does not pass.
 The render fails the deploy if `NAS_GHCR_PAT` or
 `NAS_POSTGRES_PASSWORD` are missing; other empty secrets just leave
 their feature off.

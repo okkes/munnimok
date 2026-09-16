@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, resolveLiveDir, publishedPathParts,
-  dsmAdvice, dsmLogin, dsmSession, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid,
+  dsmAdvice, dsmLogin, dsmSession, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid, summarizeNas,
 } from '../modules/dsm.mjs';
 
 const CREDS = { url: 'https://nas.example:5001/', user: 'deploy', pass: 'pw' };
@@ -226,9 +226,11 @@ test('certificate: a covered host costs nothing; an uncovered one reuses a held 
   const unknownPresent = await ensureWildcardCertificate(CREDS, { domain: 'nas.example', probeHost: 'web.nas.example', email: 'x@y.z', fetchImpl: e.fetchImpl, probeImpl: async () => ({ covers: null, code: 'ENOTFOUND' }) });
   assert.equal(unknownPresent.state, 'present');
   assert.match(unknownPresent.detail, /could not probe web\.nas\.example \(ENOTFOUND\)/);
-  const f = dsm({ 'SYNO.Core.Certificate.CRT.list': ok({ certificates: [OLD] }), 'SYNO.Core.Certificate.LetsEncrypt.create': ok({}) });
-  const unknownCreated = await ensureWildcardCertificate(CREDS, { domain: 'nas.example', probeHost: 'web.nas.example', email: 'x@y.z', fetchImpl: f.fetchImpl, probeImpl: async () => ({ covers: null, code: 'ETIMEDOUT' }) });
+  let listedF = 0;
+  const f = dsm({ 'SYNO.Core.Certificate.CRT.list': () => ok({ certificates: listedF++ === 0 ? [OLD] : [OLD, { ...WILD, id: 'unknownNew', is_default: true }] }), 'SYNO.Core.Certificate.LetsEncrypt.create': ok({}) });
+  const unknownCreated = await ensureWildcardCertificate(CREDS, { domain: 'nas.example', probeHost: 'web.nas.example', email: 'x@y.z', fetchImpl: f.fetchImpl, probeImpl: async () => ({ covers: null, code: 'ETIMEDOUT' }), sleepImpl: noWait });
   assert.equal(unknownCreated.state, 'created');
+  assert.equal(unknownCreated.id, 'unknownNew', 'the certificate the request produced is named — never "created" without an id');
   assert.equal(f.calls.filter((x) => x.key === 'SYNO.Core.Certificate.LetsEncrypt.create').length, 1);
 });
 
@@ -525,4 +527,49 @@ test('inspectNas + tlsCovers: read-only views the verify step prints — certifi
   assert.deepEqual(good, { covers: true });
   const dns = await tlsCovers('x.example', async () => { throw netErr('ENOTFOUND'); });
   assert.equal(dns.covers, null);
+});
+
+test('certificate: a create DSM answered but lists a moment later is polled, then bound — never "created" without an id; one that never lists fails the step', async () => {
+  let n = 0;
+  const slow = dsm({
+    'SYNO.Core.Certificate.CRT.list': () => ok({ certificates: n++ < 3 ? [] : [{ ...WILD, id: 'soon', is_default: true }] }),
+    'SYNO.Core.Certificate.LetsEncrypt.create': ok({}),
+    'SYNO.Core.AppPortal.ReverseProxy.list': RULES,
+    'SYNO.Core.Certificate.Service.set': ok({}),
+  });
+  const r = await ensureWildcardCertificate(CREDS, { domain: 'nas.example', probeHost: 'web.nas.example', email: 'x@y.z', hosts: ['web.nas.example'], fetchImpl: slow.fetchImpl, probeImpl: NOT_COVERED, sleepImpl: noWait });
+  assert.equal(r.state, 'created');
+  assert.equal(r.id, 'soon');
+  assert.match(r.detail, /requested through DSM and set as default/);
+  assert.equal(JSON.parse(slow.calls.find((x) => x.key === 'SYNO.Core.Certificate.Service.set').params.settings)[0].id, 'soon', 'the rules are bound to the certificate that listed late');
+  assert.equal(slow.calls.filter((x) => x.key === 'SYNO.Core.Certificate.LetsEncrypt.create').length, 1);
+  const never = dsm({ 'SYNO.Core.Certificate.CRT.list': ok({ certificates: [] }), 'SYNO.Core.Certificate.LetsEncrypt.create': ok({}) });
+  await assert.rejects(
+    ensureWildcardCertificate(CREDS, { domain: 'nas.example', probeHost: 'web.nas.example', email: 'x@y.z', hosts: ['web.nas.example'], fetchImpl: never.fetchImpl, probeImpl: NOT_COVERED, sleepImpl: noWait, pollTries: 2 }),
+    /DSM answered, but its list holds no wildcard/,
+  );
+  assert.ok(!never.calls.some((x) => x.key === 'SYNO.Core.Certificate.Service.set'), 'nothing is bound to a certificate that is not there');
+});
+
+test('poller task: a hand-made poller under another name is adopted (renamed, pointed at the resolved dirs), never doubled; the wizard digest carries no host name', async () => {
+  const shares = ok({ shares: [{ name: 'docker', additional: { real_path: '/volume1/docker' } }] });
+  const a = dsm({
+    'SYNO.FileStation.List.list_share': shares,
+    'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 2, name: 'backup', owner: 'root', real_owner: 'root' }, { id: 5, name: 'munni apply', owner: 'root', real_owner: 'root' }] }),
+    'SYNO.Core.TaskScheduler.get': (p) => ok(p.id === '5' ? { id: 5, enable: true, extra: { script: 'cd /volume1/docker/munni && cp apply.sh .apply.run && sh .apply.run' } } : { id: 2, extra: { script: 'rsync -a /volume1/photo /volumeUSB1/usbshare' } }),
+    'SYNO.Core.User.PasswordConfirm.auth': ok({ SynoConfirmPWToken: 'CONFIRM' }),
+    'SYNO.Core.TaskScheduler.Root.set': ok({}),
+  });
+  const adopted = await ensurePollerTask(CREDS, { publishedPath: '/docker/munni/published', fetchImpl: a.fetchImpl });
+  assert.equal(adopted.state, 'adopted');
+  assert.equal(adopted.id, 5);
+  assert.ok(!a.calls.some((c) => c.key === 'SYNO.Core.TaskScheduler.Root.create'), 'no second poller');
+  const set = a.calls.find((c) => c.key === 'SYNO.Core.TaskScheduler.Root.set');
+  assert.equal(set.params.id, '5');
+  assert.equal(set.params.name, POLLER_TASK_NAME, 'renamed to the managed name');
+  assert.equal(JSON.parse(set.params.extra).script, pollerScript('/volume1/docker/munni'));
+  // the digest the wizard reads holds flags and counts only — never a host name (the domain is a secret)
+  const digest = summarizeNas({ wildcard: { id: 'w', isDefault: true, expired: false, validTill: 'Dec  9 00:00:00 2036 GMT' }, task: { id: 5, enabled: false }, liveDir: '/volume1/docker/munni', liveDirError: null, bindings: { bound: ['web.nas.example'], elsewhere: ['api.nas.example'], noRule: [] } }, 3);
+  assert.deepEqual(digest, { dsm: { ok: true }, wildcard: { isDefault: true, expired: false, validTill: 'Dec  9 00:00:00 2036 GMT' }, task: { enabled: false }, liveDir: '/volume1/docker/munni', bindings: { bound: 1, elsewhere: 1, noRule: 0, total: 3 } });
+  assert.ok(!JSON.stringify(digest).includes('nas.example'));
 });

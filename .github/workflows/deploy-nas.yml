@@ -13,13 +13,20 @@
 #            compose+env rendered from infra/ stack files, unpacked by
 #            the poller into their own /volume1/docker/<stack>/ dirs)
 #
-# Env files are rendered from deploy/env/.env.nas: ${NAS_*} placeholders
-# are filled from same-named secrets (deploy/nas/render-env.sh). The job
-# runs in the production/staging GitHub Environment matching the branch,
-# so one secret NAME can carry a different value per stack (VAPID pair,
-# postgres password); repo-level secrets are the shared defaults. The
-# master channel renders .env, the dev channel renders .env.staging —
-# no whole-.env secret, no manual NAS edits (deploy/nas/README.md).
+# Env files are rendered from deploy/env/.env.nas: every ${NAS_*}
+# placeholder is filled from the same-named secret, handed to
+# deploy/nas/render-env.sh as an env var NAMED EXPLICITLY below (user
+# ruling 2026-09-16: no toJSON(secrets) — dumping the whole secrets
+# context is the pattern GitHub's scanner holds public-repo runs for,
+# and that hold silently stopped every deploy from 2026-09-08 to 09-15).
+# Adding a key = template line + secret + one env line in the job;
+# infra/tests/deploy-nas.test.mjs names a placeholder without its line.
+# The job runs in the production/staging GitHub Environment matching
+# the branch, so one secret NAME can carry a different value per stack
+# (VAPID pair, postgres password); repo-level secrets are the shared
+# defaults. The master channel renders .env, the dev channel renders
+# .env.staging — no whole-.env secret, no manual NAS edits
+# (deploy/nas/README.md).
 #
 # Secrets required (besides the NAS_* env values):
 #   SYNOLOGY_URL       e.g. https://<your-nas-domain>:5001
@@ -98,7 +105,27 @@ jobs:
           # commit that actually built the images.
           echo "${{ github.event.workflow_run.head_sha || github.sha }}" > "$RUNNER_TEMP/stamp.txt"
         env:
-          SECRETS_JSON: ${{ toJSON(secrets) }}
+          # every placeholder of deploy/env/.env.nas, by name (see the header)
+          NAS_ADMIN_SUBS: ${{ secrets.NAS_ADMIN_SUBS }}
+          NAS_API_SENTRY_DSN: ${{ secrets.NAS_API_SENTRY_DSN }}
+          NAS_DOMAIN: ${{ secrets.NAS_DOMAIN }}
+          NAS_ENABLEBANKING_APPLICATION_ID: ${{ secrets.NAS_ENABLEBANKING_APPLICATION_ID }}
+          NAS_ENABLEBANKING_PRIVATE_KEY_PEM: ${{ secrets.NAS_ENABLEBANKING_PRIVATE_KEY_PEM }}
+          NAS_FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.NAS_FCM_SERVICE_ACCOUNT_JSON }}
+          NAS_GHCR_PAT: ${{ secrets.NAS_GHCR_PAT }}
+          NAS_GLITCHTIP_EMAIL_URL: ${{ secrets.NAS_GLITCHTIP_EMAIL_URL }}
+          NAS_GLITCHTIP_SECRET_KEY: ${{ secrets.NAS_GLITCHTIP_SECRET_KEY }}
+          NAS_GOCARDLESS_SECRET_ID: ${{ secrets.NAS_GOCARDLESS_SECRET_ID }}
+          NAS_GOCARDLESS_SECRET_KEY: ${{ secrets.NAS_GOCARDLESS_SECRET_KEY }}
+          NAS_IMPORT_WATCH_OWNER_SUB: ${{ secrets.NAS_IMPORT_WATCH_OWNER_SUB }}
+          NAS_LOGODEV_PUBLIC_TOKEN: ${{ secrets.NAS_LOGODEV_PUBLIC_TOKEN }}
+          NAS_LOGODEV_SECRET_KEY: ${{ secrets.NAS_LOGODEV_SECRET_KEY }}
+          NAS_LOGTO_M2M_APP_ID: ${{ secrets.NAS_LOGTO_M2M_APP_ID }}
+          NAS_LOGTO_M2M_APP_SECRET: ${{ secrets.NAS_LOGTO_M2M_APP_SECRET }}
+          NAS_PGADMIN_PASSWORD: ${{ secrets.NAS_PGADMIN_PASSWORD }}
+          NAS_POSTGRES_PASSWORD: ${{ secrets.NAS_POSTGRES_PASSWORD }}
+          NAS_PUSH_VAPID_PRIVATE_KEY: ${{ secrets.NAS_PUSH_VAPID_PRIVATE_KEY }}
+          NAS_PUSH_VAPID_PUBLIC_KEY: ${{ secrets.NAS_PUSH_VAPID_PUBLIC_KEY }}
 
       - name: Upload to Synology FileStation (bundle first, stamp last)
         run: |
@@ -164,8 +191,31 @@ jobs:
           echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
         env:
           IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
-          SECRETS_JSON: ${{ toJSON(secrets) }}
-          VARS_JSON: ${{ toJSON(vars) }}
+          # every placeholder of the rendered .env.<stack>, by name: the stack's
+          # secrets (minted into its environment by bootstrap; repo-level roots
+          # merge in) and the variables the logto/glitchtip modules wrote back
+          NAS_ADMIN_SUBS: ${{ secrets.NAS_ADMIN_SUBS }}
+          NAS_API_SENTRY_DSN: ${{ secrets.NAS_API_SENTRY_DSN }}
+          NAS_ENABLEBANKING_APPLICATION_ID: ${{ secrets.NAS_ENABLEBANKING_APPLICATION_ID }}
+          NAS_ENABLEBANKING_PRIVATE_KEY_PEM: ${{ secrets.NAS_ENABLEBANKING_PRIVATE_KEY_PEM }}
+          NAS_FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.NAS_FCM_SERVICE_ACCOUNT_JSON }}
+          NAS_GHCR_PAT: ${{ secrets.NAS_GHCR_PAT }}
+          NAS_GLITCHTIP_EMAIL_URL: ${{ secrets.NAS_GLITCHTIP_EMAIL_URL }}
+          NAS_GLITCHTIP_SECRET_KEY: ${{ secrets.NAS_GLITCHTIP_SECRET_KEY }}
+          NAS_GOCARDLESS_SECRET_ID: ${{ secrets.NAS_GOCARDLESS_SECRET_ID }}
+          NAS_GOCARDLESS_SECRET_KEY: ${{ secrets.NAS_GOCARDLESS_SECRET_KEY }}
+          NAS_LOGODEV_PUBLIC_TOKEN: ${{ secrets.NAS_LOGODEV_PUBLIC_TOKEN }}
+          NAS_LOGODEV_SECRET_KEY: ${{ secrets.NAS_LOGODEV_SECRET_KEY }}
+          NAS_LOGTO_M2M_APP_ID: ${{ secrets.NAS_LOGTO_M2M_APP_ID }}
+          NAS_LOGTO_M2M_APP_SECRET: ${{ secrets.NAS_LOGTO_M2M_APP_SECRET }}
+          NAS_POSTGRES_PASSWORD: ${{ secrets.NAS_POSTGRES_PASSWORD }}
+          NAS_PUSH_VAPID_PRIVATE_KEY: ${{ secrets.NAS_PUSH_VAPID_PRIVATE_KEY }}
+          NAS_PUSH_VAPID_PUBLIC_KEY: ${{ secrets.NAS_PUSH_VAPID_PUBLIC_KEY }}
+          VAULT_SIGNUPS_ALLOWED: ${{ secrets.VAULT_SIGNUPS_ALLOWED }}
+          VITE_GLITCHTIP_DSN: ${{ vars.VITE_GLITCHTIP_DSN }}
+          VITE_GLITCHTIP_DSN_ADMIN: ${{ vars.VITE_GLITCHTIP_DSN_ADMIN }}
+          VITE_LOGTO_APP_ID: ${{ vars.VITE_LOGTO_APP_ID }}
+          VITE_LOGTO_APP_ID_ADMIN: ${{ vars.VITE_LOGTO_APP_ID_ADMIN }}
       - name: Upload to Synology FileStation (bundle first, stamp last)
         run: |
           set -euo pipefail

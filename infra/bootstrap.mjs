@@ -25,8 +25,8 @@ import { applyApps, applyBranding, applySocialConnectors, writeBack } from './mo
 import { applyGlitchTip, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook, renderLocalRunbook } from './modules/runbook.mjs';
-import { readFileSync } from 'node:fs';
-import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, isPermissionError } from './modules/dsm.mjs';
+import { appendFileSync, readFileSync } from 'node:fs';
+import { applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, proxyRules, dsmAdvice, dsmCode, DSM_CODE_ADVICE, isPermissionError, isTransport, summarizeNas } from './modules/dsm.mjs';
 import { localAwareFetch } from './modules/insecure-fetch.mjs';
 
 const args = process.argv.slice(2);
@@ -56,6 +56,33 @@ function envSecret(env, name) {
     return JSON.parse(out).name === name;
   } catch {
     return false;
+  }
+}
+
+/** a step output for the workflow (iac.yml reads `nas`); a no-op outside Actions */
+function githubOutput(name, value) {
+  if (!process.env.GITHUB_OUTPUT) return;
+  appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
+}
+
+/** how DSM answered the deploy account, secret-free (code + the operator advice; never the message, which could carry a URL) */
+const dsmRefusal = (e) => ({ ok: false, code: dsmCode(e) || null, transport: isTransport(e), advice: DSM_CODE_ADVICE[dsmCode(e)] ?? null });
+
+/**
+ * The pair's NAS verdict, published as the repo variable IAC_NAS_STATE for
+ * the wizard's readiness card (its first row, without retyping anything
+ * in the Synology tile). Flags and counts only — never a host name: the
+ * domain is a secret. Only the prod twin writes it (it owns the NAS-wide
+ * pieces); a token without the variables scope just prints a note.
+ */
+function publishNasState(state) {
+  if (stack.role !== 'prod') return;
+  const body = JSON.stringify({ at: new Date().toISOString(), stack: stack.stack, ...state });
+  try {
+    execFileSync('gh', ['variable', 'set', 'IAC_NAS_STATE', '--body', body], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
+    console.log('  dsm: NAS verdict published for the wizard (repo variable IAC_NAS_STATE)');
+  } catch (e) {
+    console.log(`  dsm: NAS verdict not published (${String(e.stderr ?? e.message).trim().split('\n')[0]}) — the wizard keeps the last one`);
   }
 }
 
@@ -247,8 +274,11 @@ async function ciVerify() {
   // what the NAS holds (read-only): the wildcard certificate and the poller task
   const { SYNOLOGY_URL, SYNOLOGY_USER, SYNOLOGY_PASS, SYNOLOGY_PATH } = process.env;
   if (SYNOLOGY_URL && SYNOLOGY_USER && SYNOLOGY_PASS) {
+    const hosts = proxyRules(stack).map((r) => r.host);
+    let state;
     try {
-      const nas = await inspectNas({ url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS }, { domain: stack.domain, publishedPath: SYNOLOGY_PATH ?? '', hosts: proxyRules(stack).map((r) => r.host) });
+      const nas = await inspectNas({ url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS }, { domain: stack.domain, publishedPath: SYNOLOGY_PATH ?? '', hosts });
+      state = summarizeNas(nas, hosts.length);
       const w = nas.wildcard;
       if (!w) console.log('  ✗ dsm: no wildcard certificate — the prod twin\'s bootstrap (apply) requests one through DSM');
       else if (w.expired) console.log(`  ✗ dsm: the wildcard certificate ${w.id} expired (${w.validTill}) — the prod twin's bootstrap (apply) requests a new one`);
@@ -262,7 +292,9 @@ async function ciVerify() {
       if (nas.liveDirError) console.log(`  ! dsm: ${nas.liveDirError}`);
     } catch (e) {
       console.log(`  ✗ dsm: could not read the NAS (${e.message})${dsmAdvice(e)}`);
+      state = { dsm: dsmRefusal(e) };
     }
+    publishNasState({ mode: 'verify', ...state });
   }
   const allUp = await probeAll();
   return missing.length || !allUp ? 1 : 0;
@@ -333,10 +365,14 @@ async function ciApply() {
   // Let's Encrypt request.
   const { SYNOLOGY_URL, SYNOLOGY_USER, SYNOLOGY_PASS, SYNOLOGY_PATH } = process.env;
   let nasErrors = 0;
+  // the workflow's step output `nas`: applied | blocked (the account's
+  // rights — nothing is chained onto such a run) | skipped (no creds)
+  let nasOutcome = 'skipped';
   if (SYNOLOGY_URL && SYNOLOGY_USER && SYNOLOGY_PASS) {
     const creds = { url: SYNOLOGY_URL, user: SYNOLOGY_USER, pass: SYNOLOGY_PASS };
     const owner = stack.role === 'prod';
     const hosts = proxyRules(stack).map((r) => r.host);
+    let refusal = null; // how DSM refused the deploy account, if it did
     // one step: prints its outcome; counts a failure unless it is the account's rights (expected until fixed)
     const nasStep = async (label, fn) => {
       try {
@@ -344,7 +380,7 @@ async function ciApply() {
         console.log(`  dsm: ${label} ${r.state} — ${r.detail}`);
         return r;
       } catch (e) {
-        if (!isPermissionError(e)) nasErrors++;
+        if (isPermissionError(e)) refusal = dsmRefusal(e); else nasErrors++;
         console.log(`  dsm: ${label} failed (${e.message})${dsmAdvice(e)}`);
         return null;
       }
@@ -369,9 +405,18 @@ async function ciApply() {
     } else {
       console.log('  dsm: certificate, live dir and poller task skipped until the deploy account may use DSM');
     }
+    if (refusal) {
+      nasOutcome = 'blocked';
+      publishNasState({ mode: 'apply', dsm: refusal });
+    } else {
+      nasOutcome = 'applied';
+      // what the NAS holds after this run, in the shape --verify publishes
+      if (owner) publishNasState({ mode: 'apply', ...(await inspectNas(creds, { domain: stack.domain, publishedPath: SYNOLOGY_PATH ?? '', hosts }).then((nas) => summarizeNas(nas, hosts.length)).catch((e) => ({ dsm: dsmRefusal(e) }))) });
+    }
   } else {
     console.log('  dsm: SYNOLOGY_URL/USER/PASS not in env — reverse-proxy rules, certificate and poller task not applied this run');
   }
+  githubOutput('nas', nasOutcome);
 
   const runbook = renderRunbook(stack, { minted, missingOperator });
   console.log(`  runbook → ${runbook}`);

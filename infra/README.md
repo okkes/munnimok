@@ -84,6 +84,17 @@ the six-minute wait ends (the next run adopts the certificate; never
 re-request by hand, every request counts against the 5-per-week limit).
 Optional secret `IAC_ACME_EMAIL` is the Let's Encrypt contact (default
 `admin@<domain>`).
+A run DSM refuses (402/105/119) stays green for the Logto/GlitchTip work
+it did, but chains NOTHING (step output `nas=blocked`, a notice in the
+summary) — a Deploy over a NAS without rules would only fail at the
+FileStation login. Every verify/apply of the prod twin publishes the
+NAS verdict as the repo variable `IAC_NAS_STATE` (flags and counts, no
+host names): the wizard's readiness card shows it as its first row with
+the exact DSM clicks written under the rows, and its **Bootstrap now**
+button dispatches the chained run — no retyping in the tile. A verify
+you dispatch (`verify_only`) is red while gaps remain; pushes only warn.
+A poller made by hand (the README one-liner, any name) is adopted by
+bootstrap — renamed, pointed at the resolved dirs — never doubled.
 The wizard's **NAS readiness** card (Deploy step, with the helper running)
 probes every reverse-proxy host from outside and names the step each one
 still misses — DNS, the wildcard certificate, the rule (DSM answers Web
@@ -102,8 +113,10 @@ itself (after the secrets are stored). Only two more things stay manual
 **B1-2 (once per stack — one workflow click).** Wizard step 5, or
 Actions → *Deploy to NAS* → Run workflow → channel `iac-prod` /
 `iac-staging` / `iac-both`. The workflow renders the stack from its
-GitHub Environment (secrets AND written-back variables), publishes the
-bundle via FileStation, and the NAS poller unpacks it into
+GitHub Environment (secrets AND written-back variables, each one named
+in the workflow's `env:` — never `toJSON(secrets)`, the pattern GitHub's
+scanner holds public-repo runs for; a placeholder without its line fails
+`infra/tests/deploy-nas.test.mjs`), publishes the bundle via FileStation, and the NAS poller unpacks it into
 `/volume1/docker/<stack>/` and runs `docker compose up -d` there. No
 SSH, no manual copying.
 

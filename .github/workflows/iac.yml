@@ -63,6 +63,7 @@ jobs:
         # quoted: node expands the glob itself (a dir arg is not portable)
         run: node --test "infra/tests/**/*.test.mjs"
       - name: Bootstrap / verify
+        id: boot
         # pushes to dev VERIFY (no writes); manual dispatch APPLIES unless
         # verify_only is ticked. Output lands in the run's step summary so
         # the setup wizard can point straight at it.
@@ -81,8 +82,10 @@ jobs:
             | tee -a "$GITHUB_STEP_SUMMARY" || rc=$?
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           if [ "$rc" -ne 0 ]; then
-            if [ "${FLAGS[0]:-}" = "--verify" ]; then
-              echo "::warning::verify reported gaps (expected until the runbook's manual steps are done)"
+            if [ "${FLAGS[0]:-}" = "--verify" ] && [ "${{ github.event_name }}" = "push" ]; then
+              # a push never goes red on NAS drift; a verify you DISPATCH
+              # (verify_only) is a verdict you asked for — gaps make it red
+              echo "::warning::verify reported gaps (expected until the runbook's manual steps are done) — dispatch with verify_only for a red/green verdict"
               exit 0
             fi
             exit $rc
@@ -110,6 +113,8 @@ jobs:
           # Let's Encrypt contact for the wildcard certificate DSM requests (optional)
           IAC_ACME_EMAIL: ${{ secrets.IAC_ACME_EMAIL }}
       - name: Upload rendered stack + runbook
+        # a red apply (a NAS step failed) rendered it too — keep it
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: iac-${{ matrix.stack }}-${{ github.run_number }}
@@ -120,7 +125,10 @@ jobs:
         # the wizard dispatches the prod twin with chain=staging,deploy-both:
         # staging follows (it binds its rules to the certificate prod just
         # ensured), then Deploy for both — no click left after the account fix
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.chain != '' }}
+        # …and never over a NAS that refused the deploy account: bootstrap
+        # reports nas=blocked (402/105/119) and a Deploy would only fail at
+        # the FileStation login — the step after this one says so instead
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.chain != '' && steps.boot.outputs.nas != 'blocked' }}
         run: |
           set -euo pipefail
           chain="${{ inputs.chain }}"
@@ -142,3 +150,8 @@ jobs:
           esac
         env:
           GH_TOKEN: ${{ secrets.IAC_GH_PAT || secrets.GITHUB_TOKEN }}
+      - name: Chain skipped — the deploy account may not use DSM
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.chain != '' && steps.boot.outputs.nas == 'blocked' }}
+        run: |
+          echo "::notice::nothing chained — DSM refused the deploy account (402/105/119), so the NAS holds none of this run's rules, certificate or poller yet. Fix the account (Control Panel → User & Group → the deploy user → Applications: DSM + File Station allowed; User groups: administrators), then run Bootstrap again."
+          echo "chain skipped: the deploy account may not use DSM yet — the wizard's readiness card (Deploy step) shows the exact clicks; Bootstrap again afterwards" >> "$GITHUB_STEP_SUMMARY"

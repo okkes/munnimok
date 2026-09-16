@@ -340,15 +340,17 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
   <div class="msg" id="msg-nas"></div>
   <!-- seen from outside, without any DSM credential: which one-time step each host still misses (2026-09-10) -->
   <div class="card" id="nas-ready" hidden>
-    <div class="health-h"><span class="ico" data-ico="pulse"></span><div><b>NAS readiness</b><div class="why" style="margin:0" id="nas-ready-sub">probing the hosts…</div></div><button class="ghost" id="btn-nas-probe">Probe again</button></div>
+    <div class="health-h"><span class="ico" data-ico="pulse"></span><div><b>NAS readiness</b><div class="why" style="margin:0" id="nas-ready-sub">probing the hosts…</div></div><button id="btn-nas-bootstrap" title="Run Bootstrap for the prod twin now — it chains the staging twin and then Deploy for both">Bootstrap now</button><button class="ghost" id="btn-nas-probe">Probe again</button></div>
     <ul class="health-list" id="nas-ready-list"></ul>
+    <!-- what to do for every open row, in words (not only on hover) -->
+    <div class="why" id="nas-ready-fix" hidden></div>
     <div class="msg" id="msg-nas-ready"></div>
   </div>
   <div class="card">
     <h3>Still manual on the NAS (once) — the deploy account, then two firewall clicks</h3>
     <p class="why">Once the deploy account may use DSM, <b>Bootstrap</b> (the step above) does the NAS work through the DSM API by itself, and repeats it safely on every run: every reverse-proxy rule, the <b>wildcard certificate</b> (<code class="dom">*.&lt;domain&gt;</code> — DSM’s DDNS default covers only <code class="dom">&lt;domain&gt;</code>, so bootstrap asks DSM’s own Let’s Encrypt wizard for one and sets it as default; own domain: acme.sh with the synology_dsm hook, docs/iac-plan.md §4), and the <b>poller</b> (a root Task Scheduler entry, every five minutes, in the live dir next to your published folder). <b>Deploy</b> uploads the bundle plus the poller script; the poller applies it within five minutes. None of that works while the account is refused: DSM answers 402 (the DSM application is denied for the account) or 119/105 (not an administrator) — and no account can grant itself either, which is why this one step is yours.</p>
     <ol class="steps">
-      <li><b>The deploy account</b> (once): Control Panel → User &amp; Group → the deploy user → Edit → <b>Applications</b>: DSM = Allow, File Station = Allow (check its groups too — a group’s Deny beats Allow) → <b>User groups</b>: tick administrators → Save. 2-step verification off for it. Then press Check on the Synology tile (or Store): a green check runs Bootstrap by itself — the prod twin first (it owns the certificate, the live dir and the poller), which chains the staging twin and then Deploy for both.</li>
+      <li><b>The deploy account</b> (once): Control Panel → User &amp; Group → the deploy user → Edit → <b>Applications</b>: DSM = Allow, File Station = Allow (check its groups too — a group’s Deny beats Allow) → <b>User groups</b>: tick administrators → Save. 2-step verification off for it. Then press <b>Bootstrap now</b> on the readiness card below (or Check on the Synology tile — a green check runs Bootstrap by itself): the prod twin first (it owns the certificate, the live dir and the poller), which chains the staging twin and then Deploy for both. The card’s first row shows how DSM answered the account on the last run, with the exact clicks if it refused.</li>
       <li>Control Panel → Security → Firewall: <b>allow 172.16.0.0/12</b> (the docker bridge — Logto self-fetches through the host gateway).</li>
       <li>Restrict <code class="dom">munni-iac-admin.&lt;domain&gt;</code> and <code class="dom">logto-iac-admin.&lt;domain&gt;</code> to LAN only.</li>
     </ol>
@@ -1152,6 +1154,7 @@ const S = {
   caTrust: null,           // the helper's verdict on the family root in this user's Root store
   registry: null,          // the helper's verdict on anonymous image pulls (public images need no token)
   nasProbe: null,          // the helper's outside-in probe of the NAS hosts (NAS track)
+  nasState: null,          // the NAS verdict the prod twin's last IaC run published (repo variable IAC_NAS_STATE)
   defaultBranch: null,     // the connected repo's default branch (workflows register from it)
   pollTimer: null,
 };
@@ -1180,7 +1183,7 @@ const GROUPS = [
   {
     id: 'synology', title: 'Synology deploy account', targets: ['nas'], check: 'synology',
     why: 'The pipeline uploads bundles via the FileStation API and creates reverse-proxy rules via the DSM API — no SSH. Needs a dedicated DSM account with administrator rights and 2FA off (the login API cannot answer an OTP prompt).',
-    how: ['DSM → Control Panel → User & Group → create e.g. "deploy" with administrator group membership; disable 2FA for it.', 'URL is your DSM address including port, e.g. https://yourname.synology.me:5001.', 'Path is the shared-folder path bundles land in, e.g. /docker/munni/published.'],
+    how: ['DSM → Control Panel → User & Group → create e.g. "deploy" (or edit the one you have): Applications tab → DSM = Allow, File Station = Allow (a group’s Deny beats Allow); User groups tab → administrators; 2-step verification off for it. DSM answers 402 to an account whose DSM application is denied, 105/119 to one outside administrators.', 'URL is your DSM address including port, e.g. https://yourname.synology.me:5001.', 'Path is the shared-folder path bundles land in, e.g. /docker/munni/published.'],
     fields: [
       { name: 'SYNOLOGY_URL', scope: 'repo', ph: 'https://yourname.synology.me:5001' },
       { name: 'SYNOLOGY_USER', scope: 'repo', ph: 'deploy' },
@@ -1442,6 +1445,11 @@ async function refresh() {
     workflowRuns('iac.yml'), workflowRuns('deploy-nas.yml'), workflowRuns('native-android.yml'), workflowRuns('native-ios.yml'),
   ]);
   S.runs = { iac: iacRuns?.workflow_runs ?? [], nas: nasRuns?.workflow_runs ?? [], native: [...(andRuns?.workflow_runs ?? []), ...(iosRuns?.workflow_runs ?? [])] };
+  // the NAS verdict the prod twin's last IaC run published (verify or
+  // apply): the readiness card's first row without retyping anything
+  const nasStateVar = await gh(`/repos/${S.slug}/actions/variables/IAC_NAS_STATE`, { allow404: true }).catch(() => null);
+  try { S.nasState = nasStateVar?.value ? JSON.parse(nasStateVar.value) : null; } catch { S.nasState = null; }
+  renderNasReadiness();
   renderStatus();
   scheduleLivePoll();
 }
@@ -1709,6 +1717,7 @@ async function refreshNasReadiness({ force = false } = {}) {
   } catch { S.nasProbe = null; }
   renderNasReadiness();
 }
+const ago = (iso) => { const s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000); return s < 90 ? 'just now' : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`; };
 function renderNasReadiness() {
   const list = document.getElementById('nas-ready-list');
   const sub = document.getElementById('nas-ready-sub');
@@ -1718,9 +1727,20 @@ function renderNasReadiness() {
   const rows = [];
   const dot = (cls) => (cls === 'ok' ? 'ok' : (cls === 'bad' ? 'miss' : (cls === 'warn' ? 'warn' : 'opt')));
   const row = (name, cls, label, title, jump) => rows.push({ name, cls, label, title, jump });
-  // 1. the deploy account — only the Synology tile's Check knows
-  if (v && !v.checking) row('Deploy account may use DSM', v.ok ? 'ok' : 'bad', v.ok ? 'DSM accepts the login ✓' : 'refused', v.detail, { href: '[data-group="synology"]' });
-  else row('Deploy account may use DSM', '', 'not checked yet', 'Manage → Check on the Synology tile', { href: '[data-group="synology"]' });
+  // 1. the deploy account — the Synology tile's Check (this visit) or the
+  // verdict the prod twin's last IaC run published (no retyping needed)
+  const ci = S.nasState;
+  const THEN = ' Then press Bootstrap now (above) — or Check on the Synology tile.';
+  const ciWhen = ci?.at ? ` (IaC ${ci.mode === 'apply' ? 'bootstrap' : 'verify'} run ${ago(ci.at)})` : '';
+  if (v && !v.checking) row('Deploy account may use DSM', v.ok ? 'ok' : 'bad', v.ok ? 'DSM accepts the login ✓' : 'refused', v.ok ? '' : `${v.detail}.${THEN}`, { href: '[data-group="synology"]' });
+  else if (ci?.dsm) {
+    const d = ci.dsm;
+    const label = d.ok ? `DSM accepted the login ✓${ciWhen}` : (d.transport ? `DSM unreachable from GitHub${ciWhen}` : `refused (DSM code ${d.code ?? '?'})${ciWhen}`);
+    const title = d.ok ? '' : (d.transport ? 'the run could not reach DSM — is the NAS up and its port open for GitHub’s runners (a NAS-side firewall rule)?' : `${d.advice ?? 'DSM refused the deploy account: Control Panel → User & Group → the deploy user → Applications: DSM + File Station = Allow; User groups: administrators'}.${THEN}`);
+    row('Deploy account may use DSM', d.ok ? 'ok' : (d.transport ? 'warn' : 'bad'), label, title, { href: '[data-group="synology"]' });
+    if (d.ok) row('Poller task on the NAS', ci.task ? (ci.task.enabled ? 'ok' : 'warn') : 'bad', ci.task ? (ci.task.enabled ? `every 5 minutes ✓${ciWhen}` : `exists but disabled${ciWhen}`) : `missing${ciWhen}`, ci.task?.enabled ? '' : 'Bootstrap (the prod twin) creates or re-enables it — press Bootstrap now', { href: '#s-bootstrap' });
+  }
+  else row('Deploy account may use DSM', '', 'not checked yet', 'press Bootstrap now: the run publishes how DSM answered the account (or Manage → Check on the Synology tile)', { href: '[data-group="synology"]' });
   if (!p) { row('Hosts', '', 'probe pending', '', null); }
   else {
     const s = p.summary;
@@ -1741,7 +1761,11 @@ function renderNasReadiness() {
   list.innerHTML = rows.map((r) => `<li ${r.jump ? jumpAttr(r.jump) : ''} title="${escAttr(r.title ?? '')}"><span class="hn">${r.name}</span><span class="hs ${r.cls}"><i class="dot ${dot(r.cls)}"></i>${r.label}</span></li>`).join('');
   applyIcons(document.getElementById('nas-ready'));
   const open = rows.filter((r) => r.cls === 'bad' || r.cls === 'warn');
-  sub.textContent = !p ? 'probing the hosts from this machine…' : (open.length ? `${open.length} step${open.length === 1 ? '' : 's'} still open — hover a line for what to do` : 'every host answers with munni — the NAS is ready');
+  // what to do, in words under the rows — not only on hover
+  const fix = document.getElementById('nas-ready-fix');
+  const todo = open.filter((r) => r.title);
+  if (fix) { fix.hidden = !todo.length; fix.innerHTML = todo.map((r) => `<div><b>${escAttr(r.name)}</b> — ${escAttr(r.title)}</div>`).join(''); }
+  sub.textContent = !p ? 'probing the hosts from this machine…' : (open.length ? `${open.length} step${open.length === 1 ? '' : 's'} still open — what to do is written under the rows` : 'every host answers with munni — the NAS is ready');
 }
 
 /* DSM accepting the deploy account is the moment Bootstrap can do its
@@ -1758,7 +1782,7 @@ async function bootstrapAfterSynology() {
   // the run reads SYNOLOGY_* from GitHub: a green Check on values that are
   // only typed must NOT dispatch — the Store that follows does it
   if (!SYNOLOGY_SECRETS.every((n) => secretPresent(n, true))) return { dispatched: false, reason: 'press Store: the run reads these values from GitHub, so Bootstrap follows the Store by itself' };
-  if (Date.now() - bootstrapAutoAt < 10 * 60 * 1000) return { dispatched: false, reason: '' }; // once per ten minutes is plenty
+  if (Date.now() - bootstrapAutoAt < 10 * 60 * 1000) return { dispatched: false, reason: 'Bootstrap was dispatched less than ten minutes ago — its runs are listed under step 4' }; // once per ten minutes is plenty
   // claim the slot BEFORE the await: two green verdicts in the same tick
   // (Check all + the tile's Check, a double-clicked Store) must dispatch once
   bootstrapAutoAt = Date.now();
@@ -3144,6 +3168,12 @@ const UPSTREAM = 'okkes/munnimok';
 document.getElementById('btn-check-all').addEventListener('click', () => checkAll().catch((e) => msg('msg-health', `✗ ${e.message}`, false)));
 document.getElementById('btn-feat-recommended').addEventListener('click', () => selectRecommended().catch(() => {}));
 document.getElementById('btn-nas-probe').addEventListener('click', () => refreshNasReadiness({ force: true }).catch(() => {}));
+document.getElementById('btn-nas-bootstrap').addEventListener('click', async () => {
+  // the same guarded dispatch a green Synology check makes — for the case
+  // the account was fixed in DSM without retyping anything here
+  const b = await bootstrapAfterSynology().catch((e) => ({ dispatched: false, reason: e.message }));
+  msg('msg-nas-ready', b.dispatched ? `✓ ${b.reason}` : `⚠ ${b.reason || 'nothing dispatched'}`, b.dispatched);
+});
 document.getElementById('manage-close').addEventListener('click', dismissManage);
 document.getElementById('manage-dialog').addEventListener('cancel', (e) => { e.preventDefault(); dismissManage(); });
 document.getElementById('manage-dialog').addEventListener('click', (e) => { if (e.target === e.currentTarget) dismissManage(); });
