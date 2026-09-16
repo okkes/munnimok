@@ -492,7 +492,9 @@ test('live dir: apply.sh is uploaded through FileStation (multipart, _sid in the
   assert.equal(login.params.session, 'FileStation');
   const up = a.calls.find((c) => c.key === 'SYNO.FileStation.Upload.upload');
   assert.equal(up.params._sid, 'SID-FileStation');
-  assert.ok(/\/webapi\/entry\.cgi\?_sid=SID-FileStation$/.test(up.url), 'the sid rides the query string, as upload.sh does');
+  assert.ok(/\/webapi\/entry\.cgi\?_sid=SID-FileStation&SynoToken=TOK$/.test(up.url), 'the sid rides the query string, as upload.sh does — and the session’s CSRF token with it (119 without it, found live 2026-09-16)');
+  assert.equal(up.init.headers['X-SYNO-TOKEN'], 'TOK', 'the token rides the header too');
+  assert.equal(up.init.headers['content-type'], undefined, 'multipart: the boundary is fetch’s to set');
   assert.equal(up.params.path, '/docker/munni-iac');
   assert.equal(up.params.version, '2');
   assert.equal(up.params.create_parents, 'true');

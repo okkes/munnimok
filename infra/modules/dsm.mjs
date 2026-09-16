@@ -118,8 +118,14 @@ async function dsmCall(base, path, params, fetchImpl = fetch, { timeoutMs = 3000
   }
 }
 
-/** SYNO.FileStation.Upload: multipart, _sid in the QUERY (as a field DSM answers 119), file last */
-async function dsmUpload(base, sid, path, content, name, fetchImpl = fetch, { timeoutMs = 60000 } = {}) {
+/**
+ * SYNO.FileStation.Upload: multipart, _sid in the QUERY (as a field DSM
+ * answers 119), file last — and the session's SynoToken beside it (query +
+ * X-SYNO-TOKEN header): a session that has one must carry it on the
+ * upload too, or DSM answers 119 here as well (found live 2026-09-16 on
+ * the first real run; upload.sh's v6 login has no token and needs none).
+ */
+async function dsmUpload(base, sid, path, content, name, fetchImpl = fetch, { timeoutMs = 60000, token = null } = {}) {
   const form = new FormData();
   form.append('api', 'SYNO.FileStation.Upload');
   form.append('version', '2');
@@ -128,7 +134,8 @@ async function dsmUpload(base, sid, path, content, name, fetchImpl = fetch, { ti
   form.append('create_parents', 'true');
   form.append('overwrite', 'true');
   form.append('file', new Blob([content]), name);
-  return dsmRequest(`${base}/webapi/entry.cgi?_sid=${encodeURIComponent(sid)}`, { method: 'POST', body: form, signal: AbortSignal.timeout(timeoutMs) }, 'SYNO.FileStation.Upload.upload', fetchImpl);
+  const query = new URLSearchParams({ _sid: sid, ...(token ? { SynoToken: token } : {}) });
+  return dsmRequest(`${base}/webapi/entry.cgi?${query}`, { method: 'POST', body: form, ...(token ? { headers: { 'X-SYNO-TOKEN': token } } : {}), signal: AbortSignal.timeout(timeoutMs) }, 'SYNO.FileStation.Upload.upload', fetchImpl);
 }
 
 export async function dsmLogin(base, account, passwd, fetchImpl = fetch, { session = null, retry = [], sleepImpl = sleep } = {}) {
@@ -184,7 +191,7 @@ export async function dsmSession({ url, user, pass }, fetchImpl = fetch, { sessi
     session,
     call,
     read: (api, version, method, params = {}, opts = {}) => call(api, version, method, params, { retry, ...opts }),
-    upload: (path, content, name, opts) => dsmUpload(base, sid, path, content, name, fetchImpl, opts),
+    upload: (path, content, name, opts) => dsmUpload(base, sid, path, content, name, fetchImpl, { token, ...opts }),
     logout: () => dsmLogout(base, sid, fetchImpl, session),
   };
 }
@@ -312,7 +319,7 @@ export async function bindRulesToCertificate(s, { certId, hosts }) {
     }
   }
   const known = [...uuidHost.values()];
-  return { bound: uuidHost.size, migrated: settings.map((x) => uuidHost.get(x.service.service)), unbound: hosts.filter((h) => !known.includes(h)) };
+  return { bound: uuidHost.size, migrated: settings.map((x) => uuidHost.get(x.service.service)), unbound: hosts.filter((h) => !known.includes(h)), listed: entries.length };
 }
 
 /** what DSM's own wizard waits for its Let's Encrypt call (its UI: six minutes) */
@@ -352,7 +359,7 @@ export async function ensureWildcardCertificate(creds, { domain, probeHost, emai
       if (!hosts.length) return '';
       const b = await bindRulesToCertificate(s, { certId: id, hosts });
       const moved = b.migrated.length ? `; ${b.migrated.length} rule${b.migrated.length === 1 ? '' : 's'} moved onto it (${b.migrated.join(', ')})` : `; the ${b.bound} rule${b.bound === 1 ? '' : 's'} already use it`;
-      return `${moved}${b.unbound.length ? `; no rule yet for ${b.unbound.join(', ')}` : ''}`;
+      return `${moved}${b.unbound.length ? `; no rule yet for ${b.unbound.join(', ')} (DSM listed ${b.listed} rule${b.listed === 1 ? '' : 's'} — the next run binds what it lists then)` : ''}`;
     };
     const wild = (certs) => certs.filter((c) => certHasWildcard(c, domain));
     const certs = await listCerts(s);
