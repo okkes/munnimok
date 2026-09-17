@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Munni.Api.Accounts;
 using Munni.Api.Data;
+using Munni.Api.GoCardless;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 using Xunit;
@@ -14,7 +15,8 @@ namespace Munni.Api.Tests;
 
 /// <summary>
 /// Shared-accounts P2: feed registration (S1 squatting fix), derived
-/// read access via attachments, archive-on-leave and revive-on-rejoin.
+/// read access via attachments, archive-on-leave and revive-on-rejoin —
+/// and every link the server writes carrying its gate and type.
 /// </summary>
 public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
 {
@@ -26,6 +28,7 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 
@@ -36,9 +39,11 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         return g[..14] + '5' + g[15..];
     }
 
+    private static JsonElement Json(object value) => JsonSerializer.SerializeToElement(value);
+
     private static SyncOpDto Op(string spaceId, string entityId = "acct1") =>
         new(Guid.NewGuid().ToString(), spaceId, "account", entityId,
-            new() { ["name"] = JsonSerializer.SerializeToElement("ING") }, "000000100-0000-dev");
+            new() { ["name"] = Json("ING") }, "000000100-0000-dev");
 
     [Fact]
     public void Feed_shape_detection_is_version_based()
@@ -141,7 +146,7 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
 
         // non-owner of the feed cannot attach it, even as a space member
         Assert.Equal(HttpStatusCode.Forbidden,
-            (await bob.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, "acct1"))).StatusCode);
+            (await bob.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, "acct1", "2026-01-01"))).StatusCode);
 
         var attach = await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts",
             new AttachAccountRequest(feed, "acct1", "2026-01-01"));
@@ -167,6 +172,39 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
     }
 
     [Fact]
+    public async Task Attach_carries_the_gate_and_freezes_the_accounts_type_onto_the_link()
+    {
+        var feed = FeedId();
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        var alice = ClientFor($"owner_{Guid.NewGuid():N}");
+        await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"));
+        // the feed's account row says what the account IS globally
+        await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1",
+            [new SyncOpDto(Guid.NewGuid().ToString(), feed, "account", "acct1",
+                new() { ["name"] = Json("ING"), ["type"] = Json("savings") }, "000000100-0000-dev")]));
+        await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "spacerow")]));
+
+        // the gate is not optional — an attach without one is refused
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new { feedSpaceId = feed, accountId = "acct1" })).StatusCode);
+
+        // no pick: the link takes the account row's own type
+        var link = await (await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts",
+            new AttachAccountRequest(feed, "acct1", "2026-01-01"))).Content.ReadFromJsonAsync<AccountLinkDto>();
+        Assert.Equal("2026-01-01", link!.HistoryFrom);
+        Assert.Equal("savings", link.Type);
+
+        // an explicit pick wins, and a re-attach re-states the gate
+        var picked = await (await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts",
+            new AttachAccountRequest(feed, "acct1", "2026-03-01", "credit"))).Content.ReadFromJsonAsync<AccountLinkDto>();
+        Assert.Equal(link.Id, picked!.Id);
+        Assert.Equal("2026-03-01", picked.HistoryFrom);
+        Assert.Equal("credit", picked.Type);
+        var listed = await alice.GetFromJsonAsync<List<AccountLinkDto>>($"/spaces/{spaceId}/accounts");
+        Assert.Equal("credit", Assert.Single(listed!).Type);
+    }
+
+    [Fact]
     public async Task Leaving_archives_the_link_history_stays_new_data_stops_rejoin_revives()
     {
         var feed = FeedId();
@@ -180,7 +218,7 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1", [Op(feed, "tx-before")]));
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "spacerow")]));
         await AddMemberAsync(spaceId, memberSub);
-        await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, "acct1"));
+        await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, "acct1", "2026-01-01"));
 
         // alice (the attacher) leaves the space
         var aliceId = await UserIdAsync(ownerSub);
@@ -192,10 +230,13 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         Assert.True(links![0].Archived);
 
         // …and the SYNCED mirror row carries the archived flag, so bob's
-        // devices render the badge without asking the server
+        // devices render the badge without asking the server. No device
+        // ever wrote this mirror, so the server's op carries the whole
+        // link — gate and type included — never a gateless or untyped row
         var mirror = await bob.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0");
-        var linkOps = mirror!.Ops.Where(o => o.Entity == "accountLink").ToList();
-        Assert.Contains(linkOps, o => o.Fields.TryGetValue("archived", out var v) && v.GetInt32() == 1);
+        var archiveOp = mirror!.Ops.Single(o => o.Entity == "accountLink" && o.Fields.TryGetValue("archived", out var v) && v.GetInt32() == 1);
+        Assert.Equal("2026-01-01", archiveOp.Fields["historyFrom"].GetString());
+        Assert.Equal("checking", archiveOp.Fields["type"].GetString());
         var history = await bob.GetFromJsonAsync<PullResponse>($"/sync/{feed}/pull?since=0");
         Assert.Single(history!.Ops);
 
@@ -221,6 +262,43 @@ public class FeedEndpointsTests : IClassFixture<FeedsApiFactory>
         Assert.False(revived![0].Archived);
         var full = await bob.GetFromJsonAsync<PullResponse>($"/sync/{feed}/pull?since=0");
         Assert.Equal(2, full!.Ops.Count);
+    }
+
+    [Fact]
+    public async Task Server_mirror_ops_complete_a_missing_fact_but_never_override_a_present_one()
+    {
+        var feed = FeedId();
+        var spaceId = $"space_{Guid.NewGuid():N}";
+        var ownerSub = $"owner_{Guid.NewGuid():N}";
+        var memberSub = $"member_{Guid.NewGuid():N}";
+        var alice = ClientFor(ownerSub);
+        var bob = ClientFor(memberSub);
+
+        await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, "NL69INGB0123456789"));
+        await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "spacerow")]));
+        await AddMemberAsync(spaceId, memberSub);
+        await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, "acct1", "2026-01-01"));
+        // alice's device mirrors the attachment with ITS gate (the space
+        // moved its history start since) and no type
+        var mirrorId = ImportIds.AccountLinkId(spaceId, feed);
+        await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
+            [new SyncOpDto(Guid.NewGuid().ToString(), spaceId, "accountLink", mirrorId,
+                new() { ["feedSpaceId"] = Json(feed), ["accountId"] = Json("acct1"), ["historyFrom"] = Json("2025-06-01"), ["archived"] = Json(0) },
+                "000000200-0000-dev")]));
+
+        var aliceId = await UserIdAsync(ownerSub);
+        Assert.True((await alice.DeleteAsync($"/spaces/{spaceId}/members/{aliceId}")).IsSuccessStatusCode);
+
+        var ops = (await bob.GetFromJsonAsync<PullResponse>($"/sync/{spaceId}/pull?since=0"))!.Ops;
+        var archiveOp = ops.Single(o => o.Entity == "accountLink" && o.Fields.TryGetValue("archived", out var v) && v.GetInt32() == 1);
+        // the device's gate stands (#305: never re-asserted), the missing type is completed
+        Assert.False(archiveOp.Fields.ContainsKey("historyFrom"));
+        Assert.Equal("checking", archiveOp.Fields["type"].GetString());
+        var row = (await bob.GetFromJsonAsync<BootstrapResponse>($"/sync/{spaceId}/bootstrap"))!.Rows
+            .Single(r => r.Entity == "accountLink" && r.EntityId == mirrorId);
+        Assert.Equal("2025-06-01", row.Data.GetProperty("historyFrom").GetString());
+        Assert.Equal("checking", row.Data.GetProperty("type").GetString());
+        Assert.Equal(1, row.Data.GetProperty("archived").GetInt32());
     }
 
     private async Task AddMemberAsync(string spaceId, string sub)
