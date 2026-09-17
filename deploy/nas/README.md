@@ -18,8 +18,8 @@ live there, and every stack composes up in its own folder next to it
 template from the stack's GitHub environment (`deploy/nas/render-env.sh`),
 and uploads:
 
-- `munni-<stack>.tgz` — compose file, `.env`, `update.sh`, `initdb/`, and
-  for the shared stack `pgadmin-servers.json`;
+- `<stack>.tgz` (e.g. `munni-nas-prod.tgz`) — compose file, `.env`,
+  `update.sh`, `initdb/`, and for the shared stack `pgadmin-servers.json`;
 - `VERSION_<STACK>` — the stamp (`<sha>.<run number>`; a stamp reading
   `remove` tears the stack down);
 - `apply.sh` into the live dir (the poller script rides along with every

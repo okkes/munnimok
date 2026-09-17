@@ -28,7 +28,9 @@ const rows = [];
 for (const p of platforms) {
   const names = [stackName(p.platform), ...platformEnvs(p.platform).map((e) => stackName(p.platform, e.env))];
   for (const name of names) {
-    const s = loadStack(name);
+    // lenient: the matrix job runs outside any GitHub environment, so the
+    // platform's domain secret is not there — rows never carry a host
+    const s = loadStack(name, { lenient: true });
     if (only && s.stack !== only) continue;
     if (env && env !== 'all' && (env === 'shared' ? s.role !== 'shared' : s.env !== env)) continue;
     if (role && role !== 'all' && s.role !== role) continue;

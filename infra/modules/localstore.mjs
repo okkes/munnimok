@@ -71,11 +71,13 @@ export function loadLocalValues(stack) {
   return readJson(storeFile(stack.stack)) ?? {};
 }
 
-/** the merged view a local stack renders with: the wizard's values, the shared stack's, its own */
+/** the merged view a local stack renders with: the wizard's values, the shared stack's platform-scoped values, its own */
 export function familyValues(stack) {
   const own = loadLocalValues(stack);
   const shared = stack.role === 'shared' ? {} : (readJson(storeFile(stack.sharedStack)) ?? {});
-  return { ...wizardValues(stack.platform), ...shared, ...own };
+  // a stack-scoped value (every Postgres server has its own password) never leaks from the shared store into an environment
+  const platformScoped = Object.fromEntries(Object.entries(shared).filter(([name]) => entryOf(name)?.scope !== 'stack'));
+  return { ...wizardValues(stack.platform), ...platformScoped, ...own };
 }
 
 /**

@@ -145,20 +145,25 @@ export const hostsFor = (platform, env = null) => (env
   ? { web: `munni-${env}-${platform}`, admin: `munni-${env}-${platform}-admin`, api: `munni-${env}-${platform}-api`, logto: `munni-${env}-${platform}-logto`, logtoAdmin: `munni-${env}-${platform}-logto-admin` }
   : { glitchtip: `glitchtip-${platform}`, vault: `vault-${platform}`, control: `control-${platform}`, pgadmin: `pgadmin-${platform}` });
 
+/** a stand-in domain for callers that never address a host (the workflow matrices run outside any GitHub environment) */
+export const UNRESOLVED_DOMAIN = 'domain.unresolved.invalid';
+
 /** the platform's domain: the JSON's value, with ${PLATFORM_DOMAIN} taken from the environment (a secret in the public repo) */
-export function platformDomain(p) {
+export function platformDomain(p, { lenient = false } = {}) {
   if (!p.domain) return null;
   if (p.domain !== '${PLATFORM_DOMAIN}') return p.domain;
-  if (!process.env.PLATFORM_DOMAIN) throw new Error(`PLATFORM_DOMAIN is not set — the ${p.platform} platform's domain is a secret the environment provides`);
-  return process.env.PLATFORM_DOMAIN;
+  if (process.env.PLATFORM_DOMAIN) return process.env.PLATFORM_DOMAIN;
+  if (lenient) return UNRESOLVED_DOMAIN;
+  throw new Error(`PLATFORM_DOMAIN is not set — the ${p.platform} platform's domain is a secret the environment provides`);
 }
 
 /**
  * load a stack: {stack, platform, env, role, delivery, channel, slot,
  * ports, hosts, host(key), urls, sharedStack, githubEnvironment, native,
- * features, store, registry, domain, lan}
+ * features, store, registry, domain, lan}. `lenient`: a nas stack loads
+ * without the domain (urls carry UNRESOLVED_DOMAIN) — for listings only.
  */
-export function loadStack(name) {
+export function loadStack(name, { lenient = false } = {}) {
   const parsed = parseStackName(name);
   if (!parsed) throw new Error(`"${name}" is not a stack name (munni-<platform>-<env|shared>)`);
   const p = loadPlatform(parsed.platform);
@@ -166,7 +171,7 @@ export function loadStack(name) {
   const envCfg = shared ? null : loadEnv(p.platform, parsed.env);
   const local = p.delivery === 'docker';
   const lan = local ? lanHost() : null;
-  const domain = local ? (lan ? `${lan.replaceAll('.', '-')}.sslip.io` : null) : platformDomain(p);
+  const domain = local ? (lan ? `${lan.replaceAll('.', '-')}.sslip.io` : null) : platformDomain(p, { lenient });
   const ports = shared ? { ...SHARED_PORTS } : envPorts(envCfg.slot);
   const hosts = hostsFor(p.platform, parsed.env);
   const host = (key) => {

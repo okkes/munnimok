@@ -92,7 +92,7 @@ jobs:
           cp -r "$SRC/initdb" "$STAGE/"
           for f in pgadmin-servers.json Caddyfile; do [ -f "$SRC/$f" ] && cp "$SRC/$f" "$STAGE/"; done
           bash deploy/nas/render-env.sh "$SRC/.env.${{ matrix.stack }}" "$STAGE/.env"
-          BUNDLE="munni-${{ matrix.stack }}.tgz"
+          BUNDLE="${{ matrix.stack }}.tgz"
           STAMP="VERSION_$(echo "${{ matrix.stack }}" | sed 's/^munni-//' | tr 'a-z-' 'A-Z_')"
           tar -czf "$RUNNER_TEMP/$BUNDLE" -C "$STAGE" .
           # <sha>.<run number>: every deploy is new to the poller

@@ -54,7 +54,7 @@ stack_of() { echo "$1" | sed 's/^VERSION_//' | tr 'A-Z_' 'a-z-' | sed 's/^/munni
 apply_stack() { # apply_stack STACK
   stack="$1"
   stamp="VERSION_$(echo "$stack" | sed 's/^munni-//' | tr 'a-z-' 'A-Z_')"
-  bundle="munni-$stack.tgz"
+  bundle="$stack.tgz"
   marker=".applied_$stack"
   compose="docker-compose.$stack.yml"
   target="$(dirname "$LIVE")/$stack"
