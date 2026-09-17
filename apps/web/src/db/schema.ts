@@ -6,7 +6,6 @@ import type {
   AllocationRow,
   BudgetRow,
   CategoryRow,
-  DebtRow,
   EntityName,
   EventRow,
   HoldingRow,
@@ -52,7 +51,6 @@ export class MunniDB extends Dexie {
   events!: Table<EventRow, string>;
   goals!: Table<GoalRow, string>;
   goalContributions!: Table<GoalContributionRow, string>;
-  debts!: Table<DebtRow, string>;
   allocations!: Table<AllocationRow, string>;
   receipts!: Table<ReceiptRow, string>;
   receiptLinks!: Table<ReceiptLinkRow, string>;
@@ -96,12 +94,11 @@ export class MunniDB extends Dexie {
     this.version(4).stores({
       budgets: 'id, spaceId',
     });
-    // events, goals, debts
+    // events, goals
     this.version(5).stores({
       events: 'id, spaceId',
       goals: 'id, spaceId',
       goalContributions: 'id, spaceId, goalId',
-      debts: 'id, spaceId',
     });
     // allocation (zero-based budgeting)
     this.version(6).stores({
@@ -188,8 +185,6 @@ export class MunniDB extends Dexie {
         return this.goals;
       case 'goalContribution':
         return this.goalContributions;
-      case 'debt':
-        return this.debts;
       case 'allocation':
         return this.allocations;
       case 'receipt':

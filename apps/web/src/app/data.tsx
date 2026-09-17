@@ -320,10 +320,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
         // fetch 'checking' re-assert can't flip a space's books
         const { healUntypedLinks } = await import('@/application/accountAttach');
         await healUntypedLinks(store, repo);
-        // loans v2: debt rows fold into their liability account (every
-        // boot, idempotent — late-syncing debts from old devices heal)
-        const { foldDebtsIntoAccounts } = await import('@/application/debts');
-        await foldDebtsIntoAccounts(store, repo);
         // #221: every live space carries its six default accounts (every
         // boot, idempotent — pre-#221 spaces and old-device deletes heal)
         const { ensureAllDefaultAccounts } = await import('@/application/defaultAccounts');

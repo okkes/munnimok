@@ -47,7 +47,6 @@ export const ENTITIES: readonly EntityName[] = [
   'event',
   'goal',
   'goalContribution',
-  'debt',
   'allocation',
   'receipt',
   'receiptLink',

@@ -93,8 +93,8 @@ export interface AccountRow extends SyncEnvelope {
    *  wins over the institution logo derived from bankId */
   logo?: string;
   archived?: 0 | 1;
-  // ── loans v2 (2026-08-01): the liability account IS the debt — the
-  //    old DebtRow's story fields live here now, one object, no seams
+  // ── loans v2 (2026-08-01): the liability account IS the debt — its
+  //    story fields live here, one object, no seams
   /** informational APR, e.g. 3.5 — empty means "remind me", 0 is an answer */
   interestPctYear?: number;
   /** starting size of the loan — optional garnish powering the progress bar */
@@ -458,39 +458,6 @@ export interface GoalContributionRow extends SyncEnvelope {
 }
 
 /**
- * DEPRECATED (loans v2, 2026-08-01): debts fold into their liability
- * account at boot (foldDebtsIntoAccounts) — the account row is the one
- * object now. The table stays registered so old devices' rows still
- * sync in and get folded; nothing reads it for display anymore.
- */
-export interface DebtRow extends SyncEnvelope {
-  id: string;
-  spaceId: string;
-  name: string;
-  icon?: string;
-  /** liability account whose balance is the remaining truth */
-  accountId?: string;
-  /** starting size — optional since the merged Loan form (arc 3): the
-   *  current value is the truth anchor, the original only adds progress */
-  originalCents?: number;
-  /** manual remaining when no account is linked */
-  remainingCents?: number;
-  /** informational APR, e.g. 3.5 */
-  interestPctYear?: number;
-  paymentCents?: number;
-  paymentDay?: number;
-  /** payment cadence (arc 3), recurring-shaped: every N week/month/year;
-   *  absent = monthly, estimates fill the gap when payments exist */
-  paymentEvery?: RecurringEvery;
-  paymentEveryN?: number;
-  /** free-form note (arc 3) */
-  note?: string;
-  /** auto-link payments by merchant (recurring-style) */
-  merchantKey?: string;
-  archived?: 0 | 1;
-}
-
-/**
  * One allocation cell: what this period assigned to this main category
  * (approved allocation design). Deterministic id — two devices editing
  * the same cell converge by LWW instead of duplicating rows.
@@ -783,7 +750,6 @@ export type EntityName =
   | 'event'
   | 'goal'
   | 'goalContribution'
-  | 'debt'
   | 'allocation'
   | 'receipt'
   | 'receiptLink'
@@ -810,7 +776,6 @@ export interface EntityRowMap {
   event: EventRow;
   goal: GoalRow;
   goalContribution: GoalContributionRow;
-  debt: DebtRow;
   allocation: AllocationRow;
   receipt: ReceiptRow;
   receiptLink: ReceiptLinkRow;

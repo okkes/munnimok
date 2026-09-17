@@ -90,7 +90,7 @@ describe('Debts (demo identity)', () => {
     expect(card.textContent).toMatch(/week/);
     expect(card.textContent).toMatch(/free by/);
 
-    // ONE object: the account row carries the debt story; no debt row
+    // ONE object: the account row carries the debt story
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const account = (await db.accounts.toArray()).find((a) => a.name === 'Student loan');
@@ -105,7 +105,6 @@ describe('Debts (demo identity)', () => {
         paymentEvery: 'week',
         note: 'DUO, samen met Kim',
       });
-      expect(await db.debts.toArray()).toHaveLength(0);
     }, { timeout: 5000 });
     // weekly €120 ≈ €520/month on the overview (cadence-normalized)
     expect(screen.getByTestId('debts-overview').textContent).toMatch(/520/);

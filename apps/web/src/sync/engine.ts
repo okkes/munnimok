@@ -374,7 +374,7 @@ export class SyncEngine {
     const scoped = [
       'account', 'category', 'transaction', 'txMeta', 'accountLink',
       'recurring', 'recurringDismiss', 'budget', 'event', 'goal', 'goalContribution',
-      'debt', 'allocation', 'receipt', 'receiptLink', 'storeMarker', 'storeConn', 'storeConnLink',
+      'allocation', 'receipt', 'receiptLink', 'storeMarker', 'storeConn', 'storeConnLink',
       'holding', 'lot', 'insightDismiss', 'topic', 'activity',
     ] as const;
     await this.store.transact(['space', ...scoped, 'outbox', 'meta'], async () => {
