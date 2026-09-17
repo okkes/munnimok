@@ -1,7 +1,7 @@
 import { createSign, sign as cryptoSign } from 'node:crypto';
 import { dsmSession, DSM_CODE_ADVICE, isTransport, publishedPathParts } from './dsm.mjs';
 import { localAwareFetch } from './insecure-fetch.mjs';
-import { loadStack, localEnvRegistry } from './stack.mjs';
+import { loadStack, platformEnvs } from './stack.mjs';
 
 /**
  * Credential validators for the setup wizard (user request: "whenever I
@@ -324,11 +324,11 @@ export const VALIDATORS = {
   async 'logto-m2m'(values, fetchImpl) {
     const gap = need(values, ['LOGTO_INFRA_M2M_ID', 'LOGTO_INFRA_M2M_SECRET']);
     if (gap) return { ok: false, detail: gap };
-    // the registry names the environments (no hardcoded "prod" — it may
-    // not exist mid-recreate, or at all under custom names)
-    const envs = localEnvRegistry();
+    // the lcl platform's environments name the stacks (no hardcoded "prod" —
+    // it may not exist mid-recreate, or at all under custom names)
+    const envs = platformEnvs('lcl');
     if (!envs.length) return { ok: false, detail: 'no local environment exists yet — Set up & start munni first, then re-check' };
-    const logto = loadStack(`munni-local-${envs[0].name}`).urls.logto;
+    const logto = loadStack(`munni-lcl-${envs[0].env}`).urls.logto;
     const res = await fetchImpl(`${logto}/oidc/token`, {
       method: 'POST',
       headers: {
@@ -346,7 +346,7 @@ export const VALIDATORS = {
   async 'glitchtip-token'(values, fetchImpl) {
     const gap = need(values, ['GLITCHTIP_API_TOKEN']);
     if (gap) return { ok: false, detail: gap };
-    const glitchtip = loadStack('munni-local-shared').urls.glitchtip;
+    const glitchtip = loadStack('munni-lcl-shared').urls.glitchtip;
     const res = await fetchImpl(`${glitchtip}/api/0/organizations/`, {
       headers: { authorization: `Bearer ${values.GLITCHTIP_API_TOKEN}` },
       signal: T(),
