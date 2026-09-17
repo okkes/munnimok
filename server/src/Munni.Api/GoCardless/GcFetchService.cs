@@ -227,7 +227,15 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
             try
             {
                 // every account keeps fetching through the provider that created it
-                await FetchAccountAsync(scope.ServiceProvider, db, registry.For(linked.Provider), linked, ct);
+                var api = registry.Find(linked.Provider);
+                if (api is null)
+                {
+                    // the provider left this install's configuration: the row
+                    // waits — never fetched through a different provider
+                    logger.LogWarning("gc fetch: provider {Provider} for {Iban} is not configured — skipped", linked.Provider, linked.Iban);
+                    continue;
+                }
+                await FetchAccountAsync(scope.ServiceProvider, db, api, linked, ct);
             }
             catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             {
@@ -284,7 +292,8 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
 
     private async Task HealConsentAsync(IServiceProvider services, AppDbContext db, BankProviderRegistry registry, GcRequisition requisition, CancellationToken ct)
     {
-        var gc = registry.For(requisition.Provider);
+        var gc = registry.Find(requisition.Provider);
+        if (gc is null) return; // the provider left this install's configuration — nothing can finish the consent
         var status = await gc.CompleteAuthAsync(requisition.RequisitionId, null, ct);
         if (status.Status != "LN") return; // not (yet) approved at the bank — nothing to heal
         var space = await db.Spaces.FindAsync([requisition.SpaceId], ct);

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Munni.Api.Accounts;
 using Munni.Api.GoCardless;
 using Munni.Api.Social;
 using Munni.Api.Sync;
@@ -45,13 +46,27 @@ public class ValidationTests
     }
 
     [Theory]
-    [InlineData("member", true)]
+    [InlineData("contributor", true)]
     [InlineData("owner", true)]
     [InlineData("admin", false)]
     [InlineData("", false)]
     public void SpaceInvite_restricts_roles(string role, bool valid)
     {
         var result = new SendSpaceInviteValidator().Validate(new SendSpaceInvite(Guid.NewGuid(), role, "Home"));
+        Assert.Equal(valid, result.IsValid);
+    }
+
+    // every attachment carries its history gate (a date) and, when it
+    // names a type, one the apps know
+    [Theory]
+    [InlineData("2026-01-01", null, true)]
+    [InlineData("2026-01-01", "savings", true)]
+    [InlineData("", null, false)]
+    [InlineData("01-01-2026", null, false)]
+    [InlineData("2026-01-01", "sock", false)]
+    public void Attach_requires_a_dated_gate_and_a_known_type(string historyFrom, string? type, bool valid)
+    {
+        var result = new AttachAccountRequestValidator().Validate(new AttachAccountRequest("feed-1", "acct-1", historyFrom, type));
         Assert.Equal(valid, result.IsValid);
     }
 
@@ -138,21 +153,20 @@ public class ValidationTests
     public void Requisition_requires_an_absolute_http_redirect(string url, bool valid)
     {
         var result = new CreateRequisitionRequestValidator()
-            .Validate(new CreateRequisitionRequest("space1", "ING_INGBNL2A", url));
+            .Validate(new CreateRequisitionRequest("space1", "ING_INGBNL2A", url, "gocardless"));
         Assert.Equal(valid, result.IsValid);
     }
 
-    // #175: the user's provider pick — a known name or nothing at all
+    // #175: the user's provider pick — always named, always a known one
     [Theory]
-    [InlineData(null, true)]
     [InlineData("gocardless", true)]
     [InlineData("enablebanking", true)]
     [InlineData("plaid", false)]
     [InlineData("", false)]
-    public void Requisition_provider_pick_must_name_a_known_provider(string? provider, bool valid)
+    public void Requisition_provider_pick_must_name_a_known_provider(string provider, bool valid)
     {
         var result = new CreateRequisitionRequestValidator()
-            .Validate(new CreateRequisitionRequest("space1", "ING_INGBNL2A", "https://munni.example/gc-callback", null, provider));
+            .Validate(new CreateRequisitionRequest("space1", "ING_INGBNL2A", "https://munni.example/gc-callback", provider));
         Assert.Equal(valid, result.IsValid);
     }
 }

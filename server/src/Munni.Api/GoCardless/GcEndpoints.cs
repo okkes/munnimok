@@ -8,7 +8,8 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.GoCardless;
 
-public sealed record CreateRequisitionRequest(string SpaceId, string InstitutionId, string RedirectUrl, string? AppScheme = null, string? Provider = null);
+/// <summary>Provider names the user's pick (#175) — required, one of the configured providers</summary>
+public sealed record CreateRequisitionRequest(string SpaceId, string InstitutionId, string RedirectUrl, string Provider, string? AppScheme = null);
 public sealed record CreateRequisitionResponse(string Reference, string Link);
 public sealed record CompleteResponse(string Status, int LinkedAccounts, int ImportedTransactions, string? AppScheme = null);
 /// <summary>#175: a configured provider the END USER may pick. KnownAccounts
@@ -22,21 +23,21 @@ public static partial class GcEndpoints
     [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z]{2}$")]
     private static partial System.Text.RegularExpressions.Regex CountryCode();
 
-    /// <summary>#175: the caller's explicit provider pick, the registry
-    /// default (first configured — GoCardless) when absent; an unknown
-    /// id is a 400, never a silent fallback</summary>
-    private static IBankDataApi? ResolveProvider(string? provider, BankProviderRegistry registry)
-    {
-        if (provider is null) return registry.For(null);
-        return registry.ConfiguredIds.Contains(provider) ? registry.For(provider) : null;
-    }
+    /// <summary>#175: the caller names its provider — always (the connect
+    /// sheet sends the pick); absent, unknown or unconfigured is a 400,
+    /// never a silent fallback to whichever provider registered first</summary>
+    private static IBankDataApi? ResolveProvider(string? provider, BankProviderRegistry registry) =>
+        provider is null ? null : registry.Find(provider);
+
+    private static IResult ProviderProblem(string? provider) =>
+        Results.BadRequest(new { error = provider is null ? "provider is required" : $"unknown provider '{provider}'" });
 
     private static async Task<IResult> ListInstitutionsAsync(string country, string? provider, BankProviderRegistry registry, AppDbContext db, IMemoryCache cache)
     {
         if (!CountryCode().IsMatch(country))
             return Results.BadRequest(new { error = "country must be a 2-letter code" });
         var api = ResolveProvider(provider, registry);
-        if (api is null) return Results.BadRequest(new { error = $"unknown provider '{provider}'" });
+        if (api is null) return ProviderProblem(provider);
         IReadOnlyList<GcInstitution>? list;
         try
         {
@@ -153,8 +154,8 @@ public static partial class GcEndpoints
         var group = app.MapGroup("/gocardless").RequireAuthorization().WithSafeRouteParams();
 
         // institution list, cached per provider: it changes rarely and the
-        // vendors rate-limit. #175: an explicit provider query parameter
-        // lets the END USER pick; absent keeps the admin's active one.
+        // vendors rate-limit. #175: the provider query parameter names the
+        // END USER's pick — required.
         group.MapGet("/institutions", ListInstitutionsAsync);
 
         // #175: the provider choice the connect sheet renders
@@ -170,10 +171,10 @@ public static partial class GcEndpoints
             if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == request.SpaceId && m.UserId == userId))
                 return Results.Forbid();
 
-            // #175: the user's explicit pick wins; absent, the registry
-            // default (older clients without the chooser)
+            // #175: the user's explicit pick — validated as a known name,
+            // checked here as CONFIGURED on this install
             var api = ResolveProvider(request.Provider, registry);
-            if (api is null) return Results.BadRequest(new { error = $"unknown provider '{request.Provider}'" });
+            if (api is null) return ProviderProblem(request.Provider);
             var reference = Guid.NewGuid();
             GcRequisitionCreated created;
             try
@@ -242,7 +243,9 @@ public static partial class GcEndpoints
                 return Results.Ok(new CompleteResponse("LN", alreadyLinked, 0, requisition.AppScheme));
             }
 
-            var gc = registry.For(requisition.Provider);
+            var gc = registry.Find(requisition.Provider);
+            // the consent's provider left this install's configuration — nothing can finish it
+            if (gc is null) return Results.Problem(title: $"{requisition.Provider} is not configured", statusCode: 503);
             try
             {
             var status = await gc.CompleteAuthAsync(requisition.RequisitionId, code);
