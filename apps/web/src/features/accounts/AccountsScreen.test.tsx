@@ -203,7 +203,7 @@ describe('AccountsScreen (demo identity)', () => {
     });
 
     // the badge says it plainly, on the row itself
-    await screen.findByTestId('account-unattached-feedacct-1', {}, { timeout: 5000 });
+    expect(await screen.findByTestId('account-unattached-feedacct-1', {}, { timeout: 5000 })).toBeTruthy();
   }, 15_000);
 
   it('#318: a link-less account doors into "Attach to {space}" — the intent pre-aims the space attach sheet', async () => {

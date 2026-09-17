@@ -136,7 +136,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
     fireEvent.click(await screen.findByTestId('accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-connect'));
     // no provider question in between — the list is the first thing shown
-    await screen.findByTestId('gc-bank-ING_NL');
+    expect(await screen.findByTestId('gc-bank-ING_NL')).toBeTruthy();
   }, 15_000);
 });
 

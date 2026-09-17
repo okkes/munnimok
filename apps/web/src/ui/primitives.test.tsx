@@ -164,12 +164,12 @@ describe('redesign primitives', () => {
         <ProgressBar value={0.5} testId="bar3" />
       </>,
     );
-    const bar = screen.getByTestId('bar');
-    expect(bar.getAttribute('role')).toBe('progressbar');
-    expect(bar.getAttribute('aria-valuenow')).toBe('100');
+    // a native <progress> carries the value for assistive tech
+    const valueOf = (id: string) => screen.getByTestId(id).querySelector('progress')?.getAttribute('value');
+    expect(valueOf('bar')).toBe('100');
     expect(screen.getByTestId('stripes')).toBeTruthy();
-    expect(screen.getByTestId('bar2').getAttribute('aria-valuenow')).toBe('0');
-    expect(screen.getByTestId('bar3').getAttribute('aria-valuenow')).toBe('50');
+    expect(valueOf('bar2')).toBe('0');
+    expect(valueOf('bar3')).toBe('50');
   });
 
   it('Field labels its control — the label reaches the input', () => {

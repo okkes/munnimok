@@ -229,16 +229,12 @@ export function ProgressBar({
 }>) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   return (
-    <div
-      data-testid={testId}
-      role="progressbar"
-      aria-valuenow={Math.round(pct)}
-      aria-valuemin={0}
-      aria-valuemax={100}
-      className={`relative ${BAR_H[size]} overflow-hidden rounded-full bg-bg-2 ${className}`}
-    >
+    <div data-testid={testId} className={`relative ${BAR_H[size]} overflow-hidden rounded-full bg-bg-2 ${className}`}>
+      {/* the native element carries the value for assistive tech; the styled track is decoration */}
+      <progress className="sr-only" value={Math.round(pct)} max={100} />
       <div
         key={animateKey}
+        aria-hidden
         className="m-grow-x h-full origin-left rounded-full transition-[width]"
         style={{ width: `${pct}%`, background: color ?? BAR_FILL[tone] }}
       />
