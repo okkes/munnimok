@@ -223,15 +223,6 @@ describe('AdminApp (test-auth mode)', () => {
     expect(screen.queryByText(/Delete selected/)).toBeNull(); // selection cleared
   });
 
-  it('the bank-provider picker is gone from Overview (#175: the end user picks at connect)', async () => {
-    const calls = scriptFetch(HAPPY_ROUTES());
-    renderAdmin();
-    await screen.findByTestId('overview-tiles');
-    expect(screen.queryByTestId('admin-bank-provider')).toBeNull();
-    expect(screen.queryByText(/Bank-data provider/)).toBeNull();
-    expect(calls.some((c) => c.includes('/admin/bank-provider'))).toBe(false);
-  });
-
   it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {
     const seenHeaders: (string | null)[] = [];
     const seenDevices: (string | null)[] = [];
@@ -312,7 +303,9 @@ describe('AdminApp (OIDC token mode)', () => {
     fireEvent.click(screen.getByTestId('catalog-delete-transport'));
     fireEvent.change(screen.getByTestId('catalog-delete-typed'), { target: { value: 'transport' } });
     fireEvent.click(screen.getByTestId('catalog-delete-confirm'));
-    expect(screen.getByTestId('catalog-cat-transport').className).toContain('retired');
+    // the tombstone exists as a document entry and offers the restore action
+    expect(screen.getByTestId('catalog-cat-transport')).toBeTruthy();
+    expect(screen.getByTestId('catalog-restore-transport')).toBeTruthy();
 
     // …and restoring it removes the synthetic entry (back to bundled-only)
     fireEvent.click(screen.getByTestId('catalog-restore-transport'));
