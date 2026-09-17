@@ -18,8 +18,8 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
-    version: '2.28.0',
-    date: '2026-09-08',
+    version: '3.0.0',
+    date: '2026-09-17',
     items: [
       {
         en: 'The review card grew up: long titles wrap instead of being cut, the split door leads (one story or several?), recurring and event rows appear once a category stands, and the counter-account row shows only where it means something. New: no idea what to call a payment? Filter the category picker BY the account the money went to — your pick then suggests that account. And "apply to similar" starts fresh on every card again.',
