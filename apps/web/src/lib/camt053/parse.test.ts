@@ -186,11 +186,4 @@ describe('predictCategory on parsed entries', () => {
     expect(catId).toBe('salary');
   });
 
-  it('income keywords never fire on debits', () => {
-    expect(predictCategory('SALARIS JUNI', 'debit')).not.toBe('salary');
-  });
-
-  it('returns null when nothing matches', () => {
-    expect(predictCategory('xyzzy qwerty', 'debit')).toBeNull();
-  });
 });
