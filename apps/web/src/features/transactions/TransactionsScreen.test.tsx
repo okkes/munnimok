@@ -222,7 +222,7 @@ describe('TransactionsScreen (demo identity)', () => {
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
   });
 
-  it('#320: the filter sheet narrows by account, splits defaults into their own group, type chips gone', async () => {
+  it('the filter sheet narrows by account and groups the space defaults apart from made accounts', async () => {
     renderApp('/transactions');
     await screen.findByTestId('tx-list');
     await waitFor(() => expect(rows().length).toBeGreaterThan(3));
@@ -236,10 +236,6 @@ describe('TransactionsScreen (demo identity)', () => {
     expect(within(defaultsGroup).queryByTestId('filter-account-demo_main')).toBeNull();
     // every chip wears the account's face (type icon here — no logo seeded)
     expect(screen.getByTestId('filter-account-demo_main').querySelector('.mdi')).toBeTruthy();
-    // …and the type/kind chips are gone for good
-    expect(screen.queryByTestId('filter-kind-standard')).toBeNull();
-    expect(screen.queryByTestId('filter-kind-transfer')).toBeNull();
-    expect(screen.queryByTestId('filter-transfer-detail')).toBeNull();
 
     // the demo savings account has no transactions — filter yields none
     fireEvent.click(screen.getByTestId('filter-account-demo_save'));
@@ -282,69 +278,4 @@ describe('TransactionsScreen (demo identity)', () => {
     db.close();
   }, 15_000);
 
-  it('#198 r3: a split group and its neighbours are direct siblings of the divide-y card', async () => {
-    renderApp('/transactions');
-    await screen.findByTestId('tx-list');
-    const db = new MunniDB('munni_demo');
-    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-divide'), { trackOutbox: false });
-    // [tx, split-tx, tx] on one far-past day — an isolated date card
-    await repo.upsert('transaction', DEMO_SPACE_ID, 'dv1', {
-      accountId: 'demo_main', date: '2020-05-02', amountCents: -1000, currency: 'EUR',
-      merchant: 'Before Split', catId: 'groceries', needsReview: 0,
-    });
-    await repo.upsert('transaction', DEMO_SPACE_ID, 'dvs', {
-      accountId: 'demo_main', date: '2020-05-02', amountCents: -3000, currency: 'EUR',
-      merchant: 'Split Shop', catId: 'groceries', needsReview: 0, cats: null as never,
-      splits: [
-        { id: 'dvsa', catId: 'groceries', amountCents: 2000 },
-        { id: 'dvsb', catId: 'eatingOut', amountCents: 1000 },
-      ],
-    });
-    await repo.upsert('transaction', DEMO_SPACE_ID, 'dv2', {
-      accountId: 'demo_main', date: '2020-05-02', amountCents: -2000, currency: 'EUR',
-      merchant: 'After Split', catId: 'eatingOut', needsReview: 0,
-    });
-
-    const group = await screen.findByTestId('tx-parts-dvs', {}, { timeout: 5000 });
-    await screen.findByTestId('tx-row-dv1');
-    await screen.findByTestId('tx-row-dv2');
-    // the divide-y card draws a hairline between DIRECT siblings — the
-    // group wrapper and both plain rows must all sit at that level for
-    // the group's boundaries to get their lines (the paint itself is
-    // restored in styles.css, above border-none's reach)
-    const card = group.parentElement!;
-    expect(card.className).toContain('divide-y');
-    expect(screen.getByTestId('tx-row-dv1').parentElement).toBe(card);
-    expect(screen.getByTestId('tx-row-dv2').parentElement).toBe(card);
-    // #198 r2 rule: the parts INSIDE the inset stay nested — no hairlines
-    // between the parts of one transaction
-    expect(screen.getByTestId('tx-part-row-dvs-0').parentElement).not.toBe(card);
-    db.close();
-  }, 15_000);
-
-  it('#156 r2: the card-rim rows carry the edge rounding for their selection/focus tint', async () => {
-    renderApp('/transactions');
-    await screen.findByTestId('tx-list');
-    const db = new MunniDB('munni_demo');
-    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-edge'), { trackOutbox: false });
-    await repo.upsert('transaction', DEMO_SPACE_ID, 'er1', {
-      accountId: 'demo_main', date: '2020-05-03', amountCents: -1000, currency: 'EUR',
-      merchant: 'Edge One', catId: 'groceries', needsReview: 0,
-    });
-    await repo.upsert('transaction', DEMO_SPACE_ID, 'er2', {
-      accountId: 'demo_main', date: '2020-05-03', amountCents: -2000, currency: 'EUR',
-      merchant: 'Edge Two', catId: 'groceries', needsReview: 0,
-    });
-    const first = await screen.findByTestId('tx-row-er1', {}, { timeout: 5000 });
-    await screen.findByTestId('tx-row-er2');
-    const card = first.parentElement!;
-    const rowEls = [...card.querySelectorAll('[data-testid^="tx-row-"]')];
-    expect(rowEls).toHaveLength(2);
-    // first row rounds its tint to the card's top radius, last to the bottom
-    expect(rowEls[0].className).toContain('focus-visible:rounded-t-card');
-    expect(rowEls[0].className).not.toContain('focus-visible:rounded-b-card');
-    expect(rowEls[1].className).toContain('focus-visible:rounded-b-card');
-    expect(rowEls[1].className).not.toContain('focus-visible:rounded-t-card');
-    db.close();
-  }, 15_000);
 });

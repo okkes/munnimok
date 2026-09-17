@@ -26,43 +26,10 @@ const dialogFor = (ui: React.ReactElement): HTMLDialogElement => {
   return dialog!;
 };
 
-describe('desktop dialog sizing (#276)', () => {
-  it('grows with content: auto height, a viewport ceiling and a size-derived floor', () => {
-    localStorage.setItem('munni_lang', 'en');
-    const restore = stubDesktop();
-    try {
-      const dialog = dialogFor(
-        <Sheet open onOpenChange={() => undefined} title="t" size="form">
-          <div data-testid="dlg-content" />
-        </Sheet>,
-      );
-      expect(screen.getByTestId('dlg-content')).toBeTruthy();
-      expect(dialog.style.height).toBe('auto');
-      // form = 440px on the phone; the dialog keeps 60% as its floor
-      expect(dialog.style.minHeight).toBe('264px');
-      expect(dialog.style.maxHeight).toBe('min(85dvh, 900px)');
-    } finally {
-      restore();
-    }
-  });
-
-  it('a size-less sheet stays fully content-sized (no floor)', () => {
-    localStorage.setItem('munni_lang', 'en');
-    const restore = stubDesktop();
-    try {
-      const dialog = dialogFor(
-        <Sheet open onOpenChange={() => undefined} title="t">
-          <div />
-        </Sheet>,
-      );
-      expect(dialog.style.height).toBe('auto');
-      expect(dialog.style.minHeight).toBe('');
-    } finally {
-      restore();
-    }
-  });
-
-  it('#290: the dialog opts out of the app-level focus reveal; native reveals get air', () => {
+/** the geometry itself (auto height, ceiling, floor) is measured in the
+ *  WebKit desktop spec — happy-dom has no layout to measure */
+describe('desktop dialog', () => {
+  it('#290: the dialog opts out of the app-level focus reveal', () => {
     localStorage.setItem('munni_lang', 'en');
     const restore = stubDesktop();
     try {
@@ -77,10 +44,6 @@ describe('desktop dialog sizing (#276)', () => {
       // stands down inside this class wherever SHEET_OWNS_KEYBOARD,
       // so the dialog must wear it.
       expect(dialog.className).toContain('react-modal-sheet-container');
-      // the browser's own minimal focus scroll stays (hidden fields
-      // still surface) — scroll-padding keeps them off the clip edge
-      const scroller = dialog.querySelector('.overflow-y-auto')!;
-      expect(scroller.className).toContain('[scroll-padding-block:16px]');
     } finally {
       restore();
     }

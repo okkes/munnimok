@@ -190,6 +190,7 @@ export function Chip({
       data-testid={testId}
       onClick={onClick}
       disabled={disabled}
+      aria-pressed={selected}
       className={`m-tap flex shrink-0 items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] disabled:pointer-events-none disabled:opacity-40 ${
         selected ? CHIP_ON[tone] : 'border-line bg-surface text-ink-2'
       } ${className}`}
@@ -228,7 +229,14 @@ export function ProgressBar({
 }>) {
   const pct = Math.max(0, Math.min(1, value)) * 100;
   return (
-    <div data-testid={testId} className={`relative ${BAR_H[size]} overflow-hidden rounded-full bg-bg-2 ${className}`}>
+    <div
+      data-testid={testId}
+      role="progressbar"
+      aria-valuenow={Math.round(pct)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      className={`relative ${BAR_H[size]} overflow-hidden rounded-full bg-bg-2 ${className}`}
+    >
       <div
         key={animateKey}
         className="m-grow-x h-full origin-left rounded-full transition-[width]"

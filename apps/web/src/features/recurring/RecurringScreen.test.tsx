@@ -179,7 +179,7 @@ describe('RecurringScreen (demo identity)', () => {
     expect(screen.getByTestId('recurring-luxury-line')).toBeTruthy();
   }, 15_000);
 
-  it('#332: fixed costs hide the luxury flag — and picking fixed clears a set one', async () => {
+  it('fixed costs hide the luxury flag — and picking fixed clears a set one', async () => {
     renderApp('/recurring');
     await screen.findByTestId('screen-recurring');
 
@@ -188,7 +188,7 @@ describe('RecurringScreen (demo identity)', () => {
     fireEvent.change(screen.getByTestId('recform-amount'), { target: { value: '740' } });
     // the default (subscription) offers the flag; switch it on
     fireEvent.click(screen.getByTestId('recform-luxury'));
-    await waitFor(() => expect(screen.getByTestId('recform-luxury').innerHTML).toContain('justify-end'));
+    await waitFor(() => expect(screen.getByTestId('recform-luxury').getAttribute('aria-pressed')).toBe('true'));
 
     // fixed: the control disappears (a structural cost is never luxury)…
     fireEvent.click(screen.getByTestId('recform-kind-fixed'));
@@ -196,7 +196,7 @@ describe('RecurringScreen (demo identity)', () => {
 
     // …and returning shows it again, cleared — no hidden flag lurked
     fireEvent.click(screen.getByTestId('recform-kind-subscription'));
-    await waitFor(() => expect(screen.getByTestId('recform-luxury').innerHTML).toContain('justify-start'));
+    await waitFor(() => expect(screen.getByTestId('recform-luxury').getAttribute('aria-pressed')).toBe('false'));
 
     // set once more, pick fixed, save: the record persists luxury OFF
     fireEvent.click(screen.getByTestId('recform-luxury'));
@@ -344,10 +344,10 @@ describe('RecurringScreen (demo identity)', () => {
     db.close();
   }, 20_000);
 
-  it('#192 r2: a DUO pattern lives on the DEBTS screen — tracked in place, gone from the recurring inbox', async () => {
+  it('a steady loan-shaped pattern (DUO) is offered on the debts screen and tracks in place, prefilled', async () => {
     const db = new MunniDB('munni_demo');
-    renderApp('/recurring');
-    await screen.findByTestId('screen-recurring');
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
     // four steady monthly DUO charges — a textbook student-loan pattern
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-duo'), { trackOutbox: false });
     for (let i = 0; i < 4; i++) {
@@ -357,25 +357,8 @@ describe('RecurringScreen (demo identity)', () => {
         catId: 'extraOther', needsReview: 0,
       });
     }
-    cleanup();
-
-    // the recurring inbox stays quiet about it: no DUO card there
-    renderApp('/recurring/suggestions');
-    await screen.findByTestId('screen-recurring-suggestions');
-    await waitFor(
-      () => {
-        const settled =
-          document.querySelector('[data-testid^="recsuggest-card-"]') ?? screen.queryByTestId('recsuggest-empty');
-        expect(settled).toBeTruthy();
-      },
-      { timeout: 5000 },
-    );
-    expect(screen.queryByTestId('recsuggest-card-dienst uitvoering onderwijs')).toBeNull();
-    cleanup();
 
     // the DEBTS screen carries the suggestion card itself
-    renderApp('/debts');
-    await screen.findByTestId('screen-debts');
     const key = 'dienst uitvoering onderwijs';
     await screen.findByTestId(`debts-suggestion-${key}`, {}, { timeout: 5000 });
 

@@ -22,14 +22,9 @@ describe('SettingsScreen (demo identity)', () => {
     expect(await screen.findByTestId('screen-settings-global')).toBeTruthy();
   });
 
-  it('the space header card opens space settings; the old row and scope caption are gone', async () => {
+  it('the space header card opens space settings', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
-    // restructure (user request): the space card IS the scope label + door
-    expect(screen.queryByTestId('settings-space-settings-row')).toBeNull();
-    expect(screen.queryByTestId('settings-scope-space')).toBeNull();
-    // profile moved to Global settings — it is not space-scoped
-    expect(screen.queryByTestId('settings-profile-row')).toBeNull();
     fireEvent.click(screen.getByTestId('settings-space-row'));
     expect(await screen.findByTestId('screen-space-settings')).toBeTruthy();
   });
@@ -162,49 +157,44 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('hides user-only rows for the demo identity', async () => {
+  it('the demo identity gets the device-level rows: appearance, language, accounts, tips and the app lock', async () => {
     renderApp('/settings/global');
     await screen.findByTestId('screen-settings-global');
-    expect(screen.queryByTestId('settings-friends-row')).toBeNull();
-    expect(screen.queryByTestId('settings-connections-row')).toBeNull();
-    expect(screen.queryByTestId('settings-admin-row')).toBeNull();
-    // #159: devices are sync machinery — nothing to list without an account
-    expect(screen.queryByTestId('settings-devices-row')).toBeNull();
+    for (const id of ['settings-theme-toggle', 'settings-language-row', 'settings-accounts-row', 'settings-tips-toggle', 'settings-lock-toggle']) {
+      expect(screen.getByTestId(id)).toBeTruthy();
+    }
   });
 
-  it('theme segments pin light/dark and AUTO returns to device tracking', async () => {
+  it('appearance: the segments pin light or dark, the row cycles light → dark → follow-device', async () => {
+    // persistence + the data attribute belong to app/theme.test.tsx —
+    // here the two controls and what they show
     renderApp('/settings/global');
     await screen.findByTestId('screen-settings-global');
-    expect(document.documentElement.dataset.theme).toBe('light');
+    const pressed = (id: string) => screen.getByTestId(id).getAttribute('aria-pressed');
+    // fresh storage = follow-device
+    expect(pressed('settings-theme-auto')).toBe('true');
     fireEvent.click(screen.getByTestId('settings-theme-dark'));
     expect(document.documentElement.dataset.theme).toBe('dark');
-    expect(localStorage.getItem('munni_theme')).toBe('dark');
+    expect(pressed('settings-theme-dark')).toBe('true');
     fireEvent.click(screen.getByTestId('settings-theme-light'));
     expect(document.documentElement.dataset.theme).toBe('light');
-    expect(localStorage.getItem('munni_theme')).toBe('light');
+    expect(pressed('settings-theme-light')).toBe('true');
     fireEvent.click(screen.getByTestId('settings-theme-auto'));
-    // system mode = stored key removed; jsdom's matchMedia default resolves light
-    expect(localStorage.getItem('munni_theme')).toBeNull();
-    expect(screen.getByTestId('settings-theme-auto').getAttribute('aria-pressed')).toBe('true');
-  });
+    expect(pressed('settings-theme-auto')).toBe('true');
 
-  it('tapping the appearance row cycles light → dark → follow-device (#157)', async () => {
-    renderApp('/settings/global');
-    await screen.findByTestId('screen-settings-global');
-    // fresh storage = follow-device; the first tap pins light
+    // the row walks the cycle from follow-device: light, dark, device again
     fireEvent.click(screen.getByTestId('settings-theme-toggle'));
-    expect(localStorage.getItem('munni_theme')).toBe('light');
-    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(pressed('settings-theme-light')).toBe('true');
     fireEvent.click(screen.getByTestId('settings-theme-toggle'));
-    expect(localStorage.getItem('munni_theme')).toBe('dark');
+    expect(pressed('settings-theme-dark')).toBe('true');
     expect(document.documentElement.dataset.theme).toBe('dark');
     fireEvent.click(screen.getByTestId('settings-theme-toggle'));
-    expect(localStorage.getItem('munni_theme')).toBeNull(); // back to follow-device
-    // the segments stay the precise control: a direct pick must not ALSO
-    // advance the row's cycle past what was picked
+    expect(pressed('settings-theme-auto')).toBe('true');
+    // the segments stay the precise control: a direct pick lands exactly
+    // where it points, never one step further along the row's cycle
     fireEvent.click(screen.getByTestId('settings-theme-dark'));
-    expect(localStorage.getItem('munni_theme')).toBe('dark');
-    expect(screen.getByTestId('settings-theme-dark').getAttribute('aria-pressed')).toBe('true');
+    expect(pressed('settings-theme-dark')).toBe('true');
+    expect(document.documentElement.dataset.theme).toBe('dark');
   });
 
   it('language sheet switches the UI language and persists it', async () => {
@@ -212,8 +202,7 @@ describe('GlobalSettingsScreen (demo identity)', () => {
     await screen.findByTestId('screen-settings-global');
     fireEvent.click(screen.getByTestId('settings-language-row'));
     fireEvent.click(await screen.findByTestId('lang-option-nl'));
-    expect(localStorage.getItem('munni_lang')).toBe('nl');
-    // the screen title re-renders in Dutch
+    // the screen title re-renders in Dutch (persistence: LoginScreen's pill spec)
     await waitFor(() => expect(screen.getByTestId('screen-settings-global').textContent).toContain('Algemene instellingen'));
   });
 

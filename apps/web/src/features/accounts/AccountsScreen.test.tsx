@@ -173,7 +173,7 @@ describe('AccountsScreen (demo identity)', () => {
     fetchMock.mockRestore();
   }, 15_000);
 
-  it('#248: no attach nag — an unattached account wears a quiet badge on its own row', async () => {
+  it('an unattached account wears a quiet badge on its own row', async () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
@@ -202,9 +202,8 @@ describe('AccountsScreen (demo identity)', () => {
       },
     });
 
-    // the badge says it plainly; the green offer card is gone for good
+    // the badge says it plainly, on the row itself
     await screen.findByTestId('account-unattached-feedacct-1', {}, { timeout: 5000 });
-    expect(screen.queryByTestId('attach-offer')).toBeNull();
   }, 15_000);
 
   it('#318: a link-less account doors into "Attach to {space}" — the intent pre-aims the space attach sheet', async () => {

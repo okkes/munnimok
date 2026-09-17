@@ -435,6 +435,7 @@ export function AllocateScreen() {
         {/* rollover is a space decision, synced */}
         <button
           data-testid="alloc-rollover"
+          aria-pressed={rollover}
           onClick={() => void repo.upsert('space', spaceId, spaceId, { allocRollover: rollover ? (0 as const) : (1 as const) })}
           className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >

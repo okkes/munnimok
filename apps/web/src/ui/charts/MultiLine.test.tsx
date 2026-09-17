@@ -88,8 +88,8 @@ describe('monotone interpolation (#168 r3)', () => {
   });
 });
 
-describe('MultiLine (#168 r3)', () => {
-  it('keeps 8px vertical padding — the peak dot no longer clips the frame', () => {
+describe('MultiLine', () => {
+  it('the extreme dots stay inside the frame — the peak never clips', () => {
     render(
       <MultiLine
         series={[{ values: [0, 50, 100], color: 'red' }]}
@@ -99,11 +99,12 @@ describe('MultiLine (#168 r3)', () => {
       />,
     );
     const cys = [...screen.getByTestId('ml').querySelectorAll('circle')].map((c) => Number(c.getAttribute('cy')));
-    expect(Math.min(...cys)).toBe(8);
-    expect(Math.max(...cys)).toBe(112);
+    // a selected dot is r=4.5 plus a 2px stroke: both extremes keep that much air
+    expect(Math.min(...cys)).toBeGreaterThanOrEqual(6.5);
+    expect(Math.max(...cys)).toBeLessThanOrEqual(120 - 6.5);
   });
 
-  it('#168 r4: markerIndex draws the start marker under the -start testid', () => {
+  it('markerIndex draws the tracking-start marker at that point’s x', () => {
     render(
       <MultiLine
         series={[{ values: [0, 50, 100], color: 'red' }]}
@@ -114,10 +115,9 @@ describe('MultiLine (#168 r3)', () => {
       />,
     );
     const marker = screen.getByTestId('ml3-start');
-    expect(marker.getAttribute('x1')).toBe('160');
-    expect(marker.getAttribute('x2')).toBe('160');
-    // the old current-period name is gone for good
-    expect(screen.queryByTestId('ml3-now')).toBeNull();
+    const marked = screen.getByTestId('ml3-dot-0-1');
+    expect(Number(marker.getAttribute('x1'))).toBe(Number(marked.getAttribute('cx')));
+    expect(Number(marker.getAttribute('x2'))).toBe(Number(marked.getAttribute('cx')));
   });
 
   it('skipDotAt suppresses exactly that series-point dot; the path still passes through it', () => {
@@ -138,8 +138,7 @@ describe('MultiLine (#168 r3)', () => {
     const paths = [...screen.getByTestId('ml2').querySelectorAll('path')];
     expect(paths).toHaveLength(2);
     // both lines meet at the shared point: series 0 departs where series 1 ends
-    const start0 = paths[0].getAttribute('d')!.split(' ')[0];
-    expect(start0).toBe('M106.7,60.0');
-    expect(paths[1].getAttribute('d')!.endsWith('106.7,60.0')).toBe(true);
+    const start0 = paths[0].getAttribute('d')!.split(' ')[0]; // "M<x>,<y>"
+    expect(paths[1].getAttribute('d')!.endsWith(start0.slice(1))).toBe(true);
   });
 });

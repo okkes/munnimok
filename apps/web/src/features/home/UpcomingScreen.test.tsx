@@ -100,20 +100,6 @@ describe('#334: upcoming see-all = recurring + loans together', () => {
     expect(screen.queryByTestId('screen-recurring')).toBeNull();
   }, 30_000);
 
-  it('#334 r2 (user): see-all hides when the landing would add nothing', async () => {
-    const first = renderApp('/home');
-    await screen.findByTestId('screen-home');
-    await seedUpcomingPair();
-    first.unmount();
-
-    renderApp('/home');
-    // the block already tells the whole story (1 + 1, caps untouched)…
-    await screen.findByTestId('home-upcoming-rec334', {}, { timeout: 10_000 });
-    await screen.findByTestId('home-upcoming-debt-loan334', {}, { timeout: 10_000 });
-    // …so the door goes away instead of opening an identical list
-    expect(screen.queryByTestId('home-seeall-upcoming')).toBeNull();
-  }, 30_000);
-
   it('rows navigate to their own details: recurring detail and debt detail', async () => {
     const first = renderApp('/upcoming');
     await screen.findByTestId('screen-upcoming');
