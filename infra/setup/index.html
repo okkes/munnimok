@@ -566,6 +566,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
     <li><span class="num">2</span><div class="body"><div class="t">The DSM deploy account (Synology NAS)</div><div class="d">Control Panel → User &amp; Group → the deploy user → Edit → Applications: DSM = Allow, File Station = Allow (a group's Deny beats Allow) → User groups: administrators → Save. 2-step verification off for it, and Adaptive MFA off for administrators (Security → Account) — no account can grant itself any of this. Check on the Synology tile tells whether DSM accepts it.</div></div></li>
     <li><span class="num">3</span><div class="body"><div class="t">DNS for an own domain</div><div class="d">Synology DDNS resolves <code>*.&lt;domain&gt;</code> by itself — nothing to do. An own domain needs a wildcard record pointing at the NAS (the hosts are <code>munni-&lt;env&gt;-nas</code>, <code>-api</code>, <code>-admin</code>, <code>-logto</code>, <code>-logto-admin</code>, and <code>glitchtip-nas</code>, <code>vault-nas</code>, <code>control-nas</code>, <code>pgadmin-nas</code>); the wildcard certificate then comes from acme.sh with the synology_dsm hook.</div></div></li>
     <li><span class="num">4</span><div class="body"><div class="t">The APNs key upload for iOS push</div><div class="d">Once per Apple team: developer.apple.com → Keys → a key with Apple Push Notifications service → download the .p8. Then Firebase console → the Play service account's project → Project settings → Cloud Messaging → the iOS app → APNs Authentication Key → Upload (key, Key ID, Team ID). Google offers no API for this step.</div></div></li>
+    <li><span class="num">5</span><div class="body"><div class="t">Trusted local CA roots on this computer</div><div class="d">Every https family (LAN mode) mints its own "Caddy Local Authority" root and Trust CA puts it in your Windows user store. No wipe can take it out again — Windows untrusts a root only through its own consent dialog, one per entry. After a Clean up: <code>certmgr.msc</code> → Trusted Root Certification Authorities → Certificates → delete every "Caddy Local Authority" row. The Clean up log counts the stale ones for you.</div></div></li>
   </ul>
 </section>
 
@@ -2468,9 +2469,10 @@ document.getElementById('btn-local-nuke-all')?.addEventListener('click', async (
     await streamLocal('/api/config/commit', { message: 'chore(platforms): wipe the lcl environments' }, 'commit the platform config (the removal is recorded)', { refresh: false });
     try {
       const chk = await hjson('/api/local/cleanup-check');
+      const byHand = chk.byHand?.length ? `  by hand — no API can do these (Leftovers card, item 5):\n${chk.byHand.map((l) => `  · ${l}`).join('\n')}\n` : '';
       localLog(chk.clean
-        ? `\n✓ cleanup verified: no platform containers, volumes, networks, renders or environment files remain.${chk.kept?.length ? ` Kept on purpose: ${chk.kept.join(' + ')}.` : ''}\n`
-        : `\n✗ the cleanup left traces — press Delete everything again to finish:\n${chk.leftovers.map((l) => `  · ${l}`).join('\n')}\n`);
+        ? `\n✓ cleanup verified: no platform containers, volumes, networks, renders or environment files remain.${chk.kept?.length ? ` Kept on purpose: ${chk.kept.join(' + ')}.` : ''}\n${byHand}`
+        : `\n✗ the cleanup left traces — press Delete everything again to finish:\n${chk.leftovers.map((l) => `  · ${l}`).join('\n')}\n${byHand}`);
     } catch (e) { localLog(`\ncleanup check failed (${e.message}) — verify with docker ps yourself\n`); }
   } finally { setMasterBusy(false); await refreshLocal(); }
 });

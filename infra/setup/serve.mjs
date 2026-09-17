@@ -650,6 +650,16 @@ export function caListingHasFingerprint(listing, fingerprint) {
   const want = String(fingerprint ?? '').replace(/[^0-9a-f]/gi, '').toLowerCase();
   return want.length === 40 && String(listing ?? '').split(/\r?\n/).some((line) => /sha1/i.test(line) && line.replace(/[^0-9a-f]/gi, '').toLowerCase().includes(want));
 }
+/** roots of EARLIER https families still trusted on this PC — certutil prints one ===== block per certificate; Caddy names its CA "Caddy Local Authority" */
+export function staleCaddyRoots(listing) {
+  let blocks = 0;
+  let counted = true; // nothing before the first separator is a certificate
+  for (const line of String(listing ?? '').split(/\r?\n/)) {
+    if (line.startsWith('====')) { counted = false; continue; }
+    if (!counted && line.includes('Caddy Local Authority')) { blocks++; counted = true; }
+  }
+  return blocks;
+}
 async function caTrustState(netFetchImpl, spawnImpl, { force = false } = {}) {
   const lan = lanHost();
   if (!lan) return { trusted: null, reason: 'LAN mode is off — no family certificate to trust' };
@@ -1395,7 +1405,12 @@ async function cleanupCheckEndpoint(res, spawnImpl) {
   if (existsSync(LAN_FILE())) leftovers.push('LAN marker (https mode)');
   const kept = [];
   if (existsSync(join(base, 'wizard', '.secrets.json'))) kept.push('the wizard\'s credential store');
-  return json(res, 200, { clean: leftovers.length === 0, leftovers, kept });
+  // what no API can remove: Windows untrusts a root only through its own consent dialog, one per entry — named, counted, left to the user
+  const byHand = [];
+  let stale = 0;
+  try { stale = staleCaddyRoots((await capture(spawnImpl, 'certutil', ['-user', '-store', 'Root'])).out); } catch { /* no certutil (not Windows) — nothing to count */ }
+  if (stale) byHand.push(`${stale} trusted "Caddy Local Authority" root${stale === 1 ? '' : 's'} of earlier https families in this user's certificate store — certmgr.msc → Trusted Root Certification Authorities → Certificates → delete every "Caddy Local Authority" row (Windows asks once per entry; the Leftovers card has the steps)`);
+  return json(res, 200, { clean: leftovers.length === 0, leftovers, kept, byHand });
 }
 
 /* ── the GitHub token + reading secrets back ───────────────────────── */

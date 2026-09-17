@@ -26,7 +26,7 @@ for (const p of ['lcl', 'nas']) {
 }
 writeFileSync(join(PLATFORMS, 'lcl', 'envs', 'prod.json'), JSON.stringify({ env: 'prod', slot: 0, channel: 'dev', features: { android: true, banking: ['gocardless'], signin: ['google'] } }));
 
-const { createApp, OPERATOR_NAMES, toolFor, LCL_STACKS, lanCandidates, caListingHasFingerprint } = await import('../setup/serve.mjs');
+const { createApp, OPERATOR_NAMES, toolFor, LCL_STACKS, lanCandidates, caListingHasFingerprint, staleCaddyRoots } = await import('../setup/serve.mjs');
 const { loadLocalValues, saveLocalValues, loadWizardStore } = await import('../modules/localstore.mjs');
 const { loadStack, loadEnv, platformEnvs, saveEnv } = await import('../modules/stack.mjs');
 
@@ -662,4 +662,31 @@ test('wipe: every rendered lcl stack is destroyed, the rendered folders, the LAN
   const everything = await post(app2, '/api/local/wipe', { everything: true });
   assert.match(everything.text(), /wizard's own store is gone/);
   assert.ok(!existsSync(join(RENDER, 'wizard')));
+});
+
+test('cleanup check: roots of earlier https families still trusted on this PC are named as by-hand work — the helper cannot untrust them', async () => {
+  const listing = [
+    'Root "Trusted Root Certification Authorities"',
+    '================ Certificate 0 ================',
+    'Issuer: CN=Caddy Local Authority - 2026 ECC Root',
+    'Subject: CN=Caddy Local Authority - 2026 ECC Root',
+    'Cert Hash(sha1): aa',
+    '================ Certificate 1 ================',
+    'Issuer: CN=DigiCert Global Root G2',
+    'Subject: CN=DigiCert Global Root G2',
+    'Cert Hash(sha1): bb',
+    '================ Certificate 2 ================',
+    'Issuer: CN=Caddy Local Authority - 2026 ECC Root',
+    'Subject: CN=Caddy Local Authority - 2026 ECC Root',
+    'Cert Hash(sha1): cc',
+    '',
+  ].join('\r\n');
+  assert.equal(staleCaddyRoots(listing), 2, 'issuer and subject of one certificate count once');
+  const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn([], (n, args, cmd) => (cmd === 'certutil' ? listing : '')) });
+  const chk = (await call(app2, { url: '/api/local/cleanup-check' })).json();
+  assert.ok(!chk.leftovers.some((l) => /Caddy/.test(l)), 'the roots never block the verdict');
+  assert.equal(chk.byHand.length, 1);
+  assert.match(chk.byHand[0], /^2 trusted "Caddy Local Authority" roots of earlier .* certmgr\.msc/);
+  const none = createApp({ token: 'tok', spawnImpl: scriptedSpawn([]) });
+  assert.deepEqual((await call(none, { url: '/api/local/cleanup-check' })).json().byHand, []);
 });
