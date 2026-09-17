@@ -1,5 +1,6 @@
 import { personalFeedSpaceId } from '@/domain/feedIds';
 import { apiFetch } from '@/lib/api';
+import type { AccountType } from '@/db/types';
 import type { FeedGateway } from './importCamt';
 
 /**
@@ -29,12 +30,8 @@ export function apiFeedGateway(sub: string): FeedGateway {
       }
       throw new Error(`feed registration failed (${res.status})`);
     },
-    async attach(spaceId, feedSpaceId, accountId, historyFrom) {
-      const res = await apiFetch(`/spaces/${spaceId}/accounts`, {
-        method: 'POST',
-        body: JSON.stringify({ feedSpaceId, accountId, historyFrom: historyFrom || undefined }),
-      });
-      if (!res.ok) throw new Error(`attach failed (${res.status})`);
+    async attach(spaceId, feedSpaceId, accountId, historyFrom, type) {
+      await attachAccount(spaceId, feedSpaceId, accountId, historyFrom, type);
     },
   };
 }
@@ -47,16 +44,19 @@ export async function fetchMyFeedIds(): Promise<ReadonlySet<string>> {
   return new Set(feeds.map((f) => f.feedSpaceId));
 }
 
-/** attach with optional history-from; server first, then the synced mirror is the caller's job */
+/** attach (server first — the synced mirror is the caller's job): the
+ *  gate the link starts at and the SPACE's type for the account; the
+ *  server keeps both on the link and answers them on every later read */
 export async function attachAccount(
   spaceId: string,
   feedSpaceId: string,
   accountId: string,
   historyFrom?: string,
+  type?: AccountType,
 ): Promise<void> {
   const res = await apiFetch(`/spaces/${spaceId}/accounts`, {
     method: 'POST',
-    body: JSON.stringify({ feedSpaceId, accountId, historyFrom: historyFrom || undefined }),
+    body: JSON.stringify({ feedSpaceId, accountId, historyFrom: historyFrom || undefined, type }),
   });
   if (!res.ok) throw new Error(`attach failed (${res.status})`);
 }
@@ -78,10 +78,12 @@ export interface ServerSpaceLink {
   id: string;
   feedSpaceId: string;
   accountId: string;
-  /** the link's OWN gate/name facts — the reconcile mirror must copy
-   *  them, never re-guess them (#305: a boot-minted fresh historyFrom
+  /** the link's OWN facts — the server settles the gate and the space's
+   *  account type on every link it writes; the reconcile mirror copies
+   *  them, never re-guesses them (#305: a boot-minted fresh historyFrom
    *  out-HLC'd the real attach and ratcheted the gate forward) */
-  historyFrom?: string | null;
+  historyFrom: string;
+  type: AccountType;
   attachedByName?: string | null;
   archived?: boolean;
 }

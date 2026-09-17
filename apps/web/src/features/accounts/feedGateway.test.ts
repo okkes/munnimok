@@ -56,10 +56,10 @@ describe('feed helpers', () => {
     expect((await fetchMyFeedIds()).size).toBe(0);
   });
 
-  it('attachAccount sends historyFrom only when set', async () => {
+  it('attachAccount sends historyFrom only when set, and the space\'s type for the account', async () => {
     apiFetchMock.mockResolvedValue(respond(200));
-    await attachAccount('s1', 'f1', 'a1', '2026-01-01');
-    expect(JSON.parse(apiFetchMock.mock.calls[0][1]!.body as string).historyFrom).toBe('2026-01-01');
+    await attachAccount('s1', 'f1', 'a1', '2026-01-01', 'savings');
+    expect(JSON.parse(apiFetchMock.mock.calls[0][1]!.body as string)).toMatchObject({ historyFrom: '2026-01-01', type: 'savings' });
     await attachAccount('s1', 'f1', 'a1');
     expect(JSON.parse(apiFetchMock.mock.calls[1][1]!.body as string).historyFrom).toBeUndefined();
     apiFetchMock.mockResolvedValueOnce(respond(403));

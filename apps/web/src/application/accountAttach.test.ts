@@ -35,8 +35,8 @@ describe('reconcileSpaceLinks', () => {
   it('mirrors server links no device ever wrote (the anonymous bank-connect completion)', async () => {
     const { store, repo } = await makeStore();
     vi.mocked(fetchSpaceLinks).mockResolvedValue([
-      { id: 'srv1', feedSpaceId: 'feedA', accountId: 'accA' },
-      { id: 'srv2', feedSpaceId: 'feedB', accountId: 'accB' },
+      { id: 'srv1', feedSpaceId: 'feedA', accountId: 'accA', historyFrom: '2026-02-01', type: 'savings' },
+      { id: 'srv2', feedSpaceId: 'feedB', accountId: 'accB', historyFrom: '2026-01-01', type: 'checking' },
     ]);
 
     expect(await reconcileSpaceLinks(store, repo, SPACE)).toBe(2);
@@ -44,8 +44,9 @@ describe('reconcileSpaceLinks', () => {
     expect(mirrors).toHaveLength(2);
     const a = mirrors.find((l) => l.feedSpaceId === 'feedA');
     expect(a?.accountId).toBe('accA');
-    // the space's own history start seeds the mirror
-    expect(a?.historyFrom).toBe('2026-01-01');
+    // the SERVER link's own gate and type seed the mirror
+    expect(a?.historyFrom).toBe('2026-02-01');
+    expect(a?.type).toBe('savings');
   });
 
   it('existing mirrors are left alone — the pass is idempotent', async () => {
@@ -56,7 +57,7 @@ describe('reconcileSpaceLinks', () => {
       historyFrom: '2025-06-01',
       archived: 0,
     });
-    vi.mocked(fetchSpaceLinks).mockResolvedValue([{ id: 'srv1', feedSpaceId: 'feedA', accountId: 'accA' }]);
+    vi.mocked(fetchSpaceLinks).mockResolvedValue([{ id: 'srv1', feedSpaceId: 'feedA', accountId: 'accA', historyFrom: '2026-01-01', type: 'checking' }]);
 
     expect(await reconcileSpaceLinks(store, repo, SPACE)).toBe(0);
     const mirrors = (await store.bySpace('accountLink', SPACE)).filter((l) => l.deleted === 0);

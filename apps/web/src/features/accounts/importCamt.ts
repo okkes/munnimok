@@ -15,6 +15,7 @@ import { visibleAccounts, writeTxTransform } from '@/db/joined';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
+import type { AccountType } from '@/db/types';
 
 // Fixed namespace so the same bank entry always yields the same tx id —
 // importing the same file twice (or on two devices) cannot duplicate.
@@ -213,7 +214,7 @@ export interface FeedGateway {
    *  else owns it (S1 squatting defence, never blocks the user) */
   register(preferredFeedId: string, accountRef: string): Promise<string>;
   /** server-authoritative attachment of the feed to the target space */
-  attach(spaceId: string, feedSpaceId: string, accountId: string, historyFrom?: string): Promise<void>;
+  attach(spaceId: string, feedSpaceId: string, accountId: string, historyFrom?: string, type?: AccountType): Promise<void>;
 }
 
 /** #184: rows land one by one — the UI narrates `done` of the total */
@@ -347,11 +348,15 @@ async function refreshExistingAttachment(
   if (existingLink.archived) return false;
   const historyFrom =
     existingLink.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
-  await feeds.attach(spaceId, feedId, accountId, historyFrom);
+  // the space's reading of the account rides along: the link's own type,
+  // else the account row's — the server keeps a type on every link
+  const type = existingLink.type ?? (await store.get('account', accountId))?.type;
+  await feeds.attach(spaceId, feedId, accountId, historyFrom, type);
   await repo.upsert('accountLink', spaceId, linkId, {
     feedSpaceId: feedId,
     accountId,
     historyFrom,
+    ...(type ? { type } : {}),
   });
   return true;
 }

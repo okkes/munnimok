@@ -1,3 +1,4 @@
+import { deviceHeaders, noticeDeviceRevoked } from '@/lib/api';
 import type { Op } from './merge';
 
 export interface PushResult {
@@ -36,12 +37,21 @@ interface ApiBackendOptions {
 export class ApiSyncBackend implements SyncBackend {
   constructor(private readonly options: ApiBackendOptions) {}
 
+  /** the same device pair apiFetch sends — the server refuses calls
+   *  that name no device (401 device-required) */
   private async headers(): Promise<Record<string, string>> {
     const auth = await this.options.getAuth();
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    const headers: Record<string, string> = { 'Content-Type': 'application/json', ...deviceHeaders() };
     if (auth.bearer) headers.Authorization = `Bearer ${auth.bearer}`;
     if (auth.testSub) headers['X-User-Sub'] = auth.testSub;
     return headers;
+  }
+
+  /** a failed answer — a 410 device-revoked raises the remote-disconnect
+   *  event (this browser was disconnected) before the error surfaces */
+  private async failed(res: Response): Promise<SyncHttpError> {
+    await noticeDeviceRevoked(res);
+    return new SyncHttpError(res.status);
   }
 
   async push(spaceId: string, clientId: string, ops: Op[]): Promise<PushResult> {
@@ -50,7 +60,7 @@ export class ApiSyncBackend implements SyncBackend {
       headers: await this.headers(),
       body: JSON.stringify({ clientId, ops }),
     });
-    if (!res.ok) throw new SyncHttpError(res.status);
+    if (!res.ok) throw await this.failed(res);
     return (await res.json()) as PushResult;
   }
 
@@ -58,13 +68,13 @@ export class ApiSyncBackend implements SyncBackend {
     const res = await fetch(`${this.options.baseUrl}/sync/${spaceId}/pull?since=${since}`, {
       headers: await this.headers(),
     });
-    if (!res.ok) throw new SyncHttpError(res.status);
+    if (!res.ok) throw await this.failed(res);
     return (await res.json()) as PullResult;
   }
 
   async listSpaces(): Promise<string[]> {
     const res = await fetch(`${this.options.baseUrl}/me/spaces`, { headers: await this.headers() });
-    if (!res.ok) throw new SyncHttpError(res.status);
+    if (!res.ok) throw await this.failed(res);
     return (await res.json()) as string[];
   }
 
@@ -78,7 +88,7 @@ export class ApiSyncBackend implements SyncBackend {
       headers: { ...(await this.headers()), Accept: 'text/event-stream' },
       signal,
     });
-    if (!res.ok || !res.body) throw new SyncHttpError(res.status);
+    if (!res.ok || !res.body) throw await this.failed(res);
 
     const reader = res.body.getReader();
     const decoder = new TextDecoder();

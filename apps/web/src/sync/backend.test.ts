@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiSyncBackend, SyncHttpError } from './backend';
 
@@ -16,8 +17,25 @@ describe('ApiSyncBackend', () => {
     expect(result).toEqual({ lastSeq: 7 });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://api/sync/s1/push');
-    expect(new Headers(init!.headers).get('Authorization')).toBe('Bearer tok-123');
+    const headers = new Headers(init!.headers);
+    expect(headers.get('Authorization')).toBe('Bearer tok-123');
+    // the device pair every API call carries — the server refuses
+    // device-less requests
+    expect(headers.get('X-Munni-Device')).toMatch(/^[0-9a-f]{12}$/);
+    expect(headers.get('X-Munni-Platform')).toBe('web');
     expect(init!.method).toBe('POST');
+  });
+
+  it('a 410 device-revoked answer raises the remote-disconnect event before failing', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ error: 'device-revoked' }, 410));
+    const seen = vi.fn();
+    globalThis.addEventListener('munni:device-revoked', seen);
+    try {
+      await expect(backend({ testSub: 'x' }).pull('s1', 0)).rejects.toMatchObject(new SyncHttpError(410));
+      expect(seen).toHaveBeenCalledTimes(1);
+    } finally {
+      globalThis.removeEventListener('munni:device-revoked', seen);
+    }
   });
 
   it('test-auth identities send the X-User-Sub header instead', async () => {
