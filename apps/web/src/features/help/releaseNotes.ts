@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '4.0.0',
+    date: '2026-09-18',
+    items: [
+      {
+        en: 'A fresh start: munni now runs as one app per environment, each with its own sign-in. Sign in again (Google, Apple or your username) — your data starts empty on the new environment, and the app on your phone is a new install from the store\'s testing track.',
+        nl: 'Een frisse start: munni draait nu als één app per omgeving, elk met zijn eigen inlog. Log opnieuw in (Google, Apple of je gebruikersnaam) — je gegevens beginnen leeg op de nieuwe omgeving, en de app op je telefoon is een nieuwe installatie via de testversie van de store.',
+        tr: 'Temiz bir başlangıç: munni artık her ortam için ayrı bir uygulama olarak çalışıyor, her birinin kendi girişi var. Yeniden giriş yap (Google, Apple veya kullanıcı adın) — verilerin yeni ortamda boş başlar ve telefonundaki uygulama mağazanın test kanalından yeni bir kurulumdur.',
+      },
+      {
+        en: 'Who may open the admin portal is now decided in the setup with one switch per user — no more ids to copy around. Your accounts and bank links must carry their type and start date from the first moment; the app no longer repairs them afterwards.',
+        nl: 'Wie het beheerportaal mag openen wordt nu in de setup bepaald met één schakelaar per gebruiker — geen ids meer om te kopiëren. Je rekeningen en bankkoppelingen dragen hun type en startdatum vanaf het eerste moment; de app repareert ze achteraf niet meer.',
+        tr: 'Yönetim portalını kimin açabileceği artık kurulumda kullanıcı başına tek bir anahtarla belirlenir — kopyalanacak kimlik yok. Hesapların ve banka bağlantıların tür ve başlangıç tarihini ilk andan itibaren taşır; uygulama artık bunları sonradan onarmaz.',
+      },
+    ],
+  },
+  {
     version: '3.0.0',
     date: '2026-09-17',
     items: [
