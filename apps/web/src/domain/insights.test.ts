@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { budgetRealityCheck, collectInsights, debtAcceleration, priceCreep, smallHabit, subscriptionOverlap, weekendMultiplier } from './insights';
 import type { InsightInputs } from './insights';
-import type { AccountRow, BudgetRow, RecurringRow, TransactionRow } from '@/db/types';
+import type { AccountRow, BudgetRow, RecurringRow, TxView } from '@/db/types';
 
-const tx = (partial: Partial<TransactionRow>): TransactionRow =>
+const tx = (partial: Partial<TxView>): TxView =>
   ({
     id: Math.random().toString(36).slice(2),
     spaceId: 's1',
@@ -16,7 +16,7 @@ const tx = (partial: Partial<TransactionRow>): TransactionRow =>
     needsReview: 0,
     deleted: 0,
     ...partial,
-  }) as TransactionRow;
+  }) as TxView;
 
 const rec = (partial: Partial<RecurringRow>): RecurringRow =>
   ({ id: 'r1', spaceId: 's1', name: 'Netflix', kind: 'subscription', amountCents: 1399, every: 'month', dueDay: 1, active: 1, deleted: 0, ...partial }) as RecurringRow;

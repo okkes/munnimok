@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { buildCatalog } from './catalog';
 import { cashflowSeries, categorySeries, netWorthSeries } from './trends';
-import type { TransactionRow } from '@/db/types';
+import type { TxView } from '@/db/types';
 
-const tx = (over: Partial<TransactionRow>): TransactionRow => ({
+const tx = (over: Partial<TxView>): TxView => ({
   id: Math.random().toString(36).slice(2),
   spaceId: 's1',
   accountId: 'a1',

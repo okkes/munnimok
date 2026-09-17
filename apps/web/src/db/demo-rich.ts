@@ -50,7 +50,7 @@ async function seedIncome(repo: Repo): Promise<void> {
   const credit = (id: string, date: string, cents: number, merchant: string, cat: string, desc: string) =>
     repo.upsert('transaction', DEMO_SPACE_ID, id, {
       accountId: 'demo_main', date, amountCents: cents, currency: 'EUR', merchant,
-      catId: cat, txType: 'income', needsReview: 0, description: desc,
+      catId: cat, needsReview: 0, description: desc,
     } as never);
   // salary on the 24th, six months of history ending at the most
   // recent 24th that has already passed (never seed a future charge —
@@ -72,7 +72,7 @@ async function seedHistory(repo: Repo): Promise<void> {
   const spend = (id: string, date: string, cents: number, merchant: string, cat: string, review = 0) =>
     repo.upsert('transaction', DEMO_SPACE_ID, id, {
       accountId: 'demo_main', date, amountCents: -cents, currency: 'EUR', merchant,
-      catId: review ? 'uncategorized' : cat, txType: 'expense', needsReview: review, description: merchant.toUpperCase(),
+      catId: review ? 'uncategorized' : cat, needsReview: review, description: merchant.toUpperCase(),
     } as never);
 
   // weekly groceries — amounts rotate so no two cycles look identical
@@ -99,7 +99,7 @@ async function seedHistory(repo: Repo): Promise<void> {
   // stays put.
   await repo.upsert('transaction', DEMO_SPACE_ID, 'demo_split_phone', {
     accountId: 'demo_main', date: monthDay(0, 2), amountCents: -6500, currency: 'EUR',
-    merchant: 'Vodafone', catId: 'telecom', txType: 'expense', needsReview: 0,
+    merchant: 'Vodafone', catId: 'telecom', needsReview: 0,
     description: 'VODAFONE ABONNEMENT + TOESTEL',
     splits: [
       { id: 'demo_split_phone_p1', catId: 'telecom', amountCents: 4000 },
@@ -138,7 +138,6 @@ async function seedRecurring(repo: Repo): Promise<void> {
       currency: 'EUR',
       merchant,
       catId: cat,
-      txType: 'expense',
       needsReview: 0,
       recurringId: recId,
     } as never);
@@ -181,7 +180,7 @@ async function seedBudgets(repo: Repo): Promise<void> {
   const spend = (id: string, cat: string, cents: number, merchant: string, day: number) =>
     repo.upsert('transaction', DEMO_SPACE_ID, id, {
       accountId: 'demo_main', date: monthDay(0, day), amountCents: -cents, currency: 'EUR',
-      merchant, catId: cat, txType: 'expense', needsReview: 0,
+      merchant, catId: cat, needsReview: 0,
     } as never);
   await spend('demo_b_g1', 'groceries', 6_240, 'Albert Heijn', Math.min(now().getDate(), 3));
   await spend('demo_b_g2', 'groceries', 4_180, 'Jumbo', Math.min(now().getDate(), 6));
@@ -231,7 +230,7 @@ async function seedEvents(repo: Repo): Promise<void> {
   const spend = (id: string, cat: string, cents: number, merchant: string, date: string) =>
     repo.upsert('transaction', DEMO_SPACE_ID, id, {
       accountId: 'demo_main', date, amountCents: -cents, currency: 'EUR', merchant,
-      catId: cat, txType: 'expense', needsReview: 0, eventId: 'demo_evt_bcn',
+      catId: cat, needsReview: 0, eventId: 'demo_evt_bcn',
     } as never);
   await spend('demo_ev_1', 'flight', 18_900, 'Vueling', daysAgo(2));
   await spend('demo_ev_2', 'hotel', 21_000, 'Hotel Ramblas', daysAgo(1));

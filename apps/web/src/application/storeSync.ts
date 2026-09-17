@@ -120,10 +120,7 @@ export async function pullConnections(store: StorageBackend): Promise<number> {
   let adopted = 0;
   for (const row of rows) {
     try {
-      const decrypted = await decryptJson<StoreConnectionRow>(csk, row.cipher);
-      // pre-v3 blobs carry no instance id — adopt them under the store
-      // name, matching the local schema migration
-      const remote = decrypted.id ? decrypted : { ...decrypted, id: decrypted.store };
+      const remote = await decryptJson<StoreConnectionRow>(csk, row.cipher);
       const local = await store.storeConnGet(remote.id);
       if (!local || Date.parse(remote.refreshedAt) > Date.parse(local.refreshedAt)) {
         await store.storeConnPut(remote);

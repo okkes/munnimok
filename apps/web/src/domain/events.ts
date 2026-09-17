@@ -1,4 +1,4 @@
-import type { TransactionRow } from '@/db/types';
+import type { TxView } from '@/db/types';
 import { txSliceViews } from './txSlices';
 import type { TxSliceView } from './txSlices';
 
@@ -6,7 +6,7 @@ import type { TxSliceView } from './txSlices';
  *  — "this €30 of the dinner is the trip") — all pure. */
 
 /** the row's parts that belong to this event as EXPENSES */
-function eventViews(tx: TransactionRow, eventId: string): TxSliceView[] {
+function eventViews(tx: TxView, eventId: string): TxSliceView[] {
   if (tx.deleted !== 0) return [];
   return txSliceViews(tx).filter((view) => view.eventId === eventId && view.effType === 'expense');
 }
@@ -14,7 +14,7 @@ function eventViews(tx: TransactionRow, eventId: string): TxSliceView[] {
 const viewSpent = (view: TxSliceView): number => (view.fromParts ? Math.abs(view.amountCents) : -view.amountCents);
 
 /** positive cents spent inside the event (expenses; refunds reduce) */
-export function eventSpentCents(txs: readonly TransactionRow[], eventId: string): number {
+export function eventSpentCents(txs: readonly TxView[], eventId: string): number {
   let total = 0;
   for (const tx of txs) for (const view of eventViews(tx, eventId)) total += viewSpent(view);
   return total;
@@ -26,7 +26,7 @@ interface CatalogLookup {
 
 /** main-category totals of the event's expenses, largest first */
 export function eventCategoryBreakdown(
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   eventId: string,
   catalog: CatalogLookup,
 ): { catId: string; totalCents: number }[] {
@@ -45,7 +45,7 @@ export function eventCategoryBreakdown(
 
 /** sub-category totals inside one of the event's main categories, largest first */
 export function eventSubcategoryBreakdown(
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   eventId: string,
   catalog: CatalogLookup,
   mainCatId: string,
@@ -71,7 +71,7 @@ export function eventPerDayCents(totalCents: number, from?: string, to?: string)
 }
 
 /** the transactions inside an event's date range not yet attached to it */
-export function suggestableTxs(txs: readonly TransactionRow[], eventId: string, from?: string, to?: string): TransactionRow[] {
+export function suggestableTxs<T extends TxView>(txs: readonly T[], eventId: string, from?: string, to?: string): T[] {
   if (!from || !to) return [];
   return txs.filter(
     (tx) => tx.deleted === 0 && !tx.eventId && tx.txType === 'expense' && tx.date >= from && tx.date <= to && tx.eventId !== eventId,

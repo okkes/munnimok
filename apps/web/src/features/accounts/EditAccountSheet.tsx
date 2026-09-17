@@ -182,7 +182,6 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
           amountCents: delta,
           currency: account.currency,
           merchant: t('cat.balanceAdjustment'),
-          txType: 'adjustment',
           adjustment: 1,
           catId: 'balanceAdjustment',
           needsReview: 0,

@@ -41,8 +41,8 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     transferPeerId: tx.transferPeerId,
   });
 
-  // funding left the transfer family when its type retired (2026-08-05)
-  // — kindOf files leftover unmigrated rows as standard, out of the pool
+  // the pool: rows whose DERIVED type is transfer-family (funding is a
+  // special category on standard rows — kindOf keeps it out)
   const typed = all.filter((tx) => kindOf(tx.txType) === 'transfer');
   const pairs = matchTransferPairs(typed.map(asLeg));
   let linked = 0;
@@ -73,7 +73,6 @@ async function linkSpacePairs(store: StorageBackend, repo: Repo, spaceId: string
     const stamp = accountStamp((await store.get('account', twin.accountId))?.type);
     const outType = (await store.get('account', out.accountId))?.type;
     await writePair(store, repo, out, twin, {
-      txType: stamp ?? (outType ? familyForCounter(outType) : 'transfer'),
       linkedAccountId: out.accountId,
       needsReview: 0,
       catId:
@@ -100,7 +99,6 @@ async function writePair(store: StorageBackend, repo: Repo, out: SpaceTx | undef
     if (stamp) {
       return {
         ...(leg.linkedAccountId ? {} : { linkedAccountId: other.accountId }),
-        txType: stamp,
         catId: stampMovementSub(stamp, leg.amountCents),
         needsReview: 0 as const,
       };
@@ -109,7 +107,7 @@ async function writePair(store: StorageBackend, repo: Repo, out: SpaceTx | undef
     const family = counterType ? familyForCounter(counterType) : 'transfer';
     return {
       ...(leg.linkedAccountId ? {} : { linkedAccountId: other.accountId }),
-      ...(family !== 'transfer' && counterType ? { txType: family, catId: movementCatFor(counterType, leg.amountCents) } : {}),
+      ...(family !== 'transfer' && counterType ? { catId: movementCatFor(counterType, leg.amountCents) } : {}),
     };
   };
   await writeTxTransform(repo, out, { ...(await enrich(out, inc)), transferPeerId: inc.id });

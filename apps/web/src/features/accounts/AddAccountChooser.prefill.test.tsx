@@ -37,7 +37,7 @@ describe('AddAccountChooser prefill from review (#326)', () => {
     for (const [id, date] of [['duo-1', '2020-01-05'], ['duo-2', '2020-02-04'], ['duo-3', '2020-03-05']] as const) {
       await seedRepo.upsert('transaction', DEMO_SPACE_ID, id, {
         accountId: 'demo_main', date, amountCents: -15000, currency: 'EUR',
-        merchant: 'DUO Studiefinanciering', txType: 'expense', needsReview: 1,
+        merchant: 'DUO Studiefinanciering', needsReview: 1,
       });
     }
     seed.close();

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { AccountRow, GoalRow, TransactionRow } from '@/db/types';
+import type { AccountRow, GoalRow, TxView } from '@/db/types';
 import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, suggestableTxs } from './events';
 import { goalOverview, goalProgress, paceCentsPerMonth, savingsTotalCents } from './goals';
 
-const tx = (partial: Partial<TransactionRow>): TransactionRow =>
+const tx = (partial: Partial<TxView>): TxView =>
   ({
     id: Math.random().toString(36).slice(2),
     spaceId: 's1',
@@ -17,7 +17,7 @@ const tx = (partial: Partial<TransactionRow>): TransactionRow =>
     deleted: 0,
     fieldVersions: {},
     ...partial,
-  }) as TransactionRow;
+  }) as TxView;
 
 const account = (partial: Partial<AccountRow>): AccountRow =>
   ({

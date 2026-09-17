@@ -52,8 +52,9 @@ async function problemLine(res: Response): Promise<string> {
 export function BankConnectSheet({ open, onOpenChange }: Readonly<{ open: boolean; onOpenChange: (open: boolean) => void }>) {
   const { t } = useLang();
   const { spaceId } = useData();
-  // #175: '' = no explicit pick (single provider / older server) — the
-  // server's default provider (GoCardless when configured) serves
+  // #175: the server names its configured providers and every request
+  // must name one — a single provider is picked for the user, several
+  // ask; without a list there is no bank list either
   const [providers, setProviders] = useState<ProviderOption[] | null>(null);
   const [chosenProvider, setChosenProvider] = useState<string | null>(null);
   const [institutions, setInstitutions] = useState<Institution[] | null>(null);
@@ -71,24 +72,24 @@ export function BankConnectSheet({ open, onOpenChange }: Readonly<{ open: boolea
     void (async () => {
       try {
         const res = await apiFetch('/gocardless/providers');
-        if (!res.ok) throw new Error(String(res.status));
+        if (!res.ok) throw new Error(await problemLine(res));
         const list = ((await res.json()) as { providers?: ProviderOption[] }).providers ?? [];
+        if (list.length === 0) throw new Error('no bank provider configured');
         setProviders(list);
-        if (list.length <= 1) setChosenProvider(list[0]?.id ?? '');
-      } catch {
-        // an older server without the endpoint: the active provider serves
-        setProviders([]);
-        setChosenProvider('');
+        if (list.length === 1) setChosenProvider(list[0].id);
+      } catch (err) {
+        reportError('openbanking', err);
+        setFailDetail(err instanceof Error && err.message ? err.message : null);
+        setFailed(true);
       }
     })();
   }, [open, providers]);
 
   useEffect(() => {
-    if (!open || chosenProvider === null || institutions) return;
+    if (!open || !chosenProvider || institutions) return;
     void (async () => {
       try {
-        const provider = chosenProvider ? `&provider=${encodeURIComponent(chosenProvider)}` : '';
-        const res = await apiFetch(`/gocardless/institutions?country=nl${provider}`);
+        const res = await apiFetch(`/gocardless/institutions?country=nl&provider=${encodeURIComponent(chosenProvider)}`);
         if (res.status === 429 || res.status === 503) {
           // GoCardless quota spent — a distinct message beats a generic
           // failure ("try later" is genuinely the right advice here)
@@ -106,6 +107,7 @@ export function BankConnectSheet({ open, onOpenChange }: Readonly<{ open: boolea
   }, [open, chosenProvider, institutions]);
 
   const connect = async (institutionId: string) => {
+    if (!chosenProvider) return; // the bank list only exists under a provider
     setBusy(true);
     try {
       const res = await apiFetch('/gocardless/requisitions', {
@@ -122,8 +124,8 @@ export function BankConnectSheet({ open, onOpenChange }: Readonly<{ open: boolea
           // urls; a query marker collides with the provider's ?ref=) —
           // the hosted page reads it from the complete response
           appScheme: isNativeApp() ? config.nativeScheme : null,
-          // #175: the user's explicit provider pick rides along
-          ...(chosenProvider ? { provider: chosenProvider } : {}),
+          // #175: the provider the bank list came from — required
+          provider: chosenProvider,
         }),
       });
       if (!res.ok) throw new Error(await problemLine(res));

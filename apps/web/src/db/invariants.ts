@@ -23,18 +23,12 @@ const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const isIntCents = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v);
 
-function amountAndTypeProblems(row: Record<string, unknown>): string[] {
+/** the money itself: integer cents and an ISO day (a row stores no
+ *  type — the view derives it, so there is no type to check here) */
+function amountAndDateProblems(row: Record<string, unknown>): string[] {
   const problems: string[] = [];
   if (!isIntCents(row.amountCents)) problems.push('amountCents must be integer cents');
   if (typeof row.date !== 'string' || !ISO_DAY.test(row.date)) problems.push('date must be ISO yyyy-mm-dd');
-  const hasType = row.txType !== undefined && row.txType !== null;
-  if (hasType && !(typeof row.txType === 'string' && TX_TYPES.has(row.txType))) problems.push('unknown txType');
-  // sign-bound types: a standard row's type follows its sign (the
-  // pre-2026-07-28 bulk-apply wrote +€1000 rows as 'expense')
-  if (isIntCents(row.amountCents) && row.amountCents !== 0) {
-    if (row.txType === 'expense' && row.amountCents > 0) problems.push('positive amount typed expense');
-    if (row.txType === 'income' && row.amountCents < 0) problems.push('negative amount typed income');
-  }
   return problems;
 }
 
@@ -104,7 +98,7 @@ function reimbursementProblems(links: { txId?: unknown; amountCents?: unknown }[
 function transactionProblems(row: Record<string, unknown>): string[] {
   const reviewFlagOk = row.needsReview === undefined || row.needsReview === 0 || row.needsReview === 1;
   return [
-    ...amountAndTypeProblems(row),
+    ...amountAndDateProblems(row),
     ...rowCatsProblems(row),
     ...splitProblems((row.splits as { catId?: unknown; amountCents?: unknown }[] | null | undefined) ?? []),
     ...reimbursementProblems((row.reimbursements as { txId?: unknown; amountCents?: unknown }[] | null | undefined) ?? []),

@@ -296,7 +296,7 @@ export function SplitEditorSheet({
     }
     // deliberately only on open (or a card swap): the sheet owns its
     // rows while open. Keyed by tx.id, NOT the object — background
-    // writes (sync, migrations) re-emit the same row as a fresh object
+    // writes (sync, boot heals) re-emit the same row as a fresh object
     // and must never wipe rows the user is mid-editing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx.id]);

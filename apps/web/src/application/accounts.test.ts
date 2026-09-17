@@ -25,9 +25,9 @@ describe('#212: the destructive type change', () => {
     await repo.upsert('account', SPACE, 'a1', { name: 'Main', type: 'checking', currency: 'EUR', balanceCents: 5_000, source: 'manual' });
     await repo.upsert('account', SPACE, 'other', { name: 'Other', type: 'checking', currency: 'EUR', balanceCents: 0, source: 'manual' });
     const base = { currency: 'EUR', needsReview: 0 as const };
-    await repo.upsert('transaction', SPACE, 't1', { ...base, accountId: 'a1', date: '2026-02-01', amountCents: -1_500, merchant: 'AH', catId: 'groceries', txType: 'expense' });
-    await repo.upsert('transaction', SPACE, 't2', { ...base, accountId: 'a1', date: '2026-02-02', amountCents: 2_000, merchant: 'Refund', catId: 'incomeOther', txType: 'income' });
-    await repo.upsert('transaction', SPACE, 'keep', { ...base, accountId: 'other', date: '2026-02-03', amountCents: -900, merchant: 'X', catId: 'coffee', txType: 'expense' });
+    await repo.upsert('transaction', SPACE, 't1', { ...base, accountId: 'a1', date: '2026-02-01', amountCents: -1_500, merchant: 'AH', catId: 'groceries'});
+    await repo.upsert('transaction', SPACE, 't2', { ...base, accountId: 'a1', date: '2026-02-02', amountCents: 2_000, merchant: 'Refund', catId: 'incomeOther'});
+    await repo.upsert('transaction', SPACE, 'keep', { ...base, accountId: 'other', date: '2026-02-03', amountCents: -900, merchant: 'X', catId: 'coffee'});
 
     const account = (await store.get('account', 'a1'))!;
     const touched = await changeAccountType(store, repo, account, 'savings');
@@ -35,8 +35,8 @@ describe('#212: the destructive type change', () => {
 
     expect((await store.get('account', 'a1'))?.type).toBe('savings');
     // savings STAMPS its rows — every one re-reads as saving, back in review
-    expect(await store.get('transaction', 't1')).toMatchObject({ catId: 'uncategorized', txType: 'saving', needsReview: 1 });
-    expect(await store.get('transaction', 't2')).toMatchObject({ catId: 'uncategorized', txType: 'saving', needsReview: 1 });
+    expect(await store.get('transaction', 't1')).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
+    expect(await store.get('transaction', 't2')).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
     // other accounts' rows stay untouched
     expect(await store.get('transaction', 'keep')).toMatchObject({ catId: 'coffee', needsReview: 0 });
     // balances are physical facts — the type never rewrites them
@@ -49,11 +49,11 @@ describe('#212: the destructive type change', () => {
     const repo = new Repo(store, new HlcClock('typ2'), { trackOutbox: false });
     await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
     await repo.upsert('account', SPACE, 'pot', { name: 'Pot', type: 'savings', currency: 'EUR', balanceCents: 0, source: 'manual' });
-    await repo.upsert('transaction', SPACE, 's1r', { accountId: 'pot', date: '2026-03-01', amountCents: -4_000, currency: 'EUR', merchant: 'Out', catId: 'savingWithdraw', txType: 'saving', needsReview: 0 });
+    await repo.upsert('transaction', SPACE, 's1r', { accountId: 'pot', date: '2026-03-01', amountCents: -4_000, currency: 'EUR', merchant: 'Out', catId: 'savingWithdraw', needsReview: 0 });
 
     const account = (await store.get('account', 'pot'))!;
     await changeAccountType(store, repo, account, 'checking');
-    expect(await store.get('transaction', 's1r')).toMatchObject({ catId: 'uncategorized', txType: 'expense', needsReview: 1 });
+    expect(await store.get('transaction', 's1r')).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
   });
 
   it('#212 r2: a LINKED account re-types for THIS space alone — the other space keeps its reading', async () => {
@@ -65,7 +65,7 @@ describe('#212: the destructive type change', () => {
     await repo.upsert('space', 's1', 's1', spaceBase);
     await repo.upsert('space', 's2', 's2', { ...spaceBase, name: 'Q' });
     await repo.upsert('account', 'feed1', 'bankacct', { name: 'Bank', type: 'checking', currency: 'EUR', balanceCents: 0, source: 'gocardless' });
-    await repo.upsert('transaction', 'feed1', 'raw1', { accountId: 'bankacct', date: '2026-02-01', amountCents: -1_500, currency: 'EUR', merchant: 'AH', txType: 'expense', needsReview: 0 });
+    await repo.upsert('transaction', 'feed1', 'raw1', { accountId: 'bankacct', date: '2026-02-01', amountCents: -1_500, currency: 'EUR', merchant: 'AH', needsReview: 0 });
     const linkA = accountLinkId('s1', 'feed1');
     const linkB = accountLinkId('s2', 'feed1');
     await repo.upsert('accountLink', 's1', linkA, { feedSpaceId: 'feed1', accountId: 'bankacct', type: 'checking', archived: 0 });

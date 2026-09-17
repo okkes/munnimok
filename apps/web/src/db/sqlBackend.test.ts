@@ -124,7 +124,6 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
         amountCents: -2999,
         currency: 'EUR',
         merchant: 'Bol.com',
-        txType: 'expense',
         needsReview: 1,
       });
       await repo.upsert('accountLink', SPACE, 'link1', { feedSpaceId: 'feed1', accountId: 'acc1' });

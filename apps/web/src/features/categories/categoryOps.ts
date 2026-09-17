@@ -6,7 +6,9 @@ import {
   detachCategoryPatch,
 } from '@/domain/categoryRules';
 import { adoptedCategoryId } from '@/domain/feedIds';
-import type { CategoryRow, CatDirection, TransactionRow, TxSplit, TxType } from '@/db/types';
+import { historyTransactions, writeTxTransform } from '@/db/joined';
+import type { SpaceTx } from '@/db/joined';
+import type { CategoryRow, CatDirection, TxSplit, TxType } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 
@@ -29,7 +31,7 @@ export interface CategoryChanges {
 }
 
 export interface PendingCommit {
-  affected: TransactionRow[];
+  affected: SpaceTx[];
   commit: () => Promise<void>;
 }
 
@@ -41,9 +43,13 @@ async function visibleSpaceIds(store: StorageBackend, row: CategoryRow): Promise
   return spaces.filter((s) => s.kind !== 'shared').map((s) => s.id);
 }
 
-async function txsInSpaces(store: StorageBackend, spaceIds: string[]): Promise<TransactionRow[]> {
-  const ids = new Set(spaceIds);
-  return (await store.allRows('transaction')).filter((t) => t.deleted === 0 && ids.has(t.spaceId));
+/** every transaction those spaces SEE — own rows and attached feeds,
+ *  gates lifted, with the view's DERIVED types (a category conflict is
+ *  a view-level fact: nothing stores a type) */
+async function txsInSpaces(store: StorageBackend, spaceIds: string[]): Promise<SpaceTx[]> {
+  const out: SpaceTx[] = [];
+  for (const spaceId of spaceIds) out.push(...(await historyTransactions(store, spaceId)));
+  return out;
 }
 
 const parentTypeOf = async (store: StorageBackend, parentId: string): Promise<TxType> => {
@@ -61,9 +67,11 @@ export const directionForType = (txType: TxType): CatDirection => {
   return txType === 'expense' ? 'debit' : 'both';
 };
 
-async function detachAll(repo: Repo, affected: TransactionRow[], catIds: Set<string>): Promise<void> {
+/** the space's opinion is what detaches: in place on own rows, on the
+ *  overlay for feed rows (the ONE write path) */
+async function detachAll(repo: Repo, affected: SpaceTx[], catIds: Set<string>): Promise<void> {
   for (const tx of affected) {
-    await repo.upsert('transaction', tx.spaceId, tx.id, detachCategoryPatch(tx, catIds));
+    await writeTxTransform(repo, tx, detachCategoryPatch(tx, catIds));
   }
 }
 
@@ -73,13 +81,13 @@ export async function subsOf(store: StorageBackend, parent: CategoryRow): Promis
 }
 
 interface EditImpact {
-  affected: TransactionRow[];
+  affected: SpaceTx[];
   detachIds: Set<string>;
   /** the sub's new inherited type when it moves under another parent */
   movedType?: TxType;
 }
 
-const addBroken = (impact: EditImpact, broken: TransactionRow[], catIds: Iterable<string>) => {
+const addBroken = (impact: EditImpact, broken: SpaceTx[], catIds: Iterable<string>) => {
   if (broken.length === 0) return;
   for (const tx of broken) {
     if (!impact.affected.some((a) => a.id === tx.id)) impact.affected.push(tx);
@@ -88,19 +96,19 @@ const addBroken = (impact: EditImpact, broken: TransactionRow[], catIds: Iterabl
 };
 
 /** rule 1: type change on a parent breaks every differently-typed tx in the subtree */
-const typeChangeImpact = (impact: EditImpact, txs: TransactionRow[], row: CategoryRow, changes: CategoryChanges, subtree: Set<string>) => {
+const typeChangeImpact = (impact: EditImpact, txs: SpaceTx[], row: CategoryRow, changes: CategoryChanges, subtree: Set<string>) => {
   if (row.isParent !== 1 || !changes.txType || changes.txType === row.txType) return;
   addBroken(impact, affectedByTypeChange(txs, subtree, changes.txType), subtree);
 };
 
 /** rule 2: direction change on a sub breaks wrong-side txs */
-const directionChangeImpact = (impact: EditImpact, txs: TransactionRow[], row: CategoryRow, changes: CategoryChanges) => {
+const directionChangeImpact = (impact: EditImpact, txs: SpaceTx[], row: CategoryRow, changes: CategoryChanges) => {
   if (row.isParent === 1 || !changes.direction || changes.direction === (row.direction ?? 'both')) return;
   addBroken(impact, affectedByDirectionChange(txs, row.id, changes.direction), [row.id]);
 };
 
 /** rule 3: moving a sub under a parent of another type breaks differently-typed txs */
-const moveImpact = async (impact: EditImpact, store: StorageBackend, txs: TransactionRow[], row: CategoryRow, changes: CategoryChanges) => {
+const moveImpact = async (impact: EditImpact, store: StorageBackend, txs: SpaceTx[], row: CategoryRow, changes: CategoryChanges) => {
   if (row.isParent === 1 || !changes.parentId || changes.parentId === row.parentId) return;
   impact.movedType = await parentTypeOf(store, changes.parentId);
   if (impact.movedType === row.txType) return;
@@ -273,7 +281,7 @@ const remapSplits = (splits: TxSplit[] | undefined, idMap: Map<string, string>):
 };
 
 /** rows that reference categories (transactions and overlays share the shape) */
-type CatHolder = Pick<TransactionRow, 'id' | 'catId' | 'cats' | 'splits'>;
+type CatHolder = Pick<SpaceTx, 'id' | 'catId' | 'cats' | 'splits'>;
 
 /** every category id one row references: its own, its `cats` entries and
  *  each part's own + spread (#211) */

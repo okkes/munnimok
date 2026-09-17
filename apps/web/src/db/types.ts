@@ -43,16 +43,13 @@ export interface SpaceRow extends SyncEnvelope {
   /** Home balance band (user design 2026-08-01): what the big number IS.
    *  Absent = 'networth' (the pre-config behavior: every account summed). */
   balanceBandMode?: 'networth' | 'cash' | 'spendable' | 'custom';
-  /** accounts excluded from the networth/cash band sums */
-  balanceBandExclude?: string[];
   /** the custom mode's explicit include list */
   balanceBandAccounts?: string[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
 export type AccountSource = 'manual' | 'camt053' | 'gocardless';
-/** which open-banking provider fetches a 'gocardless'-sourced account —
- *  absent on legacy rows means GoCardless (#176) */
+/** which open-banking provider fetches a 'gocardless'-sourced account (#176) */
 export type BankProvider = 'gocardless' | 'enablebanking';
 
 export interface AccountRow extends SyncEnvelope {
@@ -69,7 +66,8 @@ export interface AccountRow extends SyncEnvelope {
   /** when this account last heard from its source (ISO; bank fetch or statement import) */
   lastSyncedAt?: string;
   /** #176: the open-banking provider behind a 'gocardless' source —
-   *  stamped by the server ingest; absent = GoCardless (legacy rows) */
+   *  stamped by the server ingest on EVERY bank-fed row; manual and
+   *  statement-import rows carry none */
   provider?: BankProvider;
   /** #133/#221: this account is the space's DEFAULT for a counterparty
    *  family — minted at space creation (undeletable, ledger system-
@@ -93,8 +91,8 @@ export interface AccountRow extends SyncEnvelope {
    *  wins over the institution logo derived from bankId */
   logo?: string;
   archived?: 0 | 1;
-  // ── loans v2 (2026-08-01): the liability account IS the debt — the
-  //    old DebtRow's story fields live here now, one object, no seams
+  // ── loans v2 (2026-08-01): the liability account IS the debt — its
+  //    story fields live here, one object, no seams
   /** informational APR, e.g. 3.5 — empty means "remind me", 0 is an answer */
   interestPctYear?: number;
   /** starting size of the loan — optional garnish powering the progress bar */
@@ -192,12 +190,11 @@ export interface TxSplitCat {
    *  the spread was typed in % so the #141 sibling offer can rescale;
    *  amountCents stays materialized either way */
   pct?: number;
-  // ── #228 (user 2026-08-13): entries carry NO counterparty anymore.
-  // One counterparty per (split) transaction — the row's or part's own
+  // ── #228 (user 2026-08-13): entries carry NO counterparty. One
+  // counterparty per (split) transaction — the row's or part's own
   // linkedAccountId/transferPeerId — and a special category claims the
   // whole (split) transaction, so a spread only ever holds regular and
-  // reimbursement categories. Old per-entry links (the #133 r4 model)
-  // are relocated by the every-boot fold (migrateEntryCounters). ──
+  // reimbursement categories. ──
   /** VIEW enrichment only (like a part's): the join derives it from the
    *  entry's category + the owner's counterparty; a stored value is
    *  never read */
@@ -237,7 +234,6 @@ export interface TransactionRow extends SyncEnvelope {
    *  never mix: containers carry no cats of their own. */
   cats?: TxSplitCat[];
   splits?: TxSplit[];
-  txType: TxType;
   needsReview: 0 | 1;
   notes?: string;
   counterIban?: string;
@@ -264,10 +260,18 @@ export interface TransactionRow extends SyncEnvelope {
   /** loans v2 (2026-08-01): pre-anchor row deliberately counted into
    *  the linked manual loan's balance (one-shot marker) */
   loanCounted?: 1;
-  /** #133 D (C3): the manual correction marker — adjustment stopped
-   *  being a type; manual rows only */
+  /** #133 D (C3): the manual correction marker (manual rows only) — the
+   *  view derives the adjustment type from it; no type is stored */
   adjustment?: 0 | 1;
 }
+
+/**
+ * A transaction as the VIEW sees it: the stored row plus the type
+ * DERIVED at the join (db/joined.ts, domain/txDerive.ts) from the
+ * category, the counterparty, the account's stamp and the sign. Every
+ * reader consumes this shape; nothing stores a type.
+ */
+export type TxView = TransactionRow & { txType: TxType };
 
 /**
  * Per-space transformation overlay for one raw transaction (feature B:
@@ -283,7 +287,6 @@ export interface TxMetaRow extends SyncEnvelope {
   /** raw transaction id inside the feed space */
   txId: string;
   catId?: string;
-  txType: TxType;
   needsReview: 0 | 1;
   notes?: string;
   /** user-chosen display title; the bank's merchant stays untouched */
@@ -458,39 +461,6 @@ export interface GoalContributionRow extends SyncEnvelope {
 }
 
 /**
- * DEPRECATED (loans v2, 2026-08-01): debts fold into their liability
- * account at boot (foldDebtsIntoAccounts) — the account row is the one
- * object now. The table stays registered so old devices' rows still
- * sync in and get folded; nothing reads it for display anymore.
- */
-export interface DebtRow extends SyncEnvelope {
-  id: string;
-  spaceId: string;
-  name: string;
-  icon?: string;
-  /** liability account whose balance is the remaining truth */
-  accountId?: string;
-  /** starting size — optional since the merged Loan form (arc 3): the
-   *  current value is the truth anchor, the original only adds progress */
-  originalCents?: number;
-  /** manual remaining when no account is linked */
-  remainingCents?: number;
-  /** informational APR, e.g. 3.5 */
-  interestPctYear?: number;
-  paymentCents?: number;
-  paymentDay?: number;
-  /** payment cadence (arc 3), recurring-shaped: every N week/month/year;
-   *  absent = monthly, estimates fill the gap when payments exist */
-  paymentEvery?: RecurringEvery;
-  paymentEveryN?: number;
-  /** free-form note (arc 3) */
-  note?: string;
-  /** auto-link payments by merchant (recurring-style) */
-  merchantKey?: string;
-  archived?: 0 | 1;
-}
-
-/**
  * One allocation cell: what this period assigned to this main category
  * (approved allocation design). Deterministic id — two devices editing
  * the same cell converge by LWW instead of duplicating rows.
@@ -523,17 +493,16 @@ export interface ReceiptPayment {
 }
 
 /**
- * A transaction's line-item proof. Receipts v3 (approved redesign):
+ * A store receipt's line-item proof. Receipts v3 (approved redesign):
  * store receipts live ONCE in the owner's personal STORE FEED (the
  * global fetch/dedupe layer); linking snapshots them into a space via
- * `receiptLink`. Photo receipts skip the global layer entirely.
+ * `receiptLink`. Photo receipts skip the global layer entirely — they
+ * are photo-born `receiptLink` rows.
  */
 export interface ReceiptRow extends SyncEnvelope {
   id: string;
-  /** the owner's store feed (v3) or a viewing space (legacy rows) */
+  /** the owner's store feed */
   spaceId: string;
-  /** legacy pre-v3 link — new links live on receiptLink rows */
-  txId?: string;
   source: ReceiptSource;
   date: string;
   totalCents: number;
@@ -556,7 +525,7 @@ export type StoreId = Exclude<ReceiptSource, 'photo'>;
  * v3: keyed by INSTANCE id — multiple connections of one store coexist.
  */
 export interface StoreConnectionRow {
-  /** instance id (uuid; migrated legacy rows use the store name) */
+  /** instance id (uuid) */
   id: string;
   store: StoreId;
   tokens: Record<string, string>;
@@ -611,7 +580,8 @@ export interface StoreConnLinkRow extends SyncEnvelope {
 export interface ReceiptLinkRow extends SyncEnvelope {
   id: string;
   spaceId: string;
-  /** global receipt id; absent for photo-born links */
+  /** global receipt id; absent for photo-born links (the photo IS the
+   *  link — nothing lives behind it) */
   receiptId?: string;
   /** absent = the receipt is present in the space but not attached yet */
   txId?: string;
@@ -783,7 +753,6 @@ export type EntityName =
   | 'event'
   | 'goal'
   | 'goalContribution'
-  | 'debt'
   | 'allocation'
   | 'receipt'
   | 'receiptLink'
@@ -810,7 +779,6 @@ export interface EntityRowMap {
   event: EventRow;
   goal: GoalRow;
   goalContribution: GoalContributionRow;
-  debt: DebtRow;
   allocation: AllocationRow;
   receipt: ReceiptRow;
   receiptLink: ReceiptLinkRow;

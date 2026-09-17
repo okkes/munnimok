@@ -18,12 +18,10 @@ export const MIN_SERVER_PROTOCOL = 2;
 
 export type ProtocolIssue = 'client-outdated' | 'server-outdated';
 
-/** servers predating the handshake send nothing — they default to v1,
- *  which v2 clients refuse (the txSeen entity would 400 there) */
-export function protocolIssueFor(server: { protocol?: number; minClientProtocol?: number }): ProtocolIssue | null {
-  const serverProtocol = server.protocol ?? 1;
-  const minClient = server.minClientProtocol ?? 1;
-  if (minClient > CLIENT_PROTOCOL) return 'client-outdated';
-  if (serverProtocol < MIN_SERVER_PROTOCOL) return 'server-outdated';
+/** the verdict on a /health handshake — both fields are part of the
+ *  contract (a server that does not advertise them is not supported) */
+export function protocolIssueFor(server: { protocol: number; minClientProtocol: number }): ProtocolIssue | null {
+  if (server.minClientProtocol > CLIENT_PROTOCOL) return 'client-outdated';
+  if (server.protocol < MIN_SERVER_PROTOCOL) return 'server-outdated';
   return null;
 }

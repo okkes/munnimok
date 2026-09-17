@@ -10,9 +10,9 @@ import {
   setCatalogStorePatterns,
 } from './storeReceipts';
 import type { MatchableReceipt } from './storeReceipts';
-import type { TransactionRow } from '@/db/types';
+import type { TxView } from '@/db/types';
 
-const tx = (partial: Partial<TransactionRow>): TransactionRow =>
+const tx = (partial: Partial<TxView>): TxView =>
   ({
     id: Math.random().toString(36).slice(2),
     spaceId: 's1',
@@ -25,7 +25,7 @@ const tx = (partial: Partial<TransactionRow>): TransactionRow =>
     needsReview: 0,
     deleted: 0,
     ...partial,
-  }) as TransactionRow;
+  }) as TxView;
 
 const receipt: MatchableReceipt = { id: 'r1', source: 'ah', date: '2026-07-05', totalCents: 2350 };
 
@@ -71,7 +71,7 @@ describe('receipt ↔ transaction matching', () => {
     const paid: MatchableReceipt = { ...receipt, payment: { method: 'PINNEN', accountTail: '4321' } };
     const txs = [tx({ id: 'right-card' }), tx({ id: 'other-card' })];
     const tails: Record<string, string> = { 'right-card': 'NL0012344321', 'other-card': 'NL0099998888' };
-    const tailOf = (row: TransactionRow) => tails[row.id];
+    const tailOf = (row: TxView) => tails[row.id];
     // twins would be ambiguous — the tail disambiguates
     expect(bestMatch(paid, txs, new Set(), tailOf)).toBe('right-card');
     // no candidate matches the tail (store card ≠ IBAN): nobody is excluded

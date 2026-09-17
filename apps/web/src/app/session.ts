@@ -19,7 +19,7 @@ const SS_KEY = 'munni_session';
 
 export function readSessionIdentity(): Identity | null {
   try {
-    const raw = localStorage.getItem(SS_KEY) ?? sessionStorage.getItem(SS_KEY); // sessionStorage: pre-migration fallback
+    const raw = localStorage.getItem(SS_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Identity;
     if (parsed.kind === 'demo' || parsed.kind === 'offline' || parsed.kind === 'user') return parsed;
@@ -61,7 +61,6 @@ export const useSession = create<SessionState>((set) => ({
   },
   logout: () => {
     localStorage.removeItem(SS_KEY);
-    sessionStorage.removeItem(SS_KEY);
     set({ identity: null });
   },
 }));

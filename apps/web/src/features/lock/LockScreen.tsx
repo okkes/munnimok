@@ -3,7 +3,7 @@ import { useLang } from '@/i18n';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
 import leafUrl from '@/assets/leaf.png';
-import { effectiveBiometricKind, hashPin, readLockConfig, useLock, verifyBiometric } from './lock';
+import { hashPin, readLockConfig, useLock, verifyBiometric } from './lock';
 
 const MAX_PIN = 8;
 const MIN_PIN = 4;
@@ -64,10 +64,10 @@ export function LockScreen() {
   const [error, setError] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const config = readLockConfig();
-  const hasBiometric = !!config && effectiveBiometricKind(config) !== null;
+  const hasBiometric = !!config?.biometricKind;
 
   const tryBiometric = async () => {
-    if (!config || effectiveBiometricKind(config) === null) return;
+    if (!config?.biometricKind) return;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;

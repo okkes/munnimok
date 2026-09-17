@@ -4,10 +4,9 @@ import { standardTypeFor } from './txKind';
 
 /**
  * #133 (user ruling 6): the kind concept dies at transaction level — no
- * UI asks for a type anymore. The stored `txType` survives ONLY as a
- * DERIVED compat field (phase 1): the write choke computes it from what
- * the user actually decided, old devices and historical readers keep
- * working, and a later release stops writing it altogether (phase 2).
+ * UI asks for a type anymore and nothing stores one. The view's
+ * `txType` is DERIVED at the join (db/joined.ts) from what the user
+ * actually decided, row and parts alike.
  *
  * Order of truth:
  * 1. adjustment — the manual correction marker (C3) outranks everything

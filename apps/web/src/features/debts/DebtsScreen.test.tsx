@@ -41,7 +41,7 @@ function isoDayOffset(deltaDays: number): string {
 const seedPayment = (repo: Repo, id: string, date: string, cents = -15_000) =>
   repo.upsert('transaction', 'demo_space', id, {
     accountId: 'demo_main', date, amountCents: cents, merchant: 'Aflossing',
-    currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+    currency: 'EUR', needsReview: 0, catId: 'loanRepayment',
   });
 
 describe('Debts (demo identity)', () => {
@@ -90,7 +90,7 @@ describe('Debts (demo identity)', () => {
     expect(card.textContent).toMatch(/week/);
     expect(card.textContent).toMatch(/free by/);
 
-    // ONE object: the account row carries the debt story; no debt row
+    // ONE object: the account row carries the debt story
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const account = (await db.accounts.toArray()).find((a) => a.name === 'Student loan');
@@ -105,7 +105,6 @@ describe('Debts (demo identity)', () => {
         paymentEvery: 'week',
         note: 'DUO, samen met Kim',
       });
-      expect(await db.debts.toArray()).toHaveLength(0);
     }, { timeout: 5000 });
     // weekly €120 ≈ €520/month on the overview (cadence-normalized)
     expect(screen.getByTestId('debts-overview').textContent).toMatch(/520/);
@@ -279,7 +278,7 @@ describe('Debts (demo identity)', () => {
     const yesterday = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
     await repo.upsert('transaction', 'demo_space', 'oldpay', {
       accountId: 'demo_main', date: yesterday, amountCents: -15_000, merchant: 'Aflossing',
-      currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+      currency: 'EUR', needsReview: 0, catId: 'loanRepayment',
     });
 
     fireEvent.click(card);
@@ -328,7 +327,7 @@ describe('Debts (demo identity)', () => {
     const yesterday = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
     await repo.upsert('transaction', 'demo_space', 'oldpay2', {
       accountId: 'demo_main', date: yesterday, amountCents: -15_000, merchant: 'Aflossing',
-      currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+      currency: 'EUR', needsReview: 0, catId: 'loanRepayment',
     });
 
     fireEvent.click(card);
@@ -390,7 +389,7 @@ describe('Debts (demo identity)', () => {
     const repo = demoRepo(db);
     await repo.upsert('transaction', 'demo_space', 'prepay', {
       accountId: 'demo_main', date: '2026-08-01', amountCents: -15_000, merchant: 'Aflossing',
-      currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+      currency: 'EUR', needsReview: 0, catId: 'loanRepayment',
     });
     // the bare payment surfaces in the virtual bucket — the screen's
     // live queries have folded the row in before the create begins

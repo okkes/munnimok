@@ -22,24 +22,24 @@ describe('linkAllCounterparties', () => {
     return { db, repo };
   };
 
-  it('links matching rows, retypes plain expenses, keeps deliberate types and existing links', async () => {
+  it('links matching rows, files plain expenses under the family sub, keeps deliberate adjustments and existing links', async () => {
     const { db, repo } = await setup();
     const base = { accountId: 'acct-main', currency: 'EUR', needsReview: 0 as const };
     await repo.upsert('transaction', 's1', 'tx-topup', {
       ...base, date: '2026-07-01', amountCents: -50000, merchant: 'CC TOPUP',
-      txType: 'expense', counterIban: 'NL91 ABNA 0417 1643 00', // spaces: bank formatting
+      counterIban: 'NL91 ABNA 0417 1643 00', // spaces: bank formatting
     });
     await repo.upsert('transaction', 's1', 'tx-deliberate', {
       ...base, date: '2026-07-02', amountCents: -100, merchant: 'ADJ',
-      txType: 'adjustment', counterIban: 'NL91ABNA0417164300',
+      counterIban: 'NL91ABNA0417164300', adjustment: 1,
     });
     await repo.upsert('transaction', 's1', 'tx-linked', {
       ...base, date: '2026-07-03', amountCents: -200, merchant: 'OLD LINK',
-      txType: 'expense', counterIban: 'NL91ABNA0417164300', linkedAccountId: 'acct-other',
+      counterIban: 'NL91ABNA0417164300', linkedAccountId: 'acct-other',
     });
     await repo.upsert('transaction', 's1', 'tx-foreign', {
       ...base, date: '2026-07-04', amountCents: -300, merchant: 'RENT',
-      txType: 'expense', counterIban: 'NL00LANDLORD000001',
+      counterIban: 'NL00LANDLORD000001',
     });
 
     // the card arrives later — the sweep runs
@@ -49,9 +49,10 @@ describe('linkAllCounterparties', () => {
     const topup = await db.transactions.get('tx-topup');
     // credit = transfer (user ruling); the placeholder category files the
     // sign-picked locked sub at the write edge (arc 2)
-    expect(topup).toMatchObject({ linkedAccountId: 'acct-cc', txType: 'transfer', catId: 'transferOut' });
+    expect(topup).toMatchObject({ linkedAccountId: 'acct-cc', catId: 'transferOut' });
     const deliberate = await db.transactions.get('tx-deliberate');
-    expect(deliberate).toMatchObject({ linkedAccountId: 'acct-cc', txType: 'adjustment' }); // linked, type kept
+    expect(deliberate).toMatchObject({ linkedAccountId: 'acct-cc', adjustment: 1 }); // linked, the correction marker kept
+    expect(deliberate?.catId).toBeUndefined(); // an adjustment files no family sub
     expect((await db.transactions.get('tx-linked'))?.linkedAccountId).toBe('acct-other'); // untouched
     expect((await db.transactions.get('tx-foreign'))?.linkedAccountId).toBeUndefined();
 
@@ -64,19 +65,19 @@ describe('linkAllCounterparties', () => {
     const { db, repo } = await setup();
     await repo.upsert('transaction', 's1', 'tx-save', {
       accountId: 'acct-main', currency: 'EUR', needsReview: 0, date: '2026-07-01',
-      amountCents: -10000, merchant: 'TO SAVINGS', txType: 'expense', counterIban: 'NL02SAVE0000000002',
+      amountCents: -10000, merchant: 'TO SAVINGS', counterIban: 'NL02SAVE0000000002',
     });
     await repo.upsert('account', 's1', 'acct-save', { name: 'Buffer', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, iban: 'NL02 SAVE 0000 0000 02' });
     await linkAllCounterparties(new DexieBackend(db), repo, 's1');
     // the bijection: the counter's kind names the family — the source
     // leg reads "Set aside", never a blanket Transfer out
     const source = await db.transactions.get('tx-save');
-    expect(source).toMatchObject({ linkedAccountId: 'acct-save', txType: 'saving', catId: 'savingDeposit' });
+    expect(source).toMatchObject({ linkedAccountId: 'acct-save', catId: 'savingDeposit' });
     // …and the linked MANUAL pot got its mirror leg minted: the pot's own
     // ledger holds the saving story, and its balance moved with it
     expect(source?.transferPeerId).toBe(mirrorTxId('tx-save'));
     const mirror = await db.transactions.get(mirrorTxId('tx-save'));
-    expect(mirror).toMatchObject({ accountId: 'acct-save', amountCents: 10000, txType: 'saving', catId: 'savingDeposit', transferPeerId: 'tx-save' });
+    expect(mirror).toMatchObject({ accountId: 'acct-save', amountCents: 10000, catId: 'savingDeposit', transferPeerId: 'tx-save' });
     expect((await db.accounts.get('acct-save'))?.balanceCents).toBe(10000);
     db.close();
   });

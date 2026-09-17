@@ -31,7 +31,6 @@ async function seedNetflixPattern(db: MunniDB) {
       currency: 'EUR',
       merchant: 'NETFLIX.COM',
       catId: 'subs',
-      txType: 'expense',
       needsReview: 0,
     });
   }
@@ -67,7 +66,6 @@ describe('RecurringScreen (demo identity)', () => {
         currency: 'EUR',
         merchant: 'STREAMO',
         catId: 'subs',
-        txType: 'expense',
         needsReview: 0,
         recurringId: 'rec_price',
       });
@@ -149,7 +147,7 @@ describe('RecurringScreen (demo identity)', () => {
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'rt1', {
       accountId: 'demo_main', date: '2026-03-01', amountCents: -10_000, currency: 'EUR',
-      merchant: 'Pot topup', catId: 'uncategorized', txType: 'expense', needsReview: 1, recurringId: 'rec-ct',
+      merchant: 'Pot topup', catId: 'uncategorized', needsReview: 1, recurringId: 'rec-ct',
     });
 
     await propagateRecurringCategory(backend, repo, DEMO_SPACE_ID, 'rec-ct', 'savingDeposit', 'demo_save');
@@ -258,7 +256,6 @@ describe('RecurringScreen (demo identity)', () => {
         currency: 'EUR',
         merchant: 'BASIC-FIT',
         catId: 'subs',
-        txType: 'expense',
         needsReview: 0,
       });
     }
@@ -357,7 +354,7 @@ describe('RecurringScreen (demo identity)', () => {
       await repo.upsert('transaction', DEMO_SPACE_ID, `duo_${i}`, {
         accountId: 'demo_main', date: monthsAgo(i, Math.min(new Date().getDate(), 28)),
         amountCents: -10_400, currency: 'EUR', merchant: 'Dienst Uitvoering Onderwijs',
-        catId: 'extraOther', txType: 'expense', needsReview: 0,
+        catId: 'extraOther', needsReview: 0,
       });
     }
     cleanup();
@@ -401,7 +398,7 @@ describe('RecurringScreen (demo identity)', () => {
       await repo.upsert('transaction', DEMO_SPACE_ID, `duo_${i}`, {
         accountId: 'demo_main', date: monthsAgo(i, Math.min(new Date().getDate(), 28)),
         amountCents: -10_400, currency: 'EUR', merchant: 'Dienst Uitvoering Onderwijs',
-        catId: 'extraOther', txType: 'expense', needsReview: 0,
+        catId: 'extraOther', needsReview: 0,
       });
     }
     const key = 'dienst uitvoering onderwijs';
@@ -480,7 +477,6 @@ describe('RecurringScreen editing (demo identity)', () => {
       currency: 'EUR',
       merchant: 'GYM 167',
       catId: 'subs',
-      txType: 'expense',
       needsReview: 0,
       recurringId: 'rec_167',
     });
@@ -637,7 +633,6 @@ describe('RecurringScreen editing (demo identity)', () => {
       currency: 'EUR',
       merchant: 'GYM R5',
       catId: 'subs',
-      txType: 'expense',
       needsReview: 0,
       recurringId: 'rec_r5',
     });
@@ -683,7 +678,6 @@ describe('RecurringScreen editing (demo identity)', () => {
       currency: 'EUR',
       merchant: 'GYM LG',
       catId: 'subs',
-      txType: 'expense',
       needsReview: 0,
     });
     db.close();
@@ -919,7 +913,6 @@ describe('reconcileRecurringLinks', () => {
         amountCents,
         currency: 'EUR',
         merchant: 'Basic-Fit 123',
-        txType: 'expense',
         needsReview: 0,
       });
     }

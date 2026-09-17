@@ -1,4 +1,4 @@
-import type { TransactionRow, TxType } from '@/db/types';
+import type { TxType, TxView } from '@/db/types';
 import { cleanBankText } from '@/lib/text';
 import { txSliceViews } from './txSlices';
 
@@ -22,7 +22,7 @@ export interface TxFilter {
  *  v2: "Sarah's loan" finds the payment it names) — or, for numeric
  *  queries ('10', '10,99'), a digit-substring hit on the amount: '10'
  *  finds 10,99 and 210,15 alike (user request) */
-function matchesQuery(tx: TransactionRow, q: string, amountQ: string | null, signQ: -1 | 0 | 1): boolean {
+function matchesQuery(tx: TxView, q: string, amountQ: string | null, signQ: -1 | 0 | 1): boolean {
   const labels = (tx.splits ?? []).map((s) => s.label ?? '').join(' ');
   const haystack = `${tx.titleOverride ?? ''} ${cleanBankText(tx.merchant)} ${cleanBankText(tx.description)} ${labels}`.toLowerCase();
   if (haystack.includes(q)) return true;
@@ -34,13 +34,13 @@ function matchesQuery(tx: TransactionRow, q: string, amountQ: string | null, sig
 
 /** a row answers a category/type filter through its PARTS (typed-splits
  *  v2): the phone bill with a loan part shows under Debt payment too */
-const anySlice = (tx: TransactionRow, hit: (view: ReturnType<typeof txSliceViews>[number]) => boolean): boolean =>
+const anySlice = (tx: TxView, hit: (view: ReturnType<typeof txSliceViews>[number]) => boolean): boolean =>
   txSliceViews(tx).some(hit);
 
 /** transfers carry no category by design — they never count as
  *  uncategorized. Slice-aware (#126 r8): an unfinished PART keeps its
  *  split findable under the quick filter. */
-const isUncategorized = (tx: TransactionRow): boolean =>
+const isUncategorized = (tx: TxView): boolean =>
   anySlice(tx, (v) => (v.catId === 'uncategorized' || v.catId == null) && v.effType !== 'transfer');
 
 /** #267 r2: the direction a leading +/- constrains (0 = both) */
@@ -50,7 +50,7 @@ function querySign(q: string | undefined): -1 | 0 | 1 {
   return 0;
 }
 
-export function filterTxs(txs: TransactionRow[], filter: TxFilter): TransactionRow[] {
+export function filterTxs<T extends TxView>(txs: T[], filter: TxFilter): T[] {
   const q = filter.query?.trim().toLowerCase();
   const signQ = querySign(q);
   const digits = q?.replaceAll(/[\s.,€+-]/g, '') ?? '';
@@ -81,7 +81,7 @@ export const hasActiveFilter = (f: TxFilter): boolean =>
  * belongs to every part.
  */
 export function matchingPartIndexes(
-  tx: Pick<TransactionRow, 'splits' | 'txType' | 'catId'>,
+  tx: Pick<TxView, 'splits' | 'txType' | 'catId'>,
   filter: Pick<TxFilter, 'catIds' | 'txTypes' | 'onlyUncategorized'>,
 ): number[] {
   const parts = (tx.splits ?? []).filter((s) => s.catId !== 'reimbursed');

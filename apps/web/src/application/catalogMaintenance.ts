@@ -2,11 +2,9 @@ import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { tombstonedIds } from '@/domain/catalogDoc';
-import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, specialCatType } from '@/domain/categories';
-import { familyForCounter, movementCatFor } from '@/domain/txType';
-import type { AccountType, TxReimbursement, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import { REIMBURSED_ID, UNCATEGORIZED_ID } from '@/domain/categories';
+import type { TxReimbursement, TxSplit, TxSplitCat } from '@/db/types';
 import { isReimbContainer, largestOpenPartId, reimbCentsByPart, reimbSettleFields } from '@/domain/reimbursement';
-import { standardTypeFor } from '@/domain/txKind';
 import { cachedCatalog } from '@/sync/catalogSync';
 
 /**
@@ -54,13 +52,12 @@ export async function applyCatalogTombstones(store: StorageBackend, repo: Repo):
 
 /**
  * #228 (user 2026-08-13): reimbursement on a SPLIT transaction stays on
- * the split. EVERY boot normalizes the settle bookkeeping — old offline
- * devices can sync the retired shapes in anytime (pre-redesign NET
- * slices, the container-level `reimbursed` pseudo-part that drained the
- * WRONG sibling, container-level links without a part name). Runs
- * through the same reimbSettleFields builder the write hook uses, with
- * ID-based tie-breaks so concurrent heals on two devices write
- * byte-identical rows and LWW converges cleanly.
+ * the split. EVERY boot normalizes the settle bookkeeping: a link made
+ * before its row was split still points at the whole row, so it is
+ * given a part name, and each side's partition is recomputed from its
+ * links. Runs through the same reimbSettleFields builder the write hook
+ * uses, with ID-based tie-breaks so concurrent heals on two devices
+ * write byte-identical rows and LWW converges cleanly.
  */
 export async function normalizeReimbursements(store: StorageBackend, repo: Repo): Promise<number> {
   let touched = 0;
@@ -71,9 +68,10 @@ export async function normalizeReimbursements(store: StorageBackend, repo: Repo)
   return touched;
 }
 
+/** settle bookkeeping still on a side whose links may all be gone */
 const hasReimbRemnant = (tx: { cats?: TxSplitCat[]; splits?: TxSplit[] }): boolean =>
   (tx.cats ?? []).some((c) => c.catId === REIMBURSED_ID) ||
-  (tx.splits ?? []).some((s) => s.catId === REIMBURSED_ID || s.cats?.some((c) => c.catId === REIMBURSED_ID));
+  (tx.splits ?? []).some((s) => s.cats?.some((c) => c.catId === REIMBURSED_ID));
 
 type SpaceRows = Awaited<ReturnType<typeof visibleTransactions>>;
 
@@ -124,9 +122,10 @@ function seedNamedGiven(txs: SpaceRows): Map<string, Map<string, number>> {
   return namedGiven;
 }
 
-/** pass A: every link on a split side NAMES its part (#228) — legacy
- *  container-level links land on the largest open part, assigned in
- *  stable row order so two devices converge on the same names */
+/** pass A: every link on a split side NAMES its part (#228) — a link
+ *  made before the row was split lands on the largest open part,
+ *  assigned in stable row order so two devices converge on the same
+ *  names */
 async function nameReimbursementParts(repo: Repo, txs: SpaceRows): Promise<Map<string, TxReimbursement[]>> {
   const byId = new Map(txs.map((tx) => [tx.id, tx]));
   const namedGiven = seedNamedGiven(txs);
@@ -207,231 +206,3 @@ function settleDiffFields(
   }
   return fields;
 }
-
-/**
- * 2026-08-01 (user, ss review): the debt family shrank to exactly the
- * arc-2 pair — Repaid / Borrowed. Rows on the retired lendMoney /
- * creditCardPayment subs refile under the sign-picked family sub, raw
- * rows and per-space overlays alike; review status stays untouched.
- */
-const RETIRED_DEBT_SUBS = new Set(['lendMoney', 'creditCardPayment']);
-
-export async function migrateRetiredDebtSubs(store: StorageBackend, repo: Repo): Promise<number> {
-  const markerKey = 'debtSubsRetired_v1';
-  if (await store.metaGet(markerKey)) return 0;
-
-  let touched = 0;
-  for (const tx of await store.allRows('transaction')) {
-    if (tx.deleted === 0 && tx.catId && RETIRED_DEBT_SUBS.has(tx.catId)) {
-      await repo.upsert('transaction', tx.spaceId, tx.id, { catId: autoSubFor('debtPayment', tx.amountCents) });
-      touched++;
-    }
-  }
-  for (const meta of await store.allRows('txMeta')) {
-    if (meta.deleted === 0 && meta.catId && RETIRED_DEBT_SUBS.has(meta.catId)) {
-      const raw = await store.get('transaction', meta.txId);
-      await repo.upsert('txMeta', meta.spaceId, meta.id, { catId: autoSubFor('debtPayment', raw?.amountCents ?? -1) });
-      touched++;
-    }
-  }
-  await store.metaPut(markerKey, Date.now());
-  return touched;
-}
-
-/**
- * #252 (user 2026-08-16): Bought/Sold became brokerage-internal — the
- * unstamped movement legs file Invested/Withdrawn now. One pass refiles
- * old rows whose OWN account is not a brokerage (raw rows and per-space
- * overlays alike); brokerage-ledger rows keep Bought/Sold, which mean
- * exactly what they say there. Review status stays untouched.
- */
-const INVEST_MOVEMENT_REFILE: Record<string, string> = { investBuy: 'investContribution', investSell: 'investWithdraw' };
-
-export async function migrateInvestMovementSubs(store: StorageBackend, repo: Repo): Promise<number> {
-  const markerKey = 'investMovementSubs_v1';
-  if (await store.metaGet(markerKey)) return 0;
-
-  const brokerages = new Set(
-    (await store.allRows('account')).filter((a) => a.type === 'brokerage').map((a) => a.id),
-  );
-  let touched = 0;
-  for (const tx of await store.allRows('transaction')) {
-    if (tx.deleted === 0 && tx.catId && INVEST_MOVEMENT_REFILE[tx.catId] && !brokerages.has(tx.accountId)) {
-      await repo.upsert('transaction', tx.spaceId, tx.id, { catId: INVEST_MOVEMENT_REFILE[tx.catId] });
-      touched++;
-    }
-  }
-  for (const meta of await store.allRows('txMeta')) {
-    if (meta.deleted !== 0 || !meta.catId || !INVEST_MOVEMENT_REFILE[meta.catId]) continue;
-    const raw = await store.get('transaction', meta.txId);
-    if (raw && brokerages.has(raw.accountId)) continue;
-    await repo.upsert('txMeta', meta.spaceId, meta.id, { catId: INVEST_MOVEMENT_REFILE[meta.catId] });
-    touched++;
-  }
-  await store.metaPut(markerKey, Date.now());
-  return touched;
-}
-
-/**
- * Typed-splits v2, Q3 (user 2026-08-05): the funding TYPE retires —
- * funding is a marked special CATEGORY on standard rows now. Every
- * funding-typed row (raw and overlay alike) re-derives its type by
- * sign and keeps — or gains — its funding category so no meaning is
- * lost. The stored TxType union keeps 'funding' for old devices.
- */
-export async function migrateFundingRows(store: StorageBackend, repo: Repo): Promise<number> {
-  const markerKey = 'txFundingCat_v1';
-  if (await store.metaGet(markerKey)) return 0;
-
-  let touched = 0;
-  for (const tx of await store.allRows('transaction')) {
-    if (tx.deleted !== 0 || tx.txType !== 'funding') continue;
-    await repo.upsert('transaction', tx.spaceId, tx.id, {
-      txType: standardTypeFor(tx.amountCents),
-      catId: tx.catId && tx.catId !== UNCATEGORIZED_ID ? tx.catId : autoSubFor('funding', tx.amountCents),
-    });
-    touched++;
-  }
-  for (const meta of await store.allRows('txMeta')) {
-    if (meta.deleted !== 0 || meta.txType !== 'funding') continue;
-    const raw = await store.get('transaction', meta.txId);
-    const amount = raw?.amountCents ?? -1;
-    await repo.upsert('txMeta', meta.spaceId, meta.id, {
-      txType: standardTypeFor(amount),
-      catId: meta.catId && meta.catId !== UNCATEGORIZED_ID ? meta.catId : autoSubFor('funding', amount),
-    });
-    touched++;
-  }
-  await store.metaPut(markerKey, Date.now());
-  return touched;
-}
-
-/**
- * #211 split categories: `splits` means PARTS from here on — a plain
- * multi-category assignment lives in the row's own `cats` partition.
- * One pass folds every legacy bare-slice split (no part story on any
- * entry) into `cats`, raw rows and per-space overlays alike. Real
- * splits — any entry with a label, type, link, event, recurring,
- * note or spread — stay containers untouched. A partition that no
- * longer sums to the gross amount (pre-redesign drift) also stays: the
- * readers keep their legacy `splits` fallback for exactly that shape.
- */
-const isBareSlice = (s: TxSplit): boolean =>
-  s.label === undefined && s.txType === undefined && s.linkedAccountId === undefined
-    && s.transferPeerId === undefined && s.eventId === undefined && s.recurringId === undefined
-    && s.notes === undefined && !s.cats?.length;
-
-/** the fold's write fields — null when the split must stay a container.
- *  A single plain slice is "no split" (the shadow catId already says
- *  it), so only a real spread or settled bookkeeping materializes cats.
- *  A row that EVER saw a #211-aware write carries a `cats` field
- *  version (split writers stamp an explicit null) — its splits are
- *  REAL parts by definition and never fold, so a fresh device syncing
- *  modern data can run this one-shot safely. */
-function catSpreadFold(
-  row: { cats?: TxSplitCat[]; splits?: TxSplit[]; deleted: number; fieldVersions?: Record<string, string> },
-  grossAbs: number,
-): { cats?: TxSplitCat[] } | null {
-  if (row.deleted !== 0 || row.cats?.length) return null;
-  if (row.fieldVersions && 'cats' in row.fieldVersions) return null;
-  const splits = row.splits;
-  if (!splits?.length || !splits.every(isBareSlice)) return null;
-  if (splits.reduce((total, s) => total + s.amountCents, 0) !== grossAbs) return null;
-  const entries = splits.map((s) => ({ catId: s.catId, amountCents: s.amountCents, ...(s.pct !== undefined ? { pct: s.pct } : {}) }));
-  const spread = entries.length > 1 || entries.some((e) => e.catId === REIMBURSED_ID);
-  return spread ? { cats: entries } : {};
-}
-
-export async function migrateCatSpreads(store: StorageBackend, repo: Repo): Promise<number> {
-  const markerKey = 'txCatSpreads_v1';
-  if (await store.metaGet(markerKey)) return 0;
-
-  let touched = 0;
-  for (const tx of await store.allRows('transaction')) {
-    const fold = catSpreadFold(tx, Math.abs(tx.amountCents));
-    if (!fold) continue;
-    await repo.upsert('transaction', tx.spaceId, tx.id, { ...fold, splits: null as never });
-    touched++;
-  }
-  for (const meta of await store.allRows('txMeta')) {
-    const raw = await store.get('transaction', meta.txId);
-    const fold = raw ? catSpreadFold(meta, Math.abs(raw.amountCents)) : null;
-    if (!fold) continue;
-    await repo.upsert('txMeta', meta.spaceId, meta.id, { ...fold, splits: null as never });
-    touched++;
-  }
-  await store.metaPut(markerKey, Date.now());
-  return touched;
-}
-
-/**
- * #133 r5 (user): Transfer filed toward a SPECIAL counterparty is the
- * family's story wearing the wrong name — "you cannot select transfer
- * out [when the] counterparty is a saving account; you have to use the
- * saving category instead". One marker-gated pass refiles every such
- * row and part by its counter's kind. (#228: spread entries carry no
- * links anymore — migrateEntryCounters runs FIRST and relocates them,
- * so rows and parts are the only places a link can live.)
- */
-const TRANSFER_SUBS = new Set(['transferOut', 'transferIn', 'cashWithdraw', 'cashDeposit']);
-
-type CounterRefile = (catId: string | undefined, linkedId: string | undefined, signedCents: number) => string | undefined;
-
-function refileParts(
-  tx: { id: string; amountCents: number; splits?: TxSplit[] },
-  refiled: CounterRefile,
-): TxSplit[] | null {
-  let changed = false;
-  const sign: 1 | -1 = tx.amountCents < 0 ? -1 : 1;
-  const next = (tx.splits ?? []).map((part) => {
-    const partCat = refiled(part.catId, part.linkedAccountId, sign * Math.abs(part.amountCents));
-    if (!partCat) return part;
-    changed = true;
-    return { ...part, catId: partCat, txType: specialCatType(partCat) };
-  });
-  return changed ? next : null;
-}
-
-function counterRefileFields(
-  tx: { id: string; amountCents: number; catId?: string; linkedAccountId?: string; cats?: TxSplitCat[]; splits?: TxSplit[] },
-  refiled: CounterRefile,
-): { catId?: string; txType?: TxType; splits?: TxSplit[] } | null {
-  const fields: { catId?: string; txType?: TxType; splits?: TxSplit[] } = {};
-  const rowCat = refiled(tx.catId, tx.linkedAccountId, tx.amountCents);
-  if (rowCat) {
-    fields.catId = rowCat;
-    fields.txType = specialCatType(rowCat);
-  }
-  const splits = tx.splits?.length ? refileParts(tx, refiled) : null;
-  if (splits) fields.splits = splits;
-  return Object.keys(fields).length ? fields : null;
-}
-
-export async function migrateCounterFiledTransfers(store: StorageBackend, repo: Repo): Promise<number> {
-  const markerKey = 'counterFamilyRefile_v1';
-  if (await store.metaGet(markerKey)) return 0;
-  const typeOf = new Map<string, AccountType>(
-    (await store.allRows('account')).filter((a) => a.deleted === 0).map((a) => [a.id, a.type]),
-  );
-  const refiled: CounterRefile = (catId, linkedId, signedCents) => {
-    if (!catId || !TRANSFER_SUBS.has(catId) || !linkedId) return undefined;
-    const counterType = typeOf.get(linkedId);
-    if (!counterType || familyForCounter(counterType) === 'transfer') return undefined;
-    return movementCatFor(counterType, signedCents);
-  };
-
-  let touched = 0;
-  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
-  for (const space of spaces) {
-    for (const tx of await visibleTransactions(store, space.id)) {
-      if (tx.deleted !== 0) continue;
-      const fields = counterRefileFields(tx, refiled);
-      if (!fields) continue;
-      await writeTxTransform(repo, tx, fields);
-      touched++;
-    }
-  }
-  await store.metaPut(markerKey, Date.now());
-  return touched;
-}
-

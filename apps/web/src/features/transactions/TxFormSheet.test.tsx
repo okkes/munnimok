@@ -199,7 +199,6 @@ describe('TxFormSheet (demo identity)', () => {
       const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Fix saldo');
       expect(row?.amountCents).toBe(5000 - before);
       expect(row?.catId).toBe('balanceAdjustment');
-      expect(row?.txType).toBe('adjustment');
       expect((await db.accounts.get('demo_main'))!.balanceCents).toBe(5000);
     }, { timeout: 5000 });
     db.close();
@@ -225,7 +224,6 @@ describe('TxFormSheet (demo identity)', () => {
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Naar spaarpot');
-      expect(row?.txType).toBe('adjustment');
       expect(row?.adjustment).toBe(1);
     }, { timeout: 5000 });
     db.close();
@@ -308,7 +306,7 @@ describe('TxFormSheet (demo identity)', () => {
       expect(out.transferPeerId).toBe(inc.id); // …peered both ways
       expect(inc.transferPeerId).toBe(out.id);
       // the mirror wears the pot's R1 stamp + the Q8 movement sub
-      expect(inc).toMatchObject({ accountId: 'demo_save', txType: 'saving', catId: 'savingDeposit', linkedAccountId: 'demo_main', needsReview: 0 });
+      expect(inc).toMatchObject({ accountId: 'demo_save', catId: 'savingDeposit', linkedAccountId: 'demo_main', needsReview: 0 });
       outId = out.id;
     }, { timeout: 5000 });
 
@@ -349,7 +347,7 @@ describe('TxFormSheet (demo identity)', () => {
       const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Aflossing lening');
       // typed + the picked special sub, deliberately NO counterparty —
       // the default-loan bucket (unassigned payments) picks it up
-      expect(row).toMatchObject({ txType: 'debtPayment', catId: 'loanRepayment', needsReview: 0 });
+      expect(row).toMatchObject({ catId: 'loanRepayment', needsReview: 0 });
       expect(row?.linkedAccountId).toBeFalsy();
     }, { timeout: 5000 });
     db.close();

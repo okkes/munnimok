@@ -1,6 +1,7 @@
 import { MunniDB, identityDbName } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import type { StorageBackend } from '@/db/backend';
+import { visibleTransactions } from '@/db/joined';
 import { readSwSession } from './swSync';
 import { budgetStatus } from '@/domain/budgets';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
@@ -78,15 +79,16 @@ export async function collectBudgetAlerts(
   );
   if (budgets.length === 0) return [];
 
-  const [allSpaces, allCategories, spaceTxs, space] = await Promise.all([
+  // the space's VIEW (own rows + attached feeds, derived types) — the
+  // same rows the budgets screen counts
+  const [allSpaces, allCategories, txs, space] = await Promise.all([
     store.allRows('space'),
     store.allRows('category'),
-    store.bySpace('transaction', spaceId),
+    visibleTransactions(store, spaceId),
     store.get('space', spaceId),
   ]);
   const spaces = allSpaces.filter((s) => s.deleted === 0);
   const categoryRows = allCategories.filter((c) => c.deleted === 0);
-  const txs = spaceTxs.filter((t) => t.deleted === 0);
   const visible = visibleCategoryRows(spaces, categoryRows, spaceId);
   const doc = ((await store.metaGet('catalog'))?.value as import('@/domain/catalogDoc').CatalogDoc | undefined) ?? (await import('@/generated/catalogBaseline')).CATALOG_BASELINE;
   const catalog = buildCatalog(visible.rows, visible.sharedScope, visible.hiddenMains, doc);

@@ -98,7 +98,6 @@ describe('AccountsScreen (demo identity)', () => {
       amountCents: -1200,
       currency: 'EUR',
       merchant: 'SHELL',
-      txType: 'expense',
     });
     await repo.upsert('accountLink', 'demo_space', 'link-1', {
       feedSpaceId: 'feed-1',
@@ -461,7 +460,6 @@ describe('AccountsScreen (demo identity)', () => {
       amountCents: -1200,
       currency: 'EUR',
       merchant: 'SHELL',
-      txType: 'expense',
     });
     await repo.upsert('accountLink', 's-user', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1', type: 'checking' });
     db.close();
@@ -977,7 +975,7 @@ describe('AccountsScreen (demo identity)', () => {
         .first();
       // the delta, recorded with the adjustment category — the ledger
       // stays coherent without a hand on it
-      expect(adjustment).toMatchObject({ amountCents: 2500, adjustment: 1, needsReview: 0, txType: 'adjustment' });
+      expect(adjustment).toMatchObject({ amountCents: 2500, adjustment: 1, needsReview: 0 });
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
@@ -1280,7 +1278,7 @@ describe('AccountsScreen (demo identity)', () => {
       const adjustment = await db.transactions
         .filter((t) => t.accountId === 'demo_save' && t.catId === 'balanceAdjustment')
         .first();
-      expect(adjustment).toMatchObject({ amountCents: 5000, adjustment: 1, needsReview: 0, txType: 'adjustment' });
+      expect(adjustment).toMatchObject({ amountCents: 5000, adjustment: 1, needsReview: 0 });
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
@@ -1335,10 +1333,9 @@ describe('AccountsScreen (demo identity)', () => {
       amountCents: -1200,
       currency: 'EUR',
       merchant: 'SHELL',
-      txType: 'expense',
     });
     const metaId = txMetaId('s-user', 'rawtx-1');
-    await repo.upsert('txMeta', 's-user', metaId, { txId: 'rawtx-1', txType: 'expense', needsReview: 0, catId: 'groceries' });
+    await repo.upsert('txMeta', 's-user', metaId, { txId: 'rawtx-1', needsReview: 0, catId: 'groceries' });
     // a legacy merged-import leftover: the member space's OWN row on the
     // deleted account — it kept rendering with a dangling account
     await repo.upsert('transaction', 's-user', 'legacy-1', {
@@ -1347,7 +1344,6 @@ describe('AccountsScreen (demo identity)', () => {
       amountCents: -700,
       currency: 'EUR',
       merchant: 'OLD PATH',
-      txType: 'expense',
     });
     await repo.upsert('accountLink', 's-user', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1' });
     db.close();

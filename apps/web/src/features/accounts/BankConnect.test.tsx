@@ -31,6 +31,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/feeds': () => [],
+        'GET /gocardless/providers': () => ({ providers: [{ id: 'gocardless' }] }),
         'GET /gocardless/institutions': () => [ING, ASN],
         'POST /gocardless/requisitions': (body) => {
           requisitions.push(body);
@@ -52,7 +53,8 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
     fireEvent.click(screen.getByTestId('gc-bank-ASN_NL'));
     await waitFor(() => expect(hrefSpy).toHaveBeenCalledWith('https://bank.example/authorize'));
     expect(sessionStorage.getItem('munni_gc_ref')).toBe('ref-123');
-    expect(requisitions[0]).toMatchObject({ institutionId: 'ASN_NL', spaceId: 's-user' });
+    // the provider the list came from is named on the requisition (required server-side)
+    expect(requisitions[0]).toMatchObject({ institutionId: 'ASN_NL', spaceId: 's-user', provider: 'gocardless' });
     expect(fetchMock).toHaveBeenCalled();
   }, 15_000);
 
@@ -61,6 +63,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/feeds': () => [],
+        'GET /gocardless/providers': () => ({ providers: [{ id: 'gocardless' }] }),
         'GET /gocardless/institutions': () => new Response('', { status: 502 }),
       },
     });
@@ -160,6 +163,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/feeds': () => [],
+        'GET /gocardless/providers': () => ({ providers: [{ id: 'gocardless' }] }),
         'GET /gocardless/institutions': () => [ING],
       },
     });

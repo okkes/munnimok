@@ -3,8 +3,6 @@ import { KEYWORD_RULES } from './keyword-categories';
 import type { KeywordRule } from './keyword-categories';
 import { predictFromMemory } from './merchantMemory';
 import type { MerchantMemory } from './merchantMemory';
-import { kindOf } from './txKind';
-import type { TxType } from '@/db/types';
 
 /**
  * Keyword-based category prediction for imported bank transactions, ported
@@ -60,7 +58,6 @@ export function predictCategory(
 
 export interface TxPrediction {
   catId: string;
-  txType: TxType;
   source: 'history' | 'history-amount' | 'keyword';
   /** history occurrences backing the prediction (history sources only) */
   evidence?: number;
@@ -91,20 +88,10 @@ export interface PredictInput {
 /**
  * Layered prediction: the user's own history for this merchant first
  * (same-amount occurrences boosted — subscription behavior), keyword
- * rules as the cold-start fallback. History also carries the learned
- * transaction TYPE (a DEGIRO transfer the user marked as saving stays
- * saving), keywords derive it from the category.
+ * rules as the cold-start fallback. The prediction is a CATEGORY (plus
+ * a learned spread or event); the row's type derives from it at the
+ * join, never from a prediction.
  */
-/** a learned STANDARD type never overrules the row's sign: the same
- *  counterparty is an expense when you pay them and income when they
- *  pay you (user ss 2026-08-01: a +€2,000 credit predicted 'expense'
- *  from outgoing history). Transfer-family types carry meaning on both
- *  signs and pass through. */
-function signSafeType(txType: TxType, amountCents: number): TxType {
-  if (kindOf(txType) !== 'standard') return txType;
-  return amountCents >= 0 ? 'income' : 'expense';
-}
-
 /** #161: the memory's answer, own space first (S3776: out of predictTx) */
 function memoryPrediction(memory: LayeredMemory, input: PredictInput): TxPrediction | null {
   const hit =
@@ -113,7 +100,6 @@ function memoryPrediction(memory: LayeredMemory, input: PredictInput): TxPredict
   if (!hit) return null;
   return {
     catId: hit.catId,
-    txType: signSafeType(hit.txType, input.amountCents),
     source: hit.amountMatch ? 'history-amount' : 'history',
     evidence: hit.evidence,
     ...(hit.cats ? { cats: hit.cats } : {}),
@@ -133,8 +119,7 @@ export function predictTx(input: PredictInput): TxPrediction | null {
     input.keywordRules ? [...input.keywordRules, ...activeRules] : activeRules,
   );
   if (!catId) return null;
-  const txType = CATEGORY_BY_ID.get(catId)?.txTypes[0] ?? (direction === 'credit' ? 'income' : 'expense');
-  return { catId, txType: signSafeType(txType, input.amountCents), source: 'keyword' };
+  return { catId, source: 'keyword' };
 }
 
 /**

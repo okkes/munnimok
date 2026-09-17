@@ -14,7 +14,7 @@ export const BAND_MODES: readonly BalanceBandMode[] = ['networth', 'cash', 'spen
 
 const LIQUID_TYPES = new Set<AccountRow['type']>(['checking', 'savings', 'cash']);
 
-type BandSpace = Pick<SpaceRow, 'balanceBandMode' | 'balanceBandExclude' | 'balanceBandAccounts'>;
+type BandSpace = Pick<SpaceRow, 'balanceBandMode' | 'balanceBandAccounts'>;
 
 export const bandModeOf = (space: BandSpace | undefined): BalanceBandMode => space?.balanceBandMode ?? 'networth';
 

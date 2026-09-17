@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { BudgetRow, TransactionRow } from '@/db/types';
+import type { BudgetRow, TxView } from '@/db/types';
 import {
   budgetFamily,
   budgetPeriodAt,
@@ -26,7 +26,7 @@ const budget = (partial: Partial<BudgetRow>): BudgetRow =>
     ...partial,
   }) as BudgetRow;
 
-const tx = (date: string, amountCents: number, catId = 'groceries'): TransactionRow =>
+const tx = (date: string, amountCents: number, catId = 'groceries'): TxView =>
   ({
     id: `t${date}-${amountCents}`,
     spaceId: 's1',
@@ -40,7 +40,7 @@ const tx = (date: string, amountCents: number, catId = 'groceries'): Transaction
     needsReview: 0,
     deleted: 0,
     fieldVersions: {},
-  }) as TransactionRow;
+  }) as TxView;
 
 const catalog = {
   byId: (id: string | undefined) => ({ id: id ?? '', parentId: id === 'supermarket' ? 'groceries' : undefined }),

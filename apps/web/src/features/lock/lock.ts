@@ -22,8 +22,7 @@ export interface LockConfig {
   credentialId?: string;
   /** which biometric path unlocks (native-benefits §1): 'native' = the
    * OS prompt via the Capacitor plugin (nothing to store), 'webauthn' =
-   * the platform passkey in credentialId. Pre-§1 configs carry only
-   * credentialId — resolved as 'webauthn' by effectiveBiometricKind. */
+   * the platform passkey in credentialId; absent = PIN only */
   biometricKind?: BiometricKind;
   pinSalt: string;
   pinHash: string;
@@ -36,13 +35,6 @@ export interface LockConfig {
   lastActiveAt?: number;
 }
 
-/** the config's biometric path, resolving pre-§1 configs (credentialId only) */
-export const effectiveBiometricKind = (config: Pick<LockConfig, 'credentialId' | 'biometricKind'>): BiometricKind | null => {
-  if (config.biometricKind) return config.biometricKind;
-  return config.credentialId ? 'webauthn' : null;
-};
-
-const LEGACY_KEY = 'munni_lock';
 const keyForIdentity = (): string | null => {
   const identity = readSessionIdentity();
   return identity ? `munni_lock_${identityKey(identity)}` : null;
@@ -52,11 +44,6 @@ export function readLockConfig(): LockConfig | null {
   const key = keyForIdentity();
   if (!key) return null; // signed out — never locked
   try {
-    // #298 (user): a pre-scoping DEVICE-global config belonged to
-    // whoever set it — adopting it into the next identity handed a
-    // deleted user's PIN to a fresh signup, gating their onboarding.
-    // The lock is a per-identity fact; stale device relics just clear.
-    localStorage.removeItem(LEGACY_KEY);
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as LockConfig;
@@ -159,7 +146,7 @@ export async function verifyBiometric(
   reason = 'munni',
   signal?: AbortSignal,
 ): Promise<boolean> {
-  const kind = effectiveBiometricKind(config);
+  const kind = config.biometricKind;
   if (kind === 'native') return nativeBiometricVerify(reason);
   if (kind !== 'webauthn' || !config.credentialId) return false;
   try {

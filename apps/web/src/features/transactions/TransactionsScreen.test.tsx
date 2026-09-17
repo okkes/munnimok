@@ -32,7 +32,7 @@ describe('TransactionsScreen (demo identity)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-partfilter'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'pf1', {
       accountId: 'demo_main', date: '2020-03-01', amountCents: -3000, currency: 'EUR',
-      merchant: 'PartFilter Shop', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: 'PartFilter Shop', catId: 'groceries', needsReview: 0,
       splits: [
         { id: 'pfa', catId: 'groceries', amountCents: 2000, label: 'Food half' },
         { id: 'pfb', catId: 'uncategorized', amountCents: 1000, label: 'Mystery half' },
@@ -85,7 +85,7 @@ describe('TransactionsScreen (demo identity)', () => {
     const repo2 = new Repo(new DexieBackend(db2), new HlcClock('seed-newlens'), { trackOutbox: false });
     await repo2.upsert('transaction', DEMO_SPACE_ID, 'fresh1', {
       accountId: 'demo_main', date: '2020-04-01', amountCents: -1234, currency: 'EUR',
-      merchant: 'Fresh Arrival', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: 'Fresh Arrival', catId: 'groceries', needsReview: 0,
     });
     await screen.findByTestId('tx-row-fresh1', {}, { timeout: 5000 });
     expect(rows()).toHaveLength(1);
@@ -107,12 +107,12 @@ describe('TransactionsScreen (demo identity)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-pairlens'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'leg-out', {
       accountId: 'demo_main', date: '2020-05-01', amountCents: -7000, currency: 'EUR',
-      merchant: 'To savings', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      merchant: 'To savings', catId: 'savingDeposit', needsReview: 0,
       linkedAccountId: 'demo_save', transferPeerId: 'leg-in',
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'leg-in', {
       accountId: 'demo_save', date: '2020-05-01', amountCents: 7000, currency: 'EUR',
-      merchant: 'From checking', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      merchant: 'From checking', catId: 'savingDeposit', needsReview: 0,
       linkedAccountId: 'demo_main', transferPeerId: 'leg-out',
     });
     // collapsed by default: the outgoing leg speaks for the pair
@@ -168,14 +168,14 @@ describe('TransactionsScreen (demo identity)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-uncat'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'uncat-1', {
       accountId: 'demo_main', date: '2026-06-20', amountCents: -1250, currency: 'EUR',
-      merchant: 'MYSTERY SHOP', catId: 'uncategorized', txType: 'expense', needsReview: 0,
+      merchant: 'MYSTERY SHOP', catId: 'uncategorized', needsReview: 0,
     });
     // #133: the view DERIVES the type — a categoryless row reads as a
     // transfer through its LINK (the stored txType is legacy-only), so
     // the exclusion needs the link to be explicit here
     await repo.upsert('transaction', DEMO_SPACE_ID, 'uncat-2', {
       accountId: 'demo_main', date: '2026-06-21', amountCents: -5000, currency: 'EUR',
-      merchant: 'OWN SAVINGS', catId: 'uncategorized', txType: 'transfer', needsReview: 0,
+      merchant: 'OWN SAVINGS', catId: 'uncategorized', needsReview: 0,
       linkedAccountId: 'demo_save',
     });
     db.close();
@@ -201,12 +201,12 @@ describe('TransactionsScreen (demo identity)', () => {
     // the boot fold must read them as PARTS, not legacy slices
     await repo.upsert('transaction', DEMO_SPACE_ID, 'open-1', {
       accountId: 'demo_main', date: '2026-06-22', amountCents: -8000, currency: 'EUR',
-      merchant: 'FRONTED DINNER', catId: 'eatingOut', txType: 'expense', needsReview: 0, cats: null as never,
+      merchant: 'FRONTED DINNER', catId: 'eatingOut', needsReview: 0, cats: null as never,
       splits: [{ catId: 'eatingOut', amountCents: 3000 }, { catId: 'expenseReimburse', amountCents: 5000 }],
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'settled-1', {
       accountId: 'demo_main', date: '2026-06-23', amountCents: 5000, currency: 'EUR',
-      merchant: 'PAID BACK', catId: 'reimbursed', txType: 'income', needsReview: 0, cats: null as never,
+      merchant: 'PAID BACK', catId: 'reimbursed', needsReview: 0, cats: null as never,
       splits: [{ catId: 'reimbursed', amountCents: 5000 }],
     });
     db.close();
@@ -265,12 +265,12 @@ describe('TransactionsScreen (demo identity)', () => {
     // purchase keeps its category — both debits
     await repo.upsert('transaction', DEMO_SPACE_ID, 'wbank', {
       accountId: 'demo_main', date: '2020-04-01', amountCents: -799, currency: 'EUR',
-      merchant: 'PayPal top-up', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      merchant: 'PayPal top-up', catId: 'transferOut', needsReview: 0,
       linkedAccountId: 'wl', transferPeerId: 'wpur',
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'wpur', {
       accountId: 'wl', date: '2020-04-01', amountCents: -799, currency: 'EUR',
-      merchant: 'Vueling Wallet', catId: 'holiday', txType: 'expense', needsReview: 0,
+      merchant: 'Vueling Wallet', catId: 'holiday', needsReview: 0,
       transferPeerId: 'wbank',
     });
 
@@ -290,11 +290,11 @@ describe('TransactionsScreen (demo identity)', () => {
     // [tx, split-tx, tx] on one far-past day — an isolated date card
     await repo.upsert('transaction', DEMO_SPACE_ID, 'dv1', {
       accountId: 'demo_main', date: '2020-05-02', amountCents: -1000, currency: 'EUR',
-      merchant: 'Before Split', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: 'Before Split', catId: 'groceries', needsReview: 0,
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'dvs', {
       accountId: 'demo_main', date: '2020-05-02', amountCents: -3000, currency: 'EUR',
-      merchant: 'Split Shop', catId: 'groceries', txType: 'expense', needsReview: 0, cats: null as never,
+      merchant: 'Split Shop', catId: 'groceries', needsReview: 0, cats: null as never,
       splits: [
         { id: 'dvsa', catId: 'groceries', amountCents: 2000 },
         { id: 'dvsb', catId: 'eatingOut', amountCents: 1000 },
@@ -302,7 +302,7 @@ describe('TransactionsScreen (demo identity)', () => {
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'dv2', {
       accountId: 'demo_main', date: '2020-05-02', amountCents: -2000, currency: 'EUR',
-      merchant: 'After Split', catId: 'eatingOut', txType: 'expense', needsReview: 0,
+      merchant: 'After Split', catId: 'eatingOut', needsReview: 0,
     });
 
     const group = await screen.findByTestId('tx-parts-dvs', {}, { timeout: 5000 });
@@ -329,11 +329,11 @@ describe('TransactionsScreen (demo identity)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-edge'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'er1', {
       accountId: 'demo_main', date: '2020-05-03', amountCents: -1000, currency: 'EUR',
-      merchant: 'Edge One', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: 'Edge One', catId: 'groceries', needsReview: 0,
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'er2', {
       accountId: 'demo_main', date: '2020-05-03', amountCents: -2000, currency: 'EUR',
-      merchant: 'Edge Two', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: 'Edge Two', catId: 'groceries', needsReview: 0,
     });
     const first = await screen.findByTestId('tx-row-er1', {}, { timeout: 5000 });
     await screen.findByTestId('tx-row-er2');

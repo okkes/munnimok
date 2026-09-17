@@ -24,9 +24,9 @@ const STORE_NAMES: Record<string, string> = {
 
 /**
  * One receipt in full — shared by the tx detail, the receipts browser
- * and the unmatched list. Works on a normalized entry: v3 snapshot
- * links, legacy rows and unmatched global receipts each route their
- * delete/link actions to the right store.
+ * and the unmatched list. Works on a normalized entry: snapshot links
+ * (store-born or photo-born) and unmatched global receipts each route
+ * their delete/link actions to the right store.
  */
 export function ReceiptViewSheet({
   entry,
@@ -69,9 +69,14 @@ export function ReceiptViewSheet({
   const ladder = receipt ? candidateLadder(receipt, txs ?? []) : { primary: [], more: [] };
   const candidates = () => (showMore ? [...ladder.primary, ...ladder.more] : ladder.primary);
 
+  // a photo-born link IS the receipt (nothing lives behind it): it reads
+  // its items on demand and deletes for real, where a store receipt's
+  // link merely unlinks — the global row lives on
+  const photoBorn = entry?.kind === 'link' && entry.data.source === 'photo';
+
   // OCR via the NAS sidecar (signed-in users only — demo stays offline)
   const readItems = async () => {
-    if (!receipt?.image) return;
+    if (!receipt?.image || !entry?.linkId) return;
     setOcrState('busy');
     try {
       const response = await apiFetch('/ocr/receipt', { method: 'POST', body: JSON.stringify({ image: receipt.image }) });
@@ -85,15 +90,15 @@ export function ReceiptViewSheet({
         setOcrState('failed');
         return;
       }
-      await receiptOps.setItems(receipt.id, items);
+      await receiptOps.setItems(entry.linkId, items);
       setOcrState('idle');
     } catch {
       setOcrState('failed');
     }
   };
 
-  // a snapshot link "deletes" by unlinking — the wording must say so
-  const deleteLabel = entry?.kind === 'link' ? t('receipt.unlink') : t('action.delete');
+  // a store receipt's link "deletes" by unlinking — the wording must say so
+  const deleteLabel = entry?.kind === 'link' && !photoBorn ? t('receipt.unlink') : t('action.delete');
 
   const removeReceipt = async () => {
     if (!entry) return;
@@ -101,11 +106,10 @@ export function ReceiptViewSheet({
       setConfirmDelete(true);
       return;
     }
-    // each generation deletes in its own store: unlink the snapshot,
-    // remove the legacy row, or drop the unmatched global receipt
-    if (entry.kind === 'link' && entry.linkId) await storeOps.unlinkReceipt(entry.linkId);
-    else if (entry.kind === 'global') await storeOps.removeGlobalReceipt(entry.data.id);
-    else await receiptOps.remove(entry.data.id);
+    // each kind deletes in its own store: drop the photo, unlink the
+    // store snapshot, or drop the unmatched global receipt
+    if (entry.kind === 'global') await storeOps.removeGlobalReceipt(entry.data.id);
+    else if (entry.linkId) await (photoBorn ? receiptOps.remove(entry.linkId) : storeOps.unlinkReceipt(entry.linkId));
     onClose();
   };
 
@@ -182,7 +186,7 @@ export function ReceiptViewSheet({
             </>
           )}
 
-          {entry.kind === 'legacy' && receipt.source === 'photo' && !receipt.items?.length && storesAvailable() && (
+          {photoBorn && !receipt.items?.length && storesAvailable() && (
             <>
               <Button variant="outline" className="w-full" data-testid="receipt-read-items" disabled={ocrState === 'busy'} onClick={() => void readItems()}>
                 {t('receipt.readItems')}

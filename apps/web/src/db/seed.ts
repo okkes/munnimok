@@ -97,7 +97,6 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
       description: tx.desc,
       catId: tx.cat,
       splits: tx.splits,
-      txType,
       // kind model: a transfer-family row always names its counterparty —
       // the demo's savings transfers move demo_main → demo_save
       ...(kindOf(txType) === 'transfer' ? { linkedAccountId: 'demo_save' } : {}),

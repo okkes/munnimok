@@ -4,7 +4,6 @@ import { useSession } from '@/app/session';
 import {
   biometricAvailable,
   bootLocked,
-  effectiveBiometricKind,
   hashPin,
   initLockWatcher,
   randomSalt,
@@ -68,15 +67,6 @@ describe('lock config + pin (identity-scoped)', () => {
     expect(readLockConfig()?.timeoutSec).toBe(300); // same person: lock re-arms
   });
 
-  it('#298: a pre-scoping device-global config is a dead relic — cleared, never adopted', () => {
-    localStorage.setItem('munni_lock', JSON.stringify(config({ timeoutSec: 900 })));
-    signIn('demo');
-    // the fresh identity must NOT inherit the previous user's PIN
-    expect(readLockConfig()).toBeNull();
-    expect(localStorage.getItem('munni_lock')).toBeNull();
-    expect(localStorage.getItem('munni_lock_demo')).toBeNull();
-  })
-
   it('validPin: 4-8 digits only', () => {
     expect(validPin('1234')).toBe(true);
     expect(validPin('12345678')).toBe(true);
@@ -127,12 +117,14 @@ describe('webauthn wrappers', () => {
     });
     const registration = await registerBiometric();
     expect(registration).toEqual({ kind: 'webauthn', credentialId: 'AQID-g' }); // base64url, unpadded
-    expect(await verifyBiometric(registration!)).toBe(true);
+    // the config the setup screens store from a registration
+    const config = { biometricKind: registration!.kind, credentialId: registration!.credentialId };
+    expect(await verifyBiometric(config)).toBe(true);
 
     (navigator.credentials.create as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('cancelled'));
     expect(await registerBiometric()).toBeNull();
     (navigator.credentials.get as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no'));
-    expect(await verifyBiometric(registration!)).toBe(false);
+    expect(await verifyBiometric(config)).toBe(false);
   });
 
   it('the native shell path: register verifies once, verify uses the OS prompt (§1)', async () => {
@@ -157,12 +149,6 @@ describe('webauthn wrappers', () => {
     } finally {
       vi.unstubAllGlobals();
     }
-  });
-
-  it('pre-§1 configs (credentialId only) still resolve to the webauthn path', () => {
-    expect(effectiveBiometricKind({ credentialId: 'abc' })).toBe('webauthn');
-    expect(effectiveBiometricKind({ biometricKind: 'native' })).toBe('native');
-    expect(effectiveBiometricKind({})).toBeNull();
   });
 });
 

@@ -35,7 +35,6 @@ async function seed(db: MunniDB, opts: { spentCents: number; notifyAtPct: number
     currency: 'EUR',
     merchant: 'AH',
     catId: 'groceries',
-    txType: 'expense',
     needsReview: 0,
   });
 }

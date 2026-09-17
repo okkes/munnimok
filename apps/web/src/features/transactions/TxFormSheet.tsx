@@ -162,7 +162,7 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
     date: tx.date,
     accountId: tx.accountId,
     catId: tx.catId ?? UNCATEGORIZED_ID,
-    adjustment: tx.adjustment === 1 || tx.txType === 'adjustment',
+    adjustment: tx.adjustment === 1,
     linkedAccountId: tx.linkedAccountId ?? null,
     recurringId: tx.recurringId ?? null,
   };
@@ -273,9 +273,8 @@ function manualTxFields(args: {
     currency: args.currency,
     merchant: args.merchant.trim(),
     catId: familySub ?? args.catId,
-    txType: args.txType,
-    // #133 D (C3): the manual correction marker survives the type's
-    // retirement as its own stored flag
+    // #133 D (C3): the manual correction marker is the row's own stored
+    // flag — the view derives the adjustment type from it
     adjustment: (args.txType === 'adjustment' ? 1 : 0) as 0 | 1,
     needsReview: 0 as const,
     ...(cats || args.tx?.cats?.length ? { cats: cats ?? (null as never) } : {}),
@@ -654,7 +653,7 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const recurrings = useRecurrings();
 
   // (re)fill when opened — keyed on the row's ID, not the object:
-  // background writes (sync, migrations) re-emit the same row as a
+  // background writes (sync, boot heals) re-emit the same row as a
   // fresh object every cycle on the native SQL backend, and an
   // identity-keyed reseed overwrote what the user was typing (iOS ss)
   useEffect(() => {

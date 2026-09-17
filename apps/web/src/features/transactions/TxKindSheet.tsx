@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@/db/useQuery';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
 import { useData } from '@/app/data';
 import { typeDef } from '@/features/accounts/accountTypes';
@@ -160,12 +159,6 @@ export function CounterpartySheet({
     [allAccounts, excludeAccountId, counterTypes],
   );
 
-  // a loan account is a DEBT's backing account (1:1, user design
-  // 2026-07-28): transferring to it IS paying that debt off — the row
-  // says which one, so picking the account is picking the debt
-  const debts = useQuery(store, async () => (await store.bySpace('debt', spaceId)).filter((d) => d.deleted === 0), [spaceId]);
-  const debtByAccount = useMemo(() => new Map((debts ?? []).filter((d) => d.accountId).map((d) => [d.accountId!, d])), [debts]);
-
   const choose = (account: { id: string; type: AccountType }, peer?: { txId: string }) => {
     onChoose(account, peer);
     setForkFor(null);
@@ -229,11 +222,6 @@ export function CounterpartySheet({
                     #152: a funding pot records funding, not transfer) */}
                 <span className="block text-[11px] text-ink-4">
                   {t(`tx.type.${accountStamp(account.type) ?? typeForLinkedAccount(account.type)}`)}
-                  {debtByAccount.has(account.id) && (
-                    <span className="text-accent-deep" data-testid={`counter-debt-${account.id}`}>
-                      {' '}· {t('tx.paysDebt', { name: debtByAccount.get(account.id)!.name })}
-                    </span>
-                  )}
                 </span>
               </span>
               {/* C2: a bank-fed pick means Transfer — the real arriving

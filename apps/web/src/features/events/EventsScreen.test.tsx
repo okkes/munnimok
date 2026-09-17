@@ -121,7 +121,7 @@ describe('Events (demo identity)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-partpick'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'evsplit', {
       accountId: 'demo_main', date: isoDaysAgo(170), amountCents: -6000, currency: 'EUR',
-      merchant: 'Split Dinner', catId: 'restaurants', txType: 'expense', needsReview: 0,
+      merchant: 'Split Dinner', catId: 'restaurants', needsReview: 0,
       // #211: the explicit cats null marks these as PARTS for the boot fold
       cats: null as never,
       splits: [

@@ -6,7 +6,6 @@ import type {
   AllocationRow,
   BudgetRow,
   CategoryRow,
-  DebtRow,
   EntityName,
   EventRow,
   HoldingRow,
@@ -52,12 +51,11 @@ export class MunniDB extends Dexie {
   events!: Table<EventRow, string>;
   goals!: Table<GoalRow, string>;
   goalContributions!: Table<GoalContributionRow, string>;
-  debts!: Table<DebtRow, string>;
   allocations!: Table<AllocationRow, string>;
   receipts!: Table<ReceiptRow, string>;
   receiptLinks!: Table<ReceiptLinkRow, string>;
-  /** device-only — store tokens never sync in plaintext (privacy law).
-   *  v3: keyed by instance id (the old per-store table is retired) */
+  /** device-only — store tokens never sync in plaintext (privacy law);
+   *  keyed by connection-instance id */
   storeInstances!: Table<StoreConnectionRow, string>;
   storeMarkers!: Table<StoreMarkerRow, string>;
   storeConns!: Table<StoreConnRow, string>;
@@ -74,89 +72,48 @@ export class MunniDB extends Dexie {
 
   constructor(name: string) {
     super(name);
+    // ONE schema version: the product deployed from scratch on this
+    // model, so there is no older on-device layout to upgrade from. A
+    // future store change adds version(2) with its own upgrade.
     this.version(1).stores({
       spaces: 'id',
       accounts: 'id, spaceId',
       categories: 'id, spaceId, parentId',
       transactions: 'id, spaceId, accountId, catId, [spaceId+date]',
-      outbox: 'opId, spaceId, hlc',
-      meta: 'key',
-    });
-    // feature B: per-space transformation overlay + account attachments
-    this.version(2).stores({
+      // feature B: per-space transformation overlay + account attachments
       txMeta: 'id, spaceId, txId, [spaceId+txId]',
       accountLinks: 'id, spaceId, feedSpaceId, accountId',
-    });
-    // recurring costs + dismissed suggestions
-    this.version(3).stores({
+      // recurring costs + dismissed suggestions
       recurrings: 'id, spaceId',
       recurringDismissals: 'id, spaceId',
-    });
-    // budgets
-    this.version(4).stores({
+      // #148 r3: the synced first-seen rows (user identities)
+      txSeen: 'id, spaceId, forSpaceId',
       budgets: 'id, spaceId',
-    });
-    // events, goals, debts
-    this.version(5).stores({
       events: 'id, spaceId',
       goals: 'id, spaceId',
       goalContributions: 'id, spaceId, goalId',
-      debts: 'id, spaceId',
-    });
-    // allocation (zero-based budgeting)
-    this.version(6).stores({
+      // allocation (zero-based budgeting) + its custom category groupings
       allocations: 'id, spaceId, [spaceId+periodStart]',
-    });
-    // receipts (synced) + device-only store connections
-    this.version(7).stores({
-      receipts: 'id, spaceId, txId',
-      storeConnections: 'store',
-    });
-    // secret-free synced store markers (reconnect notices)
-    this.version(8).stores({
+      topics: 'id, spaceId',
+      // receipts v3: global rows in the owner's store feed, snapshot
+      // links per space, instance-keyed device connections, synced
+      // instance metadata + per-space inclusion links, reconnect markers
+      receipts: 'id, spaceId',
+      receiptLinks: 'id, spaceId, txId, receiptId',
+      storeInstances: 'id, store',
+      storeConns: 'id, spaceId',
+      storeConnLinks: 'id, spaceId, instanceId',
       storeMarkers: 'id, spaceId',
-    });
-    // portfolio (investments design) + device-only quote cache
-    this.version(9).stores({
+      // portfolio (investments design) + device-only quote cache
       holdings: 'id, spaceId',
       lots: 'id, spaceId, holdingId',
       quoteCache: 'key',
-    });
-    // insights: synced per-space dismissals
-    this.version(10).stores({
+      // insights: synced per-space dismissals
       insightDismissals: 'id, spaceId',
-    });
-    // allocation topics: custom category groupings
-    this.version(11).stores({
-      topics: 'id, spaceId',
-    });
-    // receipts v3: instance-keyed device connections (Dexie cannot rekey
-    // a primary key — new table, rows copied with id = store name so the
-    // E2EE cipher ids stay stable across devices), synced instance
-    // metadata + per-space inclusion links + snapshot receipt links
-    this.version(12)
-      .stores({
-        storeInstances: 'id, store',
-        storeConns: 'id, spaceId',
-        storeConnLinks: 'id, spaceId, instanceId',
-        receiptLinks: 'id, spaceId, txId, receiptId',
-      })
-      .upgrade(async (tx) => {
-        const legacy = await tx.table('storeConnections').toArray();
-        for (const row of legacy) {
-          await tx.table('storeInstances').put({ ...row, id: row.store });
-        }
-      });
-    // the retired per-store table goes in its own version (Dexie rule:
-    // deletion and the upgrade that reads it must not share a version)
-    this.version(13).stores({ storeConnections: null });
-    // activity history: who did what, newest 200 per space
-    this.version(14).stores({
+      // activity history: who did what, newest 200 per space
       activities: 'id, spaceId',
-    });
-    // #148 r3: the synced first-seen rows (user identities)
-    this.version(15).stores({
-      txSeen: 'id, spaceId, forSpaceId',
+      outbox: 'opId, spaceId, hlc',
+      meta: 'key',
     });
   }
 
@@ -188,8 +145,6 @@ export class MunniDB extends Dexie {
         return this.goals;
       case 'goalContribution':
         return this.goalContributions;
-      case 'debt':
-        return this.debts;
       case 'allocation':
         return this.allocations;
       case 'receipt':

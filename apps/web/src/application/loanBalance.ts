@@ -86,7 +86,7 @@ export async function applyLoanLinkDelta(
 export async function countPreAnchorTx(
   store: StorageBackend,
   repo: Repo,
-  tx: LinkableTx & { id: string; spaceId: string; feedSpaceId?: string; txType: string; needsReview: 0 | 1 },
+  tx: LinkableTx & { id: string; spaceId: string; feedSpaceId?: string; needsReview: 0 | 1 },
   writeMarker: () => Promise<void>,
 ): Promise<boolean> {
   const account = await adjustableLoan(store, (tx as { linkedAccountId?: string }).linkedAccountId);
