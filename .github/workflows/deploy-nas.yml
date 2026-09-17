@@ -51,15 +51,24 @@ jobs:
           node-version: 24
       - name: Which stacks
         id: m
+        # a stack rides in its GitHub environment; without one it was never bootstrapped — an image build skips it (a dispatch names its stack: the Bootstrap chain created the environment)
         run: |
+          if EXISTING=$(gh api "repos/${{ github.repository }}/environments?per_page=100" --jq '[.environments[].name] | join(",")'); then
+            FILTER=(--existing "$EXISTING")
+          else
+            echo "::warning::could not list the GitHub environments — every stack of the channel is tried"
+            FILTER=()
+          fi
           if [ "${{ github.event_name }}" = "workflow_run" ]; then
             CH="${{ github.event.workflow_run.head_branch == 'master' && 'latest' || 'dev' }}"
-            node infra/ci/matrix.mjs --platform nas --channel "$CH"
+            node infra/ci/matrix.mjs --platform nas --channel "$CH" "${FILTER[@]}"
           elif [ -n "${{ inputs.stack }}" ]; then
             node infra/ci/matrix.mjs --platform nas --stack "${{ inputs.stack }}"
           else
-            node infra/ci/matrix.mjs --platform nas --channel "${{ inputs.channel }}"
+            node infra/ci/matrix.mjs --platform nas --channel "${{ inputs.channel }}" "${FILTER[@]}"
           fi
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   deploy:
     needs: stacks
@@ -81,8 +90,22 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # the environment holds the platform's domain once its Bootstrap ran — before that there is nothing to deploy (the Bootstrap chains this Deploy when it is done)
+      - name: Bootstrapped?
+        id: ready
+        run: |
+          if [ -n "$PLATFORM_DOMAIN" ] && [ -n "$SYNOLOGY_PATH" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::${{ matrix.stack }}: environment ${{ matrix.environment }} is not bootstrapped yet (no PLATFORM_DOMAIN / SYNOLOGY_PATH) — nothing to deploy"
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
+          SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
       - name: Render + assemble the bundle
         id: bundle
+        if: ${{ steps.ready.outputs.ok == 'true' }}
         run: |
           set -euo pipefail
           node infra/bootstrap.mjs --stack "${{ matrix.stack }}" --render-only
@@ -133,6 +156,7 @@ jobs:
           VITE_GLITCHTIP_DSN: ${{ vars.VITE_GLITCHTIP_DSN }}
           VITE_GLITCHTIP_DSN_ADMIN: ${{ vars.VITE_GLITCHTIP_DSN_ADMIN }}
       - name: Upload to Synology File Station (bundle first, stamp last)
+        if: ${{ steps.ready.outputs.ok == 'true' }}
         run: |
           set -euo pipefail
           : "${SYNOLOGY_PATH:?SYNOLOGY_PATH secret missing}"
@@ -154,6 +178,7 @@ jobs:
       # again so the frontends pick the app ids up. Ends by itself.
       - name: Wait for the poller, read its log, and see whether the seeds landed
         id: applied
+        if: ${{ steps.ready.outputs.ok == 'true' }}
         run: node deploy/nas/after-apply.mjs --stack "${{ matrix.stack }}" --stamp "${{ github.sha }}.${{ github.run_number }}"
         env:
           SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
@@ -165,7 +190,7 @@ jobs:
           LOGTO_INFRA_M2M_SECRET: ${{ secrets.LOGTO_INFRA_M2M_SECRET }}
           GLITCHTIP_API_TOKEN: ${{ secrets.GLITCHTIP_API_TOKEN }}
       - name: A seed landed and its write-back is missing — run the Bootstrap once more (it chains this Deploy)
-        if: ${{ (steps.applied.outputs.logto == 'answers' && vars.VITE_LOGTO_APP_ID == '') || (steps.applied.outputs.glitchtip == 'answers' && vars.VITE_GLITCHTIP_DSN == '' && matrix.role == 'env') }}
+        if: ${{ steps.ready.outputs.ok == 'true' && ((steps.applied.outputs.logto == 'answers' && vars.VITE_LOGTO_APP_ID == '') || (steps.applied.outputs.glitchtip == 'answers' && vars.VITE_GLITCHTIP_DSN == '' && matrix.role == 'env')) }}
         run: |
           gh workflow run iac.yml --ref dev -f stack="${{ matrix.stack }}" -f chain=deploy
           echo "chained: Bootstrap ${{ matrix.stack }} → Deploy" >> "$GITHUB_STEP_SUMMARY"

@@ -27,7 +27,10 @@ and uploads:
 
 It runs on every successful image build (dev branch → stacks on channel
 `dev`, master → `latest`) and on dispatch from the wizard or the Actions
-UI.
+UI. A stack whose GitHub environment does not exist yet was never
+bootstrapped: image builds skip it (the Bootstrap chain deploys it once it
+ran), and a deploy job whose environment holds no domain yet ends with a
+notice instead of a failure.
 
 ## The poller
 

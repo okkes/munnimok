@@ -3,7 +3,7 @@
 // or environment, and handed to GitHub as include + count.
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -50,6 +50,15 @@ test('filters: platform, channel (dev vs latest), role, feature, one stack, one 
   assert.deepEqual(stacks(['--env', 'shared']), ['munni-lcl-shared', 'munni-nas-shared']);
   assert.deepEqual(stacks(['--env', 'all', '--platform', 'lcl']), ['munni-lcl-shared', 'munni-lcl-prod', 'munni-lcl-dev']);
   assert.deepEqual(stacks(['--platform', 'nas', '--stack', 'munni-lcl-prod']), [], 'nothing matches: an empty matrix, not an error');
+});
+
+test('--existing: a stack whose GitHub environment is missing was never bootstrapped — pushes and image builds skip it with a note, a named --stack is never filtered', () => {
+  assert.deepEqual(stacks(['--platform', 'nas', '--channel', 'latest', '--existing', 'nas-prod,lcl-prod']), ['munni-nas-prod']);
+  assert.deepEqual(stacks(['--platform', 'nas', '--existing', '']), [], 'no environment at all (a fresh copy of the repo, or after a wipe): nothing to run');
+  assert.deepEqual(stacks(['--platform', 'nas', '--stack', 'munni-nas-shared', '--existing', '']), ['munni-nas-shared'], 'the Bootstrap dispatch names its stack and creates the environment itself');
+  const r = spawnSync(process.execPath, [MATRIX, '--platform', 'nas', '--channel', 'latest', '--existing', 'nas-prod'], { encoding: 'utf8', env: { ...process.env, GITHUB_OUTPUT: '' } });
+  assert.match(r.stderr, /skip munni-nas-shared: GitHub environment nas-shared does not exist/);
+  assert.deepEqual(JSON.parse(r.stdout).map((x) => x.stack), ['munni-nas-prod'], 'the note stays out of the JSON');
 });
 
 test('with GITHUB_OUTPUT set the rows land in the step outputs as include (fromJSON-ready) and count', () => {

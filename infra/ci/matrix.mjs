@@ -3,7 +3,12 @@
  * The workflows' matrices from the committed platform config
  * (infra/platforms): which stacks to bootstrap, deploy or build.
  *
- *   node infra/ci/matrix.mjs --platform nas [--channel dev|latest] [--role env|shared] [--feature ios|android] [--stack munni-nas-prod] [--env prod|shared|all]
+ *   node infra/ci/matrix.mjs --platform nas [--channel dev|latest] [--role env|shared] [--feature ios|android] [--stack munni-nas-prod] [--env prod|shared|all] [--existing nas-shared,nas-prod]
+ *
+ * --existing names the GitHub environments that exist: a stack whose
+ * environment is missing was never bootstrapped, so pushes and image builds
+ * skip it (with a note on stderr) — a dispatch that names its --stack is the
+ * Bootstrap that creates the environment, and is never filtered.
  *
  * Prints a JSON array of {stack, platform, env, role, environment, channel,
  * appChannel, androidPackage, iosBundleId, scheme, label} — `environment` is
@@ -22,6 +27,9 @@ const role = arg('role');
 const feature = arg('feature');
 const only = arg('stack');
 const env = arg('env');
+const existing = arg('existing');
+const known = existing === undefined ? null : new Set(existing.split(',').map((s) => s.trim()).filter(Boolean));
+const skipped = [];
 
 const platforms = listPlatforms().filter((p) => !platform || p.platform === platform);
 const rows = [];
@@ -36,6 +44,7 @@ for (const p of platforms) {
     if (role && role !== 'all' && s.role !== role) continue;
     if (channel && channel !== 'all' && s.channel !== channel) continue;
     if (feature && !(s.features?.[feature])) continue;
+    if (known && !only && !known.has(s.githubEnvironment)) { skipped.push(s); continue; }
     rows.push({
       stack: s.stack,
       platform: s.platform,
@@ -52,6 +61,7 @@ for (const p of platforms) {
     });
   }
 }
+for (const s of skipped) console.error(`skip ${s.stack}: GitHub environment ${s.githubEnvironment} does not exist — not bootstrapped yet (the wizard's Bootstrap creates it)`);
 const json = JSON.stringify(rows);
 console.log(json);
 if (process.env.GITHUB_OUTPUT) {

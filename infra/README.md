@@ -72,6 +72,8 @@ infra/rendered/                      gitignored: rendered compose/env files, the
    commits, dispatches Bootstrap + Deploy. From then on every successful
    image build deploys the environments on that channel by itself, and
    every push builds the phone apps of the environments that enable them.
+   A stack whose GitHub environment does not exist yet is skipped by pushes
+   and image builds — only a Bootstrap dispatch names it, and creates it.
 
 Hosts: `munni-<env>-nas.<domain>` (+ `-api`, `-admin`, `-logto`,
 `-logto-admin`) and `glitchtip-nas`, `vault-nas`, `control-nas`,

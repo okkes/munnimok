@@ -54,7 +54,17 @@ jobs:
         run: node --test "infra/tests/**/*.test.mjs"
       - name: Which stacks
         id: m
-        run: node infra/ci/matrix.mjs --platform nas ${{ github.event_name == 'workflow_dispatch' && format('--stack {0}', inputs.stack) || '' }}
+        # a stack rides in its GitHub environment; without one it was never bootstrapped — a push skips it (a dispatch names its stack: that Bootstrap creates the environment)
+        run: |
+          if EXISTING=$(gh api "repos/${{ github.repository }}/environments?per_page=100" --jq '[.environments[].name] | join(",")'); then
+            FILTER=(--existing "$EXISTING")
+          else
+            echo "::warning::could not list the GitHub environments — every stack of the config is tried"
+            FILTER=()
+          fi
+          node infra/ci/matrix.mjs --platform nas ${{ github.event_name == 'workflow_dispatch' && format('--stack {0}', inputs.stack) || '' }} "${FILTER[@]}"
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   bootstrap:
     needs: stacks
