@@ -2,20 +2,15 @@
 // these specs pin the request shapes (endpoints, JWT headers/claims) and
 // the verdict mapping — with fetch faked and real freshly-minted keys.
 import { generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { scratchPlatforms } from './fixture.mjs';
 
-// hermetic: the machine's real rendered/ (LAN-mode marker included)
-// must never leak into these urls
-const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-validate-test-'));
-process.env.MUNNI_RENDER_DIR = SCRATCH;
-// the local validators resolve munni-local-prod — seed the registry
-writeFileSync(join(SCRATCH, 'local-envs.json'), JSON.stringify({ envs: [{ name: 'prod', channel: 'dev', slot: 0 }] }));
+// hermetic: the machine's real platforms/ and rendered/ (LAN-mode marker
+// included) must never leak into these urls
+const fx = scratchPlatforms();
 const { validate } = await import('../modules/validate.mjs');
-test.after(() => rmSync(SCRATCH, { recursive: true, force: true }));
+test.after(() => fx.cleanup());
 
 const capture = (status, body = {}) => {
   const calls = [];
@@ -254,17 +249,29 @@ test('google + apple: every callback the page names is judged too — a refused 
   assert.match(missingTeam.detail, /LOGTO_APPLE_TEAM_ID/);
 });
 
-test('local logto/glitchtip validators target the family stacks (prod logto, shared glitchtip)', async () => {
+test('local logto/glitchtip validators target the lcl platform\'s stacks (the first environment\'s Logto, the shared GlitchTip); without an environment the Logto check says so', async () => {
   const logto = capture(200);
   const okM2m = await validate('logto-m2m', { LOGTO_INFRA_M2M_ID: 'id', LOGTO_INFRA_M2M_SECRET: 's' }, { fetchImpl: logto.fetchImpl });
   assert.equal(okM2m.ok, true);
   assert.match(logto.calls[0].url, /^http:\/\/localhost:3201\/oidc\/token$/);
   assert.match(logto.calls[0].init.headers.authorization, /^Basic /);
+  assert.equal((await validate('logto-m2m', { LOGTO_INFRA_M2M_ID: 'id', LOGTO_INFRA_M2M_SECRET: 's' }, { fetchImpl: capture(401).fetchImpl })).ok, false);
 
   const gt = capture(200);
   const okGt = await validate('glitchtip-token', { GLITCHTIP_API_TOKEN: 't' }, { fetchImpl: gt.fetchImpl });
   assert.equal(okGt.ok, true);
   assert.match(gt.calls[0].url, /^http:\/\/localhost:8383\/api\/0\/organizations\/$/);
+
+  fx.removeEnv('lcl', 'prod');
+  fx.removeEnv('lcl', 'dev');
+  try {
+    const none = await validate('logto-m2m', { LOGTO_INFRA_M2M_ID: 'id', LOGTO_INFRA_M2M_SECRET: 's' }, { fetchImpl: capture(200).fetchImpl });
+    assert.equal(none.ok, false);
+    assert.match(none.detail, /no local environment exists yet/);
+  } finally {
+    fx.writeEnv('lcl', { env: 'prod', slot: 0, channel: 'dev' });
+    fx.writeEnv('lcl', { env: 'dev', slot: 1, channel: 'dev' });
+  }
 });
 
 test('network failures come back as unreachable, unknown providers refuse', async () => {
