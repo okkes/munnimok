@@ -32,6 +32,20 @@ function passedBy(workflow, jobId) {
   return out;
 }
 
+test('deploy-nas: every deploy step after the readiness gate runs only for a bootstrapped environment — an image build must not fail on a stack whose environment holds no secrets yet', () => {
+  const wf = read('.github/workflows/deploy-nas.yml');
+  const job = wf.split(/^  deploy:$/m)[1]?.split(/^  [a-z-]+:$/m)[0] ?? '';
+  const steps = job.split(/^      - (?:name|uses):/m).slice(1);
+  const names = steps.map((s) => s.split('\n')[0].trim());
+  const gate = names.indexOf('Bootstrapped?');
+  assert.ok(gate >= 0, 'a readiness step named Bootstrapped?');
+  assert.ok(steps.length >= gate + 5, 'the render, upload, poller and chain steps follow the gate');
+  for (const [i, s] of steps.entries()) {
+    if (i <= gate) continue;
+    assert.match(s, /if: \$\{\{ steps\.ready\.outputs\.ok == 'true'/, `${names[i]} is gated on the readiness step`);
+  }
+});
+
 test('deploy-nas: the deploy job passes every placeholder of the shared and the environment template by name — VITE_* as the written-back variables, the rest as secrets — plus the platform domain the render needs', () => {
   const passed = passedBy(read('.github/workflows/deploy-nas.yml'), 'deploy');
   for (const name of ['munni-nas-shared', 'munni-nas-prod']) {
