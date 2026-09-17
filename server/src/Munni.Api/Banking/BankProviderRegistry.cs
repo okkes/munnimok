@@ -4,9 +4,9 @@ using Munni.Api.GoCardless;
 namespace Munni.Api.Banking;
 
 /// <summary>
-/// DI wiring for the bank-data providers: the admin picks which one
-/// serves NEW consents; existing accounts keep fetching through the
-/// provider that created them.
+/// DI wiring for the bank-data providers: every configured one is offered
+/// to the END USER at connect time (#175); existing accounts keep fetching
+/// through the provider that created them.
 /// </summary>
 public static class BankingSetup
 {
@@ -41,12 +41,12 @@ public static class BankingSetup
 }
 
 /// <summary>
-/// The configured bank-data providers. #175 (user): BOTH providers are
-/// offered to the end user at connect time, so the admin's "active
-/// provider" toggle retired — the DEFAULT (registration order, i.e.
-/// GoCardless when configured) only serves clients that don't name one.
-/// Existing linked accounts always keep fetching through the provider
-/// that created them.
+/// The configured bank-data providers. #175 (user): the END USER picks one
+/// at connect time and every request names its pick; linked accounts keep
+/// fetching through the provider that created them. There is no default:
+/// a provider this install does not configure is simply not there — Find
+/// answers null and the caller decides (a 400 for a request, a skipped
+/// account for the scheduler), never a silent switch to another provider.
 /// </summary>
 public sealed class BankProviderRegistry
 {
@@ -60,7 +60,6 @@ public sealed class BankProviderRegistry
     public bool Any => _byId.Count > 0;
     public IReadOnlyCollection<string> ConfiguredIds => _byId.Keys;
 
-    /// <summary>the provider that created a row — unknown/legacy falls back to the default (first configured)</summary>
-    public IBankDataApi For(string? providerId) =>
-        providerId is not null && _byId.TryGetValue(providerId, out var api) ? api : _byId.Values.First();
+    /// <summary>the provider with this id, null when it is not configured on this install</summary>
+    public IBankDataApi? Find(string providerId) => _byId.GetValueOrDefault(providerId);
 }

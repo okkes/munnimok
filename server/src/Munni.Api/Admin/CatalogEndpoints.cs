@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Munni.Api.Auth;
 using Munni.Api.Data;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -7,28 +8,27 @@ namespace Munni.Api.Admin;
 
 /// <summary>
 /// The versioned catalog document (admin-catalog design AC1): builtin
-/// categories + prediction keywords as operator-editable content. One
-/// JSON document in AppSettings, version bumped on every publish;
-/// clients fetch opportunistically at sync time and fall back to the
-/// bundled copy when they have never fetched one.
+/// categories + prediction keywords + store merchant patterns as
+/// operator-editable content. One JSON document in AppSettings, version
+/// bumped on every publish; clients fetch opportunistically at sync time
+/// and fall back to the bundled copy when they have never fetched one.
 /// </summary>
 public static class CatalogEndpoints
 {
     private const string SettingKey = "catalog";
 
+    /// <summary>one publish = the whole document: all three sections, each an array</summary>
     public sealed record CatalogPublishDto(
         [property: JsonPropertyName("categories")] JsonElement Categories,
         [property: JsonPropertyName("keywords")] JsonElement Keywords,
-        // receipts v3 R9: operator-curated store merchant patterns — an
-        // older console publishing without the field keeps working
-        [property: JsonPropertyName("stores")] JsonElement? Stores = null);
+        [property: JsonPropertyName("stores")] JsonElement Stores);
 
     public static void MapCatalog(this IEndpointRouteBuilder app)
     {
         // public + cacheable: the catalog is content, not user data
         app.MapGet("/catalog", ReadCatalog).AllowAnonymous();
         // publish (admin console): the server owns the version counter
-        app.MapPut("/admin/catalog", PublishCatalog).RequireAuthorization();
+        app.MapPut("/admin/catalog", PublishCatalog).RequireAuthorization(AdminScope.Policy);
     }
 
     private static int VersionOf(string json)
@@ -47,13 +47,12 @@ public static class CatalogEndpoints
         return Results.Content(setting.Value, "application/json");
     }
 
-    private static async Task<IResult> PublishCatalog(CatalogPublishDto body, HttpContext http, AppDbContext db, IConfiguration config)
+    private static async Task<IResult> PublishCatalog(CatalogPublishDto body, AppDbContext db)
     {
-        if (!await AdminEndpoints.IsAdminForCatalogAsync(http, db, config)) return Results.Forbid();
-        if (body.Categories.ValueKind != JsonValueKind.Array || body.Keywords.ValueKind != JsonValueKind.Array)
-            return Results.BadRequest(new { error = "categories and keywords must be arrays" });
-        if (body.Stores is { } stores && stores.ValueKind != JsonValueKind.Array && stores.ValueKind != JsonValueKind.Null)
-            return Results.BadRequest(new { error = "stores must be an array" });
+        if (body.Categories.ValueKind != JsonValueKind.Array
+            || body.Keywords.ValueKind != JsonValueKind.Array
+            || body.Stores.ValueKind != JsonValueKind.Array)
+            return Results.BadRequest(new { error = "categories, keywords and stores must be arrays" });
 
         var setting = await db.AppSettings.FindAsync(SettingKey);
         var version = setting is null ? 0 : VersionOf(setting.Value);
@@ -62,7 +61,7 @@ public static class CatalogEndpoints
             version = version + 1,
             categories = body.Categories,
             keywords = body.Keywords,
-            stores = body.Stores is { ValueKind: JsonValueKind.Array } s ? s : JsonSerializer.SerializeToElement(Array.Empty<object>()),
+            stores = body.Stores,
         });
         if (setting is null) db.AppSettings.Add(new AppSetting { Key = SettingKey, Value = next });
         else setting.Value = next;

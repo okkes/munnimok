@@ -1,21 +1,28 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
+using Munni.Api.GoCardless;
 using Munni.Api.Social;
+using Munni.Api.Sync;
 using Munni.Api.Validation;
 
 namespace Munni.Api.Accounts;
 
 public sealed record RegisterFeedRequest(string FeedSpaceId, string AccountRef);
 public sealed record RegisterFeedResponse(string FeedSpaceId, bool Owned);
-public sealed record AttachAccountRequest(string FeedSpaceId, string AccountId, string? HistoryFrom = null);
+/// <summary>HistoryFrom is the attachment's gate (required — never silently
+/// unlimited); Type is the space's pick for the account, the account row's
+/// own type when absent (AccountTypes)</summary>
+public sealed record AttachAccountRequest(string FeedSpaceId, string AccountId, string HistoryFrom, string? Type = null);
 public sealed record AccountLinkDto(
     Guid Id,
     string SpaceId,
     string FeedSpaceId,
     string AccountId,
     Guid AttachedBy,
-    string? HistoryFrom,
+    string HistoryFrom,
+    string Type,
     bool Archived,
     string? AttachedByName = null);
 public sealed record MyFeedDto(string FeedSpaceId, string AccountRef);
@@ -110,9 +117,7 @@ public static class AccountEndpoints
         var attacherIds = links.Select(l => l.AttachedBy).Distinct().ToList();
         var names = await db.Users.Where(u => attacherIds.Contains(u.Id))
             .ToDictionaryAsync(u => u.Id, u => u.DisplayName);
-        return Results.Ok(links.Select(l => new AccountLinkDto(
-            l.Id, l.SpaceId, l.FeedSpaceId, l.AccountId, l.AttachedBy, l.HistoryFrom, l.Archived,
-            names.GetValueOrDefault(l.AttachedBy))).ToList());
+        return Results.Ok(links.Select(l => ToDto(l, names.GetValueOrDefault(l.AttachedBy))).ToList());
     }
 
     private static async Task<IResult> Attach(string spaceId, AttachAccountRequest request, AppDbContext db, HttpContext http)
@@ -123,6 +128,13 @@ public static class AccountEndpoints
         // you can only attach accounts you actually have: your own feed
         if (!await FeedAccess.IsFeedOwner(db, me, request.FeedSpaceId))
             return Results.Forbid();
+
+        // #212 r2: the link's type is the SPACE's fact about the account —
+        // the caller's pick when it sends one, else the account row's own
+        // type. Decided here, once, so every copy of this link (the row,
+        // the mirrors the server writes, the DTO a device reconciles from)
+        // carries it from the start.
+        var type = request.Type ?? await AccountTypeAsync(db, request.FeedSpaceId, request.AccountId);
 
         var link = await db.SpaceAccountLinks.FirstOrDefaultAsync(l =>
             l.SpaceId == spaceId && l.FeedSpaceId == request.FeedSpaceId && l.AccountId == request.AccountId);
@@ -136,16 +148,19 @@ public static class AccountEndpoints
                 AccountId = request.AccountId,
                 AttachedBy = me,
                 HistoryFrom = request.HistoryFrom,
+                Type = type,
             };
             db.SpaceAccountLinks.Add(link);
         }
         else
         {
             // re-attach: the owner reconnecting revives an archived link
+            // and re-states its gate; the type moves only on an explicit pick
             link.Archived = false;
             link.ArchivedAtSeq = null;
             link.AttachedBy = me;
-            if (request.HistoryFrom is not null) link.HistoryFrom = request.HistoryFrom;
+            link.HistoryFrom = request.HistoryFrom;
+            if (request.Type is not null) link.Type = request.Type;
         }
         try
         {
@@ -156,11 +171,30 @@ public static class AccountEndpoints
             // two attaches raced the check-then-insert (double-tapped
             // import, 23505 on the unique link index) — adopt the row the
             // winner created instead of answering 500 (staging 2026-07-25)
-            db.Entry(link).State = EntityState.Detached;
+            db.Entry(link).State = Microsoft.EntityFrameworkCore.EntityState.Detached;
             link = await db.SpaceAccountLinks.FirstAsync(l =>
                 l.SpaceId == spaceId && l.FeedSpaceId == request.FeedSpaceId && l.AccountId == request.AccountId);
         }
-        return Results.Ok(new AccountLinkDto(link.Id, link.SpaceId, link.FeedSpaceId, link.AccountId, link.AttachedBy, link.HistoryFrom, link.Archived));
+        return Results.Ok(ToDto(link));
+    }
+
+    private static AccountLinkDto ToDto(SpaceAccountLink link, string? attachedByName = null) =>
+        new(link.Id, link.SpaceId, link.FeedSpaceId, link.AccountId, link.AttachedBy, link.HistoryFrom, link.Type, link.Archived, attachedByName);
+
+    /// <summary>the account row's own type as its feed holds it (the global
+    /// fallback every device reads) — the default when the row has none</summary>
+    private static async Task<string> AccountTypeAsync(AppDbContext db, string feedSpaceId, string accountId)
+    {
+        var row = await db.EntityRows.FirstOrDefaultAsync(r =>
+            r.SpaceId == feedSpaceId && r.Entity == "account" && r.EntityId == accountId && !r.Deleted);
+        if (row is null) return AccountTypes.Default;
+        using var data = JsonDocument.Parse(row.DataJson);
+        return data.RootElement.TryGetProperty("type", out var type)
+               && type.ValueKind == JsonValueKind.String
+               && type.GetString() is { } known
+               && AccountTypes.All.Contains(known)
+            ? known
+            : AccountTypes.Default;
     }
 
     private static async Task<IResult> Detach(string spaceId, Guid linkId, AppDbContext db, HttpContext http)
@@ -214,23 +248,58 @@ public static class AccountEndpoints
         await WriteMirrorOpsAsync(db, spaceId, links, archived: false);
     }
 
+    /// <summary>
+    /// The server's own accountLink mirror ops (archive / revive). They
+    /// flip the flag — and complete the row: a mirror that lacks the gate
+    /// or the type gets the link's, so the server never leaves a device
+    /// with a gateless or untyped link. A fact the mirror already holds is
+    /// never re-asserted (#305: a re-minted historyFrom out-HLC'd the real
+    /// one and ratcheted the gate forward, hiding shared history).
+    /// </summary>
     private static async Task WriteMirrorOpsAsync(AppDbContext db, string spaceId, List<SpaceAccountLink> links, bool archived)
     {
         var space = await db.Spaces.FindAsync(spaceId);
         if (space is null) return;
+        var mirrorIds = links.Select(l => ImportIds.AccountLinkId(spaceId, l.FeedSpaceId)).ToList();
+        var mirrors = await db.EntityRows
+            .Where(r => r.SpaceId == spaceId && r.Entity == "accountLink" && mirrorIds.Contains(r.EntityId))
+            .ToDictionaryAsync(r => r.EntityId);
         var counter = 0;
-        var ops = links.Select(link => new Sync.SyncOpDto(
-            GoCardless.ImportIds.OpId($"linkstate:{spaceId}:{link.FeedSpaceId}:{archived}:{DateTime.UtcNow.Ticks}"),
-            spaceId,
-            "accountLink",
-            GoCardless.ImportIds.AccountLinkId(spaceId, link.FeedSpaceId),
-            new Dictionary<string, System.Text.Json.JsonElement>
+        var ops = new List<SyncOpDto>();
+        foreach (var link in links)
+        {
+            var entityId = ImportIds.AccountLinkId(spaceId, link.FeedSpaceId);
+            var fields = new Dictionary<string, JsonElement>
             {
-                ["feedSpaceId"] = System.Text.Json.JsonSerializer.SerializeToElement(link.FeedSpaceId),
-                ["accountId"] = System.Text.Json.JsonSerializer.SerializeToElement(link.AccountId),
-                ["archived"] = System.Text.Json.JsonSerializer.SerializeToElement(archived ? 1 : 0),
-            },
-            Sync.ServerHlc.Now(counter++))).ToList();
-        await new Sync.SyncWriter(db).ApplyAsync(space, null, ops);
+                ["feedSpaceId"] = Json(link.FeedSpaceId),
+                ["accountId"] = Json(link.AccountId),
+                ["archived"] = Json(archived ? 1 : 0),
+            };
+            var present = MirrorFields(mirrors.GetValueOrDefault(entityId));
+            if (!present.Contains("historyFrom")) fields["historyFrom"] = Json(link.HistoryFrom);
+            if (!present.Contains("type")) fields["type"] = Json(link.Type);
+            ops.Add(new SyncOpDto(
+                ImportIds.OpId($"linkstate:{spaceId}:{link.FeedSpaceId}:{archived}:{DateTime.UtcNow.Ticks}"),
+                spaceId,
+                "accountLink",
+                entityId,
+                fields,
+                ServerHlc.Now(counter++)));
+        }
+        await new SyncWriter(db).ApplyAsync(space, null, ops);
     }
+
+    /// <summary>the facts a live mirror row carries — none for a missing or tombstoned row</summary>
+    private static HashSet<string> MirrorFields(EntityRow? mirror)
+    {
+        if (mirror is null || mirror.Deleted) return [];
+        using var data = JsonDocument.Parse(mirror.DataJson);
+        if (data.RootElement.ValueKind != JsonValueKind.Object) return [];
+        return data.RootElement.EnumerateObject()
+            .Where(p => p.Value.ValueKind is not JsonValueKind.Null and not JsonValueKind.Undefined)
+            .Select(p => p.Name)
+            .ToHashSet();
+    }
+
+    private static JsonElement Json(object value) => JsonSerializer.SerializeToElement(value);
 }

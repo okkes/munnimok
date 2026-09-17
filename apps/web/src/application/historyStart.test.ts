@@ -78,28 +78,6 @@ describe('history start moves (arc 5)', () => {
     expect(visible).toEqual(['feed-in', 'feed-older', 'own-in', 'own-old']);
   });
 
-  it('#259: back-fills gateless links from the space start — every boot, no marker', async () => {
-    const { healGatelessLinks } = await import('./historyStart');
-    const { store, repo } = await seeded();
-    // a server-minted link: the connect mirror op carries NO gate
-    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feed2'), {
-      feedSpaceId: 'feed2', accountId: 'a-feed2', archived: 0,
-    });
-    expect(await healGatelessLinks(store, repo)).toBe(1);
-    expect((await store.get('accountLink', accountLinkId(SPACE, 'feed2')))?.historyFrom).toBe('2026-05-01');
-    // the seeded link already had its gate — untouched
-    expect((await store.get('accountLink', accountLinkId(SPACE, FEED)))?.historyFrom).toBe('2026-05-01');
-    // idempotent: a second boot writes nothing
-    expect(await healGatelessLinks(store, repo)).toBe(0);
-    // a link syncing in AFTER the first pass (the marker bug's blind
-    // spot: device B booted against an empty DB) still heals next boot
-    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feed3'), {
-      feedSpaceId: 'feed3', accountId: 'a-feed3', archived: 0,
-    });
-    expect(await healGatelessLinks(store, repo)).toBe(1);
-    expect((await store.get('accountLink', accountLinkId(SPACE, 'feed3')))?.historyFrom).toBe('2026-05-01');
-  });
-
   it('#259: a gateless link falls back to the SPACE start at read time — no heal needed', async () => {
     const { store, repo } = await seeded();
     // device B's reality: the link arrived by sync without a gate and

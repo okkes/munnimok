@@ -81,6 +81,7 @@ public class ShoppingEndpointsTests : IClassFixture<ShoppingApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", "shopper");
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 

@@ -12,18 +12,42 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Munni.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20260716111606_SplitSessions")]
-    partial class SplitSessions
+    [Migration("20260917172927_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.9")
+                .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("Munni.Api.Accounts.FeedOwner", b =>
+                {
+                    b.Property<string>("FeedSpaceId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GcAccountId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("RequisitionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("FeedSpaceId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("FeedOwners");
+                });
 
             modelBuilder.Entity("Munni.Api.Accounts.FeedSpace", b =>
                 {
@@ -74,9 +98,14 @@ namespace Munni.Api.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("HistoryFrom")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("SpaceId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Type")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -88,31 +117,6 @@ namespace Munni.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("SpaceAccountLinks");
-                });
-
-            modelBuilder.Entity("Munni.Api.Data.AdminGrant", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("GrantedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("GrantedBySub")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Sub")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Sub")
-                        .IsUnique();
-
-                    b.ToTable("AdminGrants");
                 });
 
             modelBuilder.Entity("Munni.Api.Data.AppSetting", b =>
@@ -214,6 +218,9 @@ namespace Munni.Api.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
+                    b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Role")
                         .IsRequired()
                         .HasColumnType("text");
@@ -300,6 +307,31 @@ namespace Munni.Api.Migrations
                     b.ToTable("SplitEntries");
                 });
 
+            modelBuilder.Entity("Munni.Api.Data.SplitInvite", b =>
+                {
+                    b.Property<string>("Token")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SplitId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("Token");
+
+                    b.HasIndex("SplitId");
+
+                    b.ToTable("SplitInvites");
+                });
+
             modelBuilder.Entity("Munni.Api.Data.SplitMember", b =>
                 {
                     b.Property<string>("SplitId")
@@ -307,6 +339,9 @@ namespace Munni.Api.Migrations
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("AttachedEventId")
+                        .HasColumnType("text");
 
                     b.Property<string>("AttachedSpaceId")
                         .HasColumnType("text");
@@ -323,6 +358,69 @@ namespace Munni.Api.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("SplitMembers");
+                });
+
+            modelBuilder.Entity("Munni.Api.Data.StoreConnCipher", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Cipher")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Store")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Store")
+                        .IsUnique();
+
+                    b.ToTable("StoreConnCiphers");
+                });
+
+            modelBuilder.Entity("Munni.Api.Data.StoreSyncDevice", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeviceId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("PublicJwk")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("WrappedCsk")
+                        .HasColumnType("text");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "DeviceId")
+                        .IsUnique();
+
+                    b.ToTable("StoreSyncDevices");
                 });
 
             modelBuilder.Entity("Munni.Api.Data.SyncOpRow", b =>
@@ -386,8 +484,14 @@ namespace Munni.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("Country")
+                        .HasColumnType("text");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisplayCurrency")
+                        .HasColumnType("text");
 
                     b.Property<string>("DisplayName")
                         .HasColumnType("text");
@@ -408,6 +512,57 @@ namespace Munni.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Munni.Api.Data.UserDevice", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Id")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset>("LastSeenAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Platform")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId", "Id");
+
+                    b.ToTable("UserDevices");
+                });
+
+            modelBuilder.Entity("Munni.Api.GoCardless.GcInstitutionLogo", b =>
+                {
+                    b.Property<string>("InstitutionId")
+                        .HasColumnType("text");
+
+                    b.Property<byte[]>("Bytes")
+                        .HasColumnType("bytea");
+
+                    b.Property<string>("ContentType")
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("FetchedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LogoUrl")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("InstitutionId");
+
+                    b.ToTable("GcInstitutionLogos");
                 });
 
             modelBuilder.Entity("Munni.Api.GoCardless.GcLinkedAccount", b =>
@@ -435,6 +590,12 @@ namespace Munni.Api.Migrations
 
                     b.Property<DateTimeOffset?>("LastFetchAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("LastFetchDropped")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LastFetchReceived")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Provider")
                         .IsRequired()
@@ -479,6 +640,9 @@ namespace Munni.Api.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AppScheme")
+                        .HasColumnType("text");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -488,6 +652,9 @@ namespace Munni.Api.Migrations
 
                     b.Property<string>("Provider")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RedirectOrigin")
                         .HasColumnType("text");
 
                     b.Property<string>("RequisitionId")
@@ -530,6 +697,10 @@ namespace Munni.Api.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Lang")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("P256dh")
                         .HasColumnType("text");
 
@@ -557,6 +728,15 @@ namespace Munni.Api.Migrations
 
                     b.Property<Guid>("RequestedBy")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("SpaceId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SpaceName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SpaceRole")
+                        .HasColumnType("text");
 
                     b.Property<string>("Status")
                         .IsRequired()

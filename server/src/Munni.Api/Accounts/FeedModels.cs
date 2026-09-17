@@ -26,7 +26,9 @@ public class FeedSpace
 /// Server-authoritative attachment of a feed's account to a space.
 /// Members of the space derive read access to the feed through this
 /// row; the client mirrors it into the space as a synced accountLink
-/// row for offline rendering.
+/// row for offline rendering. The row is complete from the start: it
+/// always carries the history gate and the space's account type, so a
+/// mirror the server emits never leaves a device guessing either.
 /// </summary>
 public class SpaceAccountLink
 {
@@ -39,8 +41,13 @@ public class SpaceAccountLink
 
     public Guid AttachedBy { get; set; }
 
-    /// <summary>Only transactions from this date onward are visible in the space (yyyy-mm-dd).</summary>
-    public string? HistoryFrom { get; set; }
+    /// <summary>Only transactions from this date onward are visible in the
+    /// space (yyyy-mm-dd) — every attachment has one, never silently unlimited.</summary>
+    public required string HistoryFrom { get; set; }
+
+    /// <summary>#212 r2: what the account IS to this space (AccountTypes) —
+    /// the caller's pick at attach time, else the account row's own type.</summary>
+    public required string Type { get; set; }
 
     /// <summary>Set when the attaching member left the space: history stays, new data stops.</summary>
     public bool Archived { get; set; }
@@ -49,6 +56,14 @@ public class SpaceAccountLink
     public long? ArchivedAtSeq { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
+/// <summary>The account types the apps know (apps/web/src/db/types.ts
+/// AccountType) — an attachment's Type is always one of these.</summary>
+public static class AccountTypes
+{
+    public const string Default = "checking";
+    public static readonly string[] All = ["checking", "savings", "cash", "brokerage", "credit", "mortgage", "loan", "funding"];
 }
 
 /// <summary>

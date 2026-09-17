@@ -372,7 +372,7 @@ public static class SocialEndpoints
         return Results.Ok(members.Select(m => new MemberDto(
             m.UserId,
             users.GetValueOrDefault(m.UserId)?.DisplayName,
-            SpaceRoles.Normalize(m.Role),
+            m.Role,
             users.GetValueOrDefault(m.UserId)?.Picture,
             m.JoinedAt)).ToList());
     }

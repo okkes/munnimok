@@ -89,6 +89,7 @@ public class QuoteEndpointsTests : IClassFixture<QuotesApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", "investor");
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 

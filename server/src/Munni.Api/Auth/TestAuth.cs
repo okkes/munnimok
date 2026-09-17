@@ -9,7 +9,9 @@ namespace Munni.Api.Auth;
 
 /// <summary>
 /// Header-based auth for CI/e2e (Auth:TestMode=true): the caller supplies
-/// X-User-Sub and is treated as that subject. Never enabled in production;
+/// X-User-Sub and is treated as that subject; X-User-Scope carries the
+/// space-separated `scope` claim a Logto access token would ("admin" for
+/// the operator routes, see AdminScope). Never enabled in production;
 /// Logto JWT bearer takes its place there.
 /// </summary>
 public sealed class TestAuthHandler(
@@ -25,7 +27,11 @@ public sealed class TestAuthHandler(
         if (string.IsNullOrWhiteSpace(sub))
             return Task.FromResult(AuthenticateResult.Fail("missing X-User-Sub"));
 
-        var identity = new ClaimsIdentity([new Claim("sub", sub)], SchemeName);
+        var claims = new List<Claim> { new("sub", sub) };
+        var scope = Request.Headers["X-User-Scope"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(scope)) claims.Add(new Claim("scope", scope));
+
+        var identity = new ClaimsIdentity(claims, SchemeName);
         var ticket = new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName);
         return Task.FromResult(AuthenticateResult.Success(ticket));
     }
@@ -62,23 +68,31 @@ public static class UserResolution
                 }
             }
             http.Items[ItemKey] = user.Id;
-            if (!await TouchDeviceAsync(http, db, user.Id)) return; // revoked → 410, request ends here
+            if (!await TouchDeviceAsync(http, db, user.Id)) return; // refused (401) or revoked (410) — the request ends here
         }
         await next();
     }
 
     /// <summary>
-    /// Logged-in devices: every authenticated request stamps the calling
-    /// device (X-Munni-Device, the client's HLC node id) and enforces
-    /// remote disconnect — a revoked device answers 410 {device-revoked}
-    /// and the client wipes itself (user ruling: disconnect = wipe).
+    /// Logged-in devices: every authenticated request names the calling
+    /// device (X-Munni-Device, the client's HLC node id). A request that
+    /// names none is refused with 401 {device-required} — every client
+    /// has a device, and an unnamed one could never be disconnected. The
+    /// device is stamped (last-seen, throttled) and remote disconnect is
+    /// enforced: a revoked device answers 410 {device-revoked} and the
+    /// client wipes itself (user ruling: disconnect = wipe).
     /// 410, not 403: the sync engine treats a 403 as "membership lost"
     /// and would purge the space instead of the device.
     /// </summary>
     private static async Task<bool> TouchDeviceAsync(HttpContext http, AppDbContext db, Guid userId)
     {
         var deviceId = http.Request.Headers["X-Munni-Device"].FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(deviceId) || deviceId.Length > 64) return true; // legacy client — nothing to enforce
+        if (string.IsNullOrWhiteSpace(deviceId) || deviceId.Length > 64)
+        {
+            http.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await http.Response.WriteAsJsonAsync(new { error = "device-required" });
+            return false;
+        }
 
         var device = await db.UserDevices.FindAsync(userId, deviceId);
         if (device?.RevokedAt is not null)

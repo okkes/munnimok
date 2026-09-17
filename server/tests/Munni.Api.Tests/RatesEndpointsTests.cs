@@ -99,6 +99,7 @@ public class RatesEndpointsTests : IClassFixture<RatesApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", "converter");
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 
@@ -200,6 +201,7 @@ public class RatesVendorDownTests : IClassFixture<DeadRatesApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", "converter-down");
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         Assert.Equal(HttpStatusCode.BadGateway, (await client.GetAsync("/rates")).StatusCode);
         Assert.Equal(HttpStatusCode.BadGateway, (await client.GetAsync("/rates?date=2026-07-20")).StatusCode);
     }

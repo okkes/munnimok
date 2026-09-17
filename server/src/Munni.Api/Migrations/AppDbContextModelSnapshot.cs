@@ -95,9 +95,14 @@ namespace Munni.Api.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("HistoryFrom")
+                        .IsRequired()
                         .HasColumnType("text");
 
                     b.Property<string>("SpaceId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Type")
                         .IsRequired()
                         .HasColumnType("text");
 
@@ -109,31 +114,6 @@ namespace Munni.Api.Migrations
                         .IsUnique();
 
                     b.ToTable("SpaceAccountLinks");
-                });
-
-            modelBuilder.Entity("Munni.Api.Data.AdminGrant", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTimeOffset>("GrantedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("GrantedBySub")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Sub")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Sub")
-                        .IsUnique();
-
-                    b.ToTable("AdminGrants");
                 });
 
             modelBuilder.Entity("Munni.Api.Data.AppSetting", b =>
@@ -235,7 +215,7 @@ namespace Munni.Api.Migrations
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
 
-                    b.Property<DateTimeOffset?>("JoinedAt")
+                    b.Property<DateTimeOffset>("JoinedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Role")

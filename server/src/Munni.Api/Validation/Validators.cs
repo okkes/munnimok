@@ -22,8 +22,11 @@ public sealed class AttachAccountRequestValidator : AbstractValidator<AttachAcco
     {
         RuleFor(r => r.FeedSpaceId).NotEmpty().MaximumLength(64);
         RuleFor(r => r.AccountId).NotEmpty().MaximumLength(64);
-        RuleFor(r => r.HistoryFrom).Matches(@"^\d{4}-\d{2}-\d{2}$").When(r => !string.IsNullOrEmpty(r.HistoryFrom))
-            .WithMessage("historyFrom must be yyyy-mm-dd");
+        // every attachment carries its history gate — never silently unlimited
+        RuleFor(r => r.HistoryFrom).NotEmpty().Matches(@"^\d{4}-\d{2}-\d{2}$").WithMessage("historyFrom must be yyyy-mm-dd");
+        // the space's pick for the account; absent = the account row's own type
+        RuleFor(r => r.Type).Must(t => AccountTypes.All.Contains(t!)).When(r => r.Type is not null)
+            .WithMessage("type must be one of " + string.Join(", ", AccountTypes.All));
     }
 }
 
@@ -56,13 +59,10 @@ public sealed class SendFriendRequestValidator : AbstractValidator<SendFriendReq
 
 public sealed class SendSpaceInviteValidator : AbstractValidator<SendSpaceInvite>
 {
-    // "member" accepted for older clients; the server maps it to contributor
-    private static readonly string[] Roles = [.. SpaceRoles.Assignable, SpaceRoles.LegacyMember];
-
     public SendSpaceInviteValidator()
     {
         RuleFor(r => r.ToUserId).NotEmpty();
-        RuleFor(r => r.Role).NotEmpty().Must(Roles.Contains).WithMessage("role must be owner, contributor or reader");
+        RuleFor(r => r.Role).NotEmpty().Must(SpaceRoles.Assignable.Contains).WithMessage("role must be owner, contributor or reader");
         RuleFor(r => r.SpaceName).MaximumLength(200);
     }
 }
@@ -147,10 +147,11 @@ public sealed class CreateRequisitionRequestValidator : AbstractValidator<Create
             .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri)
                          && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
             .WithMessage("redirectUrl must be an absolute http(s) URL");
-        // #175: the user's provider pick — a known name or nothing (the
-        // endpoint still checks it is CONFIGURED on this install)
+        // #175: the user's provider pick — always named (the connect sheet
+        // sends it); the endpoint still checks it is CONFIGURED on this install
         RuleFor(r => r.Provider)
-            .Must(p => p is null or Banking.GoCardlessBankApi.Id or Banking.EnableBankingApi.Id)
+            .NotEmpty()
+            .Must(p => p is Banking.GoCardlessBankApi.Id or Banking.EnableBankingApi.Id)
             .WithMessage("provider must be gocardless or enablebanking");
     }
 }

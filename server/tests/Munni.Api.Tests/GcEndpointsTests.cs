@@ -155,6 +155,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 
@@ -175,12 +176,12 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     public async Task Institutions_validate_country_and_cache_the_vendor_call()
     {
         var client = ClientFor("gc-inst");
-        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/gocardless/institutions?country=nether")).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/gocardless/institutions?country=nether&provider=gocardless")).StatusCode);
 
         var before = _factory.Gc.InstitutionCalls;
-        var list = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=nl");
+        var list = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=nl&provider=gocardless");
         Assert.Equal("ING_NL", Assert.Single(list!).Id);
-        await client.GetAsync("/gocardless/institutions?country=nl");
+        await client.GetAsync("/gocardless/institutions?country=nl&provider=gocardless");
         Assert.Equal(before + 1, _factory.Gc.InstitutionCalls); // second hit served from cache
     }
 
@@ -189,7 +190,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     {
         var client = ClientFor("gc-logo");
         // a fresh cache entry runs the upsert that records the CDN url
-        var list = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=de");
+        var list = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=de&provider=gocardless");
         Assert.Equal("/gocardless/institutions/ING_NL/logo", Assert.Single(list!).Logo);
 
         using (var scope = _factory.Services.CreateScope())
@@ -220,10 +221,10 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         // non-members may not connect a bank to the space
         var outsider = ClientFor("gc-outsider");
         Assert.Equal(HttpStatusCode.Forbidden, (await outsider.PostAsJsonAsync("/gocardless/requisitions",
-            new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback"))).StatusCode);
+            new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback", "gocardless"))).StatusCode);
 
         var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
-            new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback"))).Content
+            new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback", "gocardless"))).Content
             .ReadFromJsonAsync<CreateRequisitionResponse>();
         Assert.Contains(created!.Reference, created.Link);
 
@@ -292,7 +293,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         try
         {
             var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceId, "ING_INGBNL2A", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceId, "ING_INGBNL2A", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             var complete = await (await client.PostAsync($"/gocardless/requisitions/{created!.Reference}/complete", null))
                 .Content.ReadFromJsonAsync<CompleteResponse>();
@@ -327,7 +328,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         try
         {
             var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceId, "PAYPAL_PPLXLULL", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceId, "PAYPAL_PPLXLULL", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             var complete = await (await client.PostAsync($"/gocardless/requisitions/{created!.Reference}/complete", null))
                 .Content.ReadFromJsonAsync<CompleteResponse>();
@@ -364,7 +365,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             _factory.Gc.Details = new GcAccountDetails(null, null, "EUR", "Okkes D");
             _factory.Gc.Status = new GcRequisitionStatus("gc-req-own", "LN", ["gc-wallet-own"]);
             var createdA = await (await clientA.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceA, "PAYPAL_PPLXLULL", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceA, "PAYPAL_PPLXLULL", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             await clientA.PostAsync($"/gocardless/requisitions/{createdA!.Reference}/complete", null);
 
@@ -381,7 +382,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             // the real owner consents from their (new) identity: the wallet
             // binding AND the feed move to them
             var createdB = await (await clientB.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceB, "PAYPAL_PPLXLULL", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceB, "PAYPAL_PPLXLULL", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             await clientB.PostAsync($"/gocardless/requisitions/{createdB!.Reference}/complete", null);
 
@@ -398,11 +399,11 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             _factory.Gc.Details = new GcAccountDetails("NL11RABO0101010101", "Gedeeld", "EUR");
             _factory.Gc.Status = new GcRequisitionStatus("gc-req-fam", "LN", ["gc-acc-fam"]);
             var famA = await (await clientA.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceA, "RABOBANK_RABONL2U", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceA, "RABOBANK_RABONL2U", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             await clientA.PostAsync($"/gocardless/requisitions/{famA!.Reference}/complete", null);
             var famB = await (await clientB.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceB, "RABOBANK_RABONL2U", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceB, "RABOBANK_RABONL2U", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             await clientB.PostAsync($"/gocardless/requisitions/{famB!.Reference}/complete", null);
 
@@ -433,11 +434,11 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             _factory.Gc.Details = new GcAccountDetails("NL55INGB0000005555", "Gezamenlijk", "EUR");
             _factory.Gc.Status = new GcRequisitionStatus("gc-req-co", "LN", ["gc-acc-co"]);
             var createdA = await (await clientA.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceA, "ING_NL", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceA, "ING_NL", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             await clientA.PostAsync($"/gocardless/requisitions/{createdA!.Reference}/complete", null);
             var createdB = await (await clientB.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceB, "ING_NL", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceB, "ING_NL", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             await clientB.PostAsync($"/gocardless/requisitions/{createdB!.Reference}/complete", null);
 
@@ -477,11 +478,11 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             _factory.Gc.Details = new GcAccountDetails("NL66INGB0000006666", "Gezamenlijk", "EUR");
             _factory.Gc.Status = new GcRequisitionStatus("gc-req-hand", "LN", ["gc-acc-hand"]);
             var createdA = await (await clientA.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceA, "ING_NL", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceA, "ING_NL", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             await clientA.PostAsync($"/gocardless/requisitions/{createdA!.Reference}/complete", null);
             var createdB = await (await clientB.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceB, "ING_NL", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceB, "ING_NL", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             await clientB.PostAsync($"/gocardless/requisitions/{createdB!.Reference}/complete", null);
 
@@ -534,7 +535,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
             db.SpaceAccountLinks.Add(new SpaceAccountLink
             {
                 Id = Guid.NewGuid(), SpaceId = spaceId, FeedSpaceId = feedId,
-                AccountId = ImportIds.AccountId(iban), AttachedBy = ghost,
+                AccountId = ImportIds.AccountId(iban), AttachedBy = ghost, HistoryFrom = "2026-01-01", Type = "checking",
             });
             // the space already said no: the accountLink mirror is tombstoned
             db.EntityRows.Add(new EntityRow
@@ -566,7 +567,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         // tab with no app session — the reference GUID is the capability
         var (client, _, spaceId) = await MemberAsync("anon");
         var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
-            new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback"))).Content
+            new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback", "gocardless"))).Content
             .ReadFromJsonAsync<CreateRequisitionResponse>();
 
         // a DIFFERENT signed-in user may not complete someone else's journey
@@ -586,7 +587,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
     {
         var (client, _, spaceId) = await MemberAsync("pending");
         var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
-            new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback"))).Content
+            new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback", "gocardless"))).Content
             .ReadFromJsonAsync<CreateRequisitionResponse>();
 
         _factory.Gc.Status = new GcRequisitionStatus("gc-req-1", "GA", []);
@@ -618,7 +619,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         try
         {
             var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             var complete = await (await client.PostAsync($"/gocardless/requisitions/{created!.Reference}/complete", null))
                 .Content.ReadFromJsonAsync<CompleteResponse>();
@@ -759,7 +760,7 @@ public class GcEndpointsTests : IClassFixture<GcApiFactory>
         try
         {
             var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
-                new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback"))).Content
+                new CreateRequisitionRequest(spaceId, "ING_NL", "https://app/gc-callback", "gocardless"))).Content
                 .ReadFromJsonAsync<CreateRequisitionResponse>();
             var complete = await (await client.PostAsync($"/gocardless/requisitions/{created!.Reference}/complete", null))
                 .Content.ReadFromJsonAsync<CompleteResponse>();
@@ -1289,6 +1290,7 @@ public class BankProviderChoiceTests : IClassFixture<DualProviderApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 
@@ -1321,16 +1323,16 @@ public class BankProviderChoiceTests : IClassFixture<DualProviderApiFactory>
     }
 
     [Fact]
-    public async Task Institutions_follow_the_provider_parameter_and_refuse_unknown_ones()
+    public async Task Institutions_follow_the_provider_parameter_and_refuse_unknown_or_absent_ones()
     {
         var client = ClientFor("prov-inst");
         var eb = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=fi&provider=enablebanking");
         Assert.Equal("ASN Bank|NL", Assert.Single(eb!).Id);
         Assert.Equal(1, _factory.Eb.InstitutionCalls);
 
-        // no parameter keeps the default provider (GoCardless — first configured)
-        var active = await client.GetFromJsonAsync<List<GcInstitution>>("/gocardless/institutions?country=fi");
-        Assert.Equal("ING_NL", Assert.Single(active!).Id);
+        // the pick is required — the connect sheet always sends one, so an
+        // absent parameter is a client bug, never a silent default
+        Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/gocardless/institutions?country=fi")).StatusCode);
 
         Assert.Equal(HttpStatusCode.BadRequest, (await client.GetAsync("/gocardless/institutions?country=fi&provider=plaid")).StatusCode);
     }
@@ -1350,7 +1352,7 @@ public class BankProviderChoiceTests : IClassFixture<DualProviderApiFactory>
         }
 
         var created = await (await client.PostAsJsonAsync("/gocardless/requisitions",
-            new CreateRequisitionRequest(spaceId, "ASN Bank|NL", "https://app/gc-callback", null, "enablebanking"))).Content
+            new CreateRequisitionRequest(spaceId, "ASN Bank|NL", "https://app/gc-callback", "enablebanking"))).Content
             .ReadFromJsonAsync<CreateRequisitionResponse>();
         Assert.Contains("eb.example", created!.Link); // the EB fake authored the journey
 
