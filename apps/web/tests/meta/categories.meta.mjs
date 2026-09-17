@@ -22,16 +22,6 @@ export const GROUPS = [
           'Assigned to a transaction',
         ],
       },
-      {
-        key: '31-cats-edit',
-        title: 'Edit and delete custom categories',
-        desc: 'Custom categories can be renamed and deleted (tombstoned); transactions referencing a deleted category fall back to Uncategorized at render.',
-        tags: ['state', 'edge-case'],
-        steps: [
-          'Renamed custom category',
-          'Deleted from the list',
-        ],
-      },
     ],
   },
 ];

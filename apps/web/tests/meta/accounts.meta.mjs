@@ -22,16 +22,6 @@ export const GROUPS = [
           'List with new account',
         ],
       },
-      {
-        key: '18-accounts-edit',
-        title: 'Rename and delete',
-        desc: 'Tapping an account opens the edit sheet: rename persists; delete tombstones the account, removing it from the list and the Home total.',
-        tags: ['state', 'edge-case'],
-        steps: [
-          'Renamed account in list',
-          'List after deletion',
-        ],
-      },
     ],
   },
 ];

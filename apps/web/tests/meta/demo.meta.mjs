@@ -15,22 +15,6 @@ export const GROUPS = [
           'Home with seeded balance',
         ],
       },
-      {
-        key: '07-demo-tx-list',
-        title: 'Seeded transaction list',
-        desc: 'Transactions tab lists the bundled demo dataset grouped by day, with category icons and review badges.',
-        tags: ['state'],
-      },
-      {
-        key: '08-demo-signout',
-        title: 'Sign out resets demo data',
-        desc: 'Signing out of the demo wipes the on-device database entirely — the next demo login starts from the pristine dataset again.',
-        tags: ['state', 'edge-case'],
-        steps: [
-          'Settings with sign out',
-          'Back at login, demo database deleted',
-        ],
-      },
     ],
   },
 ];

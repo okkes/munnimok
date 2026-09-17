@@ -22,16 +22,6 @@ export const GROUPS = [
           'Back on the demo space',
         ],
       },
-      {
-        key: '24-spaces-guards',
-        title: 'Rename + delete guards',
-        desc: 'Deleting the active (or only) space is blocked with an explanation; renaming persists.',
-        tags: ['validation', 'edge-case'],
-        steps: [
-          'Delete blocked with error',
-          'Renamed space in list',
-        ],
-      },
     ],
   },
 ];

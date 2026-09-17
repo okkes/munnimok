@@ -5,6 +5,16 @@ import { VARIANTS, createPage, base, freshCamtFixture, gotoGlobalSettings, gotoS
 // two-month attach history window (2026-09-06 incident)
 const CAMT_FIXTURE = freshCamtFixture();
 
+// Why this spec exists (test policy 2026-09-17): the multi-device and
+// multi-user core flows that only a real API + Postgres + two browsers can
+// prove — two devices converging, live (SSE) convergence on one row, a
+// shared space invited through the UI, first-run onboarding shown once,
+// one personal space per returning user, and a shared bank feed
+// (import, invite, diverging overlays, archive on leave). It produces the
+// gallery/guide screenshots 25, 26, 33, 37, 57, 58, 61 and 62. The unit
+// suites cover each half with a scripted server; the server suite covers
+// the endpoints — this is the only place the whole chain runs together.
+//
 // Two-device sync e2e against the real API + Postgres
 // (deploy/docker-compose.test.yml). Skips when the stack isn't running.
 
@@ -399,10 +409,9 @@ for (const V of VARIANTS) {
     await expect(alice.page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Video Game', { timeout: 20000 });
     await shot(alice.page, k('61-feed-share'));
 
-    // #305: bob meets the shared account inside ITS space section — the
-    // global "Shared with me" section is retired. The echo wears the
-    // shared badge and answers with the READ-ONLY info sheet (facts, no
-    // owner levers: no rename, no detach, no delete)
+    // #305: bob meets the shared account inside ITS space section. The
+    // echo wears the shared badge and answers with the READ-ONLY info
+    // sheet (facts, no owner levers: no rename, no detach, no delete)
     await bob.page.click('[data-testid="tx-detail-back"]');
     await gotoGlobalSettings(bob.page);
     await bob.page.click('[data-testid="settings-accounts-row"]');
@@ -412,7 +421,6 @@ for (const V of VARIANTS) {
     // answered and the entry classified as shared-with-me
     await expect(bob.page.locator('[data-testid^="echo-shared-"]').first()).toBeVisible({ timeout: 15000 });
     const sharedEcho = bob.page.locator('button[data-testid^="account-echo-"]').first();
-    await expect(bob.page.locator('[data-testid="accounts-shared"]')).toHaveCount(0);
     await sharedEcho.click();
     await bob.page.waitForSelector('[data-testid="shared-account-info"]');
     await expect(bob.page.locator('[data-testid="space-account-sheet-detach"]')).toHaveCount(0);

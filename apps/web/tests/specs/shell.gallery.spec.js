@@ -1,7 +1,14 @@
 ﻿import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, gotoGlobalSettings, gotoSpaces, shot, teardown } from '../helpers/base.js';
 
-// --- Tests ------------------------------------------------------------------
+// Why this spec exists (test policy 2026-09-17): the app shell in a real
+// browser — boot to Home with a routed URL, every tab mounts, the
+// browser/device back button (history API, which jsdom cannot prove)
+// returns to the previous tab, the language switch relabels the UI, dark
+// mode pins the theme, and the offline start: a zero-network profile that
+// survives sign-out. It produces the gallery/guide screenshots 01-05 and
+// 38-offline. The screen-level rules behind each step are unit-tested
+// (app/screens.test.tsx, features/settings/SettingsScreen.test.tsx).
 
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;

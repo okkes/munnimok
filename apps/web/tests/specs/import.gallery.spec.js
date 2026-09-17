@@ -1,11 +1,17 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, freshCamtFixture, gotoGlobalSettings, shot, teardown } from '../helpers/base.js';
 
+// Why this spec exists (test policy 2026-09-17): the bank-file import core
+// flow with a real file picker and a real IndexedDB — preview matched by
+// IBAN, the import itself (balances, auto-categorization, review flags)
+// and the dedupe on re-import. It produces the gallery/guide screenshots
+// 19-import-preview and 20-import-run. The parser and the invalid-file
+// error are unit-tested (lib/camt053/parse.test.ts,
+// features/accounts/AccountsScreen.test.tsx).
+
 // date-freshened copy — the static file ages out of the default
 // two-month attach history window (2026-09-06 incident)
 const FIXTURE = freshCamtFixture();
-
-// --- Tests ------------------------------------------------------------------
 
 async function goToAccounts(page) {
   await gotoGlobalSettings(page);
@@ -64,20 +70,5 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="import-result"]')).toContainText('Imported 0 transactions, skipped 3');
     await shot(page, k('20-import-run'));
     await teardown(page, ctx, k('20-import-run'));
-  });
-
-  test(`import-a3 invalid file shows error [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V, { demo: true });
-    await goToAccounts(page);
-    await page.setInputFiles('[data-testid="accounts-import-input"]', {
-      name: 'not-camt.xml',
-      mimeType: 'text/xml',
-      buffer: Buffer.from('<foo>bar</foo>'),
-    });
-    await expect(page.locator('[data-testid="import-error"]')).toBeVisible();
-    await page.waitForTimeout(500);
-    await shot(page, k('21-import-invalid'));
-    await teardown(page, ctx, k('21-import-invalid'));
   });
 }

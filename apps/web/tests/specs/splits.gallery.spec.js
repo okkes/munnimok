@@ -1,6 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown, syncApiUp } from '../helpers/base.js';
 
+// Why this spec exists (test policy 2026-09-17): splits are an online-only
+// feature, and joining through a real invite LINK (a real path the OS app
+// links can match, bounced into the hash router) across two users is
+// something only a real API and two browsers can prove. It produces the
+// guide screenshots 67-split-detail, 68-splits-list and 69-split-join.
+// The ledger math and the screens are unit-tested (features/splits/*).
+//
 // Splits SP1 against the real API: create a split, add manual expenses,
 // read the ledger. Online-only feature — skips when the stack is down.
 
