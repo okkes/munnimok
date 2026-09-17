@@ -166,20 +166,28 @@ describe('ControlApp (test-auth mode)', () => {
     expect((await screen.findByTestId('control-quota')).textContent).toContain('No snapshots yet');
   });
 
-  it('typing a sub persists it and sends it as X-User-Sub', async () => {
+  it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {
     const seenHeaders: (string | null)[] = [];
+    const seenDevices: (string | null)[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input).includes('/control/')) seenHeaders.push(new Headers(init?.headers).get('X-User-Sub'));
+        if (String(input).includes('/control/')) {
+          seenHeaders.push(new Headers(init?.headers).get('X-User-Sub'));
+          seenDevices.push(new Headers(init?.headers).get('X-Munni-Device'));
+        }
         return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
       }),
     );
     render(<ControlApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'sub-admin' } });
-    await waitFor(() => expect(seenHeaders.length).toBeGreaterThan(0));
+    await waitFor(() => expect(seenHeaders.length).toBeGreaterThan(1));
     expect(seenHeaders.every((h) => h === 'sub-admin')).toBe(true);
     expect(localStorage.getItem('munni_control_sub')).toBe('sub-admin');
+    // the API refuses requests that name no device: one id, minted once, on every call
+    expect(seenDevices[0]).toBeTruthy();
+    expect(seenDevices.every((d) => d === seenDevices[0])).toBe(true);
+    expect(localStorage.getItem('munni_control_device')).toBe(seenDevices[0]);
   });
 });
 

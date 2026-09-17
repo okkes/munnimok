@@ -2,6 +2,9 @@
 import { VARIANTS, base } from '../helpers/base.js';
 
 /**
+ * Why this spec exists (test policy 2026-09-17): sheet geometry on the
+ * engine every iOS surface uses — only a real WebKit layout can prove it.
+ *
  * WebKit engine guard — geometry assertions only, no gallery shots.
  * Every iOS surface (Safari, PWA, both native webviews) renders with
  * WebKit, and WebKit applies flex sizing stricter than Blink: basis 0%
