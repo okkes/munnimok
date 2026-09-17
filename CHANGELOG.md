@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.1](https://github.com/okkes/munnimok/compare/v4.0.0...v4.0.1) (2026-09-17)
+
+
+### 🐞 Bug Fixes
+
+* **ci:** pushes and image builds skip stacks whose GitHub environment does not exist; a deploy of an unbootstrapped environment ends with a notice ([24cfc96](https://github.com/okkes/munnimok/commit/24cfc964dabe1d2301614bc11939b76b6d540b5b))
+
 ## [4.0.0](https://github.com/okkes/munnimok/compare/v3.0.0...v4.0.0) (2026-09-17)
 
 
