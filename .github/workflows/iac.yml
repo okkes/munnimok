@@ -1,4 +1,5 @@
 name: Bootstrap
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Bootstrap {0}{1}', inputs.stack, inputs.cleanup == true && ' (cleanup)' || (inputs.verify_only == true && ' (verify)' || '')) || 'Verify the nas stacks' }}
 
 # Runs infra/bootstrap.mjs for one stack of the nas platform (its GitHub
 # environment carries the secrets). Dispatched by the setup wizard when a

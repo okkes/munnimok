@@ -470,21 +470,21 @@ async function accessCredential(stack) {
   return { m2mId: item.username, m2mSecret: item.password };
 }
 
-async function accessUsersEndpoint(res, url) {
+async function accessUsersEndpoint(res, url, netFetchImpl) {
   const name = String(url.searchParams.get('stack') ?? '');
   let stack;
   try { stack = loadAnyStack(name); } catch (e) { return json(res, 400, { error: e.message }); }
   if (stack.role !== 'env') return json(res, 400, { error: 'admin access belongs to an environment' });
   try {
     const creds = await accessCredential(stack);
-    const users = await withPlatformEnv(stack.platform, () => listUsers(stack, creds));
+    const users = await withPlatformEnv(stack.platform, () => listUsers(stack, creds, { fetchImpl: netFetchImpl }));
     return json(res, 200, { stack: stack.stack, users });
   } catch (e) {
     return json(res, 502, { error: e.message });
   }
 }
 
-async function accessToggleEndpoint(req, res) {
+async function accessToggleEndpoint(req, res, netFetchImpl) {
   const body = await readBody(req);
   let stack;
   try { stack = loadAnyStack(String(body.stack ?? '')); } catch (e) { return json(res, 400, { error: e.message }); }
@@ -493,7 +493,7 @@ async function accessToggleEndpoint(req, res) {
   if (!/^[A-Za-z0-9_-]{4,64}$/.test(userId)) return json(res, 400, { error: 'bad user id' });
   try {
     const creds = await accessCredential(stack);
-    const r = await withPlatformEnv(stack.platform, () => setAdmin(stack, creds, userId, Boolean(body.admin)));
+    const r = await withPlatformEnv(stack.platform, () => setAdmin(stack, creds, userId, Boolean(body.admin), { fetchImpl: netFetchImpl }));
     return json(res, 200, r);
   } catch (e) {
     return json(res, 502, { error: e.message });
@@ -1809,8 +1809,8 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/envs/update': (req, res) => envUpdateEndpoint(req, res, spawnImpl),
     'POST /api/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
     'POST /api/envs/store-id': (req, res) => storeIdEndpoint(req, res, spawnImpl),
-    'GET /api/access/users': (req, res) => accessUsersEndpoint(res, url(req)),
-    'POST /api/access/toggle': (req, res) => accessToggleEndpoint(req, res),
+    'GET /api/access/users': (req, res) => accessUsersEndpoint(res, url(req), netFetchImpl),
+    'POST /api/access/toggle': (req, res) => accessToggleEndpoint(req, res, netFetchImpl),
     'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),
     'POST /api/local/tool': (req, res) => toolEndpoint(req, res, runImpl),
     'POST /api/local/glitchtip-setup': (req, res) => glitchtipSetupEndpoint(req, res, spawnImpl),

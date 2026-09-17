@@ -12,6 +12,7 @@
 # stacks on channel `dev`, master → channel `latest`) — the sustainable
 # pipeline: merge, images build, the NAS follows.
 name: Deploy to NAS
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Deploy {0}', inputs.stack || format('every {0} stack', inputs.channel)) || format('Deploy after images ({0})', github.event.workflow_run.head_branch) }}
 
 on:
   workflow_dispatch:

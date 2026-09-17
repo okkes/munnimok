@@ -12,6 +12,7 @@
 # capability) and a direct upload to TestFlight. The app record in App
 # Store Connect is the ONE manual step per bundle id.
 name: Native iOS
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('iOS {0}', inputs.stack) || format('iOS ({0})', github.ref_name) }}
 
 on:
   workflow_dispatch:

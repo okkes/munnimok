@@ -305,11 +305,8 @@ function fakeLogto({ users = [], admins = [] } = {}) {
   };
   return { fetch: f, calls, members };
 }
-async function withFetch(fake, fn) {
-  const real = globalThis.fetch;
-  globalThis.fetch = fake;
-  try { return await fn(); } finally { globalThis.fetch = real; }
-}
+/** the helper hands its injected fetch to the Logto module — the Access tests build an app around the fake */
+const appWith = (fetchImpl) => createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: fetchImpl });
 
 test('access/users: an environment stack only; no machine credential → 502 naming the sign-in setup; with it, every user with the admin flag', async () => {
   assert.equal((await call(app, { url: '/api/access/users?stack=munni-lcl-shared' })).statusCode, 400);
@@ -322,7 +319,7 @@ test('access/users: an environment stack only; no machine credential → 502 nam
   assert.match(nasNoVault.json().error, /vault account/);
   saveLocalValues(PROD(), { ...loadLocalValues(PROD()), LOGTO_INFRA_M2M_ID: 'infra0123456789abcdef', LOGTO_INFRA_M2M_SECRET: 'f'.repeat(48) });
   const logto = fakeLogto({ users: [{ id: 'usr_ann', name: 'Ann', primaryEmail: 'ann@example.com', avatar: null, lastSignInAt: 1700000000000 }, { id: 'usr_bob', username: 'bob' }], admins: ['usr_ann'] });
-  const res = await withFetch(logto.fetch, () => call(app, { url: '/api/access/users?stack=munni-lcl-prod' }));
+  const res = await call(appWith(logto.fetch), { url: '/api/access/users?stack=munni-lcl-prod' });
   assert.equal(res.statusCode, 200, res.text());
   const body = res.json();
   assert.equal(body.stack, 'munni-lcl-prod');
@@ -338,16 +335,16 @@ test('access/toggle: a bad user id or a shared stack is refused; on adds the use
   assert.equal((await post(app, '/api/access/toggle', { stack: 'munni-lcl-prod', userId: 'x', admin: true })).statusCode, 400);
   assert.equal((await post(app, '/api/access/toggle', { stack: 'munni-lcl-shared', userId: 'usr_bob', admin: true })).statusCode, 400);
   const logto = fakeLogto({ admins: ['usr_ann'] });
-  const on = await withFetch(logto.fetch, () => post(app, '/api/access/toggle', { stack: 'munni-lcl-prod', userId: 'usr_bob', admin: true }));
+  const on = await post(appWith(logto.fetch), '/api/access/toggle', { stack: 'munni-lcl-prod', userId: 'usr_bob', admin: true });
   assert.equal(on.statusCode, 200, on.text());
   assert.deepEqual(on.json(), { userId: 'usr_bob', admin: true });
   assert.ok(logto.calls.includes('POST /api/roles/r1/users'));
   assert.ok(logto.members.has('usr_bob'));
-  const off = await withFetch(logto.fetch, () => post(app, '/api/access/toggle', { stack: 'munni-lcl-prod', userId: 'usr_ann', admin: false }));
+  const off = await post(appWith(logto.fetch), '/api/access/toggle', { stack: 'munni-lcl-prod', userId: 'usr_ann', admin: false });
   assert.deepEqual(off.json(), { userId: 'usr_ann', admin: false });
   assert.ok(logto.calls.includes('DELETE /api/roles/r1/users/usr_ann'));
   assert.ok(!logto.members.has('usr_ann'));
-  const again = await withFetch(logto.fetch, () => post(app, '/api/access/toggle', { stack: 'munni-lcl-prod', userId: 'usr_bob', admin: true }));
+  const again = await post(appWith(logto.fetch), '/api/access/toggle', { stack: 'munni-lcl-prod', userId: 'usr_bob', admin: true });
   assert.equal(again.statusCode, 200);
   assert.equal(logto.calls.filter((c) => c === 'POST /api/roles/r1/users').length, 1, 'a member is not added twice');
 });

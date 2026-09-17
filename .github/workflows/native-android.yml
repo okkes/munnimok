@@ -6,6 +6,7 @@
 # config (NATIVE_* variables, signing secrets) comes from the stack's
 # GitHub environment, written by the setup.
 name: Native Android
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Android {0}', inputs.stack) || format('Android ({0})', github.ref_name) }}
 
 on:
   workflow_dispatch:
