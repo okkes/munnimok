@@ -206,12 +206,6 @@ export async function mintMirrorForExistingLink(
   return peer;
 }
 
-// planCatEntryMirrors retired (#228, user): entries of a category spread
-// carry no counterparties anymore — one counterparty per (split)
-// transaction, so the row- and part-level lifecycles above are the whole
-// engine. The boot fold (migrateEntryCounters) retires or re-keys the
-// mints the old per-entry model left behind.
-
 /**
  * Deleting a source row must take its mint along: the mirror row is
  * tombstoned and the balance it moved comes back. Call BEFORE removing

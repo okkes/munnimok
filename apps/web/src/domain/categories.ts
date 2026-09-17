@@ -158,8 +158,7 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"cashWithdraw","parentId":"transfer","nameKey":"cat.cashWithdraw","icon":"atm","txTypes":["transfer"],"direction":"debit"},
   {"id":"cashDeposit","parentId":"transfer","nameKey":"cat.cashDeposit","icon":"cash-plus","txTypes":["transfer"],"direction":"credit"},
   // 2026-08-01 (user, ss review): the debt family is exactly the arc-2
-  // pair — Repaid (debit) / Borrowed (credit). lendMoney and
-  // creditCardPayment retired; migrateRetiredDebtSubs refiles their rows.
+  // pair — Repaid (debit) / Borrowed (credit)
   {"id":"debt","nameKey":"cat.debt","icon":"credit-card-outline","color":"#9C27B0","isParent":true,"txTypes":["debtPayment"],"direction":"both"},
   {"id":"loanRepayment","parentId":"debt","nameKey":"cat.loanRepayment","icon":"bank-outline","txTypes":["debtPayment"],"direction":"both"},
   {"id":"debtBorrowed","parentId":"debt","nameKey":"cat.debtBorrowed","icon":"bank-transfer-in","txTypes":["debtPayment"],"direction":"both"},

@@ -22,8 +22,6 @@ import type { Identity } from './session';
 import { useEvicted } from './evicted';
 
 const ACTIVE_SPACE_KEY = 'activeSpaceId';
-/** id of a personal space this device created during bootstrap (self-heal marker) */
-const BOOTSTRAP_SPACE_KEY = 'bootstrapSpaceId';
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -39,7 +37,6 @@ const liveSpaces = async (store: StorageBackend) => (await store.allRows('space'
  */
 export async function bootstrapUserSpaces(
   store: StorageBackend,
-  repo: Repo,
   engine: SyncEngine,
   isCancelled: () => boolean,
   baseRetryMs = 2_000,
@@ -76,34 +73,7 @@ export async function bootstrapUserSpaces(
       await store.metaPut('needsOnboarding', true);
       await store.metaPut('minaTutorialPending', true);
     }
-    return;
   }
-
-  await retireEmptyBootstrapSpace(store, repo);
-}
-
-/** self-heal: a bootstrap-created space still empty while the account's
- *  real spaces arrived (pre-fix duplicates) retires quietly. #221: the
- *  eagerly minted defaults don't count as content — and they leave with
- *  the space instead of lingering as orphans. */
-async function retireEmptyBootstrapSpace(store: StorageBackend, repo: Repo): Promise<void> {
-  const bootstrapId = (await store.metaGet(BOOTSTRAP_SPACE_KEY))?.value as string | undefined;
-  if (!bootstrapId) return;
-  const others = (await liveSpaces(store)).filter((s) => s.id !== bootstrapId).length;
-  if (others === 0) return;
-  const [txs, accounts, cats] = await Promise.all([
-    store.countBySpace('transaction', bootstrapId),
-    store.bySpace('account', bootstrapId),
-    store.countBySpace('category', bootstrapId),
-  ]);
-  const realAccounts = accounts.filter((a) => a.deleted === 0 && !a.defaultFor);
-  if (txs === 0 && realAccounts.length === 0 && cats === 0) {
-    for (const account of accounts.filter((a) => a.deleted === 0)) {
-      await repo.remove('account', bootstrapId, account.id);
-    }
-    await repo.remove('space', bootstrapId, bootstrapId);
-  }
-  await store.metaDelete(BOOTSTRAP_SPACE_KEY);
 }
 
 /** any Mina meta marker: the first-run is already owned/ran/finished */
@@ -125,14 +95,13 @@ async function minaOwnsFirstRun(store: StorageBackend): Promise<boolean> {
 /** OIDC restore → fail-closed bootstrap → periodic sync (user identities) */
 async function restoreAndSync(
   store: StorageBackend,
-  repo: Repo,
   engine: SyncEngine,
   isCancelled: () => boolean,
   onAttempts: (n: number) => void,
 ): Promise<void> {
   await waitForAuthReady();
   if (isCancelled()) return;
-  await bootstrapUserSpaces(store, repo, engine, isCancelled, undefined, onAttempts);
+  await bootstrapUserSpaces(store, engine, isCancelled, undefined, onAttempts);
   if (isCancelled()) return;
   onAttempts(0);
   engine.start();
@@ -243,12 +212,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
           const { hydrateProfileMeta } = await import('@/application/profileHydrate');
           await hydrateProfileMeta(store);
         })().catch(() => undefined);
-        // receipts v2 → v3: fan-out rows become global rows + snapshot
-        // links, once per identity (fire-and-forget, retried while offline)
-        void (async () => {
-          const { migrateLegacyReceipts } = await import('@/application/receiptsMigrate');
-          await migrateLegacyReceipts(store, repo);
-        })().catch(() => undefined);
         engine = buildSyncEngine(identity, store, repo);
         // pushes failing (offline / server away) — arm the background
         // flush so the outbox drains even if the app is killed meanwhile
@@ -270,46 +233,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       // best-effort — installed PWAs are exempt, native storage is app-scoped
       if (identity.kind !== 'demo') void ensurePersistentStorage();
       if (identity.kind === 'demo') await seedDemoIfNeeded(repo);
-      // boot maintenance chain: marker-gated one-shots plus the
-      // every-boot heals (ALL identities — demo/offline data too)
+      // boot maintenance chain: the every-boot heals (ALL identities —
+      // demo/offline data too); each is idempotent and cheap
       const bootChain = (async () => {
-        const { normalizeReimbursements, migrateRetiredDebtSubs, migrateFundingRows, migrateCatSpreads, migrateCounterFiledTransfers, migrateInvestMovementSubs } = await import('@/application/catalogMaintenance');
-        // kind simplification: counterparty-less transfer-family rows
-        // become plain income/expense by sign (marker-gated, all
-        // identities; arc-2 bare labels wear their locked sub and skip)
-        // heal rows the pre-2026-07-28 bulk-apply typed against their sign
-        // arc 2 back-fill: placeholder-categorized transfer-family rows
-        // file the sign-picked locked sub ("Set aside" over a blank line)
-        // retired debt subs (lendMoney/creditCardPayment) refile by sign
-        await migrateRetiredDebtSubs(store, repo);
-        // #252: Bought/Sold became brokerage-internal — unstamped
-        // movement legs refile to Invested/Withdrawn (one-shot)
-        await migrateInvestMovementSubs(store, repo);
-        // typed-splits v2: the funding TYPE retires into its category…
-        await migrateFundingRows(store, repo);
-        // #211: splits mean PARTS — legacy bare category slices fold
-        // into the row's own `cats` partition (after the settled-slice
-        // normalization above, so the gross invariant already holds)
-        await migrateCatSpreads(store, repo);
-        // #228: ONE counterparty per (split) transaction — entry-level
-        // links relocate to their row/part, and spreads mixing a special
-        // category become real splits. Every boot: an old offline device
-        // may sync the retired per-entry shape in at any time. BEFORE
-        // the r5 refile, so that one only ever meets row/part links.
-        const { migrateEntryCounters } = await import('@/application/categoryModel');
-        await migrateEntryCounters(store, repo);
-        // #133 r5: Transfer filed toward a SPECIAL counterparty refiles
-        // as the family's movement sub (the bijection) — rows and parts
-        // (the fold above already moved every entry-level link)
-        await migrateCounterFiledTransfers(store, repo);
         // #228: reimbursement on a SPLIT transaction stays on the split.
-        // Every boot: links name their parts, each part settles inside
-        // its own cats, the retired container-level pseudo-part shape
-        // (it drained the WRONG sibling) strips and heals.
+        // Every boot: links name their parts (a row split after it was
+        // linked) and each side's settle bookkeeping is recomputed
+        const { normalizeReimbursements } = await import('@/application/catalogMaintenance');
         await normalizeReimbursements(store, repo);
-        // …and linked family rows invert — regular leg = transfer with
-        // the locked cat, the manual counter's mirror minted (no delta:
-        // the old lane already moved the balance at link time)
         // #259: gateless links (the server's connect mirror op carries
         // no historyFrom) take the space's start date — every boot, so
         // links that sync in AFTER a device's first boot heal too
@@ -359,7 +290,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       }
       if (engine) {
         const eng = engine;
-        const finishSync = () => restoreAndSync(store, repo, eng, isCancelled, onAttempts);
+        const finishSync = () => restoreAndSync(store, eng, isCancelled, onAttempts);
         if ((await liveSpaces(store)).length > 0) {
           // returning device: local-first — render from what's stored NOW;
           // auth restore + first sync catch up in the background. A dead

@@ -9,6 +9,7 @@ import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
+import { normalizeReimbursements } from '@/application/catalogMaintenance';
 
 describe('TxDetailScreen (demo identity)', () => {
   beforeEach(async () => {
@@ -959,10 +960,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     const seed = new MunniDB('munni_demo');
     await waitFor(() => expect((globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain).toBeTruthy());
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
-    // the bank named a counterparty; nothing links yet — no facts row
+    // #220: the bank's counterparty is a Details fact the moment it is
+    // known — plain metadata while nothing links yet
     await seed.transactions.update('dm6', { counterIban: 'NL02ABNA0123456789' });
     seed.close();
-    await waitFor(() => expect(screen.queryByTestId('tx-detail-original-counter')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('tx-detail-original-counter').textContent).toContain('NL02ABNA0123456789'));
 
     // point the row at the savings pot — the original IBAN moves into
     // the details section as a quiet fact
@@ -1595,10 +1597,12 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       txType: 'income',
       needsReview: 0,
     });
-    // #228: the boot normalizer settles the part-targeted link into the
-    // PART's own cats — let it finish, or its splits write races the
-    // note write below (the boot-chain trap)
+    // #228: the every-boot normalizer settles the part-targeted link into
+    // the PART's own cats. The rows were seeded AFTER this boot's chain
+    // started, so run the pass explicitly (after draining the chain, or
+    // its writes race the note write below — the boot-chain trap)
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    await normalizeReimbursements(new DexieBackend(db), repo);
 
     // r5/r6: the container row is GONE — a compact header band names the
     // original transaction with the NET amount (#228: the reimbursed

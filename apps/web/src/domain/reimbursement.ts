@@ -114,13 +114,9 @@ export const REIMB_CAT_IDS = [EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID];
  * partition is canonical both ways: the special holds the unsettled
  * remainder and shrinking returns value to IT, never to uncategorized.
  * A special must never end up sharing a spread with anything but
- * `reimbursed` bookkeeping (the ss-reported unlink hole).
- *
- * Legacy rows (pre-redesign) carried NET slices; the shortfall against
- * the gross amount IS their previously settled value, so normalization
- * tops the `reimbursed` slice up first — one pass through here migrates
- * any old row. (#228: entries carry no counterparty — the subject's one
- * link is its own field and settlement never touches it.)
+ * `reimbursed` bookkeeping (the ss-reported unlink hole). (#228:
+ * entries carry no counterparty — the subject's one link is its own
+ * field and settlement never touches it.)
  */
 export function settledCats(
   tx: Pick<TransactionRow, 'amountCents' | 'catId' | 'cats'>,
@@ -160,10 +156,6 @@ function settlePartition<T extends { catId: string; amountCents: number }>(
     reimbursed = { catId: REIMBURSED_ID, amountCents: 0 };
     slices.push(reimbursed);
   }
-  // legacy NET rows: the missing value was settled away before the
-  // redesign — restore it as reimbursed so the sum is the gross again
-  const sum = slices.reduce((total, s) => total + s.amountCents, 0);
-  if (sum < grossAbs) reimbursed.amountCents += grossAbs - sum;
 
   const delta = target - reimbursed.amountCents;
   if (delta < 0) {
@@ -210,10 +202,8 @@ export function creditRemainingCents(tx: Pick<TransactionRow, 'amountCents'>, gi
 
 // ── #228 (user 2026-08-13): reimbursement on a SPLIT transaction stays
 // on the split — the settle bookkeeping lives in the PART's own `cats`
-// partition, never as a pseudo-part in the container's `splits` (the
-// retired shape corrupted sibling amounts: the greedy consume ignored
-// which part the link named). The parent is impacted through value math
-// only. ──
+// partition, never on the container. The parent is impacted through
+// value math only. ──
 
 /** the settled value a (split) transaction's own partition carries */
 export function reimbursedInCats(cats: readonly TxSplitCat[] | undefined): number {
@@ -230,36 +220,6 @@ export function partNetCents(part: Pick<TxSplit, 'amountCents' | 'cats'>): numbe
   return Math.max(0, Math.abs(part.amountCents) - reimbursedInCats(part.cats));
 }
 
-/** one waterline step: raise the lowest parts evenly toward the next
- *  level (or spend the last cents one by one, array order) — returns
- *  what is left to give (S3776: out of the loop) */
-function fillLowestParts(parts: TxSplit[], left: number): number {
-  const min = Math.min(...parts.map((p) => p.amountCents));
-  const lowest = parts.filter((p) => p.amountCents === min);
-  const others = parts.filter((p) => p.amountCents > min);
-  const ceiling = others.length ? Math.min(...others.map((p) => p.amountCents)) : Infinity;
-  const room = ceiling === Infinity ? left : Math.min(left, (ceiling - min) * lowest.length);
-  const each = Math.floor(room / lowest.length);
-  if (each > 0) {
-    for (const part of lowest) part.amountCents += each;
-    return left - each * lowest.length;
-  }
-  // cent remainders that cannot level evenly: one by one, array order
-  for (const part of lowest.slice(0, left)) part.amountCents += 1;
-  return Math.max(0, left - lowest.length);
-}
-
-/** legacy repair: give `deficit` cents back to the parts the retired
- *  container-level consume drained — a waterline fill (the smallest
- *  parts rise first, exactly reversing the largest-first drain), stable
- *  by array order so concurrent heals converge byte-identically */
-export function restorePartAmounts(parts: TxSplit[], deficit: number): void {
-  let left = deficit;
-  while (left > 0 && parts.length > 0) {
-    left = fillLowestParts(parts, left);
-  }
-}
-
 /** one part's settle: its own `cats` absorb the links naming it — the
  *  same rules a whole row follows (a special-claimed part keeps the
  *  canonical two-slice shape); an untouched bare part stays bare */
@@ -273,10 +233,8 @@ function settledPart(part: TxSplit, settled: number, nameOf: (catId: string) => 
 }
 
 /**
- * A container's settle (#228): every REAL part settles inside its own
- * `cats` by the cents the links NAME it for; legacy `reimbursed`
- * pseudo-parts are stripped and the amounts they drained from siblings
- * are restored (waterline fill). Part amounts always sum back to the
+ * A container's settle (#228): every part settles inside its own `cats`
+ * by the cents the links NAME it for. Part amounts always sum to the
  * container's gross.
  */
 export function settleContainerParts(
@@ -284,20 +242,12 @@ export function settleContainerParts(
   centsByPartId: ReadonlyMap<string, number>,
   nameOf: (catId: string) => string,
 ): TxSplit[] {
-  const parts = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID).map((s) => ({ ...s }));
-  const grossAbs = Math.abs(tx.amountCents);
-  const deficit = grossAbs - parts.reduce((sum, p) => sum + p.amountCents, 0);
-  if (deficit > 0) restorePartAmounts(parts, deficit);
-  return parts.map((part) => settledPart(part, part.id ? (centsByPartId.get(part.id) ?? 0) : 0, nameOf));
+  return (tx.splits ?? []).map((part) => settledPart({ ...part }, part.id ? (centsByPartId.get(part.id) ?? 0) : 0, nameOf));
 }
 
-/** is this row a real CONTAINER for settle purposes? More than one real
- *  part — or typed-v2 parts (they carry ids; the retired container-level
- *  consume could shrink a container to one survivor, and legacy pre-#211
- *  category slices never had ids, so the id is the tiebreaker) */
+/** is this row a real CONTAINER for settle purposes? More than one part */
 export function isReimbContainer(tx: Pick<TransactionRow, 'splits'>): boolean {
-  const real = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-  return real.length > 1 || real.some((s) => !!s.id);
+  return (tx.splits ?? []).length > 1;
 }
 
 export interface ReimbSettlePatch {
@@ -323,19 +273,17 @@ export function reimbSettleFields(
   if (isReimbContainer(tx)) return { splits: settleContainerParts(tx, centsByPartId, nameOf) };
   const next = settledCats(tx, totalCents, nameOf);
   const real = next.filter((c) => c.catId !== REIMBURSED_ID);
-  const clearSplits = tx.splits?.length ? { splits: null } : {};
   if (next.length === 1 && real.length === 1) {
-    return { catId: real[0].catId, cats: null, ...clearSplits };
+    return { catId: real[0].catId, cats: null };
   }
   return {
     cats: next,
     ...(real.length ? { catId: largestEntry(real).catId } : {}),
-    ...clearSplits,
   };
 }
 
 /** group one side's links by the PART they name; container-level cents
- *  (legacy partId-less links) land on the largest open part */
+ *  (a link made before the row was split) land on the largest open part */
 export function reimbCentsByPart(
   links: readonly TxReimbursement[],
   key: 'partId' | 'creditPartId',
@@ -376,7 +324,7 @@ export function largestOpenPartId(
   centsByPartId: ReadonlyMap<string, number>,
 ): string | undefined {
   let best: { id: string; open: number; pref: number } | undefined;
-  for (const part of (splits ?? []).filter((s) => s.catId !== REIMBURSED_ID)) {
+  for (const part of splits ?? []) {
     if (!part.id) continue;
     const open = part.amountCents - (centsByPartId.get(part.id) ?? 0);
     // a fully-settled part takes no more, whatever it holds

@@ -182,16 +182,6 @@ describe('settledCats (redesign: gross slices + explicit reimbursed)', () => {
     expect(by(out)).toEqual({ food: 5_000, uncategorized: 5_000 });
   });
 
-  it('legacy NET slices normalize: the shortfall against gross becomes reimbursed', () => {
-    // pre-redesign row: −100 gross, 40 linked, slices summed to net 60
-    const out = settledCats(
-      { amountCents: -10_000, catId: 'food', cats: [{ catId: 'food', amountCents: 6_000 }] },
-      4_000,
-      nameOf,
-    );
-    expect(by(out)).toEqual({ food: 6_000, reimbursed: 4_000 });
-  });
-
   it('#228: a SPECIAL category claims the whole — settle is canonical and unlink returns to IT, never uncategorized', () => {
     // the ss-reported hole: [Set aside, Uncategorized] after an unlink
     const settled = settledCats({ amountCents: -10_000, catId: 'savingDeposit', cats: undefined }, 4_000, nameOf);
@@ -298,28 +288,6 @@ describe('#228: reimbursement stays ON the split (user ss)', () => {
     expect(out[1].cats).toBeUndefined();
   });
 
-  it('strips the retired pseudo-part and restores the drained sibling (the wrong-part ss bug)', () => {
-    // the stored corruption: the container-level consume drained split 2
-    // even though the link named split 1
-    const out = settleContainerParts(
-      {
-        amountCents: 240_000,
-        splits: [
-          { id: 'p1', catId: 'salary', amountCents: 120_000 },
-          { id: 'p2', catId: 'other', amountCents: 119_580 },
-          { catId: 'reimbursed', amountCents: 420 },
-        ],
-      },
-      new Map([['p1', 420]]),
-      nameOf,
-    );
-    expect(out).toHaveLength(2);
-    // split 2's amount waterline-restored, split 1 carries the bookkeeping
-    expect(out.map((p) => p.amountCents)).toEqual([120_000, 120_000]);
-    expect(by(out[0].cats!)).toEqual({ salary: 119_580, reimbursed: 420 });
-    expect(out[1].cats).toBeUndefined();
-  });
-
   it('a fully reimbursed part STAYS a part (user rule: we keep it splitted)', () => {
     const out = settleContainerParts(
       {
@@ -354,7 +322,7 @@ describe('#228: reimbursement stays ON the split (user ss)', () => {
     expect(by(out[0].cats!)).toEqual({ food: 5_000, uncategorized: 1_000 });
   });
 
-  it('reimbCentsByPart groups by name and lands loose legacy cents on the largest open part', () => {
+  it('reimbCentsByPart groups by name and lands container-level cents (a link older than the split) on the largest open part', () => {
     const splits = [
       { id: 'p1', catId: 'food', amountCents: 3_000 },
       { id: 'p2', catId: 'fun', amountCents: 7_000 },
@@ -362,7 +330,7 @@ describe('#228: reimbursement stays ON the split (user ss)', () => {
     const map = reimbCentsByPart(
       [
         { txId: 'c1', amountCents: 500, partId: 'p1' },
-        { txId: 'c2', amountCents: 800 }, // container-level legacy link
+        { txId: 'c2', amountCents: 800 }, // made before the row was split
       ],
       'partId',
       splits,
@@ -392,16 +360,16 @@ describe('#228: reimbursement stays ON the split (user ss)', () => {
     expect(largestOpenPartId(spread, new Map())).toBe('q2');
   });
 
-  it('reimbSettleFields: whole rows collapse a bare single partition and clear legacy splits', () => {
+  it('reimbSettleFields: whole rows settle in their own partition and collapse a bare single one', () => {
     const cleared = reimbSettleFields(
-      { amountCents: -10_000, catId: 'food', cats: [{ catId: 'food', amountCents: 6_000 }, { catId: 'reimbursed', amountCents: 4_000 }], splits: [{ catId: 'food', amountCents: 6_000 }, { catId: 'reimbursed', amountCents: 4_000 }] },
+      { amountCents: -10_000, catId: 'food', cats: [{ catId: 'food', amountCents: 6_000 }, { catId: 'reimbursed', amountCents: 4_000 }] },
       0,
       new Map(),
       nameOf,
     );
-    // freed onto uncategorized → still a spread, splits gone
+    // freed onto uncategorized → still a spread
     expect(by(cleared.cats!)).toEqual({ food: 6_000, uncategorized: 4_000 });
-    expect(cleared.splits).toBeNull();
+    expect(cleared.splits).toBeUndefined();
     // a special claimant collapses all the way back to the bare category
     const special = reimbSettleFields(
       { amountCents: -10_000, catId: 'savingDeposit', cats: [{ catId: 'savingDeposit', amountCents: 6_000 }, { catId: 'reimbursed', amountCents: 4_000 }], splits: undefined },

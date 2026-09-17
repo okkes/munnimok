@@ -107,20 +107,6 @@ export const hasSliceOfType = (tx: SliceSource, txType: TxType): boolean =>
 // restriction on a split beyond the amounts summing — parts repeat any
 // kind freely; incompleteness surfaces as attention marks, not refusals.
 
-/**
- * #211: `splits` means PARTS now — a plain multi-category assignment
- * lives in the row's own `cats`. This predicate only serves the one-shot
- * boot migration that folds legacy bare slices into `cats`: an entry
- * with any part story (type, link, event, recurring, label, note or
- * category spread) marks a REAL split that stays where it is.
- * `id` deliberately doesn't count: the old editor minted ids on every save.
- */
-export const hasTypedParts = (tx: Pick<TransactionRow, 'splits'>): boolean =>
-  !!tx.splits?.some(
-    (s) => s.label !== undefined || s.txType !== undefined || s.linkedAccountId !== undefined
-      || s.eventId !== undefined || s.recurringId !== undefined || s.notes !== undefined || !!s.cats?.length,
-  );
-
 /** floor + largest remainder: `weights` partitioned onto `targetCents`,
  *  summing exactly — the same fairness rule the pct editor uses */
 function largestRemainder(weights: readonly number[], weightTotal: number, targetCents: number): number[] {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hasSliceOfType, hasTypedParts, scaleSplitsTo, txSliceViews } from './txSlices';
+import { hasSliceOfType, scaleSplitsTo, txSliceViews } from './txSlices';
 import type { TransactionRow, TxSplit } from '@/db/types';
 
 const row = (over: Partial<TransactionRow>): Parameters<typeof txSliceViews>[0] =>
@@ -75,15 +75,6 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
     expect(views[2]).toMatchObject({ amountCents: -2240, catId: 'restaurants', index: 2 });
   });
 
-  it('hasTypedParts: plain multi-category (even with minted ids) is NOT a part story; labels, types, links, events or spreads are', () => {
-    const classic = row({ splits: [{ id: 'a', catId: 'groceries', amountCents: 5000 }, { id: 'b', catId: 'restaurants', amountCents: 3740 }] });
-    expect(hasTypedParts(classic)).toBe(false);
-    expect(hasTypedParts(row({}))).toBe(false);
-    expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 1, label: 'x' }] }))).toBe(true);
-    expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 1, txType: 'saving' }] }))).toBe(true);
-    expect(hasTypedParts(row({ splits: [{ catId: 'g', amountCents: 2, cats: [{ catId: 'g', amountCents: 1 }, { catId: 'h', amountCents: 1 }] }] }))).toBe(true);
-  });
-
   it('slices carry per-part recurring links, inheriting the row default (#126 r7)', () => {
     const views = txSliceViews(
       row({
@@ -117,12 +108,6 @@ describe('txSliceViews (typed-splits v2 canonical fan-out)', () => {
     // a refund row's spread stays signed — positive entries
     const refund = txSliceViews(row({ amountCents: 500, cats: [{ catId: 'a', amountCents: 300 }, { catId: 'b', amountCents: 200 }] }));
     expect(refund.map((v) => v.amountCents)).toEqual([300, 200]);
-  });
-
-  it('#211: parts wear fromParts, whole rows do not; splits win when both exist (legacy shape)', () => {
-    expect(txSliceViews(row({}))[0].fromParts).toBe(false);
-    const split = txSliceViews(row({ splits: [{ catId: 'a', amountCents: 5000 }, { catId: 'b', amountCents: 3740 }] }));
-    expect(split.every((v) => v.fromParts)).toBe(true);
   });
 
   it('#228: spread entries carry the OWNER\'s one counterparty — the row\'s on row spreads, the part\'s on part spreads', () => {

@@ -6,7 +6,7 @@ import { afterAll, beforeEach } from 'vitest';
 // per-test timeouts (repeated flake source)
 configure({ asyncUtilTimeout: 5000 });
 
-// The boot chain (migrations + linkers, app/data.tsx) writes
+// The boot chain (heals + linkers, app/data.tsx) writes
 // fire-and-forget. A test that deletes the database while the PREVIOUS
 // test's chain still holds the connection blocks the delete and boots
 // the next app on a dying handle — its live queries collapse mid-test
