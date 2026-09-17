@@ -503,6 +503,7 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
             {form.kind !== 'fixed' && (
               <button
                 data-testid="recform-luxury"
+                aria-pressed={!!form.luxury}
                 onClick={() => setForm({ ...form, luxury: !form.luxury })}
                 className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
               >
