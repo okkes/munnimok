@@ -53,6 +53,14 @@ const parentTypeOf = async (store: StorageBackend, parentId: string): Promise<Tx
   return custom?.txType ?? 'expense';
 };
 
+/** #244 (user): direction left the user's hands — a sub simply follows
+ *  its parent's nature. Income subs are credit, expense subs debit;
+ *  anything else (legacy custom mains of other types) stays open. */
+export const directionForType = (txType: TxType): CatDirection => {
+  if (txType === 'income') return 'credit';
+  return txType === 'expense' ? 'debit' : 'both';
+};
+
 async function detachAll(repo: Repo, affected: TransactionRow[], catIds: Set<string>): Promise<void> {
   for (const tx of affected) {
     await repo.upsert('transaction', tx.spaceId, tx.id, detachCategoryPatch(tx, catIds));
@@ -124,7 +132,12 @@ export async function prepareCategoryEdit(
     commit: async () => {
       if (impact.detachIds.size > 0) await detachAll(repo, impact.affected, impact.detachIds);
       const patch: Partial<CategoryRow> = { ...changes };
-      if (impact.movedType) patch.txType = impact.movedType;
+      // #244: a moved sub follows its NEW parent's nature — type and
+      // direction both re-derive (the user never states either)
+      if (impact.movedType) {
+        patch.txType = impact.movedType;
+        patch.direction = directionForType(impact.movedType);
+      }
       await repo.upsert('category', row.spaceId, row.id, patch);
       // keep stored txType on subs consistent with the parent
       if (row.isParent === 1 && changes.txType && changes.txType !== row.txType) {
@@ -182,21 +195,23 @@ export async function createMainCategory(
   return id;
 }
 
-/** Create a custom sub under any parent (type inherited from the parent). */
+/** Create a custom sub under any parent (type AND direction inherited
+ *  from the parent — #244: the user never states a direction). */
 export async function createSubCategory(
   store: StorageBackend,
   repo: Repo,
   spaceId: string,
-  input: { parentId: string; name: string; icon: string; direction: CatDirection },
+  input: { parentId: string; name: string; icon: string },
 ): Promise<string> {
   const id = repo.newId();
+  const txType = await parentTypeOf(store, input.parentId);
   await repo.upsert('category', spaceId, id, {
     parentId: input.parentId,
     name: input.name,
     icon: input.icon,
     color: '',
-    txType: await parentTypeOf(store, input.parentId),
-    direction: input.direction,
+    txType,
+    direction: directionForType(txType),
     sortOrder: 999,
     builtin: 0,
   });
@@ -240,21 +255,39 @@ export async function copyCategoryToSpace(
   }
 }
 
+/** rewrites a category-entry array through the id map; undefined when
+ *  nothing changed — shared by row `cats` (#211) and part spreads */
+const remapCatEntries = <T extends { catId: string }>(entries: T[] | undefined, idMap: Map<string, string>): T[] | undefined => {
+  if (!entries?.some((c) => idMap.has(c.catId))) return undefined;
+  return entries.map((c) => (idMap.has(c.catId) ? { ...c, catId: idMap.get(c.catId)! } : c));
+};
+
 /** rewrites a splits array through the id map; undefined when nothing changed */
 const remapSplits = (splits: TxSplit[] | undefined, idMap: Map<string, string>): TxSplit[] | undefined => {
-  if (!splits?.some((s) => idMap.has(s.catId))) return undefined;
-  return splits.map((s) => (idMap.has(s.catId) ? { ...s, catId: idMap.get(s.catId)! } : s));
+  if (!splits?.some((s) => idMap.has(s.catId) || (s.cats ?? []).some((c) => idMap.has(c.catId)))) return undefined;
+  return splits.map((s) => ({
+    ...s,
+    ...(idMap.has(s.catId) ? { catId: idMap.get(s.catId)! } : {}),
+    ...(s.cats?.length ? { cats: remapCatEntries(s.cats, idMap) ?? s.cats } : {}),
+  }));
 };
 
 /** rows that reference categories (transactions and overlays share the shape) */
-type CatHolder = Pick<TransactionRow, 'id' | 'catId' | 'splits'>;
+type CatHolder = Pick<TransactionRow, 'id' | 'catId' | 'cats' | 'splits'>;
+
+/** every category id one row references: its own, its `cats` entries and
+ *  each part's own + spread (#211) */
+const holderCatIds = (holder: CatHolder): (string | undefined)[] => [
+  holder.catId,
+  ...(holder.cats ?? []).map((c) => c.catId),
+  ...(holder.splits ?? []).flatMap((s) => [s.catId, ...(s.cats ?? []).map((c) => c.catId)]),
+];
 
 const collectUserScopedUse = (holders: CatHolder[], userScoped: (id?: string) => CategoryRow | undefined): Set<string> => {
   const used = new Set<string>();
   for (const holder of holders) {
-    if (userScoped(holder.catId)) used.add(holder.catId!);
-    for (const split of holder.splits ?? []) {
-      if (userScoped(split.catId)) used.add(split.catId);
+    for (const catId of holderCatIds(holder)) {
+      if (userScoped(catId)) used.add(catId!);
     }
   }
   return used;
@@ -312,10 +345,12 @@ async function rewriteReferences(
 ): Promise<void> {
   for (const holder of holders) {
     const catId = holder.catId ? idMap.get(holder.catId) : undefined;
+    const cats = remapCatEntries(holder.cats, idMap);
     const splits = remapSplits(holder.splits, idMap);
-    if (!catId && !splits) continue;
+    if (!catId && !cats && !splits) continue;
     await repo.upsert(entity, spaceId, holder.id, {
       ...(catId ? { catId } : {}),
+      ...(cats ? { cats } : {}),
       ...(splits ? { splits } : {}),
     });
   }

@@ -146,6 +146,41 @@ dispatch, the artifact content goes into `APPLE_DEV_CERT_P12`
 run once on 2026-07-16 — rerun it only if the cert ever expires
 (1 year) or gets revoked.
 
+The workflow now takes an `environment` input (default `local`, added
+for the wizard); on the NAS track dispatch it as is — repository-level
+secrets are visible from any environment.
+
+On the LOCAL track the wizard does all of this by itself (2026-09-08):
+the first iOS build mints the certificate through the same workflow
+(dispatched into the GitHub environment `local` — the workflow gained an
+`environment` input for that), the helper pulls the run artifact back
+into the machine store (`APPLE_DEV_CERT_P12` + `APPLE_DEV_CERT_PASSWORD`
++ the certificate's serial, family-wide like the upload keystore) and
+the wizard ships both secrets into every repo's environment `local`
+before each build, rewriting them so a stale same-name copy cannot
+linger. Before a build the helper asks Apple by serial whether the
+machine's certificate is still listed; a revoked or expired one is
+forgotten and minted again without a click.
+
+**One certificate per Apple team (learned 2026-09-09).** Development
+certificates are team-wide, and the mint's cleanup of throwaway
+certificates cannot tell a persistent one apart from junk — so the whole
+team runs on ONE persistent certificate, and every place the secret
+lives must hold the same p12: the repository-level secret (the hosted
+track), each environment that overrides it (`staging`, `production`,
+`local`), the machine store and every template copy's environment
+`local`. The first wizard mint cleared the deck blindly, revoked the
+hosted track's July certificate, and every hosted build after it
+silently minted a throwaway (the imported p12 was dead and the prune
+sweep was skipped in "persistent" mode) until Apple refused the twelfth.
+Since then: the mint protects the certificate its environment still
+holds (`PROTECT_SERIALS` in `asc-prune.js`), the iOS workflow reads the
+p12's serial, fails fast with the repair when Apple no longer lists it
+(`asc-cert-check.js`) and runs the prune as a sweep that revokes only
+throwaways other builds left behind, and a wizard build on a repo that
+already holds `APPLE_DEV_CERT_P12` at repository level does not mint at
+all — the environment falls back to that secret.
+
 ## 6. The dedicated staging apps (`app.munni.dev`) — your checklist
 
 The code side is DONE: an Android `dev` product flavor and an iOS
@@ -242,6 +277,129 @@ shared `NATIVE_LOGTO_APP_ID` until you create the apps:
 Repo-level is fine for these (same app id serves prod + staging;
 scope them per environment only if you later want staging-only Logto
 apps).
+
+## 9. The LOCAL store channels (added 2026-08-28) — wizard-managed
+
+Every LOCAL ENVIRONMENT is its own store identity beside prod and dev:
+**`app.munni.local.<env>`** ("munni <env>", `munni-local[-<env>]://`,
+the staging icon) — Android product flavor `local` (own
+`src/local/google-services.json` stub), rebranded per environment by CI
+(`sed` over the stub + shortcuts before the build; iOS generalizes the
+bundle-id rebrand the same way, associated domains stripped — the LAN
+app claims no universal links; auth returns ride the scheme). **Push is
+wired as code** (2026-09-08): pressing Build runs the wizard's
+`firebase-setup` — the Play service account's own Cloud project is
+Firebase-enabled via the Management API, the env's Android/iOS apps are
+registered there, and `native-config` hands CI the real
+google-services.json / GoogleService-Info.plist
+(`NATIVE_GOOGLE_SERVICES_B64` / `NATIVE_IOS_FIREBASE_PLIST_B64`) to
+bake over the stubs; the same service account doubles as the FCM
+sender (auto-copied into `NAS_FCM_SERVICE_ACCOUNT_JSON`, and the env is
+re-rendered + brought up again whenever its api does not carry it yet —
+`/health` must answer `fcm: true`, found live 2026-09-08: the stored
+credential never reached a running api). The Firebase apps are named
+`munni local <env> android|ios` (the Apple App ID `munni local <env>`)
+so the local track reads apart from the hosted twins. One-time
+floors: grant that service account the **Firebase Admin** AND the
+**Service Usage Admin** roles in IAM — adding Firebase to a Cloud
+project switches APIs on, which Google gates behind
+`serviceusage.services.enable`, a permission Firebase Admin does NOT
+carry (found live 2026-09-08; by hand instead: add Firebase to the
+project once in the Firebase console, then Firebase Admin alone is
+enough) — and for iOS push upload the APNs key once (Firebase console
+→ Cloud Messaging). Until then the stub keeps builds green with push
+inactive and the Android card's push pill names the exact blocker.
+iOS push in full (the wizard's iOS card carries the same fold): create
+an APNs key at developer.apple.com → Keys (tick APNs; the same `.p8`
+may carry Sign in with Apple), upload it in the Firebase console →
+project → Cloud Messaging → Apple app configuration for
+`munni local <env> ios` (Key ID + Team ID — no API exists for this),
+then on the iPhone switch notifications on in munni's settings: nothing
+registers by itself, and the simulator cannot receive push. A missing
+APNs key surfaces in the api log as `THIRD_PARTY_AUTH_ERROR`.
+Sign in with Apple works on the local track too (2026-09-08): LAN mode
+serves real https, which Apple demands — tick the feature (LAN mode
+follows by itself), paste the Services ID + key in step 3 (family-wide),
+and register every environment's return URL
+`https://munni-<env>-logto.<ip-dashed>.sslip.io/callback/apple-universal`
+in the Services ID (the Apple card lists them; a changed wifi address
+changes them). Headless re-renders feed the stored social credentials to
+the Logto connector module, so the wizard's values are not needed.
+
+Both native workflows accept `environment: local` + `localEnv: <env>`
+(+ Android: `publish: auto|skip`) on dispatch and then build against
+the machine's LAN family. The wizard's local track drives everything:
+it turns on **LAN mode** — the family re-renders onto REAL https
+hostnames `https://munni-<env>.<ip-dashed>.sslip.io` behind one family
+Caddy with a locally-minted CA (localhost keeps working alongside;
+Enable Banking consents work locally because the redirect is genuine
+https) — writes `NATIVE_API_URL`/`NATIVE_PUBLIC_ORIGIN`/
+`NATIVE_LOGTO_*`/DSNs into the GitHub environment `local`, dispatches
+the build — and DELIVERY GOES THROUGH THE STORES like every other
+channel:
+
+- **Android** → Play **internal testing** track, auto-published once
+  `NATIVE_LOCAL_CHANNEL_<ENV>=true` (env `local` variable, the wizard's
+  per-environment "Enable auto-publish" button; the wizard resolves it
+  into the dispatch's `publish` input — until then builds pass with the
+  upload skipped, no red runs). The store-mandated first upload stays
+  manual ONCE PER ENVIRONMENT: the wizard downloads the signed `.aab`
+  from the first green build → Play Console → create app
+  `app.munni.local.<env>` → Internal testing → upload → grant the CI
+  service account.
+- **iOS** → TestFlight, after the one-time App Store Connect record per
+  environment (New App, bundle `app.munni.local.<env>`). Until that
+  record exists the export dies with `error: exportArchive Error
+  Downloading App Information` — the local channel degrades it to a
+  warning (skipped-not-red, like Android's first upload) and the
+  wizard's ASC pill + build verdict name the missing record with the
+  exact bundle id. Local builds number themselves in seconds since
+  2026-01-01 (redispatching the same commit must not reuse a TestFlight
+  build number — same practice as the Android versionCode). The iOS
+  bundle id has its OWN wizard field and CI variable
+  (`NATIVE_LOCAL_APP_ID_IOS`, falling back to the Android id): Play
+  burns package names when an upload key is lost while ASC records live
+  on, so Android may roll to `prod2` while iOS keeps `prod`. The
+  export additionally needs the ASC key to hold cloud-signing rights —
+  role **Admin** (or App Manager + "Access to Cloud Managed
+  Distribution Certificate"); without it the export fails with `Cloud
+  signing permission error` / `No signing certificate "iOS
+  Distribution"`, and CI names that fix. Creating the app RECORD stays
+  manual at BOTH stores by design of their APIs (automation like
+  fastlane produce drives an interactive Apple-ID session with 2FA —
+  not CI-able); a pending Program License Agreement must be accepted by
+  the Account Holder or store operations fail account-wide.
+
+Phones must trust the family's CA once per device (download
+`http://ca.<ip-dashed>.sslip.io` → root.crt). Android: install it as a
+CA certificate (Settings → Security). iPhone: the download lands as a
+PENDING profile — Settings → **Profile Downloaded** (or General → VPN &
+Device Management) → Install, then Settings → General → About →
+**Certificate Trust Settings** → full trust; both steps, or the in-app
+OIDC discovery fetch dies on TLS and the sign-in button appears dead
+(2026-09-08 report — the login screen now surfaces that failure with
+the exact hint). The local Android flavor ships a
+`network_security_config` that trusts user-installed CAs for exactly
+this; hosted flavors stay system-CAs-only.
+
+Caveats, stated in the wizard too: the build bakes the LAN hostnames (a
+DHCP change changes them — reserve the address), and it only works on
+that wifi. Deleting an environment (or everything) cascades: containers
+\+ volumes, its GoCardless consents, its vault folder, its auto-publish
+flag — plus an OPT-IN store retirement (offered when step-3 store
+credentials exist): the Play internal-testing track is cleared and the
+TestFlight builds are expired, so testers lose the app immediately.
+What no API can do: delete the store RECORDS — the Play app record, the
+ASC app record and the burned package name stay (remove never-published
+records by hand in the consoles; a later build re-publishes under the
+same identity). One exception: an `app.munni.local.*` bundle id that
+never got its ASC app record IS deleted from the developer portal.
+Delete-everything ends with a **cleanup verification**: containers,
+volumes, networks (matched by compose project `munni-local-*` — the
+from-source dev loop, project `munni-local`, and munni-sonar don't
+count), rendered folders, the registry and the LAN marker must all be
+gone; only then does the Delete button retire. The step-3 credential
+store and the upload keystore's reset certificate survive on purpose.
 
 ## What works today
 

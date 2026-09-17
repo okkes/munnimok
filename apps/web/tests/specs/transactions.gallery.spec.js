@@ -31,14 +31,14 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await openFirstReviewTx(page);
     await page.click('[data-testid="tx-detail-category-row"]');
-    await page.waitForSelector('[data-testid="split-editor"]'); // ONE unified flow (user request)
-    await page.click('[data-testid="split-cat-0"]');
+    await page.waitForSelector('[data-testid="part-cats-editor"]'); // the split-categories editor (#211)
+    await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-videoGame"]');
     await page.waitForTimeout(500); // sheet slide-in
     await shot(page, k('10-tx-recat') + '--s1');
     await page.click('[data-testid="catpicker-videoGame"]');
     await page.waitForTimeout(400);
-    await page.click('[data-testid="split-save"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500); // sheet slide-out
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Video Game');
     // review badge cleared by explicit categorization
@@ -52,8 +52,8 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await openFirstReviewTx(page);
     await page.click('[data-testid="tx-detail-category-row"]');
-    await page.waitForSelector('[data-testid="split-editor"]');
-    await page.click('[data-testid="split-cat-0"]');
+    await page.waitForSelector('[data-testid="part-cats-editor"]');
+    await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'groc');
     await expect(page.locator('[data-testid="catpicker-groceries"]')).toBeVisible();
@@ -76,12 +76,12 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="txform-account"]');
     await page.click('[data-testid="txform-account-demo_main"]');
     await page.click('[data-testid="txform-category"]');
-    // unified editor (same as review): per-row picker, Done stages it
-    await page.click('[data-testid="split-cat-0"]');
+    // the split-categories editor (#211): per-entry picker, Done stages it
+    await page.click('[data-testid="part-cat-0"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'dining');
     await page.click('[data-testid="catpicker-restaurants"]');
-    await page.click('[data-testid="split-save"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
     await shot(page, k('27-tx-create') + '--s1');
     await page.click('[data-testid="txform-save"]');
@@ -116,7 +116,10 @@ for (const V of VARIANTS) {
     // 2026-07-28): search + suggestions above the full candidate list
     await page.click('[data-testid="reimb-add"]');
     await page.waitForSelector('[data-testid="reimb-link-list"]');
-    await page.locator('[data-testid="reimb-link-list"] [data-testid^="tx-row-"]').first().click();
+    // pick a DETERMINISTIC big credit — the list is date-sorted and the
+    // demo's relative-dated rows drift past absolute-dated ones over
+    // time, so "the first row" rots with the calendar
+    await page.locator('[data-testid="reimb-link-list"] [data-testid^="tx-row-"]').filter({ hasText: 'Demo Corp' }).first().click();
     await expect(page.locator('[data-testid="reimb-amount"]')).toHaveValue('28,99'); // clamped prefill
     await page.fill('[data-testid="reimb-amount"]', '10,00');
     await page.click('[data-testid="reimb-save"]');
@@ -124,7 +127,8 @@ for (const V of VARIANTS) {
     // net −18.99, gross struck through, summary line
     await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('18.99');
     await expect(page.locator('[data-testid="tx-detail-original-amount"]')).toContainText('28.99'); // details block owns the original
-    await expect(page.locator('[data-testid="reimb-summary"]')).toContainText('10.00');
+    // #231 r2: the section is links-only — the linked row carries the amount
+    await expect(page.locator('[data-testid="reimb-list"] [data-testid^="reimb-row-"]').first()).toContainText('10.00');
     await shot(page, k('34-tx-reimburse'));
     // unlink restores the gross amount
     await page.locator('[data-testid^="reimb-unlink-"]').click();
@@ -133,64 +137,74 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('34-tx-reimburse'));
   });
 
-  test(`tx-a8 the kind leads: a transfer names its counterparty, standard clears it [${V.id}]`, async ({ browser }) => {
+  test(`tx-a8 categories lead (#133): a diamond pick asks its counterparty, the pot answers [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await openFirstReviewTx(page); // dm100: hobby expense on demo_main
-    // simplified model: the kind row decides; picking Transfer walks
-    // straight into the MANDATORY counterparty pick
-    await page.click('[data-testid="tx-detail-kind-row"]');
-    await page.waitForSelector('[data-testid="txkind-options"]');
-    await page.click('[data-testid="txkind-transfer"]');
-    await page.waitForSelector('[data-testid="counter-accounts"]');
+    // #133 r4: no kind row — the Set aside (diamond) pick opens the
+    // counterparty ask ON THE PICK, Default pinned on top; the savings
+    // pot answers, the entry's subrow names it, Done lands both
+    // (#211: the pencil opens the split-CATEGORIES editor now)
+    await page.click('[data-testid="tx-detail-cats-edit"]');
+    await page.click('[data-testid="part-cat-0"]');
+    await page.waitForSelector('[data-testid="catpicker-search"]');
+    await page.fill('[data-testid="catpicker-search"]', 'set aside');
+    await page.click('[data-testid="catpicker-savingDeposit"]');
+    await page.waitForSelector('[data-testid="counter-default"]');
     await page.click('[data-testid="counter-pick-demo_save"]');
+    // #237: manual counters fork now — creating the leg is the explicit door
+    await page.click('[data-testid="counter-fork-create"]');
+    // #228 feedback: no counter line under the entry — the ask closes
+    await expect(page.locator('[data-testid="counter-accounts"]')).toHaveCount(0);
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
-    // the savings counterparty derives Saving; the conflicting category
-    // files under the sign-picked locked sub (arc 2) instead of resetting
-    await expect(page.locator('[data-testid="tx-detail-kind-row"]')).toContainText('Saving');
+    // #133 r4: the user's category STAYS the story — the link makes it
+    // a movement, and the pot's own ledger carries the saving leg
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Set aside');
     await expect(page.locator('[data-testid="tx-detail-linked-account"]')).toBeVisible();
     await shot(page, k('35-tx-type-link'));
-    // back to Standard: the sign resolves Expense and the link clears
-    await page.click('[data-testid="tx-detail-kind-row"]');
-    await page.waitForSelector('[data-testid="txkind-options"]');
-    await page.click('[data-testid="txkind-standard"]');
-    await page.waitForTimeout(500);
-    await expect(page.locator('[data-testid="tx-detail-kind-row"]')).toContainText('Expense');
-    await expect(page.locator('[data-testid="tx-detail-linked-account"]')).toHaveCount(0);
     await teardown(page, ctx, k('35-tx-type-link'));
   });
 
-  test(`tx-a9 split a transaction across two categories [${V.id}]`, async ({ browser }) => {
+  test(`tx-a9 split categories across two categories [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await openFirstReviewTx(page); // dm100: -28.99
+    // #211: the category row opens the split-CATEGORIES editor — the
+    // row stays ONE transaction, never a split container
     await page.click('[data-testid="tx-detail-category-row"]');
-    await page.waitForSelector('[data-testid="split-editor"]');
-    await page.click('[data-testid="split-add-row"]');
-    // assign 20.00 to the first row; second row is open -> remainder shown
-    await page.fill('[data-testid="split-amount-0"]', '20,00');
-    await expect(page.locator('[data-testid="split-remainder"]')).toContainText('8.99');
-    await expect(page.locator('[data-testid="split-save"]')).toBeDisabled();
-    // pick a category for row 2 and auto-balance via the remainder chip
-    await page.click('[data-testid="split-cat-1"]');
+    await page.waitForSelector('[data-testid="part-cats-editor"]');
+    await page.click('[data-testid="part-cat-add"]');
+    // assign 20.00 to the first entry; second is open -> remainder shown
+    await page.fill('[data-testid="part-cat-amount-0"]', '20,00');
+    await expect(page.locator('[data-testid="part-cat-remainder"]')).toContainText('8.99');
+    // #195: Done stays tappable — an unbalanced tap refuses and the
+    // remainder pill is the visible explanation
+    await page.click('[data-testid="part-cat-save"]');
+    await expect(page.locator('[data-testid="part-cats-editor"]')).toBeVisible();
+    await expect(page.locator('[data-testid="part-cat-save"]')).toHaveAttribute('aria-invalid', 'true');
+    // pick a category for entry 2 and auto-balance via the remainder chip
+    await page.click('[data-testid="part-cat-1"]');
     await page.waitForSelector('[data-testid="catpicker-search"]');
     await page.fill('[data-testid="catpicker-search"]', 'gift');
     await page.click('[data-testid="catpicker-gift"]');
     await page.waitForTimeout(700);
-    await page.click('[data-testid="split-remainder"]');
-    await expect(page.locator('[data-testid="split-amount-1"]')).toHaveValue('8,99');
+    await page.click('[data-testid="part-cat-remainder"]');
+    await expect(page.locator('[data-testid="part-cat-amount-1"]')).toHaveValue('8,99');
     await shot(page, k('36-tx-split') + '--s1');
-    await page.click('[data-testid="split-save"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
-    // breakdown visible; primary category = largest slice (Hobby, 20.00)
+    // breakdown visible; primary category = largest entry (Hobby, 20.00);
+    // the row keeps its pencil — it is NOT a container (#211)
     await expect(page.locator('[data-testid="tx-detail-categories"]')).toContainText('20.00');
     await expect(page.locator('[data-testid="tx-detail-categories"]')).toContainText('8.99');
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Hobby');
+    await expect(page.locator('[data-testid="tx-detail-cats-edit"]')).toBeVisible();
     await shot(page, k('36-tx-split'));
-    // clearing restores a single category
-    await page.click('[data-testid="tx-detail-category-row"]');
-    await page.click('[data-testid="split-clear"]');
+    // collapsing back to one entry restores a single category
+    await page.click('[data-testid="tx-detail-cats-edit"]');
+    await page.click('[data-testid="part-cat-remove-1"]');
+    await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
     await expect(page.locator('[data-testid^="tx-detail-cat-"]')).toHaveCount(0);
     await teardown(page, ctx, k('36-tx-split'));

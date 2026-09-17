@@ -6,6 +6,7 @@ import { useData } from '@/app/data';
 import { useSpaceTransactions } from '@/application/transactions';
 import { localToday, useRecurringOps } from '@/application/recurring';
 import { nextDueDate } from '@/domain/recurring';
+import { txSliceViews } from '@/domain/txSlices';
 import { detectPriceChange, yearlyCents, yearlyDeltaCents } from '@/domain/recurringPrice';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromRec } from './RecurringFormSheet';
@@ -45,7 +46,12 @@ export function RecurringDetailScreen() {
   }, [gone, navigate]);
 
   const payments = useMemo(
-    () => (txs ?? []).filter((tx) => tx.recurringId === recId).sort((a, b) => b.date.localeCompare(a.date)),
+    // slice-aware (#126 r7): a split's PART may carry the link — the
+    // whole row then counts as a payment of this recurring
+    () =>
+      (txs ?? [])
+        .filter((tx) => txSliceViews(tx).some((view) => view.recurringId === recId))
+        .sort((a, b) => b.date.localeCompare(a.date)),
     [txs, recId],
   );
 
@@ -180,7 +186,7 @@ export function RecurringDetailScreen() {
           {t('recurring.payments')} · {payments.length}
         </div>
         {payments.length > 0 ? (
-          <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="recdetail-payments">
+          <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="recdetail-payments">
             {payments.map((tx) => (
               <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
             ))}

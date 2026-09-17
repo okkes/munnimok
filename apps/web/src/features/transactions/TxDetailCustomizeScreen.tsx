@@ -7,12 +7,15 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { BlockListEditor } from '@/features/customize/BlockListEditor';
 
-/** the movable sections under the details block, in default order — the
- *  details/actions card itself is fixed (user ruling) */
-export const TX_DETAIL_BLOCK_IDS = ['reimburse', 'receipts', 'notes'] as const;
+/** the movable sections below the categories card, in default order —
+ *  #232 (user): actions and the details/facts card joined the registry;
+ *  the headline, account and categories cards stay fixed */
+export const TX_DETAIL_BLOCK_IDS = ['actions', 'facts', 'reimburse', 'receipts', 'notes'] as const;
 export type TxDetailBlockId = (typeof TX_DETAIL_BLOCK_IDS)[number];
 
 export const TX_DETAIL_BLOCK_LABELS: Record<TxDetailBlockId, TranslationKey> = {
+  actions: 'tx.actionsSection',
+  facts: 'tx.detailsSection',
   reimburse: 'reimb.section',
   receipts: 'receipt.title',
   notes: 'tx.notes',
@@ -20,6 +23,8 @@ export const TX_DETAIL_BLOCK_LABELS: Record<TxDetailBlockId, TranslationKey> = {
 
 /** icons matching the sections they stand for (user feedback 2026-07-24) */
 export const TX_DETAIL_BLOCK_ICONS: Record<TxDetailBlockId, string> = {
+  actions: 'gesture-tap-button',
+  facts: 'information-outline',
   reimburse: 'cash-refund',
   receipts: 'receipt-text-outline',
   notes: 'note-edit-outline',
@@ -30,15 +35,21 @@ export interface TxDetailBlockConfig {
   hidden: boolean;
 }
 
-/** the space's saved layout merged with defaults (new sections append) */
+/** the space's saved layout merged with defaults — #232: a section the
+ *  save predates slots in at its DEFAULT position (appending shoved
+ *  actions/facts under notes for every existing space) */
 export function resolveTxDetailBlocks(space: SpaceRow | undefined): TxDetailBlockConfig[] {
   const saved = space?.txDetailBlocks ?? [];
   const known = new Set<string>(TX_DETAIL_BLOCK_IDS);
   const ordered = saved
     .filter((entry) => known.has(entry.id))
     .map((entry) => ({ id: entry.id as TxDetailBlockId, hidden: entry.hidden === 1 }));
-  const present = new Set(ordered.map((entry) => entry.id));
-  for (const id of TX_DETAIL_BLOCK_IDS) if (!present.has(id)) ordered.push({ id, hidden: false });
+  const defaultIndex = (id: TxDetailBlockId) => TX_DETAIL_BLOCK_IDS.indexOf(id);
+  for (const id of TX_DETAIL_BLOCK_IDS) {
+    if (ordered.some((entry) => entry.id === id)) continue;
+    const at = ordered.findIndex((entry) => defaultIndex(entry.id) > defaultIndex(id));
+    ordered.splice(at === -1 ? ordered.length : at, 0, { id, hidden: false });
+  }
   return ordered;
 }
 

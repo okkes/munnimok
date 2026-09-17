@@ -8,20 +8,35 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.GoCardless;
 
-public sealed record CreateRequisitionRequest(string SpaceId, string InstitutionId, string RedirectUrl, string? AppScheme = null);
+public sealed record CreateRequisitionRequest(string SpaceId, string InstitutionId, string RedirectUrl, string? AppScheme = null, string? Provider = null);
 public sealed record CreateRequisitionResponse(string Reference, string Link);
 public sealed record CompleteResponse(string Status, int LinkedAccounts, int ImportedTransactions, string? AppScheme = null);
+/// <summary>#175: a configured provider the END USER may pick. KnownAccounts
+/// carries masked IBAN tails for Enable Banking — its restricted mode only
+/// serves portal-linked accounts, and every account munni ever fetched
+/// through EB is proof of such a link (the EB API itself cannot list them).</summary>
+public sealed record ProviderInfo(string Id, IReadOnlyList<string>? KnownAccounts);
 
 public static partial class GcEndpoints
 {
     [System.Text.RegularExpressions.GeneratedRegex("^[A-Za-z]{2}$")]
     private static partial System.Text.RegularExpressions.Regex CountryCode();
 
-    private static async Task<IResult> ListInstitutionsAsync(string country, BankProviderRegistry registry, AppDbContext db, IMemoryCache cache)
+    /// <summary>#175: the caller's explicit provider pick, the registry
+    /// default (first configured — GoCardless) when absent; an unknown
+    /// id is a 400, never a silent fallback</summary>
+    private static IBankDataApi? ResolveProvider(string? provider, BankProviderRegistry registry)
+    {
+        if (provider is null) return registry.For(null);
+        return registry.ConfiguredIds.Contains(provider) ? registry.For(provider) : null;
+    }
+
+    private static async Task<IResult> ListInstitutionsAsync(string country, string? provider, BankProviderRegistry registry, AppDbContext db, IMemoryCache cache)
     {
         if (!CountryCode().IsMatch(country))
             return Results.BadRequest(new { error = "country must be a 2-letter code" });
-        var api = await registry.ActiveAsync(db);
+        var api = ResolveProvider(provider, registry);
+        if (api is null) return Results.BadRequest(new { error = $"unknown provider '{provider}'" });
         IReadOnlyList<GcInstitution>? list;
         try
         {
@@ -102,13 +117,48 @@ public static partial class GcEndpoints
         return Results.File(row.Bytes, row.ContentType ?? "image/png");
     }
 
+    /// <summary>#175: the configured providers, for the user-facing choice
+    /// (both are first-class — the admin toggle retired; registration
+    /// order puts GoCardless first as the default). Enable Banking rides
+    /// its masked account tails so a user can tell whether THEIR account
+    /// was linked upfront on the EB portal (restricted mode serves only
+    /// portal-linked accounts — the EB API cannot list them, but every
+    /// account munni ever fetched through EB proves its link).</summary>
+    private static async Task<IResult> ListProvidersAsync(BankProviderRegistry registry, AppDbContext db)
+    {
+        List<string>? ebTails = null;
+        if (registry.ConfiguredIds.Contains(EnableBankingApi.Id))
+        {
+            var ibans = await db.GcLinkedAccounts
+                .Where(a => a.Provider == EnableBankingApi.Id && !a.Iban.StartsWith("GC:"))
+                .Select(a => a.Iban)
+                .Distinct()
+                .ToListAsync();
+            ebTails = ibans
+                .Where(i => i.Length >= 4)
+                .Select(i => i[^4..])
+                .Distinct()
+                .OrderBy(t => t)
+                .Take(12)
+                .ToList();
+        }
+        var providers = registry.ConfiguredIds
+            .Select(id => new ProviderInfo(id, id == EnableBankingApi.Id ? ebTails : null))
+            .ToList();
+        return Results.Ok(new { providers });
+    }
+
     public static void MapGoCardless(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/gocardless").RequireAuthorization().WithSafeRouteParams();
 
-        // institution list, cached per active provider: it changes rarely
-        // and the vendors rate-limit
+        // institution list, cached per provider: it changes rarely and the
+        // vendors rate-limit. #175: an explicit provider query parameter
+        // lets the END USER pick; absent keeps the admin's active one.
         group.MapGet("/institutions", ListInstitutionsAsync);
+
+        // #175: the provider choice the connect sheet renders
+        group.MapGet("/providers", ListProvidersAsync);
 
         // the vendored logo bytes — anonymous (public artwork) so a plain
         // <img> tag can load it; fetched from the recorded URL exactly once
@@ -120,7 +170,10 @@ public static partial class GcEndpoints
             if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == request.SpaceId && m.UserId == userId))
                 return Results.Forbid();
 
-            var api = await registry.ActiveAsync(db); // the admin's pick decides NEW consents
+            // #175: the user's explicit pick wins; absent, the registry
+            // default (older clients without the chooser)
+            var api = ResolveProvider(request.Provider, registry);
+            if (api is null) return Results.BadRequest(new { error = $"unknown provider '{request.Provider}'" });
             var reference = Guid.NewGuid();
             GcRequisitionCreated created;
             try
@@ -144,6 +197,9 @@ public static partial class GcEndpoints
                 Status = "created",
                 Provider = api.ProviderId,
                 AppScheme = request.AppScheme,
+                RedirectOrigin = Uri.TryCreate(request.RedirectUrl, UriKind.Absolute, out var redirect)
+                    ? redirect.GetLeftPart(UriPartial.Authority)
+                    : null,
             });
             await db.SaveChangesAsync();
             return Results.Ok(new CreateRequisitionResponse(reference.ToString(), created.Link));
@@ -164,13 +220,13 @@ public static partial class GcEndpoints
             var spaceIds = await db.SpaceMembers.Where(m => m.UserId == userId).Select(m => m.SpaceId).ToListAsync();
             var connections = await db.GcLinkedAccounts
                 .Where(a => spaceIds.Contains(a.SpaceId))
-                .Select(a => new { a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.LastFetchAt })
+                .Select(a => new { a.GcAccountId, a.SpaceId, a.AccountEntityId, a.Iban, a.LastFetchAt, a.Provider })
                 .ToListAsync();
             return Results.Ok(connections);
         });
     }
 
-    private static async Task<IResult> CompleteRequisition(Guid reference, string? code, BankProviderRegistry registry, AppDbContext db, HttpContext http)
+    private static async Task<IResult> CompleteRequisition(Guid reference, string? code, BankProviderRegistry registry, AppDbContext db, HttpContext http, ILogger<GcIngest> logger)
     {
             var userId = http.TryGetUserId();
             var requisition = await db.GcRequisitions.FindAsync(reference);
@@ -204,7 +260,7 @@ public static partial class GcEndpoints
             var space = await db.Spaces.FindAsync(requisition.SpaceId);
             if (space is null) return Results.NotFound();
 
-            var (linkedCount, imported, deferred) = await IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts);
+            var (linkedCount, imported, deferred) = await IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts, logger);
             // 'approved' = consented at the bank but not fully ingested —
             // the scheduled healer finishes it when the quota resets
             requisition.Status = deferred == 0 ? "linked" : "approved";
@@ -234,9 +290,9 @@ public static partial class GcEndpoints
     /// full window.
     /// </summary>
     internal static async Task<(int Linked, int Imported, int Deferred)> IngestApprovedAccountsAsync(
-        IBankDataApi gc, AppDbContext db, GcRequisition requisition, Space space, IReadOnlyList<string> accounts)
+        IBankDataApi gc, AppDbContext db, GcRequisition requisition, Space space, IReadOnlyList<string> accounts, ILogger? logger = null)
     {
-        var ingest = new GcIngest(db);
+        var ingest = new GcIngest(db, logger);
         var linkedCount = 0;
         var imported = 0;
         var deferred = 0;
@@ -261,7 +317,11 @@ public static partial class GcEndpoints
                 {
                     GcAccountId = gcAccountId,
                     SpaceId = requisition.SpaceId,
-                    AccountEntityId = ImportIds.AccountId(accountRef),
+                    // #311 r4 (user): the bank never silently consumes a
+                    // statement-imported account — when the canonical id
+                    // is already an import's, the bank binds its OWN row
+                    // and the user merges the two explicitly in the app
+                    AccountEntityId = await BankAccountEntityIdAsync(db, accountRef),
                     Iban = ImportIds.Normalize(accountRef),
                     Currency = details.Currency ?? "EUR",
                     RequisitionId = requisition.Id,
@@ -271,20 +331,7 @@ public static partial class GcEndpoints
             }
             else
             {
-                // a retried journey re-consented the same bank account, so
-                // the row moves to this newest consent with the freshest
-                // 90-day window — the older requisition ends up account-less
-                // and the idle cleanup frees its provider slot (user had
-                // NINE ING consents, unclear which one carried the account).
-                // Only within the SAME user: a shared family account linked
-                // by a second person keeps the first one's binding — each
-                // person's consent lives its own life (family-account case)
-                var boundTo = await db.GcRequisitions.FindAsync(linked.RequisitionId);
-                if (boundTo is null || boundTo.UserId == requisition.UserId)
-                {
-                    linked.RequisitionId = requisition.Id;
-                    linked.SpaceId = requisition.SpaceId;
-                }
+                await RebindToNewestConsentAsync(db, linked, requisition);
             }
 
             IReadOnlyList<GcBalance> balances = [];
@@ -301,7 +348,16 @@ public static partial class GcEndpoints
                 // budget spent — the feed still gets created/attached so the
                 // link shows up everywhere; data follows on the next fetch
             }
-            imported += await ingest.IngestAccountAsync(space, linked, details, balances, page?.Booked ?? [], page?.Pending);
+            // #240: the completion acts AS this requisition's user — the
+            // attachment and (co-)ownership must land on THEM, not on
+            // whoever's consent the row happens to be bound to
+            var accepted = await ingest.IngestAccountAsync(space, linked, details, balances, page?.Booked ?? [], page?.Pending, requisition);
+            imported += accepted;
+            // #240 r2: completions must leave a trace — "linked fine, zero
+            // rows" was invisible everywhere
+            if (logger?.IsEnabled(LogLevel.Information) == true)
+                logger.LogInformation("gc complete {Ref}: fetched {Booked} booked + {Pending} pending, accepted {Accepted}",
+                    linked.Iban, page?.Booked.Count ?? 0, page?.Pending?.Count ?? 0, accepted);
             if (page is not null)
             {
                 linked.LastFetchAt = DateTimeOffset.UtcNow;
@@ -310,6 +366,45 @@ public static partial class GcEndpoints
             linkedCount++;
         }
         return (linkedCount, imported, deferred);
+    }
+
+    /// <summary>
+    /// A retried journey re-consented the same bank account: the row moves
+    /// to the newest consent with the freshest 90-day window — the older
+    /// requisition ends up account-less and the idle cleanup frees its
+    /// provider slot (user had NINE ING consents, unclear which carried
+    /// the account). Only within the SAME user: a shared family account
+    /// linked by a second person keeps the first one's binding. #240:
+    /// WALLETS (no IBAN) are the exception — personal by nature, so the
+    /// newest consent always claims the binding (a stale foreign binding
+    /// stranded PayPal as "shared with me" for its real owner).
+    /// </summary>
+    /// <summary>#311 r4 (user): the id the bank binds its account row to —
+    /// the canonical acct id, UNLESS a statement import already owns that
+    /// row on the feed (its source is not a provider's). Then the bank
+    /// forks to its own row and the app offers an explicit merge.</summary>
+    private static async Task<string> BankAccountEntityIdAsync(AppDbContext db, string accountRef)
+    {
+        var canonical = ImportIds.AccountId(accountRef);
+        var feedId = ImportIds.FeedSpaceId(accountRef);
+        var row = await db.EntityRows.FirstOrDefaultAsync(r =>
+            r.SpaceId == feedId && r.Entity == "account" && r.EntityId == canonical && !r.Deleted);
+        if (row is null) return canonical;
+        using var data = System.Text.Json.JsonDocument.Parse(row.DataJson);
+        var importOwned = !data.RootElement.TryGetProperty("source", out var source)
+            || source.GetString() != "gocardless";
+        return importOwned ? ImportIds.BankAccountId(accountRef) : canonical;
+    }
+
+    private static async Task RebindToNewestConsentAsync(AppDbContext db, GcLinkedAccount linked, GcRequisition requisition)
+    {
+        var wallet = linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
+        var boundTo = await db.GcRequisitions.FindAsync(linked.RequisitionId);
+        if (boundTo is null || boundTo.UserId == requisition.UserId || wallet)
+        {
+            linked.RequisitionId = requisition.Id;
+            linked.SpaceId = requisition.SpaceId;
+        }
     }
 
     /// <summary>

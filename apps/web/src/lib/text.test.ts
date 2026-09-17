@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanBankText, fmtTimeAgo, humanizeBankKeys } from './text';
+import { cleanBankText, fmtEtaShort, fmtTimeAgo, humanizeBankKeys } from './text';
 
 describe('fmtTimeAgo', () => {
   const now = Date.parse('2026-07-15T12:00:00Z');
@@ -13,6 +13,22 @@ describe('fmtTimeAgo', () => {
     expect(fmtTimeAgo('not-a-date', 'en', now)).toBe('');
     // a slightly-ahead server timestamp must not say "in 2 minutes"
     expect(fmtTimeAgo('2026-07-15T12:02:00Z', 'en', now)).toBe('this minute');
+  });
+});
+
+describe('fmtEtaShort', () => {
+  it('#300: seconds under a minute, whole minutes above — localized units', () => {
+    // exact ICU spellings vary slightly per version ("sec" vs "secs") —
+    // the unit family is the honest assertion
+    expect(fmtEtaShort(45, 'en')).toMatch(/^45 secs?$/);
+    expect(fmtEtaShort(59, 'en')).toMatch(/^59 secs?$/);
+    expect(fmtEtaShort(60, 'en')).toMatch(/^1 mins?$/);
+    expect(fmtEtaShort(95, 'en')).toMatch(/^2 mins?$/);
+    expect(fmtEtaShort(130, 'nl')).toMatch(/^2 min/);
+    expect(fmtEtaShort(130, 'tr')).toMatch(/^2 dk/);
+  });
+  it('never says "0 sec" — a sub-second remainder rounds up to 1', () => {
+    expect(fmtEtaShort(0.2, 'en')).toMatch(/^1 secs?$/);
   });
 });
 

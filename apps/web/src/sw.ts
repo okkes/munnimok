@@ -21,6 +21,30 @@ cleanupOutdatedCaches();
 // content-hashed, so matching URLs without their query is always safe.
 precacheAndRoute(self.__WB_MANIFEST, { ignoreURLParametersMatching: [/.*/] });
 
+// /runtime-config.js is the per-deployment config overlay the nginx
+// entrypoint rewrites — excluded from the precache (vite.config globIgnores)
+// and served network-first here so an offline relaunch still boots with the
+// last-seen deployment config instead of the baked defaults.
+const RUNTIME_CONFIG_CACHE = 'munni-runtime-config';
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin || url.pathname !== '/runtime-config.js') return;
+  event.respondWith(
+    (async () => {
+      const cache = await caches.open(RUNTIME_CONFIG_CACHE);
+      try {
+        const fresh = await fetch(event.request);
+        if (fresh.ok) await cache.put(event.request, fresh.clone());
+        return fresh;
+      } catch {
+        const cached = await cache.match(event.request);
+        // no cached copy either: an empty overlay keeps the baked config
+        return cached ?? new Response('', { headers: { 'Content-Type': 'text/javascript' } });
+      }
+    })(),
+  );
+});
+
 // UpdateToast's reload button posts SKIP_WAITING (registerSW prompt mode)
 self.addEventListener('message', (event) => {
   // defense-in-depth: only act on messages from same-origin clients (a
@@ -102,7 +126,8 @@ self.addEventListener('sync', (event: Event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = (event.notification.data as { url?: string } | undefined)?.url ?? './#/transactions';
+  const data = event.notification.data as { url?: string; spaceId?: string } | undefined;
+  const url = data?.url ?? './#/transactions';
   event.waitUntil(
     (async () => {
       const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
@@ -111,10 +136,12 @@ self.addEventListener('notificationclick', (event) => {
       // pulling the announced transactions immediately
       if (existing) {
         // a focused client keeps its current screen — post the target so
-        // the app's listener routes there (friend request → friends, …)
-        existing.postMessage({ type: 'NAVIGATE', url });
+        // the app's listener routes there (friend request → friends,
+        // new transactions → the announced space's review, …)
+        existing.postMessage({ type: 'NAVIGATE', url, spaceId: data?.spaceId });
         await existing.focus();
       } else {
+        // cold start: the space rides the url itself (hash query)
         await self.clients.openWindow(url);
       }
     })(),

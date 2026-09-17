@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
+import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useLoanStatuses } from '@/application/debts';
 import type { LoanStatus } from '@/application/debts';
-import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import { useSpaceAccounts, useSpaceHistoryTransactions, useSpaceTransactions, useTxTransform } from '@/application/transactions';
 import type { SpaceTx } from '@/application/transactions';
-import { localToday } from '@/application/recurring';
+import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { monthlyPaymentCents, paymentsPerYear, projectPayoff } from '@/domain/debts';
+import { detectRecurring } from '@/domain/detectRecurring';
+import type { RecurringSuggestion } from '@/domain/detectRecurring';
+import { looksLikeDebtCreditor } from '@/domain/detectDebts';
 import type { AccountRow, RecurringEvery } from '@/db/types';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
@@ -16,8 +20,10 @@ import { typeDef } from '@/features/accounts/accountTypes';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { takeDebtHandoff } from './handoff';
-import { LoanMatchSheet } from './LoanMatchSheet';
+import type { DebtHandoff } from './handoff';
+import { LoanMatchSheet, loanMatchCandidates } from './LoanMatchSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -74,7 +80,7 @@ function UnassignedPaymentsCard({
       </button>
       <Sheet open={open} onOpenChange={setOpen} title={t('debts.unassigned')} size="tall">
         <p className="pb-2 text-[12px] text-ink-3">{t('debts.unassignedHint')}</p>
-        <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="debts-unassigned-list">
+        <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="debts-unassigned-list">
           {bare.map((tx) => (
             <TxRow key={tx.id} tx={tx} showDate onClick={() => setAssignTx(tx)} />
           ))}
@@ -119,17 +125,55 @@ export function DebtsScreen() {
   const [addOpen, setAddOpen] = useState(false);
   // right after creating, offer the matching payments from history
   const [matchFor, setMatchFor] = useState<string | null>(null);
-  // arriving FROM the recurring form (its Debt kind): the chooser opens
-  // prefilled with what the recurring already knew
-  const [handoff] = useState(() => takeDebtHandoff());
+  // the chooser's prefill: the recurring form's Debt kind hands one over
+  // at mount; tracking a detected pattern sets one in place. The chooser
+  // reads prefill only at mount, so every fresh prefill bumps the key.
+  const [prefill, setPrefill] = useState<DebtHandoff | null>(() => takeDebtHandoff());
+  const [chooserGen, setChooserGen] = useState(0);
   useEffect(() => {
-    if (handoff) setAddOpen(true);
-  }, [handoff]);
+    if (prefill) setAddOpen(true);
+  }, [prefill]);
   // counterparty-less debt payments — the virtual bucket's contents
   const bare = useMemo(
     () => (txs ?? []).filter((tx) => tx.deleted === 0 && tx.txType === 'debtPayment' && !tx.linkedAccountId),
     [txs],
   );
+  const today = localToday();
+  // #192 r2 (user): detection runs here and STAYS here — a payment
+  // pattern whose creditor is a known lender is tracked or dismissed on
+  // this screen, no detour through the recurring inbox
+  const historyTxs = useSpaceHistoryTransactions();
+  const recs = useRecurrings();
+  const dismissed = useDismissedKeys();
+  const spaceAccounts = useSpaceAccounts();
+  const recOps = useRecurringOps();
+  const loanSuggestions = useMemo(() => {
+    if (!historyTxs || !recs || !dismissed) return [];
+    const exclude = new Set([
+      ...dismissed,
+      ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : [])),
+      ...(spaceAccounts ?? []).flatMap((a) => (a.merchantKey ? [a.merchantKey] : [])),
+    ]);
+    return detectRecurring(historyTxs, { excludeKeys: exclude, today }).filter((s) => looksLikeDebtCreditor(s.name));
+  }, [historyTxs, recs, spaceAccounts, dismissed, today]);
+  const trackSuggestion = (s: RecurringSuggestion) => {
+    setChooserGen((g) => g + 1);
+    setPrefill({
+      name: s.name,
+      paymentCents: s.amountCents,
+      paymentEvery: s.every,
+      paymentDay: s.every !== 'week' ? s.dueDay : undefined,
+      merchantKey: s.merchantKey,
+    });
+  };
+
+  // #286 r2 (user): the just-created loan offers matching payments only
+  // when history actually HOLDS some — deciding once, before opening,
+  // beats an auto-opened sheet whose only content is "nothing found"
+  const offerMatches = async (id: string) => {
+    const account = await store.get('account', id);
+    if (account && loanMatchCandidates(account, historyTxs ?? [], spaceAccounts ?? []).length > 0) setMatchFor(id);
+  };
 
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
@@ -137,7 +181,6 @@ export function DebtsScreen() {
   const totalOwed = active.reduce((sum, s) => sum + s.remainingCents, 0);
   // cadence-normalized (arc 3): a weekly €100 reads as ~€433 here
   const totalMonthly = active.reduce((sum, s) => sum + monthlyPaymentCents(s.account), 0);
-  const today = localToday();
 
   const renderCard = (status: LoanStatus) => {
     const { account, remainingCents, progress } = status;
@@ -193,14 +236,63 @@ export function DebtsScreen() {
         trailing={
           <>
             <HelpButton tourId="debts" />
-            <IconButton label={t('debts.new')} testId="debts-add" onClick={() => setAddOpen(true)}>
+            <IconButton
+              label={t('debts.new')}
+              testId="debts-add"
+              onClick={() => {
+                // a manual add starts clean — any tracked prefill is spent
+                setPrefill(null);
+                setChooserGen((g) => g + 1);
+                setAddOpen(true);
+              }}
+            >
               <Icon name="plus" size={22} />
             </IconButton>
           </>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div ref={(el) => attachScrollMemory(el, 'debts')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="debts" />
+        {/* #192 r2 (user): detected loans live HERE — track or dismiss
+            without leaving the screen; tracking opens the loan chooser
+            in place, prefilled with the pattern as the payment plan */}
+        {loanSuggestions.length > 0 && (
+          <div className="mb-3 flex flex-col gap-2" data-testid="debts-suggestions">
+            <div className="m-cap">{t('debts.detectedTitle')}</div>
+            {loanSuggestions.map((s) => (
+              <div
+                key={s.merchantKey}
+                className="rounded-card border border-accent bg-accent-soft/40 p-3"
+                data-testid={`debts-suggestion-${s.merchantKey}`}
+              >
+                <div className="flex items-center gap-3">
+                  <Tile icon="hand-coin-outline" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-semibold text-ink">{s.name}</span>
+                    <span className="block text-[11px] text-ink-3">
+                      {t(paymentLabelKey(s.every), { amount: money(s.amountCents) })} ·{' '}
+                      {t('recurring.confidence', { n: s.confidence })}
+                    </span>
+                  </span>
+                </div>
+                <div className="mt-2.5 flex gap-2">
+                  <Button data-testid={`debts-loan-track-${s.merchantKey}`} size="sm" className="flex-1" onClick={() => trackSuggestion(s)}>
+                    {t('recurring.trackLoan')}
+                  </Button>
+                  <Button
+                    data-testid={`debts-loan-dismiss-${s.merchantKey}`}
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => void recOps.dismissSuggestion(s.merchantKey)}
+                  >
+                    {t('debts.notLoan')}
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {active.length > 0 && (
           <div className="grid grid-cols-2 gap-3 rounded-card border border-line bg-surface p-4" data-testid="debts-overview">
             <div>
@@ -224,13 +316,14 @@ export function DebtsScreen() {
         )}
       </div>
       <AddAccountChooser
+        key={chooserGen}
         open={addOpen}
         onOpenChange={setAddOpen}
         initialStep="manual"
         manualTypes={['loan', 'mortgage', 'credit']}
         loanFlavor
-        prefill={handoff ?? undefined}
-        onCreated={({ id }) => setMatchFor(id)}
+        prefill={prefill ?? undefined}
+        onCreated={({ id }) => void offerMatches(id)}
       />
       <LoanMatchSheet accountId={matchFor} onClose={() => setMatchFor(null)} />
     </div>

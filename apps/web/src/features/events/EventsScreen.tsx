@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import { LOCALES, useLang } from '@/i18n';
@@ -8,15 +9,18 @@ import { useSpaceTransactions } from '@/application/transactions';
 import { eventSpentCents } from '@/domain/events';
 import type { EventRow } from '@/db/types';
 import { downscaleImage } from '@/lib/image';
+import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 /** bundled, offline-ready defaults (public/events/*.jpg, Unsplash license) */
 export const EVENT_PICTURES = [
@@ -57,7 +61,12 @@ export function EventFormSheet({
   const [estimate, setEstimate] = useState('');
   const [note, setNote] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   const uploadRef = useRef<HTMLInputElement>(null);
+  // #160: desktop-only webcam tile beside the upload tile
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
 
   // seed keyed on the record's ID, never object identity (the iOS
   // reseed class: re-emitted rows must not wipe mid-typing edits)
@@ -70,6 +79,7 @@ export function EventFormSheet({
     setEstimate(editing?.budgetCents ? (editing.budgetCents / 100).toFixed(2) : '');
     setNote(editing?.note ?? '');
     setConfirmDelete(false);
+    setAttempted(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
 
@@ -77,6 +87,17 @@ export function EventFormSheet({
     if (!file) return;
     // wide enough for the hero, small enough to sync as a field
     setPicture(await downscaleImage(file, 1080, 0.72));
+  };
+
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
+      return;
+    }
+    uploadRef.current?.click();
   };
 
   const save = async () => {
@@ -116,18 +137,30 @@ export function EventFormSheet({
       note !== (editing?.note ?? ''));
 
   return (
+    <>
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('events.edit') : t('events.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* the picture defines the event — pick a bundled one or upload */}
         <div className="flex gap-2 overflow-x-auto pb-1" data-testid="eventform-pictures">
           <button
             data-testid="eventform-upload"
-            onClick={() => uploadRef.current?.click()}
+            onClick={pickPhoto}
             className="m-tap flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
           >
             <Icon name="image-plus" size={18} />
             {t('events.uploadPicture')}
           </button>
+          {/* #160: desktop webcam snapshot — mirrors the upload tile */}
+          {webcamDoor && (
+            <button
+              data-testid="eventform-webcam"
+              onClick={() => setWebcamOpen(true)}
+              className="m-tap flex h-16 w-24 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
+            >
+              <Icon name="camera-outline" size={18} />
+              {t('webcam.use')}
+            </button>
+          )}
           {EVENT_PICTURES.map((candidate) => (
             <button
               key={candidate}
@@ -153,8 +186,11 @@ export function EventFormSheet({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('events.namePlaceholder')}
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          aria-invalid={attempted && !name.trim()}
+          className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
+        {/* #195 r2 (user): the blocker sits AT the field */}
+        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="eventform-save-blocker" />
         <div className="flex items-end gap-2">
           <label className="relative min-w-0 flex-1 text-[12px] text-ink-3">
             {t('events.from')}
@@ -211,7 +247,16 @@ export function EventFormSheet({
             {t(editing.archived === 1 ? 'events.unarchive' : 'events.archive')}
           </button>
         )}
-        <Button data-testid="eventform-save" onClick={() => void save()} disabled={!name.trim()}>
+        <Button
+          data-testid="eventform-save"
+          onClick={() => {
+            if (!name.trim()) {
+              setAttempted(true);
+              return;
+            }
+            void save();
+          }}
+        >
           {editing ? t('action.save') : t('action.create')}
         </Button>
         {editing && (
@@ -221,6 +266,9 @@ export function EventFormSheet({
         )}
       </div>
     </Sheet>
+    {/* #160: snapshot feeds the same downscale path as the file input */}
+    <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onUpload(file)} />
+    </>
   );
 }
 
@@ -294,7 +342,7 @@ export function EventsScreen() {
           </>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div ref={(el) => attachScrollMemory(el, 'events')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="events" />
         <div className="flex flex-col gap-2.5 pt-1">{(events ?? []).map(renderCard)}</div>
         {events?.length === 0 && (

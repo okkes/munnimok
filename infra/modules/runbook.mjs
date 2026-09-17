@@ -1,9 +1,10 @@
 import { writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { pairProd } from './stack.mjs';
+import { pairProd, sharedOf } from './stack.mjs';
 
-const OUT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
+// MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
+const OUT_DIR = process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
 
 /**
  * First-time runbook, rendered per stack with the ACTUAL values —
@@ -34,6 +35,7 @@ ${(isProdTwin
       [stack.host('logto'), stack.ports.logto],
       [stack.host('logtoAdmin'), stack.ports.logtoAdmin],
       [stack.host('glitchtip'), stack.ports.glitchtip],
+      [stack.host('vault'), stack.ports.vault],
     ]
   : [
       [stack.host('web'), stack.ports.web],
@@ -51,37 +53,62 @@ Still manual (probed by --verify, never scripted):
   profile — Logto self-fetches its ADMIN_ENDPOINT through the host
   gateway — and RESTRICT ${stack.host('admin')}${isProdTwin ? ` + ${stack.host('logtoAdmin')}` : ''} to LAN.
 
-## 2. Deploy the containers
+## 2. Deploy the containers (one workflow click)
 
 The rendered \`docker-compose.${stack.stack}.yml\` + \`.env.${stack.stack}\`
-ship through the NAS bundle pipeline (new \`${stack.stack}\` channel in
-deploy-nas.yml — IAC4 wires this; until then copy the rendered pair to
-\`/volume1/docker/${stack.stack}/\` and \`docker compose up -d\`).
+ship through the NAS bundle pipeline: Actions → *Deploy to NAS* → Run
+workflow → channel \`${stack.role === 'prod' ? 'iac-prod' : 'iac-staging'}\` (the setup wizard has a button
+for it). The NAS poller unpacks the bundle into
+\`/volume1/docker/${stack.stack}/\` and runs \`docker compose up -d\` there —
+no SSH, no manual copying.
 ${isProdTwin ? `
-## 3. Logto OOBE (ONCE per pair — the single manual auth step)
+## 3. Logto — nothing manual (2026-09-17)
 
-1. Open ${stack.urls.logtoAdmin} → create the admin user.
-2. Applications → Create → Machine-to-machine → name it \`infra\`,
-   assign the Logto Management API role (all permissions).
-3. Store its credentials:
-   \`gh secret set IAC_LOGTO_INFRA_M2M_ID --env ${stack.githubEnvironment}\` and
-   \`gh secret set IAC_LOGTO_INFRA_M2M_SECRET --env ${stack.githubEnvironment}\`.
-4. Re-run \`bootstrap --stack ${stack.stack}\` — the logto module now
-   creates web/admin/native/m2m apps + the API resource as code and
-   writes the ids back to the GitHub Environment.
+This bootstrap minted two machine credentials for the pair
+(IAC_LOGTO_INFRA_M2M_* for the Management API, IAC_LOGTO_ADMIN_M2M_* for
+the console's admin tenant) into both environments. The first Deploy of
+this twin carries them in its .env; the NAS poller inserts them into
+Logto's own database (deploy/update.sh, idempotent) and Deploy runs this
+bootstrap once more as soon as Logto answers with them. That run creates
+web/admin/native/m2m apps + the API resource as code, writes the ids back,
+claims the console's admin (username \`admin\`, LOGTO_CONSOLE_PASSWORD),
+creates the app's first user (\`munni_admin\`, LOGTO_APP_ADMIN_PASSWORD —
+the admin area's subject, NAS_ADMIN_SUBS) and keeps every credential in
+the pair's vault (§4b). By hand only for an own Logto: the wizard's step 6
+folds the old three steps under "Doing it by hand".
 ` : `
 ## 3. Logto apps
 
 Nothing manual — the pair's OOBE happened on ${pair.stack}; re-running
 bootstrap creates this stack's apps through the same infra credential.
 `}
-## 4. GlitchTip DSNs (after first boot)
+## 4. GlitchTip — nothing manual (2026-09-17)
 
-Open ${pair.urls.glitchtip} → create org \`munni-iac\` + projects
-(pwa/api/admin per stack) → store each DSN:
-\`gh secret set NAS_API_SENTRY_DSN --env ${stack.githubEnvironment}\`,
-\`gh variable set VITE_GLITCHTIP_DSN --env ${stack.githubEnvironment}\`,
-\`gh variable set VITE_GLITCHTIP_DSN_ADMIN --env ${stack.githubEnvironment}\`.
+This bootstrap minted the admin's password (IAC_GLITCHTIP_ADMIN_PASSWORD,
+account admin@${pair.domain}) and an API token (IAC_GLITCHTIP_API_TOKEN)
+for the pair. The first Deploy of the prod twin carries them in its .env;
+the NAS poller creates the superuser and the token inside the container
+(deploy/update.sh, idempotent) and Deploy runs this bootstrap once more
+as soon as GlitchTip accepts the token. That run creates the org, the
+team and the per-stack projects and writes every DSN back
+(NAS_API_SENTRY_DSN secret, VITE_GLITCHTIP_DSN/_ADMIN variables); the
+login and the token are kept in the pair's vault (§4b). By hand only for
+an own GlitchTip: the wizard's step 7 folds the token paste under "Doing
+it by hand".
+
+## 4b. Secrets vault (once per pair — the HUMAN copy)
+
+Vaultwarden runs at ${pair.urls.vault} (LAN-restrict it in the DSM
+firewall like the *-admin hosts). Store the account you want there once
+— the wizard's Vault tile, or \`gh secret set VAULT_ADMIN_EMAIL\` +
+\`gh secret set VAULT_MASTER_PASSWORD\` (pair secrets): bootstrap creates
+the account with them (while registration is open) and keeps every
+credential it mints in a folder named \`${pair.stack}\` — the Logto
+console login, the app admin, both machine credentials, the twin's
+Postgres password — replacing that folder on every run and leaving your
+own folders alone. Then store \`VAULT_SIGNUPS_ALLOWED=false\` and redeploy
+so registration closes. GlitchTip's login and pgadmin are still yours to
+add.
 
 ## 5. Native apps (first upload is Apple/Google-mandated manual)
 
@@ -102,5 +129,77 @@ Open ${pair.urls.glitchtip} → create org \`munni-iac\` + projects
 api /health, logto well-known and glitchtip and prints anything still
 unreachable with the exact fix.
 `);
+  return file;
+}
+
+/**
+ * The local family's much shorter runbook: no DNS, no DSM, no GitHub
+ * stores — Docker Desktop and the setup wizard. Role-aware: the shared
+ * stack and the environment stacks read differently.
+ */
+export function renderLocalRunbook(stack, { minted = [], missingOperator = [] } = {}) {
+  const dir = join(OUT_DIR, stack.stack);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, `runbook.${stack.stack}.md`);
+  const compose = `docker compose --env-file .env.${stack.stack} -f docker-compose.${stack.stack}.yml`;
+  const shared = stack.sharedStack ? sharedOf(stack) : stack;
+  const isShared = stack.role === 'shared';
+  const links = isShared
+    ? `- glitchtip ${stack.urls.glitchtip} · vault ${stack.urls.vault} · control ${stack.urls.control}`
+    : `- app ${stack.urls.web} · admin ${stack.urls.admin} · api ${stack.urls.api}/health
+- logto console ${stack.urls.logtoAdmin} · glitchtip (shared) ${shared.urls.glitchtip}`;
+  const sharedTail = `
+Postgres carries every consumer database (munni_*/logto_* per
+environment + glitchtip). munni-control needs the ${stack.controlApi}
+environment's sign-in setup before its login works.
+
+## 2. Verify
+
+\`node infra/bootstrap.mjs --stack ${stack.stack} --verify\`
+`;
+  const envTail = `
+## 2. Sign-in as code (zero input via the wizard; by hand:)
+
+1. The wizard seeds the \`infra\` M2M app straight into this env's Logto
+   database and re-runs bootstrap. By hand instead: open
+   ${stack.urls.logtoAdmin} → claim the console → Applications → Create →
+   Machine-to-machine → name it \`infra\`, assign the Logto Management
+   API role, then:
+   \`$env:IAC_LOGTO_INFRA_M2M_ID='…'; $env:IAC_LOGTO_INFRA_M2M_SECRET='…'; node infra/bootstrap.mjs --stack ${stack.stack}\`
+2. \`${compose} up -d\` again so web/admin pick the new runtime config up.
+
+## 3. GlitchTip (optional, once per family)
+
+The wizard mints the admin + token inside the SHARED stack's GlitchTip.
+By hand: open ${shared.urls.glitchtip} → register → profile → Auth
+Tokens → create →
+\`$env:IAC_GLITCHTIP_API_TOKEN='…'; node infra/bootstrap.mjs --stack ${stack.stack}\`
+then \`${compose} up -d\` — this environment's DSNs are created and wired.
+
+## 4. Verify
+
+\`node infra/bootstrap.mjs --stack ${stack.stack} --verify\`
+`;
+  const warn = missingOperator.length
+    ? `\n> ⚠ Operator values still missing: ${missingOperator.join(', ')} —\n> export them (e.g. \`$env:NAS_GHCR_PAT='…'\`) and re-run bootstrap.\n`
+    : '';
+  const storeNote = isShared ? 'THIS store' : `the ${stack.sharedStack} store`;
+  writeFileSync(file, `# First-time runbook — ${stack.stack} (local ${isShared ? 'shared services' : 'environment'})
+
+Generated by \`bootstrap --stack ${stack.stack}\`. Secrets live in
+\`.secrets.local.json\` next to this file (gitignored; family-wide values
+live in ${storeNote}) — re-runs keep them stable.
+Minted this run: ${minted.length ? minted.join(', ') : 'none'}.
+${warn}
+> The setup wizard (\`infra\\setup\\start.cmd\`) does ALL of the below with
+> one button — this file is the manual fallback.
+
+## 1. Start ${isShared ? 'the shared services (always first)' : `the environment (after ${stack.sharedStack})`}
+
+From this folder (Docker Desktop running):
+\`${compose} up -d\`
+
+${links}
+${isShared ? sharedTail : envTail}`);
   return file;
 }

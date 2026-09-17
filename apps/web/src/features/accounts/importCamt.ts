@@ -1,11 +1,17 @@
 import { v5 as uuidv5 } from 'uuid';
-import { accountLinkId, feedSpaceId, txMetaId } from '@/domain/feedIds';
+import { accountLinkId, canonicalAccountId, feedSpaceId, importAccountId, txMetaId } from '@/domain/feedIds';
 import type { ParsedStatement } from '@/lib/statements/parseStatement';
 import { predictTx, predictionSkipsReview } from '@/domain/predictCategory';
 import { cachedCatalog } from '@/sync/catalogSync';
-import type { MerchantMemory } from '@/domain/merchantMemory';
+import type { SpaceMemory } from '@/application/prediction';
 import { buildSpaceMerchantMemory } from '@/application/prediction';
-import { UNCATEGORIZED_ID } from '@/domain/categories';
+import { UNCATEGORIZED_ID, isMovementCat } from '@/domain/categories';
+import { defaultFamilyFor } from '@/domain/defaultAccounts';
+import { matchCounterAccount } from '@/domain/counterClue';
+import type { ClueAccount } from '@/domain/counterClue';
+import { familyForCounter, movementCatFor } from '@/domain/txType';
+import { ensureDefaultAccount } from '@/application/defaultAccounts';
+import { visibleAccounts, writeTxTransform } from '@/db/joined';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
@@ -20,6 +26,10 @@ export interface ImportPlanAccount {
   accountId: string;
   accountName: string;
   isNew: boolean;
+  /** #204: whether THIS space already carries the account — imports
+   *  never attach by themselves; absent on the merged (offline) path,
+   *  where the account lives in the space by construction */
+  attached?: boolean;
   txCount: number;
 }
 
@@ -68,7 +78,7 @@ async function createStatementAccount(
 
 /** predicted transformation of one statement entry (history first, keywords after) */
 function predictEntry(
-  memory: MerchantMemory,
+  memory: SpaceMemory,
   entry: ParsedStatement['entries'][number],
   keywordRules?: readonly { catId: string; keywords: string[] }[],
 ): { catId: string; txType: TxType; needsReview: 0 | 1 } {
@@ -96,8 +106,10 @@ interface EntryContext {
   spaceId: string;
   accountId: string;
   iban: string;
-  memory: MerchantMemory;
+  memory: SpaceMemory;
   keywordRules?: readonly { catId: string; keywords: string[] }[];
+  /** #228 r3: the space's tracked accounts — the transfer clue-matcher's pool */
+  counterCandidates: readonly ClueAccount[];
   /** master plan IB: one id per statement per run — rollback's unit */
   batchId: string;
   /** uploader display name, frozen at import time */
@@ -109,11 +121,75 @@ async function uploaderName(store: StorageBackend): Promise<string | undefined> 
   return ((await store.metaGet('profile'))?.value as { name?: string } | undefined)?.name;
 }
 
+/**
+ * #221: a movement-category prediction is only VALID with a counterparty
+ * — link it to the space's default for that family through the write
+ * choke, so the mirror leg mints and a wrong guess later retires it
+ * (the ordinary link lifecycle, spec'd by the user). #228 r3: the
+ * TRANSFER family never leans on its default — only a clue-matched
+ * account links (`matchedId`); the pot families keep their defaults.
+ */
+async function linkPredictedMovement(
+  ctx: EntryContext,
+  txId: string,
+  predicted: { catId: string; txType: TxType; needsReview: 0 | 1 },
+  feedId: string | undefined,
+  matchedId?: string,
+): Promise<void> {
+  if (!isMovementCat(predicted.catId)) return;
+  const family = defaultFamilyFor(predicted.catId);
+  if (!family) return;
+  const targetId =
+    matchedId ?? (family === 'transfer' ? null : await ensureDefaultAccount(ctx.store, ctx.repo, ctx.spaceId, family));
+  if (!targetId) return;
+  await writeTxTransform(
+    ctx.repo,
+    { id: txId, spaceId: ctx.spaceId, feedSpaceId: feedId, txType: predicted.txType, needsReview: predicted.needsReview },
+    { linkedAccountId: targetId },
+  ).catch(() => undefined);
+}
+
+/** #228 r3 (user rule): a TRANSFER prediction is only real when the
+ *  entry's counterparty, IBAN or description names one of the space's
+ *  tracked accounts. A match rides as the counterparty (the bijection
+ *  files the category from the account's kind); no match stands the
+ *  prediction down to Uncategorized — review asks the human. */
+function resolveEntryPrediction(
+  ctx: EntryContext,
+  entry: ParsedStatement['entries'][number],
+): { predicted: { catId: string; txType: TxType; needsReview: 0 | 1 }; matchedId?: string } {
+  const predicted = predictEntry(ctx.memory, entry, ctx.keywordRules);
+  if (defaultFamilyFor(predicted.catId) !== 'transfer') return { predicted };
+  const match = matchCounterAccount(
+    {
+      merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
+      description: entry.description,
+      ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
+    },
+    ctx.counterCandidates,
+    ctx.accountId,
+  );
+  if (match) {
+    return {
+      predicted: {
+        catId: movementCatFor(match.type, entry.amountCents),
+        txType: familyForCounter(match.type),
+        needsReview: predicted.needsReview,
+      },
+      matchedId: match.id,
+    };
+  }
+  return {
+    predicted: { catId: UNCATEGORIZED_ID, txType: entry.amountCents >= 0 ? 'income' : 'expense', needsReview: 1 },
+  };
+}
+
 /** returns true when the entry was new (imported), false when it already existed */
 async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][number]): Promise<boolean> {
   const txId = uuidv5(`tx:${ctx.iban}:${entry.ref}`, IMPORT_NS);
   if (await ctx.store.get('transaction', txId)) return false;
 
+  const { predicted, matchedId } = resolveEntryPrediction(ctx, entry);
   await ctx.repo.upsert('transaction', ctx.spaceId, txId, {
     accountId: ctx.accountId,
     date: entry.date,
@@ -122,11 +198,12 @@ async function importEntry(ctx: EntryContext, entry: ParsedStatement['entries'][
     merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
     description: entry.description,
     ...(entry.counterpartyIban ? { counterIban: normalizeIban(entry.counterpartyIban) } : {}),
-    ...predictEntry(ctx.memory, entry, ctx.keywordRules),
+    ...predicted,
     importRef: entry.ref,
     importBatchId: ctx.batchId,
     ...(ctx.importedBy ? { importedBy: ctx.importedBy } : {}),
   });
+  await linkPredictedMovement(ctx, txId, predicted, undefined, matchedId);
   return true;
 }
 
@@ -143,6 +220,9 @@ export interface FeedGateway {
   attach(spaceId: string, feedSpaceId: string, accountId: string, historyFrom?: string): Promise<void>;
 }
 
+/** #184: rows land one by one — the UI narrates `done` of the total */
+export type ImportProgress = (done: number) => void;
+
 /** Match statements to existing accounts by IBAN (creating where needed) and import entries idempotently. */
 export async function importCamtStatements(
   repo: Repo,
@@ -150,12 +230,13 @@ export async function importCamtStatements(
   spaceId: string,
   statements: ParsedStatement[],
   feeds?: FeedGateway,
+  onProgress?: ImportProgress,
 ): Promise<ImportResult> {
   // demo/offline identities never sync: raw+transformation stay merged
   // in the current space exactly as before (dual-read handles both)
   return feeds
-    ? importIntoFeeds(repo, store, spaceId, statements, feeds)
-    : importMerged(repo, store, spaceId, statements);
+    ? importIntoFeeds(repo, store, spaceId, statements, feeds, onProgress)
+    : importMerged(repo, store, spaceId, statements, onProgress);
 }
 
 /** header-only exports (real ING files include one) parse to a ref-less
@@ -199,10 +280,12 @@ async function importMerged(
   store: StorageBackend,
   spaceId: string,
   statements: ParsedStatement[],
+  onProgress?: ImportProgress,
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
   const importedBy = await uploaderName(store);
   const keywordRules = (await cachedCatalog(store))?.keywords;
+  const counterCandidates = await visibleAccounts(store, spaceId);
   const existing = (await store.bySpace('account', spaceId)).filter((a) => a.deleted === 0);
   const byIban = new Map(existing.flatMap((a) => (a.iban ? [[normalizeIban(a.iban), a] as const] : [])));
 
@@ -226,12 +309,13 @@ async function importMerged(
     let txCount = 0;
     const batchId = crypto.randomUUID();
     for (const entry of stmt.entries) {
-      if (await importEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules, batchId, importedBy }, entry)) {
+      if (await importEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules, counterCandidates, batchId, importedBy }, entry)) {
         imported++;
         txCount++;
       } else {
         skipped++;
       }
+      onProgress?.(imported + skipped);
     }
 
     accounts.push({
@@ -247,10 +331,53 @@ async function importMerged(
 }
 
 /**
+ * #204 (user): importing NEVER attaches by itself — the account is
+ * global, and joining a space is an explicit step where the user also
+ * picks the type and the history gate. Only an account this space
+ * ALREADY attached refreshes its link (a re-import must not silently
+ * detach anything). Returns whether the space carries the account.
+ */
+async function refreshExistingAttachment(
+  repo: Repo,
+  store: StorageBackend,
+  feeds: FeedGateway,
+  spaceId: string,
+  feedId: string,
+  accountId: string,
+): Promise<boolean> {
+  const linkId = accountLinkId(spaceId, feedId);
+  const existingLink = await store.get('accountLink', linkId);
+  if (existingLink?.deleted !== 0) return false;
+  if (existingLink.archived) return false;
+  const historyFrom =
+    existingLink.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
+  await feeds.attach(spaceId, feedId, accountId, historyFrom);
+  await repo.upsert('accountLink', spaceId, linkId, {
+    feedSpaceId: feedId,
+    accountId,
+    historyFrom,
+  });
+  return true;
+}
+
+/** #311 r4 (user): which account row this statement lands in — a
+ *  BANK-fed row owning the canonical `acct:{iban}` id means the import
+ *  keeps its OWN separate account (never silently consumed; the user
+ *  merges explicitly, and the merge runs the reconcile). Without a bank
+ *  row the canonical id stays the import's — pure-import users see no
+ *  change and no data migrates. (S3776: out of the loop) */
+async function importTargetAccountId(store: StorageBackend, feedId: string, iban: string): Promise<string> {
+  const canonicalId = canonicalAccountId(iban);
+  const canonical = await store.get('account', canonicalId);
+  const bankOwnsCanonical = canonical?.spaceId === feedId && canonical.deleted === 0 && canonical.source === 'gocardless';
+  return bankOwnsCanonical ? importAccountId(iban) : canonicalId;
+}
+
+/**
  * Feed shape (shared-accounts design): raw facts go ONCE into the
  * account's feed space, the current space gets the transformation
- * overlay (txMeta with the predicted category) plus an accountLink, and
- * the server records the attachment so members derive read access.
+ * overlay (txMeta with the predicted category) — and an accountLink
+ * only when the space already attached the account (#204).
  */
 async function importIntoFeeds(
   repo: Repo,
@@ -258,10 +385,12 @@ async function importIntoFeeds(
   spaceId: string,
   statements: ParsedStatement[],
   feeds: FeedGateway,
+  onProgress?: ImportProgress,
 ): Promise<ImportResult> {
   const memory = await buildSpaceMerchantMemory(store, spaceId);
   const importedBy = await uploaderName(store);
   const keywordRules = (await cachedCatalog(store))?.keywords;
+  const counterCandidates = await visibleAccounts(store, spaceId);
   let imported = 0;
   let skipped = 0;
   const accounts: ImportPlanAccount[] = [];
@@ -270,7 +399,7 @@ async function importIntoFeeds(
     if (emptyStatement(stmt)) continue;
     const iban = normalizeIban(stmt.iban);
     const feedId = await feeds.register(feedSpaceId(iban), iban);
-    const accountId = uuidv5(`acct:${iban}`, IMPORT_NS);
+    const accountId = await importTargetAccountId(store, feedId, iban);
 
     const account = await store.get('account', accountId);
     if (account?.spaceId !== feedId) await createStatementAccount(repo, feedId, accountId, stmt, iban);
@@ -285,35 +414,23 @@ async function importIntoFeeds(
     let txCount = 0;
     const batchId = crypto.randomUUID();
     for (const entry of stmt.entries) {
-      if (await importFeedEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules, batchId, importedBy }, feedId, entry)) {
+      if (await importFeedEntry({ repo, store, spaceId, accountId, iban, memory, keywordRules, counterCandidates, batchId, importedBy }, feedId, entry)) {
         imported++;
         txCount++;
       } else {
         skipped++;
       }
+      onProgress?.(imported + skipped);
     }
 
-    // attach to the space the user imported from (server first — the
-    // synced link row is the offline mirror of that authoritative fact).
-    // The link CARRIES the history gate (bug: it used to attach without
-    // one, so imported rows ignored the space's start date entirely);
-    // an existing link keeps whatever gate the user already chose.
-    const linkId = accountLinkId(spaceId, feedId);
-    const existingLink = await store.get('accountLink', linkId);
-    const historyFrom =
-      existingLink?.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
-    await feeds.attach(spaceId, feedId, accountId, historyFrom);
-    await repo.upsert('accountLink', spaceId, linkId, {
-      feedSpaceId: feedId,
-      accountId,
-      historyFrom,
-    });
+    const attached = await refreshExistingAttachment(repo, store, feeds, spaceId, feedId, accountId);
 
     accounts.push({
       iban: stmt.iban,
       accountId,
       accountName: account?.name ?? `Bank · ${iban.slice(-4)}`,
       isNew: !account,
+      attached,
       txCount,
     });
   }
@@ -343,9 +460,11 @@ async function importFeedEntry(
     ...(ctx.importedBy ? { importedBy: ctx.importedBy } : {}),
   });
 
+  const { predicted, matchedId } = resolveEntryPrediction(ctx, entry);
   await ctx.repo.upsert('txMeta', ctx.spaceId, txMetaId(ctx.spaceId, txId), {
     txId,
-    ...predictEntry(ctx.memory, entry, ctx.keywordRules),
+    ...predicted,
   });
+  await linkPredictedMovement(ctx, txId, predicted, feedId, matchedId);
   return true;
 }

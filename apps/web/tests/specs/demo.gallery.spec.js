@@ -14,7 +14,9 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="login-demo-btn"]');
     await page.waitForSelector('[data-testid="home-total-balance"]');
     // checking €3,420.55 + savings €8,150.00 − the v2 loans €3,490.00
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,080.55');
+    // 8,080.55 + the default loan pot's €25 repayment leg (#133: the demo
+    // split's bare Device-plan part links onto it at boot — settled value)
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,105.55');
     await shot(page, k('06-demo-login'));
     await teardown(page, ctx, k('06-demo-login'));
   });

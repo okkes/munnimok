@@ -1,5 +1,7 @@
 import type { AccountRow, TransactionRow } from '@/db/types';
+import { REIMBURSED_ID, mainCatOf } from './categories';
 import { netAmountCents } from './reimbursement';
+import { txSliceViews } from './txSlices';
 import type { Period } from './periods';
 
 /**
@@ -16,8 +18,10 @@ interface CatalogLookup {
 /** the earlier of two ISO dates (lexicographic — these are strings, not numbers) */
 export const minIso = (a: string, b: string): string => (a < b ? a : b); // NOSONAR(S7766)
 
+// funding rows are standard-typed since the type retired (2026-08-05)
+// but the shared pot is not spending — the category family excludes them
 const countable = (tx: TransactionRow): boolean =>
-  tx.deleted === 0 && tx.pending !== 1 && tx.txType === 'expense';
+  tx.deleted === 0 && tx.pending !== 1 && tx.txType === 'expense' && mainCatOf(tx.catId) !== 'funding';
 
 /** the cat ids a selection covers: a main includes its subs, a sub itself */
 function coveredIds(catalog: CatalogLookup, catId: string): Set<string> {
@@ -29,19 +33,21 @@ function coveredIds(catalog: CatalogLookup, catId: string): Set<string> {
  * expenses when catId is undefined. Split parts count toward their own
  * category, the remainder toward the parent's.
  */
-/** how much of one transaction falls inside the covered categories */
+/** how much of one transaction falls inside the covered categories —
+ *  the canonical slice fan-out (#211): container parts, per-part
+ *  spreads and the row's own `cats` partition all count toward their
+ *  actual category; the settled `reimbursed` value is not spending */
 function txContribution(tx: TransactionRow, ids: ReadonlySet<string> | null): number {
-  const net = Math.abs(netAmountCents(tx));
-  if (!ids) return net;
-  if (!tx.splits?.length) return ids.has(tx.catId ?? '') ? net : 0;
-  let sum = 0;
-  let splitTotal = 0;
-  for (const part of tx.splits) {
-    splitTotal += Math.abs(part.amountCents);
-    if (ids.has(part.catId)) sum += Math.abs(part.amountCents);
+  // a partitionless row settles via its links alone — net keeps it honest
+  if (!tx.cats?.length && !tx.splits?.length) {
+    const net = Math.abs(netAmountCents(tx));
+    return !ids || ids.has(tx.catId ?? '') ? net : 0;
   }
-  // the unsplit remainder still belongs to the tx's own category
-  if (ids.has(tx.catId ?? '')) sum += Math.max(0, net - splitTotal);
+  let sum = 0;
+  for (const view of txSliceViews(tx)) {
+    if (view.catId === REIMBURSED_ID) continue;
+    if (!ids || ids.has(view.catId ?? '')) sum += Math.abs(view.amountCents);
+  }
   return sum;
 }
 
@@ -74,6 +80,7 @@ export function cashflowSeries(txs: readonly TransactionRow[], periods: readonly
     let expense = 0;
     for (const tx of txs) {
       if (tx.deleted !== 0 || tx.pending === 1 || tx.date < period.start || tx.date > period.end) continue;
+      if (mainCatOf(tx.catId) === 'funding') continue; // the pot is not cashflow
       if (tx.txType === 'income') income += tx.amountCents;
       else if (tx.txType === 'expense') expense += Math.abs(netAmountCents(tx));
     }

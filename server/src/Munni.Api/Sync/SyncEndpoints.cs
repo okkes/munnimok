@@ -8,7 +8,10 @@ namespace Munni.Api.Sync;
 
 public sealed record PushRequest(string ClientId, List<SyncOpDto> Ops);
 public sealed record PushResponse(long LastSeq, int Accepted, int Duplicates);
-public sealed record PullResponse(List<SyncOpDto> Ops, long LatestSeq);
+// NextSince (#305 bug 4): the last RETURNED op's seq — the honest page
+// cursor. LatestSeq is the space head; advancing the client cursor to it
+// after a capped 1000-op page skipped everything in between forever.
+public sealed record PullResponse(List<SyncOpDto> Ops, long LatestSeq, long NextSince);
 public sealed record BootstrapRow(string Entity, string EntityId, bool Deleted, JsonElement Data, Dictionary<string, string> FieldVersions);
 public sealed record BootstrapResponse(List<BootstrapRow> Rows, long LatestSeq);
 
@@ -40,6 +43,28 @@ public static class SyncEndpoints
     private static async Task<IResult> Push(string spaceId, PushRequest request, AppDbContext db, SpaceEventBroadcaster events, HttpContext http)
     {
         var userId = http.GetUserId();
+        // #281 (GlitchTip API-STAGING-N, 2026-08-20 storm): concurrent
+        // pushes — or a push racing the bank ingest — both miss the row
+        // read and collide on a PK at save. A clean retry re-reads what
+        // the winner committed and the LWW merge converges; without it
+        // the client saw 500s, retried, and ran into the rate limiter.
+        var attempt = 0;
+        while (true)
+        {
+            attempt++;
+            try
+            {
+                return await PushOnce(spaceId, request, db, events, userId);
+            }
+            catch (DbUpdateException ex) when (attempt < 3 && SyncWriter.IsUniqueViolation(ex))
+            {
+                db.ChangeTracker.Clear();
+            }
+        }
+    }
+
+    private static async Task<IResult> PushOnce(string spaceId, PushRequest request, AppDbContext db, SpaceEventBroadcaster events, Guid userId)
+    {
         var space = await db.Spaces.FindAsync(spaceId);
         if (space is null)
         {
@@ -47,7 +72,8 @@ public static class SyncEndpoints
             // feeds are born only via POST /feeds (security review S1)
             if (Accounts.FeedAccess.IsFeedShaped(spaceId))
                 return Results.Forbid();
-            // first push creates the space with the pusher as owner
+            // first push creates the space with the pusher as owner (a
+            // lost create race lands in the member check on the retry)
             space = new Space { Id = spaceId };
             db.Spaces.Add(space);
             db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = userId, Role = Social.SpaceRoles.Owner });
@@ -90,7 +116,8 @@ public static class SyncEndpoints
             JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(o.PayloadJson) ?? new(),
             o.Hlc, o.Deleted)).ToList();
         // archived readers must not chase a cursor beyond their cap
-        return Results.Ok(new PullResponse(dtos, Math.Min(space?.LastSeq ?? 0, cap)));
+        var nextSince = ops.Count > 0 ? ops[^1].Seq : since;
+        return Results.Ok(new PullResponse(dtos, Math.Min(space?.LastSeq ?? 0, cap), Math.Min(nextSince, cap)));
     }
 
     private static async Task<IResult> Bootstrap(string spaceId, AppDbContext db, HttpContext http)

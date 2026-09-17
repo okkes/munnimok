@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { euAmountToCents, normalizeDate, parseCsv } from './csv';
-import { parseStatement } from './parseStatement';
+import { detectStatementKind, parseStatement } from './parseStatement';
 
 // sanitized single-row samples of the three real ING export shapes
 const ING_CURRENT = `"Datum","Naam / Omschrijving","Rekening","Tegenrekening","Code","Af Bij","Bedrag (EUR)","Mutatiesoort","Mededelingen"
@@ -121,6 +121,18 @@ describe('parseStatement — detection', () => {
   it('XML routes to CAMT.053, unknown content throws', () => {
     expect(() => parseStatement('name,amount\nfoo,12')).toThrow('Unsupported statement format');
     expect(() => parseStatement('<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"></Document>')).toThrow(); // camt validates deeper
+  });
+});
+
+describe('detectStatementKind (#226 r2)', () => {
+  it('names every format family without parsing', () => {
+    // all three ING sub-shapes fold into one family
+    expect(detectStatementKind(ING_CURRENT)).toBe('ing');
+    expect(detectStatementKind(ING_SAVINGS)).toBe('ing');
+    expect(detectStatementKind(ING_CREDIT, 'Creditcard_210034322508_x.csv')).toBe('ing');
+    expect(detectStatementKind('<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"></Document>')).toBe('camt');
+    expect(detectStatementKind('"Date","Time","TimeZone","Name","Type","Status","Currency","Gross","Fee","Net"')).toBe('paypal');
+    expect(detectStatementKind('name,amount\nfoo,12')).toBe('unknown');
   });
 });
 

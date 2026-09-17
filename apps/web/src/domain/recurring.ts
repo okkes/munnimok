@@ -156,18 +156,23 @@ export interface RecurringComputed {
   effectiveCents: number;
 }
 
-/** per-recurring numbers for a date range (a budget period or a year) */
+/** per-recurring numbers for a date range (a budget period or a year).
+ *  #189 (user): `floor` is the space's start date — an occurrence before
+ *  it is unknowable (its payment is older than the space shows), so it
+ *  neither counts as expected nor reads as "not paid yet". */
 export function computeRange(
   recs: readonly RecurringRow[],
   linkedByRec: ReadonlyMap<string, readonly LinkedTx[]>,
   from: string,
   to: string,
   today: string,
+  floor?: string,
 ): RecurringComputed[] {
   return recs.map((rec) => {
     const linked = [...(linkedByRec.get(rec.id) ?? [])].sort((a, b) => a.date.localeCompare(b.date));
     const effectiveCents = effectiveAmountCents(rec);
-    const occurrences = rec.active === 1 ? occurrencesBetween(rec, from, to).length : 0;
+    const occurrences =
+      rec.active === 1 ? occurrencesBetween(rec, from, to).filter((d) => !floor || d >= floor).length : 0;
     const inRange = linked.filter((t) => t.date >= from && t.date <= to);
     const paidCents = inRange.reduce((s, t) => s + Math.abs(t.amountCents), 0);
     return {
@@ -187,6 +192,28 @@ export interface RecurringSummary {
   paidCents: number;
   remainingCents: number;
   luxuryCents: number;
+}
+
+/** #168: the year chart's twelve months — expected (estimate) vs paid
+ *  (actual), summed over the active recurrings per calendar month. */
+export function monthlyRecurringSeries(
+  recs: readonly RecurringRow[],
+  linkedByRec: ReadonlyMap<string, readonly LinkedTx[]>,
+  year: number,
+  today: string,
+  floor?: string,
+): { expected: number[]; paid: number[] } {
+  const active = recs.filter((r) => r.active === 1);
+  const expected: number[] = [];
+  const paid: number[] = [];
+  for (let m = 1; m <= 12; m += 1) {
+    const mm = String(m).padStart(2, '0');
+    const lastDay = new Date(year, m, 0).getDate();
+    const rows = computeRange(active, linkedByRec, `${year}-${mm}-01`, `${year}-${mm}-${String(lastDay).padStart(2, '0')}`, today, floor);
+    expected.push(rows.reduce((s, c) => s + c.expectedCents, 0));
+    paid.push(rows.reduce((s, c) => s + c.paidCents, 0));
+  }
+  return { expected, paid };
 }
 
 export function summarize(computed: readonly RecurringComputed[]): RecurringSummary {

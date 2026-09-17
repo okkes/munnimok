@@ -1,12 +1,14 @@
 import { useMemo, useState } from 'react';
 import { LOCALES, useLang } from '@/i18n';
-import { useSpaceHistoryTransactions } from '@/application/transactions';
+import { useSpaceAccounts, useSpaceHistoryTransactions } from '@/application/transactions';
 import { localToday, useDismissedKeys, useRecurringOps, useRecurrings } from '@/application/recurring';
 import { detectRecurring } from '@/domain/detectRecurring';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
+import { looksLikeDebtCreditor } from '@/domain/detectDebts';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { RecurringFormSheet, formFromSuggestion } from './RecurringFormSheet';
 import type { FormState } from './RecurringFormSheet';
+import { RecurringMatchSheet } from './RecurringMatchSheet';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
@@ -24,6 +26,7 @@ export function RecurringSuggestionsScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
   const recs = useRecurrings();
+  const accounts = useSpaceAccounts();
   const dismissed = useDismissedKeys();
   // the FULL stored history (user design 2026-08-01): detection and its
   // evidence read past the space's start date — a yearly subscription
@@ -33,19 +36,31 @@ export function RecurringSuggestionsScreen() {
   const ops = useRecurringOps();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<FormState | null>(null);
+  // #257: the accepted suggestion hands its saved id to the occurrence
+  // review — the user picks which charges belong before links are written
+  const [matchRecId, setMatchRecId] = useState<string | null>(null);
 
   const today = localToday();
   const currency = space?.currency ?? 'EUR';
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
+  const accountName = (id?: string) => (id ? (accounts ?? []).find((a) => a.id === id)?.name : undefined);
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
   const suggestions = useMemo(() => {
     if (!txs || !recs || !dismissed) return [];
-    const exclude = new Set([...dismissed, ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : []))]);
-    return detectRecurring(txs, { excludeKeys: exclude, today });
-  }, [txs, recs, dismissed, today]);
+    // #192: a loan owns its merchant key exactly like a recurring row —
+    // accepting a pattern as a loan retires the suggestion
+    const exclude = new Set([
+      ...dismissed,
+      ...recs.flatMap((r) => (r.merchantKey ? [r.merchantKey] : [])),
+      ...(accounts ?? []).flatMap((a) => (a.merchantKey ? [a.merchantKey] : [])),
+    ]);
+    // #192 r2 (user): known-lender patterns belong to the DEBTS screen —
+    // the recurring inbox keeps only genuine subscriptions
+    return detectRecurring(txs, { excludeKeys: exclude, today }).filter((s) => !looksLikeDebtCreditor(s.name));
+  }, [txs, recs, accounts, dismissed, today]);
 
   const txById = useMemo(() => new Map((txs ?? []).map((tx) => [tx.id, tx])), [txs]);
   const evidenceFor = (s: RecurringSuggestion) =>
@@ -68,7 +83,7 @@ export function RecurringSuggestionsScreen() {
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {suggestions.map((s) => (
-          <div key={s.merchantKey} className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid={`recsuggest-card-${s.merchantKey}`}>
+          <div key={s.key} className="mt-3 overflow-hidden rounded-card border border-line bg-surface" data-testid={`recsuggest-card-${s.merchantKey}`}>
             <div className="flex items-center gap-3 px-4 pt-3.5">
               <Tile icon="autorenew" />
               <span className="min-w-0 flex-1">
@@ -76,6 +91,8 @@ export function RecurringSuggestionsScreen() {
                 <span className="block text-[11px] text-ink-3">
                   {t(s.every === 'year' ? 'recurring.patternYearly' : 'recurring.patternMonthly')} ·{' '}
                   {t('recurring.confidence', { n: s.confidence })}
+                  {/* #345: which account the rhythm lives on */}
+                  {accountName(s.accountId) ? ` · ${accountName(s.accountId)}` : ''}
                 </span>
               </span>
               <span className="font-mono text-[15px] font-semibold text-ink">{money(s.amountCents)}</span>
@@ -106,7 +123,7 @@ export function RecurringSuggestionsScreen() {
                 variant="outline"
                 size="sm"
                 className="flex-1"
-                onClick={() => void ops.dismissSuggestion(s.merchantKey)}
+                onClick={() => void ops.dismissSuggestion(s.key)}
               >
                 {t('recurring.notRecurring')}
               </Button>
@@ -122,7 +139,8 @@ export function RecurringSuggestionsScreen() {
         )}
       </div>
 
-      <RecurringFormSheet initial={formInitial} onClose={() => setFormInitial(null)} />
+      <RecurringFormSheet initial={formInitial} onClose={() => setFormInitial(null)} onAccepted={setMatchRecId} />
+      <RecurringMatchSheet recId={matchRecId} onClose={() => setMatchRecId(null)} />
     </div>
   );
 }

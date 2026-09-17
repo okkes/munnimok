@@ -10,9 +10,11 @@ import { fmtCents, fmtSignedPct, parseCents } from '@/lib/money';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { SearchField } from '@/ui/SearchField';
 
 export const ASSET_CLASSES: { id: AssetClass; labelKey: TranslationKey; icon: string }[] = [
   { id: 'stock', labelKey: 'pf.classStock', icon: 'chart-line' },
@@ -47,6 +49,8 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<SearchHits | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
@@ -61,6 +65,7 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
     setQuery('');
     setHits(null);
     setConfirmDelete(false);
+    setAttempted(false);
   }, [initial, editing]);
 
   // debounced symbol search through the quotes proxy (signed-in only)
@@ -110,12 +115,12 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
       <div className="flex flex-col gap-3 pt-1">
         {quotesAvailable() && (
           <>
-            <input
-              data-testid="pf-search"
+            <SearchField
+              testId="pf-search"
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
               placeholder={t('pf.searchPlaceholder')}
-              className="h-11 w-full rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+              textSize="text-[14px]"
             />
             {hits && (hits.stocks.length > 0 || hits.coins.length > 0) && (
               <div className="max-h-44 overflow-y-auto rounded-card border border-line bg-surface" data-testid="pf-search-hits">
@@ -162,8 +167,11 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('pf.namePlaceholder')}
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          aria-invalid={attempted && !name.trim()}
+          className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
+        {/* #195 r2 (user): the blocker sits AT the field */}
+        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="pf-save-blocker" />
         <div className="flex gap-1.5 overflow-x-auto pb-1">
           {ASSET_CLASSES.map((candidate) => (
             <Chip
@@ -201,7 +209,16 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
             />
           </label>
         )}
-        <Button data-testid="pf-save" onClick={() => void save()} disabled={!name.trim()}>
+        <Button
+          data-testid="pf-save"
+          onClick={() => {
+            if (!name.trim()) {
+              setAttempted(true);
+              return;
+            }
+            void save();
+          }}
+        >
           {editing ? t('action.save') : t('action.create')}
         </Button>
         {editing && (

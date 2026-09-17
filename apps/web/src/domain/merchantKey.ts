@@ -32,17 +32,23 @@ const TRAILING_CITIES = new Set([
   'middelburg', 'diemen', 'hengelo', 'lelystad', 'duivendrecht',
 ]);
 
+// #201 r2: banks spell the same city three ways ("S GRAVENHAGE",
+// "SGRAVENHAGE", "'s gravenhage") — comparisons squash spacing and
+// punctuation so every spelling strips identically
+const squashCity = (value: string): string => value.replaceAll(/[^\p{L}]/gu, '');
+const SQUASHED_CITIES = new Set([...TRAILING_CITIES].map(squashCity));
+
 /** drops trailing city tokens: "albert heijn delft" → "albert heijn" */
 function stripTrailingCity(value: string): string {
   const tokens = value.split(' ');
   // cities can be two tokens ("den haag") — try the longer match first
   while (tokens.length > 1) {
-    const lastTwo = tokens.slice(-2).join(' ');
-    if (tokens.length > 2 && TRAILING_CITIES.has(lastTwo)) {
+    const lastTwo = squashCity(tokens.slice(-2).join(' '));
+    if (tokens.length > 2 && SQUASHED_CITIES.has(lastTwo)) {
       tokens.splice(-2, 2);
       continue;
     }
-    if (TRAILING_CITIES.has(tokens.at(-1)!)) {
+    if (SQUASHED_CITIES.has(squashCity(tokens.at(-1)!))) {
       tokens.pop();
       continue;
     }

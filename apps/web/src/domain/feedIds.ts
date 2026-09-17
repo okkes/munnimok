@@ -14,6 +14,17 @@ export const normalizeIban = (iban: string) => iban.replaceAll(/\s/g, '').toUppe
 /** sync-space id of a bank account's feed */
 export const feedSpaceId = (iban: string): string => uuidv5(`feed:${normalizeIban(iban)}`, IMPORT_NS);
 
+/** #311 r4 (user): when a BANK-fed account already owns the canonical
+ *  `acct:{iban}` id, statement imports keep their own separate account
+ *  row — the two sources stay two visible accounts until the user
+ *  explicitly MERGES them (the merge runs the reconcile). The server
+ *  mirrors this with an `acct:{iban}:bank` fork when the import owned
+ *  the canonical id first. */
+export const importAccountId = (iban: string): string => uuidv5(`acct:${normalizeIban(iban)}:import`, IMPORT_NS);
+
+/** the canonical per-IBAN account id (shared with the server's ImportIds) */
+export const canonicalAccountId = (iban: string): string => uuidv5(`acct:${normalizeIban(iban)}`, IMPORT_NS);
+
 /**
  * Fallback when the deterministic id is already registered by another
  * user (feed squatting defence, security S1): salted with the owner's
@@ -25,6 +36,27 @@ export const personalFeedSpaceId = (iban: string, sub: string): string =>
 
 /** per-space overlay row id for a raw transaction */
 export const txMetaId = (spaceId: string, txId: string): string => uuidv5(`meta:${spaceId}:${txId}`, IMPORT_NS);
+
+/** typed-splits v2 (2026-08-05): the minted counter leg of a transfer to
+ *  a MANUAL account — deterministic so two devices linking the same row
+ *  converge on ONE mirror instead of duplicating it */
+export const mirrorTxId = (txId: string): string => uuidv5(`mirror:${txId}`, IMPORT_NS);
+
+/** a PART's minted counter leg: keyed on row + part identity — ':' can
+ *  never occur inside real ids (uuid charset), so the key is unambiguous */
+export const partMirrorSourceId = (txId: string, partId: string): string => `${txId}:${partId}`;
+
+/** #133 r4 (retired by #228): a CATEGORY ENTRY's minted counter leg —
+ *  keyed on the owning money (row id, or row:part for a part's spread)
+ *  + the category. Entries carry no links anymore; this key only serves
+ *  the fold that retires or re-keys the old entry mints. */
+export const catMirrorSourceId = (baseId: string, catId: string): string => `${baseId}:cat:${catId}`;
+
+/** #228: the deterministic part a fold mints when an old mixed spread
+ *  becomes a real split — content-keyed (the editor forbade duplicate
+ *  categories per spread), so two devices folding the same row converge
+ *  on identical parts and identical part-mirror ids. */
+export const foldPartId = (baseId: string, catId: string): string => uuidv5(`part228:${baseId}:${catId}`, IMPORT_NS);
 
 /** attachment row id (one per account per space) */
 export const accountLinkId = (spaceId: string, feedId: string): string =>

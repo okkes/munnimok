@@ -5,6 +5,7 @@
   "workspaces": [
     "apps/web",
     "apps/admin",
+    "apps/control",
     "apps/native"
   ],
   "scripts": {

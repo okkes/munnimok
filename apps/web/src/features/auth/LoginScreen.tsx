@@ -3,9 +3,10 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from '@tanstack/react-router';
 import { useLogto } from '@logto/react';
 import { LANG_NAMES, LANGS, useLang } from '@/i18n';
-import { logtoConfigured } from '@/app/config';
+import { localCaUrl, logtoConfigured } from '@/app/config';
 import { useSession } from '@/app/session';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
@@ -79,13 +80,28 @@ function useOnLine(): boolean {
 function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
   const { t } = useLang();
   const { signIn } = useLogto();
+  const [failed, setFailed] = useState<string | null>(null);
+  const caUrl = localCaUrl();
   return (
     <>
       <Button
         variant="primary"
         data-testid="login-signin-btn"
         disabled={!onLine}
-        onClick={() => void signIn(callbackUri())}
+        onClick={() => {
+          setFailed(null);
+          // a rejected signIn used to vanish (iOS report 2026-09-08:
+          // "nothing happens" — the in-webview OIDC discovery fetch died
+          // on the not-yet-trusted family certificate). Name it on
+          // screen AND report it — a native user has no devtools.
+          signIn(callbackUri()).catch((err: unknown) => {
+            const e = err instanceof Error ? err : new Error(String(err));
+            void import('@/lib/report')
+              .then(({ reportError }) => reportError('auth', e))
+              .catch(() => {});
+            setFailed(e.message || e.name);
+          });
+        }}
       >
         {t('login.signIn')}
       </Button>
@@ -93,6 +109,12 @@ function LogtoSignInButton({ onLine }: Readonly<{ onLine: boolean }>) {
         <p className="flex items-center justify-center gap-1.5 text-center text-[12px] text-ink-3" data-testid="login-offline-note">
           <Icon name="wifi-off" size={13} color="var(--m-warning)" />
           {t('login.offlineNote')}
+        </p>
+      )}
+      {failed !== null && (
+        <p className="text-center text-[12px] leading-relaxed text-ink-3" data-testid="login-signin-error">
+          <Icon name="alert-circle-outline" size={13} color="var(--m-warning)" /> {t('login.signInFailed')} {failed}
+          {caUrl ? ` — ${t('login.signInFailedCaHint')}` : ''}
         </p>
       )}
     </>
@@ -150,11 +172,14 @@ export function LoginScreen() {
   const { login } = useSession();
   const navigate = useNavigate();
   const onLine = useOnLine();
+  const caUrl = localCaUrl();
   // offline mode is two full sub-SCREENS now (user ruling: info first,
   // then profile on its own screen); login modes must honor the browser
   // back button — manual pushState + popstate, since /login is one route
   const [offlineView, setOfflineView] = useState<'intro' | 'profiles' | null>(null);
   const [profileName, setProfileName] = useState('');
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   // Mina's heads-up before minting a SECOND world (arc 8)
   const [profilesAsk, setProfilesAsk] = useState(false);
   const profiles = listOfflineProfiles();
@@ -173,6 +198,7 @@ export function LoginScreen() {
 
   const openProfiles = () => {
     window.history.pushState({ munniLogin: 'offline-profiles' }, '');
+    setAttempted(false);
     setOfflineView('profiles');
   };
 
@@ -314,15 +340,28 @@ export function LoginScreen() {
             </div>
           )}
           {/* the add row stays available — "Add another profile" (arc 8) */}
+          <FormBlockerNote show={attempted && !profileName.trim()} text={t('form.needName')} testId="offline-create-blocker" className="pb-2" />
           <div className="flex gap-2">
             <input
               data-testid="offline-name"
               value={profileName}
               onChange={(e) => setProfileName(e.target.value)}
               placeholder={t('login.namePlaceholder')}
-              className="h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={attempted && !profileName.trim()}
+              className={`h-11 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[14px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !profileName.trim())}`}
             />
-            <Button size="sm" className="h-11" data-testid="offline-create" onClick={createOffline} disabled={!profileName.trim()}>
+            <Button
+              size="sm"
+              className="h-11"
+              data-testid="offline-create"
+              onClick={() => {
+                if (!profileName.trim()) {
+                  setAttempted(true);
+                  return;
+                }
+                createOffline();
+              }}
+            >
               {t(profiles.length ? 'offline.addAnother' : 'offline.addProfile')}
             </Button>
           </div>
@@ -334,6 +373,14 @@ export function LoginScreen() {
 
   return (
     <div className="m-fade relative flex h-full flex-col overflow-y-auto bg-bg md:flex-row md:overflow-hidden" data-testid="screen-login">
+      {/* #122: in dark mode the OS status icons and the wordmark float
+          over LIGHT hero art and drown — a top scrim buys them contrast.
+          Light mode needs none: dark icons read on light art. */}
+      <div
+        aria-hidden="true"
+        data-testid="login-top-scrim"
+        className="pointer-events-none absolute inset-x-0 top-0 z-[5] hidden h-28 bg-gradient-to-b from-black/55 via-black/25 to-transparent dark:block"
+      />
       {/* logo + language: overlays the hero on mobile, spans both panes on desktop */}
       <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-5 pt-[max(12px,env(safe-area-inset-top))] md:px-8 md:pt-6">
         <div className="flex items-center gap-2.5">
@@ -385,6 +432,24 @@ export function LoginScreen() {
               <Icon name="lock-outline" size={16} />
               {t('offline.loginBtn')}
             </Button>
+            {/* LOCAL builds only: sign-in opens the system browser, which
+                does not inherit the app's bundled trust anchor — one tap
+                fetches the family root instead of a remembered url */}
+            {caUrl && (
+              <div className="pt-1 text-center">
+                <button
+                  data-testid="login-trust-ca"
+                  onClick={() => window.open(caUrl, '_blank', 'noopener')}
+                  className="m-tap inline-flex items-center gap-1.5 border-none bg-transparent text-[12px] font-medium text-ink-3 underline"
+                >
+                  <Icon name="certificate-outline" size={14} />
+                  {t('login.trustCa')}
+                </button>
+                <p className="mt-1 text-[11px] leading-snug text-ink-4" data-testid="login-trust-ca-hint">
+                  {t('login.trustCaHint')}
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

@@ -1,12 +1,17 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
 import type { GlobalAccount } from '@/application/accounts';
+import { newestTxDate } from '@/application/accounts';
+import { setSpaceAttachIntent } from './openHandoff';
 import { detachFeedFromSpace } from '@/application/accountAttach';
+import { purgeAccountRemnants } from '@/application/accountPurge';
 import { logActivity } from '@/application/activity';
+import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { useData } from '@/app/data';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
-import type { AccountSource } from '@/db/types';
+import type { AccountRow, AccountSource } from '@/db/types';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
@@ -29,6 +34,14 @@ export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
   gocardless: 'acct.sourceOpenBanking',
 };
 
+/** #176: the label honors WHICH open-banking provider fetches the row —
+ *  Enable Banking rows read "Enable Banking", not "GoCardless"; legacy
+ *  rows without the stamp are GoCardless by history */
+export const sourceKeyFor = (account: Pick<AccountRow, 'source' | 'provider'>): TranslationKey =>
+  account.source === 'gocardless' && account.provider === 'enablebanking'
+    ? 'acct.sourceOpenBankingEb'
+    : SOURCE_KEYS[account.source];
+
 /**
  * The global view of one of YOUR feed accounts: name/icon, source, the
  * spaces it is currently attached to (detach-only — attaching happens on
@@ -49,13 +62,19 @@ export function AttachSheet({
 }>) {
   const { t } = useLang();
   const { store, repo, engine, spaceId } = useData();
+  const navigate = useNavigate();
   const [busy, setBusy] = useState<string | null>(null);
   const [detachSpaceId, setDetachSpaceId] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [logoOpen, setLogoOpen] = useState(false);
+  // #239: a global rename with space-level names standing asks first
+  const [renameAsk, setRenameAsk] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteFailed, setDeleteFailed] = useState(false);
+  // #185: a big account deletes in visible stages — server first, then
+  // the local purge; the confirm sheet's busy note names the current one
+  const [deleteStage, setDeleteStage] = useState<'server' | 'local'>('server');
 
   const spaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   // LIVE link rows, not the entry snapshot: the checkboxes must flip the
@@ -73,6 +92,8 @@ export function AttachSheet({
   const liveAccount = useQuery(store, async () => (accountId ? await store.get('account', accountId) : undefined), [
     accountId,
   ]);
+  // #205: the newest transaction on the account, from raw rows
+  const newestTx = useQuery(store, async () => (accountId ? newestTxDate(store, accountId) : undefined), [accountId]);
 
   // master plan IB: batches derive from the stamped rows — no extra table
   const batches =
@@ -128,22 +149,38 @@ export function AttachSheet({
     if (trimmed && trimmed !== account.name) {
       void repo.upsert('account', account.spaceId, account.id, { name: trimmed });
       void logActivity(store, repo, spaceId, 'accountEdit', trimmed);
+      // #239 (user): spaces may hold their OWN name for this account —
+      // a global rename asks whether those follow or stay
+      if ((liveLinks ?? []).some((l) => l.displayName)) setRenameAsk(trimmed);
     }
+  };
+
+  // #239: replace every space's own name with the fresh global one
+  const renameEverywhere = () => {
+    for (const link of liveLinks ?? []) {
+      if (link.displayName) void repo.upsert('accountLink', link.spaceId, link.id, { displayName: null as never });
+    }
+    setRenameAsk(null);
   };
 
   const deleteAccount = async () => {
     if (deleteBusy) return;
     setDeleteBusy(true);
     setDeleteFailed(false);
+    setDeleteStage('server');
     try {
       // server first: consent revocation + cascade (or partial removal
       // when someone else still covers the account — server ruling)
       await deleteFeedAccount(feedSpaceId);
       // my synced mirrors tombstone through the normal outbox path; the
       // feed's local rows are purged directly — it is no longer ours
+      setDeleteStage('local');
       for (const link of liveLinks ?? []) {
         await repo.remove('accountLink', link.spaceId, link.id);
       }
+      // #279: the engine purge below is feed-keyed — member spaces keep
+      // their txMeta overlays and legacy own rows unless swept here
+      await purgeAccountRemnants(store, repo, account.id, feedSpaceId);
       await engine?.purgeSpace(feedSpaceId);
       void logActivity(store, repo, spaceId, 'accountRemove', account.name);
       setDeleteOpen(false);
@@ -173,8 +210,11 @@ export function AttachSheet({
   const attachedSpaces = (spaces ?? [])
     .map((space) => ({ space, via: viaBySpace.get(space.id) }))
     .filter((row) => !!row.via);
+  // #318: the quick-attach door names the ACTIVE space
+  const activeSpace = (spaces ?? []).find((s) => s.id === spaceId);
 
   return (
+    <>
     <Sheet open={open} onOpenChange={onOpenChange} title={account.name} size="tall" dragHandle>
       {canEdit && (
         <div className="mb-3 flex flex-col gap-2">
@@ -203,9 +243,23 @@ export function AttachSheet({
           </button>
         </div>
       )}
+      {/* #212 r2 (user): NO type here — a global account is just an
+          account; each space decides what it is at attach time and can
+          change it on its own accounts sheet */}
       <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-source">
         <span className="text-ink-4">{t('acct.source')}</span>
-        <span className="text-ink-2">{t(SOURCE_KEYS[account.source])}</span>
+        <span className="text-ink-2">{t(sourceKeyFor(account))}</span>
+      </div>
+      {/* #205: where the DATA ends vs when the sync ran — two facts */}
+      {account.dataThroughDate && (
+        <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-datathrough">
+          <span className="text-ink-4">{t('acct.dataThroughLabel')}</span>
+          <span className="font-mono text-ink-2">{account.dataThroughDate}</span>
+        </div>
+      )}
+      <div className="mb-3 flex items-center justify-between px-1 text-[12px]" data-testid="attach-newest-tx">
+        <span className="text-ink-4">{t('acct.newestTx')}</span>
+        <span className="font-mono text-ink-2">{newestTx ?? '—'}</span>
       </div>
       {/* only what the account currently feeds — attaching moved to each
           space's own accounts screen (checkboxes retired, user request) */}
@@ -214,6 +268,25 @@ export function AttachSheet({
         <p className="px-1 text-[13px] text-ink-4" data-testid="attach-none">
           {t('acct.notAttached')}
         </p>
+      )}
+      {/* #318 (user): a truly link-less account offers the CURRENT space
+          by name — through the real flow: the intent pre-aims the space
+          accounts screen, whose attach sheet opens on the final step
+          (type pick + Attach, #310) — never a silent in-place attach */}
+      {canEdit && liveLinks?.length === 0 && activeSpace && (
+        <Button
+          variant="outline"
+          className="mt-2 w-full"
+          data-testid="account-attach-here"
+          onClick={() => {
+            setSpaceAttachIntent(account.id);
+            onOpenChange(false);
+            void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
+          }}
+        >
+          <Icon name="link-plus" size={16} />
+          {t('acct.attachHere', { space: activeSpace.name })}
+        </Button>
       )}
       {attachedSpaces.length > 0 && (
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="attach-spaces">
@@ -224,6 +297,8 @@ export function AttachSheet({
               className="flex items-center gap-3 border-b border-line-2 px-4 py-2.5 last:border-0"
             >
               <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{space.name}</span>
+              {/* #277: a shared space says so wherever it is listed */}
+              {space.kind === 'shared' && <SharedSpaceBadge testId={`attach-space-shared-${space.id}`} />}
               {via?.historyFrom && <span className="font-mono text-[11px] text-ink-4">{via.historyFrom}</span>}
               {via?.archived ? (
                 <span
@@ -277,14 +352,6 @@ export function AttachSheet({
           </div>
         </>
       )}
-      <DangerConfirmSheet
-        open={rollbackBatch !== null}
-        onOpenChange={(o) => !o && setRollbackBatch(null)}
-        title={t('imports.rollback')}
-        body={t('imports.rollbackBody', { n: rollbackBatch?.count ?? 0, from: rollbackBatch?.from ?? '', to: rollbackBatch?.to ?? '' })}
-        onConfirm={() => void rollback()}
-        testId="attach-rollback"
-      />
       {/* danger zone: deletion exists for connected accounts too (user
           request) — syncing identities only, the server owns the cascade */}
       {canEdit && engine && (
@@ -300,39 +367,78 @@ export function AttachSheet({
           {t('acct.deleteAccount')}
         </Button>
       )}
-      {/* aligned destructive confirm: sheet + cooldown, same as space side */}
-      <DangerConfirmSheet
-        open={detachSpaceId !== null}
-        onOpenChange={(o) => !o && setDetachSpaceId(null)}
-        title={t('acct.detachConfirmTitle')}
-        body={t('acct.detachConfirmBodySpace', {
-          account: account.name,
-          space: (spaces ?? []).find((s) => s.id === detachSpaceId)?.name ?? '',
-        })}
-        busy={busy !== null}
-        onConfirm={() => void detach()}
-        testId="attach-detach"
-      />
-      <DangerConfirmSheet
-        open={deleteOpen}
-        onOpenChange={setDeleteOpen}
-        title={t('acct.deleteConfirmTitle')}
-        body={t('acct.deleteConfirmBody')}
-        busy={deleteBusy}
-        error={deleteFailed ? t('acct.deleteFailed') : null}
-        onConfirm={() => void deleteAccount()}
-        testId="attach-delete"
-      />
-      <BrandIconPicker
-        open={logoOpen}
-        onOpenChange={setLogoOpen}
-        initialQuery={account.name}
-        onPick={({ logo }) => {
-          void repo.upsert('account', account.spaceId, account.id, { logo: logo ?? (null as never) });
-          void logActivity(store, repo, spaceId, 'accountEdit', account.name);
-          setLogoOpen(false);
-        }}
-      />
     </Sheet>
+    {/* #241 (user ss): SIBLINGS, not children — a sheet nested inside
+        another sheet's children portals FIRST and paints BELOW its
+        parent (both live at z-50; body order decides). Beside the
+        parent, the later sibling lands later in <body> and stacks on
+        top — the EditAccountSheet pattern. */}
+    <BrandIconPicker
+      open={logoOpen}
+      onOpenChange={setLogoOpen}
+      initialQuery={account.name}
+      onPick={({ logo }) => {
+        void repo.upsert('account', account.spaceId, account.id, { logo: logo ?? (null as never) });
+        void logActivity(store, repo, spaceId, 'accountEdit', account.name);
+        setLogoOpen(false);
+      }}
+    />
+    {/* #239: the global rename found space-level names — follow or keep? */}
+    <Sheet
+      open={renameAsk !== null}
+      onOpenChange={(next) => {
+        if (!next) setRenameAsk(null);
+      }}
+      title={t('acct.renameSpacesTitle')}
+      size="compact"
+    >
+      <p className="pb-4 text-[13px] leading-relaxed text-ink-2" data-testid="attach-rename-ask">
+        {t('acct.renameSpacesBody', { name: renameAsk ?? '' })}
+      </p>
+      <div className="flex flex-col gap-2">
+        <Button data-testid="attach-rename-everywhere" onClick={renameEverywhere}>
+          {t('acct.renameSpacesGo')}
+        </Button>
+        <Button variant="outline" data-testid="attach-rename-keep" onClick={() => setRenameAsk(null)}>
+          {t('acct.renameSpacesKeep')}
+        </Button>
+      </div>
+    </Sheet>
+    {/* #288 (user ss): the destructive confirms are SIBLINGS too — nested
+        in the sheet's children they portaled FIRST and the delete popup
+        painted BEHIND the sheet (same #241 body-order rule as above) */}
+    <DangerConfirmSheet
+      open={rollbackBatch !== null}
+      onOpenChange={(o) => !o && setRollbackBatch(null)}
+      title={t('imports.rollback')}
+      body={t('imports.rollbackBody', { n: rollbackBatch?.count ?? 0, from: rollbackBatch?.from ?? '', to: rollbackBatch?.to ?? '' })}
+      onConfirm={() => void rollback()}
+      testId="attach-rollback"
+    />
+    {/* aligned destructive confirm: sheet + cooldown, same as space side */}
+    <DangerConfirmSheet
+      open={detachSpaceId !== null}
+      onOpenChange={(o) => !o && setDetachSpaceId(null)}
+      title={t('acct.detachConfirmTitle')}
+      body={t('acct.detachConfirmBodySpace', {
+        account: account.name,
+        space: (spaces ?? []).find((s) => s.id === detachSpaceId)?.name ?? '',
+      })}
+      busy={busy !== null}
+      onConfirm={() => void detach()}
+      testId="attach-detach"
+    />
+    <DangerConfirmSheet
+      open={deleteOpen}
+      onOpenChange={setDeleteOpen}
+      title={t('acct.deleteConfirmTitle')}
+      body={t('acct.deleteConfirmBody')}
+      busy={deleteBusy}
+      busyText={deleteStage === 'local' ? t('acct.deleteStageLocal') : t('acct.deleteStageServer')}
+      error={deleteFailed ? t('acct.deleteFailed') : null}
+      onConfirm={() => void deleteAccount()}
+      testId="attach-delete"
+    />
+    </>
   );
 }

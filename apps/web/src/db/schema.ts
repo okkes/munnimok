@@ -30,6 +30,7 @@ import type {
   SpaceRow,
   TransactionRow,
   TxMetaRow,
+  TxSeenRow,
 } from './types';
 
 /**
@@ -46,6 +47,7 @@ export class MunniDB extends Dexie {
   accountLinks!: Table<AccountLinkRow, string>;
   recurrings!: Table<RecurringRow, string>;
   recurringDismissals!: Table<RecurringDismissRow, string>;
+  txSeen!: Table<TxSeenRow, string>;
   budgets!: Table<BudgetRow, string>;
   events!: Table<EventRow, string>;
   goals!: Table<GoalRow, string>;
@@ -152,6 +154,10 @@ export class MunniDB extends Dexie {
     this.version(14).stores({
       activities: 'id, spaceId',
     });
+    // #148 r3: the synced first-seen rows (user identities)
+    this.version(15).stores({
+      txSeen: 'id, spaceId, forSpaceId',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -172,6 +178,8 @@ export class MunniDB extends Dexie {
         return this.recurrings;
       case 'recurringDismiss':
         return this.recurringDismissals;
+      case 'txSeen':
+        return this.txSeen;
       case 'budget':
         return this.budgets;
       case 'event':

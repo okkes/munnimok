@@ -14,6 +14,7 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -81,6 +82,8 @@ export function ShoppingConnectionsScreen() {
   const [reconnectId, setReconnectId] = useState<string | null>(null);
   const [naming, setNaming] = useState<{ instanceId: string; duplicateOf?: string } | null>(null);
   const [nameDraft, setNameDraft] = useState('');
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   const [manageId, setManageId] = useState<string | null>(null);
   const [syncStates, setSyncStates] = useState<Record<string, 'busy' | StoreSyncResult>>({});
 
@@ -109,6 +112,7 @@ export function ShoppingConnectionsScreen() {
     // fresh instance: ask for a display name right away (user ruling)
     const meta = (await store.allRows('storeConn')).find((c) => c.id === result.instanceId);
     setNameDraft(meta?.displayName ?? '');
+    setAttempted(false);
     setNaming({ instanceId: result.instanceId, duplicateOf: result.duplicateOf });
     await runSync(result.instanceId);
   };
@@ -281,7 +285,16 @@ export function ShoppingConnectionsScreen() {
       />
 
       {/* name-the-instance step right after a successful connect */}
-      <Sheet open={naming !== null} onOpenChange={(open) => !open && setNaming(null)} title={t('shop.nameTitle')} size="form">
+      <Sheet
+        open={naming !== null}
+        onOpenChange={(open) => {
+          if (open) return;
+          setNaming(null);
+          setAttempted(false);
+        }}
+        title={t('shop.nameTitle')}
+        size="form"
+      >
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[13px] leading-relaxed text-ink-2">{t('shop.nameHint')}</p>
           {naming?.duplicateOf && (
@@ -293,9 +306,20 @@ export function ShoppingConnectionsScreen() {
             data-testid="shop-name-input"
             value={nameDraft}
             onChange={(e) => setNameDraft(e.target.value)}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+            aria-invalid={attempted && !nameDraft.trim()}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none${blockerRing(attempted && !nameDraft.trim())}`}
           />
-          <Button data-testid="shop-name-save" disabled={!nameDraft.trim()} onClick={() => void saveName()}>
+          <FormBlockerNote show={attempted && !nameDraft.trim()} text={t('form.needName')} testId="shop-name-save-blocker" />
+          <Button
+            data-testid="shop-name-save"
+            onClick={() => {
+              if (!nameDraft.trim()) {
+                setAttempted(true);
+                return;
+              }
+              void saveName();
+            }}
+          >
             {t('action.save')}
           </Button>
         </div>

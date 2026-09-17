@@ -6,6 +6,9 @@ export interface PushResult {
 export interface PullResult {
   ops: Op[];
   latestSeq: number;
+  /** the last returned op's seq — the honest page cursor (#305 bug 4);
+   *  absent on servers predating pagination */
+  nextSince?: number;
 }
 
 /**

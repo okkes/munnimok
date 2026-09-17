@@ -59,6 +59,16 @@ const capacitor = (): CapacitorGlobal | undefined =>
 
 export const isNativeApp = (): boolean => capacitor()?.isNativePlatform?.() === true;
 
+/** iOS/iPadOS WebKit on ANY surface — Safari tab, installed PWA, the
+ *  native shell. Mirrors react-modal-sheet's own platform test (#134)
+ *  so opt-outs fire exactly where its iOS-only behaviors would. */
+export const isIOS = (): boolean => {
+  if (typeof navigator === 'undefined') return false;
+  const platform =
+    (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData?.platform ?? navigator.platform;
+  return /^iP(hone|ad|od)/i.test(platform) || (/^Mac/i.test(platform) && navigator.maxTouchPoints > 1);
+};
+
 /**
  * Web/PWA: ask the browser not to evict IndexedDB. Native: a no-op —
  * WebView storage is app-scoped application data, never evicted.
@@ -176,16 +186,18 @@ export async function getNativeAppBuild(): Promise<number | null> {
 /**
  * Native camera capture: the webview's <input capture> path crashes on
  * iOS and offers gallery-only on Android (user report), so the shells
- * use the Camera plugin instead. Returns a File ready for the existing
+ * use the Camera plugin instead. 'CAMERA' opens the camera directly
+ * (receipts); 'PROMPT' shows the OS Camera-or-Photos chooser (#166 —
+ * the generic upload sites). Returns a File ready for the existing
  * attach pipeline, or null when cancelled/unavailable.
  */
-export async function takeNativePhoto(): Promise<File | null> {
+export async function takeNativePhoto(source: 'CAMERA' | 'PROMPT' = 'CAMERA'): Promise<File | null> {
   const camera = capacitor()?.Plugins?.Camera;
   if (!isNativeApp() || !camera?.getPhoto) return null;
   try {
     const photo = await camera.getPhoto({
       resultType: 'base64',
-      source: 'CAMERA',
+      source,
       quality: 80,
       correctOrientation: true,
     });
@@ -196,6 +208,16 @@ export async function takeNativePhoto(): Promise<File | null> {
   } catch {
     return null; // user cancelled or permission denied — the button stays usable
   }
+}
+
+/** #166: native Android's file input is gallery-only — route the tap
+ *  through the Camera plugin's chooser; the web input stays for browsers.
+ *  Callers must treat null differently per platform: native null = the
+ *  user cancelled the chooser (do nothing), web null = not native at
+ *  all (fall back to clicking the hidden file input). */
+export async function pickPhotoNative(): Promise<File | null> {
+  if (!isNativeApp()) return null;
+  return takeNativePhoto('PROMPT');
 }
 
 /**

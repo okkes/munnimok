@@ -1,9 +1,9 @@
-import path from 'path';
-import { fileURLToPath } from 'url';
 import { test, expect } from '@playwright/test';
-import { VARIANTS, createPage, base, gotoGlobalSettings, shot, teardown } from '../helpers/base.js';
+import { VARIANTS, createPage, base, freshCamtFixture, gotoGlobalSettings, shot, teardown } from '../helpers/base.js';
 
-const FIXTURE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../fixtures/camt053-sample.xml');
+// date-freshened copy — the static file ages out of the default
+// two-month attach history window (2026-09-06 incident)
+const FIXTURE = freshCamtFixture();
 
 // --- Tests ------------------------------------------------------------------
 
@@ -11,6 +11,10 @@ async function goToAccounts(page) {
   await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.waitForSelector('[data-testid="screen-accounts"]');
+  // #314 r2: space cards mount COLLAPSED — open the demo cluster so the
+  // balance asserts on demo rows keep seeing them
+  await page.click('[data-testid="accounts-space-head-demo_space"]');
+  await page.waitForSelector('[data-testid="account-row-demo_main"]');
 }
 
 async function pickFixture(page) {

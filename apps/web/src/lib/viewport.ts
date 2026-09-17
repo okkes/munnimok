@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react';
+﻿import { useSyncExternalStore } from 'react';
 
 /**
  * The one desktop breakpoint decision (redesign §4): at lg the app gains
@@ -67,6 +67,28 @@ export function padScrollportForKeyboard(target: HTMLElement): void {
   if (paddedScrollport && paddedScrollport.el !== scroller) restoreScrollportPad();
   paddedScrollport ??= { el: scroller, prev: scroller.style.paddingBottom };
   scroller.style.paddingBottom = `${inset + 16}px`;
+}
+
+/** #136 r2: is the element outside the visible band — the WINDOW band or
+ *  its nearest overflow ancestor's box? A row scrolled out of a sheet's
+ *  inner list still has window-plausible coordinates while being clipped
+ *  invisible, which let the tutorial glow paint over the wrong spot. */
+export function isClippedFromView(el: HTMLElement, topPad = 70, bottomPad = 96): boolean {
+  const r = el.getBoundingClientRect();
+  if (r.width === 0) return false; // display:none — nothing to reveal
+  if (r.top < topPad || r.bottom > window.innerHeight - bottomPad) return true;
+  let node: HTMLElement | null = el.parentElement;
+  while (node && node !== document.body) {
+    if (node.scrollHeight > node.clientHeight + 4) {
+      const overflowY = getComputedStyle(node).overflowY;
+      if (overflowY === 'auto' || overflowY === 'scroll') {
+        const box = node.getBoundingClientRect();
+        return r.top < box.top - 2 || r.bottom > box.bottom + 2;
+      }
+    }
+    node = node.parentElement;
+  }
+  return false;
 }
 
 export function revealInScroller(el: HTMLElement): void {

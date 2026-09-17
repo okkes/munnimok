@@ -1,6 +1,7 @@
 import type { AccountRow, BudgetRow, RecurringRow, TransactionRow } from '@/db/types';
 import type { TranslationKey } from '@/i18n';
 import { budgetFamily, budgetPeriodAt, budgetSpentCents, cycleIndex } from './budgets';
+import { mainCatOf } from './categories';
 import { projectPayoff } from './debts';
 import { cycleMonths } from './recurring';
 import { detectPriceChange } from './recurringPrice';
@@ -52,11 +53,19 @@ export interface InsightInputs {
 
 // ── leaks ───────────────────────────────────────────────────────────────
 
+/** #356: funding-filed recurrings are money MOVED (shared pots, family
+ * accounts), not money spent — no leak/overlap advice about them */
+const isFundingRec = (rec: Pick<RecurringRow, 'catId'>, catalog: InsightInputs['catalog']): boolean => {
+  if (!rec.catId) return false;
+  const cat = catalog.byId(rec.catId);
+  return mainCatOf(rec.catId) === 'funding' || (cat.parentId ?? cat.id) === 'funding';
+};
+
 /** a recurring cost that SUSTAINABLY charges more than it used to (min €0.50/mo) */
 export function priceCreep(inputs: InsightInputs): Insight[] {
   const out: Insight[] = [];
   for (const rec of inputs.recurrings) {
-    if (rec.deleted !== 0 || rec.active !== 1) continue;
+    if (rec.deleted !== 0 || rec.active !== 1 || isFundingRec(rec, inputs.catalog)) continue;
     const charges = inputs.txs
       .filter((tx) => tx.deleted === 0 && tx.recurringId === rec.id && tx.amountCents < 0)
       .sort((a, b) => a.date.localeCompare(b.date));
@@ -84,7 +93,7 @@ export function priceCreep(inputs: InsightInputs): Insight[] {
 export function subscriptionOverlap(inputs: InsightInputs): Insight[] {
   const groups = new Map<string, RecurringRow[]>();
   for (const rec of inputs.recurrings) {
-    if (rec.deleted !== 0 || rec.active !== 1 || rec.kind !== 'subscription') continue;
+    if (rec.deleted !== 0 || rec.active !== 1 || rec.kind !== 'subscription' || isFundingRec(rec, inputs.catalog)) continue;
     const cat = inputs.catalog.byId(rec.catId);
     const mainId = cat.parentId ?? cat.id;
     const list = groups.get(mainId) ?? [];
@@ -115,7 +124,7 @@ export function smallHabit(inputs: InsightInputs): Insight[] {
   if (!period) return [];
   const groups = new Map<string, { name: string; count: number; totalCents: number }>();
   for (const tx of inputs.txs) {
-    if (tx.deleted !== 0 || tx.txType !== 'expense') continue;
+    if (tx.deleted !== 0 || tx.txType !== 'expense' || mainCatOf(tx.catId) === 'funding') continue;
     if (tx.date < period.start || tx.date > period.end) continue;
     const spent = -tx.amountCents;
     if (spent <= 0 || spent > 1000) continue;
@@ -154,7 +163,7 @@ export function weekendMultiplier(inputs: InsightInputs): Insight[] {
   let weekend = 0;
   let weekday = 0;
   for (const tx of inputs.txs) {
-    if (tx.deleted !== 0 || tx.txType !== 'expense') continue;
+    if (tx.deleted !== 0 || tx.txType !== 'expense' || mainCatOf(tx.catId) === 'funding') continue;
     if (tx.date < start || tx.date > end) continue;
     const day = new Date(tx.date).getDay();
     if (day === 5 || day === 6 || day === 0) weekend += -tx.amountCents;

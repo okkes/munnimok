@@ -46,7 +46,8 @@ for (const V of VARIANTS) {
     // bob sees the friendship after revisiting
     await bob.page.click('[data-testid="friends-back"]');
     await goToFriends(bob.page);
-    await expect(bob.page.locator('[data-testid="friends-list"] [data-testid^="friends-remove-"]')).toHaveCount(1);
+    // #165: rows carry no trash button anymore — the row itself is the door
+    await expect(bob.page.locator('[data-testid="friends-list"] [data-testid^="friends-row-"]')).toHaveCount(1);
     await shot(bob.page, k('32-friends'));
 
     await teardown(bob.page, bob.ctx, k('32-friends') + '--bob');

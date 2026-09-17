@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
-import { ALL_TX_TYPES } from '@/domain/txType';
-import type { CategoryRow, CatDirection, TxType } from '@/db/types';
+import type { CategoryRow, TxType } from '@/db/types';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -10,10 +9,11 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { ColorPicker } from '@/ui/ColorPicker';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
-import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { SearchField } from '@/ui/SearchField';
 import {
   copyCategoryToSpace,
   createMainCategory,
@@ -24,10 +24,12 @@ import {
 import type { CategoryChanges, PendingCommit } from './categoryOps';
 import { catName, useCategories } from './useCategories';
 import type { Cat } from './useCategories';
+import { takeCategoriesCreateIntent } from './categoriesHandoff';
 import type { TFunc } from '@/i18n';
 import { MDI_NAMES } from '@/generated/mdiNames';
 import { categoryNameConflict } from '@/domain/categoryNames';
 import { LOCKED_MAIN_IDS } from '@/domain/categories';
+import { SpecialCatMark } from './SpecialCatMark';
 import type { CategoryNameConflict, NamedCategory } from '@/domain/categoryNames';
 
 const NAME_ERROR_KEYS = {
@@ -51,7 +53,6 @@ const COLORS = [
   '#F39C12', '#16A085', '#2980B9', '#E91E63', '#795548', '#607D8B',
 ];
 
-const DIRECTIONS: CatDirection[] = ['debit', 'credit', 'both'];
 
 type FormMode =
   | { kind: 'newMain' }
@@ -142,12 +143,11 @@ function SubCatRow({
         className={`m-tap relative isolate flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent px-4 py-3 text-left text-[14px] text-ink disabled:pointer-events-none ${hold.holding ? 'm-holding' : ''}`}
       >
         <Icon name={cat.icon} size={19} color={parentColor} />
+        {/* #244: direction left the user's vocabulary — the parent's
+            nature (expense / income badge on the group) says it all */}
+        {/* #261: the ◆ shows here too — managing must tell special apart */}
+        <SpecialCatMark cat={cat} color={parentColor} />
         <span className="min-w-0 flex-1 truncate">{catName(cat, t)}</span>
-        {cat.direction && cat.direction !== 'both' && (
-          <span title={t(cat.direction === 'debit' ? 'cats.legendDebit' : 'cats.legendCredit')}>
-            <Icon name={cat.direction === 'debit' ? 'arrow-up-thin' : 'arrow-down-thin'} size={15} color="var(--m-ink-4)" />
-          </span>
-        )}
         {canHold && (
           <>
             <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold text-accent-deep">
@@ -210,6 +210,7 @@ function GroupHeader({
       >
         <Icon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={20} />
         <Icon name={parent.icon} size={20} />
+        <SpecialCatMark cat={parent} color={parent.color} />
         <span className="min-w-0 flex-1 truncate">{catName(parent, t)}</span>
         <span className="rounded-md bg-bg-2 px-2 py-0.5 text-[10px] font-semibold text-ink-3">
           {t(`tx.type.${parent.txTypes[0]}`)}
@@ -250,7 +251,6 @@ export function ManageCategoriesScreen() {
   const [iconQuery, setIconQuery] = useState('');
   const [color, setColor] = useState(COLORS[0]);
   const [txType, setTxType] = useState<TxType>('expense');
-  const [direction, setDirection] = useState<CatDirection>('both');
   const [moveTo, setMoveTo] = useState<string | null>(null);
   const [moveSheetOpen, setMoveSheetOpen] = useState(false);
   // hold on a custom sub opens its action sheet (accessible alternative)
@@ -287,6 +287,8 @@ export function ManageCategoriesScreen() {
   // every main folds into a drop row, a ghost follows the finger on a
   // vertical rail, edges auto-scroll, release asks for confirmation
   const [nameError, setNameError] = useState<CategoryNameConflict | null>(null);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   // a drag consumes the trailing click — it must not open the edit sheet
   // live "a drag owns the pointer" flag for the touch blocker (state is
   // too slow: the blocker runs inside native touchmove dispatch)
@@ -313,23 +315,32 @@ export function ManageCategoriesScreen() {
     setIcon(ICONS[0]);
     setColor(COLORS[0]);
     setTxType('expense');
+    setNameError(null); // #247: a stale conflict must not flash into a fresh form
+    setAttempted(false);
     setMode({ kind: 'newMain' });
   };
+  // #180: the home FAB's "new category" arrives with the create intent
+  useEffect(() => {
+    if (takeCategoriesCreateIntent()) openNewMain();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const openNewSub = (parentId: string) => {
     setName('');
     setIcon(ICONS[0]);
-    setDirection('both');
+    setNameError(null); // #247
+    setAttempted(false);
     setMode({ kind: 'newSub', parentId });
   };
   const openEdit = (cat: Cat) => {
     const row = rowById(cat.id);
-    if (!row || cat.isOther) return; // "Other" subs are fixed (direction locked to both)
+    if (!row || cat.isOther) return; // "Other" subs are fixed
     setName(row.name ?? '');
     setIcon(row.icon);
     setColor(row.color || COLORS[0]);
     setTxType(row.txType);
-    setDirection(row.direction ?? 'both');
     setMoveTo(null);
+    setNameError(null); // #247
+    setAttempted(false);
     setMode(row.isParent === 1 ? { kind: 'editMain', row } : { kind: 'editSub', row });
   };
 
@@ -372,18 +383,20 @@ export function ManageCategoriesScreen() {
       return;
     }
     if (mode.kind === 'newMain') {
-      await createMainCategory(repo, spaceId, { name: name.trim(), icon, color, txType, otherName: t('cats.other') });
+      // #244 (user): every new parent IS an expense group — the form
+      // says so instead of asking
+      await createMainCategory(repo, spaceId, { name: name.trim(), icon, color, txType: 'expense', otherName: t('cats.other') });
       void logActivity(store, repo, spaceId, 'catAdd', name.trim());
       setMode(null);
     } else if (mode.kind === 'newSub') {
-      await createSubCategory(store, repo, spaceId, { parentId: mode.parentId, name: name.trim(), icon, direction });
+      await createSubCategory(store, repo, spaceId, { parentId: mode.parentId, name: name.trim(), icon });
       void logActivity(store, repo, spaceId, 'catAdd', name.trim());
       setMode(null);
     } else {
       const changes: CategoryChanges =
         mode.kind === 'editMain'
           ? { name: name.trim(), icon, color, txType }
-          : { name: name.trim(), icon, direction, ...(moveTo ? { parentId: moveTo } : {}) };
+          : { name: name.trim(), icon, ...(moveTo ? { parentId: moveTo } : {}) };
       await runGuarded(await prepareCategoryEdit(store, repo, mode.row, changes), 'edit', name.trim());
     }
   };
@@ -540,12 +553,6 @@ export function ManageCategoriesScreen() {
             {t(NAME_ERROR_KEYS[dragError])}
           </p>
         )}
-        {/* one-line legend: the arrows carry meaning nowhere else explained */}
-        <p className="mt-2 flex items-center gap-1 px-1 text-[11px] text-ink-4">
-          <Icon name="arrow-up-thin" size={13} /> {t('cats.legendDebit')}
-          <span className="px-0.5">·</span>
-          <Icon name="arrow-down-thin" size={13} /> {t('cats.legendCredit')}
-        </p>
         {cats.sharedScope && (personalCats?.length ?? 0) > 0 && (
           <button
             data-testid="cats-copy-open"
@@ -742,14 +749,30 @@ export function ManageCategoriesScreen() {
       {/* create / edit */}
       <Sheet
         open={mode !== null}
-        onOpenChange={(open) => !open && setMode(null)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setMode(null);
+          // #247 (user): the error outlived the sheet — a click-away
+          // flashed the OLD conflict while the exit animation ran
+          setNameError(null);
+          setAttempted(false);
+        }}
         title={formTitle}
         size="tall"
         // pinned footer (user ss: the sticky version floated over the
         // icon grid once the keyboard/safe-area shifted the scrollport)
         footer={
           <div className="flex flex-col gap-2">
-            <Button data-testid="catform-save" onClick={() => void save()} disabled={!name.trim()}>
+            <Button
+              data-testid="catform-save"
+              onClick={() => {
+                if (!name.trim()) {
+                  setAttempted(true);
+                  return;
+                }
+                void save();
+              }}
+            >
               {editing ? t('action.save') : t('action.add')}
             </Button>
             {editing && (
@@ -776,25 +799,28 @@ export function ManageCategoriesScreen() {
               setNameError(null);
             }}
             placeholder={t('cats.name')}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={attempted && !name.trim()}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
           />
+          {/* #195 r2 (user): the blocker sits AT the field, not by the
+              footer button — the sheet scrolls it into view */}
+          <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="catform-save-blocker" />
           {nameError && (
             <p className="text-[12px] text-negative" data-testid="catform-name-error">
               {t(NAME_ERROR_KEYS[nameError])}
             </p>
           )}
 
-          {/* main: transaction type + color */}
+          {/* main: color. #244 (user): the type question is gone — a new
+              parent IS an expense group (Housing, Transport, …); income
+              lives under the special Income category. Say it plainly. */}
           {isMainForm && (
             <>
-              <div className="m-cap px-1">{t('cats.type')}</div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {ALL_TX_TYPES.map((type) => (
-                  <Chip key={type} testId={`catform-type-${type}`} selected={txType === type} onClick={() => setTxType(type)}>
-                    {t(`tx.type.${type}`)}
-                  </Chip>
-                ))}
-              </div>
+              {mode?.kind === 'newMain' && (
+                <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] leading-relaxed text-ink-3" data-testid="catform-expense-note">
+                  {t('cats.newMainExpenseNote')}
+                </p>
+              )}
               <div className="m-cap px-1">{t('cats.color')}</div>
               <ColorPicker
                 colors={COLORS}
@@ -806,23 +832,10 @@ export function ManageCategoriesScreen() {
             </>
           )}
 
-          {/* sub: direction (+ move when editing) */}
+          {/* sub: move when editing (#244: the direction question is
+              gone — a sub simply follows its parent's nature) */}
           {!isMainForm && (
             <>
-              <div className="m-cap px-1">{t('cats.direction')}</div>
-              <div className="flex gap-2">
-                {DIRECTIONS.map((d) => (
-                  <Chip
-                    key={d}
-                    className="flex-1"
-                    testId={`catform-direction-${d}`}
-                    selected={direction === d}
-                    onClick={() => setDirection(d)}
-                  >
-                    {t(`cats.direction.${d}`)}
-                  </Chip>
-                ))}
-              </div>
               {mode?.kind === 'editSub' && (
                 <>
                   <div className="m-cap px-1">{t('cats.moveTarget')}</div>
@@ -853,12 +866,13 @@ export function ManageCategoriesScreen() {
 
           {/* icon picker: a curated grid by default; searching opens the
               whole self-hosted font (7k+ glyphs, fully offline) */}
-          <input
-            data-testid="catform-icon-search"
+          <SearchField
+            testId="catform-icon-search"
             value={iconQuery}
-            onChange={(e) => setIconQuery(e.target.value)}
+            onChange={setIconQuery}
             placeholder={t('cats.iconSearch')}
-            className="h-10 w-full rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none placeholder:text-ink-4"
+            height="h-10"
+            textSize="text-[13px]"
           />
           <div className="grid max-h-56 grid-cols-6 gap-2 overflow-y-auto">
             {(iconQuery.trim()
@@ -1004,18 +1018,22 @@ export function ManageCategoriesScreen() {
                 {t('action.edit')}
               </button>
             )}
-            <button
-              data-testid={`cats-menu-addsub-${groupMenu.id}`}
-              onClick={() => {
-                const id = groupMenu.id;
-                setGroupMenu(null);
-                openNewSub(id);
-              }}
-              className="m-tap flex w-full items-center gap-3 bg-transparent px-2 py-3.5 text-left text-[15px] text-ink"
-            >
-              <Icon name="plus" size={20} color="var(--m-ink-3)" />
-              {t('cats.addSub')}
-            </button>
+            {/* #261: locked system mains (incl. Adjustment) refuse user
+                subs through EVERY door — this menu had slipped the gate */}
+            {!LOCKED_MAIN_IDS.has(groupMenu.id) && (
+              <button
+                data-testid={`cats-menu-addsub-${groupMenu.id}`}
+                onClick={() => {
+                  const id = groupMenu.id;
+                  setGroupMenu(null);
+                  openNewSub(id);
+                }}
+                className="m-tap flex w-full items-center gap-3 bg-transparent px-2 py-3.5 text-left text-[15px] text-ink"
+              >
+                <Icon name="plus" size={20} color="var(--m-ink-3)" />
+                {t('cats.addSub')}
+              </button>
+            )}
           </div>
         )}
       </Sheet>

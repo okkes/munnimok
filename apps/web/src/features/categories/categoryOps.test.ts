@@ -6,7 +6,25 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { adoptedCategoryId } from '@/domain/feedIds';
-import { adoptUserCategoriesOnShare } from './categoryOps';
+import { adoptUserCategoriesOnShare, createSubCategory, directionForType } from './categoryOps';
+
+describe('#244: direction derives from the parent — the user never states it', () => {
+  it('income subs are credit, expense subs debit, anything else open', () => {
+    expect(directionForType('income')).toBe('credit');
+    expect(directionForType('expense')).toBe('debit');
+    expect(directionForType('saving')).toBe('both');
+  });
+
+  it('createSubCategory stamps the derived direction', async () => {
+    const db = new MunniDB(`munni_test_dir_${Math.random().toString(36).slice(2)}`);
+    const store = new DexieBackend(db);
+    const repo = new Repo(store, new HlcClock('d'), { trackOutbox: false });
+    const underIncome = await createSubCategory(store, repo, 'p1', { parentId: 'income', name: 'Royalties', icon: 'cash' });
+    const underSport = await createSubCategory(store, repo, 'p1', { parentId: 'sport', name: 'Padel', icon: 'dumbbell' });
+    expect(await store.get('category', underIncome)).toMatchObject({ txType: 'income', direction: 'credit' });
+    expect(await store.get('category', underSport)).toMatchObject({ txType: 'expense', direction: 'debit' });
+  });
+});
 
 describe('adoptUserCategoriesOnShare', () => {
   let db: MunniDB;

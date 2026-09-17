@@ -3,24 +3,21 @@
 #
 # GitHub publishes bundles into $PUBLISHED via the Synology FileStation
 # API (see .github/workflows/deploy-nas.yml):
-#   munni-deploy.tgz + VERSION                  — from master (prod infra,
 #       also refreshes staging so both stacks track a release)
-#   munni-deploy-staging.tgz + VERSION_STAGING  — from dev (staging-only)
 # This script — run every ~5 minutes by the DSM Task Scheduler (see
 # deploy/nas/README.md) — notices a new stamp, unpacks the bundle over
 # the live directory and runs update.sh for the affected stack(s).
 #
-# The master bundle includes .env, rendered by CI from the committed
 # template + GitHub secrets — do NOT edit .env on the NAS by hand, the
 # next deploy overwrites it. This script also ships IN the bundle and
 # so updates itself; the scheduler must therefore never execute this
 # file directly (tar would overwrite a running script) — it runs a
 # throwaway copy instead:
-#   cd /volume1/docker/munni && cp apply.sh .apply.run && sh .apply.run
+#   cd "<live dir>" && cp apply.sh .apply.run && MUNNI_LIVE_DIR="<live dir>" MUNNI_PUBLISHED_DIR="<live dir>/published" sh .apply.run
 # Idempotent: exits in milliseconds when nothing changed.
 set -u
 
-LIVE="${MUNNI_LIVE_DIR:-/volume1/docker/munni}"
+LIVE="${MUNNI_LIVE_DIR:-$(cd "$(dirname "$0")" && pwd)}" # the poller task passes it; the script's own dir otherwise
 PUBLISHED="${MUNNI_PUBLISHED_DIR:-$LIVE/published}"
 LOG="$LIVE/deploy.log"
 
@@ -69,50 +66,71 @@ if command -v flock >/dev/null 2>&1; then
   date +%s >"$LIVE/.apply.started"
 fi
 
-apply_channel() { # apply_channel STAMP BUNDLE MARKER STACKS...
-  stamp="$1"; bundle="$2"; marker="$3"; shift 3
+apply_channel_dir() { # apply_channel_dir STAMP BUNDLE MARKER DIR COMPOSE
+  # like apply_channel, but the bundle owns its own directory NEXT TO the
+  # live one (the IaC twins: /volume1/docker/munni-iac-prod …). The bundle
+  # carries its own update.sh; markers stay in $LIVE with the others.
+  stamp="$1"; bundle="$2"; marker="$3"; dir="$4"; compose="$5"
   [ -f "$PUBLISHED/$stamp" ] || return 0
-  new="$(cat "$PUBLISHED/$stamp")"
+  new="$(cat "$PUBLISHED/$stamp" | tr -d '[:space:]')"
   old="$(cat "$LIVE/$marker" 2>/dev/null || echo none)"
+  target="$(dirname "$LIVE")/$dir"
+  # cleanup as code (2026-09-17): a stamp reading "remove" (bootstrap --cleanup
+  # uploads it) stops the twin's containers, drops its volumes and deletes
+  # its folder and bundle; the marker says "removed" so the wizard can tell.
+  # Checked BEFORE the nothing-new shortcut: a marker that already reads
+  # "remove" (an older script took it for a version) must still remove.
+  if [ "$new" = "remove" ]; then
+    [ "$old" = "removed" ] && return 0
+    if [ -d "$target" ]; then
+      envf=".env"; case "$compose" in *staging*) [ -f "$target/.env.staging" ] && envf=".env.staging" ;; esac
+      log "removal requested for $dir — stopping its containers and deleting $target"
+      (cd "$target" && docker compose --env-file "$envf" -f "$compose" down -v --remove-orphans) >>"$LOG" 2>&1 || log "compose down failed for $dir (continuing with the folder)"
+      rm -rf "$target"
+    fi
+    rm -f "$PUBLISHED/$bundle" "$PUBLISHED/$stamp"
+    echo removed >"$LIVE/$marker"
+    log "$dir removed"
+    return 0
+  fi
   [ "$new" = "$old" ] && return 0
-
-  log "new deploy $stamp=$new (was $old) — unpacking $bundle"
-  if ! tar -xzf "$PUBLISHED/$bundle" -C "$LIVE"; then
-    log "unpack of $bundle FAILED — leaving stacks untouched"
+  mkdir -p "$target"
+  log "new deploy $stamp=$new (was $old) — unpacking $bundle into $target"
+  if ! tar -xzf "$PUBLISHED/$bundle" -C "$target"; then
+    log "unpack of $bundle FAILED — leaving $dir untouched"
     return 1
   fi
 
-  ok=1
-  for compose in "$@"; do
-    log "updating $compose"
-    if sh "$LIVE/update.sh" "$compose" >>"$LOG" 2>&1; then
-      log "$compose ok"
-    else
-      log "$compose FAILED (see above) — its previous containers keep running"
-      ok=0
-    fi
-  done
-  # the marker records only SUCCESS: a failed update (e.g. a one-shot
-  # migration dying on a transient fault) is retried on the next cycle
-  # instead of being remembered as done. up -d is idempotent, so a
-  # persistently failing bundle just retries every cycle and keeps
-  # logging until a fixed bundle arrives.
-  if [ "$ok" = 1 ]; then
+  log "updating $dir/$compose"
+  if sh "$target/update.sh" "$compose" >>"$LOG" 2>&1; then
+    log "$dir/$compose ok"
     echo "$new" >"$LIVE/$marker"
   else
-    log "$stamp=$new NOT marked applied — will retry next cycle"
+    log "$dir/$compose FAILED (see above) — its previous containers keep running; retried next cycle"
+    return 1
   fi
-  [ "$ok" = 1 ]
 }
 
 rc=0
-# master bundle refreshes prod AND staging (a release moves both stacks)
-apply_channel VERSION munni-deploy.tgz .applied_version \
-  docker-compose.yml docker-compose.staging.yml || rc=1
-# dev bundle refreshes staging only
-apply_channel VERSION_STAGING munni-deploy-staging.tgz .applied_version_staging \
-  docker-compose.staging.yml || rc=1
+# iac twins: each in its own directory, deployed only when their bundles
+# appear (deploy-nas.yml channel=iac-*) — absent stamps skip in µs
+apply_channel_dir VERSION_IAC_PROD munni-deploy-iac-prod.tgz .applied_version_iac_prod \
+  munni-iac-prod docker-compose.munni-iac-prod.yml || rc=1
+apply_channel_dir VERSION_IAC_STAGING munni-deploy-iac-staging.tgz .applied_version_iac_staging \
+  munni-iac-staging docker-compose.munni-iac-staging.yml || rc=1
 # one status line to stdout: the DSM Run Result then always tells what
+# a Logto or GlitchTip seed that could not run yet (still booting the first
+# time; update.sh left .logto-seed-pending / .glitchtip-seed-pending) is
+# retried every cycle
+for dir in munni-iac-prod munni-iac-staging; do
+  d="$(dirname "$LIVE")/$dir"
+  if { [ -f "$d/.logto-seed-pending" ] || [ -f "$d/.glitchtip-seed-pending" ]; } && [ -f "$d/update.sh" ]; then
+    compose="$(ls "$d"/docker-compose.*.yml 2>/dev/null | head -n 1)"
+    log "seed pending in $dir — retrying"
+    (cd "$d" && sh ./update.sh --seed "$(basename "$compose")") >>"$LOG" 2>&1 || log "seed retry in $dir failed — next cycle"
+  fi
+done
+
 # state the cycle LEFT things in, even when nothing changed
-echo "cycle done rc=$rc prod=$(cat "$LIVE/.applied_version" 2>/dev/null || echo none) staging=$(cat "$LIVE/.applied_version_staging" 2>/dev/null || echo none)"
+echo "cycle done rc=$rc iac-prod=$(cat "$LIVE/.applied_version_iac_prod" 2>/dev/null || echo none) iac-staging=$(cat "$LIVE/.applied_version_iac_staging" 2>/dev/null || echo none)"
 exit $rc

@@ -70,4 +70,10 @@ describe('fmtCents (integer cents -> localized string)', () => {
     expect(fmtCents(123456, 'TRY', 'tr')).toContain('1.234,56');
     expect(fmtCents(100, 'GBP', 'en')).toBe('£1.00');
   });
+
+  it('renders the bare symbol, never the country-prefixed one (#150)', () => {
+    // en-IE spelled foreign dollars as "US$1,234.50" without narrowSymbol
+    expect(fmtCents(123450, 'USD', 'en')).toBe('$1,234.50');
+    expect(fmtCents(-123450, 'USD', 'en')).toBe('-$1,234.50');
+  });
 });

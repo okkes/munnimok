@@ -132,11 +132,21 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
     {
         if (!string.IsNullOrEmpty(authCode))
         {
-            var session = await SendAsync<SessionResponse>(HttpMethod.Post, "sessions", new { code = authCode }, ct);
-            var uids = session.Accounts?.Where(a => a.Uid is not null).Select(a => a.Uid!).ToList() ?? [];
-            return new GcRequisitionStatus(session.SessionId ?? requisitionId, "LN", uids);
+            try
+            {
+                var session = await SendAsync<SessionResponse>(HttpMethod.Post, "sessions", new { code = authCode }, ct);
+                var uids = session.Accounts?.Where(a => a.Uid is not null).Select(a => a.Uid!).ToList() ?? [];
+                return new GcRequisitionStatus(session.SessionId ?? requisitionId, "LN", uids);
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("ALREADY_AUTHORIZED"))
+            {
+                // #281 (staging 2026-08-17): callbacks re-fire and the auth
+                // code is single-use — an earlier complete already minted
+                // the session. Authorized IS the goal state: fall through
+                // to the status read instead of failing the whole complete.
+            }
         }
-        // no code = a retry after the session already exists
+        // no code (or a burnt one) = a retry after the session exists
         var existing = await SendAsync<SessionStatus>(HttpMethod.Get, $"sessions/{Uri.EscapeDataString(requisitionId)}", null, ct);
         var status = existing.Status?.ToUpperInvariant() == "AUTHORIZED" ? "LN" : existing.Status ?? "CR";
         return new GcRequisitionStatus(requisitionId, status, existing.Accounts ?? []);
@@ -187,6 +197,7 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
         [property: JsonPropertyName("status")] string? Status,
         [property: JsonPropertyName("booking_date")] string? BookingDate,
         [property: JsonPropertyName("value_date")] string? ValueDate,
+        [property: JsonPropertyName("transaction_date")] string? TransactionDate,
         [property: JsonPropertyName("remittance_information")] List<string>? RemittanceInformation,
         [property: JsonPropertyName("creditor")] EbParty? Creditor,
         [property: JsonPropertyName("debtor")] EbParty? Debtor,
@@ -197,6 +208,19 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
         [property: JsonPropertyName("continuation_key")] string? ContinuationKey);
 
     public async Task<GcTransactionsPage> GetTransactionsAsync(string accountId, DateOnly? from, CancellationToken ct = default)
+    {
+        var (booked, pending) = await FetchTransactionPagesAsync(accountId, from, ct);
+        // #240 r2: some ASPSPs answer an out-of-range date_from with an
+        // EMPTY list instead of an error (PayPal's window is far shorter
+        // than the two-year ask) — retry once on the ASPSP's own default
+        // window rather than concluding the account has no history
+        if (from is not null && booked.Count == 0 && pending.Count == 0)
+            (booked, pending) = await FetchTransactionPagesAsync(accountId, null, ct);
+        return new GcTransactionsPage(booked, pending, null); // EB publishes no per-account budget headers
+    }
+
+    private async Task<(List<GcTransaction> Booked, List<GcTransaction> Pending)> FetchTransactionPagesAsync(
+        string accountId, DateOnly? from, CancellationToken ct)
     {
         var booked = new List<GcTransaction>();
         var pending = new List<GcTransaction>();
@@ -220,7 +244,7 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
             continuation = result.ContinuationKey;
             if (continuation is null) break;
         }
-        return new GcTransactionsPage(booked, pending, null); // EB publishes no per-account budget headers
+        return (booked, pending);
     }
 
     private static GcTransaction MapTransaction(EbTransaction tx)
@@ -231,17 +255,43 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
         var amount = debit && !tx.TransactionAmount.Amount.StartsWith('-')
             ? "-" + tx.TransactionAmount.Amount
             : tx.TransactionAmount.Amount;
+        // #240: some ASPSPs (PayPal among them) omit entry_reference and/or
+        // booking_date. The ingest keys row identity on the reference and
+        // drops date-less rows — which silently lost EVERY transaction of
+        // such an account. Fall back through EVERY date EB publishes
+        // (r3: transaction_date included — wallet rows may carry only
+        // that one), and derive a deterministic reference from the
+        // transaction's stable facts so every re-fetch maps to the same
+        // row.
+        var bookingDate = tx.BookingDate ?? tx.ValueDate ?? tx.TransactionDate;
+        var remittance = tx.RemittanceInformation is { Count: > 0 } lines ? string.Join(' ', lines) : null;
+        var reference = string.IsNullOrWhiteSpace(tx.EntryReference)
+            ? SyntheticReference(bookingDate, amount, tx, remittance)
+            : tx.EntryReference;
         return new GcTransaction(
-            tx.EntryReference,
+            reference,
             null,
-            tx.BookingDate,
+            bookingDate,
             tx.ValueDate,
             new GcAmount(amount, tx.TransactionAmount.Currency),
             tx.Creditor?.Name,
             tx.Debtor?.Name,
-            tx.RemittanceInformation is { Count: > 0 } remittance ? string.Join(' ', remittance) : null,
+            remittance,
             new GcAccountReference(tx.CreditorAccount?.Iban),
             new GcAccountReference(tx.DebtorAccount?.Iban));
+    }
+
+    /// <summary>
+    /// Row identity when the ASPSP publishes none: a hash of the stable
+    /// facts. Two truly identical same-day twins would collapse into one
+    /// row — accepted over losing the whole account's history (#240).
+    /// </summary>
+    private static string SyntheticReference(string? date, string amount, EbTransaction tx, string? remittance)
+    {
+        var seed = string.Join('|', date, amount, tx.TransactionAmount.Currency,
+            tx.Creditor?.Name, tx.Debtor?.Name, tx.CreditorAccount?.Iban, tx.DebtorAccount?.Iban, remittance);
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(seed));
+        return "eb:" + Convert.ToHexString(hash)[..24].ToLowerInvariant();
     }
 
 }

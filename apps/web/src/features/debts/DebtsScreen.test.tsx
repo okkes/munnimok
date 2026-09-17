@@ -22,14 +22,27 @@ async function createLoan(name: string, current: string, apr?: string, payment?:
   await waitFor(() => {
     expect(document.querySelector('[data-testid^="debt-card-"]')).toBeTruthy();
   });
-  // creation auto-offers matching payments — close the (empty) sheet so
-  // its candidate rows never shadow the test's own tx rows
-  await screen.findByTestId('loanmatch-empty');
-  fireEvent.keyDown(window, { key: 'Escape' });
+  // #286 r2: creation auto-offers matching payments ONLY when history
+  // holds candidates — these seeds start empty, so no sheet ever opens
+  expect(screen.queryByTestId('loanmatch-list')).toBeNull();
   return document.querySelector('[data-testid^="debt-card-"]')!;
 }
 
 const demoRepo = (db: MunniDB) => new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+
+/** #286 r3: local yyyy-mm-dd relative to today — candidate seeds sit
+ *  just before (pre-anchor) or after (post-anchor) the balance date */
+function isoDayOffset(deltaDays: number): string {
+  const d = new Date(Date.now() + deltaDays * 86_400_000);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** one bare debt payment the matcher scores as a strong candidate */
+const seedPayment = (repo: Repo, id: string, date: string, cents = -15_000) =>
+  repo.upsert('transaction', 'demo_space', id, {
+    accountId: 'demo_main', date, amountCents: cents, merchant: 'Aflossing',
+    currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+  });
 
 describe('Debts (demo identity)', () => {
   beforeEach(() => {
@@ -50,9 +63,12 @@ describe('Debts (demo identity)', () => {
     fireEvent.click(screen.getByTestId('chooser-accttype-loan'));
     fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Student loan' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-original'), { target: { value: '12000' } });
-    // save refuses until the CURRENT value anchors the loan
-    expect((screen.getByTestId('chooser-acctform-save') as HTMLButtonElement).disabled).toBe(true);
+    // save refuses until the CURRENT value anchors the loan — the tap
+    // names the missing amount instead of a dead button (#195)
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
+    expect(await screen.findByTestId('chooser-acctform-save-blocker')).toBeTruthy();
     fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '10000' } });
+    await waitFor(() => expect(screen.queryByTestId('chooser-acctform-save-blocker')).toBeNull());
     fireEvent.change(screen.getByTestId('chooser-acctform-iban'), { target: { value: 'NL77LOAN0000000077' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-apr'), { target: { value: '12' } });
     fireEvent.change(screen.getByTestId('chooser-acctform-payment'), { target: { value: '120' } });
@@ -111,15 +127,20 @@ describe('Debts (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('acctedit-name') as HTMLInputElement).value).toBe('Student loan'));
     expect((screen.getByTestId('acctedit-balance') as HTMLInputElement).value).toBe('10000.00');
     fireEvent.change(screen.getByTestId('acctedit-payment'), { target: { value: '1000' } });
+    // #190: the plan's due day, like recurring
+    fireEvent.change(screen.getByTestId('acctedit-payday'), { target: { value: '28' } });
     fireEvent.click(screen.getByTestId('acctedit-save'));
     // the write is the truth (the sheet lingers through its close animation)
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const account = (await db.accounts.toArray()).find((a) => a.name === 'Student loan');
       expect(account?.paymentCents).toBe(100_000);
+      expect(account?.paymentDay).toBe(28);
     }, { timeout: 5000 });
     db.close();
-    await waitFor(() => expect(screen.getByTestId('debtdetail-projection')).toBeTruthy());
+    // the detail's plan line says the due day (#190) — the live query
+    // re-emits AFTER the write, so the text is awaited, never assumed
+    await waitFor(() => expect(document.body.textContent).toContain('Due day 28'), { timeout: 5000 });
 
     // delete (confirm sheet) — the orphaned detail hands back to the list
     fireEvent.click(screen.getByTestId('debtdetail-edit'));
@@ -177,6 +198,9 @@ describe('Debts (demo identity)', () => {
   it('bare debt payments gather in the virtual card and assign to a loan', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
+    // the #221 bare-row fold default-links bare movement rows — drain
+    // the boot chain BEFORE seeding so deliberately-bare rows stay bare
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const card = await createLoan('Car loan', '5000');
     // v2: the card id IS the loan account's id
     const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
@@ -227,11 +251,13 @@ describe('Debts (demo identity)', () => {
     // the estimate also powers the projection despite empty explicit fields
     expect(screen.getByTestId('debtdetail-projection')).toBeTruthy();
 
-    // the add-payment door opens the manual form staged onto this loan
+    // the add-payment door opens the manual form staged onto this loan —
+    // the leg is a plain Transfer now (R2), the loan's minted mirror
+    // will carry the debt story
     fireEvent.click(screen.getByTestId('debtdetail-add-payment'));
     await screen.findByTestId('txform-save');
-    await waitFor(() => expect(screen.getByTestId('txform-kind').textContent).toContain('Debt Payment'));
-    expect(screen.getByTestId('txform-counter').textContent).toContain('Car loan');
+    // #133 D: no kind row — the pre-staged counterparty IS the story
+    await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Car loan'));
     expect((screen.getByTestId('txform-merchant') as HTMLInputElement).value).toBe('Car loan');
     db.close();
   }, 15_000);
@@ -239,6 +265,9 @@ describe('Debts (demo identity)', () => {
   it('found-payments links history to the loan; pre-anchor rows count only on request', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');
+    // drain the boot chain first: its late bare-row fold raced the
+    // apply below and its default link could win by LWW (house trap)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const card = await createLoan('Car loan', '5000');
     const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
 
@@ -260,7 +289,11 @@ describe('Debts (demo identity)', () => {
     await screen.findByTestId('loanmatch-pick-oldpay');
     // the strong-match pre-check settles an effect tick after the row
     await waitFor(() => expect((screen.getByTestId('loanmatch-pick-oldpay') as HTMLInputElement).checked).toBe(true));
-    expect(screen.getByTestId('loanmatch-count-oldpay')).toBeTruthy();
+    // #286 r3: the pre-anchor story reads ONCE above the list in deduct
+    // language; the row wears one trailing deduct SWITCH, off by default
+    // (no auto-deduct: this loan carries no original size)
+    expect(screen.getByTestId('loanmatch-old-caption').textContent).toContain('Deducts');
+    expect(screen.getByTestId('loanmatch-count-oldpay').getAttribute('aria-checked')).toBe('false');
     fireEvent.click(screen.getByTestId('loanmatch-apply'));
 
     await waitFor(async () => {
@@ -277,6 +310,42 @@ describe('Debts (demo identity)', () => {
       expect((await db.accounts.get(accountId))?.balanceCents).toBe(-485_000);
     }, { timeout: 5000 });
     expect((await db.transactions.get('oldpay'))?.loanCounted).toBe(1);
+    db.close();
+  }, 20_000);
+
+  it('#286 r3: flipping the trailing Deducts switch subtracts a pre-anchor payment at apply', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    // drain the boot chain first (house trap: its late bare-row fold
+    // races the apply and its default link could win by LWW)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const card = await createLoan('Car loan', '5000');
+    const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
+
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    const y = new Date(Date.now() - 86_400_000);
+    const yesterday = `${y.getFullYear()}-${String(y.getMonth() + 1).padStart(2, '0')}-${String(y.getDate()).padStart(2, '0')}`;
+    await repo.upsert('transaction', 'demo_space', 'oldpay2', {
+      accountId: 'demo_main', date: yesterday, amountCents: -15_000, merchant: 'Aflossing',
+      currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+    });
+
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    await screen.findByTestId('loanmatch-pick-oldpay2');
+    await waitFor(() => expect((screen.getByTestId('loanmatch-pick-oldpay2') as HTMLInputElement).checked).toBe(true));
+    // the deliberate opt-in rides the row's trailing deduct switch (#286 r3)
+    fireEvent.click(screen.getByTestId('loanmatch-count-oldpay2'));
+    expect(screen.getByTestId('loanmatch-count-oldpay2').getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(screen.getByTestId('loanmatch-apply'));
+
+    await waitFor(async () => {
+      expect((await db.transactions.get('oldpay2'))?.loanCounted).toBe(1);
+      // counted: the pre-anchor payment lowers the loan (−5000 → −4850)
+      expect((await db.accounts.get(accountId))?.balanceCents).toBe(-485_000);
+    }, { timeout: 5000 });
     db.close();
   }, 20_000);
 
@@ -300,4 +369,226 @@ describe('Debts (demo identity)', () => {
     }, { timeout: 5000 });
     expect(archived.className).toContain('opacity-60');
   }, 15_000);
+
+  it('#286 r2: a loan created with no matching history auto-opens NO sheet', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    await createLoan('Car loan', '5000');
+    // the offer stood down entirely — no sheet, no empty-state bloat
+    // (deterministic: with zero candidates the host never sets matchFor)
+    expect(screen.queryByTestId('loanmatch-empty')).toBeNull();
+    expect(screen.queryByTestId('loanmatch-list')).toBeNull();
+  }, 15_000);
+
+  it('#286 r2: a loan created WITH matching history still auto-offers the sheet', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    // drain the boot chain BEFORE seeding (house trap: the late
+    // bare-row fold races the seed; post-drain rows stay bare)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    await repo.upsert('transaction', 'demo_space', 'prepay', {
+      accountId: 'demo_main', date: '2026-08-01', amountCents: -15_000, merchant: 'Aflossing',
+      currency: 'EUR', needsReview: 0, txType: 'debtPayment', catId: 'loanRepayment',
+    });
+    // the bare payment surfaces in the virtual bucket — the screen's
+    // live queries have folded the row in before the create begins
+    await screen.findByTestId('debts-unassigned');
+
+    fireEvent.click(screen.getByTestId('debts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-accttype-loan'));
+    fireEvent.change(await screen.findByTestId('chooser-acctform-name'), { target: { value: 'Car loan' } });
+    fireEvent.change(screen.getByTestId('chooser-acctform-balance'), { target: { value: '5000' } });
+    fireEvent.click(screen.getByTestId('chooser-acctform-save'));
+
+    // the auto-offer opens on the real candidate (debt-payment label) —
+    // awaited: the floating find leaked a rejection into later specs
+    expect(await screen.findByTestId('loanmatch-pick-prepay')).toBeTruthy();
+    db.close();
+  }, 15_000);
+
+  it('#286 r2: manual Find payments with nothing to link shows one quiet line only', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    const card = await createLoan('Car loan', '5000');
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    const empty = await screen.findByTestId('loanmatch-empty');
+    expect(empty.textContent).toBe('No transactions found to link.');
+    // the header noise stands down: title only — no hint, no apply
+    expect(screen.queryByTestId('loanmatch-hint')).toBeNull();
+    expect(screen.queryByTestId('loanmatch-apply')).toBeNull();
+  }, 15_000);
+
+  it('#286 r3: the pinned footer sums deducting picks; the row face toggles the pick', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    // drain the boot chain BEFORE seeding (house trap: the late
+    // bare-row fold races the seed; post-drain rows stay bare)
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const card = await createLoan('Car loan', '5000');
+
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    await seedPayment(repo, 'sum1', isoDayOffset(-1));
+
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    await screen.findByTestId('loanmatch-pick-sum1');
+    await waitFor(() => expect((screen.getByTestId('loanmatch-pick-sum1') as HTMLInputElement).checked).toBe(true));
+
+    // picked but NOT deducting: the sum stays zero, the balance stays put
+    expect(screen.getByTestId('loanmatch-summary').textContent).toContain('1 selected');
+    expect(screen.getByTestId('loanmatch-deduct-sum').textContent).toMatch(/0\.00/);
+    expect(screen.getByTestId('loanmatch-new-balance').textContent).toMatch(/5.000\.00.*→.*5.000\.00/);
+
+    // flipping deduct moves the preview: −€150.00 off, landing on −€4,850.00
+    fireEvent.click(screen.getByTestId('loanmatch-count-sum1'));
+    expect(screen.getByTestId('loanmatch-deduct-sum').textContent).toMatch(/150\.00/);
+    expect(screen.getByTestId('loanmatch-new-balance').textContent).toMatch(/4.850\.00/);
+
+    // the FACE is a pick target (#286 r3): tapping the TxRow unpicks…
+    fireEvent.click(screen.getByTestId('tx-row-sum1'));
+    expect((screen.getByTestId('loanmatch-pick-sum1') as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByTestId('loanmatch-summary').textContent).toContain('0 selected');
+    // …and an unpicked row deducts nothing, whatever its switch says
+    expect(screen.getByTestId('loanmatch-deduct-sum').textContent).toMatch(/0\.00/);
+    fireEvent.click(screen.getByTestId('tx-row-sum1'));
+    expect((screen.getByTestId('loanmatch-pick-sum1') as HTMLInputElement).checked).toBe(true);
+    db.close();
+  }, 20_000);
+
+  it('#286 r3: original == current balance auto-deducts every candidate; apply moves the number', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    // the loan still stands at its full size — nothing was deducted
+    // upfront, so found payments must deduct (user rule)
+    const card = await createLoan('Car loan', '5000', undefined, undefined, '5000');
+    const accountId = card.getAttribute('data-testid')!.replace('debt-card-', '');
+
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    await seedPayment(repo, 'auto1', isoDayOffset(-1));
+
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    await screen.findByTestId('loanmatch-pick-auto1');
+    // the deduct switch seeds ON (an effect tick after the row shows)
+    await waitFor(() => expect(screen.getByTestId('loanmatch-count-auto1').getAttribute('aria-checked')).toBe('true'));
+    expect(screen.getByTestId('loanmatch-new-balance').textContent).toMatch(/4.850\.00/);
+
+    fireEvent.click(screen.getByTestId('loanmatch-apply'));
+    await waitFor(async () => {
+      expect((await db.transactions.get('auto1'))?.loanCounted).toBe(1);
+      expect((await db.accounts.get(accountId))?.balanceCents).toBe(-485_000);
+    }, { timeout: 5000 });
+    db.close();
+  }, 20_000);
+
+  it('#286 r3: select-all and deduct-all sweep both columns', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const card = await createLoan('Car loan', '5000');
+
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    await seedPayment(repo, 'bulk1', isoDayOffset(-1));
+    await seedPayment(repo, 'bulk2', isoDayOffset(-2));
+
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    await screen.findByTestId('loanmatch-pick-bulk2');
+    await waitFor(() => expect((screen.getByTestId('loanmatch-pick-bulk1') as HTMLInputElement).checked).toBe(true));
+
+    // both strong matches arrive picked — the master unpicks, then re-picks
+    const pickAll = screen.getByTestId('loanmatch-pick-all') as HTMLInputElement;
+    expect(pickAll.checked).toBe(true);
+    fireEvent.click(pickAll);
+    expect(screen.getByTestId('loanmatch-summary').textContent).toContain('0 selected');
+    expect((screen.getByTestId('loanmatch-pick-bulk1') as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(pickAll);
+    expect(screen.getByTestId('loanmatch-summary').textContent).toContain('2 selected');
+
+    // deduct-all flips every row switch; the sum follows both payments
+    fireEvent.click(screen.getByTestId('loanmatch-deduct-all'));
+    expect(screen.getByTestId('loanmatch-count-bulk1').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('loanmatch-count-bulk2').getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByTestId('loanmatch-deduct-sum').textContent).toMatch(/300\.00/);
+    fireEvent.click(screen.getByTestId('loanmatch-deduct-all'));
+    expect(screen.getByTestId('loanmatch-count-bulk1').getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByTestId('loanmatch-deduct-sum').textContent).toMatch(/0\.00/);
+    db.close();
+  }, 20_000);
+
+  it('#286 r3: a post-anchor row wears a disabled always-on deduct switch', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const card = await createLoan('Car loan', '5000');
+
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    // dated AFTER the balance anchor: linking always deducts — no choice
+    await seedPayment(repo, 'newpay', isoDayOffset(1));
+
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    await screen.findByTestId('loanmatch-pick-newpay');
+    await waitFor(() => expect((screen.getByTestId('loanmatch-pick-newpay') as HTMLInputElement).checked).toBe(true));
+
+    // present (no layout jump), ON, muted — and a tap changes nothing
+    const sw = screen.getByTestId('loanmatch-count-newpay');
+    expect(sw.getAttribute('aria-disabled')).toBe('true');
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+    fireEvent.click(sw);
+    expect(sw.getAttribute('aria-checked')).toBe('true');
+    // no pre-anchor rows: the caption stands down, the master disables
+    expect(screen.queryByTestId('loanmatch-old-caption')).toBeNull();
+    expect(screen.getByTestId('loanmatch-deduct-all').getAttribute('aria-disabled')).toBe('true');
+    // the footer already counts it: post-anchor picks always deduct
+    expect(screen.getByTestId('loanmatch-new-balance').textContent).toMatch(/4.850\.00/);
+    db.close();
+  }, 20_000);
+
+  it('#286 r3: dismissing with candidates asks first; discard closes without linking', async () => {
+    renderApp('/debts');
+    await screen.findByTestId('screen-debts');
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    const card = await createLoan('Car loan', '5000');
+
+    const db = new MunniDB('munni_demo');
+    const repo = demoRepo(db);
+    await seedPayment(repo, 'guard1', isoDayOffset(-1));
+
+    fireEvent.click(card);
+    await screen.findByTestId('debtdetail-hero');
+    fireEvent.click(screen.getByTestId('debtdetail-find-payments'));
+    await screen.findByTestId('loanmatch-pick-guard1');
+    await waitFor(() => expect((screen.getByTestId('loanmatch-pick-guard1') as HTMLInputElement).checked).toBe(true));
+
+    // Escape = a dismissal gesture: the guard asks instead of dropping
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await screen.findByTestId('sheet-discard');
+    fireEvent.click(screen.getByTestId('sheet-keep-editing'));
+    expect((screen.getByTestId('loanmatch-pick-guard1') as HTMLInputElement).checked).toBe(true);
+
+    // choosing Discard really closes: the host clears the loan id and
+    // the candidate rows drain (test-mode sheets stay mounted, so the
+    // emptied list is the observable, not the sheet's absence)
+    fireEvent.keyDown(window, { key: 'Escape' });
+    fireEvent.click(await screen.findByTestId('sheet-discard'));
+    await waitFor(() => expect(screen.queryByTestId('loanmatch-pick-guard1')).toBeNull());
+    // nothing linked, nothing moved
+    expect((await db.transactions.get('guard1'))?.linkedAccountId).toBeUndefined();
+    expect((await db.accounts.toArray()).find((a) => a.name === 'Car loan')?.balanceCents).toBe(-500_000);
+    db.close();
+  }, 20_000);
 });

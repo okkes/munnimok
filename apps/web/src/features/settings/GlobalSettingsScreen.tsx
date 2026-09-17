@@ -4,11 +4,13 @@ import { apiFetch, getApiCapabilities } from '@/lib/api';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
+import type { ThemeMode } from '@/app/theme';
 import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { TIPS_DISABLED_KEY, useTipsDisabled } from '@/features/help/tipsPref';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Pill, Row } from '@/ui/primitives';
@@ -24,6 +26,7 @@ import {
   readLockConfig,
   registerBiometric,
   validPin,
+  verifyBiometric,
   writeLockConfig,
 } from '@/features/lock/lock';
 
@@ -61,10 +64,21 @@ function ProfileHeaderRow({ onClick }: Readonly<{ onClick: () => void }>) {
   );
 }
 
+/** #157: the appearance row taps through this cycle — a fixed order so
+ *  repeated taps visit every mode and land back where they started */
+export const NEXT_THEME_MODE: Record<ThemeMode, ThemeMode> = { light: 'dark', dark: 'system', system: 'light' };
+
 /** three-state appearance control: light / dark / follow device */
 function ThemeModeSwitch() {
   const { t } = useLang();
   const { mode, setMode } = useTheme();
+  // #157: the row AROUND this switch cycles on tap (trailing renders
+  // inside the row's button) — a precise segment pick must not bubble
+  // up and ALSO advance the cycle
+  const pick = (next: ThemeMode) => (e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    setMode(next);
+  };
   const segCls = (active: boolean) =>
     `m-tap flex items-center justify-center px-2.5 py-1 ${
       active ? 'bg-accent-soft text-accent-deep' : 'text-ink-3'
@@ -72,14 +86,16 @@ function ThemeModeSwitch() {
   return (
     // no group role (S6819): each segment is a labelled aria-pressed
     // button — the span is purely a visual frame
+    // #327 r3 (user): the end segments own the frame's corners so the
+    // inset focus ring follows the visible rounding
     <span className="flex shrink-0 overflow-hidden rounded-lg border border-line-2">
       <button
         type="button"
         data-testid="settings-theme-light"
         aria-label={t('settings.themeLight')}
         aria-pressed={mode === 'light'}
-        onClick={() => setMode('light')}
-        className={segCls(mode === 'light')}
+        onClick={pick('light')}
+        className={`${segCls(mode === 'light')} rounded-l-lg`}
       >
         <Icon name="weather-sunny" size={15} />
       </button>
@@ -88,7 +104,7 @@ function ThemeModeSwitch() {
         data-testid="settings-theme-dark"
         aria-label={t('settings.themeDark')}
         aria-pressed={mode === 'dark'}
-        onClick={() => setMode('dark')}
+        onClick={pick('dark')}
         className={`${segCls(mode === 'dark')} border-x border-line-2`}
       >
         <Icon name="weather-night" size={15} />
@@ -98,8 +114,8 @@ function ThemeModeSwitch() {
         data-testid="settings-theme-auto"
         aria-label={t('settings.followDevice')}
         aria-pressed={mode === 'system'}
-        onClick={() => setMode('system')}
-        className={`${segCls(mode === 'system')} font-mono text-[11px] font-semibold`}
+        onClick={pick('system')}
+        className={`${segCls(mode === 'system')} rounded-r-lg font-mono text-[11px] font-semibold`}
       >
         AUTO
       </button>
@@ -115,7 +131,7 @@ function ThemeModeSwitch() {
 
 export function GlobalSettingsScreen() {
   const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
-  const { theme, mode: themeMode } = useTheme();
+  const { theme, mode: themeMode, setMode: setThemeMode } = useTheme();
   const { store } = useData();
   const tipsOff = useTipsDisabled();
   const [langSheetOpen, setLangSheetOpen] = useState(false);
@@ -138,6 +154,8 @@ export function GlobalSettingsScreen() {
   const [lockTimeout, setLockTimeout] = useState(60);
   const [lockBioAvailable, setLockBioAvailable] = useState(false);
   const [lockError, setLockError] = useState<string | null>(null);
+  // #195: tappable — an invalid tap names the blocker
+  const [lockAttempted, setLockAttempted] = useState(false);
   useEffect(() => {
     if (identity?.kind !== 'user') return;
     void getApiCapabilities().then((caps) => {
@@ -147,17 +165,47 @@ export function GlobalSettingsScreen() {
     void pushEnabled().then(setPushOn);
   }, [identity?.kind]);
 
+  // #282 (user): turning the lock OFF is a guarded act — the current
+  // PIN (or the registered biometric) must answer first
+  const [disarmOpen, setDisarmOpen] = useState(false);
+  const [disarmPin, setDisarmPin] = useState('');
+  const [disarmError, setDisarmError] = useState(false);
+  const disarm = () => {
+    writeLockConfig(null);
+    setLockOn(false);
+    setDisarmOpen(false);
+  };
+  const tryDisarmBiometric = async () => {
+    const config = readLockConfig();
+    if (config && (await verifyBiometric(config, t('lock.disarmTitle')))) disarm();
+  };
+  const onDisarmDigit = async (next: string) => {
+    setDisarmPin(next);
+    setDisarmError(false);
+    const config = readLockConfig();
+    if (!config || next.length < 4) return;
+    if ((await hashPin(next, config.pinSalt)) === config.pinHash) {
+      disarm();
+    } else if (next.length >= 8) {
+      setDisarmError(true);
+    }
+  };
+
   const toggleLock = async () => {
     if (lockOn) {
-      // the user already proved themself at unlock time — direct disable
-      writeLockConfig(null);
-      setLockOn(false);
+      setDisarmPin('');
+      setDisarmError(false);
+      setDisarmOpen(true);
+      const config = readLockConfig();
+      // the registered biometric answers hands-free where it exists
+      if (config?.credentialId) void tryDisarmBiometric();
       return;
     }
     setLockPin('');
     setLockPin2('');
     setLockTimeout(60);
     setLockError(null);
+    setLockAttempted(false);
     setLockBioAvailable(await biometricAvailable());
     setLockSheetOpen(true);
   };
@@ -228,6 +276,17 @@ export function GlobalSettingsScreen() {
           {gcAvailable && (
             <Row testId="settings-connections-row" icon="bank-transfer" title={t('gc.connections')} onClick={openConnections} />
           )}
+          {/* #159 (user): devices are an app-wide concern — moved here from
+              the profile, which keeps only identity-level acts */}
+          {identity?.kind === 'user' && (
+            <Row
+              testId="settings-devices-row"
+              icon="devices"
+              title={t('devices.title')}
+              sub={t('devices.rowSub')}
+              onClick={() => void navigate({ to: '/devices' })}
+            />
+          )}
           <Row
             testId="settings-language-row"
             icon="translate"
@@ -285,6 +344,9 @@ export function GlobalSettingsScreen() {
             sub={themeMode === 'system' ? t('settings.followDevice') : undefined}
             chevron={false}
             trailing={<ThemeModeSwitch />}
+            // #157 (user): the row itself is the quick cycle — the
+            // segments stay the precise control (their clicks don't bubble)
+            onClick={() => setThemeMode(NEXT_THEME_MODE[themeMode])}
           />
           <Row
             testId="settings-tips-toggle"
@@ -331,6 +393,33 @@ export function GlobalSettingsScreen() {
       </Sheet>
 
       {/* App lock setup: backup PIN + re-lock timeout (+ biometrics when available) */}
+      {/* #282: the disarm challenge — current PIN (auto-verifying like
+          the lock screen) or the registered biometric */}
+      <Sheet open={disarmOpen} onOpenChange={setDisarmOpen} title={t('lock.disarmTitle')} size="compact">
+        <div className="flex flex-col gap-3 pt-1" data-testid="lock-disarm-sheet">
+          <p className="text-[13px] leading-relaxed text-ink-2">{t('lock.disarmBody')}</p>
+          <input
+            data-testid="lock-disarm-pin"
+            value={disarmPin}
+            onChange={(e) => void onDisarmDigit(e.target.value.replaceAll(/\D/g, '').slice(0, 8))}
+            inputMode="numeric"
+            type="password"
+            autoComplete="off"
+            placeholder={t('lock.pinPlaceholder')}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-center font-mono text-[18px] tracking-[0.4em] text-ink outline-none${disarmError ? ' ring-1 ring-negative' : ''}`}
+          />
+          {disarmError && (
+            <p className="text-center text-[12px] text-negative" data-testid="lock-disarm-error">
+              {t('lock.wrongPin')}
+            </p>
+          )}
+          {readLockConfig()?.credentialId && (
+            <Button variant="outline" data-testid="lock-disarm-bio" onClick={() => void tryDisarmBiometric()}>
+              {t('lock.disarmBiometric')}
+            </Button>
+          )}
+        </div>
+      </Sheet>
       <Sheet open={lockSheetOpen} onOpenChange={setLockSheetOpen} title={t('lock.setup')} size="form">
         <div className="flex flex-col gap-3 pt-1">
           {!lockBioAvailable && <p className="text-[12px] text-ink-3">{t('lock.notSupported')}</p>}
@@ -342,8 +431,11 @@ export function GlobalSettingsScreen() {
             value={lockPin}
             onChange={(e) => setLockPin(e.target.value.replaceAll(/\D/g, ''))}
             placeholder={t('lock.pinLabel')}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={lockAttempted && !validPin(lockPin)}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !validPin(lockPin))}`}
           />
+          {/* #195 r2 (user): the blocker sits AT the field */}
+          <FormBlockerNote show={lockAttempted && !validPin(lockPin)} text={t('form.needFields')} testId="lock-setup-save-blocker" />
           <input
             data-testid="lock-setup-pin2"
             type="password"
@@ -376,7 +468,16 @@ export function GlobalSettingsScreen() {
               {lockError}
             </p>
           )}
-          <Button data-testid="lock-setup-save" onClick={() => void saveLock()} disabled={!validPin(lockPin)}>
+          <Button
+            data-testid="lock-setup-save"
+            onClick={() => {
+              if (!validPin(lockPin)) {
+                setLockAttempted(true);
+                return;
+              }
+              void saveLock();
+            }}
+          >
             {t('action.save')}
           </Button>
         </div>

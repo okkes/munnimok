@@ -126,33 +126,27 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/users")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/gocardless/requisitions")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await user.DeleteAsync("/admin/gocardless/requisitions/req-x")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/bank-provider")).StatusCode);
     }
 
     [Fact]
-    public async Task AdminPicksTheBankProviderForNewConsents()
+    public async Task BankProviderToggleIsGone()
     {
+        // #175: the END USER picks the provider at connect time — the
+        // admin's "active provider" endpoints retired outright
         var admin = ClientFor("the-admin");
-        var state = await admin.GetFromJsonAsync<System.Text.Json.JsonElement>("/admin/bank-provider");
-        Assert.Equal("gocardless", state.GetProperty("active").GetString());
-        Assert.Contains("gocardless", state.GetProperty("configured").EnumerateArray().Select(e => e.GetString()));
-
-        // an unconfigured provider is refused loudly
-        Assert.Equal(HttpStatusCode.BadRequest,
-            (await admin.PutAsJsonAsync("/admin/bank-provider", new { provider = "enablebanking" })).StatusCode);
-        // re-picking the configured one round-trips
-        Assert.True((await admin.PutAsJsonAsync("/admin/bank-provider", new { provider = "gocardless" })).IsSuccessStatusCode);
-        var after = await admin.GetFromJsonAsync<System.Text.Json.JsonElement>("/admin/bank-provider");
-        Assert.Equal("gocardless", after.GetProperty("active").GetString());
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/admin/bank-provider")).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,
+            (await admin.PutAsJsonAsync("/admin/bank-provider", new { provider = "gocardless" })).StatusCode);
     }
 
     [Fact]
-    public async Task AdminSeesUsersAndRequisitionsWithStaleFlag_AndDeletes()
+    public async Task AdminSeesOnlyThisEnvironmentsRequisitions_ForeignOnesAreCountedAndUndeletable()
     {
         var admin = ClientFor("the-admin");
         Assert.True((await admin.GetAsync("/admin/ping")).IsSuccessStatusCode);
 
-        // seed a local record matching req-known
+        // seed local records: one matching req-known (also present at GC)
+        // and one the provider no longer knows (dead consent → stale)
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -167,23 +161,44 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
                 RequisitionId = "req-known",
                 Status = "linked",
             });
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = Guid.NewGuid(),
+                UserId = owner.Id,
+                SpaceId = "s1",
+                InstitutionId = "ASN_BANK_ASNBNL21",
+                RequisitionId = "req-dead-at-gc",
+                Status = "created",
+            });
             await db.SaveChangesAsync();
         }
 
         var users = await admin.GetFromJsonAsync<List<AdminUserDto>>("/admin/users");
         Assert.Contains(users!, u => u.Sub == "the-owner");
 
-        var requisitions = await admin.GetFromJsonAsync<List<AdminRequisitionDto>>("/admin/gocardless/requisitions");
-        Assert.Equal(2, requisitions!.Count);
-        Assert.True(requisitions.Single(r => r.RequisitionId == "req-stale").Stale);
-        Assert.False(requisitions.Single(r => r.RequisitionId == "req-known").Stale);
-        Assert.Equal("the-owner", requisitions.Single(r => r.RequisitionId == "req-known").OwnerSub);
+        // the shared GC account also carries req-stale (another
+        // environment's consent) — counted, never listed
+        var list = await admin.GetFromJsonAsync<AdminRequisitionListDto>("/admin/gocardless/requisitions");
+        Assert.Equal(2, list!.Requisitions.Count);
+        Assert.Equal(1, list.ForeignCount);
+        Assert.DoesNotContain(list.Requisitions, r => r.RequisitionId == "req-stale");
+        var known = list.Requisitions.Single(r => r.RequisitionId == "req-known");
+        Assert.False(known.Stale);
+        Assert.Equal("the-owner", known.OwnerSub);
+        var dead = list.Requisitions.Single(r => r.RequisitionId == "req-dead-at-gc");
+        Assert.True(dead.Stale);
+        Assert.Equal("gone", dead.Status);
 
-        // delete the stale one: GC called, list shrinks
-        Assert.True((await admin.DeleteAsync("/admin/gocardless/requisitions/req-stale")).IsSuccessStatusCode);
-        Assert.Contains("req-stale", _factory.Gc.Deleted);
-        var after = await admin.GetFromJsonAsync<List<AdminRequisitionDto>>("/admin/gocardless/requisitions");
-        Assert.Single(after!);
+        // deleting a FOREIGN consent is refused and GC is never called —
+        // a staging admin must not be able to revoke prod's bank access
+        Assert.Equal(HttpStatusCode.NotFound, (await admin.DeleteAsync("/admin/gocardless/requisitions/req-stale")).StatusCode);
+        Assert.DoesNotContain("req-stale", _factory.Gc.Deleted);
+
+        // deleting an OWN consent works: GC called, list shrinks
+        Assert.True((await admin.DeleteAsync("/admin/gocardless/requisitions/req-known")).IsSuccessStatusCode);
+        Assert.Contains("req-known", _factory.Gc.Deleted);
+        var after = await admin.GetFromJsonAsync<AdminRequisitionListDto>("/admin/gocardless/requisitions");
+        Assert.Single(after!.Requisitions);
     }
 }
 

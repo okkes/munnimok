@@ -3,21 +3,12 @@ import ReactDOM from 'react-dom/client';
 import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
 import * as Sentry from '@sentry/react';
 import { AdminApp } from './AdminApp';
+import { config, glitchtipDsn } from './config';
 import './styles.css';
 
-const config = {
-  apiUrl: (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:8180',
-  logtoEndpoint: (import.meta.env.VITE_LOGTO_ENDPOINT as string | undefined) ?? '',
-  logtoAppId: (import.meta.env.VITE_LOGTO_APP_ID as string | undefined) ?? '',
-  logtoResource: (import.meta.env.VITE_LOGTO_RESOURCE as string | undefined) ?? '',
-};
-
-// operator console errors land in their own GlitchTip project (no-op when unset)
-const glitchtipDsn = (import.meta.env.VITE_GLITCHTIP_DSN as string | undefined) ?? '';
 if (glitchtipDsn) {
   Sentry.init({ dsn: glitchtipDsn, sendDefaultPii: false, sendClientReports: false });
 }
-export type AdminConfig = typeof config;
 
 const logtoConfigured = Boolean(config.logtoEndpoint && config.logtoAppId);
 

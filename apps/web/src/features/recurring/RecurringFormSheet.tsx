@@ -6,13 +6,21 @@ import { setDebtHandoff } from '@/features/debts/handoff';
 import { DebtHandoffInterstitial } from '@/features/debts/DebtHandoffInterstitial';
 import { useData } from '@/app/data';
 import { propagateRecurringCategory, useRecurringOps } from '@/application/recurring';
+import { useSpaceAccounts } from '@/application/transactions';
+import { specialCatType } from '@/domain/categories';
+import { counterTypesFor } from '@/domain/txType';
+import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { CategoryPicker } from '@/features/categories/CategoryPicker';
+// #343: one account face for the whole app — logo when set, else the
+// type icon in the account's color (shared with home's upcoming rows)
+import { LoanFace } from '@/features/home/UpcomingScreen';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import type { RecurringSuggestion } from '@/domain/detectRecurring';
 import type { RecurringEvery, RecurringKind, RecurringRow } from '@/db/types';
 import { BrandIconPicker } from './BrandIconPicker';
 import { KIND_ICON } from './RecurringVisual';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
@@ -37,6 +45,8 @@ export interface FormState {
   active: boolean;
   merchantKey?: string;
   catId?: string;
+  /** #274: counterparty account for a special category */
+  linkedAccountId?: string;
 }
 
 export const emptyForm = (): FormState => ({
@@ -84,6 +94,7 @@ export const formFromRec = (rec: RecurringRow): FormState => ({
   active: rec.active === 1,
   merchantKey: rec.merchantKey,
   catId: rec.catId,
+  linkedAccountId: rec.linkedAccountId,
 });
 
 export const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
@@ -96,6 +107,51 @@ export const formFromSuggestion = (s: RecurringSuggestion): FormState => ({
   merchantKey: s.merchantKey,
 });
 
+// #195: the first failing requirement names the blocker (null form =
+// closed sheet, nothing blocks)
+const blockerKeyFor = (form: FormState | null): 'form.needName' | 'form.needAmount' | 'form.needDate' | null => {
+  if (form === null) return null;
+  if (!form.name.trim()) return 'form.needName';
+  if (!form.amount) return 'form.needAmount';
+  if (form.custom && !form.firstDue) return 'form.needDate';
+  return null;
+};
+
+/** dirty vs the seed baseline (S3776: out of the component) */
+const formDirty = (form: FormState | null, baseline: string): boolean =>
+  form !== null && JSON.stringify(form) !== baseline;
+
+/** stable reseed key: the record's identity, 'new' for drafts (S3776) */
+const seedKeyOf = (initial: FormState | null): string | null => (initial === null ? null : (initial.id ?? 'new'));
+
+/** #195 field rings, computed off the component (S3776) */
+function recformRings(attempted: boolean, form: FormState | null) {
+  if (!attempted || form === null) return { nameBad: false, amountBad: false, dateBad: false };
+  return { nameBad: !form.name.trim(), amountBad: !form.amount, dateBad: !form.firstDue };
+}
+
+/** custom cadences anchor on the first due date; presets keep the
+ *  no-auto-`since` rule so a cost added mid-period still counts for the
+ *  whole current period (and accepted suggestions own their history) */
+function cadenceFieldsFor(form: FormState) {
+  if (form.custom) {
+    return {
+      every: form.every,
+      everyN: Math.min(99, Math.max(1, Math.round(form.everyN) || 1)),
+      since: form.firstDue,
+      dueDay: Number(form.firstDue.slice(8, 10)),
+      dueMonth: Number(form.firstDue.slice(5, 7)),
+    };
+  }
+  return {
+    every: form.every,
+    everyN: 1, // overwrite a previous custom cadence
+    since: '', // '' clears — an absent field would not sync
+    dueDay: Math.min(31, Math.max(1, form.dueDay || 1)),
+    ...(form.every === 'year' ? { dueMonth: Math.min(12, Math.max(1, form.dueMonth || 1)) } : {}),
+  };
+}
+
 interface RecurringFormSheetProps {
   /** non-null opens the sheet with this draft; the sheet owns edits from there */
   initial: FormState | null;
@@ -105,6 +161,10 @@ interface RecurringFormSheetProps {
   /** create-and-return hosts (review, tx detail) get the saved row's id
    *  HERE — sniffing the live-query list after close is a lost race */
   onSaved?: (id: string) => void;
+  /** #257: an accepted SUGGESTION hands off to the occurrence review
+   *  (pick which charges belong) instead of blind auto-reconcile; hosts
+   *  without one keep the old reconcile behavior */
+  onAccepted?: (id: string) => void;
 }
 
 /**
@@ -112,74 +172,98 @@ interface RecurringFormSheetProps {
  * tab (add), the detail screen (edit) and the suggestions screen
  * (accept). Owns its pickers and persistence.
  */
-export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Readonly<RecurringFormSheetProps>) {
+/** v2: the recurring's amount and rhythm are the loan's PAYMENT plan
+ *  (they were never its original size); #190: the due day rides along.
+ *  S3776. */
+function debtHandoffFrom(form: FormState) {
+  const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
+  return {
+    name: form.name.trim() || undefined,
+    paymentCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
+    paymentEvery: form.every,
+    paymentDay: form.every !== 'week' ? form.dueDay || undefined : undefined,
+    merchantKey: form.merchantKey ?? undefined,
+  };
+}
+
+/** #274: the accounts a category's counter matrix allows. S3776. */
+function counterChoicesFor<T extends { type: import('@/db/types').AccountType }>(
+  catId: string | undefined,
+  accounts: readonly T[] | undefined,
+): T[] {
+  if (!catId || !specialCatType(catId)) return [];
+  const allowed = counterTypesFor(catId);
+  return (accounts ?? []).filter((acct) => !allowed || allowed.includes(acct.type));
+}
+
+export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAccepted }: Readonly<RecurringFormSheetProps>) {
   const { t, lang } = useLang();
   const ops = useRecurringOps();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
+  const accounts = useSpaceAccounts();
   const [form, setForm] = useState<FormState | null>(null);
   const [brandPickerOpen, setBrandPickerOpen] = useState(false);
   const [catPickerOpen, setCatPickerOpen] = useState(false);
+  // #274: the counterparty pick for special categories
+  const [counterPickerOpen, setCounterPickerOpen] = useState(false);
+  // #341: quick-create — the same full chooser the transaction flow has
+  const [counterChooserOpen, setCounterChooserOpen] = useState(false);
   const [debtIntent, setDebtIntent] = useState(false);
   // what the category was when the sheet opened -- propagation fires
   // only on a real change
   const initialCatIdRef = useRef<string | undefined>(undefined);
+  const initialLinkRef = useRef<string | undefined>(undefined);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // free-typed drafts so the '1' can be deleted while editing; clamped on blur
   const [dueDayText, setDueDayText] = useState('1');
   const [everyNText, setEveryNText] = useState('1');
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
 
   // seed on open or when the underlying RECORD changes — never on object
   // identity: callers rebuild `initial` per render (formFromTx in review),
   // and on the native SQL backend every sync cycle re-emits fresh objects.
   // The identity-keyed reseed kept overwriting mid-typing edits (iOS ss).
-  const seedKey = initial === null ? null : (initial.id ?? 'new');
+  const seedKey = seedKeyOf(initial);
   const seededRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (seededRef.current === seedKey) return;
     seededRef.current = seedKey;
     initialCatIdRef.current = initial?.catId;
+    initialLinkRef.current = initial?.linkedAccountId;
     setForm(initial);
     setDueDayText(String(initial?.dueDay ?? 1));
     setEveryNText(String(initial?.everyN ?? 1));
     setConfirmDelete(false);
+    setAttempted(false);
     // dirty baseline (user request 2026-08-01): edited forms ask before
     // a stray dismissal drops them
     baselineRef.current = JSON.stringify(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
   const baselineRef = useRef('');
-  const dirty = form !== null && JSON.stringify(form) !== baselineRef.current;
+  const dirty = formDirty(form, baselineRef.current);
+  const blockerKey = blockerKeyFor(form);
+  // #274: which accounts the category's counter matrix allows (S3776:
+  // resolved outside the component)
+  const counterChoices = counterChoicesFor(form?.catId, accounts);
+  // #195 rings, precomputed once (S3776: the JSX kept re-branching)
+  const { nameBad, amountBad, dateBad } = recformRings(attempted, form);
 
   const save = async () => {
-    if (!form?.name.trim()) return;
-    if (form.custom && !form.firstDue) return;
+    if (form === null || blockerKeyFor(form) !== null) return;
     const amountCents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
     if (!Number.isFinite(amountCents) || amountCents <= 0) return;
     const fromSuggestion = form.id === null && !!form.merchantKey;
-    // custom cadences anchor on the first due date; presets keep the
-    // no-auto-`since` rule so a cost added mid-period still counts for
-    // the whole current period (and accepted suggestions own their history)
-    const cadence = form.custom
-      ? {
-          every: form.every,
-          everyN: Math.min(99, Math.max(1, Math.round(form.everyN) || 1)),
-          since: form.firstDue,
-          dueDay: Number(form.firstDue.slice(8, 10)),
-          dueMonth: Number(form.firstDue.slice(5, 7)),
-        }
-      : {
-          every: form.every,
-          everyN: 1, // overwrite a previous custom cadence
-          since: '', // '' clears — an absent field would not sync
-          dueDay: Math.min(31, Math.max(1, form.dueDay || 1)),
-          ...(form.every === 'year' ? { dueMonth: Math.min(12, Math.max(1, form.dueMonth || 1)) } : {}),
-        };
+    const cadence = cadenceFieldsFor(form);
     const savedId = await ops.save(form.id, {
       name: form.name.trim(),
       kind: form.kind,
-      luxury: form.luxury ? 1 : 0,
+      // #332 (user): fixed never saves luxury — heals pre-#332 records
+      // whose hidden flag would otherwise silently persist through an edit
+      luxury: form.luxury && form.kind !== 'fixed' ? 1 : 0,
       amountCents,
       icon: KIND_ICON[form.kind],
       logo: form.logo ?? '', // '' clears — an absent field would not sync
@@ -188,16 +272,25 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
       notifyDaysBefore: form.notify || undefined,
       merchantKey: form.merchantKey,
       catId: form.catId ?? '', // '' clears -- an absent field would not sync
+      linkedAccountId: form.linkedAccountId ?? '', // #274 — same clear rule
     });
     // the recurring OWNS its transactions' category (user rule
-    // 2026-07-28): a changed category re-files every linked transaction
-    if (form.id && form.catId !== initialCatIdRef.current) {
-      await propagateRecurringCategory(store, repo, spaceId, form.id, form.catId).catch(() => undefined);
+    // 2026-07-28): a changed category re-files every linked transaction;
+    // #274: a changed counterparty rides the same propagation
+    if (form.id && (form.catId !== initialCatIdRef.current || form.linkedAccountId !== initialLinkRef.current)) {
+      await propagateRecurringCategory(store, repo, spaceId, form.id, form.catId, form.linkedAccountId || undefined).catch(
+        () => undefined,
+      );
     }
     onSaved?.(savedId);
     onClose();
-    // an accepted suggestion should immediately own its past payments
-    if (fromSuggestion) await ops.reconcile();
+    // an accepted suggestion should immediately own its past payments —
+    // #257: hosts with an occurrence review take over (the user picks
+    // which charges belong); others keep the blind reconcile
+    if (fromSuggestion) {
+      if (onAccepted) onAccepted(savedId);
+      else await ops.reconcile();
+    }
   };
 
   const removeCurrent = async () => {
@@ -227,10 +320,13 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder={t('recurring.name')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={nameBad}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(nameBad)}`}
             />
             <div className="flex gap-2">
-              <Chip testId="recform-kind-fixed" selected={form.kind === 'fixed'} onClick={() => setForm({ ...form, kind: 'fixed' })}>
+              {/* #332 (user): a fixed cost is never a luxury — picking it
+                  clears the flag so no hidden-but-set value survives */}
+              <Chip testId="recform-kind-fixed" selected={form.kind === 'fixed'} onClick={() => setForm({ ...form, kind: 'fixed', luxury: false })}>
                 {t('recurring.kindFixed')}
               </Chip>
               <Chip testId="recform-kind-subscription" selected={form.kind === 'subscription'} onClick={() => setForm({ ...form, kind: 'subscription' })}>
@@ -257,6 +353,22 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
               <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
             </button>
 
+            {/* #274 (user): a special category carries a counterparty —
+                transactions attached to this recurring inherit it */}
+            {form.catId && specialCatType(form.catId) && (
+              <button
+                data-testid="recform-counter"
+                onClick={() => setCounterPickerOpen(true)}
+                className="m-tap flex h-11 w-full items-center gap-2 rounded-input border border-line bg-surface px-3 text-left text-[14px] text-ink"
+              >
+                <Icon name="swap-horizontal" size={17} color="var(--m-accent-deep)" />
+                <span className={`min-w-0 flex-1 truncate${form.linkedAccountId ? '' : ' text-ink-4'}`}>
+                  {accounts?.find((a) => a.id === form.linkedAccountId)?.name ?? t('recurring.pickCounter')}
+                </span>
+                <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
+              </button>
+            )}
+
             <div className="m-cap px-1">{t('recurring.amount')}</div>
             <input
               data-testid="recform-amount"
@@ -267,7 +379,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
               value={form.amount}
               onChange={(e) => setForm({ ...form, amount: e.target.value })}
               placeholder="0.00"
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={amountBad}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(amountBad)}`}
             />
 
             <div className="m-cap px-1">{t('recurring.iconTitle')}</div>
@@ -344,7 +457,8 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
                     type="date"
                     value={form.firstDue}
                     onChange={(e) => setForm({ ...form, firstDue: e.target.value })}
-                    className="h-10 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none"
+                    aria-invalid={dateBad}
+                    className={`h-10 rounded-input border border-line bg-surface px-3 text-[13px] text-ink outline-none${blockerRing(dateBad)}`}
                   />
                 </label>
               </div>
@@ -385,21 +499,24 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
               </label>
             )}
 
-            <button
-              data-testid="recform-luxury"
-              onClick={() => setForm({ ...form, luxury: !form.luxury })}
-              className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block text-[14px] text-ink">{t('recurring.luxury')}</span>
-                <span className="block text-[11px] text-ink-4">{t('recurring.luxuryHint')}</span>
-              </span>
-              <span
-                className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${form.luxury ? 'justify-end bg-accent' : 'justify-start bg-bg-2'}`}
+            {/* #332 (user): fixed costs hide the luxury toggle entirely */}
+            {form.kind !== 'fixed' && (
+              <button
+                data-testid="recform-luxury"
+                onClick={() => setForm({ ...form, luxury: !form.luxury })}
+                className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
               >
-                <span className="h-5 w-5 rounded-full bg-surface shadow" />
-              </span>
-            </button>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] text-ink">{t('recurring.luxury')}</span>
+                  <span className="block text-[11px] text-ink-4">{t('recurring.luxuryHint')}</span>
+                </span>
+                <span
+                  className={`flex h-6 w-10 items-center rounded-full p-0.5 transition-colors ${form.luxury ? 'justify-end bg-accent' : 'justify-start bg-bg-2'}`}
+                >
+                  <span className="h-5 w-5 rounded-full bg-surface shadow" />
+                </span>
+              </button>
+            )}
 
             <div className="m-cap px-1">{t('recurring.notify')}</div>
             <div className="flex flex-wrap gap-2">
@@ -425,10 +542,16 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
               </button>
             )}
 
+            <FormBlockerNote show={attempted && blockerKey !== null} text={blockerKey ? t(blockerKey) : ''} testId="recform-save-blocker" />
             <Button
               data-testid="recform-save"
-              onClick={() => void save()}
-              disabled={!form.name.trim() || !form.amount || (form.custom && !form.firstDue)}
+              onClick={() => {
+                if (blockerKey !== null) {
+                  setAttempted(true);
+                  return;
+                }
+                void save();
+              }}
             >
               {form.id ? t('action.save') : t('action.add')}
             </Button>
@@ -455,22 +578,77 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved }: Rea
         direction="debit"
         selectedId={form?.catId}
         onPick={(catId) => {
-          if (form) setForm({ ...form, catId });
+          // #274: a counter only means something under a special category
+          if (form) setForm({ ...form, catId, ...(specialCatType(catId) ? {} : { linkedAccountId: undefined }) });
+        }}
+      />
+      {/* #274 (user): the counterparty pick — accounts the category's
+          matrix allows (sheet SIBLING, never nested — portal order) */}
+      <Sheet open={counterPickerOpen} onOpenChange={setCounterPickerOpen} title={t('recurring.counterTitle')} size="form">
+        <div className="flex flex-col gap-2 pt-1" data-testid="recform-counter-sheet">
+          {counterChoices.map((acct) => (
+            <button
+              key={acct.id}
+              data-testid={`recform-counter-acct-${acct.id}`}
+              onClick={() => {
+                if (form) setForm({ ...form, linkedAccountId: acct.id });
+                setCounterPickerOpen(false);
+              }}
+              className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[14px] text-ink"
+            >
+              {/* #343: the account's real face — logo if set, not a
+                  generic bank icon */}
+              <LoanFace loan={acct} />
+              <span className="min-w-0 flex-1 truncate">{acct.name}</span>
+              {form?.linkedAccountId === acct.id && <Icon name="check" size={16} color="var(--m-accent-deep)" />}
+            </button>
+          ))}
+          {counterChoices.length === 0 && (
+            <p className="px-1 py-4 text-center text-[13px] text-ink-4" data-testid="recform-counter-empty">
+              {t('recurring.counterEmpty')}
+            </p>
+          )}
+          {/* #341: the creation door — same full chooser as the
+              transaction flow (bank connect, import, or manual) */}
+          <button
+            data-testid="recform-counter-create"
+            onClick={() => setCounterChooserOpen(true)}
+            className="m-tap mt-2 flex w-full items-center gap-2 rounded-card border border-dashed border-line bg-transparent px-4 py-3 text-left text-[14px] font-medium text-accent-deep"
+          >
+            <Icon name="plus-circle-outline" size={18} />
+            {t('tx.counterFullSetup')}
+          </button>
+          {form?.linkedAccountId && (
+            <Button
+              variant="outline"
+              data-testid="recform-counter-clear"
+              onClick={() => {
+                if (form) setForm({ ...form, linkedAccountId: undefined });
+                setCounterPickerOpen(false);
+              }}
+            >
+              {t('recurring.counterNone')}
+            </Button>
+          )}
+        </div>
+      </Sheet>
+      {/* #341: chooser as a SIBLING, never nested (#241 — portal order);
+          the type grid narrows to what the category's matrix allows */}
+      <AddAccountChooser
+        open={counterChooserOpen}
+        onOpenChange={setCounterChooserOpen}
+        manualTypes={form?.catId ? (counterTypesFor(form.catId) ?? undefined) : undefined}
+        onCreated={(account) => {
+          if (form) setForm({ ...form, linkedAccountId: account.id });
+          setCounterChooserOpen(false);
+          setCounterPickerOpen(false);
         }}
       />
       {debtIntent && form && (
         <DebtHandoffInterstitial
           onStay={() => setDebtIntent(false)}
           onContinue={() => {
-            const cents = Math.round(Number.parseFloat(form.amount.replace(',', '.')) * 100);
-            // v2: the recurring's amount and rhythm are the loan's
-            // PAYMENT plan (they were never its original size)
-            setDebtHandoff({
-              name: form.name.trim() || undefined,
-              paymentCents: Number.isFinite(cents) && cents > 0 ? cents : undefined,
-              paymentEvery: form.every,
-              merchantKey: form.merchantKey ?? undefined,
-            });
+            setDebtHandoff(debtHandoffFrom(form));
             setDebtIntent(false);
             onClose();
             void navigate({ to: '/debts' });

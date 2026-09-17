@@ -19,6 +19,11 @@ public class GcRequisition
     /// shell — the hosted callback page reads it from the complete
     /// response to hand the user back into the app</summary>
     public string? AppScheme { get; set; }
+    /// <summary>origin of the consent's redirect url (e.g.
+    /// https://munni.example) — the GoCardless account is shared across
+    /// environments, and this is the per-consent environment marker the
+    /// shared-services cockpit attributes by (plan LS4)</summary>
+    public string? RedirectOrigin { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
@@ -46,6 +51,12 @@ public class GcLinkedAccount
     public int? DailySuccessLimit { get; set; }
     public int? SuccessRemaining { get; set; }
     public DateTimeOffset? RateResetAt { get; set; }
+    /// <summary>#240 r3: what the LAST fetch actually carried — raw rows
+    /// the provider answered with, and how many could not be represented
+    /// (no reference/date). Mirrored onto the feed account row so the
+    /// app can say "the bank returned nothing" instead of staying mute.</summary>
+    public int? LastFetchReceived { get; set; }
+    public int? LastFetchDropped { get; set; }
 }
 
 /// <summary>
@@ -84,6 +95,10 @@ public static class ImportIds
     private static readonly Guid Namespace = Guid.Parse("5f3c9a70-0d3e-4e0f-9a57-6d2b3a1c8e42");
 
     public static string AccountId(string iban) => V5($"acct:{Normalize(iban)}").ToString();
+    /// <summary>#311 r4: the bank's OWN account row when a statement
+    /// import already owns the canonical id — the two stay separate
+    /// accounts until the user merges them in the app</summary>
+    public static string BankAccountId(string iban) => V5($"acct:{Normalize(iban)}:bank").ToString();
     public static string TransactionId(string iban, string reference) => V5($"tx:{Normalize(iban)}:{reference}").ToString();
     /// <summary>sync-space id of a bank account's feed (matches client feedIds.ts)</summary>
     public static string FeedSpaceId(string iban) => V5($"feed:{Normalize(iban)}").ToString();

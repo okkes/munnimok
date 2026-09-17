@@ -156,6 +156,48 @@ describe('Repo', () => {
         splits: [{ catId: '', amountCents: 500 }],
       }),
     ).rejects.toMatchObject({ name: 'InvariantViolation' });
+
+    // a part's category spread must sum to the part (v2.1)
+    await expect(
+      repo.upsert('transaction', 's1', 't3', {
+        accountId: 'a',
+        date: '2026-07-01',
+        amountCents: -1_000,
+        currency: 'EUR',
+        merchant: 'X',
+        txType: 'expense',
+        needsReview: 0,
+        splits: [
+          { catId: 'g', amountCents: 1_000, cats: [{ catId: 'g', amountCents: 700 }, { catId: 'h', amountCents: 200 }] },
+        ],
+      }),
+    ).rejects.toMatchObject({ name: 'InvariantViolation' });
+
+    // #211: the ROW's category spread must sum to the gross amount
+    await expect(
+      repo.upsert('transaction', 's1', 't4', {
+        accountId: 'a',
+        date: '2026-07-01',
+        amountCents: -1_000,
+        currency: 'EUR',
+        merchant: 'X',
+        txType: 'expense',
+        needsReview: 0,
+        cats: [{ catId: 'g', amountCents: 700 }, { catId: 'h', amountCents: 200 }],
+      }),
+    ).rejects.toMatchObject({ name: 'InvariantViolation' });
+    // ...and a sound spread lands (a lone settled entry is legal too)
+    await repo.upsert('transaction', 's1', 't5', {
+      accountId: 'a',
+      date: '2026-07-01',
+      amountCents: -1_000,
+      currency: 'EUR',
+      merchant: 'X',
+      txType: 'expense',
+      needsReview: 0,
+      cats: [{ catId: 'g', amountCents: 700 }, { catId: 'h', amountCents: 300 }],
+    });
+    expect((await db.transactions.get('t5'))?.cats).toHaveLength(2);
   });
 
   it('remote ops are never refused — convergence beats validation', async () => {

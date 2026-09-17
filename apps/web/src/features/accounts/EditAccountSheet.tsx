@@ -1,22 +1,34 @@
 import { useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
+import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
+import { newestTxDate } from '@/application/accounts';
 import { isDebtTracked } from '@/domain/debts';
-import { parseCents } from '@/lib/money';
+import { fmtCents, parseCents } from '@/lib/money';
 import type { AccountRow, RecurringEvery } from '@/db/types';
 import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { SOURCE_KEYS } from './AttachSheet';
+import { sourceKeyFor } from './AttachSheet';
+import { AccountTypeRow } from './AccountTypeRow';
 import { isLiability, manualBalanceDate, typeDef } from './accountTypes';
-import { isCustomCadence, LoanCadenceControl } from './LoanCadenceControl';
+import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
 
 /** an emptied field must CLEAR the row (null); undefined would drop from
  *  the op and leave the stale value standing */
 const orClear = <T,>(value: T | undefined): T | null => value ?? null;
+
+/** #269: the signed cents a save would ADD to the stored balance — null
+ *  while the field is unparseable or matches the row (nothing to record) */
+const balanceDelta = (account: AccountRow, balance: string, negative: boolean): number | null => {
+  const cents = parseCents(balance || '');
+  if (cents === null) return null;
+  const signed = negative ? -Math.abs(cents) : Math.abs(cents);
+  return signed === account.balanceCents ? null : signed - account.balanceCents;
+};
 
 /** the sheet's whole draft, computed from the row (S3776: the seeding
  *  branches live out of the component) */
@@ -29,6 +41,7 @@ const seedFrom = (account: AccountRow) => ({
   original: account.originalCents ? (account.originalCents / 100).toFixed(2) : '',
   apr: account.interestPctYear === undefined ? '' : String(account.interestPctYear),
   payment: account.paymentCents ? (account.paymentCents / 100).toFixed(2) : '',
+  payDay: account.paymentDay ? String(account.paymentDay) : '',
   payEvery: account.paymentEvery ?? ('month' as RecurringEvery),
   payEveryN: Math.max(1, account.paymentEveryN ?? 1),
   payCustom: isCustomCadence(account.paymentEvery, account.paymentEveryN),
@@ -46,8 +59,33 @@ const seedFrom = (account: AccountRow) => ({
  * editable but their balance is the bank's and the row can't be
  * deleted from here. Writes target the ACCOUNT's own space.
  */
+/** dirty vs the row-derived seed (S3776: out of the component) */
+function editedVsSeed(
+  seed: ReturnType<typeof seedFrom>,
+  now: {
+    name: string; balance: string; negative: boolean; iban: string; original: string; apr: string;
+    payment: string; payDay: string; payEvery: RecurringEvery; payEveryN: number; note: string; track: boolean;
+  },
+  manual: boolean,
+  liability: boolean,
+): boolean {
+  if (now.name !== seed.name) return true;
+  if (manual && (now.balance !== seed.balance || now.negative !== seed.negative)) return true;
+  if (!liability) return false;
+  return (
+    now.iban !== seed.iban || now.original !== seed.original || now.apr !== seed.apr ||
+    now.payment !== seed.payment || now.payDay !== seed.payDay || now.payEvery !== seed.payEvery ||
+    now.payEveryN !== seed.payEveryN || now.note !== seed.note || now.track !== seed.track
+  );
+}
+
+/** #348: manual accounts delete — the cash wallet included; the other
+ *  defaults are the space's fixtures. S3776. */
+const deletableAccount = (manual: boolean, defaultFor?: string): boolean =>
+  manual && (!defaultFor || defaultFor === 'cash');
+
 export function EditAccountSheet({ account, onClose }: Readonly<{ account: AccountRow | null; onClose: () => void }>) {
-  const { t } = useLang();
+  const { t, lang } = useLang();
   const { store, repo } = useData();
   const [seedId, setSeedId] = useState<string | null>(null);
   const [name, setName] = useState('');
@@ -61,6 +99,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const [original, setOriginal] = useState('');
   const [apr, setApr] = useState('');
   const [payment, setPayment] = useState('');
+  const [payDay, setPayDay] = useState('');
   const [payEvery, setPayEvery] = useState<RecurringEvery>('month');
   const [payEveryN, setPayEveryN] = useState(1);
   const [payCustom, setPayCustom] = useState(false);
@@ -80,6 +119,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     setOriginal(seed.original);
     setApr(seed.apr);
     setPayment(seed.payment);
+    setPayDay(seed.payDay);
     setPayEvery(seed.payEvery);
     setPayEveryN(seed.payEveryN);
     setPayCustom(seed.payCustom);
@@ -90,6 +130,11 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
 
   const manual = account?.source === 'manual';
   const liability = !!account && isLiability(account.type);
+  // #269: the delta the save would record as an adjustment row — the
+  // note below the field makes the side effect known BEFORE saving
+  const adjustDelta = account && manual ? balanceDelta(account, balance, negative) : null;
+  // #205: the newest transaction on the account, for the About section
+  const newest = useQuery(store, async () => (account ? newestTxDate(store, account.id) : undefined), [account?.id]);
 
   // dirty vs the row-derived seed: an untouched sheet closes freely, an
   // edited one asks (user request 2026-08-01); the logo saves on pick
@@ -97,17 +142,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const seedNow = account ? seedFrom(account) : null;
   const dirty =
     !!seedNow &&
-    (name !== seedNow.name ||
-      (manual && (balance !== seedNow.balance || negative !== seedNow.negative)) ||
-      (liability &&
-        (iban !== seedNow.iban ||
-          original !== seedNow.original ||
-          apr !== seedNow.apr ||
-          payment !== seedNow.payment ||
-          payEvery !== seedNow.payEvery ||
-          payEveryN !== seedNow.payEveryN ||
-          note !== seedNow.note ||
-          track !== seedNow.track)));
+    editedVsSeed(seedNow, { name, balance, negative, iban, original, apr, payment, payDay, payEvery, payEveryN, note, track }, manual, liability);
 
   /** what the liability form asks of the row — empties null-clear */
   const storyChanges = (): Partial<AccountRow> => {
@@ -123,6 +158,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
       paymentCents: orClear(hasPayment ? paymentCents : undefined) as never,
       paymentEvery: orClear(hasPayment ? payEvery : undefined) as never,
       paymentEveryN: orClear(hasPayment && payEveryN > 1 ? payEveryN : undefined) as never,
+      // #190: the due day rides the plan; weekly plans carry none
+      paymentDay: orClear(hasPayment && payEvery !== 'week' ? parsedDueDay(payDay) : undefined) as never,
       note: orClear(note.trim() || undefined) as never,
       trackAsDebt: track ? 1 : 0,
     };
@@ -132,13 +169,24 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     if (!account || !name.trim()) return;
     const changes: Partial<AccountRow> = { name: name.trim() };
     if (manual) {
-      const cents = parseCents(balance || '');
-      if (cents !== null) {
-        const signed = negative ? -Math.abs(cents) : Math.abs(cents);
-        if (signed !== account.balanceCents) {
-          changes.balanceCents = signed;
-          changes.balanceAsOf = manualBalanceDate();
-        }
+      const delta = balanceDelta(account, balance, negative);
+      if (delta !== null) {
+        changes.balanceCents = account.balanceCents + delta;
+        changes.balanceAsOf = manualBalanceDate();
+        // #269 (grown from #221's defaults-only rule): EVERY manual
+        // balance edit records its delta as an adjustment row, so the
+        // ledger explains the jump instead of silently rewriting
+        void repo.upsert('transaction', account.spaceId, repo.newId(), {
+          accountId: account.id,
+          date: manualBalanceDate(),
+          amountCents: delta,
+          currency: account.currency,
+          merchant: t('cat.balanceAdjustment'),
+          txType: 'adjustment',
+          adjustment: 1,
+          catId: 'balanceAdjustment',
+          needsReview: 0,
+        });
       }
     }
     void repo.upsert('account', account.spaceId, account.id, { ...changes, ...(liability ? storyChanges() : {}) });
@@ -158,40 +206,18 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     <>
       <Sheet open={!!account} onOpenChange={(open) => !open && onClose()} title={t('acct.editAccount')} size={liability ? 'tall' : 'form'} dirty={dirty}>
         <div className="flex flex-col gap-3 pt-1">
-          <input
-            data-testid="acctedit-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
-          />
-          {manual && (
-            <div className="flex gap-2">
-              <div className="flex overflow-hidden rounded-input border border-line">
-                <button
-                  data-testid="acctedit-neg"
-                  onClick={() => setNegative(true)}
-                  className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
-                >
-                  −
-                </button>
-                <button
-                  data-testid="acctedit-pos"
-                  onClick={() => setNegative(false)}
-                  className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
-                >
-                  +
-                </button>
-              </div>
-              <input
-                data-testid="acctedit-balance"
-                value={balance}
-                onChange={(e) => setBalance(e.target.value)}
-                inputMode="decimal"
-                placeholder={`${t('acct.balanceNow')} (${account?.currency ?? 'EUR'})`}
-                className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
-              />
-            </div>
-          )}
+          {/* #208: labeled sections, the overview's caption style — the
+              form reads as Basics / Balance / loan story / About */}
+          <div className="m-cap px-1">{t('acct.sectionBasics')}</div>
+          <label className="text-[12px] text-ink-3">
+            {t('acct.accountName')}
+            <input
+              data-testid="acctedit-name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+            />
+          </label>
           <button
             data-testid="acctedit-change-icon"
             onClick={() => setLogoOpen(true)}
@@ -205,6 +231,51 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
             <span className="flex-1">{t('acct.changeIcon')}</span>
             <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
           </button>
+          {/* #212: the type, visible and changeable (destructive) */}
+          {account && <AccountTypeRow account={account} />}
+          {manual && (
+            <>
+              <div className="m-cap px-1 pt-1">{t('acct.sectionBalance')}</div>
+              <div className="flex gap-2">
+                {/* #327 r3 (user): halves own their corners — the inset
+                    focus ring follows the group's rounding */}
+                <div className="flex overflow-hidden rounded-input border border-line">
+                  <button
+                    data-testid="acctedit-neg"
+                    onClick={() => setNegative(true)}
+                    className={`m-tap rounded-l-input border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
+                  >
+                    −
+                  </button>
+                  <button
+                    data-testid="acctedit-pos"
+                    onClick={() => setNegative(false)}
+                    className={`m-tap rounded-r-input border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
+                  >
+                    +
+                  </button>
+                </div>
+                <input
+                  data-testid="acctedit-balance"
+                  value={balance}
+                  onChange={(e) => setBalance(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={`${t('acct.balanceNow')} (${account?.currency ?? 'EUR'})`}
+                  className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+                />
+              </div>
+              {account && adjustDelta !== null && (
+                <p className="px-1 text-[11px] leading-snug text-warning" data-testid="acctedit-adjust-note">
+                  {t('acct.adjustNote', { delta: fmtCents(adjustDelta, account.currency, lang, { sign: true }) })}
+                </p>
+              )}
+              {account?.balanceAsOf && (
+                <p className="px-1 text-[11px] leading-snug text-ink-4" data-testid="acctedit-balance-asof">
+                  {t('acct.balanceAsOf', { date: account.balanceAsOf })}
+                </p>
+              )}
+            </>
+          )}
           {liability && (
             <>
               {/* the debt story (loans v2): the account IS the loan */}
@@ -215,7 +286,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   value={iban}
                   onChange={(e) => setIban(e.target.value)}
                   placeholder={t('debts.iban')}
-                  className="h-11 w-full rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4"
+                  className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[13px] text-ink outline-none placeholder:text-ink-4"
                 />
               )}
               <div className="flex gap-2">
@@ -230,7 +301,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                     value={original}
                     onChange={(e) => setOriginal(e.target.value)}
                     placeholder="0.00"
-                    className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
                 </label>
                 <label className="min-w-0 flex-1 text-[12px] text-ink-3">
@@ -244,24 +315,41 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                     value={apr}
                     onChange={(e) => setApr(e.target.value)}
                     placeholder="0.0"
-                    className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
                 </label>
               </div>
-              <label className="text-[12px] text-ink-3">
-                {t('debts.payment')}
-                <input
-                  data-testid="acctedit-payment"
-                  type="number"
-                  inputMode="decimal"
-                  step="0.01"
-                  min="0"
-                  value={payment}
-                  onChange={(e) => setPayment(e.target.value)}
-                  placeholder="0.00"
-                  className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-                />
-              </label>
+              <div className="flex gap-2">
+                <label className="min-w-0 flex-[2] text-[12px] text-ink-3">
+                  {t('debts.payment')}
+                  <input
+                    data-testid="acctedit-payment"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.01"
+                    min="0"
+                    value={payment}
+                    onChange={(e) => setPayment(e.target.value)}
+                    placeholder="0.00"
+                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                  />
+                </label>
+                {/* #190: the plan's due day, like recurring */}
+                <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+                  {t('debts.dueDay')}
+                  <input
+                    data-testid="acctedit-payday"
+                    type="number"
+                    inputMode="numeric"
+                    min="1"
+                    max="31"
+                    value={payDay}
+                    onChange={(e) => setPayDay(e.target.value)}
+                    placeholder="—"
+                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                  />
+                </label>
+              </div>
               <LoanCadenceControl
                 value={{ every: payEvery, everyN: payEveryN }}
                 custom={payCustom}
@@ -295,15 +383,35 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
             </>
           )}
           {account && (
-            <div className="flex items-center justify-between px-1 text-[12px]" data-testid="acctedit-source">
-              <span className="text-ink-4">{t('acct.source')}</span>
-              <span className="text-ink-2">{t(SOURCE_KEYS[account.source])}</span>
-            </div>
+            <>
+              <div className="m-cap px-1 pt-1">{t('acct.sectionAbout')}</div>
+              <div className="overflow-hidden rounded-card border border-line bg-surface">
+                <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-source">
+                  <span className="text-ink-3">{t('acct.source')}</span>
+                  <span className="text-ink-2">{t(sourceKeyFor(account))}</span>
+                </div>
+                {/* #205: where the data ends and the last real movement */}
+                {account.dataThroughDate && (
+                  <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-datathrough">
+                    <span className="text-ink-3">{t('acct.dataThroughLabel')}</span>
+                    <span className="font-mono text-[12px] text-ink">{account.dataThroughDate}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-newest-tx">
+                  <span className="text-ink-3">{t('acct.newestTx')}</span>
+                  <span className="font-mono text-[12px] text-ink">{newest ?? '—'}</span>
+                </div>
+              </div>
+            </>
           )}
           <Button data-testid="acctedit-save" onClick={save} disabled={!name.trim()}>
             {t('action.save')}
           </Button>
-          {manual && (
+          {/* #221: the default accounts are the space's fixtures — no
+              delete door; their balance stays adjustable above.
+              #348: the cash wallet is the user's own — deletable (and
+              the boot heal no longer re-mints a deliberate delete) */}
+          {deletableAccount(manual, account?.defaultFor) && (
             <Button variant="danger" data-testid="acctedit-delete" onClick={() => setConfirmRemove(true)}>
               {t('action.delete')}
             </Button>

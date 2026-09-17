@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { HlcClock } from '@/sync/hlc';
@@ -48,7 +49,7 @@ describe('Splits (SP1)', () => {
   it('lists splits, opens the detail, and the ledger says who owes whom', async () => {
     renderAppAsUser('/splits', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits': () => [
           { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', memberCount: 2, entryCount: 1 },
         ],
@@ -77,7 +78,7 @@ describe('Splits (SP1)', () => {
     let entries = [...DETAIL.entries];
     renderAppAsUser('/splits/split-1', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/split-1': () => ({ ...DETAIL, entries }),
         'POST /splits/split-1/entries': (body) => {
           posted.push(body);
@@ -131,7 +132,7 @@ describe('Splits (SP1)', () => {
     const posted: unknown[] = [];
     renderAppAsUser('/splits/split-1', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/split-1': () => DETAIL,
         'POST /splits/split-1/entries': (body) => {
           posted.push(body);
@@ -159,7 +160,7 @@ describe('Splits (SP1)', () => {
     const posted: unknown[] = [];
     renderAppAsUser('/splits/split-1', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/split-1': () => DETAIL,
         'POST /splits/split-1/entries': (body) => {
           posted.push(body);
@@ -194,7 +195,7 @@ describe('Splits (SP1)', () => {
   it('mints a share link from the members card (SP3)', async () => {
     renderAppAsUser('/splits/split-1', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/split-1': () => DETAIL,
         'POST /splits/split-1/invites': () => ({ token: 'tok-abc', expiresAt: '2026-07-23' }),
       },
@@ -214,7 +215,7 @@ describe('Splits (SP1)', () => {
         { id: 's-house', name: 'Household', kind: 'shared' },
       ],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/invites/tok-abc': () => ({ splitName: 'Barcelona', currency: 'EUR', inviterName: 'Anna' }),
         'POST /splits/invites/tok-abc/accept': (body) => {
           accepted.push(body);
@@ -238,7 +239,7 @@ describe('Splits (SP1)', () => {
   it('a dead invite link says so instead of joining (SP3)', async () => {
     renderAppAsUser('/splits/join/expired', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/invites/expired': () => new Response(null, { status: 404 }),
       },
     });
@@ -255,7 +256,7 @@ describe('Splits (SP1)', () => {
     const posted: unknown[] = [];
     renderAppAsUser('/splits/split-1', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/split-1': () => owes,
         'POST /splits/split-1/entries': (body) => {
           posted.push(body);
@@ -278,7 +279,7 @@ describe('Splits (SP1)', () => {
     let status = 'open';
     renderAppAsUser('/splits/split-1', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/split-1': () => ({ ...DETAIL, status }),
         'POST /splits/split-1/close': () => {
           status = 'settled';
@@ -317,7 +318,7 @@ describe('Splits (SP1)', () => {
     });
     renderAppAsUser('/splits/split-1', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits/split-1': withSource,
         'POST /splits/split-1/attach': (body) => {
           attached.push(body);
@@ -351,7 +352,7 @@ describe('Splits (SP1)', () => {
 
     renderAppAsUser('/events/ev-rome', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits': () => [
           { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', attachedEventId: 'ev-rome', memberCount: 2, entryCount: 1 },
         ],
@@ -371,7 +372,7 @@ describe('Splits (SP1)', () => {
   it('the Home block surfaces my current split and jumps into it', async () => {
     renderAppAsUser('/', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits': () => [
           { id: 'split-1', name: 'Barcelona', currency: 'EUR', status: 'open', role: 'owner', memberCount: 2, entryCount: 1 },
         ],
@@ -391,7 +392,7 @@ describe('Splits (SP1)', () => {
     const created: unknown[] = [];
     renderAppAsUser('/splits', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: {} }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /splits': () => [],
         'POST /splits': (body) => {
           created.push(body);

@@ -45,16 +45,21 @@ export function DebtDetailScreen() {
   }, [statuses, status, navigate]);
   const today = localToday();
 
-  // payment history: transactions ON the loan account, transfers naming
-  // it as counterparty, and — for handoff-created loans — debt payments
-  // matching the remembered merchant
+  // payment history (typed-splits v2: the loan's OWN ledger is the
+  // record): rows ON the account first — minted mirrors, bank rows,
+  // hand-typed legs — plus unpeered transfers naming it as counterparty
+  // (legacy links without a mirror) and, for handoff-created loans,
+  // debt payments matching the remembered merchant. A PEERED source leg
+  // is represented by its mirror on the account — listing both would
+  // double-count the same payment.
   const payments = useMemo(() => {
     if (!status || !txs) return [];
     const { account } = status;
     return txs
       .filter((tx) => {
         if (tx.deleted !== 0) return false;
-        if (tx.accountId === account.id || tx.linkedAccountId === account.id) return true;
+        if (tx.accountId === account.id) return true;
+        if (tx.linkedAccountId === account.id) return !tx.transferPeerId;
         return !!account.merchantKey && tx.txType === 'debtPayment' && merchantKey(tx.merchant) === account.merchantKey;
       })
       .sort((a, b) => b.date.localeCompare(a.date))
@@ -119,7 +124,11 @@ export function DebtDetailScreen() {
           meta={
             <>
               {account.paymentCents && (
-                <span>{t(paymentLabelKey(account.paymentEvery), { amount: money(account.paymentCents) })}</span>
+                <span>
+                  {t(paymentLabelKey(account.paymentEvery), { amount: money(account.paymentCents) })}
+                  {/* #190: the plan's due day says which period a payment belongs to */}
+                  {account.paymentDay ? ` · ${t('recurring.dueDay2', { day: account.paymentDay })}` : ''}
+                </span>
               )}
               {estimate && (
                 <span data-testid="debtdetail-estimate">
@@ -170,7 +179,7 @@ export function DebtDetailScreen() {
           {t('debts.payments')} · {payments.length}
         </div>
         {payments.length > 0 ? (
-          <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="debtdetail-payments">
+          <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="debtdetail-payments">
             {payments.map((tx) => (
               <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
             ))}

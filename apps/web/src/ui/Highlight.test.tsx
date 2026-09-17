@@ -34,6 +34,14 @@ describe('Highlight', () => {
     expect(container.textContent).toBe('Spotify AB');
   });
 
+  it('#267 r2: amountQueryFor strips a leading sign and still swaps separators', async () => {
+    const { amountQueryFor } = await import('./Highlight');
+    expect(amountQueryFor('+€13.91', '+13,91')).toBe('13.91');
+    expect(amountQueryFor('-€13.91', '-13.91')).toBe('13.91');
+    expect(amountQueryFor('€210.15', '10')).toBe('10');
+    expect(amountQueryFor('€13.91', '+99')).toBe('');
+  });
+
   it('renders plain text without marks when nothing matches', () => {
     const { container } = render(<Highlight text="Spotify" query="zz" />);
     expect(container.querySelector('mark')).toBeNull();

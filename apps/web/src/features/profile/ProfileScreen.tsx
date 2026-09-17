@@ -10,15 +10,19 @@ import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { useLang } from '@/i18n';
 import { apiFetch } from '@/lib/api';
 import { downscaleImage, isDataImage } from '@/lib/image';
+import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { COUNTRIES, CURRENCIES } from '@/domain/countries';
 import { setPredictionCountry } from '@/domain/predictCategory';
 import { MANUAL_RATES_META_KEY, readManualRates } from '@/lib/rates';
 import { useQuery } from '@/db/useQuery';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { useDiscardGuard } from '@/ui/DiscardGuard';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Flag } from '@/ui/Flag';
 import { Sheet } from '@/ui/Sheet';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 /** avatar presets: "icon|color" */
 export const AVATARS = [
@@ -163,28 +167,40 @@ export function ProfileScreen() {
   const [displayCurrencyOpen, setDisplayCurrencyOpen] = useState(false);
   const [saved, setSaved] = useState(false);
   const [copied, setCopied] = useState(false);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteTyped, setDeleteTyped] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
+  // #307: which stage of the deletion runs (server erase → device wipe)
+  const [deletePhase, setDeletePhase] = useState<'server' | 'local' | null>(null);
   const [deleteError, setDeleteError] = useState(false);
   const [deleteProfileOpen, setDeleteProfileOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // #160: desktop-only webcam door beside the upload button
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
   const navigate = useNavigate();
   const logout = useSession((s) => s.logout);
 
   // full account deletion (account-deletion design; Apple 5.1.1(v)):
-  // the server erases everything, then the device forgets the identity
+  // the server erases everything, then the device forgets the identity.
+  // #307 (user): the wait is narrated per stage — the server erase is
+  // the slow one — and the sheet refuses dismissal while it runs
   const deleteAccount = async () => {
     const current = identity;
     if (current?.kind !== 'user') return;
     setDeleteBusy(true);
     setDeleteError(false);
+    setDeletePhase('server');
     const res = await apiFetch('/me', { method: 'DELETE' }).catch(() => null);
     if (!res?.ok) {
       setDeleteBusy(false);
+      setDeletePhase(null);
       setDeleteError(true);
       return;
     }
+    setDeletePhase('local');
     logout();
     await destroyIdentityData(current);
     await navigate({ to: '/login' });
@@ -211,6 +227,17 @@ export function ProfileScreen() {
     }
   };
 
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => void onPhotoPicked(file ?? undefined));
+      return;
+    }
+    fileRef.current?.click();
+  };
+
   // load current values per identity kind
   useEffect(() => {
     let cancelled = false;
@@ -222,11 +249,22 @@ export function ProfileScreen() {
       if (loaded.userId) setUserId(loaded.userId);
       if (loaded.country) setCountry(loaded.country);
       setDisplayCurrency(loaded.displayCurrency);
+      // #164: the loaded snapshot is the discard-guard baseline
+      baselineRef.current = JSON.stringify([
+        loaded.name,
+        loaded.picture ?? null,
+        loaded.country ?? null,
+        loaded.displayCurrency ?? null,
+      ]);
     })();
     return () => {
       cancelled = true;
     };
   }, [identity, store]);
+  const baselineRef = useRef<string | null>(null);
+  const draftPrint = JSON.stringify([name, picture ?? null, country ?? null, displayCurrency ?? null]);
+  const profileDirty = baselineRef.current !== null && draftPrint !== baselineRef.current;
+  const { guardedBack, sheet: discardSheet } = useDiscardGuard(profileDirty, () => window.history.back());
 
   const save = async () => {
     if (!name.trim()) return;
@@ -249,6 +287,9 @@ export function ProfileScreen() {
       displayCurrency: displayCurrency ?? undefined,
     } satisfies LocalProfile);
     setPredictionCountry(country);
+    // #164: a save makes the draft the new baseline — leaving is clean
+    baselineRef.current = JSON.stringify([name, picture ?? null, country ?? null, displayCurrency ?? null]);
+    setAttempted(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 1500);
   };
@@ -265,11 +306,12 @@ export function ProfileScreen() {
       <AppBar
         title={t('profile.title')}
         leading={
-          <IconButton label={t('action.back')} testId="profile-back" onClick={() => window.history.back()}>
+          <IconButton label={t('action.back')} testId="profile-back" onClick={guardedBack}>
             <Icon name="chevron-left" size={24} />
           </IconButton>
         }
       />
+      {discardSheet}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col items-center gap-1.5 py-5">
           <Avatar picture={picture} size={72} />
@@ -305,16 +347,26 @@ export function ProfileScreen() {
           data-testid="profile-photo-input"
           onChange={(e) => void onPhotoPicked(e.target.files?.[0])}
         />
-        <Button
-          variant="outline"
-          size="sm"
-          className="mt-2 w-full"
-          data-testid="profile-photo-upload"
-          onClick={() => fileRef.current?.click()}
-        >
-          <Icon name="camera-outline" size={16} />
-          {isDataImage(picture) ? t('profile.photoReplace') : t('profile.photoUpload')}
-        </Button>
+        <div className="mt-2 flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="flex-1"
+            data-testid="profile-photo-upload"
+            onClick={pickPhoto}
+          >
+            {/* #146 r2: upload wears the upload glyph — webcam keeps the camera */}
+            <Icon name="upload-outline" size={16} />
+            {isDataImage(picture) ? t('profile.photoReplace') : t('profile.photoUpload')}
+          </Button>
+          {/* #160: desktop webcam snapshot beside the upload */}
+          {webcamDoor && (
+            <Button variant="outline" size="sm" data-testid="profile-photo-webcam" onClick={() => setWebcamOpen(true)}>
+              <Icon name="camera-outline" size={16} />
+              {t('webcam.use')}
+            </Button>
+          )}
+        </div>
 
         <div className="m-cap mt-5 mb-1 px-1">{t('profile.displayName')}</div>
         <input
@@ -322,8 +374,11 @@ export function ProfileScreen() {
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('profile.displayName')}
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          aria-invalid={attempted && !name.trim()}
+          className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
         />
+        {/* #195 r2 (user): the blocker sits AT the field */}
+        <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="profile-save-blocker" className="mt-1 px-1" />
 
         {/* country of use — changeable later (user request); tunes the
             category predictor, explained by the info line */}
@@ -402,7 +457,17 @@ export function ProfileScreen() {
           </div>
         </Sheet>
 
-        <Button className="mt-4 w-full" data-testid="profile-save" onClick={() => void save()} disabled={!name.trim()}>
+        <Button
+          className="mt-4 w-full"
+          data-testid="profile-save"
+          onClick={() => {
+            if (!name.trim()) {
+              setAttempted(true);
+              return;
+            }
+            void save();
+          }}
+        >
           {saved ? t('profile.saved') : t('action.save')}
         </Button>
 
@@ -432,18 +497,8 @@ export function ProfileScreen() {
 
         {/* identity-level danger zone (user request: these belong to the
             PROFILE, not app settings) — always last on the screen */}
-        {/* logged-in devices (approved plan): see + disconnect them */}
-        {identity?.kind === 'user' && (
-          <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">
-            <Row
-              testId="profile-devices"
-              icon="devices"
-              title={t('devices.title')}
-              sub={t('devices.rowSub')}
-              onClick={() => void navigate({ to: '/devices' })}
-            />
-          </div>
-        )}
+        {/* logged-in devices moved to Global settings (#159): they are an
+            app-wide concern, not an identity act */}
         {identity?.kind === 'user' && (
           <div className="mt-6 overflow-hidden rounded-card border border-line bg-surface">
             <Row
@@ -487,6 +542,9 @@ export function ProfileScreen() {
         )}
       </div>
 
+      {/* #160: snapshot feeds the same downscale path as the file input */}
+      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onPhotoPicked(file)} />
+
       <DangerConfirmSheet
         open={deleteProfileOpen}
         onOpenChange={setDeleteProfileOpen}
@@ -497,8 +555,16 @@ export function ProfileScreen() {
       />
 
       {/* the point of no return: everything the design promises, spelled
-          out, then a typed confirmation — no accidental taps */}
-      <Sheet open={deleteOpen} onOpenChange={setDeleteOpen} title={t('settings.deleteAccountTitle')} size="form">
+          out, then a typed confirmation — no accidental taps. #307: while
+          the deletion runs the sheet locks (busyNote) and narrates the
+          stage instead of leaving the user staring at a dimmed button */}
+      <Sheet
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title={t('settings.deleteAccountTitle')}
+        size="form"
+        busyNote={deleteBusy ? t('settings.deleteBusyNote') : null}
+      >
         <div className="flex flex-col gap-3 pt-1">
           <p className="text-[13px] text-ink-2">{t('settings.deleteAccountBody')}</p>
           <p className="text-[12px] text-ink-3">{t('settings.deleteTypePrompt', { word: t('settings.deleteTypeWord') })}</p>
@@ -508,11 +574,20 @@ export function ProfileScreen() {
             onChange={(e) => setDeleteTyped(e.target.value)}
             placeholder={t('settings.deleteTypeWord')}
             autoCapitalize="characters"
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+            disabled={deleteBusy}
+            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none disabled:opacity-40"
           />
           {deleteError && (
             <p className="text-[12px] text-negative" data-testid="delete-account-error">
               {t('settings.deleteFailed')}
+            </p>
+          )}
+          {deleteBusy && (
+            <p className="flex items-center gap-2 text-[12px] text-ink-2" data-testid="delete-account-progress">
+              <span className="inline-flex animate-spin">
+                <Icon name="loading" size={14} />
+              </span>
+              {deletePhase === 'local' ? t('settings.deleteBusyLocal') : t('settings.deleteBusyServer')}
             </p>
           )}
           <button

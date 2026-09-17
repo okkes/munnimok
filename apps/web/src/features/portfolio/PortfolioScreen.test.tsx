@@ -42,8 +42,10 @@ describe('Portfolio (demo identity)', () => {
     fireEvent.click(screen.getByTestId('pf-add'));
     await screen.findByTestId('pf-name');
     expect(screen.queryByTestId('pf-search')).toBeNull();
-    fireEvent.click(screen.getByTestId('pf-save')); // empty name: no-op
+    fireEvent.click(screen.getByTestId('pf-save')); // empty name: refused with the blocker (#195)
+    expect(await screen.findByTestId('pf-save-blocker')).toBeTruthy();
     fireEvent.change(screen.getByTestId('pf-name'), { target: { value: 'Garage fund' } });
+    await waitFor(() => expect(screen.queryByTestId('pf-save-blocker')).toBeNull());
     fireEvent.change(screen.getByTestId('pf-manual-price'), { target: { value: '50' } });
     fireEvent.click(screen.getByTestId('pf-save'));
 

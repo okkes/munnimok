@@ -46,6 +46,11 @@ public sealed class SendFriendRequestValidator : AbstractValidator<SendFriendReq
     public SendFriendRequestValidator()
     {
         RuleFor(r => r.ToUserId).NotEmpty();
+        // #169: the optional space piggyback (ownership is checked in the handler)
+        RuleFor(r => r.SpaceId).MaximumLength(64);
+        RuleFor(r => r.Role).Must(role => SpaceRoles.Assignable.Contains(role!)).When(r => !string.IsNullOrEmpty(r.Role))
+            .WithMessage("role must be owner, contributor or reader");
+        RuleFor(r => r.SpaceName).MaximumLength(200);
     }
 }
 
@@ -67,12 +72,14 @@ public sealed class ChangeRoleRequestValidator : AbstractValidator<ChangeRoleReq
     public ChangeRoleRequestValidator()
     {
         RuleFor(r => r.Role).NotEmpty().Must(SpaceRoles.Assignable.Contains).WithMessage("role must be owner, contributor or reader");
+        // #172: the client sends the space's name along for the push text
+        RuleFor(r => r.SpaceName).MaximumLength(200);
     }
 }
 
 public sealed class SyncOpDtoValidator : AbstractValidator<SyncOpDto>
 {
-    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "allocation", "receipt", "receiptLink", "storeMarker", "storeConn", "storeConnLink", "holding", "lot", "insightDismiss", "topic", "activity"];
+    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "allocation", "receipt", "receiptLink", "storeMarker", "storeConn", "storeConnLink", "holding", "lot", "insightDismiss", "topic", "activity", "txSeen"];
 
     public SyncOpDtoValidator()
     {
@@ -140,6 +147,11 @@ public sealed class CreateRequisitionRequestValidator : AbstractValidator<Create
             .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri)
                          && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
             .WithMessage("redirectUrl must be an absolute http(s) URL");
+        // #175: the user's provider pick — a known name or nothing (the
+        // endpoint still checks it is CONFIGURED on this install)
+        RuleFor(r => r.Provider)
+            .Must(p => p is null or Banking.GoCardlessBankApi.Id or Banking.EnableBankingApi.Id)
+            .WithMessage("provider must be gocardless or enablebanking");
     }
 }
 

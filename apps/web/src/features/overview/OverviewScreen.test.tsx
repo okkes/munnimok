@@ -73,9 +73,11 @@ describe('Overview (demo identity)', () => {
     const list = await screen.findByTestId('catdrill-list');
     expect(list.querySelectorAll('[data-testid^="tx-row-"]').length).toBeGreaterThan(0);
 
-    // a payment row leads on to the transaction detail
+    // #168 r5 (user): a payment row goes STRAIGHT to the transaction
+    // page — the in-between peek sheet is retired
     fireEvent.click(list.querySelector('[data-testid^="tx-row-"]')!);
     expect(await screen.findByTestId('screen-tx-detail')).toBeTruthy();
+    expect(screen.queryByTestId('tx-peek')).toBeNull();
   });
 
   it('the drill period selector swaps the list to the chosen period', async () => {

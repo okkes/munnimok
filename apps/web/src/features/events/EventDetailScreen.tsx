@@ -4,20 +4,37 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useEvents } from '@/application/events';
-import { logActivity } from '@/application/activity';
-import { useSpaceTransactions, useTxTransform } from '@/application/transactions';
+import { useSpaceTransactions } from '@/application/transactions';
 import { eventCategoryBreakdown, eventPerDayCents, eventSpentCents, eventSubcategoryBreakdown, suggestableTxs } from '@/domain/events';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
-import { Sheet } from '@/ui/Sheet';
 import { ProgressBar } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
+import { TxPartRow } from '@/ui/TxPartRow';
 import { EventFormSheet, eventPicture } from './EventsScreen';
 import { SplitEventSummary } from '@/features/splits/SplitEventSummary';
-import type { EventRow } from '@/db/types';
+import { REIMBURSED_ID } from '@/domain/categories';
+import type { EventRow, TransactionRow, TxSplit } from '@/db/types';
+
+// ── #143: a split's parts attach individually — never the container ──
+/** the pickable parts of one row, keeping their ORIGINAL splits index
+ *  (legacy flat spreads may lack part ids — the index is the address) */
+export function partEntries(tx: TransactionRow): { part: TxSplit; idx: number }[] {
+  return (tx.splits ?? []).map((part, idx) => ({ part, idx })).filter((e) => e.part.catId !== REIMBURSED_ID);
+}
+export const partPickKey = (txId: string, idx: number): string => `${txId}#${idx}`;
+/** every checkbox key the picker opens with: part keys for multi-part
+ *  rows (parts already attached elsewhere stay out), else the tx id */
+export function suggestionKeysOf(txs: readonly TransactionRow[] | undefined): string[] {
+  return (txs ?? []).flatMap((tx) => {
+    const entries = partEntries(tx);
+    if (entries.length > 1) return entries.filter((e) => !e.part.eventId).map((e) => partPickKey(tx.id, e.idx));
+    return [tx.id];
+  });
+}
 
 /**
  * One event in full: what it cost (per day when dated), where the money
@@ -27,17 +44,13 @@ import type { EventRow } from '@/db/types';
 export function EventDetailScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { store, repo, spaceId } = useData();
+  const { store, spaceId } = useData();
   const { eventId } = useParams({ strict: false }) as { eventId: string };
   const events = useEvents();
   const txs = useSpaceTransactions();
-  const transform = useTxTransform();
   const cats = useCategories();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const [formInitial, setFormInitial] = useState<EventRow | 'new' | null>(null);
-  const [pickOpen, setPickOpen] = useState(false);
-  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set());
-  const [attaching, setAttaching] = useState(false);
   // category drill (user request): a tapped main filters the payments and
   // unfolds its subcategories; a tapped sub narrows further
   const [drillMain, setDrillMain] = useState<string | null>(null);
@@ -54,8 +67,14 @@ export function EventDetailScreen() {
 
   const view = useMemo(() => {
     if (!event || !txs) return undefined;
+    // #143: membership is per-slice — a row belongs when it (or any of
+    // its parts) carries the event
     const list = txs
-      .filter((tx) => tx.deleted === 0 && tx.eventId === event.id)
+      .filter(
+        (tx) =>
+          tx.deleted === 0 &&
+          (tx.eventId === event.id || (tx.splits ?? []).some((s) => s.catId !== REIMBURSED_ID && s.eventId === event.id)),
+      )
       .sort((a, b) => b.date.localeCompare(a.date));
     const spent = eventSpentCents(txs, event.id);
     return {
@@ -67,11 +86,6 @@ export function EventDetailScreen() {
     };
   }, [event, txs, cats]);
 
-  // opening the picker starts with everything selected — excluding is the review
-  useEffect(() => {
-    if (pickOpen) setPicked(new Set(view?.suggestions.map((tx) => tx.id) ?? []));
-  }, [pickOpen, view?.suggestions]);
-
   if (!event || !view) return <div className="h-full" data-testid="screen-event-detail" />;
 
   const filteredList = view.list.filter((tx) => {
@@ -81,32 +95,6 @@ export function EventDetailScreen() {
     return (cat.parentId ?? cat.id) === drillMain;
   });
 
-  const attachPicked = async () => {
-    setAttaching(true);
-    try {
-      let n = 0;
-      for (const tx of view.suggestions) {
-        // one history line for the whole batch, not one per transaction
-        if (picked.has(tx.id)) {
-          await transform(tx, { eventId: event.id }, null);
-          n++;
-        }
-      }
-      if (n > 0) void logActivity(store, repo, spaceId, 'txLink', `${event.name} +${n}`);
-      setPickOpen(false);
-    } finally {
-      setAttaching(false);
-    }
-  };
-
-  const togglePick = (id: string) => {
-    const next = new Set(picked);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setPicked(next);
-  };
-
-  const pickedTotal = view.suggestions.filter((tx) => picked.has(tx.id)).reduce((sum, tx) => sum + -tx.amountCents, 0);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
 
   return (
@@ -168,7 +156,12 @@ export function EventDetailScreen() {
             <span className="min-w-0 flex-1 text-[13px] text-ink-2">
               {t('events.suggestAttach', { n: view.suggestions.length })}
             </span>
-            <Button size="sm" data-testid="eventdetail-attach-all" onClick={() => setPickOpen(true)}>
+            <Button
+              size="sm"
+              data-testid="eventdetail-attach-all"
+              // #144 (user): the picker is a full SCREEN now, not a sheet
+              onClick={() => void navigate({ to: '/events/$eventId/attach', params: { eventId: event.id } })}
+            >
               {t('events.reviewSuggested')}
             </Button>
           </div>
@@ -245,10 +238,34 @@ export function EventDetailScreen() {
           )}
         </div>
         {filteredList.length > 0 ? (
-          <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="eventdetail-txs">
-            {filteredList.map((tx) => (
-              <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
-            ))}
+          <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="eventdetail-txs">
+            {filteredList.map((tx) => {
+              // #143: a split shows its MEMBER parts as rows of their
+              // own — each opens its part page
+              const entries = partEntries(tx);
+              if (entries.length > 1) {
+                const sign = tx.amountCents < 0 ? -1 : 1;
+                return entries
+                  .map((e, ordinal) => ({ ...e, ordinal }))
+                  .filter((e) => (e.part.eventId ?? tx.eventId) === event.id)
+                  .map((e) => (
+                    <TxPartRow
+                      key={partPickKey(tx.id, e.idx)}
+                      tx={tx}
+                      part={e.part}
+                      index={e.ordinal}
+                      amountText={money(sign * Math.abs(e.part.amountCents))}
+                      onClick={() =>
+                        void navigate({ to: '/transactions/$txId', params: { txId: tx.id }, search: { part: e.part.id } })
+                      }
+                      showDate
+                    />
+                  ));
+              }
+              return (
+                <TxRow key={tx.id} tx={tx} showDate onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })} />
+              );
+            })}
           </div>
         ) : (
           <p className="px-1 text-[12px] text-ink-4" data-testid="eventdetail-empty">
@@ -257,35 +274,7 @@ export function EventDetailScreen() {
         )}
       </div>
 
-      {/* pick which suggestions belong to the event */}
-      <Sheet open={pickOpen} onOpenChange={(open) => !open && setPickOpen(false)} title={t('events.pickTitle')} size="tall" dragHandle>
-        <div className="max-h-[46vh] overflow-y-auto" data-testid="eventpick-list">
-          {view.suggestions.map((tx) => {
-            const checked = picked.has(tx.id);
-            return (
-              <div key={tx.id} className="flex items-center gap-2 border-b border-line-2 last:border-0">
-                <button
-                  data-testid={`eventpick-${tx.id}`}
-                  aria-label={tx.merchant}
-                  onClick={() => togglePick(tx.id)}
-                  className={`m-tap ml-1 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border-2 ${
-                    checked ? 'border-accent bg-accent text-white' : 'border-line bg-surface'
-                  }`}
-                >
-                  {checked && <Icon name="check" size={12} />}
-                </button>
-                <div className="min-w-0 flex-1">
-                  <TxRow tx={tx} showDate hideCategory={false} onClick={() => togglePick(tx.id)} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <Button className="mt-3 w-full" data-testid="eventpick-attach" disabled={attaching || picked.size === 0} onClick={() => void attachPicked()}>
-          {t('events.attachPicked', { n: picked.size, amount: money(pickedTotal) })}
-        </Button>
-      </Sheet>
-
+      {/* #144: the picker moved to its own SCREEN (/events/$id/attach) */}
       <EventFormSheet initial={formInitial} onClose={() => setFormInitial(null)} />
     </div>
   );

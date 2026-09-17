@@ -14,9 +14,14 @@ import { AppBar } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip, Row } from '@/ui/primitives';
+import { PinChallengeSheet } from '@/features/lock/PinChallengeSheet';
+import { readLockConfig } from '@/features/lock/lock';
+import { takeSettingsJump } from './settingsJump';
+import { flashJumpTo } from '@/lib/flashJump';
 import { Sheet } from '@/ui/Sheet';
 import { useQuery } from '@/db/useQuery';
 import { useMyRole } from '@/features/spaces/SpaceSharing';
+import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
 import { PERIOD_KEYS } from '@/features/spaces/PeriodSettingsScreen';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import { CURRENCIES } from '@/domain/countries';
@@ -97,11 +102,72 @@ function SpaceHeaderRow({ space, onClick }: Readonly<{ space: SpaceRow | undefin
         </span>
       )}
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-semibold text-ink">{space?.name ?? ''}</span>
-        <span className="block text-[12px] text-ink-3">{t('settings.spaceCardSub')}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="min-w-0 truncate text-[15px] font-semibold text-ink">{space?.name ?? ''}</span>
+          {/* #277: the card says when the scope is a SHARED space */}
+          {space?.kind === 'shared' && <SharedSpaceBadge testId="settings-space-shared-badge" />}
+        </span>
+        <span className="block truncate text-[12px] text-ink-3">
+          {t('settings.spaceCardSub')}
+          {space?.kind === 'shared' && space.createdByName && <> · {t('space.createdBy', { name: space.createdByName })}</>}
+        </span>
       </span>
       <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
     </button>
+  );
+}
+
+/** #302 (user): the invite-lock setting — quick-link target (scroll +
+ *  settle + flash on arrival) and PIN-protected on the way OPEN: with a
+ *  lock configured, ENABLING invitations asks for the PIN first;
+ *  locking the space back needs none. Module-level for S3776. */
+function InviteLockRow({
+  space,
+  onWrite,
+}: Readonly<{
+  space: { id: string; inviteLock?: 0 | 1 };
+  onWrite: (next: 0 | 1) => void;
+}>) {
+  const { t } = useLang();
+  const [challengeOpen, setChallengeOpen] = useState(false);
+  // the quick link's landing: consume the handoff once, then flash
+  useEffect(() => {
+    if (takeSettingsJump() !== 'invite-lock') return;
+    const row = document.querySelector<HTMLElement>('[data-testid="settings-space-private-row"]');
+    if (row) flashJumpTo(row);
+  }, []);
+  const toggle = (checked: boolean) => {
+    if (!checked && readLockConfig()) {
+      setChallengeOpen(true);
+      return;
+    }
+    onWrite(checked ? 1 : 0);
+  };
+  return (
+    <>
+      <Row
+        testId="settings-space-private-row"
+        icon="lock-outline"
+        title={t('space.inviteLockLabel')}
+        sub={t('space.inviteLockSub')}
+        trailing={
+          <input
+            type="checkbox"
+            data-testid="settings-space-private-toggle"
+            checked={space.inviteLock === 1}
+            onChange={(e) => toggle(e.target.checked)}
+            className="h-4 w-4 accent-[var(--m-accent)]"
+          />
+        }
+      />
+      <PinChallengeSheet
+        open={challengeOpen}
+        onOpenChange={setChallengeOpen}
+        title={t('space.inviteUnlockTitle')}
+        body={t('space.inviteUnlockBody')}
+        onPass={() => onWrite(0)}
+      />
+    </>
   );
 }
 
@@ -288,6 +354,17 @@ export function SettingsScreen() {
                     }}
                   />
                 ))}
+              {/* #162: the private lock lives with the space's other
+                  settings now — owner-only, applies immediately (LWW) */}
+              {group.capKey === 'settings.groupSetup' && myRole === 'owner' && activeSpace && (
+                <InviteLockRow
+                  space={activeSpace}
+                  onWrite={(next) => {
+                    void repo.upsert('space', activeSpace.id, activeSpace.id, { inviteLock: next });
+                    void logActivity(store, repo, activeSpace.id, 'spaceEdit', activeSpace.name);
+                  }}
+                />
+              )}
             </div>
           </div>
         ))}

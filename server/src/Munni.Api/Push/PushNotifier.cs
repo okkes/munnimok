@@ -95,6 +95,14 @@ public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<Pu
     public Task NotifySpaceJoinAsync(Guid toUserId, string? fromName, string? spaceName, CancellationToken ct) =>
         SendToUsersAsync([toUserId], new { type = "space-join", fromName, spaceName }, ct);
 
+    /// <summary>#172/#173: "You were removed from {spaceName} by {fromName}" — to the removed member</summary>
+    public Task NotifyMemberRemovedAsync(Guid toUserId, string? spaceName, string? actorName, CancellationToken ct) =>
+        SendToUsersAsync([toUserId], new { type = "member-removed", fromName = actorName, spaceName }, ct);
+
+    /// <summary>#172: "Your role in {spaceName} is now {role}" — to the affected member</summary>
+    public Task NotifyMemberRoleChangedAsync(Guid toUserId, string? spaceName, string role, CancellationToken ct) =>
+        SendToUsersAsync([toUserId], new { type = "member-role", spaceName, role }, ct);
+
     private async Task SendToUsersAsync(IReadOnlyCollection<Guid> userIds, object payload, CancellationToken ct)
     {
         var subscriptions = await db.PushSubscriptions.Where(s => userIds.Contains(s.UserId)).ToListAsync(ct);

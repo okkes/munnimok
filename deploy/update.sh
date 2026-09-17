@@ -1,15 +1,18 @@
 #!/bin/sh
-# munni update script for the Synology NAS (run as root):
-#   bash /volume1/docker/munni/update.sh                            # production (.env)
-#   bash /volume1/docker/munni/update.sh docker-compose.staging.yml # staging
+# munni update script for the Synology NAS (run as root) — one IaC twin:
+#   sh /volume1/docker/munni-iac-prod/update.sh docker-compose.munni-iac-prod.yml
+#   sh /volume1/docker/munni-iac-staging/update.sh docker-compose.munni-iac-staging.yml
 # Invoked by deploy/nas/apply.sh when GitHub publishes a new bundle, or
-# by hand. Compose reads the env file via --env-file; staging uses
-# .env.staging when present and falls back to the production .env
-# (the staging compose only needs a subset of its keys).
+# by hand. Compose reads the env file via --env-file; a *staging* compose
+# uses .env.staging when present and falls back to .env.
 # Re-authenticates to GHCR from the env file on every run, so it keeps
 # working even if /root/.docker/config.json is ever wiped (DSM upgrade).
 set -eu
 cd "$(dirname "$0")"
+# --logto-seed: only the Logto seed below (the poller retries a seed that
+# could not run yet — Logto still booting for the first time)
+MODE=apply
+if [ "${1:-}" = "--logto-seed" ] || [ "${1:-}" = "--seed" ]; then MODE=seed; shift; fi
 COMPOSE_FILE="${1:-docker-compose.yml}"
 case "$COMPOSE_FILE" in
   *staging*) ENV_FILE=".env.staging"; [ -f "$ENV_FILE" ] || ENV_FILE=".env" ;;
@@ -28,6 +31,107 @@ env_val() {
 GHCR_USER="$(env_val GHCR_USER)"
 GHCR_PAT="$(env_val GHCR_PAT)"
 
+# ── Logto machine credentials as code (2026-09-17): the bundle's env carries
+#    two credentials the IaC bootstrap minted; insert them into Logto's own
+#    database once (idempotent: upsert by id, an older id of the same name
+#    makes way) so the first sign-in setup needs no console visit —
+#    `infra` in the default tenant with the Management API role (what the
+#    bootstrap uses for apps, connectors, branding, users) and one in the
+#    admin tenant with the roles of Logto's own console credential m-admin
+#    (what claims the console's first admin). Logto creates its tables and
+#    roles on first boot — wait for the role row; a seed that cannot run
+#    yet leaves .logto-seed-pending, which the poller retries every cycle.
+logto_seed() {
+  SEED_ID="$(env_val LOGTO_SEED_INFRA_ID)"; SEED_SECRET="$(env_val LOGTO_SEED_INFRA_SECRET)"
+  ADM_ID="$(env_val LOGTO_SEED_ADMIN_ID)"; ADM_SECRET="$(env_val LOGTO_SEED_ADMIN_SECRET)"
+  if [ -z "$SEED_ID" ] || [ -z "$SEED_SECRET" ]; then return 0; fi
+  grep -q '^  logto:' "$COMPOSE_FILE" || return 0
+  ready=0
+  for _ in $(seq 1 60); do
+    n="$(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres psql -U munni -d logto -A -t -c "select count(*) from roles where tenant_id='default' and name='Logto Management API access';" 2>/dev/null | tr -d '[:space:]' || true)"
+    if [ "$n" = "1" ]; then ready=1; break; fi
+    sleep 10
+  done
+  if [ "$ready" -ne 1 ]; then
+    echo "logto seed: Logto has not created its roles yet — retried next cycle"
+    touch .logto-seed-pending
+    return 0
+  fi
+  META='{"redirectUris":[],"postLogoutRedirectUris":[]}'
+  set -- \
+    -c "delete from applications where tenant_id='default' and name='infra (munni setup)' and id <> '$SEED_ID';" \
+    -c "insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('default', '$SEED_ID', 'infra (munni setup)', '$SEED_SECRET', 'created by the munni IaC bootstrap', 'MachineToMachine', '$META', '{}') on conflict (id) do update set secret = excluded.secret, name = excluded.name;" \
+    -c "insert into applications_roles (tenant_id, id, application_id, role_id) select 'default', 'link0' || substr(md5('$SEED_ID'), 1, 16), '$SEED_ID', r.id from roles r where r.tenant_id = 'default' and r.name = 'Logto Management API access' on conflict do nothing;"
+  if [ -n "$ADM_ID" ] && [ -n "$ADM_SECRET" ]; then
+    set -- "$@" \
+      -c "delete from applications where tenant_id='admin' and name='infra admin (munni setup)' and id <> '$ADM_ID';" \
+      -c "insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('admin', '$ADM_ID', 'infra admin (munni setup)', '$ADM_SECRET', 'created by the munni IaC bootstrap — claims the console admin', 'MachineToMachine', '$META', '{}') on conflict (id) do update set secret = excluded.secret, name = excluded.name;" \
+      -c "insert into applications_roles (tenant_id, id, application_id, role_id) select 'admin', 'link1' || substr(md5('$ADM_ID'), 1, 16), '$ADM_ID', ar.role_id from applications_roles ar where ar.tenant_id = 'admin' and ar.application_id = 'm-admin' on conflict do nothing;"
+  fi
+  if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres psql -U munni -d logto -v ON_ERROR_STOP=1 -q "$@"; then
+    echo "logto seed: machine credentials in place (infra + admin tenant) — the next IaC bootstrap turns sign-in into code"
+    rm -f .logto-seed-pending
+  else
+    echo "logto seed FAILED — retried next cycle"
+    touch .logto-seed-pending
+  fi
+}
+# ── GlitchTip admin + API token as code (2026-09-17): the bundle's env carries
+#    the admin password and the API token the IaC bootstrap minted; create
+#    the superuser and the token inside the container once (idempotent — an
+#    existing user or token is left alone) so the bootstrap can write the
+#    DSNs back without anyone registering by hand. Waits for GlitchTip's
+#    migrations; a seed that cannot run yet leaves .glitchtip-seed-pending,
+#    which the poller retries every cycle.
+glitchtip_seed() {
+  GT_EMAIL="$(env_val GLITCHTIP_SEED_EMAIL)"; GT_PASSWORD="$(env_val GLITCHTIP_SEED_PASSWORD)"; GT_TOKEN="$(env_val GLITCHTIP_SEED_TOKEN)"
+  if [ -z "$GT_EMAIL" ] || [ -z "$GT_PASSWORD" ] || [ -z "$GT_TOKEN" ]; then return 0; fi
+  grep -q '^  glitchtip:' "$COMPOSE_FILE" || return 0
+  ready=0
+  for _ in $(seq 1 60); do
+    if docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T glitchtip ./manage.py migrate --check >/dev/null 2>&1; then ready=1; break; fi
+    sleep 10
+  done
+  if [ "$ready" -ne 1 ]; then
+    echo "glitchtip seed: GlitchTip has not applied its migrations yet — retried next cycle"
+    touch .glitchtip-seed-pending
+    return 0
+  fi
+  GT_PY='
+import os
+from django.contrib.auth import get_user_model
+from apps.api_tokens.models import APIToken
+email = os.environ["GT_ADMIN_EMAIL"]
+password = os.environ["GT_ADMIN_PASSWORD"]
+token = os.environ["GT_TOKEN"]
+U = get_user_model()
+u = U.objects.filter(email=email).first()
+if u is None:
+    u = U.objects.create_superuser(email, password)
+    print("USER:created")
+else:
+    print("USER:existing")
+if APIToken.objects.filter(token=token).exists():
+    print("TOKEN:existing")
+else:
+    flags = getattr(APIToken._meta.get_field("scopes"), "flags", []) or []
+    APIToken.objects.create(user=u, token=token, scopes=(1 << len(flags)) - 1)
+    print("TOKEN:created")
+'
+  if GT_ADMIN_EMAIL="$GT_EMAIL" GT_ADMIN_PASSWORD="$GT_PASSWORD" GT_TOKEN="$GT_TOKEN" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T -e GT_ADMIN_EMAIL -e GT_ADMIN_PASSWORD -e GT_TOKEN glitchtip ./manage.py shell -c "$GT_PY"; then
+    echo "glitchtip seed: admin + API token in place — the next IaC bootstrap writes the DSNs back"
+    rm -f .glitchtip-seed-pending
+  else
+    echo "glitchtip seed FAILED — retried next cycle"
+    touch .glitchtip-seed-pending
+  fi
+}
+if [ "$MODE" = "seed" ]; then
+  logto_seed
+  glitchtip_seed
+  exit 0
+fi
+
 if [ -n "$GHCR_PAT" ]; then
   printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:-okkes}" --password-stdin
 fi
@@ -41,16 +145,27 @@ mkdir -p import-watch
 #    data directory. Dump everything with a throwaway 17 server reading
 #    the old volume, let 18 initialise the new volume, restore after up.
 #    The old volume stays untouched as the rollback.
-case "$COMPOSE_FILE" in
-  *staging*) PG_PROJECT="munni-staging"; PG_OLD="pgdata_staging"; PG_NEW="pgdata18_staging" ;;
-  *)         PG_PROJECT="$(basename "$(pwd)")"; PG_OLD="pgdata"; PG_NEW="pgdata18" ;;
-esac
+# every twin is its own compose project in its own folder (the legacy live
+# stacks, which shared one folder, were archived on 2026-09-17)
+PG_PROJECT="$(basename "$(pwd)")"; PG_OLD="pgdata"; PG_NEW="pgdata18"
 # r2: the r1 attempt restored into the image's TEMPORARY bootstrap
 # server (first-boot init) and died at its shutdown — the versioned
 # name makes r1 markers invalid so those volumes get redone
 PG_MARKER="pg18-restored-r2-$(basename "$COMPOSE_FILE" .yml).ok"
 PG_RESTORE=""
+# what the "old" volume really holds: a major is only migrated FROM 17.
+# The iac twins keep their PostgreSQL 18 data in a volume named pgdata
+# (found live 2026-09-16: this guard took each twin down, started a 17
+# server on 18-format data, died on it, and did that every cycle — 502 on
+# every host). 17 keeps PG_VERSION at the volume root, 18 under
+# <major>/docker (the image's versioned data layout); no file = no data.
+pg_data_version() {
+  docker run --rm -v "$1":/d alpine:3 sh -c 'v=$(cat /d/PG_VERSION 2>/dev/null || cat /d/*/docker/PG_VERSION 2>/dev/null | head -n 1); echo "${v:-none}"' 2>/dev/null || echo unknown
+}
 if docker volume inspect "${PG_PROJECT}_${PG_OLD}" >/dev/null 2>&1 && [ ! -f "$PG_MARKER" ]; then
+  PG_OLD_VERSION="$(pg_data_version "${PG_PROJECT}_${PG_OLD}")"
+  case "$PG_OLD_VERSION" in
+  17)
   echo "postgres 17->18: migrating (old volume present, no completion marker)"
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down --remove-orphans >/dev/null 2>&1 || true
   # a half-migrated new volume (failed or RACED attempt — the 2026-07-17
@@ -69,6 +184,13 @@ if docker volume inspect "${PG_PROJECT}_${PG_OLD}" >/dev/null 2>&1 && [ ! -f "$P
   docker exec munni-pg17-dump pg_dumpall -U munni > "$PG_RESTORE"
   docker rm -f munni-pg17-dump >/dev/null
   [ -s "$PG_RESTORE" ] || { echo "pg dump came out empty — refusing to continue" >&2; exit 1; }
+  ;;
+  18)
+    echo "postgres: ${PG_PROJECT}_${PG_OLD} already holds PostgreSQL 18 data — nothing to migrate"
+    date > "$PG_MARKER" ;;
+  *)
+    echo "postgres: ${PG_PROJECT}_${PG_OLD} holds no PostgreSQL data to migrate (PG_VERSION=$PG_OLD_VERSION) — compose initialises it" ;;
+  esac
 fi
 
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" pull
@@ -109,6 +231,7 @@ fi
 # don't die before the status dump below — it captures WHY up failed
 UP_RC=0
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d || UP_RC=$?
+[ "$UP_RC" -eq 0 ] && { logto_seed; glitchtip_seed; }
 docker image prune -f
 
 # ── post-deploy status dump (survives container recreation; readable via

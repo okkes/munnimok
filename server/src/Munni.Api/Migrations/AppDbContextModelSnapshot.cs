@@ -17,10 +17,34 @@ namespace Munni.Api.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.9")
+                .HasAnnotation("ProductVersion", "10.0.10")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("Munni.Api.Accounts.FeedOwner", b =>
+                {
+                    b.Property<string>("FeedSpaceId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("GcAccountId")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("RequisitionId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("FeedSpaceId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("FeedOwners");
+                });
 
             modelBuilder.Entity("Munni.Api.Accounts.FeedSpace", b =>
                 {
@@ -210,6 +234,9 @@ namespace Munni.Api.Migrations
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("JoinedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Role")
                         .IsRequired()
@@ -581,6 +608,12 @@ namespace Munni.Api.Migrations
                     b.Property<DateTimeOffset?>("LastFetchAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("LastFetchDropped")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LastFetchReceived")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasColumnType("text");
@@ -636,6 +669,9 @@ namespace Munni.Api.Migrations
 
                     b.Property<string>("Provider")
                         .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RedirectOrigin")
                         .HasColumnType("text");
 
                     b.Property<string>("RequisitionId")
@@ -709,6 +745,15 @@ namespace Munni.Api.Migrations
 
                     b.Property<Guid>("RequestedBy")
                         .HasColumnType("uuid");
+
+                    b.Property<string>("SpaceId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SpaceName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SpaceRole")
+                        .HasColumnType("text");
 
                     b.Property<string>("Status")
                         .IsRequired()

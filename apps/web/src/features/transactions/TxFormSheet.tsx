@@ -1,28 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts } from '@/application/transactions';
-import { UNCATEGORIZED_ID, autoSubFor } from '@/domain/categories';
-import { typeForLinkedAccount } from '@/domain/txType';
+import { REIMBURSED_ID, UNCATEGORIZED_ID, autoSubFor, isMovementCat, specialCatType, stampMovementSub } from '@/domain/categories';
+import { scaleCatsTo } from '@/domain/txSlices';
+import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
+import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { logActivity } from '@/application/activity';
-import { createCounterTransaction } from '@/application/transferMatch';
+import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
+import { applyHistoryMove } from '@/application/historyStart';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useRecurrings } from '@/application/recurring';
 import { fmtCents, parseCents } from '@/lib/money';
-import type { AccountRow, TransactionRow, TxSplit, TxType } from '@/db/types';
+import { Chip } from '@/ui/primitives';
+import { focusEntryMode, nextAmountEntry } from '@/lib/amountRegister';
+import type { AmountEntryMode } from '@/lib/amountRegister';
+import type { AccountRow, RecurringRow, TransactionRow, TxSplitCat, TxType } from '@/db/types';
+import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { typeDef } from '@/features/accounts/accountTypes';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { CategoryPicker } from '@/features/categories/CategoryPicker';
-import { SplitEditorSheet } from './SplitEditorSheet';
-import { primaryCatId } from '@/domain/splits';
-import { kindOf } from '@/domain/txKind';
+import { CatsSheet } from './PartCatsSheet';
 import { minaSuggestedTx } from '@/features/mina/steps';
-import type { TxKind } from '@/domain/txKind';
-import { CounterpartySheet, TX_KIND_VISUAL, TxKindSheet, kindDetail } from './TxKindSheet';
+import { CounterpartySheet } from './TxKindSheet';
 
 interface TxFormSheetProps {
   open: boolean;
@@ -41,20 +45,8 @@ const todayIso = () => new Date().toISOString().slice(0, 10);
 const formFingerprint = (state: Record<string, unknown>): string =>
   JSON.stringify([
     state.amount, state.isExpense, state.merchant, state.date, state.accountId, state.catId,
-    state.kind, state.linkedAccountId, state.bareType, state.recurringId, state.splits,
+    state.adjustment, state.linkedAccountId, state.recurringId, state.cats,
   ]);
-
-/**
- * The kind resolves the stored technical type (user simplification):
- * standard by the sign toggle, transfer by the counterparty's account
- * type (plain 'transfer' while the mandatory pick is still open),
- * adjustment as itself.
- */
-const typeForKind = (kind: TxKind, isExpense: boolean, counterType: TxType | null): TxType => {
-  if (kind === 'adjustment') return 'adjustment';
-  if (kind === 'transfer') return counterType ?? 'transfer';
-  return isExpense ? 'expense' : 'income';
-};
 
 type BalanceAccount = { id: string; source: string; balanceCents: number };
 
@@ -95,54 +87,50 @@ function applyManualBalanceDeltas(
   }
 }
 
-/** the kind row + (transfers only) the mandatory counterparty row —
- *  the manual form's face of the simplified model (S3776: out of the
- *  main component) */
-function KindRows({
-  kind,
-  detailType,
+/** #133 D: the kind grid is gone — the counterparty row (always there,
+ *  None by default) and the small Adjustment toggle are what remains of
+ *  it on the manual form (S3776: out of the main component) */
+function CounterAdjustRows({
   counterName,
-  onKind,
+  locked = false,
+  adjustment,
+  counterBlocker,
   onCounter,
+  onToggleAdjustment,
 }: Readonly<{
-  kind: TxKind;
-  detailType: TxType | null;
   counterName: string | undefined;
-  onKind: () => void;
+  /** R1: a stamped account owns its rows' meaning */
+  locked?: boolean;
+  adjustment: boolean;
+  /** #309 (user): the save refused for THIS field — text under the row */
+  counterBlocker?: string;
   onCounter: () => void;
+  onToggleAdjustment: () => void;
 }>) {
   const { t } = useLang();
   return (
     <>
-      {/* kind row (user simplification): standard / transfer / adjustment
-          — the third option exists exactly here, on hand-entered rows */}
       <button
-        data-testid="txform-kind"
-        onClick={onKind}
-        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+        data-testid="txform-counter"
+        onClick={locked ? undefined : onCounter}
+        className={`m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink${blockerRing(!!counterBlocker)}`}
       >
-        <Icon name={TX_KIND_VISUAL[kind].icon} size={20} color={TX_KIND_VISUAL[kind].color} />
-        <span className="flex-1">
-          {t(`tx.kind.${kind}`)}
-          {detailType && <span className="text-[12px] text-ink-4"> · {t(`tx.type.${detailType}`)}</span>}
-        </span>
-        <span className="text-xs text-ink-4">{t('tx.kindTitle')}</span>
-        <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+        <Icon name="bank-transfer" size={20} color={counterBlocker ? 'var(--m-negative)' : 'var(--m-ink-3)'} />
+        <span className={`flex-1${counterBlocker ? ' text-negative' : ''}`}>{counterName ?? t('tx.counterNone')}</span>
+        <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
+        <Icon name={locked ? 'lock-outline' : 'chevron-right'} size={locked ? 14 : 18} color="var(--m-ink-4)" />
       </button>
-      {kind === 'transfer' && (
-        <button
-          data-testid="txform-counter"
-          onClick={onCounter}
-          className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-        >
-          <Icon name="bank-transfer" size={20} color="var(--m-ink-3)" />
-          <span className={`flex-1 ${counterName ? '' : 'text-warning'}`}>
-            {counterName ?? t('tx.counterAccountPick')}
-          </span>
-          <span className="text-xs text-ink-4">{t('tx.counterparty')}</span>
-          <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-        </button>
-      )}
+      <FormBlockerNote show={!!counterBlocker} text={counterBlocker ?? ''} testId="txform-save-blocker" />
+      {/* C3: corrections stay a manual-row tool — a quiet toggle */}
+      <button
+        data-testid="txform-adjustment"
+        onClick={onToggleAdjustment}
+        className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-2.5 text-left text-[13px] text-ink-2"
+      >
+        <Icon name="tune-variant" size={18} color="var(--m-ink-3)" />
+        <span className="flex-1">{t('txform.adjustment')}</span>
+        <Icon name={adjustment ? 'checkbox-marked' : 'checkbox-blank-outline'} size={18} color={adjustment ? 'var(--m-accent-deep)' : 'var(--m-ink-4)'} />
+      </button>
     </>
   );
 }
@@ -162,9 +150,8 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
       date: todayIso(),
       accountId: null,
       catId: suggested?.catId ?? UNCATEGORIZED_ID,
-      kind: (prefill ? 'transfer' : 'standard') as TxKind,
+      adjustment: false,
       linkedAccountId: prefill?.linkedAccountId ?? null,
-      bareType: null as TxType | null,
       recurringId: null,
     };
   }
@@ -175,44 +162,74 @@ function initialFormState(tx: TransactionRow | undefined, prefill?: TxFormSheetP
     date: tx.date,
     accountId: tx.accountId,
     catId: tx.catId ?? UNCATEGORIZED_ID,
-    kind: kindOf(tx.txType),
+    adjustment: tx.adjustment === 1 || tx.txType === 'adjustment',
     linkedAccountId: tx.linkedAccountId ?? null,
-    // a counterless transfer-family row (the arc-2 bare exit) reopens
-    // with its typed label intact instead of demanding a counterparty
-    bareType: kindOf(tx.txType) === 'transfer' && !tx.linkedAccountId ? tx.txType : null,
     recurringId: tx.recurringId ?? null,
   };
 }
 
-/** the split editor needs a SpaceTx shape; a NEW manual tx builds one
- *  from the live form state (S3776: out of the component) */
-function buildPseudoTx(
-  tx: TransactionRow | undefined,
-  form: {
-    accountId: string;
-    date: string;
-    cents: number | null;
-    isExpense: boolean;
-    currency: string;
-    merchant: string;
-    catId: string;
-    txType: TxType;
-  },
-): never {
-  const abs = Math.abs(form.cents ?? 0);
-  return (tx ?? {
-    id: 'new',
-    spaceId: '',
-    accountId: form.accountId,
-    date: form.date,
-    amountCents: form.isExpense ? -abs : abs,
-    currency: form.currency,
-    merchant: form.merchant,
-    catId: form.catId,
-    txType: form.txType,
-    needsReview: 0,
-  }) as never;
+/** the form's category row (#211, S3776: out of the component): a
+ *  split CONTAINER owns no category — the row states the parts and
+ *  stays inert (the detail's manage flow edits them); a whole row
+ *  doors into the split-categories editor and names its spread */
+function FormCategoryRow({
+  tx,
+  cat,
+  cats,
+  stagedCats,
+  onOpen,
+}: Readonly<{
+  tx: TransactionRow | undefined;
+  cat: ReturnType<ReturnType<typeof useCategories>['byId']>;
+  cats: ReturnType<typeof useCategories>;
+  stagedCats: TxSplitCat[] | null;
+  onOpen: () => void;
+}>) {
+  const { t } = useLang();
+  if (tx?.splits?.length) {
+    return (
+      <div
+        data-testid="txform-category-parts"
+        className="flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink-3"
+      >
+        <Icon name="call-split" size={20} color="var(--m-ink-4)" />
+        <span className="flex-1">
+          {t('split.partsSection')} · {tx.splits.filter((s) => s.catId !== REIMBURSED_ID).length}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <button
+      data-testid="txform-category"
+      onClick={onOpen}
+      className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+    >
+      <Icon name={cat.icon} size={20} color={cat.color ?? cats.byId(cat.parentId).color} />
+      <span className="flex-1">
+        {stagedCats && stagedCats.length > 1
+          ? stagedCats.map((entry) => catName(cats.byId(entry.catId), t)).join(' · ')
+          : catName(cat, t)}
+      </span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
+  );
 }
+
+/** #309 (user): a movement category without its decided other side —
+ *  adjustments carry no counterparty at all, and the DEBT family keeps
+ *  its designed bare story (the unassigned-payments bucket collects
+ *  loan rows until a real loan claims them). (S3776: out of the component) */
+const movementCounterMissing = (adjustment: boolean, catId: string | null, linkedAccountId: string | null): boolean =>
+  !adjustment && !!catId && isMovementCat(catId) && specialCatType(catId) !== 'debtPayment' && !linkedAccountId;
+
+/** #309: the ask pins the staged special's family default (S3776) */
+const askDefaultFamily = (catId: string | null) =>
+  catId && specialCatType(catId) ? (defaultFamilyFor(catId) ?? undefined) : undefined;
+
+/** #195/#309: the blocker text when it names THIS field (S3776) */
+const fieldBlocker = (field: string, current: string, text: string): string | undefined =>
+  current === field ? text : undefined;
 
 /** save gate: real merchant, positive amount, an account, a date not
  *  before the space starts (arc 5), and — for transfers — a decided
@@ -239,28 +256,46 @@ function manualTxFields(args: {
   merchant: string;
   catId: string;
   txType: TxType;
-  stagedSplits: TxSplit[] | null;
+  stagedCats: TxSplitCat[] | null;
   linkedAccountId: string | null;
   recurringId: string | null;
 }): Partial<Omit<TransactionRow, 'id' | 'spaceId'>> {
   // arc 2 locked doors: an uncategorized transfer-family row files under
   // the family's sign-picked sub instead of the hidden placeholder
-  const familySub = args.catId === UNCATEGORIZED_ID && !args.stagedSplits?.length ? autoSubFor(args.txType, args.signed) : undefined;
+  const familySub = args.catId === UNCATEGORIZED_ID && !args.stagedCats?.length ? autoSubFor(args.txType, args.signed) : undefined;
+  // #211: a staged spread rides the write — rescaled if the amount moved
+  // after spreading (the partition must always sum to the gross)
+  const cats = args.stagedCats?.length ? rescaledCats(args.stagedCats, Math.abs(args.signed)) : undefined;
   return {
     accountId: args.accountId,
     date: args.date,
     amountCents: args.signed,
     currency: args.currency,
-    merchant: args.merchant,
+    merchant: args.merchant.trim(),
     catId: familySub ?? args.catId,
     txType: args.txType,
+    // #133 D (C3): the manual correction marker survives the type's
+    // retirement as its own stored flag
+    adjustment: (args.txType === 'adjustment' ? 1 : 0) as 0 | 1,
     needsReview: 0 as const,
-    // splits staged in the unified editor travel with the write
-    ...(args.stagedSplits?.length ? { splits: args.stagedSplits } : {}),
+    ...(cats || args.tx?.cats?.length ? { cats: cats ?? (null as never) } : {}),
     ...(args.linkedAccountId || args.tx?.linkedAccountId ? { linkedAccountId: args.linkedAccountId ?? (null as never) } : {}),
     ...(args.recurringId || args.tx?.recurringId ? { recurringId: args.recurringId ?? (null as never) } : {}),
   };
 }
+
+/** the spread scaled onto a (possibly edited) amount — identity when it
+ *  already sums; largest-remainder otherwise */
+function rescaledCats(entries: TxSplitCat[], targetAbs: number): TxSplitCat[] | undefined {
+  const sum = entries.reduce((total, e) => total + e.amountCents, 0);
+  if (sum === targetAbs) return entries;
+  const scaled = scaleCatsTo(entries, targetAbs);
+  return scaled?.length ? scaled : undefined;
+}
+
+// applyFormCatMirrors retired (#228): spread entries carry no links —
+// the form's one counterparty is its linkedAccountId state, and the
+// row-level planMirrorChange in save() is the whole mirror story.
 
 const optionRow = (selected: boolean, onClick: () => void, content: React.ReactNode, testId: string) => (
   <button
@@ -284,7 +319,7 @@ function RecurringPickSheet({
 }: Readonly<{
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  recurrings: readonly { id: string; name: string }[];
+  recurrings: readonly Pick<RecurringRow, 'id' | 'name' | 'logo' | 'icon' | 'kind'>[];
   recurringId: string | null;
   onPick: (id: string | null) => void;
 }>) {
@@ -302,7 +337,11 @@ function RecurringPickSheet({
           optionRow(
             recurringId === r.id,
             () => onPick(r.id),
-            <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{r.name}</span>,
+            // #258 (user): the cost's own face, not a generic row
+            <span className="flex min-w-0 flex-1 items-center gap-2.5">
+              <RecurringVisual rec={r} size={16} active={false} />
+              <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{r.name}</span>
+            </span>,
             `txform-recurring-${r.id}`,
           ),
         )}
@@ -360,12 +399,35 @@ function AccountPickSheet({
 /** exactly ONE manual account picks itself; with several, the user
  *  chooses explicitly — a silent first-account default booked rows on
  *  the wrong account (user redesign 2026-07-31) */
-const soleAccountId = (writable: readonly AccountRow[]): string | null => (writable.length === 1 ? writable[0].id : null);
+/** the account that picks itself: the single REAL manual account — the
+ *  #348 cash wallet joins `writable` as a choice but must not break the
+ *  self-pick every space relied on; with no real account it stands in */
+const soleAccountId = (writable: readonly AccountRow[]): string | null => {
+  const real = writable.filter((a) => !a.defaultFor);
+  if (real.length === 1) return real[0].id;
+  if (real.length === 0 && writable.length === 1) return writable[0].id;
+  return null;
+};
 
-/** a transfer's other side is decided by an account OR the bare
- *  "no counter account" label (arc 2) — undecided blocks save */
-const counterUndecided = (kind: TxKind, linkedAccount: AccountRow | undefined, bareType: TxType | null): boolean =>
-  kind === 'transfer' && !linkedAccount && !bareType;
+/** #228 (user): removing the counterparty resets a special category —
+ *  the movement story ends with its account (S3776: out of the form) */
+const detachedCatFor = (catId: string): string => (specialCatType(catId) ? UNCATEGORIZED_ID : catId);
+
+/** #133: the form's effective type — the same derivation order the
+ *  choke uses (adjustment > stamp > diamond category > counterparty >
+ *  sign). Module-level for S3776. */
+function formEffectiveType(
+  adjustment: boolean,
+  ownStamp: TxType | undefined,
+  catId: string,
+  linkedAccount: AccountRow | undefined,
+  isExpense: boolean,
+): TxType {
+  if (adjustment) return 'adjustment';
+  // #133 r5 bijection: the counter's KIND names the family
+  const linkedType = linkedAccount ? familyForCounter(linkedAccount.type) : undefined;
+  return ownStamp ?? specialCatType(catId) ?? linkedType ?? (isExpense ? 'expense' : 'income');
+}
 
 /** the space's start date IF the picked date falls before it (arc 5) —
  *  such a row would vanish behind the display gate the moment it saved,
@@ -373,21 +435,17 @@ const counterUndecided = (kind: TxKind, linkedAccount: AccountRow | undefined, b
 const blockingStartDate = (space: { historyStartDate?: string } | undefined, date: string): string | undefined =>
   space?.historyStartDate && date && date < space.historyStartDate ? space.historyStartDate : undefined;
 
-/** the counter row's face: the account's name, or the bare label */
-const counterFieldLabel = (
-  linkedName: string | undefined,
-  bareType: TxType | null,
-  t: ReturnType<typeof useLang>['t'],
-): string | undefined => linkedName ?? (bareType ? t('tx.counterNone') : undefined);
-
 /** the account field on the form: picked account, or the pick prompt */
-function AccountFieldRow({ account, onOpen }: Readonly<{ account: AccountRow | undefined; onOpen: () => void }>) {
+function AccountFieldRow({ account, onOpen, bad = false }: Readonly<{ account: AccountRow | undefined; onOpen: () => void; bad?: boolean }>) {
   const { t } = useLang();
   return (
     <button
       data-testid="txform-account"
       onClick={onOpen}
-      className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+      // S6811: buttons don't take aria-invalid — the ring + data flag
+      // carry the "fix this field" signal instead
+      data-invalid={bad || undefined}
+      className={`m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink${blockerRing(bad)}`}
     >
       <Icon name={account ? typeDef(account.type).icon : 'bank-outline'} size={20} color="var(--m-ink-3)" />
       <span className={`min-w-0 flex-1 truncate ${account ? '' : 'text-warning'}`}>{account?.name ?? t('txform.pickAccount')}</span>
@@ -403,35 +461,179 @@ function AccountFieldRow({ account, onOpen }: Readonly<{ account: AccountRow | u
  * automatically synced accounts (open banking) never take manual rows:
  * the bank feed is their single source of truth (user rule).
  */
+/** #269: the signed cents a manual save writes — target mode is the
+ *  difference to the account's balance, delta mode the signed value
+ *  (S3776/S3358: out of the component) */
+function signedManualCents(adjustment: boolean, adjustTarget: boolean, cents: number, adjustBase: number, isExpense: boolean): number {
+  if (adjustment && adjustTarget) return Math.abs(cents) - adjustBase;
+  return isExpense ? -Math.abs(cents) : Math.abs(cents);
+}
+
+/** #269: the live balance delta — null while the field is empty (S3776) */
+function adjustDeltaFor(adjustment: boolean, adjustTarget: boolean, cents: number | null, adjustBase: number, isExpense: boolean): number | null {
+  if (!adjustment || cents === null || cents === 0) return null;
+  return signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense);
+}
+
+/** #195 r2: the (field, message) the blocker cascade names (S3776) */
+function manualBlockerFor(args: {
+  attempted: boolean;
+  valid: boolean;
+  merchant: string;
+  cents: number | null;
+  adjustNoop: boolean;
+  effectiveAccount: string | null;
+  counterMissing: boolean;
+  startGateBlocking: string | undefined;
+  t: ReturnType<typeof useLang>['t'];
+}): [string, string] {
+  const { t } = args;
+  if (!args.attempted || args.valid) return ['', ''];
+  if (!args.merchant.trim()) return ['merchant', t('form.needName')];
+  if (args.cents === null || args.cents === 0) return ['amount', t('form.needAmount')];
+  if (args.adjustNoop) return ['amount', t('txform.adjustNoop')];
+  if (!args.effectiveAccount) return ['account', t('form.needAccount')];
+  // #309 (user): a movement category refuses to save without its counter
+  if (args.counterMissing) return ['counter', t('review.counterRequired')];
+  // the start-gate card already explains itself — just point at it
+  if (args.startGateBlocking) return ['form', t('form.fixErrors')];
+  return ['form', t('form.needFields')];
+}
+
+/** #269 (user): the adjustment names its balance impact, and the typed
+ *  number can mean the value OR the balance to land on (S3776) */
+function AdjustmentPanel({
+  show,
+  adjustTarget,
+  onMode,
+  adjustDelta,
+  adjustBase,
+  currency,
+}: Readonly<{
+  /** on only while the checkbox is ticked AND an account is picked */
+  show: boolean;
+  adjustTarget: boolean;
+  onMode: (target: boolean) => void;
+  adjustDelta: number | null;
+  adjustBase: number;
+  currency: string;
+}>) {
+  const { t, lang } = useLang();
+  if (!show) return null;
+  return (
+    <div className="flex flex-col gap-2 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="txform-adjust-panel">
+      <div className="flex gap-1.5">
+        <Chip testId="txform-adjust-mode-delta" selected={!adjustTarget} onClick={() => onMode(false)}>
+          {t('txform.adjustModeDelta')}
+        </Chip>
+        <Chip testId="txform-adjust-mode-target" selected={adjustTarget} onClick={() => onMode(true)}>
+          {t('txform.adjustModeTarget')}
+        </Chip>
+      </div>
+      <p className="text-[12px] text-ink-3" data-testid="txform-adjust-impact">
+        {adjustDelta === null
+          ? t('txform.adjustImpactIdle')
+          : t('txform.adjustImpact', {
+              from: fmtCents(adjustBase, currency, lang),
+              to: fmtCents(adjustBase + adjustDelta, currency, lang),
+              delta: fmtCents(adjustDelta, currency, lang, { sign: true }),
+            })}
+      </p>
+    </div>
+  );
+}
+
+/** #269: the category row — locked to Balance Adjustment while the
+ *  checkbox is on (S3776: the swap lives out of the component) */
+function FormCategorySlot({
+  adjustment,
+  tx,
+  cat,
+  cats,
+  stagedCats,
+  onOpen,
+}: Readonly<{
+  adjustment: boolean;
+  tx: TransactionRow | undefined;
+  cat: ReturnType<ReturnType<typeof useCategories>['byId']>;
+  cats: ReturnType<typeof useCategories>;
+  stagedCats: TxSplitCat[] | null;
+  onOpen: () => void;
+}>) {
+  const { t } = useLang();
+  if (!adjustment) return <FormCategoryRow tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={onOpen} />;
+  return (
+    <div
+      className="flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-[15px] text-ink-3"
+      data-testid="txform-adjust-cat"
+    >
+      <Icon name="scale-balance" size={20} color="var(--m-ink-3)" />
+      <span className="flex-1">{catName(cats.byId('balanceAdjustment'), t)}</span>
+      <Icon name="lock-outline" size={14} color="var(--m-ink-4)" />
+    </div>
+  );
+}
+
+/** #269: the recurring-link row — never on an adjustment (S3776) */
+function RecurringLinkRow({
+  adjustment,
+  recurrings,
+  recurringId,
+  onOpen,
+}: Readonly<{
+  adjustment: boolean;
+  recurrings: readonly Pick<RecurringRow, 'id' | 'name'>[] | undefined;
+  recurringId: string | null;
+  onOpen: () => void;
+}>) {
+  const { t } = useLang();
+  if (adjustment || (recurrings?.length ?? 0) === 0) return null;
+  return (
+    <button
+      data-testid="txform-recurring"
+      onClick={onOpen}
+      className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+    >
+      <Icon name="autorenew" size={20} color="var(--m-ink-3)" />
+      <span className={`flex-1 ${recurringId ? '' : 'text-ink-4'}`}>
+        {recurrings?.find((r) => r.id === recurringId)?.name ?? t('recurring.linkNone')}
+      </span>
+      <span className="text-xs text-ink-4">{t('recurring.linkTitle')}</span>
+      <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+    </button>
+  );
+}
+
 export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProps) {
   const { t } = useLang();
   const navigate = useNavigate();
   const { store, repo, spaceId } = useData();
   const cats = useCategories();
   const [amount, setAmount] = useState('');
+  // register-style entry state for the amount field (lib/amountRegister)
+  const [amountEntryMode, setAmountEntryMode] = useState<AmountEntryMode>('register');
   const [isExpense, setIsExpense] = useState(true);
   const [merchant, setMerchant] = useState('');
   const [date, setDate] = useState(todayIso());
   const [accountId, setAccountId] = useState<string | null>(null);
   const [catId, setCatId] = useState<string>(UNCATEGORIZED_ID);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  // unified category editor (user request: same as review — type and
-  // counterparty live INSIDE the category sheet now)
-  const [splitOpen, setSplitOpen] = useState(false);
-  const [stagedSplits, setStagedSplits] = useState<TxSplit[] | null>(null);
-  // the simplified kind (user redesign): standard / transfer / adjustment;
-  // a transfer saves with a counterparty OR a bare family label (arc 2)
-  const [kind, setKind] = useState<TxKind>('standard');
+  // #211: the split-CATEGORIES editor (the same sheet as review/detail) —
+  // a spread stays ONE transaction; real splits are the detail's flow
+  const [catsSheetOpen, setCatsSheetOpen] = useState(false);
+  const [stagedCats, setStagedCats] = useState<TxSplitCat[] | null>(null);
+  // #133 D: no kind — a counterparty makes it a transfer, the toggle
+  // marks manual corrections (C3)
+  const [adjustment, setAdjustment] = useState(false);
+  // #269 (user): what the typed number MEANS while Adjustment is on —
+  // the transaction's value (default) or the balance to land on
+  const [adjustTarget, setAdjustTarget] = useState(false);
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
-  const [bareType, setBareType] = useState<TxType | null>(null);
   const [recurringId, setRecurringId] = useState<string | null>(null);
-  const [kindOpen, setKindOpen] = useState(false);
   const [counterOpen, setCounterOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
-  // manual counterparty: the other side can be written in the same
-  // stroke (user: "-100 to savings updated only half the picture")
-  const [mirrorCounter, setMirrorCounter] = useState(true);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   const baselineRef = useRef('');
 
   const allAccounts = useSpaceAccounts();
@@ -441,8 +643,14 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   // tier rule: hand-typed rows belong on MANUAL accounts only — linked
   // feeds are the bank's and imported (camt/csv) accounts are the next
-  // upload's; manual entries there would duplicate or contradict them
-  const writable = useMemo(() => (accounts ?? []).filter((a) => a.source === 'manual'), [accounts]);
+  // upload's; manual entries there would duplicate or contradict them.
+  // #221: the DEFAULT accounts' ledgers are system-managed (mirror legs
+  // + balance adjustments) — never a hand-entry target. #348 exception:
+  // the CASH WALLET is the user's own pocket — hand entries welcome.
+  const writable = useMemo(
+    () => (accounts ?? []).filter((a) => a.source === 'manual' && (!a.defaultFor || a.defaultFor === 'cash')),
+    [accounts],
+  );
   const recurrings = useRecurrings();
 
   // (re)fill when opened — keyed on the row's ID, not the object:
@@ -458,19 +666,18 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
     setDate(initial.date);
     setAccountId(initial.accountId);
     setCatId(initial.catId);
-    setKind(initial.kind);
+    setAdjustment(initial.adjustment);
     setLinkedAccountId(initial.linkedAccountId);
-    setBareType(initial.bareType);
     setRecurringId(initial.recurringId);
-    setStagedSplits(tx?.splits ?? null);
-    setMirrorCounter(true);
+    setStagedCats(tx?.cats ?? null);
+    setAttempted(false);
     // dirty baseline (user request 2026-08-01): a stray backdrop tap on
     // an EDITED form asks before dropping it; an untouched one closes
     baselineRef.current = formFingerprint({
       amount: initial.amount, isExpense: initial.isExpense, merchant: initial.merchant, date: initial.date,
-      accountId: initial.accountId, catId: initial.catId, kind: initial.kind,
-      linkedAccountId: initial.linkedAccountId, bareType: initial.bareType, recurringId: initial.recurringId,
-      splits: tx?.splits ?? null,
+      accountId: initial.accountId, catId: initial.catId, adjustment: initial.adjustment,
+      linkedAccountId: initial.linkedAccountId, recurringId: initial.recurringId,
+      cats: tx?.cats ?? null,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, tx?.id]);
@@ -480,85 +687,90 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
   const selectedAccount = writable.find((a) => a.id === effectiveAccount);
   const cents = parseCents(amount);
   const linkedAccount = (accounts ?? []).find((a) => a.id === linkedAccountId);
-  // the counterparty derives the type; the bare exit (arc 2) names it directly
-  const effectiveType: TxType = typeForKind(kind, isExpense, linkedAccount ? typeForLinkedAccount(linkedAccount.type) : bareType);
-  const counterMissing = counterUndecided(kind, linkedAccount, bareType);
+  // R1: a stamped account types every one of its rows; R3: a marked
+  // special category pulls its type onto a standard row; otherwise the
+  // kind resolves it (a tracked counterparty = plain transfer, R2)
+  const ownStamp = accountStamp(selectedAccount?.type);
+  const effectiveType = formEffectiveType(adjustment, ownStamp, catId, linkedAccount, isExpense);
   const startGateBlocking = blockingStartDate(space, date);
-  const kindDetailType = kindDetail(effectiveType);
-  const valid = isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking });
+  // #269: the adjustment's balance story — current → after (target mode
+  // derives the transaction's value from the difference to the balance)
+  const adjustBase = selectedAccount?.balanceCents ?? 0;
+  const adjustDelta = adjustDeltaFor(adjustment, adjustTarget, cents, adjustBase, isExpense);
+  const adjustNoop = adjustTarget && adjustDelta === 0;
+  // #309 (user): a movement category REQUIRES its counterparty here too —
+  // the validator always had the gate, the form just never fed it
+  const counterMissing = movementCounterMissing(adjustment, catId, linkedAccountId);
+  const valid =
+    isValidManualTx({ merchant, cents, account: effectiveAccount, date, counterMissing, beforeStart: !!startGateBlocking }) &&
+    !adjustNoop;
+  // #195 r2 (user): the note renders under the field it names — one
+  // (field, text) pair at a time, the note scrolls itself into view
+  const [blockerField, blockerText] = manualBlockerFor({
+    attempted, valid, merchant, cents, adjustNoop, effectiveAccount, counterMissing, startGateBlocking, t,
+  });
 
   const formCurrency = accounts?.find((a) => a.id === effectiveAccount)?.currency ?? 'EUR';
-  // the editor needs a SpaceTx shape; a NEW manual tx builds it from the
-  // live form state (controlled mode only reads amount/cat/currency)
-  const pseudoTx = buildPseudoTx(tx, {
-    accountId: effectiveAccount ?? '',
-    date,
-    cents,
-    isExpense,
-    currency: formCurrency,
-    merchant: merchant.trim(),
-    catId,
-    txType: effectiveType,
-  });
 
   const save = () => {
     if (!valid || !effectiveAccount || cents === null) return;
-    const signed = isExpense ? -Math.abs(cents) : Math.abs(cents);
+    // #269: target mode writes the DIFFERENCE to the named balance
+    const signed = signedManualCents(adjustment, adjustTarget, cents, adjustBase, isExpense);
     const rowId = tx?.id ?? repo.newId();
+    // Q8: a stamped row that names a counterparty is a movement — the
+    // category is forced from the special account's own side; a bare
+    // uncategorized one defaults there too (interest/fees are re-picks)
+    const forcedCat = ownStamp && (linkedAccountId || catId === UNCATEGORIZED_ID) ? stampMovementSub(ownStamp, signed) : undefined;
     applyManualBalanceDeltas(repo, spaceId, manualBalanceDeltas(accounts, tx, effectiveAccount, signed));
-    // loans v2 (review finding): the edit form writes the raw row
-    // directly, so the loan link coupling must ride here too — a
-    // retargeted or cleared counterparty moves the manual loans exactly
-    // like the same gesture in the detail screen. The mirror path stays
-    // exempt: createCounterTransaction skips liability counters now.
     const prevLinked = tx?.linkedAccountId ?? undefined;
-    const nextLinked = linkedAccountId ?? undefined; // mirrors manualTxFields' write
-    if (prevLinked !== nextLinked) {
-      void import('@/application/loanBalance')
-        .then(({ applyLoanLinkDelta }) =>
-          applyLoanLinkDelta(store, repo, { amountCents: signed, date, transferPeerId: tx?.transferPeerId, loanCounted: tx?.loanCounted }, prevLinked, nextLinked),
-        )
-        .catch(() => undefined);
-    }
+    const nextLinked = (adjustment ? null : linkedAccountId) ?? undefined; // mirrors manualTxFields' write
     void logActivity(store, repo, spaceId, tx ? 'txEdit' : 'txAdd', merchant.trim());
-    void repo.upsert(
-      'transaction',
-      spaceId,
-      rowId,
-      manualTxFields({
+    // the form writes the raw row directly (not through writeTxTransform),
+    // so the mirror-mint lifecycle must ride here too: a linked MANUAL
+    // counter gets its leg minted (typed by its stamp, balance follows),
+    // a retargeted or cleared counterparty retires the old mint — the
+    // same engine as every other linkedAccountId writer (typed-splits v2)
+    void (async () => {
+      const fields = manualTxFields({
         tx,
         accountId: effectiveAccount,
         date,
         signed,
         currency: formCurrency,
         merchant: merchant.trim(),
-        catId,
+        // #269: an adjustment IS its category — no spreads, no counter,
+        // no recurring riding along
+        catId: adjustment ? 'balanceAdjustment' : (forcedCat ?? catId),
         txType: effectiveType,
-        stagedSplits,
-        linkedAccountId,
-        recurringId,
-      }),
-    );
-    // the checked mirror writes the OTHER side onto the manual counter
-    // account in the same stroke (peered both ways, balance follows)
-    if (!tx && mirrorCounter && kind === 'transfer' && linkedAccount?.source === 'manual') {
-      void createCounterTransaction(
-        store,
-        repo,
-        {
-          id: rowId,
-          spaceId,
-          accountId: effectiveAccount,
-          date,
-          amountCents: signed,
-          currency: formCurrency,
-          merchant: merchant.trim(),
-          txType: effectiveType,
-          needsReview: 0,
-        } as Parameters<typeof createCounterTransaction>[2],
-        linkedAccount.id,
-      ).catch(() => undefined);
-    }
+        stagedCats: adjustment ? null : stagedCats,
+        linkedAccountId: adjustment ? null : linkedAccountId,
+        recurringId: adjustment ? null : recurringId,
+      });
+      await repo.upsert('transaction', spaceId, rowId, fields);
+      if (prevLinked !== nextLinked) {
+        const { planMirrorChange } = await import('@/application/mirrorMint');
+        const plan = await planMirrorChange(
+          store,
+          {
+            id: rowId,
+            accountId: effectiveAccount,
+            amountCents: signed,
+            date,
+            currency: formCurrency,
+            merchant: merchant.trim(),
+            ...(tx?.loanCounted === 1 ? { loanCounted: 1 as const } : {}),
+          },
+          prevLinked,
+          nextLinked,
+          tx?.transferPeerId,
+          undefined,
+        );
+        if (Object.hasOwn(plan.sourceFields, 'transferPeerId')) {
+          await repo.upsert('transaction', spaceId, rowId, { transferPeerId: (plan.sourceFields.transferPeerId ?? null) as never });
+        }
+        await plan.execute(repo);
+      }
+    })().catch(() => undefined);
     onOpenChange(false);
   };
 
@@ -569,7 +781,10 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         onOpenChange={onOpenChange}
         title={tx ? t('txform.editTitle') : t('txform.addTitle')}
         size="tall"
-        dirty={open && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, kind, linkedAccountId, bareType, recurringId, splits: stagedSplits }) !== baselineRef.current}
+        // #179: until the seed effect stamps a baseline, the form cannot
+        // be dirty — the ref-in-effect pattern left '' behind on a blank
+        // new form (no state change → no re-render → false discard ask)
+        dirty={open && baselineRef.current !== '' && formFingerprint({ amount, isExpense, merchant, date, accountId, catId, adjustment, linkedAccountId, recurringId, cats: stagedCats }) !== baselineRef.current}
       >
         {/* no manual account yet: explain WHY the form can't work and
             hand over a one-tap path to fix it (user UX request) */}
@@ -583,7 +798,11 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
               data-testid="txform-add-account"
               onClick={() => {
                 onOpenChange(false);
-                void navigate({ to: '/accounts' });
+                // #179 (user): straight to the SPACE's accounts screen
+                // with the add sheet opening on arrival — the global
+                // overview hid manual creation two taps deep
+                setSpaceAddAccountIntent();
+                void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
               }}
             >
               {t('txform.noAccountsCta')}
@@ -593,18 +812,20 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         <div className="flex flex-col gap-3 pt-1">
           {/* direction + amount */}
           <div className="flex gap-2">
+            {/* #327 r3 (user): halves own their corners — the inset
+                focus ring follows the group's rounding */}
             <div className="flex overflow-hidden rounded-input border border-line">
               <button
                 data-testid="txform-expense"
                 onClick={() => setIsExpense(true)}
-                className={`m-tap border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
+                className={`m-tap rounded-l-input border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
               >
                 −
               </button>
               <button
                 data-testid="txform-income"
                 onClick={() => setIsExpense(false)}
-                className={`m-tap border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
+                className={`m-tap rounded-r-input border-none px-3 text-[13px] font-medium ${isExpense ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
               >
                 +
               </button>
@@ -612,20 +833,31 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
             <input
               data-testid="txform-amount"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onFocus={() => setAmountEntryMode(focusEntryMode(amount))}
+              onChange={(e) => {
+                // register-style entry (user request): digits fill cents
+                // from the right; a comma or operator frees the field
+                const next = nextAmountEntry(amountEntryMode, amount, e.target.value);
+                setAmountEntryMode(next.mode);
+                setAmount(next.text);
+              }}
               inputMode="decimal"
               placeholder={`${t('txform.amount')} (EUR)`}
-              className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={attempted && (cents === null || cents === 0)}
+              className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && (cents === null || cents === 0))}`}
             />
           </div>
+          <FormBlockerNote show={blockerField === 'amount'} text={blockerText} testId="txform-save-blocker" />
 
           <input
             data-testid="txform-merchant"
             value={merchant}
             onChange={(e) => setMerchant(e.target.value)}
             placeholder={t('txform.merchant')}
-            className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+            aria-invalid={attempted && !merchant.trim()}
+            className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !merchant.trim())}`}
           />
+          <FormBlockerNote show={blockerField === 'merchant'} text={blockerText} testId="txform-save-blocker" />
 
           {/* the webview's own picker indicator sat misaligned (user
               report) — hide it and draw our chevron where it belongs */}
@@ -651,8 +883,9 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
                 variant="outline"
                 data-testid="txform-move-start"
                 onClick={() => {
-                  void repo.upsert('space', spaceId, spaceId, { historyStartDate: date });
-                  void logActivity(store, repo, spaceId, 'spaceEdit', space?.name ?? '');
+                  // #259: the full move — every attachment's gate follows
+                  // the space date (a bare space write left links behind)
+                  void applyHistoryMove(store, repo, spaceId, date);
                 }}
               >
                 {t('txform.moveStart')}
@@ -662,98 +895,92 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
 
           {/* account — a full field + picker sheet (the chip strip felt
               odd, user 2026-07-31); open-banking accounts are not offered */}
-          {writable.length > 0 && <AccountFieldRow account={selectedAccount} onOpen={() => setAccountOpen(true)} />}
+          {writable.length > 0 && (
+            <AccountFieldRow account={selectedAccount} onOpen={() => setAccountOpen(true)} bad={attempted && !effectiveAccount} />
+          )}
+          <FormBlockerNote show={blockerField === 'account'} text={blockerText} testId="txform-save-blocker" />
           {writable.length === 0 && (
             <p className="px-1 text-[12px] text-ink-4" data-testid="txform-no-manual-account">
               {t('txform.manualOnly')}
             </p>
           )}
 
-          <KindRows
-            kind={kind}
-            detailType={kindDetailType}
-            counterName={counterFieldLabel(linkedAccount?.name, bareType, t)}
-            onKind={() => setKindOpen(true)}
+          <CounterAdjustRows
+            counterName={linkedAccount?.name}
+            locked={!!ownStamp || adjustment}
+            adjustment={adjustment}
+            counterBlocker={fieldBlocker('counter', blockerField, blockerText)}
             onCounter={() => setCounterOpen(true)}
+            onToggleAdjustment={() => {
+              setAdjustment((v) => !v);
+              setAdjustTarget(false);
+            }}
+          />
+
+          {/* #269 (user): the adjustment names its balance impact, and the
+              typed number can mean the value OR the balance to land on */}
+          <AdjustmentPanel
+            show={adjustment && !!selectedAccount}
+            adjustTarget={adjustTarget}
+            onMode={setAdjustTarget}
+            adjustDelta={adjustDelta}
+            adjustBase={adjustBase}
+            currency={formCurrency}
           />
 
           {/* manual counter account: offer to write the other side too —
               without it "-100 to savings" updated only half the picture */}
-          {!tx && kind === 'transfer' && linkedAccount?.source === 'manual' && (
-            <label className="flex items-center gap-2 px-1 text-[13px] text-ink-2">
-              <input
-                type="checkbox"
-                data-testid="txform-mirror"
-                checked={mirrorCounter}
-                onChange={(e) => setMirrorCounter(e.target.checked)}
-              />
-              {t('txform.mirrorCreate', { name: linkedAccount.name })}
-            </label>
-          )}
+          {/* the mirror checkbox retired 2026-08-05: a MANUAL counter's
+              leg is always minted now — the special account's ledger IS
+              the record (typed-splits v2) */}
 
-          {/* category row — opens the SAME unified editor as review */}
-          <button
-            data-testid="txform-category"
-            onClick={() => setSplitOpen(true)}
-            className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
+          {/* category row — the split-categories editor (#211). A split
+              CONTAINER owns no category of its own: the row states the
+              parts and stays inert (the detail's manage flow edits them) */}
+          <FormCategorySlot adjustment={adjustment} tx={tx} cat={cat} cats={cats} stagedCats={stagedCats} onOpen={() => setCatsSheetOpen(true)} />
+
+          <RecurringLinkRow adjustment={adjustment} recurrings={recurrings} recurringId={recurringId} onOpen={() => setRecurringOpen(true)} />
+
+          <FormBlockerNote show={blockerField === 'form'} text={blockerText} testId="txform-save-blocker" />
+          <Button
+            data-testid="txform-save"
+            onClick={() => {
+              if (!valid) {
+                setAttempted(true);
+                return;
+              }
+              save();
+            }}
           >
-            <Icon name={cat.icon} size={20} color={cat.color ?? cats.byId(cat.parentId).color} />
-            <span className="flex-1">{catName(cat, t)}</span>
-            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-          </button>
-
-          {/* recurring link (only when the space has recurring costs) */}
-          {(recurrings?.length ?? 0) > 0 && (
-            <button
-              data-testid="txform-recurring"
-              onClick={() => setRecurringOpen(true)}
-              className="m-tap flex w-full items-center gap-3 rounded-input border border-line bg-surface px-4 py-3 text-left text-[15px] text-ink"
-            >
-              <Icon name="autorenew" size={20} color="var(--m-ink-3)" />
-              <span className={`flex-1 ${recurringId ? '' : 'text-ink-4'}`}>
-                {recurrings?.find((r) => r.id === recurringId)?.name ?? t('recurring.linkNone')}
-              </span>
-              <span className="text-xs text-ink-4">{t('recurring.linkTitle')}</span>
-              <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
-            </button>
-          )}
-
-          <Button data-testid="txform-save" onClick={save} disabled={!valid}>
             {tx ? t('action.save') : t('action.add')}
           </Button>
         </div>
         )}
       </Sheet>
 
-      {/* stacked: the kind picker — a transfer immediately continues
-          into the mandatory counterparty pick */}
-      <TxKindSheet
-        open={kindOpen}
-        onOpenChange={setKindOpen}
-        current={kind}
-        allowAdjustment
-        onPick={(next) => {
-          setKind(next);
-          if (next === 'transfer') {
-            setCounterOpen(true);
-          } else {
-            setLinkedAccountId(null);
-            setBareType(null);
-          }
-        }}
-      />
       <CounterpartySheet
         open={counterOpen}
         onOpenChange={setCounterOpen}
         excludeAccountId={effectiveAccount ?? ''}
         currentLinkedId={linkedAccountId ?? undefined}
+        // #309: a staged movement category pins its family Default in
+        // the ask — the one-tap answer to the required-counter refusal
+        // (same wiring as the detail screen's row)
+        defaultFamily={askDefaultFamily(catId)}
         onChoose={(picked) => {
           setLinkedAccountId(picked.id);
-          setBareType(null);
+          // #133 r5 bijection: a movement category follows the newly
+          // picked counter's kind. #228 feedback: counter-FIRST — an
+          // uncategorized row fills its special category right away
+          // (a deliberate plain category is not this rule's business)
+          if (specialCatType(catId) || catId === UNCATEGORIZED_ID) {
+            setCatId(movementCatFor(picked.type, isExpense ? -1 : 1));
+          }
         }}
-        onBare={(type) => {
-          setBareType(type);
+        onDetach={() => {
+          // the sheet shows the door only while a counterparty is linked
           setLinkedAccountId(null);
+          setCatId(detachedCatFor(catId));
         }}
       />
 
@@ -778,34 +1005,48 @@ export function TxFormSheet({ open, onOpenChange, tx, prefill }: TxFormSheetProp
         }}
       />
 
-      {/* the unified category editor (same component as review) — type
-          and counterparty ride along as context rows */}
-      <SplitEditorSheet
-        open={splitOpen}
-        onOpenChange={setSplitOpen}
-        tx={pseudoTx}
-        value={stagedSplits ?? undefined}
-        txType={effectiveType}
-        seedSingle
-        seedCatId={catId}
-        direction={isExpense ? 'debit' : 'credit'}
-        onApply={(splits) => {
-          setStagedSplits(splits);
-          if (splits?.length) setCatId(primaryCatId(splits) ?? catId);
+      {/* #211: the split-categories editor (same sheet as review/detail) —
+          the spread stays ONE transaction; the amount typed so far is the
+          money being partitioned. #228: a lone ◆ pick asks its
+          counterparty inside the editor — the form-level answer */}
+      <CatsSheet
+        open={catsSheetOpen}
+        onOpenChange={setCatsSheetOpen}
+        subject={{
+          id: tx?.id ?? 'new',
+          label: merchant.trim() || undefined,
+          catId,
+          cats: stagedCats ?? undefined,
+          amountCents: Math.abs(cents ?? 0),
+          linkedAccountId: linkedAccountId ?? undefined,
         }}
-        onApplySingle={(picked) => {
-          setStagedSplits(null);
-          setCatId(picked);
+        currency={formCurrency}
+        direction={isExpense ? 'debit' : 'credit'}
+        // #256 (user ss): the form's resolved type gates the picker like the
+        // detail screen's does — a brokerage row stops offering Groceries
+        txType={effectiveType}
+        title={t('split.catsTitle')}
+        includePct
+        excludeAccountId={effectiveAccount ?? ''}
+        askDisabled={!!ownStamp}
+        onApply={(entries) => {
+          if (entries.length === 1) {
+            setStagedCats(null);
+            setCatId(entries[0].catId);
+            // a single entry's link (answered in the editor) IS the
+            // row's counterparty — #218: a BARE entry clears it too
+            setLinkedAccountId(entries[0].linkedAccountId ?? null);
+            return;
+          }
+          setStagedCats(entries);
+          const primary = entries.reduce((best, e) => (e.amountCents > best.amountCents ? e : best), entries[0]);
+          setCatId(primary.catId);
+          // the entries own their counterparties now — the whole-row
+          // link moved into its entry when the spread was seeded
+          setLinkedAccountId(null);
         }}
       />
 
-      <CategoryPicker
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        selectedId={catId}
-        onPick={setCatId}
-        direction={isExpense ? 'debit' : 'credit'}
-      />
     </>
   );
 }

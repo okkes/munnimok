@@ -11,12 +11,13 @@ namespace Munni.Api.GoCardless;
 /// Turns GoCardless account/transaction data into sync ops — the server
 /// acting as one more device, in the shared-accounts shape: raw facts go
 /// once into the account's FEED space, the requisition's target space
-/// gets the predicted overlay (txMeta) plus the attachment mirror.
+/// gets the predicted overlay (txMeta). Attaching to a space is the
+/// user's explicit step (#204 r2) — ingest never writes links.
 /// Deterministic op/entity ids make every ingest idempotent and match
 /// the client-side importer, so cross-source imports collapse into the
 /// same rows.
 /// </summary>
-public sealed partial class GcIngest(AppDbContext db)
+public sealed partial class GcIngest(AppDbContext db, ILogger? logger = null)
 {
     public async Task<int> IngestAccountAsync(
         Space space,
@@ -24,15 +25,35 @@ public sealed partial class GcIngest(AppDbContext db)
         GcAccountDetails details,
         IReadOnlyList<GcBalance> balances,
         IReadOnlyList<GcTransaction> transactions,
-        IReadOnlyList<GcTransaction>? pending = null)
+        IReadOnlyList<GcTransaction>? pending = null,
+        GcRequisition? actingConsent = null)
     {
-        var feedSpace = await EnsureFeedAsync(linked, space.Id);
+        var feedSpace = await EnsureFeedAsync(linked, actingConsent);
 
         var accountOps = new List<SyncOpDto>();
         var feedOps = new List<SyncOpDto>();
         var spaceOps = new List<SyncOpDto>();
         var counter = 0;
         string NextHlc() => ServerHlc.Now(counter++);
+
+        // Count both writes the ops and tallies what could be represented
+        var written = transactions.Count(tx => AddBookedOps(space.Id, feedSpace.Id, linked, tx, feedOps, spaceOps, NextHlc));
+        var dropped = transactions.Count - written;
+        // #240: rows without a reference or date used to vanish without a
+        // trace — an ASPSP omitting entry_reference lost its whole history
+        // and nothing anywhere said so
+        if (dropped > 0)
+            logger?.LogWarning("gc ingest {Ref}: {Dropped} of {Total} booked rows lack a reference/date and were dropped",
+                linked.Iban, dropped, transactions.Count);
+
+        var pendingWritten = await MirrorPendingAsync(linked, feedSpace.Id, pending ?? [], feedOps, NextHlc);
+        var pendingDropped = (pending?.Count ?? 0) - pendingWritten;
+
+        // #240 r3: the fetch outcome is a FACT of the account row now —
+        // "the bank answered with nothing" must be visible in the app,
+        // not only in a server log nobody can reach
+        linked.LastFetchReceived = transactions.Count + (pending?.Count ?? 0);
+        linked.LastFetchDropped = dropped + pendingDropped;
 
         // account row in the feed (create or refresh balance — raw bank truth)
         var accountFields = await BuildAccountFieldsAsync(feedSpace.Id, linked, details, balances);
@@ -41,16 +62,11 @@ public sealed partial class GcIngest(AppDbContext db)
         // dedupe the later ones away)
         accountOps.Add(NewOp(feedSpace.Id, "account", linked.AccountEntityId, accountFields, NextHlc(), $"acct:{linked.GcAccountId}:{DateTime.UtcNow:yyyy-MM-ddTHH:mm}"));
 
-        // attachment mirror so offline devices render the link
-        spaceOps.Add(NewOp(space.Id, "accountLink", ImportIds.AccountLinkId(space.Id, feedSpace.Id), new Dictionary<string, JsonElement>
-        {
-            ["feedSpaceId"] = Json(feedSpace.Id),
-            ["accountId"] = Json(linked.AccountEntityId),
-        }, NextHlc(), $"gclink:{space.Id}:{feedSpace.Id}"));
-
-        foreach (var tx in transactions) AddBookedOps(space.Id, feedSpace.Id, linked, tx, feedOps, spaceOps, NextHlc);
-
-        await MirrorPendingAsync(linked, feedSpace.Id, pending ?? [], feedOps, NextHlc);
+        // #204 r2 (user): connecting NEVER attaches — the account exists
+        // globally (the feed + its raw rows); joining a space is the
+        // user's explicit step, where they also pick the type and the
+        // history gate. The requisition's space stays the RETURN context
+        // and the home of the prediction overlays, nothing more.
 
         var writer = new SyncWriter(db);
         await writer.ApplyAsync(feedSpace, null, accountOps);
@@ -60,8 +76,9 @@ public sealed partial class GcIngest(AppDbContext db)
         return accepted;
     }
 
-    /// <summary>One booked bank transaction → raw feed op + the target space's predicted overlay.</summary>
-    private static void AddBookedOps(
+    /// <summary>One booked bank transaction → raw feed op + the target space's predicted overlay.
+    /// False = the row lacks an identity or date and cannot be represented.</summary>
+    private static bool AddBookedOps(
         string spaceId,
         string feedSpaceId,
         GcLinkedAccount linked,
@@ -71,7 +88,7 @@ public sealed partial class GcIngest(AppDbContext db)
         Func<string> nextHlc)
     {
         var reference = tx.TransactionId ?? tx.InternalTransactionId;
-        if (reference is null || tx.BookingDate is null) return;
+        if (reference is null || tx.BookingDate is null) return false;
         var cents = ToCents(tx.TransactionAmount.Amount);
         var direction = cents < 0 ? "debit" : "credit";
         var counterparty = CleanBankText(cents < 0 ? tx.CreditorName : tx.DebtorName);
@@ -107,6 +124,7 @@ public sealed partial class GcIngest(AppDbContext db)
             ["needsReview"] = Json(predicted is null ? 1 : 0),
         };
         spaceOps.Add(NewOp(spaceId, "txMeta", ImportIds.TxMetaId(spaceId, entityId), metaFields, nextHlc(), $"gcmeta:{spaceId}:{entityId}"));
+        return true;
     }
 
     /// <summary>
@@ -115,7 +133,7 @@ public sealed partial class GcIngest(AppDbContext db)
     /// review — the booked twin replaces them later. Rows that left the
     /// bank's pending list get tombstoned.
     /// </summary>
-    private async Task MirrorPendingAsync(
+    private async Task<int> MirrorPendingAsync(
         GcLinkedAccount linked,
         string feedSpaceId,
         IReadOnlyList<GcTransaction> pending,
@@ -159,6 +177,7 @@ public sealed partial class GcIngest(AppDbContext db)
         var trackedIds = tracked.Select(p => p.EntityId).ToHashSet();
         foreach (var id in currentPending.Where(id => !trackedIds.Contains(id)))
             db.GcPendingTxs.Add(new GcPendingTx { GcAccountId = linked.GcAccountId, EntityId = id });
+        return currentPending.Count;
     }
 
     /// <summary>The feed account row's fields: raw bank truth plus the logo hint.</summary>
@@ -176,19 +195,31 @@ public sealed partial class GcIngest(AppDbContext db)
             : InstitutionDisplayName(requisition?.InstitutionId) ?? details.OwnerName ?? "Wallet";
         var fields = new Dictionary<string, JsonElement>
         {
-            ["type"] = Json("checking"),
             ["source"] = Json("gocardless"),
             ["currency"] = Json(details.Currency ?? linked.Currency),
         };
         // the bank's display name seeds the row once; after that the field
         // belongs to the user (re-asserting it each fetch stamped a fresh
-        // server HLC and silently clobbered renames made in the app)
+        // server HLC and silently clobbered renames made in the app).
+        // #212 r2: type is seed-only for the same reason — the SPACE owns
+        // the account's type (accountLink.type); re-sending 'checking'
+        // every fetch kept overwriting the global fallback clients read
         var exists = await db.EntityRows.AnyAsync(r =>
             r.SpaceId == feedSpaceId && r.Entity == "account" && r.EntityId == linked.AccountEntityId);
-        if (!exists) fields["name"] = Json(details.Name ?? fallbackName);
+        if (!exists)
+        {
+            fields["name"] = Json(details.Name ?? fallbackName);
+            fields["type"] = Json("checking");
+        }
         if (isRealIban) fields["iban"] = Json(linked.Iban);
-        // the institution id lets clients show the real bank logo
-        if (requisition is not null) fields["bankId"] = Json(requisition.InstitutionId);
+        // the institution id lets clients show the real bank logo; the
+        // provider names WHO fetches (#176: EB rows read "GoCardless"
+        // without it) — re-sent every fetch, so existing rows heal
+        if (requisition is not null)
+        {
+            fields["bankId"] = Json(requisition.InstitutionId);
+            fields["provider"] = Json(requisition.Provider);
+        }
         if (balance is not null)
         {
             fields["balanceCents"] = Json(ToCents(balance.BalanceAmount.Amount));
@@ -196,22 +227,62 @@ public sealed partial class GcIngest(AppDbContext db)
         }
         // every device shows when this account last heard from the bank
         fields["lastSyncedAt"] = Json(DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+        // #240 r3: what that fetch actually carried — "the bank answered
+        // with nothing" and "rows could not be stored" become visible
+        // facts on the account row instead of invisible server logs
+        if (linked.LastFetchReceived is { } received) fields["lastFetchReceived"] = Json(received);
+        if (linked.LastFetchDropped is { } droppedRows) fields["lastFetchDropped"] = Json(droppedRows);
         return fields;
     }
 
     /// <summary>
     /// Feed registry + owner membership + server-side attachment for a
     /// GoCardless-linked account (the owning flow that may create feeds).
+    /// #240: the ACTING consent decides who is acting — a completion runs
+    /// as the consenting user, a scheduled fetch as the bound consent's
+    /// user. A second user's own consent covering an existing IBAN feed
+    /// makes them a CO-owner (user ruling: connecting the same bank
+    /// account IS full ownership; the IBAN proves it is the same one).
     /// </summary>
-    private async Task<Space> EnsureFeedAsync(GcLinkedAccount linked, string targetSpaceId)
+    private async Task<Space> EnsureFeedAsync(GcLinkedAccount linked, GcRequisition? actingConsent = null)
     {
         var feedId = ImportIds.FeedSpaceId(linked.Iban);
-        var requisition = await db.GcRequisitions.FindAsync(linked.RequisitionId)
+        var requisition = actingConsent
+            ?? await db.GcRequisitions.FindAsync(linked.RequisitionId)
             ?? throw new InvalidOperationException($"requisition {linked.RequisitionId} missing");
         var ownerId = requisition.UserId;
+        var wallet = linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
 
-        if (await db.FeedSpaces.FindAsync(feedId) is null)
+        var feed = await db.FeedSpaces.FindAsync(feedId);
+        if (feed is null)
+        {
             db.FeedSpaces.Add(new FeedSpace { Id = feedId, OwnerUserId = ownerId, AccountRef = ImportIds.Normalize(linked.Iban) });
+        }
+        else if (wallet && feed.OwnerUserId != ownerId)
+        {
+            // #240: a WALLET (no IBAN) is personal by nature — there is no
+            // joint-PayPal the way there is a joint bank account, so the
+            // consent that fetches it owns its feed. A stale binding (an
+            // old identity's requisition) left the feed "shared with me"
+            // for its real owner: /me/feeds omitted it, edit and
+            // attach-to-space locked.
+            feed.OwnerUserId = ownerId;
+        }
+        else if (!wallet && feed.OwnerUserId != ownerId
+                 && !await db.FeedOwners.AnyAsync(o => o.FeedSpaceId == feedId && o.UserId == ownerId))
+        {
+            // #240 r3: an IBAN feed someone else connected first — this
+            // user's OWN consent covers the same account, so they own it
+            // too. The recorded consent lets the fetch binding hand over
+            // if the first owner ever deletes theirs.
+            db.FeedOwners.Add(new FeedOwner
+            {
+                FeedSpaceId = feedId,
+                UserId = ownerId,
+                RequisitionId = requisition.Id,
+                GcAccountId = linked.GcAccountId,
+            });
+        }
 
         var feedSpace = await db.Spaces.FindAsync(feedId);
         if (feedSpace is null)
@@ -222,17 +293,9 @@ public sealed partial class GcIngest(AppDbContext db)
         if (!await db.SpaceMembers.AnyAsync(m => m.SpaceId == feedId && m.UserId == ownerId))
             db.SpaceMembers.Add(new SpaceMember { SpaceId = feedId, UserId = ownerId, Role = Social.SpaceRoles.Owner });
 
-        if (!await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == targetSpaceId && l.FeedSpaceId == feedId && l.AccountId == linked.AccountEntityId))
-        {
-            db.SpaceAccountLinks.Add(new SpaceAccountLink
-            {
-                Id = Guid.NewGuid(),
-                SpaceId = targetSpaceId,
-                FeedSpaceId = feedId,
-                AccountId = linked.AccountEntityId,
-                AttachedBy = ownerId,
-            });
-        }
+        // #204 r2 (user): no SpaceAccountLink here — connecting creates
+        // the GLOBAL account only; the explicit attach endpoint writes
+        // the link when the user picks the space, type and history gate
         await db.SaveChangesAsync();
         return feedSpace;
     }

@@ -20,21 +20,22 @@ const dayDiff = (fromIso: string, toIso: string): number => Math.round((Date.par
 
 const REIMB_CAT_IDS = new Set<string>([EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID]);
 
-/** does the row book itself as reimbursement money (category or slice)? */
-export function filedAsReimbursement(tx: Pick<TransactionRow, 'catId' | 'splits'>): boolean {
+/** does the row book itself as reimbursement money (category, part or
+ *  #211 category-spread entry)? */
+export function filedAsReimbursement(tx: Pick<TransactionRow, 'catId' | 'cats' | 'splits'>): boolean {
   if (tx.catId && REIMB_CAT_IDS.has(tx.catId)) return true;
-  return (tx.splits ?? []).some((s) => REIMB_CAT_IDS.has(s.catId));
+  return [...(tx.splits ?? []), ...(tx.cats ?? [])].some((s) => REIMB_CAT_IDS.has(s.catId));
 }
 
 /**
  * What the row's reimbursement CATEGORY earmarks, in cents — the slice
- * value when split, the whole net value when the row itself is filed as
- * expected/received reimbursement, and null when it carries no
- * reimbursement bookkeeping at all (the caller falls back to the net
- * value, today's behavior).
+ * value when split (container parts and #211 row spreads alike), the
+ * whole net value when the row itself is filed as expected/received
+ * reimbursement, and null when it carries no reimbursement bookkeeping
+ * at all (the caller falls back to the net value, today's behavior).
  */
-export function reimbEarmarkCents(tx: Pick<TransactionRow, 'catId' | 'splits' | 'amountCents' | 'reimbursements'>): number | null {
-  const slices = (tx.splits ?? []).filter((s) => REIMB_CAT_IDS.has(s.catId));
+export function reimbEarmarkCents(tx: Pick<TransactionRow, 'catId' | 'cats' | 'splits' | 'amountCents' | 'reimbursements'>): number | null {
+  const slices = [...(tx.splits ?? []), ...(tx.cats ?? [])].filter((s) => REIMB_CAT_IDS.has(s.catId));
   if (slices.length > 0) return slices.reduce((sum, s) => sum + Math.abs(s.amountCents), 0);
   if (tx.catId && REIMB_CAT_IDS.has(tx.catId)) return Math.abs(netAmountCents(tx));
   return null;

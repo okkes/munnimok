@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminApp } from './AdminApp';
-import type { AdminConfig } from './main';
+import type { AdminConfig } from './config';
 
 const CONFIG: AdminConfig = { apiUrl: 'http://api.test', logtoEndpoint: '', logtoAppId: '', logtoResource: '' };
 
@@ -16,6 +16,9 @@ const REQUISITIONS = [
   { requisitionId: 'req-stale-0002', status: 'EX', institutionId: 'ASN_NL', created: null, accountCount: 0, stale: true, ownerSub: null },
   { requisitionId: 'req-fresh-0003', status: 'LN', institutionId: 'RABO_NL', created: new Date(Date.now() - 5 * 86_400_000).toISOString(), accountCount: 1, stale: false, ownerSub: 'sub-bob' },
 ];
+// the endpoint returns THIS environment's consents + a count of foreign
+// ones on the shared GoCardless account
+const requisitionList = (requisitions: typeof REQUISITIONS, foreignCount = 2) => ({ requisitions, foreignCount });
 const QUOTA = [
   { provider: 'gocardless', scope: 'accounts:transactions', limit: 4, remaining: 1, resetAtUtc: '2026-07-17T06:00:00Z', capturedAtUtc: '2026-07-16T06:00:00Z' },
 ];
@@ -53,8 +56,7 @@ const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /catalog': () => ({ body: CATALOG }),
   'GET /admin/ping': () => ({}),
   'GET /admin/users': () => ({ body: USERS }),
-  'GET /admin/gocardless/requisitions': () => ({ body: REQUISITIONS }),
-  'GET /admin/bank-provider': () => ({ body: { active: 'gocardless', configured: ['gocardless', 'enablebanking'] } }),
+  'GET /admin/gocardless/requisitions': () => ({ body: requisitionList(REQUISITIONS) }),
   'GET /admin/quota': () => ({ body: QUOTA }),
   'GET /health': () => ({ body: HEALTH }),
 });
@@ -80,6 +82,16 @@ describe('AdminApp (test-auth mode)', () => {
     render(<AdminApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('admin-sub'), { target: { value: 'nobody' } });
     await waitFor(() => expect(screen.getByText(/not on the admin list/)).toBeTruthy());
+    expect(screen.queryByTestId('overview-tiles')).toBeNull();
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+  });
+
+  it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the admin-list one', async () => {
+    scriptFetch({ 'GET /admin/ping': () => ({ status: 500 }) });
+    render(<AdminApp config={CONFIG} getToken={null} />);
+    fireEvent.change(screen.getByTestId('admin-sub'), { target: { value: 'anybody' } });
+    await screen.findByText(/did not answer/);
+    expect(screen.queryByText(/not on the admin list/)).toBeNull();
     expect(screen.queryByTestId('overview-tiles')).toBeNull();
   });
 
@@ -187,7 +199,7 @@ describe('AdminApp (test-auth mode)', () => {
     let requisitions = [...REQUISITIONS];
     const calls = scriptFetch({
       ...HAPPY_ROUTES(),
-      'GET /admin/gocardless/requisitions': () => ({ body: requisitions }),
+      'GET /admin/gocardless/requisitions': () => ({ body: requisitionList(requisitions) }),
       'DELETE /admin/gocardless/requisitions/req-stale-0002': () => {
         requisitions = requisitions.filter((r) => r.requisitionId !== 'req-stale-0002');
         return {};
@@ -216,23 +228,13 @@ describe('AdminApp (test-auth mode)', () => {
     expect(screen.queryByText(/Delete selected/)).toBeNull(); // selection cleared
   });
 
-  it('the bank-provider picker on Overview shows the active one and switches it', async () => {
-    let active = 'gocardless';
-    const calls = scriptFetch({
-      ...HAPPY_ROUTES(),
-      'GET /admin/bank-provider': () => ({ body: { active, configured: ['gocardless', 'enablebanking'] } }),
-      'PUT /admin/bank-provider': (init) => {
-        active = (JSON.parse(String(init?.body)) as { provider: string }).provider;
-        return { body: { active } };
-      },
-    });
+  it('the bank-provider picker is gone from Overview (#175: the end user picks at connect)', async () => {
+    const calls = scriptFetch(HAPPY_ROUTES());
     renderAdmin();
-    const gc = (await screen.findByTestId('admin-provider-gocardless')) as HTMLInputElement;
-    expect(gc.checked).toBe(true);
-    fireEvent.click(screen.getByTestId('admin-provider-enablebanking'));
-    await waitFor(() => expect((screen.getByTestId('admin-provider-enablebanking') as HTMLInputElement).checked).toBe(true));
-    expect(calls).toContain('PUT /admin/bank-provider');
-    expect(active).toBe('enablebanking');
+    await screen.findByTestId('overview-tiles');
+    expect(screen.queryByTestId('admin-bank-provider')).toBeNull();
+    expect(screen.queryByText(/Bank-data provider/)).toBeNull();
+    expect(calls.some((c) => c.includes('/admin/bank-provider'))).toBe(false);
   });
 
   it('typing a sub persists it and sends it as X-User-Sub', async () => {

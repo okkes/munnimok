@@ -62,6 +62,14 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
     {
         using var scope = scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        // #240 r3: attachments whose mirror the space tombstoned are dead
+        // weight that keeps orphaned feeds re-syncing to devices — drop
+        // them daily (provider-independent, so it runs before the GC gate)
+        var removedLinks = await Accounts.FeedJanitor.RemoveDeadAttachmentsAsync(db, null, ct);
+        if (removedLinks > 0 && logger.IsEnabled(LogLevel.Information))
+            logger.LogInformation("feed janitor: removed {Count} dead attachment(s)", removedLinks);
+
         // slot cleanup is a GoCardless-specific concern (their free tier
         // counts connections) — skip entirely when GC isn't configured
         var gc = scope.ServiceProvider.GetService<IGoCardlessApi>();
@@ -139,7 +147,11 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
             foreach (var (local, linked) in CoveredPairs(requisition, localByRemoteId, byAccountId))
             {
                 var boundTo = localById.GetValueOrDefault(linked.RequisitionId);
-                if (boundTo is not null && boundTo.UserId != local.UserId) continue; // someone else's binding
+                // #240: wallet bindings (no IBAN — personal by nature) always
+                // move to the newest covering consent; only real IBAN
+                // accounts protect a foreign (family) binding
+                var wallet = linked.Iban.StartsWith("GC:", StringComparison.OrdinalIgnoreCase);
+                if (boundTo is not null && boundTo.UserId != local.UserId && !wallet) continue; // someone else's binding
                 linked.RequisitionId = local.Id;
                 linked.SpaceId = local.SpaceId;
             }
@@ -176,6 +188,23 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
     /// <summary>seconds between account fetches (staggering); tests shrink it</summary>
     internal TimeSpan AccountDelay { get; set; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>#240 r2: the feed space holds not one live transaction —
+    /// whatever the backfill fetched never landed.</summary>
+    internal static async Task<bool> FeedHasNoRowsAsync(AppDbContext db, GcLinkedAccount linked, CancellationToken ct) =>
+        !await db.EntityRows.AnyAsync(
+            r => r.SpaceId == ImportIds.FeedSpaceId(linked.Iban) && r.Entity == "transaction" && !r.Deleted, ct);
+
+    /// <summary>#240 r2: stamped as backfilled, yet the feed is empty — a
+    /// backfill that ingested nothing does not count. An hour between
+    /// retries keeps a genuinely empty account from hammering the bank
+    /// (GC's daily budget additionally lands in the 12h rate backoff).</summary>
+    internal static async Task<bool> EmptyBackfillAsync(AppDbContext db, GcLinkedAccount linked, CancellationToken ct)
+    {
+        if (linked.HistoryBackfilledAt is null || linked.LastFetchAt is null) return false;
+        if (DateTimeOffset.UtcNow - linked.LastFetchAt.Value < TimeSpan.FromHours(1)) return false;
+        return await FeedHasNoRowsAsync(db, linked, ct);
+    }
+
     internal async Task FetchAllAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
@@ -187,7 +216,13 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var linkedAccounts = await db.GcLinkedAccounts.ToListAsync(ct);
         foreach (var linked in linkedAccounts)
         {
-            if (!GcSchedule.IsDue(linked, DateTimeOffset.UtcNow)) continue;
+            // #240 r2: a "backfilled" account whose feed never received a
+            // single row keeps retrying the full window every tick until
+            // data actually exists (dropped rows on an old binary, an
+            // ASPSP answering empty, an erased feed) — the 429 backoff
+            // below still guards the provider budget
+            var emptyBackfill = await EmptyBackfillAsync(db, linked, ct);
+            if (!emptyBackfill && !GcSchedule.IsDue(linked, DateTimeOffset.UtcNow)) continue;
             if (_rateLimitedUntil.TryGetValue(linked.GcAccountId, out var until) && DateTimeOffset.UtcNow < until) continue;
             try
             {
@@ -255,7 +290,7 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var space = await db.Spaces.FindAsync([requisition.SpaceId], ct);
         if (space is null) return;
 
-        var (linkedCount, imported, deferred) = await GcEndpoints.IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts);
+        var (linkedCount, imported, deferred) = await GcEndpoints.IngestApprovedAccountsAsync(gc, db, requisition, space, status.Accounts, logger);
         if (deferred == 0) requisition.Status = "linked";
         else if (requisition.Status == "created") requisition.Status = "approved";
         await db.SaveChangesAsync(ct);
@@ -283,15 +318,18 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         // no backfill marker → fetch the full window regardless of
         // LastFetchAt: accounts linked before the feed-space migration had
         // a LastFetchAt but their FEED space only ever received deltas.
+        // #240 r2: an EMPTY feed re-runs the full window too — a stamp
+        // whose fetch never landed a row must not shrink to 3-day deltas.
         // The window asks for TWO YEARS (user design 2026-08-01: yearly
         // recurring detection needs the tail); the provider clamps to
         // whatever the consent actually allows
-        var from = linked.HistoryBackfilledAt is null
+        var fullWindow = linked.HistoryBackfilledAt is null || await FeedHasNoRowsAsync(db, linked, ct);
+        var from = fullWindow
             ? DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-GoCardlessApi.MaxHistoryDays))
             : DateOnly.FromDateTime((linked.LastFetchAt?.UtcDateTime ?? DateTime.UtcNow.AddDays(-GoCardlessApi.MaxHistoryDays)).AddDays(-3));
         var page = await gc.GetTransactionsAsync(linked.GcAccountId, from, ct);
 
-        var accepted = await new GcIngest(db).IngestAccountAsync(space, linked, details, balances, page.Booked, page.Pending);
+        var accepted = await new GcIngest(db, logger).IngestAccountAsync(space, linked, details, balances, page.Booked, page.Pending);
         linked.LastFetchAt = DateTimeOffset.UtcNow;
         linked.HistoryBackfilledAt ??= DateTimeOffset.UtcNow;
         if (page.Rate is { } rate)
@@ -303,7 +341,8 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         }
         await db.SaveChangesAsync(ct);
         if (logger.IsEnabled(LogLevel.Information))
-            logger.LogInformation("gc fetch {Iban}: {Accepted} new ops", linked.Iban, accepted);
+            logger.LogInformation("gc fetch {Iban}: {Received} received, {Accepted} new ops, {Dropped} dropped",
+                linked.Iban, linked.LastFetchReceived ?? 0, accepted, linked.LastFetchDropped ?? 0);
 
         // wake the members' devices: SSE for open apps, push notification +
         // preload for closed ones. Raw rows land in the FEED space; the

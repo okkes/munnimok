@@ -56,6 +56,10 @@ export default defineConfig(({ mode }) => {
           // empty logo picker. jpg: the bundled event pictures must work
           // offline/demo too.
           globPatterns: ['**/*.{js,css,html,ico,png,svg,json,woff2,jpg}'],
+          // never precache the runtime-config overlay: the nginx entrypoint
+          // rewrites it per deployment, but the precache would pin the
+          // build-time stub forever (sw.ts serves it network-first instead)
+          globIgnores: ['runtime-config.js'],
           maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
           // iife, NOT the default es: the worker is registered as a classic
           // script, but the es build kept `import.meta` (dynamic-import
@@ -68,10 +72,13 @@ export default defineConfig(({ mode }) => {
       }),
       {
         // iOS home-screen installs read apple-touch-icon, not (reliably)
-        // the manifest icons — inject the channel's leaf
+        // the manifest icons — inject the channel's leaf. #230: the same
+        // leaf becomes the browser-tab favicon (there was NO icon link at
+        // all — tabs showed the generic globe).
         name: 'munni:apple-touch-icon',
         transformIndexHtml: () => [
           { tag: 'link', attrs: { rel: 'apple-touch-icon', sizes: '192x192', href: icon(192) }, injectTo: 'head' as const },
+          { tag: 'link', attrs: { rel: 'icon', type: 'image/png', sizes: '192x192', href: icon(192) }, injectTo: 'head' as const },
         ],
       },
       {

@@ -1,114 +1,56 @@
-# NAS auto-deploy (GitHub → Synology, no SSH, no manual uploads)
+# The NAS side of the IaC twins
 
-The flow: a push builds the images, then the **Deploy to NAS** workflow
-assembles a deploy bundle and uploads it to the NAS over the FileStation
-API. A DSM Scheduled Task runs `apply.sh` every few minutes; on a new
-version stamp it unpacks the bundle over the live directory (scripts
-included — everything self-updates) and runs `update.sh`, which pulls
-the images and restarts the stack.
+Everything here runs on the Synology NAS without SSH: GitHub publishes
+through the FileStation API, a root Task Scheduler entry (the poller)
+applies. The legacy live pipeline was archived on 2026-09-17 under the
+git tag `archive/legacy-cicd`; this folder serves the IaC twins only.
 
-Two channels, both handled:
+## The one rule: live dir = the parent of `SYNOLOGY_PATH`
 
-| Branch | Uploads | What gets updated on the NAS |
-|---|---|---|
-| `master` | `munni-deploy.tgz` + `VERSION` | **production** stack, then **staging** (a release moves both) — bundle includes compose files, nginx conf, scripts and the rendered `.env` |
-| `dev` | `munni-deploy-staging.tgz` + `VERSION_STAGING` | **staging** only (tests dev's compose changes before a release) |
+`SYNOLOGY_PATH` is the published folder (e.g. `/docker/munni-iac/published`).
+Its parent is the live dir (`/docker/munni-iac` → `/volume1/docker/munni-iac`,
+resolved through the share's real path, never guessed). The live dir
+holds `apply.sh`, `deploy.log`, the stamp markers; the twins unpack NEXT to
+it: `/volume1/docker/munni-iac-prod`, `/volume1/docker/munni-iac-staging`.
 
-## Secrets: template + placeholders
+## What Deploy uploads (deploy-nas.yml, channel iac-prod | iac-staging | iac-both)
 
-`deploy/env/.env.nas` is committed to the repo with real values for
-everything non-secret and `${NAS_*}` placeholders for secrets:
+- `apply.sh` into the live dir (the task runs a throwaway copy, so
+  overwriting the running script is safe);
+- `munni-deploy-iac-<twin>.tgz` (compose + env rendered from the twin's
+  GitHub Environment + `update.sh` + initdb) into the published folder;
+- `VERSION_IAC_<TWIN>` last, so the poller never sees a stamp before its
+  bundle. The stamp is `<sha>.<run number>`: every deploy is new.
+
+## The poller (`apply.sh`, every 5 minutes, root)
+
+Ensured by the prod twin's IaC bootstrap (DSM Task Scheduler through the
+API, `munni deploy poller`); by hand the same command:
 
 ```
-POSTGRES_PASSWORD=${NAS_POSTGRES_PASSWORD}
-FCM_SERVICE_ACCOUNT_JSON='${NAS_FCM_SERVICE_ACCOUNT_JSON}'
+cd "<live dir>" && cp apply.sh .apply.run && MUNNI_LIVE_DIR="<live dir>" MUNNI_PUBLISHED_DIR="<live dir>/published" sh .apply.run
 ```
 
-CI renders it with `render-env.sh`: each placeholder is filled from the
-**same-named GitHub secret**, resolved through the job's **GitHub
-Environment** — the deploy job runs in `production` (master) or
-`staging` (dev), so ONE secret name can carry a different value per
-stack, and repo-level secrets act as the shared default for both.
-Master renders `.env`, dev renders `.env.staging` from the same
-template. Adding a key = template line + secret; no workflow change.
-The render fails the deploy if `NAS_GHCR_PAT` or
-`NAS_POSTGRES_PASSWORD` are missing; other empty secrets just leave
-their feature off.
+Each cycle: a new stamp → unpack the bundle into the twin's folder → run
+its `update.sh` (registry login, the Postgres 17→18 migration guard that
+reads the volume's real version, `docker compose up -d`, then the seeds:
+the Logto machine credentials and the GlitchTip admin + API token the
+bootstrap minted, inserted once, idempotently). A seed the service is not
+ready for leaves a pending marker the next cycle retries. Everything is
+logged to `deploy.log` — `--verify` and Deploy's after-apply step print
+its tail through FileStation, so nothing needs SSH.
 
-⚠ The rendered `.env` / `.env.staging` **overwrite** the NAS copies on
-every deploy — never edit them on the NAS by hand.
+## Removal
 
-### Where each NAS_* secret lives
+`bootstrap --cleanup` (the wizard's Clean up) uploads a stamp reading
+`remove`: the next cycle stops the twin's containers (`docker compose
+down -v --remove-orphans` with its env file), deletes its folder, bundle
+and stamp, and writes `removed` into the marker so the workflow can tell.
+A pair cleanup then deletes the poller task and the live dir through the
+DSM API.
 
-**Repo-level (one value serves both stacks):** `NAS_GHCR_PAT`,
-`NAS_FCM_SERVICE_ACCOUNT_JSON` (raw one-line JSON, no surrounding
-quotes — the template quotes it), `NAS_GOCARDLESS_SECRET_ID`,
-`NAS_GOCARDLESS_SECRET_KEY`, `NAS_ADMIN_SUBS`,
-`NAS_LOGODEV_SECRET_KEY`, `NAS_LOGODEV_PUBLIC_TOKEN`,
-`NAS_API_SENTRY_DSN`, and the prod-only services staging ignores:
-`NAS_GLITCHTIP_SECRET_KEY`, `NAS_GLITCHTIP_EMAIL_URL`,
-`NAS_PGADMIN_PASSWORD`, `NAS_IMPORT_WATCH_OWNER_SUB`,
-`NAS_ENABLEBANKING_APPLICATION_ID`, `NAS_ENABLEBANKING_PRIVATE_KEY_PEM`.
+## Locks and markers
 
-**Environment-scoped (production + staging each get their own):**
-- `NAS_POSTGRES_PASSWORD` — ⚠ postgres only applies a password at
-  first initdb, so both environments must START with the current
-  password (the volumes already exist); diverge them only if you ever
-  recreate the staging volume.
-- `NAS_PUSH_VAPID_PUBLIC_KEY` / `NAS_PUSH_VAPID_PRIVATE_KEY` — one
-  pair per environment (`npx web-push generate-vapid-keys`); replacing
-  a pair kills that environment's existing push subscriptions, so
-  give production the CURRENT pair and mint a fresh one for staging.
-
-## One-time NAS setup
-
-1. **Make the NAS reachable** over HTTPS (QuickConnect or a port-forward
-   to DSM, e.g. `https://<your-domain>:5001`).
-
-2. **Dedicated deploy account** (Control Panel → User): e.g. `github-deploy`,
-   member of a group with **FileStation** access and write permission to
-   the target shared folder only. **Turn 2-Step Verification OFF** for this
-   account — the login API cannot answer an interactive OTP. Give it no
-   other privileges.
-
-3. **Target folders** (File Station):
-   - `…/docker/munni` — the live stack
-   - `…/docker/munni/published` — where GitHub drops new bundles
-
-4. **Bootstrap `apply.sh`** once: copy it from this folder to
-   `…/docker/munni/apply.sh`. After that it self-updates from every
-   bundle — this is the only manual upload, ever.
-
-5. **DSM Task Scheduler** → Create → Scheduled Task → User-defined script:
-   - User: `root` (needs docker)
-   - Schedule: daily, **repeat every 5 minutes**
-   - Run command (the copy makes self-update safe — tar must never
-     overwrite the script the shell is currently reading):
-     ```
-     cd /volume1/docker/munni && cp apply.sh .apply.run && sh .apply.run
-     ```
-   Adjust the path if your volume/share differs; override with
-   `MUNNI_LIVE_DIR` / `MUNNI_PUBLISHED_DIR` env vars if needed.
-
-## GitHub secrets for the upload itself
-
-| Secret | Value |
-|---|---|
-| `SYNOLOGY_URL` | `https://<your-domain>:5001` (DSM HTTPS endpoint) |
-| `SYNOLOGY_USER` | the `github-deploy` account |
-| `SYNOLOGY_PASS` | its password |
-| `SYNOLOGY_PATH` | `/docker/munni/published` (FileStation path, no volume prefix) |
-
-Then push to master or dev (or run **Deploy to NAS** by hand) and watch
-`…/docker/munni/deploy.log` on the NAS.
-
-## Why this shape
-
-- **No SSH**: uploads use the FileStation HTTP API; the only thing that
-  runs on the NAS is the local Task Scheduler script.
-- **No secret values in git**: the template carries placeholders; values
-  live in GitHub secrets and are injected at render time.
-- **Atomic-ish**: the version stamp is uploaded last, so the poller
-  never acts on a half-uploaded bundle. A failed `update.sh` leaves the
-  running containers untouched and logs the error; prod and staging
-  fail independently.
+`.apply.lock2` + `.apply.pid` (flock; a wedged holder is killed by age),
+`.applied_version_iac_prod` / `_iac_staging` (what is applied),
+`.logto-seed-pending` / `.glitchtip-seed-pending` (retry), `pg18-restored-*.ok`.

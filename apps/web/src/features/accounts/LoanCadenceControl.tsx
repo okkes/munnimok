@@ -12,6 +12,13 @@ export interface LoanCadence {
 export const isCustomCadence = (every: RecurringEvery | undefined, everyN: number | undefined): boolean =>
   every === 'week' || (everyN ?? 1) > 1;
 
+/** #190: the due-day field parsed like the recurring form — 1..31 or
+ *  nothing (blank/invalid input stores no day) */
+export const parsedDueDay = (raw: string): number | undefined => {
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 1 && n <= 31 ? n : undefined;
+};
+
 /**
  * The loan payment's rhythm — same mechanics as the recurring form
  * (user request 2026-08-01): Monthly / Yearly presets plus a Custom

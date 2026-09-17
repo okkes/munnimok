@@ -113,6 +113,178 @@ describe('feature B join layer', () => {
     expect(metas[0].notes).toBe('weekly shop');
   });
 
+  it('#305: the CONSUMER view — a link SOMEONE ELSE attached joins the feed rows, and an archived link keeps serving history', async () => {
+    await seedFeed();
+    // re-shape the attachment as a foreign one: the viewing user never
+    // wrote it — visibleTransactions must not care WHO attached
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), {
+      attachedBy: 'someone-else',
+      attachedByName: 'Marie',
+    });
+    const store = new DexieBackend(db);
+    const txs = await visibleTransactions(store, SPACE);
+    expect(txs).toHaveLength(1); // raw2 stays behind the history gate
+    expect(txs[0].id).toBe('raw1');
+    expect(txs[0].feedSpaceId).toBe(FEED); // joined, not a legacy merge
+
+    // the sharer LEFT the space: the link archives (sync-a6) but the
+    // stored history keeps serving — the freeze stops NEW data, not old
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { archived: 1 });
+    const after = await visibleTransactions(store, SPACE);
+    expect(after).toHaveLength(1);
+    expect(after[0].id).toBe('raw1');
+  });
+
+  it('#211: the category spread is a space opinion — cats overlay onto feed rows and stay per space', async () => {
+    await seedFeed();
+    const [tx] = await visibleTransactions(new DexieBackend(db), SPACE);
+    const spread = [
+      { catId: 'groceries', amountCents: Math.abs(tx.amountCents) - 100 },
+      { catId: 'householdSupplies', amountCents: 100 },
+    ];
+    await writeTxTransform(repo, tx, { catId: 'groceries', cats: spread, needsReview: 0 });
+
+    const [again] = await visibleTransactions(new DexieBackend(db), SPACE);
+    // joinTx maps the overlay field; the view enriches each entry with
+    // its derived type (#133 r4) — the STORED overlay stays untouched
+    expect(again.cats).toEqual(spread.map((c) => ({ ...c, txType: 'expense' })));
+    const metas = await db.txMeta.where('spaceId').equals(SPACE).toArray();
+    expect(metas[0].cats).toEqual(spread); // stored on the overlay, not the raw row
+    expect((await db.transactions.get('raw1'))?.cats).toBeUndefined();
+  });
+
+  it('#133 removal: the VIEW derives every type at the join — stored values are never read', async () => {
+    await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'defpot', { name: 'Default savings', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'saving' });
+    await repo.upsert('transaction', SPACE, 'derive1', {
+      accountId: 'chk', date: '2026-07-03', amountCents: -1200, currency: 'EUR',
+      // the STORED type lies on purpose (sign-legal) — the view ignores it
+      merchant: 'Shop', catId: 'savingDeposit', txType: 'expense', needsReview: 0,
+    });
+    const store = new DexieBackend(db);
+    const view = async () => (await visibleTransactions(store, SPACE)).find((t) => t.id === 'derive1');
+
+    // a bare ◆ movement row derives its family, whatever was stored
+    expect((await view())?.txType).toBe('saving');
+    // linking the DEFAULT pot keeps the family (the counterparty rule)
+    const tx = { id: 'derive1', spaceId: SPACE, feedSpaceId: undefined, txType: 'expense', needsReview: 0, amountCents: -1200 } as never;
+    await writeTxTransform(repo, tx, { linkedAccountId: 'defpot' });
+    expect((await view())?.txType).toBe('saving');
+    // an ordinary category signs; parts derive per part with the row sign
+    await writeTxTransform(repo, tx, { linkedAccountId: null as never, catId: 'coffee' });
+    expect((await view())?.txType).toBe('expense');
+    await writeTxTransform(repo, tx, {
+      splits: [
+        { id: 'p1', catId: 'groceries', amountCents: 700 },
+        { id: 'p2', catId: 'savingDeposit', amountCents: 500 },
+        // a DEFAULT-linked part wears the family, not transfer
+        { id: 'p3', catId: 'savingDeposit', amountCents: 0, linkedAccountId: 'defpot' },
+      ],
+    });
+    const parts = (await view())?.splits ?? [];
+    expect(parts.map((s) => s.txType)).toEqual(['expense', 'saving', 'saving']);
+
+    // the adjustment marker outranks everything — flag and legacy alike
+    await repo.upsert('transaction', SPACE, 'adj1', {
+      accountId: 'chk', date: '2026-07-04', amountCents: -50, currency: 'EUR',
+      merchant: 'Fix', catId: 'groceries', txType: 'expense', needsReview: 0, adjustment: 1,
+    });
+    const store2 = new DexieBackend(db);
+    const adj = (await visibleTransactions(store2, SPACE)).find((t) => t.id === 'adj1');
+    expect(adj?.txType).toBe('adjustment');
+  });
+
+  it('#228: spread entries derive with the ROW\'s one counterparty; the row link speaks for the whole', async () => {
+    await repo.upsert('account', SPACE, 'chk', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
+    await repo.upsert('account', SPACE, 'defpot', { name: 'Default savings', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0, defaultFor: 'saving' });
+    // the settled shape: a linked movement row whose spread holds the
+    // real entry + the settled bookkeeping entry (reimbursed passes
+    // through untouched — it is bookkeeping, not a story)
+    await repo.upsert('transaction', SPACE, 'spread1', {
+      accountId: 'chk', date: '2026-07-05', amountCents: -10_000, currency: 'EUR',
+      merchant: 'Mixed', catId: 'savingDeposit', txType: 'expense', needsReview: 0,
+      linkedAccountId: 'defpot',
+      cats: [
+        { catId: 'savingDeposit', amountCents: 6_000 },
+        { catId: 'reimbursed', amountCents: 4_000 },
+      ],
+    });
+    // a REGULAR spread without any link keeps deriving by sign per entry
+    await repo.upsert('transaction', SPACE, 'spread2', {
+      accountId: 'chk', date: '2026-07-06', amountCents: -5_000, currency: 'EUR',
+      merchant: 'Plain', catId: 'groceries', txType: 'expense', needsReview: 0,
+      cats: [
+        { catId: 'groceries', amountCents: 3_000 },
+        { catId: 'sweets', amountCents: 2_000 },
+      ],
+    });
+    const store = new DexieBackend(db);
+    const rows = await visibleTransactions(store, SPACE);
+    const settled = rows.find((t) => t.id === 'spread1');
+    // the real entry derives with the row's link (the default pot keeps
+    // the saving story); the settled entry rides untouched
+    expect(settled?.cats?.map((c) => c.txType)).toEqual(['saving', undefined]);
+    // the row's own link names the headline
+    expect(settled?.txType).toBe('saving');
+    const plain = rows.find((t) => t.id === 'spread2');
+    expect(plain?.cats?.map((c) => c.txType)).toEqual(['expense', 'expense']);
+    expect(plain?.txType).toBe('expense');
+  });
+
+  it('#152: the attachment owns the type — stamp overlay and the funding blackout', async () => {
+    await seedFeed();
+    // this space says the checking feed is a SAVINGS pot: rows stamp
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { type: 'savings' });
+    const store = new DexieBackend(db);
+    const accounts = await visibleAccounts(store, SPACE);
+    expect(accounts.find((a) => a.id === 'acct1')?.type).toBe('savings');
+    const txs = await visibleTransactions(store, SPACE);
+    expect(txs.find((t) => t.id === 'raw1')?.txType).toBe('saving');
+
+    // another space calls the SAME account funding — it completes the
+    // picture and shows nothing
+    await repo.upsert('accountLink', OTHER_SPACE, accountLinkId(OTHER_SPACE, FEED), {
+      feedSpaceId: FEED, accountId: 'acct1', historyFrom: '2026-01-01', type: 'funding',
+    });
+    expect((await visibleAccounts(store, OTHER_SPACE)).find((a) => a.id === 'acct1')?.type).toBe('funding');
+    expect(await visibleTransactions(store, OTHER_SPACE)).toEqual([]);
+  });
+
+  it('#239: a space-level display name wins in its space and NOWHERE else', async () => {
+    await seedFeed();
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { displayName: 'Our groceries card' });
+    await repo.upsert('accountLink', OTHER_SPACE, accountLinkId(OTHER_SPACE, FEED), {
+      feedSpaceId: FEED, accountId: 'acct1', historyFrom: '2026-01-01',
+    });
+    const store = new DexieBackend(db);
+    expect((await visibleAccounts(store, SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Our groceries card');
+    // the other space (and the global row) keep the global name
+    expect((await visibleAccounts(store, OTHER_SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Bank · 6789');
+    expect((await store.get('account', 'acct1'))?.name).toBe('Bank · 6789');
+    // clearing the override falls back to the global name
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, FEED), { displayName: null as never });
+    expect((await visibleAccounts(store, SPACE)).find((a) => a.id === 'acct1')?.name).toBe('Bank · 6789');
+  });
+
+  it('#152: a funding counterparty derives the funding family; nothing mints into the pot', async () => {
+    await seedFeed();
+    await repo.upsert('account', SPACE, 'pot1', {
+      name: 'Family pot', type: 'funding', source: 'manual', currency: 'EUR', balanceCents: 0,
+    });
+    const store = new DexieBackend(db);
+    const tx = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'raw1')!;
+    await writeTxTransform(repo, tx, { linkedAccountId: 'pot1' });
+    // #133 removal: nothing writes the type anymore — the VIEW derives
+    // funding from the counterparty
+    const linked = (await visibleTransactions(store, SPACE)).find((t) => t.id === 'raw1');
+    expect(linked?.txType).toBe('funding');
+    // no mirror leg — the pot shows no transactions, so none are written
+    const potRows = (await store.bySpace('transaction', SPACE)).filter(
+      (t) => t.accountId === 'pot1' && t.deleted === 0,
+    );
+    expect(potRows).toEqual([]);
+  });
+
   it('legacy merged rows keep working and writing in place (dual-read)', async () => {
     await repo.upsert('transaction', SPACE, 'legacy1', {
       accountId: 'oldAcct',

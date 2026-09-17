@@ -2,7 +2,6 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
-using Munni.Api.Banking;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
 using Munni.Api.Validation;
@@ -19,7 +18,6 @@ public sealed record AdminUserDiagnosisDto(
     List<AdminFeedDto> OwnedFeeds,
     List<AdminAttachmentDto> Attachments,
     List<AdminGcLinkDto> GcLinks);
-public sealed record BankProviderChoice(string Provider);
 public sealed record AdminGrantDto(string Sub, string GrantedBySub, DateTimeOffset GrantedAtUtc, bool Bootstrap);
 public sealed record ProviderQuotaDto(string Provider, string Scope, int? Limit, int? Remaining, DateTimeOffset? ResetAtUtc, DateTimeOffset CapturedAtUtc);
 public sealed record AdminRequisitionDto(
@@ -28,9 +26,19 @@ public sealed record AdminRequisitionDto(
     string InstitutionId,
     DateTimeOffset? Created,
     int AccountCount,
-    /// <summary>true when munni has no local record — a stale leftover at GoCardless</summary>
+    /// <summary>true when the consent is dead at GoCardless (gone or expired) while THIS environment still records it</summary>
     bool Stale,
     string? OwnerSub);
+
+/// <summary>
+/// THIS environment's connections only. The GoCardless account is shared
+/// by every munni environment (prod/staging/twins), so the remote listing
+/// contains foreign consents — they are counted, never listed and never
+/// deletable from here (a staging admin once saw prod's healthy consents
+/// flagged "stale" with a working delete button — a cross-environment
+/// foot-gun, 2026-08-27).
+/// </summary>
+public sealed record AdminRequisitionListDto(List<AdminRequisitionDto> Requisitions, int ForeignCount);
 
 /// <summary>
 /// Admin area: user overview + GoCardless requisition management (list
@@ -47,8 +55,6 @@ public static class AdminEndpoints
             await IsAdminAsync(http, db, config)
                 ? Results.Ok(new { admin = true, gocardless = goCardlessEnabled, banking = bankingEnabled })
                 : Results.Forbid());
-
-        if (bankingEnabled) MapBankProvider(group);
 
         group.MapGet("/users", ListUsers);
         // operator-initiated removal, same pipeline as the user's own
@@ -192,53 +198,49 @@ public static class AdminEndpoints
         var remote = await gc.ListRequisitionsAsync();
         var local = await db.GcRequisitions.ToListAsync();
         var owners = await db.Users.ToDictionaryAsync(u => u.Id, u => u.Sub);
-        var localByRemoteId = local.ToDictionary(l => l.RequisitionId);
-        return Results.Ok(remote
-            .OrderByDescending(r => r.Created)
-            .Select(r =>
+        var remoteById = remote.ToDictionary(r => r.Id);
+        var localIds = local.Select(l => l.RequisitionId).ToHashSet();
+        var requisitions = local
+            // interrupted journeys can re-use a consent — one row per consent
+            .GroupBy(l => l.RequisitionId)
+            .Select(g => g.OrderByDescending(l => l.CreatedAt).First())
+            .Select(l =>
             {
-                var known = localByRemoteId.GetValueOrDefault(r.Id);
+                var r = remoteById.GetValueOrDefault(l.RequisitionId);
                 return new AdminRequisitionDto(
-                    r.Id, r.Status, r.InstitutionId, r.Created, r.Accounts.Count,
-                    Stale: known is null,
-                    OwnerSub: known is null ? null : owners.GetValueOrDefault(known.UserId));
+                    l.RequisitionId,
+                    r?.Status ?? "gone",
+                    l.InstitutionId,
+                    r?.Created ?? l.CreatedAt,
+                    r?.Accounts.Count ?? 0,
+                    // dead at the provider while we still track it
+                    Stale: r is null || r.Status == "EX",
+                    OwnerSub: owners.GetValueOrDefault(l.UserId));
             })
-            .ToList());
+            .OrderByDescending(d => d.Created)
+            .ToList();
+        return Results.Ok(new AdminRequisitionListDto(requisitions, ForeignCount: remote.Count(r => !localIds.Contains(r.Id))));
     }
 
     private static async Task<IResult> DeleteRequisition(string requisitionId, HttpContext http, AppDbContext db, IConfiguration config, IGoCardlessApi gc)
     {
         if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-        await gc.DeleteRequisitionAsync(requisitionId); // frees the GC connection slot
         var local = await db.GcRequisitions.FirstOrDefaultAsync(r => r.RequisitionId == requisitionId);
-        if (local is not null)
-        {
-            var linked = await db.GcLinkedAccounts.Where(a => a.RequisitionId == local.Id).ToListAsync();
-            db.GcLinkedAccounts.RemoveRange(linked); // stops scheduled fetching
-            db.GcRequisitions.Remove(local);
-            await db.SaveChangesAsync();
-        }
+        // NEVER touch a consent this environment doesn't own — the GC
+        // account is shared, and deleting here would revoke another
+        // environment's live bank connection
+        if (local is null) return Results.NotFound(new { error = "not this environment's connection — manage it from its own admin" });
+        await gc.DeleteRequisitionAsync(requisitionId); // frees the GC connection slot
+        var linked = await db.GcLinkedAccounts.Where(a => a.RequisitionId == local.Id).ToListAsync();
+        db.GcLinkedAccounts.RemoveRange(linked); // stops scheduled fetching
+        db.GcRequisitions.RemoveRange(await db.GcRequisitions.Where(r => r.RequisitionId == requisitionId).ToListAsync());
+        await db.SaveChangesAsync();
         return Results.Ok();
     }
 
-    /// <summary>which provider serves NEW bank consents (user request) —
-    /// existing accounts keep the provider that created them</summary>
-    private static void MapBankProvider(IEndpointRouteBuilder group)
-    {
-        group.MapGet("/bank-provider", async (HttpContext http, AppDbContext db, IConfiguration config, BankProviderRegistry registry) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            return Results.Ok(new { active = await registry.ActiveIdAsync(db), configured = registry.ConfiguredIds });
-        });
-
-        group.MapPut("/bank-provider", async (BankProviderChoice choice, HttpContext http, AppDbContext db, IConfiguration config, BankProviderRegistry registry) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            return await registry.SetActiveAsync(db, choice.Provider)
-                ? Results.Ok(new { active = choice.Provider })
-                : Results.BadRequest(new { error = "provider not configured" });
-        });
-    }
+    // /admin/bank-provider retired (#175): the END USER picks the
+    // provider at connect time, so there is no admin-selected "active"
+    // provider anymore — existing accounts keep the one that created them.
 
     /// <summary>grant/revoke admin from the console (AD2): the env list
     /// stays as un-demotable bootstrap; grants live in the database</summary>
@@ -293,14 +295,18 @@ public static class AdminEndpoints
     /// normal sync traffic — the console shows remaining/reset per scope</summary>
     private static void MapQuota(IEndpointRouteBuilder group)
     {
-        group.MapGet("/quota", async (HttpContext http, AppDbContext db, IConfiguration config) =>
-        {
-            if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
-            var rows = await db.ProviderQuotas.OrderBy(q => q.Provider).ThenBy(q => q.Scope).ToListAsync();
-            return Results.Ok(rows
-                .Select(q => new ProviderQuotaDto(q.Provider, q.Scope, q.Limit, q.Remaining, q.ResetAtUtc, q.CapturedAtUtc))
-                .ToList());
-        });
+        group.MapGet("/quota", GetQuota);
+    }
+
+    /// <summary>shared with /control/quota: the snapshots describe the SHARED
+    /// provider account, so both consoles serve the identical payload</summary>
+    internal static async Task<IResult> GetQuota(HttpContext http, AppDbContext db, IConfiguration config)
+    {
+        if (!await IsAdminAsync(http, db, config)) return Results.Forbid();
+        var rows = await db.ProviderQuotas.OrderBy(q => q.Provider).ThenBy(q => q.Scope).ToListAsync();
+        return Results.Ok(rows
+            .Select(q => new ProviderQuotaDto(q.Provider, q.Scope, q.Limit, q.Remaining, q.ResetAtUtc, q.CapturedAtUtc))
+            .ToList());
     }
 
     private static HashSet<string> BootstrapSubs(IConfiguration config) =>
@@ -312,7 +318,8 @@ public static class AdminEndpoints
     internal static Task<bool> IsAdminForCatalogAsync(HttpContext http, AppDbContext db, IConfiguration config)
         => IsAdminAsync(http, db, config);
 
-    private static async Task<bool> IsAdminAsync(HttpContext http, AppDbContext db, IConfiguration config)
+    // internal: the /control group (ControlEndpoints) shares this exact gate
+    internal static async Task<bool> IsAdminAsync(HttpContext http, AppDbContext db, IConfiguration config)
     {
         var user = await db.Users.FindAsync(http.GetUserId());
         if (user is null) return false;

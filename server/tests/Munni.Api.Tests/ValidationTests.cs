@@ -141,4 +141,18 @@ public class ValidationTests
             .Validate(new CreateRequisitionRequest("space1", "ING_INGBNL2A", url));
         Assert.Equal(valid, result.IsValid);
     }
+
+    // #175: the user's provider pick — a known name or nothing at all
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("gocardless", true)]
+    [InlineData("enablebanking", true)]
+    [InlineData("plaid", false)]
+    [InlineData("", false)]
+    public void Requisition_provider_pick_must_name_a_known_provider(string? provider, bool valid)
+    {
+        var result = new CreateRequisitionRequestValidator()
+            .Validate(new CreateRequisitionRequest("space1", "ING_INGBNL2A", "https://munni.example/gc-callback", null, provider));
+        Assert.Equal(valid, result.IsValid);
+    }
 }

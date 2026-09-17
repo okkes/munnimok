@@ -78,18 +78,40 @@ describe('history start moves (arc 5)', () => {
     expect(visible).toEqual(['feed-in', 'feed-older', 'own-in', 'own-old']);
   });
 
-  it('back-fills gateless links from the space start, once (old-import heal)', async () => {
-    const { migrateUngatedLinks } = await import('./historyStart');
+  it('#259: back-fills gateless links from the space start — every boot, no marker', async () => {
+    const { healGatelessLinks } = await import('./historyStart');
     const { store, repo } = await seeded();
-    // an old-import link: attached with NO gate — every feed row leaked
+    // a server-minted link: the connect mirror op carries NO gate
     await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feed2'), {
       feedSpaceId: 'feed2', accountId: 'a-feed2', archived: 0,
     });
-    expect(await migrateUngatedLinks(store, repo)).toBe(1);
+    expect(await healGatelessLinks(store, repo)).toBe(1);
     expect((await store.get('accountLink', accountLinkId(SPACE, 'feed2')))?.historyFrom).toBe('2026-05-01');
     // the seeded link already had its gate — untouched
     expect((await store.get('accountLink', accountLinkId(SPACE, FEED)))?.historyFrom).toBe('2026-05-01');
-    // marker gates the rerun
-    expect(await migrateUngatedLinks(store, repo)).toBe(0);
+    // idempotent: a second boot writes nothing
+    expect(await healGatelessLinks(store, repo)).toBe(0);
+    // a link syncing in AFTER the first pass (the marker bug's blind
+    // spot: device B booted against an empty DB) still heals next boot
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feed3'), {
+      feedSpaceId: 'feed3', accountId: 'a-feed3', archived: 0,
+    });
+    expect(await healGatelessLinks(store, repo)).toBe(1);
+    expect((await store.get('accountLink', accountLinkId(SPACE, 'feed3')))?.historyFrom).toBe('2026-05-01');
+  });
+
+  it('#259: a gateless link falls back to the SPACE start at read time — no heal needed', async () => {
+    const { store, repo } = await seeded();
+    // device B's reality: the link arrived by sync without a gate and
+    // no heal has run yet — the space date must still govern the list
+    await repo.upsert('accountLink', SPACE, accountLinkId(SPACE, 'feed2'), {
+      feedSpaceId: 'feed2', accountId: 'a-feed2', archived: 0,
+    });
+    const feedBase = { accountId: 'a-feed2', currency: 'EUR', merchant: 'BANK2', txType: 'expense' as const, needsReview: 0 as const };
+    await repo.upsert('transaction', 'feed2', 'f2-in', { ...feedBase, date: '2026-05-20', amountCents: -300 });
+    await repo.upsert('transaction', 'feed2', 'f2-older', { ...feedBase, date: '2026-04-20', amountCents: -400 });
+    const visible = (await visibleTransactions(store, SPACE)).map((t) => t.id).sort((a, b) => a.localeCompare(b));
+    // f2-older sits before the space start: hidden even with no link gate
+    expect(visible).toEqual(['f2-in', 'feed-in', 'own-in']);
   });
 });

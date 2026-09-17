@@ -6,10 +6,18 @@ import { localToday } from '@/application/recurring';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
-import { addDays, nextDueDate } from '@/domain/recurring';
+import { addDays } from '@/domain/recurring';
+import {
+  upcomingHorizon,
+  upcomingLoanAmountCents,
+  upcomingLoanPayments,
+  upcomingRecAmountCents,
+  upcomingRecurrings,
+} from '@/domain/upcoming';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
-import type { RecurringRow } from '@/db/types';
+import { LoanFace } from './UpcomingScreen';
 import { LOCALES, useLang } from '@/i18n';
+import type { TFunc, TranslationKey } from '@/i18n';
 import { useSession } from '@/app/session';
 import { useTopSplit } from '@/features/splits/useTopSplit';
 import { useData } from '@/app/data';
@@ -24,7 +32,7 @@ import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
 import { useCategories } from '@/features/categories/useCategories';
 import { safeToSpend } from '@/domain/cashflow';
-import { BAND_MODES, bandEligible, bandIncludes, bandModeOf } from '@/domain/balanceBand';
+import { BAND_MODES, bandEditable, bandEligible, bandIncludes, bandModeOf } from '@/domain/balanceBand';
 import { minIso, netWorthSeries } from '@/domain/trends';
 import { Line } from '@/ui/charts/Line';
 import { cleanBankText } from '@/lib/text';
@@ -43,7 +51,7 @@ import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { budgetDaysLeft } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
-import { sumCents } from '@/lib/rates';
+import { convertCents, sumCents } from '@/lib/rates';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { setDisplayCurrency } from '@/features/currency/displayCurrencyPref';
 import { CURRENCIES } from '@/domain/countries';
@@ -51,6 +59,13 @@ import { AppBar } from '@/ui/AppBar';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { TxRow } from '@/ui/TxRow';
+import { presetTxFilters } from '@/features/transactions/txFilters';
+import { TxFormSheet } from '@/features/transactions/TxFormSheet';
+import { StatementImportFlow } from '@/features/accounts/StatementImportFlow';
+import { setCategoriesCreateIntent } from '@/features/categories/categoriesHandoff';
+import { setSpaceAddAccountIntent } from '@/features/spaces/spaceAccountsHandoff';
+import { setFriendsAddIntent } from '@/features/friends/friendsHandoff';
+import { setSpacesCreateIntent } from '@/features/spaces/spacesHandoff';
 
 const TILE_META: Record<OverviewKind, { icon: string; color: string; field: keyof OverviewSummary; signed?: boolean }> = {
   income: { icon: 'cash-plus', color: 'var(--m-accent)', field: 'incomeCents' },
@@ -69,6 +84,130 @@ const tileValueClass = (kind: OverviewKind, cents: number): string => {
   return cents < 0 ? 'text-negative' : 'text-accent-deep';
 };
 
+/** #327 r3 (user): the square tiles sit inside the card's rounded
+ *  overflow-hidden frame — each corner tile owns the card's corner so
+ *  the inset focus ring hugs the visible shape instead of being sliced */
+const tileCorners = (i: number, len: number): string =>
+  [i === 0 && 'rounded-tl-card', i === 1 && 'rounded-tr-card', i === len - 2 && 'rounded-bl-card', i === len - 1 && 'rounded-br-card']
+    .filter(Boolean)
+    .join(' ');
+
+/** #313 (user): a sparse desktop home keeps ONE centered column — the
+ *  block width the user liked (~720px) with emptiness on both sides */
+const SINGLE_COLUMN_LG = 'lg:mx-auto lg:max-w-[720px]';
+
+/** #313 (user ss): unused blocks render null (their door lives inside
+ *  Explore), so counting CONFIGURED blocks kept a broken half-empty grid
+ *  on nearly empty homes — only blocks that actually render earn a
+ *  column (#155's bar of four). While the core data still loads the
+ *  configured count stands in, so a content-rich home does not flash
+ *  single-column on arrival. Out of the component for S3776. */
+function resolveRenderedBlocks(
+  visible: { id: HomeBlockId }[],
+  renderers: Record<HomeBlockId, () => React.ReactNode>,
+  dataReady: boolean,
+): { rendered: { id: HomeBlockId; node: React.ReactNode }[]; twoColumns: boolean } {
+  const rendered = visible
+    .map((entry) => ({ id: entry.id, node: renderers[entry.id]() }))
+    .filter((entry) => entry.node !== null);
+  const contentCount = dataReady ? rendered.length : visible.length;
+  return { rendered, twoColumns: contentCount >= 4 };
+}
+
+/** a block's teaser descriptor (#121) — present only while the feature
+ *  is unused AND its data has loaded enough to know */
+interface TeaserDesc {
+  icon: string;
+  titleKey: TranslationKey;
+  subKey: TranslationKey;
+  to: string;
+  testId: string;
+}
+
+/** #121: which blocks are in their unused/teaser state right now — the
+ *  conditions mirror each block's own teaser branch. Out of the
+ *  component for S3776. */
+function buildTeaserMap(state: {
+  hasBudgets: boolean;
+  identityKind: string | undefined;
+  topSplit: unknown;
+  eventsLoaded: boolean;
+  featuredEvent: unknown;
+  goalsLoaded: boolean;
+  topGoalsCount: number;
+  debtsLoaded: boolean;
+  activeDebtsCount: number;
+}): Partial<Record<HomeBlockId, TeaserDesc>> {
+  const map: Partial<Record<HomeBlockId, TeaserDesc>> = {};
+  if (!state.hasBudgets) {
+    map.budgets = { icon: 'wallet-outline', titleKey: 'home.budgetsTeaserTitle', subKey: 'home.budgetsTeaserSub', to: '/budgets', testId: 'home-budgets-teaser' };
+  }
+  if (state.identityKind === 'user' && state.topSplit === null) {
+    map.splits = { icon: 'account-cash-outline', titleKey: 'home.splitsTeaserTitle', subKey: 'home.splitsTeaserSub', to: '/splits', testId: 'home-splits-teaser' };
+  }
+  if (state.eventsLoaded && !state.featuredEvent) {
+    map.events = { icon: 'party-popper', titleKey: 'home.eventsTeaserTitle', subKey: 'home.eventsTeaserSub', to: '/events', testId: 'home-events-teaser' };
+  }
+  if (state.goalsLoaded && state.topGoalsCount === 0) {
+    map.goals = { icon: 'flag-outline', titleKey: 'home.goalsTeaserTitle', subKey: 'home.goalsTeaserSub', to: '/goals', testId: 'home-goals-teaser' };
+  }
+  if (state.debtsLoaded && state.activeDebtsCount === 0) {
+    map.debts = { icon: 'hand-coin-outline', titleKey: 'home.debtsTeaserTitle', subKey: 'home.debtsTeaserSub', to: '/debts', testId: 'home-debts-teaser' };
+  }
+  return map;
+}
+
+/** the fixed row order inside Explore (the features that can teaser) */
+const EXPLORE_FEATURES: readonly HomeBlockId[] = ['budgets', 'goals', 'debts', 'events', 'splits'];
+
+/** #121 v2: Explore is a first-class block — it lives in Customize Home
+ *  like any other, so the user orders and hides it themselves. It lists
+ *  every feature the space hasn't used yet as a one-line door and
+ *  disappears once everything is in use. The standalone dashed teaser
+ *  cards retired with it. Out of the component for S3776. */
+function renderExploreList(
+  teaserOf: Partial<Record<HomeBlockId, TeaserDesc>>,
+  go: (to: string) => void,
+  t: TFunc,
+): React.ReactNode {
+  const ids = EXPLORE_FEATURES.filter((id) => teaserOf[id]);
+  if (ids.length === 0) return null;
+  return (
+    <div className="mt-5" data-testid="home-explore">
+      <div className="m-cap mb-1 px-1">{t('home.exploreTitle')}</div>
+      <div className="overflow-hidden rounded-card border border-dashed border-line bg-surface">
+        {ids.map((eid) => {
+          const row = teaserOf[eid]!;
+          return (
+            <button
+              key={eid}
+              data-testid={`home-explore-${eid}`}
+              onClick={() => go(row.to)}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+            >
+              <Icon name={row.icon} size={17} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-ink">{t(row.titleKey)}</span>
+                <span className="block truncate text-[11px] text-ink-4">{t(row.subKey)}</span>
+              </span>
+              <Icon name="chevron-right" size={14} color="var(--m-ink-4)" />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** #361: the entrance fade plays ONCE per session — replaying it on
+ *  every tab return read as the whole screen reloading */
+let homeFadedOnce = false;
+function homeFadeClass(): string {
+  if (homeFadedOnce) return '';
+  homeFadedOnce = true;
+  return 'm-fade';
+}
+
 export function HomeScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -76,11 +215,15 @@ export function HomeScreen() {
   const identity = useSession((s) => s.identity);
   const topSplit = useTopSplit();
   const [accountsOpen, setAccountsOpen] = useState(false);
+  // #180: the quick-add speed dial + its two in-place hosts
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [quickTxOpen, setQuickTxOpen] = useState(false);
+  const [quickImportOpen, setQuickImportOpen] = useState(false);
 
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
   const cats = useCategories();
-  const { newTxs, ackAll } = useNewTransactions(allTxs);
+  const { newTxs } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
   const needsOnboarding = useQuery(store, async () => store.metaGet('needsOnboarding'), []);
@@ -88,7 +231,7 @@ export function HomeScreen() {
     if (needsOnboarding?.value === true) void navigate({ to: '/onboarding' });
   }, [needsOnboarding, navigate]);
 
-  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId], undefined, `space:${spaceId}`);
   const currency = space?.currency ?? accounts?.[0]?.currency ?? 'EUR';
   // the band total is convert-then-sum (currency plan): into the display
   // currency when set, else the ledger currency — no more silent numeric
@@ -136,15 +279,29 @@ export function HomeScreen() {
   const budgets = useBudgets();
   const urgentBudgets = useMemo(() => (budgetStatuses ?? []).slice(0, 3), [budgetStatuses]);
   const hasBudgets = (budgets?.length ?? 0) > 0;
+  // #334 (user): the row-building is shared with the /upcoming see-all
+  // landing (domain/upcoming) so block and landing can never drift
   const upcoming = useMemo(() => {
     const today = localToday();
-    const horizon = addDays(today, 7);
-    return (recurrings ?? [])
-      .map((rec) => ({ rec, nextDue: nextDueDate(rec, today) }))
-      .filter((u): u is { rec: RecurringRow; nextDue: string } => u.nextDue !== null && u.nextDue <= horizon)
-      .sort((a, b) => a.nextDue.localeCompare(b.nextDue))
-      .slice(0, 4);
+    return upcomingRecurrings(recurrings ?? [], today, addDays(today, 7)).slice(0, 4);
   }, [recurrings]);
+  // #266 (user): loan payment plans join the coming-up story — same
+  // horizon, clearly labeled so recurring vs debt reads apart
+  const upcomingDebts = useMemo(() => {
+    const today = localToday();
+    return upcomingLoanPayments(accounts ?? [], today, addDays(today, 7)).slice(0, 3);
+  }, [accounts]);
+  // #334 r2 (user): the see-all door only earns its place when the
+  // landing (uncapped, period-wide — same shared builders + window)
+  // would list MORE rows than the block already shows
+  const upcomingHasMore = useMemo(() => {
+    const today = localToday();
+    const horizon = upcomingHorizon(space, today);
+    const landingCount =
+      upcomingRecurrings(recurrings ?? [], today, horizon).length +
+      upcomingLoanPayments(accounts ?? [], today, horizon).length;
+    return landingCount > upcoming.length + upcomingDebts.length;
+  }, [space, recurrings, accounts, upcoming, upcomingDebts]);
 
   // landing-zone blocks that only appear once the feature is in use.
   // one event only: running now, else the next upcoming, else the latest
@@ -186,11 +343,20 @@ export function HomeScreen() {
     return toAllocateCents(window, allTxs ?? [], accountsById, allocations);
   }, [allocations, space?.periodType, space?.periodDay, allTxs, accounts]);
 
-  // cash-flow forecast (F1): shows nothing rather than a wrong number
+  // cash-flow forecast (F1): shows nothing rather than a wrong number.
+  // #349: mixed-currency accounts summed RAW made the liquid base lie —
+  // convert each balance into the ledger currency first (a missing rate
+  // keeps the raw figure; still better than dropping the account)
   const forecast = useMemo(() => {
     if (!accounts || !allTxs || !recurrings) return null;
+    const day = display?.cache.days.latest;
+    const converted = accounts.map((a) =>
+      a.currency && a.currency !== currency
+        ? { ...a, balanceCents: convertCents(a.balanceCents, a.currency, currency, day, display?.manual) ?? a.balanceCents }
+        : a,
+    );
     return safeToSpend({
-      accounts,
+      accounts: converted,
       txs: allTxs,
       recurrings,
       allocations,
@@ -198,29 +364,32 @@ export function HomeScreen() {
       period,
       today: localToday(),
     });
-  }, [accounts, allTxs, recurrings, allocations, cats, period]);
+  }, [accounts, allTxs, recurrings, allocations, cats, period, currency, display]);
   const [forecastOpen, setForecastOpen] = useState(false);
 
-  // the include/exclude toggle: custom keeps its own include list, the
-  // sum modes keep an exclusion list (absent = everything counts)
+  // #142 (user): only "Picked accounts" takes toggles — its include list
   const toggleBandAccount = async (accountId: string) => {
+    if (!bandEditable(bandMode)) return;
     // read the row FRESH: two quick toggles from the render-stale space
     // object dropped the first write (review finding)
     const live = await store.get('space', spaceId);
     if (!live) return;
-    const key = bandMode === 'custom' ? 'balanceBandAccounts' : 'balanceBandExclude';
-    const current = live[key] ?? [];
+    const current = live.balanceBandAccounts ?? [];
     const next = current.includes(accountId) ? current.filter((id) => id !== accountId) : [...current, accountId];
-    await repo.upsert('space', spaceId, spaceId, { [key]: next });
+    await repo.upsert('space', spaceId, spaceId, { balanceBandAccounts: next });
   };
 
-  // spendable rides the forecast (ledger currency, no conversion lens);
-  // no payday/liquid yet → an honest dash beats a wrong number
+  // spendable rides the forecast (summed in the LEDGER currency above);
+  // no payday/liquid yet → an honest dash beats a wrong number.
+  // #349: it renders through the same display lens as every other money
+  // on this card — the raw fmtCents pinned it to the ledger currency
   const spendableBand = bandMode === 'spendable';
   const bandCents = spendableBand ? (forecast?.cents ?? null) : bandTotal.cents;
   const bandApprox = !spendableBand && bandTotal.approximate ? '≈ ' : '';
-  const bandShownCurrency = spendableBand ? currency : bandCurrency;
-  const bandLabel = bandCents === null ? '—' : `${bandApprox}${fmtCents(bandCents, bandShownCurrency, lang)}`;
+  let bandLabel = '—';
+  if (bandCents !== null) {
+    bandLabel = spendableBand ? fmt(bandCents, currency) : `${bandApprox}${fmtCents(bandCents, bandCurrency, lang)}`;
+  }
 
   // each landing-zone block renders through this registry so the
   // per-space layout (order + visibility) can rearrange them
@@ -230,6 +399,7 @@ export function HomeScreen() {
     networth: renderNetworthBlock,
     overview: renderOverviewBlock,
     transactions: renderTransactionsBlock,
+    explore: () => renderExploreList(teaserOf, (to) => void navigate({ to }), t),
     budgets: renderBudgetsBlock,
     allocation: renderAllocationBlock,
     upcoming: renderUpcomingBlock,
@@ -242,8 +412,25 @@ export function HomeScreen() {
   const layout = resolveHomeBlocks(space);
   const visibleBlocks = layout.filter((entry) => !entry.hidden);
 
+  // #121 v2: the unused/teaser states, resolved in one place (module fn)
+  const teaserOf = buildTeaserMap({
+    hasBudgets,
+    identityKind: identity?.kind,
+    topSplit,
+    eventsLoaded: !!events,
+    featuredEvent,
+    goalsLoaded: !!goals,
+    topGoalsCount: topGoals.length,
+    debtsLoaded: !!debtStatuses,
+    activeDebtsCount: activeDebts.length,
+  });
+
+  // #313 (user ss): the columns follow what actually RENDERS — see
+  // resolveRenderedBlocks (#155: the split earns its keep with 4+)
+  const { rendered: renderedBlocks, twoColumns } = resolveRenderedBlocks(visibleBlocks, blockRenderers, allTxs !== undefined);
+
   return (
-    <div className="m-fade flex h-full flex-col" data-testid="screen-home">
+    <div className={`${homeFadeClass()} relative flex h-full flex-col`} data-testid="screen-home">
       {/* ≤3 trailing actions (redesign §2H): customize moved to the end of
           the block list, where the blocks actually live */}
       <AppBar
@@ -258,12 +445,70 @@ export function HomeScreen() {
           </>
         }
       />
+      {/* #180 (user): the quick-add speed dial — one floating door to the
+          six most common creations, in the user's stated order */}
+      <button
+        data-testid="home-fab"
+        aria-label={t('home.quickAdd')}
+        onClick={() => setQuickOpen(true)}
+        className="m-tap absolute right-4 bottom-4 z-30 flex h-14 w-14 items-center justify-center rounded-full border-none bg-brand text-on-brand shadow-[0_4px_16px_rgba(0,0,0,0.25)]"
+      >
+        <Icon name="plus" size={26} />
+      </button>
+      <Sheet open={quickOpen} onOpenChange={setQuickOpen} title={t('home.quickAdd')} size="form">
+        <div className="flex flex-col pt-1" data-testid="home-quick-sheet">
+          {(
+            [
+              ['tx', 'receipt-text-plus-outline', () => setQuickTxOpen(true)],
+              ['import', 'file-upload-outline', () => setQuickImportOpen(true)],
+              ['category', 'shape-plus-outline', () => {
+                setCategoriesCreateIntent();
+                void navigate({ to: '/categories' });
+              }],
+              ['account', 'bank-plus', () => {
+                setSpaceAddAccountIntent();
+                void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
+              }],
+              ['friend', 'account-plus-outline', () => {
+                setFriendsAddIntent();
+                void navigate({ to: '/friends' });
+              }],
+              ['space', 'home-plus-outline', () => {
+                setSpacesCreateIntent();
+                void navigate({ to: '/spaces' });
+              }],
+            ] as const
+          ).map(([id, icon, go]) => (
+            <button
+              key={id}
+              data-testid={`home-quick-${id}`}
+              onClick={() => {
+                setQuickOpen(false);
+                go();
+              }}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-1 py-3.5 text-left text-[15px] text-ink last:border-0"
+            >
+              <Icon name={icon} size={20} color="var(--m-accent-deep)" />
+              {t(`home.quick.${id}`)}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+      {/* the FAB's in-place hosts — sheets are siblings (#241 rule) */}
+      <TxFormSheet open={quickTxOpen} onOpenChange={setQuickTxOpen} />
+      <StatementImportFlow open={quickImportOpen} onOpenChange={setQuickImportOpen} />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* desktop ruling (§4.4) + D4: strict two-column split — the
             balance heads the left column (a 1040px band saying one number
             wasted the width), the nudges head the right; on mobile the
-            grid dissolves and the DOM order is balance → nudges → blocks */}
-        <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6">
+            grid dissolves and the DOM order is balance → nudges → blocks.
+            #155 (user ss): with only a couple of blocks the split read
+            as broken — sparse homes keep ONE centered column instead
+            (#313: centered on what actually RENDERS, a bit wider) */}
+        <div
+          data-testid="home-columns"
+          className={twoColumns ? 'lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6' : SINGLE_COLUMN_LG}
+        >
           {/* slim balance band: one line; accounts fold out on tap. The
               fold-out lives BESIDE the header button (nested buttons are
               invalid HTML — the quick lens toggle needs its own) */}
@@ -304,13 +549,12 @@ export function HomeScreen() {
                   </div>
                   <div className="mt-2 flex flex-col gap-1" data-testid="home-balance-accounts">
                     {(accounts ?? []).map((a) => {
-                      const eligible = bandEligible(bandMode, a);
                       const included = bandIncludes(bandMode, a, space);
                       return (
-                        <div key={a.id} className={`flex items-center gap-2 text-[13px] ${eligible && !included ? 'opacity-45' : 'opacity-90'}`}>
-                          {/* per-account say in the sum (user request) —
-                              spendable is a formula and takes no toggles */}
-                          {eligible && (
+                        <div key={a.id} className={`flex items-center gap-2 text-[13px] ${included ? 'opacity-90' : 'opacity-45'}`}>
+                          {/* #142 (user): the premade modes are read-only —
+                              only Picked accounts offers the checkboxes */}
+                          {bandEditable(bandMode) && bandEligible(bandMode, a) && (
                             <input
                               data-testid={`band-acct-${a.id}`}
                               type="checkbox"
@@ -350,22 +594,28 @@ export function HomeScreen() {
 
           </div>
 
+          {/* #313: the halves split what RENDERS, so both columns carry
+              real content instead of one side collecting all the nulls */}
           <div className="min-w-0 lg:col-start-1 lg:row-start-2">
-            {visibleBlocks.slice(0, Math.ceil(visibleBlocks.length / 2)).map((entry) => (
-              <div key={entry.id}>{blockRenderers[entry.id]()}</div>
+            {(twoColumns ? renderedBlocks.slice(0, Math.ceil(renderedBlocks.length / 2)) : renderedBlocks).map((entry) => (
+              <div key={entry.id}>{entry.node}</div>
             ))}
           </div>
-          <div className="min-w-0 lg:col-start-2 lg:row-start-2">
-            {visibleBlocks.slice(Math.ceil(visibleBlocks.length / 2)).map((entry) => (
-              <div key={entry.id}>{blockRenderers[entry.id]()}</div>
-            ))}
-          </div>
+          {twoColumns && (
+            <div className="min-w-0 lg:col-start-2 lg:row-start-2">
+              {renderedBlocks.slice(Math.ceil(renderedBlocks.length / 2)).map((entry) => (
+                <div key={entry.id}>{entry.node}</div>
+              ))}
+            </div>
+          )}
         </div>
 
+        {/* #313: the door joins the centered column on sparse desktops —
+            a full-width stray made the rest read off-center */}
         <button
           data-testid="home-customize"
           onClick={() => void navigate({ to: '/home/customize' })}
-          className="m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3"
+          className={'m-tap mt-5 flex w-full items-center justify-center gap-2 rounded-card border border-dashed border-line bg-transparent py-3 text-[13px] font-medium text-ink-3' + (twoColumns ? '' : ' ' + SINGLE_COLUMN_LG)}
         >
           <Icon name="tune-variant" size={16} />
           {t('home.customize')}
@@ -375,6 +625,9 @@ export function HomeScreen() {
       {/* quick display-currency picker (band fold-out shortcut) — the
           full setting with the offline manual rates lives on Profile */}
       <Sheet open={lensOpen} onOpenChange={setLensOpen} title={t('profile.displayCurrency')} size="form" dragHandle>
+        {/* #150 (user): the lens needs its one-line story — same copy the
+            full setting on Profile carries */}
+        <p className="pb-2 text-[12px] leading-relaxed text-ink-3">{t('profile.displayCurrencyInfo')}</p>
         <div className="flex flex-col pt-1">
           <button
             data-testid="band-lens-off"
@@ -505,7 +758,7 @@ export function HomeScreen() {
               onClick={() => void navigate({ to: '/overview/$kind', params: { kind } })}
               className={`m-tap flex items-center gap-2.5 border-none bg-transparent px-4 py-3 text-left ${
                 i % 2 === 1 ? 'border-l border-l-line-2' : ''
-              } ${i > 1 ? 'border-t border-t-line-2' : ''}`}
+              } ${i > 1 ? 'border-t border-t-line-2' : ''} ${tileCorners(i, OVERVIEW_KINDS.length)}`}
             >
               <span
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
@@ -619,24 +872,8 @@ export function HomeScreen() {
   }
 
   function renderBudgetsBlock() {
-    // never made a budget? a quiet get-started teaser instead of silence —
-    // hideable like any block via Customize Home
-    if (!hasBudgets) {
-      return (
-        <button
-          data-testid="home-budgets-teaser"
-          onClick={() => void navigate({ to: '/budgets' })}
-          className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3.5 text-left"
-        >
-          <Tile icon="wallet-outline" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-[14px] font-semibold text-ink">{t('home.budgetsTeaserTitle')}</span>
-            <span className="block text-[12px] text-ink-3">{t('home.budgetsTeaserSub')}</span>
-          </span>
-          <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-        </button>
-      );
-    }
+    // unused features live in the Explore block now (#121 v2)
+    if (!hasBudgets) return null;
     if (urgentBudgets.length === 0) return null;
     return (
       <>
@@ -688,18 +925,23 @@ export function HomeScreen() {
   }
 
   function renderUpcomingBlock() {
-    if (upcoming.length === 0) return null;
+    if (upcoming.length === 0 && upcomingDebts.length === 0) return null;
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
           <span>{t('recurring.upcoming')}</span>
-          <button
-            data-testid="home-seeall-upcoming"
-            onClick={() => void navigate({ to: '/recurring' })}
-            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
-          >
-            {t('action.seeAll')}
-          </button>
+          {/* #334 (user): the block mixes recurring + loans, so see-all
+              lands on the combined list — not the recurring manager.
+              r2: hidden when the landing has nothing more to show */}
+          {upcomingHasMore && (
+            <button
+              data-testid="home-seeall-upcoming"
+              onClick={() => void navigate({ to: '/upcoming' })}
+              className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+            >
+              {t('action.seeAll')}
+            </button>
+          )}
         </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-upcoming">
           {upcoming.map(({ rec, nextDue }) => (
@@ -712,10 +954,34 @@ export function HomeScreen() {
               <RecurringVisual rec={rec} size={16} active={false} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
-                <span className="block text-[11px] text-ink-4">{fmtShort(nextDue)}</span>
+                <span className="block text-[11px] text-ink-4">
+                  {fmtShort(nextDue)} · {t('home.upcomingRecurring')}
+                </span>
+              </span>
+              {/* #334 r2 (user): unsigned — one sign story for both kinds */}
+              <span className="m-num text-[13px] font-semibold text-ink">
+                {fmt(upcomingRecAmountCents(rec), currency)}
+              </span>
+            </button>
+          ))}
+          {/* #266: the loan plans' next payments, clearly told apart */}
+          {upcomingDebts.map(({ loan, nextDue }) => (
+            <button
+              key={loan.id}
+              data-testid={`home-upcoming-debt-${loan.id}`}
+              onClick={() => void navigate({ to: '/debts/$debtId', params: { debtId: loan.id } })}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+            >
+              {/* #336 (user): the account's own face, not a stand-in */}
+              <LoanFace loan={loan} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-ink">{loan.name}</span>
+                <span className="block text-[11px] text-ink-4">
+                  {fmtShort(nextDue)} · {t('home.upcomingLoan')}
+                </span>
               </span>
               <span className="m-num text-[13px] font-semibold text-ink">
-                {fmt(rec.amountCents, currency)}
+                {fmt(upcomingLoanAmountCents(loan), currency)}
               </span>
             </button>
           ))}
@@ -765,34 +1031,13 @@ export function HomeScreen() {
     );
   }
 
-  // the good features shouldn't hide in settings: unconfigured ones get
-  // a quiet dashed door on the landing zone (hideable like any block)
-  function renderTeaser(testId: string, icon: string, titleKey: Parameters<typeof t>[0], subKey: Parameters<typeof t>[0], to: string) {
-    return (
-      <button
-        data-testid={testId}
-        onClick={() => void navigate({ to })}
-        className="m-tap mt-5 flex w-full items-center gap-3 rounded-card border border-dashed border-line bg-surface px-4 py-3.5 text-left"
-      >
-        <Tile icon={icon} />
-        <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-semibold text-ink">{t(titleKey)}</span>
-          <span className="block text-[12px] text-ink-3">{t(subKey)}</span>
-        </span>
-        <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-      </button>
-    );
-  }
-
   function renderSplitsBlock() {
     // online-only, signed-in feature: loading and every degraded state
     // renders nothing; no open split shows the teaser (user request:
     // reach the current split from Home, or all of them via see-all)
     if (identity?.kind !== 'user') return null;
     if (topSplit === undefined) return null;
-    if (topSplit === null) {
-      return renderTeaser('home-splits-teaser', 'account-cash-outline', 'home.splitsTeaserTitle', 'home.splitsTeaserSub', '/splits');
-    }
+    if (topSplit === null) return null; // Explore carries the door (#121 v2)
     const netLine = () => {
       if (topSplit.net > 0) return t('splits.summaryOwed', { amount: fmt(topSplit.net, topSplit.currency) });
       if (topSplit.net < 0) return t('splits.summaryOwe', { amount: fmt(-topSplit.net, topSplit.currency) });
@@ -827,9 +1072,7 @@ export function HomeScreen() {
   }
 
   function renderEventsBlock() {
-    if (!featuredEvent) {
-      return events ? renderTeaser('home-events-teaser', 'party-popper', 'home.eventsTeaserTitle', 'home.eventsTeaserSub', '/events') : null;
-    }
+    if (!featuredEvent) return null; // Explore carries the door (#121 v2)
     const today = localToday();
     const spent = eventSpentCents(allTxs ?? [], featuredEvent.id);
     const from = featuredEvent.from;
@@ -868,9 +1111,7 @@ export function HomeScreen() {
   }
 
   function renderGoalsBlock() {
-    if (topGoals.length === 0) {
-      return goals ? renderTeaser('home-goals-teaser', 'flag-outline', 'home.goalsTeaserTitle', 'home.goalsTeaserSub', '/goals') : null;
-    }
+    if (topGoals.length === 0) return null; // Explore carries the door (#121 v2)
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
@@ -912,20 +1153,13 @@ export function HomeScreen() {
   }
 
   function renderDebtsBlock() {
-    if (activeDebts.length === 0) {
-      return debtStatuses ? renderTeaser('home-debts-teaser', 'hand-coin-outline', 'home.debtsTeaserTitle', 'home.debtsTeaserSub', '/debts') : null;
-    }
+    if (activeDebts.length === 0) return null; // Explore carries the door (#121 v2)
+    // no see-all here (#337): the card below IS the whole door — both
+    // led to the same /debts screen
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
           <span>{t('debts.title')}</span>
-          <button
-            data-testid="home-seeall-debts"
-            onClick={() => void navigate({ to: '/debts' })}
-            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
-          >
-            {t('action.seeAll')}
-          </button>
         </div>
         <button
           data-testid="home-debts"
@@ -993,7 +1227,10 @@ export function HomeScreen() {
           <button
             data-testid="home-newtx-all"
             onClick={() => {
-              void ackAll();
+              // #148 r2 (user): NEW = first-seen within 24h, not
+              // unreviewed — seeing the list must NOT clear the badges
+              // (their 24h clock does); arrive with the New lens on
+              presetTxFilters({ newOnly: true });
               void navigate({ to: '/transactions' });
             }}
             className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
@@ -1001,13 +1238,19 @@ export function HomeScreen() {
             {t('action.seeAll')}
           </button>
         </div>
-        <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="home-newtxs">
+        <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="home-newtxs">
           {newTxs.slice(0, 5).map((tx) => (
             <TxRow
               key={tx.id}
               tx={tx}
               showDate
-              onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+              onClick={() => {
+                // #358: the list BEHIND the detail must match this block
+                // — arrive with the New lens on (desktop shows both
+                // panes at once; mobile finds it on back)
+                presetTxFilters({ newOnly: true });
+                void navigate({ to: '/transactions/$txId', params: { txId: tx.id } });
+              }}
             />
           ))}
         </div>

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
-import type { AdminConfig } from './main';
+import type { AdminConfig } from './config';
 import bundledCatalog from './generated/bundledCatalog.json';
 
 interface UserDiagnosis {
@@ -29,6 +29,13 @@ interface AdminRequisition {
   stale: boolean;
   ownerSub: string | null;
 }
+/** THIS environment's connections + a count of foreign ones (the GC
+ * account is shared across environments; foreign consents are neither
+ * listed nor deletable here) */
+interface AdminRequisitionList {
+  requisitions: AdminRequisition[];
+  foreignCount: number;
+}
 interface ProviderQuota {
   provider: string;
   scope: string;
@@ -46,16 +53,6 @@ const STATUS_LABEL: Record<string, string> = {
   CR: 'created', LN: 'linked', EX: 'expired', RJ: 'rejected', SU: 'suspended',
   GA: 'authorizing', UA: 'authorizing', GC: 'consenting', SA: 'selecting',
 };
-
-const PROVIDER_LABEL: Record<string, string> = {
-  gocardless: 'GoCardless (Bank Account Data)',
-  enablebanking: 'Enable Banking',
-};
-
-interface BankProviderState {
-  active: string;
-  configured: string[];
-}
 
 type Screen = 'overview' | 'users' | 'connections' | 'catalog';
 
@@ -134,12 +131,16 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   const [sub, setSub] = useState(() => localStorage.getItem('munni_admin_sub') ?? '');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requisitions, setRequisitions] = useState<AdminRequisition[] | null>(null);
-  const [provider, setProvider] = useState<BankProviderState | null>(null);
+  const [foreignCount, setForeignCount] = useState(0);
   const [quota, setQuota] = useState<ProviderQuota[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  // 'denied' = the api really said 403; 'unreachable' = the ping never
+  // got an answer (network/CORS/5xx) — one shared message made a blocked
+  // request read as "not an admin" (found live 2026-08-28, control twin)
   const [denied, setDenied] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -158,20 +159,24 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     [config.apiUrl, getToken, sub],
   );
 
+  const blocked = denied || unreachable;
   const reload = useCallback(async () => {
     const ping = await call('/admin/ping').catch(() => null);
-    setDenied(!ping?.ok);
+    setDenied(ping?.status === 403);
+    setUnreachable(!ping || (!ping.ok && ping.status !== 403));
     if (!ping?.ok) return;
-    const [usersRes, reqRes, providerRes, quotaRes, healthRes] = await Promise.all([
+    const [usersRes, reqRes, quotaRes, healthRes] = await Promise.all([
       call('/admin/users'),
       call('/admin/gocardless/requisitions'),
-      call('/admin/bank-provider'),
       call('/admin/quota'),
       fetch(`${config.apiUrl}/health`).catch(() => null),
     ]);
     if (usersRes.ok) setUsers((await usersRes.json()) as AdminUser[]);
-    if (reqRes.ok) setRequisitions((await reqRes.json()) as AdminRequisition[]);
-    if (providerRes.ok) setProvider((await providerRes.json()) as BankProviderState);
+    if (reqRes.ok) {
+      const list = (await reqRes.json()) as AdminRequisitionList;
+      setRequisitions(list.requisitions);
+      setForeignCount(list.foreignCount);
+    }
     if (quotaRes.ok) setQuota((await quotaRes.json()) as ProviderQuota[]);
     if (healthRes?.ok) setHealth((await healthRes.json()) as HealthInfo);
     const catalogRes = await call('/catalog').catch(() => null);
@@ -195,7 +200,8 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     setBusy(false);
   };
 
-  const pickProvider = (id: string) => act(() => call('/admin/bank-provider', { method: 'PUT', body: JSON.stringify({ provider: id }) }));
+  // pickProvider retired (#175): both providers are offered to the END
+  // USER at connect time — there is no admin-selected "active" one.
   const publishCatalog = (categories: CatalogCategory[], keywords: CatalogKeywordRule[], stores: CatalogStoreRule[]) =>
     act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords, stores }) }));
   const promote = (userSub: string) => act(() => call(`/admin/admins/${encodeURIComponent(userSub)}`, { method: 'POST' }));
@@ -253,26 +259,20 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
 
       <main className="content">
         {denied && <p className="denied">This account is not on the admin list.</p>}
+        {unreachable && <p className="denied">The admin API did not answer — is the environment running (and this origin allowed)?</p>}
+        {/* blocked: no data loaded — the empty screens would only mislead */}
         {error && (
           <p className="error" data-testid="admin-error">
             {error}
           </p>
         )}
-        {!denied && screen === 'overview' && (
-          <OverviewScreen
-            users={users}
-            requisitions={requisitions}
-            quota={quota}
-            health={health}
-            provider={provider}
-            busy={busy}
-            onPickProvider={pickProvider}
-          />
+        {!blocked && screen === 'overview' && (
+          <OverviewScreen users={users} requisitions={requisitions} quota={quota} health={health} />
         )}
-        {!denied && screen === 'catalog' && catalog && (
+        {!blocked && screen === 'catalog' && catalog && (
           <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
         )}
-        {!denied && screen === 'users' && (
+        {!blocked && screen === 'users' && (
           <UsersScreen
             users={users}
             busy={busy}
@@ -288,9 +288,10 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
             }}
           />
         )}
-        {!denied && screen === 'connections' && (
+        {!blocked && screen === 'connections' && (
           <ConnectionsScreen
             requisitions={requisitions}
+            foreignCount={foreignCount}
             selected={selected}
             busy={busy}
             onToggle={(id) =>
@@ -314,17 +315,11 @@ function OverviewScreen({
   requisitions,
   quota,
   health,
-  provider,
-  busy,
-  onPickProvider,
 }: Readonly<{
   users: AdminUser[];
   requisitions: AdminRequisition[] | null;
   quota: ProviderQuota[];
   health: HealthInfo | null;
-  provider: BankProviderState | null;
-  busy: boolean;
-  onPickProvider: (id: string) => void;
 }>) {
   const linked = (requisitions ?? []).filter((r) => r.status === 'LN');
   const expiring = (requisitions ?? []).filter(expiresSoon);
@@ -378,28 +373,8 @@ function OverviewScreen({
         </table>
       </section>
 
-      {provider && (
-        <section className="card">
-          <h2>Bank-data provider</h2>
-          <p className="hint">New bank consents use the selected provider; existing accounts keep the one that created them.</p>
-          <div data-testid="admin-bank-provider">
-            {provider.configured.map((id) => (
-              <label key={id} className="radio">
-                <input
-                  type="radio"
-                  name="bank-provider"
-                  data-testid={`admin-provider-${id}`}
-                  checked={provider.active === id}
-                  disabled={busy}
-                  onChange={() => onPickProvider(id)}
-                />
-                {PROVIDER_LABEL[id] ?? id}
-              </label>
-            ))}
-          </div>
-        </section>
-      )}
-
+      {/* the Bank-data provider toggle retired (#175): the END USER
+          picks the provider at connect time now — both are first-class */}
       {health && (
         <section className="card">
           <h2>Server</h2>
@@ -563,12 +538,14 @@ function UsersScreen({
 
 function ConnectionsScreen({
   requisitions,
+  foreignCount,
   selected,
   busy,
   onToggle,
   onDeleteSelected,
 }: Readonly<{
   requisitions: AdminRequisition[] | null;
+  foreignCount: number;
   selected: Set<string>;
   busy: boolean;
   onToggle: (id: string) => void;
@@ -580,6 +557,16 @@ function ConnectionsScreen({
   return (
     <>
       <h1>Bank connections</h1>
+      <p className="muted">
+        This environment&apos;s consents only.
+        {foreignCount > 0 && (
+          <span data-testid="connections-foreign-note">
+            {' '}
+            {foreignCount} other connection{foreignCount === 1 ? '' : 's'} on the shared GoCardless account belong
+            {foreignCount === 1 ? 's' : ''} to other environments — manage those from their own admin.
+          </span>
+        )}
+      </p>
       <div className="toolbar">
         <label className="radio">
           <input

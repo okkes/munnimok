@@ -106,6 +106,15 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
     }
   });
 
+  it('#296: txSeen rows round-trip on BOTH backends — the native list forgot the entity and user login crashed', async () => {
+    for (const { name, store, repo } of await bothBackends()) {
+      await repo.upsert('txSeen', SPACE, 'seen-1', { forSpaceId: 's-x', txId: 't1', labeledAt: 123 });
+      const rows = await store.bySpace('txSeen', SPACE);
+      expect(rows, name).toHaveLength(1);
+      expect(rows[0], name).toMatchObject({ forSpaceId: 's-x', txId: 't1', labeledAt: 123, deleted: 0 });
+    }
+  });
+
   it('the joined read model works unchanged on both backends', async () => {
     for (const { name, store, repo } of await bothBackends()) {
       // a feed space raw row + this space's overlay + an attachment

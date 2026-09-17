@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { DisplayMoneyProvider } from '@/features/currency/useDisplayMoney';
 import { useLang } from '@/i18n';
@@ -12,8 +12,12 @@ import { useStoreKeepAlive } from '@/application/stores';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
+import { clearTxFilters } from '@/features/transactions/txFilters';
 import { padScrollportForKeyboard, restoreScrollportPad, revealInScroller } from '@/lib/viewport';
-import { SHEET_OWNS_KEYBOARD } from '@/ui/Sheet';
+import { wheelToHorizontal } from '@/lib/wheelScroll';
+import { SHEET_OWNS_KEYBOARD, Sheet } from '@/ui/Sheet';
+import { Button } from '@/ui/Button';
+import { useEvicted } from './evicted';
 import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
@@ -35,8 +39,16 @@ const TABS: TabDef[] = [
   { to: '/settings', labelKey: 'tab.settings', icon: 'cog-outline', iconActive: 'cog', testId: 'tab-settings' },
 ];
 
+/** input types that summon NO on-screen keyboard — focusing a checkbox
+ *  must not hide the tab bar (#162 fallout: the private toggle left the
+ *  bar hidden until blur) */
+const KEYBOARDLESS_INPUTS = new Set(['checkbox', 'radio', 'range', 'button', 'submit', 'reset', 'file', 'color']);
+
 const isEditable = (el: EventTarget | null): el is HTMLElement =>
-  el instanceof HTMLElement && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+  el instanceof HTMLElement &&
+  ((el.tagName === 'INPUT' && !KEYBOARDLESS_INPUTS.has((el as HTMLInputElement).type)) ||
+    el.tagName === 'TEXTAREA' ||
+    el.isContentEditable);
 
 
 /**
@@ -100,34 +112,75 @@ function useKeyboardOpen(): boolean {
   const [open, setOpen] = useState(false);
   useEffect(() => {
     let cancelReveal: (() => void) | null = null;
+    // #312 (user): scrolling blurs the field and the keyboard slides
+    // away — but the relayout (tab bar back, scrollport pad removed)
+    // fired MID-GESTURE and the screen jumped under the finger. While a
+    // touch is down, the close waits for the finger to lift: the list
+    // keeps scrolling as if nothing happened, then ONE calm relayout.
+    let touchDown = false;
+    let pendingClose = false;
+    const settleClose = () => {
+      pendingClose = false;
+      if (!isEditable(document.activeElement)) {
+        setOpen(false);
+        restoreScrollportPad();
+      }
+    };
+    const onTouchStart = () => {
+      touchDown = true;
+    };
+    const onTouchEnd = () => {
+      touchDown = false;
+      // a beat after lift-off — the momentum handoff stays smooth
+      if (pendingClose) setTimeout(settleClose, 60);
+    };
     const onFocusIn = (e: FocusEvent) => {
       if (!isEditable(e.target)) return;
+      pendingClose = false;
       setOpen(true);
       cancelReveal?.();
-      // inside a sheet on iOS Safari/PWA the sheet library owns the
-      // keyboard (it translates the sheet AND reveals the field) — a
-      // second reveal here fought it
+      // where the sheet library still owns the keyboard (non-iOS,
+      // non-resizing viewports) a second reveal here fought it. On iOS
+      // the library stands down entirely (#134) and THIS reveal is the
+      // one that pads the sheet's scroller and shows hidden fields.
       if (SHEET_OWNS_KEYBOARD && e.target.closest('.react-modal-sheet-container')) return;
       cancelReveal = scheduleKeyboardReveal(e.target);
     };
     const onFocusOut = () => {
       // focus often hops field-to-field — only a settled blur closes
       setTimeout(() => {
-        if (!isEditable(document.activeElement)) {
-          setOpen(false);
-          restoreScrollportPad();
+        if (isEditable(document.activeElement)) return;
+        if (touchDown) {
+          pendingClose = true; // the scroll owns the screen right now
+          return;
         }
+        settleClose();
       }, 100);
     };
+    window.addEventListener('touchstart', onTouchStart, { passive: true });
+    window.addEventListener('touchend', onTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', onTouchEnd, { passive: true });
     window.addEventListener('focusin', onFocusIn);
     window.addEventListener('focusout', onFocusOut);
     return () => {
       cancelReveal?.();
+      window.removeEventListener('touchstart', onTouchStart);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchEnd);
       window.removeEventListener('focusin', onFocusIn);
       window.removeEventListener('focusout', onFocusOut);
     };
   }, []);
   return open;
+}
+
+/** #153: wheel-only mice reach sideways strips — the one app-wide
+ *  listener (the decision logic lives in lib/wheelScroll) */
+function useWheelToHorizontal(): void {
+  useEffect(() => {
+    document.addEventListener('wheel', wheelToHorizontal, { passive: false });
+    return () => document.removeEventListener('wheel', wheelToHorizontal);
+  }, []);
 }
 
 /** headless: fires due-soon reminders once per app open (needs DataProvider) */
@@ -168,6 +221,30 @@ function BudgetAlerts() {
   return null;
 }
 
+/** #173 (user): kicked out of the active space — the takeover sheet says
+ *  what happened and where the app landed instead of silently vanishing
+ *  the data underfoot. Not-active evictions get the phone push only. */
+function EvictedNotice() {
+  const { t } = useLang();
+  const evicted = useEvicted((s) => s.evicted);
+  const clear = useEvicted((s) => s.clear);
+  return (
+    <Sheet open={evicted !== null} onOpenChange={(next) => !next && clear()} title={t('space.kickedTitle')} size="compact">
+      {evicted && (
+        <div className="flex flex-col gap-3 pt-1" data-testid="space-kicked-sheet">
+          <p className="text-[14px] leading-relaxed text-ink-2">
+            {t('space.kickedBody', { space: evicted.spaceName })}
+            {evicted.switchedToName ? ` ${t('space.kickedSwitched', { to: evicted.switchedToName })}` : ''}
+          </p>
+          <Button data-testid="space-kicked-ok" onClick={clear}>
+            {t('action.done')}
+          </Button>
+        </div>
+      )}
+    </Sheet>
+  );
+}
+
 /** unmistakable "this is the demo" marker (user request): a pill next to
  *  the desktop brand, and a slim strip above the mobile tab bar */
 function DemoBadge() {
@@ -205,6 +282,7 @@ export function AppLayout() {
   const hideNav = pathname.startsWith('/onboarding');
   // the mobile tab bar makes no sense floating on top of the keyboard
   const keyboardOpen = useKeyboardOpen();
+  useWheelToHorizontal(); // #153: wheel-only mice reach sideways strips
 
   return (
     <div className="flex h-full flex-row bg-bg text-ink">
@@ -222,8 +300,15 @@ export function AppLayout() {
                 key={tab.to}
                 to={tab.to}
                 data-testid={`side-${tab.testId}`}
+                onClick={() => {
+                  // #140: choosing another TAB resets the tx lens
+                  if (tab.to !== '/transactions') clearTxFilters();
+                }}
+                // #271: hover tints in the accent language — bg-surface
+                // (white on light bg-2 / gray on dark) read as stale gray
+                // blocks whenever hover state lingered
                 className={`m-tap flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium ${
-                  active ? 'bg-accent-soft text-accent-deep' : 'text-ink-2 hover:bg-surface'
+                  active ? 'bg-accent-soft text-accent-deep' : 'text-ink-2 hover:bg-accent-soft/40'
                 }`}
               >
                 <Icon name={active ? tab.iconActive : tab.icon} size={20} />
@@ -250,6 +335,7 @@ export function AppLayout() {
             </HelpProvider>
             <DemoBanner />
             <OfflineBanner />
+            <EvictedNotice />
             <RecurringReminders />
             <StoreKeepAlive />
             <BudgetAlerts />
@@ -271,6 +357,10 @@ export function AppLayout() {
                 key={tab.to}
                 to={tab.to}
                 data-testid={tab.testId}
+                onClick={() => {
+                  // #140: choosing another TAB resets the tx lens
+                  if (tab.to !== '/transactions') clearTxFilters();
+                }}
                 className={`m-tap flex flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[10px] font-medium ${
                   active ? 'text-brand' : 'text-ink-4'
                 }`}

@@ -1,4 +1,4 @@
-// @vitest-environment happy-dom
+﻿// @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
 import { nearestScrollport, padScrollportForKeyboard, restoreScrollportPad } from './viewport';
 

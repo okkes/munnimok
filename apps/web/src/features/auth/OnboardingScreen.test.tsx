@@ -11,15 +11,20 @@ describe('OnboardingScreen (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('is NOT skippable: continue stays disabled until a display name exists', async () => {
+  it('is NOT skippable: a nameless continue is refused with the blocker (#195)', async () => {
     renderApp('/onboarding');
     await screen.findByTestId('screen-onboarding');
     // the skip button is gone (user ruling) and so is the currency field
     expect(screen.queryByTestId('onboarding-skip')).toBeNull();
     expect(screen.queryByTestId('onboarding-currency')).toBeNull();
-    expect((screen.getByTestId('onboarding-save') as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.change(screen.getByTestId('onboarding-name'), { target: { value: 'Okkes' } });
+    // the button stays tappable — the invalid tap names the blocker instead
     expect((screen.getByTestId('onboarding-save') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('onboarding-save'));
+    expect(await screen.findByTestId('onboarding-save-blocker')).toBeTruthy();
+    expect(screen.getByTestId('onboarding-name').getAttribute('aria-invalid')).toBe('true');
+    expect(screen.queryByTestId('onboarding-lock-step')).toBeNull(); // did not advance
+    fireEvent.change(screen.getByTestId('onboarding-name'), { target: { value: 'Okkes' } });
+    await waitFor(() => expect(screen.queryByTestId('onboarding-save-blocker')).toBeNull());
   });
 
   it('country picker searches; language chips switch the UI in place', async () => {

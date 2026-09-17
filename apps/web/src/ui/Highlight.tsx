@@ -22,6 +22,24 @@ export function splitHighlight(text: string, query: string): HighlightPart[] {
 }
 
 /**
+ * #267: the query variant that actually hits a formatted AMOUNT — the
+ * user types "7,77" while the locale renders "€7.77" (or the reverse),
+ * so the decimal separator swaps before giving up. '' = no hit.
+ */
+export function amountQueryFor(amountText: string, query: string | undefined): string {
+  const raw = (query ?? '').trim();
+  if (!raw) return '';
+  // #267 r2 (user): a leading +/- narrows the SIGN (the filter's job) —
+  // the visible hit is the number itself
+  const q = /^[+-]/.test(raw) ? raw.slice(1).trim() : raw;
+  if (!q) return '';
+  const lower = amountText.toLowerCase();
+  if (lower.includes(q.toLowerCase())) return q;
+  const swapped = q.replace(/[.,]/g, (c) => (c === ',' ? '.' : ','));
+  return swapped !== q && lower.includes(swapped.toLowerCase()) ? swapped : '';
+}
+
+/**
  * Marks where a search query matched inside result text — every list the
  * app searches renders its match through this, so "why is this a hit?"
  * is always visible.

@@ -33,7 +33,15 @@ export function resetAuthExpiryGuard(): void {
 }
 
 /** Authenticated fetch to the munni API for the current user identity. */
-export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+export async function apiFetch(
+  path: string,
+  init: RequestInit = {},
+  opts?: {
+    /** #281: statuses a caller HANDLES as a designed branch (e.g. the
+     *  /feeds 409 → personal-feed fallback) — expected, so not reported */
+    expectStatuses?: readonly number[];
+  },
+): Promise<Response> {
   assertNetworkAllowed();
   const identity = readSessionIdentity();
   // Cold-start guard: every app update forces a cold start, and screens
@@ -89,6 +97,16 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
       useSession.getState().logout();
       globalThis.location.assign('/#/login');
     }
+  }
+  // #186 (user rule): UNEXPECTED server answers reach GlitchTip from the
+  // choke point — callers keep swallowing into UI state, but the trace
+  // survives. Identity states (401/403/410) have their own handlers,
+  // and plain 4xx are the caller's business; 5xx and 409 are the
+  // "should not happen" band (the re-import 409 resolved itself and
+  // left no trace anywhere).
+  if ((response.status >= 500 || response.status === 409) && !opts?.expectStatuses?.includes(response.status)) {
+    const { reportWarning } = await import('@/lib/report');
+    reportWarning('api', `apiFetch ${init.method ?? 'GET'} ${path} -> ${response.status}`, { status: response.status });
   }
   return response;
 }

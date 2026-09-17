@@ -64,10 +64,20 @@ export interface TxPrediction {
   source: 'history' | 'history-amount' | 'keyword';
   /** history occurrences backing the prediction (history sources only) */
   evidence?: number;
+  /** #161: the pct spread the user keeps confirming (own space only) */
+  cats?: { catId: string; pct: number }[];
+  /** #161: the event the recent charges joined (own space only) */
+  eventId?: string;
+}
+
+/** #161: the own space answers first, other spaces are the fallback */
+export interface LayeredMemory {
+  own: MerchantMemory;
+  others: MerchantMemory;
 }
 
 export interface PredictInput {
-  memory?: MerchantMemory;
+  memory?: LayeredMemory;
   merchant: string;
   /** the user's rename — keyword matching reads it too (user request) */
   titleOverride?: string;
@@ -95,17 +105,26 @@ function signSafeType(txType: TxType, amountCents: number): TxType {
   return amountCents >= 0 ? 'income' : 'expense';
 }
 
+/** #161: the memory's answer, own space first (S3776: out of predictTx) */
+function memoryPrediction(memory: LayeredMemory, input: PredictInput): TxPrediction | null {
+  const hit =
+    predictFromMemory(memory.own, input.merchant, input.amountCents) ??
+    predictFromMemory(memory.others, input.merchant, input.amountCents);
+  if (!hit) return null;
+  return {
+    catId: hit.catId,
+    txType: signSafeType(hit.txType, input.amountCents),
+    source: hit.amountMatch ? 'history-amount' : 'history',
+    evidence: hit.evidence,
+    ...(hit.cats ? { cats: hit.cats } : {}),
+    ...(hit.eventId ? { eventId: hit.eventId } : {}),
+  };
+}
+
 export function predictTx(input: PredictInput): TxPrediction | null {
   if (input.memory) {
-    const hit = predictFromMemory(input.memory, input.merchant, input.amountCents);
-    if (hit) {
-      return {
-        catId: hit.catId,
-        txType: signSafeType(hit.txType, input.amountCents),
-        source: hit.amountMatch ? 'history-amount' : 'history',
-        evidence: hit.evidence,
-      };
-    }
+    const remembered = memoryPrediction(input.memory, input);
+    if (remembered) return remembered;
   }
   const direction = input.amountCents >= 0 ? 'credit' : 'debit';
   const catId = predictCategory(

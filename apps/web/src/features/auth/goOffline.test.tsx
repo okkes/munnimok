@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
+import { CLIENT_PROTOCOL } from '@/lib/protocol';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { USER_TEST_DB, USER_TEST_SUB, renderAppAsUser } from '@/test/harness';
@@ -36,7 +37,7 @@ describe('Go offline (user identity, scripted server)', () => {
   };
 
   const api = (calls: string[]) => ({
-    'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false } }),
+    'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
     'GET /me/spaces': () => ['s-user', 'sh-1', 'feed-1'],
     'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
     'GET /me': () => ({ userId: '00000000-0000-0000-0000-000000000001', displayName: 'Okkes', picture: null }),

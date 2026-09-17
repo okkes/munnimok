@@ -34,6 +34,10 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
     periodDay: 1,
   });
 
+  // #221: a space is born with its six default accounts — demo included
+  const { ensureSpaceDefaultAccounts } = await import('@/application/defaultAccounts');
+  await ensureSpaceDefaultAccounts(repo.store, repo, DEMO_SPACE_ID);
+
   for (const account of DEMO_ACCOUNTS) {
     await repo.upsert('account', DEMO_SPACE_ID, account.id, {
       name: account.name,

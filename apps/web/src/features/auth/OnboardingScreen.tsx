@@ -6,18 +6,22 @@ import { useData } from '@/app/data';
 import { useSession } from '@/app/session';
 import { apiFetch } from '@/lib/api';
 import { downscaleImage } from '@/lib/image';
+import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { COUNTRIES } from '@/domain/countries';
 import { setPredictionCountry } from '@/domain/predictCategory';
 import { AVATARS, Avatar } from '@/features/profile/ProfileScreen';
 import { offlineProfileName, updateOfflineProfile } from './offlineProfiles';
 import { biometricAvailable, hashPin, randomSalt, registerBiometric, validPin, writeLockConfig } from '@/features/lock/lock';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Chip } from '@/ui/primitives';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
 import { Flag, langFlagCode } from '@/ui/Flag';
 import { Logo } from '@/ui/Logo';
 import { Sheet } from '@/ui/Sheet';
+import { SearchField } from '@/ui/SearchField';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 const countryLabel = (code: string, lang: Lang) => {
   const c = COUNTRIES.find((x) => x.code === code);
@@ -44,12 +48,18 @@ export function OnboardingScreen() {
   const [countryOpen, setCountryOpen] = useState(false);
   const [query, setQuery] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  // #160: desktop-only webcam door beside the avatar upload
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
   // step 1 = profile, step 2 = app lock; bank step retired (user ruling)
   const [step, setStep] = useState<1 | 2>(1);
   const [bioAvailable, setBioAvailable] = useState(false);
   const [lockPin, setLockPin] = useState('');
   const [lockPin2, setLockPin2] = useState('');
   const [lockError, setLockError] = useState<string | null>(null);
+  // #195: tappable — an invalid tap names the blocker (one flag per step)
+  const [attempted, setAttempted] = useState(false);
+  const [lockAttempted, setLockAttempted] = useState(false);
 
   useEffect(() => {
     void biometricAvailable().then(setBioAvailable);
@@ -82,6 +92,17 @@ export function OnboardingScreen() {
   const onUpload = async (file: File | undefined) => {
     if (!file) return;
     setPicture(await downscaleImage(file));
+  };
+
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
+      return;
+    }
+    fileRef.current?.click();
   };
 
   /** same shape as the settings flow: PIN is the fallback, biometrics
@@ -134,6 +155,7 @@ export function OnboardingScreen() {
     setPredictionCountry(country);
     // cleared here: leaving the app mid-flow must not loop onboarding
     await store.metaDelete('needsOnboarding');
+    setAttempted(false);
     setStep(2);
   };
 
@@ -178,11 +200,23 @@ export function OnboardingScreen() {
                 ))}
                 <button
                   data-testid="onboarding-avatar-upload"
-                  onClick={() => fileRef.current?.click()}
+                  onClick={pickPhoto}
                   className="m-tap flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-line bg-surface"
                 >
                   <Icon name="camera-plus-outline" size={17} color="var(--m-ink-3)" />
                 </button>
+                {/* #160: desktop webcam snapshot — mirrors the upload dot */}
+                {webcamDoor && (
+                  <button
+                    data-testid="onboarding-avatar-webcam"
+                    aria-label={t('webcam.use')}
+                    title={t('webcam.use')}
+                    onClick={() => setWebcamOpen(true)}
+                    className="m-tap flex h-9 w-9 items-center justify-center rounded-full border border-dashed border-line bg-surface"
+                  >
+                    <Icon name="camera-outline" size={17} color="var(--m-ink-3)" />
+                  </button>
+                )}
                 <input ref={fileRef} type="file" accept="image/*" hidden data-testid="onboarding-avatar-file" onChange={(e) => void onUpload(e.target.files?.[0])} />
               </div>
             </div>
@@ -193,8 +227,11 @@ export function OnboardingScreen() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder={t('profile.displayName')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={attempted && !name.trim()}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && !name.trim())}`}
             />
+            {/* #195 r2 (user): the blocker sits AT the field */}
+            <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="onboarding-save-blocker" />
             {/* the WHY, kept short (user request): offline nobody else
                 ever sees the name; online it's the face others see */}
             <p className="px-1 text-[12px] leading-snug text-ink-4">
@@ -226,7 +263,16 @@ export function OnboardingScreen() {
               {t('onboarding.countryInfo')}
             </p>
 
-            <Button data-testid="onboarding-save" onClick={() => void applyProfile()} disabled={!name.trim()}>
+            <Button
+              data-testid="onboarding-save"
+              onClick={() => {
+                if (!name.trim()) {
+                  setAttempted(true);
+                  return;
+                }
+                void applyProfile();
+              }}
+            >
               {t('login.continue')}
             </Button>
           </div>
@@ -251,8 +297,10 @@ export function OnboardingScreen() {
                 setLockError(null);
               }}
               placeholder={t('lock.pinLabel')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={lockAttempted && !lockPin}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !lockPin)}`}
             />
+            <FormBlockerNote show={lockAttempted && !lockPin} text={t('form.needFields')} testId="onboarding-lock-enable-blocker" />
             <input
               data-testid="onboarding-lock-pin2"
               type="password"
@@ -263,14 +311,29 @@ export function OnboardingScreen() {
                 setLockError(null);
               }}
               placeholder={t('lock.pinConfirm')}
-              className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+              aria-invalid={lockAttempted && !lockPin2}
+              className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(lockAttempted && !lockPin2)}`}
+            />
+            <FormBlockerNote
+              show={lockAttempted && !!lockPin && !lockPin2}
+              text={t('form.needFields')}
+              testId="onboarding-lock-enable-blocker"
             />
             {lockError && (
               <p className="text-[12px] text-negative" data-testid="onboarding-lock-error">
                 {lockError}
               </p>
             )}
-            <Button data-testid="onboarding-lock-enable" onClick={() => void enableLock()} disabled={!lockPin || !lockPin2}>
+            <Button
+              data-testid="onboarding-lock-enable"
+              onClick={() => {
+                if (!lockPin || !lockPin2) {
+                  setLockAttempted(true);
+                  return;
+                }
+                void enableLock();
+              }}
+            >
               <Icon name={bioAvailable ? 'fingerprint' : 'lock-outline'} size={18} />
               {t('lock.setup')}
             </Button>
@@ -282,13 +345,16 @@ export function OnboardingScreen() {
         )}
       </div>
 
+      {/* #160: snapshot feeds the same downscale path as the file input */}
+      <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onUpload(file)} />
+
       <Sheet open={countryOpen} onOpenChange={setCountryOpen} title={t('onboarding.countryLabel')} size="tall" dragHandle>
-        <input
-          data-testid="onboarding-country-search"
+        <SearchField
+          testId="onboarding-country-search"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={setQuery}
           placeholder={t('onboarding.countrySearch')}
-          className="mb-2 h-11 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          className="mb-2"
         />
         {filtered.map((c) => (
           <button

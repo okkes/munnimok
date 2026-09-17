@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
@@ -10,10 +10,13 @@ import { LOCKED_MAIN_IDS } from '@/domain/categories';
 import type { BudgetCarryMode, BudgetEvery, BudgetRow } from '@/db/types';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { useDiscardGuard } from '@/ui/DiscardGuard';
+import { FormBlockerNote } from '@/ui/FormBlockerNote';
 import { Button } from '@/ui/Button';
 import { Collapse } from '@/ui/Collapse';
 import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
+import { SearchField } from '@/ui/SearchField';
 import { BUDGET_ICONS } from './budgetUi';
 
 /**
@@ -95,6 +98,24 @@ export function BudgetFormScreen() {
 
   const amountCents = Math.round(Number.parseFloat(amount.replace(',', '.')) * 100);
   const valid = name.trim().length > 0 && Number.isFinite(amountCents) && amountCents > 0 && catIds.length > 0 && !!anchor;
+  // #195: the save stays tappable — an invalid tap names the blocker.
+  // r2 (user): the note renders under the field it names — one
+  // (field, text) pair at a time, the note scrolls itself into view
+  const [attempted, setAttempted] = useState(false);
+  const [blockerField, blockerText] = ((): [string, string] => {
+    if (!attempted || valid) return ['', ''];
+    if (!name.trim()) return ['name', t('form.needName')];
+    if (!Number.isFinite(amountCents) || amountCents <= 0) return ['amount', t('form.needAmount')];
+    if (catIds.length === 0) return ['cats', t('form.needCategory')];
+    return ['anchor', t('form.needFields')]; // only the anchor is left to miss
+  })();
+  // #164: edits guard the back arrow — the draft is dirty once any field
+  // moved away from the seeded state (creation counts from blank)
+  const draftPrint = JSON.stringify([name, icon, amount, every, anchor, catIds, carryOver, carryMode, carryPeriods, carryCap, notifyAtPct]);
+  const baselineRef = useRef<string | null>(null);
+  if (baselineRef.current === null && (!budgetId || loaded)) baselineRef.current = draftPrint;
+  const formDirty = baselineRef.current !== null && draftPrint !== baselineRef.current;
+  const { guardedBack, sheet: discardSheet } = useDiscardGuard(formDirty, () => window.history.back());
 
   const save = async () => {
     if (!valid) return;
@@ -164,11 +185,12 @@ export function BudgetFormScreen() {
       <AppBar
         title={editing ? t('budgets.edit') : t('budgets.new')}
         leading={
-          <IconButton label={t('action.back')} testId="budgetform-back" onClick={() => window.history.back()}>
+          <IconButton label={t('action.back')} testId="budgetform-back" onClick={guardedBack}>
             <Icon name="arrow-left" size={22} />
           </IconButton>
         }
       />
+      {discardSheet}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col gap-3 pt-1">
           {/* icon row */}
@@ -194,6 +216,8 @@ export function BudgetFormScreen() {
             placeholder={t('budgets.namePlaceholder')}
             className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
+          {/* #195 r2 (user): the blocker sits AT the field */}
+          <FormBlockerNote show={blockerField === 'name'} text={blockerText} testId="budgetform-blocker" />
 
           <div className="m-cap px-1">{t('budgets.amount', { currency })}</div>
           <input
@@ -207,6 +231,7 @@ export function BudgetFormScreen() {
             placeholder="0.00"
             className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
           />
+          <FormBlockerNote show={blockerField === 'amount'} text={blockerText} testId="budgetform-blocker" />
 
           <div className="m-cap px-1">{t('budgets.cadence')}</div>
           <div className="flex flex-wrap items-center gap-2">
@@ -232,16 +257,18 @@ export function BudgetFormScreen() {
               className="h-10 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
             />
           </label>
+          <FormBlockerNote show={blockerField === 'anchor'} text={blockerText} testId="budgetform-blocker" />
 
           <div className="m-cap px-1">
             {t('screen.categories')} · {catIds.length}
           </div>
-          <input
-            data-testid="budgetform-cat-search"
+          <SearchField
+            testId="budgetform-cat-search"
             value={catQuery}
-            onChange={(e) => setCatQuery(e.target.value)}
+            onChange={setCatQuery}
             placeholder={t('cats.searchPlaceholder')}
-            className="h-10 w-full rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+            height="h-10"
+            textSize="text-[14px]"
           />
           <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="budgetform-cats">
             {expenseParents.map((parent) => {
@@ -279,6 +306,7 @@ export function BudgetFormScreen() {
               );
             })}
           </div>
+          <FormBlockerNote show={blockerField === 'cats'} text={blockerText} testId="budgetform-blocker" />
 
           {/* carry-over */}
           <button
@@ -342,7 +370,16 @@ export function BudgetFormScreen() {
             ))}
           </div>
 
-          <Button data-testid="budgetform-save" onClick={() => void save()} disabled={!valid}>
+          <Button
+            data-testid="budgetform-save"
+            onClick={() => {
+              if (!valid) {
+                setAttempted(true);
+                return;
+              }
+              void save();
+            }}
+          >
             {editing ? t('action.save') : t('action.create')}
           </Button>
           {editing && (

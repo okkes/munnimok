@@ -3,7 +3,11 @@ import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { renderApp } from '@/test/harness';
-import { isoDaysAgo } from '@/db/seed';
+import { DEMO_SPACE_ID, isoDaysAgo } from '@/db/seed';
+import { HlcClock } from '@/sync/hlc';
+import { Repo } from '@/db/repo';
+import { DexieBackend } from '@/db/backend';
+import { MunniDB } from '@/db/schema';
 
 async function createEvent(name: string, from?: string, to?: string, budget?: string) {
   fireEvent.click(await screen.findByTestId('events-add'));
@@ -59,6 +63,27 @@ describe('Events (demo identity)', () => {
     expect(card.textContent).toMatch(/€0[.,]00/);
   }, 15_000);
 
+  it('#195: a nameless save is refused with the blocker; typing clears it', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    await screen.findByTestId('events-empty');
+
+    fireEvent.click(await screen.findByTestId('events-add'));
+    await screen.findByTestId('eventform-name');
+    // the save stays tappable — the invalid tap names what's missing
+    expect((screen.getByTestId('eventform-save') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('eventform-save'));
+    expect(await screen.findByTestId('eventform-save-blocker')).toBeTruthy();
+    expect(screen.getByTestId('eventform-name').getAttribute('aria-invalid')).toBe('true');
+    // nothing saved
+    expect(document.querySelector('[data-testid^="event-card-"]')).toBeNull();
+
+    // fixing the input clears the blocker live — no second tap needed
+    fireEvent.change(screen.getByTestId('eventform-name'), { target: { value: 'Ski trip' } });
+    await waitFor(() => expect(screen.queryByTestId('eventform-save-blocker')).toBeNull());
+    expect(screen.getByTestId('eventform-name').getAttribute('aria-invalid')).toBe('false');
+  }, 15_000);
+
   it('detail suggests txs in the date range and attach-all adopts them', async () => {
     renderApp('/events');
     await screen.findByTestId('screen-events');
@@ -66,20 +91,83 @@ describe('Events (demo identity)', () => {
 
     fireEvent.click(card);
     await screen.findByTestId('eventdetail-hero');
-    const banner = await screen.findByTestId('eventdetail-suggest');
+    // the one-boot type-core chain (typed-splits v2: migrations, mirror
+    // mints, the enriched pair matcher) keeps writing behind this test
+    // longer than before, and a warm worker slows every emission — the
+    // waits get real headroom instead of racing the burst
+    const banner = await screen.findByTestId('eventdetail-suggest', {}, { timeout: 15_000 });
     expect(banner.textContent).toMatch(/[1-9]/);
 
-    // the picker opens pre-checked; unticking one keeps it out
+    // the picker opens pre-checked; unticking one keeps it out — a REAL
+    // row, by id: the old prefix query grabbed the eventpick-list
+    // CONTAINER (first in document order), so the exclusion never
+    // toggled and the flow silently attached everything
     fireEvent.click(screen.getByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
-    const firstPick = document.querySelector('[data-testid^="eventpick-"]')!;
-    fireEvent.click(firstPick); // exclude one
+    fireEvent.click(await screen.findByTestId('eventpick-dm2')); // exclude the rent
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach'));
-    await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/€[1-9]/), { timeout: 8000 });
+    await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/€[1-9]/), { timeout: 15_000 });
     // the excluded transaction keeps the banner alive with exactly one left
-    await waitFor(() => expect(screen.getByTestId('eventdetail-suggest').textContent).toMatch(/1 /));
+    await waitFor(() => expect(screen.getByTestId('eventdetail-suggest').textContent).toMatch(/1 /), { timeout: 8000 });
     expect(screen.getByTestId('eventdetail-cats')).toBeTruthy();
     expect(screen.getByTestId('eventdetail-txs')).toBeTruthy();
+  }, 45_000);
+
+  it('#143: a split offers its parts one by one — the container itself is never a pick', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('seed-partpick'), { trackOutbox: false });
+    await repo.upsert('transaction', DEMO_SPACE_ID, 'evsplit', {
+      accountId: 'demo_main', date: isoDaysAgo(170), amountCents: -6000, currency: 'EUR',
+      merchant: 'Split Dinner', catId: 'restaurants', txType: 'expense', needsReview: 0,
+      // #211: the explicit cats null marks these as PARTS for the boot fold
+      cats: null as never,
+      splits: [
+        { id: 'p1', catId: 'restaurants', amountCents: 4500 },
+        { id: 'p2', catId: 'groceries', amountCents: 1500 },
+      ],
+    });
+    const card = await createEvent('Parts trip', isoDaysAgo(180), isoDaysAgo(160));
+    fireEvent.click(card);
+    await screen.findByTestId('eventdetail-hero');
+    await screen.findByTestId('eventdetail-suggest', {}, { timeout: 15_000 });
+    fireEvent.click(screen.getByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+
+    // the parts pick individually; the container has no checkbox of its own
+    await screen.findByTestId('eventpick-evsplit-part-0');
+    expect(screen.queryByTestId('eventpick-evsplit')).toBeNull();
+    // leave the groceries part out of the event
+    fireEvent.click(screen.getByTestId('eventpick-evsplit-part-1'));
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
+    fireEvent.click(screen.getByTestId('eventpick-attach'));
+    await waitFor(async () => {
+      const rowNow = await db.transactions.get('evsplit');
+      expect(rowNow?.splits?.[0]?.eventId).toBeTruthy();
+      expect(rowNow?.splits?.[1]?.eventId).toBeUndefined();
+      expect(rowNow?.eventId ?? undefined).toBeUndefined(); // container stays bare
+    }, { timeout: 15_000 });
+    // the attached payments list shows the member part as its own row
+    await screen.findByTestId('tx-part-solo-evsplit-0', {}, { timeout: 8000 });
+    db.close();
+  }, 45_000);
+
+  it('#144: select/deselect-all sweep the whole pick list in one tap', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    const card = await createEvent('Sweep trip', isoDaysAgo(180), isoDaysAgo(160));
+    fireEvent.click(card);
+    fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
+    await screen.findByTestId('eventpick-list');
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
+
+    // none → the attach button disarms; all → it arms again
+    fireEvent.click(screen.getByTestId('eventpick-none'));
+    expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByTestId('eventpick-all'));
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false));
   }, 20_000);
 
   it('tapping a breakdown category unfolds subs and filters the payments (user request)', async () => {
@@ -89,6 +177,7 @@ describe('Events (demo identity)', () => {
     fireEvent.click(card);
     fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
     await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
     // attach-all writes one tx at a time — sample the count only once the
@@ -120,6 +209,7 @@ describe('Events (demo identity)', () => {
     fireEvent.click(card);
     fireEvent.click(await screen.findByTestId('eventdetail-attach-all'));
     await screen.findByTestId('eventpick-list');
+    await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
     const txList = await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
 

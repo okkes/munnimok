@@ -106,16 +106,19 @@ public class GcIngestTests
         await db.SaveChangesAsync();
         Assert.Equal(3, accepted); // new RAW transactions only
 
-        // the feed exists: registry entry, owner membership, attachment to s1
+        // the feed exists: registry entry + owner membership — and NO
+        // attachment (#204 r2: joining a space is the user's explicit step)
         Assert.NotNull(await db.FeedSpaces.FindAsync(FeedId));
         Assert.True(await db.SpaceMembers.AnyAsync(m => m.SpaceId == FeedId && m.UserId == OwnerId));
-        Assert.True(await db.SpaceAccountLinks.AnyAsync(l => l.SpaceId == "s1" && l.FeedSpaceId == FeedId && !l.Archived));
+        Assert.False(await db.SpaceAccountLinks.AnyAsync());
 
         // account row lives in the FEED with the dated raw balance
         var account = await db.EntityRows.FindAsync(FeedId, "account", ImportIds.AccountId("NL69INGB0123456789"));
         var accountData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(account!.DataJson)!;
         Assert.Equal(123456, accountData["balanceCents"].GetInt32());
         Assert.Equal("gocardless", accountData["source"].GetString());
+        // #176: the fetching provider rides along so clients label honestly
+        Assert.Equal("gocardless", accountData["provider"].GetString());
         Assert.True(accountData.ContainsKey("balanceAsOf"));
 
         // raw halves carry no opinion; <br> separators are sanitized
@@ -138,7 +141,30 @@ public class GcIngestTests
         Assert.Equal("uncategorized", unknownData["catId"].GetString());
         Assert.Equal(1, unknownData["needsReview"].GetInt32());
 
-        Assert.NotNull(await db.EntityRows.FindAsync("s1", "accountLink", ImportIds.AccountLinkId("s1", FeedId)));
+        // #204 r2: no synced link mirror either — the space renders the
+        // attachment only after the user's explicit attach writes it
+        Assert.Null(await db.EntityRows.FindAsync("s1", "accountLink", ImportIds.AccountLinkId("s1", FeedId)));
+    }
+
+    [Fact]
+    public async Task EnableBankingRowsCarryTheirProviderStamp()
+    {
+        await using var db = await SeedDbAsync();
+        var requisition = await db.GcRequisitions.FindAsync(RequisitionId);
+        requisition!.Provider = "enablebanking";
+        await db.SaveChangesAsync();
+        var space = await db.Spaces.FindAsync("s1");
+
+        await new GcIngest(db).IngestAccountAsync(space!, Linked("s1"), Details, Balances, Transactions);
+        await db.SaveChangesAsync();
+
+        // #176: the row says WHO fetches — EB accounts stop reading as
+        // "GoCardless" in the apps (the stamp re-sends every fetch, so
+        // existing rows heal on their next sync)
+        var account = await db.EntityRows.FindAsync(FeedId, "account", ImportIds.AccountId("NL69INGB0123456789"));
+        var accountData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(account!.DataJson)!;
+        Assert.Equal("gocardless", accountData["source"].GetString()); // compat: source stays the open-banking marker
+        Assert.Equal("enablebanking", accountData["provider"].GetString());
     }
 
     [Fact]
@@ -157,7 +183,7 @@ public class GcIngestTests
         Assert.Equal(0, secondRun); // deterministic op ids: nothing re-imports
         Assert.Equal(3, await db.EntityRows.CountAsync(r => r.SpaceId == FeedId && r.Entity == "transaction"));
         Assert.Equal(3, await db.EntityRows.CountAsync(r => r.SpaceId == "s1" && r.Entity == "txMeta"));
-        Assert.Equal(1, await db.SpaceAccountLinks.CountAsync());
+        Assert.Equal(0, await db.SpaceAccountLinks.CountAsync()); // #204 r2: never attached by ingest
     }
 
     [Fact]
@@ -171,12 +197,18 @@ public class GcIngestTests
         await db.SaveChangesAsync();
 
         // the user renames the account on their phone; the next fetch runs
-        // LATER, so before the fix its fresh server HLC won the name field
+        // LATER, so before the fix its fresh server HLC won the name field.
+        // #212 r2: type is seed-only for the same reason — the client's
+        // stored reading must survive every refresh
         var accountId = ImportIds.AccountId("NL69INGB0123456789");
         var feedSpace = await db.Spaces.FindAsync(FeedId);
         var rename = new SyncOpDto(
             "rename-op-1", FeedId, "account", accountId,
-            new Dictionary<string, JsonElement> { ["name"] = JsonSerializer.SerializeToElement("My spending") },
+            new Dictionary<string, JsonElement>
+            {
+                ["name"] = JsonSerializer.SerializeToElement("My spending"),
+                ["type"] = JsonSerializer.SerializeToElement("savings"),
+            },
             ServerHlc.Now().Replace(ServerHlc.DeviceId, "phone"));
         await new SyncWriter(db).ApplyAsync(feedSpace!, null, [rename]);
         await db.SaveChangesAsync();
@@ -192,6 +224,7 @@ public class GcIngestTests
         var row = await db.EntityRows.FindAsync(FeedId, "account", accountId);
         var data = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(row!.DataJson)!;
         Assert.Equal("My spending", data["name"].GetString()); // rename survives the refresh
+        Assert.Equal("savings", data["type"].GetString()); // #212 r2: so does the type
         Assert.Equal(123456, data["balanceCents"].GetInt32()); // raw facts still refreshed
     }
 }

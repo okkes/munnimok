@@ -11,6 +11,15 @@ namespace Munni.Api.Sync;
 /// </summary>
 public sealed class SyncWriter(AppDbContext db)
 {
+    /// <summary>
+    /// Two writers pushing the same brand-new row (or a push racing the
+    /// bank ingest) both pass the FindAsync miss and collide on a primary
+    /// key at save (Postgres 23505). The LWW merge makes a clean re-read
+    /// converge, so callers retry on exactly this signal.
+    /// </summary>
+    public static bool IsUniqueViolation(DbUpdateException ex) =>
+        ex.InnerException is Npgsql.PostgresException { SqlState: Npgsql.PostgresErrorCodes.UniqueViolation };
+
     /// <summary>Applies ops (idempotent by opId). Caller saves changes.</summary>
     public async Task<(long LastSeq, int Accepted)> ApplyAsync(Space space, Guid? userId, IReadOnlyList<SyncOpDto> ops)
     {

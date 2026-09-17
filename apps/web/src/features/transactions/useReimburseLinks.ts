@@ -5,7 +5,9 @@ import {
   clampReimbursement,
   creditRemainingCents,
   givenCents,
-  settledSplits,
+  isReimbContainer,
+  reimbCentsByPart,
+  reimbSettleFields,
   totalReimbursedCents,
   withLink,
 } from '@/domain/reimbursement';
@@ -17,8 +19,8 @@ import { catName, useCategories } from '@/features/categories/useCategories';
 /**
  * The one place reimbursement links are written — shared by the
  * detail-screen section and the full-screen picker so MERGE semantics
- * (old + new, both directions) and the gross-splits invariant can never
- * drift apart.
+ * (old + new, both directions) and the gross invariant can never drift
+ * apart.
  */
 export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
   const transform = useTxTransform();
@@ -28,21 +30,47 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
 
   // settlement rewrites category attribution (redesign, docs/
   // reimbursement-redesign.md): slices keep the GROSS truth and the
-  // settled value moves into an explicit `reimbursed` slice on BOTH sides
+  // settled value moves into an explicit `reimbursed` slice on BOTH
+  // sides. #228 (user): a container's settle lives on the PART each
+  // link names — inside the part's own `cats` — never as a pseudo-part
+  // in the container's `splits`; the parent is impacted through value
+  // math only. A whole row settles inside its own `cats`.
   const expensePatch = (expense: SpaceTx, newLinks: TxReimbursement[]) => ({
     reimbursements: newLinks,
-    splits: settledSplits(expense, totalReimbursedCents({ reimbursements: newLinks }), nameOf),
+    ...(reimbSettleFields(
+      expense,
+      totalReimbursedCents({ reimbursements: newLinks }),
+      reimbCentsByPart(newLinks, 'partId', expense.splits),
+      nameOf,
+    ) as Record<string, never>),
   });
+
+  /** every link naming `creditId`, with `expenseId`'s links replaced by
+   *  its NEXT state — the write below lands both sides in one gesture,
+   *  so the live snapshot is one beat behind */
+  const givenView = (creditId: string, expenseId: string, expenseLinks: TxReimbursement[]) => {
+    const naming = (allTxs ?? [])
+      .flatMap((row) => (row.id === expenseId ? expenseLinks : (row.reimbursements ?? [])))
+      .filter((link) => link.txId === creditId);
+    return {
+      total: naming.reduce((sum, link) => sum + link.amountCents, 0),
+      byPart: (splits: SpaceTx['splits']) => reimbCentsByPart(naming, 'creditPartId', splits),
+    };
+  };
 
   // a settled credit deserves a real category instead of "Uncategorized"
   // (user remark): the moment it is linked it self-files as Reimbursed,
-  // unless the user already picked something deliberately
-  const creditPatch = (credit: SpaceTx, newGivenCents: number) => {
-    const selfFiles = (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1) && newGivenCents > 0;
+  // unless the user already picked something deliberately. A split
+  // credit never self-files — its parts own their categories.
+  const creditPatch = (credit: SpaceTx, view: ReturnType<typeof givenView>) => {
+    const selfFiles =
+      !isReimbContainer(credit) &&
+      (!credit.catId || credit.catId === UNCATEGORIZED_ID || credit.needsReview === 1) &&
+      view.total > 0;
     const catId = selfFiles ? REIMBURSED_ID : credit.catId;
     return {
+      ...(reimbSettleFields({ ...credit, catId }, view.total, view.byPart(credit.splits), nameOf) as Record<string, never>),
       ...(selfFiles ? { catId, txType: 'income' as const, needsReview: 0 as const } : {}),
-      splits: settledSplits({ ...credit, catId }, newGivenCents, nameOf),
     };
   };
 
@@ -57,20 +85,28 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
   };
 
   /** link `cents` of `credit` against `expense`, MERGING into any
-   *  existing link between the two (both directions call this) */
-  const link = (expense: SpaceTx, credit: SpaceTx, cents: number): void => {
+   *  existing link between the two (both directions call this); a
+   *  partId targets one PART of a split expense (#126 r5), a
+   *  creditPartId one PART of a split credit (#197) */
+  const link = (expense: SpaceTx, credit: SpaceTx, cents: number, partId?: string, creditPartId?: string): void => {
     const clamped = clampReimbursement(expense, giveableCents(credit), cents);
     if (clamped <= 0) return;
-    const prev = (expense.reimbursements ?? []).find((r) => r.txId === credit.id)?.amountCents ?? 0;
-    void transform(expense, expensePatch(expense, withLink(expense.reimbursements, credit.id, prev + clamped)), 'reimburse');
-    void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) + clamped), null); // one line per gesture, not per side
+    const prev =
+      (expense.reimbursements ?? []).find(
+        (r) => r.txId === credit.id && r.partId === partId && r.creditPartId === creditPartId,
+      )?.amountCents ?? 0;
+    const nextLinks = withLink(expense.reimbursements, credit.id, prev + clamped, partId, creditPartId);
+    void transform(expense, expensePatch(expense, nextLinks), 'reimburse');
+    void transform(credit, creditPatch(credit, givenView(credit.id, expense.id, nextLinks)), null); // one line per gesture, not per side
   };
 
-  /** remove the link between the two (either side's unlink button) */
+  /** remove the link between the two (either side's unlink button) —
+   *  severs the WHOLE pair, part-targeted links included (#126 r5) */
   const unlink = (expense: SpaceTx, credit: SpaceTx): void => {
-    const removed = (expense.reimbursements ?? []).find((r) => r.txId === credit.id)?.amountCents ?? 0;
-    void transform(expense, expensePatch(expense, withLink(expense.reimbursements, credit.id, 0)), 'reimburse');
-    void transform(credit, creditPatch(credit, givenCents(allTxs ?? [], credit.id) - removed), null);
+    const links = expense.reimbursements ?? [];
+    const nextLinks = links.filter((r) => r.txId !== credit.id);
+    void transform(expense, expensePatch(expense, nextLinks), 'reimburse');
+    void transform(credit, creditPatch(credit, givenView(credit.id, expense.id, nextLinks)), null);
   };
 
   return { link, unlink, giveableCents };

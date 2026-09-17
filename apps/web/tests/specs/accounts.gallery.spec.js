@@ -7,6 +7,10 @@ async function goToAccounts(page) {
   await gotoGlobalSettings(page);
   await page.click('[data-testid="settings-accounts-row"]');
   await page.waitForSelector('[data-testid="screen-accounts"]');
+  // #314 r2: space cards mount COLLAPSED — open the demo cluster so the
+  // demo rows are interactable, like before
+  await page.click('[data-testid="accounts-space-head-demo_space"]');
+  await page.waitForSelector('[data-testid="account-row-demo_main"]');
 }
 
 for (const V of VARIANTS) {
@@ -43,14 +47,19 @@ for (const V of VARIANTS) {
     await page.waitForTimeout(500); // sheet slide-out
     // the fresh manual account lists on the SPACE's accounts screen…
     await expect(page.locator('[data-testid="screen-space-accounts"]')).toContainText('Wallet');
-    // …and the global overview shows it inside its space segment
+    // …and the global overview shows it inside its space card (#314 r2:
+    // the back-nav remounts the screen, so the card is collapsed again —
+    // expand it before asserting its content)
     await page.click('[data-testid="spaceaccounts-back"]');
-    await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('Wallet');
-    await expect(page.locator('[data-testid^="accounts-space-"]')).toContainText('52.50');
-    // home total includes the new account: 8,080.55 + 52.50 (the demo's
-    // v2 loan accounts weigh on the band now)
+    await page.waitForSelector('[data-testid="screen-accounts"]');
+    await page.click('[data-testid="accounts-space-head-demo_space"]');
+    await expect(page.locator('[data-testid="accounts-space-demo_space"]')).toContainText('Wallet');
+    await expect(page.locator('[data-testid="accounts-space-demo_space"]')).toContainText('52.50');
+    // home total includes the new account: 8,105.55 + 52.50 (the #133
+    // migration links the demo split's bare Device-plan part onto the
+    // default loan pot, whose €25 repayment leg joins the band)
     await page.click('[data-testid="tab-home"]');
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,133.05');
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('8,158.05');
     await shot(page, k('17-accounts-add'));
     await teardown(page, ctx, k('17-accounts-add'));
   });
@@ -76,9 +85,9 @@ for (const V of VARIANTS) {
     await removeConfirm.click();
     await expect(page.locator('[data-testid="account-row-demo_save"]')).toHaveCount(0);
     await page.click('[data-testid="tab-home"]');
-    // 8,080.55 − 8,150.00 savings: the v2 demo loans keep weighing in,
+    // 8,105.55 − 8,150.00 savings: the v2 demo loans keep weighing in,
     // so deleting the big savings account honestly dips below zero
-    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('69.45');
+    await expect(page.locator('[data-testid="home-total-balance"]')).toContainText('44.45');
     await shot(page, k('18-accounts-edit'));
     await teardown(page, ctx, k('18-accounts-edit'));
   });

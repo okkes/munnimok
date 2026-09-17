@@ -8,7 +8,7 @@ import { isMinaSheetGuarded } from '@/features/mina/lock';
 // disliked): at lg a sheet renders as a centered dialog — the familiar
 // desktop shape, with the page still visible around it
 import { useLgViewport as usePanelMode } from '@/lib/viewport';
-import { isNativeApp } from '@/lib/platform';
+import { isIOS, isNativeApp } from '@/lib/platform';
 import { Button } from './Button';
 
 /** the three sheet heights; per-pixel values stay out of call sites */
@@ -29,9 +29,91 @@ const IS_TEST = import.meta.env.MODE === 'test';
 //  - native shells: @capacitor/keyboard resize:"native" shrinks the webview
 const IS_ANDROID = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
 const VIEWPORT_RESIZES = IS_ANDROID || isNativeApp();
-/** true where the sheet library's avoidKeyboard is active — the global
- *  keyboard reveal must stand down inside sheets there (AppLayout) */
-export const SHEET_OWNS_KEYBOARD = !VIEWPORT_RESIZES;
+
+// ── #134: iOS keeps NATIVE tap-to-focus ─────────────────────────────
+// The library's iOS scroll lock intercepted every tap on an editable
+// (preventDefault + teleport the field -2000px + programmatic focus +
+// restore a frame later), and its keyboard avoidance smooth-scrolled
+// the tapped field to the sheet's top on EVERY focus hop. WebKit keeps
+// the caret invisible until all of that settles — the reported ~2s
+// stall, worst when switching between fields. iOS opts out of both:
+// the tap focuses natively (caret lands immediately), and AppLayout's
+// settled-viewport reveal — which pads the sheet's scroller and only
+// scrolls when a field is actually hidden — takes over inside sheets.
+// The document itself can't scroll (fixed app frame, html/body
+// overflow:hidden), so the lock's page-pinning bought nothing here.
+const ON_IOS = isIOS();
+
+// The one job the teleport DID do for us: focusing a field the
+// keyboard covers makes WebKit shove scrollTop onto overflow:hidden
+// ancestors (the sheet chrome — "scroll jail"), which shears the
+// sheet's content out of its frame. A non-scroller has no business
+// holding a scroll offset, so while an iOS sheet is open, every
+// editable focus sweeps the chain and zeroes shoved offsets — once in
+// the focus beat, once after the keyboard has landed.
+let jailGuardUsers = 0;
+let removeJailGuard: (() => void) | null = null;
+
+function unshoveFrom(el: HTMLElement | null): void {
+  for (let node = el; node && node !== document.body; node = node.parentElement) {
+    if (node.scrollTop !== 0) {
+      const overflowY = getComputedStyle(node).overflowY;
+      if (overflowY !== 'auto' && overflowY !== 'scroll') node.scrollTop = 0;
+    }
+  }
+}
+
+function pushJailGuard(): void {
+  jailGuardUsers++;
+  if (jailGuardUsers > 1) return;
+  const timers = new Set<ReturnType<typeof setTimeout>>();
+  const onFocusIn = (e: FocusEvent) => {
+    const target = e.target;
+    if (!(target instanceof HTMLElement) || !target.closest('input, textarea, select, [contenteditable="true"]')) return;
+    requestAnimationFrame(() => unshoveFrom(target));
+    const timer = setTimeout(() => {
+      timers.delete(timer);
+      unshoveFrom(target);
+    }, 400);
+    timers.add(timer);
+  };
+  document.addEventListener('focusin', onFocusIn);
+  removeJailGuard = () => {
+    document.removeEventListener('focusin', onFocusIn);
+    for (const timer of timers) clearTimeout(timer);
+  };
+}
+
+function popJailGuard(): void {
+  jailGuardUsers = Math.max(0, jailGuardUsers - 1);
+  if (jailGuardUsers === 0) {
+    removeJailGuard?.();
+    removeJailGuard = null;
+  }
+}
+
+/** true where the SHEET surface owns keyboard handling — the global
+ *  keyboard reveal must stand down inside sheets there (AppLayout).
+ *  No longer true on iOS (#134): there AppLayout owns the reveal.
+ *  #290 r2: "owns" now means the library where an on-screen keyboard
+ *  is plausible, and NOTHING on fine-pointer machines — with no
+ *  keyboard there is nothing to reveal, and every scripted scroll on
+ *  focus is a pure yank. */
+export const SHEET_OWNS_KEYBOARD = !VIEWPORT_RESIZES && !ON_IOS;
+
+/** #290 r2 (user): the mobile sheet library's keyboard avoidance may
+ *  engage only where an on-screen keyboard is PLAUSIBLE — a coarse
+ *  primary pointer (touch). Desktop Chromium exposes
+ *  navigator.virtualKeyboard even on mouse-only machines, and the
+ *  library reads the API's presence as "keyboard open" the moment a
+ *  field is focused (it flips overlaysContent itself and a zero-height
+ *  keyboard rect still counts) — then smooth-scrolls the focused field
+ *  flush under the sheet header (the "fields fall behind the New loan
+ *  header" report). Android/native keep their resize path and iOS its
+ *  #134 opt-out; evaluated at render so docking/undocking a tablet
+ *  keyboard is honored. Exported for the Sheet.desktop smoke. */
+export const sheetLibAvoidsKeyboard = (): boolean =>
+  !VIEWPORT_RESIZES && !ON_IOS && typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
 
 // ── sheet stack ──────────────────────────────────────────────────────────
 // Only the TOP sheet may dismiss. Without this, opening a picker sheet on
@@ -67,6 +149,17 @@ function popVisual(id: number) {
 
 /** true while any sheet is open — global gestures (edge-swipe back) must stand down */
 export const hasOpenSheet = (): boolean => visualStack.length > 0;
+
+/** #136: is this element visible on the TOP layer — the topmost sheet,
+ *  or the base screen when no sheet is open? The Mina glow pierced any
+ *  sheet stacked ABOVE its anchor (the overlay outranks every sheet at
+ *  z-60); the tutorial stands its glow down when this says no. */
+export function elementOnTopLayer(el: HTMLElement): boolean {
+  if (visualStack.length === 0) return true; // no sheets — the screen IS the top
+  const topEl = coveredEls.get(visualStack.at(-1)!);
+  if (!topEl) return true; // top sheet not measurable yet — don't flicker
+  return topEl.contains(el);
+}
 
 // every open sheet registers its close callback; the Mina tutorial (and
 // only flows like it) dismisses leftovers before moving to a step whose
@@ -209,6 +302,18 @@ interface SheetProps {
    *  first instead of silently dropping the form. Programmatic closes
    *  (the host's own save calling onOpenChange) are unaffected. */
   dirty?: boolean;
+  /** #203 (user): work in flight — dismissal gestures flash this note
+   *  ("still running") instead of closing; the drag springs back. The
+   *  host clears it (and may close) when the work lands. */
+  busyNote?: string | null;
+  /** #311 r3 (user): data-dense sheets may take the desktop width —
+   *  the dialog widens; the mobile sheet is untouched */
+  wide?: boolean;
+  /** #344 (user): content that toggles per keystroke (search results,
+   *  conditional sections) made the auto-height desktop dialog pump —
+   *  `steady` pins the dialog to the requested size instead of growing
+   *  with content. The mobile sheet is height-locked either way. */
+  steady?: boolean;
 }
 
 /**
@@ -240,6 +345,10 @@ interface DesktopDialogProps {
   title?: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** #311 r3: the widened desktop shape for data-dense sheets */
+  wide?: boolean;
+  /** #344: pin the dialog to the requested height (no content growth) */
+  steady?: boolean;
   /** USER dismissal request (backdrop/ESC) — the owner decides whether
    *  it closes, asks about unsaved edits, or is tutorial-locked */
   onDismiss: () => void;
@@ -247,7 +356,7 @@ interface DesktopDialogProps {
 
 /** desktop (2026-07-18 fix): a plain centered dialog — vaul's drawer
  *  transforms fought the centered layout and pinned it to the top */
-function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, onDismiss }: Readonly<DesktopDialogProps>) {
+function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, wide, steady, onDismiss }: Readonly<DesktopDialogProps>) {
   // enter/exit: grow from the click point, shrink back to it
   const [phase, setPhase] = useState<'closed' | 'hidden' | 'open'>('closed');
   const originRef = useRef({ x: 0, y: 0 });
@@ -292,15 +401,32 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
         style={{ opacity: hidden ? 0 : 1, transition: `opacity ${PANEL_MS}ms ease-out` }}
       />
       {/* a real <dialog> (a11y): UA border/padding/color neutralized */}
+      {/* #290 (user): clicking a field at mid sizes scrolled the dialog
+          "way up" — AppLayout's keyboard reveal CENTERS any focused
+          editable in its nearest scroller, a scripted scrollTo no CSS
+          scroll-padding can temper, and with no on-screen keyboard the
+          centering is a pure yank (big screens hid it: #276 auto-height
+          leaves nothing to scroll). AppLayout already stands down inside
+          `.react-modal-sheet-container` wherever SHEET_OWNS_KEYBOARD, so
+          the dialog wears the same class; where a keyboard really exists
+          (iPad / Android tablets at lg) the reveal keeps working. */}
       <dialog
         open
         aria-modal="true"
         data-sheet-body=""
         ref={(el) => registerCoveredEl(id, el)}
-        className="relative z-10 m-0 flex w-[480px] max-w-[92vw] flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none"
+        className={`react-modal-sheet-container relative z-10 m-0 flex ${wide ? 'w-[760px] max-w-[94vw]' : 'w-[480px] max-w-[92vw]'} flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none`}
         style={{
-          height: fixedHeight,
-          maxHeight: '85dvh',
+          // #276: the dialog grows with its content — the phone's fixed
+          // heights left half-empty dialogs and clipped tall content on
+          // large screens. The size still sets a floor so short content
+          // keeps a recognizable shape; the ceiling is viewport-relative.
+          // (The MOBILE sheet keeps its mount-locked height — hard rule.)
+          // #344: `steady` opts out of the growth — content that toggles
+          // per keystroke made the dialog pump between floor and ceiling
+          height: steady && fixedHeight !== undefined ? fixedHeight : 'auto',
+          minHeight: fixedHeight === undefined ? undefined : Math.round(fixedHeight * 0.6),
+          maxHeight: 'min(85dvh, 900px)',
           // grow from the source, shrink back to it — the covered-parent
           // recede writes to the same properties, so hand them over only
           // while entering/exiting
@@ -317,7 +443,11 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
         {/* flex-auto, not flex-1: with no `size` this dialog is
             auto-height, where basis 0% collapses in WebKit (Safari on
             macOS/iPad) exactly like the mobile sheet did on iOS */}
-        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pt-2 pb-5">{children}</div>
+        {/* #290: with the app-level reveal standing down, the BROWSER's
+            native focus scroll is what shows a hidden field — it scrolls
+            minimally; scroll-padding gives the revealed field a little
+            air instead of landing flush against the clipped edge */}
+        <div className="min-h-0 flex-auto overflow-y-auto overscroll-contain px-5 pt-2 pb-5 [scroll-padding-block:16px]">{children}</div>
         {footer && <div className="shrink-0 border-t border-line-2 bg-bg px-5 pt-3 pb-5">{footer}</div>}
       </dialog>
     </div>,
@@ -332,7 +462,7 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
  * cancelling inputs mid-typing, user report); stacked sheets lock their
  * parents automatically. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, size, height, footer, dirty }: Readonly<SheetProps>) {
+export function Sheet({ open, onOpenChange, title, children, size, height, footer, dirty, busyNote, wide, steady }: Readonly<SheetProps>) {
   const { t } = useLang();
   const requested = height ?? (size ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
@@ -340,14 +470,41 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   // the flow while it runs, and unsaved edits get a conscious "discard?"
   // before the form is dropped (both 2026-08-01 user requests)
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  // #203: a dismissal attempt while work runs flashes the note briefly
+  const [busyFlash, setBusyFlash] = useState(false);
+  const busyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashBusy = () => {
+    setBusyFlash(true);
+    if (busyTimer.current) clearTimeout(busyTimer.current);
+    busyTimer.current = setTimeout(() => setBusyFlash(false), 2500);
+  };
+  // #253 (user): a DRAG on a dirty sheet completes — the sheet hides,
+  // the "discard?" ask shows, and Keep editing slides it back up. This
+  // flag is the hidden-while-asking state; a ref mirror keeps the
+  // lib's late animation callbacks from re-arming the ask.
+  const [hiddenForDiscard, setHiddenForDiscard] = useState(false);
+  const hiddenRef = useRef(false);
+  const setHidden = (value: boolean) => {
+    hiddenRef.current = value;
+    setHiddenForDiscard(value);
+  };
   useEffect(() => {
-    if (!open) setConfirmDiscard(false);
+    if (!open) {
+      setConfirmDiscard(false);
+      hiddenRef.current = false;
+      setHiddenForDiscard(false);
+    }
   }, [open]);
   const requestDismiss = () => {
     // the tutorial locks only the ROOT sheet (the lesson's form) — a
     // nested picker (budget period, currency…) must stay dismissible or
     // the user is trapped one level down (user ss 2026-08-01)
     if (isMinaSheetGuarded() && depth === 0) return;
+    // #203: work in flight — say so instead of closing over it
+    if (busyNote) {
+      flashBusy();
+      return;
+    }
     if (dirty) {
       setConfirmDiscard(true);
       return;
@@ -365,6 +522,13 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   // drag bar alone never gave (user request)
   const fixedHeight = requested === undefined ? undefined : Math.max(280, requested - depth * 28);
   const panel = usePanelMode();
+  // #134: while an iOS mobile sheet is open, undo WebKit scroll-jail
+  // shoves on every editable focus (see module block)
+  useEffect(() => {
+    if (!open || panel || !ON_IOS) return;
+    pushJailGuard();
+    return () => popJailGuard();
+  }, [open, panel]);
 
   // the whole test corpus was written against vaul's jsdom behavior: a
   // closed sheet STAYED MOUNTED (its exit transition never ran there),
@@ -419,10 +583,26 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   // the "discard changes?" ask — its own stacked sheet, so the parent
   // recedes and the choice is explicit (never window.confirm)
   const discardConfirm = dirty ? (
-    <Sheet open={confirmDiscard} onOpenChange={setConfirmDiscard} title={t('sheet.discardTitle')} size="compact">
+    <Sheet
+      open={confirmDiscard}
+      onOpenChange={(next) => {
+        setConfirmDiscard(next);
+        // dismissing the ask itself (backdrop/drag) keeps the edits —
+        // the hidden form slides back up (#253)
+        if (!next) setHidden(false);
+      }}
+      title={t('sheet.discardTitle')}
+      size="compact"
+    >
       <div className="flex flex-col gap-3 pt-1">
         <p className="text-[13px] leading-relaxed text-ink-2">{t('sheet.discardBody')}</p>
-        <Button data-testid="sheet-keep-editing" onClick={() => setConfirmDiscard(false)}>
+        <Button
+          data-testid="sheet-keep-editing"
+          onClick={() => {
+            setConfirmDiscard(false);
+            setHidden(false);
+          }}
+        >
           {t('sheet.keepEditing')}
         </Button>
         <Button
@@ -430,6 +610,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
           data-testid="sheet-discard"
           onClick={() => {
             setConfirmDiscard(false);
+            setHidden(false);
             onOpenChange(false);
           }}
         >
@@ -439,10 +620,20 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
     </Sheet>
   ) : null;
 
+  // #203: the flash itself — rendered at the top of the content in
+  // both shapes (mobile sheet + desktop dialog)
+  const busyBanner =
+    busyFlash && busyNote ? (
+      <div className="mb-2 rounded-card bg-warning-soft px-3 py-2 text-[12px] text-ink-2" data-testid="sheet-busy-note">
+        {busyNote}
+      </div>
+    ) : null;
+
   if (panel) {
     return (
       <>
-        <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} onDismiss={requestDismiss}>
+        <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} wide={wide} steady={steady} onDismiss={requestDismiss}>
+          {busyBanner}
           {children}
         </DesktopDialog>
         {discardConfirm}
@@ -454,10 +645,26 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
     <>
     <ModalSheet
       ref={sheetRef}
-      isOpen={IS_TEST ? everOpen : open}
+      isOpen={IS_TEST ? everOpen : open && !hiddenForDiscard}
       onClose={() => {
         syncCoveredStyles(); // a settled dismissal ends the drag
-        if (!isLocked && !(isMinaSheetGuarded() && depth === 0) && !dirty) onOpenChange(false);
+        if (!open) return; // a programmatic close is already handled
+        if (isLocked || (isMinaSheetGuarded() && depth === 0)) return;
+        // #203: belt for the drag path — disableDismiss already refuses
+        if (busyNote) {
+          flashBusy();
+          return;
+        }
+        if (dirty) {
+          // #253 (user): the drag COMPLETES — the sheet hides and the
+          // "discard?" ask takes over; Keep editing brings it back
+          if (!hiddenRef.current) {
+            setHidden(true);
+            setConfirmDiscard(true);
+          }
+          return;
+        }
+        onOpenChange(false);
       }}
       onCloseStart={() => {
         syncCoveredStyles();
@@ -468,11 +675,20 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
         if (ghost) ghost.style.pointerEvents = 'none';
       }}
       detent="content"
-      avoidKeyboard={!VIEWPORT_RESIZES}
-      // dirty forms and the Mina tutorial refuse the drag-dismissal too:
-      // the sheet snaps back, and the backdrop path asks "discard?"
-      // (tutorial: root sheet only — nested pickers stay dismissible)
-      disableDismiss={isLocked || !!dirty || (isMinaSheetGuarded() && depth === 0)}
+      // #134: on iOS BOTH library behaviors stand down (see the block
+      // at the top) — AppLayout reveals, the jail guard keeps chrome
+      // straight, and the fixed app frame already pins the page.
+      // #290 r2: fine-pointer machines have no on-screen keyboard —
+      // the library stands down there too, or its virtualKeyboard
+      // misfire scrolls every focused field under the sheet header
+      avoidKeyboard={sheetLibAvoidsKeyboard()}
+      disableScrollLocking={ON_IOS}
+      // the Mina tutorial refuses the drag-dismissal (root sheet only —
+      // nested pickers stay dismissible). #253: dirty forms no longer
+      // refuse it — the drag completes, the sheet hides, and the
+      // "discard?" ask decides whether it comes back. #203: in-flight
+      // work refuses the drag (it springs back, the note flashes).
+      disableDismiss={isLocked || (isMinaSheetGuarded() && depth === 0) || !!busyNote}
       prefersReducedMotion={IS_TEST}
       unstyled
       // z-50 like the old drawer: the Mina tutorial overlay must still be
@@ -540,7 +756,10 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
             scrollClassName="px-5"
             scrollStyle={{ height: 'auto', flex: '1 1 auto', minHeight: 0 }}
           >
-            <div className={footer ? 'pb-2' : 'pb-[max(20px,env(safe-area-inset-bottom))]'}>{children}</div>
+            <div className={footer ? 'pb-2' : 'pb-[max(20px,env(safe-area-inset-bottom))]'}>
+              {busyBanner}
+              {children}
+            </div>
           </ModalSheet.Content>
           {/* pinned footer: OUTSIDE the scrollport, so it can never
               drift over the content (the sticky-in-scroll version did,

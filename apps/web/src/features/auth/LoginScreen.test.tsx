@@ -8,10 +8,37 @@ import { renderApp } from '@/test/harness';
 // Local-first law also applies to demo/offline sign-in: zero network.
 const fetchSpy = vi.fn(() => Promise.reject(new Error('network disabled in test')));
 
-// deterministic regardless of the developer's .env.local
-vi.mock('@/app/config', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/app/config')>()),
-  logtoConfigured: false,
+// deterministic regardless of the developer's .env.local; localCaUrl and
+// logtoConfigured are steerable per test (LOCAL native builds get a
+// trust-certificate button; the sign-in-error spec needs the button)
+const mockCaUrl = { value: null as string | null };
+const mockLogto = { value: false };
+vi.mock('@/app/config', async (importOriginal) => {
+  const real = await importOriginal<typeof import('@/app/config')>();
+  return {
+    ...real,
+    get logtoConfigured() {
+      return mockLogto.value;
+    },
+    localCaUrl: () => mockCaUrl.value,
+  };
+});
+// controllable OIDC surface: signIn rejections must SHOW on the login
+// screen (iOS report 2026-09-08: an untrusted family cert made the
+// discovery fetch die and the button looked simply dead)
+const mockSignIn = vi.fn(() => Promise.resolve());
+vi.mock('@logto/react', () => ({
+  LogtoProvider: ({ children }: { children: unknown }) => children,
+  useLogto: () => ({
+    signIn: mockSignIn,
+    signOut: vi.fn(),
+    getAccessToken: vi.fn(async () => undefined),
+    getIdTokenClaims: vi.fn(async () => undefined),
+    isAuthenticated: false,
+    isLoading: false,
+    error: undefined,
+  }),
+  useHandleSignInCallback: () => ({ error: undefined, isAuthenticated: false }),
 }));
 
 describe('LoginScreen', () => {
@@ -21,6 +48,24 @@ describe('LoginScreen', () => {
     indexedDB.deleteDatabase('munni_demo');
     vi.stubGlobal('fetch', fetchSpy);
     fetchSpy.mockClear();
+    mockSignIn.mockClear();
+  });
+
+  it('a sign-in that cannot start names the failure instead of dying silently (iOS cert, 2026-09-08)', async () => {
+    mockLogto.value = true;
+    mockCaUrl.value = 'http://ca.192-168-2-2.sslip.io/root.crt';
+    mockSignIn.mockRejectedValueOnce(new TypeError('Load failed'));
+    try {
+      renderApp('/login', { signedIn: false });
+      fireEvent.click(await screen.findByTestId('login-signin-btn'));
+      const err = await screen.findByTestId('login-signin-error');
+      expect(err.textContent).toContain('Load failed');
+      // the LOCAL build appends the certificate hint (full-trust step)
+      expect(err.textContent).toContain('Certificate Trust Settings');
+    } finally {
+      mockLogto.value = false;
+      mockCaUrl.value = null;
+    }
   });
 
   it('demo button signs in and lands on home without network calls', async () => {
@@ -29,6 +74,36 @@ describe('LoginScreen', () => {
     expect(await screen.findByTestId('screen-home')).toBeTruthy();
     expect(readSessionIdentity()).toEqual({ kind: 'demo' });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('LOCAL builds offer the trust-certificate button; everything else stays clean', async () => {
+    mockCaUrl.value = null;
+    const first = renderApp('/login', { signedIn: false });
+    await screen.findByTestId('login-demo-btn');
+    expect(screen.queryByTestId('login-trust-ca')).toBeNull();
+    first.unmount();
+
+    mockCaUrl.value = 'http://ca.192-168-2-2.sslip.io/root.crt';
+    try {
+      const open = vi.fn();
+      vi.stubGlobal('open', open);
+      renderApp('/login', { signedIn: false });
+      const btn = await screen.findByTestId('login-trust-ca');
+      expect(screen.getByTestId('login-trust-ca-hint')).toBeTruthy();
+      fireEvent.click(btn);
+      expect(open).toHaveBeenCalledWith('http://ca.192-168-2-2.sslip.io/root.crt', '_blank', 'noopener');
+    } finally {
+      mockCaUrl.value = null;
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('carries the dark-mode top scrim so status icons and wordmark read on the light hero (#122)', async () => {
+    renderApp('/login', { signedIn: false });
+    const scrim = await screen.findByTestId('login-top-scrim');
+    // dark-only visibility: hidden by default, shown via the dark variant
+    expect(scrim.className).toContain('hidden');
+    expect(scrim.className).toContain('dark:block');
   });
 
   it('creates an offline profile and enters a personal space named after it', async () => {
@@ -47,8 +122,11 @@ describe('LoginScreen', () => {
     fireEvent.click(screen.getByTestId('offline-continue'));
     expect(await screen.findByTestId('screen-offline-profiles')).toBeTruthy();
     const name = await screen.findByTestId('offline-name');
-    expect((screen.getByTestId('offline-create') as HTMLButtonElement).disabled).toBe(true);
+    // #195: stays tappable — a nameless tap names the blocker instead
+    fireEvent.click(screen.getByTestId('offline-create'));
+    expect(await screen.findByTestId('offline-create-blocker')).toBeTruthy();
     fireEvent.change(name, { target: { value: 'Okkes' } });
+    await waitFor(() => expect(screen.queryByTestId('offline-create-blocker')).toBeNull());
     fireEvent.click(screen.getByTestId('offline-create'));
 
     // offline users get the same first-run setup (user ruling): name is

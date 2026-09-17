@@ -34,6 +34,9 @@ export function useRecurrings(): RecurringRow[] | undefined {
       return rows;
     },
     [spaceId],
+    // #361: remount cache — tab returns render the last rows instantly
+    undefined,
+    `recurrings:${spaceId}`,
   );
 }
 
@@ -51,12 +54,19 @@ export async function propagateRecurringCategory(
   spaceId: string,
   recurringId: string,
   catId: string = 'uncategorized',
+  linkedAccountId?: string,
 ): Promise<number> {
   let touched = 0;
   for (const tx of await visibleTransactions(store, spaceId)) {
     if (tx.deleted !== 0 || tx.recurringId !== recurringId) continue;
-    if (tx.catId === catId || tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
-    await writeTxTransform(repo, tx, { catId });
+    if (tx.catId === 'reimbursed' || tx.catId === 'expenseReimburse') continue;
+    // #274 (user): the recurring's counterparty rides to its rows — the
+    // choke mints the manual counter leg per row ("bulk create")
+    const linkField =
+      linkedAccountId && tx.linkedAccountId !== linkedAccountId ? { linkedAccountId } : {};
+    if (tx.catId === catId && !('linkedAccountId' in linkField)) continue;
+    // #260 r2 (user): the recurring applying its category IS the review
+    await writeTxTransform(repo, tx, { catId, needsReview: 0, ...linkField });
     touched++;
   }
   return touched;
@@ -104,16 +114,54 @@ export function useRecurringOps(): RecurringOps {
       // re-files the transaction — unless the user filed it as expected
       // reimbursement or settlement filed it as reimbursed
       const rec = recurringId ? await store.get('recurring', recurringId) : undefined;
+      // #260 r2 (user): the refile counts as the review — linked rows
+      // must not keep wearing the unreviewed badge
       const refile =
         rec?.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
-          ? { catId: rec.catId }
+          ? { catId: rec.catId, needsReview: 0 as const }
           : {};
-      await writeTxTransform(repo, tx, { recurringId, ...refile });
+      // #274 (user): the recurring's counterparty rides to its rows —
+      // for a manual counter the choke mints the leg right here
+      const counter =
+        rec?.linkedAccountId && tx.linkedAccountId !== rec.linkedAccountId
+          ? { linkedAccountId: rec.linkedAccountId }
+          : {};
+      await writeTxTransform(repo, tx, { recurringId, ...refile, ...counter });
       void logActivity(store, repo, spaceId, 'txLink', txTitle(tx));
     },
     reconcile: () => reconcileRecurringLinks(store, repo, spaceId),
   };
 }
+
+/** rows the auto-linker considers at all — unlinked outgoing expense or
+ *  funding money (#264: pot top-ups are recurring-shaped too). S3776. */
+const reconcilableRow = (tx: SpaceTx): boolean =>
+  !tx.recurringId && tx.amountCents < 0 && (tx.txType === 'expense' || tx.txType === 'funding');
+
+/** which billing cycles each recurring already has a linked payment in
+ *  (one payment per cycle). S3776. */
+function linkedCyclesOf(txs: readonly SpaceTx[], recs: readonly RecurringRow[]): Map<string, Set<string>> {
+  const cycles = new Map<string, Set<string>>();
+  for (const tx of txs) {
+    if (!tx.recurringId) continue;
+    const rec = recs.find((r) => r.id === tx.recurringId);
+    if (!rec) continue;
+    const set = cycles.get(rec.id) ?? new Set<string>();
+    set.add(cycleKeyOf(rec, tx.date));
+    cycles.set(rec.id, set);
+  }
+  return cycles;
+}
+
+/** #360: the facts a freshly auto-linked row adopts from its recurring —
+ *  category (unless reimbursement-filed) and counterparty; the row stays
+ *  unreviewed, the user still confirms. S3776. */
+const adoptionPatch = (rec: RecurringRow, tx: SpaceTx): { catId?: string; linkedAccountId?: string } => ({
+  ...(rec.catId && tx.catId !== rec.catId && tx.catId !== 'reimbursed' && tx.catId !== 'expenseReimburse'
+    ? { catId: rec.catId }
+    : {}),
+  ...(rec.linkedAccountId && tx.linkedAccountId !== rec.linkedAccountId ? { linkedAccountId: rec.linkedAccountId } : {}),
+});
 
 /**
  * Auto-link unlinked expenses to active recurrings by merchant pattern:
@@ -128,29 +176,31 @@ export async function reconcileRecurringLinks(store: StorageBackend, repo: Repo,
   if (recs.length === 0) return 0;
 
   const txs = await visibleTransactions(store, spaceId);
-  const byKey = new Map(recs.map((r) => [r.merchantKey!, r]));
-
-  const linkedCycles = new Map<string, Set<string>>();
-  for (const tx of txs) {
-    if (!tx.recurringId) continue;
-    const rec = recs.find((r) => r.id === tx.recurringId);
-    if (!rec) continue;
-    const set = linkedCycles.get(rec.id) ?? new Set();
-    set.add(cycleKeyOf(rec, tx.date));
-    linkedCycles.set(rec.id, set);
+  // #346: one merchant may carry SEVERAL recurrings (amount tiers) —
+  // the amount match below picks the right one
+  const byKey = new Map<string, RecurringRow[]>();
+  for (const r of recs) {
+    const list = byKey.get(r.merchantKey!) ?? [];
+    list.push(r);
+    byKey.set(r.merchantKey!, list);
   }
+
+  const linkedCycles = linkedCyclesOf(txs, recs);
 
   let linked = 0;
   for (const tx of [...txs].sort((a, b) => a.date.localeCompare(b.date))) {
-    if (tx.recurringId || tx.amountCents >= 0 || tx.txType !== 'expense') continue;
-    const rec = byKey.get(merchantKey(tx.merchant));
-    if (!rec || !recurringAmountMatches(rec, tx.amountCents)) continue;
+    if (!reconcilableRow(tx)) continue;
+    // #126 r7: a split container never takes a row-level recurring link —
+    // its parts carry their own (linked by hand from the part surfaces)
+    if ((tx.splits ?? []).filter((s) => s.catId !== 'reimbursed').length > 1) continue;
+    const rec = (byKey.get(merchantKey(tx.merchant)) ?? []).find((r) => recurringAmountMatches(r, tx.amountCents));
+    if (!rec) continue;
     const cycle = cycleKeyOf(rec, tx.date);
     const cycles = linkedCycles.get(rec.id) ?? new Set();
     if (cycles.has(cycle)) continue; // one payment per billing cycle
     cycles.add(cycle);
     linkedCycles.set(rec.id, cycles);
-    await writeTxTransform(repo, tx, { recurringId: rec.id });
+    await writeTxTransform(repo, tx, { recurringId: rec.id, ...adoptionPatch(rec, tx) });
     linked++;
   }
   return linked;
@@ -198,9 +248,10 @@ export function useRecurringReminders(): void {
       // loans saved without an interest rate get a WEEKLY nudge to fill
       // it in — 0% is an answer, an empty rate is a question (user rule
       // 2026-07-28); quick-add now, find out the rate later. Loans v2:
-      // the tracked liability ACCOUNTS are the debts now
+      // the tracked liability ACCOUNTS are the debts now. #221: the
+      // minted DEFAULT pot is munni's fixture, not a user loan — no nag.
       const loans = (await store.allRows('account')).filter(
-        (a) => a.deleted === 0 && a.archived !== 1 && a.interestPctYear === undefined && isDebtTracked(a),
+        (a) => a.deleted === 0 && a.archived !== 1 && !a.defaultFor && a.interestPctYear === undefined && isDebtTracked(a),
       );
       for (const loan of loans) {
         const key = `debtPctReminded_${loan.id}`;

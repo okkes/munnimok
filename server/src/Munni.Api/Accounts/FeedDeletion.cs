@@ -29,6 +29,11 @@ public static class FeedDeletion
         var feed = await db.FeedSpaces.FindAsync(feedSpaceId);
         if (feed is null) return Results.NotFound();
 
+        // #240 r3: attachments whose mirror the space already tombstoned
+        // are dead weight — drop them BEFORE judging "who else uses it",
+        // or a mis-stamped AttachedBy keeps an orphan undeletable forever
+        await FeedJanitor.RemoveDeadAttachmentsAsync(db, feedSpaceId);
+
         // every provider link pointing at this feed, with its consent owner
         var allLinks = await (
             from a in db.GcLinkedAccounts
@@ -37,40 +42,51 @@ public static class FeedDeletion
         var links = allLinks.Select(x => new ConsentLink(x.a, x.r)).ToList();
         var feedLinks = links.Where(x => ImportIds.FeedSpaceId(x.Account.Iban) == feedSpaceId).ToList();
         var mine = feedLinks.Where(x => x.Requisition.UserId == me).ToList();
+        var coOwner = await db.FeedOwners.AnyAsync(o => o.FeedSpaceId == feedSpaceId && o.UserId == me);
 
-        // deleting is for accounts you brought in: your feed or your consent
-        if (feed.OwnerUserId != me && mine.Count == 0) return Results.Forbid();
+        // deleting is for accounts you brought in: your feed, your
+        // co-ownership (#240: your own consent proved the account) or
+        // your consent
+        if (feed.OwnerUserId != me && !coOwner && mine.Count == 0) return Results.Forbid();
 
         // 1 · my consent goes first (fetches stop; nothing resurrects)
-        await RevokeMyConsentsAsync(db, http, loggerFactory, links, mine);
+        await RevokeMyConsentsAsync(db, http, loggerFactory, links, mine, feedSpaceId, me);
 
         // 2 · anyone ELSE still covering this account keeps the feed alive
         var otherConsent = feedLinks.Any(x => x.Requisition.UserId != me);
+        var otherCoOwner = await db.FeedOwners.AnyAsync(o => o.FeedSpaceId == feedSpaceId && o.UserId != me);
         var otherAttachment = await db.SpaceAccountLinks.AnyAsync(l => l.FeedSpaceId == feedSpaceId && l.AttachedBy != me);
-        if (otherConsent || otherAttachment || feed.OwnerUserId != me)
+        var otherOwner = feed.OwnerUserId != me && await db.SpaceMembers.AnyAsync(m => m.UserId == feed.OwnerUserId);
+        if (otherConsent || otherCoOwner || otherAttachment || otherOwner)
         {
             await RemoveMyViewAsync(db, feed, me, feedLinks);
             await db.SaveChangesAsync();
             return Results.Ok(new FeedDeletionResult(false));
         }
 
-        // 3 · full erasure
+        // 3 · full erasure — nobody living is left behind this feed
+        // (#240 r3: a recorded owner with no living presence, e.g. a
+        // deleted test identity, no longer blocks the erase)
         await EraseFeedAsync(db, feed);
         await db.SaveChangesAsync();
         return Results.Ok(new FeedDeletionResult(true));
     }
 
     /// <summary>Remove the caller's links; revoke each of their consents
-    /// that no longer covers any account (GC has no partial revocation).</summary>
+    /// that no longer covers any account (GC has no partial revocation).
+    /// #240: when a CO-owner's own consent still covers the account, the
+    /// fetch binding hands over to it instead of dying with mine.</summary>
     private static async Task RevokeMyConsentsAsync(
         AppDbContext db, HttpContext http, ILoggerFactory loggerFactory,
-        List<ConsentLink> allLinks, List<ConsentLink> mine)
+        List<ConsentLink> allLinks, List<ConsentLink> mine, string feedSpaceId, Guid me)
     {
         var logger = loggerFactory.CreateLogger("FeedDeletion");
         var gc = http.RequestServices.GetService<IGoCardlessApi>();
         var myAccountIds = mine.Select(x => x.Account.GcAccountId).ToHashSet();
         db.GcPendingTxs.RemoveRange(await db.GcPendingTxs.Where(p => myAccountIds.Contains(p.GcAccountId)).ToListAsync());
-        db.GcLinkedAccounts.RemoveRange(mine.Select(x => x.Account));
+
+        await HandOverOrDropMyRowsAsync(db, allLinks, mine, feedSpaceId, me);
+
         foreach (var requisition in mine.Select(x => x.Requisition).DistinctBy(r => r.Id).ToList())
         {
             var stillHasAccounts = allLinks.Any(x =>
@@ -91,6 +107,56 @@ public static class FeedDeletion
         }
     }
 
+    /// <summary>
+    /// #240: my fetch rows leave — unless a surviving CO-owner's recorded
+    /// consent can take the binding over. Same provider id (GoCardless):
+    /// the row survives, re-bound in place with null stamps so the next
+    /// tick backfills the full window. Per-session ids (Enable Banking):
+    /// a fresh row carries the survivor's own pair into the same
+    /// IBAN-keyed feed (deterministic entity ids dedupe the overlap).
+    /// Another user's own consent already fetching means nothing to do.
+    /// </summary>
+    private static async Task HandOverOrDropMyRowsAsync(
+        AppDbContext db, List<ConsentLink> allLinks, List<ConsentLink> mine, string feedSpaceId, Guid me)
+    {
+        var otherConsentFetches = allLinks.Any(x =>
+            ImportIds.FeedSpaceId(x.Account.Iban) == feedSpaceId && x.Requisition.UserId != me);
+        var survivor = otherConsentFetches
+            ? null
+            : await db.FeedOwners
+                .Where(o => o.FeedSpaceId == feedSpaceId && o.UserId != me && o.RequisitionId != null && o.GcAccountId != null)
+                .OrderByDescending(o => o.CreatedAt)
+                .FirstOrDefaultAsync();
+        var survivorRequisition = survivor is null ? null : await db.GcRequisitions.FindAsync(survivor.RequisitionId);
+
+        var kept = survivorRequisition is null
+            ? null
+            : mine.Select(x => x.Account).FirstOrDefault(a => a.GcAccountId == survivor!.GcAccountId);
+        if (kept is not null)
+        {
+            kept.RequisitionId = survivorRequisition!.Id;
+            kept.SpaceId = survivorRequisition.SpaceId;
+            kept.Provider = survivorRequisition.Provider;
+            kept.LastFetchAt = null;
+            kept.HistoryBackfilledAt = null;
+        }
+        else if (survivorRequisition is not null && mine.Count > 0)
+        {
+            var taken = mine[0].Account;
+            db.GcLinkedAccounts.Add(new GcLinkedAccount
+            {
+                GcAccountId = survivor!.GcAccountId!,
+                SpaceId = survivorRequisition.SpaceId,
+                AccountEntityId = taken.AccountEntityId,
+                Iban = taken.Iban,
+                Currency = taken.Currency,
+                RequisitionId = survivorRequisition.Id,
+                Provider = survivorRequisition.Provider,
+            });
+        }
+        db.GcLinkedAccounts.RemoveRange(mine.Select(x => x.Account).Where(a => !ReferenceEquals(a, kept)));
+    }
+
     /// <summary>Partial path: my attachments disappear, the others keep
     /// theirs; ownership follows a remaining coverer so they can attach.</summary>
     private static async Task RemoveMyViewAsync(AppDbContext db, FeedSpace feed, Guid me, List<ConsentLink> feedLinks)
@@ -99,12 +165,22 @@ public static class FeedDeletion
             .Where(l => l.FeedSpaceId == feed.Id && l.AttachedBy == me)
             .ToListAsync();
         db.SpaceAccountLinks.RemoveRange(myLinks);
+        // #240: my co-ownership goes with my view
+        db.FeedOwners.RemoveRange(await db.FeedOwners.Where(o => o.FeedSpaceId == feed.Id && o.UserId == me).ToListAsync());
         await WriteDeletionOpsAsync(db, myLinks.Select(l => l.SpaceId).Distinct().ToList(), feed.Id, txIds: null);
         if (feed.OwnerUserId == me)
         {
-            var successor = feedLinks.FirstOrDefault(x => x.Requisition.UserId != me)?.Requisition.UserId
+            // a co-owner is the natural successor; consent holders and
+            // attachers keep their old place in line
+            var successor = (await db.FeedOwners.FirstOrDefaultAsync(o => o.FeedSpaceId == feed.Id && o.UserId != me))?.UserId
+                ?? feedLinks.FirstOrDefault(x => x.Requisition.UserId != me)?.Requisition.UserId
                 ?? (await db.SpaceAccountLinks.FirstOrDefaultAsync(l => l.FeedSpaceId == feed.Id && l.AttachedBy != me))?.AttachedBy;
-            if (successor is Guid next) feed.OwnerUserId = next;
+            if (successor is Guid next)
+            {
+                feed.OwnerUserId = next;
+                // the promoted co-owner's row collapses into the primary slot
+                db.FeedOwners.RemoveRange(await db.FeedOwners.Where(o => o.FeedSpaceId == feed.Id && o.UserId == next).ToListAsync());
+            }
         }
     }
 
@@ -124,6 +200,7 @@ public static class FeedDeletion
             .ToListAsync();
         await WriteDeletionOpsAsync(db, viewingSpaceIds, feedSpaceId, txIds);
         db.SpaceAccountLinks.RemoveRange(await db.SpaceAccountLinks.Where(l => l.FeedSpaceId == feedSpaceId).ToListAsync());
+        db.FeedOwners.RemoveRange(await db.FeedOwners.Where(o => o.FeedSpaceId == feedSpaceId).ToListAsync());
 
         db.EntityRows.RemoveRange(await db.EntityRows.Where(r => r.SpaceId == feedSpaceId).ToListAsync());
         db.SyncOps.RemoveRange(await db.SyncOps.Where(o => o.SpaceId == feedSpaceId).ToListAsync());

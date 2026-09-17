@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { filterTxs, hasActiveFilter } from './txFilter';
+import { filterTxs, hasActiveFilter, matchingPartIndexes } from './txFilter';
 import type { TransactionRow } from '@/db/types';
 
 const tx = (partial: Partial<TransactionRow>): TransactionRow =>
@@ -79,6 +79,47 @@ describe('filterTxs', () => {
     expect(filterTxs(typed, { from: '2026-07-06', to: '2026-07-31' }).map((t) => t.id)).toEqual(['t2']);
     // empty sets mean "no restriction"
     expect(filterTxs(typed, { txTypes: new Set(), catIds: new Set(), accountIds: new Set() })).toHaveLength(3);
+  });
+
+  it('matchingPartIndexes partitions a split by the part-level filters (#126 r8)', () => {
+    const split = tx({
+      id: 's1',
+      txType: 'expense',
+      catId: 'groceries',
+      splits: [
+        { id: 'p0', catId: 'groceries', amountCents: 900 },
+        { id: 'p1', catId: 'housing', amountCents: 500, txType: 'saving' },
+        { id: 'p2', catId: 'uncategorized', amountCents: 300, cats: undefined },
+        { id: 'p3', catId: 'gifts', amountCents: 200, cats: [{ catId: 'gifts', amountCents: 150 }, { catId: 'coffee', amountCents: 50 }] },
+      ],
+    });
+    // no partitioning filter → every part shows (the full band)
+    expect(matchingPartIndexes(split, {})).toEqual([0, 1, 2, 3]);
+    expect(matchingPartIndexes(split, { catIds: new Set() })).toEqual([0, 1, 2, 3]);
+    // category filters pick the matching parts — spreads match per entry
+    expect(matchingPartIndexes(split, { catIds: new Set(['groceries']) })).toEqual([0]);
+    expect(matchingPartIndexes(split, { catIds: new Set(['coffee']) })).toEqual([3]);
+    // type filters read the part's own type, inheriting the row's
+    expect(matchingPartIndexes(split, { txTypes: new Set(['saving']) })).toEqual([1]);
+    expect(matchingPartIndexes(split, { txTypes: new Set(['expense']) })).toEqual([0, 2, 3]);
+    // the uncategorized quick filter finds the unfinished part
+    expect(matchingPartIndexes(split, { onlyUncategorized: true })).toEqual([2]);
+    // the settled Reimbursed slice is bookkeeping, never a part
+    const settled = tx({ id: 's2', txType: 'expense', splits: [{ catId: 'groceries', amountCents: 100 }, { catId: 'reimbursed', amountCents: 50 }] });
+    expect(matchingPartIndexes(settled, { catIds: new Set(['groceries']) })).toEqual([0]);
+  });
+
+  it('#267 r2: a leading +/- constrains the sign, magnitude stays a substring hit', () => {
+    const signed = [
+      tx({ id: 'in1', merchant: 'Refund A', amountCents: 1391 }),
+      tx({ id: 'in2', merchant: 'Refund B', amountCents: 1391 }),
+      tx({ id: 'out1', merchant: 'Shop', amountCents: -1391 }),
+      tx({ id: 'out2', merchant: 'Shop big', amountCents: -21391 }),
+    ];
+    expect(filterTxs(signed, { query: '+13,91' }).map((r) => r.id)).toEqual(['in1', 'in2']);
+    expect(filterTxs(signed, { query: '-13,91' }).map((r) => r.id)).toEqual(['out1', 'out2']);
+    // unsigned keeps matching both directions
+    expect(filterTxs(signed, { query: '13,91' })).toHaveLength(4);
   });
 
   it('hasActiveFilter ignores whitespace-only queries and empty sets', () => {

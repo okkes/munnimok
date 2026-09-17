@@ -11,10 +11,13 @@ import type { FeedGateway } from './importCamt';
 export function apiFeedGateway(sub: string): FeedGateway {
   return {
     async register(preferredFeedId, accountRef) {
-      const res = await apiFetch('/feeds', {
-        method: 'POST',
-        body: JSON.stringify({ feedSpaceId: preferredFeedId, accountRef }),
-      });
+      // #281: a 409 here is the designed fork (the shared feed id is
+      // taken) — the personal-feed retry below handles it, no report
+      const res = await apiFetch(
+        '/feeds',
+        { method: 'POST', body: JSON.stringify({ feedSpaceId: preferredFeedId, accountRef }) },
+        { expectStatuses: [409] },
+      );
       if (res.ok) return preferredFeedId;
       if (res.status === 409) {
         const personal = personalFeedSpaceId(accountRef, sub);
@@ -71,7 +74,19 @@ export async function deleteFeedAccount(feedSpaceId: string): Promise<{ erased: 
 }
 
 /** server links of a space (authoritative ids needed for detach) */
-export async function fetchSpaceLinks(spaceId: string): Promise<{ id: string; feedSpaceId: string; accountId: string }[]> {
+export interface ServerSpaceLink {
+  id: string;
+  feedSpaceId: string;
+  accountId: string;
+  /** the link's OWN gate/name facts — the reconcile mirror must copy
+   *  them, never re-guess them (#305: a boot-minted fresh historyFrom
+   *  out-HLC'd the real attach and ratcheted the gate forward) */
+  historyFrom?: string | null;
+  attachedByName?: string | null;
+  archived?: boolean;
+}
+
+export async function fetchSpaceLinks(spaceId: string): Promise<ServerSpaceLink[]> {
   const res = await apiFetch(`/spaces/${spaceId}/accounts`);
-  return res.ok ? ((await res.json()) as { id: string; feedSpaceId: string; accountId: string }[]) : [];
+  return res.ok ? ((await res.json()) as ServerSpaceLink[]) : [];
 }

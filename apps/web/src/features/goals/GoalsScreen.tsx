@@ -1,4 +1,6 @@
 import { downscaleImage } from '@/lib/image';
+import { isNativeApp, pickPhotoNative } from '@/lib/platform';
+import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
@@ -15,9 +17,11 @@ import { HelpButton } from '@/features/help/HelpButton';
 import { IntroCard } from '@/features/help/IntroCard';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { ProgressBar, Tile } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
+import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
 
 export const GOAL_ICONS = ['home-outline', 'car-outline', 'airplane', 'shield-check-outline', 'laptop', 'ring', 'sail-boat', 'school-outline'] as const;
 
@@ -46,6 +50,8 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
   const [target, setTarget] = useState('');
   const [targetDate, setTargetDate] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
 
   useEffect(() => {
     setName(editing?.name ?? '');
@@ -54,17 +60,34 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     setTarget(editing?.targetCents ? (editing.targetCents / 100).toFixed(2) : '');
     setTargetDate(editing?.targetDate ?? '');
     setConfirmDelete(false);
+    setAttempted(false);
   }, [initial, editing]);
 
   const uploadRef = useRef<HTMLInputElement>(null);
+  // #160: desktop-only webcam tile beside the upload tile
+  const webcamDoor = useWebcamDoor();
+  const [webcamOpen, setWebcamOpen] = useState(false);
   const onUpload = async (file: File | undefined) => {
     if (!file) return;
     // wide enough for the hero, small enough to sync as a field
     setPicture(await downscaleImage(file, 1080, 0.72));
   };
 
+  const pickPhoto = () => {
+    // #166: the Android shell's file input is gallery-only — the Camera
+    // plugin's chooser answers there; null from it = the user cancelled,
+    // never a reason to open the web input on top
+    if (isNativeApp()) {
+      void pickPhotoNative().then((file) => void onUpload(file ?? undefined));
+      return;
+    }
+    uploadRef.current?.click();
+  };
+
   const targetCents = parseCents(target);
-  const valid = name.trim().length > 0 && targetCents !== null && targetCents > 0;
+  const nameMissing = name.trim().length === 0;
+  const amountMissing = targetCents === null || targetCents <= 0;
+  const valid = !nameMissing && !amountMissing;
 
   const save = async () => {
     if (!valid || targetCents === null) return;
@@ -98,6 +121,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
       targetDate !== (editing?.targetDate ?? ''));
 
   return (
+    <>
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('goals.edit') : t('goals.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* optional cover, same mechanics as events (user request) */}
@@ -114,12 +138,23 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
           </button>
           <button
             data-testid="goalform-upload"
-            onClick={() => uploadRef.current?.click()}
+            onClick={pickPhoto}
             className="m-tap flex h-14 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
           >
             <Icon name="image-plus" size={16} />
             {t('events.uploadPicture')}
           </button>
+          {/* #160: desktop webcam snapshot — mirrors the upload tile */}
+          {webcamDoor && (
+            <button
+              data-testid="goalform-webcam"
+              onClick={() => setWebcamOpen(true)}
+              className="m-tap flex h-14 w-20 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-line bg-surface text-[10px] text-ink-3"
+            >
+              <Icon name="camera-outline" size={16} />
+              {t('webcam.use')}
+            </button>
+          )}
           {GOAL_PICTURES.map((candidate) => (
             <button
               key={candidate}
@@ -159,8 +194,11 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder={t('goals.namePlaceholder')}
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+          aria-invalid={attempted && nameMissing}
+          className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && nameMissing)}`}
         />
+        {/* #195 r2 (user): the blocker sits AT the field */}
+        <FormBlockerNote show={attempted && nameMissing} text={t('form.needName')} testId="goalform-save-blocker" />
         <div className="m-cap px-1">{t('goals.target')}</div>
         <input
           data-testid="goalform-target"
@@ -171,8 +209,10 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
           value={target}
           onChange={(e) => setTarget(e.target.value)}
           placeholder="0.00"
-          className="h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4"
+          aria-invalid={attempted && amountMissing}
+          className={`h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(attempted && amountMissing)}`}
         />
+        <FormBlockerNote show={attempted && !nameMissing && amountMissing} text={t('form.needAmount')} testId="goalform-save-blocker" />
         <label className="flex items-center gap-3 text-[13px] text-ink-2">
           {t('goals.targetDate')}
           <input
@@ -183,7 +223,16 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
             className="h-10 min-w-0 flex-1 appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
           />
         </label>
-        <Button data-testid="goalform-save" onClick={() => void save()} disabled={!valid}>
+        <Button
+          data-testid="goalform-save"
+          onClick={() => {
+            if (!valid) {
+              setAttempted(true);
+              return;
+            }
+            void save();
+          }}
+        >
           {editing ? t('action.save') : t('action.create')}
         </Button>
         {editing && (
@@ -193,6 +242,9 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
         )}
       </div>
     </Sheet>
+    {/* #160: snapshot feeds the same downscale path as the file input */}
+    <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onUpload(file)} />
+    </>
   );
 }
 
@@ -231,7 +283,7 @@ export function GoalsScreen() {
           </>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
+      <div ref={(el) => attachScrollMemory(el, 'goals')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <IntroCard tourId="goals" />
         {/* the honesty header — negative unallocated is the rebalance signal.
             Held back until both sides loaded so it never flashes €0 savings. */}

@@ -38,6 +38,7 @@ import { BudgetFormScreen } from '@/features/budgets/BudgetFormScreen';
 import { BudgetDetailScreen } from '@/features/budgets/BudgetDetailScreen';
 import { EventsScreen } from '@/features/events/EventsScreen';
 import { EventDetailScreen } from '@/features/events/EventDetailScreen';
+import { EventAttachScreen } from '@/features/events/EventAttachScreen';
 import { GoalsScreen } from '@/features/goals/GoalsScreen';
 import { GoalDetailScreen } from '@/features/goals/GoalDetailScreen';
 import { DebtsScreen } from '@/features/debts/DebtsScreen';
@@ -52,6 +53,7 @@ import { InsightsScreen } from '@/features/insights/InsightsScreen';
 import { TrendsScreen } from '@/features/trends/TrendsScreen';
 import { ProfileScreen } from '@/features/profile/ProfileScreen';
 import { DevicesScreen } from '@/features/profile/DevicesScreen';
+import { UpcomingScreen } from '@/features/home/UpcomingScreen';
 import { RecurringScreen } from '@/features/recurring/RecurringScreen';
 import { RecurringDetailScreen } from '@/features/recurring/RecurringDetailScreen';
 import { RecurringSuggestionsScreen } from '@/features/recurring/RecurringSuggestionsScreen';
@@ -90,6 +92,9 @@ const homeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home', c
 // sheet felt awkward; the sheet transform also sent the drag ghost adrift)
 const homeCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/home/customize', component: HomeCustomizeScreen });
 const txCustomizeRoute = createRoute({ getParentRoute: () => appRoute, path: '/tx-customize', component: TxDetailCustomizeScreen });
+// #334 (user): home's coming-up see-all lands on the combined recurring +
+// loan list — a plain child route, so browser back returns to Home
+const upcomingRoute = createRoute({ getParentRoute: () => appRoute, path: '/upcoming', component: UpcomingScreen });
 // list routes render the master-detail layout: the list stays mounted
 // while a detail child slides in beside it at lg (animated, §4.2)
 const transactionsRoute = createRoute({
@@ -101,6 +106,10 @@ const txDetailRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: '$txId',
   component: TxDetailScreen,
+  // #126 r4: a split's parts are addressable — ?part=<partId> shows one
+  // part as its own transaction page
+  validateSearch: (search: Record<string, unknown>): { part?: string } =>
+    typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
 });
 // full-screen counterpart picker (user redesign 2026-07-28) — a sibling
 // of the detail under /transactions, so it owns the detail pane on
@@ -109,6 +118,9 @@ const reimburseLinkRoute = createRoute({
   getParentRoute: () => transactionsRoute,
   path: '$txId/link-reimb',
   component: ReimburseLinkScreen,
+  // #126 r5: a link opened from a part page targets that part
+  validateSearch: (search: Record<string, unknown>): { part?: string } =>
+    typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
 });
 const recurringRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -125,6 +137,18 @@ const recurringDetailRoute = createRoute({
   getParentRoute: () => recurringRoute,
   path: '$recId',
   component: RecurringDetailScreen,
+});
+// #168 r5 (user): a transaction opened FROM the recurring screen mounts
+// under the recurring layout — at lg the recurring list stays the master
+// pane beside it (like $recId above); on mobile, back lands on
+// /recurring. Deeper detours from the detail (parts, peers, link-reimb)
+// continue under the canonical /transactions tree by design.
+const recurringTxRoute = createRoute({
+  getParentRoute: () => recurringRoute,
+  path: 'tx/$txId',
+  component: () => <TxDetailScreen backTo="/recurring" />,
+  validateSearch: (search: Record<string, unknown>): { part?: string } =>
+    typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {},
 });
 const spacesRoute = createRoute({ getParentRoute: () => appRoute, path: '/spaces', component: SpacesScreen });
 const spaceSettingsRoute = createRoute({
@@ -158,7 +182,15 @@ const goOfflineRoute = createRoute({
   path: '/settings/go-offline',
   component: GoOfflineScreen,
 });
-const reviewRoute = createRoute({ getParentRoute: () => appRoute, path: '/review', component: ReviewScreen });
+const reviewRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: '/review',
+  component: ReviewScreen,
+  // #132: a new-transactions notification lands in the ANNOUNCED space —
+  // the space id rides the hash query so cold starts carry it too
+  validateSearch: (search: Record<string, unknown>): { space?: string } =>
+    typeof search.space === 'string' && search.space.length > 0 ? { space: search.space } : {},
+});
 const accountsRoute = createRoute({ getParentRoute: () => appRoute, path: '/accounts', component: AccountsScreen });
 const categoriesRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -184,6 +216,8 @@ const budgetDetailRoute = createRoute({ getParentRoute: () => budgetsRoute, path
 const budgetEditRoute = createRoute({ getParentRoute: () => appRoute, path: '/budgets/$budgetId/edit', component: BudgetFormScreen });
 const eventsRoute = createRoute({ getParentRoute: () => appRoute, path: '/events', component: EventsScreen });
 const eventDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId', component: EventDetailScreen });
+// #144: attaching is a full screen, not a sheet
+const eventAttachRoute = createRoute({ getParentRoute: () => appRoute, path: '/events/$eventId/attach', component: EventAttachScreen });
 const goalsRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals', component: GoalsScreen });
 const goalDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/goals/$goalId', component: GoalDetailScreen });
 const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts', component: DebtsScreen });
@@ -203,9 +237,26 @@ const trendsRoute = createRoute({ getParentRoute: () => appRoute, path: '/trends
 const categoryDrillRoute = createRoute({
   getParentRoute: () => appRoute,
   path: '/overview/$kind/$catId',
-  component: CategoryDrillScreen,
+  // #351 (user): a master-detail host — at lg a tapped transaction opens
+  // in the right pane while this drill stays put
+  component: () => <MasterDetailLayout list={<CategoryDrillScreen />} />,
   // the overview hands over its selected period
   validateSearch: (search: Record<string, unknown>): { from?: string } => ({
+    from: typeof search.from === 'string' ? search.from : undefined,
+  }),
+});
+/** #351: the transaction page under the overview tree (the recurring
+ *  tx/$txId precedent) — back returns to the drill, period intact */
+function OverviewTxDetail() {
+  const { kind, catId } = overviewTxRoute.useParams();
+  return <TxDetailScreen backTo={`/overview/${kind}/${catId}`} />;
+}
+const overviewTxRoute = createRoute({
+  getParentRoute: () => categoryDrillRoute,
+  path: 'tx/$txId',
+  component: OverviewTxDetail,
+  validateSearch: (search: Record<string, unknown>): { part?: string; from?: string } => ({
+    ...(typeof search.part === 'string' && search.part.length > 0 ? { part: search.part } : {}),
     from: typeof search.from === 'string' ? search.from : undefined,
   }),
 });
@@ -217,8 +268,9 @@ export const routeTree = rootRoute.addChildren([
     homeRoute,
     homeCustomizeRoute,
     txCustomizeRoute,
+    upcomingRoute,
     transactionsRoute.addChildren([txDetailRoute, reimburseLinkRoute]),
-    recurringRoute.addChildren([recurringDetailRoute]),
+    recurringRoute.addChildren([recurringDetailRoute, recurringTxRoute]),
     recurringSuggestionsRoute,
     spacesRoute,
     spaceSettingsRoute,
@@ -239,12 +291,13 @@ export const routeTree = rootRoute.addChildren([
     profileRoute,
     devicesRoute,
     overviewRoute,
-    categoryDrillRoute,
+    categoryDrillRoute.addChildren([overviewTxRoute]),
     budgetsRoute.addChildren([budgetDetailRoute]),
     budgetNewRoute,
     budgetEditRoute,
     eventsRoute,
     eventDetailRoute,
+    eventAttachRoute,
     goalsRoute,
     goalDetailRoute,
     debtsRoute,

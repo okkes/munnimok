@@ -14,6 +14,7 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { SearchField } from '@/ui/SearchField';
 
 interface SplitSummary {
   id: string;
@@ -754,12 +755,13 @@ export function SplitDetailScreen() {
           list is read from the LOCAL database, never another member's */}
       <Sheet open={txOpen} onOpenChange={setTxOpen} title={t('splits.fromTx')} size="tall" dragHandle>
         <div className="flex h-full flex-col gap-3 pt-1">
-          <input
-            data-testid="split-tx-search"
+          <SearchField
+            testId="split-tx-search"
             value={txQuery}
-            onChange={(e) => setTxQuery(e.target.value)}
+            onChange={setTxQuery}
             placeholder={t('splits.searchTx')}
-            className="h-12 w-full shrink-0 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none"
+            height="h-12"
+            className="shrink-0"
           />
           <div className="min-h-0 flex-1 overflow-y-auto rounded-card border border-line bg-surface">
             {(txResults ?? []).map((tx) => {

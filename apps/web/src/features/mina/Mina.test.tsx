@@ -7,6 +7,7 @@ import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
 import { MINA_STEPS } from './steps';
+import { clipPads, rectSettled } from './MinaTutorial';
 import { revertMinaRun } from './revert';
 import { en } from '@/i18n/en';
 import { nl } from '@/i18n/nl';
@@ -26,6 +27,44 @@ describe('Mina step registry', () => {
     // one welcome, one wrap, both fullscreen
     expect(MINA_STEPS[0].id).toBe('welcome');
     expect(MINA_STEPS.at(-1)!.id).toBe('wrap');
+  });
+});
+
+describe('#136 r3: settled-geometry reveal + sheet-aware clip pads', () => {
+  const rect = (top: number, left = 0, width = 100, height = 40) => ({ top, left, width, height }) as DOMRect;
+
+  it('rectSettled: only two agreeing frames count — a sheet mid slide-in never settles', () => {
+    // first sighting has no previous frame to agree with
+    expect(rectSettled(null, rect(400))).toBe(false);
+    // the bottom sheet is still rising — the one-shot reveal must wait
+    expect(rectSettled(rect(700), rect(520))).toBe(false);
+    // geometry held still for a frame — now the clip check may judge
+    expect(rectSettled(rect(520), rect(520))).toBe(true);
+    // a size change (desktop dialog growing) is movement too
+    expect(rectSettled(rect(520, 0, 100, 40), rect(520, 0, 100, 90))).toBe(false);
+  });
+
+  it('clipPads: anchors inside a sheet float above the app chrome — tight pads', () => {
+    const sheet = document.createElement('div');
+    sheet.setAttribute('data-sheet-body', '');
+    const row = document.createElement('button');
+    sheet.appendChild(row);
+    document.body.appendChild(sheet);
+    const bare = document.createElement('button');
+    document.body.appendChild(bare);
+    try {
+      // a sheet's bottom row is NOT hidden behind the tab bar — the
+      // sheet covers that chrome, so the chrome-sized pads must not
+      // call it "clipped" forever (that buried the switcher's Manage
+      // row at sub-lg sizes and stood the soft glow down at sheet
+      // bottoms, user ss 2026-08-21)
+      expect(clipPads(row)).toEqual([12, 12]);
+      // on-screen anchors keep the app-bar/tab-bar reserves
+      expect(clipPads(bare)).toEqual([70, 96]);
+    } finally {
+      sheet.remove();
+      bare.remove();
+    }
   });
 });
 

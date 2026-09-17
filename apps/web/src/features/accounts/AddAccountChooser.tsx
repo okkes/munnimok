@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { minaSuggestedAccountName } from '@/features/mina/steps';
 import { getApiCapabilities } from '@/lib/api';
@@ -14,9 +14,11 @@ import { evalAmountCents, parseCents } from '@/lib/money';
 import type { AccountRow, AccountType, RecurringEvery } from '@/db/types';
 import { ACCOUNT_TYPES, isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { Button } from '@/ui/Button';
+import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Chip } from '@/ui/primitives';
-import { isCustomCadence, LoanCadenceControl } from './LoanCadenceControl';
+import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
 import { Icon } from '@/ui/Icon';
+import { InfoHint } from '@/ui/InfoHint';
 import { Sheet } from '@/ui/Sheet';
 
 /**
@@ -28,6 +30,37 @@ import { Sheet } from '@/ui/Sheet';
  * types extend it with the debt story (loans v2 — the account IS the
  * loan, so the Debts "+" lands here too, pre-filtered).
  */
+/** any manual-form field carrying text keeps the discard ask armed (S3776) */
+const anyManualFieldFilled = (fields: readonly string[]): boolean => fields.some((field) => field !== '');
+
+/** #326 (user): hosts that cannot pass props — the counterparty ask's
+ *  Create door mounts the chooser itself — stage a prefill HERE while
+ *  their context is up (review stages the card's facts, and clears on
+ *  leave). The chooser drinks it whenever it opens without an explicit
+ *  `prefill` prop; the loan-plan fields apply once a liability type is
+ *  picked, the name and currency apply to every manual create. */
+export interface ChooserLoanPrefill {
+  name?: string;
+  currency?: string;
+  paymentCents?: number;
+  paymentDay?: number;
+  paymentEvery?: RecurringEvery;
+}
+let stagedLoanPrefill: ChooserLoanPrefill | null = null;
+export const setChooserLoanPrefill = (next: ChooserLoanPrefill | null): void => {
+  stagedLoanPrefill = next;
+};
+
+/** the loan-handoff prefill's payment as typed text (S3776) */
+const prefillPaymentText = (cents: number | undefined): string => (cents ? (cents / 100).toFixed(2) : '');
+const prefillPayDayText = (day: number | undefined): string => (day ? String(day) : '');
+
+/** #195 field rings, computed off the component (S3776) */
+function chooserRings(attempted: boolean, nameMissing: boolean, balanceMissing: boolean) {
+  if (!attempted) return { nameBad: false, balanceBad: false };
+  return { nameBad: nameMissing, balanceBad: balanceMissing };
+}
+
 export function AddAccountChooser({
   open,
   onOpenChange,
@@ -66,14 +99,14 @@ export function AddAccountChooser({
    *  scenes — the generic space-scoped copy read like a stranger here */
   loanFlavor?: boolean;
   /** the recurring→loan handoff seeds the liability form */
-  prefill?: { name?: string; paymentCents?: number; paymentEvery?: RecurringEvery; merchantKey?: string };
+  prefill?: { name?: string; paymentCents?: number; paymentEvery?: RecurringEvery; paymentDay?: number; merchantKey?: string };
 }>) {
   const { t } = useLang();
   const { store, repo, spaceId } = useData();
   const navigate = useNavigate();
   const syncing = useSession((s) => s.identity?.kind === 'user');
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
-  const [step, setStep] = useState<'intent' | 'manual' | 'shareWarn'>(initialStep ?? 'intent');
+  const [step, setStep] = useState<'intent' | 'manual'>(initialStep ?? 'intent');
   // hosts that know pass gcAvailable; everyone else (the counterparty
   // picker's Create door, ss 2026-08-01: the bank option was missing
   // there) gets it resolved right here
@@ -85,6 +118,25 @@ export function AddAccountChooser({
       .catch(() => undefined);
   }, [syncing, gcAvailable]);
   const bankAvailable = gcAvailable ?? gcSelf;
+  // #326 (user): drink the staged one-shot prefill on open — hosts that
+  // mount the chooser themselves (the counterparty ask's Create door)
+  // cannot pass the `prefill` prop; review stages the card's facts and
+  // clears them again when the card leaves
+  useEffect(() => {
+    if (!open || prefill) return;
+    const staged = stagedLoanPrefill;
+    if (!staged) return;
+    if (staged.name) setName(staged.name);
+    if (staged.currency) setCurrency(staged.currency);
+    if (staged.paymentCents) setPayment(prefillPaymentText(staged.paymentCents));
+    if (staged.paymentDay) setPayDay(prefillPayDayText(staged.paymentDay));
+    if (staged.paymentEvery) {
+      setPayEvery(staged.paymentEvery);
+      setPayCustom(isCustomCadence(staged.paymentEvery, 1));
+    }
+    // one-shot per open — the staged facts are the OPEN's starting point
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
   // no in-place import host? the flow itself embeds (user request: the
   // old door bounced to the global overview mid-flow)
   const [importOpen, setImportOpen] = useState(false);
@@ -100,13 +152,16 @@ export function AddAccountChooser({
   const [iban, setIban] = useState('');
   const [original, setOriginal] = useState('');
   const [apr, setApr] = useState('');
-  const [payment, setPayment] = useState(prefill?.paymentCents ? (prefill.paymentCents / 100).toFixed(2) : '');
+  const [payment, setPayment] = useState(prefillPaymentText(prefill?.paymentCents));
+  // #190: the plan's due day — like recurring, it says which period a
+  // payment belongs to
+  const [payDay, setPayDay] = useState(prefillPayDayText(prefill?.paymentDay));
   const [payEvery, setPayEvery] = useState<RecurringEvery>(prefill?.paymentEvery ?? 'month');
   const [payEveryN, setPayEveryN] = useState(1);
   const [payCustom, setPayCustom] = useState(isCustomCadence(prefill?.paymentEvery, 1));
   const [note, setNote] = useState('');
-  // the action a shared-space warning is holding back (connect/import)
-  const pendingRef = useRef<(() => void) | null>(null);
+  // #195: tappable — an invalid tap names the blocker
+  const [attempted, setAttempted] = useState(false);
   const effectiveCurrency = currency ?? space?.currency ?? 'EUR';
 
   const close = (next: boolean) => {
@@ -126,21 +181,13 @@ export function AddAccountChooser({
       setPayEveryN(1);
       setPayCustom(false);
       setNote('');
-      pendingRef.current = null;
+      setAttempted(false);
     }
   };
 
-  // bank-connected and imported accounts become visible to every member
-  // of a SHARED space — that deserves a conscious yes before the flow
-  // starts; manual accounts are exempt (user rule 2026-07-28)
-  const guarded = (action: () => void) => {
-    if (space?.kind === 'shared') {
-      pendingRef.current = action;
-      setStep('shareWarn');
-    } else {
-      action();
-    }
-  };
+  // #308 (user): the shared-space warning left this flow — connect and
+  // import create GLOBAL accounts and never auto-attach anymore, so the
+  // heads-up moved to the space's attach step, where it is true
 
   // Mina suggests the demo account's name; the user still presses Add
   useEffect(() => {
@@ -159,7 +206,11 @@ export function AddAccountChooser({
   // a loan/mortgage exists to track what's owed — its current value is
   // the whole point and can't default to zero (v2: "current required")
   const balanceRequired = newType === 'loan' || newType === 'mortgage';
-  const saveDisabled = !name.trim() || (balanceRequired && parseCents(balance) === null);
+  const nameMissing = !name.trim();
+  const balanceMissing = balanceRequired && parseCents(balance) === null;
+  const saveDisabled = nameMissing || balanceMissing;
+  // #195 rings, precomputed once (S3776: the JSX kept re-branching)
+  const { nameBad, balanceBad } = chooserRings(attempted, nameMissing, balanceMissing);
 
   /** the debt story a LIABILITY account carries (loans v2) — blank
    *  fields stay off the row entirely */
@@ -173,7 +224,13 @@ export function AddAccountChooser({
       // 0% is a real answer; only the EMPTY field means "remind me"
       ...(Number.isFinite(aprNumber) && aprNumber >= 0 ? { interestPctYear: aprNumber } : {}),
       ...(paymentCents && paymentCents > 0
-        ? { paymentCents, paymentEvery: payEvery, ...(payEveryN > 1 ? { paymentEveryN: payEveryN } : {}) }
+        ? {
+            paymentCents,
+            paymentEvery: payEvery,
+            ...(payEveryN > 1 ? { paymentEveryN: payEveryN } : {}),
+            // #190: weekly plans have no day-of-month
+            ...(payEvery !== 'week' && parsedDueDay(payDay) ? { paymentDay: parsedDueDay(payDay) } : {}),
+          }
         : {}),
       ...(note.trim() ? { note: note.trim() } : {}),
       ...(prefill?.merchantKey ? { merchantKey: prefill.merchantKey } : {}),
@@ -181,7 +238,8 @@ export function AddAccountChooser({
   };
 
   const createManual = () => {
-    const cents = parseCents(balance || '0');
+    // #342: funding pots always start at zero — the field is not shown
+    const cents = newType === 'funding' ? 0 : parseCents(balance || '0');
     if (!newType || saveDisabled || cents === null) return;
     const id = repo.newId();
     void repo.upsert('account', spaceId, id, {
@@ -200,10 +258,7 @@ export function AddAccountChooser({
 
   // a filled manual form deserves a "discard?" before a stray backdrop
   // tap drops it (user request 2026-08-01) — the intent step never asks
-  const manualDirty =
-    step === 'manual' &&
-    newType !== null &&
-    (name.trim() !== '' || balance !== '' || iban !== '' || original !== '' || apr !== '' || payment !== '' || note !== '');
+  const manualDirty = step === 'manual' && newType !== null && anyManualFieldFilled([name.trim(), balance, iban, original, apr, payment, note]);
 
   return (
     <>
@@ -217,13 +272,11 @@ export function AddAccountChooser({
               accent
               title={t('chooser.connect')}
               sub={t('chooser.connectSub')}
-              onClick={() =>
-                guarded(() => {
-                  close(false);
-                  if (onConnect) onConnect();
-                  else setConnectOpen(true);
-                })
-              }
+              onClick={() => {
+                close(false);
+                if (onConnect) onConnect();
+                else setConnectOpen(true);
+              }}
             />
           )}
           <IntentRow
@@ -231,13 +284,11 @@ export function AddAccountChooser({
             icon="file-upload-outline"
             title={t('chooser.import')}
             sub={t('chooser.importSub')}
-            onClick={() =>
-              guarded(() => {
-                close(false);
-                if (onImport) onImport();
-                else setImportOpen(true);
-              })
-            }
+            onClick={() => {
+              close(false);
+              if (onImport) onImport();
+              else setImportOpen(true);
+            }}
           />
           {hideManual ? (
             <button
@@ -267,34 +318,17 @@ export function AddAccountChooser({
         </div>
       )}
 
-      {step === 'shareWarn' && (
-        <div className="flex flex-col gap-3 pt-1" data-testid="chooser-share-warn">
-          <div className="flex items-center gap-2 text-[14px] font-semibold text-ink">
-            <Icon name="account-group-outline" size={20} color="var(--m-warning)" />
-            {t('chooser.shareWarnTitle')}
-          </div>
-          <p className="text-[13px] leading-relaxed text-ink-2">{t('chooser.shareWarnBody', { space: space?.name ?? '' })}</p>
-          <Button
-            data-testid="chooser-share-continue"
-            onClick={() => {
-              const action = pendingRef.current;
-              pendingRef.current = null;
-              action?.();
-            }}
-          >
-            {t('chooser.shareWarnContinue')}
-          </Button>
-          <Button variant="outline" data-testid="chooser-share-cancel" onClick={() => setStep('intent')}>
-            {t('action.cancel')}
-          </Button>
-        </div>
-      )}
-
       {step === 'manual' && (
         <div className="flex flex-col gap-3 pt-1" data-testid="chooser-manual-form">
-          <p className="text-[12px] leading-snug text-ink-4">
-            {loanFlavor ? t('debts.chooserNote') : t('acct.spaceScopedNote', { space: space?.name ?? '' })}
-          </p>
+          {/* #283: the scope/storage story folds behind a hint — the
+              always-visible paragraph shouted over the form */}
+          <div className="m-cap flex flex-wrap items-center gap-1.5">
+            {t('acct.manual')}
+            <InfoHint
+              text={loanFlavor ? t('debts.chooserNote') : t('acct.spaceScopedNote', { space: space?.name ?? '' })}
+              testId="chooser-hint"
+            />
+          </div>
           {newType ? (
             <>
               <div className="flex items-center gap-2 text-[13px] text-ink-3">
@@ -306,21 +340,30 @@ export function AddAccountChooser({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('acct.accountName')}
-                className="h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+                aria-invalid={nameBad}
+                className={`h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(nameBad)}`}
               />
+              {/* #195 r2 (user): the blocker sits AT the field */}
+              <FormBlockerNote show={nameBad} text={t('form.needName')} testId="chooser-acctform-save-blocker" />
+              {/* #342: a funding pot has no balance of its own to ask
+                  for — it counts nowhere and starts at zero */}
+              {newType !== 'funding' && (
               <div className="flex gap-2">
+                {/* #327 r3 (user): each half owns its corners of the
+                    clipping frame so the inset focus ring hugs the
+                    visible shape instead of losing its corners */}
                 <div className="flex overflow-hidden rounded-input border border-line">
                   <button
                     data-testid="chooser-acctform-neg"
                     onClick={() => setNegative(true)}
-                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
+                    className={`m-tap rounded-l-input border-none px-3 text-[13px] font-medium ${negative ? 'bg-negative-soft text-negative' : 'bg-surface text-ink-3'}`}
                   >
                     −
                   </button>
                   <button
                     data-testid="chooser-acctform-pos"
                     onClick={() => setNegative(false)}
-                    className={`m-tap border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
+                    className={`m-tap rounded-r-input border-none px-3 text-[13px] font-medium ${negative ? 'bg-surface text-ink-3' : 'bg-accent-soft text-accent-deep'}`}
                   >
                     +
                   </button>
@@ -335,9 +378,12 @@ export function AddAccountChooser({
                   // starting value (user ss: "Initial balance" next to
                   // "Original amount" read as the same thing twice)
                   placeholder={`${t(isLiability(newType) ? 'debts.current' : 'acct.initialBalance')} (${effectiveCurrency})`}
-                  className="h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4"
+                  aria-invalid={balanceBad}
+                  className={`h-12 min-w-0 flex-1 rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4${blockerRing(balanceBad)}`}
                 />
               </div>
+              )}
+              <FormBlockerNote show={!nameBad && balanceBad} text={t('form.needAmount')} testId="chooser-acctform-save-blocker" />
               <div className="m-cap px-1">{t('space.currency')}</div>
               <div className="flex gap-2 overflow-x-auto pb-1">
                 {CURRENCIES.map((c) => (
@@ -386,18 +432,35 @@ export function AddAccountChooser({
                       />
                     </label>
                   </div>
-                  <label className="text-[12px] text-ink-3">
-                    {t('debts.payment')}
-                    <input
-                      data-testid="chooser-acctform-payment"
-                      inputMode="decimal"
-                      value={payment}
-                      onChange={(e) => setPayment(e.target.value)}
-                      onBlur={() => evalField(payment, setPayment)}
-                      placeholder="0.00"
-                      className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-                    />
-                  </label>
+                  <div className="flex gap-2">
+                    <label className="min-w-0 flex-[2] text-[12px] text-ink-3">
+                      {t('debts.payment')}
+                      <input
+                        data-testid="chooser-acctform-payment"
+                        inputMode="decimal"
+                        value={payment}
+                        onChange={(e) => setPayment(e.target.value)}
+                        onBlur={() => evalField(payment, setPayment)}
+                        placeholder="0.00"
+                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                      />
+                    </label>
+                    {/* #190: the plan's due day, like recurring */}
+                    <label className="min-w-0 flex-1 text-[12px] text-ink-3">
+                      {t('debts.dueDay')}
+                      <input
+                        data-testid="chooser-acctform-payday"
+                        type="number"
+                        inputMode="numeric"
+                        min="1"
+                        max="31"
+                        value={payDay}
+                        onChange={(e) => setPayDay(e.target.value)}
+                        placeholder="—"
+                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
+                      />
+                    </label>
+                  </div>
                   <LoanCadenceControl
                     value={{ every: payEvery, everyN: payEveryN }}
                     custom={payCustom}
@@ -418,7 +481,16 @@ export function AddAccountChooser({
                   />
                 </>
               )}
-              <Button data-testid="chooser-acctform-save" onClick={createManual} disabled={saveDisabled}>
+              <Button
+                data-testid="chooser-acctform-save"
+                onClick={() => {
+                  if (saveDisabled) {
+                    setAttempted(true);
+                    return;
+                  }
+                  createManual();
+                }}
+              >
                 {t('action.add')}
               </Button>
             </>

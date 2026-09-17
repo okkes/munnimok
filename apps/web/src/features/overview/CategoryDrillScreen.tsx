@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
@@ -13,8 +13,19 @@ import { AppBar, IconButton } from '@/ui/AppBar';
 import { BarChart } from '@/ui/charts';
 import { Icon } from '@/ui/Icon';
 import { TxRow } from '@/ui/TxRow';
+import { TxPartRow } from '@/ui/TxPartRow';
+import { matchingPartIndexes } from '@/domain/txFilter';
+import type { TxSplit } from '@/db/types';
 
 const PERIOD_COUNT = 6;
+
+/** the part's cents belonging to the drilled category (spread-aware) */
+const partCatShare = (part: TxSplit, catSet: ReadonlySet<string>): number => {
+  if (part.cats?.length) {
+    return part.cats.filter((entry) => catSet.has(entry.catId)).reduce((sum, entry) => sum + entry.amountCents, 0);
+  }
+  return Math.abs(part.amountCents);
+};
 
 const KIND_ACCENT: Record<OverviewKind, string> = {
   income: 'var(--m-accent)',
@@ -28,16 +39,27 @@ const KIND_ACCENT: Record<OverviewKind, string> = {
 /**
  * One category, in place: period total, per-period mini bars doubling as
  * the period selector, and the plain list of the transactions behind the
- * number — each row leading on to its detail. Replaces the old forward
- * to the filtered Transactions tab, which lost the analysis context.
+ * number — each row navigating straight to its transaction page (#168
+ * r5: the in-between peek sheet is retired; back returns here). Replaces
+ * the old forward to the filtered Transactions tab, which lost the
+ * analysis context.
  */
+/** #351/#355: the drill's session period memory — the back door from a
+ *  transaction page carries no ?from */
+const DRILL_PERIOD_MEMO = new Map<string, number>();
+
 export function CategoryDrillScreen() {
   const { t, lang } = useLang();
   const { store, spaceId } = useData();
   const { kind, catId } = useParams({ strict: false }) as { kind: OverviewKind; catId: string };
   const { from } = useSearch({ strict: false }) as { from?: string };
-  const navigate = useNavigate();
   const cats = useCategories();
+  const navigate = useNavigate();
+  // #351 (user): the transaction opens UNDER the overview tree — at lg
+  // this drill stays the master pane beside the detail (the recurring
+  // tx/$txId precedent); on mobile, back lands right back here
+  const openTx = (txId: string) =>
+    void navigate({ to: '/overview/$kind/$catId/tx/$txId', params: { kind, catId, txId }, search: { from } });
 
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const accounts = useSpaceAccounts();
@@ -47,12 +69,18 @@ export function CategoryDrillScreen() {
     () => periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, PERIOD_COUNT),
     [space?.periodType, space?.periodDay],
   );
-  // land on the period the overview was looking at (falls back to current)
+  // land on the period the overview was looking at; without ?from (the
+  // back door from a transaction page, #351) the drill's own memory
+  // wins over snapping to the current period
+  const memoKey = `${kind}:${catId}`;
   const initialIndex = useMemo(() => {
     const found = from ? periods.findIndex((p) => p.start === from) : -1;
-    return found >= 0 ? found : PERIOD_COUNT - 1;
-  }, [periods, from]);
+    return found >= 0 ? found : (DRILL_PERIOD_MEMO.get(memoKey) ?? PERIOD_COUNT - 1);
+  }, [periods, from, memoKey]);
   const [periodIndex, setPeriodIndex] = useState(initialIndex);
+  useEffect(() => {
+    DRILL_PERIOD_MEMO.set(memoKey, periodIndex);
+  }, [memoKey, periodIndex]);
   // the space row loads async: the first render computes periods with
   // default month boundaries, so a custom period start makes `from`
   // unmatchable and the drill snapped back to the CURRENT period (user
@@ -135,12 +163,35 @@ export function CategoryDrillScreen() {
           {t('overview.payments')} · {selected.txs.length}
         </div>
         {selected.txs.length > 0 ? (
-          <div className="rounded-card border border-line bg-surface px-3 py-1" data-testid="catdrill-list">
+          <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="catdrill-list">
             {selected.txs.map((tx) => {
               // the headline is what THIS category got (splits partition);
               // the full net amount stays visible small when they differ
               const slice = categoryContributionCents(kind, tx, catId, cats);
               const signed = tx.amountCents < 0 ? -slice : slice;
+              // #126 r8 (user request): a split shows only ITS matching
+              // parts here — normal-looking rows with the split glyph;
+              // #168 r5: they open the parent transaction's page
+              const rowParts = (tx.splits ?? []).filter((s) => s.catId !== 'reimbursed');
+              // #149: every multi-part row branches, labels or not
+              if (rowParts.length > 1) {
+                const drillCats = new Set([catId, ...cats.childrenOf(catId).map((c) => c.id)]);
+                const shown = matchingPartIndexes(tx, { catIds: drillCats });
+                return shown.map((i) => (
+                  <TxPartRow
+                    key={rowParts[i].id ?? `${tx.id}-${i}`}
+                    tx={tx}
+                    part={rowParts[i]}
+                    index={i}
+                    amountText={fmt(
+                      (tx.amountCents < 0 ? -1 : 1) * partCatShare(rowParts[i], drillCats),
+                      currency,
+                    )}
+                    onClick={() => openTx(tx.id)}
+                    showDate
+                  />
+                ));
+              }
               return (
                 <TxRow
                   key={tx.id}
@@ -149,7 +200,7 @@ export function CategoryDrillScreen() {
                   // a sub-category drill repeats its own name on every row
                   hideCategory={!!cat.parentId}
                   amountOverrideCents={signed}
-                  onClick={() => void navigate({ to: '/transactions/$txId', params: { txId: tx.id } })}
+                  onClick={() => openTx(tx.id)}
                 />
               );
             })}

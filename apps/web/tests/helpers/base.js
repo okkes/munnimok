@@ -11,6 +11,31 @@ for (const d of [SHOTS_DIR, VIDEOS_DIR]) {
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
+/** The CAMT fixture must not age: the attach flow's default history
+ * window is DEFAULT_HISTORY_MONTHS back from TODAY, and a static file
+ * silently falls out of it (found 2026-09-06: the newest booking, Jul 5,
+ * left the two-month window overnight — sync-a6's shared feed came up
+ * empty while the app behaved correctly). Every ISO date in the file is
+ * shifted by one common delta so the newest lands 3 days ago — spacing,
+ * ordering and dedupe identity within a run stay intact. */
+export function freshCamtFixture() {
+  const xml = fs.readFileSync(path.join(ROOT, 'fixtures', 'camt053-sample.xml'), 'utf8');
+  const dates = [...xml.matchAll(/\d{4}-\d{2}-\d{2}/g)].map((m) => m[0]);
+  const newest = dates.reduce((a, b) => (a > b ? a : b));
+  const target = new Date();
+  target.setDate(target.getDate() - 3);
+  const deltaDays = Math.round((target.getTime() - new Date(`${newest}T00:00:00Z`).getTime()) / 86400000);
+  const shifted = xml.replace(/\d{4}-\d{2}-\d{2}/g, (d) => {
+    const dt = new Date(`${d}T00:00:00Z`);
+    dt.setUTCDate(dt.getUTCDate() + deltaDays);
+    return dt.toISOString().slice(0, 10);
+  });
+  const out = path.join(ROOT, 'results', 'camt053-fresh.xml');
+  fs.mkdirSync(path.dirname(out), { recursive: true });
+  fs.writeFileSync(out, shifted);
+  return out;
+}
+
 // All test variants: language × theme × viewport.
 // id format: '{lang}-{theme}-{viewport}'
 // Single default variant: EN, light, mobile.
@@ -112,14 +137,15 @@ async function completeOnboardingIfShown(page, userSub) {
   }
   if (winner !== 'onboarding') return;
   // something can remount the tree once during a cold boot and wipe the
-  // typed name (CI snapshots showed the field empty + Continue disabled
-  // AFTER a successful fill) — so fill-until-armed, then walk the steps,
-  // retrying the whole passage if the screen snaps back
+  // typed name (CI snapshots showed the field empty AFTER a successful
+  // fill) — so fill until the FIELD HOLDS the value (#195 keeps the
+  // Continue button always enabled, so its state says nothing anymore),
+  // then walk the steps, retrying the passage if the screen snaps back
   const name = page.locator('[data-testid="onboarding-name"]');
   const save = page.locator('[data-testid="onboarding-save"]');
   for (let attempt = 0; attempt < 6; attempt++) {
     try {
-      for (let i = 0; i < 30 && !(await save.isEnabled().catch(() => false)); i++) {
+      for (let i = 0; i < 30 && (await name.inputValue().catch(() => '')) !== 'E2E User'; i++) {
         await name.fill('E2E User').catch(() => undefined);
         await page.waitForTimeout(500);
       }
