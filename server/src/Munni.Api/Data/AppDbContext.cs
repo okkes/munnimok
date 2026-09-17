@@ -27,7 +27,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<StoreSyncDevice> StoreSyncDevices => Set<StoreSyncDevice>();
     public DbSet<UserDevice> UserDevices => Set<UserDevice>();
     public DbSet<StoreConnCipher> StoreConnCiphers => Set<StoreConnCipher>();
-    public DbSet<AdminGrant> AdminGrants => Set<AdminGrant>();
     public DbSet<ProviderQuota> ProviderQuotas => Set<ProviderQuota>();
     public DbSet<Split> Splits => Set<Split>();
     public DbSet<SplitMember> SplitMembers => Set<SplitMember>();
@@ -109,11 +108,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.UserId, x.Store }).IsUnique();
-        });
-        modelBuilder.Entity<AdminGrant>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => x.Sub).IsUnique();
         });
         modelBuilder.Entity<ProviderQuota>(e =>
         {
@@ -208,19 +202,6 @@ public class SplitInvite
 }
 
 /// <summary>
-/// DB-stored admin promotion (admin-redesign AD2): effective admins are
-/// the Admin:Subs env list (bootstrap/emergency, immutable from the UI)
-/// UNION these grants, managed from the admin console.
-/// </summary>
-public class AdminGrant
-{
-    public Guid Id { get; set; }
-    public required string Sub { get; set; }
-    public required string GrantedBySub { get; set; }
-    public DateTimeOffset GrantedAtUtc { get; set; } = DateTimeOffset.UtcNow;
-}
-
-/// <summary>
 /// Latest rate-limit headers seen per provider endpoint scope
 /// (admin-redesign AD3) — captured by piggybacking on normal sync
 /// traffic, never by extra calls. One row per (provider, scope).
@@ -237,7 +218,7 @@ public class ProviderQuota
     public DateTimeOffset CapturedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 
-/// <summary>admin-editable server-wide settings (active bank provider, …)</summary>
+/// <summary>operator-editable server-wide settings (the catalog document, …)</summary>
 public class AppSetting
 {
     public required string Key { get; set; }
@@ -318,9 +299,9 @@ public class SpaceMember
 {
     public required string SpaceId { get; set; }
     public Guid UserId { get; set; }
-    public required string Role { get; set; } // owner | member
-    /// <summary>#172 "member since" — null on rows created before the column existed</summary>
-    public DateTimeOffset? JoinedAt { get; set; } = DateTimeOffset.UtcNow;
+    public required string Role { get; set; } // owner | contributor | reader (SpaceRoles)
+    /// <summary>#172 "member since"</summary>
+    public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
 public class SyncOpRow

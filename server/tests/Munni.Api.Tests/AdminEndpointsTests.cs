@@ -1,10 +1,12 @@
-using System.Text.Json;
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Munni.Api.Admin;
+using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
 
@@ -44,16 +46,24 @@ public sealed class FakeGoCardless : IGoCardlessApi
         throw new NotImplementedException();
 }
 
+/// <summary>
+/// Test host with GoCardless faked. One in-memory database PER FIXTURE
+/// INSTANCE: EF's internal service-provider cache is process-wide and
+/// keyed by the options, so two fixtures naming the same database share
+/// one store — AccountDeletionTests seeded requisitions into this class's
+/// "2 rows" assertion whenever xUnit ran the classes in parallel (the
+/// ~50 % flake on dev).
+/// </summary>
 public class AdminApiFactory : WebApplicationFactory<Program>
 {
     public FakeGoCardless Gc { get; } = new();
+    private readonly string _databaseName = $"admin-tests-{Guid.NewGuid():N}";
 
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
     {
         builder.UseSetting("Auth:TestMode", "true");
         builder.UseSetting("Db:AutoMigrate", "false");
         builder.UseSetting("GoCardless:SecretId", "test"); // enables admin GC routes
-        builder.UseSetting("Admin:Subs", "the-admin, another-admin");
         builder.ConfigureServices(services =>
         {
             foreach (var d in services
@@ -68,22 +78,65 @@ public class AdminApiFactory : WebApplicationFactory<Program>
             {
                 services.Remove(d);
             }
-            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("admin-tests"));
+            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_databaseName));
             services.AddSingleton<IGoCardlessApi>(Gc);
         });
     }
 }
 
+/// <summary>
+/// The admin area is gated by the token's `admin` scope (AdminScope): the
+/// subject is anyone, the scope decides — exactly what Logto issues when
+/// the user holds the admin role on the API resource.
+/// </summary>
 public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
 {
     private readonly AdminApiFactory _factory;
 
     public AdminEndpointsTests(AdminApiFactory factory) => _factory = factory;
 
+    private HttpClient ClientFor(string sub, string? scope = null)
+    {
+        var client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
+        if (scope is not null) client.DefaultRequestHeaders.Add("X-User-Scope", scope);
+        return client;
+    }
+
+    [Fact]
+    public async Task The_scope_grants_admin_not_the_subject()
+    {
+        // the same subject: no scope → 403, the scope among others → 200
+        Assert.Equal(HttpStatusCode.Forbidden, (await ClientFor("the-admin").GetAsync("/admin/ping")).StatusCode);
+        var response = await ClientFor("the-admin", "openid profile admin").GetAsync("/admin/ping");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        Assert.True(body.GetProperty("admin").GetBoolean());
+        Assert.True(body.GetProperty("gocardless").GetBoolean());
+
+        // whole-word scope: look-alikes do not count
+        Assert.Equal(HttpStatusCode.Forbidden, (await ClientFor("the-admin", "administrator").GetAsync("/admin/ping")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await ClientFor("the-admin", "admin:read").GetAsync("/admin/ping")).StatusCode);
+        // no session at all → 401, not 403
+        Assert.Equal(HttpStatusCode.Unauthorized, (await _factory.CreateClient().GetAsync("/admin/ping")).StatusCode);
+    }
+
+    [Fact]
+    public void A_scope_claim_split_into_several_claims_still_counts()
+    {
+        // a JSON-array `scope` deserializes as one claim per entry
+        var arrayShaped = new ClaimsPrincipal(new ClaimsIdentity([new Claim("scope", "openid"), new Claim("scope", "admin")], "test"));
+        Assert.True(AdminScope.HasAdminScope(arrayShaped));
+        var stringShaped = new ClaimsPrincipal(new ClaimsIdentity([new Claim("scope", "openid admin")], "test"));
+        Assert.True(AdminScope.HasAdminScope(stringShaped));
+        Assert.False(AdminScope.HasAdminScope(new ClaimsPrincipal(new ClaimsIdentity([new Claim("sub", "x")], "test"))));
+    }
+
     [Fact]
     public async Task User_diagnosis_exposes_the_whole_sync_chain()
     {
-        var admin = ClientFor("the-admin");
+        var admin = ClientFor("the-admin", "admin");
         var user = ClientFor("diag-user");
         await user.GetAsync("/me"); // materialize
 
@@ -97,6 +150,7 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
             db.SpaceAccountLinks.Add(new Accounts.SpaceAccountLink
             {
                 Id = Guid.NewGuid(), SpaceId = "space-diag", FeedSpaceId = "feed-diag", AccountId = "acct-1", AttachedBy = userId,
+                HistoryFrom = "2026-01-01", Type = "checking",
             });
             await db.SaveChangesAsync();
         }
@@ -111,38 +165,22 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
         Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/admin/users/nobody/diagnosis")).StatusCode);
     }
 
-    private HttpClient ClientFor(string sub)
-    {
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-User-Sub", sub);
-        return client;
-    }
-
     [Fact]
     public async Task NonAdminIsForbiddenEverywhere()
     {
         var user = ClientFor("regular-user");
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/ping")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/users")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/users/regular-user/diagnosis")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/quota")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/gocardless/requisitions")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await user.DeleteAsync("/admin/gocardless/requisitions/req-x")).StatusCode);
     }
 
     [Fact]
-    public async Task BankProviderToggleIsGone()
-    {
-        // #175: the END USER picks the provider at connect time — the
-        // admin's "active provider" endpoints retired outright
-        var admin = ClientFor("the-admin");
-        Assert.Equal(HttpStatusCode.NotFound, (await admin.GetAsync("/admin/bank-provider")).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound,
-            (await admin.PutAsJsonAsync("/admin/bank-provider", new { provider = "gocardless" })).StatusCode);
-    }
-
-    [Fact]
     public async Task AdminSeesOnlyThisEnvironmentsRequisitions_ForeignOnesAreCountedAndUndeletable()
     {
-        var admin = ClientFor("the-admin");
+        var admin = ClientFor("the-admin", "admin");
         Assert.True((await admin.GetAsync("/admin/ping")).IsSuccessStatusCode);
 
         // seed local records: one matching req-known (also present at GC)
@@ -200,68 +238,6 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
         var after = await admin.GetFromJsonAsync<AdminRequisitionListDto>("/admin/gocardless/requisitions");
         Assert.Single(after!.Requisitions);
     }
-}
-
-public class AdminGrantsTests : IClassFixture<AdminApiFactory>
-{
-    private readonly AdminApiFactory _factory;
-
-    public AdminGrantsTests(AdminApiFactory factory) => _factory = factory;
-
-    private HttpClient ClientFor(string sub)
-    {
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-User-Sub", sub);
-        return client;
-    }
-
-    private async Task SeedUserAsync(string sub)
-    {
-        using var scope = _factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        if (!await db.Users.AnyAsync(u => u.Sub == sub))
-        {
-            db.Users.Add(new User { Id = Guid.NewGuid(), Sub = sub });
-            await db.SaveChangesAsync();
-        }
-    }
-
-    [Fact]
-    public async Task PromoteGrantsAccess_RevokeTakesItAway()
-    {
-        await SeedUserAsync("promoted-user");
-        var admin = ClientFor("the-admin");
-        var promoted = ClientFor("promoted-user");
-
-        Assert.Equal(HttpStatusCode.Forbidden, (await promoted.GetAsync("/admin/ping")).StatusCode);
-        Assert.True((await admin.PostAsync("/admin/admins/promoted-user", null)).IsSuccessStatusCode);
-        Assert.True((await promoted.GetAsync("/admin/ping")).IsSuccessStatusCode);
-
-        // the grants list carries both bootstrap and DB admins, flagged
-        var admins = await admin.GetFromJsonAsync<List<AdminGrantDto>>("/admin/admins");
-        Assert.Contains(admins!, a => a.Sub == "the-admin" && a.Bootstrap);
-        Assert.Contains(admins!, a => a.Sub == "promoted-user" && !a.Bootstrap && a.GrantedBySub == "the-admin");
-
-        // a granted admin can grant others (same power) but the revoke path works too
-        Assert.True((await admin.DeleteAsync("/admin/admins/promoted-user")).IsSuccessStatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await promoted.GetAsync("/admin/ping")).StatusCode);
-    }
-
-    [Fact]
-    public async Task GuardsHold_BootstrapAndSelfAndUnknownUsers()
-    {
-        var admin = ClientFor("the-admin");
-        // bootstrap admins cannot be demoted from the console
-        Assert.Equal(HttpStatusCode.BadRequest, (await admin.DeleteAsync("/admin/admins/another-admin")).StatusCode);
-        // you cannot demote yourself
-        Assert.Equal(HttpStatusCode.BadRequest, (await admin.DeleteAsync("/admin/admins/the-admin")).StatusCode);
-        // promoting a sub that has never signed in is refused
-        Assert.Equal(HttpStatusCode.NotFound, (await admin.PostAsync("/admin/admins/ghost-user", null)).StatusCode);
-        // non-admins cannot touch the grants API
-        var user = ClientFor("regular-user-2");
-        Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/admin/admins")).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await user.PostAsync("/admin/admins/regular-user-2", null)).StatusCode);
-    }
 
     [Fact]
     public async Task QuotaEndpointReturnsCapturedSnapshots()
@@ -280,7 +256,7 @@ public class AdminGrantsTests : IClassFixture<AdminApiFactory>
             });
             await db.SaveChangesAsync();
         }
-        var admin = ClientFor("the-admin");
+        var admin = ClientFor("the-admin", "admin");
         var quota = await admin.GetFromJsonAsync<List<ProviderQuotaDto>>("/admin/quota");
         var row = quota!.Single(q => q.Scope == "accounts:transactions");
         Assert.Equal(4, row.Limit);
@@ -297,98 +273,4 @@ public class QuotaCaptureHandlerTests
     [InlineData("https://x/api/v2/token/new/", "token:new")]
     public void ScopeCollapsesIdsIntoEndpointFamilies(string url, string expected) =>
         Assert.Equal(expected, QuotaCaptureHandler.ScopeOf(new Uri(url)));
-}
-
-/// <summary>stubbed Logto Management API for the username migration</summary>
-public sealed class FakeLogtoHandler : HttpMessageHandler
-{
-    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-    {
-        var path = request.RequestUri!.AbsolutePath;
-        if (path.EndsWith("/oidc/token"))
-            return Json("""{"access_token":"tok"}""");
-        if (request.Method == HttpMethod.Get && path.EndsWith("/api/users"))
-        {
-            var firstPage = request.RequestUri.Query.Contains("page=1");
-            return Json(firstPage
-                ? """[{"id":"u1","username":"Okkes"},{"id":"u2","username":"already"},{"id":"u3","username":null},{"id":"u4","username":"Taken"}]"""
-                : "[]");
-        }
-        if (request.Method == HttpMethod.Patch && path.Contains("/api/users/"))
-        {
-            // u4's lowercase twin already exists -> Logto rejects the rename
-            return path.EndsWith("/u4")
-                ? Task.FromResult(new HttpResponseMessage(HttpStatusCode.UnprocessableEntity))
-                : Json("{}");
-        }
-        return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
-    }
-
-    private static Task<HttpResponseMessage> Json(string body) =>
-        Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-        {
-            Content = new StringContent(body, System.Text.Encoding.UTF8, "application/json"),
-        });
-}
-
-public class AdminLogtoFactory : WebApplicationFactory<Program>
-{
-    protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
-    {
-        builder.UseSetting("Auth:TestMode", "true");
-        builder.UseSetting("Db:AutoMigrate", "false");
-        builder.UseSetting("Admin:Subs", "the-admin");
-        builder.UseSetting("Logto:M2mAppId", "m2m-app");
-        builder.UseSetting("Logto:M2mAppSecret", "m2m-secret");
-        builder.UseSetting("Auth:Authority", "http://logto.local/oidc");
-        builder.ConfigureServices(services =>
-        {
-            foreach (var d in services
-                         .Where(d =>
-                             d.ServiceType == typeof(DbContextOptions<AppDbContext>) ||
-                             d.ServiceType == typeof(DbContextOptions) ||
-                             d.ServiceType == typeof(AppDbContext) ||
-                             d.ServiceType.Name.Contains("IDbContextOptionsConfiguration"))
-                         .ToList())
-            {
-                services.Remove(d);
-            }
-            services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase("admin-logto-tests"));
-            services.AddHttpClient("logto-m2m").ConfigurePrimaryHttpMessageHandler(() => new FakeLogtoHandler());
-        });
-    }
-}
-
-public class LogtoUsernameMigrationTests : IClassFixture<AdminLogtoFactory>
-{
-    private readonly AdminLogtoFactory _factory;
-
-    public LogtoUsernameMigrationTests(AdminLogtoFactory factory) => _factory = factory;
-
-    private HttpClient ClientFor(string sub)
-    {
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Add("X-User-Sub", sub);
-        return client;
-    }
-
-    [Fact]
-    public async Task Lowercases_mixed_case_usernames_and_reports_collisions()
-    {
-        var response = await ClientFor("the-admin").PostAsync("/admin/logto/lowercase-usernames", null);
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var changed = body.RootElement.GetProperty("changed").EnumerateArray().Select(e => e.GetString()).ToList();
-        var skipped = body.RootElement.GetProperty("skipped").EnumerateArray().Select(e => e.GetString()).ToList();
-        // already-lowercase and username-less users are untouched
-        Assert.Equal(["Okkes"], changed);
-        Assert.Equal(["Taken (422)"], skipped);
-    }
-
-    [Fact]
-    public async Task Only_admins_may_run_the_migration()
-    {
-        var response = await ClientFor("random-user").PostAsync("/admin/logto/lowercase-usernames", null);
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-    }
 }

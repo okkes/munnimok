@@ -17,8 +17,6 @@ interface AdminUser {
   email: string | null;
   createdAt: string;
   spaceCount: number;
-  isAdmin: boolean;
-  bootstrap: boolean;
 }
 interface AdminRequisition {
   requisitionId: string;
@@ -105,6 +103,31 @@ interface BundledKeywordRule {
 const expiresSoon = (r: AdminRequisition): boolean =>
   r.status === 'LN' && !!r.created && Date.now() - new Date(r.created).getTime() > 76 * 86_400_000;
 
+/**
+ * This browser's stable device id: the API stamps every authenticated
+ * request's device (X-Munni-Device) and refuses requests that name none,
+ * so the account's Logged-in devices screen can list and disconnect it.
+ */
+const DEVICE_KEY = 'munni_admin_device';
+function deviceId(): string {
+  try {
+    const known = localStorage.getItem(DEVICE_KEY);
+    if (known) return known;
+    const minted = crypto.randomUUID();
+    localStorage.setItem(DEVICE_KEY, minted);
+    return minted;
+  } catch {
+    return 'admin-console';
+  }
+}
+function forgetDevice(): void {
+  try {
+    localStorage.removeItem(DEVICE_KEY);
+  } catch {
+    // storage unavailable — nothing was remembered
+  }
+}
+
 interface AdminAppProps {
   config: AdminConfig;
   /** null = test-auth mode (X-User-Sub header from the sub box) */
@@ -113,7 +136,7 @@ interface AdminAppProps {
 
 /**
  * munni admin console (admin-redesign): a desktop-first operator tool —
- * overview, user management incl. admin grants, and bank-connection
+ * overview, user management, and bank-connection
  * upkeep. Talks to the same API (/admin/* gated server-side); it
  * deliberately shares no code with the member app.
  */
@@ -141,6 +164,9 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   // request read as "not an admin" (found live 2026-08-28, control twin)
   const [denied, setDenied] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
+  // 'disconnected' = the api said 410: this browser's device was revoked
+  // from the account (Logged-in devices) — the next load registers anew
+  const [disconnected, setDisconnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -148,6 +174,8 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     async (path: string, init: RequestInit = {}) => {
       const headers = new Headers(init.headers);
       headers.set('Content-Type', 'application/json');
+      headers.set('X-Munni-Device', deviceId());
+      headers.set('X-Munni-Platform', 'web');
       if (getToken) {
         const token = await getToken();
         if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -159,9 +187,14 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     [config.apiUrl, getToken, sub],
   );
 
-  const blocked = denied || unreachable;
+  const blocked = denied || unreachable || disconnected;
   const reload = useCallback(async () => {
     const ping = await call('/admin/ping').catch(() => null);
+    if (ping?.status === 410) {
+      forgetDevice();
+      setDisconnected(true);
+      return;
+    }
     setDenied(ping?.status === 403);
     setUnreachable(!ping || (!ping.ok && ping.status !== 403));
     if (!ping?.ok) return;
@@ -204,8 +237,6 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   // USER at connect time — there is no admin-selected "active" one.
   const publishCatalog = (categories: CatalogCategory[], keywords: CatalogKeywordRule[], stores: CatalogStoreRule[]) =>
     act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords, stores }) }));
-  const promote = (userSub: string) => act(() => call(`/admin/admins/${encodeURIComponent(userSub)}`, { method: 'POST' }));
-  const demote = (userSub: string) => act(() => call(`/admin/admins/${encodeURIComponent(userSub)}`, { method: 'DELETE' }));
 
   const deleteSelected = async () => {
     setBusy(true);
@@ -258,8 +289,9 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
       </aside>
 
       <main className="content">
-        {denied && <p className="denied">This account is not on the admin list.</p>}
+        {denied && <p className="denied">This account has no admin access — its sign-in carries no admin scope.</p>}
         {unreachable && <p className="denied">The admin API did not answer — is the environment running (and this origin allowed)?</p>}
+        {disconnected && <p className="denied">This browser was disconnected from the account — reload to register it again.</p>}
         {/* blocked: no data loaded — the empty screens would only mislead */}
         {error && (
           <p className="error" data-testid="admin-error">
@@ -275,9 +307,6 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
         {!blocked && screen === 'users' && (
           <UsersScreen
             users={users}
-            busy={busy}
-            onPromote={promote}
-            onDemote={demote}
             onDiagnose={async (sub) => {
               const res = await call(`/admin/users/${encodeURIComponent(sub)}/diagnosis`).catch(() => null);
               if (!res?.ok) {
@@ -403,15 +432,9 @@ function Tile({ label, value, warn = false }: Readonly<{ label: string; value: s
 
 function UsersScreen({
   users,
-  busy,
-  onPromote,
-  onDemote,
   onDiagnose,
 }: Readonly<{
   users: AdminUser[];
-  busy: boolean;
-  onPromote: (sub: string) => void;
-  onDemote: (sub: string) => void;
   /** resolves to the diagnosis, or a human-readable failure line */
   onDiagnose: (sub: string) => Promise<UserDiagnosis | string>;
 }>) {
@@ -450,7 +473,6 @@ function UsersScreen({
               <th>User</th>
               <th>Joined</th>
               <th>Spaces</th>
-              <th>Role</th>
               <th />
             </tr>
           </thead>
@@ -466,21 +488,7 @@ function UsersScreen({
                 </td>
                 <td>{new Date(u.createdAt).toLocaleDateString()}</td>
                 <td>{u.spaceCount} spaces</td>
-                <td>
-                  {u.bootstrap && <span className="chip on">bootstrap admin</span>}
-                  {u.isAdmin && !u.bootstrap && <span className="chip on">admin</span>}
-                </td>
                 <td className="cell-actions">
-                  {!u.isAdmin && (
-                    <button data-testid={`promote-${u.sub}`} className="btn" disabled={busy} onClick={() => onPromote(u.sub)}>
-                      Promote to admin
-                    </button>
-                  )}
-                  {u.isAdmin && !u.bootstrap && (
-                    <button data-testid={`demote-${u.sub}`} className="btn danger" disabled={busy} onClick={() => onDemote(u.sub)}>
-                      Demote
-                    </button>
-                  )}
                   <button
                     data-testid={`diagnose-${u.sub}`}
                     className="btn"
@@ -493,7 +501,7 @@ function UsersScreen({
             ))}
             {diag && (
               <tr data-testid="user-diagnosis">
-                <td colSpan={5}>
+                <td colSpan={4}>
                   {!diag.data && <span className="sub">loading…</span>}
                   {typeof diag.data === 'string' && <span className="sub">{diag.data}</span>}
                   {diag.data && typeof diag.data !== 'string' && (

@@ -61,22 +61,33 @@ describe('ControlApp (test-auth mode)', () => {
     sessionStorage.clear(); // the persisted screen must not leak between tests
   });
 
-  it('a sub that is not on the admin list sees the denied note and no data', async () => {
+  it('a sign-in without the admin scope sees the denied note and no data', async () => {
     scriptFetch({ 'GET /control/ping': () => ({ status: 403 }) });
     render(<ControlApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'nobody' } });
-    await screen.findByText(/not on the admin list/);
+    await screen.findByText(/no admin access/);
     expect(screen.queryByTestId('control-tiles')).toBeNull();
     expect(screen.queryByText(/did not answer/)).toBeNull();
   });
 
-  it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the admin-list one', async () => {
+  it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the denied one', async () => {
     scriptFetch({ 'GET /control/ping': () => ({ status: 500 }) });
     render(<ControlApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'anybody' } });
     await screen.findByText(/did not answer/);
-    expect(screen.queryByText(/not on the admin list/)).toBeNull();
+    expect(screen.queryByText(/no admin access/)).toBeNull();
     expect(screen.queryByTestId('control-tiles')).toBeNull();
+  });
+
+  it('a disconnected device (410) says so and forgets its id so the next load registers anew', async () => {
+    localStorage.setItem('munni_control_device', 'dev-revoked');
+    scriptFetch({ 'GET /control/ping': () => ({ status: 410, body: { error: 'device-revoked' } }) });
+    render(<ControlApp config={CONFIG} getToken={null} />);
+    fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'anybody' } });
+    await screen.findByText(/disconnected from the account/);
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+    expect(screen.queryByTestId('control-tiles')).toBeNull();
+    expect(localStorage.getItem('munni_control_device')).toBeNull();
   });
 
   it('shows the cockpit nav and overview: totals per environment plus env health', async () => {

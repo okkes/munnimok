@@ -7,9 +7,9 @@ import type { AdminConfig } from './config';
 const CONFIG: AdminConfig = { apiUrl: 'http://api.test', logtoEndpoint: '', logtoAppId: '', logtoResource: '' };
 
 const USERS = [
-  { id: 'u1', sub: 'sub-alice', displayName: 'Alice', email: 'alice@x.nl', createdAt: '2026-01-01T00:00:00Z', spaceCount: 2, isAdmin: true, bootstrap: true },
-  { id: 'u2', sub: 'sub-bob', displayName: null, email: null, createdAt: '2026-02-01T00:00:00Z', spaceCount: 1, isAdmin: false, bootstrap: false },
-  { id: 'u3', sub: 'sub-carol', displayName: 'Carol', email: null, createdAt: '2026-03-01T00:00:00Z', spaceCount: 3, isAdmin: true, bootstrap: false },
+  { id: 'u1', sub: 'sub-alice', displayName: 'Alice', email: 'alice@x.nl', createdAt: '2026-01-01T00:00:00Z', spaceCount: 2 },
+  { id: 'u2', sub: 'sub-bob', displayName: null, email: null, createdAt: '2026-02-01T00:00:00Z', spaceCount: 1 },
+  { id: 'u3', sub: 'sub-carol', displayName: 'Carol', email: null, createdAt: '2026-03-01T00:00:00Z', spaceCount: 3 },
 ];
 const REQUISITIONS = [
   { requisitionId: 'req-live-0001', status: 'LN', institutionId: 'ING_NL', created: new Date(Date.now() - 80 * 86_400_000).toISOString(), accountCount: 2, stale: false, ownerSub: 'sub-alice' },
@@ -77,22 +77,33 @@ describe('AdminApp (test-auth mode)', () => {
     sessionStorage.clear(); // the persisted screen must not leak between tests
   });
 
-  it('a sub that is not on the admin list sees the denied note and no data', async () => {
+  it('a sign-in without the admin scope sees the denied note and no data', async () => {
     scriptFetch({ 'GET /admin/ping': () => ({ status: 403 }) });
     render(<AdminApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('admin-sub'), { target: { value: 'nobody' } });
-    await waitFor(() => expect(screen.getByText(/not on the admin list/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/no admin access/)).toBeTruthy());
     expect(screen.queryByTestId('overview-tiles')).toBeNull();
     expect(screen.queryByText(/did not answer/)).toBeNull();
   });
 
-  it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the admin-list one', async () => {
+  it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the denied one', async () => {
     scriptFetch({ 'GET /admin/ping': () => ({ status: 500 }) });
     render(<AdminApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('admin-sub'), { target: { value: 'anybody' } });
     await screen.findByText(/did not answer/);
-    expect(screen.queryByText(/not on the admin list/)).toBeNull();
+    expect(screen.queryByText(/no admin access/)).toBeNull();
     expect(screen.queryByTestId('overview-tiles')).toBeNull();
+  });
+
+  it('a disconnected device (410) says so and forgets its id so the next load registers anew', async () => {
+    localStorage.setItem('munni_admin_device', 'dev-revoked');
+    scriptFetch({ 'GET /admin/ping': () => ({ status: 410, body: { error: 'device-revoked' } }) });
+    render(<AdminApp config={CONFIG} getToken={null} />);
+    fireEvent.change(screen.getByTestId('admin-sub'), { target: { value: 'anybody' } });
+    await screen.findByText(/disconnected from the account/);
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+    expect(screen.queryByTestId('overview-tiles')).toBeNull();
+    expect(localStorage.getItem('munni_admin_device')).toBeNull();
   });
 
   it('overview shows tiles, the quota table with reset time, and capability chips', async () => {
@@ -114,14 +125,13 @@ describe('AdminApp (test-auth mode)', () => {
     expect(caps.textContent).toContain('fcm');
   });
 
-  it('users screen filters by search and shows admin badges', async () => {
+  it('users screen filters by search', async () => {
     scriptFetch(HAPPY_ROUTES());
     renderAdmin();
     fireEvent.click(await screen.findByTestId('nav-users'));
 
     const table = await screen.findByTestId('admin-users');
     expect(table.textContent).toContain('Alice');
-    expect(table.textContent).toContain('bootstrap admin');
     expect(table.textContent).toContain('sub-bob'); // nameless users fall back to sub
 
     fireEvent.change(screen.getByTestId('users-search'), { target: { value: 'carol' } });
@@ -166,33 +176,18 @@ describe('AdminApp (test-auth mode)', () => {
     await screen.findByTestId('admin-users');
   });
 
-  it('promote and demote call the grants API; bootstrap admins have no demote button', async () => {
-    const calls = scriptFetch({
-      ...HAPPY_ROUTES(),
-      'POST /admin/admins/sub-bob': () => ({}),
-      'DELETE /admin/admins/sub-carol': () => ({}),
-    });
-    renderAdmin();
-    fireEvent.click(await screen.findByTestId('nav-users'));
-    await screen.findByTestId('admin-users');
-
-    expect(screen.queryByTestId('demote-sub-alice')).toBeNull(); // bootstrap: untouchable
-    fireEvent.click(screen.getByTestId('promote-sub-bob'));
-    await waitFor(() => expect(calls).toContain('POST /admin/admins/sub-bob'));
-    fireEvent.click(screen.getByTestId('demote-sub-carol'));
-    await waitFor(() => expect(calls).toContain('DELETE /admin/admins/sub-carol'));
-  });
-
   it('a failed action surfaces the server error', async () => {
     scriptFetch({
       ...HAPPY_ROUTES(),
-      'DELETE /admin/admins/sub-carol': () => ({ status: 400, body: { error: 'cannot demote yourself' } }),
+      'PUT /admin/catalog': () => ({ status: 400, body: { error: 'categories, keywords and stores must be arrays' } }),
     });
     renderAdmin();
-    fireEvent.click(await screen.findByTestId('nav-users'));
-    await screen.findByTestId('admin-users');
-    fireEvent.click(screen.getByTestId('demote-sub-carol'));
-    await waitFor(() => expect(screen.getByTestId('admin-error').textContent).toContain('cannot demote yourself'));
+    fireEvent.click(await screen.findByTestId('nav-catalog'));
+    await screen.findByTestId('catalog-cat-groceries');
+    // the publish button arms only with unpublished changes
+    fireEvent.change(screen.getByTestId('catalog-store-ah'), { target: { value: 'albert heijn' } });
+    fireEvent.click(screen.getByTestId('catalog-publish'));
+    await waitFor(() => expect(screen.getByTestId('admin-error').textContent).toContain('must be arrays'));
   });
 
   it('connections: expiring filter narrows the list; delete removes selected and reloads', async () => {
@@ -237,20 +232,28 @@ describe('AdminApp (test-auth mode)', () => {
     expect(calls.some((c) => c.includes('/admin/bank-provider'))).toBe(false);
   });
 
-  it('typing a sub persists it and sends it as X-User-Sub', async () => {
+  it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {
     const seenHeaders: (string | null)[] = [];
+    const seenDevices: (string | null)[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input).includes('/admin/')) seenHeaders.push(new Headers(init?.headers).get('X-User-Sub'));
+        if (String(input).includes('/admin/')) {
+          seenHeaders.push(new Headers(init?.headers).get('X-User-Sub'));
+          seenDevices.push(new Headers(init?.headers).get('X-Munni-Device'));
+        }
         return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
       }),
     );
     render(<AdminApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('admin-sub'), { target: { value: 'sub-admin' } });
-    await waitFor(() => expect(seenHeaders.length).toBeGreaterThan(0));
+    await waitFor(() => expect(seenHeaders.length).toBeGreaterThan(1));
     expect(seenHeaders.every((h) => h === 'sub-admin')).toBe(true);
     expect(localStorage.getItem('munni_admin_sub')).toBe('sub-admin');
+    // the API refuses requests that name no device: one id, minted once, on every call
+    expect(seenDevices[0]).toBeTruthy();
+    expect(seenDevices.every((d) => d === seenDevices[0])).toBe(true);
+    expect(localStorage.getItem('munni_admin_device')).toBe(seenDevices[0]);
   });
 });
 
