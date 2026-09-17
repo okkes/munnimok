@@ -33,7 +33,7 @@ export interface SharedVia {
 
 export interface GlobalAccount {
   account: AccountRow;
-  /** set for feed accounts (undefined = legacy/manual row in a member space) */
+  /** set for feed accounts (undefined = the space's own manual row) */
   feedSpaceId?: string;
   sharedVia: SharedVia[];
 }

@@ -731,7 +731,7 @@ export function AccountsScreen() {
       return;
     }
     if (entry.feedSpaceId) setAttaching(entry); // bank feed: manage attachments
-    else setEditing(entry.account); // manual/legacy row: EditAccountSheet
+    else setEditing(entry.account); // the space's own manual row: EditAccountSheet
   };
 
   // #239 r2 (user): arriving from a space's info sheet with a target —

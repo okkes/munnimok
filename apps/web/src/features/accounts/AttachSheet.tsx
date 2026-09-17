@@ -178,7 +178,7 @@ export function AttachSheet({
         await repo.remove('accountLink', link.spaceId, link.id);
       }
       // #279: the engine purge below is feed-keyed — member spaces keep
-      // their txMeta overlays and legacy own rows unless swept here
+      // their txMeta overlays and the space's own rows unless swept here
       await purgeAccountRemnants(store, repo, account.id, feedSpaceId);
       await engine?.purgeSpace(feedSpaceId);
       void logActivity(store, repo, spaceId, 'accountRemove', account.name);

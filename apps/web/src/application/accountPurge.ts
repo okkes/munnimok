@@ -7,7 +7,7 @@ import type { StorageBackend } from '@/db/backend';
  * which is FEED-space-keyed — so two kinds of remnants survived in
  * member spaces: txMeta overlays for the feed's transactions (invisible
  * but syncing forever) and the member space's OWN transaction rows on
- * the account (the legacy merged import path wrote those; they kept
+ * the account (statement imports without a feed write those; they kept
  * rendering with a dangling account). Tombstone both via the repo —
  * tombstones sync to other devices, where a raw local delete would
  * resurrect on the next pull. Run BEFORE the engine purge, while the
