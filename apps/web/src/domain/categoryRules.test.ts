@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { TransactionRow } from '@/db/types';
+import type { TxView } from '@/db/types';
 import {
   affectedByDelete,
   affectedByDirectionChange,
@@ -10,7 +10,7 @@ import {
   subtreeIds,
 } from './categoryRules';
 
-const tx = (partial: Partial<TransactionRow>): TransactionRow =>
+const tx = (partial: Partial<TxView>): TxView =>
   ({
     id: 't',
     spaceId: 's',
@@ -24,7 +24,7 @@ const tx = (partial: Partial<TransactionRow>): TransactionRow =>
     deleted: 0,
     fieldVersions: {},
     ...partial,
-  }) as TransactionRow;
+  }) as TxView;
 
 describe('directionOfTx / directionAllows', () => {
   it('sign decides the side', () => {

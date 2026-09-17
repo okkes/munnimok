@@ -4,39 +4,40 @@ import { deriveTxType } from '@/domain/txDerive';
 import { FAMILY_TX_TYPE } from '@/domain/defaultAccounts';
 import type { StorageBackend } from './backend';
 import type { Repo } from './repo';
-import type { AccountLinkRow, AccountRow, AccountType, TransactionRow, TxMetaRow, TxSplitCat, TxType } from './types';
+import type { AccountLinkRow, AccountRow, AccountType, TransactionRow, TxMetaRow, TxSplitCat, TxType, TxView } from './types';
 
 /**
  * Feature B join layer: what a space "sees".
  *
  * Raw bank data lives once, in the account's feed space. A viewing
  * space sees a raw transaction through its attachments, dressed with
- * the space's own transformation overlay (txMeta). Rows created before
- * the feed migration still carry both halves merged — those are served
- * as-is (dual-read), so mid-migration devices never show gaps.
+ * the space's own transformation overlay (txMeta). The space's OWN rows
+ * (manual entries, statement imports without a feed) carry both halves
+ * on the row itself and are served as-is.
  */
 
-export interface SpaceTx extends TransactionRow {
-  /** present when the row is a joined feed transaction (not a legacy merged row) */
+/** a transaction as a space sees it: the view (derived txType included)
+ *  plus where the row came from */
+export interface SpaceTx extends TxView {
+  /** present when the row is a joined feed transaction (not one of the space's own rows) */
   feedSpaceId?: string;
 }
 
-const TRANSFORM_DEFAULTS = (raw: TransactionRow): Pick<TransactionRow, 'catId' | 'txType' | 'needsReview'> => ({
-  catId: undefined, // renders as Uncategorized until a member categorizes it
-  txType: raw.amountCents >= 0 ? 'income' : 'expense',
-  needsReview: 1,
-});
+/** a row as the space stores or joins it, before the view types derive */
+type JoinedRow = TransactionRow & { feedSpaceId?: string };
 
-function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: string, feedSpaceId: string): SpaceTx {
-  const defaults = TRANSFORM_DEFAULTS(raw);
+const TRANSFORM_DEFAULTS: Pick<TransactionRow, 'catId' | 'needsReview'> = {
+  catId: undefined, // renders as Uncategorized until a member categorizes it
+  needsReview: 1,
+};
+
+function joinTx(raw: TransactionRow, meta: TxMetaRow | undefined, spaceId: string, feedSpaceId: string): JoinedRow {
+  const defaults = TRANSFORM_DEFAULTS;
   return {
     ...raw,
     spaceId,
     feedSpaceId,
     catId: meta?.catId ?? defaults.catId,
-    // legacy carry only — deriveViewTypes overwrites this for every
-    // consumer (#133 removal: the stored type is never read again)
-    txType: meta?.txType ?? defaults.txType,
     // reserved (pending) charges are not review material: the bank will
     // replace them with their booked twin
     needsReview: raw.pending === 1 ? 0 : (meta?.needsReview ?? defaults.needsReview),
@@ -104,14 +105,12 @@ async function accountFacts(store: StorageBackend, spaceId: string, links: Accou
   return { stamps, funding, counter };
 }
 
-/** #133 removal: the VIEW's txType is DERIVED, row and parts alike —
- *  the stored value is legacy-only and no reader depends on it again.
- *  The one exception: the adjustment marker (its own field now, with
- *  the historical type value as fallback). */
-function deriveViewTypes(row: SpaceTx, facts: SpaceAccountFacts): SpaceTx {
+/** #133: the VIEW's txType is DERIVED, row and parts alike — nothing is
+ *  stored; the adjustment marker is the row's own field */
+function deriveViewTypes(row: JoinedRow, facts: SpaceAccountFacts): SpaceTx {
   const counterOf = (id: string | undefined) => (id ? facts.counter.get(id) : undefined);
   const sign = row.amountCents < 0 ? -1 : 1;
-  const realParts = (row.splits ?? []).filter((s) => s.catId !== 'reimbursed');
+  const multiPart = (row.splits ?? []).length > 1;
   const derive = (catId: string | undefined, linkedId: string | undefined, amountCents: number, multiPart: boolean, adjustment: boolean) =>
     deriveTxType({
       catId,
@@ -133,22 +132,18 @@ function deriveViewTypes(row: SpaceTx, facts: SpaceAccountFacts): SpaceTx {
         ? c
         : { ...c, txType: derive(c.catId, ownLinked, sign * Math.abs(c.amountCents), false, false) },
     );
-  const adjustment = row.adjustment === 1 || row.txType === 'adjustment';
-  const txType = derive(row.catId, row.linkedAccountId, row.amountCents, realParts.length > 1, adjustment);
+  const adjustment = row.adjustment === 1;
+  const txType = derive(row.catId, row.linkedAccountId, row.amountCents, multiPart, adjustment);
   const cats = enrichCats(row.cats, row.linkedAccountId);
-  const splits = row.splits?.map((s) =>
-    s.catId === 'reimbursed'
-      ? s
-      : {
-          ...s,
-          txType: derive(s.catId, s.linkedAccountId, sign * Math.abs(s.amountCents), false, false),
-          ...(s.cats ? { cats: enrichCats(s.cats, s.linkedAccountId) } : {}),
-        },
-  );
+  const splits = row.splits?.map((s) => ({
+    ...s,
+    txType: derive(s.catId, s.linkedAccountId, sign * Math.abs(s.amountCents), false, false),
+    ...(s.cats ? { cats: enrichCats(s.cats, s.linkedAccountId) } : {}),
+  }));
   return { ...row, txType, ...(cats ? { cats } : {}), ...(splits ? { splits } : {}) };
 }
 
-/** every transaction the space sees: legacy merged rows + joined feed rows */
+/** every transaction the space sees: its own rows + joined feed rows */
 export async function visibleTransactions(store: StorageBackend, spaceId: string): Promise<SpaceTx[]> {
   const [own, links, metas, space] = await Promise.all([
     store.bySpace('transaction', spaceId),
@@ -164,13 +159,13 @@ export async function visibleTransactions(store: StorageBackend, spaceId: string
   const { stamps, funding, counter } = await accountFacts(store, spaceId, links);
   // #152: funding accounts complete the counterparty picture and nothing
   // more — their transactions never enter the space's lists
-  const legacy = own.filter(
+  const ownRows = own.filter(
     (t) => t.deleted === 0 && !funding.has(t.accountId) && (!startGate || t.date >= startGate),
   );
   const metaByTx = new Map(metas.filter((m) => m.deleted === 0).map((m) => [m.txId, m]));
 
   const facts = { stamps, funding, counter };
-  const out: SpaceTx[] = legacy.map((t) => deriveViewTypes({ ...t }, facts));
+  const out: SpaceTx[] = ownRows.map((t) => deriveViewTypes({ ...t }, facts));
   for (const link of links) {
     if (funding.has(link.accountId)) continue;
     // #259: a link's own gate wins; a link WITHOUT one (the server's
@@ -223,7 +218,7 @@ export interface SpaceAccount extends AccountRow {
   link?: AccountLinkRow;
 }
 
-/** every account the space sees: legacy in-space rows + attached feed
+/** every account the space sees: its own in-space rows + attached feed
  *  accounts — the attachment's TYPE opinion applied (#152: type is a
  *  space-level fact for attached accounts) and its NAME opinion too
  *  (#239: a space may call the account by its own name) */
@@ -243,14 +238,14 @@ export async function visibleAccounts(store: StorageBackend, spaceId: string): P
 export type TxTransformFields = Partial<
   Pick<
     TxMetaRow,
-    'catId' | 'txType' | 'needsReview' | 'notes' | 'titleOverride' | 'cats' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId' | 'loanCounted'
+    'catId' | 'needsReview' | 'notes' | 'titleOverride' | 'cats' | 'splits' | 'reimbursements' | 'linkedAccountId' | 'transferPeerId' | 'recurringId' | 'eventId' | 'loanCounted'
   >
 >;
 
-type TransformTx = Pick<SpaceTx, 'id' | 'spaceId' | 'feedSpaceId' | 'txType' | 'needsReview'> &
+type TransformTx = Pick<SpaceTx, 'id' | 'spaceId' | 'feedSpaceId' | 'needsReview'> &
   Partial<Pick<SpaceTx, 'amountCents' | 'date' | 'linkedAccountId' | 'transferPeerId' | 'loanCounted'>>;
 
-/** one merged view field: the overlay owns it on feed rows, raw on legacy */
+/** one merged view field: the overlay owns it on feed rows, the row itself on own rows */
 const mergedField = <K extends 'linkedAccountId' | 'transferPeerId' | 'loanCounted'>(
   feed: boolean,
   raw: TransactionRow,
@@ -417,7 +412,7 @@ async function diffPartPlans(
 /**
  * The single write path for transformation edits: joined feed rows get
  * their overlay written (creating it deterministically on first edit);
- * legacy merged rows keep writing in place until migrated. The
+ * the space's own rows write in place. The
  * mirror-mint lifecycle lives at THIS choke point (the loans-v2 lesson,
  * generalized) — every linkedAccountId writer (user edits, auto-linkers,
  * the match sheet, review confirms) mints or retires the manual counter
@@ -437,8 +432,7 @@ export async function writeTxTransform(repo: Repo, tx: TransformTx, fields: TxTr
   } else {
     await repo.upsert('txMeta', tx.spaceId, txMetaId(tx.spaceId, tx.id), {
       txId: tx.id,
-      // first write materializes the current effective view alongside the edit
-      txType: tx.txType,
+      // first write materializes the current review state alongside the edit
       needsReview: tx.needsReview,
       ...write,
     });

@@ -28,7 +28,6 @@ describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
       currency: 'EUR',
       merchant: 'Albert Heijn Delft',
       catId: 'movie', // deliberate odd builtin choice — must carry over
-      txType: 'expense',
       needsReview: 0,
     });
 
@@ -43,11 +42,11 @@ describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
   it("#161: the own space's history OUTRANKS other spaces for the same merchant", async () => {
     await repo.upsert('transaction', 'sx', 'txg', {
       accountId: 'a1', date: '2026-07-01', amountCents: -2500, currency: 'EUR',
-      merchant: 'Albert Heijn', catId: 'movie', txType: 'expense', needsReview: 0,
+      merchant: 'Albert Heijn', catId: 'movie', needsReview: 0,
     });
     await repo.upsert('transaction', 'sy', 'tyg', {
       accountId: 'a2', date: '2026-06-01', amountCents: -1800, currency: 'EUR',
-      merchant: 'Albert Heijn', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: 'Albert Heijn', catId: 'groceries', needsReview: 0,
     });
     const memory = await buildSpaceMerchantMemory(new DexieBackend(db), 'sy');
     // sy's own single groceries answer wins over sx's newer movie one
@@ -62,7 +61,6 @@ describe('buildSpaceMerchantMemory (user-scoped cross-space learning)', () => {
       currency: 'EUR',
       merchant: 'Padel Baan',
       catId: 'custom_padel_x', // not a catalog id — invisible to sy
-      txType: 'expense',
       needsReview: 0,
     });
 

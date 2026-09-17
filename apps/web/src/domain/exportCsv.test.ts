@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { buildCatalog } from './catalog';
 import { CSV_COLUMNS, delimiterForLang, serializeCsv, toCsvRows } from './exportCsv';
 import type { ExportContext } from './exportCsv';
-import type { AccountRow, TransactionRow } from '@/db/types';
+import type { AccountRow, TxView } from '@/db/types';
 
 const account = { id: 'a1', name: 'Main; "Checking"', currency: 'EUR' } as AccountRow;
 
-const tx = (over: Partial<TransactionRow>): TransactionRow => ({
+const tx = (over: Partial<TxView>): TxView => ({
   id: 't1',
   spaceId: 's1',
   accountId: 'a1',

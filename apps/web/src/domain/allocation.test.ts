@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { ageOfMoneyDays, allocationId, availableCents, availableRecCents, recBucketId, recurringPeriodShare, spentByRecurring, spreadEvenly, toAllocateCents } from './allocation';
-import type { AccountRow, AllocationRow, TransactionRow } from '@/db/types';
+import type { AccountRow, AllocationRow, TxView } from '@/db/types';
 
-const tx = (partial: Partial<TransactionRow>): TransactionRow =>
+const tx = (partial: Partial<TxView>): TxView =>
   ({
     id: Math.random().toString(36).slice(2),
     spaceId: 's1',
@@ -15,7 +15,7 @@ const tx = (partial: Partial<TransactionRow>): TransactionRow =>
     needsReview: 0,
     deleted: 0,
     ...partial,
-  }) as TransactionRow;
+  }) as TxView;
 
 const alloc = (periodStart: string, catId: string, assignedCents: number): AllocationRow =>
   ({ id: allocationId('s1', periodStart, catId), spaceId: 's1', periodStart, catId, assignedCents, deleted: 0 }) as AllocationRow;

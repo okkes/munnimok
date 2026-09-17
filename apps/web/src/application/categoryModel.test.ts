@@ -42,17 +42,17 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     // the bare set-aside: ◆ movement category, no counterparty
     await repo.upsert('transaction', SPACE, 'bare1', {
       accountId: 'main', date: '2026-07-01', amountCents: -5000, currency: 'EUR',
-      merchant: 'Set aside', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      merchant: 'Set aside', catId: 'savingDeposit', needsReview: 0,
     });
     // interest is a value story, not a movement — never links
     await repo.upsert('transaction', SPACE, 'interest1', {
       accountId: 'main', date: '2026-07-02', amountCents: 300, currency: 'EUR',
-      merchant: 'Interest', catId: 'savingInterest', txType: 'income', needsReview: 0,
+      merchant: 'Interest', catId: 'savingInterest', needsReview: 0,
     });
     // rows ON a special account are the pot's own ledger — untouched
     await repo.upsert('transaction', SPACE, 'onpot1', {
       accountId: 'pot', date: '2026-07-03', amountCents: 2000, currency: 'EUR',
-      merchant: 'Deposit', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      merchant: 'Deposit', catId: 'savingDeposit', needsReview: 0,
     });
 
     const touched = await migrateBareSpecialRows(store, repo);
@@ -61,7 +61,6 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     const migrated = await store.get('transaction', 'bare1');
     expect(migrated?.linkedAccountId).toBe(defaultAccountId(SPACE, 'saving'));
     // the counterparty rule: a DEFAULT pot keeps the special category's type
-    expect(migrated?.txType).toBe('saving');
     expect(migrated?.transferPeerId).toBeTruthy();
     // the pot's leg exists and carries the money
     const mirror = await store.get('transaction', migrated!.transferPeerId!);
@@ -81,15 +80,15 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     // the screenshot case: munni predicted Cash Withdraw, no counterparty
     await repo.upsert('transaction', SPACE, 'atm1', {
       accountId: 'main', date: '2026-07-10', amountCents: -100, currency: 'EUR',
-      merchant: 'Geldmaat', catId: 'cashWithdraw', txType: 'transfer', needsReview: 1,
+      merchant: 'Geldmaat', catId: 'cashWithdraw', needsReview: 1,
     });
     await repo.upsert('transaction', SPACE, 'tout1', {
       accountId: 'main', date: '2026-07-11', amountCents: -2500, currency: 'EUR',
-      merchant: 'Moved out', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      merchant: 'Moved out', catId: 'transferOut', needsReview: 0,
     });
     await repo.upsert('transaction', SPACE, 'fund1', {
       accountId: 'main', date: '2026-07-12', amountCents: -4000, currency: 'EUR',
-      merchant: 'To the pot', catId: 'fundingOut', txType: 'funding', needsReview: 0,
+      merchant: 'To the pot', catId: 'fundingOut', needsReview: 0,
     });
 
     expect(await migrateBareSpecialRows(store, repo)).toBe(3);
@@ -107,7 +106,7 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     // transfer stands down to Uncategorized and goes back to review;
     // the transfer default is never minted for it
     const tout = await store.get('transaction', 'tout1');
-    expect(tout).toMatchObject({ catId: 'uncategorized', txType: 'expense', needsReview: 1 });
+    expect(tout).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
     expect(tout?.linkedAccountId).toBeUndefined();
     expect(await store.get('account', defaultAccountId(SPACE, 'transfer'))).toBeUndefined();
     // funding links its pot but mints NOTHING (#152: funding shows no rows)
@@ -129,13 +128,13 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     await repo.upsert('account', SPACE, 'vak', { name: 'Vakantiepot', type: 'savings', source: 'manual', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('transaction', SPACE, 'pp1', {
       accountId: 'main', date: '2026-07-14', amountCents: -799, currency: 'EUR',
-      merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', needsReview: 0,
       description: 'Incasso · Naam: PayPal Europe S.a.r.l. et Cie S.C.A Omschrijving: 1051635911097/PAYPAL',
       counterIban: 'LU89751000135104200E',
     });
     await repo.upsert('transaction', SPACE, 'vak1', {
       accountId: 'main', date: '2026-07-15', amountCents: -12_000, currency: 'EUR',
-      merchant: 'Overboeking naar Vakantiepot', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      merchant: 'Overboeking naar Vakantiepot', catId: 'transferOut', needsReview: 0,
     });
 
     expect(await migrateBareSpecialRows(store, repo)).toBe(2);
@@ -164,7 +163,7 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     await repo.upsert('account', SPACE, 'pp', { name: 'PayPal o.doker@live.nl', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0 });
     await repo.upsert('transaction', SPACE, 'split1', {
       accountId: 'main', date: '2026-07-16', amountCents: -3000, currency: 'EUR',
-      merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', needsReview: 0,
       splits: [
         { id: 'p1', catId: 'transferOut', amountCents: 2000, txType: 'transfer' },
         { id: 'p2', catId: 'groceries', amountCents: 1000 },
@@ -172,7 +171,7 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     });
     await repo.upsert('transaction', SPACE, 'split2', {
       accountId: 'main', date: '2026-07-17', amountCents: -3000, currency: 'EUR',
-      merchant: 'Verzamelbetaling', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      merchant: 'Verzamelbetaling', catId: 'transferOut', needsReview: 0,
       splits: [
         { id: 'q1', catId: 'transferOut', amountCents: 2000, txType: 'transfer' },
         { id: 'q2', catId: 'groceries', amountCents: 1000 },
@@ -217,7 +216,7 @@ describe('#133 step A: default accounts + the bare-row migration', () => {
     await repo.upsert('account', SPACE, 'main', { name: 'Checking', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 100_000 });
     await repo.upsert('transaction', SPACE, 'split1', {
       accountId: 'main', date: '2026-07-05', amountCents: -6500, currency: 'EUR',
-      merchant: 'Phone bill', catId: 'telecom', txType: 'expense', needsReview: 0,
+      merchant: 'Phone bill', catId: 'telecom', needsReview: 0,
       splits: [
         { id: 'p1', catId: 'telecom', amountCents: 4000 },
         { id: 'p2', catId: 'savingDeposit', amountCents: 2500, txType: 'saving', label: 'Device pot' },

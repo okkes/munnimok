@@ -82,7 +82,6 @@ describe('linkTransferPairs (application, per space)', () => {
       amountCents: -50000,
       currency: 'EUR',
       merchant: 'To the pot',
-      txType: 'saving',
       linkedAccountId: 'pot',
       needsReview: 0,
     });
@@ -92,7 +91,6 @@ describe('linkTransferPairs (application, per space)', () => {
       amountCents: 50000,
       currency: 'EUR',
       merchant: 'From checking',
-      txType: 'saving',
       needsReview: 0,
     });
     // a cross-space would-be twin: same amount, in the family space —
@@ -103,7 +101,6 @@ describe('linkTransferPairs (application, per space)', () => {
       amountCents: 50000,
       currency: 'EUR',
       merchant: 'From Okkes',
-      txType: 'transfer',
       needsReview: 0,
     });
 
@@ -118,17 +115,17 @@ describe('linkTransferPairs (application, per space)', () => {
   it('#133 r5: the unstamped leg of a checking↔savings pair files Set aside — never Transfer out', async () => {
     await repo.upsert('transaction', 'priv', 'out', {
       accountId: 'checking', date: '2026-07-25', amountCents: -50000, currency: 'EUR',
-      merchant: 'To the pot', txType: 'transfer', catId: 'transferOut', linkedAccountId: 'pot', needsReview: 0,
+      merchant: 'To the pot', catId: 'transferOut', linkedAccountId: 'pot', needsReview: 0,
     });
     await repo.upsert('transaction', 'priv', 'in', {
       accountId: 'pot', date: '2026-07-26', amountCents: 50000, currency: 'EUR',
-      merchant: 'From checking', txType: 'saving', needsReview: 0,
+      merchant: 'From checking', needsReview: 0,
     });
     expect(await linkTransferPairs(store, repo)).toBe(1);
     // the bijection holds on BOTH legs: the checking side wears the
     // family movement sub by its counter's kind, the pot its stamp
-    expect(await db.transactions.get('out')).toMatchObject({ transferPeerId: 'in', txType: 'saving', catId: 'savingDeposit' });
-    expect(await db.transactions.get('in')).toMatchObject({ txType: 'saving', catId: 'savingDeposit', linkedAccountId: 'checking' });
+    expect(await db.transactions.get('out')).toMatchObject({ transferPeerId: 'in', catId: 'savingDeposit' });
+    expect(await db.transactions.get('in')).toMatchObject({ catId: 'savingDeposit', linkedAccountId: 'checking' });
   });
 
   it('a deliberate out-leg claims its RAW income twin and types the mirror', async () => {
@@ -138,7 +135,6 @@ describe('linkTransferPairs (application, per space)', () => {
       amountCents: -10000,
       currency: 'EUR',
       merchant: 'To savings',
-      txType: 'saving',
       linkedAccountId: 'pot',
       needsReview: 0,
     });
@@ -149,14 +145,12 @@ describe('linkTransferPairs (application, per space)', () => {
       amountCents: 10000,
       currency: 'EUR',
       merchant: 'OKKES DOKER',
-      txType: 'income',
       needsReview: 1,
     });
 
     expect(await linkTransferPairs(store, repo)).toBe(1);
     const twin = await db.transactions.get('twin');
     expect(twin?.transferPeerId).toBe('out');
-    expect(twin?.txType).toBe('saving'); // typed as the mirror
     expect(twin?.linkedAccountId).toBe('checking'); // points back
     expect(twin?.needsReview).toBe(0);
   });
@@ -168,7 +162,6 @@ describe('linkTransferPairs (application, per space)', () => {
       amountCents: -10000,
       currency: 'EUR',
       merchant: 'To the pot',
-      txType: 'transfer',
       linkedAccountId: 'pot',
       needsReview: 0,
     });
@@ -180,7 +173,7 @@ describe('linkTransferPairs (application, per space)', () => {
     expect(mirror).toMatchObject({
       accountId: 'pot',
       amountCents: 10000,
-      txType: 'saving', // the pot's R1 stamp
+      // the pot's R1 stamp
       catId: 'savingDeposit', // + on the pot = set aside (Q8 movement)
       linkedAccountId: 'checking',
       transferPeerId: 'out',
@@ -200,7 +193,6 @@ describe('linkTransferPairs (application, per space)', () => {
       amountCents: -10000,
       currency: 'EUR',
       merchant: 'To savings',
-      txType: 'saving',
       linkedAccountId: 'pot',
       needsReview: 0,
     });
@@ -211,7 +203,6 @@ describe('linkTransferPairs (application, per space)', () => {
         amountCents: 10000,
         currency: 'EUR',
         merchant: 'DEPOSIT',
-        txType: 'income',
         needsReview: 1,
       });
     }

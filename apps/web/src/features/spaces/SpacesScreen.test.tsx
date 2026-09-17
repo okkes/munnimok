@@ -153,7 +153,7 @@ describe('SpacesScreen (demo identity)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('sa'), { trackOutbox: false });
     await repo.upsert('space', 'busy', 'busy', { name: 'Busy', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('transaction', 'busy', 'bz1', {
-      accountId: 'a', date: '2026-07-30', amountCents: -500, currency: 'EUR', merchant: 'Z', txType: 'expense', needsReview: 1,
+      accountId: 'a', date: '2026-07-30', amountCents: -500, currency: 'EUR', merchant: 'Z', needsReview: 1,
     });
     db.close();
 

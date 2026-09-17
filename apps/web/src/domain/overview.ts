@@ -1,4 +1,4 @@
-import type { AccountRow, TransactionRow } from '@/db/types';
+import type { AccountRow, TxView } from '@/db/types';
 import { REIMBURSEMENT_MAIN_ID, mainCatOf } from './categories';
 import { inPeriod } from './periods';
 import { txSliceViews } from './txSlices';
@@ -63,7 +63,7 @@ function viewInKind(kind: OverviewKind, view: TxSliceView): boolean {
 }
 
 /** one part's signed contribution to a bucket */
-function viewContribution(kind: OverviewKind, view: TxSliceView, tx: TransactionRow, accountsById?: Map<string, AccountRow>): number {
+function viewContribution(kind: OverviewKind, view: TxSliceView, tx: TxView, accountsById?: Map<string, AccountRow>): number {
   switch (kind) {
     case 'income':
       return view.amountCents; // income parts are positive by construction
@@ -84,7 +84,7 @@ function viewContribution(kind: OverviewKind, view: TxSliceView, tx: Transaction
  *  summed over its matching parts. An UNSPLIT row keeps the classic
  *  contract (membership is the caller's txsForKind filter); only a
  *  split row's parts answer per kind themselves. */
-export function contributionCents(kind: OverviewKind, tx: TransactionRow, accountsById?: Map<string, AccountRow>): number {
+export function contributionCents(kind: OverviewKind, tx: TxView, accountsById?: Map<string, AccountRow>): number {
   return txSliceViews(tx)
     .filter((view) => !view.fromParts || viewInKind(kind, view))
     .reduce((sum, view) => sum + viewContribution(kind, view, tx, accountsById), 0);
@@ -92,10 +92,10 @@ export function contributionCents(kind: OverviewKind, tx: TransactionRow, accoun
 
 export function txsForKind(
   kind: OverviewKind,
-  txs: TransactionRow[],
+  txs: TxView[],
   _accountsById: Map<string, AccountRow>,
   period: Period,
-): TransactionRow[] {
+): TxView[] {
   return txs.filter(
     (tx) => tx.deleted === 0 && inPeriod(tx.date, period) && txSliceViews(tx).some((view) => viewInKind(kind, view)),
   );
@@ -111,7 +111,7 @@ export interface OverviewSummary {
 }
 
 export function overviewSummary(
-  txs: TransactionRow[],
+  txs: TxView[],
   accountsById: Map<string, AccountRow>,
   period: Period,
 ): OverviewSummary {
@@ -156,7 +156,7 @@ interface CatalogLookup {
  */
 export function categoryContributionCents(
   kind: OverviewKind,
-  tx: TransactionRow,
+  tx: TxView,
   catId: string,
   catalog: CatalogLookup,
   accountsById?: Map<string, AccountRow>,
@@ -178,12 +178,12 @@ export function categoryContributionCents(
 
 export function txsForCategory(
   kind: OverviewKind,
-  txs: TransactionRow[],
+  txs: TxView[],
   accountsById: Map<string, AccountRow>,
   period: Period,
   catId: string,
   catalog: CatalogLookup,
-): { txs: TransactionRow[]; totalCents: number } {
+): { txs: TxView[]; totalCents: number } {
   // split transactions belong to every category their slices touch
   const matches = txsForKind(kind, txs, accountsById, period).filter(
     (tx) => categoryContributionCents(kind, tx, catId, catalog, accountsById) !== 0,
@@ -199,7 +199,7 @@ export function txsForCategory(
  *  split transactions land per slice, not on their primary category */
 export function categoryBreakdown(
   kind: OverviewKind,
-  txs: TransactionRow[],
+  txs: TxView[],
   accountsById: Map<string, AccountRow>,
   period: Period,
   catalog: CatalogLookup,

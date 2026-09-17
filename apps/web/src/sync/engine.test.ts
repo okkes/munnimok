@@ -302,7 +302,7 @@ describe('SyncEngine', () => {
     server.listSpaces = async () => {
       const res = await origList();
       await a.repo.upsert('account', 'feed-1', 'facc', { name: 'ING import', balanceCents: 0 });
-      await a.repo.upsert('transaction', 'feed-1', 'ftx', { accountId: 'facc', date: '2026-07-01', amountCents: -100, currency: 'EUR', merchant: 'X', txType: 'expense', needsReview: 1 });
+      await a.repo.upsert('transaction', 'feed-1', 'ftx', { accountId: 'facc', date: '2026-07-01', amountCents: -100, currency: 'EUR', merchant: 'X', needsReview: 1 });
       await a.repo.upsert('accountLink', 's1', 'link1', { feedSpaceId: 'feed-1', accountId: 'facc' });
       return res;
     };

@@ -2,8 +2,6 @@ import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { visibleTransactions, writeTxTransform } from '@/db/joined';
 import { UNCATEGORIZED_ID } from '@/domain/categories';
-import { accountStamp } from '@/domain/txType';
-import { standardTypeFor } from '@/domain/txKind';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 import type { AccountLinkRow, AccountRow, AccountType } from '@/db/types';
@@ -160,7 +158,6 @@ export async function changeAccountType(
   nextType: AccountType,
 ): Promise<number> {
   await repo.upsert('account', account.spaceId, account.id, { type: nextType });
-  const stamp = accountStamp(nextType);
   const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
   let touched = 0;
   for (const space of spaces) {
@@ -168,7 +165,6 @@ export async function changeAccountType(
     for (const row of rows) {
       await writeTxTransform(repo, row, {
         catId: UNCATEGORIZED_ID,
-        txType: stamp ?? standardTypeFor(row.amountCents),
         needsReview: 1,
       });
       touched++;
@@ -192,7 +188,6 @@ export async function changeLinkedAccountType(
   nextType: AccountType,
 ): Promise<number> {
   await repo.upsert('accountLink', spaceId, link.id, { type: nextType });
-  const stamp = accountStamp(nextType);
   const rows = (await visibleTransactions(store, spaceId)).filter(
     (r) => r.accountId === link.accountId && r.deleted === 0,
   );
@@ -200,7 +195,6 @@ export async function changeLinkedAccountType(
   for (const row of rows) {
     await writeTxTransform(repo, row, {
       catId: UNCATEGORIZED_ID,
-      txType: stamp ?? standardTypeFor(row.amountCents),
       needsReview: 1,
     });
     touched++;

@@ -45,13 +45,13 @@ describe('adoptUserCategoriesOnShare', () => {
     await repo.upsert('category', 'p1', 'lonesub', { parentId: 'sport', name: 'Padel', icon: 'dumbbell', color: '', txType: 'expense', direction: 'both', sortOrder: 3, builtin: 0 });
 
     // the soon-to-be-shared space uses them: directly, in splits and in an overlay
-    await repo.upsert('transaction', 'tgt', 'tx1', { accountId: 'a', date: '2026-07-01', amountCents: -1000, currency: 'EUR', merchant: 'Decathlon', catId: 'sub1', txType: 'expense', needsReview: 0 });
+    await repo.upsert('transaction', 'tgt', 'tx1', { accountId: 'a', date: '2026-07-01', amountCents: -1000, currency: 'EUR', merchant: 'Decathlon', catId: 'sub1', needsReview: 0 });
     await repo.upsert('transaction', 'tgt', 'tx2', {
       accountId: 'a', date: '2026-07-02', amountCents: -2000, currency: 'EUR', merchant: 'Mix', catId: 'groceries',
       splits: [{ catId: 'lonesub', amountCents: 500 }, { catId: 'groceries', amountCents: 1500 }],
-      txType: 'expense', needsReview: 0,
+      needsReview: 0,
     });
-    await repo.upsert('txMeta', 'tgt', 'meta1', { txId: 'raw1', catId: 'sub1', txType: 'expense', needsReview: 0 });
+    await repo.upsert('txMeta', 'tgt', 'meta1', { txId: 'raw1', catId: 'sub1', needsReview: 0 });
   });
 
   it('copies used units into the space and rewrites every reference', async () => {

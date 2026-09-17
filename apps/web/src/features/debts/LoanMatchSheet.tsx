@@ -139,7 +139,6 @@ async function applyLinks(
       tx,
       {
         linkedAccountId: accountId,
-        txType: 'debtPayment',
         catId: autoSubFor('debtPayment', tx.amountCents),
         ...(preAnchor && counted.has(tx.id) ? { loanCounted: 1 as const } : {}),
       },

@@ -40,7 +40,6 @@ export async function buildMergePlan(
 /** the fields that make up a space's opinion about a transaction */
 const OPINION_FIELDS = [
   'catId',
-  'txType',
   'needsReview',
   'notes',
   'titleOverride',

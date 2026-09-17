@@ -236,7 +236,6 @@ export interface TransactionRow extends SyncEnvelope {
    *  never mix: containers carry no cats of their own. */
   cats?: TxSplitCat[];
   splits?: TxSplit[];
-  txType: TxType;
   needsReview: 0 | 1;
   notes?: string;
   counterIban?: string;
@@ -263,10 +262,18 @@ export interface TransactionRow extends SyncEnvelope {
   /** loans v2 (2026-08-01): pre-anchor row deliberately counted into
    *  the linked manual loan's balance (one-shot marker) */
   loanCounted?: 1;
-  /** #133 D (C3): the manual correction marker — adjustment stopped
-   *  being a type; manual rows only */
+  /** #133 D (C3): the manual correction marker (manual rows only) — the
+   *  view derives the adjustment type from it; no type is stored */
   adjustment?: 0 | 1;
 }
+
+/**
+ * A transaction as the VIEW sees it: the stored row plus the type
+ * DERIVED at the join (db/joined.ts, domain/txDerive.ts) from the
+ * category, the counterparty, the account's stamp and the sign. Every
+ * reader consumes this shape; nothing stores a type.
+ */
+export type TxView = TransactionRow & { txType: TxType };
 
 /**
  * Per-space transformation overlay for one raw transaction (feature B:
@@ -282,7 +289,6 @@ export interface TxMetaRow extends SyncEnvelope {
   /** raw transaction id inside the feed space */
   txId: string;
   catId?: string;
-  txType: TxType;
   needsReview: 0 | 1;
   notes?: string;
   /** user-chosen display title; the bank's merchant stays untouched */

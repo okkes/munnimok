@@ -89,7 +89,6 @@ const seedTx = (spaceId: string, id: string, merchant: string) =>
     amountCents: -2350,
     currency: 'EUR',
     merchant,
-    txType: 'expense',
     needsReview: 0,
   });
 

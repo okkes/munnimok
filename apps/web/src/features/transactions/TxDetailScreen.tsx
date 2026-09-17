@@ -49,7 +49,7 @@ import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
-import type { AccountRow, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountRow, RecurringRow, TxSplit, TxSplitCat } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -801,7 +801,6 @@ interface RowEntryDeps {
  *  per-sibling match queue instead */
 interface BulkOfferState {
   catId: string;
-  txType: TxType;
   count: number;
   link?: { accountId: string; viaPeer: boolean };
 }
@@ -814,8 +813,6 @@ interface BulkOfferState {
  *  arms the #141 bulk offer. Module-level for S3776. */
 async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): Promise<void> {
   const { tx } = deps;
-  const family = specialCatType(entry.catId);
-  const txType = family ?? deps.cats.byId(entry.catId).txTypes[0] ?? tx.txType;
   // #218: the editor OWNS the link story — a BARE entry on a linked row
   // is a detach (the choke retires our mint, the peer releases)
   const linkChanged = (entry.linkedAccountId ?? undefined) !== (tx.linkedAccountId ?? undefined);
@@ -836,7 +833,6 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
     tx,
     {
       catId: entry.catId,
-      txType,
       needsReview: 0,
       ...deps.singleCatFields(entry.catId),
       ...(linkChanged ? { linkedAccountId: (entry.linkedAccountId ?? null) as never } : {}),
@@ -860,7 +856,6 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
     similar.length > 0
       ? {
           catId: entry.catId,
-          txType,
           count: similar.length,
           // #268: the link travels with the offer — viaPeer flips the
           // apply into the per-sibling counter-match queue
@@ -2015,7 +2010,7 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
   const [counterOpen, setCounterOpen] = useState(false);
   const [bulkOffer, setBulkOffer] = useState<BulkOfferState | null>(null);
   // #268: the per-sibling counter-match queue a viaPeer bulk apply runs
-  const [counterBulk, setCounterBulk] = useState<{ items: SpaceTx[]; catId: string; txType: TxType; accountId: string } | null>(null);
+  const [counterBulk, setCounterBulk] = useState<{ items: SpaceTx[]; catId: string; accountId: string } | null>(null);
   // #141: a landed split offers itself to the splitless siblings —
   // mutually exclusive with the category offer (they share the bar)
   const [splitBulk, setSplitBulk] = useState<TxSplit[] | null>(null);
@@ -2391,7 +2386,7 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
     // #268 (user): a SPECIFIC counter pick cannot be copied — each
     // sibling asks for its own counter row (or links and waits)
     if (bulkOffer.link?.viaPeer && picked.length > 0) {
-      setCounterBulk({ items: picked, catId: bulkOffer.catId, txType: bulkOffer.txType, accountId: bulkOffer.link.accountId });
+      setCounterBulk({ items: picked, catId: bulkOffer.catId, accountId: bulkOffer.link.accountId });
       setBulkOffer(null);
       return;
     }
@@ -2402,7 +2397,6 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
         item,
         {
           catId: bulkOffer.catId,
-          txType: bulkOffer.txType,
           needsReview: 0,
           ...(bulkOffer.link ? { linkedAccountId: bulkOffer.link.accountId } : {}),
         },
@@ -2422,7 +2416,6 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
       item,
       {
         catId: counterBulk.catId,
-        txType: counterBulk.txType,
         needsReview: 0,
         linkedAccountId: counterBulk.accountId as never,
         ...(peerId ? { transferPeerId: peerId } : {}),

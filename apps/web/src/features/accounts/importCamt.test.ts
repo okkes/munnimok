@@ -68,9 +68,9 @@ describe('importCamtStatements', () => {
     // keyword predictions are guesses: applied, but flagged for review —
     // only merchant history the user confirmed twice skips the queue
     const grocery = txs.find((t) => t.importRef === 'REF-001')!;
-    expect(grocery).toMatchObject({ catId: 'groceries', needsReview: 1, txType: 'expense' });
+    expect(grocery).toMatchObject({ catId: 'groceries', needsReview: 1 });
     const salary = txs.find((t) => t.importRef === 'REF-002')!;
-    expect(salary).toMatchObject({ catId: 'salary', needsReview: 1, txType: 'income' });
+    expect(salary).toMatchObject({ catId: 'salary', needsReview: 1 });
     const unknown = txs.find((t) => t.importRef === 'REF-003')!;
     expect(unknown).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
   });
@@ -123,7 +123,6 @@ describe('importCamtStatements', () => {
         currency: 'EUR',
         merchant: 'Albert Heijn 1470',
         catId: 'sport',
-        txType: 'expense',
         needsReview: 0,
       });
     }
@@ -146,7 +145,6 @@ describe('importCamtStatements', () => {
         currency: 'EUR',
         merchant: 'Albert Heijn 1350',
         catId: 'savingDeposit',
-        txType: 'saving',
         needsReview: 0,
       });
     }
@@ -169,7 +167,7 @@ describe('importCamtStatements', () => {
     for (const [id, date] of [['h1', '2026-05-01'], ['h2', '2026-06-01']] as const) {
       await repo.upsert('transaction', 's1', id, {
         accountId: 'acct-x', date, amountCents: -799, currency: 'EUR',
-        merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+        merchant: 'PayPal Europe S.a.r.l. et Cie S.C.A', catId: 'transferOut', needsReview: 0,
       });
     }
   };
@@ -198,7 +196,7 @@ describe('importCamtStatements', () => {
     await teachTransfer();
     await importCamtStatements(repo, new DexieBackend(db), 's1', [paypalStatement()]);
     const tx = (await db.transactions.toArray()).find((t) => t.importRef === 'PP-1')!;
-    expect(tx).toMatchObject({ catId: 'uncategorized', txType: 'expense', needsReview: 1 });
+    expect(tx).toMatchObject({ catId: 'uncategorized', needsReview: 1 });
     expect(tx.linkedAccountId).toBeUndefined();
     // the transfer default is a manual pick only — never minted for predictions
     expect(await db.accounts.get('defaultacct_transfer_s1')).toBeUndefined();

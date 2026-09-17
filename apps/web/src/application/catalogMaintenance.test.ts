@@ -24,11 +24,11 @@ describe('catalog tombstone pass (AC3)', () => {
       parentId: 'gift', name: 'Wrapping', icon: 'gift', color: '', txType: 'expense', sortOrder: 1, builtin: 0,
     });
     // transactions on the retired builtin, on the custom sub, and elsewhere
-    await repo.upsert('transaction', SPACE, 't-gift', { accountId: 'a', date: '2026-01-01', amountCents: -100, currency: 'EUR', merchant: 'X', catId: 'gift', txType: 'expense', needsReview: 0 });
-    await repo.upsert('transaction', SPACE, 't-sub', { accountId: 'a', date: '2026-01-02', amountCents: -200, currency: 'EUR', merchant: 'Y', catId: 'sub1', txType: 'expense', needsReview: 0 });
-    await repo.upsert('transaction', SPACE, 't-keep', { accountId: 'a', date: '2026-01-03', amountCents: -300, currency: 'EUR', merchant: 'Z', catId: 'groceries', txType: 'expense', needsReview: 0 });
+    await repo.upsert('transaction', SPACE, 't-gift', { accountId: 'a', date: '2026-01-01', amountCents: -100, currency: 'EUR', merchant: 'X', catId: 'gift', needsReview: 0 });
+    await repo.upsert('transaction', SPACE, 't-sub', { accountId: 'a', date: '2026-01-02', amountCents: -200, currency: 'EUR', merchant: 'Y', catId: 'sub1', needsReview: 0 });
+    await repo.upsert('transaction', SPACE, 't-keep', { accountId: 'a', date: '2026-01-03', amountCents: -300, currency: 'EUR', merchant: 'Z', catId: 'groceries', needsReview: 0 });
     // a feed overlay pointing at the retired id
-    await repo.upsert('txMeta', SPACE, 'm1', { txId: 'raw1', catId: 'gift', txType: 'expense', needsReview: 0 });
+    await repo.upsert('txMeta', SPACE, 'm1', { txId: 'raw1', catId: 'gift', needsReview: 0 });
     await store.metaPut('catalog', {
       version: 4,
       categories: [{ id: 'gift', deleted: true, names: { en: 'Gift', nl: 'Cadeau', tr: 'Hediye' }, icon: 'gift-outline' }],
@@ -75,7 +75,7 @@ describe('#228: the every-boot reimbursement normalizer', () => {
     // a +2400 credit that gave 4.20 while whole, then got split in two
     await repo.upsert('transaction', SPACE, 'salary', {
       accountId: 'a', date: '2026-07-24', amountCents: 240_000, currency: 'EUR', merchant: 'Demo Corp BV',
-      catId: 'salary', txType: 'income', needsReview: 0,
+      catId: 'salary', needsReview: 0,
       splits: [
         { id: 'p1', catId: 'salary', amountCents: 120_000 },
         { id: 'p2', catId: 'incomeOther', amountCents: 120_000 },
@@ -84,13 +84,13 @@ describe('#228: the every-boot reimbursement normalizer', () => {
     // the koffie expense's link points at the whole credit — no part yet
     await repo.upsert('transaction', SPACE, 'koffie', {
       accountId: 'a', date: '2026-07-25', amountCents: -420, currency: 'EUR', merchant: 'Koffie',
-      catId: 'eatingOut', txType: 'expense', needsReview: 0,
+      catId: 'eatingOut', needsReview: 0,
       reimbursements: [{ txId: 'salary', amountCents: 420 }],
     });
     // untouched: no links anywhere near it
     await repo.upsert('transaction', SPACE, 'plain', {
       accountId: 'a', date: '2026-01-03', amountCents: -500, currency: 'EUR', merchant: 'Z',
-      catId: 'coffee', txType: 'expense', needsReview: 0,
+      catId: 'coffee', needsReview: 0,
     });
 
     expect(await normalizeReimbursements(store, repo)).toBeGreaterThan(0);

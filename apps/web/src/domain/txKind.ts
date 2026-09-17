@@ -17,9 +17,9 @@ import type { TxType } from '@/db/types';
  * - adjustment  → a manual correction for an unresolvable discrepancy
  *
  * Money leaving to the outside world (a friend's IBAN, a shop) is
- * ALWAYS standard (user ruling). The funding TYPE retired 2026-08-05
- * (Q3): funding is a special category on standard rows now — the
- * stored member below only serves unmigrated rows.
+ * ALWAYS standard (user ruling). Funding is a special category on
+ * standard rows; the 'funding' type only derives from a funding-pot
+ * counterparty (#152) and reads as standard here.
  */
 export type TxKind = 'standard' | 'transfer' | 'adjustment';
 

@@ -4,6 +4,7 @@ import type { ReceiptItem, ReceiptPayment, ReceiptRow, StoreConnectionRow, Trans
 import { bestMatch, mapAhItems, mapAhPayment, mapAhSummary } from '@/domain/storeReceipts';
 import type { AccountTailOf, MatchableReceipt } from '@/domain/storeReceipts';
 import { receiptLinkId } from '@/domain/feedIds';
+import { visibleTransactions } from '@/db/joined';
 import { ensureStoreFeed } from '@/application/storeFeed';
 import { writeReceiptLink } from '@/application/receiptLinks';
 import { ahFetchReceiptItems, ahFetchReceipts, ahRefresh } from './ah';
@@ -80,11 +81,12 @@ export async function matchReceiptsIntoSpace(
   spaceId: string,
   receipts: readonly ReceiptRow[],
 ): Promise<number> {
-  const [allTxs, links] = await Promise.all([
-    storage.bySpace('transaction', spaceId),
+  // the space's VIEW: own rows and attached feed rows alike, the derived
+  // types telling expenses from movements
+  const [txs, links] = await Promise.all([
+    visibleTransactions(storage, spaceId),
     storage.bySpace('receiptLink', spaceId),
   ]);
-  const txs = allTxs.filter((t) => t.deleted === 0);
   const present = new Set(links.filter((l) => l.deleted === 0).map((l) => l.id));
   const taken = new Set(links.filter((l) => l.deleted === 0 && l.txId).map((l) => l.txId!));
   const tailOf = await accountTailResolver(storage);

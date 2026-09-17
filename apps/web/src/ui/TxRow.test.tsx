@@ -46,7 +46,7 @@ describe('TxRow', () => {
   });
 
   it('positive amounts render with an explicit plus', async () => {
-    renderWithData(<TxRow tx={tx({ amountCents: 2000, catId: 'salary', txType: 'income' })} />);
+    renderWithData(<TxRow tx={tx({ amountCents: 2000, catId: 'salary'})} />);
     expect((await screen.findByTestId('tx-row-t1')).textContent).toContain('+€20.00');
   });
 

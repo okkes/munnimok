@@ -76,8 +76,8 @@ describe('revertMinaRun', () => {
     // survivor space with a tutorial-made transaction (loose ledger row)
     await repo.upsert('space', 'keep', 'keep', { name: 'Keep', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('account', 'keep', 'acc', { name: 'Wallet', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });
-    await repo.upsert('transaction', 'keep', 'tour-tx', { accountId: 'acc', date: '2026-07-26', amountCents: -1234, currency: 'EUR', merchant: 'Groceries', txType: 'expense', needsReview: 0 });
-    await repo.upsert('transaction', 'keep', 'own-tx', { accountId: 'acc', date: '2026-07-25', amountCents: -500, currency: 'EUR', merchant: 'Mine', txType: 'expense', needsReview: 0 });
+    await repo.upsert('transaction', 'keep', 'tour-tx', { accountId: 'acc', date: '2026-07-26', amountCents: -1234, currency: 'EUR', merchant: 'Groceries', needsReview: 0 });
+    await repo.upsert('transaction', 'keep', 'own-tx', { accountId: 'acc', date: '2026-07-25', amountCents: -500, currency: 'EUR', merchant: 'Mine', needsReview: 0 });
     // ledgered second space with its own content
     await repo.upsert('space', 'fam', 'fam', { name: 'Family', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
     await repo.upsert('account', 'fam', 'fam-acc', { name: 'X', type: 'checking', source: 'manual', currency: 'EUR', balanceCents: 0 });

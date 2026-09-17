@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ALL_TX_TYPES,
   accountStamp,
   allowedSpecialCats,
   applyTypeChange,
@@ -175,7 +174,7 @@ describe('applyTypeChange', () => {
       currentCatId: 'groceries',
       catTxTypes: ['expense'],
     });
-    expect(fields).toEqual({ txType: 'expense', linkedAccountId: undefined });
+    expect(fields).toEqual({ linkedAccountId: undefined });
   });
 
   it('resets a conflicting category to uncategorized and flags review', () => {
@@ -186,18 +185,10 @@ describe('applyTypeChange', () => {
       catTxTypes: ['expense'],
     });
     expect(fields).toEqual({
-      txType: 'transfer',
       linkedAccountId: 'acc-2',
       catId: 'uncategorized',
       needsReview: 1,
     });
-  });
-
-  it('covers every type in the catalog list', () => {
-    expect(ALL_TX_TYPES).toHaveLength(8); // + funding (2026-08-01)
-    for (const type of ALL_TX_TYPES) {
-      expect(applyTypeChange({ nextType: type, linkedAccountId: null, currentCatId: undefined, catTxTypes: [] }).txType).toBe(type);
-    }
   });
 
   describe('the locked family sub at the write edge (arc 2)', () => {
@@ -209,7 +200,7 @@ describe('applyTypeChange', () => {
         catTxTypes: ['expense'],
         amountCents: -5000,
       });
-      expect(fields).toEqual({ txType: 'transfer', linkedAccountId: 'acc-2', catId: 'transferOut' });
+      expect(fields).toEqual({ linkedAccountId: 'acc-2', catId: 'transferOut' });
     });
 
     it('a placeholder category files too — both signs', () => {

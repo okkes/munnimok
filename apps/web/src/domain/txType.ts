@@ -1,17 +1,6 @@
 import { autoSubFor, specialCatType } from './categories';
 import type { AccountType, TxType } from '@/db/types';
 
-export const ALL_TX_TYPES: TxType[] = [
-  'expense',
-  'income',
-  'saving',
-  'transfer',
-  'debtPayment',
-  'investment',
-  'funding',
-  'adjustment',
-];
-
 /**
  * R1 (typed-splits v2, user 2026-08-05): special accounts STAMP every
  * one of their rows' type — a savings account's ledger is all saving,
@@ -168,14 +157,16 @@ export function categoryConflictsWithType(catTxTypes: TxType[], txType: TxType):
 }
 
 /**
- * Fields to write when the user changes the type or the linked account.
- * A conflicting category falls back to uncategorized (flagged for review)
- * instead of silently lying about what kind of money movement this is —
- * except transfer-family types (arc 2 locked doors): with the money's
- * sign known they file the family's locked sub, which is always truthful,
- * so no review round-trip. needsReview stays untouched on that path: a
- * row already in the deck keeps its confirmation stop, a settled row
- * isn't dragged back.
+ * Fields to write when a counterparty link gives the row a family
+ * (`nextType` is the family the counter's kind means — the view derives
+ * the type from the link itself; nothing stores it). A conflicting
+ * category falls back to uncategorized (flagged for review) instead of
+ * silently lying about what kind of money movement this is — except
+ * transfer-family types (arc 2 locked doors): with the money's sign
+ * known they file the family's locked sub, which is always truthful, so
+ * no review round-trip. needsReview stays untouched on that path: a row
+ * already in the deck keeps its confirmation stop, a settled row isn't
+ * dragged back.
  */
 export function applyTypeChange(options: {
   nextType: TxType;
@@ -183,15 +174,14 @@ export function applyTypeChange(options: {
   currentCatId: string | undefined;
   catTxTypes: TxType[];
   amountCents?: number;
-}): { txType: TxType; linkedAccountId?: string; catId?: string; needsReview?: 0 | 1 } {
+}): { linkedAccountId?: string; catId?: string; needsReview?: 0 | 1 } {
   const conflict = categoryConflictsWithType(options.catTxTypes, options.nextType);
   const familySub = options.amountCents === undefined ? undefined : autoSubFor(options.nextType, options.amountCents);
   const placeholder = !options.currentCatId || options.currentCatId === 'uncategorized';
   if (familySub && (conflict || placeholder)) {
-    return { txType: options.nextType, linkedAccountId: options.linkedAccountId ?? undefined, catId: familySub };
+    return { linkedAccountId: options.linkedAccountId ?? undefined, catId: familySub };
   }
   return {
-    txType: options.nextType,
     linkedAccountId: options.linkedAccountId ?? undefined,
     ...(conflict ? { catId: 'uncategorized', needsReview: 1 as const } : {}),
   };

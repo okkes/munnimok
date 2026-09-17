@@ -1,4 +1,4 @@
-import type { BudgetRow, TransactionRow } from '@/db/types';
+import type { BudgetRow, TxView } from '@/db/types';
 import { txSliceViews } from './txSlices';
 import type { Period } from './periods';
 
@@ -79,7 +79,7 @@ export function budgetFamily(catIds: readonly string[], catalog: CatalogLookup):
  *  never counts as spending — and a typed part answers to its OWN kind
  *  (a loan part inside the phone bill never eats the telecom budget). */
 export function budgetSpentCents(
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   family: ReadonlySet<string>,
   period: Period,
 ): number {
@@ -104,7 +104,7 @@ export function budgetSpentCents(
  */
 export function carriedCents(
   budget: BudgetRow,
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   family: ReadonlySet<string>,
   today: string,
 ): number {
@@ -142,7 +142,7 @@ export interface BudgetStatus {
 
 export function budgetStatus(
   budget: BudgetRow,
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   catalog: CatalogLookup,
   today: string,
 ): BudgetStatus {

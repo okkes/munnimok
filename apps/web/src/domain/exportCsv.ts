@@ -1,4 +1,4 @@
-import type { AccountRow, RecurringRow, TransactionRow } from '@/db/types';
+import type { AccountRow, RecurringRow, TxView } from '@/db/types';
 import type { Cat, Catalog } from './catalog';
 import { cleanBankText } from '@/lib/text';
 import { givenCents, netAmountCents, netCreditCents } from './reimbursement';
@@ -14,7 +14,7 @@ export interface ExportContext {
   accounts: readonly AccountRow[];
   catalog: Catalog;
   catName: (cat: Cat) => string;
-  typeName: (txType: TransactionRow['txType']) => string;
+  typeName: (txType: TxView['txType']) => string;
   recurrings?: readonly RecurringRow[];
   events?: readonly { id: string; name: string }[];
   /** adds tx/account ids for power users */
@@ -33,7 +33,7 @@ const TECHNICAL_COLUMNS = ['tx_id', 'account_id'] as const;
 
 const cents = (value: number): string => (value / 100).toFixed(2);
 
-const statusOf = (tx: TransactionRow): string => {
+const statusOf = (tx: TxView): string => {
   if (tx.pending === 1) return 'pending';
   return tx.needsReview === 1 ? 'unreviewed' : 'reviewed';
 };
@@ -43,13 +43,13 @@ type BaseRow = (
   catOf: Cat,
   mainOf: Cat,
   amount: number,
-  typeOf?: TransactionRow['txType'],
+  typeOf?: TxView['txType'],
   eventOf?: string,
 ) => string[];
 
 /** #211: a row's own category spread exports one honest row per entry,
  *  the same shape a part spread gets — marked `cat` (it is not a part) */
-function pushCatRows(rows: string[][], tx: TransactionRow, catalog: Catalog, base: BaseRow): void {
+function pushCatRows(rows: string[][], tx: TxView, catalog: Catalog, base: BaseRow): void {
   for (const entry of tx.cats ?? []) {
     const entryCat = catalog.byId(entry.catId);
     const entryMain = entryCat.parentId ? catalog.byId(entryCat.parentId) : entryCat;
@@ -60,7 +60,7 @@ function pushCatRows(rows: string[][], tx: TransactionRow, catalog: Catalog, bas
 /** split parts carry the expense sign of their parent, their OWN
  *  type/event (typed-splits v2), and the label rides the marker; a part
  *  spread across categories (v2.1) exports one honest row per entry */
-function pushPartRows(rows: string[][], tx: TransactionRow, catalog: Catalog, base: BaseRow): void {
+function pushPartRows(rows: string[][], tx: TxView, catalog: Catalog, base: BaseRow): void {
   for (const part of tx.splits ?? []) {
     const entries = part.cats?.length ? part.cats : [{ catId: part.catId, amountCents: part.amountCents }];
     for (const entry of entries) {
@@ -81,7 +81,7 @@ function pushPartRows(rows: string[][], tx: TransactionRow, catalog: Catalog, ba
 }
 
 /** one export row per transaction; split parts fan out beneath it */
-export function toCsvRows(txs: readonly TransactionRow[], ctx: ExportContext): string[][] {
+export function toCsvRows(txs: readonly TxView[], ctx: ExportContext): string[][] {
   const accountById = new Map(ctx.accounts.map((a) => [a.id, a]));
   const recurringById = new Map((ctx.recurrings ?? []).map((r) => [r.id, r.name]));
   const eventById = new Map((ctx.events ?? []).map((e) => [e.id, e.name]));

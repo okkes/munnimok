@@ -1,4 +1,4 @@
-import type { TransactionRow, TxSplit, TxType } from '@/db/types';
+import type { TxSplit, TxType, TxView } from '@/db/types';
 import { REIMBURSED_ID } from './categories';
 
 /**
@@ -33,7 +33,7 @@ export interface TxSliceView {
 }
 
 type SliceSource = Pick<
-  TransactionRow,
+  TxView,
   'amountCents' | 'catId' | 'cats' | 'txType' | 'eventId' | 'recurringId' | 'linkedAccountId' | 'transferPeerId' | 'splits'
 >;
 

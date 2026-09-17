@@ -171,7 +171,7 @@ export const draftReady = (draft: ReviewDraft): boolean => {
     return !!draft.linkedAccountId || (isMovementCat(draft.catId) && defaultFamilyFor(draft.catId) !== 'transfer');
   }
   // adjustments are corrections — not spending; same placeholder story.
-  // ('funding' only serves unmigrated rows since the type retired.)
+  // (#152: a funding-pot counterparty derives the funding family.)
   if (draft.txType === 'funding' || draft.txType === 'adjustment') return true;
   // #126 r7 (user rule): no restriction on a split beyond the amounts —
   // the ONLY hold-back left is an uncategorized part, and the deck marks

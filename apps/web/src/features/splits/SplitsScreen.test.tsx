@@ -121,11 +121,11 @@ describe('Splits (SP1)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('transaction', 's-user', 'tx-ah', {
       accountId: 'a1', date: '2026-07-14', amountCents: -2350, currency: 'EUR',
-      merchant: 'Albert Heijn', txType: 'expense', needsReview: 0,
+      merchant: 'Albert Heijn', needsReview: 0,
     });
     await repo.upsert('transaction', 's-user', 'tx-salary', {
       accountId: 'a1', date: '2026-07-01', amountCents: 250000, currency: 'EUR',
-      merchant: 'Salary', txType: 'income', needsReview: 0, // income: never offered
+      merchant: 'Salary', needsReview: 0, // income: never offered
     });
     db.close();
 
@@ -305,7 +305,7 @@ describe('Splits (SP1)', () => {
     await repo.upsert('event', 's-user', 'ev-rome', { name: 'Rome weekend' });
     await repo.upsert('transaction', 's-user', 'tx-ah', {
       accountId: 'a1', date: '2026-07-14', amountCents: -2350, currency: 'EUR',
-      merchant: 'Albert Heijn', txType: 'expense', needsReview: 0,
+      merchant: 'Albert Heijn', needsReview: 0,
     });
     db.close();
 

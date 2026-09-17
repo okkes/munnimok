@@ -8,7 +8,6 @@ import { matchCounterAccount } from '@/domain/counterClue';
 import type { ClueTx } from '@/domain/counterClue';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import type { DefaultFamily } from '@/domain/defaultAccounts';
-import { standardTypeFor } from '@/domain/txKind';
 import { accountStamp, movementCatFor } from '@/domain/txType';
 import { ensureDefaultAccount } from './defaultAccounts';
 
@@ -36,7 +35,7 @@ function resolveBareTransfer(
 ): TxTransformFields {
   const match = matchCounterAccount(clue, candidates, accountId);
   if (match) return { linkedAccountId: match.id, catId: movementCatFor(match.type, amountCents) };
-  return { catId: UNCATEGORIZED_ID, txType: standardTypeFor(amountCents), needsReview: 1 };
+  return { catId: UNCATEGORIZED_ID, needsReview: 1 };
 }
 
 /** the part-level twin: link the matched account, or the part goes
@@ -146,7 +145,6 @@ export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo):
       id: raw.id,
       spaceId,
       feedSpaceId,
-      txType: meta?.txType ?? raw.txType,
       needsReview: meta?.needsReview ?? raw.needsReview,
       amountCents: raw.amountCents,
       date: raw.date,
@@ -174,8 +172,8 @@ export async function migrateBareSpecialRows(store: StorageBackend, repo: Repo):
       return;
     }
     const targetId = await ensureDefaultAccount(store, repo, spaceId, family);
-    // the choke derives the compat txType: a DEFAULT counter keeps the
-    // row wearing its special category (the user's counterparty rule)
+    // a DEFAULT counter keeps the row wearing its special category (the
+    // user's counterparty rule) — the view derives the family from it
     await writeTxTransform(repo, tx, { linkedAccountId: targetId });
     touched++;
   };

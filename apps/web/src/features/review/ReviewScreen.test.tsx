@@ -358,7 +358,7 @@ describe('ReviewScreen (demo identity)', () => {
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, over.id, {
       accountId: 'demo_main', date: '2026-01-05', amountCents: -799, currency: 'EUR',
       merchant: over.merchant, description: over.description, counterIban: over.counterIban,
-      catId: 'transferOut', txType: 'transfer', needsReview: 1,
+      catId: 'transferOut', needsReview: 1,
     });
     seed.close();
   };
@@ -453,7 +453,6 @@ describe('ReviewScreen (demo identity)', () => {
         currency: 'EUR',
         merchant: first.merchant,
         catId: first.catId, // bulk1 IS the card — it needs a ready draft
-        txType: 'expense',
         needsReview: 1,
       });
     }
@@ -514,7 +513,6 @@ describe('ReviewScreen (demo identity)', () => {
       currency: 'EUR',
       merchant: 'NETFLIX.COM',
       catId: 'subs',
-      txType: 'expense',
       needsReview: 1,
     });
 
@@ -577,7 +575,7 @@ describe('ReviewScreen (demo identity)', () => {
     for (const [id, day] of [['evt-a', '01'], ['evt-b', '02']] as const) {
       await repo.upsert('transaction', DEMO_SPACE_ID, id, {
         accountId: 'demo_main', date: `2020-01-${day}`, amountCents: -2000, currency: 'EUR',
-        merchant: 'APRES SKI BAR', catId: 'entertainment', txType: 'expense', needsReview: 1,
+        merchant: 'APRES SKI BAR', catId: 'entertainment', needsReview: 1,
       });
     }
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('APRES SKI BAR'), { timeout: 5000 });
@@ -796,7 +794,7 @@ describe('ReviewScreen (demo identity)', () => {
     for (const [id, day] of [['note-a', '01'], ['note-b', '02']] as const) {
       await repo.upsert('transaction', DEMO_SPACE_ID, id, {
         accountId: 'demo_main', date: `2020-02-${day}`, amountCents: -1500, currency: 'EUR',
-        merchant: 'PADEL CLUB', catId: 'entertainment', txType: 'expense', needsReview: 1,
+        merchant: 'PADEL CLUB', catId: 'entertainment', needsReview: 1,
       });
     }
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('PADEL CLUB'), { timeout: 10_000 });
@@ -825,7 +823,7 @@ describe('ReviewScreen (demo identity)', () => {
       .sort((a, b) => a.date.localeCompare(b.date))[0]; // the current card
     await repo.upsert('transaction', DEMO_SPACE_ID, 'none-1', {
       accountId: first.accountId, date: '2030-01-01', amountCents: first.amountCents, currency: 'EUR',
-      merchant: first.merchant, catId: first.catId, txType: 'expense', needsReview: 1,
+      merchant: first.merchant, catId: first.catId, needsReview: 1,
     });
     db.close();
     await waitFor(() => expect(screen.getByTestId('review-bulk').textContent).toContain('Also apply to 1 similar'), { timeout: 10_000 });
@@ -1121,7 +1119,7 @@ describe('ReviewScreen (demo identity)', () => {
     // no counterparty, no note — the one shape that may open directly
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'bare-split', {
       accountId: 'demo_main', date: '2020-01-01', amountCents: -1000, currency: 'EUR',
-      merchant: 'Storyless Stall', catId: 'uncategorized', txType: 'expense', needsReview: 1,
+      merchant: 'Storyless Stall', catId: 'uncategorized', needsReview: 1,
     });
     seed.close();
     cleanup();
@@ -1234,7 +1232,6 @@ describe('ReviewScreen (demo identity)', () => {
       merchant: 'SPLITCAFE',
       description: 'A very long remittance line that identifies this charge beyond two clamped lines of text',
       catId: 'groceries',
-      txType: 'expense',
       needsReview: 1,
     });
     await waitFor(() => expect(screen.getByTestId('review-card').textContent).toContain('SPLITCAFE'), { timeout: 5000 });
@@ -1329,13 +1326,6 @@ describe('ReviewScreen (demo identity)', () => {
     // #228 feedback: the card's Counterparty row names the pot
     await waitFor(() => expect(screen.getByTestId('review-counter-row').textContent).toContain('Demo Savings'));
     expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
-
-    // nothing was written mid-flight: the tx still holds its own type
-    const db = new MunniDB('munni_demo');
-    const current = (await db.transactions.filter((t) => t.needsReview === 1).toArray())
-      .sort((a, b) => a.date.localeCompare(b.date))[0]; // oldest first (user rule)
-    expect(current.txType).not.toBe('saving');
-    db.close();
   }, 15_000);
 
   it('skip moves on and the skipped pile can be revisited', async () => {
@@ -1376,7 +1366,7 @@ describe('ReviewScreen (user identity, split settlements)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed'), { trackOutbox: false });
     await repo.upsert('transaction', 's-user', 'tx-in', {
       accountId: 'a1', date: '2026-07-16', amountCents: 1500, currency: 'EUR',
-      merchant: 'A. FRIEND', txType: 'income', needsReview: 1,
+      merchant: 'A. FRIEND', needsReview: 1,
     });
     db.close();
 
@@ -1419,7 +1409,7 @@ describe('ReviewScreen (user identity, split settlements)', () => {
       const check = new MunniDB(USER_TEST_DB);
       const tx = await check.transactions.get('tx-in');
       check.close();
-      expect(tx).toMatchObject({ txType: 'income', catId: 'reimburse', needsReview: 0 });
+      expect(tx).toMatchObject({ catId: 'reimburse', needsReview: 0 });
     });
   }, 15_000);
 });
@@ -1439,7 +1429,7 @@ describe('ReviewScreen (own-account transfers)', () => {
     });
     await repo.upsert('transaction', 's-user', 'tx-topup', {
       accountId: 'acct-main', date: '2026-07-16', amountCents: -50000, currency: 'EUR',
-      merchant: 'CREDITCARD TOPUP', txType: 'expense', needsReview: 1,
+      merchant: 'CREDITCARD TOPUP', needsReview: 1,
       counterIban: 'NL91ABNA0417164300', // same IBAN, bank formatting differs
     });
     db.close();
@@ -1463,7 +1453,7 @@ describe('ReviewScreen (own-account transfers)', () => {
       const tx = await check.transactions.get('tx-topup');
       check.close();
       // credit counter-account: a transfer between own accounts (user ruling)
-      expect(tx).toMatchObject({ txType: 'transfer', linkedAccountId: 'acct-cc', needsReview: 0 });
+      expect(tx).toMatchObject({ linkedAccountId: 'acct-cc', needsReview: 0 });
     });
   }, 15_000);
 
@@ -1480,7 +1470,7 @@ describe('ReviewScreen (own-account transfers)', () => {
     });
     await repo.upsert('transaction', 's-user', 'tx-topup', {
       accountId: 'acct-main', date: '2026-07-16', amountCents: -50000, currency: 'EUR',
-      merchant: 'CREDITCARD TOPUP', txType: 'expense', needsReview: 1, counterIban: 'NL91ABNA0417164300',
+      merchant: 'CREDITCARD TOPUP', needsReview: 1, counterIban: 'NL91ABNA0417164300',
     });
     db.close();
 

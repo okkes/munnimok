@@ -70,7 +70,7 @@ export function useReimburseLinks(allTxs: SpaceTx[] | undefined) {
     const catId = selfFiles ? REIMBURSED_ID : credit.catId;
     return {
       ...(reimbSettleFields({ ...credit, catId }, view.total, view.byPart(credit.splits), nameOf) as Record<string, never>),
-      ...(selfFiles ? { catId, txType: 'income' as const, needsReview: 0 as const } : {}),
+      ...(selfFiles ? { catId, needsReview: 0 as const } : {}),
     };
   };
 
