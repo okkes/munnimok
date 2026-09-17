@@ -34,16 +34,23 @@ describe('isDataImage', () => {
 });
 
 describe('downscaleImage', () => {
-  it('draws the bitmap onto a fitted canvas and returns the JPEG data URL', async () => {
+  it('downscales the bitmap to the fitted size and returns the JPEG data URL', async () => {
     const close = vi.fn();
     vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 1000, height: 500, close }));
     const drawImage = vi.fn();
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ drawImage } as never);
+    let canvas: HTMLCanvasElement | undefined;
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (this: HTMLCanvasElement) {
+      canvas = this;
+      return { drawImage } as never;
+    });
     vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockReturnValue('data:image/jpeg;base64,tiny');
 
     const url = await downscaleImage(new Blob(['x']), 256);
     expect(url).toBe('data:image/jpeg;base64,tiny');
-    expect(drawImage).toHaveBeenCalledWith(expect.anything(), 0, 0, 256, 128);
+    // 1000×500 fits a 256 square as 256×128 — the canvas IS that size
+    expect(canvas?.width).toBe(256);
+    expect(canvas?.height).toBe(128);
+    expect(drawImage).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalled(); // bitmap released on success
   });
 

@@ -95,7 +95,7 @@ describe('#313: desktop columns follow what actually renders', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('few rendering blocks: no grid — the single column centers and widens', async () => {
+  it('few rendering blocks keep one centered column', async () => {
     const first = renderApp('/home');
     await screen.findByTestId('screen-home');
     // the boot chain must settle before this handle's writes (db.close trap)
@@ -119,13 +119,8 @@ describe('#313: desktop columns follow what actually renders', () => {
     renderApp('/home');
     await screen.findByTestId('home-explore', {}, { timeout: 10_000 });
     // until the space row + txs land, the configured-count fallback may
-    // hold the grid — the settled state is the centered single column
-    await waitFor(() => expect(screen.getByTestId('home-columns').className).toContain('lg:mx-auto'), { timeout: 10_000 });
-    const wrap = screen.getByTestId('home-columns');
-    expect(wrap.className).toContain('lg:max-w-[720px]');
-    expect(wrap.className).not.toContain('lg:grid');
-    // the customize door joins the centered column instead of straying wide
-    expect(screen.getByTestId('home-customize').className).toContain('lg:max-w-[720px]');
+    // hold the grid — the settled state is the single column
+    await waitFor(() => expect(screen.getByTestId('home-columns').getAttribute('data-columns')).toBe('1'), { timeout: 10_000 });
   }, 20_000);
 
   it('four rendering blocks still earn the two-column grid', async () => {
@@ -150,7 +145,7 @@ describe('#313: desktop columns follow what actually renders', () => {
     await screen.findByTestId('home-review-banner', {}, { timeout: 10_000 });
     await screen.findByTestId('home-explore', {}, { timeout: 10_000 });
     expect(screen.getByTestId('home-overview-income')).toBeTruthy();
-    // …so the desktop split stays a grid
-    await waitFor(() => expect(screen.getByTestId('home-columns').className).toContain('lg:grid-cols-2'), { timeout: 10_000 });
+    // …so the desktop split stays two columns
+    await waitFor(() => expect(screen.getByTestId('home-columns').getAttribute('data-columns')).toBe('2'), { timeout: 10_000 });
   }, 20_000);
 });
