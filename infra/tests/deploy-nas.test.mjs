@@ -27,7 +27,7 @@ function passedBy(workflow, jobId) {
 const WORKFLOW = read('.github/workflows/deploy-nas.yml');
 
 test('deploy-nas: the iac channel passes every placeholder of both rendered twins — NAS_* as secrets, VITE_* as the written-back variables', () => {
-  process.env.IAC_DOMAIN ??= 'nas.example';
+  process.env.PLATFORM_DOMAIN ??= 'nas.example';
   const passed = passedBy(WORKFLOW, 'deploy-iac');
   for (const name of ['munni-iac-prod', 'munni-iac-staging']) {
     const dir = renderStack(loadStack(name));

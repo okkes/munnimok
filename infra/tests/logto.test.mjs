@@ -120,7 +120,7 @@ test('ensureAppAdmin: the app\'s first user is created once with a generated pas
 import { removeApps, appDefinitions } from '../modules/logto.mjs';
 import { loadStack } from '../modules/stack.mjs';
 test('removeApps: the stack\'s apps and its API resource are deleted by name/indicator, nothing else', async () => {
-  process.env.IAC_DOMAIN ??= 'nas.example';
+  process.env.PLATFORM_DOMAIN ??= 'nas.example';
   const stackDef = loadStack('munni-iac-staging');
   const names = new Set(Object.values(appDefinitions(stackDef)).map((d) => d.name));
   const calls = [];

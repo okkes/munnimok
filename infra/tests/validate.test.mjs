@@ -37,24 +37,24 @@ const ecPem = () => generateKeyPairSync('ec', { namedCurve: 'P-256' }).privateKe
 
 test('gocardless: hits token/new with both secrets; maps accept and reject', async () => {
   const { calls, fetchImpl } = capture(200);
-  const ok = await validate('gocardless', { NAS_GOCARDLESS_SECRET_ID: 'id1', NAS_GOCARDLESS_SECRET_KEY: 'key1' }, { fetchImpl });
+  const ok = await validate('gocardless', { GOCARDLESS_SECRET_ID: 'id1', GOCARDLESS_SECRET_KEY: 'key1' }, { fetchImpl });
   assert.equal(ok.ok, true);
   assert.match(calls[0].url, /bankaccountdata\.gocardless\.com\/api\/v2\/token\/new\/$/);
   assert.deepEqual(JSON.parse(calls[0].init.body), { secret_id: 'id1', secret_key: 'key1' });
 
-  const bad = await validate('gocardless', { NAS_GOCARDLESS_SECRET_ID: 'id1', NAS_GOCARDLESS_SECRET_KEY: 'nope' }, { fetchImpl: capture(401).fetchImpl });
+  const bad = await validate('gocardless', { GOCARDLESS_SECRET_ID: 'id1', GOCARDLESS_SECRET_KEY: 'nope' }, { fetchImpl: capture(401).fetchImpl });
   assert.equal(bad.ok, false);
   assert.match(bad.detail, /401/);
 
-  const gap = await validate('gocardless', { NAS_GOCARDLESS_SECRET_ID: 'id1' }, { fetchImpl });
-  assert.match(gap.detail, /missing: NAS_GOCARDLESS_SECRET_KEY/);
+  const gap = await validate('gocardless', { GOCARDLESS_SECRET_ID: 'id1' }, { fetchImpl });
+  assert.match(gap.detail, /missing: GOCARDLESS_SECRET_KEY/);
 });
 
 test('enablebanking: RS256 JWT with kid=app id, iss/aud per the server, against /aspsps', async () => {
   const { calls, fetchImpl } = capture(200);
   const verdict = await validate('enablebanking', {
-    NAS_ENABLEBANKING_APPLICATION_ID: 'app-123',
-    NAS_ENABLEBANKING_PRIVATE_KEY_PEM: rsaPem(),
+    ENABLEBANKING_APPLICATION_ID: 'app-123',
+    ENABLEBANKING_PRIVATE_KEY_PEM: rsaPem(),
   }, { fetchImpl });
   assert.equal(verdict.ok, true);
   assert.match(calls[0].url, /api\.enablebanking\.com\/aspsps\?country=NL$/);
@@ -66,7 +66,7 @@ test('enablebanking: RS256 JWT with kid=app id, iss/aud per the server, against 
   assert.equal(payload.aud, 'api.enablebanking.com');
   assert.ok(payload.exp > payload.iat);
 
-  const badPem = await validate('enablebanking', { NAS_ENABLEBANKING_APPLICATION_ID: 'a', NAS_ENABLEBANKING_PRIVATE_KEY_PEM: 'not a pem' }, { fetchImpl });
+  const badPem = await validate('enablebanking', { ENABLEBANKING_APPLICATION_ID: 'a', ENABLEBANKING_PRIVATE_KEY_PEM: 'not a pem' }, { fetchImpl });
   assert.equal(badPem.ok, false);
   assert.match(badPem.detail, /PEM does not parse/);
 });
@@ -74,7 +74,7 @@ test('enablebanking: RS256 JWT with kid=app id, iss/aud per the server, against 
 test('fcm: parses the service account, mints a jwt-bearer grant to its token_uri', async () => {
   const sa = { type: 'service_account', project_id: 'munni-test', private_key: rsaPem(), client_email: 'svc@munni-test.iam.gserviceaccount.com', token_uri: 'https://oauth2.googleapis.com/token' };
   const { calls, fetchImpl } = capture(200, { access_token: 'x' });
-  const verdict = await validate('fcm', { NAS_FCM_SERVICE_ACCOUNT_JSON: JSON.stringify(sa) }, { fetchImpl });
+  const verdict = await validate('fcm', { FCM_SERVICE_ACCOUNT_JSON: JSON.stringify(sa) }, { fetchImpl });
   assert.equal(verdict.ok, true);
   assert.match(verdict.detail, /munni-test/);
   assert.equal(calls[0].url, sa.token_uri);
@@ -83,9 +83,9 @@ test('fcm: parses the service account, mints a jwt-bearer grant to its token_uri
   assert.equal(payload.iss, sa.client_email);
   assert.match(payload.scope, /firebase\.messaging/);
 
-  const notJson = await validate('fcm', { NAS_FCM_SERVICE_ACCOUNT_JSON: 'nope' }, { fetchImpl });
+  const notJson = await validate('fcm', { FCM_SERVICE_ACCOUNT_JSON: 'nope' }, { fetchImpl });
   assert.match(notJson.detail, /not valid JSON/);
-  const missingField = await validate('fcm', { NAS_FCM_SERVICE_ACCOUNT_JSON: '{"type":"service_account"}' }, { fetchImpl });
+  const missingField = await validate('fcm', { FCM_SERVICE_ACCOUNT_JSON: '{"type":"service_account"}' }, { fetchImpl });
   assert.match(missingField.detail, /lacks "private_key"/);
 });
 
@@ -125,12 +125,12 @@ test('ascstore: ES256 App Store Connect jwt against /v1/apps; team-id format gua
 });
 
 test('logodev: swap detection first, then search (sk) + image (pk)', async () => {
-  const swapped = await validate('logodev', { NAS_LOGODEV_SECRET_KEY: 'pk_x', NAS_LOGODEV_PUBLIC_TOKEN: 'sk_y' }, { fetchImpl: capture(200).fetchImpl });
+  const swapped = await validate('logodev', { LOGODEV_SECRET_KEY: 'pk_x', LOGODEV_PUBLIC_TOKEN: 'sk_y' }, { fetchImpl: capture(200).fetchImpl });
   assert.equal(swapped.ok, false);
   assert.match(swapped.detail, /swapped/);
 
   const { calls, fetchImpl } = capture(200);
-  const good = await validate('logodev', { NAS_LOGODEV_SECRET_KEY: 'sk_x', NAS_LOGODEV_PUBLIC_TOKEN: 'pk_y' }, { fetchImpl });
+  const good = await validate('logodev', { LOGODEV_SECRET_KEY: 'sk_x', LOGODEV_PUBLIC_TOKEN: 'pk_y' }, { fetchImpl });
   assert.equal(good.ok, true);
   assert.match(calls[0].url, /api\.logo\.dev\/search/);
   assert.equal(calls[0].init.headers.authorization, 'Bearer sk_x');
@@ -167,13 +167,13 @@ test('ghcr: the registry token must authenticate AND carry read:packages', async
   const mk = (status, scopes) => async () => ({ ok: status < 400, status, headers: { get: (k) => (k === 'x-oauth-scopes' ? scopes : null) }, json: async () => ({ login: 'okkes' }) });
   const missing = await validate('ghcr', {}, { fetchImpl: mk(200, 'read:packages') });
   assert.equal(missing.ok, false);
-  const rejected = await validate('ghcr', { NAS_GHCR_PAT: 'ghp_x' }, { fetchImpl: mk(401, '') });
+  const rejected = await validate('ghcr', { GHCR_PAT: 'ghp_x' }, { fetchImpl: mk(401, '') });
   assert.equal(rejected.ok, false);
   assert.match(rejected.detail, /401/);
-  const noScope = await validate('ghcr', { NAS_GHCR_PAT: 'ghp_x' }, { fetchImpl: mk(200, 'repo') });
+  const noScope = await validate('ghcr', { GHCR_PAT: 'ghp_x' }, { fetchImpl: mk(200, 'repo') });
   assert.equal(noScope.ok, false);
   assert.match(noScope.detail, /read:packages/);
-  const good = await validate('ghcr', { NAS_GHCR_PAT: 'ghp_x' }, { fetchImpl: mk(200, 'read:packages, repo') });
+  const good = await validate('ghcr', { GHCR_PAT: 'ghp_x' }, { fetchImpl: mk(200, 'read:packages, repo') });
   assert.equal(good.ok, true);
   assert.match(good.detail, /okkes/);
 });
@@ -256,19 +256,19 @@ test('google + apple: every callback the page names is judged too — a refused 
 
 test('local logto/glitchtip validators target the family stacks (prod logto, shared glitchtip)', async () => {
   const logto = capture(200);
-  const okM2m = await validate('logto-m2m', { IAC_LOGTO_INFRA_M2M_ID: 'id', IAC_LOGTO_INFRA_M2M_SECRET: 's' }, { fetchImpl: logto.fetchImpl });
+  const okM2m = await validate('logto-m2m', { LOGTO_INFRA_M2M_ID: 'id', LOGTO_INFRA_M2M_SECRET: 's' }, { fetchImpl: logto.fetchImpl });
   assert.equal(okM2m.ok, true);
   assert.match(logto.calls[0].url, /^http:\/\/localhost:3201\/oidc\/token$/);
   assert.match(logto.calls[0].init.headers.authorization, /^Basic /);
 
   const gt = capture(200);
-  const okGt = await validate('glitchtip-token', { IAC_GLITCHTIP_API_TOKEN: 't' }, { fetchImpl: gt.fetchImpl });
+  const okGt = await validate('glitchtip-token', { GLITCHTIP_API_TOKEN: 't' }, { fetchImpl: gt.fetchImpl });
   assert.equal(okGt.ok, true);
   assert.match(gt.calls[0].url, /^http:\/\/localhost:8383\/api\/0\/organizations\/$/);
 });
 
 test('network failures come back as unreachable, unknown providers refuse', async () => {
-  const down = await validate('gocardless', { NAS_GOCARDLESS_SECRET_ID: 'a', NAS_GOCARDLESS_SECRET_KEY: 'b' }, { fetchImpl: async () => { throw new Error('ENOTFOUND'); } });
+  const down = await validate('gocardless', { GOCARDLESS_SECRET_ID: 'a', GOCARDLESS_SECRET_KEY: 'b' }, { fetchImpl: async () => { throw new Error('ENOTFOUND'); } });
   assert.equal(down.ok, false);
   assert.equal(down.unreachable, true);
   const unknown = await validate('rm -rf', {});

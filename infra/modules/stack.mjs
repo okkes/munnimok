@@ -1,20 +1,39 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const STACKS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'stacks');
-// MUNNI_RENDER_DIR: same test override render/localstore honor
-const RENDER_DIR = () => process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
-
 /**
- * LAN MODE (native-apps ruling 2026-08-28): when infra/rendered/lan-host
- * holds an address (the machine's 192.168.x.y, written by the wizard),
- * every LOCAL stack derives its urls from it instead of localhost — so a
- * phone on the same network reaches web/api/logto, and CI-built native
- * apps can bake these origins. A plain file (not the secret stores)
- * because localstore imports THIS module — a store read here would cycle.
- * Deleting the file + re-running bootstrap flips everything back.
+ * The platform/environment model (infra/platforms/README.md): every
+ * platform runs ONE shared stack and N environment stacks, all described
+ * by committed JSON the wizard writes and the workflows read. Nothing
+ * here is hand-written per stack any more — names, hosts and ports are
+ * derived from <platform, env, slot>.
  */
+
+// MUNNI_PLATFORMS_DIR / MUNNI_RENDER_DIR: test overrides so specs never touch the real tree
+const HERE = dirname(fileURLToPath(import.meta.url));
+export const PLATFORMS_DIR = () => process.env.MUNNI_PLATFORMS_DIR ?? join(HERE, '..', 'platforms');
+const RENDER_DIR = () => process.env.MUNNI_RENDER_DIR ?? join(HERE, '..', 'rendered');
+
+export const PLATFORM_IDS = ['lcl', 'nas', 'rpi'];
+export const PLATFORM_LABELS = { lcl: 'This computer', nas: 'Synology NAS', rpi: 'Raspberry Pi' };
+export const RESERVED_ENV_NAMES = new Set(['shared', 'platform', 'all']);
+/** 2-12 lowercase letters/digits, starting with a letter (hostnames, compose project names, GitHub environments) */
+export const ENV_NAME_RE = /^[a-z][a-z0-9]{1,11}$/;
+
+/** environment ports come from the SLOT — stable across deletions */
+export const PORT_SLOT = { web: 8380, admin: 8381, api: 8382, logto: 3201, logtoAdmin: 3202 };
+export const SHARED_PORTS = { glitchtip: 8383, vault: 8384, control: 8385, pgadmin: 8386 };
+export const envPorts = (slot) => Object.fromEntries(Object.entries(PORT_SLOT).map(([k, base]) => [k, base + 100 * slot]));
+
+export const stackName = (platform, env = null) => `munni-${platform}-${env ?? 'shared'}`;
+export function parseStackName(name) {
+  const m = /^munni-([a-z]{2,5})-([a-z0-9]{2,12})$/.exec(String(name ?? ''));
+  if (!m) return null;
+  return { platform: m[1], env: m[2] === 'shared' ? null : m[2] };
+}
+
+/** LAN mode (lcl only): infra/rendered/lan-host holds the machine's LAN address */
 export function lanHost() {
   const file = join(RENDER_DIR(), 'lan-host');
   if (!existsSync(file)) return null;
@@ -22,45 +41,188 @@ export function lanHost() {
   return /^[0-9a-zA-Z.-]+$/.test(host) ? host : null;
 }
 
-/** strip // and /* *​/ comments (naive but our files avoid urls-in-strings pitfalls via lookbehind on ':') */
-function stripJsonc(text) {
-  return text
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .map((line) => {
-      const idx = line.search(/(?<!:)\/\/(?![^"]*"(?:[^"]*"[^"]*")*[^"]*$)/);
-      return idx >= 0 ? line.slice(0, idx) : line;
-    })
-    .join('\n');
+const readJson = (file) => JSON.parse(readFileSync(file, 'utf8'));
+const writeJson = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`); };
+
+const platformFile = (id) => join(PLATFORMS_DIR(), id, 'platform.json');
+const envsDir = (id) => join(PLATFORMS_DIR(), id, 'envs');
+const envFile = (id, env) => join(envsDir(id), `${env}.json`);
+
+/* ── platforms ───────────────────────────────────────────────────────── */
+
+export function listPlatforms() {
+  const dir = PLATFORMS_DIR();
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((id) => existsSync(platformFile(id)))
+    .map((id) => loadPlatform(id));
+}
+
+export function loadPlatform(id) {
+  const file = platformFile(id);
+  if (!existsSync(file)) throw new Error(`unknown platform "${id}" — no ${file}`);
+  const cfg = readJson(file);
+  if (cfg.platform !== id) throw new Error(`${file} declares platform "${cfg.platform}" — must match its folder`);
+  return {
+    label: PLATFORM_LABELS[id] ?? id,
+    registry: 'ghcr.io/okkes',
+    sharedChannel: 'latest',
+    ...cfg,
+    delivery: cfg.delivery ?? (id === 'lcl' ? 'docker' : id === 'nas' ? 'synology' : 'ssh'),
+    file,
+  };
+}
+
+export function savePlatform(cfg) {
+  const { file: _f, ...rest } = cfg;
+  writeJson(platformFile(cfg.platform), rest);
+  return loadPlatform(cfg.platform);
+}
+
+/* ── environments ────────────────────────────────────────────────────── */
+
+export function platformEnvs(id) {
+  const dir = envsDir(id);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .map((f) => normalizeEnv(id, readJson(join(dir, f)), f.replace(/\.json$/, '')))
+    .sort((a, b) => a.slot - b.slot);
+}
+
+function normalizeEnv(platform, raw, fromFile) {
+  const env = raw.env ?? fromFile;
+  if (!ENV_NAME_RE.test(env) || RESERVED_ENV_NAMES.has(env)) throw new Error(`environment name "${env}" is invalid (2-12 lowercase letters/digits, not ${[...RESERVED_ENV_NAMES].join('/')})`);
+  if (!Number.isInteger(raw.slot) || raw.slot < 0) throw new Error(`environment "${env}" on ${platform} has no integer slot`);
+  const features = { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, banking: [], signin: [], ...(raw.features ?? {}) };
+  return {
+    env,
+    slot: raw.slot,
+    channel: raw.channel === 'dev' ? 'dev' : 'latest',
+    appChannel: raw.appChannel ?? (env === 'prod' ? 'production' : 'staging'),
+    label: raw.label ?? `munni ${env}-${platform}`,
+    features,
+    store: {
+      androidPackage: raw.store?.androidPackage ?? `app.munni.${platform}.${env}`,
+      iosBundleId: raw.store?.iosBundleId ?? raw.store?.androidPackage ?? `app.munni.${platform}.${env}`,
+    },
+  };
+}
+
+export function loadEnv(platform, env) {
+  const file = envFile(platform, env);
+  if (!existsSync(file)) throw new Error(`unknown environment "${env}" on ${platform} — no ${file}`);
+  return normalizeEnv(platform, readJson(file), env);
+}
+
+/** the lowest free slot on a platform */
+export function nextSlot(platform) {
+  const used = new Set(platformEnvs(platform).map((e) => e.slot));
+  let slot = 0;
+  while (used.has(slot)) slot += 1;
+  return slot;
+}
+
+export function saveEnv(platform, cfg) {
+  const normalized = normalizeEnv(platform, cfg, cfg.env);
+  writeJson(envFile(platform, normalized.env), normalized);
+  return normalized;
+}
+
+export function removeEnv(platform, env) {
+  const file = envFile(platform, env);
+  if (existsSync(file)) rmSync(file);
+}
+
+/* ── stacks ──────────────────────────────────────────────────────────── */
+
+/** every stack: per platform the shared stack first, then its environments by slot */
+export function listStacks() {
+  return listPlatforms().flatMap((p) => [stackName(p.platform), ...platformEnvs(p.platform).map((e) => stackName(p.platform, e.env))]);
+}
+
+export const hostsFor = (platform, env = null) => (env
+  ? { web: `munni-${env}-${platform}`, admin: `munni-${env}-${platform}-admin`, api: `munni-${env}-${platform}-api`, logto: `munni-${env}-${platform}-logto`, logtoAdmin: `munni-${env}-${platform}-logto-admin` }
+  : { glitchtip: `glitchtip-${platform}`, vault: `vault-${platform}`, control: `control-${platform}`, pgadmin: `pgadmin-${platform}` });
+
+/** the platform's domain: the JSON's value, with ${PLATFORM_DOMAIN} taken from the environment (a secret in the public repo) */
+export function platformDomain(p) {
+  if (!p.domain) return null;
+  if (p.domain !== '${PLATFORM_DOMAIN}') return p.domain;
+  if (!process.env.PLATFORM_DOMAIN) throw new Error(`PLATFORM_DOMAIN is not set — the ${p.platform} platform's domain is a secret the environment provides`);
+  return process.env.PLATFORM_DOMAIN;
 }
 
 /**
- * DYNAMIC local environments (user ruling 2026-08-28: "+" creates any
- * number of them): infra/rendered/local-envs.json lists
- * {name (2-5 lowercase letters), channel (dev|latest), slot}. Ports come
- * from the SLOT (stable across deletions): web 8380+100·slot, admin
- * 8381+…, api 8382+…, logto 3201+100·slot, logtoAdmin 3202+…. The
- * default registry reproduces the original prod (slot 0) + dev (slot 1)
- * family byte-for-byte, so existing machines migrate without a restart.
+ * load a stack: {stack, platform, env, role, delivery, channel, slot,
+ * ports, hosts, host(key), urls, sharedStack, githubEnvironment, native,
+ * features, store, registry, domain, lan}
  */
-const ENV_REGISTRY_FILE = () => join(RENDER_DIR(), 'local-envs.json');
-
-export function localEnvRegistry() {
-  const file = ENV_REGISTRY_FILE();
-  // no registry = no environments (user ruling 2026-08-28: Delete
-  // everything forgets prod too; Set up & start recreates it)
-  if (!existsSync(file)) return [];
-  const envs = JSON.parse(readFileSync(file, 'utf8')).envs ?? [];
-  return envs.filter((e) => /^[a-z]{2,5}$/.test(e.name) && Number.isInteger(e.slot));
+export function loadStack(name) {
+  const parsed = parseStackName(name);
+  if (!parsed) throw new Error(`"${name}" is not a stack name (munni-<platform>-<env|shared>)`);
+  const p = loadPlatform(parsed.platform);
+  const shared = parsed.env === null;
+  const envCfg = shared ? null : loadEnv(p.platform, parsed.env);
+  const local = p.delivery === 'docker';
+  const lan = local ? lanHost() : null;
+  const domain = local ? (lan ? `${lan.replaceAll('.', '-')}.sslip.io` : null) : platformDomain(p);
+  const ports = shared ? { ...SHARED_PORTS } : envPorts(envCfg.slot);
+  const hosts = hostsFor(p.platform, parsed.env);
+  const host = (key) => {
+    if (!hosts[key]) throw new Error(`stack ${name} has no service "${key}"`);
+    return domain ? `${hosts[key]}.${domain}` : 'localhost';
+  };
+  const url = (key) => {
+    if (domain) return `https://${host(key)}`;
+    // plain localhost (no LAN mode): http on the published port, except the vault (Bitwarden refuses http)
+    return `${key === 'vault' ? 'https' : 'http'}://localhost:${ports[key]}`;
+  };
+  const urls = Object.fromEntries(Object.keys(hosts).map((k) => [k, url(k)]));
+  const controlEnvName = shared ? (p.controlEnv ?? platformEnvs(p.platform)[0]?.env ?? null) : null;
+  return {
+    stack: name,
+    platform: p.platform,
+    platformLabel: p.label,
+    delivery: p.delivery,
+    env: parsed.env,
+    role: shared ? 'shared' : 'env',
+    channel: shared ? p.sharedChannel : envCfg.channel,
+    appChannel: shared ? null : envCfg.appChannel,
+    slot: shared ? null : envCfg.slot,
+    ports,
+    hosts,
+    host,
+    urls,
+    domain,
+    lan,
+    registry: p.registry,
+    publishedPath: p.publishedPath ?? null,
+    sharedStack: stackName(p.platform),
+    controlApi: controlEnvName ? stackName(p.platform, controlEnvName) : null,
+    githubEnvironment: `${p.platform}-${parsed.env ?? 'shared'}`,
+    features: shared ? { telemetry: true } : envCfg.features,
+    store: shared ? null : envCfg.store,
+    label: shared ? `munni shared (${p.label})` : envCfg.label,
+    native: shared ? null : {
+      appId: envCfg.store.androidPackage,
+      iosAppId: envCfg.store.iosBundleId,
+      label: envCfg.label,
+      scheme: `munni-${parsed.env}-${p.platform}`,
+    },
+    file: shared ? p.file : envFile(p.platform, parsed.env),
+  };
 }
 
-export function saveLocalEnvRegistry(envs) {
-  writeFileSync(ENV_REGISTRY_FILE(), `${JSON.stringify({ envs }, null, 2)}\n`);
+/** the platform's shared stack (self for a shared stack) */
+export function sharedOf(stack) {
+  return stack.role === 'shared' ? stack : loadStack(stack.sharedStack);
 }
 
-/** the helper's self-update settings + last verdict (user ruling
- * 2026-09-08: the wizard is a ONE-TIME bootstrap — afterwards the local
- * family keeps itself current, pulling like the NAS poller does) */
+/** every environment stack of a platform, by slot */
+export const platformEnvStacks = (platform) => platformEnvs(platform).map((e) => loadStack(stackName(platform, e.env)));
+
+/* ── the helper's self-update settings (lcl) ─────────────────────────── */
 const AUTONOMY_FILE = () => join(RENDER_DIR(), 'local-autonomy.json');
 export const AUTONOMY_DEFAULTS = Object.freeze({ enabled: false, intervalMinutes: 10, lastCheckAt: null, lastResult: null });
 
@@ -76,126 +238,7 @@ export function loadAutonomy() {
 
 export function saveAutonomy(state) {
   const next = { ...AUTONOMY_DEFAULTS, ...state };
+  mkdirSync(dirname(AUTONOMY_FILE()), { recursive: true });
   writeFileSync(AUTONOMY_FILE(), `${JSON.stringify(next, null, 2)}\n`);
   return next;
-}
-
-function synthesizeLocalEnv(entry) {
-  const s = entry.slot;
-  return {
-    stack: `munni-local-${entry.name}`,
-    pair: `munni-local-${entry.name}`,
-    role: 'prod', // self-paired: every env owns its logto
-    channel: entry.channel,
-    target: 'local',
-    sharedStack: 'munni-local-shared',
-    appChannel: entry.name === 'prod' ? 'production' : 'staging',
-    domain: 'localhost',
-    ports: { web: 8380 + 100 * s, admin: 8381 + 100 * s, api: 8382 + 100 * s, logto: 3201 + 100 * s, logtoAdmin: 3202 + 100 * s },
-    registry: 'ghcr.io/okkes',
-    native: {
-      // one store identity PER environment (user ruling 2026-08-28),
-      // installable side by side. The SUFFIX is the operator's choice
-      // (user ruling 2026-08-31: no black-box numbering) — default is
-      // the environment name; a burned package (Play pins the first
-      // upload key per package forever) rolls to whatever they type.
-      // appGen is the legacy pre-suffix form, kept readable.
-      appId: `app.munni.local.${entry.appSuffix ?? `${entry.name}${(entry.appGen ?? 1) > 1 ? entry.appGen : ''}`}`,
-      // the iOS bundle id may DIVERGE (user request 2026-09-06): Play
-      // burns package names (pinned upload key) while ASC records live
-      // on — Android can roll to prod2 while iOS keeps prod. Default:
-      // follow the Android id.
-      iosAppId: `app.munni.local.${entry.iosSuffix ?? entry.appSuffix ?? `${entry.name}${(entry.appGen ?? 1) > 1 ? entry.appGen : ''}`}`,
-      label: `munni ${entry.name}`,
-      scheme: entry.name === 'prod' ? 'munni-local' : `munni-local-${entry.name}`,
-    },
-    features: { telemetry: true },
-    envName: entry.name,
-    slot: s,
-  };
-}
-
-export function listStacks() {
-  const fileStacks = readdirSync(STACKS_DIR)
-    .filter((f) => f.endsWith('.jsonc'))
-    .map((f) => f.replace(/\.jsonc$/, ''));
-  const envStacks = localEnvRegistry().map((e) => `munni-local-${e.name}`);
-  return [...fileStacks, ...envStacks.filter((n) => !fileStacks.includes(n))];
-}
-
-/** load a stack file (or synthesize a registry env) and derive the
- * values every module needs */
-export function loadStack(name) {
-  const file = join(STACKS_DIR, `${name}.jsonc`);
-  let cfg;
-  if (existsSync(file)) {
-    cfg = JSON.parse(stripJsonc(readFileSync(file, 'utf8')));
-  } else {
-    const entry = localEnvRegistry().find((e) => `munni-local-${e.name}` === name);
-    if (!entry) throw new Error(`unknown stack "${name}" — no stack file and no local-envs.json entry`);
-    cfg = synthesizeLocalEnv(entry);
-  }
-  // the NAS domain is treated as a SECRET (public repo): stack files
-  // carry a placeholder, the environment provides the value
-  if (cfg.domain === '${IAC_DOMAIN}') {
-    if (!process.env.IAC_DOMAIN) throw new Error('IAC_DOMAIN is not set — export it (locally) or add the repo secret (CI)');
-    cfg.domain = process.env.IAC_DOMAIN;
-  }
-  if (cfg.stack !== name) throw new Error(`stack file ${file} declares "${cfg.stack}" — must match its filename`);
-  // target "local": localhost plain-http by default; in LAN MODE the
-  // whole family moves onto REAL https hostnames —
-  // <service>.<ip-dashed>.sslip.io (wildcard DNS to the LAN address,
-  // user ruling 2026-08-28) behind one family Caddy with a local CA, so
-  // browsers get no mixed content and Enable Banking gets a registrable
-  // https redirect. The localhost http ports stay published as twins.
-  // The VAULT is https in BOTH modes (the Bitwarden web client refuses
-  // plain http outright).
-  const local = cfg.target === 'local';
-  const lan = local ? lanHost() : null;
-  const sslipBase = lan ? `${lan.replaceAll('.', '-')}.sslip.io` : null;
-  const envPart = cfg.envName ? `munni-${cfg.envName}` : null;
-  const sslipHost = (key) => {
-    if (envPart) {
-      const suffix = { web: '', admin: '-admin', api: '-api', logto: '-logto', logtoAdmin: '-logto-admin' }[key] ?? `-${key}`;
-      return `${envPart}${suffix}.${sslipBase}`;
-    }
-    return `${key === 'logtoAdmin' ? 'logto-admin' : key}.${sslipBase}`;
-  };
-  const host = (key) => {
-    if (!local) return `${cfg.hosts[key]}.${cfg.domain}`;
-    return sslipBase ? sslipHost(key) : 'localhost';
-  };
-  const url = (key) => {
-    if (!local) return `https://${host(key)}`;
-    if (sslipBase) return `https://${sslipHost(key)}`;
-    if (key === 'vault') return `https://localhost:${cfg.ports[key]}`;
-    return `http://localhost:${cfg.ports[key]}`;
-  };
-  // a stack only gets urls for services it actually addresses (a shared
-  // stack has no web/api; an env stack pointing at a shared stack has no
-  // glitchtip of its own) — locally that is "port defined", hosted
-  // "host defined"
-  const keys = ['web', 'api', 'admin', 'logto', 'logtoAdmin', 'glitchtip', 'vault', 'control', 'pgadmin'];
-  const urls = Object.fromEntries(
-    keys.filter((k) => (local ? cfg.ports?.[k] !== undefined : cfg.hosts?.[k] !== undefined)).map((k) => [k, url(k)]),
-  );
-  return { ...cfg, file, urls, host };
-}
-
-/** the prod twin of a stack's pair (where the pair's services live);
- * self for prod twins and for role:"shared" stacks */
-export function pairProd(stack) {
-  if (stack.role === 'prod' || stack.role === 'shared') return stack;
-  const sibling = listStacks()
-    .map((name) => loadStack(name))
-    .find((s) => s.pair === stack.pair && s.role === 'prod');
-  if (!sibling) throw new Error(`no prod twin found for pair "${stack.pair}"`);
-  return sibling;
-}
-
-/** where a stack's cross-environment services (glitchtip, vault, ocr,
- * postgres) live: its declared sharedStack when the topology is split
- * (local three-stack), else the pair's prod twin (iac pairs) */
-export function sharedOf(stack) {
-  return stack.sharedStack ? loadStack(stack.sharedStack) : pairProd(stack);
 }

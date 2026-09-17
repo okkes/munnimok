@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- LOCAL flavor only: the family CA rides INSIDE the app. CI bakes the
+<!-- the platform's CA rides INSIDE the app (lcl: the family CA). CI bakes the
      machine's real root into res/raw/family_ca.pem at build time (the
      committed file is a placeholder with a discarded key), so the app
      trusts https://munni-<env>.<ip-dashed>.sslip.io out of the box — no

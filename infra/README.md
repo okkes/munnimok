@@ -15,7 +15,7 @@ self-contained in the wizard and in `runbook.munni-local.md` after a
 `node infra/bootstrap.mjs --stack munni-local`.
 
 > The NAS domain is a SECRET here (public repo): wherever you see
-> `<domain>`, that's the value of the `IAC_DOMAIN` secret.
+> `<domain>`, that's the value of the `PLATFORM_DOMAIN` secret.
 
 ---
 
@@ -27,12 +27,12 @@ secrets, if doing it by hand):
 
 | Secret | What |
 |---|---|
-| `IAC_DOMAIN` | your DDNS domain (e.g. `xxxx.synology.me`) |
-| `IAC_GH_PAT` | fine-grained PAT, THIS repo, permissions: Administration RW + Secrets RW + Variables RW + Actions RW (bootstrap writes environment secrets — `GITHUB_TOKEN` cannot; the wizard also dispatches workflows with it) |
+| `PLATFORM_DOMAIN` | your DDNS domain (e.g. `xxxx.synology.me`) |
+| `GH_PAT` | fine-grained PAT, THIS repo, permissions: Administration RW + Secrets RW + Variables RW + Actions RW (bootstrap writes environment secrets — `GITHUB_TOKEN` cannot; the wizard also dispatches workflows with it) |
 | `SYNOLOGY_URL` / `_USER` / `_PASS` / `_PATH` | DSM deploy account (FileStation + reverse-proxy writes; admin rights, 2FA off AND Adaptive MFA off for administrators — B1-1) — shared with deploy-nas.yml |
-| `NAS_GHCR_PAT` | optional — the munni images are public; a classic PAT with read:packages only for private images |
-| `NAS_GOCARDLESS_SECRET_ID` / `_KEY` | GoCardless portal |
-| optional: `NAS_ENABLEBANKING_*`, `NAS_FCM_SERVICE_ACCOUNT_JSON`, `NAS_LOGODEV_*`, `LOGTO_GOOGLE_*`, `LOGTO_APPLE_*` | as per feature |
+| `GHCR_PAT` | optional — the munni images are public; a classic PAT with read:packages only for private images |
+| `GOCARDLESS_SECRET_ID` / `_KEY` | GoCardless portal |
+| optional: `ENABLEBANKING_*`, `FCM_SERVICE_ACCOUNT_JSON`, `LOGODEV_*`, `LOGTO_GOOGLE_*`, `LOGTO_APPLE_*` | as per feature |
 
 `infra/secrets.manifest.json` is the authoritative inventory (owners,
 scopes, platform tags); `bootstrap --verify` fails loudly on drift and
@@ -90,13 +90,13 @@ of their own). A NAS step failing for anything but the account's rights
 makes the run red — including a Let's Encrypt request still running when
 the six-minute wait ends (the next run adopts the certificate; never
 re-request by hand, every request counts against the 5-per-week limit).
-Optional secret `IAC_ACME_EMAIL` is the Let's Encrypt contact (default
+Optional secret `ACME_EMAIL` is the Let's Encrypt contact (default
 `admin@<domain>`).
 A run DSM refuses (402/105) stays green for the Logto/GlitchTip work
 it did, but chains NOTHING (step output `nas=blocked`, a notice in the
 summary) — a Deploy over a NAS without rules would only fail at the
 FileStation login. Every verify/apply of the prod twin publishes the
-NAS verdict as the repo variable `IAC_NAS_STATE` (flags and counts, no
+NAS verdict as the repo variable `NAS_STATE` (flags and counts, no
 host names): the wizard's readiness card shows it as its first row with
 the exact DSM clicks written under the rows, and its **Bootstrap now**
 button dispatches the chained run — no retyping in the tile. A verify
@@ -174,7 +174,7 @@ missing one is named before the first sign-in ever fails.
 
 **C1. Logto — nothing manual (2026-09-17).** Wizard step 6 is a status
 card. The prod twin's bootstrap mints two machine credentials for the
-pair (`IAC_LOGTO_INFRA_M2M_*` for the Management API, `IAC_LOGTO_ADMIN_M2M_*`
+pair (`LOGTO_INFRA_M2M_*` for the Management API, `LOGTO_ADMIN_M2M_*`
 for the console's admin tenant) into both environments; the first Deploy
 of the prod twin carries them in its `.env` and the NAS poller inserts
 them into Logto's own database (`deploy/update.sh`, idempotent — a seed
@@ -189,7 +189,7 @@ credential in the pair's vault (C4b). That run chains the staging twin
 and Deploy again so the frontends pick the ids up — the loop ends by
 itself once `VITE_LOGTO_APP_ID` exists. By hand only for an own Logto:
 the old three steps sit under "Doing it by hand" in step 6, and
-`gh secret set IAC_LOGTO_INFRA_M2M_ID/SECRET --env iac-production`
+`gh secret set LOGTO_INFRA_M2M_ID/SECRET --env iac-production`
 (and `--env iac-staging`) replaces the minted credential.
 
 **C2. Google sign-in (optional, once).** Google Cloud console →
@@ -208,14 +208,14 @@ re-run the workflow.
 
 **C4. GlitchTip — nothing manual (2026-09-17).** Wizard step 7 is a status
 card. The prod twin's bootstrap mints the admin's password
-(`IAC_GLITCHTIP_ADMIN_PASSWORD`, account `admin@<domain>`) and an API
-token (`IAC_GLITCHTIP_API_TOKEN`) for the pair; the first Deploy of the
+(`GLITCHTIP_ADMIN_PASSWORD`, account `admin@<domain>`) and an API
+token (`GLITCHTIP_API_TOKEN`) for the pair; the first Deploy of the
 prod twin carries them in its `.env` and the NAS poller creates the
 superuser and the token inside the container (`deploy/update.sh`, a
 Django shell, idempotent). Deploy waits for GlitchTip to accept the
 token and runs the bootstrap once more, which creates the org, the team
 and the per-stack projects and writes every DSN back
-(`NAS_API_SENTRY_DSN` secret, `VITE_GLITCHTIP_DSN`/`_ADMIN` variables),
+(`API_SENTRY_DSN` secret, `VITE_GLITCHTIP_DSN`/`_ADMIN` variables),
 then chains staging and Deploy so the frontends pick them up. The login
 and the token are kept in the pair's vault (C4b). By hand only for an
 own GlitchTip: the token paste sits under "Doing it by hand" in step 7.
@@ -246,7 +246,7 @@ token it injects into the page.
 The same flow by hand, if you prefer a terminal:
 
 ```sh
-$env:NAS_GHCR_PAT = '<read:packages PAT>'
+$env:GHCR_PAT = '<read:packages PAT>'
 node infra/bootstrap.mjs --stack munni-local
 cd infra/rendered/munni-local
 docker compose --env-file .env.munni-local -f docker-compose.munni-local.yml up -d
@@ -289,7 +289,7 @@ proves it with an anonymous pull and the tile reads "Not needed") never
 count as blocking, and *Skip for now* counts an integration as done
 everywhere (chip, health, rail, stepper) until a value is saved or the
 skip is undone. Connecting GitHub stores the connection token as
-`IAC_GH_PAT` by itself (no separate button) — ONE token: the registry
+`GH_PAT` by itself (no separate button) — ONE token: the registry
 tile only exists when the helper finds the images private (then a
 classic PAT with read:packages, or the connection token when it is one).
 A copy made by the wizard follows upstream's pipeline: at Connect (and

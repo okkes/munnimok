@@ -92,18 +92,18 @@ test('run routes to the requested stack and passes ONLY manifest operator names 
   const res = fakeRes();
   await app(fakeReq({
     method: 'POST', url: '/api/local/run', token: 'tok',
-    body: { values: { NAS_GHCR_PAT: 'ghp_x', PATH: 'evil', LD_PRELOAD: 'evil', NOT_A_SECRET: 'x', IAC_DOMAIN: 'nas-only' } },
+    body: { values: { GHCR_PAT: 'ghp_x', PATH: 'evil', LD_PRELOAD: 'evil', NOT_A_SECRET: 'x', PLATFORM_DOMAIN: 'nas-only' } },
   }), res);
   assert.equal(runs.length, 1);
   const { cmd, args, opts } = runs[0];
   assert.equal(cmd, process.execPath);
   assert.ok(args.join(' ').includes('bootstrap.mjs --stack munni-local-prod'), 'prod is the default stack');
-  assert.equal(opts.env.NAS_GHCR_PAT, 'ghp_x');
+  assert.equal(opts.env.GHCR_PAT, 'ghp_x');
   assert.notEqual(opts.env.PATH, 'evil');
   assert.equal(opts.env.NOT_A_SECRET, undefined);
   // platform-nas operator roots are not local operator names
-  assert.ok(!OPERATOR_NAMES.has('IAC_DOMAIN'));
-  assert.equal(opts.env.IAC_DOMAIN, process.env.IAC_DOMAIN);
+  assert.ok(!OPERATOR_NAMES.has('PLATFORM_DOMAIN'));
+  assert.equal(opts.env.PLATFORM_DOMAIN, process.env.PLATFORM_DOMAIN);
 
   runs.length = 0;
   await app(fakeReq({ method: 'POST', url: '/api/local/run', token: 'tok', body: { stack: 'munni-local-shared' } }), fakeRes());
@@ -150,7 +150,7 @@ test('validate passes only manifest operator names through, merged over the stor
   const res = fakeRes();
   await app(fakeReq({
     method: 'POST', url: '/api/validate', token: 'tok',
-    body: { provider: 'gocardless', values: { NAS_GOCARDLESS_SECRET_ID: 'id1', PATH: 'evil', RANDOM: 'x', SYNOLOGY_URL: 'https://nas:5001' }, redirectUris: ['https://munni-prod-logto.192-168-2-2.sslip.io/callback/google-universal', 'javascript:alert(1)', 'ftp://x/y', 42, 'http://localhost:3201/callback/google-universal'] },
+    body: { provider: 'gocardless', values: { GOCARDLESS_SECRET_ID: 'id1', PATH: 'evil', RANDOM: 'x', SYNOLOGY_URL: 'https://nas:5001' }, redirectUris: ['https://munni-prod-logto.192-168-2-2.sslip.io/callback/google-universal', 'javascript:alert(1)', 'ftp://x/y', 42, 'http://localhost:3201/callback/google-universal'] },
   }), res);
   assert.equal(res.statusCode, 200);
   assert.equal(validations.length, 1);
@@ -159,7 +159,7 @@ test('validate passes only manifest operator names through, merged over the stor
   assert.deepEqual(validations[0].opts.redirectUris, ['https://munni-prod-logto.192-168-2-2.sslip.io/callback/google-universal', 'http://localhost:3201/callback/google-universal']);
   // …and the family's app bundle ids ride along (an App ID pasted as Apple client id is named)
   assert.deepEqual(validations[0].opts.iosAppIds, ['app.munni', 'app.munni.dev', 'app.munni.local.prod', 'app.munni.local.dev']);
-  assert.equal(validations[0].values.NAS_GOCARDLESS_SECRET_ID, 'id1');
+  assert.equal(validations[0].values.GOCARDLESS_SECRET_ID, 'id1');
   // SYNOLOGY_* are operator names (NAS platform) — allowed for validation
   assert.equal(validations[0].values.SYNOLOGY_URL, 'https://nas:5001');
   assert.equal(validations[0].values.PATH, undefined);
@@ -190,8 +190,8 @@ test('logto-setup targets the chosen environment and reuses the stored credentia
   const boot = spawned[1];
   assert.equal(boot.cmd, process.execPath);
   assert.ok(boot.args.join(' ').includes('--stack munni-local-dev'));
-  const id = boot.opts.env.IAC_LOGTO_INFRA_M2M_ID;
-  const secret = boot.opts.env.IAC_LOGTO_INFRA_M2M_SECRET;
+  const id = boot.opts.env.LOGTO_INFRA_M2M_ID;
+  const secret = boot.opts.env.LOGTO_INFRA_M2M_SECRET;
   assert.match(id, /^infra[a-f0-9]{16}$/);
   assert.equal(secret.length, 48);
   assert.ok(insertSql.includes(id), 'psql insert must carry the same app id');
@@ -208,14 +208,14 @@ test('logto-setup targets the chosen environment and reuses the stored credentia
   // it verbatim instead of minting anew — so a reseeded logto database
   // gets the SAME app back
   const dev = loadStack('munni-local-dev');
-  saveLocalValues(dev, { ...loadLocalValues(dev), IAC_LOGTO_INFRA_M2M_ID: 'infra0123456789abcdef', IAC_LOGTO_INFRA_M2M_SECRET: 'f'.repeat(48) });
+  saveLocalValues(dev, { ...loadLocalValues(dev), LOGTO_INFRA_M2M_ID: 'infra0123456789abcdef', LOGTO_INFRA_M2M_SECRET: 'f'.repeat(48) });
   const spawned2 = [];
   const app3 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned2, outputs), probeImpl: async () => false });
   const res2 = fakeRes();
   await app3(fakeReq({ method: 'POST', url: '/api/local/logto-setup', token: 'tok', body: { stack: 'munni-local-dev' } }), res2);
   await settle(res2);
   assert.ok(spawned2[0].args.join(' ').includes('infra0123456789abcdef'), 'the stored app id must be re-inserted verbatim');
-  assert.equal(spawned2[1].opts.env.IAC_LOGTO_INFRA_M2M_SECRET, 'f'.repeat(48), 'the stored secret rides along');
+  assert.equal(spawned2[1].opts.env.LOGTO_INFRA_M2M_SECRET, 'f'.repeat(48), 'the stored secret rides along');
 });
 
 test('logto-setup on the control-owning environment refreshes the shared stack too', async () => {
@@ -281,10 +281,10 @@ test('status reports per-stack store NAMES, requirements and probes — never va
   const shared = body.stacks['munni-local-shared'];
   assert.deepEqual(shared.services, { glitchtip: false, vault: false, control: false, pgadmin: false });
   assert.ok(Array.isArray(shared.required), 'family roots are the shared stack\'s asks');
-  assert.ok(!shared.required.includes('NAS_GHCR_PAT'), 'the registry token is optional (the munni images are public) — never a family ask (2026-09-10)');
+  assert.ok(!shared.required.includes('GHCR_PAT'), 'the registry token is optional (the munni images are public) — never a family ask (2026-09-10)');
   const prod = body.stacks['munni-local-prod'];
   assert.deepEqual(prod.services, { web: false, api: false, logto: false });
-  assert.ok(!prod.required.includes('NAS_GHCR_PAT'), 'env stacks must not re-ask for shared names');
+  assert.ok(!prod.required.includes('GHCR_PAT'), 'env stacks must not re-ask for shared names');
   assert.ok(prod.urls.web.startsWith('http://localhost:'));
   assert.ok(Array.isArray(prod.stored));
   assert.ok(!JSON.stringify(body).includes('ghp_'), 'status leaked a value');
@@ -296,9 +296,9 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
   // store even when saved "from" prod; VAPID stays in prod's own store
   saveLocalValues(prodStack, {
     ...loadLocalValues(prodStack),
-    NAS_PUSH_VAPID_PRIVATE_KEY: 'vapid-secret-x',
-    NAS_GOCARDLESS_SECRET_ID: 'gc-id-1',
-    NAS_PGADMIN_PASSWORD: 'pgadmin-pw-long',
+    PUSH_VAPID_PRIVATE_KEY: 'vapid-secret-x',
+    GOCARDLESS_SECRET_ID: 'gc-id-1',
+    PGADMIN_PASSWORD: 'pgadmin-pw-long',
     GLITCHTIP_ADMIN_EMAIL: 'admin@munni.dev',
     // ≥12 chars: the glitchtip-setup endpoint REUSES a stored password,
     // and its own spec asserts real-password length
@@ -308,10 +308,10 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
   const reveal = fakeRes();
   await app(fakeReq({ url: '/api/local/secrets', token: 'tok' }), reveal);
   const revealed = JSON.parse(reveal.chunks.join('')).values;
-  assert.equal(revealed['munni-local-shared'].NAS_GOCARDLESS_SECRET_ID, 'gc-id-1');
+  assert.equal(revealed['munni-local-shared'].GOCARDLESS_SECRET_ID, 'gc-id-1');
   assert.equal(revealed['munni-local-shared'].GLITCHTIP_ADMIN_EMAIL, 'admin@munni.dev');
-  assert.equal(revealed['munni-local-prod'].NAS_PUSH_VAPID_PRIVATE_KEY, 'vapid-secret-x');
-  assert.equal(revealed['munni-local-prod'].NAS_GOCARDLESS_SECRET_ID, undefined, 'shared names show under shared');
+  assert.equal(revealed['munni-local-prod'].PUSH_VAPID_PRIVATE_KEY, 'vapid-secret-x');
+  assert.equal(revealed['munni-local-prod'].GOCARDLESS_SECRET_ID, undefined, 'shared names show under shared');
 
   const noToken = fakeRes();
   await app(fakeReq({ url: '/api/local/secrets' }), noToken);
@@ -324,7 +324,7 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
   const names = exported.items.map((i) => i.name);
   assert.ok(names.includes('GlitchTip console'));
   assert.ok(names.includes('pgAdmin'), 'pgAdmin login rides the export');
-  assert.ok(names.includes('NAS_GOCARDLESS_SECRET_ID'), 'plain names — folders carry the grouping now');
+  assert.ok(names.includes('GOCARDLESS_SECRET_ID'), 'plain names — folders carry the grouping now');
   assert.ok(!JSON.stringify(exported).includes('vapid-secret-x'), 'VAPID key leaked into the vault export');
   const gt = exported.items.find((i) => i.name === 'GlitchTip console');
   assert.equal(gt.login.username, 'admin@munni.dev');
@@ -333,7 +333,7 @@ test('secret retrieval: reveal returns the family stores; the vault export skips
   const sharedFolder = exported.folders.find((f) => f.name === 'shared');
   assert.ok(sharedFolder, 'a "shared" folder exists in the export');
   assert.equal(gt.folderId, sharedFolder.id);
-  const gcItem = exported.items.find((i) => i.name === 'NAS_GOCARDLESS_SECRET_ID');
+  const gcItem = exported.items.find((i) => i.name === 'GOCARDLESS_SECRET_ID');
   assert.equal(gcItem.folderId, sharedFolder.id, 'GC secret lives in the shared folder (shared ownership)');
 });
 
@@ -575,7 +575,7 @@ test('glitchtip-setup mints in the SHARED stack and wires the chosen environment
   const boot = spawned[1];
   assert.equal(boot.cmd, process.execPath);
   assert.ok(boot.args.join(' ').includes('--stack munni-local-dev'));
-  assert.equal(boot.opts.env.IAC_GLITCHTIP_API_TOKEN, 'gt_secret_token_123');
+  assert.equal(boot.opts.env.GLITCHTIP_API_TOKEN, 'gt_secret_token_123');
   // step 3: the env restarts with its DSNs
   assert.deepEqual(spawned[2].args.slice(-3), ['up', '-d', '--remove-orphans']);
   assert.ok(spawned[2].args.join(' ').includes('docker-compose.munni-local-dev.yml'));
@@ -627,7 +627,7 @@ test('env delete purges the GlitchTip org when a token exists', async () => {
   await app(fakeReq({ method: 'POST', url: '/api/local/envs', token: 'tok', body: { name: 'gtd' } }), mk);
   const shared = loadStack('munni-local-shared');
   const prev = loadLocalValues(shared);
-  saveLocalValues(shared, { ...prev, IAC_GLITCHTIP_API_TOKEN: 'gt_tok_1' });
+  saveLocalValues(shared, { ...prev, GLITCHTIP_API_TOKEN: 'gt_tok_1' });
   const calls = [];
   const netFetchImpl = async (url, init = {}) => { calls.push({ url, init }); return { ok: true, status: 204, text: async () => '' }; };
   const spawned = [];
@@ -870,7 +870,7 @@ test('gh-pat: a working GitHub token persists into the shared store; an empty on
     const res = fakeRes();
     await app(fakeReq({ method: 'POST', url: '/api/local/gh-pat', token: 'tok', body: { pat: 'github_pat_test123' } }), res);
     assert.equal(res.statusCode, 200);
-    assert.equal(loadLocalValues(shared).IAC_GH_PAT, 'github_pat_test123');
+    assert.equal(loadLocalValues(shared).GH_PAT, 'github_pat_test123');
   } finally {
     saveLocalValues(shared, prev);
   }
@@ -1039,7 +1039,7 @@ test('firebase as code: setup finds the project, registers both apps, copies the
     assert.match(out, /\[exit 0\]/);
     assert.ok(spawned.some((s) => s.args.includes('--stack') && s.args.includes('munni-local-prod')), 'bootstrap re-rendered the env');
     assert.ok(spawned.some((s) => s.cmd === 'docker' && s.args.includes('up') && s.args.includes('docker-compose.munni-local-prod.yml')), 'the env stack came up again');
-    assert.equal(loadLocalValues(shared).NAS_FCM_SERVICE_ACCOUNT_JSON, loadLocalValues(shared).PLAY_SERVICE_ACCOUNT_JSON);
+    assert.equal(loadLocalValues(shared).FCM_SERVICE_ACCOUNT_JSON, loadLocalValues(shared).PLAY_SERVICE_ACCOUNT_JSON);
 
     // an env already carrying the credential is left alone (no restart on every Build)
     (await import('node:fs')).mkdirSync(join(SCRATCH, 'munni-local-prod'), { recursive: true });
@@ -1186,7 +1186,7 @@ test('apple cert: the machine mints the p12 password, pulls the minted certifica
   const { zipBuild } = await import('../modules/zip.mjs');
   const shared = loadStack('munni-local-shared');
   const prev = loadLocalValues(shared);
-  const { APPLE_DEV_CERT_P12: _p12, APPLE_DEV_CERT_PASSWORD: _pw, APPLE_DEV_CERT_SERIAL: _sn, IAC_GH_PAT: _pat, ...bare } = prev;
+  const { APPLE_DEV_CERT_P12: _p12, APPLE_DEV_CERT_PASSWORD: _pw, APPLE_DEV_CERT_SERIAL: _sn, GH_PAT: _pat, ...bare } = prev;
   // fake App Store Connect credentials: the status endpoint asks Apple
   // (mocked below) whether the stored certificate is still listed
   const { generateKeyPairSync } = await import('node:crypto');
@@ -1215,7 +1215,7 @@ test('apple cert: the machine mints the p12 password, pulls the minted certifica
     assert.match(noPat.chunks.join(''), /no GitHub token in the machine store/);
     assert.match(noPat.chunks.join(''), /\[exit 1\]/);
 
-    saveLocalValues(shared, { ...loadLocalValues(shared), IAC_GH_PAT: 'ghp_test' });
+    saveLocalValues(shared, { ...loadLocalValues(shared), GH_PAT: 'ghp_test' });
     const b64 = 'MIIKAQIBAzCCCscGCSqGSIb3DQEHAaCCCrgEggq0'.repeat(4);
     const calls = [];
     const netFetchImpl = async (url, init = {}) => {
@@ -1441,13 +1441,13 @@ test('delete-everything epilogue: forget-all wipes registry, env stores, LAN mar
   assert.match(ascVerdict.detail, /missing/, 'a real verdict, not an unknown-stack crash');
   // a validator that NEEDS an environment says so instead of throwing
   const m2m = fakeRes();
-  await appReal(fakeReq({ method: 'POST', url: '/api/validate', token: 'tok', body: { provider: 'logto-m2m', values: { IAC_LOGTO_INFRA_M2M_ID: 'x', IAC_LOGTO_INFRA_M2M_SECRET: 'y' } } }), m2m);
+  await appReal(fakeReq({ method: 'POST', url: '/api/validate', token: 'tok', body: { provider: 'logto-m2m', values: { LOGTO_INFRA_M2M_ID: 'x', LOGTO_INFRA_M2M_SECRET: 'y' } } }), m2m);
   assert.equal(m2m.statusCode, 200);
   assert.match(JSON.parse(m2m.chunks.join('')).detail, /no local environment exists yet/);
   // SAVE routes to the shared stack too (second 2026-09-08 report: the
   // step-3 Save spawned bootstrap on the phantom prod env and died)
   runs.length = 0;
-  await app(fakeReq({ method: 'POST', url: '/api/local/run', token: 'tok', body: { values: { NAS_GHCR_PAT: 'x' } } }), fakeRes());
+  await app(fakeReq({ method: 'POST', url: '/api/local/run', token: 'tok', body: { values: { GHCR_PAT: 'x' } } }), fakeRes());
   assert.ok(runs[0].args.join(' ').includes('--stack munni-local-shared'), 'zero environments → the shared stack takes the save');
 });
 
@@ -1530,5 +1530,5 @@ test('nas-probe: every host names the one-time step it is missing — dns, wildc
   assert.equal(body.summary.dns, false);
   assert.ok(body.summary.rulesMissing >= 1);
   assert.ok(body.summary.containersMissing >= 1);
-  assert.equal(process.env.IAC_DOMAIN, undefined, 'the probe restores the environment it borrowed');
+  assert.equal(process.env.PLATFORM_DOMAIN, undefined, 'the probe restores the environment it borrowed');
 });

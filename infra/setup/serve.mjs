@@ -322,8 +322,8 @@ async function logtoSetupEndpoint(req, res, spawnImpl) {
 
   // stored credential re-used verbatim; the INSERT is idempotent, so a
   // freshly reseeded logto database gets the same credential back
-  const id = values.IAC_LOGTO_INFRA_M2M_ID ?? `infra${randomBytes(8).toString('hex')}`;
-  const secret = values.IAC_LOGTO_INFRA_M2M_SECRET ?? randomBytes(24).toString('hex');
+  const id = values.LOGTO_INFRA_M2M_ID ?? `infra${randomBytes(8).toString('hex')}`;
+  const secret = values.LOGTO_INFRA_M2M_SECRET ?? randomBytes(24).toString('hex');
   const linkId = `link0${randomBytes(8).toString('hex')}`;
   const sqlApp = `insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('default', '${id}', 'infra (munni setup)', '${secret}', 'created by the munni setup wizard', 'MachineToMachine', '{"redirectUris":[],"postLogoutRedirectUris":[]}', '{}') on conflict (id) do nothing;`;
   const sqlRole = `insert into applications_roles (tenant_id, id, application_id, role_id) select 'default', '${linkId}', '${id}', r.id from roles r where r.tenant_id = 'default' and r.name = '${LOGTO_MGMT_ROLE}' on conflict do nothing;`;
@@ -338,7 +338,7 @@ async function logtoSetupEndpoint(req, res, spawnImpl) {
 
   const boot = await run(res, 'turn sign-in into code (apps, redirect URIs, API resource) + store the credential', process.execPath,
     [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack],
-    { cwd: ROOT, env: { ...process.env, IAC_LOGTO_INFRA_M2M_ID: id, IAC_LOGTO_INFRA_M2M_SECRET: secret } });
+    { cwd: ROOT, env: { ...process.env, LOGTO_INFRA_M2M_ID: id, LOGTO_INFRA_M2M_SECRET: secret } });
   if (boot.code !== 0 || !/logto: apps upserted/.test(boot.out)) {
     res.write('\nLogto did not accept the credential yet — wait for the logto dot to turn green, then press the button again (nothing is lost).\n');
     return res.end('[exit 1]\n');
@@ -423,7 +423,7 @@ async function glitchtipSetupEndpoint(req, res, spawnImpl) {
 
   const wire = await run(res, `wire ${stack.stack}'s org, projects and DSNs (bootstrap)`, process.execPath,
     [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack],
-    { cwd: ROOT, env: { ...process.env, IAC_GLITCHTIP_API_TOKEN: token } });
+    { cwd: ROOT, env: { ...process.env, GLITCHTIP_API_TOKEN: token } });
   if (wire.code !== 0) return res.end('[exit 1]\n');
 
   const restart = await run(res, 'restart with the DSNs wired in (docker compose up -d)', 'docker',
@@ -436,7 +436,7 @@ async function glitchtipSetupEndpoint(req, res, spawnImpl) {
 async function purgeGcRequisitions(target, res) {
   // GC credentials are SHARED-owned — never depend on an env existing
   const values = familyValues(loadStack(SHARED_STACK));
-  if (!values.NAS_GOCARDLESS_SECRET_ID || !values.NAS_GOCARDLESS_SECRET_KEY) {
+  if (!values.GOCARDLESS_SECRET_ID || !values.GOCARDLESS_SECRET_KEY) {
     res.write('no GoCardless credentials in the store — nothing to purge there\n');
     return true;
   }
@@ -445,7 +445,7 @@ async function purgeGcRequisitions(target, res) {
   const tokenRes = await fetch('https://bankaccountdata.gocardless.com/api/v2/token/new/', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ secret_id: values.NAS_GOCARDLESS_SECRET_ID, secret_key: values.NAS_GOCARDLESS_SECRET_KEY }),
+    body: JSON.stringify({ secret_id: values.GOCARDLESS_SECRET_ID, secret_key: values.GOCARDLESS_SECRET_KEY }),
     signal: AbortSignal.timeout(15000),
   });
   if (!tokenRes.ok) { res.write(`GoCardless token mint failed (${tokenRes.status}) — skipping the provider purge\n`); return false; }
@@ -667,15 +667,15 @@ async function registryEndpoint(res, url, netFetchImpl) {
 const NAS_STACKS = ['munni-iac-prod', 'munni-iac-staging'];
 const NAS_HOST_KEYS = ['web', 'api', 'admin', 'logto', 'logtoAdmin', 'glitchtip', 'vault'];
 export function nasHosts(domain) {
-  const prev = process.env.IAC_DOMAIN;
-  process.env.IAC_DOMAIN = domain;
+  const prev = process.env.PLATFORM_DOMAIN;
+  process.env.PLATFORM_DOMAIN = domain;
   try {
     return NAS_STACKS.map((name) => {
       const st = loadStack(name);
       return { stack: name, hosts: proxyRules(st).map((r, i) => ({ key: NAS_HOST_KEYS[i] ?? String(i), host: r.host })) };
     });
   } finally {
-    if (prev === undefined) delete process.env.IAC_DOMAIN; else process.env.IAC_DOMAIN = prev;
+    if (prev === undefined) delete process.env.PLATFORM_DOMAIN; else process.env.PLATFORM_DOMAIN = prev;
   }
 }
 // every way node can say "the certificate itself is the problem": each one
@@ -1246,8 +1246,8 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
     // the API's SENDER credential: same service account, zero extra input
     const shared = loadStack(SHARED_STACK);
     const sharedValues = loadLocalValues(shared);
-    if (!sharedValues.NAS_FCM_SERVICE_ACCOUNT_JSON) {
-      saveLocalValues(shared, { ...sharedValues, NAS_FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON });
+    if (!sharedValues.FCM_SERVICE_ACCOUNT_JSON) {
+      saveLocalValues(shared, { ...sharedValues, FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON });
       res.write('sender credential: the api sends push with the SAME service account — stored ✓\n');
     } else {
       res.write('sender credential: already stored ✓\n');
@@ -1557,7 +1557,7 @@ async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
  * GlitchTip org (+ its projects/DSNs) dies with it — best-effort, the
  * token only exists once crash tracking was wired */
 async function purgeGlitchtipOrg(stackName, res, fetchImpl = localAwareFetch) {
-  const token = familyValues(loadStack(SHARED_STACK)).IAC_GLITCHTIP_API_TOKEN;
+  const token = familyValues(loadStack(SHARED_STACK)).GLITCHTIP_API_TOKEN;
   if (!token) { res.write('no GlitchTip token in the store — skipping the org purge\n'); return; }
   const base = loadStack(SHARED_STACK).urls.glitchtip;
   try {
@@ -1685,7 +1685,7 @@ async function ghPatEndpoint(req, res) {
   const pat = String(body.pat ?? '').trim();
   if (!pat) return json(res, 400, { error: 'no token given' });
   const shared = loadStack(SHARED_STACK);
-  saveLocalValues(shared, { ...loadLocalValues(shared), IAC_GH_PAT: pat });
+  saveLocalValues(shared, { ...loadLocalValues(shared), GH_PAT: pat });
   return json(res, 200, { ok: true });
 }
 
@@ -1711,26 +1711,26 @@ const vaultFolderOf = (stackName) => (stackName === SHARED_STACK ? 'shared' : st
  * for, how it's generated") — provenance + rotation come from the
  * manifest, purpose from this map */
 const VAULT_PURPOSE = {
-  NAS_GOCARDLESS_SECRET_ID: 'GoCardless Bank Account Data credential (half 1) — the api mints access tokens with the pair for bank syncs and consents.',
-  NAS_GOCARDLESS_SECRET_KEY: 'GoCardless Bank Account Data credential (half 2) — paired with the secret id.',
-  NAS_ENABLEBANKING_APPLICATION_ID: 'Enable Banking application id (UUID) — names the app in the RS256 JWTs the api signs.',
-  NAS_ENABLEBANKING_PRIVATE_KEY_PEM: 'Enable Banking application private key (downloadable ONCE at registration) — signs the api’s JWTs.',
-  NAS_GLITCHTIP_SECRET_KEY: 'GlitchTip’s Django SECRET_KEY — signs its sessions and cookies.',
-  IAC_GLITCHTIP_API_TOKEN: 'GlitchTip API token the setup uses to create orgs/projects and read DSNs back.',
+  GOCARDLESS_SECRET_ID: 'GoCardless Bank Account Data credential (half 1) — the api mints access tokens with the pair for bank syncs and consents.',
+  GOCARDLESS_SECRET_KEY: 'GoCardless Bank Account Data credential (half 2) — paired with the secret id.',
+  ENABLEBANKING_APPLICATION_ID: 'Enable Banking application id (UUID) — names the app in the RS256 JWTs the api signs.',
+  ENABLEBANKING_PRIVATE_KEY_PEM: 'Enable Banking application private key (downloadable ONCE at registration) — signs the api’s JWTs.',
+  GLITCHTIP_SECRET_KEY: 'GlitchTip’s Django SECRET_KEY — signs its sessions and cookies.',
+  GLITCHTIP_API_TOKEN: 'GlitchTip API token the setup uses to create orgs/projects and read DSNs back.',
   VITE_GLITCHTIP_DSN: 'Crash-report DSN for the munni web app — points its browser errors at the right GlitchTip project. Public by design.',
   VITE_GLITCHTIP_DSN_ADMIN: 'Crash-report DSN for the admin portal. Public by design.',
-  NAS_API_SENTRY_DSN: 'Crash-report DSN for the api (container-network form — the api cannot resolve browser addresses).',
+  API_SENTRY_DSN: 'Crash-report DSN for the api (container-network form — the api cannot resolve browser addresses).',
   VITE_LOGTO_APP_ID: 'Logto application id (public client id) the munni web app signs in with.',
   VITE_LOGTO_APP_ID_ADMIN: 'Logto application id the admin portal signs in with.',
   VITE_LOGTO_APP_ID_CONTROL: 'Logto application id the munni-control cockpit signs in with.',
   NATIVE_LOGTO_APP_ID: 'Logto application id the native (Android/iOS) shells sign in with.',
-  NAS_LOGTO_M2M_APP_ID: 'Machine-to-machine app id the api itself uses against Logto (e.g. deleting a sign-in identity with the account).',
-  NAS_LOGTO_M2M_APP_SECRET: 'Secret of the api’s machine-to-machine Logto app.',
+  LOGTO_M2M_APP_ID: 'Machine-to-machine app id the api itself uses against Logto (e.g. deleting a sign-in identity with the account).',
+  LOGTO_M2M_APP_SECRET: 'Secret of the api’s machine-to-machine Logto app.',
   NAS_ADMIN_SUBS: 'Comma-separated OIDC user ids (subs) with admin access — gates both the admin portal and munni-control.',
-  NAS_GHCR_PAT: 'GitHub token docker uses to pull the munni images from GHCR.',
-  NAS_FCM_SERVICE_ACCOUNT_JSON: 'Firebase service account (whole JSON file) — lets the api send Android push messages.',
-  NAS_LOGODEV_SECRET_KEY: 'logo.dev secret key (server-side merchant-logo search).',
-  NAS_LOGODEV_PUBLIC_TOKEN: 'logo.dev publishable token (client-side logo images).',
+  GHCR_PAT: 'GitHub token docker uses to pull the munni images from GHCR.',
+  FCM_SERVICE_ACCOUNT_JSON: 'Firebase service account (whole JSON file) — lets the api send Android push messages.',
+  LOGODEV_SECRET_KEY: 'logo.dev secret key (server-side merchant-logo search).',
+  LOGODEV_PUBLIC_TOKEN: 'logo.dev publishable token (client-side logo images).',
   LOGTO_GOOGLE_CLIENT_ID: 'Google OAuth client id for “Sign in with Google”.',
   LOGTO_GOOGLE_CLIENT_SECRET: 'Google OAuth client secret — pairs with the client id.',
   APPLE_DEV_CERT_P12: 'The machine’s persistent Apple Development certificate (.p12, base64) — CI imports it instead of minting a throwaway one per build (no more “certificate revoked” mails).',
@@ -1743,7 +1743,7 @@ const VAULT_PURPOSE = {
   ANDROID_KEYSTORE_PASSWORD: 'Password of the upload keystore (wizard-generated).',
   ANDROID_KEY_ALIAS: 'Key alias inside the upload keystore (munni-upload).',
   ANDROID_KEY_PASSWORD: 'Key password inside the upload keystore (same as the store password).',
-  IAC_GH_PAT: 'Fine-grained GitHub token the wizard connects and dispatches CI builds with — saved so the GitHub card reconnects by itself.',
+  GH_PAT: 'Fine-grained GitHub token the wizard connects and dispatches CI builds with — saved so the GitHub card reconnects by itself.',
   ASC_KEY_ID: 'App Store Connect API key id — with the issuer id + .p8, CI uploads to TestFlight and the wizard checks app records.',
   ASC_ISSUER_ID: 'App Store Connect API issuer id — pairs with the key.',
   ASC_KEY_P8: 'App Store Connect API private key (.p8, base64) — shown once at creation.',
@@ -1775,8 +1775,8 @@ function buildVaultItems() {
       notes: 'Sign-in for the crash-report console (one GlitchTip for every environment). Account + password created by the setup wizard — change it inside GlitchTip whenever you like.',
     });
   }
-  if (shared.NAS_PGADMIN_PASSWORD) {
-    items.push({ folder: 'shared', name: 'pgAdmin', username: 'admin@munni.dev', password: shared.NAS_PGADMIN_PASSWORD, uri: sharedStack.urls.pgadmin, notes: 'One console over every database server in the family — the servers are preregistered; on first connect paste the matching Postgres password (each environment’s is in its folder) and tick “save password”. Wizard-generated.' });
+  if (shared.PGADMIN_PASSWORD) {
+    items.push({ folder: 'shared', name: 'pgAdmin', username: 'admin@munni.dev', password: shared.PGADMIN_PASSWORD, uri: sharedStack.urls.pgadmin, notes: 'One console over every database server in the family — the servers are preregistered; on first connect paste the matching Postgres password (each environment’s is in its folder) and tick “save password”. Wizard-generated.' });
   }
   for (const stackName of LOCAL_STACKS()) {
     items.push(...stackVaultItems(stackName));
@@ -1784,11 +1784,11 @@ function buildVaultItems() {
   return items;
 }
 
-const VAULT_SKIP_NAMES = new Set(['NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD']);
+const VAULT_SKIP_NAMES = new Set(['PUSH_VAPID_PRIVATE_KEY', 'PUSH_VAPID_PUBLIC_KEY', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD']);
 const VAULT_COVERED_NAMES = new Set([
-  'GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_PGADMIN_PASSWORD',
-  'NAS_POSTGRES_PASSWORD', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD',
-  'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET',
+  'GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'PGADMIN_PASSWORD',
+  'POSTGRES_PASSWORD', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD',
+  'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'LOGTO_INFRA_M2M_ID', 'LOGTO_INFRA_M2M_SECRET',
 ]);
 
 function stackVaultItems(stackName) {
@@ -1799,8 +1799,8 @@ function stackVaultItems(stackName) {
   const pgNote = stackName === SHARED_STACK
     ? 'The shared stack’s database server (GlitchTip’s data lives here). Wizard-generated password; every environment has its OWN server with its own password.'
     : `Database server owned by the ${folder} environment alone (munni + logto databases) — deleting the environment deletes it. Wizard-generated password; use it in pgAdmin for the “${folder}” entry.`;
-  if (values.NAS_POSTGRES_PASSWORD) {
-    items.push({ folder, name: 'Postgres', username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: pgNote });
+  if (values.POSTGRES_PASSWORD) {
+    items.push({ folder, name: 'Postgres', username: 'munni', password: values.POSTGRES_PASSWORD, notes: pgNote });
   }
   if (values.LOGTO_CONSOLE_USERNAME) {
     items.push({ folder, name: 'Logto console', username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '', notes: `The ${folder} environment’s Logto ADMIN console (manage sign-in experience, users, connectors). Account auto-claimed by the setup wizard with a generated password.` });
@@ -1808,8 +1808,8 @@ function stackVaultItems(stackName) {
   if (values.LOGTO_APP_ADMIN_USERNAME) {
     items.push({ folder, name: 'munni app (admin user)', username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web ?? '', notes: `The ${folder} environment’s first munni user, auto-created and wired as admin (its id sits in NAS_ADMIN_SUBS) — sign into the app, the admin portal and munni-control with it.` });
   }
-  if (values.IAC_LOGTO_INFRA_M2M_ID) {
-    items.push({ folder, name: 'Logto infra M2M', username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '', notes: 'Machine credential the SETUP uses to manage this environment’s Logto as code (apps, redirect URIs, branding). Seeded straight into Logto’s database by the wizard.' });
+  if (values.LOGTO_INFRA_M2M_ID) {
+    items.push({ folder, name: 'Logto infra M2M', username: values.LOGTO_INFRA_M2M_ID, password: values.LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '', notes: 'Machine credential the SETUP uses to manage this environment’s Logto as code (apps, redirect URIs, branding). Seeded straight into Logto’s database by the wizard.' });
   }
   for (const [name, value] of Object.entries(values)) {
     if (VAULT_COVERED_NAMES.has(name) || VAULT_SKIP_NAMES.has(name) || !value) continue;
@@ -1931,7 +1931,7 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
 
 /** every manifest operator name may carry a value INTO a validation —
  * transient use only, never stored, never logged */
-const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator' || /^IAC_LOGTO_[A-Z]+_M2M_(ID|SECRET)$/.test(s.name)).map((s) => s.name));
+const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator' || /^LOGTO_[A-Z]+_M2M_(ID|SECRET)$/.test(s.name)).map((s) => s.name));
 
 async function validateEndpoint(req, res, validateImpl) {
   const body = await readBody(req);
@@ -2038,13 +2038,13 @@ async function appleCertImportEndpoint(req, res, netFetchImpl) {
   }
   const shared = loadStack(SHARED_STACK);
   const values = loadLocalValues(shared);
-  if (!values.IAC_GH_PAT) {
-    res.write('no GitHub token in the machine store — press Store as IAC_GH_PAT on the GitHub tile first\n');
+  if (!values.GH_PAT) {
+    res.write('no GitHub token in the machine store — press Store as GH_PAT on the GitHub tile first\n');
     return res.end('[exit 1]\n');
   }
   const api = (path, init = {}) => netFetchImpl(`https://api.github.com${path}`, {
     ...init,
-    headers: { authorization: `Bearer ${values.IAC_GH_PAT}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...init.headers },
+    headers: { authorization: `Bearer ${values.GH_PAT}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...init.headers },
     signal: AbortSignal.timeout(30000),
   });
   try {

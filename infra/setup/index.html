@@ -292,10 +292,10 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
   <div class="card tile int crow" id="connect-card" data-group="github">
     <div class="tile-h"><span class="bico" data-bico="github"></span><span class="sp"></span><span data-chip><span class="pill" id="connect-pill">not connected</span></span></div>
     <div class="tile-t">GitHub — the build &amp; deploy engine</div>
-    <div class="tile-d">needed for CI builds and deploys · <code>IAC_GH_PAT</code></div>
+    <div class="tile-d">needed for CI builds and deploys · <code>GH_PAT</code></div>
     <div class="tile-f"><span class="tag info">Connection</span><button class="ghost mini" data-manage="github">Manage</button></div>
     <div class="crow-b" data-body="github">
-    <p class="why" id="connect-why-nas">The whole NAS pipeline lives in your repo's Actions: one fine-grained token drives this page live and is stored as <code>IAC_GH_PAT</code> so the bootstrap workflow can manage environments too. Point it at a repo that carries munni — or at a name that doesn't exist yet, and this page forks <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically.</p>
+    <p class="why" id="connect-why-nas">The whole NAS pipeline lives in your repo's Actions: one fine-grained token drives this page live and is stored as <code>GH_PAT</code> so the bootstrap workflow can manage environments too. Point it at a repo that carries munni — or at a name that doesn't exist yet, and this page forks <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically.</p>
     <p class="why" id="connect-why-local" hidden>This tile only appears because Android/iOS is ticked: the native apps are BUILT by GitHub CI (never on this machine), so those builds need your repo's Actions. Everything else on the local track stays GitHub-free. Same token rules as the NAS track; a nonexistent repo name gets forked from <code>okkes/munnimok</code>. After a successful Connect the token is saved in this machine's gitignored store like every other credential on this step — the next visit reconnects by itself.</p>
     <div id="connect-body">
     <details class="how"><summary>How to create the token (2 minutes)</summary>
@@ -374,9 +374,9 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
     <pre><button class="copy">copy</button><code>infra\setup\start.cmd        (double-click it — or: node infra/setup/serve.mjs)</code></pre>
     <details class="how"><summary>Manual fallback — the exact commands the helper would run</summary>
       <ol>
-        <li>Shared services first: <code>$env:NAS_GHCR_PAT='&lt;read:packages PAT&gt;'; node infra/bootstrap.mjs --stack munni-local-shared</code> then <code>cd infra/rendered/munni-local-shared; docker compose --env-file .env.munni-local-shared -f docker-compose.munni-local-shared.yml up -d</code></li>
+        <li>Shared services first: <code>$env:GHCR_PAT='&lt;read:packages PAT&gt;'; node infra/bootstrap.mjs --stack munni-local-shared</code> then <code>cd infra/rendered/munni-local-shared; docker compose --env-file .env.munni-local-shared -f docker-compose.munni-local-shared.yml up -d</code></li>
         <li>Each environment: <code>node infra/bootstrap.mjs --stack munni-local-prod</code> (same for <code>munni-local-dev</code>) → <code>cd infra/rendered/&lt;stack&gt;</code> → compose up -d. Re-run bootstrap once its Logto answers so the sign-in apps land.</li>
-        <li>GlitchTip token → <code>$env:IAC_GLITCHTIP_API_TOKEN='…'</code> → re-run the env bootstrap → up -d. Verify: <code>node infra/bootstrap.mjs --stack munni-local-prod --verify</code></li>
+        <li>GlitchTip token → <code>$env:GLITCHTIP_API_TOKEN='…'</code> → re-run the env bootstrap → up -d. Verify: <code>node infra/bootstrap.mjs --stack munni-local-prod --verify</code></li>
         <li>From-source dev loop: <code>docker compose --env-file deploy/env/.env.local -f deploy/docker-compose.local.yml up -d --build</code> + <code>npm run dev</code> (see deploy/README.md).</li>
         <li>Tooling: <code>deploy/docker-compose.sonar.yml</code> + <code>./deploy/sonar/analyze.ps1</code>; <code>deploy/docker-compose.test.yml</code>; <code>./deploy/webkit-e2e.ps1</code>.</li>
       </ol>
@@ -528,8 +528,8 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
       <li>Paste the app’s id + secret here and store — they replace the minted ones in both iac environments:</li>
     </ol>
     <div class="grid2">
-    <div><label class="f" for="in-m2m-id">IAC_LOGTO_INFRA_M2M_ID <span class="dot" data-dot="IAC_LOGTO_INFRA_M2M_ID"></span></label><input type="text" id="in-m2m-id" autocomplete="off"/></div>
-    <div><label class="f" for="in-m2m-secret">IAC_LOGTO_INFRA_M2M_SECRET <span class="dot" data-dot="IAC_LOGTO_INFRA_M2M_SECRET"></span></label><input type="password" id="in-m2m-secret" autocomplete="off"/></div>
+    <div><label class="f" for="in-m2m-id">LOGTO_INFRA_M2M_ID <span class="dot" data-dot="LOGTO_INFRA_M2M_ID"></span></label><input type="text" id="in-m2m-id" autocomplete="off"/></div>
+    <div><label class="f" for="in-m2m-secret">LOGTO_INFRA_M2M_SECRET <span class="dot" data-dot="LOGTO_INFRA_M2M_SECRET"></span></label><input type="password" id="in-m2m-secret" autocomplete="off"/></div>
   </div>
   <button id="btn-store-m2m">Store credential</button>
   <button class="ghost" data-dispatch-iac="munni-iac-prod">Re-run prod bootstrap</button>
@@ -553,7 +553,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
       <li>Open <a href="#" class="dom-link" data-host="glitchtip-iac">glitchtip-iac.&lt;domain&gt;</a> → register the first account.</li>
       <li>Profile → <b>Auth Tokens</b> → create a token → paste — it replaces the minted one in both iac environments:</li>
     </ol>
-    <label class="f" for="in-gt-token">IAC_GLITCHTIP_API_TOKEN <span class="dot" data-dot="IAC_GLITCHTIP_API_TOKEN"></span></label>
+    <label class="f" for="in-gt-token">GLITCHTIP_API_TOKEN <span class="dot" data-dot="GLITCHTIP_API_TOKEN"></span></label>
   <input type="password" id="in-gt-token" autocomplete="off"/>
   <button id="btn-store-gt">Store token</button>
   <button class="ghost" data-dispatch-iac="munni-iac-prod">Re-run prod bootstrap</button>
@@ -607,7 +607,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
   <div class="card">
     <h3>Rotate a generated secret</h3>
     <div class="grid2">
-      <div><label class="f" for="in-rotate">secret name(s), comma-separated</label><input type="text" id="in-rotate" placeholder="NAS_GLITCHTIP_SECRET_KEY"/></div>
+      <div><label class="f" for="in-rotate">secret name(s), comma-separated</label><input type="text" id="in-rotate" placeholder="GLITCHTIP_SECRET_KEY"/></div>
       <div><label class="f" for="in-rotate-stack">stack</label><select id="in-rotate-stack"><option>munni-iac-prod</option><option>munni-iac-staging</option></select></div>
     </div>
     <button id="btn-rotate">Rotate via workflow</button>
@@ -1176,7 +1176,7 @@ const S = {
   caTrust: null,           // the helper's verdict on the family root in this user's Root store
   registry: null,          // the helper's verdict on anonymous image pulls (public images need no token)
   nasProbe: null,          // the helper's outside-in probe of the NAS hosts (NAS track)
-  nasState: null,          // the NAS verdict the prod twin's last IaC run published (repo variable IAC_NAS_STATE)
+  nasState: null,          // the NAS verdict the prod twin's last IaC run published (repo variable NAS_STATE)
   repoSecretDates: null,   // name → updated_at of every repo secret (the run signs in with THOSE values)
   defaultBranch: null,     // the connected repo's default branch (workflows register from it)
   pollTimer: null,
@@ -1201,7 +1201,7 @@ const GROUPS = [
     id: 'domain', title: 'Your domain', targets: ['nas'], check: 'browser:domain',
     why: 'Every service becomes a subdomain of your NAS DDNS domain (munni-iac.…, logto-iac.…). The domain is treated as a secret because this repo is public.',
     how: ['DSM → Control Panel → External Access → DDNS — add or read your hostname (e.g. yourname.synology.me).', 'Paste it below; the field also personalizes every link on this page.'],
-    fields: [{ name: 'IAC_DOMAIN', scope: 'repo', ph: 'yourname.synology.me', mirror: 'domain' }],
+    fields: [{ name: 'PLATFORM_DOMAIN', scope: 'repo', ph: 'yourname.synology.me', mirror: 'domain' }],
   },
   {
     id: 'synology', title: 'Synology deploy account', targets: ['nas'], check: 'synology',
@@ -1229,7 +1229,7 @@ const GROUPS = [
     id: 'ghcr', title: 'Container registry pulls', check: 'browser:ghcr', optional: true, when: () => S.registry?.public === false,
     why: 'The munni images on ghcr.io are public — the host pulls them without any token. This tile appears only because the helper found the images PRIVATE (a private copy publishing its own): then docker logs into ghcr.io with this token.',
     how: ['github.com/settings/tokens (classic) → Generate new token → scope read:packages. A fine-grained token cannot log into ghcr, so the GitHub connection token is reused here only when it is a classic one with that scope (checked at Connect).'],
-    fields: [{ name: 'NAS_GHCR_PAT', scope: 'repo', secret: true }],
+    fields: [{ name: 'GHCR_PAT', scope: 'repo', secret: true }],
   },
   {
     id: 'gocardless', title: 'GoCardless Bank Account Data', feature: 'gocardless', check: 'gocardless',
@@ -1240,8 +1240,8 @@ const GROUPS = [
       'Nothing else to configure: GoCardless needs NO redirect-URL registration — munni passes the return address with every connection, on any platform.',
     ],
     fields: [
-      { name: 'NAS_GOCARDLESS_SECRET_ID', scope: 'repo' },
-      { name: 'NAS_GOCARDLESS_SECRET_KEY', scope: 'repo', secret: true },
+      { name: 'GOCARDLESS_SECRET_ID', scope: 'repo' },
+      { name: 'GOCARDLESS_SECRET_KEY', scope: 'repo', secret: true },
     ],
   },
   {
@@ -1258,8 +1258,8 @@ const GROUPS = [
       'The <b>Application ID</b> (a UUID) is on the application’s page in the Control Panel after registration.',
     ],
     fields: [
-      { name: 'NAS_ENABLEBANKING_APPLICATION_ID', scope: 'repo' },
-      { name: 'NAS_ENABLEBANKING_PRIVATE_KEY_PEM', scope: 'repo', area: true },
+      { name: 'ENABLEBANKING_APPLICATION_ID', scope: 'repo' },
+      { name: 'ENABLEBANKING_PRIVATE_KEY_PEM', scope: 'repo', area: true },
     ],
   },
   {
@@ -1298,15 +1298,15 @@ const GROUPS = [
       'Manual paste is only for the NAS track or a deliberately separate sender: console.firebase.google.com → project → Service accounts → Generate new private key → paste the JSON here.',
       'The NAS_ in the name is historical — the environment-first secrets arc renames it.',
     ],
-    fields: [{ name: 'NAS_FCM_SERVICE_ACCOUNT_JSON', scope: 'repo', area: true }],
+    fields: [{ name: 'FCM_SERVICE_ACCOUNT_JSON', scope: 'repo', area: true }],
   },
   {
     id: 'logodev', title: 'logo.dev', feature: 'logodev', check: 'logodev',
     why: 'Merchant and brand logos next to transactions and recurring costs. Free tier is plenty.',
     how: ['logo.dev → sign up → dashboard → API keys: the secret key (server) and the publishable token (client).'],
     fields: [
-      { name: 'NAS_LOGODEV_SECRET_KEY', scope: 'repo', secret: true },
-      { name: 'NAS_LOGODEV_PUBLIC_TOKEN', scope: 'repo' },
+      { name: 'LOGODEV_SECRET_KEY', scope: 'repo', secret: true },
+      { name: 'LOGODEV_PUBLIC_TOKEN', scope: 'repo' },
     ],
   },
   {
@@ -1349,7 +1349,7 @@ const GROUPS = [
       'Format: <code>smtp://USER:PASSWORD@HOST:PORT</code> — <code>smtps://</code> for STARTTLS (port 587), <code>smtp+ssl://</code> for implicit TLS (port 465). It is a URL, not a mail address: an <code>@</code> inside the user name is written as <code>%40</code>.',
       'Gmail: Google Account → Security → 2-Step Verification → <b>App passwords</b> → create one, then <code>smtps://you%40gmail.com:APP-PASSWORD@smtp.gmail.com:587</code>. Any mailbox provider works the same way.',
     ],
-    fields: [{ name: 'NAS_GLITCHTIP_EMAIL_URL', scope: 'pair', ph: 'smtps://you%40gmail.com:app-password@smtp.gmail.com:587' }],
+    fields: [{ name: 'GLITCHTIP_EMAIL_URL', scope: 'pair', ph: 'smtps://you%40gmail.com:app-password@smtp.gmail.com:587' }],
   },
 ];
 
@@ -1361,7 +1361,7 @@ const PHASE_OF = { playstore: 'later', ascstore: 'later', fcm: 'later', google: 
  * what needs it — the stepper and the rail decide the order */
 const KIND_ORDER = ['Connections', 'Bank providers', 'Stores & signing', 'Sign-in providers', 'Extras'];
 const KIND_HINT = {
-  Connections: 'GitHub for the phones’ CI builds and the deploys — one token, stored as IAC_GH_PAT at Connect',
+  Connections: 'GitHub for the phones’ CI builds and the deploys — one token, stored as GH_PAT at Connect',
   'Bank providers': 'read-only PSD2 access — the heart of the product',
   'Stores & signing': 'CI publishes with these; the machine keeps the signing keys itself',
   'Sign-in providers': 'credentials only — every environment registers its own callback in its workspace',
@@ -1437,7 +1437,7 @@ async function ghUpsertRepoVar(name, value) {
 async function storeSecret(name, value, scope) {
   // repository Actions secrets live under /actions/secrets — the bare
   // /repos/{slug}/secrets path 404s (found live 2026-08-29: Store as
-  // IAC_GH_PAT never worked for the repo scope)
+  // GH_PAT never worked for the repo scope)
   if (scope === 'repo') { await putSecretAt(`/repos/${S.slug}/actions`, name, value); return; }
   for (const env of ENVS) {
     await ensureEnv(env);
@@ -1483,7 +1483,7 @@ async function refresh() {
   S.runs = { iac: iacRuns?.workflow_runs ?? [], nas: nasRuns?.workflow_runs ?? [], native: [...(andRuns?.workflow_runs ?? []), ...(iosRuns?.workflow_runs ?? [])] };
   // the NAS verdict the prod twin's last IaC run published (verify or
   // apply): the readiness card's first row without retyping anything
-  const nasStateVar = await gh(`/repos/${S.slug}/actions/variables/IAC_NAS_STATE`, { allow404: true }).catch(() => null);
+  const nasStateVar = await gh(`/repos/${S.slug}/actions/variables/NAS_STATE`, { allow404: true }).catch(() => null);
   try { S.nasState = nasStateVar?.value ? JSON.parse(nasStateVar.value) : null; } catch { S.nasState = null; }
   renderNasReadiness();
   renderLogtoAuto();
@@ -1528,16 +1528,16 @@ function renderStatus() {
   el('runs-iac').innerHTML = runsHtml(S.runs.iac ?? [], () => true);
   el('runs-nas').innerHTML = runsHtml(S.runs.nas ?? [], (r) => r.event === 'workflow_dispatch');
   el('runs-native').innerHTML = runsHtml(S.runs.native ?? [], (r) => r.event === 'workflow_dispatch');
-  const envsReady = ENVS.every((env) => S.envs[env]?.secrets?.has('NAS_POSTGRES_PASSWORD'));
+  const envsReady = ENVS.every((env) => S.envs[env]?.secrets?.has('POSTGRES_PASSWORD'));
   el('bootstrap-pill').textContent = envsReady ? 'environments minted ✓' : 'not bootstrapped yet';
   el('bootstrap-pill').className = 'pill ' + (envsReady ? 'ok' : '');
-  const logtoDone = ENVS.every((env) => S.envs[env]?.secrets?.has('NAS_LOGTO_M2M_APP_ID'));
-  const logtoMinted = Boolean(S.envs['iac-production']?.secrets?.has('IAC_LOGTO_INFRA_M2M_ID'));
+  const logtoDone = ENVS.every((env) => S.envs[env]?.secrets?.has('LOGTO_M2M_APP_ID'));
+  const logtoMinted = Boolean(S.envs['iac-production']?.secrets?.has('LOGTO_INFRA_M2M_ID'));
   el('logto-pill').textContent = logtoDone ? 'apps are code ✓' : (logtoMinted ? 'in progress — no click needed' : 'pending Bootstrap');
   el('logto-pill').className = 'pill ' + (logtoDone ? 'ok' : '');
   renderLogtoAuto();
   const gtDone = ENVS.every((env) => S.envs[env]?.vars?.has('VITE_GLITCHTIP_DSN'));
-  const gtMinted = Boolean(S.envs['iac-production']?.secrets?.has('IAC_GLITCHTIP_API_TOKEN'));
+  const gtMinted = Boolean(S.envs['iac-production']?.secrets?.has('GLITCHTIP_API_TOKEN'));
   el('gt-pill').textContent = gtDone ? 'DSNs written back ✓' : (gtMinted ? 'in progress — no click needed' : 'pending Bootstrap');
   el('gt-pill').className = 'pill ' + (gtDone ? 'ok' : '');
   renderGlitchtipAuto();
@@ -1772,7 +1772,7 @@ function renderLogtoAuto() {
   const lg = S.nasState?.logto ?? null;
   const rows = [];
   const row = (name, cls, label, title, jump) => rows.push({ name, cls, label, title, jump });
-  const minted = prodS.has('IAC_LOGTO_INFRA_M2M_ID');
+  const minted = prodS.has('LOGTO_INFRA_M2M_ID');
   row('Machine credentials minted', minted ? 'ok' : '', minted ? 'in both environments ✓' : 'not yet', minted ? '' : 'Bootstrap (the prod twin) mints them — press Bootstrap now on the readiness card or Bootstrap under step 4', { href: '#s-bootstrap' });
   row('Seeded into Logto on the NAS', lg ? (lg.seeded ? 'ok' : (lg.credential ? 'warn' : '')) : '', lg?.seeded ? 'Logto answers with them ✓' : (lg?.credential ? 'not yet — the next Deploy seeds them (poller)' : 'unknown'), lg && !lg.seeded && lg.credential ? 'the poller inserts the credentials after the first Deploy of the prod twin; Deploy then runs Bootstrap again by itself' : '', { href: '#s-deploy' });
   const wired = ENVS.every((env) => S.envs[env]?.vars?.has('VITE_LOGTO_APP_ID'));
@@ -1801,7 +1801,7 @@ function renderGlitchtipAuto() {
   const gt = S.nasState?.glitchtip ?? null;
   const rows = [];
   const row = (name, cls, label, title, jump) => rows.push({ name, cls, label, title, jump });
-  const minted = prodS.has('IAC_GLITCHTIP_API_TOKEN');
+  const minted = prodS.has('GLITCHTIP_API_TOKEN');
   row('Admin + API token minted', minted ? 'ok' : '', minted ? 'in both environments ✓' : 'not yet', minted ? '' : 'Bootstrap (the prod twin) mints them — press Bootstrap now on the readiness card or Bootstrap under step 4', { href: '#s-bootstrap' });
   row('Created inside GlitchTip on the NAS', gt ? (gt.seeded ? 'ok' : (gt.credential ? 'warn' : '')) : '', gt?.seeded ? 'GlitchTip accepts the token ✓' : (gt?.credential ? 'not yet — the next Deploy creates them (poller)' : 'unknown'), gt && !gt.seeded && gt.credential ? 'the poller creates the admin and the token after the first Deploy of the prod twin; Deploy then runs Bootstrap again by itself' : '', { href: '#s-deploy' });
   const wired = ENVS.every((env) => S.envs[env]?.vars?.has('VITE_GLITCHTIP_DSN'));
@@ -1912,12 +1912,12 @@ async function bootstrapAfterSynology() {
 /* the connection token doubles as the registry token when it can (user
    ruling 2026-09-10) — only worth anything for PRIVATE images */
 async function adoptPatForRegistry() {
-  if (!S.pat || S.registry?.public !== false || secretPresent('NAS_GHCR_PAT', true)) return;
-  const v = await BROWSER_VALIDATORS.ghcr({ NAS_GHCR_PAT: S.pat }).catch(() => null);
+  if (!S.pat || S.registry?.public !== false || secretPresent('GHCR_PAT', true)) return;
+  const v = await BROWSER_VALIDATORS.ghcr({ GHCR_PAT: S.pat }).catch(() => null);
   if (!v?.ok) { msg('msg-group-ghcr', `the images are private and the GitHub token cannot pull them (${v?.detail ?? 'check failed'}) — a classic PAT with read:packages is needed here`, false); return; }
-  if (S.platform === 'local') { if (!(await runLocalQuiet({ values: { NAS_GHCR_PAT: S.pat } }))) return; } else await storeSecret('NAS_GHCR_PAT', S.pat, 'repo');
-  S.recentlyStored.set('NAS_GHCR_PAT', Date.now());
-  msg('msg-group-ghcr', 'the GitHub token has read:packages — stored as NAS_GHCR_PAT as well ✓', true);
+  if (S.platform === 'local') { if (!(await runLocalQuiet({ values: { GHCR_PAT: S.pat } }))) return; } else await storeSecret('GHCR_PAT', S.pat, 'repo');
+  S.recentlyStored.set('GHCR_PAT', Date.now());
+  msg('msg-group-ghcr', 'the GitHub token has read:packages — stored as GHCR_PAT as well ✓', true);
   renderStatus();
 }
 
@@ -2036,7 +2036,7 @@ function updateEnvCard(env, s) {
   }
   const warn = document.getElementById(`env-logto-warn-${name}`);
   if (warn) warn.hidden = Boolean(s.services.logto);
-  const signinDone = stored.has('NAS_LOGTO_M2M_APP_ID');
+  const signinDone = stored.has('LOGTO_M2M_APP_ID');
   const sd = document.getElementById(`env-signin-dot-${name}`);
   if (sd) sd.className = 'dot ' + (signinDone ? 'ok' : 'miss');
   setPill(`env-signin-pill-${name}`, signinDone ? 'live ✓' : 'runs with Set up', signinDone);
@@ -2058,11 +2058,11 @@ function accessHtml(env) {
     <button class="ghost" data-act="gt" data-stack="${env.stack}">Re-run crash tracking</button>
     <p style="margin-top:8px;font-size:13px">Bring your own Logto M2M credential (console → Applications → Machine-to-machine, role <b>Logto Management API</b>):</p>
     <div class="grid2">
-      <div><label class="f" for="in-m2m-id-${s}">IAC_LOGTO_INFRA_M2M_ID</label><input type="text" id="in-m2m-id-${s}" autocomplete="off"/></div>
-      <div><label class="f" for="in-m2m-secret-${s}">IAC_LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-m2m-secret-${s}" autocomplete="off"/></div>
+      <div><label class="f" for="in-m2m-id-${s}">LOGTO_INFRA_M2M_ID</label><input type="text" id="in-m2m-id-${s}" autocomplete="off"/></div>
+      <div><label class="f" for="in-m2m-secret-${s}">LOGTO_INFRA_M2M_SECRET</label><input type="password" id="in-m2m-secret-${s}" autocomplete="off"/></div>
     </div>
     <button data-act="oobe" data-stack="${env.stack}">Apply sign-in setup</button>
-    <label class="f" for="in-gt-${s}">IAC_GLITCHTIP_API_TOKEN (family-wide, from <a href="${gt}" target="_blank" rel="noreferrer">GlitchTip</a> → Auth Tokens)</label>
+    <label class="f" for="in-gt-${s}">GLITCHTIP_API_TOKEN (family-wide, from <a href="${gt}" target="_blank" rel="noreferrer">GlitchTip</a> → Auth Tokens)</label>
     <input type="password" id="in-gt-${s}" autocomplete="off"/>
     <button data-act="gtapply" data-stack="${env.stack}">Apply crash tracking</button>
     <div class="msg" id="msg-oobe-${s}"></div>`;
@@ -3165,7 +3165,7 @@ function requireConnection() {
    the local helper, which mirrors the server's real auth flows. ── */
 const BROWSER_VALIDATORS = {
   async ghcr(values) {
-    const pat = values.NAS_GHCR_PAT;
+    const pat = values.GHCR_PAT;
     if (!pat) return { ok: false, detail: 'paste the token first' };
     const res = await fetch('https://api.github.com/user', { headers: { authorization: 'Bearer ' + pat } });
     if (!res.ok) return { ok: false, detail: `GitHub rejected the token (${res.status})` };
@@ -3177,13 +3177,13 @@ const BROWSER_VALIDATORS = {
     return { ok: true, detail: `valid — ${login}, scopes: ${scopes}` };
   },
   async domain(values) {
-    const d = values.IAC_DOMAIN ?? '';
+    const d = values.PLATFORM_DOMAIN ?? '';
     return /^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(d)
       ? { ok: true, detail: 'looks like a valid hostname (DNS itself is probed by bootstrap --verify)' }
       : { ok: false, detail: 'not a hostname — expected something like yourname.synology.me (no https://, no trailing slash)' };
   },
   async emailUrl(values) {
-    const u = values.NAS_GLITCHTIP_EMAIL_URL ?? '';
+    const u = values.GLITCHTIP_EMAIL_URL ?? '';
     // a bare mail address is the classic paste (2026-09-10) — say what the field really takes
     if (/^[^\s@:/]+@[^\s@:/]+\.[a-z]+$/i.test(u)) return { ok: false, detail: 'that is a mail ADDRESS — this field takes the SMTP url of the mailbox that sends, e.g. smtps://you%40gmail.com:APP-PASSWORD@smtp.gmail.com:587 (the @ inside the user name written as %40)' };
     return /^(smtps?|smtp\+tls|smtp\+ssl):\/\/[^:@\s]+(:[^@\s]*)?@[^:@\s]+:\d+\/?$/.test(u)
@@ -3260,7 +3260,7 @@ async function checkManifest() {
     const manifest = JSON.parse(atob(file.content.replace(/\n/g, '')));
     const known = new Set([
       ...GROUPS.flatMap((g) => g.fields.map((f) => f.name)),
-      'IAC_GH_PAT', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET', 'IAC_GLITCHTIP_API_TOKEN', 'NAS_ADMIN_SUBS',
+      'GH_PAT', 'LOGTO_INFRA_M2M_ID', 'LOGTO_INFRA_M2M_SECRET', 'GLITCHTIP_API_TOKEN', 'NAS_ADMIN_SUBS',
       // machine-owned / wizard-managed — never pasted
       'VAULT_SIGNUPS_ALLOWED', 'APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD', 'APPLE_DEV_CERT_SERIAL',
     ]);
@@ -3323,16 +3323,16 @@ async function connectRepo(repo) {
   // open the first-boot latch: a connected repo is being initialized —
   // its push workflows (skipped until now on fresh copies) come alive
   await ghUpsertRepoVar('MUNNI_INITIALIZED', 'true').catch(() => {});
-  // the connection token IS IAC_GH_PAT (user ruling 2026-09-10): stored as
+  // the connection token IS GH_PAT (user ruling 2026-09-10): stored as
   // the repository secret right away — workflows that write secrets back
   // (keystore mint, bootstrap) need it; no separate button
   let patNote = '';
   try {
-    await storeSecret('IAC_GH_PAT', S.pat, 'repo');
-    S.recentlyStored.set('IAC_GH_PAT', Date.now());
-    patNote = ' The token is stored as IAC_GH_PAT.';
+    await storeSecret('GH_PAT', S.pat, 'repo');
+    S.recentlyStored.set('GH_PAT', Date.now());
+    patNote = ' The token is stored as GH_PAT.';
   } catch (e) {
-    patNote = ` Storing the token as IAC_GH_PAT failed (${e.message}) — the token needs Secrets: read and write.`;
+    patNote = ` Storing the token as GH_PAT failed (${e.message}) — the token needs Secrets: read and write.`;
   }
   S.defaultBranch = repo.default_branch ?? null;
   document.getElementById('btn-refresh').disabled = false;
@@ -3501,8 +3501,8 @@ document.getElementById('btn-store-m2m').addEventListener('click', async () => {
     const id = document.getElementById('in-m2m-id').value.trim();
     const secret = document.getElementById('in-m2m-secret').value.trim();
     if (!id || !secret) throw new Error('Both the app id and the secret are needed.');
-    await storeSecret('IAC_LOGTO_INFRA_M2M_ID', id, 'pair');
-    await storeSecret('IAC_LOGTO_INFRA_M2M_SECRET', secret, 'pair');
+    await storeSecret('LOGTO_INFRA_M2M_ID', id, 'pair');
+    await storeSecret('LOGTO_INFRA_M2M_SECRET', secret, 'pair');
     document.getElementById('in-m2m-secret').value = '';
     msg('msg-logto', 'Credential stored in both iac environments ✓ — now re-run both bootstraps (buttons above) to turn Logto apps into code.', true);
     await refresh();
@@ -3513,7 +3513,7 @@ document.getElementById('btn-store-gt').addEventListener('click', async () => {
     requireConnection();
     const token = document.getElementById('in-gt-token').value.trim();
     if (!token) throw new Error('Paste the token first.');
-    await storeSecret('IAC_GLITCHTIP_API_TOKEN', token, 'pair');
+    await storeSecret('GLITCHTIP_API_TOKEN', token, 'pair');
     document.getElementById('in-gt-token').value = '';
     msg('msg-gt', 'Token stored ✓ — re-run both bootstraps; the DSNs write themselves back.', true);
     await refresh();
@@ -3705,10 +3705,10 @@ document.getElementById('env-cards')?.addEventListener('click', async (e) => {
     }
   } else if (act === 'oobe') {
     const values = {
-      IAC_LOGTO_INFRA_M2M_ID: document.getElementById(`in-m2m-id-${s}`).value.trim(),
-      IAC_LOGTO_INFRA_M2M_SECRET: document.getElementById(`in-m2m-secret-${s}`).value.trim(),
+      LOGTO_INFRA_M2M_ID: document.getElementById(`in-m2m-id-${s}`).value.trim(),
+      LOGTO_INFRA_M2M_SECRET: document.getElementById(`in-m2m-secret-${s}`).value.trim(),
     };
-    if (!values.IAC_LOGTO_INFRA_M2M_ID || !values.IAC_LOGTO_INFRA_M2M_SECRET) { localLog('\nBoth the app id and the secret are needed.\n'); return; }
+    if (!values.LOGTO_INFRA_M2M_ID || !values.LOGTO_INFRA_M2M_SECRET) { localLog('\nBoth the app id and the secret are needed.\n'); return; }
     if (await streamLocal('/api/local/run', { stack, values }, `apply ${label} sign-in setup`)) {
       document.getElementById(`in-m2m-secret-${s}`).value = '';
       await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart web/admin with the new config');
@@ -3716,7 +3716,7 @@ document.getElementById('env-cards')?.addEventListener('click', async (e) => {
   } else if (act === 'gtapply') {
     const token = document.getElementById(`in-gt-${s}`).value.trim();
     if (!token) { localLog('\nPaste the GlitchTip token first.\n'); return; }
-    if (await streamLocal('/api/local/run', { stack, values: { IAC_GLITCHTIP_API_TOKEN: token } }, `apply ${label} crash tracking`)) {
+    if (await streamLocal('/api/local/run', { stack, values: { GLITCHTIP_API_TOKEN: token } }, `apply ${label} crash tracking`)) {
       document.getElementById(`in-gt-${s}`).value = '';
       await streamLocal('/api/local/tool', { tool: `${stack}:up` }, 'restart with the DSNs wired in');
     }
@@ -3741,12 +3741,12 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
     if (v.LOGTO_CONSOLE_USERNAME && v.LOGTO_CONSOLE_PASSWORD) signIns.push({ name: `Logto console — ${l}`, url: env.logtoAdmin, user: v.LOGTO_CONSOLE_USERNAME, pass: v.LOGTO_CONSOLE_PASSWORD });
   }
   if (shared.GLITCHTIP_ADMIN_EMAIL && shared.GLITCHTIP_ADMIN_PASSWORD) signIns.push({ name: 'GlitchTip (family-wide)', url: 'http://localhost:8383', user: shared.GLITCHTIP_ADMIN_EMAIL, pass: shared.GLITCHTIP_ADMIN_PASSWORD });
-  if (shared.NAS_PGADMIN_PASSWORD) signIns.push({ name: 'pgAdmin (all database servers)', url: 'http://localhost:8386', user: 'admin@munni.dev', pass: shared.NAS_PGADMIN_PASSWORD });
+  if (shared.PGADMIN_PASSWORD) signIns.push({ name: 'pgAdmin (all database servers)', url: 'http://localhost:8386', user: 'admin@munni.dev', pass: shared.PGADMIN_PASSWORD });
   for (const env of S.envList) {
     const v = values[env.stack] ?? {};
-    if (v.NAS_POSTGRES_PASSWORD) signIns.push({ name: `Postgres — ${envLabel(env.name).toLowerCase()} (its own server)`, url: '', user: 'munni', pass: v.NAS_POSTGRES_PASSWORD });
+    if (v.POSTGRES_PASSWORD) signIns.push({ name: `Postgres — ${envLabel(env.name).toLowerCase()} (its own server)`, url: '', user: 'munni', pass: v.POSTGRES_PASSWORD });
   }
-  if (shared.NAS_POSTGRES_PASSWORD) signIns.push({ name: 'Postgres — glitchtip-db (shared)', url: '', user: 'munni', pass: shared.NAS_POSTGRES_PASSWORD });
+  if (shared.POSTGRES_PASSWORD) signIns.push({ name: 'Postgres — glitchtip-db (shared)', url: '', user: 'munni', pass: shared.POSTGRES_PASSWORD });
   if (shared.VAULT_ADMIN_EMAIL && shared.VAULT_MASTER_PASSWORD) {
     signIns.push({ name: 'Vaultwarden (master password)', url: 'https://localhost:8384', user: shared.VAULT_ADMIN_EMAIL, pass: shared.VAULT_MASTER_PASSWORD });
   } else {
@@ -4080,7 +4080,7 @@ async function buildLocalAndroidFlow(env) {
     say('build green ✓ — fetching the signed .aab for the ONE-TIME Play upload…');
     const arts = await gh(`/repos/${S.slug}/actions/runs/${run.id}/artifacts`);
     const art = (arts?.artifacts ?? []).find((a) => a.name === 'munni-android-release');
-    if (!art) throw new Error('no signed bundle on the run — this repo has neither ANDROID_KEYSTORE_* secrets nor IAC_GH_PAT (a fresh copy starts empty: secrets never ride along). Connect GitHub (Manage on the GitHub tile — the token is stored as IAC_GH_PAT by itself) and rebuild — the workflow then MINTS an upload keystore automatically and keeps it as environment secrets.');
+    if (!art) throw new Error('no signed bundle on the run — this repo has neither ANDROID_KEYSTORE_* secrets nor GH_PAT (a fresh copy starts empty: secrets never ride along). Connect GitHub (Manage on the GitHub tile — the token is stored as GH_PAT by itself) and rebuild — the workflow then MINTS an upload keystore automatically and keeps it as environment secrets.');
     const zipRes = await fetch(art.archive_download_url, { headers: { authorization: 'Bearer ' + S.pat } });
     if (!zipRes.ok) throw new Error(`artifact download failed (${zipRes.status})`);
     const blob = await zipRes.blob();
@@ -4278,7 +4278,7 @@ applyDomain();
   if (!HELPER) return;
   try {
     const all = await (await hfetch('/api/local/secrets')).json();
-    const pat = Object.assign({}, ...Object.values(all.values)).IAC_GH_PAT;
+    const pat = Object.assign({}, ...Object.values(all.values)).GH_PAT;
     const field = document.getElementById('in-pat');
     if (!pat || field.value) return;
     field.value = pat;

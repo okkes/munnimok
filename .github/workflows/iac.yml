@@ -1,16 +1,17 @@
-name: IaC bootstrap
+name: Bootstrap
 
-# Runs infra/bootstrap.mjs for a stack in CI (user ruling: IaC lives in
-# GitHub Actions, not on anyone's machine). Manual dispatch per stack;
-# also re-verifies both stacks whenever infra/ changes on dev.
+# Runs infra/bootstrap.mjs for one stack of the nas platform (its GitHub
+# environment carries the secrets). Dispatched by the setup wizard when a
+# platform or an environment is created, re-run by Deploy once a deploy
+# has seeded Logto/GlitchTip, and by hand from the Actions UI. Pushes to
+# dev that touch infra/ VERIFY every nas stack (no writes).
 on:
   workflow_dispatch:
     inputs:
       stack:
-        description: 'Stack to bootstrap'
+        description: 'Stack (munni-nas-shared, munni-nas-<env>)'
         required: true
-        type: choice
-        options: [munni-iac-prod, munni-iac-staging]
+        type: string
       verify_only:
         description: 'Only verify (no writes)'
         type: boolean
@@ -20,11 +21,11 @@ on:
         type: string
         default: ''
       chain:
-        description: 'After a green apply, run next (comma-separated, in order): staging (the twin; prod only), deploy (this twin), deploy-both, cleanup-prod (after a staging cleanup: the pair)'
+        description: 'After a green apply: deploy (this stack) — dispatched by the wizard'
         type: string
         default: ''
       cleanup:
-        description: 'CLEAN UP this stack instead: its rules, containers + folder on the NAS (via the poller), Logto apps / GlitchTip projects, its GitHub environment; the prod twin also removes the poller task + live dir once no staging twin is left'
+        description: 'CLEAN UP this stack instead: rules, containers + folder (via the poller), GlitchTip projects, its GitHub environment and platform file; the shared stack also removes the poller task + live dir once no environment is left'
         type: boolean
         default: false
   push:
@@ -32,45 +33,49 @@ on:
     paths: ['infra/**', '.github/workflows/iac.yml']
 
 permissions:
-  contents: read
-  actions: write # the chain step dispatches the next run (GITHUB_TOKEN fallback)
+  contents: write # a cleanup commits the removed platform file
+  actions: write # the chain step dispatches the next run
 
 jobs:
-  bootstrap:
-    # first-boot latch: fresh repo copies skip every run until the
-    # wizard marks the repo initialized (variable MUNNI_INITIALIZED)
+  stacks:
+    # first-boot latch: fresh repo copies skip every run until the wizard marks the repo initialized
     if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     runs-on: ubuntu-latest
-    # one APPLY per stack at a time — two applies of the same stack must
-    # never race (list-before-create). The twins keep separate groups: the
-    # prod twin owns the NAS-wide pieces (certificate, live dir, poller),
-    # so they never race for a Let's Encrypt request either. Verifies write
-    # nothing and get their OWN group: GitHub keeps only the NEWEST pending
-    # run per group, so a verify queued by the next infra push (or by the
-    # wizard's per-file pipeline sync) would otherwise cancel a pending
-    # apply — and with it the whole chain — silently.
-    concurrency:
-      group: iac-${{ matrix.stack }}-${{ (github.event_name == 'push' || inputs.verify_only == true) && 'verify' || 'apply' }}
-      cancel-in-progress: ${{ github.event_name == 'push' || inputs.verify_only == true }}
-    strategy:
-      matrix:
-        stack: ${{ github.event_name == 'push' && fromJSON('["munni-iac-prod","munni-iac-staging"]') || fromJSON(format('["{0}"]', inputs.stack)) }}
-    # the stack's environment carries its minted secrets + the pair's
-    # Logto infra credential
-    environment: ${{ matrix.stack == 'munni-iac-prod' && 'iac-production' || 'iac-staging' }}
+    outputs:
+      include: ${{ steps.m.outputs.include }}
+      count: ${{ steps.m.outputs.count }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 24
       - name: Infra module tests
-        # quoted: node expands the glob itself (a dir arg is not portable)
         run: node --test "infra/tests/**/*.test.mjs"
-      - name: Bootstrap / verify
+      - name: Which stacks
+        id: m
+        run: node infra/ci/matrix.mjs --platform nas ${{ github.event_name == 'workflow_dispatch' && format('--stack {0}', inputs.stack) || '' }}
+
+  bootstrap:
+    needs: stacks
+    if: ${{ needs.stacks.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.stacks.outputs.include) }}
+    # one APPLY per stack at a time; verifies get their own group so a
+    # queued verify can never cancel a pending apply
+    concurrency:
+      group: iac-${{ matrix.stack }}-${{ (github.event_name == 'push' || inputs.verify_only == true) && 'verify' || 'apply' }}
+      cancel-in-progress: ${{ github.event_name == 'push' || inputs.verify_only == true }}
+    environment: ${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Bootstrap / verify / clean up
         id: boot
-        # pushes to dev VERIFY (no writes); manual dispatch APPLIES unless
-        # verify_only is ticked. Output lands in the run's step summary so
-        # the setup wizard can point straight at it.
         run: |
           set -o pipefail
           FLAGS=()
@@ -90,100 +95,78 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           if [ "$rc" -ne 0 ]; then
             if [ "${FLAGS[0]:-}" = "--verify" ] && [ "${{ github.event_name }}" = "push" ]; then
-              # a push never goes red on NAS drift; a verify you DISPATCH
-              # (verify_only) is a verdict you asked for — gaps make it red
-              echo "::warning::verify reported gaps (expected until the runbook's manual steps are done) — dispatch with verify_only for a red/green verdict"
+              echo "::warning::verify reported gaps — dispatch with verify_only for a red/green verdict"
               exit 0
             fi
             exit $rc
           fi
         env:
-          # gh in bootstrap needs a token that can manage environments +
-          # secrets — GITHUB_TOKEN cannot; the operator provides IAC_GH_PAT
-          # (fine-grained: administration + secrets + variables, this repo)
-          GH_TOKEN: ${{ secrets.IAC_GH_PAT || secrets.GITHUB_TOKEN }}
-          IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
-          IAC_LOGTO_INFRA_M2M_ID: ${{ secrets.IAC_LOGTO_INFRA_M2M_ID }}
-          IAC_LOGTO_INFRA_M2M_SECRET: ${{ secrets.IAC_LOGTO_INFRA_M2M_SECRET }}
-          # the admin-tenant credential (claims the console admin), the humans it created, the admin subject — all written back by earlier runs
-          IAC_LOGTO_ADMIN_M2M_ID: ${{ secrets.IAC_LOGTO_ADMIN_M2M_ID }}
-          IAC_LOGTO_ADMIN_M2M_SECRET: ${{ secrets.IAC_LOGTO_ADMIN_M2M_SECRET }}
-          LOGTO_CONSOLE_USERNAME: ${{ secrets.LOGTO_CONSOLE_USERNAME }}
-          LOGTO_CONSOLE_PASSWORD: ${{ secrets.LOGTO_CONSOLE_PASSWORD }}
-          LOGTO_APP_ADMIN_USERNAME: ${{ secrets.LOGTO_APP_ADMIN_USERNAME }}
-          LOGTO_APP_ADMIN_PASSWORD: ${{ secrets.LOGTO_APP_ADMIN_PASSWORD }}
-          NAS_ADMIN_SUBS: ${{ secrets.NAS_ADMIN_SUBS }}
-          NAS_POSTGRES_PASSWORD: ${{ secrets.NAS_POSTGRES_PASSWORD }}
-          # the pair's vault account (the wizard's Vault tile) — every minted credential is kept there
+          # gh needs a token that can manage environments + secrets — GITHUB_TOKEN cannot; the wizard stores GH_PAT
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          # the platform (mirrored into every environment of it)
+          PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
+          SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
+          SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
+          SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
+          SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
+          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
+          GLITCHTIP_API_TOKEN: ${{ secrets.GLITCHTIP_API_TOKEN }}
+          GLITCHTIP_ADMIN_PASSWORD: ${{ secrets.GLITCHTIP_ADMIN_PASSWORD }}
+          PGADMIN_PASSWORD: ${{ secrets.PGADMIN_PASSWORD }}
           VAULT_ADMIN_EMAIL: ${{ secrets.VAULT_ADMIN_EMAIL }}
           VAULT_MASTER_PASSWORD: ${{ secrets.VAULT_MASTER_PASSWORD }}
-          IAC_GLITCHTIP_API_TOKEN: ${{ secrets.IAC_GLITCHTIP_API_TOKEN }}
-          IAC_GLITCHTIP_ADMIN_PASSWORD: ${{ secrets.IAC_GLITCHTIP_ADMIN_PASSWORD }}
+          # the stack
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          LOGTO_INFRA_M2M_ID: ${{ secrets.LOGTO_INFRA_M2M_ID }}
+          LOGTO_INFRA_M2M_SECRET: ${{ secrets.LOGTO_INFRA_M2M_SECRET }}
+          LOGTO_ADMIN_M2M_ID: ${{ secrets.LOGTO_ADMIN_M2M_ID }}
+          LOGTO_ADMIN_M2M_SECRET: ${{ secrets.LOGTO_ADMIN_M2M_SECRET }}
+          LOGTO_CONSOLE_USERNAME: ${{ secrets.LOGTO_CONSOLE_USERNAME }}
+          LOGTO_CONSOLE_PASSWORD: ${{ secrets.LOGTO_CONSOLE_PASSWORD }}
           LOGTO_GOOGLE_CLIENT_ID: ${{ secrets.LOGTO_GOOGLE_CLIENT_ID }}
           LOGTO_GOOGLE_CLIENT_SECRET: ${{ secrets.LOGTO_GOOGLE_CLIENT_SECRET }}
           LOGTO_APPLE_CLIENT_ID: ${{ secrets.LOGTO_APPLE_CLIENT_ID }}
           LOGTO_APPLE_TEAM_ID: ${{ secrets.LOGTO_APPLE_TEAM_ID }}
           LOGTO_APPLE_KEY_ID: ${{ secrets.LOGTO_APPLE_KEY_ID }}
           LOGTO_APPLE_PRIVATE_KEY: ${{ secrets.LOGTO_APPLE_PRIVATE_KEY }}
-          SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
-          SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
-          SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
-          # the poller task runs in the live dir next to this published folder
-          SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
-          # Let's Encrypt contact for the wildcard certificate DSM requests (optional)
-          IAC_ACME_EMAIL: ${{ secrets.IAC_ACME_EMAIL }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Commit a removed platform file (cleanup)
+        if: ${{ inputs.cleanup == true && !cancelled() }}
+        run: |
+          if [ -n "$(git status --porcelain infra/platforms)" ]; then
+            git config user.name "munni setup"
+            git config user.email "setup@munni.invalid"
+            git add infra/platforms
+            git commit -m "chore(platforms): remove ${{ matrix.stack }} (cleanup)"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+            echo "platform file removed and committed" >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Mask the domain in the artifact (this repository is public — the domain is a secret)
         if: ${{ !cancelled() }}
         run: |
-          if [ -n "${IAC_DOMAIN:-}" ] && [ -d "infra/rendered/${{ matrix.stack }}" ]; then
-            grep -rlF --null -- "$IAC_DOMAIN" "infra/rendered/${{ matrix.stack }}" | xargs -0 -r sed -i "s/$IAC_DOMAIN/<domain>/g"
+          if [ -n "${PLATFORM_DOMAIN:-}" ] && [ -d "infra/rendered/${{ matrix.stack }}" ]; then
+            grep -rlF --null -- "$PLATFORM_DOMAIN" "infra/rendered/${{ matrix.stack }}" | xargs -0 -r sed -i "s/$PLATFORM_DOMAIN/<domain>/g"
           fi
         env:
-          IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
+          PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
       - name: Upload rendered stack + runbook
-        # a red apply (a NAS step failed) rendered it too — keep it
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
-          name: iac-${{ matrix.stack }}-${{ github.run_number }}
+          name: bootstrap-${{ matrix.stack }}-${{ github.run_number }}
           path: infra/rendered/${{ matrix.stack }}/
           retention-days: 30
-          if-no-files-found: ignore # a cleanup renders nothing
-      # LAST: a chain that cannot be dispatched must not cost the runbook above
-      - name: Chain the next run
-        # the wizard dispatches the prod twin with chain=staging,deploy-both:
-        # staging follows (it binds its rules to the certificate prod just
-        # ensured), then Deploy for both — no click left after the account fix
-        # …and never over a NAS that refused the deploy account: bootstrap
-        # reports nas=blocked (402/105) and a Deploy would only fail at
-        # the FileStation login — the step after this one says so instead
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.chain != '' && steps.boot.outputs.nas != 'blocked' }}
+          if-no-files-found: ignore
+      - name: Chain the deploy
+        # the wizard dispatches with chain=deploy: a green apply is followed by the
+        # stack's Deploy — never over a NAS that refused the deploy account
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.cleanup != true && inputs.chain == 'deploy' && steps.boot.outputs.nas != 'blocked' }}
         run: |
-          set -euo pipefail
-          chain="${{ inputs.chain }}"
-          head="${chain%%,*}"
-          rest="${chain#*,}"
-          if [ "$rest" = "$chain" ]; then rest=""; fi
-          case "$head" in
-            staging)
-              gh workflow run iac.yml --ref "$GITHUB_REF_NAME" -f stack=munni-iac-staging -f chain="$rest"
-              echo "chained: Bootstrap munni-iac-staging (then: ${rest:-nothing})" >> "$GITHUB_STEP_SUMMARY" ;;
-            deploy)
-              gh workflow run deploy-nas.yml --ref "$GITHUB_REF_NAME" -f channel="${{ matrix.stack == 'munni-iac-prod' && 'iac-prod' || 'iac-staging' }}"
-              echo "chained: Deploy ${{ matrix.stack }}" >> "$GITHUB_STEP_SUMMARY" ;;
-            deploy-both)
-              gh workflow run deploy-nas.yml --ref "$GITHUB_REF_NAME" -f channel=iac-both
-              echo "chained: Deploy both twins" >> "$GITHUB_STEP_SUMMARY" ;;
-            cleanup-prod)
-              gh workflow run iac.yml --ref "$GITHUB_REF_NAME" -f stack=munni-iac-prod -f cleanup=true
-              echo "chained: Clean up munni-iac-prod (the pair's poller task + live dir go with it)" >> "$GITHUB_STEP_SUMMARY" ;;
-            *)
-              echo "::warning::unknown chain step '$head' — nothing chained" ;;
-          esac
+          gh workflow run deploy-nas.yml --ref "$GITHUB_REF_NAME" -f stack="${{ matrix.stack }}"
+          echo "chained: Deploy ${{ matrix.stack }}" >> "$GITHUB_STEP_SUMMARY"
         env:
-          GH_TOKEN: ${{ secrets.IAC_GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
       - name: Chain skipped — the deploy account may not use DSM
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.chain != '' && steps.boot.outputs.nas == 'blocked' }}
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.verify_only != true && inputs.cleanup != true && inputs.chain == 'deploy' && steps.boot.outputs.nas == 'blocked' }}
         run: |
-          echo "::notice::nothing chained — DSM refused the deploy account (402/105), so the NAS holds none of this run's rules, certificate or poller yet. Fix the account (Control Panel → User & Group → the deploy user → Applications: DSM + File Station allowed; User groups: administrators), then run Bootstrap again."
-          echo "chain skipped: the deploy account may not use DSM yet — the wizard's readiness card (Deploy step) shows the exact clicks; Bootstrap again afterwards" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice::nothing chained — DSM refused the deploy account (402/105). Control Panel → User & Group → the deploy user: Applications DSM + File Station allowed, User groups administrators; Security → Account: no 2FA/Adaptive MFA for it. Then run Bootstrap again."

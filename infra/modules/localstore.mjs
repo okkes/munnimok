@@ -1,206 +1,151 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MANIFEST, generateValue, vapidPair } from './secrets.mjs';
+import { MANIFEST, entriesFor, featureOn, generateValue, vapidPair } from './secrets.mjs';
 import { loadStack } from './stack.mjs';
 
 // MUNNI_RENDER_DIR: test override so specs never touch a real rendered/
-const OUT_DIR = process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
+const OUT_DIR = () => process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath(import.meta.url)), '..', 'rendered');
 
 /**
- * Secret stores for target:"local" stacks — file-backed twins of the
- * GitHub Environments, one per stack under
- * infra/rendered/<stack>/.secrets.local.json (gitignored). In the
- * three-stack topology (plan LS1-LS3) values split by OWNERSHIP:
- * family-wide roots and the shared services' own secrets live in the
- * SHARED stack's store; per-environment values (logto apps/M2M, VAPID,
- * admin subs, DSNs) live in each env stack's store. Env reads see the
- * merged view; env writes of shared names land in the shared store.
+ * The wizard's own store (infra/rendered/wizard/.secrets.json,
+ * gitignored): what the operator typed ONCE — `family` values used by
+ * every platform (bank providers, logos, push, sign-in providers, store
+ * accounts, the GitHub token) and per-platform values under `platforms`
+ * (the NAS account, the domain, each platform's vault account). For the
+ * lcl platform they are also what the stacks render with; for nas the
+ * wizard copies them into the GitHub environments.
+ *
+ * Stack stores (infra/rendered/<stack>/.secrets.local.json) hold what a
+ * LOCAL stack minted or wrote back: the shared stack's platform-scoped
+ * values, each environment's own.
  */
-const storeFile = (stackName) => join(OUT_DIR, stackName, '.secrets.local.json');
+const WIZARD_FILE = () => join(OUT_DIR(), 'wizard', '.secrets.json');
+const storeFile = (stackName) => join(OUT_DIR(), stackName, '.secrets.local.json');
 
-/** names owned by the FAMILY's shared stack (everything else is per-env) */
-export const SHARED_LOCAL_NAMES = new Set([
-  'NAS_GHCR_PAT',
-  'NAS_GOCARDLESS_SECRET_ID',
-  'NAS_GOCARDLESS_SECRET_KEY',
-  'NAS_ENABLEBANKING_APPLICATION_ID',
-  'NAS_ENABLEBANKING_PRIVATE_KEY_PEM',
-  'NAS_FCM_SERVICE_ACCOUNT_JSON',
-  'NAS_LOGODEV_SECRET_KEY',
-  'NAS_LOGODEV_PUBLIC_TOKEN',
-  'LOGTO_GOOGLE_CLIENT_ID',
-  'LOGTO_GOOGLE_CLIENT_SECRET',
-  // one Apple Services ID + key serves every environment's sign-in
-  // (the local track got real https with LAN mode, 2026-09-08)
-  'LOGTO_APPLE_CLIENT_ID',
-  'LOGTO_APPLE_TEAM_ID',
-  'LOGTO_APPLE_KEY_ID',
-  'LOGTO_APPLE_PRIVATE_KEY',
-  'NAS_GLITCHTIP_EMAIL_URL',
-  'NAS_GLITCHTIP_SECRET_KEY',
-  'NAS_PGADMIN_PASSWORD',
-  'VAULT_SIGNUPS_ALLOWED',
-  'VAULT_ADMIN_EMAIL',
-  'VAULT_MASTER_PASSWORD',
-  'IAC_GLITCHTIP_API_TOKEN',
-  // the wizard's GitHub token (user request 2026-09-06: persisted like
-  // every other step-3 credential — reconnects by itself)
-  'IAC_GH_PAT',
-  'GLITCHTIP_ADMIN_EMAIL',
-  'GLITCHTIP_ADMIN_PASSWORD',
-  'CONTROL_LOGTO_APP_ID',
-  // store-publishing roots (one Play/ASC account serves every channel)
-  'PLAY_SERVICE_ACCOUNT_JSON',
-  'ASC_KEY_ID',
-  'ASC_ISSUER_ID',
-  'ASC_KEY_P8',
-  'APPLE_TEAM_ID',
-  // the MACHINE-owned upload keystore (Play pins the first upload key
-  // forever — it must outlive every repo copy)
-  'ANDROID_KEYSTORE_BASE64',
-  'ANDROID_KEYSTORE_PASSWORD',
-  'ANDROID_KEY_ALIAS',
-  'ANDROID_KEY_PASSWORD',
-  // the MACHINE-owned Apple Development certificate (minted once via
-  // the repo's mint workflow — CI stops minting throwaway certs and
-  // Apple stops mailing "certificate revoked", 2026-09-08)
-  'APPLE_DEV_CERT_P12',
-  'APPLE_DEV_CERT_PASSWORD',
-  'APPLE_DEV_CERT_SERIAL',
-]);
+const readJson = (file) => (existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null);
+const writeJson = (file, value) => { mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`); return value; };
 
-/** generated names the shared stack mints (env stacks never do) */
-const SHARED_GENERATED = new Set(['NAS_GLITCHTIP_SECRET_KEY', 'NAS_PGADMIN_PASSWORD']);
+const entryOf = (name) => MANIFEST.secrets.find((s) => s.name === name);
 
-/** minted by EVERY stack into its OWN store: each postgres server gets
- * its own password, so one environment's credentials never open another
- * environment's database (user isolation ruling 2026-08-27) */
-const PER_STACK_GENERATED = new Set(['NAS_POSTGRES_PASSWORD']);
-
-const readStore = (stackName) => {
-  const file = storeFile(stackName);
-  return existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : null;
-};
-const writeStore = (stackName, values) => {
-  const file = storeFile(stackName);
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(file, `${JSON.stringify(values, null, 2)}\n`);
-  return values;
-};
-
-/** one-time migration from the retired single-twin store: shared names
- * seed the shared stack's store, the rest seeds munni-local-prod (the
- * twin's successor — same ports, same consents) */
-function legacySeed(stackName) {
-  const legacy = readStore('munni-local');
-  if (!legacy) return {};
-  if (stackName === 'munni-local-prod') {
-    return Object.fromEntries(Object.entries(legacy).filter(([k]) => !SHARED_LOCAL_NAMES.has(k)));
-  }
-  const stack = safeLoad(stackName);
-  if (stack?.role === 'shared') {
-    return Object.fromEntries(Object.entries(legacy).filter(([k]) => SHARED_LOCAL_NAMES.has(k)));
-  }
-  return {};
+export function loadWizardStore() {
+  const raw = readJson(WIZARD_FILE()) ?? {};
+  return { family: raw.family ?? {}, platforms: raw.platforms ?? {} };
 }
-const safeLoad = (name) => {
-  try { return loadStack(name); } catch { return null; }
-};
 
-/** the stack's OWN stored values (plus the one-time legacy seed) */
+export function saveWizardStore(store) {
+  return writeJson(WIZARD_FILE(), { family: store.family ?? {}, platforms: store.platforms ?? {} });
+}
+
+/** the wizard's values as one platform sees them */
+export function wizardValues(platform) {
+  const store = loadWizardStore();
+  return { ...store.family, ...(platform ? store.platforms[platform] ?? {} : {}) };
+}
+
+/** where an operator value belongs: per platform when the manifest scopes it to a platform, else the family */
+export function setWizardValues(values, platform = null) {
+  const store = loadWizardStore();
+  for (const [name, value] of Object.entries(values)) {
+    const entry = entryOf(name);
+    if (entry?.scope === 'platform' && platform) {
+      store.platforms[platform] = { ...(store.platforms[platform] ?? {}), [name]: value };
+    } else {
+      store.family[name] = value;
+    }
+  }
+  return saveWizardStore(store);
+}
+
+export function forgetWizardValues(names, platform = null) {
+  const store = loadWizardStore();
+  for (const name of names) {
+    delete store.family[name];
+    if (platform && store.platforms[platform]) delete store.platforms[platform][name];
+  }
+  return saveWizardStore(store);
+}
+
+/** a local stack's OWN stored values */
 export function loadLocalValues(stack) {
-  const own = readStore(stack.stack);
-  if (own) return own;
-  const seeded = legacySeed(stack.stack);
-  return Object.keys(seeded).length ? writeStore(stack.stack, seeded) : {};
+  return readJson(storeFile(stack.stack)) ?? {};
 }
 
-/** merged view an env stack renders with: shared values under its own */
+/** the merged view a local stack renders with: the wizard's values, the shared stack's, its own */
 export function familyValues(stack) {
   const own = loadLocalValues(stack);
-  if (!stack.sharedStack) return own;
-  const shared = readStore(stack.sharedStack) ?? legacySeedInto(stack.sharedStack);
-  return { ...shared, ...own };
+  const shared = stack.role === 'shared' ? {} : (readJson(storeFile(stack.sharedStack)) ?? {});
+  return { ...wizardValues(stack.platform), ...shared, ...own };
 }
-const legacySeedInto = (sharedName) => {
-  const seeded = legacySeed(sharedName);
-  return Object.keys(seeded).length ? writeStore(sharedName, seeded) : {};
-};
 
-/** save: shared-owned names route to the family's shared store */
+/**
+ * save: operator/wizard values go to the wizard's store, platform-scoped
+ * minted/written-back ones to the platform's shared stack store, the
+ * rest to the stack's own store
+ */
 export function saveLocalValues(stack, values) {
-  if (!stack.sharedStack) return writeStore(stack.stack, values);
   const own = {};
-  const shared = readStore(stack.sharedStack) ?? {};
+  const wizard = {};
+  const shared = stack.role === 'shared' ? null : (readJson(storeFile(stack.sharedStack)) ?? {});
   let sharedChanged = false;
   for (const [name, value] of Object.entries(values)) {
-    if (SHARED_LOCAL_NAMES.has(name)) {
+    const entry = entryOf(name);
+    if (entry?.owner === 'operator' || entry?.scope === 'wizard') {
+      wizard[name] = value;
+    } else if (entry?.scope === 'platform' && shared) {
       if (shared[name] !== value) { shared[name] = value; sharedChanged = true; }
     } else {
       own[name] = value;
     }
   }
-  if (sharedChanged) writeStore(stack.sharedStack, shared);
-  return writeStore(stack.stack, own);
+  if (Object.keys(wizard).length) setWizardValues(wizard, stack.platform);
+  if (sharedChanged) writeJson(storeFile(stack.sharedStack), shared);
+  return writeJson(storeFile(stack.stack), own);
 }
 
-/** manifest entries that apply to a local stack (nas/ci platforms skip) */
-export const localManifestEntries = () => MANIFEST.secrets.filter((s) => !['nas', 'ci'].includes(s.platform));
-
-/** the entries a PARTICULAR local stack is responsible for */
-export function stackManifestEntries(stack) {
-  const entries = localManifestEntries();
-  if (stack.role === 'shared') return entries.filter((e) => SHARED_LOCAL_NAMES.has(e.name) || PER_STACK_GENERATED.has(e.name));
-  if (stack.sharedStack) return entries.filter((e) => !SHARED_LOCAL_NAMES.has(e.name));
-  return entries;
-}
+/** the manifest entries a local stack is responsible for */
+export const stackManifestEntries = (stack) => entriesFor(stack);
 
 function ensureVapid(values, rotate, minted) {
-  const needed =
-    rotate.includes('NAS_PUSH_VAPID_PUBLIC_KEY') || !values.NAS_PUSH_VAPID_PUBLIC_KEY || !values.NAS_PUSH_VAPID_PRIVATE_KEY;
+  const needed = rotate.includes('PUSH_VAPID_PUBLIC_KEY') || !values.PUSH_VAPID_PUBLIC_KEY || !values.PUSH_VAPID_PRIVATE_KEY;
   if (!needed) return;
   const pair = vapidPair();
-  values.NAS_PUSH_VAPID_PUBLIC_KEY = pair.publicKey;
-  values.NAS_PUSH_VAPID_PRIVATE_KEY = pair.privateKey;
-  minted.push('NAS_PUSH_VAPID_PUBLIC_KEY', 'NAS_PUSH_VAPID_PRIVATE_KEY');
+  values.PUSH_VAPID_PUBLIC_KEY = pair.publicKey;
+  values.PUSH_VAPID_PRIVATE_KEY = pair.privateKey;
+  minted.push('PUSH_VAPID_PUBLIC_KEY', 'PUSH_VAPID_PRIVATE_KEY');
 }
 
 /**
- * Mint the generated secrets THIS stack owns, absorb operator values
- * offered via process.env (routed by ownership), report the required
- * operator values still absent across the merged view.
+ * Mint the generated secrets THIS local stack owns, absorb operator
+ * values offered via process.env into the wizard's store, and report the
+ * required operator values still absent for the features it enables.
  */
 export function ensureLocalSecrets(stack, { rotate = [] } = {}) {
   const values = familyValues(stack);
   const own = loadLocalValues(stack);
   const minted = [];
   const missingOperator = [];
-  const isShared = stack.role === 'shared';
-
-  const ownsGenerated = (name) =>
-    PER_STACK_GENERATED.has(name) || (isShared ? SHARED_GENERATED.has(name) : !SHARED_GENERATED.has(name));
-  // per-stack names must exist in THIS stack's store — the merged view
-  // would satisfy the check with another stack's value
-  const present = (name) => (PER_STACK_GENERATED.has(name) ? own[name] : values[name]);
-
-  if (!isShared) ensureVapid(values, rotate, minted);
-
-  const applyEntry = (entry) => {
-    const ownedHere = isShared ? SHARED_LOCAL_NAMES.has(entry.name) : true; // env stacks absorb env names; shared names route on save
-    if (entry.owner === 'operator' && ownedHere && process.env[entry.name]) values[entry.name] = process.env[entry.name];
-    const needed = rotate.includes(entry.name) || !present(entry.name);
-    if (!needed) return;
-    if (entry.owner === 'generated' && ownsGenerated(entry.name)) {
-      values[entry.name] = generateValue(entry.name);
+  const offered = {};
+  if (stack.role === 'env') ensureVapid(own, rotate, minted);
+  for (const entry of stackManifestEntries(stack)) {
+    if (entry.name.startsWith('PUSH_VAPID_')) continue;
+    if (entry.owner === 'operator' && process.env[entry.name]) { offered[entry.name] = process.env[entry.name]; values[entry.name] = process.env[entry.name]; }
+    const present = entry.scope === 'stack' ? own[entry.name] : values[entry.name];
+    const needed = rotate.includes(entry.name) || !present;
+    if (!needed) continue;
+    if (entry.owner === 'generated') {
+      const value = generateValue(entry.name);
+      if (entry.scope === 'stack' || stack.role === 'env') own[entry.name] = value;
+      else own[entry.name] = value; // the shared stack's platform-scoped values live in its own store
       minted.push(entry.name);
-    } else if (entry.owner === 'operator' && !entry.optional && stackManifestEntries(stack).some((e) => e.name === entry.name)) {
+    } else if (entry.owner === 'operator' && !entry.optional && featureOn(stack, entry.feature)) {
       missingOperator.push(entry.name);
     }
-  };
-  for (const entry of localManifestEntries()) {
-    if (!entry.name.startsWith('NAS_PUSH_VAPID_')) applyEntry(entry);
   }
-  saveLocalValues(stack, values);
+  if (Object.keys(offered).length) setWizardValues(offered, stack.platform);
+  writeJson(storeFile(stack.stack), own);
   return { values: familyValues(stack), minted, missingOperator };
 }
+
+/** re-export for callers that only need the stack loader alongside the stores */
+export { loadStack };

@@ -1,0 +1,7 @@
+{
+  "platform": "lcl",
+  "label": "This computer",
+  "delivery": "docker",
+  "registry": "ghcr.io/okkes",
+  "sharedChannel": "dev"
+}

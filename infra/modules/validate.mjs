@@ -57,12 +57,12 @@ export const dsmLoginAdvice = (message) => {
 export const VALIDATORS = {
   /** POST token/new — the exact call GoCardlessApi makes */
   async gocardless(values, fetchImpl) {
-    const gap = need(values, ['NAS_GOCARDLESS_SECRET_ID', 'NAS_GOCARDLESS_SECRET_KEY']);
+    const gap = need(values, ['GOCARDLESS_SECRET_ID', 'GOCARDLESS_SECRET_KEY']);
     if (gap) return { ok: false, detail: gap };
     const res = await fetchImpl('https://bankaccountdata.gocardless.com/api/v2/token/new/', {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ secret_id: values.NAS_GOCARDLESS_SECRET_ID, secret_key: values.NAS_GOCARDLESS_SECRET_KEY }),
+      body: JSON.stringify({ secret_id: values.GOCARDLESS_SECRET_ID, secret_key: values.GOCARDLESS_SECRET_KEY }),
       signal: T(),
     });
     if (res.ok) return { ok: true, detail: 'GoCardless accepted the credentials (access token minted)' };
@@ -71,15 +71,15 @@ export const VALIDATORS = {
 
   /** RS256 JWT (iss/aud per EnableBankingApi) against GET /aspsps */
   async enablebanking(values, fetchImpl) {
-    const gap = need(values, ['NAS_ENABLEBANKING_APPLICATION_ID', 'NAS_ENABLEBANKING_PRIVATE_KEY_PEM']);
+    const gap = need(values, ['ENABLEBANKING_APPLICATION_ID', 'ENABLEBANKING_PRIVATE_KEY_PEM']);
     if (gap) return { ok: false, detail: gap };
     const now = Math.floor(Date.now() / 1000);
     let jwt;
     try {
       jwt = jwtRS256({
-        header: { alg: 'RS256', typ: 'JWT', kid: values.NAS_ENABLEBANKING_APPLICATION_ID },
+        header: { alg: 'RS256', typ: 'JWT', kid: values.ENABLEBANKING_APPLICATION_ID },
         payload: { iss: 'enablebanking.com', aud: 'api.enablebanking.com', iat: now, exp: now + 3600 },
-        pem: values.NAS_ENABLEBANKING_PRIVATE_KEY_PEM.replaceAll('\\n', '\n'),
+        pem: values.ENABLEBANKING_PRIVATE_KEY_PEM.replaceAll('\\n', '\n'),
       });
     } catch (e) {
       return { ok: false, detail: `the PEM does not parse as a private key (${e.message})` };
@@ -95,11 +95,11 @@ export const VALIDATORS = {
 
   /** parse the service account + actually mint a Google OAuth token */
   async fcm(values, fetchImpl) {
-    const gap = need(values, ['NAS_FCM_SERVICE_ACCOUNT_JSON']);
+    const gap = need(values, ['FCM_SERVICE_ACCOUNT_JSON']);
     if (gap) return { ok: false, detail: gap };
     let sa;
     try {
-      sa = JSON.parse(values.NAS_FCM_SERVICE_ACCOUNT_JSON);
+      sa = JSON.parse(values.FCM_SERVICE_ACCOUNT_JSON);
     } catch {
       return { ok: false, detail: 'not valid JSON — paste the WHOLE downloaded service-account file' };
     }
@@ -133,9 +133,9 @@ export const VALIDATORS = {
    *  classic PAT; the page's own check needs the pasted value, this twin
    *  lets "Check all" verify the STORED one through the helper */
   async ghcr(values, fetchImpl) {
-    const gap = need(values, ['NAS_GHCR_PAT']);
+    const gap = need(values, ['GHCR_PAT']);
     if (gap) return { ok: false, detail: gap };
-    const res = await fetchImpl('https://api.github.com/user', { headers: { authorization: `Bearer ${values.NAS_GHCR_PAT}`, accept: 'application/vnd.github+json' }, signal: T() });
+    const res = await fetchImpl('https://api.github.com/user', { headers: { authorization: `Bearer ${values.GHCR_PAT}`, accept: 'application/vnd.github+json' }, signal: T() });
     if (!res.ok) return { ok: false, detail: `GitHub rejected the token (${res.status})` };
     const scopes = res.headers?.get?.('x-oauth-scopes') ?? '';
     const login = (await res.json()).login;
@@ -144,9 +144,9 @@ export const VALIDATORS = {
   },
 
   async logodev(values, fetchImpl) {
-    const gap = need(values, ['NAS_LOGODEV_SECRET_KEY', 'NAS_LOGODEV_PUBLIC_TOKEN']);
+    const gap = need(values, ['LOGODEV_SECRET_KEY', 'LOGODEV_PUBLIC_TOKEN']);
     if (gap) return { ok: false, detail: gap };
-    const { NAS_LOGODEV_SECRET_KEY: sk, NAS_LOGODEV_PUBLIC_TOKEN: pk } = values;
+    const { LOGODEV_SECRET_KEY: sk, LOGODEV_PUBLIC_TOKEN: pk } = values;
     if (sk.startsWith('pk_')) return { ok: false, detail: 'the SECRET key field holds a publishable key (pk_…) — the two are swapped' };
     if (pk.startsWith('sk_')) return { ok: false, detail: 'the PUBLIC token field holds a secret key (sk_…) — the two are swapped' };
     const search = await fetchImpl('https://api.logo.dev/search?q=google', { headers: { authorization: `Bearer ${sk}` }, signal: T() });
@@ -322,7 +322,7 @@ export const VALIDATORS = {
 
   /** the local pair's Logto management token — what bootstrap will do */
   async 'logto-m2m'(values, fetchImpl) {
-    const gap = need(values, ['IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET']);
+    const gap = need(values, ['LOGTO_INFRA_M2M_ID', 'LOGTO_INFRA_M2M_SECRET']);
     if (gap) return { ok: false, detail: gap };
     // the registry names the environments (no hardcoded "prod" — it may
     // not exist mid-recreate, or at all under custom names)
@@ -333,7 +333,7 @@ export const VALIDATORS = {
       method: 'POST',
       headers: {
         'content-type': 'application/x-www-form-urlencoded',
-        authorization: `Basic ${Buffer.from(`${values.IAC_LOGTO_INFRA_M2M_ID}:${values.IAC_LOGTO_INFRA_M2M_SECRET}`).toString('base64')}`,
+        authorization: `Basic ${Buffer.from(`${values.LOGTO_INFRA_M2M_ID}:${values.LOGTO_INFRA_M2M_SECRET}`).toString('base64')}`,
       },
       body: new URLSearchParams({ grant_type: 'client_credentials', resource: 'https://default.logto.app/api', scope: 'all' }).toString(),
       signal: T(),
@@ -344,11 +344,11 @@ export const VALIDATORS = {
 
   /** the local GlitchTip token against its own API */
   async 'glitchtip-token'(values, fetchImpl) {
-    const gap = need(values, ['IAC_GLITCHTIP_API_TOKEN']);
+    const gap = need(values, ['GLITCHTIP_API_TOKEN']);
     if (gap) return { ok: false, detail: gap };
     const glitchtip = loadStack('munni-local-shared').urls.glitchtip;
     const res = await fetchImpl(`${glitchtip}/api/0/organizations/`, {
-      headers: { authorization: `Bearer ${values.IAC_GLITCHTIP_API_TOKEN}` },
+      headers: { authorization: `Bearer ${values.GLITCHTIP_API_TOKEN}` },
       signal: T(),
     });
     if (res.ok) return { ok: true, detail: 'GlitchTip accepted the token' };

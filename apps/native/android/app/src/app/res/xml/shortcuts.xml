@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- local-flavor override: same shortcuts, LAN package + scheme -->
+<!-- rebranded per build: CI replaces the placeholder package + scheme -->
 <shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
     <shortcut
         android:shortcutId="review"
@@ -7,8 +7,8 @@
         android:shortcutShortLabel="@string/shortcut_review">
         <intent
             android:action="android.intent.action.VIEW"
-            android:data="munni-local://review"
-            android:targetPackage="app.munni.local.prod"
+            android:data="munni-placeholder://review"
+            android:targetPackage="app.munni.placeholder"
             android:targetClass="app.munni.MainActivity" />
     </shortcut>
     <shortcut
@@ -17,8 +17,8 @@
         android:shortcutShortLabel="@string/shortcut_transactions">
         <intent
             android:action="android.intent.action.VIEW"
-            android:data="munni-local://transactions"
-            android:targetPackage="app.munni.local.prod"
+            android:data="munni-placeholder://transactions"
+            android:targetPackage="app.munni.placeholder"
             android:targetClass="app.munni.MainActivity" />
     </shortcut>
 </shortcuts>

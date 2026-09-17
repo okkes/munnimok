@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 const SCRATCH = mkdtempSync(join(tmpdir(), 'munni-infra-test-'));
 process.env.MUNNI_RENDER_DIR = SCRATCH;
-process.env.IAC_DOMAIN = 'example.test';
+process.env.PLATFORM_DOMAIN = 'example.test';
 // no registry file = no environments now — seed the classic prod+dev pair
 writeFileSync(join(SCRATCH, 'local-envs.json'), JSON.stringify({ envs: [
   { name: 'prod', channel: 'dev', slot: 0 },
@@ -45,8 +45,8 @@ test('the legacy single-twin store migrates by ownership', () => {
   // simulate the retired munni-local store with mixed values
   mkdirSync(join(SCRATCH, 'munni-local'), { recursive: true });
   writeFileSync(join(SCRATCH, 'munni-local', '.secrets.local.json'), JSON.stringify({
-    NAS_GHCR_PAT: 'ghp_legacy',
-    NAS_POSTGRES_PASSWORD: 'pg_legacy',
+    GHCR_PAT: 'ghp_legacy',
+    POSTGRES_PASSWORD: 'pg_legacy',
     VITE_LOGTO_APP_ID: 'web-legacy',
     NAS_ADMIN_SUBS: 'usr_legacy',
   }));
@@ -55,38 +55,38 @@ test('the legacy single-twin store migrates by ownership', () => {
   assert.equal(own.VITE_LOGTO_APP_ID, 'web-legacy');
   assert.equal(own.NAS_ADMIN_SUBS, 'usr_legacy');
   // postgres passwords are PER-STACK now — the legacy value seeds prod
-  assert.equal(own.NAS_POSTGRES_PASSWORD, 'pg_legacy');
-  assert.equal(own.NAS_GHCR_PAT, undefined, 'shared names must not land in the env store');
+  assert.equal(own.POSTGRES_PASSWORD, 'pg_legacy');
+  assert.equal(own.GHCR_PAT, undefined, 'shared names must not land in the env store');
   const merged = familyValues(prod);
-  assert.equal(merged.NAS_GHCR_PAT, 'ghp_legacy');
+  assert.equal(merged.GHCR_PAT, 'ghp_legacy');
   // dev starts CLEAN — no leaked env values from prod's past
   const dev = loadLocalValues(loadStack('munni-local-dev'));
   assert.equal(dev.VITE_LOGTO_APP_ID, undefined);
-  assert.equal(dev.NAS_POSTGRES_PASSWORD, undefined, 'each stack mints its OWN postgres password');
+  assert.equal(dev.POSTGRES_PASSWORD, undefined, 'each stack mints its OWN postgres password');
 });
 
 test('minting follows ownership: every stack its own postgres password, shared owns glitchtip + pgadmin, envs own VAPID', () => {
   const shared = loadStack('munni-local-shared');
   const sharedRun = ensureLocalSecrets(shared, {});
-  assert.ok(sharedRun.values.NAS_GLITCHTIP_SECRET_KEY);
-  assert.ok(sharedRun.values.NAS_PGADMIN_PASSWORD, 'shared mints the pgAdmin login');
-  assert.ok(sharedRun.minted.includes('NAS_POSTGRES_PASSWORD'), 'shared mints glitchtip-db its own password');
-  assert.ok(!sharedRun.minted.includes('NAS_PUSH_VAPID_PUBLIC_KEY'), 'shared must not mint VAPID');
+  assert.ok(sharedRun.values.GLITCHTIP_SECRET_KEY);
+  assert.ok(sharedRun.values.PGADMIN_PASSWORD, 'shared mints the pgAdmin login');
+  assert.ok(sharedRun.minted.includes('POSTGRES_PASSWORD'), 'shared mints glitchtip-db its own password');
+  assert.ok(!sharedRun.minted.includes('PUSH_VAPID_PUBLIC_KEY'), 'shared must not mint VAPID');
 
   const prod = loadStack('munni-local-prod');
   const prodRun = ensureLocalSecrets(prod, {});
-  assert.ok(prodRun.values.NAS_PUSH_VAPID_PUBLIC_KEY);
-  assert.ok(!prodRun.minted.includes('NAS_POSTGRES_PASSWORD'), 'prod keeps its legacy-seeded password');
-  assert.equal(loadLocalValues(prod).NAS_POSTGRES_PASSWORD, 'pg_legacy');
-  assert.ok(!prodRun.minted.includes('NAS_PGADMIN_PASSWORD'), 'envs must not mint the shared pgAdmin login');
+  assert.ok(prodRun.values.PUSH_VAPID_PUBLIC_KEY);
+  assert.ok(!prodRun.minted.includes('POSTGRES_PASSWORD'), 'prod keeps its legacy-seeded password');
+  assert.equal(loadLocalValues(prod).POSTGRES_PASSWORD, 'pg_legacy');
+  assert.ok(!prodRun.minted.includes('PGADMIN_PASSWORD'), 'envs must not mint the shared pgAdmin login');
 
   const dev = loadStack('munni-local-dev');
   const devRun = ensureLocalSecrets(dev, {});
-  assert.ok(devRun.minted.includes('NAS_POSTGRES_PASSWORD'), 'dev mints its OWN password');
+  assert.ok(devRun.minted.includes('POSTGRES_PASSWORD'), 'dev mints its OWN password');
   const pw = {
-    shared: loadLocalValues(shared).NAS_POSTGRES_PASSWORD,
-    prod: loadLocalValues(prod).NAS_POSTGRES_PASSWORD,
-    dev: loadLocalValues(dev).NAS_POSTGRES_PASSWORD,
+    shared: loadLocalValues(shared).POSTGRES_PASSWORD,
+    prod: loadLocalValues(prod).POSTGRES_PASSWORD,
+    dev: loadLocalValues(dev).POSTGRES_PASSWORD,
   };
   assert.ok(pw.shared);
   assert.ok(pw.prod);
@@ -97,15 +97,15 @@ test('minting follows ownership: every stack its own postgres password, shared o
 
   const again = ensureLocalSecrets(prod, {});
   assert.deepEqual(again.minted, [], 'stable across re-runs');
-  assert.equal(again.values.NAS_PUSH_VAPID_PUBLIC_KEY, prodRun.values.NAS_PUSH_VAPID_PUBLIC_KEY);
+  assert.equal(again.values.PUSH_VAPID_PUBLIC_KEY, prodRun.values.PUSH_VAPID_PUBLIC_KEY);
 });
 
 test('saving a shared-owned name from an env stack routes to the shared store', () => {
   const prod = loadStack('munni-local-prod');
-  saveLocalValues(prod, { ...familyValues(prod), NAS_GOCARDLESS_SECRET_ID: 'gc-route-1' });
-  assert.equal(loadLocalValues(prod).NAS_GOCARDLESS_SECRET_ID, undefined);
-  assert.equal(loadLocalValues(loadStack('munni-local-shared')).NAS_GOCARDLESS_SECRET_ID, 'gc-route-1');
-  assert.equal(familyValues(loadStack('munni-local-dev')).NAS_GOCARDLESS_SECRET_ID, 'gc-route-1', 'the whole family sees it');
+  saveLocalValues(prod, { ...familyValues(prod), GOCARDLESS_SECRET_ID: 'gc-route-1' });
+  assert.equal(loadLocalValues(prod).GOCARDLESS_SECRET_ID, undefined);
+  assert.equal(loadLocalValues(loadStack('munni-local-shared')).GOCARDLESS_SECRET_ID, 'gc-route-1');
+  assert.equal(familyValues(loadStack('munni-local-dev')).GOCARDLESS_SECRET_ID, 'gc-route-1', 'the whole family sees it');
 });
 
 test('shared render: glitchtip with own db + vault + ocr + control + pgadmin over the family', () => {
@@ -212,7 +212,7 @@ test('iac render keeps the CI placeholder contract and the runtime-config overla
   assert.ok(compose.includes('vaultwarden/server'), 'the iac prod twin keeps the pair vault');
   assert.ok(!compose.includes('Auth__RequireHttps'), 'hosted stacks stay https-strict');
   const placeholders = templatePlaceholders(stack);
-  for (const name of ['NAS_GHCR_PAT', 'VITE_LOGTO_APP_ID', 'VITE_LOGTO_APP_ID_ADMIN', 'VITE_GLITCHTIP_DSN', 'VITE_GLITCHTIP_DSN_ADMIN', 'VAULT_SIGNUPS_ALLOWED']) {
+  for (const name of ['GHCR_PAT', 'VITE_LOGTO_APP_ID', 'VITE_LOGTO_APP_ID_ADMIN', 'VITE_GLITCHTIP_DSN', 'VITE_GLITCHTIP_DSN_ADMIN', 'VAULT_SIGNUPS_ALLOWED']) {
     assert.ok(placeholders.includes(name), `${name} missing from the iac env template`);
   }
 });
