@@ -58,65 +58,30 @@ export async function writeReceiptLink(
   return id;
 }
 
-/** every receipt visible in a space: v3 snapshot links + legacy rows */
-export interface SpaceReceiptView {
-  /** the row that renders (legacy rows are adapted into link shape) */
-  link: ReceiptLinkRow;
-  /** true when this is a pre-v3 `receipt` row (writes go to the old id) */
-  legacy: boolean;
+/** every receipt visible in a space: its snapshot links (store receipts
+ *  linked in, photo-born ones), newest first */
+export async function spaceReceipts(store: StorageBackend, spaceId: string): Promise<ReceiptLinkRow[]> {
+  const links = (await store.bySpace('receiptLink', spaceId)).filter((l) => l.deleted === 0);
+  links.sort((a, b) => b.date.localeCompare(a.date));
+  return links;
 }
 
-const legacyAsLink = (row: ReceiptRow): ReceiptLinkRow => ({
-  id: row.id,
-  spaceId: row.spaceId,
-  receiptId: row.storeRef ? row.id : undefined,
-  txId: row.txId,
-  source: row.source,
-  instanceId: row.instanceId,
-  date: row.date,
-  totalCents: row.totalCents,
-  merchant: row.merchant,
-  items: row.items,
-  image: row.image,
-  payment: row.payment,
-  fieldVersions: row.fieldVersions,
-  deleted: row.deleted,
-});
-
-export async function spaceReceipts(store: StorageBackend, spaceId: string): Promise<SpaceReceiptView[]> {
-  const [links, legacyRows] = await Promise.all([
-    store.bySpace('receiptLink', spaceId),
-    store.bySpace('receipt', spaceId),
-  ]);
-  const views: SpaceReceiptView[] = links
-    .filter((l) => l.deleted === 0)
-    .map((link) => ({ link, legacy: false }));
-  const linkedReceiptIds = new Set(views.map((v) => v.link.receiptId).filter(Boolean));
-  for (const row of legacyRows) {
-    if (row.deleted !== 0) continue;
-    // a migrated row may coexist with its v3 link for a while — link wins
-    if (row.storeRef && linkedReceiptIds.has(row.id)) continue;
-    views.push({ link: legacyAsLink(row), legacy: true });
-  }
-  views.sort((a, b) => b.link.date.localeCompare(a.link.date));
-  return views;
-}
-
-export function useSpaceReceipts(): SpaceReceiptView[] | undefined {
+export function useSpaceReceipts(): ReceiptLinkRow[] | undefined {
   const { store, spaceId } = useData();
   return useQuery(store, async () => spaceReceipts(store, spaceId), [spaceId]);
 }
 
 // ── normalized entries (what the screens render and act on) ──────────────
 
-export type ReceiptKind = 'link' | 'legacy' | 'global';
+export type ReceiptKind = 'link' | 'global';
 
-/** one receipt as a screen sees it, whatever storage generation it is */
+/** one receipt as a screen sees it: a space's snapshot link, or an
+ *  owner's still-unmatched global receipt */
 export interface ReceiptEntry {
   kind: ReceiptKind;
   /** ReceiptRow-shaped payload — rendering + linking always work on this */
   data: ReceiptRow;
-  /** the receiptLink row id (kind 'link' — unlink target) */
+  /** the receiptLink row id (kind 'link' — the unlink/delete target) */
   linkId?: string;
   txId?: string;
 }
@@ -124,7 +89,6 @@ export interface ReceiptEntry {
 const linkAsReceipt = (link: ReceiptLinkRow): ReceiptRow => ({
   id: link.receiptId ?? link.id,
   spaceId: link.spaceId,
-  txId: link.txId,
   source: link.source,
   date: link.date,
   totalCents: link.totalCents,
@@ -137,23 +101,24 @@ const linkAsReceipt = (link: ReceiptLinkRow): ReceiptRow => ({
   deleted: link.deleted,
 });
 
-export const viewAsEntry = (view: SpaceReceiptView): ReceiptEntry =>
-  view.legacy
-    ? { kind: 'legacy', data: linkAsReceipt(view.link), txId: view.link.txId }
-    : { kind: 'link', data: linkAsReceipt(view.link), linkId: view.link.id, txId: view.link.txId };
+export const linkAsEntry = (link: ReceiptLinkRow): ReceiptEntry => ({
+  kind: 'link',
+  data: linkAsReceipt(link),
+  linkId: link.id,
+  txId: link.txId,
+});
 
 export const globalAsEntry = (row: ReceiptRow): ReceiptEntry => ({ kind: 'global', data: row });
 
-/** the receipt attached to one transaction (v3 link or legacy row) */
+/** the receipt attached to one transaction */
 export function useTxReceiptEntry(txId: string | undefined): ReceiptEntry | null | undefined {
   const { store, spaceId } = useData();
   return useQuery(
     store,
     async () => {
       if (!txId) return null;
-      const all = await spaceReceipts(store, spaceId);
-      const view = all.find((v) => v.link.txId === txId);
-      return view ? viewAsEntry(view) : null;
+      const link = (await spaceReceipts(store, spaceId)).find((l) => l.txId === txId);
+      return link ? linkAsEntry(link) : null;
     },
     [spaceId, txId],
   );

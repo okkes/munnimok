@@ -98,7 +98,7 @@ export class MunniDB extends Dexie {
       // receipts v3: global rows in the owner's store feed, snapshot
       // links per space, instance-keyed device connections, synced
       // instance metadata + per-space inclusion links, reconnect markers
-      receipts: 'id, spaceId, txId',
+      receipts: 'id, spaceId',
       receiptLinks: 'id, spaceId, txId, receiptId',
       storeInstances: 'id, store',
       storeConns: 'id, spaceId',

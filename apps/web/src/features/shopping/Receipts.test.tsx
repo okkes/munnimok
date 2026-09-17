@@ -288,20 +288,20 @@ describe('Receipts S1 (demo identity)', () => {
     fireEvent.change(screen.getByTestId('receipt-file'), { target: { files: [file] } });
     await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
 
-    // seed a store receipt beside the photo one
+    // seed a store receipt's snapshot (present, not attached) beside the photo one
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
     const { DexieBackend } = await import('@/db/backend');
     const { HlcClock } = await import('@/sync/hlc');
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
-    await repo.upsert('receipt', 'demo_space', 'rcpt:ah:x1@demo_space', {
+    await repo.upsert('receiptLink', 'demo_space', 'rlink-ah-x1', {
+      receiptId: 'rcpt:ah:x1',
       source: 'ah',
       date: '2026-07-01',
       totalCents: 2199,
       merchant: 'Albert Heijn',
       items: [{ name: 'HALFVOLLE MELK', totalCents: 258 }],
-      storeRef: 'ah:x1',
     });
     db.close();
     cleanup();

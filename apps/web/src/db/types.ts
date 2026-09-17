@@ -489,17 +489,16 @@ export interface ReceiptPayment {
 }
 
 /**
- * A transaction's line-item proof. Receipts v3 (approved redesign):
+ * A store receipt's line-item proof. Receipts v3 (approved redesign):
  * store receipts live ONCE in the owner's personal STORE FEED (the
  * global fetch/dedupe layer); linking snapshots them into a space via
- * `receiptLink`. Photo receipts skip the global layer entirely.
+ * `receiptLink`. Photo receipts skip the global layer entirely — they
+ * are photo-born `receiptLink` rows.
  */
 export interface ReceiptRow extends SyncEnvelope {
   id: string;
-  /** the owner's store feed (v3) or a viewing space (legacy rows) */
+  /** the owner's store feed */
   spaceId: string;
-  /** legacy pre-v3 link — new links live on receiptLink rows */
-  txId?: string;
   source: ReceiptSource;
   date: string;
   totalCents: number;
@@ -577,7 +576,8 @@ export interface StoreConnLinkRow extends SyncEnvelope {
 export interface ReceiptLinkRow extends SyncEnvelope {
   id: string;
   spaceId: string;
-  /** global receipt id; absent for photo-born links */
+  /** global receipt id; absent for photo-born links (the photo IS the
+   *  link — nothing lives behind it) */
   receiptId?: string;
   /** absent = the receipt is present in the space but not attached yet */
   txId?: string;

@@ -90,8 +90,8 @@ async function migrateMatch(store: StorageBackend, repo: Repo, match: ReconcileM
       }
     }
     // receipts follow the surviving row
-    for (const receipt of (await store.bySpace('receipt', spaceId)).filter((r) => r.deleted === 0 && r.txId === match.imported.id)) {
-      await repo.upsert('receipt', spaceId, receipt.id, { txId: match.linked.id });
+    for (const link of (await store.bySpace('receiptLink', spaceId)).filter((l) => l.deleted === 0 && l.txId === match.imported.id)) {
+      await repo.upsert('receiptLink', spaceId, link.id, { txId: match.linked.id });
     }
   }
 }

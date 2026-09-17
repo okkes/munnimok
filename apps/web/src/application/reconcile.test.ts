@@ -36,7 +36,7 @@ describe('applyReconcile (linked is the truth)', () => {
 
     // the space's edits on the matched import + a receipt + a reimb link
     await repo.upsert('txMeta', SPACE, txMetaId(SPACE, 'I1'), { txId: 'I1', catId: 'transport', txType: 'expense', needsReview: 0, notes: 'tank beurt' });
-    await repo.upsert('receipt', SPACE, 'rcpt-1', { txId: 'I1', source: 'photo', date: '2026-06-10', totalCents: 1200, merchant: 'Shell' });
+    await repo.upsert('receiptLink', SPACE, 'rcpt-1', { txId: 'I1', source: 'photo', date: '2026-06-10', totalCents: 1200, merchant: 'Shell' });
     // an expense in the space claims the MISMATCHED import as its refund
     await repo.upsert('txMeta', SPACE, txMetaId(SPACE, 'L3'), { txId: 'L3', catId: 'salary', txType: 'income', needsReview: 0, reimbursements: [{ txId: 'I2', amountCents: 500 }, { txId: 'I1', amountCents: 100 }] });
     return { store, repo };
@@ -56,7 +56,7 @@ describe('applyReconcile (linked is the truth)', () => {
     const meta = await store.get('txMeta', txMetaId(SPACE, 'L2'));
     expect(meta).toMatchObject({ txId: 'L2', catId: 'transport', notes: 'tank beurt' });
     // the receipt follows
-    expect((await store.get('receipt', 'rcpt-1'))?.txId).toBe('L2');
+    expect((await store.get('receiptLink', 'rcpt-1'))?.txId).toBe('L2');
     // judged imports are gone, history survives
     expect((await store.get('transaction', 'I1'))?.deleted).toBe(1);
     expect((await store.get('transaction', 'I2'))?.deleted).toBe(1);
