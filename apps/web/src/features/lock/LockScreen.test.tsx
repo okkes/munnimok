@@ -21,6 +21,8 @@ describe('LockScreen (PIN keypad — no platform authenticator in tests)', () =>
   it('typing the right PIN on the keypad unlocks without a confirm button', async () => {
     renderWithProviders(<LockScreen />);
     await screen.findByTestId('lock-dots');
+    // without a stored passkey the keypad is the only way in
+    expect(screen.queryByTestId('lock-unlock')).toBeNull();
     tap('1', '2', '3', '4');
     await waitFor(() => expect(useLock.getState().locked).toBe(false));
   });
@@ -46,13 +48,7 @@ describe('LockScreen (PIN keypad — no platform authenticator in tests)', () =>
     await waitFor(() => expect(useLock.getState().locked).toBe(false));
   });
 
-  it('no biometric key is rendered without a stored credential', async () => {
-    renderWithProviders(<LockScreen />);
-    await screen.findByTestId('lock-dots');
-    expect(screen.queryByTestId('lock-unlock')).toBeNull();
-  });
-
-  it('#202: the passkey auto-prompt fires once per LOCK CYCLE — remounts stay quiet', async () => {
+  it('the passkey prompt appears once per lock cycle: a remount stays quiet, the key re-prompts, a new lock prompts again', async () => {
     writeLockConfig({
       enabled: true, pinSalt: 's', pinHash: await hashPin('1234', 's'), timeoutSec: 0,
       biometricKind: 'webauthn', credentialId: 'AAAA',

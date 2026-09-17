@@ -156,21 +156,6 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     expect(warn.textContent).toContain('Familie');
   }, 20_000);
 
-  it('#308: a PRIVATE space attaches without the warning', async () => {
-    await seedRows();
-    await seedCandidate();
-    const { setSpaceAttachIntent } = await import('@/features/accounts/openHandoff');
-    setSpaceAttachIntent('feedacct-2');
-    renderAppAsUser('/spaces/s-user/accounts', {
-      spaces: [{ id: 's-user', name: 'Personal' }],
-      api: apiWithCandidate('personal'),
-    });
-
-    await screen.findByTestId('space-attach-focus', {}, { timeout: 10_000 });
-    await screen.findByTestId('space-attach-types', {}, { timeout: 10_000 });
-    expect(screen.queryByTestId('space-attach-share-warn')).toBeNull();
-  }, 20_000);
-
   it('#310: an already-attached target falls back to the plain pick list — where a manual pick still warns (#308)', async () => {
     await seedRows();
     await seedCandidate();

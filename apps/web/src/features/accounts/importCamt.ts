@@ -9,13 +9,13 @@ import { UNCATEGORIZED_ID, isMovementCat } from '@/domain/categories';
 import { defaultFamilyFor } from '@/domain/defaultAccounts';
 import { matchCounterAccount } from '@/domain/counterClue';
 import type { ClueAccount } from '@/domain/counterClue';
-import { familyForCounter, movementCatFor } from '@/domain/txType';
+import { movementCatFor } from '@/domain/txType';
 import { ensureDefaultAccount } from '@/application/defaultAccounts';
 import { visibleAccounts, writeTxTransform } from '@/db/joined';
 import { DEFAULT_HISTORY_MONTHS, isoMonthsAgo } from '@/features/spaces/spaceDefaults';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
-import type { TxType } from '@/db/types';
+import type { AccountType } from '@/db/types';
 
 // Fixed namespace so the same bank entry always yields the same tx id —
 // importing the same file twice (or on two devices) cannot duplicate.
@@ -81,7 +81,7 @@ function predictEntry(
   memory: SpaceMemory,
   entry: ParsedStatement['entries'][number],
   keywordRules?: readonly { catId: string; keywords: string[] }[],
-): { catId: string; txType: TxType; needsReview: 0 | 1 } {
+): { catId: string; needsReview: 0 | 1 } {
   const prediction = predictTx({
     memory,
     merchant: entry.counterpartyName ?? entry.description.slice(0, 40),
@@ -89,10 +89,8 @@ function predictEntry(
     amountCents: entry.amountCents,
     keywordRules,
   });
-  const fallbackType: TxType = entry.amountCents >= 0 ? 'income' : 'expense';
   return {
     catId: prediction?.catId ?? UNCATEGORIZED_ID,
-    txType: prediction?.txType ?? fallbackType,
     // only merchant history the user confirmed twice skips review —
     // keyword hits are guesses and review is the teaching loop
     needsReview: predictionSkipsReview(prediction) ? 0 : 1,
@@ -132,7 +130,7 @@ async function uploaderName(store: StorageBackend): Promise<string | undefined> 
 async function linkPredictedMovement(
   ctx: EntryContext,
   txId: string,
-  predicted: { catId: string; txType: TxType; needsReview: 0 | 1 },
+  predicted: { catId: string; needsReview: 0 | 1 },
   feedId: string | undefined,
   matchedId?: string,
 ): Promise<void> {
@@ -144,7 +142,7 @@ async function linkPredictedMovement(
   if (!targetId) return;
   await writeTxTransform(
     ctx.repo,
-    { id: txId, spaceId: ctx.spaceId, feedSpaceId: feedId, txType: predicted.txType, needsReview: predicted.needsReview },
+    { id: txId, spaceId: ctx.spaceId, feedSpaceId: feedId, needsReview: predicted.needsReview },
     { linkedAccountId: targetId },
   ).catch(() => undefined);
 }
@@ -157,7 +155,7 @@ async function linkPredictedMovement(
 function resolveEntryPrediction(
   ctx: EntryContext,
   entry: ParsedStatement['entries'][number],
-): { predicted: { catId: string; txType: TxType; needsReview: 0 | 1 }; matchedId?: string } {
+): { predicted: { catId: string; needsReview: 0 | 1 }; matchedId?: string } {
   const predicted = predictEntry(ctx.memory, entry, ctx.keywordRules);
   if (defaultFamilyFor(predicted.catId) !== 'transfer') return { predicted };
   const match = matchCounterAccount(
@@ -173,14 +171,13 @@ function resolveEntryPrediction(
     return {
       predicted: {
         catId: movementCatFor(match.type, entry.amountCents),
-        txType: familyForCounter(match.type),
         needsReview: predicted.needsReview,
       },
       matchedId: match.id,
     };
   }
   return {
-    predicted: { catId: UNCATEGORIZED_ID, txType: entry.amountCents >= 0 ? 'income' : 'expense', needsReview: 1 },
+    predicted: { catId: UNCATEGORIZED_ID, needsReview: 1 },
   };
 }
 
@@ -217,7 +214,7 @@ export interface FeedGateway {
    *  else owns it (S1 squatting defence, never blocks the user) */
   register(preferredFeedId: string, accountRef: string): Promise<string>;
   /** server-authoritative attachment of the feed to the target space */
-  attach(spaceId: string, feedSpaceId: string, accountId: string, historyFrom?: string): Promise<void>;
+  attach(spaceId: string, feedSpaceId: string, accountId: string, historyFrom?: string, type?: AccountType): Promise<void>;
 }
 
 /** #184: rows land one by one — the UI narrates `done` of the total */
@@ -351,11 +348,15 @@ async function refreshExistingAttachment(
   if (existingLink.archived) return false;
   const historyFrom =
     existingLink.historyFrom ?? (await store.get('space', spaceId))?.historyStartDate ?? isoMonthsAgo(DEFAULT_HISTORY_MONTHS);
-  await feeds.attach(spaceId, feedId, accountId, historyFrom);
+  // the space's reading of the account rides along: the link's own type,
+  // else the account row's — the server keeps a type on every link
+  const type = existingLink.type ?? (await store.get('account', accountId))?.type;
+  await feeds.attach(spaceId, feedId, accountId, historyFrom, type);
   await repo.upsert('accountLink', spaceId, linkId, {
     feedSpaceId: feedId,
     accountId,
     historyFrom,
+    ...(type ? { type } : {}),
   });
   return true;
 }

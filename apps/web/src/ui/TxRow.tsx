@@ -119,6 +119,8 @@ export function TxRow({
       type="button"
       onClick={onClick}
       data-testid={`tx-row-${tx.id}`}
+      // the open row of a desktop master–detail list is the current one
+      aria-current={selected ? 'true' : undefined}
       // #156 r2: styles.css skips the outline ring for this button — the
       // focus-visible background below is the one focus signal
       data-quiet-focus=""

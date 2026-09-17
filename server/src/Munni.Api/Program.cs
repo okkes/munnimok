@@ -151,7 +151,11 @@ else
             options.RequireHttpsMetadata = builder.Configuration.GetValue("Auth:RequireHttps", true);
         });
 }
-builder.Services.AddAuthorization();
+// operator routes (/admin, /control, the catalog publish): the token must carry the `admin` scope
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy(AdminScope.Policy, policy => policy
+        .RequireAuthenticatedUser()
+        .RequireAssertion(context => AdminScope.HasAdminScope(context.User)));
 
 var corsOrigins = builder.Configuration.GetSection("Cors:Origins").Get<string[]>() ?? [];
 builder.Services.AddCors(o => o.AddDefaultPolicy(p =>

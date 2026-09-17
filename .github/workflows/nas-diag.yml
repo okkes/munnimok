@@ -17,6 +17,8 @@ permissions:
 jobs:
   fetch:
     runs-on: ubuntu-latest
+    # the nas platform's account and paths live in its shared environment
+    environment: nas-shared
     steps:
       - uses: actions/checkout@v7
 

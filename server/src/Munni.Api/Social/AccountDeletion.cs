@@ -37,10 +37,9 @@ public static class AccountDeletion
         //     read (their archived history stays, decision ①); delete the rest
         await PruneOwnedFeedsAsync(db, user.Id, survivingSpaceIds);
 
-        // 5 · social graph + grants
+        // 5 · social graph
         db.Friendships.RemoveRange(await db.Friendships.Where(f => f.UserAId == user.Id || f.UserBId == user.Id).ToListAsync());
         db.SpaceInvites.RemoveRange(await db.SpaceInvites.Where(i => i.ToUserId == user.Id || i.FromUserId == user.Id).ToListAsync());
-        db.AdminGrants.RemoveRange(await db.AdminGrants.Where(g => g.Sub == user.Sub).ToListAsync());
 
         // 6 · the Logto identity (kills the login + other sessions). Optional:
         //     without the M2M credential the server data still disappears.

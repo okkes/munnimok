@@ -20,36 +20,22 @@ vi.mock('@tanstack/react-router', async (importOriginal) => ({
 }));
 
 describe('Button', () => {
-  it('renders each variant/size with the mapped classes', () => {
-    render(
-      <>
-        <Button>Go</Button>
-        <Button variant="outline" size="sm">
-          Out
-        </Button>
-        <Button variant="ghost">Gh</Button>
-        <Button variant="danger">Del</Button>
-      </>,
-    );
-    expect(screen.getByText('Go').className).toContain('bg-brand');
-    expect(screen.getByText('Go').className).toContain('h-12');
-    expect(screen.getByText('Out').className).toContain('border-line');
-    expect(screen.getByText('Out').className).toContain('h-9');
-    expect(screen.getByText('Gh').className).toContain('bg-transparent');
-    expect(screen.getByText('Del').className).toContain('bg-negative');
-  });
-
-  it('forwards native button props', () => {
+  it('renders its label as a real button, forwards clicks, and a disabled one is inert', () => {
     const onClick = vi.fn();
     render(
-      <Button onClick={onClick} disabled data-testid="b">
-        Save
-      </Button>,
+      <>
+        <Button onClick={onClick}>Go</Button>
+        <Button onClick={onClick} disabled data-testid="b">
+          Save
+        </Button>
+      </>,
     );
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    expect(onClick).toHaveBeenCalledTimes(1);
     const btn = screen.getByTestId('b') as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
     fireEvent.click(btn);
-    expect(onClick).not.toHaveBeenCalled();
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -78,24 +64,23 @@ describe('IconButton', () => {
     );
     const btn = screen.getByLabelText('Close');
     expect(btn.getAttribute('data-testid')).toBe('ib');
-    expect(btn.className).toContain('bg-surface');
     fireEvent.click(btn);
     expect(onClick).toHaveBeenCalled();
   });
 });
 
 describe('Icon', () => {
-  it('maps the name to an mdi class and sizes the glyph', () => {
-    const { container } = render(<Icon name="bank" size={24} color="red" />);
-    const i = container.querySelector('i')!;
-    expect(i.className).toContain('mdi-bank');
-    expect(i.style.fontSize).toBe('24px');
-    expect(i.style.color).toBe('red');
-  });
-
-  it('falls back to help-circle-outline for an empty name', () => {
-    const { container } = render(<Icon name="" />);
-    expect(container.querySelector('i')!.className).toContain('mdi-help-circle-outline');
+  it('renders the named glyph as decoration and falls back to a generic glyph for an empty name', () => {
+    const { container } = render(
+      <>
+        <Icon name="bank" />
+        <Icon name="" />
+      </>,
+    );
+    const [named, fallback] = [...container.querySelectorAll('i')];
+    expect(named.className).toContain('mdi-bank');
+    expect(named.getAttribute('aria-hidden')).toBe('true');
+    expect(fallback.className).toContain('mdi-help-circle-outline');
   });
 });
 
@@ -103,26 +88,26 @@ describe('Logo', () => {
   it('renders the wordmark with the accent dot', () => {
     const { container } = render(<Logo size={40} />);
     expect(container.textContent).toBe('munni.');
-    expect((container.firstElementChild as HTMLElement).style.fontSize).toBe('40px');
   });
 });
 
 describe('redesign primitives', () => {
-  it('Tile renders at exactly two sizes with tone-soft backgrounds', () => {
+  it('Tile shows its icon, or richer content when given', () => {
     const { container } = render(
       <>
-        <Tile icon="bank" size={48} />
-        <Tile icon="bank" tone="special" />
+        <Tile icon="bank" />
+        <Tile icon="bank">
+          <img alt="Acme" src="/brands/acme.svg" />
+        </Tile>
       </>,
     );
-    const [hero, row] = [...container.querySelectorAll('span')].filter((s) => s.querySelector('i'));
-    expect(hero.className).toContain('h-12');
-    expect(hero.className).toContain('bg-accent-soft');
-    expect(row.className).toContain('h-9');
-    expect(row.className).toContain('bg-special-soft');
+    const tiles = [...container.querySelectorAll('span')].filter((s) => s.querySelector('i, img'));
+    expect(tiles[0].querySelector('i')?.className).toContain('mdi-bank');
+    expect(tiles[1].querySelector('img')?.getAttribute('alt')).toBe('Acme');
+    expect(tiles[1].querySelector('i')).toBeNull(); // the content replaces the icon
   });
 
-  it('Row: nav rows are 15px with a chevron, data rows 13px without', () => {
+  it('Row: a nav row is a button with a chevron affordance; a data row is inert and shows its record', () => {
     const onClick = vi.fn();
     const { container } = render(
       <>
@@ -131,18 +116,18 @@ describe('redesign primitives', () => {
       </>,
     );
     const nav = screen.getByTestId('nav-row');
-    expect(nav.className).toContain('py-3.5');
+    expect(nav.tagName).toBe('BUTTON');
     expect(nav.querySelector('.mdi-chevron-right')).toBeTruthy();
     fireEvent.click(nav);
     expect(onClick).toHaveBeenCalled();
     const data = screen.getByTestId('data-row');
     expect(data.tagName).toBe('DIV'); // no onClick -> not a button
-    expect(data.className).toContain('py-2.5');
     expect(data.querySelector('.mdi-chevron-right')).toBeNull();
     expect(container.textContent).toContain('12 items');
+    expect(container.textContent).toContain('€3');
   });
 
-  it('Pill and Chip carry their tones', () => {
+  it('Pill shows its label; Chip exposes its selected state and a disabled chip is inert', () => {
     const onClick = vi.fn();
     render(
       <>
@@ -152,48 +137,48 @@ describe('redesign primitives', () => {
         <Chip selected onClick={onClick} testId="chip-on">
           Monthly
         </Chip>
-        <Chip selected tone="warning" onClick={onClick} testId="chip-warn">
-          Filter
+        <Chip selected={false} onClick={onClick} testId="chip-off">
+          Weekly
         </Chip>
-        <Chip selected={false} onClick={onClick} disabled testId="chip-off">
+        <Chip selected={false} onClick={onClick} disabled testId="chip-dead">
           Off
         </Chip>
       </>,
     );
-    expect(screen.getByTestId('pill').className).toContain('bg-warning-soft');
-    expect(screen.getByTestId('chip-on').className).toContain('border-accent');
-    expect(screen.getByTestId('chip-warn').className).toContain('border-warning');
-    expect((screen.getByTestId('chip-off') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('pill').textContent).toBe('Unreviewed');
+    expect(screen.getByTestId('chip-on').getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByTestId('chip-off').getAttribute('aria-pressed')).toBe('false');
     fireEvent.click(screen.getByTestId('chip-on'));
+    expect(onClick).toHaveBeenCalledTimes(1);
+    const dead = screen.getByTestId('chip-dead') as HTMLButtonElement;
+    expect(dead.disabled).toBe(true);
+    fireEvent.click(dead);
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it('ProgressBar clamps, sizes and takes an overlay', () => {
+  it('ProgressBar clamps its value into 0–100, exposes it, and takes an overlay', () => {
     render(
       <>
         <ProgressBar value={1.4} size="sm" testId="bar" overlay={<div data-testid="stripes" />} />
         <ProgressBar value={-1} size="lg" color="red" testId="bar2" />
+        <ProgressBar value={0.5} testId="bar3" />
       </>,
     );
-    const bar = screen.getByTestId('bar');
-    expect(bar.className).toContain('h-1');
-    expect((bar.firstElementChild as HTMLElement).style.width).toBe('100%');
+    // a native <progress> carries the value for assistive tech
+    const valueOf = (id: string) => screen.getByTestId(id).querySelector('progress')?.getAttribute('value');
+    expect(valueOf('bar')).toBe('100');
     expect(screen.getByTestId('stripes')).toBeTruthy();
-    const bar2 = screen.getByTestId('bar2');
-    expect(bar2.className).toContain('h-2');
-    expect((bar2.firstElementChild as HTMLElement).style.width).toBe('0%');
-    expect((bar2.firstElementChild as HTMLElement).style.background).toBe('red');
+    expect(valueOf('bar2')).toBe('0');
+    expect(valueOf('bar3')).toBe('50');
   });
 
-  it('Field puts a 12px label above its control', () => {
+  it('Field labels its control — the label reaches the input', () => {
     render(
       <Field label="Name" htmlFor="f">
         <input id="f" />
       </Field>,
     );
-    const label = screen.getByText('Name');
-    expect(label.tagName).toBe('LABEL');
-    expect(label.className).toContain('text-[12px]');
+    expect((screen.getByLabelText('Name') as HTMLInputElement).id).toBe('f');
   });
 
   it('MasterDetailLayout: detail replaces the list below lg, panes beside it at lg', () => {

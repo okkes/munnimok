@@ -34,7 +34,6 @@ services:
       Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
       Logos__SecretKey: ${LOGODEV_SECRET_KEY:-}
       Logos__PublicToken: ${LOGODEV_PUBLIC_TOKEN:-}
-      Admin__Subs: ${ADMIN_SUBS:-}
       Ocr__BaseUrl: http://ocr:8884
       ImportWatch__Path: /import-watch
       ImportWatch__OwnerSub: ${IMPORT_WATCH_OWNER_SUB:-}

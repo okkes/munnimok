@@ -98,7 +98,6 @@ describe('AccountsScreen (demo identity)', () => {
       amountCents: -1200,
       currency: 'EUR',
       merchant: 'SHELL',
-      txType: 'expense',
     });
     await repo.upsert('accountLink', 'demo_space', 'link-1', {
       feedSpaceId: 'feed-1',
@@ -174,7 +173,7 @@ describe('AccountsScreen (demo identity)', () => {
     fetchMock.mockRestore();
   }, 15_000);
 
-  it('#248: no attach nag — an unattached account wears a quiet badge on its own row', async () => {
+  it('an unattached account wears a quiet badge on its own row', async () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
     const { MunniDB } = await import('@/db/schema');
     const { Repo } = await import('@/db/repo');
@@ -203,9 +202,8 @@ describe('AccountsScreen (demo identity)', () => {
       },
     });
 
-    // the badge says it plainly; the green offer card is gone for good
-    await screen.findByTestId('account-unattached-feedacct-1', {}, { timeout: 5000 });
-    expect(screen.queryByTestId('attach-offer')).toBeNull();
+    // the badge says it plainly, on the row itself
+    expect(await screen.findByTestId('account-unattached-feedacct-1', {}, { timeout: 5000 })).toBeTruthy();
   }, 15_000);
 
   it('#318: a link-less account doors into "Attach to {space}" — the intent pre-aims the space attach sheet', async () => {
@@ -461,7 +459,6 @@ describe('AccountsScreen (demo identity)', () => {
       amountCents: -1200,
       currency: 'EUR',
       merchant: 'SHELL',
-      txType: 'expense',
     });
     await repo.upsert('accountLink', 's-user', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1', type: 'checking' });
     db.close();
@@ -977,7 +974,7 @@ describe('AccountsScreen (demo identity)', () => {
         .first();
       // the delta, recorded with the adjustment category — the ledger
       // stays coherent without a hand on it
-      expect(adjustment).toMatchObject({ amountCents: 2500, adjustment: 1, needsReview: 0, txType: 'adjustment' });
+      expect(adjustment).toMatchObject({ amountCents: 2500, adjustment: 1, needsReview: 0 });
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
@@ -1280,7 +1277,7 @@ describe('AccountsScreen (demo identity)', () => {
       const adjustment = await db.transactions
         .filter((t) => t.accountId === 'demo_save' && t.catId === 'balanceAdjustment')
         .first();
-      expect(adjustment).toMatchObject({ amountCents: 5000, adjustment: 1, needsReview: 0, txType: 'adjustment' });
+      expect(adjustment).toMatchObject({ amountCents: 5000, adjustment: 1, needsReview: 0 });
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
@@ -1335,10 +1332,9 @@ describe('AccountsScreen (demo identity)', () => {
       amountCents: -1200,
       currency: 'EUR',
       merchant: 'SHELL',
-      txType: 'expense',
     });
     const metaId = txMetaId('s-user', 'rawtx-1');
-    await repo.upsert('txMeta', 's-user', metaId, { txId: 'rawtx-1', txType: 'expense', needsReview: 0, catId: 'groceries' });
+    await repo.upsert('txMeta', 's-user', metaId, { txId: 'rawtx-1', needsReview: 0, catId: 'groceries' });
     // a legacy merged-import leftover: the member space's OWN row on the
     // deleted account — it kept rendering with a dangling account
     await repo.upsert('transaction', 's-user', 'legacy-1', {
@@ -1347,7 +1343,6 @@ describe('AccountsScreen (demo identity)', () => {
       amountCents: -700,
       currency: 'EUR',
       merchant: 'OLD PATH',
-      txType: 'expense',
     });
     await repo.upsert('accountLink', 's-user', 'link-1', { feedSpaceId: 'feed-1', accountId: 'feedacct-1' });
     db.close();

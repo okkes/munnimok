@@ -7,7 +7,6 @@ import { predictTx, predictionSkipsReview } from './predictCategory';
 const confirmed = (over: Partial<MemoryInput>): MemoryInput => ({
   merchant: 'Albert Heijn 1470',
   catId: 'groceries',
-  txType: 'expense',
   needsReview: 0,
   date: '2026-06-01',
   amountCents: -2500,
@@ -105,8 +104,8 @@ const layered = (own: ReturnType<typeof buildMerchantMemory>) => ({ own, others:
 describe('predictTx layering', () => {
   it('history beats keywords, keywords cover cold start', () => {
     const memory = buildMerchantMemory([
-      confirmed({ merchant: 'Albert Heijn', catId: 'sport', txType: 'expense' }),
-      confirmed({ merchant: 'Albert Heijn', catId: 'sport', txType: 'expense', date: '2026-06-10' }),
+      confirmed({ merchant: 'Albert Heijn', catId: 'sport'}),
+      confirmed({ merchant: 'Albert Heijn', catId: 'sport', date: '2026-06-10' }),
     ]);
     // "albert heijn" is also a groceries KEYWORD — history must win
     const history = predictTx({ memory: layered(memory), merchant: 'Albert Heijn 1470', amountCents: -1500 });

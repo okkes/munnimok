@@ -1,6 +1,6 @@
 import { autoSubFor, stampMovementSub } from '@/domain/categories';
 import { mirrorTxId } from '@/domain/feedIds';
-import { accountStamp, familyForCounter, movementCatFor } from '@/domain/txType';
+import { accountStamp, movementCatFor } from '@/domain/txType';
 import { isLiability } from '@/features/accounts/accountTypes';
 import { countsTowardLoan } from './loanBalance';
 import type { StorageBackend } from '@/db/backend';
@@ -154,7 +154,6 @@ export async function planMirrorChange(
             amountCents: mirrorAmount,
             currency: source.currency,
             merchant: source.merchant,
-            txType: stamp ?? (sourceType ? familyForCounter(sourceType) : 'transfer'),
             catId:
               (stamp ? stampMovementSub(stamp, mirrorAmount) : undefined) ??
               (sourceType ? movementCatFor(sourceType, mirrorAmount) : autoSubFor('transfer', mirrorAmount)),
@@ -205,12 +204,6 @@ export async function mintMirrorForExistingLink(
   await plan.execute(repo);
   return peer;
 }
-
-// planCatEntryMirrors retired (#228, user): entries of a category spread
-// carry no counterparties anymore — one counterparty per (split)
-// transaction, so the row- and part-level lifecycles above are the whole
-// engine. The boot fold (migrateEntryCounters) retires or re-keys the
-// mints the old per-entry model left behind.
 
 /**
  * Deleting a source row must take its mint along: the mirror row is

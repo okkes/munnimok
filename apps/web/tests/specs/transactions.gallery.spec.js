@@ -1,7 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// --- Tests ------------------------------------------------------------------
+// Why this spec exists (test policy 2026-09-17): the transaction core flows
+// in a real browser — detail + browser back, recategorizing through the
+// split-categories editor and the picker (stacked sheets), notes that
+// survive leaving the screen (save-on-blur), creating and then editing a
+// manual transaction, reimbursement links, the counter-account link and
+// the split editor. It produces the gallery/guide screenshots 09, 10, 12,
+// 27, 28, 34, 35 and 36. Picker search and the field-level rules are
+// unit-tested (features/transactions/*.test.tsx,
+// features/categories/CategoryPicker.test.tsx).
 
 async function openFirstReviewTx(page) {
   await page.click('[data-testid="tab-transactions"]');
@@ -47,23 +55,7 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('10-tx-recat'));
   });
 
-  test(`tx-a3 category search filters picker [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V, { demo: true });
-    await openFirstReviewTx(page);
-    await page.click('[data-testid="tx-detail-category-row"]');
-    await page.waitForSelector('[data-testid="part-cats-editor"]');
-    await page.click('[data-testid="part-cat-0"]');
-    await page.waitForSelector('[data-testid="catpicker-search"]');
-    await page.fill('[data-testid="catpicker-search"]', 'groc');
-    await expect(page.locator('[data-testid="catpicker-groceries"]')).toBeVisible();
-    await expect(page.locator('[data-testid="catpicker-videoGame"]')).toHaveCount(0);
-    await page.waitForTimeout(400);
-    await shot(page, k('11-tx-cat-search'));
-    await teardown(page, ctx, k('11-tx-cat-search'));
-  });
-
-  test(`tx-a5 create manual transaction [${V.id}]`, async ({ browser }) => {
+  test(`tx-a5 create a manual transaction, then edit its amount and name [${V.id}]`, async ({ browser }) => {
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await page.click('[data-testid="tab-transactions"]');
@@ -89,23 +81,21 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="tx-list"]')).toContainText('Test Lunch');
     await expect(page.locator('[data-testid="tx-list"]')).toContainText('12.50');
     await shot(page, k('27-tx-create'));
-    await teardown(page, ctx, k('27-tx-create'));
-  });
 
-  test(`tx-a6 edit manual transaction amount and name [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V, { demo: true });
-    await openFirstReviewTx(page); // dm100 — demo txs have no importRef, so editable
+    // a manual transaction stays editable: the detail header's pencil
+    // reopens the form, amount and name change in place (28-tx-edit)
+    await page.locator('[data-testid^="tx-row-"]', { hasText: 'Test Lunch' }).first().click();
+    await page.waitForSelector('[data-testid="screen-tx-detail"]');
     await page.click('[data-testid="tx-detail-edit"]');
     await page.waitForSelector('[data-testid="txform-amount"]');
     await page.fill('[data-testid="txform-amount"]', '99,99');
-    await page.fill('[data-testid="txform-merchant"]', 'Amazon Corrected');
+    await page.fill('[data-testid="txform-merchant"]', 'Lunch Corrected');
     await page.click('[data-testid="txform-save"]');
     await page.waitForTimeout(500);
     await expect(page.locator('[data-testid="tx-detail-amount"]')).toContainText('99.99');
-    await expect(page.locator('[data-testid="screen-tx-detail"]')).toContainText('Amazon Corrected');
+    await expect(page.locator('[data-testid="screen-tx-detail"]')).toContainText('Lunch Corrected');
     await shot(page, k('28-tx-edit'));
-    await teardown(page, ctx, k('28-tx-edit'));
+    await teardown(page, ctx, k('27-tx-create'));
   });
 
   test(`tx-a7 link and unlink a reimbursement [${V.id}]`, async ({ browser }) => {
@@ -154,8 +144,6 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="counter-pick-demo_save"]');
     // #237: manual counters fork now — creating the leg is the explicit door
     await page.click('[data-testid="counter-fork-create"]');
-    // #228 feedback: no counter line under the entry — the ask closes
-    await expect(page.locator('[data-testid="counter-accounts"]')).toHaveCount(0);
     await page.click('[data-testid="part-cat-save"]');
     await page.waitForTimeout(500);
     // #133 r4: the user's category STAYS the story — the link makes it

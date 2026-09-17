@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, teardown } from '../helpers/base.js';
 
+// Why this spec exists (test policy 2026-09-17): a heap measurement needs a
+// real JS engine and a real GC — no unit harness can take it.
+//
 // #135: the CI half of leak detection — chromium drives the SAME shared
 // code every platform ships (iOS WebKit included), cycles the main
 // screens hard, and asserts the JS heap settles instead of climbing.

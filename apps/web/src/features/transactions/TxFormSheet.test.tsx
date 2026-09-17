@@ -90,19 +90,6 @@ describe('TxFormSheet (demo identity)', () => {
     // coverage instrumentation pushes this flow past vitest's 5s default
   }, 15_000);
 
-  it('#228 feedback: counterparty-FIRST on the form\'s own row — the pick fills the special category', async () => {
-    await openForm();
-    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
-    // the form's Counterparty row is the counter-first door now (#228
-    // feedback: the editor shows no counter line anymore)
-    fireEvent.click(screen.getByTestId('txform-counter'));
-    // the bare door lists every tracked account (no category asked yet);
-    // a savings pick on an outgoing row can only mean Set aside
-    fireEvent.click(await screen.findByTestId('counter-pick-demo_save'));
-    await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Set aside'));
-    expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings');
-  }, 15_000);
-
   it('#228: a lone ◆ pick in the editor becomes the FORM\'s counterparty; save mints the row-key leg', async () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '50,00' } });
@@ -199,23 +186,24 @@ describe('TxFormSheet (demo identity)', () => {
       const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Fix saldo');
       expect(row?.amountCents).toBe(5000 - before);
       expect(row?.catId).toBe('balanceAdjustment');
-      expect(row?.txType).toBe('adjustment');
       expect((await db.accounts.get('demo_main'))!.balanceCents).toBe(5000);
     }, { timeout: 5000 });
     db.close();
   }, 15_000);
 
-  it('a transfer kind demands its counterparty; the counterparty derives the type', async () => {
+  it('a counterparty picked first derives the story: a savings pot fills Set aside; the Adjustment mark writes through', async () => {
     await openForm();
     fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '25,00' } });
     fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Naar spaarpot' } });
 
-    // #133 D: no kind row — the always-there counterparty row IS the
-    // transfer door; picking the pot derives the type
+    // the always-there counterparty row IS the transfer door: the bare
+    // door lists every tracked account, and a savings pick on an outgoing
+    // row can only mean Set aside — the category fills by itself
     fireEvent.click(screen.getByTestId('txform-counter'));
     await screen.findByTestId('counter-accounts');
     fireEvent.click(screen.getByTestId('counter-pick-demo_save'));
     await waitFor(() => expect(screen.getByTestId('txform-counter').textContent).toContain('Demo Savings'));
+    expect(screen.getByTestId('txform-category').textContent).toContain('Set aside');
     expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
 
     // the Adjustment toggle marks a correction; save writes the marker
@@ -225,7 +213,6 @@ describe('TxFormSheet (demo identity)', () => {
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Naar spaarpot');
-      expect(row?.txType).toBe('adjustment');
       expect(row?.adjustment).toBe(1);
     }, { timeout: 5000 });
     db.close();
@@ -308,7 +295,7 @@ describe('TxFormSheet (demo identity)', () => {
       expect(out.transferPeerId).toBe(inc.id); // …peered both ways
       expect(inc.transferPeerId).toBe(out.id);
       // the mirror wears the pot's R1 stamp + the Q8 movement sub
-      expect(inc).toMatchObject({ accountId: 'demo_save', txType: 'saving', catId: 'savingDeposit', linkedAccountId: 'demo_main', needsReview: 0 });
+      expect(inc).toMatchObject({ accountId: 'demo_save', catId: 'savingDeposit', linkedAccountId: 'demo_main', needsReview: 0 });
       outId = out.id;
     }, { timeout: 5000 });
 
@@ -320,37 +307,6 @@ describe('TxFormSheet (demo identity)', () => {
       );
       expect(rows).toHaveLength(1);
       expect(screen.getByTestId(`tx-row-pair-${outId}`).textContent).toContain('→');
-    }, { timeout: 5000 });
-    db.close();
-  }, 15_000);
-
-  it('the marked special category carries the flat-loan story (typed-splits v2)', async () => {
-    await openForm();
-    fireEvent.change(screen.getByTestId('txform-amount'), { target: { value: '30,00' } });
-    fireEvent.change(screen.getByTestId('txform-merchant'), { target: { value: 'Aflossing lening' } });
-
-    // the bare-type exit retired: the flat structure's "Loan payment" is
-    // the marked Repaid category, picked in the cats editor (#211) — the
-    // debt type follows the pick, no counterparty demanded
-    fireEvent.click(screen.getByTestId('txform-category'));
-    fireEvent.click(await screen.findByTestId('part-cat-0'));
-    await screen.findByTestId('speccat-loanRepayment'); // the diamond mark
-    fireEvent.click(screen.getByTestId('catpicker-loanRepayment'));
-    fireEvent.click(await screen.findByTestId('part-cat-save'));
-
-    // #133 D: no kind row to read — the category chip carries the story
-    await waitFor(() => expect(screen.getByTestId('txform-category').textContent).toContain('Repaid'));
-    expect((screen.getByTestId('txform-save') as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(screen.getByTestId('txform-save'));
-
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB('munni_demo');
-    await waitFor(async () => {
-      const row = (await db.transactions.toArray()).find((r) => r.merchant === 'Aflossing lening');
-      // typed + the picked special sub, deliberately NO counterparty —
-      // the default-loan bucket (unassigned payments) picks it up
-      expect(row).toMatchObject({ txType: 'debtPayment', catId: 'loanRepayment', needsReview: 0 });
-      expect(row?.linkedAccountId).toBeFalsy();
     }, { timeout: 5000 });
     db.close();
   }, 15_000);

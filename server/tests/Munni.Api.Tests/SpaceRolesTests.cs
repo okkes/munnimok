@@ -16,6 +16,7 @@ public class SpaceRolesTests : IClassFixture<SyncApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 
@@ -61,7 +62,7 @@ public class SpaceRolesTests : IClassFixture<SyncApiFactory>
     }
 
     [Fact]
-    public async Task Legacy_member_invites_become_contributors_and_can_push()
+    public async Task Contributors_can_push()
     {
         var suffix = Guid.NewGuid().ToString("N")[..8];
         var owner = ClientFor($"owner2-{suffix}");
@@ -71,7 +72,7 @@ public class SpaceRolesTests : IClassFixture<SyncApiFactory>
 
         await owner.PostAsJsonAsync($"/sync/{spaceId}/push", Push(spaceId, "devO"));
         await Befriend(owner, friend, friendId);
-        await InviteAndAccept(owner, friend, spaceId, friendId, "member");
+        await InviteAndAccept(owner, friend, spaceId, friendId, "contributor");
 
         var members = await owner.GetFromJsonAsync<List<MemberDto>>($"/spaces/{spaceId}/members");
         Assert.Equal("contributor", members!.Single(m => m.UserId == friendId).Role);

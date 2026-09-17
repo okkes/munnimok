@@ -33,9 +33,10 @@ public class DevicesApiFactory : WebApplicationFactory<Program>
 }
 
 /// <summary>
-/// Logged-in devices: stamping on authenticated requests, list/rename,
-/// and the remote-disconnect contract (revoked device → 410, so the
-/// client wipes itself — 403 would read as a lost space membership).
+/// Logged-in devices: every authenticated request names its device (or
+/// is refused), stamping, list/rename, and the remote-disconnect contract
+/// (revoked device → 410, so the client wipes itself — 403 would read as
+/// a lost space membership).
 /// </summary>
 public class DeviceEndpointsTests : IClassFixture<DevicesApiFactory>
 {
@@ -62,7 +63,7 @@ public class DeviceEndpointsTests : IClassFixture<DevicesApiFactory>
     }
 
     [Fact]
-    public async Task Renaming_persists_and_legacy_clients_without_the_header_still_work()
+    public async Task Renaming_persists()
     {
         var sub = $"dev_{Guid.NewGuid():N}";
         var phone = ClientFor(sub, "phone-2", "ios");
@@ -72,10 +73,23 @@ public class DeviceEndpointsTests : IClassFixture<DevicesApiFactory>
         Assert.Equal(HttpStatusCode.OK, rename.StatusCode);
         var devices = await phone.GetFromJsonAsync<List<DeviceDto>>("/me/devices");
         Assert.Contains(devices!, d => d.Id == "phone-2" && d.Name == "Okkes' iPhone");
+    }
 
-        // a client that never sends the header is simply not enforced
-        var legacy = ClientFor(sub);
-        Assert.Equal(HttpStatusCode.OK, (await legacy.GetAsync("/me/devices")).StatusCode);
+    [Fact]
+    public async Task A_request_that_names_no_device_is_refused()
+    {
+        // every client has a device id (the HLC node id); without one the
+        // server could never disconnect it, so the request is refused —
+        // 401 with its own reason, distinct from an expired session
+        var sub = $"dev_{Guid.NewGuid():N}";
+        var refused = await ClientFor(sub).GetAsync("/me/devices");
+        Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+        Assert.Contains("device-required", await refused.Content.ReadAsStringAsync());
+        // an over-long id is no id either
+        Assert.Equal(HttpStatusCode.Unauthorized, (await ClientFor(sub, new string('x', 65)).GetAsync("/me/devices")).StatusCode);
+        // nothing was stamped for the refused calls
+        var devices = await ClientFor(sub, "phone-4", "android").GetFromJsonAsync<List<DeviceDto>>("/me/devices");
+        Assert.Equal("phone-4", Assert.Single(devices!).Id);
     }
 
     [Fact]

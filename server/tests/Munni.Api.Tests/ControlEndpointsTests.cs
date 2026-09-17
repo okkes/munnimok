@@ -51,7 +51,6 @@ public class ControlApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Auth:TestMode", "true");
         builder.UseSetting("Db:AutoMigrate", "false");
         builder.UseSetting("GoCardless:SecretId", "test"); // enables the /control GC routes
-        builder.UseSetting("Admin:Subs", "the-admin, another-admin");
         builder.ConfigureServices(services =>
         {
             foreach (var d in services
@@ -72,16 +71,19 @@ public class ControlApiFactory : WebApplicationFactory<Program>
     }
 }
 
+/// <summary>/control shares the `admin` scope gate with /admin (AdminScope).</summary>
 public class ControlEndpointsTests : IClassFixture<ControlApiFactory>
 {
     private readonly ControlApiFactory _factory;
 
     public ControlEndpointsTests(ControlApiFactory factory) => _factory = factory;
 
-    private HttpClient ClientFor(string sub)
+    private HttpClient ClientFor(string sub, string? scope = null)
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
+        if (scope is not null) client.DefaultRequestHeaders.Add("X-User-Scope", scope);
         return client;
     }
 
@@ -97,7 +99,7 @@ public class ControlEndpointsTests : IClassFixture<ControlApiFactory>
     [Fact]
     public async Task ConsentsAttributeOriginsAndMarkOwnedHere_DeletionDoesNotExist()
     {
-        var admin = ClientFor("the-admin");
+        var admin = ClientFor("the-admin", "admin");
         Assert.True((await admin.GetAsync("/control/ping")).IsSuccessStatusCode);
 
         // req-here is the only consent THIS environment's database knows
@@ -159,7 +161,7 @@ public class ControlEndpointsTests : IClassFixture<ControlApiFactory>
             });
             await db.SaveChangesAsync();
         }
-        var admin = ClientFor("the-admin");
+        var admin = ClientFor("the-admin", "admin");
         var control = await admin.GetFromJsonAsync<List<ProviderQuotaDto>>("/control/quota");
         var row = control!.Single(q => q.Scope == "requisitions");
         Assert.Equal(50, row.Limit);

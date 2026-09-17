@@ -12,6 +12,24 @@ function devicePlatform(): string {
   return /Android/i.test(navigator.userAgent) ? 'android' : 'ios';
 }
 
+/** every request names the calling device (last-seen stamps, remote
+ *  disconnect) and its platform — the server refuses device-less calls
+ *  with 401 {device-required}; the sync transport sends the same pair */
+export function deviceHeaders(): Record<string, string> {
+  return { 'X-Munni-Device': getDeviceId(), 'X-Munni-Platform': devicePlatform() };
+}
+
+/** remote disconnect (user ruling: disconnect = wipe): a 410
+ *  device-revoked from ANY endpoint means another device revoked this
+ *  one — data.tsx listens and erases this copy */
+export async function noticeDeviceRevoked(response: Response): Promise<void> {
+  if (response.status !== 410) return;
+  const body = await response.clone().json().catch(() => null);
+  if ((body as { error?: string } | null)?.error === 'device-revoked') {
+    globalThis.dispatchEvent(new CustomEvent('munni:device-revoked'));
+  }
+}
+
 /** rejects API access for identities that promised to stay offline */
 function assertNetworkAllowed(): void {
   const identity = readSessionIdentity();
@@ -55,10 +73,7 @@ export async function apiFetch(
   const attempt = async (): Promise<Response> => {
     const headers = new Headers(init.headers);
     headers.set('Content-Type', 'application/json');
-    // logged-in devices: every request names the calling device so the
-    // server can stamp last-seen and enforce a remote disconnect
-    headers.set('X-Munni-Device', getDeviceId());
-    headers.set('X-Munni-Platform', devicePlatform());
+    for (const [name, value] of Object.entries(deviceHeaders())) headers.set(name, value);
     if (identity?.kind === 'user') {
       if (identity.testAuth) headers.set('X-User-Sub', identity.sub);
       else {
@@ -70,14 +85,7 @@ export async function apiFetch(
     return fetch(`${config.apiUrl}${path}`, { ...init, headers });
   };
   let response = await attempt();
-  if (response.status === 410) {
-    // remote disconnect (user ruling: disconnect = wipe): another device
-    // revoked this one — data.tsx listens and erases this copy
-    const body = await response.clone().json().catch(() => null);
-    if ((body as { error?: string } | null)?.error === 'device-revoked') {
-      globalThis.dispatchEvent(new CustomEvent('munni:device-revoked'));
-    }
-  }
+  await noticeDeviceRevoked(response);
   if (response.status === 401 && identity?.kind === 'user' && !identity.testAuth) {
     // maybe just an expired access token — the SDK mints a fresh one
     response = await attempt();
@@ -140,10 +148,11 @@ export async function getApiCapabilities(): Promise<ApiCapabilities> {
   if (identity && identity.kind !== 'user') return { gocardless: false };
   try {
     const res = await fetch(`${config.apiUrl}/health`, { signal: AbortSignal.timeout(3000) });
+    // the handshake fields are the server's contract (lib/protocol.ts)
     const body = (await res.json()) as {
       capabilities?: ApiCapabilities;
-      protocol?: number;
-      minClientProtocol?: number;
+      protocol: number;
+      minClientProtocol: number;
     };
     protocolIssue = protocolIssueFor(body);
     capabilities = body.capabilities ?? { gocardless: false };

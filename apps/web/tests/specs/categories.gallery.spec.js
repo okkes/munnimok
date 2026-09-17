@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// --- Tests ------------------------------------------------------------------
+// Why this spec exists (test policy 2026-09-17): custom categories as a
+// real-browser flow — the manage screen's grouped catalog, creating a
+// custom sub through the form sheet and picking it on a transaction
+// through the split-categories editor and the picker (three stacked
+// sheets). It produces the gallery/guide screenshots 29-cats-manage and
+// 30-cats-create. Rename/delete, custom mains (#244) and the cascade are
+// unit-tested (features/categories/ManageCategoriesScreen.test.tsx).
 
 async function goToManageCats(page) {
   await page.click('[data-testid="tab-settings"]');
@@ -34,8 +40,6 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="cats-addsub-consumption"]');
     await page.waitForSelector('[data-testid="catform-name"]');
     await page.fill('[data-testid="catform-name"]', 'Bubble Tea');
-    // #244: no direction question — the sub follows its parent's nature
-    await expect(page.locator('[data-testid="catform-direction-debit"]')).toHaveCount(0);
     await page.click('[data-testid="catform-icon-coffee-outline"]');
     await page.waitForTimeout(400);
     await shot(page, k('30-cats-create') + '--s1');
@@ -62,62 +66,5 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="tx-detail-category-row"]')).toContainText('Bubble Tea');
     await shot(page, k('30-cats-create'));
     await teardown(page, ctx, k('30-cats-create'));
-  });
-
-  test(`cats-a3 edit and delete custom sub [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V, { demo: true });
-    await goToManageCats(page);
-    // create one under Sport
-    await page.click('[data-testid="cats-group-sport"]');
-    await page.click('[data-testid="cats-addsub-sport"]');
-    await page.fill('[data-testid="catform-name"]', 'Temp Cat');
-    await page.click('[data-testid="catform-save"]');
-    await page.waitForTimeout(500);
-    // rename via edit
-    await page.click('[data-testid="screen-manage-cats"] button:has-text("Temp Cat")');
-    await page.waitForSelector('[data-testid="catform-name"]');
-    await page.fill('[data-testid="catform-name"]', 'Renamed Cat');
-    await page.click('[data-testid="catform-save"]');
-    await page.waitForTimeout(500);
-    await expect(page.locator('[data-testid="screen-manage-cats"]')).toContainText('Renamed Cat');
-    await shot(page, k('31-cats-edit') + '--s1');
-    // delete
-    await page.click('[data-testid="screen-manage-cats"] button:has-text("Renamed Cat")');
-    await page.click('[data-testid="catform-delete"]');
-    await page.waitForTimeout(500);
-    await expect(page.locator('[data-testid="screen-manage-cats"]')).not.toContainText('Renamed Cat');
-    await shot(page, k('31-cats-edit'));
-    await teardown(page, ctx, k('31-cats-edit'));
-  });
-
-  test(`cats-a4 create custom MAIN (always expense, #244) with color; delete cascades [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V, { demo: true });
-    await goToManageCats(page);
-    await page.click('[data-testid="cats-add"]');
-    await page.waitForSelector('[data-testid="catform-name"]');
-    await page.fill('[data-testid="catform-name"]', 'Music');
-    // #244: no type question — the form SAYS a new parent tracks spending
-    await expect(page.locator('[data-testid="catform-expense-note"]')).toBeVisible();
-    await page.click('[data-testid="catform-color-9B59B6"]');
-    await page.click('[data-testid="catform-icon-music"]');
-    await shot(page, k('56-cats-main') + '--s1');
-    await page.click('[data-testid="catform-save"]');
-    await page.waitForTimeout(500);
-    // group header with type badge + locked Other sub
-    await expect(page.locator('[data-cat-group]', { hasText: 'Music' })).toContainText('Expense');
-    await shot(page, k('56-cats-main'));
-
-    // delete the main again — Edit lives in the header's hold menu now
-    const musicHeader = page.locator('[data-cat-group]', { hasText: 'Music' }).locator('[data-testid^="cats-group-"]');
-    await musicHeader.dispatchEvent('pointerdown');
-    await page.waitForTimeout(600); // the 450ms hold threshold
-    await musicHeader.dispatchEvent('pointerup');
-    await page.locator('[data-testid^="cats-editmain-"]').click();
-    await page.click('[data-testid="catform-delete"]');
-    await page.waitForTimeout(500);
-    await expect(page.locator('[data-testid="screen-manage-cats"]')).not.toContainText('Music');
-    await teardown(page, ctx, k('56-cats-main'));
   });
 }

@@ -11,6 +11,8 @@ public static class ApiProtocol
 {
     // v2 (#148 r3): the txSeen entity — a v2 client's push would 400 on a v1 server
     public const int Version = 2;
-    /// <summary>oldest client protocol this server still speaks</summary>
-    public const int MinClient = 1;
+    /// <summary>oldest client protocol this server still speaks — v2: the
+    /// clean-slate server requires the device header, a named bank provider
+    /// and a gated attach, none of which a v1 client sent</summary>
+    public const int MinClient = 2;
 }

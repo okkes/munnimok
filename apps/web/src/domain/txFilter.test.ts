@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { filterTxs, hasActiveFilter, matchingPartIndexes } from './txFilter';
-import type { TransactionRow } from '@/db/types';
+import type { TxView } from '@/db/types';
 
-const tx = (partial: Partial<TransactionRow>): TransactionRow =>
+const tx = (partial: Partial<TxView>): TxView =>
   ({
     id: 'x',
     spaceId: 's',
@@ -16,7 +16,7 @@ const tx = (partial: Partial<TransactionRow>): TransactionRow =>
     deleted: 0,
     fieldVersions: {},
     ...partial,
-  }) as TransactionRow;
+  }) as TxView;
 
 describe('filterTxs', () => {
   const rows = [

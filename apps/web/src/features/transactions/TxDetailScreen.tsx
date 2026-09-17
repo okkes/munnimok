@@ -49,7 +49,7 @@ import { resolveTxDetailBlocks } from './TxDetailCustomizeScreen';
 import type { TxDetailBlockId } from './TxDetailCustomizeScreen';
 import { TxRow } from '@/ui/TxRow';
 import type { SpaceTx } from '@/application/transactions';
-import type { AccountRow, RecurringRow, TxSplit, TxSplitCat, TxType } from '@/db/types';
+import type { AccountRow, RecurringRow, TxSplit, TxSplitCat } from '@/db/types';
 
 const DATE_FMT: Record<string, string> = { en: 'en-GB', nl: 'nl-NL', tr: 'tr-TR' };
 
@@ -270,23 +270,6 @@ async function deleteManualTxRow(
   account: AccountRow | undefined,
 ): Promise<void> {
   await removeMirrorForDeletedSource(store, repo, tx, tx.linkedAccountId).catch(() => undefined);
-  // #228 compat: an UNMIGRATED spread synced from an old device may
-  // still carry entry-keyed mints — they go with the row too
-  const { retireLegacyEntryMints } = await import('@/application/categoryModel');
-  await retireLegacyEntryMints(
-    store,
-    repo,
-    {
-      baseId: tx.id,
-      accountId: tx.accountId,
-      sign: tx.amountCents < 0 ? -1 : 1,
-      date: tx.date,
-      time: tx.time,
-      currency: tx.currency,
-      merchant: tx.merchant,
-    },
-    tx.cats,
-  ).catch(() => undefined);
   if (account && account.source !== 'gocardless') {
     const fresh = await store.get('account', account.id);
     if (fresh?.deleted === 0) {
@@ -818,7 +801,6 @@ interface RowEntryDeps {
  *  per-sibling match queue instead */
 interface BulkOfferState {
   catId: string;
-  txType: TxType;
   count: number;
   link?: { accountId: string; viaPeer: boolean };
 }
@@ -831,8 +813,6 @@ interface BulkOfferState {
  *  arms the #141 bulk offer. Module-level for S3776. */
 async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): Promise<void> {
   const { tx } = deps;
-  const family = specialCatType(entry.catId);
-  const txType = family ?? deps.cats.byId(entry.catId).txTypes[0] ?? tx.txType;
   // #218: the editor OWNS the link story — a BARE entry on a linked row
   // is a detach (the choke retires our mint, the peer releases)
   const linkChanged = (entry.linkedAccountId ?? undefined) !== (tx.linkedAccountId ?? undefined);
@@ -853,7 +833,6 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
     tx,
     {
       catId: entry.catId,
-      txType,
       needsReview: 0,
       ...deps.singleCatFields(entry.catId),
       ...(linkChanged ? { linkedAccountId: (entry.linkedAccountId ?? null) as never } : {}),
@@ -877,7 +856,6 @@ async function writeRowSingleEntry(deps: RowEntryDeps, entry: CatsApplyEntry): P
     similar.length > 0
       ? {
           catId: entry.catId,
-          txType,
           count: similar.length,
           // #268: the link travels with the offer — viaPeer flips the
           // apply into the per-sibling counter-match queue
@@ -2032,7 +2010,7 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
   const [counterOpen, setCounterOpen] = useState(false);
   const [bulkOffer, setBulkOffer] = useState<BulkOfferState | null>(null);
   // #268: the per-sibling counter-match queue a viaPeer bulk apply runs
-  const [counterBulk, setCounterBulk] = useState<{ items: SpaceTx[]; catId: string; txType: TxType; accountId: string } | null>(null);
+  const [counterBulk, setCounterBulk] = useState<{ items: SpaceTx[]; catId: string; accountId: string } | null>(null);
   // #141: a landed split offers itself to the splitless siblings —
   // mutually exclusive with the category offer (they share the bar)
   const [splitBulk, setSplitBulk] = useState<TxSplit[] | null>(null);
@@ -2246,11 +2224,9 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
   // reimbursement — the editor's picker enforces it
   const recurringAllowedCats = recurringCatConstraint(tx, recurrings);
 
-  // #126 r4: the split's parts (the settled Reimbursed slice is
-  // bookkeeping, not a part) — with a real split the container steps
-  // back and the parts carry the stories
-  const parts = (tx.splits ?? []).filter((s) => s.catId !== REIMBURSED_ID);
-  const settledSlices = (tx.splits ?? []).filter((s) => s.catId === REIMBURSED_ID);
+  // #126 r4: with a real split the container steps back and the parts
+  // carry the stories
+  const parts = tx.splits ?? [];
   const multiPart = parts.length > 1;
   const activeEventsList = (events ?? []).filter((e) => e.archived !== 1);
   const activeRecsList = (recurrings ?? []).filter((r) => r.active === 1);
@@ -2284,7 +2260,7 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
     // carry it now); explicit nulls — an undefined would drop from the
     // op and leave stale values behind (LWW)
     void transform(tx, {
-      splits: [...splitStage, ...settledSlices],
+      splits: splitStage,
       catId: primaryCatId(splitStage) ?? tx.catId,
       // #211: a container owns no category spread — the explicit null
       // also VERSION-STAMPS the row (its cats fieldVersion tells fresh
@@ -2301,11 +2277,9 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
     setSplitStage(null);
     setCompleteOpen(false);
   };
-  // the settled value a container holds: legacy pseudo-slices plus the
-  // parts' own bookkeeping (#228: the settle lives ON the parts)
-  const partsSettledCents =
-    settledSlices.reduce((sum, s) => sum + s.amountCents, 0) +
-    parts.reduce((sum, part) => sum + reimbursedInCats(part.cats), 0);
+  // the settled value a container holds: the parts' own bookkeeping
+  // (#228: the settle lives ON the parts)
+  const partsSettledCents = parts.reduce((sum, part) => sum + reimbursedInCats(part.cats), 0);
   const unsplitTo = (catId: string) => {
     setSplitStage(null);
     // #201 (user): removing the split retires the armed bulk offers —
@@ -2317,10 +2291,8 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
   };
 
   // #211: ONE category on a whole row rewrites its partition — a spread
-  // clears (or, settled, re-forms around the pick); legacy splits clear
-  const settledPartitionCents =
-    settledSlices.reduce((sum, s) => sum + s.amountCents, 0) +
-    (tx.cats ?? []).filter((e) => e.catId === REIMBURSED_ID).reduce((sum, e) => sum + e.amountCents, 0);
+  // clears (or, settled, re-forms around the pick)
+  const settledPartitionCents = (tx.cats ?? []).filter((e) => e.catId === REIMBURSED_ID).reduce((sum, e) => sum + e.amountCents, 0);
   const singleCatFields = (catId: string) => singleCatPartitionFields(tx, multiPart, settledPartitionCents, catId);
   // #220: the bank's counterparty is ALWAYS a Details fact now — no
   // derivation gates; the row itself decides how it renders
@@ -2414,7 +2386,7 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
     // #268 (user): a SPECIFIC counter pick cannot be copied — each
     // sibling asks for its own counter row (or links and waits)
     if (bulkOffer.link?.viaPeer && picked.length > 0) {
-      setCounterBulk({ items: picked, catId: bulkOffer.catId, txType: bulkOffer.txType, accountId: bulkOffer.link.accountId });
+      setCounterBulk({ items: picked, catId: bulkOffer.catId, accountId: bulkOffer.link.accountId });
       setBulkOffer(null);
       return;
     }
@@ -2425,7 +2397,6 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
         item,
         {
           catId: bulkOffer.catId,
-          txType: bulkOffer.txType,
           needsReview: 0,
           ...(bulkOffer.link ? { linkedAccountId: bulkOffer.link.accountId } : {}),
         },
@@ -2445,7 +2416,6 @@ export function TxDetailScreen({ backTo = '/transactions' }: Readonly<{ backTo?:
       item,
       {
         catId: counterBulk.catId,
-        txType: counterBulk.txType,
         needsReview: 0,
         linkedAccountId: counterBulk.accountId as never,
         ...(peerId ? { transferPeerId: peerId } : {}),

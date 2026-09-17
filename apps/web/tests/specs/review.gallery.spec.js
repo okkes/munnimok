@@ -1,7 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// --- Tests ------------------------------------------------------------------
+// Why this spec exists (test policy 2026-09-17): the review core flow in a
+// real browser — the Home banner opens the queue, confirm/recategorize
+// drain it through the split-categories editor and the sheet stack, and
+// an empty queue takes the banner off Home. It produces the gallery/guide
+// screenshots 13-review-banner, 14-review-flow and 15-review-done. The
+// queue's ordering and confirm semantics are unit-tested
+// (features/review/*.test.tsx).
 
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
@@ -20,7 +26,8 @@ for (const V of VARIANTS) {
     await teardown(page, ctx, k('13-review-banner'));
   });
 
-  test(`review-a2 confirm and recategorize drain the queue [${V.id}]`, async ({ browser }) => {
+  test(`review-a2 confirm and recategorize drain the queue; the empty queue hides the home banner [${V.id}]`, async ({ browser }) => {
+    test.slow(); // drains the whole queue through the live query — CI needs headroom
     const { page, ctx } = await createPage(browser, V);
     await base(page, V, { demo: true });
     await page.click('[data-testid="home-review-banner"]');
@@ -40,8 +47,10 @@ for (const V of VARIANTS) {
     await expect(page.locator('[data-testid="review-category-chip"]')).toContainText('Gift');
     await shot(page, k('14-review-flow') + '--s2');
     await page.click('[data-testid="review-confirm-btn"]'); // Gift confirmed
-    // the richer demo seed varies the rest of the queue — drain it with
-    // the same paced idempotent-confirm loop as review-a3
+    // the richer demo seed varies the rest of the queue — drain it with a
+    // paced idempotent-confirm loop: re-confirming a card that hasn't
+    // swapped yet is an idempotent write, so no advance-tracking is
+    // needed, and a genuinely unconfirmable card still fails
     await expect(async () => {
       if (await page.locator('[data-testid="review-empty"]').count()) return;
       await page.click('[data-testid="review-confirm-btn"]', { timeout: 2000 }).catch(() => undefined);
@@ -49,30 +58,12 @@ for (const V of VARIANTS) {
     }).toPass({ timeout: 90_000, intervals: [800, 1500, 3000] });
     await expect(page.locator('[data-testid="review-empty"]')).toBeVisible();
     await shot(page, k('14-review-flow'));
-    await teardown(page, ctx, k('14-review-flow'));
-  });
 
-  test(`review-a3 empty queue hides home banner [${V.id}]`, async ({ browser }) => {
-    test.slow(); // 3 confirm round-trips through the live query — CI needs headroom
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V, { demo: true });
-    await page.click('[data-testid="home-review-banner"]');
-    // drain the whole queue: keep confirming until the empty state shows.
-    // Re-confirming a card that hasn't swapped yet is an idempotent write,
-    // so no advance-tracking is needed — the paced intervals stop this
-    // from hammering, and a genuinely unconfirmable card still fails.
-    // (the old fixed 3-iteration loop flaked whenever the LAST live-query
-    // round trip outlived its separate budget on coverage runners)
-    await expect(async () => {
-      if (await page.locator('[data-testid="review-empty"]').count()) return;
-      await page.click('[data-testid="review-confirm-btn"]', { timeout: 2000 }).catch(() => undefined);
-      throw new Error('queue not empty yet');
-    }).toPass({ timeout: 90_000, intervals: [800, 1500, 3000] });
-    await expect(page.locator('[data-testid="review-empty"]')).toBeVisible();
+    // back home: nothing left to review, so the banner is gone (15-review-done)
     await page.click('[data-testid="review-back"]');
     await expect(page.locator('[data-testid="screen-home"]')).toBeVisible();
     await expect(page.locator('[data-testid="home-review-banner"]')).toHaveCount(0);
     await shot(page, k('15-review-done'));
-    await teardown(page, ctx, k('15-review-done'));
+    await teardown(page, ctx, k('14-review-flow'));
   });
 }

@@ -6,8 +6,13 @@ import {
   applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, resolveLiveDir, publishedPathParts,
   dsmAdvice, dsmLogin, dsmSession, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid, summarizeNas,
   probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes, LOGIN_SHAPES, CALL_SHAPES, SESSION_SHAPES,
-  readPollerLog,
+  readPollerLog, proxyRules,
 } from '../modules/dsm.mjs';
+import { scratchPlatforms } from './fixture.mjs';
+
+const fx = scratchPlatforms();
+const { loadStack } = await import('../modules/stack.mjs');
+test.after(() => fx.cleanup());
 
 const CREDS = { url: 'https://nas.example:5001/', user: 'deploy', pass: 'pw' };
 const noWait = async () => {};
@@ -37,7 +42,9 @@ function dsm(routes) {
 const ok = (data = {}) => ({ success: true, data });
 const fail = (code, extra = {}) => ({ success: false, error: { code, ...extra } });
 const netErr = (code) => { const e = new Error('fetch failed'); e.cause = { code }; return e; };
-const stack = { stack: 'munni-iac-prod', sharedServices: false, host: (k) => `${k}.nas.example`, ports: { web: 8290, api: 8292, admin: 8291 } };
+// a real environment stack of the nas platform: five hosts under the domain, ports from its slot
+const stack = loadStack('munni-nas-prod');
+const H = { web: 'munni-prod-nas.nas.example', admin: 'munni-prod-nas-admin.nas.example', api: 'munni-prod-nas-api.nas.example', logto: 'munni-prod-nas-logto.nas.example', logtoAdmin: 'munni-prod-nas-logto-admin.nas.example' };
 const NOT_COVERED = async () => ({ covers: false, code: 'ERR_TLS_CERT_ALTNAME_INVALID' });
 const OLD = { id: 'old1', desc: 'nas.example', is_default: true, subject: { common_name: 'nas.example', sub_alt_name: ['nas.example'] }, valid_till: 'Oct 20 17:39:26 2036 GMT', services: [] };
 const WILD = { id: 'wild1', desc: 'nas.example;*.nas.example', is_default: false, subject: { common_name: 'nas.example', sub_alt_name: ['nas.example', '*.nas.example'] }, valid_till: 'Dec  9 00:00:00 2036 GMT', services: [] };
@@ -45,15 +52,29 @@ const RULE_U1 = { display_name: 'web.nas.example', display_name_i18n: '', isPkg:
 // DSM 7.3 lists the id as UUID; a lowercase uuid (older captures) still counts
 const RULES = ok({ entries: [{ UUID: 'u1', frontend: { fqdn: 'web.nas.example' } }, { uuid: 'u9', frontend: { fqdn: 'other.nas.example' } }] });
 
+test('proxyRules: every service of a stack gets a rule — an environment its five hosts, the shared stack its four — each onto its published port', () => {
+  assert.deepEqual(proxyRules(stack), [
+    { key: 'web', host: H.web, port: 8380 }, { key: 'admin', host: H.admin, port: 8381 }, { key: 'api', host: H.api, port: 8382 },
+    { key: 'logto', host: H.logto, port: 3201 }, { key: 'logtoAdmin', host: H.logtoAdmin, port: 3202 },
+  ]);
+  assert.deepEqual(proxyRules(loadStack('munni-nas-staging')).map((r) => [r.host, r.port]), [['munni-staging-nas.nas.example', 8480], ['munni-staging-nas-admin.nas.example', 8481], ['munni-staging-nas-api.nas.example', 8482], ['munni-staging-nas-logto.nas.example', 3301], ['munni-staging-nas-logto-admin.nas.example', 3302]]);
+  assert.deepEqual(proxyRules(loadStack('munni-nas-shared')), [
+    { key: 'glitchtip', host: 'glitchtip-nas.nas.example', port: 8383 }, { key: 'vault', host: 'vault-nas.nas.example', port: 8384 },
+    { key: 'control', host: 'control-nas.nas.example', port: 8385 }, { key: 'pgadmin', host: 'pgadmin-nas.nas.example', port: 8386 },
+  ]);
+});
+
 test('dsm: every call rides the sid AND the SynoToken; error codes come with the operator advice; a hand-set access profile survives an update', async () => {
   const { calls, fetchImpl } = dsm({
-    'SYNO.Core.AppPortal.ReverseProxy.list': ok({ entries: [{ UUID: 'a1', frontend: { fqdn: 'admin.nas.example', acl_id: 'lan-only' }, backend: { port: 1 } }] }),
+    'SYNO.Core.AppPortal.ReverseProxy.list': ok({ entries: [{ UUID: 'a1', frontend: { fqdn: H.admin, acl_id: 'lan-only' }, backend: { port: 1 } }, { UUID: 'l1', frontend: { fqdn: H.logto }, backend: { port: 3201 } }] }),
     'SYNO.Core.AppPortal.ReverseProxy.create': ok({}),
     'SYNO.Core.AppPortal.ReverseProxy.update': ok({}),
   });
   const out = await applyReverseProxy(stack, CREDS, fetchImpl);
-  assert.deepEqual(out.created, ['web.nas.example', 'api.nas.example']);
-  assert.deepEqual(out.updated, ['admin.nas.example']);
+  assert.deepEqual(out, { created: [H.web, H.api, H.logtoAdmin], updated: [H.admin], unchanged: [H.logto] }, 'missing rules are created, a wrong port updated, a right one left alone');
+  const created = calls.filter((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.create').map((c) => JSON.parse(c.params.entry));
+  assert.deepEqual(created.map((e) => [e.frontend.fqdn, e.frontend.port, e.backend.fqdn, e.backend.port]), [[H.web, 443, 'localhost', 8380], [H.api, 443, 'localhost', 8382], [H.logtoAdmin, 443, 'localhost', 3202]], 'https on 443 in front, the stack\'s published port behind');
+  assert.equal(created[0].description, `munni-nas-prod: ${H.web}`);
   const list = calls.find((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.list');
   assert.equal(list.params._sid, 'SID-DSM');
   assert.equal(list.params.SynoToken, 'TOK');
@@ -68,7 +89,7 @@ test('dsm: every call rides the sid AND the SynoToken; error codes come with the
   const update = JSON.parse(calls.find((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.update').params.entry);
   assert.equal(update.UUID, 'a1');
   assert.equal(update.frontend.acl_id, 'lan-only', 'the LAN-only profile the operator set is kept');
-  assert.equal(update.backend.port, 8291);
+  assert.equal(update.backend.port, 8381);
   assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /application it names/);
   assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /session DSM does not know/, '402 names the other cause too');
   assert.match(dsmAdvice(new Error('DSM SYNO.API.Auth.login failed: {"code":402}')), /administrators group/, '402 names the admin step too — one text with validate.mjs');
@@ -744,11 +765,11 @@ test('readLiveFile: the stamp marker of the live dir comes through FileStation r
 import { removeReverseProxy, removePollerTask, removeLiveDir, requestRemoval } from '../modules/dsm.mjs';
 test('cleanup: the stack\'s rules go by uuid, the poller task by id (root API as the fallback), the live dir through FileStation, and a removal is a stamp reading "remove"', async () => {
   const a = dsm({
-    'SYNO.Core.AppPortal.ReverseProxy.list': ok({ entries: [{ UUID: 'u1', frontend: { fqdn: 'web.nas.example' } }, { UUID: 'u2', frontend: { fqdn: 'api.nas.example' } }, { UUID: 'u9', frontend: { fqdn: 'other.nas.example' } }] }),
+    'SYNO.Core.AppPortal.ReverseProxy.list': ok({ entries: [{ UUID: 'u1', frontend: { fqdn: H.web } }, { UUID: 'u2', frontend: { fqdn: H.api } }, { UUID: 'u9', frontend: { fqdn: 'munni-staging-nas.nas.example' } }] }),
     'SYNO.Core.AppPortal.ReverseProxy.delete': ok({}),
   });
   const rules = await removeReverseProxy(stack, CREDS, a.fetchImpl);
-  assert.deepEqual(rules, { removed: ['web.nas.example', 'api.nas.example'], absent: ['admin.nas.example'] });
+  assert.deepEqual(rules, { removed: [H.web, H.api], absent: [H.admin, H.logto, H.logtoAdmin] });
   assert.deepEqual(a.calls.filter((c) => c.key === 'SYNO.Core.AppPortal.ReverseProxy.delete').map((c) => c.params.uuids), ['["u1"]', '["u2"]'], 'never the other rule');
   const t = dsm({
     'SYNO.Core.TaskScheduler.list': ok({ tasks: [{ id: 42, name: POLLER_TASK_NAME, owner: 'root', real_owner: 'root' }] }),

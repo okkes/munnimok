@@ -127,13 +127,17 @@ describe('Allocation (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('alloc-toallocate').textContent).toMatch(/-/));
   }, 15_000);
 
-  it('rollover is a visible per-space toggle', async () => {
+  it('rollover is a per-space toggle: a tap flips it and the space remembers', async () => {
     renderApp('/allocate');
     await screen.findByTestId('screen-allocate');
     const toggle = () => screen.getByTestId('alloc-rollover');
-    expect(toggle().innerHTML).toContain('justify-end'); // default on
+    expect(toggle().getAttribute('aria-pressed')).toBe('true'); // default on
     fireEvent.click(toggle());
-    await waitFor(() => expect(toggle().innerHTML).toContain('justify-start'));
+    await waitFor(() => expect(toggle().getAttribute('aria-pressed')).toBe('false'));
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await waitFor(async () => expect((await db.spaces.get('demo_space'))?.allocRollover).toBe(0));
+    db.close();
   }, 15_000);
 
   it('settings row and home block both land on the allocate screen', async () => {

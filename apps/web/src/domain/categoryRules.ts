@@ -1,4 +1,4 @@
-import type { CatDirection, TransactionRow, TxType } from '@/db/types';
+import type { CatDirection, TransactionRow, TxType, TxView } from '@/db/types';
 import { UNCATEGORIZED_ID } from './categories';
 
 /**
@@ -13,7 +13,7 @@ import { UNCATEGORIZED_ID } from './categories';
  * then reset to Uncategorized and flagged for review.
  */
 
-export const directionOfTx = (tx: Pick<TransactionRow, 'amountCents'>): 'debit' | 'credit' =>
+export const directionOfTx = (tx: Pick<TxView, 'amountCents'>): 'debit' | 'credit' =>
   tx.amountCents < 0 ? 'debit' : 'credit';
 
 export const directionAllows = (direction: CatDirection | undefined, side: 'debit' | 'credit'): boolean =>
@@ -26,28 +26,28 @@ export function subtreeIds(parentId: string, cats: { id: string; parentId?: stri
   return ids;
 }
 
-const usesCat = (tx: TransactionRow, catIds: Set<string>): boolean =>
+const usesCat = (tx: TxView, catIds: Set<string>): boolean =>
   (tx.catId !== undefined && catIds.has(tx.catId))
   || (tx.splits ?? []).some((s) => catIds.has(s.catId) || (s.cats ?? []).some((c) => catIds.has(c.catId)))
   || (tx.cats ?? []).some((c) => catIds.has(c.catId));
 
 /** transactions that would conflict if the category subtree changed to `newType` */
-export function affectedByTypeChange(txs: TransactionRow[], catIds: Set<string>, newType: TxType): TransactionRow[] {
+export function affectedByTypeChange(txs: TxView[], catIds: Set<string>, newType: TxType): TxView[] {
   return txs.filter((tx) => tx.deleted === 0 && usesCat(tx, catIds) && tx.txType !== newType);
 }
 
 /** transactions on the wrong side if the sub's direction changed to `newDirection` */
 export function affectedByDirectionChange(
-  txs: TransactionRow[],
+  txs: TxView[],
   catId: string,
   newDirection: CatDirection,
-): TransactionRow[] {
+): TxView[] {
   const ids = new Set([catId]);
   return txs.filter((tx) => tx.deleted === 0 && usesCat(tx, ids) && !directionAllows(newDirection, directionOfTx(tx)));
 }
 
 /** every transaction still using a category that is about to be deleted */
-export function affectedByDelete(txs: TransactionRow[], catIds: Set<string>): TransactionRow[] {
+export function affectedByDelete(txs: TxView[], catIds: Set<string>): TxView[] {
   return txs.filter((tx) => tx.deleted === 0 && usesCat(tx, catIds));
 }
 
@@ -57,8 +57,11 @@ export function affectedByDelete(txs: TransactionRow[], catIds: Set<string>): Tr
  * rows' category but keep the amounts (also uncategorized) — part
  * spreads and the row's own `cats` partition (#211) the same way.
  */
-export function detachCategoryPatch(tx: TransactionRow, catIds: Set<string>): Partial<TransactionRow> {
-  const patch: Partial<TransactionRow> = { needsReview: 1 };
+export function detachCategoryPatch(
+  tx: TxView,
+  catIds: Set<string>,
+): Partial<Pick<TransactionRow, 'catId' | 'splits' | 'cats' | 'needsReview'>> {
+  const patch: Partial<Pick<TransactionRow, 'catId' | 'splits' | 'cats' | 'needsReview'>> = { needsReview: 1 };
   const detachCats = <T extends { catId: string }>(entries: T[]): T[] =>
     entries.map((c) => (catIds.has(c.catId) ? { ...c, catId: UNCATEGORIZED_ID } : c));
   if (tx.catId !== undefined && catIds.has(tx.catId)) patch.catId = UNCATEGORIZED_ID;

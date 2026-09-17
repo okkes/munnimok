@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
+import type { SpaceTx } from '@/application/transactions';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { REIMBURSED_ID } from '@/domain/categories';
 import { orDefaultLabel, txTitle } from '@/lib/text';
 import { EMPTY_FILTERS, FilterSheet, countActive } from './FilterSheet';
 import type { SheetFilters } from './FilterSheet';
 import { useLang } from '@/i18n';
-import type { TransactionRow } from '@/db/types';
 import { filterTxs, matchingPartIndexes } from '@/domain/txFilter';
 import { hasUnsettledReimbursement, partNetCents } from '@/domain/reimbursement';
 import { kindOf } from '@/domain/txKind';
@@ -39,8 +39,8 @@ function TxPartSoloRows({
   onOpen,
   highlight = '',
 }: Readonly<{
-  tx: TransactionRow;
-  parts: readonly NonNullable<TransactionRow['splits']>[number][];
+  tx: SpaceTx;
+  parts: readonly NonNullable<SpaceTx['splits']>[number][];
   shownIdx: readonly number[];
   fmt: ReturnType<typeof useDisplayMoney>['fmt'];
   onOpen: (partId: string | undefined) => void;
@@ -76,8 +76,8 @@ function TxPartGroupRows({
   fmt,
   onOpen,
 }: Readonly<{
-  tx: TransactionRow;
-  parts: readonly NonNullable<TransactionRow['splits']>[number][];
+  tx: SpaceTx;
+  parts: readonly NonNullable<SpaceTx['splits']>[number][];
   fmt: ReturnType<typeof useDisplayMoney>['fmt'];
   onOpen: (partId: string | undefined) => void;
 }>) {
@@ -177,9 +177,9 @@ function TxPartGroupRows({
  *  reads through the reverse index, so the surviving leg still says
  *  where the money came from. */
 function peerNoteFor(
-  item: TransactionRow,
-  byId: Map<string, TransactionRow>,
-  reverse: Map<string, TransactionRow>,
+  item: SpaceTx,
+  byId: Map<string, SpaceTx>,
+  reverse: Map<string, SpaceTx>,
   accountNames: Map<string, string>,
 ): string | undefined {
   const peer = (item.transferPeerId ? byId.get(item.transferPeerId) : undefined) ?? reverse.get(item.id);
@@ -201,21 +201,21 @@ function edgeOf(index: number, count: number): TxRowEdge {
 }
 
 /** the byId + reverse peer indexes over one list (S3776 helpers) */
-function peerIndexes(matched: readonly TransactionRow[]) {
+function peerIndexes(matched: readonly SpaceTx[]) {
   const byId = new Map(matched.map((item) => [item.id, item]));
   // #237 r2: one-way pairs read their peer through the reverse index
-  const reverse = new Map<string, TransactionRow>();
+  const reverse = new Map<string, SpaceTx>();
   for (const row of matched) {
     if (row.transferPeerId && byId.has(row.transferPeerId)) reverse.set(row.transferPeerId, row);
   }
-  const peerOf = (item: TransactionRow) => (item.transferPeerId ? byId.get(item.transferPeerId) : undefined) ?? reverse.get(item.id);
+  const peerOf = (item: SpaceTx) => (item.transferPeerId ? byId.get(item.transferPeerId) : undefined) ?? reverse.get(item.id);
   return { peerOf };
 }
 
 /** #237 (user decision "a"): a pair collapses to ONE row — the outgoing
  *  leg, or for a SAME-SIGN wallet pair the real purchase (the transfer
  *  leg hides). S3776: out of the list memo. */
-function collapseTransferPairs(matched: TransactionRow[]): TransactionRow[] {
+function collapseTransferPairs(matched: SpaceTx[]): SpaceTx[] {
   const { peerOf } = peerIndexes(matched);
   return matched.filter((item) => {
     const peer = peerOf(item);
@@ -228,10 +228,10 @@ function collapseTransferPairs(matched: TransactionRow[]): TransactionRow[] {
 }
 
 /** #352: same-day legs sit together, outgoing first. S3776. */
-function pairAdjacentLegs(matched: TransactionRow[]): TransactionRow[] {
+function pairAdjacentLegs(matched: SpaceTx[]): SpaceTx[] {
   const { peerOf } = peerIndexes(matched);
   const placed = new Set<string>();
-  const ordered: TransactionRow[] = [];
+  const ordered: SpaceTx[] = [];
   for (const item of matched) {
     if (placed.has(item.id)) continue;
     const peer = peerOf(item);
@@ -249,8 +249,8 @@ function pairAdjacentLegs(matched: TransactionRow[]): TransactionRow[] {
   return ordered;
 }
 
-function groupByDate(txs: TransactionRow[]): [string, TransactionRow[]][] {
-  const groups = new Map<string, TransactionRow[]>();
+function groupByDate(txs: SpaceTx[]): [string, SpaceTx[]][] {
+  const groups = new Map<string, SpaceTx[]>();
   for (const tx of txs) {
     const list = groups.get(tx.date) ?? [];
     list.push(tx);
@@ -370,7 +370,7 @@ export function TransactionsScreen() {
   const peerNotes = useMemo(() => {
     if (filters.accountIds.size > 0) return new Map<string, string>();
     const byId = new Map((allTxs ?? []).map((item) => [item.id, item]));
-    const reverse = new Map<string, TransactionRow>();
+    const reverse = new Map<string, SpaceTx>();
     for (const row of allTxs ?? []) {
       if (row.transferPeerId) reverse.set(row.transferPeerId, row);
     }
@@ -486,7 +486,7 @@ export function TransactionsScreen() {
           }
           // S2004: the row renderer lives at THIS level, not inside the
           // list map — pair units render two rows through one function
-          const renderRow = (item: TransactionRow, listIndex: number) => (
+          const renderRow = (item: SpaceTx, listIndex: number) => (
             <TxRow
               key={item.id}
               tx={item}

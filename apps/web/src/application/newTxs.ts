@@ -6,7 +6,6 @@ import type { SpaceTx } from '@/db/joined';
 import type { TxSeenRow } from '@/db/types';
 import { bornAtMs, txSeenBaseId, txSeenRowId, userStateSpaceId } from '@/domain/userState';
 
-const LEGACY_KEY = 'txSeen';
 const KEY_PREFIX = 'txNew_';
 const KNOWN_CAP = 1500;
 const NEW_TTL_MS = 24 * 60 * 60 * 1000;
@@ -58,12 +57,7 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
     store,
     async () => {
       if (stateSpaceId) return null; // the synced rows own it
-      const own = (await store.metaGet(key))?.value as NewMarker | undefined;
-      if (own) return own;
-      // migration: the old device-wide seen list seeds `known` so nothing
-      // historic floods the block on the first run of the new scheme
-      const legacy = (await store.metaGet(LEGACY_KEY))?.value as { ids?: string[] } | undefined;
-      return legacy?.ids ? ({ known: legacy.ids, fresh: {} } satisfies NewMarker) : null;
+      return ((await store.metaGet(key))?.value as NewMarker | undefined) ?? null;
     },
     [spaceId, stateSpaceId],
   );
@@ -73,7 +67,7 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
     if (!txs) return;
     if (stateSpaceId) {
       if (seenRows === undefined) return;
-      void labelSynced(repo, stateSpaceId, spaceId, txs, spaceSeen, baseline, store).catch(() => undefined);
+      void labelSynced(repo, stateSpaceId, spaceId, txs, spaceSeen, baseline).catch(() => undefined);
       return;
     }
     if (marker === undefined) return;
@@ -113,23 +107,16 @@ async function labelSynced(
   txs: SpaceTx[],
   spaceSeen: TxSeenRow[],
   baseline: TxSeenRow | undefined,
-  store: ReturnType<typeof useData>['store'],
 ): Promise<void> {
   const now = Date.now();
   if (!baseline) {
     // first sight of this space under the scheme: everything current is
-    // history. The device-local marker's fresh labels (r2) migrate so a
-    // running 24h clock survives the upgrade.
+    // history
     await repo.upsert('txSeen', stateSpaceId, txSeenBaseId(spaceId), {
       forSpaceId: spaceId,
       labeledAt: now,
       baseline: 1 as const,
     });
-    const legacy = (await store.metaGet(KEY_PREFIX + spaceId))?.value as NewMarker | undefined;
-    for (const [txId, at] of Object.entries(legacy?.fresh ?? {})) {
-      if (now - at >= NEW_TTL_MS) continue;
-      await repo.upsert('txSeen', stateSpaceId, txSeenRowId(spaceId, txId), { forSpaceId: spaceId, txId, labeledAt: at });
-    }
     return;
   }
   const seenTxIds = new Set(spaceSeen.map((row) => row.txId).filter(Boolean));

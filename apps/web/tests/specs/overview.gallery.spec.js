@@ -1,7 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { VARIANTS, createPage, base, shot, teardown } from '../helpers/base.js';
 
-// Period overview: home tiles + category drill-down (demo data).
+// Why this spec exists (test policy 2026-09-17): the period overview as
+// the user meets it — the Home tiles and the expense drill-down (chart,
+// composition, expandable categories, period switch) rendered by a real
+// browser on demo data. It produces the guide screenshots 59-overview-home
+// and 60-overview-expense. The sign mechanics of the saving/income sides
+// are unit-tested (features/overview/OverviewScreen.test.tsx).
 
 for (const V of VARIANTS) {
   const k = (name) => `${name}--${V.id}`;
@@ -34,17 +39,5 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="overview-bar-2"]');
     await expect(page.locator('[data-testid="overview-total"]')).toContainText('€');
     await teardown(page, ctx, k('60-overview-expense'));
-  });
-
-  test(`ov-a3 saving drill-down uses the checking-side sign mechanic [${V.id}]`, async ({ browser }) => {
-    const { page, ctx } = await createPage(browser, V);
-    await base(page, V, { demo: true });
-    await page.click('[data-testid="home-overview-saving"]');
-    await page.waitForSelector('[data-testid="screen-overview"]');
-    // demo deposits are -200/-150 on checking -> shown as positive savings
-    await page.click('[data-testid="overview-bar-4"]'); // previous period
-    await expect(page.locator('[data-testid="overview-total"]')).not.toContainText('-');
-    await shot(page, k('61-overview-saving'));
-    await teardown(page, ctx, k('61-overview-saving'));
   });
 }

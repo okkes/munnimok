@@ -61,30 +61,6 @@ export async function historyMoveImpact(store: StorageBackend, spaceId: string, 
 }
 
 /**
- * #259: every attach path writes a gate ("never silently unlimited"),
- * so a gateless link is always an accident — the server's connect-time
- * mirror op carries none, and the old one-shot heal burned its device-
- * local marker against an EMPTY database before the first sync ever
- * delivered the links. The sweep is idempotent and runs every boot: a
- * gateless link in a space that has a start date takes the space's
- * date, whenever it arrived. (Display already falls back at read time —
- * this makes the stored fact honest too.)
- */
-export async function healGatelessLinks(store: StorageBackend, repo: Repo): Promise<number> {
-  let touched = 0;
-  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
-  for (const space of spaces) {
-    if (!space.historyStartDate) continue;
-    for (const link of await spaceAccountLinks(store, space.id)) {
-      if (link.historyFrom) continue;
-      await repo.upsert('accountLink', space.id, link.id, { historyFrom: space.historyStartDate });
-      touched++;
-    }
-  }
-  return touched;
-}
-
-/**
  * The write half: the space's date moves, every attachment's gate moves
  * with it (the settings sheet is the space-wide control), and — moving
  * newer — the space's own rows before the new start tombstone.

@@ -159,7 +159,7 @@ describe('feature B join layer', () => {
     await repo.upsert('transaction', SPACE, 'derive1', {
       accountId: 'chk', date: '2026-07-03', amountCents: -1200, currency: 'EUR',
       // the STORED type lies on purpose (sign-legal) — the view ignores it
-      merchant: 'Shop', catId: 'savingDeposit', txType: 'expense', needsReview: 0,
+      merchant: 'Shop', catId: 'savingDeposit', needsReview: 0,
     });
     const store = new DexieBackend(db);
     const view = async () => (await visibleTransactions(store, SPACE)).find((t) => t.id === 'derive1');
@@ -187,7 +187,7 @@ describe('feature B join layer', () => {
     // the adjustment marker outranks everything — flag and legacy alike
     await repo.upsert('transaction', SPACE, 'adj1', {
       accountId: 'chk', date: '2026-07-04', amountCents: -50, currency: 'EUR',
-      merchant: 'Fix', catId: 'groceries', txType: 'expense', needsReview: 0, adjustment: 1,
+      merchant: 'Fix', catId: 'groceries', needsReview: 0, adjustment: 1,
     });
     const store2 = new DexieBackend(db);
     const adj = (await visibleTransactions(store2, SPACE)).find((t) => t.id === 'adj1');
@@ -202,7 +202,7 @@ describe('feature B join layer', () => {
     // through untouched — it is bookkeeping, not a story)
     await repo.upsert('transaction', SPACE, 'spread1', {
       accountId: 'chk', date: '2026-07-05', amountCents: -10_000, currency: 'EUR',
-      merchant: 'Mixed', catId: 'savingDeposit', txType: 'expense', needsReview: 0,
+      merchant: 'Mixed', catId: 'savingDeposit', needsReview: 0,
       linkedAccountId: 'defpot',
       cats: [
         { catId: 'savingDeposit', amountCents: 6_000 },
@@ -212,7 +212,7 @@ describe('feature B join layer', () => {
     // a REGULAR spread without any link keeps deriving by sign per entry
     await repo.upsert('transaction', SPACE, 'spread2', {
       accountId: 'chk', date: '2026-07-06', amountCents: -5_000, currency: 'EUR',
-      merchant: 'Plain', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: 'Plain', catId: 'groceries', needsReview: 0,
       cats: [
         { catId: 'groceries', amountCents: 3_000 },
         { catId: 'sweets', amountCents: 2_000 },
@@ -285,7 +285,7 @@ describe('feature B join layer', () => {
     expect(potRows).toEqual([]);
   });
 
-  it('legacy merged rows keep working and writing in place (dual-read)', async () => {
+  it("the space's own rows are served as-is and write in place (no overlay)", async () => {
     await repo.upsert('transaction', SPACE, 'legacy1', {
       accountId: 'oldAcct',
       date: '2026-07-02',
@@ -293,17 +293,16 @@ describe('feature B join layer', () => {
       currency: 'EUR',
       merchant: 'Bakker',
       catId: 'groceries',
-      txType: 'expense',
       needsReview: 0,
     });
     const txs = await visibleTransactions(new DexieBackend(db), SPACE);
-    const legacy = txs.find((t) => t.id === 'legacy1')!;
-    expect(legacy.feedSpaceId).toBeUndefined();
-    expect(legacy.catId).toBe('groceries');
+    const ownRow = txs.find((t) => t.id === 'legacy1')!;
+    expect(ownRow.feedSpaceId).toBeUndefined();
+    expect(ownRow.catId).toBe('groceries');
 
-    await writeTxTransform(repo, legacy, { notes: 'ok' });
+    await writeTxTransform(repo, ownRow, { notes: 'ok' });
     expect((await db.transactions.get('legacy1'))?.notes).toBe('ok'); // written in place
-    expect(await db.txMeta.count()).toBe(0); // no overlay for legacy rows
+    expect(await db.txMeta.count()).toBe(0); // no overlay for own rows
   });
 
   it('visibleAccounts includes attached feed accounts with their link info', async () => {

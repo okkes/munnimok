@@ -1,0 +1,9 @@
+{
+  "platform": "nas",
+  "label": "Synology NAS",
+  "delivery": "synology",
+  "domain": "${PLATFORM_DOMAIN}",
+  "registry": "ghcr.io/okkes",
+  "publishedPath": "/docker/munni-nas/published",
+  "sharedChannel": "latest"
+}

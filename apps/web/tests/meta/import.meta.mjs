@@ -22,12 +22,6 @@ export const GROUPS = [
           'Re-import: all duplicates skipped',
         ],
       },
-      {
-        key: '21-import-invalid',
-        title: 'Invalid file error',
-        desc: 'A non-CAMT XML file shows a friendly error inside the sheet instead of importing anything.',
-        tags: ['error', 'validation'],
-      },
     ],
   },
 ];

@@ -158,8 +158,7 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"cashWithdraw","parentId":"transfer","nameKey":"cat.cashWithdraw","icon":"atm","txTypes":["transfer"],"direction":"debit"},
   {"id":"cashDeposit","parentId":"transfer","nameKey":"cat.cashDeposit","icon":"cash-plus","txTypes":["transfer"],"direction":"credit"},
   // 2026-08-01 (user, ss review): the debt family is exactly the arc-2
-  // pair — Repaid (debit) / Borrowed (credit). lendMoney and
-  // creditCardPayment retired; migrateRetiredDebtSubs refiles their rows.
+  // pair — Repaid (debit) / Borrowed (credit)
   {"id":"debt","nameKey":"cat.debt","icon":"credit-card-outline","color":"#9C27B0","isParent":true,"txTypes":["debtPayment"],"direction":"both"},
   {"id":"loanRepayment","parentId":"debt","nameKey":"cat.loanRepayment","icon":"bank-outline","txTypes":["debtPayment"],"direction":"both"},
   {"id":"debtBorrowed","parentId":"debt","nameKey":"cat.debtBorrowed","icon":"bank-transfer-in","txTypes":["debtPayment"],"direction":"both"},
@@ -181,9 +180,10 @@ export const BUILTIN_CATEGORIES: BuiltinCategory[] = [
   {"id":"investFees","parentId":"investment","nameKey":"cat.investFees","icon":"cash-minus","txTypes":["investment"],"direction":"debit"},
   {"id":"adjustment","nameKey":"cat.adjustment","icon":"tune-variant","color":"#607D8B","isParent":true,"txTypes":["adjustment"],"direction":"both"},
   {"id":"balanceAdjustment","parentId":"adjustment","nameKey":"cat.balanceAdjustment","icon":"scale-balance","txTypes":["adjustment"],"direction":"both"},
-  // typed-splits v2 Q3 (2026-08-05): the funding TYPE retired — funding
-  // is a marked special CATEGORY on standard rows now ('funding' kept in
-  // txTypes only so unmigrated rows never read as conflicts)
+  // typed-splits v2 Q3 (2026-08-05): funding is a marked special
+  // CATEGORY on standard rows; 'funding' stays in txTypes because a row
+  // whose counterparty is a funding pot DERIVES that family (#152) and
+  // its category must not read as a conflict
   {"id":"funding","nameKey":"cat.funding","icon":"hand-coin","color":"#16A085","isParent":true,"txTypes":["expense","income","funding"],"direction":"both"},
   {"id":"fundingOut","parentId":"funding","nameKey":"cat.fundingOut","icon":"bank-transfer-out","txTypes":["expense","funding"],"direction":"debit"},
   {"id":"fundingIn","parentId":"funding","nameKey":"cat.fundingIn","icon":"bank-transfer-in","txTypes":["income","funding"],"direction":"credit"},

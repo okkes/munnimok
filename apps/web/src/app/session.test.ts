@@ -21,17 +21,10 @@ describe('session persistence (local-first: restarts must not sign out)', () => 
     expect(readSessionIdentity()).toEqual({ kind: 'user', sub: 'abc', testAuth: true });
   });
 
-  it('falls back to a pre-migration sessionStorage entry', () => {
-    sessionStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
-    expect(readSessionIdentity()).toEqual({ kind: 'demo' });
-  });
-
-  it('logout clears both storages', () => {
+  it('logout clears the stored identity', () => {
     useSession.getState().login({ kind: 'demo' });
-    sessionStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
     useSession.getState().logout();
     expect(localStorage.getItem('munni_session')).toBeNull();
-    expect(sessionStorage.getItem('munni_session')).toBeNull();
     expect(readSessionIdentity()).toBeNull();
   });
 

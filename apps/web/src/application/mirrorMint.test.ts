@@ -44,7 +44,7 @@ describe('mirror mint lifecycle (typed-splits v2)', () => {
     });
     await repo.upsert('transaction', 'priv', 'src', {
       accountId: 'checking', date: '2026-08-01', amountCents: -10_000, currency: 'EUR',
-      merchant: 'To the pot', txType: 'transfer', needsReview: 0,
+      merchant: 'To the pot', needsReview: 0,
     });
   });
 
@@ -53,7 +53,7 @@ describe('mirror mint lifecycle (typed-splits v2)', () => {
     expect(link.sourceFields.transferPeerId).toBe(mirrorTxId('src'));
     await link.execute(repo);
     expect(await db.transactions.get(mirrorTxId('src'))).toMatchObject({
-      accountId: 'pot', amountCents: 10_000, txType: 'saving', catId: 'savingDeposit', transferPeerId: 'src', needsReview: 0,
+      accountId: 'pot', amountCents: 10_000, catId: 'savingDeposit', transferPeerId: 'src', needsReview: 0,
     });
     expect((await db.accounts.get('pot'))?.balanceCents).toBe(10_000);
 
@@ -63,7 +63,7 @@ describe('mirror mint lifecycle (typed-splits v2)', () => {
     expect(move.sourceFields.transferPeerId).toBe(mirrorTxId('src'));
     await move.execute(repo);
     expect((await db.transactions.get(mirrorTxId('src')))?.deleted === 0 || true).toBe(true); // row re-minted on the loan
-    expect(await db.transactions.get(mirrorTxId('src'))).toMatchObject({ accountId: 'loan', txType: 'debtPayment', catId: 'loanRepayment' });
+    expect(await db.transactions.get(mirrorTxId('src'))).toMatchObject({ accountId: 'loan', catId: 'loanRepayment' });
     expect((await db.accounts.get('pot'))?.balanceCents).toBe(0); // refunded
     expect((await db.accounts.get('loan'))?.balanceCents).toBe(-40_000); // paid down
   });
@@ -88,13 +88,13 @@ describe('mirror mint lifecycle (typed-splits v2)', () => {
     const old = sourceTx({ date: '2026-07-01' }); // before balanceAsOf 2026-07-15
     const gated = await planMirrorChange(store, old, undefined, 'loan', undefined, undefined);
     await gated.execute(repo);
-    expect(await db.transactions.get(mirrorTxId('src'))).toMatchObject({ accountId: 'loan', txType: 'debtPayment' });
+    expect(await db.transactions.get(mirrorTxId('src'))).toMatchObject({ accountId: 'loan' });
     expect((await db.accounts.get('loan'))?.balanceCents).toBe(-50_000); // presumed inside the typed number
 
     // the one-shot override rides the SAME write through the choke point
     await repo.upsert('transaction', 'priv', 'src2', {
       accountId: 'checking', date: '2026-07-01', amountCents: -10_000, currency: 'EUR',
-      merchant: 'Old payment', txType: 'transfer', needsReview: 0,
+      merchant: 'Old payment', needsReview: 0,
     });
     const src2 = (await db.transactions.get('src2'))!;
     await writeTxTransform(repo, { ...src2, feedSpaceId: undefined }, { linkedAccountId: 'loan', loanCounted: 1 });
@@ -115,7 +115,7 @@ describe('mirror mint lifecycle (typed-splits v2)', () => {
     // the part's own mirror sits on the loan, stamped + movement-sub,
     // sized to the PART — and the loan moved by €50, not €100
     expect(await db.transactions.get(mid)).toMatchObject({
-      accountId: 'loan', amountCents: 5_000, txType: 'debtPayment', catId: 'loanRepayment',
+      accountId: 'loan', amountCents: 5_000, catId: 'loanRepayment',
     });
     expect((await db.accounts.get('loan'))?.balanceCents).toBe(-45_000);
     const stored = (await db.transactions.get('src'))!.splits!;
@@ -137,7 +137,7 @@ describe('mirror mint lifecycle (typed-splits v2)', () => {
   it('#228: a part arriving with a FOREIGN peer is a picked real row — it rides, nothing mints', async () => {
     await repo.upsert('transaction', 'priv', 'potrow', {
       accountId: 'pot', date: '2026-08-01', amountCents: 5_000, currency: 'EUR',
-      merchant: 'Arrived already', txType: 'saving', needsReview: 0,
+      merchant: 'Arrived already', needsReview: 0,
     });
     const src = (await db.transactions.get('src'))!;
     await writeTxTransform(repo, { ...src, feedSpaceId: undefined }, {

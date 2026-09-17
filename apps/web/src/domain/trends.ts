@@ -1,4 +1,4 @@
-import type { AccountRow, TransactionRow } from '@/db/types';
+import type { AccountRow, TxView } from '@/db/types';
 import { REIMBURSED_ID, mainCatOf } from './categories';
 import { netAmountCents } from './reimbursement';
 import { txSliceViews } from './txSlices';
@@ -20,7 +20,7 @@ export const minIso = (a: string, b: string): string => (a < b ? a : b); // NOSO
 
 // funding rows are standard-typed since the type retired (2026-08-05)
 // but the shared pot is not spending — the category family excludes them
-const countable = (tx: TransactionRow): boolean =>
+const countable = (tx: TxView): boolean =>
   tx.deleted === 0 && tx.pending !== 1 && tx.txType === 'expense' && mainCatOf(tx.catId) !== 'funding';
 
 /** the cat ids a selection covers: a main includes its subs, a sub itself */
@@ -37,7 +37,7 @@ function coveredIds(catalog: CatalogLookup, catId: string): Set<string> {
  *  the canonical slice fan-out (#211): container parts, per-part
  *  spreads and the row's own `cats` partition all count toward their
  *  actual category; the settled `reimbursed` value is not spending */
-function txContribution(tx: TransactionRow, ids: ReadonlySet<string> | null): number {
+function txContribution(tx: TxView, ids: ReadonlySet<string> | null): number {
   // a partitionless row settles via its links alone — net keeps it honest
   if (!tx.cats?.length && !tx.splits?.length) {
     const net = Math.abs(netAmountCents(tx));
@@ -52,7 +52,7 @@ function txContribution(tx: TransactionRow, ids: ReadonlySet<string> | null): nu
 }
 
 export function categorySeries(
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   periods: readonly Period[],
   catalog: CatalogLookup,
   catId?: string,
@@ -74,7 +74,7 @@ export interface CashflowPoint {
 }
 
 /** income vs expense per period (gross income, net expenses) */
-export function cashflowSeries(txs: readonly TransactionRow[], periods: readonly Period[]): CashflowPoint[] {
+export function cashflowSeries(txs: readonly TxView[], periods: readonly Period[]): CashflowPoint[] {
   return periods.map((period) => {
     let income = 0;
     let expense = 0;
@@ -101,7 +101,7 @@ export interface NetWorthPoint {
  */
 export function netWorthSeries(
   accounts: readonly Pick<AccountRow, 'id' | 'balanceCents' | 'archived' | 'deleted'>[],
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   dates: readonly string[],
 ): NetWorthPoint[] {
   const live = accounts.filter((account) => account.deleted === 0 && account.archived !== 1);

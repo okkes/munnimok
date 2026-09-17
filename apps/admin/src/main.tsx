@@ -21,6 +21,9 @@ function Root() {
         endpoint: config.logtoEndpoint,
         appId: config.logtoAppId,
         resources: config.logtoResource ? [config.logtoResource] : [],
+        // the API admits an operator by the `admin` scope on its access
+        // token (a Logto role on the API resource grants it) — ask for it
+        scopes: ['admin'],
       }}
     >
       <LogtoGate />

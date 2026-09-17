@@ -1,4 +1,4 @@
-import type { AccountRow, BudgetRow, RecurringRow, TransactionRow } from '@/db/types';
+import type { AccountRow, BudgetRow, RecurringRow, TxView } from '@/db/types';
 import type { TranslationKey } from '@/i18n';
 import { budgetFamily, budgetPeriodAt, budgetSpentCents, cycleIndex } from './budgets';
 import { mainCatOf } from './categories';
@@ -39,7 +39,7 @@ interface CatalogLookup {
 }
 
 export interface InsightInputs {
-  txs: readonly TransactionRow[];
+  txs: readonly TxView[];
   recurrings: readonly RecurringRow[];
   budgets: readonly BudgetRow[];
   /** loans v2: the tracked liability accounts (the account IS the debt) */

@@ -9,6 +9,7 @@ import { HlcClock } from '@/sync/hlc';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
+import { normalizeReimbursements } from '@/application/catalogMaintenance';
 
 describe('TxDetailScreen (demo identity)', () => {
   beforeEach(async () => {
@@ -214,11 +215,15 @@ describe('TxDetailScreen (demo identity)', () => {
   it('#228: a PART\'s counterparty row links the part itself — the part-key leg mints', async () => {
     renderApp('/transactions');
     await screen.findByTestId('screen-transactions');
+    // seed AFTER the boot chain: its every-boot fold would otherwise
+    // default-link the bare saving part mid-spec
+    await waitFor(() => expect((globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain).toBeTruthy());
+    await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-cnt'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-cnt', {
       accountId: 'demo_main', date: '2020-03-01', amountCents: -6000, currency: 'EUR',
-      merchant: 'Two stories', catId: 'telecom', txType: 'expense', needsReview: 0,
+      merchant: 'Two stories', catId: 'telecom', needsReview: 0,
       splits: [
         { id: 'cp1', catId: 'telecom', amountCents: 4000 },
         { id: 'cp2', catId: 'savingDeposit', amountCents: 2000, txType: 'saving' },
@@ -270,7 +275,7 @@ describe('TxDetailScreen (demo identity)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-partpick'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-pp', {
       accountId: 'demo_main', date: '2020-03-05', amountCents: -6000, currency: 'EUR',
-      merchant: 'Split with pot', catId: 'telecom', txType: 'expense', needsReview: 0,
+      merchant: 'Split with pot', catId: 'telecom', needsReview: 0,
       splits: [
         { id: 'pp1', catId: 'telecom', amountCents: 4000 },
         // the counter account is already decided; only the PEER is open
@@ -280,7 +285,7 @@ describe('TxDetailScreen (demo identity)', () => {
     // the pot row that already IS the other leg of the €20 part
     await repo.upsert('transaction', DEMO_SPACE_ID, 'pot-in', {
       accountId: 'demo_save', date: '2020-03-05', amountCents: 2000, currency: 'EUR',
-      merchant: 'Pot arrival', catId: 'uncategorized', txType: 'income', needsReview: 0,
+      merchant: 'Pot arrival', catId: 'uncategorized', needsReview: 0,
     });
     await screen.findByTestId('tx-parts-tx-pp', {}, { timeout: 10_000 });
     fireEvent.click(screen.getByTestId('tx-part-row-tx-pp-1'));
@@ -311,7 +316,7 @@ describe('TxDetailScreen (demo identity)', () => {
     // pointing at the CONTAINER row
     await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-pp', {
       accountId: 'demo_main', date: '2020-03-05', amountCents: -6000, currency: 'EUR',
-      merchant: 'Split with pot', catId: 'telecom', txType: 'expense', needsReview: 0,
+      merchant: 'Split with pot', catId: 'telecom', needsReview: 0,
       splits: [
         { id: 'pp1', catId: 'telecom', amountCents: 4000 },
         { id: 'pp2', catId: 'savingDeposit', amountCents: 2000, txType: 'saving', linkedAccountId: 'demo_save', transferPeerId: 'pot-in' },
@@ -319,7 +324,7 @@ describe('TxDetailScreen (demo identity)', () => {
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'pot-in', {
       accountId: 'demo_save', date: '2020-03-05', amountCents: 2000, currency: 'EUR',
-      merchant: 'Pot arrival', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      merchant: 'Pot arrival', catId: 'savingDeposit', needsReview: 0,
       linkedAccountId: 'demo_main', transferPeerId: 'tx-pp',
     });
     await screen.findByTestId('tx-parts-tx-pp', {}, { timeout: 5000 });
@@ -362,7 +367,7 @@ describe('TxDetailScreen (demo identity)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-r4m'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'tx-mm', {
       accountId: 'demo_main', date: '2020-04-01', amountCents: -6000, currency: 'EUR',
-      merchant: 'Mint split', catId: 'telecom', txType: 'expense', needsReview: 0,
+      merchant: 'Mint split', catId: 'telecom', needsReview: 0,
       splits: [
         { id: 'mm1', catId: 'telecom', amountCents: 4000 },
         { id: 'mm2', catId: 'savingDeposit', amountCents: 2000, txType: 'saving', linkedAccountId: 'demo_save', transferPeerId: legId },
@@ -374,7 +379,7 @@ describe('TxDetailScreen (demo identity)', () => {
     // whose tap opened an EMPTY detail (the glitch screenshots).
     await repo.upsert('transaction', DEMO_SPACE_ID, legId, {
       accountId: 'demo_save', date: '2020-04-01', amountCents: 2000, currency: 'EUR',
-      merchant: 'Minted leg', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      merchant: 'Minted leg', catId: 'savingDeposit', needsReview: 0,
       linkedAccountId: 'demo_main', transferPeerId: partMirrorSourceId('tx-mm', 'mm2'),
     });
     await screen.findByTestId('tx-detail-amount', {}, { timeout: 8000 });
@@ -406,7 +411,7 @@ describe('TxDetailScreen (demo identity)', () => {
     const seedRepo = new Repo(new DexieBackend(seed), new HlcClock('ro-seed'), { trackOutbox: false });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'potleg1', {
       accountId: 'defaultacct_saving_demo_space', date: '2026-07-20', amountCents: 20000, currency: 'EUR',
-      merchant: 'Savings transfer', txType: 'saving', catId: 'savingDeposit', needsReview: 0,
+      merchant: 'Savings transfer', catId: 'savingDeposit', needsReview: 0,
       linkedAccountId: 'demo_main', transferPeerId: 'dm12',
     });
     seed.close();
@@ -479,7 +484,6 @@ describe('counterparty account number on the detail screen', () => {
       currency: 'EUR',
       merchant: 'Counterparty Test',
       catId: 'groceries',
-      txType: 'expense',
       needsReview: 0,
       counterIban,
     });
@@ -559,7 +563,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
       expect(tx?.catId).toBe('savingDeposit'); // the pick survives the link
       // the deterministic mirror sits on the pot, stamped + movement-sub
       const mirror = await db.transactions.get(mirrorTxId('dm6'));
-      expect(mirror).toMatchObject({ accountId: 'demo_save', amountCents: 5240, txType: 'saving', catId: 'savingDeposit', transferPeerId: 'dm6' });
+      expect(mirror).toMatchObject({ accountId: 'demo_save', amountCents: 5240, catId: 'savingDeposit', transferPeerId: 'dm6' });
     });
     db.close();
   }, 15_000);
@@ -616,7 +620,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
       expect(tx?.linkedAccountId).toBe('demo_save');
       expect(tx?.cats ?? undefined).toBeUndefined();
       const mirror = await db.transactions.get(mirrorTxId('dm6'));
-      expect(mirror).toMatchObject({ accountId: 'demo_save', amountCents: 5240, txType: 'saving' });
+      expect(mirror).toMatchObject({ accountId: 'demo_save', amountCents: 5240 });
     }, { timeout: 8000 });
     db.close();
   }, 20_000);
@@ -636,17 +640,14 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await screen.findByTestId('counter-default');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
-    // #228 feedback: the property row shows the bare state; no
-    // "→ account" line under the category anywhere
+    // the property rows show the bare state
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Repaid');
     });
     expect(screen.getByTestId('tx-detail-counter-row').textContent).toContain('No counter account');
-    expect(screen.queryByTestId('tx-detail-cat-counter-0')).toBeNull();
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
-      expect(tx?.txType).toBe('debtPayment');
       expect(tx?.catId).toBe('loanRepayment');
       expect(tx?.linkedAccountId).toBeFalsy();
     });
@@ -709,7 +710,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     // the other leg already lives on the pot: same size, same day, +sign
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'dup1', {
       accountId: 'ms1', date: dm6seed!.date, amountCents: -dm6seed!.amountCents, currency: 'EUR',
-      merchant: 'Moved in', catId: 'uncategorized', txType: 'income', needsReview: 0,
+      merchant: 'Moved in', catId: 'uncategorized', needsReview: 0,
     });
     const potBalance = 10_000;
     seed.close();
@@ -757,19 +758,19 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     // two same-merchant expenses + one pot twin EACH
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'dt1', {
       accountId: 'demo_main', date: '2026-02-01', amountCents: -500, currency: 'EUR',
-      merchant: 'Queue Shop', catId: 'uncategorized', txType: 'expense', needsReview: 0,
+      merchant: 'Queue Shop', catId: 'uncategorized', needsReview: 0,
     });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'dt2', {
       accountId: 'demo_main', date: '2026-02-02', amountCents: -500, currency: 'EUR',
-      merchant: 'Queue Shop', catId: 'uncategorized', txType: 'expense', needsReview: 0,
+      merchant: 'Queue Shop', catId: 'uncategorized', needsReview: 0,
     });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'qc1', {
       accountId: 'qs1', date: '2026-02-01', amountCents: 500, currency: 'EUR',
-      merchant: 'Pot in one', catId: 'uncategorized', txType: 'income', needsReview: 0,
+      merchant: 'Pot in one', catId: 'uncategorized', needsReview: 0,
     });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'qc2', {
       accountId: 'qs1', date: '2026-02-02', amountCents: 500, currency: 'EUR',
-      merchant: 'Pot in two', catId: 'uncategorized', txType: 'income', needsReview: 0,
+      merchant: 'Pot in two', catId: 'uncategorized', needsReview: 0,
     });
     seed.close();
     cleanup();
@@ -818,7 +819,7 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     const dm6seed = await seed.transactions.get('dm6');
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'dup2', {
       accountId: 'ms2', date: dm6seed!.date, amountCents: -dm6seed!.amountCents, currency: 'EUR',
-      merchant: 'Maybe the leg', catId: 'uncategorized', txType: 'income', needsReview: 0,
+      merchant: 'Maybe the leg', catId: 'uncategorized', needsReview: 0,
     });
     seed.close();
 
@@ -858,11 +859,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     const dm6seed = await seed.transactions.get('dm6');
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'sr1', {
       accountId: 'ms9', date: dm6seed!.date, amountCents: -dm6seed!.amountCents, currency: 'EUR',
-      merchant: 'Blue Coffee', catId: 'uncategorized', txType: 'income', needsReview: 0,
+      merchant: 'Blue Coffee', catId: 'uncategorized', needsReview: 0,
     });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'sr2', {
       accountId: 'ms9', date: dm6seed!.date, amountCents: 777, currency: 'EUR',
-      merchant: 'Yellow Bakery', catId: 'uncategorized', txType: 'income', needsReview: 0,
+      merchant: 'Yellow Bakery', catId: 'uncategorized', needsReview: 0,
     });
     seed.close();
 
@@ -911,13 +912,6 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     db.close();
   }, 20_000);
 
-  it('#133 D: the detail carries NO kind surface — categories and the counterparty ask are the whole story', async () => {
-    renderApp('/transactions/dm6');
-    await screen.findByTestId('screen-tx-detail');
-    expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull();
-    expect(screen.queryByTestId('txkind-options')).toBeNull();
-  }, 15_000);
-
   it('#152 r2: the ◆ Funding pick asks WHICH funding account — candidates filtered, pick keeps the story', async () => {
     renderApp('/transactions/dm6');
     await screen.findByTestId('screen-tx-detail');
@@ -959,10 +953,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     const seed = new MunniDB('munni_demo');
     await waitFor(() => expect((globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain).toBeTruthy());
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
-    // the bank named a counterparty; nothing links yet — no facts row
+    // #220: the bank's counterparty is a Details fact the moment it is
+    // known — plain metadata while nothing links yet
     await seed.transactions.update('dm6', { counterIban: 'NL02ABNA0123456789' });
     seed.close();
-    await waitFor(() => expect(screen.queryByTestId('tx-detail-original-counter')).toBeNull());
+    await waitFor(() => expect(screen.getByTestId('tx-detail-original-counter').textContent).toContain('NL02ABNA0123456789'));
 
     // point the row at the savings pot — the original IBAN moves into
     // the details section as a quiet fact
@@ -1066,12 +1061,12 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     // slice (hotel) and leave groceries untouched (#235 order)
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'imp1', {
       accountId: 'demo_main', date: '2026-05-02', amountCents: -10_000, currency: 'EUR',
-      merchant: 'Spread Hotel', catId: 'hotels', txType: 'expense', needsReview: 0,
+      merchant: 'Spread Hotel', catId: 'hotels', needsReview: 0,
       cats: [{ catId: 'hotels', amountCents: 6000 }, { catId: 'groceries', amountCents: 4000 }],
     });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'imp2', {
       accountId: 'demo_main', date: '2026-05-03', amountCents: 3000, currency: 'EUR',
-      merchant: 'Refund thirty', catId: 'uncategorized', txType: 'income', needsReview: 0,
+      merchant: 'Refund thirty', catId: 'uncategorized', needsReview: 0,
     });
     seed.close();
     cleanup();
@@ -1130,7 +1125,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-reimb-part'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'rsplit', {
       accountId: 'demo_main', date: '2026-07-01', amountCents: -6000, currency: 'EUR',
-      merchant: 'Split Lunch', catId: 'restaurants', txType: 'expense', needsReview: 0,
+      merchant: 'Split Lunch', catId: 'restaurants', needsReview: 0,
       // #211: the explicit cats null marks these as PARTS for the boot fold
       cats: null as never,
       splits: [
@@ -1173,7 +1168,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-reimb-cpart'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'csplit', {
       accountId: 'demo_main', date: '2026-07-02', amountCents: 8000, currency: 'EUR',
-      merchant: 'Mixed refund', catId: 'reimburse', txType: 'income', needsReview: 0,
+      merchant: 'Mixed refund', catId: 'reimburse', needsReview: 0,
       // #211: the explicit cats null marks these as PARTS for the boot fold
       cats: null as never,
       splits: [
@@ -1216,7 +1211,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     // a settled Set-aside expense: −52.40 with €20.00 reimbursed
     await repo.upsert('transaction', DEMO_SPACE_ID, 'sx1', {
       accountId: 'demo_main', date: '2026-07-03', amountCents: -5240, currency: 'EUR',
-      merchant: 'Vueling', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      merchant: 'Vueling', catId: 'savingDeposit', needsReview: 0,
       reimbursements: [{ txId: 'dm1', amountCents: 2000 }],
       cats: [{ catId: 'savingDeposit', amountCents: 3240 }, { catId: 'reimbursed', amountCents: 2000 }],
     });
@@ -1268,7 +1263,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-part-net'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'psplit', {
       accountId: 'demo_main', date: '2026-07-04', amountCents: 240_000, currency: 'EUR',
-      merchant: 'Demo Corp BV', catId: 'salary', txType: 'income', needsReview: 0,
+      merchant: 'Demo Corp BV', catId: 'salary', needsReview: 0,
       cats: null as never,
       splits: [
         { id: 'pp1', catId: 'salary', amountCents: 120_000, cats: [{ catId: 'salary', amountCents: 119_580 }, { catId: 'reimbursed', amountCents: 420 }] },
@@ -1277,7 +1272,7 @@ describe('ReimburseSection via detail (demo tx dm6, -€52.40)', () => {
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'pkoffie', {
       accountId: 'demo_main', date: '2026-07-05', amountCents: -420, currency: 'EUR',
-      merchant: 'Koffie', catId: 'reimbursed', txType: 'expense', needsReview: 0,
+      merchant: 'Koffie', catId: 'reimbursed', needsReview: 0,
       reimbursements: [{ txId: 'psplit', amountCents: 420, creditPartId: 'pp1' }],
       cats: [{ catId: 'reimbursed', amountCents: 420 }],
     });
@@ -1383,11 +1378,11 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     const dm6 = await db.transactions.get('dm6');
     await repo.upsert('transaction', DEMO_SPACE_ID, 'sib-exact', {
       accountId: 'demo_main', date: '2020-04-01', amountCents: -5240, currency: 'EUR',
-      merchant: dm6?.merchant ?? '', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: dm6?.merchant ?? '', catId: 'groceries', needsReview: 0,
     });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'sib-half', {
       accountId: 'demo_main', date: '2020-04-02', amountCents: -2620, currency: 'EUR',
-      merchant: dm6?.merchant ?? '', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: dm6?.merchant ?? '', catId: 'groceries', needsReview: 0,
     });
 
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
@@ -1427,7 +1422,7 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     const dm6row = await db.transactions.get('dm6');
     await repo.upsert('transaction', DEMO_SPACE_ID, 'sib-other', {
       accountId: 'demo_main', date: '2020-04-03', amountCents: -1234, currency: 'EUR',
-      merchant: dm6row?.merchant ?? '', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: dm6row?.merchant ?? '', catId: 'groceries', needsReview: 0,
     });
     db.close();
     fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
@@ -1574,7 +1569,6 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       currency: 'EUR',
       merchant: 'Vodafone',
       catId: 'telecom',
-      txType: 'expense',
       needsReview: 0,
       splits: [
         { id: 'pp1', catId: 'telecom', amountCents: 4000 },
@@ -1592,13 +1586,14 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       currency: 'EUR',
       merchant: 'Sam pays back',
       catId: 'reimbursed',
-      txType: 'income',
       needsReview: 0,
     });
-    // #228: the boot normalizer settles the part-targeted link into the
-    // PART's own cats — let it finish, or its splits write races the
-    // note write below (the boot-chain trap)
+    // #228: the every-boot normalizer settles the part-targeted link into
+    // the PART's own cats. The rows were seeded AFTER this boot's chain
+    // started, so run the pass explicitly (after draining the chain, or
+    // its writes race the note write below — the boot-chain trap)
     await (globalThis as { __munniBootChain?: Promise<unknown> }).__munniBootChain;
+    await normalizeReimbursements(new DexieBackend(db), repo);
 
     // r5/r6: the container row is GONE — a compact header band names the
     // original transaction with the NET amount (#228: the reimbursed
@@ -1740,7 +1735,6 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
       currency: 'EUR',
       merchant: 'Vodafone',
       catId: 'telecom',
-      txType: 'expense',
       needsReview: 0,
       splits: [
         { id: 'pp1', catId: 'telecom', amountCents: 4000 },
@@ -1774,25 +1768,6 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     db.close();
   }, 15_000);
 
-  it('register-style amount entry: digits fill cents from the right (user request)', async () => {
-    renderApp('/transactions/dm6');
-    fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
-    await screen.findByTestId('part-cats-editor');
-    fireEvent.click(screen.getByTestId('part-cat-add'));
-
-    const amount = screen.getByTestId('part-cat-amount-1') as HTMLInputElement;
-    fireEvent.focus(amount); // arms the register; the empty lands a frame later (#134)
-    await waitFor(() => expect(amount.value).toBe(''));
-    fireEvent.change(amount, { target: { value: '5' } });
-    expect(amount.value).toBe('0,05');
-    fireEvent.change(amount, { target: { value: '0,055' } });
-    expect(amount.value).toBe('0,55');
-    fireEvent.change(amount, { target: { value: '0,550' } });
-    expect(amount.value).toBe('5,50');
-    // a comma promotes typed digits to euros and frees the field
-    fireEvent.change(amount, { target: { value: '5,50,' } });
-    expect(amount.value).toBe('550,');
-  });
 });
 
 describe('bulk apply from the detail (user request)', () => {
@@ -1814,7 +1789,7 @@ describe('bulk apply from the detail (user request)', () => {
     for (const [id, needsReview] of [['blk-a', 0], ['blk-b', 1]] as const) {
       await repo.upsert('transaction', DEMO_SPACE_ID, id, {
         accountId: 'demo_main', date: '2026-06-01', amountCents: -900, currency: 'EUR',
-        merchant: 'BULKSHOP BV', catId: 'groceries', txType: 'expense', needsReview,
+        merchant: 'BULKSHOP BV', catId: 'groceries', needsReview,
       });
     }
     cleanup();
@@ -1846,7 +1821,7 @@ describe('bulk apply from the detail (user request)', () => {
     for (const id of ['sel-a', 'sel-b', 'sel-c']) {
       await repo.upsert('transaction', DEMO_SPACE_ID, id, {
         accountId: 'demo_main', date: '2026-06-01', amountCents: -700, currency: 'EUR',
-        merchant: 'SELECTSHOP BV', catId: 'groceries', txType: 'expense', needsReview: 0,
+        merchant: 'SELECTSHOP BV', catId: 'groceries', needsReview: 0,
       });
     }
     cleanup();
@@ -1894,7 +1869,7 @@ describe('title rename (user request)', () => {
     for (const id of ['ttl-a', 'ttl-b']) {
       await repo.upsert('transaction', DEMO_SPACE_ID, id, {
         accountId: 'demo_main', date: '2026-06-01', amountCents: -900, currency: 'EUR',
-        merchant: 'ODIDO NETHERLANDS B.V.', catId: 'telecom', txType: 'expense', needsReview: 0,
+        merchant: 'ODIDO NETHERLANDS B.V.', catId: 'telecom', needsReview: 0,
         importRef: `bank-${id}`, // imported rows get the rename pencil
       });
     }
@@ -1937,7 +1912,7 @@ describe('detail sections customize (user request)', () => {
     const repo = new Repo(new DexieBackend(db), new HlcClock('seed-custom'), { trackOutbox: false });
     await repo.upsert('transaction', DEMO_SPACE_ID, 'cust-a', {
       accountId: 'demo_main', date: '2026-06-01', amountCents: -500, currency: 'EUR',
-      merchant: 'CUSTOMSHOP', catId: 'groceries', txType: 'expense', needsReview: 0,
+      merchant: 'CUSTOMSHOP', catId: 'groceries', needsReview: 0,
     });
     cleanup();
 
@@ -2033,7 +2008,7 @@ describe('detail sections customize (user request)', () => {
     // and mints its leg (#221) — exactly the state the user unlinks
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'r237d', {
       accountId: 'demo_main', date: '2026-07-20', amountCents: -4200, currency: 'EUR',
-      merchant: 'Default unlink', catId: 'savingDeposit', txType: 'saving', needsReview: 0,
+      merchant: 'Default unlink', catId: 'savingDeposit', needsReview: 0,
     });
     seed.close();
     cleanup();
@@ -2076,12 +2051,12 @@ describe('detail sections customize (user request)', () => {
     // the bank top-up, already linked to the wallet — Awaiting counterpart
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'bank1', {
       accountId: 'demo_main', date: '2026-07-14', amountCents: -799, currency: 'EUR',
-      merchant: 'PayPal top-up', catId: 'transferOut', txType: 'transfer', needsReview: 0, linkedAccountId: 'wl',
+      merchant: 'PayPal top-up', catId: 'transferOut', needsReview: 0, linkedAccountId: 'wl',
     });
     // the real purchase on the wallet — same sign, same size
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'wp1', {
       accountId: 'wl', date: '2026-07-14', amountCents: -799, currency: 'EUR',
-      merchant: 'Vueling', catId: 'holiday', txType: 'expense', needsReview: 0,
+      merchant: 'Vueling', catId: 'holiday', needsReview: 0,
     });
     seed.close();
     cleanup();
@@ -2139,7 +2114,7 @@ describe('detail sections customize (user request)', () => {
     // the bank top-up, already linked to the wallet — Awaiting counterpart
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'bankf', {
       accountId: 'demo_main', date: '2026-07-14', amountCents: -799, currency: 'EUR',
-      merchant: 'PayPal top-up', catId: 'transferOut', txType: 'transfer', needsReview: 0, linkedAccountId: 'wlacct',
+      merchant: 'PayPal top-up', catId: 'transferOut', needsReview: 0, linkedAccountId: 'wlacct',
     });
     seed.close();
     cleanup();
@@ -2184,11 +2159,11 @@ describe('detail sections customize (user request)', () => {
     });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rp1', {
       accountId: 'demo_main', date: '2026-07-22', amountCents: -4367, currency: 'EUR',
-      merchant: 'PayPal Europe', catId: 'transferOut', txType: 'transfer', needsReview: 0, linkedAccountId: 'wl3',
+      merchant: 'PayPal Europe', catId: 'transferOut', needsReview: 0, linkedAccountId: 'wl3',
     });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'rp2', {
       accountId: 'wl3', date: '2026-07-21', amountCents: -4356, currency: 'EUR',
-      merchant: 'Axosoft, LLC', catId: 'consumption', txType: 'expense', needsReview: 0,
+      merchant: 'Axosoft, LLC', catId: 'consumption', needsReview: 0,
     });
     seed.close();
     cleanup();
@@ -2225,12 +2200,12 @@ describe('detail sections customize (user request)', () => {
     // points at the purchase, the purchase knows nothing
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'owb', {
       accountId: 'demo_main', date: '2026-07-17', amountCents: -4356, currency: 'EUR',
-      merchant: 'PayPal Europe', catId: 'transferOut', txType: 'transfer', needsReview: 0,
+      merchant: 'PayPal Europe', catId: 'transferOut', needsReview: 0,
       linkedAccountId: 'wl4', transferPeerId: 'owp',
     });
     await seedRepo.upsert('transaction', DEMO_SPACE_ID, 'owp', {
       accountId: 'wl4', date: '2026-07-16', amountCents: -4356, currency: 'EUR',
-      merchant: 'Axosoft, LLC', catId: 'consumption', txType: 'expense', needsReview: 0,
+      merchant: 'Axosoft, LLC', catId: 'consumption', needsReview: 0,
     });
     seed.close();
     cleanup();

@@ -38,6 +38,31 @@ const NAV: [Screen, string][] = [
   ['quota', 'Quota'],
 ];
 
+/**
+ * This browser's stable device id: the API stamps every authenticated
+ * request's device (X-Munni-Device) and refuses requests that name none,
+ * so the account's Logged-in devices screen can list and disconnect it.
+ */
+const DEVICE_KEY = 'munni_control_device';
+function deviceId(): string {
+  try {
+    const known = localStorage.getItem(DEVICE_KEY);
+    if (known) return known;
+    const minted = crypto.randomUUID();
+    localStorage.setItem(DEVICE_KEY, minted);
+    return minted;
+  } catch {
+    return 'control-console';
+  }
+}
+function forgetDevice(): void {
+  try {
+    localStorage.removeItem(DEVICE_KEY);
+  } catch {
+    // storage unavailable — nothing was remembered
+  }
+}
+
 /** grouping key for consents whose redirect carried no usable origin */
 const UNATTRIBUTED = 'unattributed';
 
@@ -89,11 +114,17 @@ export function ControlApp({ config, getToken }: Readonly<ControlAppProps>) {
   // and a blocked request read as "not an admin" (found live 2026-08-28)
   const [denied, setDenied] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
+  // 'disconnected' = the api said 410: this browser's device was revoked
+  // from the account (Logged-in devices) — the next load registers anew
+  const [disconnected, setDisconnected] = useState(false);
+  const blocked = denied || unreachable || disconnected;
 
   const call = useCallback(
     async (path: string, init: RequestInit = {}) => {
       const headers = new Headers(init.headers);
       headers.set('Content-Type', 'application/json');
+      headers.set('X-Munni-Device', deviceId());
+      headers.set('X-Munni-Platform', 'web');
       if (getToken) {
         const token = await getToken();
         if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -107,6 +138,11 @@ export function ControlApp({ config, getToken }: Readonly<ControlAppProps>) {
 
   const reload = useCallback(async () => {
     const ping = await call('/control/ping').catch(() => null);
+    if (ping?.status === 410) {
+      forgetDevice();
+      setDisconnected(true);
+      return;
+    }
     setDenied(ping?.status === 403);
     setUnreachable(!ping || (!ping.ok && ping.status !== 403));
     if (!ping?.ok) return;
@@ -158,11 +194,12 @@ export function ControlApp({ config, getToken }: Readonly<ControlAppProps>) {
       </aside>
 
       <main className="content">
-        {denied && <p className="denied">This account is not on the admin list.</p>}
+        {denied && <p className="denied">This account has no admin access — its sign-in carries no admin scope.</p>}
         {unreachable && <p className="denied">The control API did not answer — is the environment running (and this origin allowed)?</p>}
-        {!denied && !unreachable && screen === 'overview' && <OverviewScreen consents={consents} health={health} />}
-        {!denied && !unreachable && screen === 'connections' && <ConsentsScreen consents={consents} />}
-        {!denied && !unreachable && screen === 'quota' && <QuotaScreen quota={quota} />}
+        {disconnected && <p className="denied">This browser was disconnected from the account — reload to register it again.</p>}
+        {!blocked && screen === 'overview' && <OverviewScreen consents={consents} health={health} />}
+        {!blocked && screen === 'connections' && <ConsentsScreen consents={consents} />}
+        {!blocked && screen === 'quota' && <QuotaScreen quota={quota} />}
       </main>
     </div>
   );

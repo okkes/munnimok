@@ -1,4 +1,4 @@
-import type { AccountRow, AllocationRow, TransactionRow } from '@/db/types';
+import type { AccountRow, AllocationRow, TxView } from '@/db/types';
 import { LOCKED_MAIN_IDS } from './categories';
 import { contributionCents, txsForKind } from './overview';
 import type { Period } from './periods';
@@ -19,7 +19,7 @@ export const allocationId = (spaceId: string, periodStart: string, catId: string
 
 /** income received inside a period, by the overview's income rules */
 export function periodIncomeCents(
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   accountsById: Map<string, AccountRow>,
   period: Period,
 ): number {
@@ -27,7 +27,7 @@ export function periodIncomeCents(
 }
 
 /** positive expense cents per MAIN category inside a period (subs roll up) */
-export function spentByMainCat(txs: readonly TransactionRow[], catalog: CatalogLookup, period: Period): Map<string, number> {
+export function spentByMainCat(txs: readonly TxView[], catalog: CatalogLookup, period: Period): Map<string, number> {
   const totals = new Map<string, number>();
   for (const tx of txs) {
     if (tx.deleted !== 0 || tx.txType !== 'expense') continue;
@@ -52,7 +52,7 @@ const assignedInPeriod = (allocations: readonly AllocationRow[], periodStart: st
  */
 export function toAllocateCents(
   periods: readonly Period[],
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   accountsById: Map<string, AccountRow>,
   allocations: readonly AllocationRow[],
 ): number {
@@ -72,7 +72,7 @@ export function availableCents(
   catId: string,
   periods: readonly Period[],
   rollover: boolean,
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   catalog: CatalogLookup,
   allocations: readonly AllocationRow[],
 ): number {
@@ -97,7 +97,7 @@ export const recBucketId = (recurringId: string): string => `rec:${recurringId}`
 
 /** positive expense cents per linked recurring cost inside a period */
 export function spentByRecurring(
-  txs: readonly (TransactionRow & { recurringId?: string })[],
+  txs: readonly (TxView & { recurringId?: string })[],
   period: Period,
 ): Map<string, number> {
   const totals = new Map<string, number>();
@@ -129,7 +129,7 @@ export function availableRecCents(
   recurringId: string,
   periods: readonly Period[],
   rollover: boolean,
-  txs: readonly (TransactionRow & { recurringId?: string })[],
+  txs: readonly (TxView & { recurringId?: string })[],
   allocations: readonly AllocationRow[],
 ): number {
   const bucket = recBucketId(recurringId);
@@ -149,7 +149,7 @@ export function availableRecCents(
  * wallet — FIFO over income, averaged across the most recent expenses.
  * The YNAB-style honesty metric: higher is calmer.
  */
-export function ageOfMoneyDays(txs: readonly TransactionRow[], sampleSize = 10): number | null {
+export function ageOfMoneyDays(txs: readonly TxView[], sampleSize = 10): number | null {
   const incomes = txs
     .filter((tx) => tx.deleted === 0 && tx.txType === 'income' && tx.amountCents > 0)
     .sort((a, b) => a.date.localeCompare(b.date))

@@ -35,8 +35,7 @@ export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
 };
 
 /** #176: the label honors WHICH open-banking provider fetches the row —
- *  Enable Banking rows read "Enable Banking", not "GoCardless"; legacy
- *  rows without the stamp are GoCardless by history */
+ *  Enable Banking rows read "Enable Banking", not "GoCardless" */
 export const sourceKeyFor = (account: Pick<AccountRow, 'source' | 'provider'>): TranslationKey =>
   account.source === 'gocardless' && account.provider === 'enablebanking'
     ? 'acct.sourceOpenBankingEb'
@@ -179,7 +178,7 @@ export function AttachSheet({
         await repo.remove('accountLink', link.spaceId, link.id);
       }
       // #279: the engine purge below is feed-keyed — member spaces keep
-      // their txMeta overlays and legacy own rows unless swept here
+      // their txMeta overlays and the space's own rows unless swept here
       await purgeAccountRemnants(store, repo, account.id, feedSpaceId);
       await engine?.purgeSpace(feedSpaceId);
       void logActivity(store, repo, spaceId, 'accountRemove', account.name);

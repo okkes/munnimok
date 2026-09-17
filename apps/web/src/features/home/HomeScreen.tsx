@@ -507,6 +507,7 @@ export function HomeScreen() {
             (#313: centered on what actually RENDERS, a bit wider) */}
         <div
           data-testid="home-columns"
+          data-columns={twoColumns ? '2' : '1'}
           className={twoColumns ? 'lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-6' : SINGLE_COLUMN_LG}
         >
           {/* slim balance band: one line; accounts fold out on tap. The

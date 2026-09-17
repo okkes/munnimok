@@ -204,22 +204,11 @@ const ruleId = (e) => e?.UUID ?? e?.uuid ?? null;
 
 /** the reverse-proxy rules a stack needs: source https host -> local port */
 export function proxyRules(stack) {
-  const rules = [
-    { host: stack.host('web'), port: stack.ports.web },
-    { host: stack.host('api'), port: stack.ports.api },
-    { host: stack.host('admin'), port: stack.ports.admin },
-  ];
-  if (stack.sharedServices) {
-    rules.push(
-      { host: stack.host('logto'), port: stack.ports.logto },
-      { host: stack.host('logtoAdmin'), port: stack.ports.logtoAdmin },
-      { host: stack.host('glitchtip'), port: stack.ports.glitchtip },
-      // the pair's Vaultwarden (secrets-access plan SA1) — LAN-restrict
-      // it in the DSM firewall like the *-admin hosts
-      { host: stack.host('vault'), port: stack.ports.vault },
-    );
-  }
-  return rules;
+  // every service of the stack gets a rule: an environment its five
+  // (web, api, admin, its own Logto + console), the platform's shared
+  // stack its four (glitchtip, vault, control, pgadmin). LAN-restrict the
+  // admin, console, vault, control and pgadmin hosts in the DSM firewall.
+  return Object.keys(stack.hosts).map((key) => ({ key, host: stack.host(key), port: stack.ports[key] }));
 }
 
 /** upsert the stack's rules; returns {created, updated, unchanged} */

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { nextPayday, safeToSpend } from './cashflow';
-import type { RecurringRow, TransactionRow } from '@/db/types';
+import type { RecurringRow, TxView } from '@/db/types';
 
-const tx = (over: Partial<TransactionRow>): TransactionRow => ({
+const tx = (over: Partial<TxView>): TxView => ({
   id: Math.random().toString(36).slice(2),
   spaceId: 's1',
   accountId: 'a1',

@@ -19,6 +19,7 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 
@@ -104,7 +105,7 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
             [new SyncOpDto(Guid.NewGuid().ToString(), spaceId, "space", spaceId,
                 new() { ["name"] = JsonSerializer.SerializeToElement("Household") }, "000000100-0000-devA")]));
         Assert.True((await alice.PostAsJsonAsync($"/spaces/{spaceId}/invites",
-            new SendSpaceInvite(bobId, "member", "Household"))).IsSuccessStatusCode);
+            new SendSpaceInvite(bobId, "contributor", "Household"))).IsSuccessStatusCode);
 
         // bob sees + accepts the invite -> space appears in his discovery + pull works
         var invites = await bob.GetFromJsonAsync<List<SpaceInviteDto>>("/me/invites");
@@ -229,11 +230,11 @@ public class SocialEndpointsTests : IClassFixture<SyncApiFactory>
             [new SyncOpDto(Guid.NewGuid().ToString(), spaceId, "space", spaceId, new(), "000000100-0000-devA")]));
 
         // not friends -> 400
-        var response = await alice.PostAsJsonAsync($"/spaces/{spaceId}/invites", new SendSpaceInvite(malloryId, "member", null));
+        var response = await alice.PostAsJsonAsync($"/spaces/{spaceId}/invites", new SendSpaceInvite(malloryId, "contributor", null));
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
         // non-owner cannot invite at all
         Assert.Equal(HttpStatusCode.Forbidden,
-            (await mallory.PostAsJsonAsync($"/spaces/{spaceId}/invites", new SendSpaceInvite(malloryId, "member", null))).StatusCode);
+            (await mallory.PostAsJsonAsync($"/spaces/{spaceId}/invites", new SendSpaceInvite(malloryId, "contributor", null))).StatusCode);
     }
 }

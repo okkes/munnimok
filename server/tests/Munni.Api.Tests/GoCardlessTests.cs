@@ -163,7 +163,7 @@ public class GcIngestTests
         // existing rows heal on their next sync)
         var account = await db.EntityRows.FindAsync(FeedId, "account", ImportIds.AccountId("NL69INGB0123456789"));
         var accountData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(account!.DataJson)!;
-        Assert.Equal("gocardless", accountData["source"].GetString()); // compat: source stays the open-banking marker
+        Assert.Equal("gocardless", accountData["source"].GetString()); // 'gocardless' = the bank-connected marker whichever provider fetches; provider says who
         Assert.Equal("enablebanking", accountData["provider"].GetString());
     }
 

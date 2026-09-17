@@ -55,7 +55,7 @@ export interface StorageBackend {
 
   // --- device-only stores (never synced) ---
   storeConnAll(): Promise<StoreConnectionRow[]>;
-  /** by INSTANCE id (receipts v3; legacy migrated rows use the store name) */
+  /** by INSTANCE id (receipts v3) */
   storeConnGet(id: string): Promise<StoreConnectionRow | undefined>;
   storeConnPut(row: StoreConnectionRow): Promise<void>;
   storeConnDelete(id: string): Promise<void>;

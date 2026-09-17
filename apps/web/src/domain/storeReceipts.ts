@@ -1,4 +1,4 @@
-import type { ReceiptItem, ReceiptPayment, ReceiptSource, TransactionRow } from '@/db/types';
+import type { ReceiptItem, ReceiptPayment, ReceiptSource, TxView } from '@/db/types';
 
 /**
  * Store receipts domain (receipts design S2) — all pure: matching
@@ -46,7 +46,7 @@ export interface MatchableReceipt {
 }
 
 /** resolves a transaction's paying-account IBAN/PAN tail, when known */
-export type AccountTailOf = (tx: TransactionRow) => string | undefined;
+export type AccountTailOf = (tx: TxView) => string | undefined;
 
 const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
 
@@ -58,9 +58,9 @@ const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.pars
  */
 function applyPaymentFilter(
   receipt: MatchableReceipt,
-  candidates: TransactionRow[],
+  candidates: TxView[],
   tailOf?: AccountTailOf,
-): TransactionRow[] {
+): TxView[] {
   const tail = receipt.payment?.accountTail;
   if (!tail || !tailOf) return candidates;
   const hits = candidates.filter((tx) => tailOf(tx)?.endsWith(tail));
@@ -70,9 +70,9 @@ function applyPaymentFilter(
 /** design rule: amount ± 2 cents, date ± 2 days, merchant as tiebreaker */
 export function matchCandidates(
   receipt: MatchableReceipt,
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   tailOf?: AccountTailOf,
-): TransactionRow[] {
+): TxView[] {
   const base = txs
     .filter(
       (tx) =>
@@ -85,10 +85,10 @@ export function matchCandidates(
   return applyPaymentFilter(receipt, base, tailOf);
 }
 
-const merchantHit = (source: ReceiptSource, tx: TransactionRow): boolean =>
+const merchantHit = (source: ReceiptSource, tx: TxView): boolean =>
   (catalogStorePatterns[source] ?? STORE_MERCHANT[source])?.test(tx.merchant ?? '') ?? false;
 
-function scoreOf(receipt: MatchableReceipt, tx: TransactionRow): number {
+function scoreOf(receipt: MatchableReceipt, tx: TxView): number {
   const merchant = merchantHit(receipt.source, tx) ? 2 : 0;
   const exact = -tx.amountCents === receipt.totalCents ? 1 : 0;
   return merchant + exact + (2 - dayDiff(tx.date, receipt.date)) * 0.1;
@@ -101,7 +101,7 @@ function scoreOf(receipt: MatchableReceipt, tx: TransactionRow): number {
  */
 export function bestMatch(
   receipt: MatchableReceipt,
-  txs: readonly TransactionRow[],
+  txs: readonly TxView[],
   takenTxIds: ReadonlySet<string>,
   tailOf?: AccountTailOf,
 ): string | null {
@@ -118,12 +118,12 @@ export function bestMatch(
  */
 export interface CandidateLadder {
   /** amount ±2c and date ±2d, best first (rungs 1–2) */
-  primary: TransactionRow[];
+  primary: TxView[];
   /** rung 3 (same amount, any date) + rung 4 (latest expenses) behind "show more" */
-  more: TransactionRow[];
+  more: TxView[];
 }
 
-export function candidateLadder(receipt: MatchableReceipt, txs: readonly TransactionRow[]): CandidateLadder {
+export function candidateLadder(receipt: MatchableReceipt, txs: readonly TxView[]): CandidateLadder {
   const primary = matchCandidates(receipt, txs).slice(0, 8);
   const seen = new Set(primary.map((tx) => tx.id));
   const expenses = txs

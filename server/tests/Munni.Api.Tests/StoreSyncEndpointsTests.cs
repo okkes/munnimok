@@ -19,6 +19,7 @@ public class StoreSyncEndpointsTests : IClassFixture<AdminApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         await client.GetAsync("/me"); // materialize the user
         return client;
     }
@@ -60,14 +61,19 @@ public class StoreSyncEndpointsTests : IClassFixture<AdminApiFactory>
     }
 
     [Fact]
-    public async Task Ciphertext_RoundTrips_AndStaysPerUser()
+    public async Task Ciphertext_RoundTrips_KeyedByInstance_AndStaysPerUser()
     {
         var alice = await ClientFor("sync-carol");
         var mallory = await ClientFor("sync-mallory");
-        await alice.PutAsJsonAsync("/me/store-sync/connections/ah", new { cipher = "opaque-blob" });
+        // receipts v3: one blob per connection INSTANCE, keyed by its uuid
+        var instance = Guid.NewGuid().ToString();
+        Assert.Equal(HttpStatusCode.OK, (await alice.PutAsJsonAsync($"/me/store-sync/connections/{instance}", new { cipher = "opaque-blob" })).StatusCode);
+        // a store name is not an instance key
+        Assert.Equal(HttpStatusCode.BadRequest, (await alice.PutAsJsonAsync("/me/store-sync/connections/ah", new { cipher = "opaque-blob" })).StatusCode);
 
         var mine = await Json(await alice.GetAsync("/me/store-sync/connections"));
         Assert.Equal(1, mine.GetArrayLength());
+        Assert.Equal(instance, mine[0].GetProperty("store").GetString());
         Assert.Equal("opaque-blob", mine[0].GetProperty("cipher").GetString());
 
         var theirs = await Json(await mallory.GetAsync("/me/store-sync/connections"));
@@ -79,7 +85,7 @@ public class StoreSyncEndpointsTests : IClassFixture<AdminApiFactory>
     {
         var client = await ClientFor("sync-dave");
         await client.PostAsJsonAsync("/me/store-sync/devices", new { deviceId = "dev-1", publicJwk = "{jwk}", name = "Phone" });
-        await client.PutAsJsonAsync("/me/store-sync/connections/jumbo", new { cipher = "blob" });
+        await client.PutAsJsonAsync($"/me/store-sync/connections/{Guid.NewGuid()}", new { cipher = "blob" });
 
         Assert.Equal(HttpStatusCode.OK, (await client.DeleteAsync("/me/store-sync")).StatusCode);
         Assert.Equal(0, (await Json(await client.GetAsync("/me/store-sync/devices"))).GetArrayLength());

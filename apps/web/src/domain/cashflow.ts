@@ -1,4 +1,4 @@
-import type { AccountRow, AllocationRow, RecurringRow, TransactionRow } from '@/db/types';
+import type { AccountRow, AllocationRow, RecurringRow, TxView } from '@/db/types';
 import { spentByMainCat } from './allocation';
 import { merchantKey } from './merchantKey';
 import { nextDueDate } from './recurring';
@@ -32,9 +32,9 @@ const isoAddMonths = (iso: string, months: number): string => {
  * twice in distinct months during the last four; its day-of-month
  * projects forward. Null when nothing salary-shaped exists.
  */
-export function nextPayday(txs: readonly TransactionRow[], today: string): PaydayInfo | null {
+export function nextPayday(txs: readonly TxView[], today: string): PaydayInfo | null {
   const cutoff = isoAddMonths(today, -4);
-  const groups = new Map<string, { merchant: string; months: Set<string>; latest: TransactionRow }>();
+  const groups = new Map<string, { merchant: string; months: Set<string>; latest: TxView }>();
   for (const tx of txs) {
     if (tx.deleted !== 0 || tx.amountCents < 10_000 || tx.pending === 1) continue; // ≥ €100
     if (tx.date < cutoff || tx.date > today) continue;
@@ -72,7 +72,7 @@ export interface SafeToSpend {
 
 export function safeToSpend(input: {
   accounts: readonly Pick<AccountRow, 'id' | 'type' | 'balanceCents' | 'archived' | 'deleted'>[];
-  txs: readonly TransactionRow[];
+  txs: readonly TxView[];
   recurrings: readonly RecurringRow[];
   allocations?: readonly AllocationRow[];
   catalog?: CatalogLookup;

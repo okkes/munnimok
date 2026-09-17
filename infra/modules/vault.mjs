@@ -203,3 +203,30 @@ export async function vaultReplaceFolder(base, { email, password, folder, items 
   if (!imp.ok) throw new Error(`vault import failed (${imp.status})`);
   return { registered, folder, replaced, imported: items.length };
 }
+
+/**
+ * Read one folder of the vault back (the wizard's Access tab needs the
+ * environment's Logto machine credential the CI bootstrap kept there):
+ * sign in, decrypt the folder's items with the account's real user key.
+ * Returns [{name, username, password, uri, notes}] — an unknown folder
+ * or account yields [].
+ */
+export async function vaultReadFolder(base, { email, password, folder }, fetchImpl = insecureFetch) {
+  const account = buildAccount(email, password);
+  const token = await vaultLogin(base, email, account.hash, fetchImpl);
+  if (!token) throw new Error(`vault: sign-in as ${email} failed`);
+  const sync = await vaultSync(base, token, fetchImpl);
+  const profileKey = sync.profile?.key ?? sync.Profile?.Key;
+  const keys = userKeysOf(email, password, profileKey);
+  const dec = (v) => { if (!v) return ''; try { return decString(keys, v).toString('utf8'); } catch { return ''; } };
+  const folders = sync.folders ?? sync.Folders ?? [];
+  const wanted = folders.find((f) => dec(f.name ?? f.Name) === folder);
+  const wantedId = wanted ? (wanted.id ?? wanted.Id) : null;
+  if (!wantedId) return [];
+  return (sync.ciphers ?? sync.Ciphers ?? [])
+    .filter((c) => (c.folderId ?? c.FolderId) === wantedId)
+    .map((c) => {
+      const login = c.login ?? c.Login ?? {};
+      return { name: dec(c.name ?? c.Name), username: dec(login.username ?? login.Username), password: dec(login.password ?? login.Password), uri: dec((login.uris ?? login.Uris ?? [])[0]?.uri ?? (login.uris ?? login.Uris ?? [])[0]?.Uri), notes: dec(c.notes ?? c.Notes) };
+    });
+}

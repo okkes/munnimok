@@ -3,7 +3,7 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { globalAsEntry, useSpaceReceipts, viewAsEntry } from '@/application/receiptLinks';
+import { globalAsEntry, linkAsEntry, useSpaceReceipts } from '@/application/receiptLinks';
 import type { ReceiptEntry } from '@/application/receiptLinks';
 import { useSpaceStoreConnLinks, useUnmatchedReceipts } from '@/application/stores';
 import { fmtCents } from '@/lib/money';
@@ -45,9 +45,9 @@ function entryMatches(entry: ReceiptEntry, q: string, amountQ: string | null): b
 
 /**
  * Receipts v3 home (R7): everything the space sees — snapshot-linked
- * receipts, legacy rows and the owner's still-unmatched store pulls —
- * searchable by name/item/amount, filterable by linked-state and by
- * connection instance, grouped by store.
+ * receipts (store-born and photo-born) and the owner's still-unmatched
+ * store pulls — searchable by name/item/amount, filterable by
+ * linked-state and by connection instance, grouped by store.
  */
 export function ReceiptsScreen() {
   const { t, lang } = useLang();
@@ -58,19 +58,19 @@ export function ReceiptsScreen() {
   const [unlinkedOnly, setUnlinkedOnly] = useState(false);
   const [instanceFilter, setInstanceFilter] = useState<string | null>(null);
 
-  const views = useSpaceReceipts();
+  const links = useSpaceReceipts();
   const unmatched = useUnmatchedReceipts();
   const connLinks = useSpaceStoreConnLinks();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
 
   const entries = useMemo(() => {
-    const linked = (views ?? []).map(viewAsEntry);
+    const linked = (links ?? []).map(linkAsEntry);
     const open = (unmatched ?? []).map(globalAsEntry);
     const all = [...linked, ...open];
     all.sort((a, b) => b.data.date.localeCompare(a.data.date));
     return all;
-  }, [views, unmatched]);
+  }, [links, unmatched]);
 
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -185,7 +185,7 @@ export function ReceiptsScreen() {
             </div>
           ))
         ) : (
-          views && (
+          links && (
             <div className="flex flex-col items-center gap-2 px-6 pt-16 text-center" data-testid="receipts-empty">
               <Icon name="receipt-text-outline" size={34} color="var(--m-ink-4)" />
               <p className="text-[14px] font-medium text-ink-2">{t('receipts.emptyTitle')}</p>

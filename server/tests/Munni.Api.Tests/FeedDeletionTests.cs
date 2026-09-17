@@ -26,6 +26,7 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 
@@ -56,7 +57,7 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
             [Op(feed, "account", accountId), Op(feed, "transaction", txId)]));
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1",
             [Op(spaceId, "space", spaceId), Op(spaceId, "txMeta", ImportIds.TxMetaId(spaceId, txId), "catId")]));
-        await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, accountId));
+        await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, accountId, "2026-01-01"));
 
         // my consent rows exist and must go with the account
         var aliceId = await UserIdAsync(sub);
@@ -121,7 +122,7 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
         await alice.PostAsJsonAsync("/feeds", new RegisterFeedRequest(feed, iban));
         await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1", [Op(feed, "account", accountId)]));
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "space", spaceId)]));
-        await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, accountId));
+        await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, accountId, "2026-01-01"));
         // bob's own consent covers the same IBAN (family shared account)
         await bob.GetAsync("/me/spaces"); // ensures bob's user row exists
         var aliceId = await UserIdAsync(aliceSub);

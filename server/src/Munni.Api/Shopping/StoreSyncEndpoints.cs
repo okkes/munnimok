@@ -100,12 +100,11 @@ public static class StoreSyncEndpoints
 
     private static void MapConnections(RouteGroupBuilder group)
     {
-        // connection ciphertext, one blob per connection INSTANCE (v3 keys
-        // are uuids, 36 chars — the old 32 cap would 400 them; legacy blobs
-        // keyed by store name keep working)
+        // connection ciphertext, one blob per connection INSTANCE — keyed by
+        // the instance's uuid (receipts v3), nothing else
         group.MapPut("/connections/{store}", async (string store, ConnectionCipherRequest request, AppDbContext db, HttpContext http) =>
         {
-            if (store.Length > 64 || request.Cipher.Length is 0 or > 16384) return Results.BadRequest();
+            if (!Guid.TryParseExact(store, "D", out _) || request.Cipher.Length is 0 or > 16384) return Results.BadRequest();
             var me = http.GetUserId();
             var row = await db.StoreConnCiphers.FirstOrDefaultAsync(c => c.UserId == me && c.Store == store);
             if (row is null)

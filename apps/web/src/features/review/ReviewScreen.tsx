@@ -11,7 +11,7 @@ import { RecurringFormSheet, formFromTx } from '@/features/recurring/RecurringFo
 import type { FormState as RecurringFormState } from '@/features/recurring/RecurringFormSheet';
 import { merchantKey } from '@/domain/merchantKey';
 import { draftReady, initDraft, withCategory, withCats, withKind, withLinkedAccount, withSplits, withType } from '@/domain/reviewDraft';
-import { kindOf, standardTypeFor } from '@/domain/txKind';
+import { standardTypeFor } from '@/domain/txKind';
 import { EXPECTED_REIMBURSE_ID, RECEIVED_REIMBURSE_ID, REIMBURSED_ID, UNCATEGORIZED_ID, isMovementCat, specialCatType } from '@/domain/categories';
 import { COUNTERABLE_ACCOUNT_TYPES, accountStamp, counterTypesFor, movementCatFor } from '@/domain/txType';
 import { partNetCents } from '@/domain/reimbursement';
@@ -372,7 +372,6 @@ async function writeConfirmation(args: {
   const linkField = replacing('linkedAccountId', draft.linkedAccountId, !!args.tx.linkedAccountId);
   await args.transform(args.tx, {
     catId: draft.catId,
-    txType: draft.txType,
     needsReview: 0,
     ...splitsField,
     ...catsField,
@@ -403,12 +402,10 @@ function catsForSibling(item: SpaceTx, entries: TxSplitCat[]): TxSplitCat[] | un
 }
 
 /** the WHOLE decision rides to every selected sibling (user rule):
- *  category, type, counterparty, recurring, event. Absolute splits fit
- *  exact twins by the similar-rule, pct splits rescale per item — and
- *  sign-bound standard types re-derive by the sibling's OWN sign (the
- *  similar filter already keeps signs together; this guards any path
- *  that doesn't). A partition travels whole: parts clear a sibling's
- *  spread and vice versa (#211 — the two never mix on one row). */
+ *  category, counterparty, recurring, event. Absolute splits fit exact
+ *  twins by the similar-rule, pct splits rescale per item. A partition
+ *  travels whole: parts clear a sibling's spread and vice versa (#211 —
+ *  the two never mix on one row). */
 function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | undefined, eventId: string | undefined, note?: string) {
   // #237 r2: a pointed-at EXISTING row is specific to ONE part — a
   // sibling's copy must never point at the same row (bulk is disabled
@@ -417,11 +414,9 @@ function bulkFieldsFor(item: SpaceTx, draft: ReviewDraft, recurringId: string | 
     ? resolveSplitsFor(item.amountCents, draft.splits).map((s) => ({ ...s, transferPeerId: undefined }))
     : undefined;
   const catEntries = !splits && draft.cats?.length ? catsForSibling(item, draft.cats) : undefined;
-  const siblingType = kindOf(draft.txType) === 'standard' ? standardTypeFor(item.amountCents) : draft.txType;
   const linkedId = draft.linkedAccountId;
   return {
     catId: draft.catId,
-    txType: siblingType,
     needsReview: 0 as const,
     ...(splits ? { splits, cats: null as never } : {}),
     ...(catEntries ? { cats: catEntries, ...(item.splits?.length ? { splits: null as never } : {}) } : {}),

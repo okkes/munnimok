@@ -61,22 +61,33 @@ describe('ControlApp (test-auth mode)', () => {
     sessionStorage.clear(); // the persisted screen must not leak between tests
   });
 
-  it('a sub that is not on the admin list sees the denied note and no data', async () => {
+  it('a sign-in without the admin scope sees the denied note and no data', async () => {
     scriptFetch({ 'GET /control/ping': () => ({ status: 403 }) });
     render(<ControlApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'nobody' } });
-    await screen.findByText(/not on the admin list/);
+    await screen.findByText(/no admin access/);
     expect(screen.queryByTestId('control-tiles')).toBeNull();
     expect(screen.queryByText(/did not answer/)).toBeNull();
   });
 
-  it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the admin-list one', async () => {
+  it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the denied one', async () => {
     scriptFetch({ 'GET /control/ping': () => ({ status: 500 }) });
     render(<ControlApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'anybody' } });
     await screen.findByText(/did not answer/);
-    expect(screen.queryByText(/not on the admin list/)).toBeNull();
+    expect(screen.queryByText(/no admin access/)).toBeNull();
     expect(screen.queryByTestId('control-tiles')).toBeNull();
+  });
+
+  it('a disconnected device (410) says so and forgets its id so the next load registers anew', async () => {
+    localStorage.setItem('munni_control_device', 'dev-revoked');
+    scriptFetch({ 'GET /control/ping': () => ({ status: 410, body: { error: 'device-revoked' } }) });
+    render(<ControlApp config={CONFIG} getToken={null} />);
+    fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'anybody' } });
+    await screen.findByText(/disconnected from the account/);
+    expect(screen.queryByText(/did not answer/)).toBeNull();
+    expect(screen.queryByTestId('control-tiles')).toBeNull();
+    expect(localStorage.getItem('munni_control_device')).toBeNull();
   });
 
   it('shows the cockpit nav and overview: totals per environment plus env health', async () => {
@@ -155,20 +166,28 @@ describe('ControlApp (test-auth mode)', () => {
     expect((await screen.findByTestId('control-quota')).textContent).toContain('No snapshots yet');
   });
 
-  it('typing a sub persists it and sends it as X-User-Sub', async () => {
+  it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {
     const seenHeaders: (string | null)[] = [];
+    const seenDevices: (string | null)[] = [];
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        if (String(input).includes('/control/')) seenHeaders.push(new Headers(init?.headers).get('X-User-Sub'));
+        if (String(input).includes('/control/')) {
+          seenHeaders.push(new Headers(init?.headers).get('X-User-Sub'));
+          seenDevices.push(new Headers(init?.headers).get('X-Munni-Device'));
+        }
         return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } });
       }),
     );
     render(<ControlApp config={CONFIG} getToken={null} />);
     fireEvent.change(screen.getByTestId('control-sub'), { target: { value: 'sub-admin' } });
-    await waitFor(() => expect(seenHeaders.length).toBeGreaterThan(0));
+    await waitFor(() => expect(seenHeaders.length).toBeGreaterThan(1));
     expect(seenHeaders.every((h) => h === 'sub-admin')).toBe(true);
     expect(localStorage.getItem('munni_control_sub')).toBe('sub-admin');
+    // the API refuses requests that name no device: one id, minted once, on every call
+    expect(seenDevices[0]).toBeTruthy();
+    expect(seenDevices.every((d) => d === seenDevices[0])).toBe(true);
+    expect(localStorage.getItem('munni_control_device')).toBe(seenDevices[0]);
   });
 });
 

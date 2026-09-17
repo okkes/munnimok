@@ -32,6 +32,9 @@ export default defineConfig({
         'src/sw.ts',
       ],
       reporter: ['text-summary', 'html'],
+      // the repo's coverage floor (Sonar gate: 85 % lines) — a run under the
+      // bar fails; raise, never lower, when the suite grows
+      thresholds: { lines: 85, statements: 85, functions: 80, branches: 70 },
     },
   },
 });

@@ -14,17 +14,25 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
 
     public CatalogEndpointsTests(AdminApiFactory factory) => _factory = factory;
 
-    private HttpClient ClientFor(string? sub)
+    private HttpClient ClientFor(string? sub, string? scope = null)
     {
         var client = _factory.CreateClient();
-        if (sub is not null) client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        if (sub is not null)
+        {
+            client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+            client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
+        }
+        if (scope is not null) client.DefaultRequestHeaders.Add("X-User-Scope", scope);
         return client;
     }
+
+    private static readonly string[] AhPatterns = ["albert heijn", "AH to go"];
 
     private static object Payload(string keyword = "padel") => new
     {
         categories = new[] { new { id = "groceries", en = "Groceries", nl = "Boodschappen", tr = "Market" } },
         keywords = new[] { new { keyword, catId = "hobby" } },
+        stores = new[] { new { id = "ah", patterns = AhPatterns } },
     };
 
     [Fact]
@@ -46,8 +54,7 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
     [Fact]
     public async Task Publish_BumpsVersion_AndServesWithEtag()
     {
-        var admin = ClientFor("the-admin");
-        await admin.GetAsync("/me");
+        var admin = ClientFor("the-admin", "admin");
         var first = await admin.PutAsJsonAsync("/admin/catalog", Payload());
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
         var second = await admin.PutAsJsonAsync("/admin/catalog", Payload("tennis"));
@@ -60,6 +67,10 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
         var doc = JsonDocument.Parse(await read.Content.ReadAsStringAsync()).RootElement;
         Assert.Equal(v2, doc.GetProperty("version").GetInt32());
         Assert.Equal("tennis", doc.GetProperty("keywords")[0].GetProperty("keyword").GetString());
+        // receipts v3 R9: store merchant patterns publish and serve verbatim
+        var store = doc.GetProperty("stores")[0];
+        Assert.Equal("ah", store.GetProperty("id").GetString());
+        Assert.Equal(2, store.GetProperty("patterns").GetArrayLength());
 
         // a fresh device revalidates for free
         var cached = ClientFor(null);
@@ -69,38 +80,18 @@ public class CatalogEndpointsTests : IClassFixture<AdminApiFactory>
     }
 
     [Fact]
-    public async Task Publish_RejectsNonArrays()
+    public async Task Publish_IsTheWholeDocument_EverySectionAnArray()
     {
-        var admin = ClientFor("the-admin");
-        await admin.GetAsync("/me");
-        var response = await admin.PutAsJsonAsync("/admin/catalog", new { categories = "nope", keywords = Array.Empty<object>() });
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    private static readonly string[] AhPatterns = ["albert heijn", "AH to go"];
-
-    [Fact]
-    public async Task Publish_RoundTrips_StorePatterns_AndDefaultsThemEmpty()
-    {
-        var admin = ClientFor("the-admin");
-        await admin.GetAsync("/me");
-        // an older console publishing WITHOUT stores keeps working
-        var legacy = await admin.PutAsJsonAsync("/admin/catalog", new { categories = Array.Empty<object>(), keywords = Array.Empty<object>() });
-        Assert.Equal(HttpStatusCode.OK, legacy.StatusCode);
-        var read1 = JsonDocument.Parse(await (await ClientFor(null).GetAsync("/catalog")).Content.ReadAsStringAsync()).RootElement;
-        Assert.Equal(0, read1.GetProperty("stores").GetArrayLength());
-
-        // receipts v3 R9: patterns publish and serve verbatim
-        var withStores = await admin.PutAsJsonAsync("/admin/catalog", new
-        {
-            categories = Array.Empty<object>(),
-            keywords = Array.Empty<object>(),
-            stores = new[] { new { id = "ah", patterns = AhPatterns } },
-        });
-        Assert.Equal(HttpStatusCode.OK, withStores.StatusCode);
-        var read2 = JsonDocument.Parse(await (await ClientFor(null).GetAsync("/catalog")).Content.ReadAsStringAsync()).RootElement;
-        var store = read2.GetProperty("stores")[0];
-        Assert.Equal("ah", store.GetProperty("id").GetString());
-        Assert.Equal(2, store.GetProperty("patterns").GetArrayLength());
+        var admin = ClientFor("the-admin", "admin");
+        var empty = Array.Empty<object>();
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await admin.PutAsJsonAsync("/admin/catalog", new { categories = "nope", keywords = empty, stores = empty })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await admin.PutAsJsonAsync("/admin/catalog", new { categories = empty, keywords = empty, stores = "ah" })).StatusCode);
+        // a publish that leaves a section out would silently erase it
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await admin.PutAsJsonAsync("/admin/catalog", new { categories = empty, keywords = empty })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK,
+            (await admin.PutAsJsonAsync("/admin/catalog", new { categories = empty, keywords = empty, stores = empty })).StatusCode);
     }
 }

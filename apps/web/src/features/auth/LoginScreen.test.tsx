@@ -98,14 +98,6 @@ describe('LoginScreen', () => {
     }
   });
 
-  it('carries the dark-mode top scrim so status icons and wordmark read on the light hero (#122)', async () => {
-    renderApp('/login', { signedIn: false });
-    const scrim = await screen.findByTestId('login-top-scrim');
-    // dark-only visibility: hidden by default, shown via the dark variant
-    expect(scrim.className).toContain('hidden');
-    expect(scrim.className).toContain('dark:block');
-  });
-
   it('creates an offline profile and enters a personal space named after it', async () => {
     renderApp('/login', { signedIn: false });
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
@@ -180,11 +172,10 @@ describe('LoginScreen', () => {
     expect(fetchSpy).not.toHaveBeenCalled(); // language art/data is bundled
   });
 
-  it('unavailable providers are hidden when Logto is not configured', async () => {
+  it('without Logto the login offers the demo and offline doors, no sign-in button', async () => {
     renderApp('/login', { signedIn: false });
     await screen.findByTestId('login-demo-btn');
-    expect(screen.queryByTestId('login-google-btn')).toBeNull();
-    expect(screen.queryByTestId('login-apple-btn')).toBeNull();
+    expect(screen.getByTestId('login-offline-btn')).toBeTruthy();
     expect(screen.queryByTestId('login-signin-btn')).toBeNull();
   });
 
@@ -208,9 +199,6 @@ describe('LoginScreen', () => {
     fireEvent.click(await screen.findByTestId('login-offline-btn'));
     fireEvent.click(await screen.findByTestId('offline-continue'));
     const profileBtn = await screen.findByText('Okkes');
-    // deletion moved to Settings → Profile (user ruling 2026-07-29) —
-    // the chooser offers no destructive affordance any more
-    expect(document.querySelector('[data-testid^="offline-delete-"]')).toBeNull();
     fireEvent.click(profileBtn.closest('button')!);
     expect(await screen.findByTestId('screen-home')).toBeTruthy();
     await waitFor(() => expect(readSessionIdentity()).toEqual(identity));

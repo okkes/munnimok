@@ -21,10 +21,12 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
 
     public AccountDeletionTests(AdminApiFactory factory) => _factory = factory;
 
-    private HttpClient ClientFor(string sub)
+    private HttpClient ClientFor(string sub, string? scope = null)
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
+        if (scope is not null) client.DefaultRequestHeaders.Add("X-User-Scope", scope);
         return client;
     }
 
@@ -71,7 +73,7 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
         db.SpaceMembers.AddRange(
             new SpaceMember { SpaceId = $"{prefix}-solo", UserId = leaver.Id, Role = SpaceRoles.Owner },
             new SpaceMember { SpaceId = $"{prefix}-shared", UserId = leaver.Id, Role = SpaceRoles.Owner },
-            new SpaceMember { SpaceId = $"{prefix}-shared", UserId = friend.Id, Role = "contributor" });
+            new SpaceMember { SpaceId = $"{prefix}-shared", UserId = friend.Id, Role = SpaceRoles.Contributor });
         db.EntityRows.Add(new EntityRow { SpaceId = $"{prefix}-solo", Entity = "transaction", EntityId = "t1", DataJson = "{}", FieldVersionsJson = "{}" });
         db.SyncOps.Add(new SyncOpRow { SpaceId = $"{prefix}-solo", Seq = 1, OpId = $"{prefix}-op1", Entity = "transaction", EntityId = "t1", Hlc = "1", PayloadJson = "{}" });
 
@@ -83,8 +85,8 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
         db.Spaces.AddRange(new Space { Id = $"{prefix}-feed-shared" }, new Space { Id = $"{prefix}-feed-solo" });
         db.EntityRows.Add(new EntityRow { SpaceId = $"{prefix}-feed-shared", Entity = "transaction", EntityId = "f1", DataJson = "{}", FieldVersionsJson = "{}" });
         db.SpaceAccountLinks.AddRange(
-            new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = $"{prefix}-shared", FeedSpaceId = $"{prefix}-feed-shared", AccountId = "a1", AttachedBy = leaver.Id },
-            new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = $"{prefix}-solo", FeedSpaceId = $"{prefix}-feed-solo", AccountId = "a2", AttachedBy = leaver.Id });
+            new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = $"{prefix}-shared", FeedSpaceId = $"{prefix}-feed-shared", AccountId = "a1", AttachedBy = leaver.Id, HistoryFrom = "2026-01-01", Type = "checking" },
+            new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = $"{prefix}-solo", FeedSpaceId = $"{prefix}-feed-solo", AccountId = "a2", AttachedBy = leaver.Id, HistoryFrom = "2026-01-01", Type = "checking" });
 
         // consent + push + friendship
         db.GcRequisitions.Add(new GcRequisition
@@ -144,7 +146,7 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
     public async Task AdminDeletesAUser_ButNeverThemselves()
     {
         await SeedWorldAsync("del-target", "del-witness", "d2");
-        var admin = ClientFor("the-admin");
+        var admin = ClientFor("the-admin", "admin");
 
         Assert.Equal(HttpStatusCode.BadRequest, (await admin.DeleteAsync("/admin/users/the-admin")).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await admin.DeleteAsync("/admin/users/no-such-sub")).StatusCode);
@@ -155,7 +157,7 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
         Assert.False(await db.Users.AnyAsync(u => u.Sub == "del-target"));
         Assert.True(await db.Users.AnyAsync(u => u.Sub == "del-witness"));
 
-        // non-admins cannot use the operator path
+        // without the admin scope the operator path is closed
         var user = ClientFor("del-witness");
         Assert.Equal(HttpStatusCode.Forbidden, (await user.DeleteAsync("/admin/users/del-witness")).StatusCode);
     }

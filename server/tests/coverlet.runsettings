@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Coverage settings for every `dotnet test` of the API suite — wired in by
+  Directory.Build.props (RunSettingsFilePath), so no run needs a settings
+  flag. The collector starts DISABLED: a plain `dotnet test` runs without
+  instrumentation, and `dotnet test - -collect:"XPlat Code Coverage"` (CI,
+  deploy/sonar/analyze.ps1) enables this node while keeping its configuration.
+
+  The exclusions mirror the Sonar analysis (deploy/sonar/analyze.ps1 passes
+  sonar.exclusions=**/Migrations/**, and Sonar ignores generated code): EF
+  migrations and the source-generator output under obj/ are not product code.
+  The floor itself lives in Directory.Build.props (MunniCoverageGate) —
+  coverlet's VSTest collector cannot enforce a threshold on its own.
+-->
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage" enabled="false">
+        <Configuration>
+          <Format>cobertura</Format>
+          <ExcludeByFile>**/Migrations/*.cs,**/obj/**/*.cs</ExcludeByFile>
+          <ExcludeByAttribute>GeneratedCodeAttribute</ExcludeByAttribute>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

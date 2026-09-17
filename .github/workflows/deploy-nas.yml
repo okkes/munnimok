@@ -1,64 +1,87 @@
-# Deploy the IaC twins to the Synology NAS via the FileStation API (user
-# request: no SSH). Dispatched from the setup wizard (or the Actions UI) —
-# by the IaC bootstrap's chain after a green apply, and by hand for a
-# redeploy. The NAS-side poller (deploy/nas/apply.sh, a DSM Task Scheduler
-# entry the prod twin's bootstrap ensures) picks up the new stamp, unpacks
-# each twin into its own /volume1/docker/<stack>/ and runs update.sh there.
+# Deploy stacks of the nas platform to the Synology NAS via the File
+# Station API (no SSH). One bundle per stack — rendered from the committed
+# platform config (infra/platforms/nas) with every placeholder filled from
+# the stack's GitHub environment, each secret NAMED explicitly below (no
+# toJSON(secrets): the pattern GitHub's scanner holds public-repo runs
+# for). The NAS-side poller (deploy/nas/apply.sh, a Task Scheduler entry
+# the shared stack's bootstrap ensures) picks the stamp up and composes the
+# stack up in its own folder next to the live dir.
 #
-# Channels: iac-prod | iac-staging | iac-both → munni-deploy-iac-*.tgz +
-# VERSION_IAC_* in the published folder (SYNOLOGY_PATH); the live dir is
-# its PARENT (the one rule everywhere — infra/modules/dsm.mjs).
-#
-# Env files are rendered from infra/ stack files: every placeholder is
-# filled from the same-named secret or written-back variable of the
-# twin's GitHub Environment, each one NAMED EXPLICITLY below (user ruling
-# 2026-09-16: no toJSON(secrets) — the pattern GitHub's scanner holds
-# public-repo runs for). Adding a key = template + secret + one env line;
-# infra/tests/deploy-nas.test.mjs names a placeholder without its line.
-#
-# The legacy live pipeline (master/dev bundles, deploy/docker-compose*.yml,
-# the live poller) was archived on 2026-09-17: tag archive/legacy-cicd.
-#
-# Secrets required (besides the twins' environments):
-#   SYNOLOGY_URL       e.g. https://<your-nas-domain>:5001
-#   SYNOLOGY_USER      the deploy account (DSM administrator; 2FA off,
-#                      Adaptive MFA off for administrators — infra/README.md B1-1)
-#   SYNOLOGY_PASS      that account's password
-#   SYNOLOGY_PATH      the published folder, e.g. /docker/munni-iac/published
+# Triggers: the wizard / the Bootstrap chain (dispatch, one stack or every
+# stack of a channel), and every successful image build (dev branch →
+# stacks on channel `dev`, master → channel `latest`) — the sustainable
+# pipeline: merge, images build, the NAS follows.
 name: Deploy to NAS
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('Deploy {0}', inputs.stack || format('every {0} stack', inputs.channel)) || format('Deploy after images ({0})', github.event.workflow_run.head_branch) }}
 
 on:
   workflow_dispatch:
     inputs:
+      stack:
+        description: 'One stack (munni-nas-shared, munni-nas-<env>) — or empty for every stack of the channel below'
+        type: string
+        default: ''
       channel:
-        description: 'Which twin(s)'
+        description: 'With an empty stack: every nas stack on this image channel'
         type: choice
-        options: [iac-both, iac-prod, iac-staging]
-        default: iac-both
+        options: [all, dev, latest]
+        default: all
+  workflow_run:
+    workflows: ['Build & push images']
+    types: [completed]
+    branches: [dev, master]
+
 permissions:
   contents: read
-  actions: write # re-runs the IaC bootstrap once the NAS has seeded Logto/GlitchTip (GITHUB_TOKEN fallback)
+  actions: write # re-runs the Bootstrap once a deploy has seeded Logto/GlitchTip
 
 jobs:
-  # ── IaC twins: rendered from infra/ stack files, dispatched from the
-  # setup wizard (or Actions UI). The poller (deploy/nas/apply.sh) unpacks
-  # each into its own /volume1/docker/<stack>/ and composes it up there.
-  deploy-iac:
-    # first-boot latch: fresh repo copies skip until the wizard marks the repo initialized
-    if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
+  stacks:
+    if: ${{ vars.MUNNI_INITIALIZED == 'true' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success') }}
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        stack: ${{ fromJSON(inputs.channel == 'iac-both' && '["munni-iac-prod","munni-iac-staging"]' || (inputs.channel == 'iac-prod' && '["munni-iac-prod"]' || '["munni-iac-staging"]')) }}
-    # the stack's environment carries its minted secrets + written-back
-    # variables; repo-level roots (SYNOLOGY_*, NAS_GHCR_PAT…) merge in
-    environment: ${{ matrix.stack == 'munni-iac-prod' && 'iac-production' || 'iac-staging' }}
+    outputs:
+      include: ${{ steps.m.outputs.include }}
+      count: ${{ steps.m.outputs.count }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: dev # the platform config and the templates live on dev; images come from the channel
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - name: Render + assemble the iac bundle
+      - name: Which stacks
+        id: m
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_run" ]; then
+            CH="${{ github.event.workflow_run.head_branch == 'master' && 'latest' || 'dev' }}"
+            node infra/ci/matrix.mjs --platform nas --channel "$CH"
+          elif [ -n "${{ inputs.stack }}" ]; then
+            node infra/ci/matrix.mjs --platform nas --stack "${{ inputs.stack }}"
+          else
+            node infra/ci/matrix.mjs --platform nas --channel "${{ inputs.channel }}"
+          fi
+
+  deploy:
+    needs: stacks
+    if: ${{ needs.stacks.outputs.count != '0' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1 # the shared stack first (the matrix lists it first); one upload session at a time
+      matrix:
+        include: ${{ fromJSON(needs.stacks.outputs.include) }}
+    concurrency:
+      group: deploy-${{ matrix.stack }}
+      cancel-in-progress: false
+    environment: ${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: dev
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Render + assemble the bundle
         id: bundle
         run: |
           set -euo pipefail
@@ -68,95 +91,83 @@ jobs:
           mkdir -p "$STAGE"
           cp "$SRC/docker-compose.${{ matrix.stack }}.yml" deploy/update.sh "$STAGE/"
           cp -r "$SRC/initdb" "$STAGE/"
-          if [ "${{ matrix.stack }}" = "munni-iac-prod" ]; then
-            ENV_NAME=".env"; BUNDLE="munni-deploy-iac-prod.tgz"; STAMP="VERSION_IAC_PROD"
-          else
-            # update.sh resolves *staging* compose files to .env.staging
-            ENV_NAME=".env.staging"; BUNDLE="munni-deploy-iac-staging.tgz"; STAMP="VERSION_IAC_STAGING"
-          fi
-          bash deploy/nas/render-env.sh "$SRC/.env.${{ matrix.stack }}" "$STAGE/$ENV_NAME"
+          for f in pgadmin-servers.json Caddyfile; do [ -f "$SRC/$f" ] && cp "$SRC/$f" "$STAGE/"; done
+          bash deploy/nas/render-env.sh "$SRC/.env.${{ matrix.stack }}" "$STAGE/.env"
+          BUNDLE="${{ matrix.stack }}.tgz"
+          STAMP="VERSION_$(echo "${{ matrix.stack }}" | sed 's/^munni-//' | tr 'a-z-' 'A-Z_')"
           tar -czf "$RUNNER_TEMP/$BUNDLE" -C "$STAGE" .
-          # <sha>.<run number> — see the live job: every deploy is new to the poller
+          # <sha>.<run number>: every deploy is new to the poller
           echo "${{ github.sha }}.${{ github.run_number }}" > "$RUNNER_TEMP/$STAMP"
           echo "bundle=$BUNDLE" >> "$GITHUB_OUTPUT"
           echo "stamp=$STAMP" >> "$GITHUB_OUTPUT"
         env:
-          IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
-          # every placeholder of the rendered .env.<stack>, by name: the stack's
-          # secrets (minted into its environment by bootstrap; repo-level roots
-          # merge in) and the variables the logto/glitchtip modules wrote back
-          NAS_ADMIN_SUBS: ${{ secrets.NAS_ADMIN_SUBS }}
-          NAS_API_SENTRY_DSN: ${{ secrets.NAS_API_SENTRY_DSN }}
-          NAS_ENABLEBANKING_APPLICATION_ID: ${{ secrets.NAS_ENABLEBANKING_APPLICATION_ID }}
-          NAS_ENABLEBANKING_PRIVATE_KEY_PEM: ${{ secrets.NAS_ENABLEBANKING_PRIVATE_KEY_PEM }}
-          NAS_FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.NAS_FCM_SERVICE_ACCOUNT_JSON }}
-          NAS_GHCR_PAT: ${{ secrets.NAS_GHCR_PAT }}
-          NAS_GLITCHTIP_EMAIL_URL: ${{ secrets.NAS_GLITCHTIP_EMAIL_URL }}
-          NAS_GLITCHTIP_SECRET_KEY: ${{ secrets.NAS_GLITCHTIP_SECRET_KEY }}
-          NAS_GOCARDLESS_SECRET_ID: ${{ secrets.NAS_GOCARDLESS_SECRET_ID }}
-          NAS_GOCARDLESS_SECRET_KEY: ${{ secrets.NAS_GOCARDLESS_SECRET_KEY }}
-          NAS_LOGODEV_PUBLIC_TOKEN: ${{ secrets.NAS_LOGODEV_PUBLIC_TOKEN }}
-          NAS_LOGODEV_SECRET_KEY: ${{ secrets.NAS_LOGODEV_SECRET_KEY }}
-          NAS_LOGTO_M2M_APP_ID: ${{ secrets.NAS_LOGTO_M2M_APP_ID }}
-          NAS_LOGTO_M2M_APP_SECRET: ${{ secrets.NAS_LOGTO_M2M_APP_SECRET }}
-          NAS_POSTGRES_PASSWORD: ${{ secrets.NAS_POSTGRES_PASSWORD }}
-          NAS_PUSH_VAPID_PRIVATE_KEY: ${{ secrets.NAS_PUSH_VAPID_PRIVATE_KEY }}
-          NAS_PUSH_VAPID_PUBLIC_KEY: ${{ secrets.NAS_PUSH_VAPID_PUBLIC_KEY }}
+          PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
+          # every placeholder of the rendered env template, by name
+          GHCR_PAT: ${{ secrets.GHCR_PAT }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          GLITCHTIP_SECRET_KEY: ${{ secrets.GLITCHTIP_SECRET_KEY }}
+          GLITCHTIP_EMAIL_URL: ${{ secrets.GLITCHTIP_EMAIL_URL }}
+          GLITCHTIP_ADMIN_PASSWORD: ${{ secrets.GLITCHTIP_ADMIN_PASSWORD }}
+          GLITCHTIP_API_TOKEN: ${{ secrets.GLITCHTIP_API_TOKEN }}
+          PGADMIN_PASSWORD: ${{ secrets.PGADMIN_PASSWORD }}
           VAULT_SIGNUPS_ALLOWED: ${{ secrets.VAULT_SIGNUPS_ALLOWED }}
-          # the Logto seed the poller applies on the NAS (prod twin's env only; empty for staging)
-          IAC_LOGTO_INFRA_M2M_ID: ${{ secrets.IAC_LOGTO_INFRA_M2M_ID }}
-          IAC_LOGTO_INFRA_M2M_SECRET: ${{ secrets.IAC_LOGTO_INFRA_M2M_SECRET }}
-          IAC_LOGTO_ADMIN_M2M_ID: ${{ secrets.IAC_LOGTO_ADMIN_M2M_ID }}
-          IAC_LOGTO_ADMIN_M2M_SECRET: ${{ secrets.IAC_LOGTO_ADMIN_M2M_SECRET }}
-          IAC_GLITCHTIP_ADMIN_PASSWORD: ${{ secrets.IAC_GLITCHTIP_ADMIN_PASSWORD }}
-          IAC_GLITCHTIP_API_TOKEN: ${{ secrets.IAC_GLITCHTIP_API_TOKEN }}
-          VITE_GLITCHTIP_DSN: ${{ vars.VITE_GLITCHTIP_DSN }}
-          VITE_GLITCHTIP_DSN_ADMIN: ${{ vars.VITE_GLITCHTIP_DSN_ADMIN }}
+          CONTROL_LOGTO_APP_ID: ${{ secrets.CONTROL_LOGTO_APP_ID }}
+          LOGTO_INFRA_M2M_ID: ${{ secrets.LOGTO_INFRA_M2M_ID }}
+          LOGTO_INFRA_M2M_SECRET: ${{ secrets.LOGTO_INFRA_M2M_SECRET }}
+          LOGTO_ADMIN_M2M_ID: ${{ secrets.LOGTO_ADMIN_M2M_ID }}
+          LOGTO_ADMIN_M2M_SECRET: ${{ secrets.LOGTO_ADMIN_M2M_SECRET }}
+          LOGTO_M2M_APP_ID: ${{ secrets.LOGTO_M2M_APP_ID }}
+          LOGTO_M2M_APP_SECRET: ${{ secrets.LOGTO_M2M_APP_SECRET }}
+          API_SENTRY_DSN: ${{ secrets.API_SENTRY_DSN }}
+          GOCARDLESS_SECRET_ID: ${{ secrets.GOCARDLESS_SECRET_ID }}
+          GOCARDLESS_SECRET_KEY: ${{ secrets.GOCARDLESS_SECRET_KEY }}
+          ENABLEBANKING_APPLICATION_ID: ${{ secrets.ENABLEBANKING_APPLICATION_ID }}
+          ENABLEBANKING_PRIVATE_KEY_PEM: ${{ secrets.ENABLEBANKING_PRIVATE_KEY_PEM }}
+          PUSH_VAPID_PUBLIC_KEY: ${{ secrets.PUSH_VAPID_PUBLIC_KEY }}
+          PUSH_VAPID_PRIVATE_KEY: ${{ secrets.PUSH_VAPID_PRIVATE_KEY }}
+          FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
+          LOGODEV_SECRET_KEY: ${{ secrets.LOGODEV_SECRET_KEY }}
+          LOGODEV_PUBLIC_TOKEN: ${{ secrets.LOGODEV_PUBLIC_TOKEN }}
           VITE_LOGTO_APP_ID: ${{ vars.VITE_LOGTO_APP_ID }}
           VITE_LOGTO_APP_ID_ADMIN: ${{ vars.VITE_LOGTO_APP_ID_ADMIN }}
-      - name: Upload to Synology FileStation (bundle first, stamp last)
-        id: upload
+          VITE_GLITCHTIP_DSN: ${{ vars.VITE_GLITCHTIP_DSN }}
+          VITE_GLITCHTIP_DSN_ADMIN: ${{ vars.VITE_GLITCHTIP_DSN_ADMIN }}
+      - name: Upload to Synology File Station (bundle first, stamp last)
         run: |
           set -euo pipefail
-          # the poller script rides along with every bundle (the task runs a throwaway copy)
           : "${SYNOLOGY_PATH:?SYNOLOGY_PATH secret missing}"
           LIVE="${SYNOLOGY_PATH%/}"; LIVE="${LIVE%/*}"
           if [ -z "$LIVE" ] || [ "$LIVE" = "${SYNOLOGY_PATH%/}" ]; then
-            echo "::error::SYNOLOGY_PATH must be a folder inside a shared folder, e.g. /docker/munni/published"; exit 1
+            echo "::error::SYNOLOGY_PATH must be a folder inside a shared folder, e.g. /docker/munni-nas/published"; exit 1
           fi
+          # the poller script rides along with every bundle (the task runs a throwaway copy)
           SYNOLOGY_PATH="$LIVE" bash deploy/nas/upload.sh deploy/nas/apply.sh
-          bash deploy/nas/upload.sh \
-            "$RUNNER_TEMP/${{ steps.bundle.outputs.bundle }}" \
-            "$RUNNER_TEMP/${{ steps.bundle.outputs.stamp }}"
+          bash deploy/nas/upload.sh "$RUNNER_TEMP/${{ steps.bundle.outputs.bundle }}" "$RUNNER_TEMP/${{ steps.bundle.outputs.stamp }}"
         env:
           SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
           SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
           SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
-
-      # ── no click left (2026-09-17): the prod twin's first Deploy carries the
-      # Logto seed; once the poller applied it and Logto answers with the minted
-      # credential, the bootstrap runs once more and turns sign-in into code
-      # (apps, console admin, app admin, vault) — it chains staging + Deploy
-      # again so the frontends pick the app ids up. Ends by itself: the
-      # written-back VITE_LOGTO_APP_ID means sign-in is wired.
-      - name: Wait for the poller, read its log, and see whether Logto is seeded
+      # no click left: the first deploy carries the seeds; once the poller applied
+      # them and the services answer with the seeded credentials, the Bootstrap
+      # runs once more and turns sign-in / crash reports into code, then deploys
+      # again so the frontends pick the app ids up. Ends by itself.
+      - name: Wait for the poller, read its log, and see whether the seeds landed
         id: applied
-        if: ${{ matrix.stack == 'munni-iac-prod' }}
         run: node deploy/nas/after-apply.mjs --stack "${{ matrix.stack }}" --stamp "${{ github.sha }}.${{ github.run_number }}"
         env:
           SYNOLOGY_URL: ${{ secrets.SYNOLOGY_URL }}
           SYNOLOGY_USER: ${{ secrets.SYNOLOGY_USER }}
           SYNOLOGY_PASS: ${{ secrets.SYNOLOGY_PASS }}
           SYNOLOGY_PATH: ${{ secrets.SYNOLOGY_PATH }}
-          IAC_DOMAIN: ${{ secrets.IAC_DOMAIN }}
-          IAC_LOGTO_INFRA_M2M_ID: ${{ secrets.IAC_LOGTO_INFRA_M2M_ID }}
-          IAC_LOGTO_INFRA_M2M_SECRET: ${{ secrets.IAC_LOGTO_INFRA_M2M_SECRET }}
-          IAC_GLITCHTIP_API_TOKEN: ${{ secrets.IAC_GLITCHTIP_API_TOKEN }}
-      - name: Sign-in or crash reports not wired yet — run the IaC bootstrap once more (it chains staging + Deploy)
-        if: ${{ matrix.stack == 'munni-iac-prod' && ((steps.applied.outputs.logto == 'answers' && vars.VITE_LOGTO_APP_ID == '') || (steps.applied.outputs.glitchtip == 'answers' && vars.VITE_GLITCHTIP_DSN == '')) }}
+          PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
+          LOGTO_INFRA_M2M_ID: ${{ secrets.LOGTO_INFRA_M2M_ID }}
+          LOGTO_INFRA_M2M_SECRET: ${{ secrets.LOGTO_INFRA_M2M_SECRET }}
+          GLITCHTIP_API_TOKEN: ${{ secrets.GLITCHTIP_API_TOKEN }}
+      - name: A seed landed and its write-back is missing — run the Bootstrap once more (it chains this Deploy)
+        if: ${{ (steps.applied.outputs.logto == 'answers' && vars.VITE_LOGTO_APP_ID == '') || (steps.applied.outputs.glitchtip == 'answers' && vars.VITE_GLITCHTIP_DSN == '' && matrix.role == 'env') }}
         run: |
-          gh workflow run iac.yml --ref "$GITHUB_REF_NAME" -f stack=munni-iac-prod -f chain=staging,deploy-both
-          echo "chained: Bootstrap munni-iac-prod (a seed landed, its write-back is missing) → staging → Deploy both" >> "$GITHUB_STEP_SUMMARY"
+          gh workflow run iac.yml --ref dev -f stack="${{ matrix.stack }}" -f chain=deploy
+          echo "chained: Bootstrap ${{ matrix.stack }} → Deploy" >> "$GITHUB_STEP_SUMMARY"
         env:
-          GH_TOKEN: ${{ secrets.IAC_GH_PAT || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}

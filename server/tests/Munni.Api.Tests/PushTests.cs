@@ -21,6 +21,7 @@ public class PushTests : IClassFixture<SyncApiFactory>
     {
         var client = _factory.CreateClient();
         client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
         return client;
     }
 
@@ -129,6 +130,7 @@ public class PushTests : IClassFixture<SyncApiFactory>
         {
             var client = factory.CreateClient();
             client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+            client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
             return client;
         }
         var alice = ClientOf($"soc-a-{suffix}");
@@ -188,6 +190,7 @@ public class PushTests : IClassFixture<SyncApiFactory>
         {
             var client = factory.CreateClient();
             client.DefaultRequestHeaders.Add("X-User-Sub", sub);
+            client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
             return client;
         }
         var alice = ClientOf($"mem-a-{suffix}");

@@ -4,20 +4,20 @@
  * double-click infra/setup/start.cmd). Zero dependencies.
  *
  * It serves infra/setup/index.html on 127.0.0.1 and gives the page hands
- * on THIS machine, now over the local THREE-STACK family (plan LS1-LS3):
- * munni-local-shared (postgres, glitchtip, vault, ocr, munni-control)
- * plus the munni-local-prod / munni-local-dev environments, each with its
- * own Logto. Endpoints take a `stack` and stream every command's output
- * into the page. Without the helper the page stays a guided manual.
+ * on THIS machine: the lcl platform (Docker Desktop — the shared stack
+ * plus every environment, each with its own Logto) is run from here; for
+ * the nas platform the helper only keeps the wizard's own store, writes
+ * the committed platform config (infra/platforms) and answers what the
+ * page cannot compute itself — GitHub Actions does the deploying.
  *
  * Security model (a localhost dev tool, but still):
  * - binds 127.0.0.1 only; Host header must be localhost/127.0.0.1;
  * - every /api call needs the per-run token the server injects into the
  *   page it serves (other local pages can't drive it);
- * - commands are a fixed allowlist over a fixed stack list — the ONLY
- *   caller-controlled data is operator secret VALUES, passed as env to
- *   bootstrap (never argv, never logged) and restricted to the
- *   manifest's operator names.
+ * - commands are a fixed allowlist over the KNOWN stacks — the only
+ *   caller-controlled data are operator secret VALUES (stored in the
+ *   wizard's store, passed as env to bootstrap, never argv, never logged)
+ *   and the platform config fields, validated before they are written.
  */
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
@@ -26,48 +26,60 @@ import { randomBytes, X509Certificate } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { MANIFEST } from '../modules/secrets.mjs';
-import { familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from '../modules/localstore.mjs';
+import { MANIFEST, entriesFor } from '../modules/secrets.mjs';
+import { ensureLocalSecrets, familyValues, forgetWizardValues, loadLocalValues, loadWizardStore, saveLocalValues, setWizardValues, wizardValues } from '../modules/localstore.mjs';
 import { insecureFetch, localAwareFetch } from '../modules/insecure-fetch.mjs';
-import { lanHost, loadAutonomy, loadStack, localEnvRegistry, saveAutonomy, saveLocalEnvRegistry } from '../modules/stack.mjs';
+import { ENV_NAME_RE, RESERVED_ENV_NAMES, lanHost, listPlatforms, loadAutonomy, loadEnv, loadPlatform, loadStack, nextSlot, parseStackName, platformEnvStacks, platformEnvs, removeEnv, saveAutonomy, saveEnv, savePlatform, sharedOf, stackName } from '../modules/stack.mjs';
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
-import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultRegister } from '../modules/vault.mjs';
+import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultReadFolder, vaultRegister } from '../modules/vault.mjs';
 import { zipEntry, zipNames } from '../modules/zip.mjs';
 import { proxyRules } from '../modules/dsm.mjs';
+import { listUsers, setAdmin } from '../modules/logto.mjs';
+import { removeProjects } from '../modules/glitchtip.mjs';
 
 const DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(DIR, '..', '..');
 const HTML = join(DIR, 'index.html');
 
-export const SHARED_STACK = 'munni-local-shared';
-/** the environment stacks are DYNAMIC (local-envs.json registry) */
-export const LOCAL_ENVS = () => localEnvRegistry().map((e) => `munni-local-${e.name}`);
-export const LOCAL_STACKS = () => [SHARED_STACK, ...LOCAL_ENVS()];
+/* ── the stacks this helper may touch ───────────────────────────────── */
+const LCL = 'lcl';
+export const LCL_SHARED = stackName(LCL);
+export const LCL_ENVS = () => platformEnvStacks(LCL).map((s) => s.stack);
+export const LCL_STACKS = () => [LCL_SHARED, ...LCL_ENVS()];
+const isLcl = (name) => parseStackName(name)?.platform === LCL;
 
 // MUNNI_RENDER_DIR: same test override the render/localstore modules honor
-const renderedDir = (name) =>
-  process.env.MUNNI_RENDER_DIR ? join(process.env.MUNNI_RENDER_DIR, name) : join(ROOT, 'infra', 'rendered', name);
+const renderedDir = (name) => process.env.MUNNI_RENDER_DIR ? join(process.env.MUNNI_RENDER_DIR, name) : join(ROOT, 'infra', 'rendered', name);
 const composeArgs = (name) => ['compose', '--env-file', `.env.${name}`, '-f', `docker-compose.${name}.yml`];
-/** stack routing with honest fallbacks: the named stack when it exists,
- * else the FIRST registry environment, else the shared stack. The old
- * hardcoded munni-local-prod fallback crashed every consumer while the
- * registry was empty (mid delete/recreate — user reports 2026-09-08:
- * first Check, then Save died on bootstrap's unknown-stack throw) and
- * would equally crash a registry without a literal "prod". */
-const pickStack = (candidate) => (LOCAL_STACKS().includes(candidate) ? candidate : (LOCAL_ENVS()[0] ?? SHARED_STACK));
-/** env-only variant: callers guard LOCAL_ENVS().length before calling */
-const pickEnv = (candidate) => (LOCAL_ENVS().includes(candidate) ? candidate : LOCAL_ENVS()[0]);
+/** the named lcl stack when it exists, else the first environment, else the shared stack */
+const pickLclStack = (candidate) => (LCL_STACKS().includes(candidate) ? candidate : (LCL_ENVS()[0] ?? LCL_SHARED));
+const pickLclEnv = (candidate) => (LCL_ENVS().includes(candidate) ? candidate : LCL_ENVS()[0]);
 
-/** operator names the browser may hand to bootstrap via env */
-export const OPERATOR_NAMES = new Set(
-  MANIFEST.secrets.filter((s) => s.owner === 'operator' && !['nas', 'ci'].includes(s.platform)).map((s) => s.name),
-);
+/** operator names the wizard may store (the manifest's operator + wizard entries) */
+export const OPERATOR_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator' || s.scope === 'wizard').map((s) => s.name));
+const NAME_RE = /^[A-Z][A-Z0-9_]{1,63}$/;
+
+/**
+ * a nas stack's domain is a secret the wizard holds in its platform
+ * section — loading such a stack needs it in the environment for the
+ * duration of the call
+ */
+function withPlatformEnv(platform, fn) {
+  const prev = process.env.PLATFORM_DOMAIN;
+  const domain = wizardValues(platform).PLATFORM_DOMAIN;
+  if (domain) process.env.PLATFORM_DOMAIN = domain;
+  try {
+    return fn();
+  } finally {
+    if (prev === undefined) delete process.env.PLATFORM_DOMAIN; else process.env.PLATFORM_DOMAIN = prev;
+  }
+}
+const loadAnyStack = (name) => withPlatformEnv(parseStackName(name)?.platform, () => loadStack(name));
+/** the values a stack's setup sees: lcl = the stores, nas = the wizard's own values */
+const valuesFor = (stack) => (stack.delivery === 'docker' ? familyValues(stack) : wizardValues(stack.platform));
 
 const DEVSOURCE_COMPOSE = ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml'];
-/** fixed verb set over the KNOWN stacks — nothing here is caller-
- * controlled beyond picking one. The heavyweight VERIFICATION tools
- * (sonar, e2e, webkit) left this on user ruling: they are development
- * instruments, not setup steps. */
+/** fixed verb set over the KNOWN lcl stacks — nothing here is caller-controlled beyond picking one */
 export function toolFor(id) {
   const m = /^(.+):(up|down|destroy)$/.exec(String(id ?? ''));
   if (!m) return null;
@@ -76,18 +88,15 @@ export function toolFor(id) {
     const args = { up: ['up', '-d', '--build'], down: ['down'], destroy: ['down', '-v', '--remove-orphans'] }[verb];
     return { cwd: ROOT, cmd: 'docker', args: [...DEVSOURCE_COMPOSE, ...args] };
   }
-  if (!LOCAL_STACKS().includes(name)) return null;
-  // -v --remove-orphans: destroy nukes volumes, network, strays — the
-  // wizard asks for explicit confirmation before calling these
+  if (!LCL_STACKS().includes(name)) return null;
   const args = { up: ['up', '-d', '--remove-orphans'], down: ['down'], destroy: ['down', '-v', '--remove-orphans'] }[verb];
   return { cwd: renderedDir(name), cmd: 'docker', args: [...composeArgs(name), ...args] };
 }
 
-/** the web origin each stack hands to GoCardless as its consent redirect
- * — the discriminator for which requisitions BELONG to it */
+/** the web origin each stack hands to GoCardless as its consent redirect — the discriminator for which requisitions BELONG to it */
 function gcRedirectPrefix(target) {
   if (target === 'devsource') return 'http://localhost:5173/';
-  if (!LOCAL_ENVS().includes(target)) return null; // shared: no consents
+  if (!LCL_ENVS().includes(target)) return null;
   return `${loadStack(target).urls.web}/`;
 }
 
@@ -95,58 +104,47 @@ const hostOk = (req) => /^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.hos
 
 async function probe(url) {
   try {
-    const res = await localAwareFetch(url, { signal: AbortSignal.timeout(1500) });
-    return res.status < 500;
+    const res = await localAwareFetch(url, { signal: AbortSignal.timeout(2500) });
+    return res.ok || res.status === 404;
   } catch {
-    return false; // unreachable → down
+    return false;
   }
 }
 
+/** run a command, stream its output to the response */
 function runToStream(res, cmd, args, opts = {}) {
-  if (!res.headersSent) res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  const child = spawn(cmd, args, { cwd: opts.cwd ?? ROOT, env: opts.env ?? process.env, shell: false });
+  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  res.write(`▶ ${cmd} ${args.join(' ')}\n\n`);
+  const child = spawn(cmd, args, { ...opts, shell: false });
   child.stdout.on('data', (d) => res.write(d));
   child.stderr.on('data', (d) => res.write(d));
-  child.on('error', (e) => { res.write(`\n[helper] failed to start ${cmd}: ${e.message}\n`); res.end('[exit -1]\n'); });
+  child.on('error', (e) => res.end(`\n[error: ${e.message}]\n`));
   child.on('close', (code) => res.end(`\n[exit ${code}]\n`));
 }
 
 const readBody = (req) =>
-  new Promise((resolve, reject) => {
-    let data = '';
-    req.on('data', (c) => { data += c; if (data.length > 1_000_000) { reject(new Error('body too large')); req.destroy(); } });
-    req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
+  new Promise((resolve) => {
+    let raw = '';
+    req.on('data', (d) => { raw += d; });
+    req.on('end', () => { try { resolve(JSON.parse(raw || '{}')); } catch { resolve({}); } });
   });
-
 const json = (res, status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 
 const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
   new Promise((resolve) => {
-    res.write(`\n▶ ${label}\n`);
-    const child = spawnImpl(cmd, args, { cwd: opts.cwd ?? ROOT, env: opts.env ?? process.env, shell: false });
+    if (label) res.write(`▶ ${label}\n`);
+    const child = spawnImpl(cmd, args, { ...opts, shell: false });
     let out = '';
-    const forward = (d) => {
-      const s = String(d);
-      out += s;
-      res.write(opts.mask ? opts.mask(s) : s);
-    };
-    child.stdout.on('data', forward);
-    child.stderr.on('data', forward);
-    child.on('error', (e) => { res.write(`[helper] ${cmd} failed to start: ${e.message}\n`); resolve({ code: -1, out }); });
-    child.on('close', (code) => resolve({ code, out }));
+    const mask = opts.mask ?? ((s) => s);
+    child.stdout.on('data', (d) => { const s = String(d); out += s; res.write(mask(s)); });
+    child.stderr?.on?.('data', (d) => { const s = String(d); out += s; res.write(mask(s)); });
+    child.on('error', (e) => { res.write(`[error: ${e.message}]\n`); resolve({ code: 1, out }); });
+    child.on('close', (code) => { res.write('\n'); resolve({ code: code ?? 1, out }); });
   });
+const streamHead = (res) => res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
 
-/* ── status ────────────────────────────────────────────────────────── */
-/** which health url each service key answers on */
-const SERVICE_PROBE_PATH = {
-  web: '',
-  api: '/health',
-  logto: '/oidc/.well-known/openid-configuration',
-  glitchtip: '/api/0/',
-  vault: '/alive',
-  control: '',
-  pgadmin: '/misc/ping',
-};
+/* ── status ───────────────────────────────────────────────────────── */
+const SERVICE_PROBE_PATH = { web: '', api: '/health', logto: '/oidc/.well-known/openid-configuration', glitchtip: '/api/0/', vault: '/alive', control: '', pgadmin: '/misc/ping' };
 
 async function stackStatus(name, probeImpl) {
   const stack = loadStack(name);
@@ -158,12 +156,29 @@ async function stackStatus(name, probeImpl) {
   return {
     rendered: existsSync(join(renderedDir(name), `.env.${name}`)),
     stored: Object.keys(own).filter((k) => own[k]), // NAMES only, never values
-    required: stackManifestEntries(stack).filter((s) => !s.optional && s.owner === 'operator').map((s) => s.name),
+    required: entriesFor(stack).filter((s) => !s.optional && s.owner === 'operator').map((s) => s.name),
     services,
     urls: stack.urls,
-    envName: stack.envName ?? null,
+    env: stack.env,
+    role: stack.role,
     channel: stack.channel,
   };
+}
+
+/** the committed platform config as the page shows it (never a secret) */
+function platformsView() {
+  return listPlatforms().map((p) => ({
+    platform: p.platform,
+    label: p.label,
+    delivery: p.delivery,
+    registry: p.registry,
+    publishedPath: p.publishedPath ?? null,
+    controlEnv: p.controlEnv ?? null,
+    sharedStack: stackName(p.platform),
+    sharedEnvironment: `${p.platform}-shared`,
+    domainStored: Boolean(wizardValues(p.platform).PLATFORM_DOMAIN),
+    envs: platformEnvs(p.platform).map((e) => ({ ...e, stack: stackName(p.platform, e.env), environment: `${p.platform}-${e.env}` })),
+  }));
 }
 
 async function statusEndpoint(res, probeImpl) {
@@ -175,28 +190,165 @@ async function statusEndpoint(res, probeImpl) {
     c.on('close', (code) => resolve({ ok: code === 0, version: out.trim() }));
   });
   const stacks = {};
-  for (const name of LOCAL_STACKS()) {
-    stacks[name] = await stackStatus(name, probeImpl);
-  }
+  for (const name of LCL_STACKS()) stacks[name] = await stackStatus(name, probeImpl);
   const { enabled, lastCheckAt, lastResult } = loadAutonomy();
-  // the Google console links point at the Play service account's own
-  // project — the OAuth client belongs next to the Firebase apps
   let googleProject = null;
   try {
-    googleProject = JSON.parse(loadLocalValues(loadStack(SHARED_STACK)).PLAY_SERVICE_ACCOUNT_JSON ?? 'null')?.project_id ?? null;
+    googleProject = JSON.parse(wizardValues(LCL).PLAY_SERVICE_ACCOUNT_JSON ?? 'null')?.project_id ?? null;
   } catch { /* no or malformed service account — generic links */ }
-  return json(res, 200, { docker, stacks, lan: lanHost(), googleProject, autonomy: { enabled, lastCheckAt, lastResult, running: autonomyRunning } });
+  const store = loadWizardStore();
+  return json(res, 200, {
+    docker,
+    stacks,
+    platforms: platformsView(),
+    wizardStored: { family: Object.keys(store.family).filter((k) => store.family[k]), platforms: Object.fromEntries(Object.entries(store.platforms).map(([p, v]) => [p, Object.keys(v).filter((k) => v[k])])) },
+    lan: lanHost(),
+    googleProject,
+    autonomy: { enabled, lastCheckAt, lastResult, running: autonomyRunning },
+  });
 }
 
-/* ── run bootstrap ─────────────────────────────────────────────────── */
+/* ── the wizard's own store (operator values) ─────────────────────── */
+function wizardValuesGet(res, url) {
+  const platform = url.searchParams.get('platform') || null;
+  const store = loadWizardStore();
+  return json(res, 200, { family: store.family, platform: platform ? (store.platforms[platform] ?? {}) : {} });
+}
+
+async function wizardValuesSet(req, res) {
+  const body = await readBody(req);
+  const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
+  const values = {};
+  for (const [name, value] of Object.entries(body.values ?? {})) {
+    if (OPERATOR_NAMES.has(name) && typeof value === 'string') values[name] = value;
+  }
+  const forget = Object.keys(values).filter((n) => values[n] === '');
+  const keep = Object.fromEntries(Object.entries(values).filter(([, v]) => v !== ''));
+  if (Object.keys(keep).length) setWizardValues(keep, platform);
+  if (forget.length) forgetWizardValues(forget, platform);
+  return json(res, 200, { stored: Object.keys(keep), forgotten: forget });
+}
+
+/** the platform's vault account: generated once into the wizard's store (the page copies it to GitHub for nas) */
+async function vaultAccountEndpoint(req, res) {
+  const body = await readBody(req);
+  const platform = String(body.platform ?? '');
+  if (!listPlatforms().some((p) => p.platform === platform)) return json(res, 400, { error: 'unknown platform' });
+  const v = wizardValues(platform);
+  const email = v.VAULT_ADMIN_EMAIL || `vault@munni.${platform}`;
+  const password = v.VAULT_MASTER_PASSWORD || randomBytes(16).toString('base64url');
+  setWizardValues({ VAULT_ADMIN_EMAIL: email, VAULT_MASTER_PASSWORD: password }, platform);
+  return json(res, 200, { email, generated: !v.VAULT_MASTER_PASSWORD });
+}
+
+/* ── platform config as code (infra/platforms) ────────────────────── */
+const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin'];
+const BANKING = ['gocardless', 'enablebanking'];
+const SIGNIN = ['google', 'apple'];
+function normalizeFeatures(raw = {}) {
+  const f = {};
+  for (const k of FEATURE_KEYS) if (typeof raw[k] === 'boolean') f[k] = raw[k];
+  if (Array.isArray(raw.banking)) f.banking = raw.banking.filter((x) => BANKING.includes(x));
+  if (Array.isArray(raw.signin)) f.signin = raw.signin.filter((x) => SIGNIN.includes(x));
+  return f;
+}
+const STORE_ID_RE = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*){2,5}$/;
+
+async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
+  const body = await readBody(req);
+  const platform = String(body.platform ?? '');
+  const env = String(body.env ?? '').trim().toLowerCase();
+  if (!listPlatforms().some((p) => p.platform === platform)) return json(res, 400, { error: 'unknown platform' });
+  if (!ENV_NAME_RE.test(env) || RESERVED_ENV_NAMES.has(env)) return json(res, 400, { error: 'name must be 2-12 lowercase letters/digits starting with a letter (like prod, staging, acc)' });
+  if (platformEnvs(platform).some((e) => e.env === env)) return json(res, 400, { error: `environment "${env}" already exists on ${platform}` });
+  const cfg = {
+    env,
+    slot: nextSlot(platform),
+    channel: body.channel === 'latest' ? 'latest' : 'dev',
+    ...(typeof body.appChannel === 'string' ? { appChannel: body.appChannel === 'production' ? 'production' : 'staging' } : {}),
+    ...(typeof body.label === 'string' && body.label.trim() ? { label: body.label.trim().slice(0, 40) } : {}),
+    features: normalizeFeatures(body.features),
+  };
+  const store = {};
+  if (typeof body.androidPackage === 'string' && STORE_ID_RE.test(body.androidPackage)) store.androidPackage = body.androidPackage;
+  if (typeof body.iosBundleId === 'string' && STORE_ID_RE.test(body.iosBundleId)) store.iosBundleId = body.iosBundleId;
+  if (Object.keys(store).length) cfg.store = store;
+  const saved = saveEnv(platform, cfg);
+  const name = stackName(platform, env);
+  if (platform !== LCL) return json(res, 200, { ok: true, stack: name, environment: `${platform}-${env}`, env: saved, file: `infra/platforms/${platform}/envs/${env}.json` });
+  // lcl: render right away (mints its secrets, writes compose + env); the page chains start + sign-in + crash wiring
+  if (!lanHost()) return runImpl(res, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name], { cwd: ROOT });
+  streamHead(res);
+  const boot = await stepRunner(spawnImpl)(res, `render environment ${env}`, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name], { cwd: ROOT });
+  if (boot.code !== 0) return res.end('[exit 1]\n');
+  await refreshFamilyTls(res, spawnImpl);
+  return res.end('\n[exit 0]\n');
+}
+
+/** change an environment's features, channel, label or store ids; lcl re-renders */
+async function envUpdateEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  const platform = String(body.platform ?? '');
+  const env = String(body.env ?? '');
+  let current;
+  try { current = loadEnv(platform, env); } catch (e) { return json(res, 400, { error: e.message }); }
+  const next = { ...current };
+  if (body.channel === 'latest' || body.channel === 'dev') next.channel = body.channel;
+  if (body.appChannel === 'production' || body.appChannel === 'staging') next.appChannel = body.appChannel;
+  if (typeof body.label === 'string' && body.label.trim()) next.label = body.label.trim().slice(0, 40);
+  if (body.features) next.features = { ...current.features, ...normalizeFeatures(body.features) };
+  if (typeof body.androidPackage === 'string' && STORE_ID_RE.test(body.androidPackage)) next.store = { ...next.store, androidPackage: body.androidPackage };
+  if (typeof body.iosBundleId === 'string' && STORE_ID_RE.test(body.iosBundleId)) next.store = { ...next.store, iosBundleId: body.iosBundleId };
+  const saved = saveEnv(platform, next);
+  if (platform !== LCL) return json(res, 200, { ok: true, env: saved });
+  streamHead(res);
+  await stepRunner(spawnImpl)(res, `re-render ${env} with its new settings`, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stackName(platform, env)], { cwd: ROOT });
+  return res.end('\n[exit 0]\n');
+}
+
+/** edit a platform's own fields (published path, control environment) */
+async function platformSaveEndpoint(req, res) {
+  const body = await readBody(req);
+  let p;
+  try { p = loadPlatform(String(body.platform ?? '')); } catch (e) { return json(res, 400, { error: e.message }); }
+  if (typeof body.publishedPath === 'string') {
+    if (!/^\/[a-zA-Z0-9_-]+(\/[a-zA-Z0-9_.-]+)+$/.test(body.publishedPath)) return json(res, 400, { error: 'the published path must be a folder inside a shared folder, like /docker/munni-nas/published' });
+    p.publishedPath = body.publishedPath;
+  }
+  if (typeof body.controlEnv === 'string') {
+    if (body.controlEnv && !platformEnvs(p.platform).some((e) => e.env === body.controlEnv)) return json(res, 400, { error: `no environment "${body.controlEnv}" on ${p.platform}` });
+    if (body.controlEnv) p.controlEnv = body.controlEnv; else delete p.controlEnv;
+  }
+  if (body.sharedChannel === 'latest' || body.sharedChannel === 'dev') p.sharedChannel = body.sharedChannel;
+  const saved = savePlatform(p);
+  return json(res, 200, { ok: true, platform: { ...saved, file: undefined } });
+}
+
+/** commit + push the platform config (the pipeline reads it from the branch) */
+async function configCommitEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  const message = String(body.message ?? 'chore(platforms): update the platform config').replace(/[^\w\s():,./+-]/g, '').slice(0, 120);
+  streamHead(res);
+  const run = stepRunner(spawnImpl);
+  const git = (label, args) => run(res, label, 'git', args, { cwd: ROOT });
+  const status = await git('what changed under infra/platforms', ['status', '--porcelain', 'infra/platforms']);
+  if (!status.out.trim()) { res.write('nothing to commit — the platform config is already on the branch\n'); return res.end('[exit 0]\n'); }
+  await git('stage the platform config', ['add', 'infra/platforms']);
+  const commit = await git('commit', ['commit', '-m', message, '--', 'infra/platforms']);
+  if (commit.code !== 0) return res.end('[exit 1]\n');
+  const push = await git('push the branch', ['push', 'origin', 'HEAD']);
+  return res.end(`\n[exit ${push.code === 0 ? 0 : 1}]\n`);
+}
+
+/* ── run bootstrap / tools (lcl) ──────────────────────────────────── */
 async function runEndpoint(req, res, runImpl) {
   const body = await readBody(req);
-  const stackName = pickStack(body.stack);
+  const name = pickLclStack(body.stack);
   const env = { ...process.env };
-  for (const [name, value] of Object.entries(body.values ?? {})) {
-    if (OPERATOR_NAMES.has(name) && typeof value === 'string' && value) env[name] = value;
+  for (const [n, value] of Object.entries(body.values ?? {})) {
+    if (OPERATOR_NAMES.has(n) && typeof value === 'string' && value) env[n] = value;
   }
-  const args = [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stackName];
+  const args = [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name];
   if (body.verify) args.push('--verify');
   return runImpl(res, process.execPath, args, { cwd: ROOT, env });
 }
@@ -208,169 +360,61 @@ async function toolEndpoint(req, res, runImpl) {
   return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
 }
 
-/* ── zero-input Logto per environment (plans LS3 + earlier rounds):
-   insert the infra M2M app straight into THAT env's logto database on
-   the shared postgres, wire apps as code, claim the console + the app's
-   first admin user. Idempotent — the insert is ON CONFLICT DO NOTHING
-   with the STORED credential, so a fresh database gets re-seeded. ── */
-const LOGTO_MGMT_ROLE = 'Logto Management API access';
-
-const logtoToken = async (base, id, secret, resource) => {
-  const basic = Buffer.from(`${id}:${secret}`).toString('base64');
-  const res = await localAwareFetch(`${base}/oidc/token`, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/x-www-form-urlencoded',
-      authorization: `Basic ${basic}`,
-    },
-    body: new URLSearchParams({ grant_type: 'client_credentials', resource, scope: 'all' }).toString(),
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) throw new Error(`token ${res.status}`);
-  return (await res.json()).access_token;
-};
-const logtoApi = async (base, token, path, init = {}) => {
-  const res = await localAwareFetch(`${base}/api${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers },
-    signal: AbortSignal.timeout(10000),
-  });
-  if (!res.ok) throw new Error(`${init.method ?? 'GET'} ${path} ${res.status}`);
-  return res.status === 204 ? null : res.json();
-};
-
-/** psql inside the ENVIRONMENT's own postgres (each env runs its own;
- * the service carries a UNIQUE name — see the render's DNS-collision note) */
-const envPgService = (stackName) => `postgres-${stackName.replace('munni-local-', '')}`;
-const envPsql = (stackName, db, sql) => [
-  ...composeArgs(stackName), 'exec', '-T', envPgService(stackName), 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1',
-  ...sql.flatMap((s) => ['-c', s]),
-];
-/** single-VALUE query: -At strips headers/footers so out.trim() IS the value */
-const envPsqlValue = (stackName, db, sql) => [
-  ...composeArgs(stackName), 'exec', '-T', envPgService(stackName), 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1', '-A', '-t', '-c', sql,
-];
-
-async function claimLogtoHumans(res, run, stack, infra) {
-  const secretStep = await run(res, 'read the console machine credential (inside postgres)', 'docker',
-    envPsqlValue(stack.stack, 'logto', "select secret from applications where tenant_id='admin' and id='m-admin';"),
-    { cwd: renderedDir(stack.stack), mask: () => '(captured)\n' });
-  const mSecret = secretStep.code === 0 ? secretStep.out.trim() : '';
-  if (!/^[0-9a-zA-Z_-]{16,}$/.test(mSecret)) {
-    res.write('could not read the console machine credential — account auto-claim skipped\n');
-    return false;
-  }
-  let changed = false;
-  const adminBase = stack.urls.logtoAdmin;
-  try {
-    const token = await logtoToken(adminBase, 'm-admin', mSecret, 'https://admin.logto.app/api');
-    const users = await logtoApi(adminBase, token, '/users?page_size=1');
-    if (users.length) {
-      res.write('Logto console already has its account — left untouched\n');
-    } else {
-      const password = randomBytes(12).toString('base64url');
-      const created = await logtoApi(adminBase, token, '/users', { method: 'POST', body: JSON.stringify({ username: 'admin', password }) });
-      const roles = await logtoApi(adminBase, token, '/roles?page_size=50');
-      const roleIds = roles.filter((r) => ['user', 'default:admin'].includes(r.name)).map((r) => r.id);
-      if (roleIds.length) await logtoApi(adminBase, token, `/users/${created.id}/roles`, { method: 'POST', body: JSON.stringify({ roleIds }) });
-      saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_CONSOLE_USERNAME: 'admin', LOGTO_CONSOLE_PASSWORD: password });
-      res.write(`Logto console claimed → ${adminBase} · username admin · password ${password}\n(kept in the local secret store)\n`);
-      changed = true;
-    }
-    // an API-created account never flips the console out of its OOBE
-    // Register mode (found live: the page kept offering Create-account
-    // and refused the taken username) — force SignIn once a user exists
-    const exp = await logtoApi(adminBase, token, '/sign-in-exp');
-    if (exp.signInMode !== 'SignIn') {
-      await logtoApi(adminBase, token, '/sign-in-exp', { method: 'PATCH', body: JSON.stringify({ signInMode: 'SignIn' }) });
-      res.write('console switched to the LOGIN screen (register mode off)\n');
-    }
-  } catch (e) {
-    res.write(`console auto-claim failed (${e.message}) — claim it by hand at ${adminBase} when you like\n`);
-  }
-  try {
-    // reality first, store second: after Delete + Set up the store still
-    // carries a NAS_ADMIN_SUBS from the WIPED database — the fresh env
-    // must get its admin user regardless (found live 2026-08-28)
-    const token = await logtoToken(stack.urls.logto, infra.id, infra.secret, 'https://default.logto.app/api');
-    const users = await logtoApi(stack.urls.logto, token, '/users?page_size=1');
-    if (users.length) {
-      const store = loadLocalValues(stack);
-      res.write(store.NAS_ADMIN_SUBS
-        ? 'the app has users and admin access is configured — left untouched\n'
-        : 'the app already has users — paste YOUR user id under Store admin access instead\n');
-      return changed;
-    }
-    // NOTE: Logto usernames must match /^[A-Z_a-z]\w*$/ — no hyphens
-    const password = randomBytes(12).toString('base64url');
-    const created = await logtoApi(stack.urls.logto, token, '/users', { method: 'POST', body: JSON.stringify({ username: 'munni_admin', password }) });
-    saveLocalValues(stack, { ...loadLocalValues(stack), LOGTO_APP_ADMIN_USERNAME: 'munni_admin', LOGTO_APP_ADMIN_PASSWORD: password, NAS_ADMIN_SUBS: created.id });
-    res.write(`munni admin user created → sign into the app as munni_admin · ${password}\nadmin access wired automatically (NAS_ADMIN_SUBS=${created.id})\n`);
-    return true;
-  } catch (e) {
-    res.write(`app-admin auto-create failed (${e.message}) — use Store admin access after your first sign-up\n`);
-    return changed;
-  }
-}
+/* ── zero-input Logto per lcl environment: seed the minted machine
+   credentials straight into THAT environment's Logto database, then
+   bootstrap (apps, API resource + admin scope, the admin role, connectors,
+   branding, the console's admin) and restart web/admin ── */
+const envPgService = (name) => `postgres-${parseStackName(name).env}`;
+const envPsql = (name, db, sql) => [...composeArgs(name), 'exec', '-T', envPgService(name), 'psql', '-U', 'munni', '-d', db, '-v', 'ON_ERROR_STOP=1', ...sql.flatMap((s) => ['-c', s])];
 
 async function logtoSetupEndpoint(req, res, spawnImpl) {
   const body = await readBody(req);
-  const stack = loadStack(pickEnv(body.stack));
-  const values = familyValues(stack);
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  if (!LCL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
+  const stack = loadStack(pickLclEnv(body.stack));
+  const { values } = ensureLocalSecrets(stack);
+  streamHead(res);
   const run = stepRunner(spawnImpl);
-
-  // stored credential re-used verbatim; the INSERT is idempotent, so a
-  // freshly reseeded logto database gets the same credential back
-  const id = values.IAC_LOGTO_INFRA_M2M_ID ?? `infra${randomBytes(8).toString('hex')}`;
-  const secret = values.IAC_LOGTO_INFRA_M2M_SECRET ?? randomBytes(24).toString('hex');
-  const linkId = `link0${randomBytes(8).toString('hex')}`;
-  const sqlApp = `insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('default', '${id}', 'infra (munni setup)', '${secret}', 'created by the munni setup wizard', 'MachineToMachine', '{"redirectUris":[],"postLogoutRedirectUris":[]}', '{}') on conflict (id) do nothing;`;
-  const sqlRole = `insert into applications_roles (tenant_id, id, application_id, role_id) select 'default', '${linkId}', '${id}', r.id from roles r where r.tenant_id = 'default' and r.name = '${LOGTO_MGMT_ROLE}' on conflict do nothing;`;
-  const ins = await run(res, `seed the infra M2M app inside ${stack.stack}'s Logto`, 'docker',
-    envPsql(stack.stack, 'logto', [sqlApp, sqlRole]),
-    { cwd: renderedDir(stack.stack), mask: (s) => s.replaceAll(secret, '(secret)') });
+  const META = '{"redirectUris":[],"postLogoutRedirectUris":[]}';
+  const id = values.LOGTO_INFRA_M2M_ID; const secret = values.LOGTO_INFRA_M2M_SECRET;
+  const admId = values.LOGTO_ADMIN_M2M_ID; const admSecret = values.LOGTO_ADMIN_M2M_SECRET;
+  const sql = [
+    `delete from applications where tenant_id='default' and name='infra (munni setup)' and id <> '${id}';`,
+    `insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('default', '${id}', 'infra (munni setup)', '${secret}', 'created by the munni setup', 'MachineToMachine', '${META}', '{}') on conflict (id) do update set secret = excluded.secret, name = excluded.name;`,
+    `insert into applications_roles (tenant_id, id, application_id, role_id) select 'default', 'link0' || substr(md5('${id}'), 1, 16), '${id}', r.id from roles r where r.tenant_id = 'default' and r.name = 'Logto Management API access' on conflict do nothing;`,
+    `delete from applications where tenant_id='admin' and name='infra admin (munni setup)' and id <> '${admId}';`,
+    `insert into applications (tenant_id, id, name, secret, description, type, oidc_client_metadata, custom_client_metadata) values ('admin', '${admId}', 'infra admin (munni setup)', '${admSecret}', 'created by the munni setup — claims the console admin', 'MachineToMachine', '${META}', '{}') on conflict (id) do update set secret = excluded.secret, name = excluded.name;`,
+    `insert into applications_roles (tenant_id, id, application_id, role_id) select 'admin', 'link1' || substr(md5('${admId}'), 1, 16), '${admId}', ar.role_id from applications_roles ar where ar.tenant_id = 'admin' and ar.application_id = 'm-admin' on conflict do nothing;`,
+  ];
+  const mask = (s) => s.replaceAll(secret, '(secret)').replaceAll(admSecret, '(secret)');
+  const ins = await run(res, `seed the machine credentials inside ${stack.stack}'s Logto`, 'docker', envPsql(stack.stack, 'logto', sql), { cwd: renderedDir(stack.stack), mask });
   if (ins.code !== 0) {
-    res.write('\nIs this environment running (step 4)? Its logto dot must be green — then retry.\n');
+    res.write('\nIs this environment running? Its logto dot must be green — then retry.\n');
     return res.end('[exit 1]\n');
   }
-  res.write(`\nInfra app id: ${id} — the secret goes straight into the local secret store, never shown.\n`);
-
-  const boot = await run(res, 'turn sign-in into code (apps, redirect URIs, API resource) + store the credential', process.execPath,
-    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack],
-    { cwd: ROOT, env: { ...process.env, IAC_LOGTO_INFRA_M2M_ID: id, IAC_LOGTO_INFRA_M2M_SECRET: secret } });
+  const boot = await run(res, 'sign-in as code (apps, API resource + admin scope, admin role, connectors, branding, console admin)', process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack], { cwd: ROOT });
   if (boot.code !== 0 || !/logto: apps upserted/.test(boot.out)) {
     res.write('\nLogto did not accept the credential yet — wait for the logto dot to turn green, then press the button again (nothing is lost).\n');
     return res.end('[exit 1]\n');
   }
-
-  const changed = await claimLogtoHumans(res, run, stack, { id, secret });
-  if (changed) {
-    await run(res, 'refresh the rendered env (admin access wired in)', process.execPath,
-      [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack], { cwd: ROOT });
+  if (loadStack(LCL_SHARED).controlApi === stack.stack) {
+    await run(res, 'wire the control cockpit to this sign-in', process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', LCL_SHARED], { cwd: ROOT });
+    await run(res, 'restart the shared stack (control picks its app id up)', 'docker', [...composeArgs(LCL_SHARED), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(LCL_SHARED) });
   }
-  // this env powers munni-control? refresh the shared render too
-  if (loadStack(SHARED_STACK).controlApi === stack.stack) {
-    await run(res, 'wire munni-control to this sign-in', process.execPath,
-      [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
-    await run(res, 'restart the shared stack (control picks its app id up)', 'docker',
-      [...composeArgs(SHARED_STACK), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(SHARED_STACK) });
-  }
-
-  const up = await run(res, 'restart web/admin with their sign-in config', 'docker',
-    [...composeArgs(stack.stack), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(stack.stack) });
-  res.write('\nDone. Sign-in is code — console and admin logins live under Reveal secrets.\n');
+  const up = await run(res, 'restart web/admin with their sign-in config', 'docker', [...composeArgs(stack.stack), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(stack.stack) });
+  res.write('\nDone. Sign in with Google/Apple (or the console\'s admin) and hand out admin access under Access.\n');
   return res.end(`\n[exit ${up.code === 0 ? 0 : 1}]\n`);
 }
 
-/* ── zero-input GlitchTip: the shared stack owns ONE admin + token; each
-   environment gets its own org projects + DSNs. ── */
-const GT_BOOTSTRAP_PY = `
+/* ── zero-input GlitchTip (lcl): the shared stack's admin + the minted
+   API token are created inside the container; the environment's
+   projects + DSNs follow through bootstrap ── */
+const GT_SEED_PY = `
 import os
 from django.contrib.auth import get_user_model
 from apps.api_tokens.models import APIToken
 email = os.environ['GT_ADMIN_EMAIL']
 password = os.environ['GT_ADMIN_PASSWORD']
+token = os.environ['GT_TOKEN']
 U = get_user_model()
 u = U.objects.filter(email=email).first()
 if u is None:
@@ -378,65 +422,88 @@ if u is None:
     print('USER:created')
 else:
     print('USER:existing')
-t = APIToken.objects.filter(user=u).first()
-if t is None:
-    flags = getattr(APIToken._meta.get_field('scopes'), 'flags', []) or []
-    t = APIToken.objects.create(user=u, scopes=(1 << len(flags)) - 1)
-    print('TOKEN_STATE:created')
+if APIToken.objects.filter(token=token).exists():
+    print('TOKEN:existing')
 else:
-    print('TOKEN_STATE:existing')
-print('TOKEN:' + str(t.token))
+    flags = getattr(APIToken._meta.get_field('scopes'), 'flags', []) or []
+    APIToken.objects.create(user=u, token=token, scopes=(1 << len(flags)) - 1)
+    print('TOKEN:created')
 `;
 
 async function glitchtipSetupEndpoint(req, res, spawnImpl) {
   const body = await readBody(req);
-  const stack = loadStack(pickEnv(body.stack));
-  const shared = loadStack(SHARED_STACK);
-  const sharedValues = loadLocalValues(shared);
-  // resolvable-TLD address like pgadmin/vault: GlitchTip 6.x (pydantic
-  // email validation) 500s on EVERY /users/me/ for a .local address —
-  // "the part after the @-sign is a special-use or reserved name"
-  const email = sharedValues.GLITCHTIP_ADMIN_EMAIL ?? 'admin@munni.dev';
-  const password = sharedValues.GLITCHTIP_ADMIN_PASSWORD ?? randomBytes(12).toString('base64url');
-  saveLocalValues(shared, { ...sharedValues, GLITCHTIP_ADMIN_EMAIL: email, GLITCHTIP_ADMIN_PASSWORD: password });
-
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  if (!LCL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
+  const stack = loadStack(pickLclEnv(body.stack));
+  const shared = loadStack(LCL_SHARED);
+  const { values: sharedValues } = ensureLocalSecrets(shared);
+  const email = `admin@munni.${LCL}`;
+  streamHead(res);
   const run = stepRunner(spawnImpl);
-
   const mint = await run(res, 'create the GlitchTip admin + API token (inside the shared stack)', 'docker',
-    [...composeArgs(SHARED_STACK), 'exec', '-T', '-e', 'GT_ADMIN_EMAIL', '-e', 'GT_ADMIN_PASSWORD', 'glitchtip', './manage.py', 'shell', '-c', GT_BOOTSTRAP_PY],
-    {
-      cwd: renderedDir(SHARED_STACK),
-      env: { ...process.env, GT_ADMIN_EMAIL: email, GT_ADMIN_PASSWORD: password },
-      mask: (s) => s.replace(/TOKEN:\S+/g, 'TOKEN:(captured)'),
-    });
+    [...composeArgs(LCL_SHARED), 'exec', '-T', '-e', 'GT_ADMIN_EMAIL', '-e', 'GT_ADMIN_PASSWORD', '-e', 'GT_TOKEN', 'glitchtip', './manage.py', 'shell', '-c', GT_SEED_PY],
+    { cwd: renderedDir(LCL_SHARED), env: { ...process.env, GT_ADMIN_EMAIL: email, GT_ADMIN_PASSWORD: sharedValues.GLITCHTIP_ADMIN_PASSWORD, GT_TOKEN: sharedValues.GLITCHTIP_API_TOKEN } });
   if (mint.code !== 0) {
-    res.write('\nIs the shared stack running? Use step 4 → Set up first, wait for GlitchTip, then retry.\n');
+    res.write('\nIs the shared stack running? Set up & start first, wait for GlitchTip, then retry.\n');
     return res.end('[exit 1]\n');
   }
-  const token = /TOKEN:(\S+)/.exec(mint.out)?.[1];
-  if (!token) {
-    res.write('\ncould not read the API token back from the container — use the manual fallback\n');
-    return res.end('[exit 1]\n');
-  }
-  res.write(`\nGlitchTip console login → email ${email} · password ${password}\n(kept in the local secret store — change it inside GlitchTip whenever you like)\n`);
-
-  const wire = await run(res, `wire ${stack.stack}'s org, projects and DSNs (bootstrap)`, process.execPath,
-    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack],
-    { cwd: ROOT, env: { ...process.env, IAC_GLITCHTIP_API_TOKEN: token } });
+  res.write(`\nGlitchTip console login → ${email} (password under Reveal secrets)\n`);
+  const wire = await run(res, `wire ${stack.stack}'s projects and DSNs (bootstrap)`, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack], { cwd: ROOT });
   if (wire.code !== 0) return res.end('[exit 1]\n');
-
-  const restart = await run(res, 'restart with the DSNs wired in (docker compose up -d)', 'docker',
-    [...composeArgs(stack.stack), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(stack.stack) });
+  const restart = await run(res, 'restart with the DSNs wired in', 'docker', [...composeArgs(stack.stack), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(stack.stack) });
   return res.end(`\n[exit ${restart.code === 0 ? 0 : 1}]\n`);
 }
 
-/* ── cleanup: revoke the stack's own GoCardless consents, then remove
-   containers + volumes + network ── */
+/* ── admin access: list the environment's users, toggle the admin role ── */
+async function accessCredential(stack) {
+  if (stack.delivery === 'docker') {
+    const v = familyValues(stack);
+    if (!v.LOGTO_INFRA_M2M_ID || !v.LOGTO_INFRA_M2M_SECRET) throw new Error('this environment has no Logto machine credential yet — run its sign-in setup first');
+    return { m2mId: v.LOGTO_INFRA_M2M_ID, m2mSecret: v.LOGTO_INFRA_M2M_SECRET };
+  }
+  // nas: the CI bootstrap kept the credential in the platform's vault, folder <stack>
+  const v = wizardValues(stack.platform);
+  if (!v.VAULT_ADMIN_EMAIL || !v.VAULT_MASTER_PASSWORD) throw new Error('the platform\'s vault account is not in the wizard\'s store — generate it on the platform card first');
+  const shared = sharedOf(stack);
+  const items = await vaultReadFolder(shared.urls.vault, { email: v.VAULT_ADMIN_EMAIL, password: v.VAULT_MASTER_PASSWORD, folder: stack.stack }, localAwareFetch);
+  const item = items.find((i) => i.name === 'Logto infra M2M');
+  if (!item?.username || !item?.password) throw new Error(`the vault holds no "Logto infra M2M" item in folder ${stack.stack} yet — the environment's bootstrap keeps it there once Logto is seeded`);
+  return { m2mId: item.username, m2mSecret: item.password };
+}
+
+async function accessUsersEndpoint(res, url, netFetchImpl) {
+  const name = String(url.searchParams.get('stack') ?? '');
+  let stack;
+  try { stack = loadAnyStack(name); } catch (e) { return json(res, 400, { error: e.message }); }
+  if (stack.role !== 'env') return json(res, 400, { error: 'admin access belongs to an environment' });
+  try {
+    const creds = await accessCredential(stack);
+    const users = await withPlatformEnv(stack.platform, () => listUsers(stack, creds, { fetchImpl: netFetchImpl }));
+    return json(res, 200, { stack: stack.stack, users });
+  } catch (e) {
+    return json(res, 502, { error: e.message });
+  }
+}
+
+async function accessToggleEndpoint(req, res, netFetchImpl) {
+  const body = await readBody(req);
+  let stack;
+  try { stack = loadAnyStack(String(body.stack ?? '')); } catch (e) { return json(res, 400, { error: e.message }); }
+  if (stack.role !== 'env') return json(res, 400, { error: 'admin access belongs to an environment' });
+  const userId = String(body.userId ?? '');
+  if (!/^[A-Za-z0-9_-]{4,64}$/.test(userId)) return json(res, 400, { error: 'bad user id' });
+  try {
+    const creds = await accessCredential(stack);
+    const r = await withPlatformEnv(stack.platform, () => setAdmin(stack, creds, userId, Boolean(body.admin), { fetchImpl: netFetchImpl }));
+    return json(res, 200, r);
+  } catch (e) {
+    return json(res, 502, { error: e.message });
+  }
+}
+
+/* ── cleanup (lcl): revoke the stack's own GoCardless consents, then remove containers + volumes + network ── */
 async function purgeGcRequisitions(target, res) {
-  // GC credentials are SHARED-owned — never depend on an env existing
-  const values = familyValues(loadStack(SHARED_STACK));
-  if (!values.NAS_GOCARDLESS_SECRET_ID || !values.NAS_GOCARDLESS_SECRET_KEY) {
+  const values = wizardValues(LCL);
+  if (!values.GOCARDLESS_SECRET_ID || !values.GOCARDLESS_SECRET_KEY) {
     res.write('no GoCardless credentials in the store — nothing to purge there\n');
     return true;
   }
@@ -445,16 +512,12 @@ async function purgeGcRequisitions(target, res) {
   const tokenRes = await fetch('https://bankaccountdata.gocardless.com/api/v2/token/new/', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ secret_id: values.NAS_GOCARDLESS_SECRET_ID, secret_key: values.NAS_GOCARDLESS_SECRET_KEY }),
+    body: JSON.stringify({ secret_id: values.GOCARDLESS_SECRET_ID, secret_key: values.GOCARDLESS_SECRET_KEY }),
     signal: AbortSignal.timeout(15000),
   });
   if (!tokenRes.ok) { res.write(`GoCardless token mint failed (${tokenRes.status}) — skipping the provider purge\n`); return false; }
   const { access } = await tokenRes.json();
-  const gc = (path, init = {}) => fetch(`https://bankaccountdata.gocardless.com/api/v2${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${access}`, accept: 'application/json' },
-    signal: AbortSignal.timeout(15000),
-  });
+  const gc = (path, init = {}) => fetch(`https://bankaccountdata.gocardless.com/api/v2${path}`, { ...init, headers: { authorization: `Bearer ${access}`, accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
   const list = await (await gc('/requisitions/?limit=100')).json();
   const mine = (list.results ?? []).filter((r) => String(r.redirect ?? '').startsWith(prefix));
   if (!mine.length) { res.write('no requisitions at GoCardless belong to this stack — nothing to purge\n'); return true; }
@@ -470,8 +533,8 @@ async function purgeGcRequisitions(target, res) {
 
 async function cleanupEndpoint(req, res, runImpl) {
   const body = await readBody(req);
-  const target = body.target === 'devsource' ? 'devsource' : pickStack(body.target);
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const target = body.target === 'devsource' ? 'devsource' : pickLclStack(body.target);
+  streamHead(res);
   res.write(`▶ clean up ${target} — GoCardless consents first, then containers + volumes + network\n\n`);
   try {
     await purgeGcRequisitions(target, res);
@@ -479,12 +542,15 @@ async function cleanupEndpoint(req, res, runImpl) {
     res.write(`GoCardless purge failed (${e.message}) — continuing with the docker teardown\n`);
   }
   const tool = toolFor(`${target}:destroy`);
-  return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
+  const child = spawn(tool.cmd, tool.args, { cwd: tool.cwd, shell: false });
+  child.stdout.on('data', (d) => res.write(d));
+  child.stderr.on('data', (d) => res.write(d));
+  child.on('error', (e) => res.end(`\n[error: ${e.message}]\n`));
+  child.on('close', (code) => res.end(`\n[exit ${code}]\n`));
+  void runImpl;
 }
 
-/* ── LAN mode + CI-built native apps (user ruling 2026-08-28: FULL LAN
-   mode so phones reach the local stacks, but binaries come from the
-   existing GitHub workflows — nothing builds on this machine) ── */
+/* ── LAN mode + CI-built native apps ─────────────────────────────── */
 const LAN_FILE = () => join(process.env.MUNNI_RENDER_DIR ?? join(ROOT, 'infra', 'rendered'), 'lan-host');
 
 /** the machine's plausible LAN addresses, private ranges first */
@@ -495,10 +561,7 @@ export function lanCandidates(interfacesImpl = networkInterfaces) {
     if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return 2;
     return 3;
   };
-  const all = Object.values(interfacesImpl())
-    .flat()
-    .filter((i) => i && i.family === 'IPv4' && !i.internal)
-    .map((i) => i.address);
+  const all = Object.values(interfacesImpl()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal).map((i) => i.address);
   return [...new Set(all)].sort((a, b) => rank(a) - rank(b));
 }
 
@@ -506,35 +569,30 @@ function lanGetEndpoint(res) {
   return json(res, 200, { current: lanHost(), candidates: lanCandidates() });
 }
 
-/** flip the whole local family between localhost and a LAN address:
- * write the marker, re-render every stack (urls, CORS, Logto redirect
- * URIs, DSNs all follow), restart the containers */
+/** flip the lcl family between localhost and a LAN address: write the marker, re-render every stack, restart the containers */
 async function lanSetEndpoint(req, res, spawnImpl, probeImpl, netFetchImpl) {
   const body = await readBody(req);
   const host = String(body.host ?? '').trim();
   if (host && !lanCandidates().includes(host)) return json(res, 400, { error: 'not one of this machine\'s addresses' });
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  streamHead(res);
   const run = stepRunner(spawnImpl);
   if (host) {
     mkdirSync(dirname(LAN_FILE()), { recursive: true });
     writeFileSync(LAN_FILE(), `${host}\n`);
-    res.write(`▶ LAN mode ON — the family moves to https://munni-<env>.${host.replaceAll('.', '-')}.sslip.io hostnames (localhost keeps working alongside)\n`);
+    res.write(`▶ LAN mode ON — the family moves to https://munni-<env>-lcl.${host.replaceAll('.', '-')}.sslip.io hostnames (localhost keeps working alongside)\n`);
   } else {
     rmSync(LAN_FILE(), { force: true });
     res.write('▶ LAN mode OFF — back to localhost-only\n');
   }
-  // SHARED first: glitchtip must run under the NEW domain before the env
-  // bootstraps ask it for DSNs (found live 2026-08-28: env-first kept
-  // the localhost DSN form in the LAN render)
-  for (const name of [SHARED_STACK, ...LOCAL_ENVS()]) {
-    const boot = await run(res, `re-render ${name}`, process.execPath,
-      [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name], { cwd: ROOT });
+  // SHARED first: glitchtip must run under the NEW domain before the env bootstraps ask it for DSNs
+  for (const name of LCL_STACKS()) {
+    const boot = await run(res, `re-render ${name}`, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name], { cwd: ROOT });
     if (boot.code !== 0) return res.end('[exit 1]\n');
     const up = await run(res, `restart ${name}`, 'docker', [...composeArgs(name), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(name) });
     if (up.code !== 0) return res.end('[exit 1]\n');
-    if (name === SHARED_STACK && host) {
+    if (name === LCL_SHARED && host) {
       res.write('… waiting for glitchtip to answer on the new address\n');
-      const glitchtipUrl = `${loadStack(SHARED_STACK).urls.glitchtip}/api/0/`;
+      const glitchtipUrl = `${loadStack(LCL_SHARED).urls.glitchtip}/api/0/`;
       const deadline = Date.now() + 120000;
       while (!(await probeImpl(glitchtipUrl))) {
         if (Date.now() > deadline) { res.write('glitchtip never answered on the new address — check docker ps, then retry\n'); return res.end('[exit 1]\n'); }
@@ -544,24 +602,16 @@ async function lanSetEndpoint(req, res, spawnImpl, probeImpl, netFetchImpl) {
     }
   }
   if (host) {
-    // this PC's browsers need the CA too (fetch to the logto hostname
-    // fails without it) — one Windows dialog, silent when already there
     await installFamilyCa(res, run, netFetchImpl);
-    const base = `${host.replaceAll('.', '-')}.sslip.io`;
-    const envLine = localEnvRegistry().map((e) => `${e.name} → https://munni-${e.name}.${base}`).join(' · ');
-    res.write(`\nDone. From your phone (same wifi): ${envLine}\nTrust the family's certificate once per device: download http://ca.${base} (root.crt). Android: install it as a CA certificate (Settings → Security). iPhone: Settings → Profile Downloaded → Install, THEN Settings → General → About → Certificate Trust Settings → switch the root fully on (both steps, or sign-in fails).\nIf the phone cannot reach it, allow Docker/vpnkit through the Windows firewall for private networks (incl. port 443), and give this machine a DHCP reservation — a changed address needs a rebuilt app.\n`);
+    const envLine = platformEnvStacks(LCL).map((s) => `${s.env} → ${s.urls.web}`).join(' · ');
+    res.write(`\nDone. From your phone (same wifi): ${envLine}\nTrust the family's certificate once per device: download http://ca.${host.replaceAll('.', '-')}.sslip.io (root.crt). Android: install it as a CA certificate (Settings → Security). iPhone: Settings → Profile Downloaded → Install, THEN Settings → General → About → Certificate Trust Settings → switch the root fully on.\nIf the phone cannot reach it, allow Docker/vpnkit through the Windows firewall for private networks (incl. port 443), and give this machine a DHCP reservation — a changed address needs a rebuilt app.\n`);
   } else {
     res.write('\nDone. Everything answers on localhost again.\n');
   }
   return res.end('\n[exit 0]\n');
 }
 
-/** trust the family CA in the DESKTOP browser too: an https page can be
- * clicked through per-origin, but fetch() to the logto hostname just
- * fails — sign-in breaks until the root is trusted (found live
- * 2026-08-28). Downloads root.crt from the CA site and hands it to
- * certutil (CurrentUser Root — Windows shows ONE consent dialog; a
- * re-run with the cert already present is silent). */
+/** trust the family CA in the desktop browser too (certutil, CurrentUser Root — one Windows consent dialog) */
 async function installFamilyCa(res, run, netFetchImpl) {
   const lan = lanHost();
   if (!lan) { res.write('LAN mode is off — no local CA to trust\n'); return false; }
@@ -570,12 +620,12 @@ async function installFamilyCa(res, run, netFetchImpl) {
   try {
     const crtRes = await netFetchImpl(`http://ca.${base}/root.crt`, { signal: AbortSignal.timeout(8000) });
     if (!crtRes.ok) throw new Error(`status ${crtRes.status}`);
-    crt = await crtRes.text(); // Caddy's root.crt is PEM
+    crt = await crtRes.text();
   } catch (e) {
     res.write(`could not download http://ca.${base}/root.crt (${e.message}) — is the family running?\n`);
     return false;
   }
-  const file = join(renderedDir(SHARED_STACK), 'family-root.crt');
+  const file = join(renderedDir(LCL_SHARED), 'family-root.crt');
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, crt);
   if (process.platform !== 'win32') {
@@ -583,26 +633,32 @@ async function installFamilyCa(res, run, netFetchImpl) {
     return false;
   }
   res.write('if Windows asks to install a root certificate: that is the family CA — confirm it\n');
-  const add = await run(res, 'trust the family CA on this PC (certutil, CurrentUser Root)', 'certutil', ['-user', '-addstore', 'Root', file], { cwd: renderedDir(SHARED_STACK) });
+  const add = await run(res, 'trust the family CA on this PC (certutil, CurrentUser Root)', 'certutil', ['-user', '-addstore', 'Root', file], { cwd: renderedDir(LCL_SHARED) });
   return add.code === 0;
 }
 
 async function trustCaEndpoint(res, spawnImpl, netFetchImpl) {
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  streamHead(res);
   const ok = await installFamilyCa(res, stepRunner(spawnImpl), netFetchImpl);
-  caTrustMemo = { at: 0, value: null }; // the next probe reads the store afresh
+  caTrustMemo = { at: 0, value: null };
   return res.end(`\n[exit ${ok ? 0 : 1}]\n`);
 }
 
-/* ── is the family CA trusted on THIS PC? (user request 2026-09-10: no
-   manual tick — with the CA site up, compare the root's fingerprint with
-   the CurrentUser Root store). Memoized a minute; trust-ca busts it. ── */
 let caTrustMemo = { at: 0, value: null };
-/** certutil prints one "Cert Hash(sha1): …" line per certificate — with or
- *  without spaces depending on the Windows build; compare hex only */
+/** certutil prints one "Cert Hash(sha1): …" line per certificate — compare hex only */
 export function caListingHasFingerprint(listing, fingerprint) {
   const want = String(fingerprint ?? '').replace(/[^0-9a-f]/gi, '').toLowerCase();
   return want.length === 40 && String(listing ?? '').split(/\r?\n/).some((line) => /sha1/i.test(line) && line.replace(/[^0-9a-f]/gi, '').toLowerCase().includes(want));
+}
+/** roots of EARLIER https families still trusted on this PC — certutil prints one ===== block per certificate; Caddy names its CA "Caddy Local Authority" */
+export function staleCaddyRoots(listing) {
+  let blocks = 0;
+  let counted = true; // nothing before the first separator is a certificate
+  for (const line of String(listing ?? '').split(/\r?\n/)) {
+    if (line.startsWith('====')) { counted = false; continue; }
+    if (!counted && line.includes('Caddy Local Authority')) { blocks++; counted = true; }
+  }
+  return blocks;
 }
 async function caTrustState(netFetchImpl, spawnImpl, { force = false } = {}) {
   const lan = lanHost();
@@ -633,13 +689,11 @@ async function caTrustEndpoint(res, url, netFetchImpl, spawnImpl) {
   return json(res, 200, await caTrustState(netFetchImpl, spawnImpl, { force: url.searchParams.get('force') === '1' }));
 }
 
-/* ── are the munni images public? Then no registry token is needed to
-   pull them (user request 2026-09-10: stop asking for a second token).
-   An anonymous pull token + a manifest HEAD, memoized ten minutes. ── */
+/* ── are the munni images public? Then no registry token is needed ── */
 let registryMemo = { at: 0, value: null };
 async function registryState(netFetchImpl, { force = false } = {}) {
   if (!force && registryMemo.value && Date.now() - registryMemo.at < 600000) return registryMemo.value;
-  const registry = loadStack(SHARED_STACK).registry ?? 'ghcr.io/okkes';
+  const registry = listPlatforms()[0]?.registry ?? 'ghcr.io/okkes';
   const repo = `${registry.replace(/^ghcr\.io\//, '')}/munni-web`;
   const remember = (value) => { registryMemo = { at: Date.now(), value }; return value; };
   try {
@@ -658,40 +712,27 @@ async function registryEndpoint(res, url, netFetchImpl) {
   return json(res, 200, await registryState(netFetchImpl, { force: url.searchParams.get('force') === '1' }));
 }
 
-/* ── NAS readiness without any DSM credential (2026-09-10): seen from
-   outside, every reverse-proxy host tells which one-time step is still
-   missing — DNS, the wildcard certificate (TLS fails by name), the rule
-   (DSM answers with Web Station's welcome page when nothing matches),
-   the containers (a rule answering 502 has nothing behind it yet: no
-   bundle applied → the poller task is missing or Deploy never ran). ── */
-const NAS_STACKS = ['munni-iac-prod', 'munni-iac-staging'];
-const NAS_HOST_KEYS = ['web', 'api', 'admin', 'logto', 'logtoAdmin', 'glitchtip', 'vault'];
-export function nasHosts(domain) {
-  const prev = process.env.IAC_DOMAIN;
-  process.env.IAC_DOMAIN = domain;
+/* ── NAS readiness without any DSM credential: seen from outside, every
+   reverse-proxy host tells which one-time step is still missing ── */
+/** the hosts a platform's stacks need, computed under the given domain */
+export function nasHosts(platform, domain) {
+  const prev = process.env.PLATFORM_DOMAIN;
+  process.env.PLATFORM_DOMAIN = domain;
   try {
-    return NAS_STACKS.map((name) => {
+    return [stackName(platform), ...platformEnvStacks(platform).map((s) => s.stack)].map((name) => {
       const st = loadStack(name);
-      return { stack: name, hosts: proxyRules(st).map((r, i) => ({ key: NAS_HOST_KEYS[i] ?? String(i), host: r.host })) };
+      return { stack: name, hosts: proxyRules(st).map((r) => ({ key: r.key, host: r.host })) };
     });
   } finally {
-    if (prev === undefined) delete process.env.IAC_DOMAIN; else process.env.IAC_DOMAIN = prev;
+    if (prev === undefined) delete process.env.PLATFORM_DOMAIN; else process.env.PLATFORM_DOMAIN = prev;
   }
 }
-// every way node can say "the certificate itself is the problem": each one
-// means the rule behind it is still readable unverified (the second look)
 const NAS_CERT_CODES = new Set(['UNABLE_TO_VERIFY_LEAF_SIGNATURE', 'UNABLE_TO_GET_ISSUER_CERT', 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY', 'CERT_UNTRUSTED', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'SELF_SIGNED_CERT_IN_CHAIN', 'CERT_HAS_EXPIRED', 'CERT_NOT_YET_VALID', 'ERR_TLS_CERT_ALTNAME_INVALID']);
-/** what answers on the host: a rule (munni or a 502 behind it) or DSM itself */
-/** DSM's own front door: its web app's path, or — the shape its default
- * server uses for an unmatched host — a redirect to THIS host on another
- * port (DSM's own, :5001 unless the operator moved it). The apps behind
- * the rules only ever redirect inside their own origin. */
 function isDsmPortal(host, location) {
   if (!location) return false;
   if (/\/webman\//i.test(location)) return true;
   try {
     const u = new URL(location, `https://${host}/`);
-    // new URL() normalises an explicit :443 away, so an app's own redirect stays "up"
     return u.hostname.toLowerCase() === String(host).toLowerCase() && u.port !== '' && u.port !== '443';
   } catch { return false; }
 }
@@ -700,11 +741,10 @@ async function classifyNasAnswer(host, fetchImpl) {
   const text = res.status < 400 && typeof res.text === 'function' ? String(await res.text()).slice(0, 6000) : '';
   const noRule = (how) => ({ state: 'no-rule', detail: `${how} — no reverse-proxy rule for this host yet; Bootstrap writes it once the deploy account may use DSM` });
   if (/Synology Web Station/i.test(text)) return noRule('DSM answers with Web Station’s welcome page');
-  // without Web Station, DSM's default server sends an unmatched host to its own portal (:5001, /webman/)
   const location = res.status >= 300 && res.status < 400 ? String(res.headers?.get?.('location') ?? '') : '';
   if (isDsmPortal(host, location)) return noRule(`DSM redirects to its own portal (${location})`);
   if (/DiskStation|SYNO\.SDS|\/webman\//i.test(text)) return noRule('DSM’s own portal answers');
-  if ([502, 503, 504].includes(res.status)) return { state: 'no-container', detail: `the rule exists but nothing answers behind it (${res.status}) — no bundle applied yet: Bootstrap (prod twin) creates the poller task when SYNOLOGY_PATH is stored, Deploy uploads the bundle, the poller applies it within five minutes` };
+  if ([502, 503, 504].includes(res.status)) return { state: 'no-container', detail: `the rule exists but nothing answers behind it (${res.status}) — no bundle applied yet: Deploy uploads it, the poller applies it within five minutes` };
   return { state: 'up', detail: `answers (${res.status})` };
 }
 export async function probeNasHost(host, netFetchImpl, insecureImpl = null) {
@@ -714,10 +754,8 @@ export async function probeNasHost(host, netFetchImpl, insecureImpl = null) {
     const code = e.cause?.code ?? e.code ?? e.name;
     if (code === 'ERR_TLS_CERT_ALTNAME_INVALID' || NAS_CERT_CODES.has(code)) {
       const detail = code === 'ERR_TLS_CERT_ALTNAME_INVALID'
-        ? 'the certificate does not cover this host — Bootstrap (prod twin) requests the wildcard (*.<domain>) through DSM and binds the rules to it once the deploy account may use DSM (own domain: acme.sh with the synology_dsm hook)'
-        : `the certificate is not trusted (${code}) — Bootstrap (prod twin) requests a Let’s Encrypt certificate through DSM once the deploy account may use DSM${code === 'CERT_HAS_EXPIRED' ? ' (an expired wildcard is replaced)' : ''}`;
-      // a second, deliberately unverified look: the certificate hides
-      // nothing about the rule behind it — say both at once
+        ? 'the certificate does not cover this host — the shared stack\'s Bootstrap requests the wildcard (*.<domain>) through DSM and binds the rules to it'
+        : `the certificate is not trusted (${code}) — the shared stack's Bootstrap requests a Let’s Encrypt certificate through DSM${code === 'CERT_HAS_EXPIRED' ? ' (an expired wildcard is replaced)' : ''}`;
       let behind = null;
       if (insecureImpl) behind = await classifyNasAnswer(host, insecureImpl).catch(() => null);
       return { host, state: 'no-cert', detail, ...(behind ? { behind: behind.state, behindDetail: behind.detail } : {}) };
@@ -726,13 +764,16 @@ export async function probeNasHost(host, netFetchImpl, insecureImpl = null) {
     return { host, state: 'unreachable', detail: `no answer (${code})` };
   }
 }
-let nasProbeMemo = { at: 0, domain: null, value: null };
+let nasProbeMemo = { at: 0, key: null, value: null };
 async function nasProbeEndpoint(res, url, netFetchImpl, insecureImpl) {
-  const domain = String(url.searchParams.get('domain') ?? '').trim().toLowerCase();
+  const platform = String(url.searchParams.get('platform') ?? 'nas');
+  const domain = String(url.searchParams.get('domain') ?? wizardValues(platform).PLATFORM_DOMAIN ?? '').trim().toLowerCase();
   if (!/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(domain)) return json(res, 400, { error: 'domain must be a hostname (e.g. yourname.synology.me)' });
+  if (!listPlatforms().some((p) => p.platform === platform && p.delivery !== 'docker')) return json(res, 400, { error: 'unknown platform' });
   const force = url.searchParams.get('force') === '1';
-  if (!force && nasProbeMemo.value && nasProbeMemo.domain === domain && Date.now() - nasProbeMemo.at < 30000) return json(res, 200, nasProbeMemo.value);
-  const stacks = await Promise.all(nasHosts(domain).map(async (s) => ({ ...s, hosts: await Promise.all(s.hosts.map(async (h) => ({ ...h, ...(await probeNasHost(h.host, netFetchImpl, insecureImpl)) }))) })));
+  const key = `${platform}:${domain}`;
+  if (!force && nasProbeMemo.value && nasProbeMemo.key === key && Date.now() - nasProbeMemo.at < 30000) return json(res, 200, nasProbeMemo.value);
+  const stacks = await Promise.all(nasHosts(platform, domain).map(async (s) => ({ ...s, hosts: await Promise.all(s.hosts.map(async (h) => ({ ...h, ...(await probeNasHost(h.host, netFetchImpl, insecureImpl)) }))) })));
   const all = stacks.flatMap((s) => s.hosts);
   const count = (state) => all.filter((h) => h.state === state || h.behind === state).length;
   const summary = {
@@ -744,20 +785,12 @@ async function nasProbeEndpoint(res, url, netFetchImpl, insecureImpl) {
     containersMissing: count('no-container'),
     unreachable: all.filter((h) => h.state === 'unreachable').length,
   };
-  const value = { domain, stacks, summary };
-  nasProbeMemo = { at: Date.now(), domain, value };
+  const value = { platform, domain, stacks, summary };
+  nasProbeMemo = { at: Date.now(), key, value };
   return json(res, 200, value);
 }
 
-/* ── store readiness (user ruling 2026-08-28: no manual Enable-publish
-   button — the wizard POLLS whether the operator did the one-time store
-   upload and flips auto-publish itself). The credentials live in the
-   local store; checks mirror what CI's publish steps really do. ── */
-/** Google access token from the stored Play service account, for any
- * scope — the SAME credential drives the Play checks AND (once granted
- * the Firebase Admin + Service Usage Admin roles) the Firebase
- * Management API. Throws with the
- * exact operator-facing diagnosis on failure. */
+/* ── store readiness: the wizard POLLS whether the one-time store records exist ── */
 async function googleAccessToken(values, scope, fetchImpl) {
   let sa;
   try {
@@ -766,17 +799,8 @@ async function googleAccessToken(values, scope, fetchImpl) {
     throw new Error('PLAY_SERVICE_ACCOUNT_JSON is not valid JSON');
   }
   const now = Math.floor(Date.now() / 1000);
-  const assertion = jwtRS256({
-    header: { alg: 'RS256', typ: 'JWT' },
-    payload: { iss: sa.client_email, scope, aud: sa.token_uri, iat: now, exp: now + 300 },
-    pem: sa.private_key,
-  });
-  const tok = await fetchImpl(sa.token_uri, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(),
-    signal: AbortSignal.timeout(10000),
-  });
+  const assertion = jwtRS256({ header: { alg: 'RS256', typ: 'JWT' }, payload: { iss: sa.client_email, scope, aud: sa.token_uri, iat: now, exp: now + 300 }, pem: sa.private_key });
+  const tok = await fetchImpl(sa.token_uri, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(), signal: AbortSignal.timeout(10000) });
   if (!tok.ok) throw new Error(`Google rejected the service account (${tok.status})`);
   return { access: (await tok.json()).access_token, projectId: sa.project_id, clientEmail: sa.client_email };
 }
@@ -784,6 +808,9 @@ async function googleAccessToken(values, scope, fetchImpl) {
 async function playAccessToken(values, fetchImpl) {
   return (await googleAccessToken(values, 'https://www.googleapis.com/auth/androidpublisher', fetchImpl)).access;
 }
+
+/** every munni package the config knows — probing another one splits "not invited" from "this app is not visible" */
+const knownAndroidPackages = () => [...new Set(listPlatforms().flatMap((p) => platformEnvs(p.platform).map((e) => e.store.androidPackage)))];
 
 async function playAppExists(values, appId, fetchImpl) {
   if (!values.PLAY_SERVICE_ACCOUNT_JSON) return { state: 'no-creds' };
@@ -793,60 +820,31 @@ async function playAppExists(values, appId, fetchImpl) {
   } catch (e) {
     return { state: 'error', detail: e.message };
   }
-  // a throwaway edit: succeeds only when the package exists AND the
-  // service account may publish it — exactly what the CI upload needs.
-  // ALWAYS deleted right after: opening an edit EXPIRES any concurrent
-  // one, and a poll racing a CI publish killed a real upload (found
-  // live 2026-08-30: "This edit has expired")
-  const probe = (pkg) => fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/edits`, {
-    method: 'POST',
-    headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
-    body: '{}',
-    signal: AbortSignal.timeout(10000),
-  });
+  // a throwaway edit: succeeds only when the package exists AND the service account may publish it — ALWAYS deleted right after
+  const probeEdit = (pkg) => fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/edits`, { method: 'POST', headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(10000) });
   const dropEdit = async (pkg, res2) => {
     try {
       const { id } = await res2.json();
-      if (id) {
-        await fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/edits/${encodeURIComponent(id)}`, {
-          method: 'DELETE',
-          headers: { authorization: `Bearer ${access}` },
-          signal: AbortSignal.timeout(10000),
-        });
-      }
+      if (id) await fetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(pkg)}/edits/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { authorization: `Bearer ${access}` }, signal: AbortSignal.timeout(10000) });
     } catch { /* the edit dies on its own within minutes */ }
   };
-  const edit = await probe(appId);
-  if (edit.ok) {
-    await dropEdit(appId, edit);
-    return { state: 'ready' };
-  }
-  // Google's own hiccups must not masquerade as a config problem (a
-  // transient 503 wore the "release access?" hint, user report)
+  const edit = await probeEdit(appId);
+  if (edit.ok) { await dropEdit(appId, edit); return { state: 'ready' }; }
   if (edit.status >= 500) return { state: 'transient', detail: `Play answered ${edit.status} — a hiccup on Google's side, retried on the next poll` };
   if (edit.status === 404) return { state: 'missing-app' };
   if (edit.status === 403) {
-    // Google reuses 403 for a DISABLED API in the service account's own
-    // Cloud project (found live 2026-08-29: SERVICE_DISABLED while the
-    // Play-side permissions were fine) — the body names it exactly
     const body = await edit.json().catch(() => ({}));
     const disabled = body?.error?.details?.find((d) => d.reason === 'SERVICE_DISABLED');
     if (disabled || /has not been used in project|it is disabled/.test(body?.error?.message ?? '')) {
       const url = disabled?.metadata?.activationUrl ?? 'https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com';
       return { state: 'error', detail: `the Google Play Android Developer API is disabled in the service account's Cloud project — enable it once (${url}), wait a few minutes, this page retries by itself` };
     }
-    // Play answers 403 both for "not invited at all" and "this app is
-    // not visible to you" — probing the OTHER munni packages splits the
-    // two: any non-403 proves the account link works (user request
-    // 2026-08-29: say WHICH problem it is)
-    for (const other of ['app.munni', 'app.munni.dev']) {
-      const r2 = await probe(other).catch(() => null);
+    for (const other of knownAndroidPackages().filter((p) => p !== appId)) {
+      const r2 = await probeEdit(other).catch(() => null);
       if (r2?.ok) await dropEdit(other, r2);
-      if (r2 && (r2.ok || r2.status === 404)) {
-        return { state: 'missing-app', detail: `the service account has Play access, but ${appId} is not visible to it — do the one-time upload to create the app (or, with per-app scoping, grant it under App permissions)` };
-      }
+      if (r2 && (r2.ok || r2.status === 404)) return { state: 'missing-app', detail: `the service account has Play access, but ${appId} is not visible to it — do the one-time upload to create the app (or, with per-app scoping, grant it under App permissions)` };
     }
-    return { state: 'error', detail: 'the service account is NOT invited to the Play developer account yet — Play Console → Users and permissions → invite it with Release to testing tracks (guide step 2)' };
+    return { state: 'error', detail: 'the service account is NOT invited to the Play developer account yet — Play Console → Users and permissions → invite it with Release to testing tracks' };
   }
   return { state: 'error', detail: `Play answered ${edit.status} — does the service account have release access?` };
 }
@@ -854,11 +852,7 @@ async function playAppExists(values, appId, fetchImpl) {
 /** ES256 App Store Connect token from the stored key (base64 or raw PEM) */
 function ascJwt(values) {
   const now = Math.floor(Date.now() / 1000);
-  return jwtES256({
-    header: { alg: 'ES256', kid: values.ASC_KEY_ID, typ: 'JWT' },
-    payload: { iss: values.ASC_ISSUER_ID, aud: 'appstoreconnect-v1', iat: now, exp: now + 600 },
-    pem: values.ASC_KEY_P8.includes('BEGIN') ? values.ASC_KEY_P8 : Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8'),
-  });
+  return jwtES256({ header: { alg: 'ES256', kid: values.ASC_KEY_ID, typ: 'JWT' }, payload: { iss: values.ASC_ISSUER_ID, aud: 'appstoreconnect-v1', iat: now, exp: now + 600 }, pem: values.ASC_KEY_P8.includes('BEGIN') ? values.ASC_KEY_P8 : Buffer.from(values.ASC_KEY_P8, 'base64').toString('utf8') });
 }
 
 async function ascAppExists(values, bundleId, fetchImpl) {
@@ -869,18 +863,14 @@ async function ascAppExists(values, bundleId, fetchImpl) {
   } catch (e) {
     return { state: 'error', detail: `the ASC .p8 does not parse (${e.message})` };
   }
-  const res = await fetchImpl(`https://api.appstoreconnect.apple.com/v1/apps?filter%5BbundleId%5D=${encodeURIComponent(bundleId)}`, {
-    headers: { authorization: `Bearer ${jwt}` },
-    signal: AbortSignal.timeout(10000),
-  });
+  const res = await fetchImpl(`https://api.appstoreconnect.apple.com/v1/apps?filter%5BbundleId%5D=${encodeURIComponent(bundleId)}`, { headers: { authorization: `Bearer ${jwt}` }, signal: AbortSignal.timeout(10000) });
   if (res.status >= 500) return { state: 'transient', detail: `App Store Connect answered ${res.status} — a hiccup on Apple's side, retried on the next poll` };
   if (!res.ok) return { state: 'error', detail: `App Store Connect answered ${res.status}` };
   const body = await res.json();
   return { state: (body.data ?? []).length ? 'ready' : 'missing-app' };
 }
 
-/** is push WIRED for this env? project firebase-enabled + both apps
- * registered → the builds bake real configs and the sender works */
+/** is push WIRED for this env? project firebase-enabled + both apps registered */
 async function firebaseState(values, stack, fetchImpl) {
   if (!values.PLAY_SERVICE_ACCOUNT_JSON) return { state: 'no-creds' };
   let access;
@@ -895,9 +885,6 @@ async function firebaseState(values, stack, fetchImpl) {
   const proj = await fb(`/projects/${projectId}`);
   if (proj.status >= 500) return { state: 'transient', detail: `Firebase answered ${proj.status} — retried on the next poll` };
   if (proj.status === 404) {
-    // a bare Cloud project (the Management API IS on — off answers 403):
-    // Build adds Firebase, IF the account may switch services on. The
-    // no-op enable is the honest probe and changes nothing here
     const en = await enableService(access, projectId, FB_API, fetchImpl);
     return en.ok
       ? { state: 'missing-app', detail: `push stubbed — ${projectId} is not a Firebase project yet; Build adds Firebase to it` }
@@ -911,50 +898,46 @@ async function firebaseState(values, stack, fetchImpl) {
   const missing = [];
   if (!aList.some((a) => a.packageName === stack.native.appId)) missing.push(stack.native.appId);
   if (!iList.some((a) => a.bundleId === stack.native.iosAppId)) missing.push(`${stack.native.iosAppId} (iOS)`);
-  return missing.length
-    ? { state: 'missing-app', detail: `not registered at Firebase yet: ${missing.join(', ')} — pressing Build registers them` }
-    : { state: 'ready' };
+  return missing.length ? { state: 'missing-app', detail: `not registered at Firebase yet: ${missing.join(', ')} — pressing Build registers them` } : { state: 'ready' };
+}
+
+/** an environment stack of any platform from ?stack= (400 otherwise) */
+function envStackFrom(name) {
+  const stack = loadAnyStack(String(name ?? ''));
+  if (stack.role !== 'env') throw new Error('an environment stack is needed');
+  return stack;
 }
 
 async function storeStatusEndpoint(res, url, fetchImpl) {
-  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
-  const stack = loadStack(pickEnv(url?.searchParams.get('stack')));
-  const values = familyValues(stack);
+  let stack;
+  try { stack = envStackFrom(url?.searchParams.get('stack')); } catch (e) { return json(res, 400, { error: e.message }); }
+  const values = valuesFor(stack);
   const [play, ios, firebase] = await Promise.all([
     playAppExists(values, stack.native.appId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
     ascAppExists(values, stack.native.iosAppId, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
     firebaseState(values, stack, fetchImpl).catch((e) => ({ state: 'error', detail: e.message })),
   ]);
-  return json(res, 200, { localEnv: stack.envName, appId: stack.native.appId, iosAppId: stack.native.iosAppId, play, ios, firebase });
+  return json(res, 200, { stack: stack.stack, env: stack.env, appId: stack.native.appId, iosAppId: stack.native.iosAppId, play, ios, firebase });
 }
 
-/* ── OPT-IN store retirement on delete (user request 2026-09-04):
-   neither store offers a delete API for apps, but the DISTRIBUTION can
-   be pulled — Play internal-testing releases withdrawn, TestFlight
-   builds expired (testers lose the app immediately). Records and the
-   package name stay; only ever touches app.munni.local.* packages. ── */
+/* ── OPT-IN store retirement: the DISTRIBUTION is withdrawn (Play internal releases, TestFlight builds); records stay ── */
 async function storeRetireEndpoint(req, res, netFetchImpl) {
   const body = await readBody(req);
-  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist' });
-  const stack = loadStack(pickEnv(body.stack));
+  let stack;
+  try { stack = envStackFrom(body.stack); } catch (e) { return json(res, 400, { error: e.message }); }
   const appId = stack.native.appId;
   const iosAppId = stack.native.iosAppId;
-  if (!appId.startsWith('app.munni.local.') || !iosAppId.startsWith('app.munni.local.')) {
-    return json(res, 400, { error: `refusing to touch ${appId} / ${iosAppId} — only app.munni.local.* packages can be retired here` });
-  }
-  const values = familyValues(stack);
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  if (!appId.startsWith('app.munni.') || !iosAppId.startsWith('app.munni.')) return json(res, 400, { error: `refusing to touch ${appId} / ${iosAppId} — only app.munni.* packages can be retired here` });
+  const values = valuesFor(stack);
+  streamHead(res);
   res.write(`▶ retire ${appId === iosAppId ? appId : `${appId} (Play) + ${iosAppId} (TestFlight)`} at the stores — distribution is withdrawn; the records themselves have no delete API\n\n`);
   let ok = true;
   if (!values.PLAY_SERVICE_ACCOUNT_JSON) {
-    res.write('Play: no service account stored (Features & accounts) — skipped\n');
+    res.write('Play: no service account stored — skipped\n');
   } else {
     try {
       const access = await playAccessToken(values, netFetchImpl);
-      const api = (path, init = {}) => netFetchImpl(
-        `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(appId)}${path}`,
-        { ...init, headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(15000) },
-      );
+      const api = (path, init = {}) => netFetchImpl(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${encodeURIComponent(appId)}${path}`, { ...init, headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(15000) });
       const edit = await api('/edits', { method: 'POST', body: '{}' });
       if (edit.status === 404 || edit.status === 403) {
         res.write(`Play: ${appId} does not exist there (or is not visible to the service account) — nothing to retire\n`);
@@ -969,16 +952,10 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
           res.write(`Play: clearing the internal track failed (${trk.status})\n`);
           await api(`/edits/${id}`, { method: 'DELETE' }).catch(() => {});
         } else {
-          // some accounts refuse the plain commit for review-exempt
-          // changes — the retry mirrors what the Console itself does
           let commit = await api(`/edits/${id}:commit`, { method: 'POST' });
           if (!commit.ok) commit = await api(`/edits/${id}:commit?changesNotSentForReview=true`, { method: 'POST' });
-          if (commit.ok) {
-            res.write(`Play: internal testing withdrawn for ${appId} ✓ — testers lose it now. The app record and the package name STAY (Google has no delete API; a never-published app can be removed by hand in Play Console, but the package name is burned either way).\n`);
-          } else {
-            ok = false;
-            res.write(`Play: committing the withdrawal failed (${commit.status})\n`);
-          }
+          if (commit.ok) res.write(`Play: internal testing withdrawn for ${appId} ✓ — testers lose it now. The app record and the package name STAY (Google has no delete API).\n`);
+          else { ok = false; res.write(`Play: committing the withdrawal failed (${commit.status})\n`); }
         }
       }
     } catch (e) {
@@ -987,13 +964,11 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
     }
   }
   if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) {
-    res.write('TestFlight: no App Store Connect key stored (Features & accounts) — skipped\n');
+    res.write('TestFlight: no App Store Connect key stored — skipped\n');
   } else {
     try {
       const jwt = ascJwt(values);
-      const asc = (path, init = {}) => netFetchImpl(`https://api.appstoreconnect.apple.com/v1${path}`, {
-        ...init, headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(15000),
-      });
+      const asc = (path, init = {}) => netFetchImpl(`https://api.appstoreconnect.apple.com/v1${path}`, { ...init, headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(15000) });
       const appsRes = await asc(`/apps?filter%5BbundleId%5D=${encodeURIComponent(iosAppId)}&limit=2`);
       if (!appsRes.ok) throw new Error(`App Store Connect answered ${appsRes.status}`);
       const app = ((await appsRes.json()).data ?? [])[0];
@@ -1005,17 +980,15 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
           if (p.ok) expired += 1;
           else { ok = false; res.write(`TestFlight: expiring build ${b.attributes?.version ?? b.id} failed (${p.status})\n`); }
         }
-        res.write(`TestFlight: ${expired}/${builds.length} builds expired for ${iosAppId} ✓ — testers lose it now. The App Store Connect app record STAYS (Apple has no delete API; a never-published app can be removed by hand under App Information → Remove App).\n`);
+        res.write(`TestFlight: ${expired}/${builds.length} builds expired for ${iosAppId} ✓ — testers lose it now. The App Store Connect app record STAYS (Apple has no delete API).\n`);
       } else {
-        // no app record — but the developer-portal App ID registration
-        // (the wizard creates it as code) CAN be deleted while unused
         const bids = ((await (await asc(`/bundleIds?filter%5Bidentifier%5D=${encodeURIComponent(iosAppId)}&limit=200`)).json()).data) ?? [];
         const bid = bids.find((d) => d.attributes?.identifier === iosAppId);
         if (!bid) {
           res.write(`TestFlight: nothing at Apple for ${iosAppId} — no app record, no App ID registration\n`);
         } else {
           const del = await asc(`/bundleIds/${bid.id}`, { method: 'DELETE' });
-          if (del.ok || del.status === 204) res.write(`TestFlight: no app record existed — the App ID registration ${iosAppId} was deleted from the developer portal ✓ (fully freed on Apple's side)\n`);
+          if (del.ok || del.status === 204) res.write(`TestFlight: no app record existed — the App ID registration ${iosAppId} was deleted from the developer portal ✓\n`);
           else { ok = false; res.write(`TestFlight: deleting the App ID registration failed (${del.status}) — remove it by hand at developer.apple.com → Identifiers\n`); }
         }
       }
@@ -1027,48 +1000,18 @@ async function storeRetireEndpoint(req, res, netFetchImpl) {
   return res.end(`\n[exit ${ok ? 0 : 1}]\n`);
 }
 
-/* ── Firebase push as code (user ruling 2026-09-08: automate — no
-   separate project, no separate credential). The Play service account's
-   OWN Cloud project becomes the Firebase project via the Management
-   API; each environment's Android/iOS apps are registered there and
-   their config files ride to CI as variables. The one-time Google
-   floor: grant that service account the Firebase Admin role AND the
-   Service Usage Admin role — adding Firebase to a Cloud project switches
-   APIs on, which Google gates behind serviceusage.services.enable, and
-   Firebase Admin does NOT carry that permission (found live 2026-09-08:
-   role granted, addFirebase still 403 — the old text blamed the wrong
-   role). By hand instead: add Firebase to the project once in the
-   Firebase console, after which Firebase Admin alone is enough. ── */
+/* ── Firebase push as code: the Play service account's own Cloud project becomes the Firebase project ── */
 const FB_BASE = 'https://firebase.googleapis.com/v1beta1';
 const SU_BASE = 'https://serviceusage.googleapis.com/v1';
 const FB_API = 'firebase.googleapis.com';
 const iamUrl = (projectId) => `https://console.cloud.google.com/iam-admin/iam?project=${projectId}`;
-const fbFetcher = (access, fetchImpl) => (path, init = {}) => fetchImpl(`${FB_BASE}${path}`, {
-  ...init,
-  headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json', ...init.headers },
-  signal: AbortSignal.timeout(20000),
-});
-
-/** Google's error envelope, or {} when the body is not JSON */
+const fbFetcher = (access, fetchImpl) => (path, init = {}) => fetchImpl(`${FB_BASE}${path}`, { ...init, headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(20000) });
 const googleError = async (r) => (await r.json().catch(() => ({})))?.error ?? {};
-/** the SERVICE_DISABLED detail (or {} when only the message says so) */
-const serviceDisabled = (err) => err.details?.find((d) => d.reason === 'SERVICE_DISABLED')
-  ?? (/has not been used in project|it is disabled/.test(err.message ?? '') ? {} : null);
-/** the permission Google itself names in a refusal (ErrorInfo metadata) */
+const serviceDisabled = (err) => err.details?.find((d) => d.reason === 'SERVICE_DISABLED') ?? (/has not been used in project|it is disabled/.test(err.message ?? '') ? {} : null);
 const deniedPermission = (err) => err.details?.find((d) => d.reason === 'AUTH_PERMISSION_DENIED')?.metadata?.permission;
 const ROLE_FOR = { 'serviceusage.services.enable': 'Service Usage Admin role' };
+const enableService = (access, projectId, service, fetchImpl) => fetchImpl(`${SU_BASE}/projects/${projectId}/services/${service}:enable`, { method: 'POST', headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' }, body: '{}', signal: AbortSignal.timeout(20000) });
 
-/** switch an API on in the service account's own Cloud project — a
- * no-op when it already is, which makes it the one honest probe for
- * serviceusage.services.enable BEFORE addFirebase burns a 403 */
-const enableService = (access, projectId, service, fetchImpl) => fetchImpl(`${SU_BASE}/projects/${projectId}/services/${service}:enable`, {
-  method: 'POST',
-  headers: { authorization: `Bearer ${access}`, 'content-type': 'application/json' },
-  body: '{}',
-  signal: AbortSignal.timeout(20000),
-});
-
-/** name enableService's refusal precisely — the role gap, both ways out */
 async function suExplain(r, projectId, clientEmail, service) {
   const err = await googleError(r);
   if (r.status === 403) {
@@ -1078,7 +1021,6 @@ async function suExplain(r, projectId, clientEmail, service) {
   return `Google refused switching on ${service} in ${projectId} (${r.status}): ${err.message ?? 'no detail'}`;
 }
 
-/** name the classic Firebase Management API refusals precisely */
 function fbExplain(status, err, projectId, clientEmail) {
   const disabled = serviceDisabled(err);
   if (disabled) {
@@ -1086,16 +1028,11 @@ function fbExplain(status, err, projectId, clientEmail) {
     return `the Firebase Management API is disabled in ${projectId} — Build switches it on by itself once ${clientEmail} holds the Service Usage Admin role; or enable it by hand (${url}), wait a few minutes, retry`;
   }
   const perm = deniedPermission(err);
-  if (perm) {
-    return `${clientEmail} lacks ${perm} on ${projectId} — grant it the ${ROLE_FOR[perm] ?? `role that carries ${perm}`} (${iamUrl(projectId)}), wait a minute, retry`;
-  }
-  if (status === 403) {
-    return `${clientEmail} lacks Firebase rights on ${projectId}${err.message ? ` (Google: ${err.message})` : ''} — grant it the Firebase Admin role once (${iamUrl(projectId)}), wait a minute, retry`;
-  }
+  if (perm) return `${clientEmail} lacks ${perm} on ${projectId} — grant it the ${ROLE_FOR[perm] ?? `role that carries ${perm}`} (${iamUrl(projectId)}), wait a minute, retry`;
+  if (status === 403) return `${clientEmail} lacks Firebase rights on ${projectId}${err.message ? ` (Google: ${err.message})` : ''} — grant it the Firebase Admin role once (${iamUrl(projectId)}), wait a minute, retry`;
   return err.message ?? `status ${status}`;
 }
 
-/** poll a long-running Google operation (Firebase, Service Usage) to completion */
 async function opWait(getOp, opRes, what) {
   let op = await opRes.json();
   const deadline = Date.now() + 90000;
@@ -1108,20 +1045,11 @@ async function opWait(getOp, opRes, what) {
   return op;
 }
 const fbOpWait = (fb, opRes) => opWait((name) => fb(`/${name}`), opRes, 'the Firebase operation');
-const suOpWait = (access, opRes, fetchImpl) => opWait(
-  (name) => fetchImpl(`${SU_BASE}/${name}`, { headers: { authorization: `Bearer ${access}` }, signal: AbortSignal.timeout(20000) }),
-  opRes, 'switching the API on',
-);
+const suOpWait = (access, opRes, fetchImpl) => opWait((name) => fetchImpl(`${SU_BASE}/${name}`, { headers: { authorization: `Bearer ${access}` }, signal: AbortSignal.timeout(20000) }), opRes, 'switching the API on');
 
-/** turn the bare Cloud project into a Firebase project: API on (a no-op
- * probe of the enable right when it already is), then addFirebase — a
- * freshly switched-on API takes Google a moment to notice */
 async function fbAddFirebase(res, fb, access, projectId, clientEmail, apiOff, fetchImpl) {
   const en = await enableService(access, projectId, FB_API, fetchImpl);
-  if (!en.ok) {
-    res.write(`could not add Firebase: ${await suExplain(en, projectId, clientEmail, FB_API)}\n`);
-    return false;
-  }
+  if (!en.ok) { res.write(`could not add Firebase: ${await suExplain(en, projectId, clientEmail, FB_API)}\n`); return false; }
   await suOpWait(access, en, fetchImpl);
   if (apiOff) res.write('Firebase Management API enabled ✓\n');
   const attempt = () => fb(`/projects/${projectId}:addFirebase`, { method: 'POST', body: '{}' });
@@ -1133,16 +1061,12 @@ async function fbAddFirebase(res, fb, access, projectId, clientEmail, apiOff, fe
     add = await attempt();
     err = add.ok ? null : await googleError(add);
   }
-  if (err) {
-    res.write(`could not add Firebase: ${fbExplain(add.status, err, projectId, clientEmail)}\n`);
-    return false;
-  }
+  if (err) { res.write(`could not add Firebase: ${fbExplain(add.status, err, projectId, clientEmail)}\n`); return false; }
   await fbOpWait(fb, add);
   res.write(`Firebase enabled on ${projectId} ✓\n`);
   return true;
 }
 
-/** get-or-create one Firebase app (android|ios) and return its config */
 async function fbEnsureApp(fb, res, projectId, kind, id, label) {
   const coll = kind === 'android' ? 'androidApps' : 'iosApps';
   const field = kind === 'android' ? 'packageName' : 'bundleId';
@@ -1158,50 +1082,32 @@ async function fbEnsureApp(fb, res, projectId, kind, id, label) {
   } else {
     res.write(`  ${id} already registered ✓\n`);
     if (app.displayName !== label) {
-      // the console chips show the DISPLAY name — the track belongs in it
-      // (user 2026-09-08: 'munni prod' is ambiguous beside the nas twins)
       const renamed = await fb(`/projects/${projectId}/${coll}/${app.appId}?updateMask=displayName`, { method: 'PATCH', body: JSON.stringify({ displayName: label }) });
       res.write(renamed.ok ? `  renamed to "${label}" ✓\n` : `  (could not rename it to "${label}" — Firebase answered ${renamed.status}; cosmetic, carrying on)\n`);
     }
   }
   const cfg = await fb(`/projects/${projectId}/${coll}/${app.appId}/config`);
   if (!cfg.ok) throw new Error(`could not fetch ${id}'s config (${cfg.status})`);
-  return (await cfg.json()).configFileContents; // base64 of the file
+  return (await cfg.json()).configFileContents;
 }
 
-/** the env's api must CARRY the sender: re-render + up when its rendered
- * env lacks the credential, then take the api's own word from /health.
- * Found live 2026-09-08: 'stored ✓' printed while the api still ran
- * with an empty Fcm__ServiceAccountJson — friend requests reached the
- * in-app bell, the phone stayed silent (the routing sender reports
- * success for a transport that is not configured). */
+/** lcl: the api must CARRY the sender — re-render + up when its rendered env lacks the credential, then take the api's own word from /health */
 async function applySenderToApi(res, stack, clientEmail, spawnImpl, fetchImpl) {
   const envFile = join(renderedDir(stack.stack), `.env.${stack.stack}`);
   if (existsSync(envFile) && readFileSync(envFile, 'utf8').includes(clientEmail)) {
-    res.write(`sender: the ${stack.envName} api environment already carries it ✓\n`);
+    res.write(`sender: the ${stack.env} api environment already carries it ✓\n`);
     return true;
   }
   const run = stepRunner(spawnImpl);
-  const render = await run(res, `re-render ${stack.envName} with the sender credential`, process.execPath,
-    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack], { cwd: ROOT });
-  if (render.code !== 0) {
-    res.write('the re-render failed — the api keeps running WITHOUT a sender until Set up & start succeeds\n');
-    return false;
-  }
-  const up = await run(res, `restart ${stack.envName} so the api picks the sender up`, 'docker',
-    [...composeArgs(stack.stack), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(stack.stack) });
-  if (up.code !== 0) {
-    res.write('the restart failed — is Docker running? (Set up & start retries it)\n');
-    return false;
-  }
+  const render = await run(res, `re-render ${stack.env} with the sender credential`, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stack.stack], { cwd: ROOT });
+  if (render.code !== 0) { res.write('the re-render failed — the api keeps running WITHOUT a sender until Set up & start succeeds\n'); return false; }
+  const up = await run(res, `restart ${stack.env} so the api picks the sender up`, 'docker', [...composeArgs(stack.stack), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(stack.stack) });
+  if (up.code !== 0) { res.write('the restart failed — is Docker running?\n'); return false; }
   const deadline = Date.now() + 90000;
   while (Date.now() < deadline) {
     try {
       const health = await fetchImpl(`${stack.urls.api}/health`, { signal: AbortSignal.timeout(5000) });
-      if (health.ok && (await health.json())?.capabilities?.fcm === true) {
-        res.write('the api reports native push (fcm) ✓\n');
-        return true;
-      }
+      if (health.ok && (await health.json())?.capabilities?.fcm === true) { res.write('the api reports native push (fcm) ✓\n'); return true; }
     } catch { /* still starting */ }
     await new Promise((r) => setTimeout(r, 3000));
   }
@@ -1209,16 +1115,15 @@ async function applySenderToApi(res, stack, clientEmail, spawnImpl, fetchImpl) {
   return false;
 }
 
-/** Firebase console chips show these — the TRACK belongs in the name */
-const fbLabel = (stack, kind) => `munni local ${stack.envName} ${kind}`;
+const fbLabel = (stack, kind) => `munni ${stack.env} ${stack.platform} ${kind}`;
 
 async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
   const body = await readBody(req);
-  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
-  const stack = loadStack(pickEnv(body.stack));
-  const values = familyValues(stack);
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  res.write(`▶ Firebase push for ${stack.envName} — project, app registrations and configs, all as code\n\n`);
+  let stack;
+  try { stack = envStackFrom(body.stack); } catch (e) { return json(res, 400, { error: e.message }); }
+  const values = valuesFor(stack);
+  streamHead(res);
+  res.write(`▶ Firebase push for ${stack.stack} — project, app registrations and configs, all as code\n\n`);
   if (!values.PLAY_SERVICE_ACCOUNT_JSON) {
     res.write('the Play service account is not stored yet (Features & accounts) — the SAME credential drives Firebase\n');
     return res.end('[exit 1]\n');
@@ -1230,29 +1135,26 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
     if (proj.ok) {
       res.write(`Firebase project ${projectId} ✓\n`);
     } else {
-      // a bare Cloud project answers 404 here (403 SERVICE_DISABLED while
-      // the Management API is off) — adding Firebase to it is exactly the
-      // console's "create project" without the console
       const apiOff = Boolean(serviceDisabled(await googleError(proj)));
-      res.write(apiOff
-        ? `the Firebase Management API is off in ${projectId} — switching it on…\n`
-        : `${projectId} is not a Firebase project yet — adding Firebase to it…\n`);
+      res.write(apiOff ? `the Firebase Management API is off in ${projectId} — switching it on…\n` : `${projectId} is not a Firebase project yet — adding Firebase to it…\n`);
       if (!(await fbAddFirebase(res, fb, access, projectId, clientEmail, apiOff, netFetchImpl))) return res.end('[exit 1]\n');
     }
     await fbEnsureApp(fb, res, projectId, 'android', stack.native.appId, fbLabel(stack, 'android'));
     res.write('  google-services.json ready — the next Android build bakes it in (push active)\n');
     await fbEnsureApp(fb, res, projectId, 'ios', stack.native.iosAppId, fbLabel(stack, 'ios'));
     res.write('  GoogleService-Info.plist ready — the next iOS build bakes it in\n');
-    // the API's SENDER credential: same service account, zero extra input
-    const shared = loadStack(SHARED_STACK);
-    const sharedValues = loadLocalValues(shared);
-    if (!sharedValues.NAS_FCM_SERVICE_ACCOUNT_JSON) {
-      saveLocalValues(shared, { ...sharedValues, NAS_FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON });
+    // the api's SENDER credential: the same service account, stored once in the wizard's family values
+    if (!values.FCM_SERVICE_ACCOUNT_JSON) {
+      setWizardValues({ FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON });
       res.write('sender credential: the api sends push with the SAME service account — stored ✓\n');
     } else {
       res.write('sender credential: already stored ✓\n');
     }
-    if (!(await applySenderToApi(res, stack, clientEmail, spawnImpl, netFetchImpl))) return res.end('[exit 1]\n');
+    if (stack.delivery === 'docker') {
+      if (!(await applySenderToApi(res, stack, clientEmail, spawnImpl, netFetchImpl))) return res.end('[exit 1]\n');
+    } else {
+      res.write(`sender credential: store FCM_SERVICE_ACCOUNT_JSON into GitHub environment ${stack.githubEnvironment} (the page does it on Save) and Deploy again so the api carries it\n`);
+    }
     res.write('\nRemaining manual floor for iOS push only: upload the APNs key once — Firebase console → Project settings → Cloud Messaging → Apple app configuration.\n');
     return res.end('\n[exit 0]\n');
   } catch (e) {
@@ -1261,115 +1163,69 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
   }
 }
 
-/* ── the MACHINE owns the upload keystore (user incident 2026-08-31:
-   deleting the repo destroyed the CI-minted keystore, the fresh repo
-   minted another, and Play pins the first upload key forever). Minted
-   ONCE here (JDK in a container, docker-tooling rule) into the shared
-   store; the wizard ships it into every repo's environment. ── */
+/* ── the machine owns the upload keystore (Play pins the first upload key per package) ── */
 async function mintKeystoreEndpoint(req, res, spawnImpl) {
-  const shared = loadStack(SHARED_STACK);
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  if (loadLocalValues(shared).ANDROID_KEYSTORE_BASE64) {
-    res.write('the machine already holds the upload keystore — every repo signs with the same key ✓\n');
+  streamHead(res);
+  if (wizardValues().ANDROID_KEYSTORE_BASE64) {
+    res.write('the machine already holds the upload keystore — every environment signs with the same key ✓\n');
     return res.end('[exit 0]\n');
   }
   const pass = randomBytes(24).toString('hex');
   const run = stepRunner(spawnImpl);
   const mint = await run(res, 'mint the upload keystore (JDK in a container — the first run pulls the image)', 'docker',
-    ['run', '--rm', '-e', `KS_PASS=${pass}`, 'eclipse-temurin:21-jdk', 'sh', '-c',
-      'keytool -genkeypair -keystore /tmp/u.ks -alias munni-upload -keyalg RSA -keysize 2048 -validity 10000 -storepass "$KS_PASS" -keypass "$KS_PASS" -dname "CN=munni upload key" >/dev/null 2>&1 && echo "KEYSTORE_B64:$(base64 -w0 /tmp/u.ks)" && keytool -exportcert -rfc -keystore /tmp/u.ks -alias munni-upload -storepass "$KS_PASS"'],
+    ['run', '--rm', '-e', `KS_PASS=${pass}`, 'eclipse-temurin:21-jdk', 'sh', '-c', 'keytool -genkeypair -keystore /tmp/u.ks -alias munni-upload -keyalg RSA -keysize 2048 -validity 10000 -storepass "$KS_PASS" -keypass "$KS_PASS" -dname "CN=munni upload key" >/dev/null 2>&1 && echo "KEYSTORE_B64:$(base64 -w0 /tmp/u.ks)" && keytool -exportcert -rfc -keystore /tmp/u.ks -alias munni-upload -storepass "$KS_PASS"'],
     { cwd: ROOT, mask: (s) => s.replaceAll(pass, '(pass)').replace(/KEYSTORE_B64:\S+/g, 'KEYSTORE_B64:(captured)') });
-  if (mint.code !== 0) {
-    res.write('minting failed — is Docker running?\n');
-    return res.end('[exit 1]\n');
-  }
+  if (mint.code !== 0) { res.write('minting failed — is Docker running?\n'); return res.end('[exit 1]\n'); }
   const b64 = /KEYSTORE_B64:(\S+)/.exec(mint.out)?.[1];
   const cert = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/.exec(mint.out)?.[0];
-  if (!b64) {
-    res.write('could not read the keystore back from the container\n');
-    return res.end('[exit 1]\n');
-  }
-  saveLocalValues(shared, {
-    ...loadLocalValues(shared),
-    ANDROID_KEYSTORE_BASE64: b64,
-    ANDROID_KEYSTORE_PASSWORD: pass,
-    ANDROID_KEY_ALIAS: 'munni-upload',
-    ANDROID_KEY_PASSWORD: pass,
-  });
+  if (!b64) { res.write('could not read the keystore back from the container\n'); return res.end('[exit 1]\n'); }
+  setWizardValues({ ANDROID_KEYSTORE_BASE64: b64, ANDROID_KEYSTORE_PASSWORD: pass, ANDROID_KEY_ALIAS: 'munni-upload', ANDROID_KEY_PASSWORD: pass });
   if (cert) {
-    const certFile = join(renderedDir(SHARED_STACK), 'upload-cert.pem');
+    const certFile = join(dirname(LAN_FILE()), 'wizard', 'upload-cert.pem');
     mkdirSync(dirname(certFile), { recursive: true });
     writeFileSync(certFile, `${cert}\n`);
     res.write(`upload certificate → ${certFile} (only needed for a Play UPLOAD-KEY RESET)\n`);
   }
-  res.write('upload keystore minted into the machine store ✓ — every repo, present and future, signs with the SAME key\n');
+  res.write('upload keystore minted into the wizard\'s store ✓ — every environment signs with the SAME key\n');
   return res.end('[exit 0]\n');
 }
 
-/* ── roll a BURNED store package (user request 2026-08-31: a new Play
-   app NOW instead of the two-day upload-key reset). Play pins the first
-   upload key per PACKAGE — bumping the generation gives the same
-   environment a fresh package (app.munni.local.prod → …prod2) while
-   its data, sign-in and urls stay untouched. ── */
-async function newStorePackageEndpoint(req, res, spawnImpl) {
+/** the operator names a store package (a burned Play package rolls to a fresh one; iOS may diverge) */
+async function storeIdEndpoint(req, res, spawnImpl) {
   const body = await readBody(req);
-  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
-  const name = pickEnv(body.stack).replace('munni-local-', '');
-  const envs = localEnvRegistry();
-  const entry = envs.find((e) => e.name === name);
-  if (!entry) return json(res, 400, { error: `no environment named "${name}"` });
-  // the OPERATOR names the package segment (no black-box numbering);
-  // Android and iOS may diverge (user request 2026-09-06: a Play-burned
-  // package rolls while the existing ASC record keeps its bundle)
-  const platform = body.platform === 'ios' ? 'ios' : 'android';
-  const suffix = String(body.suffix ?? '').trim().toLowerCase();
-  if (!/^[a-z][a-z0-9]{1,29}$/.test(suffix)) {
-    return json(res, 400, { error: 'the package suffix must be 2-30 characters, letters/digits, starting with a letter (like prod2, phone, beta)' });
-  }
-  if (platform === 'ios') {
-    entry.iosSuffix = suffix;
-  } else {
-    entry.appSuffix = suffix;
-    delete entry.appGen; // superseded by the explicit suffix
-  }
-  saveLocalEnvRegistry(envs);
-  const native = loadStack(`munni-local-${name}`).native;
-  const newId = platform === 'ios' ? native.iosAppId : native.appId;
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  res.write(`▶ ${platform === 'ios' ? 'iOS bundle id' : 'store package'} set → ${newId}\n(a previously used package keeps its store records — retire them in the consoles whenever)\n\n`);
-  const run = stepRunner(spawnImpl);
-  await run(res, `re-render ${name} with the new identity`, process.execPath,
-    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
-  if (platform === 'ios') {
-    res.write(`\nNext: the App ID registers itself on the next iOS build; create the App Store Connect record for ${newId} (New App) if it does not exist yet — this page detects it.\n`);
-  } else {
-    res.write(`\nNext: create the Play record for ${newId} (Play Console → Create app). This page detects it, and the FIRST build uploads itself — signed with the machine keystore, the key that never changes again.\n`);
-  }
+  const platform = String(body.platform ?? '');
+  const env = String(body.env ?? '');
+  let current;
+  try { current = loadEnv(platform, env); } catch (e) { return json(res, 400, { error: e.message }); }
+  const kind = body.kind === 'ios' ? 'iosBundleId' : 'androidPackage';
+  const id = String(body.id ?? '').trim().toLowerCase();
+  if (!STORE_ID_RE.test(id) || !id.startsWith('app.munni.')) return json(res, 400, { error: 'the id must look like app.munni.<platform>.<name> (lowercase letters/digits, dots)' });
+  const saved = saveEnv(platform, { ...current, store: { ...current.store, [kind]: id } });
+  streamHead(res);
+  res.write(`▶ ${kind === 'iosBundleId' ? 'iOS bundle id' : 'store package'} set → ${id}\n(a previously used package keeps its store records — retire them in the consoles whenever)\n\n`);
+  if (platform === LCL) await stepRunner(spawnImpl)(res, `re-render ${env} with the new identity`, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', stackName(platform, env)], { cwd: ROOT });
+  else res.write('commit the platform config (Save) — the next build carries the new identity\n');
+  res.write(kind === 'iosBundleId'
+    ? `\nNext: the App ID registers itself on the next iOS build; create the App Store Connect record for ${id} (New App) if it does not exist yet — this page detects it.\n`
+    : `\nNext: create the Play record for ${id} (Play Console → Create app). This page detects it, and the FIRST build uploads itself.\n`);
+  void saved;
   return res.end('[exit 0]\n');
 }
 
-/* ── Apple App ID as code (user request 2026-08-31: automate the
-   identifier + capabilities; only the ASC "New App" record has no
-   create-API). Registers bundle app.munni.local.<env> with the
-   LONG-RUN capabilities so nothing needs re-provisioning later. ── */
+/* ── Apple App ID as code: bundle id + long-run capabilities ── */
 const IOS_CAPABILITIES = [
   ['PUSH_NOTIFICATIONS', 'push notifications (FCM later — tick now, never reprovision)', null],
-  // Sign in with Apple only EXISTS with the primary-app consent setting:
-  // without it Apple records nothing, keys and Services IDs find "no
-  // identifiers available", and the API answers 409 — which the loop
-  // used to read as "already enabled" (found live 2026-09-09)
   ['APPLE_ID_AUTH', 'Sign in with Apple as the PRIMARY App ID (keys and Services IDs attach to it)', [{ key: 'APPLE_ID_AUTH_APP_CONSENT', options: [{ key: 'PRIMARY_APP_CONSENT' }] }]],
-  ['ASSOCIATED_DOMAINS', 'associated domains (universal links on the hosted track)', null],
+  ['ASSOCIATED_DOMAINS', 'associated domains (universal links)', null],
 ];
-const isPrimaryAppleId = (cap) => (cap.attributes?.settings ?? [])
-  .some((s) => s.key === 'APPLE_ID_AUTH_APP_CONSENT' && (s.options ?? []).some((o) => o.key === 'PRIMARY_APP_CONSENT'));
+const isPrimaryAppleId = (cap) => (cap.attributes?.settings ?? []).some((s) => s.key === 'APPLE_ID_AUTH_APP_CONSENT' && (s.options ?? []).some((o) => o.key === 'PRIMARY_APP_CONSENT'));
 
 async function iosAppIdEndpoint(req, res, fetchImpl) {
   const body = await readBody(req);
-  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet' });
-  const stack = loadStack(pickEnv(body.stack));
-  const values = familyValues(stack);
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  let stack;
+  try { stack = envStackFrom(body.stack); } catch (e) { return json(res, 400, { error: e.message }); }
+  const values = valuesFor(stack);
+  streamHead(res);
   if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) {
     res.write('the App Store Connect key is not stored yet (Features & accounts) — cannot register the App ID\n');
     return res.end('[exit 1]\n');
@@ -1381,231 +1237,145 @@ async function iosAppIdEndpoint(req, res, fetchImpl) {
     res.write(`the ASC .p8 does not parse (${e.message})\n`);
     return res.end('[exit 1]\n');
   }
-  const asc = (path, init = {}) => fetchImpl(`https://api.appstoreconnect.apple.com/v1${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...init.headers },
-    signal: AbortSignal.timeout(15000),
-  });
+  const asc = (path, init = {}) => fetchImpl(`https://api.appstoreconnect.apple.com/v1${path}`, { ...init, headers: { authorization: `Bearer ${jwt}`, 'content-type': 'application/json', ...init.headers }, signal: AbortSignal.timeout(15000) });
   const bundleId = stack.native.iosAppId;
   const list = await asc(`/bundleIds?filter%5Bidentifier%5D=${encodeURIComponent(bundleId)}`);
-  if (!list.ok) {
-    res.write(`App Store Connect answered ${list.status} listing bundle ids — is the key an App Manager key?\n`);
-    return res.end('[exit 1]\n');
-  }
+  if (!list.ok) { res.write(`App Store Connect answered ${list.status} listing bundle ids — is the key an App Manager key?\n`); return res.end('[exit 1]\n'); }
   let record = ((await list.json()).data ?? []).find((d) => d.attributes?.identifier === bundleId);
   if (record) {
     res.write(`App ID ${bundleId} already registered ✓\n`);
   } else {
-    const created = await asc('/bundleIds', {
-      method: 'POST',
-      body: JSON.stringify({ data: { type: 'bundleIds', attributes: { identifier: bundleId, name: `munni local ${stack.envName}`, platform: 'IOS' } } }),
-    });
-    if (!created.ok) {
-      res.write(`could not register ${bundleId} (${created.status}): ${(await created.text()).slice(0, 300)}\n`);
-      return res.end('[exit 1]\n');
-    }
+    const created = await asc('/bundleIds', { method: 'POST', body: JSON.stringify({ data: { type: 'bundleIds', attributes: { identifier: bundleId, name: `munni ${stack.env} ${stack.platform}`, platform: 'IOS' } } }) });
+    if (!created.ok) { res.write(`could not register ${bundleId} (${created.status}): ${(await created.text()).slice(0, 300)}\n`); return res.end('[exit 1]\n'); }
     record = (await created.json()).data;
     res.write(`App ID ${bundleId} registered ✓\n`);
   }
-  // the LIST is the truth about what Apple recorded — a 409 means
-  // "already there" OR "entity refused", and only the list tells them apart
   const listCaps = async () => (((await (await asc(`/bundleIds/${record.id}/bundleIdCapabilities`)).json()).data) ?? []);
   let have = await listCaps();
   let ok = true;
   for (const [cap, why, settings] of IOS_CAPABILITIES) {
     const existing = have.find((c) => c.attributes?.capabilityType === cap);
     const complete = (c) => c && (!settings || isPrimaryAppleId(c));
-    if (complete(existing)) {
-      res.write(`  capability ${cap} ✓ — ${why}\n`);
-      continue;
-    }
+    if (complete(existing)) { res.write(`  capability ${cap} ✓ — ${why}\n`); continue; }
     const attributes = settings ? { capabilityType: cap, settings } : { capabilityType: cap };
     const r = existing
       ? await asc(`/bundleIdCapabilities/${existing.id}`, { method: 'PATCH', body: JSON.stringify({ data: { type: 'bundleIdCapabilities', id: existing.id, attributes } }) })
       : await asc('/bundleIdCapabilities', { method: 'POST', body: JSON.stringify({ data: { type: 'bundleIdCapabilities', attributes, relationships: { bundleId: { data: { type: 'bundleIds', id: record.id } } } } }) });
-    if (r.ok) {
-      res.write(`  capability ${cap} ${existing ? 'completed' : 'enabled'} ✓ — ${why}\n`);
-      continue;
-    }
+    if (r.ok) { res.write(`  capability ${cap} ${existing ? 'completed' : 'enabled'} ✓ — ${why}\n`); continue; }
     const detail = (await r.text().catch(() => '')).slice(0, 200);
     have = await listCaps();
-    if (complete(have.find((c) => c.attributes?.capabilityType === cap))) {
-      res.write(`  capability ${cap} ✓ — ${why}\n`);
-    } else {
-      ok = false;
-      res.write(`  capability ${cap} NOT enabled (Apple answered ${r.status}${detail ? `: ${detail}` : ''}) — by hand: developer.apple.com → Identifiers → ${bundleId}${settings ? ' → Sign in with Apple → Configure → Enable as a primary App ID' : ''}\n`);
-    }
+    if (complete(have.find((c) => c.attributes?.capabilityType === cap))) res.write(`  capability ${cap} ✓ — ${why}\n`);
+    else { ok = false; res.write(`  capability ${cap} NOT enabled (Apple answered ${r.status}${detail ? `: ${detail}` : ''}) — by hand: developer.apple.com → Identifiers → ${bundleId}${settings ? ' → Sign in with Apple → Configure → Enable as a primary App ID' : ''}\n`); }
   }
-  res.write(`\nRemaining one-time (no API exists): App Store Connect → New App → pick ${bundleId} from the bundle-id dropdown. The APNs SSL certificate dialog is the LEGACY push path — never create those; push will use the team APNs key via Firebase.\n`);
+  res.write(`\nRemaining one-time (no API exists): App Store Connect → New App → pick ${bundleId} from the bundle-id dropdown. Never create APNs SSL certificates — push uses the team APNs key via Firebase.\n`);
   return res.end(`[exit ${ok ? 0 : 1}]\n`);
 }
 
-/** what the wizard writes into the GitHub environment `local` so the
- * EXISTING native workflows bake a build that talks to this machine —
- * per LOCAL environment (?stack=munni-local-<name>, default prod) */
+/** what the page writes into the stack's GitHub environment so the native workflows bake a build for it */
 async function nativeConfigEndpoint(res, url, fetchImpl) {
-  if (!LOCAL_ENVS().length) return json(res, 400, { error: 'no environments exist yet — Set up & start munni first' });
-  const stack = loadStack(pickEnv(url?.searchParams.get('stack')));
-  const values = familyValues(stack);
+  let stack;
+  try { stack = envStackFrom(url?.searchParams.get('stack')); } catch (e) { return json(res, 400, { error: e.message }); }
+  const values = valuesFor(stack);
   const lan = lanHost();
-  const dsn = values.VITE_GLITCHTIP_DSN ?? '';
   const variables = {
     NATIVE_API_URL: stack.urls.api,
     NATIVE_PUBLIC_ORIGIN: stack.urls.web,
     NATIVE_LOGTO_ENDPOINT: stack.urls.logto,
     NATIVE_LOGTO_RESOURCE: stack.urls.api,
     NATIVE_LOGTO_APP_ID: values.NATIVE_LOGTO_APP_ID ?? '',
-    NATIVE_GLITCHTIP_DSN_ANDROID: dsn,
-    NATIVE_GLITCHTIP_DSN_IOS: dsn,
-    // the AUTHORITATIVE package ids (carry the store-package choices —
-    // the workflows must not re-derive them from the env name alone);
-    // Android and iOS may diverge (Play burns package names, ASC not)
-    NATIVE_LOCAL_APP_ID: stack.native.appId,
-    NATIVE_LOCAL_APP_ID_IOS: stack.native.iosAppId,
+    NATIVE_GLITCHTIP_DSN_ANDROID: values.NATIVE_GLITCHTIP_DSN_ANDROID ?? values.VITE_GLITCHTIP_DSN ?? '',
+    NATIVE_GLITCHTIP_DSN_IOS: values.NATIVE_GLITCHTIP_DSN_IOS ?? values.VITE_GLITCHTIP_DSN ?? '',
   };
   const missing = [];
-  if (!lan) missing.push('LAN mode is off — a phone cannot reach localhost');
-  if (lan) {
-    // CI bakes the family root INTO the app (user request 2026-08-31:
-    // no manual certificate install on the phone for the app itself)
-    try {
-      const crt = await fetchImpl(`http://ca.${lan.replaceAll('.', '-')}.sslip.io/root.crt`, { signal: AbortSignal.timeout(8000) });
-      if (crt.ok) variables.NATIVE_FAMILY_CA_PEM = await crt.text();
-      else missing.push(`the family CA is not downloadable (status ${crt.status}) — is the family running? Without it the app build cannot bundle the certificate`);
-    } catch (e) {
-      missing.push(`the family CA is not downloadable (${e.message}) — is the family running? Without it the app build cannot bundle the certificate`);
+  if (stack.delivery === 'docker') {
+    if (!lan) missing.push('LAN mode is off — a phone cannot reach localhost');
+    if (lan) {
+      try {
+        const crt = await fetchImpl(`http://ca.${lan.replaceAll('.', '-')}.sslip.io/root.crt`, { signal: AbortSignal.timeout(8000) });
+        if (crt.ok) variables.NATIVE_FAMILY_CA_PEM = await crt.text();
+        else missing.push(`the family CA is not downloadable (status ${crt.status}) — is the family running?`);
+      } catch (e) {
+        missing.push(`the family CA is not downloadable (${e.message}) — is the family running?`);
+      }
     }
+    if (!variables.NATIVE_LOGTO_APP_ID) missing.push(`sign-in setup has not stored the native app id yet — run the sign-in setup of ${stack.env} once`);
   }
-  if (!variables.NATIVE_LOGTO_APP_ID) missing.push(`sign-in setup has not stored the native app id yet — press Re-run sign-in setup on ${stack.envName} once`);
-  // Firebase configs ride along when the apps are REGISTERED (the build
-  // flows run firebase-setup first; this only reads — never creates).
-  // Absent configs are not blocking: the stub keeps builds green with
-  // push inactive, and the wizard's push pill names the reason.
   if (values.PLAY_SERVICE_ACCOUNT_JSON) {
     try {
       const { access, projectId } = await googleAccessToken(values, 'https://www.googleapis.com/auth/cloud-platform', fetchImpl);
       const fb = fbFetcher(access, fetchImpl);
       const aList = ((await (await fb(`/projects/${projectId}/androidApps?pageSize=100`)).json()).apps) ?? [];
       const aApp = aList.find((a) => a.packageName === stack.native.appId);
-      if (aApp) {
-        const cfg = await fb(`/projects/${projectId}/androidApps/${aApp.appId}/config`);
-        if (cfg.ok) variables.NATIVE_GOOGLE_SERVICES_B64 = (await cfg.json()).configFileContents;
-      }
+      if (aApp) { const cfg = await fb(`/projects/${projectId}/androidApps/${aApp.appId}/config`); if (cfg.ok) variables.NATIVE_GOOGLE_SERVICES_B64 = (await cfg.json()).configFileContents; }
       const iList = ((await (await fb(`/projects/${projectId}/iosApps?pageSize=100`)).json()).apps) ?? [];
       const iApp = iList.find((a) => a.bundleId === stack.native.iosAppId);
-      if (iApp) {
-        const cfg = await fb(`/projects/${projectId}/iosApps/${iApp.appId}/config`);
-        if (cfg.ok) variables.NATIVE_IOS_FIREBASE_PLIST_B64 = (await cfg.json()).configFileContents;
-      }
+      if (iApp) { const cfg = await fb(`/projects/${projectId}/iosApps/${iApp.appId}/config`); if (cfg.ok) variables.NATIVE_IOS_FIREBASE_PLIST_B64 = (await cfg.json()).configFileContents; }
     } catch { /* push stays stubbed — firebase-setup names the reason */ }
   }
-  return json(res, 200, {
-    environment: 'local',
-    localEnv: stack.envName,
-    appId: stack.native.appId,
-    iosAppId: stack.native.iosAppId,
-    scheme: stack.native.scheme,
-    lanHost: lan,
-    ready: missing.length === 0,
-    missing,
-    variables,
-  });
+  return json(res, 200, { stack: stack.stack, environment: stack.githubEnvironment, env: stack.env, platform: stack.platform, appId: stack.native.appId, iosAppId: stack.native.iosAppId, scheme: stack.native.scheme, lanHost: lan, ready: missing.length === 0, missing, variables });
 }
 
-/* ── dynamic environments: "+" creates one, delete tears one down and
-   forgets it (user ruling 2026-08-28: any number of environments) ── */
-const RESERVED_ENV_NAMES = new Set(['shared', 'local']);
-
-/** LAN mode: the family Caddyfile enumerates the registry — a changed
- * env list must re-render the shared stack and restart the tls proxy,
- * or the new hostnames never resolve / dead ones 502 forever */
+/* ── lcl environments: delete, wipe, leftovers ────────────────────── */
 async function refreshFamilyTls(res, spawnImpl) {
   if (!lanHost()) return;
   const run = stepRunner(spawnImpl);
-  await run(res, 'refresh the family Caddyfile (hostnames follow the registry)', process.execPath,
-    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
-  await run(res, 'restart the https proxy', 'docker',
-    [...composeArgs(SHARED_STACK), 'restart', 'family-tls'], { cwd: renderedDir(SHARED_STACK) });
+  await run(res, 'refresh the family Caddyfile (hostnames follow the environments)', process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', LCL_SHARED], { cwd: ROOT });
+  await run(res, 'restart the https proxy', 'docker', [...composeArgs(LCL_SHARED), 'restart', 'family-tls'], { cwd: renderedDir(LCL_SHARED) });
 }
 
-async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
+async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
   const body = await readBody(req);
-  const name = String(body.name ?? '').trim().toLowerCase();
-  const channel = body.channel === 'latest' ? 'latest' : 'dev';
-  if (!/^[a-z]{2,5}$/.test(name)) return json(res, 400, { error: 'name must be 2-5 lowercase letters (like dev, test, acc, stg)' });
-  if (RESERVED_ENV_NAMES.has(name)) return json(res, 400, { error: `"${name}" is reserved` });
-  const envs = localEnvRegistry();
-  if (envs.some((e) => e.name === name)) return json(res, 400, { error: `environment "${name}" already exists` });
-  const used = new Set(envs.map((e) => e.slot));
-  let slot = 0;
-  while (used.has(slot)) slot += 1;
-  saveLocalEnvRegistry([...envs, { name, channel, slot }]);
-  // render right away (mints its secrets, writes compose + env); the
-  // wizard chains start + sign-in + crash wiring from here
-  if (!lanHost()) {
-    return runImpl(res, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
+  const platform = String(body.platform ?? LCL);
+  const env = String(body.env ?? '').trim().toLowerCase();
+  if (platform !== LCL) return json(res, 400, { error: 'environments on other platforms are cleaned up by the pipeline (the Clean up button dispatches it)' });
+  const name = stackName(LCL, env);
+  if (!LCL_ENVS().includes(name)) return json(res, 400, { error: `no environment named "${env}"` });
+  if (loadStack(LCL_SHARED).controlApi === name && LCL_ENVS().length > 1) return json(res, 400, { error: 'the control cockpit rides this environment — point it at another one first (platform card)' });
+  streamHead(res);
+  res.write(`▶ delete environment ${env} — GoCardless consents, GlitchTip projects, containers + volumes, then forget it\n\n`);
+  try {
+    await purgeGcRequisitions(name, res);
+  } catch (e) {
+    res.write(`GoCardless purge failed (${e.message}) — continuing with the docker teardown\n`);
   }
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  const boot = await stepRunner(spawnImpl)(res, `render environment ${name}`, process.execPath,
-    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', `munni-local-${name}`], { cwd: ROOT });
-  if (boot.code !== 0) return res.end('[exit 1]\n');
+  try {
+    const shared = loadStack(LCL_SHARED);
+    const token = familyValues(shared).GLITCHTIP_API_TOKEN;
+    if (token) { const r = await removeProjects(shared, loadStack(name), token, { fetchImpl: netFetchImpl }); res.write(`GlitchTip projects removed: ${r.removed.join(', ') || 'none'}\n`); }
+  } catch (e) {
+    res.write(`GlitchTip project purge failed (${e.message}) — remove them in the console if they linger\n`);
+  }
+  const tool = toolFor(`${name}:destroy`);
+  await stepRunner(spawnImpl)(res, 'containers + volumes + network', tool.cmd, tool.args, { cwd: tool.cwd });
+  removeEnv(LCL, env);
+  rmSync(renderedDir(name), { recursive: true, force: true });
   await refreshFamilyTls(res, spawnImpl);
+  res.write(`\nenvironment ${env} deleted and forgotten (its secret store went with the rendered folder; commit the platform config to record the removal)\n`);
+  res.write('what CANNOT be deleted by API: the STORE RECORDS of its package (Retire withdraws the distribution — the records go by hand in the consoles)\n');
   return res.end('\n[exit 0]\n');
 }
 
-/** part of the delete cascade (user ruling 2026-08-28): the env's
- * GlitchTip org (+ its projects/DSNs) dies with it — best-effort, the
- * token only exists once crash tracking was wired */
-async function purgeGlitchtipOrg(stackName, res, fetchImpl = localAwareFetch) {
-  const token = familyValues(loadStack(SHARED_STACK)).IAC_GLITCHTIP_API_TOKEN;
-  if (!token) { res.write('no GlitchTip token in the store — skipping the org purge\n'); return; }
-  const base = loadStack(SHARED_STACK).urls.glitchtip;
-  try {
-    const del = await fetchImpl(`${base}/api/0/organizations/${stackName}/`, {
-      method: 'DELETE',
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(15000),
-    });
-    if (del.ok || del.status === 204) res.write(`GlitchTip org ${stackName} deleted\n`);
-    else if (del.status === 404) res.write(`GlitchTip has no org ${stackName} — nothing to purge\n`);
-    else res.write(`GlitchTip org delete answered ${del.status} — remove it in the console if it lingers\n`);
-  } catch (e) {
-    res.write(`GlitchTip org purge failed (${e.message}) — remove it in the console if it lingers\n`);
+/** wipe the lcl platform: every stack's containers + volumes, the rendered dirs, the LAN marker, the environment files; the wizard's store only on request */
+async function wipeEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  streamHead(res);
+  const run = stepRunner(spawnImpl);
+  for (const name of [...LCL_ENVS(), LCL_SHARED]) {
+    const tool = toolFor(`${name}:destroy`);
+    if (existsSync(join(tool.cwd, `docker-compose.${name}.yml`))) await run(res, `${name}: containers + volumes + network`, tool.cmd, tool.args, { cwd: tool.cwd });
+    rmSync(renderedDir(name), { recursive: true, force: true });
   }
-}
-
-/** Delete-everything epilogue (user ruling 2026-08-28: prod is not
- * special — after the wipe NO environment exists; Set up & start
- * recreates production). The wizard calls this after destroying every
- * stack's containers; here the environments are FORGOTTEN: registry
- * emptied, rendered dirs (each env's secret store included) removed.
- * The LAN marker and the shared RENDER die too (user report 2026-09-04:
- * their leftovers kept the https pill and the Delete button armed after
- * a wipe) — only the machine-owned survivors stay: the step-3
- * credential store and the upload keystore's reset certificate. */
-const NUKE_SURVIVORS = ['.secrets.local.json', 'upload-cert.pem'];
-function envsForgetAllEndpoint(res) {
-  const names = localEnvRegistry().map((e) => e.name);
-  for (const name of names) {
-    rmSync(renderedDir(`munni-local-${name}`), { recursive: true, force: true });
-  }
-  saveLocalEnvRegistry([]);
+  for (const e of platformEnvs(LCL)) removeEnv(LCL, e.env);
   rmSync(LAN_FILE(), { force: true });
-  const sharedDir = renderedDir(SHARED_STACK);
-  if (existsSync(sharedDir)) {
-    for (const f of readdirSync(sharedDir)) {
-      if (!NUKE_SURVIVORS.includes(f)) rmSync(join(sharedDir, f), { recursive: true, force: true });
-    }
+  if (body.everything === true) {
+    rmSync(join(dirname(LAN_FILE()), 'wizard'), { recursive: true, force: true });
+    res.write('the wizard\'s own store is gone too — every credential must be entered again\n');
   }
-  return json(res, 200, { forgotten: names, kept: NUKE_SURVIVORS.filter((f) => existsSync(join(sharedDir, f))) });
+  res.write('\nlcl wiped: no environments, no rendered stacks, no LAN marker — commit the platform config to record it\n');
+  return res.end('[exit 0]\n');
 }
 
-/** post-wipe verification (user request 2026-09-04): name what is STILL
- * there, so the wizard can honestly retire the Delete button — or keep
- * it armed with the leftovers listed. Docker resources are matched by
- * their compose PROJECT (family projects are munni-local-<something>;
- * the from-source dev loop's project is exactly `munni-local` and
- * munni-sonar is different tooling — neither counts). */
+/** post-wipe verification: name what is STILL there */
 async function cleanupCheckEndpoint(res, spawnImpl) {
   const dockerLines = (args) => new Promise((resolve) => {
     const c = spawnImpl('docker', args, { shell: false });
@@ -1622,132 +1392,80 @@ async function cleanupCheckEndpoint(res, spawnImpl) {
   ]);
   const leftovers = [];
   if (!containers || !volumes || !networks) leftovers.push('docker did not answer — containers/volumes could not be verified');
+  const ours = (n) => /^munni-(lcl|local)-/.test(n);
   for (const line of containers ?? []) {
     const [name, project] = line.split('\t');
-    if (project?.startsWith('munni-local-')) leftovers.push(`container ${name}`);
+    if (ours(project ?? '')) leftovers.push(`container ${name}`);
   }
-  for (const n of volumes ?? []) if (n.startsWith('munni-local-')) leftovers.push(`volume ${n}`);
-  for (const n of networks ?? []) if (n.startsWith('munni-local-')) leftovers.push(`network ${n}`);
-  for (const e of localEnvRegistry()) leftovers.push(`registry entry ${e.name}`);
+  for (const n of volumes ?? []) if (ours(n)) leftovers.push(`volume ${n}`);
+  for (const n of networks ?? []) if (ours(n)) leftovers.push(`network ${n}`);
+  for (const e of platformEnvs(LCL)) leftovers.push(`environment file ${e.env}`);
   const base = dirname(LAN_FILE());
-  if (existsSync(base)) {
-    for (const d of readdirSync(base)) {
-      if (!d.startsWith('munni-local-')) continue;
-      if (d === SHARED_STACK) {
-        for (const f of readdirSync(renderedDir(SHARED_STACK))) {
-          if (!NUKE_SURVIVORS.includes(f)) leftovers.push(`shared render file ${f}`);
-        }
-      } else {
-        leftovers.push(`rendered folder ${d}`);
-      }
-    }
-  }
+  if (existsSync(base)) for (const d of readdirSync(base)) if (ours(d)) leftovers.push(`rendered folder ${d}`);
   if (existsSync(LAN_FILE())) leftovers.push('LAN marker (https mode)');
   const kept = [];
-  if (existsSync(join(renderedDir(SHARED_STACK), '.secrets.local.json'))) kept.push('the step-3 credential store');
-  if (existsSync(join(renderedDir(SHARED_STACK), 'upload-cert.pem'))) kept.push('the upload keystore certificate');
-  return json(res, 200, { clean: leftovers.length === 0, leftovers, kept });
+  if (existsSync(join(base, 'wizard', '.secrets.json'))) kept.push('the wizard\'s credential store');
+  // what no API can remove: Windows untrusts a root only through its own consent dialog, one per entry — named, counted, left to the user
+  const byHand = [];
+  let stale = 0;
+  try { stale = staleCaddyRoots((await capture(spawnImpl, 'certutil', ['-user', '-store', 'Root'])).out); } catch { /* no certutil (not Windows) — nothing to count */ }
+  if (stale) byHand.push(`${stale} trusted "Caddy Local Authority" root${stale === 1 ? '' : 's'} of earlier https families in this user's certificate store — certmgr.msc → Trusted Root Certification Authorities → Certificates → delete every "Caddy Local Authority" row (Windows asks once per entry; the Leftovers card has the steps)`);
+  return json(res, 200, { clean: leftovers.length === 0, leftovers, kept, byHand });
 }
 
-async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
-  const body = await readBody(req);
-  const name = String(body.name ?? '').trim().toLowerCase();
-  const stackName = `munni-local-${name}`;
-  const envs = localEnvRegistry();
-  if (!envs.some((e) => e.name === name)) return json(res, 400, { error: `no environment named "${name}"` });
-  if (loadStack(SHARED_STACK).controlApi === stackName) {
-    return json(res, 400, { error: 'munni-control and the native apps ride this environment — it cannot be deleted' });
-  }
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  res.write(`▶ delete environment ${name} — GoCardless consents, GlitchTip org, containers + volumes, then forget it\n\n`);
-  try {
-    await purgeGcRequisitions(stackName, res);
-  } catch (e) {
-    res.write(`GoCardless purge failed (${e.message}) — continuing with the docker teardown\n`);
-  }
-  await purgeGlitchtipOrg(stackName, res, netFetchImpl);
-  const tool = toolFor(`${stackName}:destroy`);
-  await stepRunner(spawnImpl)(res, 'containers + volumes + network', tool.cmd, tool.args, { cwd: tool.cwd });
-  saveLocalEnvRegistry(localEnvRegistry().filter((e) => e.name !== name));
-  rmSync(renderedDir(stackName), { recursive: true, force: true });
-  await refreshFamilyTls(res, spawnImpl);
-  res.write(`\nenvironment ${name} deleted and forgotten (its secret store went with the rendered folder)\n`);
-  res.write(`what CANNOT be deleted by API: the STORE RECORDS for its app.munni.local.* package (the wizard's retire option withdraws the distribution — the records themselves go by hand in the consoles) and any GitHub environment "local" variables still pointing at it (overwritten by the next native build)\n`);
-  return res.end('\n[exit 0]\n');
-}
-
-/** persist the GitHub PAT like every other step-3 credential (user
- * request 2026-09-06: no re-pasting on every visit). Saved into the
- * shared machine store; the wizard reads it back and reconnects itself
- * on the next load. */
+/* ── the GitHub token + reading secrets back ───────────────────────── */
 async function ghPatEndpoint(req, res) {
   const body = await readBody(req);
   const pat = String(body.pat ?? '').trim();
   if (!pat) return json(res, 400, { error: 'no token given' });
-  const shared = loadStack(SHARED_STACK);
-  saveLocalValues(shared, { ...loadLocalValues(shared), IAC_GH_PAT: pat });
+  setWizardValues({ GH_PAT: pat });
   return json(res, 200, { ok: true });
 }
 
-/* ── secret retrieval (family-wide): the stores ARE readable — surfaced
-   on EXPLICIT request only; values go to the page, never to any log ── */
+/** the stores ARE readable — on EXPLICIT request only; values go to the page, never to any log */
 function secretsEndpoint(res) {
   const values = {};
-  for (const name of LOCAL_STACKS()) {
-    values[name] = loadLocalValues(loadStack(name));
-  }
-  return json(res, 200, { values });
+  for (const name of LCL_STACKS()) values[name] = loadLocalValues(loadStack(name));
+  return json(res, 200, { wizard: loadWizardStore(), values });
 }
 
-/** the family's sign-ins and raw values as PLAIN rows — the Bitwarden
- * JSON export and the automatic in-vault import both build from this.
- * Every row carries a FOLDER (one per environment + "shared") so the
- * vault groups by environment instead of name prefixes (user ruling
- * 2026-08-28). VAPID keys stay out per the plan; the vault's own master
- * credential stays out of its own contents. */
-const vaultFolderOf = (stackName) => (stackName === SHARED_STACK ? 'shared' : stackName.replace('munni-local-', ''));
-
-/* what each raw secret IS (user request 2026-08-28: "what it is used
- * for, how it's generated") — provenance + rotation come from the
- * manifest, purpose from this map */
+/* ── the lcl vault: account + every secret item, per-stack folders ── */
 const VAULT_PURPOSE = {
-  NAS_GOCARDLESS_SECRET_ID: 'GoCardless Bank Account Data credential (half 1) — the api mints access tokens with the pair for bank syncs and consents.',
-  NAS_GOCARDLESS_SECRET_KEY: 'GoCardless Bank Account Data credential (half 2) — paired with the secret id.',
-  NAS_ENABLEBANKING_APPLICATION_ID: 'Enable Banking application id (UUID) — names the app in the RS256 JWTs the api signs.',
-  NAS_ENABLEBANKING_PRIVATE_KEY_PEM: 'Enable Banking application private key (downloadable ONCE at registration) — signs the api’s JWTs.',
-  NAS_GLITCHTIP_SECRET_KEY: 'GlitchTip’s Django SECRET_KEY — signs its sessions and cookies.',
-  IAC_GLITCHTIP_API_TOKEN: 'GlitchTip API token the setup uses to create orgs/projects and read DSNs back.',
-  VITE_GLITCHTIP_DSN: 'Crash-report DSN for the munni web app — points its browser errors at the right GlitchTip project. Public by design.',
+  GOCARDLESS_SECRET_ID: 'GoCardless Bank Account Data credential (half 1) — the api mints access tokens with the pair for bank syncs and consents.',
+  GOCARDLESS_SECRET_KEY: 'GoCardless Bank Account Data credential (half 2) — paired with the secret id.',
+  ENABLEBANKING_APPLICATION_ID: 'Enable Banking application id (UUID) — names the app in the RS256 JWTs the api signs.',
+  ENABLEBANKING_PRIVATE_KEY_PEM: 'Enable Banking application private key (downloadable ONCE at registration) — signs the api’s JWTs.',
+  GLITCHTIP_SECRET_KEY: 'GlitchTip’s Django SECRET_KEY — signs its sessions and cookies.',
+  GLITCHTIP_API_TOKEN: 'GlitchTip API token the setup uses to create orgs/projects and read DSNs back.',
+  VITE_GLITCHTIP_DSN: 'Crash-report DSN for the munni web app. Public by design.',
   VITE_GLITCHTIP_DSN_ADMIN: 'Crash-report DSN for the admin portal. Public by design.',
-  NAS_API_SENTRY_DSN: 'Crash-report DSN for the api (container-network form — the api cannot resolve browser addresses).',
+  API_SENTRY_DSN: 'Crash-report DSN for the api (container-network form).',
   VITE_LOGTO_APP_ID: 'Logto application id (public client id) the munni web app signs in with.',
   VITE_LOGTO_APP_ID_ADMIN: 'Logto application id the admin portal signs in with.',
-  VITE_LOGTO_APP_ID_CONTROL: 'Logto application id the munni-control cockpit signs in with.',
+  VITE_LOGTO_APP_ID_CONTROL: 'Logto application id the control cockpit signs in with.',
   NATIVE_LOGTO_APP_ID: 'Logto application id the native (Android/iOS) shells sign in with.',
-  NAS_LOGTO_M2M_APP_ID: 'Machine-to-machine app id the api itself uses against Logto (e.g. deleting a sign-in identity with the account).',
-  NAS_LOGTO_M2M_APP_SECRET: 'Secret of the api’s machine-to-machine Logto app.',
-  NAS_ADMIN_SUBS: 'Comma-separated OIDC user ids (subs) with admin access — gates both the admin portal and munni-control.',
-  NAS_GHCR_PAT: 'GitHub token docker uses to pull the munni images from GHCR.',
-  NAS_FCM_SERVICE_ACCOUNT_JSON: 'Firebase service account (whole JSON file) — lets the api send Android push messages.',
-  NAS_LOGODEV_SECRET_KEY: 'logo.dev secret key (server-side merchant-logo search).',
-  NAS_LOGODEV_PUBLIC_TOKEN: 'logo.dev publishable token (client-side logo images).',
+  LOGTO_M2M_APP_ID: 'Machine-to-machine app id the api itself uses against Logto.',
+  LOGTO_M2M_APP_SECRET: 'Secret of the api’s machine-to-machine Logto app.',
+  GHCR_PAT: 'GitHub token docker uses to pull the munni images from GHCR.',
+  FCM_SERVICE_ACCOUNT_JSON: 'Firebase service account (whole JSON file) — lets the api send push messages.',
+  LOGODEV_SECRET_KEY: 'logo.dev secret key (server-side merchant-logo search).',
+  LOGODEV_PUBLIC_TOKEN: 'logo.dev publishable token (client-side logo images).',
   LOGTO_GOOGLE_CLIENT_ID: 'Google OAuth client id for “Sign in with Google”.',
   LOGTO_GOOGLE_CLIENT_SECRET: 'Google OAuth client secret — pairs with the client id.',
-  APPLE_DEV_CERT_P12: 'The machine’s persistent Apple Development certificate (.p12, base64) — CI imports it instead of minting a throwaway one per build (no more “certificate revoked” mails).',
-  APPLE_DEV_CERT_PASSWORD: 'Password of that .p12 — minted here before the certificate; the mint workflow encrypts with it.',
-  APPLE_DEV_CERT_SERIAL: 'Serial of that certificate — the wizard asks Apple by serial whether it is still valid before each iOS build.',
+  APPLE_DEV_CERT_P12: 'The machine’s persistent Apple Development certificate (.p12, base64) — CI imports it instead of minting a throwaway one per build.',
+  APPLE_DEV_CERT_PASSWORD: 'Password of that .p12.',
+  APPLE_DEV_CERT_SERIAL: 'Serial of that certificate — the wizard asks Apple by serial whether it is still valid.',
   LOGTO_APPLE_CLIENT_ID: 'Apple Services ID for “Sign in with Apple”.',
-  VAULT_SIGNUPS_ALLOWED: 'Wizard bookkeeping: whether this vault still accepts registrations (closed after setup).',
-  PLAY_SERVICE_ACCOUNT_JSON: 'Google Play service account (whole JSON file) — CI publishes builds with it; the wizard also uses it to detect when a store app exists.',
-  ANDROID_KEYSTORE_BASE64: 'The upload keystore (base64) every Android build signs with — minted ONCE by the wizard and kept here because Play pins the first upload key forever; it must outlive any repo.',
+  PLAY_SERVICE_ACCOUNT_JSON: 'Google Play service account (whole JSON file) — CI publishes builds with it; the wizard detects store apps with it.',
+  ANDROID_KEYSTORE_BASE64: 'The upload keystore (base64) every Android build signs with — minted ONCE by the wizard (Play pins the first upload key per package).',
   ANDROID_KEYSTORE_PASSWORD: 'Password of the upload keystore (wizard-generated).',
   ANDROID_KEY_ALIAS: 'Key alias inside the upload keystore (munni-upload).',
-  ANDROID_KEY_PASSWORD: 'Key password inside the upload keystore (same as the store password).',
-  IAC_GH_PAT: 'Fine-grained GitHub token the wizard connects and dispatches CI builds with — saved so the GitHub card reconnects by itself.',
-  ASC_KEY_ID: 'App Store Connect API key id — with the issuer id + .p8, CI uploads to TestFlight and the wizard checks app records.',
-  ASC_ISSUER_ID: 'App Store Connect API issuer id — pairs with the key.',
+  ANDROID_KEY_PASSWORD: 'Key password inside the upload keystore.',
+  GH_PAT: 'Fine-grained GitHub token the wizard stores secrets, commits config and dispatches builds with.',
+  ASC_KEY_ID: 'App Store Connect API key id.',
+  ASC_ISSUER_ID: 'App Store Connect API issuer id.',
   ASC_KEY_P8: 'App Store Connect API private key (.p8, base64) — shown once at creation.',
-  APPLE_TEAM_ID: 'The 10-character Apple developer team id — signing and uploads name it.',
+  APPLE_TEAM_ID: 'The 10-character Apple developer team id.',
 };
 
 function vaultNote(name) {
@@ -1761,60 +1479,36 @@ function vaultNote(name) {
   return parts.join(' ');
 }
 
-function buildVaultItems() {
+const VAULT_SKIP_NAMES = new Set(['PUSH_VAPID_PRIVATE_KEY', 'PUSH_VAPID_PUBLIC_KEY', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD']);
+const VAULT_COVERED_NAMES = new Set(['GLITCHTIP_ADMIN_PASSWORD', 'PGADMIN_PASSWORD', 'POSTGRES_PASSWORD', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD', 'LOGTO_INFRA_M2M_ID', 'LOGTO_INFRA_M2M_SECRET']);
+
+function stackVaultItems(name) {
   const items = [];
-  const sharedStack = loadStack(SHARED_STACK);
-  const shared = loadLocalValues(sharedStack);
-  if (shared.GLITCHTIP_ADMIN_EMAIL) {
-    items.push({
-      folder: 'shared',
-      name: 'GlitchTip console',
-      username: shared.GLITCHTIP_ADMIN_EMAIL,
-      password: shared.GLITCHTIP_ADMIN_PASSWORD ?? '',
-      uri: sharedStack.urls.glitchtip,
-      notes: 'Sign-in for the crash-report console (one GlitchTip for every environment). Account + password created by the setup wizard — change it inside GlitchTip whenever you like.',
-    });
+  const stack = loadStack(name);
+  const values = loadLocalValues(stack);
+  const folder = stack.stack;
+  if (values.POSTGRES_PASSWORD) items.push({ folder, name: 'Postgres', username: 'munni', password: values.POSTGRES_PASSWORD, notes: stack.role === 'shared' ? 'The shared stack’s database server (GlitchTip’s data). Wizard-generated.' : `Database server owned by the ${stack.env} environment alone (munni + logto databases). Wizard-generated; use it in pgAdmin for the “${stack.env}” entry.` });
+  if (stack.role === 'shared') {
+    if (values.GLITCHTIP_ADMIN_PASSWORD) items.push({ folder, name: 'GlitchTip console', username: `admin@munni.${stack.platform}`, password: values.GLITCHTIP_ADMIN_PASSWORD, uri: stack.urls.glitchtip, notes: 'Sign-in for the crash-report console (one GlitchTip for every environment of the platform). Created by the setup.' });
+    if (values.PGADMIN_PASSWORD) items.push({ folder, name: 'pgAdmin', username: 'admin@munni.dev', password: values.PGADMIN_PASSWORD, uri: stack.urls.pgadmin, notes: 'One console over every database server of the platform — the servers are preregistered; paste the matching Postgres password on first connect.' });
   }
-  if (shared.NAS_PGADMIN_PASSWORD) {
-    items.push({ folder: 'shared', name: 'pgAdmin', username: 'admin@munni.dev', password: shared.NAS_PGADMIN_PASSWORD, uri: sharedStack.urls.pgadmin, notes: 'One console over every database server in the family — the servers are preregistered; on first connect paste the matching Postgres password (each environment’s is in its folder) and tick “save password”. Wizard-generated.' });
-  }
-  for (const stackName of LOCAL_STACKS()) {
-    items.push(...stackVaultItems(stackName));
+  if (values.LOGTO_CONSOLE_USERNAME) items.push({ folder, name: 'Logto console', username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '', notes: `The ${stack.env} environment’s Logto ADMIN console. Account created by the setup with a generated password.` });
+  if (values.LOGTO_INFRA_M2M_ID) items.push({ folder, name: 'Logto infra M2M', username: values.LOGTO_INFRA_M2M_ID, password: values.LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '', notes: 'Machine credential the SETUP uses to manage this environment’s Logto as code (apps, the admin role, branding).' });
+  for (const [n, value] of Object.entries(values)) {
+    if (VAULT_COVERED_NAMES.has(n) || VAULT_SKIP_NAMES.has(n) || !value) continue;
+    items.push({ folder, name: n, password: String(value), notes: vaultNote(n) });
   }
   return items;
 }
 
-const VAULT_SKIP_NAMES = new Set(['NAS_PUSH_VAPID_PRIVATE_KEY', 'NAS_PUSH_VAPID_PUBLIC_KEY', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD']);
-const VAULT_COVERED_NAMES = new Set([
-  'GLITCHTIP_ADMIN_EMAIL', 'GLITCHTIP_ADMIN_PASSWORD', 'NAS_PGADMIN_PASSWORD',
-  'NAS_POSTGRES_PASSWORD', 'LOGTO_CONSOLE_USERNAME', 'LOGTO_CONSOLE_PASSWORD',
-  'LOGTO_APP_ADMIN_USERNAME', 'LOGTO_APP_ADMIN_PASSWORD', 'IAC_LOGTO_INFRA_M2M_ID', 'IAC_LOGTO_INFRA_M2M_SECRET',
-]);
-
-function stackVaultItems(stackName) {
+function buildVaultItems() {
   const items = [];
-  const stack = loadStack(stackName);
-  const values = loadLocalValues(stack);
-  const folder = vaultFolderOf(stackName);
-  const pgNote = stackName === SHARED_STACK
-    ? 'The shared stack’s database server (GlitchTip’s data lives here). Wizard-generated password; every environment has its OWN server with its own password.'
-    : `Database server owned by the ${folder} environment alone (munni + logto databases) — deleting the environment deletes it. Wizard-generated password; use it in pgAdmin for the “${folder}” entry.`;
-  if (values.NAS_POSTGRES_PASSWORD) {
-    items.push({ folder, name: 'Postgres', username: 'munni', password: values.NAS_POSTGRES_PASSWORD, notes: pgNote });
+  const store = loadWizardStore();
+  for (const [n, value] of Object.entries({ ...store.family, ...(store.platforms[LCL] ?? {}) })) {
+    if (VAULT_SKIP_NAMES.has(n) || !value) continue;
+    items.push({ folder: 'wizard', name: n, password: String(value), notes: vaultNote(n) });
   }
-  if (values.LOGTO_CONSOLE_USERNAME) {
-    items.push({ folder, name: 'Logto console', username: values.LOGTO_CONSOLE_USERNAME, password: values.LOGTO_CONSOLE_PASSWORD ?? '', uri: stack.urls.logtoAdmin ?? '', notes: `The ${folder} environment’s Logto ADMIN console (manage sign-in experience, users, connectors). Account auto-claimed by the setup wizard with a generated password.` });
-  }
-  if (values.LOGTO_APP_ADMIN_USERNAME) {
-    items.push({ folder, name: 'munni app (admin user)', username: values.LOGTO_APP_ADMIN_USERNAME, password: values.LOGTO_APP_ADMIN_PASSWORD ?? '', uri: stack.urls.web ?? '', notes: `The ${folder} environment’s first munni user, auto-created and wired as admin (its id sits in NAS_ADMIN_SUBS) — sign into the app, the admin portal and munni-control with it.` });
-  }
-  if (values.IAC_LOGTO_INFRA_M2M_ID) {
-    items.push({ folder, name: 'Logto infra M2M', username: values.IAC_LOGTO_INFRA_M2M_ID, password: values.IAC_LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto ?? '', notes: 'Machine credential the SETUP uses to manage this environment’s Logto as code (apps, redirect URIs, branding). Seeded straight into Logto’s database by the wizard.' });
-  }
-  for (const [name, value] of Object.entries(values)) {
-    if (VAULT_COVERED_NAMES.has(name) || VAULT_SKIP_NAMES.has(name) || !value) continue;
-    items.push({ folder, name, password: String(value), notes: vaultNote(name) });
-  }
+  for (const name of LCL_STACKS()) items.push(...stackVaultItems(name));
   return items;
 }
 
@@ -1823,32 +1517,15 @@ function vaultExportEndpoint(res) {
   const rows = buildVaultItems();
   const folderNames = [...new Set(rows.map((r) => r.folder))];
   const folders = folderNames.map((name, i) => ({ id: `f${i}`, name }));
-  const items = rows.map((r) => ({
-    type: 1,
-    folderId: `f${folderNames.indexOf(r.folder)}`,
-    name: r.name,
-    notes: r.notes ?? '',
-    favorite: false,
-    login: { username: r.username ?? '', password: r.password ?? '', uris: r.uri ? [{ match: null, uri: r.uri }] : [], totp: null },
-    collectionIds: null,
-  }));
+  const items = rows.map((r) => ({ type: 1, folderId: `f${folderNames.indexOf(r.folder)}`, name: r.name, notes: r.notes ?? '', favorite: false, login: { username: r.username ?? '', password: r.password ?? '', uris: r.uri ? [{ match: null, uri: r.uri }] : [], totp: null }, collectionIds: null }));
   return json(res, 200, { encrypted: false, folders, items });
 }
 
-/** zero-input vault (user ruling): create the account with a GENERATED
- * master password kept in the local store, refresh every secret item
- * inside it (purge + import), then close signups. Re-runnable — a re-run
- * re-syncs the items. */
-/** reopen signups (they close after every successful setup — but a
- * WIPED vault with a store that still says "closed" must be able to
- * register its account again; found live 2026-08-28) */
 async function reopenVaultSignups(res, run, base, fetchImpl) {
-  const shared = loadStack(SHARED_STACK);
-  const v = loadLocalValues(shared);
-  saveLocalValues(shared, { ...v, VAULT_SIGNUPS_ALLOWED: '' });
-  await run(res, 'reopen vault signups for the fresh vault (closed again right after)', process.execPath,
-    [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
-  await run(res, 'restart the shared stack', 'docker', [...composeArgs(SHARED_STACK), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(SHARED_STACK) });
+  const shared = loadStack(LCL_SHARED);
+  saveLocalValues(shared, { ...loadLocalValues(shared), VAULT_SIGNUPS_ALLOWED: '' });
+  await run(res, 'reopen vault signups for the fresh vault (closed again right after)', process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', LCL_SHARED], { cwd: ROOT });
+  await run(res, 'restart the shared stack', 'docker', [...composeArgs(LCL_SHARED), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(LCL_SHARED) });
   const deadline = Date.now() + 90000;
   for (;;) {
     try {
@@ -1860,52 +1537,36 @@ async function reopenVaultSignups(res, run, base, fetchImpl) {
   }
 }
 
-/** sign in, or create the account — reopening signups once when a WIPED
- * vault sits behind a store that still says signups-closed. Returns the
- * access token, or null after writing the failure to the stream. */
 async function vaultEnsureAccount(res, run, base, account, fetchImpl) {
   let token = await vaultLogin(base, account.register.email, account.hash, fetchImpl);
-  if (token) {
-    res.write('account already exists — signed in with the stored master password ✓\n');
-    return token;
-  }
+  if (token) { res.write('account already exists — signed in with the stored master password ✓\n'); return token; }
   let reg = await vaultRegister(base, account.register, fetchImpl);
   if (!reg.ok) {
-    // vaultwarden's refusal is ambiguous ("Registration not allowed or
-    // user already exists") — closed signups from a previous run are
-    // the common cause; reopen once and retry before giving up
     res.write(`registration refused (${reg.status}) — reopening signups once and retrying\n`);
-    if (!(await reopenVaultSignups(res, run, base, fetchImpl))) {
-      res.write('the vault never came back after the restart — check step 4 status, then retry\n');
-      return null;
-    }
+    if (!(await reopenVaultSignups(res, run, base, fetchImpl))) { res.write('the vault never came back after the restart — retry\n'); return null; }
     reg = await vaultRegister(base, account.register, fetchImpl);
   }
-  if (!reg.ok) {
-    res.write(`could not create the account (${reg.status})\nan account for this email exists with a DIFFERENT master password — Delete shared services (wipes the vault volume) and re-run, or change VAULT_ADMIN_EMAIL in the store\n`);
-    return null;
-  }
+  if (!reg.ok) { res.write(`could not create the account (${reg.status})\nan account for this email exists with a DIFFERENT master password — wipe the shared stack and re-run, or change the vault account in the wizard\n`); return null; }
   res.write('account created ✓\n');
   token = await vaultLogin(base, account.register.email, account.hash, fetchImpl);
-  if (!token) res.write('login failed right after registration — is the vault healthy (step 4 status)?\n');
+  if (!token) res.write('login failed right after registration — is the vault healthy?\n');
   return token;
 }
 
 async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
-  const shared = loadStack(SHARED_STACK);
-  const values = loadLocalValues(shared);
-  // pgadmin-style resolvable-TLD address; any inbox-less email works
-  const email = values.VAULT_ADMIN_EMAIL ?? 'admin@munni.dev';
-  const password = values.VAULT_MASTER_PASSWORD ?? randomBytes(16).toString('base64url');
-  saveLocalValues(shared, { ...values, VAULT_ADMIN_EMAIL: email, VAULT_MASTER_PASSWORD: password });
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  const shared = loadStack(LCL_SHARED);
+  const v = wizardValues(LCL);
+  const email = v.VAULT_ADMIN_EMAIL || `vault@munni.${LCL}`;
+  const password = v.VAULT_MASTER_PASSWORD || randomBytes(16).toString('base64url');
+  setWizardValues({ VAULT_ADMIN_EMAIL: email, VAULT_MASTER_PASSWORD: password }, LCL);
+  streamHead(res);
   const run = stepRunner(spawnImpl);
   const base = shared.urls.vault;
   res.write(`▶ vault account ${email} — sign in, create when missing\n`);
   const account = buildAccount(email, password);
   const token = await vaultEnsureAccount(res, run, base, account, fetchImpl);
   if (!token) return res.end('[exit 1]\n');
-  res.write('▶ refresh the secret items (purge + import, grouped in per-environment folders)\n');
+  res.write('▶ refresh the secret items (purge + import, one folder per stack)\n');
   await vaultPurge(base, token, account.hash, fetchImpl);
   const rows = buildVaultItems();
   const folderNames = [...new Set(rows.map((r) => r.folder))];
@@ -1913,80 +1574,51 @@ async function vaultSetupEndpoint(req, res, spawnImpl, fetchImpl) {
   const ciphers = rows.map((r) => buildCipher(account.userKeys, r));
   const folderRelationships = rows.map((r, i) => ({ key: i, value: folderNames.indexOf(r.folder) }));
   const imp = await vaultImport(base, token, { ciphers, folders, folderRelationships }, fetchImpl);
-  if (!imp.ok) {
-    res.write(`import failed (${imp.status} ${(await imp.text().catch(() => '')).slice(0, 200)})\n`);
-    return res.end('[exit 1]\n');
-  }
+  if (!imp.ok) { res.write(`import failed (${imp.status} ${(await imp.text().catch(() => '')).slice(0, 200)})\n`); return res.end('[exit 1]\n'); }
   res.write(`${ciphers.length} items in ${folders.length} folders ✓ (re-running this refreshes them)\n`);
-  const v2 = loadLocalValues(shared);
-  if (v2.VAULT_SIGNUPS_ALLOWED !== 'false') {
-    saveLocalValues(shared, { ...v2, VAULT_SIGNUPS_ALLOWED: 'false' });
-    await run(res, 'close vault signups (nobody else on the network can register)', process.execPath,
-      [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', SHARED_STACK], { cwd: ROOT });
-    await run(res, 'restart the shared stack', 'docker', [...composeArgs(SHARED_STACK), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(SHARED_STACK) });
+  const own = loadLocalValues(shared);
+  if (own.VAULT_SIGNUPS_ALLOWED !== 'false') {
+    saveLocalValues(shared, { ...own, VAULT_SIGNUPS_ALLOWED: 'false' });
+    await run(res, 'close vault signups (nobody else on the network can register)', process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', LCL_SHARED], { cwd: ROOT });
+    await run(res, 'restart the shared stack', 'docker', [...composeArgs(LCL_SHARED), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(LCL_SHARED) });
   }
-  res.write(`\nDone. Vault → ${base} · ${email} · master password under Reveal secrets.\n(Use it with the real Bitwarden apps/extension pointed at that server url.)\n`);
+  res.write(`\nDone. Vault → ${base} · ${email} · master password under Reveal secrets.\n`);
   return res.end('\n[exit 0]\n');
 }
 
-/** every manifest operator name may carry a value INTO a validation —
- * transient use only, never stored, never logged */
-const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator' || /^IAC_LOGTO_[A-Z]+_M2M_(ID|SECRET)$/.test(s.name)).map((s) => s.name));
+/* ── credential checks (the tiles' Check) ─────────────────────────── */
+const VALIDATABLE_NAMES = new Set(MANIFEST.secrets.filter((s) => s.owner === 'operator' || /^LOGTO_[A-Z]+_M2M_(ID|SECRET)$/.test(s.name)).map((s) => s.name));
 
 async function validateEndpoint(req, res, validateImpl) {
   const body = await readBody(req);
-  // pasted field values win; the family store fills the gaps so "Check"
-  // also re-verifies values stored earlier — via pickStack, so a
-  // registry with no environments (mid delete/recreate) still reads
-  // the surviving SHARED store instead of throwing on a phantom env
-  const values = { ...familyValues(loadStack(pickStack(body.stack))) };
+  const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : LCL;
+  // pasted field values win; the wizard's store fills the gaps so Check re-verifies values stored earlier
+  const values = { ...wizardValues(platform) };
   for (const [name, value] of Object.entries(body.values ?? {})) {
     if (VALIDATABLE_NAMES.has(name) && typeof value === 'string' && value) values[name] = value;
   }
-  // the sign-in callbacks the page wants judged alongside the credentials
-  // (Google/Apple answer a redirect check without a user)
-  const redirectUris = (Array.isArray(body.redirectUris) ? body.redirectUris : [])
-    .filter((u) => typeof u === 'string' && /^https?:\/\/[^\s"'<>]+$/.test(u))
-    .slice(0, 12);
-  // the family's app bundle ids — an App ID pasted as Apple client id is
-  // the classic mix-up, and only the helper knows the ids to compare
-  const iosAppIds = [...new Set(['app.munni', 'app.munni.dev', ...LOCAL_ENVS().map((name) => loadStack(name).native?.iosAppId).filter(Boolean)])];
+  const redirectUris = (Array.isArray(body.redirectUris) ? body.redirectUris : []).filter((u) => typeof u === 'string' && /^https?:\/\/[^\s"'<>]+$/.test(u)).slice(0, 12);
+  const iosAppIds = [...new Set(listPlatforms().flatMap((p) => platformEnvs(p.platform).map((e) => e.store.iosBundleId)))];
   return json(res, 200, await validateImpl(String(body.provider ?? ''), values, { redirectUris, iosAppIds }));
 }
 
 function serveHtml(res, token) {
-  const html = readFileSync(HTML, 'utf8').replace(
-    '</head>',
-    `<script>window.__SETUP_HELPER__={token:${JSON.stringify(token)}};</script></head>`,
-  );
+  const html = readFileSync(HTML, 'utf8').replace('</head>', `<script>window.__SETUP_HELPER__={token:${JSON.stringify(token)}};</script></head>`);
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-cache' });
   res.end(html);
 }
 
-/* ── the MACHINE owns the Apple Development certificate (same ruling as
-   the upload keystore; user report 2026-09-08: every local iOS build
-   minted a throwaway cert and pruned the older ones — each prune an
-   Apple "certificate revoked" email). Minted ONCE by the repo's
-   mint-apple-cert workflow (a macOS runner: its p12s import cleanly),
-   pulled back here from the run artifact, shipped into every repo's
-   environment local by the wizard before an iOS build. ── */
+/* ── the machine owns the Apple Development certificate ───────────── */
 const APPLE_CERT_ARTIFACT = 'apple-dev-cert-p12';
 const APPLE_CERT_FILE = 'APPLE_DEV_CERT_P12.b64';
 const APPLE_CERT_SERIAL_FILE = 'APPLE_DEV_CERT_SERIAL.txt';
 const normSerial = (s) => String(s ?? '').trim().toUpperCase().replace(/^0+/, '');
 
-/** does Apple still list the machine's certificate? A revoked or expired
- *  p12 imports without a word and CI would mint throwaways until Apple's
- *  cap (2026-09-09: the wizard's first mint had wiped the hosted track's
- *  certificate; ten piled up in a day) — matched by serial */
 async function appleCertAtApple(values, fetchImpl) {
-  if (!values.APPLE_DEV_CERT_SERIAL) return { state: 'unknown' }; // imported before the mint recorded serials
+  if (!values.APPLE_DEV_CERT_SERIAL) return { state: 'unknown' };
   if (!values.ASC_KEY_ID || !values.ASC_ISSUER_ID || !values.ASC_KEY_P8) return { state: 'no-creds' };
   try {
-    const res = await fetchImpl('https://api.appstoreconnect.apple.com/v1/certificates?filter%5BcertificateType%5D=DEVELOPMENT,IOS_DEVELOPMENT&limit=200', {
-      headers: { authorization: `Bearer ${ascJwt(values)}` },
-      signal: AbortSignal.timeout(20000),
-    });
+    const res = await fetchImpl('https://api.appstoreconnect.apple.com/v1/certificates?filter%5BcertificateType%5D=DEVELOPMENT,IOS_DEVELOPMENT&limit=200', { headers: { authorization: `Bearer ${ascJwt(values)}` }, signal: AbortSignal.timeout(20000) });
     if (!res.ok) return { state: 'error', detail: `App Store Connect answered ${res.status}` };
     const want = normSerial(values.APPLE_DEV_CERT_SERIAL);
     const hit = ((await res.json()).data ?? []).find((c) => normSerial(c.attributes?.serialNumber) === want);
@@ -2000,60 +1632,37 @@ async function appleCertAtApple(values, fetchImpl) {
 }
 
 async function appleCertStatusEndpoint(res, fetchImpl) {
-  const v = loadLocalValues(loadStack(SHARED_STACK));
+  const v = wizardValues();
   const out = { present: Boolean(v.APPLE_DEV_CERT_P12 && v.APPLE_DEV_CERT_PASSWORD), password: Boolean(v.APPLE_DEV_CERT_PASSWORD) };
   if (v.APPLE_DEV_CERT_SERIAL) out.serial = v.APPLE_DEV_CERT_SERIAL;
   if (out.present) out.apple = await appleCertAtApple(v, fetchImpl);
   return json(res, 200, out);
 }
 
-/** Apple revoked or expired the machine's certificate: drop it so the
- *  next iOS build mints again (the wizard calls this by itself) */
 function appleCertForgetEndpoint(res) {
-  const shared = loadStack(SHARED_STACK);
-  const next = { ...loadLocalValues(shared) };
-  delete next.APPLE_DEV_CERT_P12;
-  delete next.APPLE_DEV_CERT_SERIAL;
-  saveLocalValues(shared, next);
+  forgetWizardValues(['APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_SERIAL']);
   return json(res, 200, { ok: true });
 }
 
-/** the p12 password is minted HERE first — the mint workflow encrypts with it */
 function appleCertPasswordEndpoint(res) {
-  const shared = loadStack(SHARED_STACK);
-  const v = loadLocalValues(shared);
-  if (!v.APPLE_DEV_CERT_PASSWORD) saveLocalValues(shared, { ...v, APPLE_DEV_CERT_PASSWORD: randomBytes(24).toString('hex') });
+  if (!wizardValues().APPLE_DEV_CERT_PASSWORD) setWizardValues({ APPLE_DEV_CERT_PASSWORD: randomBytes(24).toString('hex') });
   return json(res, 200, { ok: true });
 }
 
-/** pull the minted p12 out of the workflow run's artifact into the store */
 async function appleCertImportEndpoint(req, res, netFetchImpl) {
   const body = await readBody(req);
   const slug = String(body.slug ?? '');
   const runId = Number(body.runId);
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isInteger(runId) || runId <= 0) {
-    res.write('need the repo slug and the mint run id\n');
-    return res.end('[exit 1]\n');
-  }
-  const shared = loadStack(SHARED_STACK);
-  const values = loadLocalValues(shared);
-  if (!values.IAC_GH_PAT) {
-    res.write('no GitHub token in the machine store — press Store as IAC_GH_PAT on the GitHub tile first\n');
-    return res.end('[exit 1]\n');
-  }
-  const api = (path, init = {}) => netFetchImpl(`https://api.github.com${path}`, {
-    ...init,
-    headers: { authorization: `Bearer ${values.IAC_GH_PAT}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...init.headers },
-    signal: AbortSignal.timeout(30000),
-  });
+  streamHead(res);
+  if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isInteger(runId) || runId <= 0) { res.write('need the repo slug and the mint run id\n'); return res.end('[exit 1]\n'); }
+  const values = wizardValues();
+  if (!values.GH_PAT) { res.write('no GitHub token in the wizard\'s store — connect GitHub first\n'); return res.end('[exit 1]\n'); }
+  const api = (path, init = {}) => netFetchImpl(`https://api.github.com${path}`, { ...init, headers: { authorization: `Bearer ${values.GH_PAT}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...init.headers }, signal: AbortSignal.timeout(30000) });
   try {
     const list = await api(`/repos/${slug}/actions/runs/${runId}/artifacts`);
     if (!list.ok) throw new Error(`GitHub answered ${list.status} listing the run's artifacts`);
     const art = ((await list.json()).artifacts ?? []).find((a) => a.name === APPLE_CERT_ARTIFACT);
-    if (!art) throw new Error(`run ${runId} carries no ${APPLE_CERT_ARTIFACT} artifact — did the mint job fail? (its Preflight names the missing secret)`);
-    // the archive url 302s to blob storage, which refuses a forwarded
-    // Authorization header — hop by hand
+    if (!art) throw new Error(`run ${runId} carries no ${APPLE_CERT_ARTIFACT} artifact — did the mint job fail?`);
     const hop = await api(`/repos/${slug}/actions/artifacts/${art.id}/zip`, { redirect: 'manual' });
     const location = hop.headers?.get?.('location');
     const zipRes = location ? await netFetchImpl(location, { signal: AbortSignal.timeout(60000) }) : hop;
@@ -2061,14 +1670,10 @@ async function appleCertImportEndpoint(req, res, netFetchImpl) {
     const zip = Buffer.from(await zipRes.arrayBuffer());
     const b64 = zipEntry(zip, APPLE_CERT_FILE).toString('utf8').trim();
     if (!/^[A-Za-z0-9+/=]{100,}$/.test(b64)) throw new Error('the artifact does not look like a base64 p12');
-    // the serial rides along since 2026-09-09 (older mints: none → the
-    // validity check reports unknown; CI's own check still guards)
     const serial = zipNames(zip).includes(APPLE_CERT_SERIAL_FILE) ? normSerial(zipEntry(zip, APPLE_CERT_SERIAL_FILE).toString('utf8')) : '';
-    const next = { ...loadLocalValues(shared), APPLE_DEV_CERT_P12: b64 };
-    delete next.APPLE_DEV_CERT_SERIAL;
-    if (serial) next.APPLE_DEV_CERT_SERIAL = serial;
-    saveLocalValues(shared, next);
-    res.write(`Apple Development certificate stored in the machine store ✓${serial ? ` (serial ${serial})` : ''} — every repo's iOS builds sign with it from now on (the whole Apple team shares this one certificate); nothing gets minted or revoked anymore. Apple expires it after a year — the wizard notices and mints again by itself\n`);
+    forgetWizardValues(['APPLE_DEV_CERT_SERIAL']);
+    setWizardValues({ APPLE_DEV_CERT_P12: b64, ...(serial ? { APPLE_DEV_CERT_SERIAL: serial } : {}) });
+    res.write(`Apple Development certificate stored in the wizard's store ✓${serial ? ` (serial ${serial})` : ''} — every environment's iOS builds sign with it (the whole Apple team shares this one certificate). Apple expires it after a year — the wizard notices and mints again.\n`);
     return res.end('[exit 0]\n');
   } catch (e) {
     res.write(`${e.message}\n`);
@@ -2076,31 +1681,23 @@ async function appleCertImportEndpoint(req, res, netFetchImpl) {
   }
 }
 
-/* ── keeps itself up to date (user ruling 2026-09-08: the wizard is a
-   ONE-TIME bootstrap — afterwards CI/CD must update everything). The NAS
-   pulls a bundle through the DSM poller; a PC cannot be pushed to
-   either, so the helper IS the poller: fetch this checkout's branch,
-   fast-forward when the tree is clean, re-render every stack after a
-   pull, pull the (mutable channel) images, bring the family up, and
-   restart itself once its own code moved. Nothing is pushed here. ── */
+/* ── keeps itself up to date (lcl): the helper IS the poller — fetch the
+   branch, fast-forward when clean, re-render, pull images, bring the
+   family up, restart itself once its own code moved ── */
 const AUTONOMY_TASK = 'munni local helper';
 const AUTONOMY_MIN_MINUTES = 2;
 let autonomyRunning = false;
 let autonomyLastLog = '';
 let autonomyTimer = null;
-let autonomyDeps = null; // set by main only — tests never arm timers
+let autonomyDeps = null;
 let autonomyNextAt = null;
 
-/** run a command quietly and hand back its output */
 const capture = (spawnImpl, cmd, args, opts = {}) => stepRunner(spawnImpl)({ write() {} }, '', cmd, args, opts);
 
 async function autonomyCycle(res, spawnImpl, restartImpl) {
   const log = { text: '' };
   const out = { write(s) { log.text = (log.text + String(s)).slice(-20000); res?.write(s); } };
-  if (autonomyRunning) {
-    out.write('an update check is already running\n');
-    return { code: 1 };
-  }
+  if (autonomyRunning) { out.write('an update check is already running\n'); return { code: 1 }; }
   autonomyRunning = true;
   const run = stepRunner(spawnImpl);
   const git = (label, args) => run(out, label, 'git', args, { cwd: ROOT });
@@ -2113,48 +1710,29 @@ async function autonomyCycle(res, spawnImpl, restartImpl) {
       result.paused = 'origin unreachable (offline?) — images still update';
     } else {
       const behind = Number((await git('commits behind origin', ['rev-list', '--count', `HEAD..origin/${result.branch}`])).out.trim()) || 0;
-      if (behind && dirty) {
-        result.paused = `${behind} new commit(s) on origin/${result.branch}, but this checkout has uncommitted changes (${dirty.split('\n').length} file(s)) — the pull waits for a clean tree; images still update`;
-      } else if (behind) {
+      if (behind && dirty) result.paused = `${behind} new commit(s) on origin/${result.branch}, but this checkout has uncommitted changes (${dirty.split('\n').length} file(s)) — the pull waits for a clean tree; images still update`;
+      else if (behind) {
         const pull = await git(`pull ${behind} commit(s) (fast-forward only)`, ['pull', '--ff-only', '--quiet', 'origin', result.branch]);
         if (pull.code === 0) result.pulled = true;
         else result.paused = 'the pull failed (diverged history?) — fix it by hand, images still update';
-      } else {
-        out.write(`up to date with origin/${result.branch}\n`);
-      }
+      } else out.write(`up to date with origin/${result.branch}\n`);
     }
-    for (const name of LOCAL_STACKS()) {
-      if (!existsSync(join(renderedDir(name), `.env.${name}`))) {
-        out.write(`${name}: not set up yet — skipped\n`);
-        continue;
-      }
+    for (const name of LCL_STACKS()) {
+      if (!existsSync(join(renderedDir(name), `.env.${name}`))) { out.write(`${name}: not set up yet — skipped\n`); continue; }
       if (result.pulled) {
-        // templates only change through a pull — re-render from the store then
         const render = await run(out, `re-render ${name}`, process.execPath, [join(ROOT, 'infra', 'bootstrap.mjs'), '--stack', name], { cwd: ROOT });
-        if (render.code !== 0) {
-          result.failed.push(`${name} (render)`);
-          continue;
-        }
+        if (render.code !== 0) { result.failed.push(`${name} (render)`); continue; }
       }
       const pull = await run(out, `pull ${name}'s images (channel tags move)`, 'docker', [...composeArgs(name), 'pull', '--quiet'], { cwd: renderedDir(name) });
       if (pull.code !== 0) result.failed.push(`${name} (image pull)`);
       const up = await run(out, `bring ${name} up`, 'docker', [...composeArgs(name), 'up', '-d', '--remove-orphans'], { cwd: renderedDir(name) });
       if (up.code !== 0) result.failed.push(`${name} (up)`);
-      for (const m of up.out.matchAll(/Container (\S+)\s+(?:Recreated|Started)/g)) {
-        if (!result.changed.includes(m[1])) result.changed.push(m[1]);
-      }
+      for (const m of up.out.matchAll(/Container (\S+)\s+(?:Recreated|Started)/g)) if (!result.changed.includes(m[1])) result.changed.push(m[1]);
     }
     saveAutonomy({ ...loadAutonomy(), lastCheckAt: result.at, lastResult: result });
-    const verdict = [
-      result.paused ? `paused: ${result.paused}` : (result.pulled ? 'code pulled' : 'code unchanged'),
-      result.changed.length ? `restarted: ${result.changed.join(', ')}` : 'containers unchanged',
-      ...(result.failed.length ? [`FAILED: ${result.failed.join(', ')}`] : []),
-    ].join('; ');
+    const verdict = [result.paused ? `paused: ${result.paused}` : (result.pulled ? 'code pulled' : 'code unchanged'), result.changed.length ? `restarted: ${result.changed.join(', ')}` : 'containers unchanged', ...(result.failed.length ? [`FAILED: ${result.failed.join(', ')}`] : [])].join('; ');
     out.write(`\n${verdict}\n`);
-    if (result.pulled && restartImpl) {
-      out.write('the helper restarts itself to run the new code — reload this page in a few seconds\n');
-      setTimeout(restartImpl, 1500);
-    }
+    if (result.pulled && restartImpl) { out.write('the helper restarts itself to run the new code — reload this page in a few seconds\n'); setTimeout(restartImpl, 1500); }
     return { code: result.failed.length ? 1 : 0, result };
   } finally {
     autonomyLastLog = log.text;
@@ -2170,47 +1748,26 @@ function rearmAutonomy() {
   const state = loadAutonomy();
   if (!state.enabled) return;
   const every = Math.max(AUTONOMY_MIN_MINUTES, Number(state.intervalMinutes) || 10) * 60000;
-  const tick = () => {
-    autonomyNextAt = new Date(Date.now() + every).toISOString();
-    return autonomyCycle(null, autonomyDeps.spawnImpl, autonomyDeps.restartImpl).catch(() => {});
-  };
+  const tick = () => { autonomyNextAt = new Date(Date.now() + every).toISOString(); return autonomyCycle(null, autonomyDeps.spawnImpl, autonomyDeps.restartImpl).catch(() => {}); };
   autonomyTimer = setInterval(tick, every);
   autonomyTimer.unref?.();
-  // a logon start (or turning it on) applies what landed meanwhile soon,
-  // not a full interval later
   setTimeout(tick, 45000).unref?.();
   autonomyNextAt = new Date(Date.now() + 45000).toISOString();
 }
 
-/** main hands the real spawn + the self-restart in; tests never call this */
 export function armAutonomy(deps) {
   autonomyDeps = deps;
   rearmAutonomy();
 }
 
-// Task Scheduler through the built-in PowerShell module: schtasks.exe
-// refuses an ONLOGON trigger without elevation ("Access is denied",
-// found live 2026-09-08), Register-ScheduledTask registers a task for
-// the current user's own logon as a plain user
 const PS = 'powershell.exe';
 const psArgs = (script) => ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', script];
-const taskExists = async (spawnImpl) => process.platform === 'win32'
-  ? (await capture(spawnImpl, PS, psArgs(`Get-ScheduledTask -TaskName '${AUTONOMY_TASK}' -ErrorAction Stop | Out-Null`), { cwd: ROOT })).code === 0
-  : null;
+const taskExists = async (spawnImpl) => process.platform === 'win32' ? (await capture(spawnImpl, PS, psArgs(`Get-ScheduledTask -TaskName '${AUTONOMY_TASK}' -ErrorAction Stop | Out-Null`), { cwd: ROOT })).code === 0 : null;
 
 async function autonomyStatusEndpoint(res, spawnImpl) {
   const state = loadAutonomy();
   const branch = (await capture(spawnImpl, 'git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: ROOT })).out.trim() || null;
-  return json(res, 200, {
-    ...state,
-    running: autonomyRunning,
-    armed: Boolean(autonomyTimer),
-    nextCheckAt: autonomyNextAt,
-    logonTask: await taskExists(spawnImpl),
-    branch,
-    checkout: ROOT,
-    lastLog: autonomyLastLog.slice(-4000),
-  });
+  return json(res, 200, { ...state, running: autonomyRunning, armed: Boolean(autonomyTimer), nextCheckAt: autonomyNextAt, logonTask: await taskExists(spawnImpl), branch, checkout: ROOT, lastLog: autonomyLastLog.slice(-4000) });
 }
 
 async function autonomySetEndpoint(req, res) {
@@ -2224,20 +1781,15 @@ async function autonomySetEndpoint(req, res) {
 }
 
 async function autonomyRunEndpoint(res, spawnImpl, restartImpl) {
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
+  streamHead(res);
   const { code } = await autonomyCycle(res, spawnImpl, restartImpl);
   return res.end(`\n[exit ${code}]\n`);
 }
 
-/** Task Scheduler (built-in, current user, no admin): the helper starts
- * at every logon from autonomy.cmd — minimized, no browser tab */
 async function autonomyLogonEndpoint(req, res, spawnImpl) {
   const body = await readBody(req);
-  res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
-  if (process.platform !== 'win32') {
-    res.write('the logon task is Windows-only (Task Scheduler) — on macOS/Linux start the helper from a login item or a user service\n');
-    return res.end('[exit 1]\n');
-  }
+  streamHead(res);
+  if (process.platform !== 'win32') { res.write('the logon task is Windows-only (Task Scheduler) — on macOS/Linux start the helper from a login item or a user service\n'); return res.end('[exit 1]\n'); }
   const run = stepRunner(spawnImpl);
   if (body.install === false) {
     const del = await run(res, 'remove the logon task', PS, psArgs(`Unregister-ScheduledTask -TaskName '${AUTONOMY_TASK}' -Confirm:$false -ErrorAction Stop`), { cwd: ROOT });
@@ -2253,29 +1805,36 @@ async function autonomyLogonEndpoint(req, res, spawnImpl) {
     "'registered'",
   ].join('; ');
   const create = await run(res, 'register the logon task (Task Scheduler, current user, no admin needed)', PS, psArgs(script), { cwd: ROOT });
-  if (create.code !== 0) {
-    res.write('registering failed — open Task Scheduler once to see whether tasks may be created for this user\n');
-    return res.end('[exit 1]\n');
-  }
-  res.write(`the helper now starts at every logon from ${cmdFile} (minimized window, no browser tab) — with automatic updates on it keeps the family current by itself\n`);
+  if (create.code !== 0) { res.write('registering failed — open Task Scheduler once to see whether tasks may be created for this user\n'); return res.end('[exit 1]\n'); }
+  res.write(`the helper now starts at every logon from ${cmdFile} (minimized window, no browser tab)\n`);
   return res.end('[exit 0]\n');
 }
 
 /** build the handler; spawn/probe/validate deps injectable for tests */
 export function createApp({ token, probeImpl = probe, runImpl = runToStream, validateImpl = validate, spawnImpl = spawn, vaultFetchImpl = insecureFetch, netFetchImpl = localAwareFetch, restartImpl = null } = {}) {
+  const url = (req) => new URL(req.url, 'http://localhost');
   const routes = {
-    'GET /api/local/status': (req, res) => statusEndpoint(res, probeImpl),
+    'GET /api/status': (req, res) => statusEndpoint(res, probeImpl),
+    'GET /api/wizard/values': (req, res) => wizardValuesGet(res, url(req)),
+    'POST /api/wizard/values': (req, res) => wizardValuesSet(req, res),
+    'POST /api/platforms/vault-account': (req, res) => vaultAccountEndpoint(req, res),
+    'POST /api/platforms/save': (req, res) => platformSaveEndpoint(req, res),
+    'POST /api/config/commit': (req, res) => configCommitEndpoint(req, res, spawnImpl),
+    'POST /api/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
+    'POST /api/envs/update': (req, res) => envUpdateEndpoint(req, res, spawnImpl),
+    'POST /api/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
+    'POST /api/envs/store-id': (req, res) => storeIdEndpoint(req, res, spawnImpl),
+    'GET /api/access/users': (req, res) => accessUsersEndpoint(res, url(req), netFetchImpl),
+    'POST /api/access/toggle': (req, res) => accessToggleEndpoint(req, res, netFetchImpl),
     'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),
     'POST /api/local/tool': (req, res) => toolEndpoint(req, res, runImpl),
     'POST /api/local/glitchtip-setup': (req, res) => glitchtipSetupEndpoint(req, res, spawnImpl),
     'POST /api/local/logto-setup': (req, res) => logtoSetupEndpoint(req, res, spawnImpl),
     'POST /api/local/cleanup': (req, res) => cleanupEndpoint(req, res, runImpl),
-    'POST /api/local/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
-    'POST /api/local/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
-    'POST /api/local/envs/forget-all': (req, res) => envsForgetAllEndpoint(res),
+    'POST /api/local/wipe': (req, res) => wipeEndpoint(req, res, spawnImpl),
     'GET /api/local/cleanup-check': (req, res) => cleanupCheckEndpoint(res, spawnImpl),
     'POST /api/local/store-retire': (req, res) => storeRetireEndpoint(req, res, netFetchImpl),
-    'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
+    'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, url(req), netFetchImpl),
     'POST /api/local/firebase-setup': (req, res) => firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),
@@ -2287,27 +1846,26 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/local/autonomy': (req, res) => autonomySetEndpoint(req, res),
     'POST /api/local/autonomy/run': (req, res) => autonomyRunEndpoint(res, spawnImpl, restartImpl),
     'POST /api/local/autonomy/logon': (req, res) => autonomyLogonEndpoint(req, res, spawnImpl),
-    'POST /api/local/new-store-package': (req, res) => newStorePackageEndpoint(req, res, spawnImpl),
     'POST /api/local/trust-ca': (req, res) => trustCaEndpoint(res, spawnImpl, netFetchImpl),
-    'GET /api/local/ca-trust': (req, res) => caTrustEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl, spawnImpl),
-    'GET /api/local/registry': (req, res) => registryEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
-    'GET /api/local/nas-probe': (req, res) => nasProbeEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl, vaultFetchImpl),
+    'GET /api/local/ca-trust': (req, res) => caTrustEndpoint(res, url(req), netFetchImpl, spawnImpl),
+    'GET /api/local/registry': (req, res) => registryEndpoint(res, url(req), netFetchImpl),
+    'GET /api/local/nas-probe': (req, res) => nasProbeEndpoint(res, url(req), netFetchImpl, vaultFetchImpl),
     'POST /api/local/gh-pat': (req, res) => ghPatEndpoint(req, res),
     'GET /api/local/secrets': (req, res) => secretsEndpoint(res),
     'GET /api/local/vault-export': (req, res) => vaultExportEndpoint(res),
     'POST /api/local/vault-setup': (req, res) => vaultSetupEndpoint(req, res, spawnImpl, vaultFetchImpl),
     'GET /api/local/lan': (req, res) => lanGetEndpoint(res),
     'POST /api/local/lan': (req, res) => lanSetEndpoint(req, res, spawnImpl, probeImpl, netFetchImpl),
-    'GET /api/local/native-config': (req, res) => nativeConfigEndpoint(res, new URL(req.url, 'http://localhost'), netFetchImpl),
+    'GET /api/local/native-config': (req, res) => nativeConfigEndpoint(res, url(req), netFetchImpl),
     'POST /api/validate': (req, res) => validateEndpoint(req, res, validateImpl),
   };
   return async function handle(req, res) {
     if (!hostOk(req)) return json(res, 403, { error: 'bad host' });
-    const url = new URL(req.url, 'http://localhost');
-    if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) return serveHtml(res, token);
-    if (!url.pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' });
+    const u = url(req);
+    if (req.method === 'GET' && (u.pathname === '/' || u.pathname === '/index.html')) return serveHtml(res, token);
+    if (!u.pathname.startsWith('/api/')) return json(res, 404, { error: 'not found' });
     if (req.headers['x-setup-token'] !== token) return json(res, 401, { error: 'bad token' });
-    const route = routes[`${req.method} ${url.pathname}`];
+    const route = routes[`${req.method} ${u.pathname}`];
     if (!route) return json(res, 404, { error: 'not found' });
     try {
       return await route(req, res);
@@ -2327,7 +1885,6 @@ const openBrowser = (url) => {
   spawn(cmd, args, { shell: false, stdio: 'ignore' }).on('error', () => {});
 };
 
-/** is the thing on this port ALREADY a munni helper? (double-started) */
 async function isRunningHelper(port) {
   try {
     const res = await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(1500) });
@@ -2337,21 +1894,12 @@ async function isRunningHelper(port) {
   }
 }
 
-/** hand over to a fresh process running the just-pulled code: stop
- * listening first (the double-start guard would otherwise see THIS
- * helper and exit the new one), let the event loop drain, and fall back
- * to a hard exit only if something keeps it alive */
 function restartHelper(server) {
   clearInterval(autonomyTimer);
   autonomyTimer = null;
   server.close();
   server.closeAllConnections?.();
-  spawn(process.execPath, [fileURLToPath(import.meta.url)], {
-    detached: true,
-    stdio: 'ignore',
-    shell: false,
-    env: { ...process.env, SETUP_NO_OPEN: '1', SETUP_RESTART_WAIT: '1500' },
-  }).unref();
+  spawn(process.execPath, [fileURLToPath(import.meta.url)], { detached: true, stdio: 'ignore', shell: false, env: { ...process.env, SETUP_NO_OPEN: '1', SETUP_RESTART_WAIT: '1500' } }).unref();
   setTimeout(() => process.exit(0), 3000).unref();
 }
 
@@ -2359,35 +1907,28 @@ function startHelper(port, attemptsLeft) {
   const token = randomBytes(16).toString('hex');
   let server = null;
   server = createServer(createApp({ token, restartImpl: () => restartHelper(server) }));
-  server.requestTimeout = 0; // compose builds stream for many minutes
+  server.requestTimeout = 0;
   server.on('error', async (err) => {
     if (err.code !== 'EADDRINUSE') throw err;
     if (await isRunningHelper(port)) {
       const url = `http://127.0.0.1:${port}/`;
       console.log(`the munni setup helper is ALREADY running → ${url}`);
-      console.log('(opened it in your browser — nothing else to do. Close the other window first if you really want a fresh one.)');
       openBrowser(url);
-      return; // exit 0 — this is the happy path, not an error
-    }
-    if (attemptsLeft > 0) {
-      console.log(`port ${port} is taken by something else — trying ${port + 1}`);
-      startHelper(port + 1, attemptsLeft - 1);
       return;
     }
+    if (attemptsLeft > 0) { console.log(`port ${port} is taken by something else — trying ${port + 1}`); startHelper(port + 1, attemptsLeft - 1); return; }
     console.error(`ports ${port - 3}-${port} are all taken. Free one (or set SETUP_PORT) and start me again.`);
     process.exitCode = 1;
   });
   server.listen(port, '127.0.0.1', () => {
     const url = `http://127.0.0.1:${port}/`;
     console.log(`munni setup helper ready → ${url}`);
-    console.log('(the page it serves can now run the local setup for you; Ctrl+C stops the helper)');
     openBrowser(url);
     armAutonomy({ spawnImpl: spawn, restartImpl: () => restartHelper(server) });
-    if (loadAutonomy().enabled) console.log('automatic updates are ON — this helper keeps the local family current by itself');
+    if (loadAutonomy().enabled) console.log('automatic updates are ON — this helper keeps the lcl family current by itself');
   });
 }
 
 if (isMain) {
-  // a self-restart waits for its predecessor to let go of the port
   setTimeout(() => startHelper(Number(process.env.SETUP_PORT ?? 8377), 3), Number(process.env.SETUP_RESTART_WAIT ?? 0));
 }

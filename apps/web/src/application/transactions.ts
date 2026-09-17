@@ -9,20 +9,20 @@ export type { SpaceAccount, SpaceTx, TxTransformFields };
 
 /**
  * Application layer (architecture R1): screens ask questions and issue
- * commands here — they no longer know whether a transaction is a legacy
- * merged row or a feed row joined with this space's overlay, nor that
- * Dexie exists. The feed/overlay model (feature B) lives entirely
- * behind these hooks.
+ * commands here — they no longer know whether a transaction is one of
+ * the space's own rows or a feed row joined with this space's overlay,
+ * nor that Dexie exists. The feed/overlay model (feature B) lives
+ * entirely behind these hooks.
  */
 
-/** every transaction the active space sees (legacy + attached feeds), unsorted */
+/** every transaction the active space sees (own rows + attached feeds), unsorted */
 export function useSpaceTransactions(): SpaceTx[] | undefined {
   const { store, spaceId } = useData();
   // #361: remount cache — tab returns render the last rows instantly
   return useQuery(store, async () => visibleTransactions(store, spaceId), [spaceId], undefined, `spaceTx:${spaceId}`);
 }
 
-/** every account the active space sees (legacy + attached), with link info */
+/** every account the active space sees (own + attached), with link info */
 export function useSpaceAccounts(): SpaceAccount[] | undefined {
   const { store, spaceId } = useData();
   // #361: remount cache — tab returns render the last rows instantly
@@ -45,8 +45,8 @@ export function useSpaceTransaction(txId: string): SpaceTx | undefined {
 
 /**
  * The single write path for a space's opinion about a transaction
- * (category, type, notes, splits, reimbursements, review flag): overlay
- * for feed rows, in place for legacy rows.
+ * (category, notes, splits, reimbursements, review flag): overlay for
+ * feed rows, in place for the space's own rows.
  *
  * `activity` names the history line this gesture writes — default
  * 'txEdit'; pass a more specific kind, or null when the caller logs a

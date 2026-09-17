@@ -127,15 +127,14 @@ describe('Repo', () => {
 
   it('model invariants block a malformed local write, whole and clean', async () => {
     const repo = makeRepo('devA', db, () => ++wallMs);
-    // a screen's validation leaked: positive amount typed expense
+    // a screen's validation leaked: fractional cents
     await expect(
       repo.upsert('transaction', 's1', 't1', {
         accountId: 'a',
         date: '2026-07-01',
-        amountCents: 1_000,
+        amountCents: 10.5,
         currency: 'EUR',
         merchant: 'X',
-        txType: 'expense',
         needsReview: 0,
       }),
     ).rejects.toMatchObject({ name: 'InvariantViolation' });
@@ -151,7 +150,6 @@ describe('Repo', () => {
         amountCents: -1_000,
         currency: 'EUR',
         merchant: 'X',
-        txType: 'expense',
         needsReview: 0,
         splits: [{ catId: '', amountCents: 500 }],
       }),
@@ -165,7 +163,6 @@ describe('Repo', () => {
         amountCents: -1_000,
         currency: 'EUR',
         merchant: 'X',
-        txType: 'expense',
         needsReview: 0,
         splits: [
           { catId: 'g', amountCents: 1_000, cats: [{ catId: 'g', amountCents: 700 }, { catId: 'h', amountCents: 200 }] },
@@ -181,7 +178,6 @@ describe('Repo', () => {
         amountCents: -1_000,
         currency: 'EUR',
         merchant: 'X',
-        txType: 'expense',
         needsReview: 0,
         cats: [{ catId: 'g', amountCents: 700 }, { catId: 'h', amountCents: 200 }],
       }),
@@ -193,7 +189,6 @@ describe('Repo', () => {
       amountCents: -1_000,
       currency: 'EUR',
       merchant: 'X',
-      txType: 'expense',
       needsReview: 0,
       cats: [{ catId: 'g', amountCents: 700 }, { catId: 'h', amountCents: 300 }],
     });
@@ -213,6 +208,7 @@ describe('Repo', () => {
         hlc: '2026-07-01T00:00:00.000Z-0000-devB',
       },
     ]);
-    expect((await db.transactions.get('remote1'))?.txType).toBe('expense');
+    // the row landed as sent — every device converges on the same rows
+    expect((await db.transactions.get('remote1'))?.merchant).toBe('X');
   });
 });

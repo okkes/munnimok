@@ -1,6 +1,6 @@
 import { UNCATEGORIZED_ID } from './categories';
 import { merchantKey } from './merchantKey';
-import type { TxSplitCat, TxType } from '@/db/types';
+import type { TxSplitCat } from '@/db/types';
 
 /**
  * History-based prediction: how the user actually handled a merchant
@@ -31,7 +31,6 @@ const decayedWeight = (date: string, today: string): number => {
 
 export interface MerchantStats {
   catId: string;
-  txType: TxType;
   /** money direction this stat was learned from (refunds ≠ purchases) */
   sign: 1 | -1;
   count: number;
@@ -53,7 +52,6 @@ export type MerchantMemory = Map<string, MerchantStats[]>;
 export interface MemoryInput {
   merchant: string;
   catId?: string;
-  txType: TxType;
   needsReview: 0 | 1;
   date: string;
   amountCents: number;
@@ -74,10 +72,7 @@ const teachableSpread = (cats: TxSplitCat[] | undefined): { catId: string; pct: 
 function absorbRow(entry: MerchantStats, row: MemoryInput, weight: number): void {
   entry.count += 1;
   entry.weight += weight;
-  if (row.date >= entry.lastDate) {
-    entry.lastDate = row.date;
-    entry.txType = row.txType; // the latest opinion also owns the type
-  }
+  if (row.date >= entry.lastDate) entry.lastDate = row.date;
   if (entry.amounts.length < 8) entry.amounts.push(Math.abs(row.amountCents));
   const spread = teachableSpread(row.cats);
   if (spread) {
@@ -98,7 +93,7 @@ export function buildMerchantMemory(rows: readonly MemoryInput[], today?: string
     const stats = memory.get(key) ?? [];
     let entry = stats.find((s) => s.catId === row.catId && s.sign === sign);
     if (!entry) {
-      entry = { catId: row.catId, txType: row.txType, sign, count: 0, weight: 0, lastDate: row.date, amounts: [], spreadCount: 0, eventVotes: new Map() };
+      entry = { catId: row.catId, sign, count: 0, weight: 0, lastDate: row.date, amounts: [], spreadCount: 0, eventVotes: new Map() };
       stats.push(entry);
     }
     absorbRow(entry, row, decayedWeight(row.date, now));
@@ -112,7 +107,6 @@ const closeAmounts = (a: number, b: number): boolean => Math.abs(a - b) <= Math.
 
 export interface MemoryHit {
   catId: string;
-  txType: TxType;
   /** occurrences backing this prediction */
   evidence: number;
   /** an earlier occurrence had ~this exact amount (subscription-like) */
@@ -138,7 +132,7 @@ function hitFrom(stat: MerchantStats, amountMatch: boolean): MemoryHit {
   }
   // one long-ago event link is noise; ~two recent ones are a habit
   if (best < 1.2) eventId = undefined;
-  return { catId: stat.catId, txType: stat.txType, evidence: stat.count, amountMatch, cats, eventId };
+  return { catId: stat.catId, evidence: stat.count, amountMatch, cats, eventId };
 }
 
 export function predictFromMemory(memory: MerchantMemory, merchant: string, amountCents: number): MemoryHit | null {

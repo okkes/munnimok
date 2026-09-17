@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { AccountRow, TransactionRow } from '@/db/types';
+import type { AccountRow, TxView } from '@/db/types';
 import { categoryBreakdown, contributionCents, overviewSummary, txsForKind } from './overview';
 import { inPeriod, periodHistory } from './periods';
 
 const PERIOD = { start: '2026-07-01', end: '2026-07-31' };
 
-const tx = (partial: Partial<TransactionRow>): TransactionRow =>
+const tx = (partial: Partial<TxView>): TxView =>
   ({
     id: Math.random().toString(36).slice(2),
     spaceId: 's',
@@ -19,7 +19,7 @@ const tx = (partial: Partial<TransactionRow>): TransactionRow =>
     deleted: 0,
     fieldVersions: {},
     ...partial,
-  }) as TransactionRow;
+  }) as TxView;
 
 const accounts = new Map<string, AccountRow>([
   ['checking', { id: 'checking', type: 'checking' } as AccountRow],
@@ -102,7 +102,7 @@ describe('overviewSummary', () => {
       tx({ txType: 'income', catId: 'fundingIn', amountCents: 10_000 }),
       tx({ txType: 'debtPayment', catId: 'loanRepayment', amountCents: -30_000 }),
       tx({ amountCents: -99_900, date: '2026-06-30' }), // outside period
-      tx({ amountCents: -99_900, deleted: 1 } as Partial<TransactionRow>),
+      tx({ amountCents: -99_900, deleted: 1 } as Partial<TxView>),
     ];
     const summary = overviewSummary(txs, accounts, PERIOD);
     expect(summary).toEqual({

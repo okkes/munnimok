@@ -26,12 +26,6 @@ export const GROUPS = [
         ],
       },
       {
-        key: '11-tx-cat-search',
-        title: 'Category picker search',
-        desc: 'Typing in the picker search filters categories across all groups.',
-        tags: ['state'],
-      },
-      {
         key: '12-tx-notes',
         title: 'Notes persist',
         desc: 'Notes save on blur into the local database and survive leaving and reopening the transaction.',
