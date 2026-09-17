@@ -216,40 +216,51 @@ public sealed class GcFetchService(IServiceScopeFactory scopeFactory, ILogger<Gc
         var linkedAccounts = await db.GcLinkedAccounts.ToListAsync(ct);
         foreach (var linked in linkedAccounts)
         {
-            // #240 r2: a "backfilled" account whose feed never received a
-            // single row keeps retrying the full window every tick until
-            // data actually exists (dropped rows on an old binary, an
-            // ASPSP answering empty, an erased feed) — the 429 backoff
-            // below still guards the provider budget
-            var emptyBackfill = await EmptyBackfillAsync(db, linked, ct);
-            if (!emptyBackfill && !GcSchedule.IsDue(linked, DateTimeOffset.UtcNow)) continue;
-            if (_rateLimitedUntil.TryGetValue(linked.GcAccountId, out var until) && DateTimeOffset.UtcNow < until) continue;
-            try
-            {
-                // every account keeps fetching through the provider that created it
-                var api = registry.Find(linked.Provider);
-                if (api is null)
-                {
-                    // the provider left this install's configuration: the row
-                    // waits — never fetched through a different provider
-                    logger.LogWarning("gc fetch: provider {Provider} for {Iban} is not configured — skipped", linked.Provider, linked.Iban);
-                    continue;
-                }
-                await FetchAccountAsync(scope.ServiceProvider, db, api, linked, ct);
-            }
-            catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-            {
-                // the ~4-calls-per-endpoint daily budget is spent — stand
-                // down for 12h instead of hammering the remaining calls
-                _rateLimitedUntil[linked.GcAccountId] = DateTimeOffset.UtcNow.AddHours(12);
-                if (logger.IsEnabled(LogLevel.Information))
-                    logger.LogInformation(ex, "gc rate limit for {Iban} — deferring 12h", linked.Iban);
-            }
-            catch (HttpRequestException ex)
-            {
-                // expired consent or other 4xx/5xx — wait for the next cycle
-                logger.LogWarning(ex, "gc fetch failed for {Iban}", linked.Iban);
-            }
+            if (await SkipThisTickAsync(db, linked, ct)) continue;
+            await FetchGuardedAsync(scope.ServiceProvider, db, registry, linked, ct);
+        }
+    }
+
+    /// <summary>#240 r2: a "backfilled" account whose feed never received a
+    /// single row keeps retrying the full window every tick until data
+    /// actually exists (dropped rows on an old binary, an ASPSP answering
+    /// empty, an erased feed); otherwise the schedule decides — and an
+    /// account whose provider budget is spent (429) stands down for 12h.</summary>
+    private async Task<bool> SkipThisTickAsync(AppDbContext db, GcLinkedAccount linked, CancellationToken ct)
+    {
+        var emptyBackfill = await EmptyBackfillAsync(db, linked, ct);
+        if (!emptyBackfill && !GcSchedule.IsDue(linked, DateTimeOffset.UtcNow)) return true;
+        return _rateLimitedUntil.TryGetValue(linked.GcAccountId, out var until) && DateTimeOffset.UtcNow < until;
+    }
+
+    /// <summary>one account through the provider that created it — provider
+    /// trouble is logged and never stops the loop</summary>
+    private async Task FetchGuardedAsync(IServiceProvider services, AppDbContext db, BankProviderRegistry registry, GcLinkedAccount linked, CancellationToken ct)
+    {
+        var api = registry.Find(linked.Provider);
+        if (api is null)
+        {
+            // the provider left this install's configuration: the row
+            // waits — never fetched through a different provider
+            logger.LogWarning("gc fetch: provider {Provider} for {Iban} is not configured — skipped", linked.Provider, linked.Iban);
+            return;
+        }
+        try
+        {
+            await FetchAccountAsync(services, db, api, linked, ct);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+        {
+            // the ~4-calls-per-endpoint daily budget is spent — stand
+            // down for 12h instead of hammering the remaining calls
+            _rateLimitedUntil[linked.GcAccountId] = DateTimeOffset.UtcNow.AddHours(12);
+            if (logger.IsEnabled(LogLevel.Information))
+                logger.LogInformation(ex, "gc rate limit for {Iban} — deferring 12h", linked.Iban);
+        }
+        catch (HttpRequestException ex)
+        {
+            // expired consent or other 4xx/5xx — wait for the next cycle
+            logger.LogWarning(ex, "gc fetch failed for {Iban}", linked.Iban);
         }
     }
 
