@@ -140,10 +140,11 @@ export async function getApiCapabilities(): Promise<ApiCapabilities> {
   if (identity && identity.kind !== 'user') return { gocardless: false };
   try {
     const res = await fetch(`${config.apiUrl}/health`, { signal: AbortSignal.timeout(3000) });
+    // the handshake fields are the server's contract (lib/protocol.ts)
     const body = (await res.json()) as {
       capabilities?: ApiCapabilities;
-      protocol?: number;
-      minClientProtocol?: number;
+      protocol: number;
+      minClientProtocol: number;
     };
     protocolIssue = protocolIssueFor(body);
     capabilities = body.capabilities ?? { gocardless: false };

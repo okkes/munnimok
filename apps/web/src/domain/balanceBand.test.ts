@@ -11,13 +11,10 @@ describe('balance band modes', () => {
     expect(bandModeOf({ balanceBandMode: 'cash' })).toBe('cash');
   });
 
-  it('#142: the premade modes are fixed formulas — stored exclusions no longer bite', () => {
+  it('#142: the premade modes are fixed formulas', () => {
     expect(bandIncludes('cash', acct('a', 'checking'), {})).toBe(true);
     expect(bandIncludes('cash', acct('a', 'loan'), {})).toBe(false);
-    // an exclusion list left over from the toggle era is inert now
-    expect(bandIncludes('cash', acct('a', 'cash'), { balanceBandExclude: ['a'] })).toBe(true);
     expect(bandIncludes('networth', acct('l', 'loan'), {})).toBe(true);
-    expect(bandIncludes('networth', acct('l', 'loan'), { balanceBandExclude: ['l'] })).toBe(true);
     expect(bandEligible('spendable', acct('a', 'checking'))).toBe(false);
   });
 

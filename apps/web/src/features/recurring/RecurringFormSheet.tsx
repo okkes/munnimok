@@ -261,9 +261,9 @@ export function RecurringFormSheet({ initial, onClose, onDeleted, onSaved, onAcc
     const savedId = await ops.save(form.id, {
       name: form.name.trim(),
       kind: form.kind,
-      // #332 (user): fixed never saves luxury — heals pre-#332 records
-      // whose hidden flag would otherwise silently persist through an edit
-      luxury: form.luxury && form.kind !== 'fixed' ? 1 : 0,
+      // #332 (user): a fixed cost is never a luxury — picking the kind
+      // already cleared the flag, the form never shows it for fixed
+      luxury: form.luxury ? 1 : 0,
       amountCents,
       icon: KIND_ICON[form.kind],
       logo: form.logo ?? '', // '' clears — an absent field would not sync

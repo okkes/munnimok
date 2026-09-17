@@ -43,16 +43,13 @@ export interface SpaceRow extends SyncEnvelope {
   /** Home balance band (user design 2026-08-01): what the big number IS.
    *  Absent = 'networth' (the pre-config behavior: every account summed). */
   balanceBandMode?: 'networth' | 'cash' | 'spendable' | 'custom';
-  /** accounts excluded from the networth/cash band sums */
-  balanceBandExclude?: string[];
   /** the custom mode's explicit include list */
   balanceBandAccounts?: string[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
 export type AccountSource = 'manual' | 'camt053' | 'gocardless';
-/** which open-banking provider fetches a 'gocardless'-sourced account —
- *  absent on legacy rows means GoCardless (#176) */
+/** which open-banking provider fetches a 'gocardless'-sourced account (#176) */
 export type BankProvider = 'gocardless' | 'enablebanking';
 
 export interface AccountRow extends SyncEnvelope {
@@ -69,7 +66,8 @@ export interface AccountRow extends SyncEnvelope {
   /** when this account last heard from its source (ISO; bank fetch or statement import) */
   lastSyncedAt?: string;
   /** #176: the open-banking provider behind a 'gocardless' source —
-   *  stamped by the server ingest; absent = GoCardless (legacy rows) */
+   *  stamped by the server ingest on EVERY bank-fed row; manual and
+   *  statement-import rows carry none */
   provider?: BankProvider;
   /** #133/#221: this account is the space's DEFAULT for a counterparty
    *  family — minted at space creation (undeletable, ledger system-

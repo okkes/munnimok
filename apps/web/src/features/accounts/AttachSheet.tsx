@@ -35,8 +35,7 @@ export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
 };
 
 /** #176: the label honors WHICH open-banking provider fetches the row —
- *  Enable Banking rows read "Enable Banking", not "GoCardless"; legacy
- *  rows without the stamp are GoCardless by history */
+ *  Enable Banking rows read "Enable Banking", not "GoCardless" */
 export const sourceKeyFor = (account: Pick<AccountRow, 'source' | 'provider'>): TranslationKey =>
   account.source === 'gocardless' && account.provider === 'enablebanking'
     ? 'acct.sourceOpenBankingEb'
