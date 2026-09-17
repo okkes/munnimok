@@ -130,7 +130,7 @@ function liveDir() {
       writeFileSync(join(stage, `docker-compose.${stack}.yml`), 'services: {}\n');
       writeFileSync(join(stage, '.env'), 'X=1\n');
       // relative paths from inside the staging dir: every tar (GNU, bsd) takes them
-      execFileSync('tar', ['-czf', `../munni-nas/published/munni-${stack}.tgz`, '.'], { cwd: stage, env });
+      execFileSync('tar', ['-czf', `../munni-nas/published/${stack}.tgz`, '.'], { cwd: stage, env });
     },
     stamp: (stack, value) => writeFileSync(join(published, stampOf(stack)), `${value}\n`),
     marker: (stack) => (existsSync(join(live, `.applied_${stack}`)) ? readFileSync(join(live, `.applied_${stack}`), 'utf8').trim() : null),
@@ -181,13 +181,13 @@ test('apply.sh: a stamp reading "remove" stops the stack\'s containers with its 
   mkdirSync(target, { recursive: true });
   writeFileSync(join(target, `docker-compose.${stack}.yml`), 'services: {}\n');
   writeFileSync(join(target, '.env'), 'X=1\n');
-  writeFileSync(join(nas.published, `munni-${stack}.tgz`), 'not really a tarball');
+  writeFileSync(join(nas.published, `${stack}.tgz`), 'not really a tarball');
   nas.stamp(stack, 'remove');
   writeFileSync(join(nas.live, `.applied_${stack}`), 'remove\n');
   assert.equal(nas.run().rc, 0);
   assert.deepEqual(nas.fake.calls(), [`compose --env-file .env -f docker-compose.${stack}.yml down -v --remove-orphans`], 'containers and volumes go through compose with the stack\'s own env file');
   assert.equal(existsSync(target), false, 'the stack folder is gone');
-  assert.equal(existsSync(join(nas.published, `munni-${stack}.tgz`)), false);
+  assert.equal(existsSync(join(nas.published, `${stack}.tgz`)), false);
   assert.equal(existsSync(join(nas.published, stampOf(stack))), false);
   assert.equal(nas.marker(stack), 'removed');
   assert.match(nas.log(), /munni-nas-staging removed/);
