@@ -1,5 +1,39 @@
 # Changelog
 
+## [4.0.0](https://github.com/okkes/munnimok/compare/v3.0.0...v4.0.0) (2026-09-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **api:** the Admin__Subs setting is no longer read and the admin_grants table no longer exists; operator access requires the `admin` scope on the API access token (a Logto API-resource scope granted through a role). GET/POST/DELETE /admin/admins and POST /admin/logto/lowercase-usernames are removed; /admin/users no longer reports isAdmin/bootstrap.
+* **infra:** the iac twins, the legacy environments and every NAS_/IAC_ secret name are gone; stacks are munni-<platform>-<env|shared>, hosts munni-<env>-<platform>, GitHub environments <platform>-<env|shared>.
+* **web:** an on-device database created by an earlier build is not upgraded — the product redeploys from scratch with no existing devices, users or databases, so no upgrade path is carried.
+
+### ✨ Features
+
+* **api:** admin access is the token's admin scope ([d132726](https://github.com/okkes/munnimok/commit/d132726a6eb8afc219878e7411972fa1587d7136))
+* **api:** every link the server writes carries its gate and account type ([2ecc40e](https://github.com/okkes/munnimok/commit/2ecc40e92a01a65300532c83dd6589884f851d91))
+* **api:** regenerate the schema as a single Initial migration ([79e4337](https://github.com/okkes/munnimok/commit/79e43371fc5475cc4af0203b97c92f88c182b56a))
+* **infra:** platforms and environments as committed config — one shared stack plus N environments per platform (lcl, nas), generated names and ports, scope-aware secrets, per-environment Logto with the admin role, CI matrices from the config ([dad9ece](https://github.com/okkes/munnimok/commit/dad9ece6e6787d98d7d2555a28e206634dc8302e))
+* **infra:** the cleanup check counts the trusted roots of earlier https families; the Leftovers card says how to remove them ([a45a6a2](https://github.com/okkes/munnimok/commit/a45a6a2decb3c5e2177c9585dc1382866e391024))
+* **infra:** the helper drives platforms and environments — config as code, wizard store, lcl seeding on minted credentials, the Access endpoints, config commit; images build stack-agnostic ([541d3ab](https://github.com/okkes/munnimok/commit/541d3abc05e374e0f1e1fdf5ff7ba946a9e8e47f))
+* **web:** follow the server contract — device header, typed links, named provider ([0154b6c](https://github.com/okkes/munnimok/commit/0154b6cfbc248b6a77b305b19330323f9e0ddf22))
+* **wizard:** platforms, shared services and environment workspaces over the new helper ([e122f33](https://github.com/okkes/munnimok/commit/e122f33d375317800701b2ebc44569a7cf6a4be8))
+* **wizard:** the Access endpoints use the injected fetch; runs carry their stack in the run name; the checklist describes the clean-slate platform model ([d5228d6](https://github.com/okkes/munnimok/commit/d5228d60e8c165458919cec294b14735ce3515b5))
+
+
+### 🐞 Bug Fixes
+
+* **infra:** the workflow matrices load nas stacks without the domain secret; bundle names are the stack name; a stack-scoped value never leaks from the shared store ([416bb64](https://github.com/okkes/munnimok/commit/416bb644576bed3bf5b4a9a26945a021df577229))
+* **infra:** validate.mjs imported the removed localEnvRegistry — the local validators resolve the lcl platform's stacks ([24cd6aa](https://github.com/okkes/munnimok/commit/24cd6aaa24e28201718a7576c89fa3a59a9436e1))
+* **web:** the boot chain keeps only the live passes after the two branches met ([4b67585](https://github.com/okkes/munnimok/commit/4b675854c80504217086aa3595b6a13871b49c40))
+* **web:** the two positive tests assert; the progress bar exposes a native progress element ([fbb7c36](https://github.com/okkes/munnimok/commit/fbb7c36871b1e713ad3e4877edd20c992b291f6b))
+
+
+### ♻️ Refactoring
+
+* **web:** one Dexie schema version, no store-to-store migrations ([03fb50e](https://github.com/okkes/munnimok/commit/03fb50e1364151440019e62a77a8c2c11ef0bc8f))
+
 ## [3.0.0](https://github.com/okkes/munnimok/compare/v2.27.0...v3.0.0) (2026-09-17)
 
 
