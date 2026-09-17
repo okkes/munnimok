@@ -523,7 +523,7 @@ export type StoreId = Exclude<ReceiptSource, 'photo'>;
  * v3: keyed by INSTANCE id — multiple connections of one store coexist.
  */
 export interface StoreConnectionRow {
-  /** instance id (uuid; migrated legacy rows use the store name) */
+  /** instance id (uuid) */
   id: string;
   store: StoreId;
   tokens: Record<string, string>;
