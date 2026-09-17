@@ -208,5 +208,7 @@ describe('Repo', () => {
         hlc: '2026-07-01T00:00:00.000Z-0000-devB',
       },
     ]);
+    // the row landed as sent — every device converges on the same rows
+    expect((await db.transactions.get('remote1'))?.merchant).toBe('X');
   });
 });
