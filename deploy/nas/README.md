@@ -1,56 +1,67 @@
-# The NAS side of the IaC twins
+# Deploying to the Synology NAS
 
-Everything here runs on the Synology NAS without SSH: GitHub publishes
-through the FileStation API, a root Task Scheduler entry (the poller)
-applies. The legacy live pipeline was archived on 2026-09-17 under the
-git tag `archive/legacy-cicd`; this folder serves the IaC twins only.
+The `nas` platform (infra/platforms/nas) is deployed by GitHub Actions
+through the DSM File Station API — no SSH, nothing typed on the NAS.
 
-## The one rule: live dir = the parent of `SYNOLOGY_PATH`
+## The one rule
 
-`SYNOLOGY_PATH` is the published folder (e.g. `/docker/munni-iac/published`).
-Its parent is the live dir (`/docker/munni-iac` → `/volume1/docker/munni-iac`,
-resolved through the share's real path, never guessed). The live dir
-holds `apply.sh`, `deploy.log`, the stamp markers; the twins unpack NEXT to
-it: `/volume1/docker/munni-iac-prod`, `/volume1/docker/munni-iac-staging`.
+`SYNOLOGY_PATH` (a platform secret, e.g. `/docker/munni-nas/published`)
+is the File Station folder bundles land in. The **live dir is its
+parent** (`/volume1/docker/munni-nas`): the poller script and the markers
+live there, and every stack composes up in its own folder next to it
+(`/volume1/docker/munni-nas-shared`, `/volume1/docker/munni-nas-prod`, …).
 
-## What Deploy uploads (deploy-nas.yml, channel iac-prod | iac-staging | iac-both)
+## Bundles and stamps
 
-- `apply.sh` into the live dir (the task runs a throwaway copy, so
-  overwriting the running script is safe);
-- `munni-deploy-iac-<twin>.tgz` (compose + env rendered from the twin's
-  GitHub Environment + `update.sh` + initdb) into the published folder;
-- `VERSION_IAC_<TWIN>` last, so the poller never sees a stamp before its
-  bundle. The stamp is `<sha>.<run number>`: every deploy is new.
+`deploy-nas.yml` renders each stack from the committed config
+(`node infra/bootstrap.mjs --stack <name> --render-only`), fills the env
+template from the stack's GitHub environment (`deploy/nas/render-env.sh`),
+and uploads:
 
-## The poller (`apply.sh`, every 5 minutes, root)
+- `munni-<stack>.tgz` — compose file, `.env`, `update.sh`, `initdb/`, and
+  for the shared stack `pgadmin-servers.json`;
+- `VERSION_<STACK>` — the stamp (`<sha>.<run number>`; a stamp reading
+  `remove` tears the stack down);
+- `apply.sh` into the live dir (the poller script rides along with every
+  deploy, so it updates itself).
 
-Ensured by the prod twin's IaC bootstrap (DSM Task Scheduler through the
-API, `munni deploy poller`); by hand the same command:
+It runs on every successful image build (dev branch → stacks on channel
+`dev`, master → `latest`) and on dispatch from the wizard or the Actions
+UI.
 
-```
-cd "<live dir>" && cp apply.sh .apply.run && MUNNI_LIVE_DIR="<live dir>" MUNNI_PUBLISHED_DIR="<live dir>/published" sh .apply.run
-```
+## The poller
 
-Each cycle: a new stamp → unpack the bundle into the twin's folder → run
-its `update.sh` (registry login, the Postgres 17→18 migration guard that
-reads the volume's real version, `docker compose up -d`, then the seeds:
-the Logto machine credentials and the GlitchTip admin + API token the
-bootstrap minted, inserted once, idempotently). A seed the service is not
-ready for leaves a pending marker the next cycle retries. Everything is
-logged to `deploy.log` — `--verify` and Deploy's after-apply step print
-its tail through FileStation, so nothing needs SSH.
+`deploy/nas/apply.sh` is a DSM Task Scheduler entry (root, every five
+minutes) the shared stack's bootstrap creates through the DSM API. Each
+cycle it looks at every `VERSION_*` stamp in the published folder — the
+shared stack first, then the environments — unpacks a new bundle into the
+stack's folder and runs `update.sh` there (`docker compose pull` + `up
+-d`, then the seeds). Markers in the live dir: `.applied_<stack>` holds
+the stamp last applied (or `removed`), `deploy.log` is the poller's own
+log (read by every bootstrap and by `nas-diag.yml`).
 
-## Removal
+Seeds (`deploy/update.sh`): an environment's first deploy inserts the
+minted Logto machine credentials into Logto's database (`infra` with the
+Management API role, and the admin-tenant credential that claims the
+console); the shared stack's deploy creates GlitchTip's admin and API
+token inside the container. A seed that cannot run yet (the service still
+booting) leaves `.logto-seed-pending` / `.glitchtip-seed-pending` and the
+poller retries it every cycle. `deploy/nas/after-apply.mjs` waits in the
+workflow until the marker matches and the services answer with the
+seeded credentials, then the Bootstrap runs once more and writes the app
+ids and DSNs back.
 
-`bootstrap --cleanup` (the wizard's Clean up) uploads a stamp reading
-`remove`: the next cycle stops the twin's containers (`docker compose
-down -v --remove-orphans` with its env file), deletes its folder, bundle
-and stamp, and writes `removed` into the marker so the workflow can tell.
-A pair cleanup then deletes the poller task and the live dir through the
-DSM API.
+## Cleanup
 
-## Locks and markers
+`iac.yml` with `cleanup=true` (the wizard's Clean up button): the
+environment's GlitchTip projects, its reverse-proxy rules, a `remove`
+stamp (the poller stops the containers, drops the volumes, deletes the
+folder), its GitHub environment and its platform file (committed by the
+workflow). The shared stack goes last, once no environment is left: its
+rules, containers, the poller task and the live dir. The wildcard
+certificate stays.
 
-`.apply.lock2` + `.apply.pid` (flock; a wedged holder is killed by age),
-`.applied_version_iac_prod` / `_iac_staging` (what is applied),
-`.logto-seed-pending` / `.glitchtip-seed-pending` (retry), `pg18-restored-*.ok`.
+## Diagnostics
+
+`nas-diag.yml` downloads `deploy.log` (or any file of the live dir) as an
+artifact; every Bootstrap prints the poller's last lines in its summary.
