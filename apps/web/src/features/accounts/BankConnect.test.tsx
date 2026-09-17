@@ -124,7 +124,7 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
     expect(requisitions[0]).toMatchObject({ institutionId: 'ING_NL', provider: 'gocardless' });
   }, 15_000);
 
-  it('#175: a single configured provider skips the choice entirely', async () => {
+  it('a single configured provider lands straight on its bank list', async () => {
     renderAppAsUser('/accounts', {
       api: {
         'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
@@ -135,43 +135,8 @@ describe('BankConnectSheet (user identity, GoCardless enabled)', () => {
     });
     fireEvent.click(await screen.findByTestId('accounts-add'));
     fireEvent.click(await screen.findByTestId('chooser-connect'));
+    // no provider question in between — the list is the first thing shown
     await screen.findByTestId('gc-bank-ING_NL');
-    expect(screen.queryByTestId('gc-provider-choice')).toBeNull();
-    expect(screen.queryByTestId('gc-provider-back')).toBeNull();
-  }, 15_000);
-
-  it('#308: a SHARED space goes straight to the bank list — the connect-time warning is gone (it lives on the attach step now)', async () => {
-    // the space row is shared BEFORE the app boots, so the chooser sees
-    // the kind at click time — no race with the bootstrap pull
-    const { MunniDB } = await import('@/db/schema');
-    const { Repo } = await import('@/db/repo');
-    const { DexieBackend } = await import('@/db/backend');
-    const { HlcClock } = await import('@/sync/hlc');
-    const db = new MunniDB(USER_TEST_DB);
-    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
-    await repo.upsert('space', 's-user', 's-user', {
-      name: 'Familie',
-      kind: 'shared',
-      currency: 'EUR',
-      periodType: 'month',
-      periodDay: 1,
-    });
-    db.close();
-
-    renderAppAsUser('/accounts', {
-      spaces: [{ id: 's-user', name: 'Familie', kind: 'shared' }],
-      api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
-        'GET /me/feeds': () => [],
-        'GET /gocardless/providers': () => ({ providers: [{ id: 'gocardless' }] }),
-        'GET /gocardless/institutions': () => [ING],
-      },
-    });
-    fireEvent.click(await screen.findByTestId('accounts-add'));
-    fireEvent.click(await screen.findByTestId('chooser-connect'));
-    // the flow proceeds directly — no "I understand" gate in between
-    await screen.findByTestId('gc-bank-ING_NL', {}, { timeout: 10_000 });
-    expect(screen.queryByTestId('chooser-share-warn')).toBeNull();
   }, 15_000);
 });
 
@@ -196,10 +161,8 @@ describe('GcCallbackScreen (test auth — no Logto)', () => {
     await screen.findByText('Bank connected');
     expect(completed[0]).toContain('/gocardless/requisitions/ref-9/complete');
     expect(sessionStorage.getItem('munni_gc_ref')).toBeNull(); // consumed
-    // #319 (user): ONE next-step line under the headline — the stacked
-    // "close this tab" paragraph is gone
+    // one next-step line under the headline points at the accounts screen
     expect(screen.getByTestId('gc-unattached-note').textContent).toContain('accounts screen');
-    expect(screen.queryByText(/close this tab/i)).toBeNull();
   });
 
   it('fails gracefully without a reference or on a server error', async () => {

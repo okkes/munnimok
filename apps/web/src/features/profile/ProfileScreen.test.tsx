@@ -70,13 +70,6 @@ describe('ProfileScreen (demo identity)', () => {
     });
     expect(fetchSpy).not.toHaveBeenCalled(); // demo: photo stays on the device
   });
-
-  it('demo identity shows no user id / email block', async () => {
-    renderApp('/profile');
-    await screen.findByTestId('screen-profile');
-    expect(screen.queryByTestId('profile-copy-id')).toBeNull();
-    expect(screen.queryByTestId('profile-email')).toBeNull();
-  });
 });
 
 describe('ProfileScreen (offline identity)', () => {

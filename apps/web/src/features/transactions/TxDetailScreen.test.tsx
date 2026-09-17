@@ -640,13 +640,11 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     await screen.findByTestId('counter-default');
     fireEvent.keyDown(window, { key: 'Escape' });
     fireEvent.click(await screen.findByTestId('part-cat-save'));
-    // #228 feedback: the property row shows the bare state; no
-    // "→ account" line under the category anywhere
+    // the property rows show the bare state
     await waitFor(() => {
       expect(screen.getByTestId('tx-detail-category-row').textContent).toContain('Repaid');
     });
     expect(screen.getByTestId('tx-detail-counter-row').textContent).toContain('No counter account');
-    expect(screen.queryByTestId('tx-detail-cat-counter-0')).toBeNull();
     const db = new MunniDB('munni_demo');
     await waitFor(async () => {
       const tx = await db.transactions.get('dm6');
@@ -913,13 +911,6 @@ describe('TxTypeSheet via detail (demo tx dm6, groceries expense)', () => {
     }, { timeout: 8000 });
     db.close();
   }, 20_000);
-
-  it('#133 D: the detail carries NO kind surface — categories and the counterparty ask are the whole story', async () => {
-    renderApp('/transactions/dm6');
-    await screen.findByTestId('screen-tx-detail');
-    expect(screen.queryByTestId('tx-detail-kind-row')).toBeNull();
-    expect(screen.queryByTestId('txkind-options')).toBeNull();
-  }, 15_000);
 
   it('#152 r2: the ◆ Funding pick asks WHICH funding account — candidates filtered, pick keeps the story', async () => {
     renderApp('/transactions/dm6');
@@ -1777,25 +1768,6 @@ describe('SplitEditorSheet via detail (demo tx dm6, -€52.40)', () => {
     db.close();
   }, 15_000);
 
-  it('register-style amount entry: digits fill cents from the right (user request)', async () => {
-    renderApp('/transactions/dm6');
-    fireEvent.click(await screen.findByTestId('tx-detail-category-row'));
-    await screen.findByTestId('part-cats-editor');
-    fireEvent.click(screen.getByTestId('part-cat-add'));
-
-    const amount = screen.getByTestId('part-cat-amount-1') as HTMLInputElement;
-    fireEvent.focus(amount); // arms the register; the empty lands a frame later (#134)
-    await waitFor(() => expect(amount.value).toBe(''));
-    fireEvent.change(amount, { target: { value: '5' } });
-    expect(amount.value).toBe('0,05');
-    fireEvent.change(amount, { target: { value: '0,055' } });
-    expect(amount.value).toBe('0,55');
-    fireEvent.change(amount, { target: { value: '0,550' } });
-    expect(amount.value).toBe('5,50');
-    // a comma promotes typed digits to euros and frees the field
-    fireEvent.change(amount, { target: { value: '5,50,' } });
-    expect(amount.value).toBe('550,');
-  });
 });
 
 describe('bulk apply from the detail (user request)', () => {

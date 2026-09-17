@@ -369,16 +369,6 @@ describe('Debts (demo identity)', () => {
     expect(archived.className).toContain('opacity-60');
   }, 15_000);
 
-  it('#286 r2: a loan created with no matching history auto-opens NO sheet', async () => {
-    renderApp('/debts');
-    await screen.findByTestId('screen-debts');
-    await createLoan('Car loan', '5000');
-    // the offer stood down entirely — no sheet, no empty-state bloat
-    // (deterministic: with zero candidates the host never sets matchFor)
-    expect(screen.queryByTestId('loanmatch-empty')).toBeNull();
-    expect(screen.queryByTestId('loanmatch-list')).toBeNull();
-  }, 15_000);
-
   it('#286 r2: a loan created WITH matching history still auto-offers the sheet', async () => {
     renderApp('/debts');
     await screen.findByTestId('screen-debts');

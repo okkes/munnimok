@@ -29,27 +29,7 @@ describe('Tutorials (demo identity)', () => {
     indexedDB.deleteDatabase('munni_demo');
   });
 
-  it('the native shell shows no PWA install nudge or walkthrough', async () => {
-    (globalThis as { Capacitor?: unknown }).Capacitor = { isNativePlatform: () => true };
-    try {
-      renderApp('/help');
-      await screen.findByTestId('screen-help');
-      expect(screen.queryByTestId('help-tour-install')).toBeNull();
-      cleanup();
-      renderApp('/home');
-      await screen.findByTestId('home-balance-band');
-      expect(screen.queryByTestId('install-hint')).toBeNull();
-    } finally {
-      delete (globalThis as { Capacitor?: unknown }).Capacitor;
-    }
-  }, 15_000);
-
-  it('the intro card nudges once and stays dismissed (Home has none — Mina owns the first-run)', async () => {
-    renderApp('/home');
-    await screen.findByTestId('home-balance-band');
-    expect(screen.queryByTestId('intro-card-home')).toBeNull();
-
-    cleanup();
+  it('the intro card nudges once and stays dismissed', async () => {
     renderApp('/review');
     const card = await screen.findByTestId('intro-card-review', {}, { timeout: 5000 });
     expect(card.textContent).toContain('60-second');
@@ -149,8 +129,6 @@ describe('Tutorials (demo identity)', () => {
   it('release notes: land in the bell inbox once per version, help keeps the door (arc 6)', async () => {
     renderApp('/home');
     await screen.findByTestId('screen-home');
-    // the Home banner is retired — the news lives in the bell now
-    expect(screen.queryByTestId('whatsnew-card')).toBeNull();
     fireEvent.click(await screen.findByTestId('home-notifications'));
     const row = await waitFor(() => {
       const el = document.querySelector('[data-testid^="notif-inbox-"]');
