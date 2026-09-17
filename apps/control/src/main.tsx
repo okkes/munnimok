@@ -23,6 +23,9 @@ function Root() {
         endpoint: config.logtoEndpoint,
         appId: config.logtoAppId,
         resources: config.logtoResource ? [config.logtoResource] : [],
+        // the api lets a token with the `admin` scope in — Logto grants it
+        // to users holding the "munni admin" role (the wizard's Access tab)
+        scopes: ['admin'],
       }}
     >
       <LogtoGate />
