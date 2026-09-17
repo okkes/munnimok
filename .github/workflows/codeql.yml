@@ -1,9 +1,13 @@
 name: CodeQL
 
+# Push-only: every branch a pull request can target (dev, master) is
+# analyzed on push, so a pull_request run would only repeat it. It was
+# also the one run that could not start: a pull request opened by a
+# workflow (release-please's "chore(master): release x.y.z") runs under
+# that workflow's token, and the first-boot latch below could not read
+# `vars` there — the run failed before any job existed (#393, 2026-09-17).
 on:
   push:
-    branches: [main, master, dev]
-  pull_request:
     branches: [main, master, dev]
   schedule:
     - cron: '30 5 * * 1' # weekly deep scan
