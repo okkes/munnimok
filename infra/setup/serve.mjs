@@ -1317,7 +1317,9 @@ async function nativeConfigEndpoint(res, url, fetchImpl) {
       if (iApp) { const cfg = await fb(`/projects/${projectId}/iosApps/${iApp.appId}/config`); if (cfg.ok) variables.NATIVE_IOS_FIREBASE_PLIST_B64 = (await cfg.json()).configFileContents; }
     } catch { /* push stays stubbed — firebase-setup names the reason */ }
   }
-  return json(res, 200, { stack: stack.stack, environment: stack.githubEnvironment, env: stack.env, platform: stack.platform, appId: stack.native.appId, iosAppId: stack.native.iosAppId, scheme: stack.native.scheme, lanHost: lan, ready: missing.length === 0, missing, variables });
+  // GitHub refuses an empty variable; a value this helper does not hold (the NAS write-backs live in the GitHub environment) is simply not sent, so what the Bootstrap wrote back stays
+  const known = Object.fromEntries(Object.entries(variables).filter(([, v]) => v));
+  return json(res, 200, { stack: stack.stack, environment: stack.githubEnvironment, env: stack.env, platform: stack.platform, appId: stack.native.appId, iosAppId: stack.native.iosAppId, scheme: stack.native.scheme, lanHost: lan, ready: missing.length === 0, missing, variables: known });
 }
 
 /* ── lcl environments: delete, wipe, leftovers ────────────────────── */

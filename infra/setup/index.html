@@ -3440,8 +3440,19 @@ async function writeNativeEnv(env) {
   const cfg = await hjson(`/api/local/native-config?stack=${encodeURIComponent(env.stack)}`);
   if (!cfg.ready) throw new Error('not ready: ' + (cfg.missing ?? []).join(' · '));
   await ensureEnv(cfg.environment);
-  for (const [name, value] of Object.entries(cfg.variables)) await ghUpsertEnvVar(cfg.environment, name, value);
-  localLog(`\n${Object.keys(cfg.variables).length} NATIVE_* variables written into the GitHub environment ${cfg.environment}\n`);
+  const written = [];
+  for (const [name, value] of Object.entries(cfg.variables)) {
+    if (!value) continue; // GitHub refuses an empty variable, and an empty one would only erase a write-back
+    await ghUpsertEnvVar(cfg.environment, name, value);
+    written.push(name);
+  }
+  if (!isLcl()) {
+    // the write-backs of a NAS environment live in its GitHub environment: sign-in is a must, crash reporting a warning
+    const have = new Set(((await gh(`${envBase(cfg.environment)}/variables?per_page=100`, { allow404: true }))?.variables ?? []).map((v) => v.name));
+    if (!have.has('NATIVE_LOGTO_APP_ID')) throw new Error(`not ready: the sign-in wiring has not written NATIVE_LOGTO_APP_ID into ${cfg.environment} yet — Bootstrap + Deploy of ${env.env} does that (Re-run bootstrap on the Overview tab), then build again`);
+    if (!have.has('NATIVE_GLITCHTIP_DSN_ANDROID') || !have.has('NATIVE_GLITCHTIP_DSN_IOS')) localLog(`\n⚠ ${cfg.environment} has no GlitchTip DSN for the phones yet — the apps build without crash reporting until the Bootstrap writes it back (Re-run bootstrap once the shared stack answers)\n`);
+  }
+  localLog(`\n${written.length} NATIVE_* variables written into the GitHub environment ${cfg.environment}\n`);
   return cfg;
 }
 async function awaitRun(file, started, stack, maxMs, say) {

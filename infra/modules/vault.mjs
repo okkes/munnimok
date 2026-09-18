@@ -230,3 +230,20 @@ export async function vaultReadFolder(base, { email, password, folder }, fetchIm
       return { name: dec(c.name ?? c.Name), username: dec(login.username ?? login.Username), password: dec(login.password ?? login.Password), uri: dec((login.uris ?? login.Uris ?? [])[0]?.uri ?? (login.uris ?? login.Uris ?? [])[0]?.Uri), notes: dec(c.notes ?? c.Notes) };
     });
 }
+
+/** the platform values an environment may need, as the shared stack's bootstrap files them in its vault folder (item name → secret name) */
+export const VAULT_PLATFORM_ITEMS = { 'GlitchTip API token': 'GLITCHTIP_API_TOKEN', GlitchTip: 'GLITCHTIP_ADMIN_PASSWORD', pgAdmin: 'PGADMIN_PASSWORD' };
+
+export function platformValuesFromItems(items) {
+  const out = {};
+  for (const item of items ?? []) {
+    const name = VAULT_PLATFORM_ITEMS[item.name];
+    if (name && item.password) out[name] = item.password;
+  }
+  return out;
+}
+
+/** read the shared stack's folder (creds.folder) and map its items to secret names — what an environment added after the shared stack pulls for itself */
+export async function vaultPlatformValues(base, creds, fetchImpl = insecureFetch) {
+  return platformValuesFromItems(await vaultReadFolder(base, creds, fetchImpl));
+}

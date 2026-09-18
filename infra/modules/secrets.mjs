@@ -68,8 +68,8 @@ export function entriesFor(stack) {
   });
 }
 
-/** platform-scoped entries an ENVIRONMENT stack must also see (mirrored into its GitHub environment) */
-export const mirroredEntries = (stack) => (stack.role === 'env' ? platformEntries(stack.platform).filter((s) => s.scope === 'platform') : []);
+/** platform-scoped entries an ENVIRONMENT stack must also see (mirrored into its GitHub environment) — a sharedOnly value (GlitchTip's own keys, pgAdmin's login) stays with the shared stack */
+export const mirroredEntries = (stack) => (stack.role === 'env' ? platformEntries(stack.platform).filter((s) => s.scope === 'platform' && !s.sharedOnly) : []);
 
 /* ── GitHub (the nas platform) ───────────────────────────────────────── */
 
@@ -138,9 +138,14 @@ export function ensureSecrets(stack, { rotate = [] } = {}) {
   ensureEnvironment(env);
   const present = existingEnvSecrets(env);
   const minted = [];
+  const mirrored = [];
   const missingOperator = [];
   const waitingForShared = [];
-  const setOwn = (name, value) => (MANIFEST.secrets.find((s) => s.name === name)?.scope === 'platform' ? setPlatformSecret(stack, name, value) : setEnvSecret(env, name, value));
+  const setOwn = (name, value) => {
+    const entry = MANIFEST.secrets.find((s) => s.name === name);
+    // a platform value reaches every environment of the platform — a sharedOnly one stays in the shared stack's own environment
+    return entry?.scope === 'platform' && !entry.sharedOnly ? setPlatformSecret(stack, name, value) : setEnvSecret(env, name, value);
+  };
 
   if (stack.role === 'env') {
     const vapidNeeded = rotate.includes('PUSH_VAPID_PUBLIC_KEY') || !present.has('PUSH_VAPID_PUBLIC_KEY') || !present.has('PUSH_VAPID_PRIVATE_KEY');
@@ -156,21 +161,28 @@ export function ensureSecrets(stack, { rotate = [] } = {}) {
   }
   for (const entry of entriesFor(stack)) {
     if (entry.name.startsWith('PUSH_VAPID_')) continue;
-    // a platform-scoped generated value must also reach every environment of the platform
-    const envsLacking = entry.owner === 'generated' && entry.scope === 'platform'
+    // a platform-scoped generated value must also reach every environment of the platform — unless it is the shared stack's alone
+    const envsLacking = entry.owner === 'generated' && entry.scope === 'platform' && !entry.sharedOnly
       ? platformEnvStacks(stack.platform).map((s) => s.githubEnvironment).filter((e) => { ensureEnvironment(e); return !existingEnvSecrets(e).has(entry.name); })
       : [];
-    const needed = rotate.includes(entry.name) || !present.has(entry.name) || envsLacking.length > 0;
-    if (!needed) continue;
+    const have = present.has(entry.name) && !rotate.includes(entry.name);
+    if (have && !envsLacking.length) continue;
     if (entry.owner === 'generated') {
-      setOwn(entry.name, generateValue(entry.name));
-      minted.push(entry.name);
+      // an environment added later gets the value the shared stack already runs with — the job carries it — never a re-mint that would strand the running services
+      const known = have ? process.env[entry.name] : '';
+      if (known) {
+        for (const e of envsLacking) setEnvSecret(e, entry.name, known);
+        mirrored.push(entry.name);
+      } else {
+        setOwn(entry.name, generateValue(entry.name));
+        minted.push(entry.name);
+      }
     } else if (entry.owner === 'operator' && !entry.optional) {
       missingOperator.push(entry.name);
     }
     // module-owned: written back later — never minted
   }
-  return { minted, missingOperator, waitingForShared };
+  return { minted, mirrored, missingOperator, waitingForShared };
 }
 
 /** manifest-vs-reality check used by --verify (no writes) */

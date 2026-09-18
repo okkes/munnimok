@@ -18,10 +18,10 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { listStacks, loadStack, platformEnvStacks, removeEnv, sharedOf } from './modules/stack.mjs';
-import { deleteEnvironment, ensureSecrets, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
+import { deleteEnvironment, ensureSecrets, setEnvSecret, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
 import { ensureLocalSecrets, stackValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
 import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAdminRole, logtoAnswers, removeApps, writeBack } from './modules/logto.mjs';
-import { vaultReplaceFolder } from './modules/vault.mjs';
+import { vaultPlatformValues, vaultReplaceFolder } from './modules/vault.mjs';
 import { applyGlitchTip, glitchtipAnswers, removeProjects, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook } from './modules/runbook.mjs';
@@ -339,10 +339,42 @@ async function ciVerify() {
   return missing.length || !allUp ? 1 : 0;
 }
 
+/** an environment added AFTER the shared stack ran: the platform values it needs sit in the platform vault, where the shared
+ *  stack's bootstrap files them — take them from there, store them into this environment, use them in this very run */
+async function pullPlatformValuesFromVault(names) {
+  const email = process.env.VAULT_ADMIN_EMAIL;
+  const password = process.env.VAULT_MASTER_PASSWORD;
+  if (isShared || !names.length || !email || !password || !shared.urls.vault) return [];
+  let found;
+  try {
+    found = await vaultPlatformValues(shared.urls.vault, { email, password, folder: shared.stack }, localAwareFetch);
+  } catch (e) {
+    console.log(`  vault: could not read the platform vault (${e.message}) — the shared stack's next bootstrap mirrors the values instead`);
+    return [];
+  }
+  const pulled = [];
+  for (const name of names) {
+    const value = found[name];
+    if (!value) continue;
+    setEnvSecret(stack.githubEnvironment, name, value);
+    process.env[name] = value;
+    pulled.push(name);
+  }
+  return pulled;
+}
+
 async function ciApply() {
   console.log(`bootstrap ${stack.stack} (${isShared ? 'shared services' : `environment ${stack.env}`} on ${stack.platformLabel})`);
-  const { minted, missingOperator, waitingForShared } = ensureSecrets(stack, { rotate });
+  const secretsState = ensureSecrets(stack, { rotate });
+  const { minted, mirrored, missingOperator } = secretsState;
+  let { waitingForShared } = secretsState;
   if (minted.length) console.log(`  minted: ${minted.join(', ')}`);
+  if (mirrored?.length) console.log(`  mirrored into the environments added since, same values: ${mirrored.join(', ')}`);
+  if (waitingForShared.length) {
+    const pulled = await pullPlatformValuesFromVault(waitingForShared);
+    if (pulled.length) console.log(`  vault: ${pulled.join(', ')} taken from the platform vault (the shared stack keeps them there) and stored into ${stack.githubEnvironment}`);
+    waitingForShared = waitingForShared.filter((n) => !pulled.includes(n));
+  }
   if (waitingForShared.length) console.log(`  ⏳ platform values the shared stack's bootstrap mirrors, not in this environment yet: ${waitingForShared.join(', ')}`);
   if (missingOperator.length) console.log(`  ⚠ operator secrets still missing (the wizard's tiles store them): ${missingOperator.join(', ')}`);
   const dir = renderStack(stack);

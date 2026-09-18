@@ -551,6 +551,12 @@ test('native-config: LAN off is not ready (and says so); the variables carry the
   assert.equal(body.variables.NATIVE_API_URL, 'http://localhost:8482');
   assert.equal(body.variables.NATIVE_LOGTO_ENDPOINT, 'http://localhost:3301');
   assert.equal(body.variables.NATIVE_FAMILY_CA_PEM, undefined, 'no CA without LAN mode');
+  assert.equal(body.variables.NATIVE_LOGTO_APP_ID, undefined, 'a value the helper does not hold is not sent — GitHub refuses empty variables');
+  const nas = (await call(app, { url: '/api/local/native-config?stack=munni-nas-prod' })).json();
+  assert.equal(nas.ready, true, 'a NAS environment needs no LAN mode');
+  assert.equal(nas.environment, 'nas-prod');
+  assert.ok(Object.keys(nas.variables).length >= 4 && Object.values(nas.variables).every((v) => v), 'urls only, never an empty value: the NAS write-backs (app id, DSNs) live in the GitHub environment and must not be erased');
+  assert.equal(nas.variables.NATIVE_LOGTO_APP_ID, undefined);
 });
 
 test('lan: candidates rank private IPv4 first; a host this machine does not have is refused', async () => {

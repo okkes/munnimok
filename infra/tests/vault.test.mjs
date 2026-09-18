@@ -116,3 +116,14 @@ test('vaultReplaceFolder: an existing account is read with its REAL user key, on
   assert.equal(r2.registered, true);
   assert.ok(seen.some((s) => s.url.endsWith('/identity/accounts/register')), 'registered first');
 });
+
+test('platformValuesFromItems: the shared folder\'s items map to the secret names an environment needs; strangers and empty passwords are ignored', async () => {
+  const { platformValuesFromItems } = await import('../modules/vault.mjs');
+  assert.deepEqual(platformValuesFromItems([
+    { name: 'GlitchTip API token', username: 'setup', password: 'tok40' },
+    { name: 'GlitchTip', username: 'admin@munni.nas', password: 'pw' },
+    { name: 'Postgres (glitchtip-db)', username: 'munni', password: 'pg' },
+    { name: 'pgAdmin', username: 'admin@munni.dev', password: '' },
+  ]), { GLITCHTIP_API_TOKEN: 'tok40', GLITCHTIP_ADMIN_PASSWORD: 'pw' });
+  assert.deepEqual(platformValuesFromItems([]), {});
+});
