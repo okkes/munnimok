@@ -118,7 +118,11 @@ Generate new private key).
   switched on in munni registers a push token.
 - **Sign-in registrations** (Registrations tab): Google's redirect URI
   and Apple's return URL per environment — the tab lists the exact
-  values and verifies them where a provider offers an API.
+  values and verifies them by itself where a provider offers an API
+  (on load, after a platform switch and after the provider is saved; a
+  verdict younger than 30 minutes is kept across reloads, Verify asks
+  again). Where none exists, Enable Banking for one, tick done on the
+  block once you registered the URL — the Setup status rail follows.
 - **Sign in with Apple** is configured on its tile only after the first
   environment with Apple exists and the App Store Connect key is saved:
   the tile then names that environment's App ID (the wizard registers

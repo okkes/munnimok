@@ -1134,7 +1134,8 @@ const S = {
   nasProbe: null,          // the helper's outside-in probe of the NAS hosts
   localStore: new Set(),   // names the helper's stores hold for the picked platform (never values)
   storeStatusByEnv: {},    // store-status verdicts per environment name
-  regVerdicts: {},         // registration verdicts per environment name → provider
+  regVerdicts: LS.get('reg-verdicts.' + LS.get('platform', 'lcl'), {}), // registration verdicts per environment name → provider — per platform, kept across reloads
+  autoVerified: new Set(), // environment:provider pairs this page load already asked the provider about
   skipped: new Set(LS.get('skipped.' + LS.get('platform', 'lcl'), [])),
   verdicts: {},            // the last Check verdict per integration (feeds the health card)
   recentlyStored: new Map(),
@@ -1889,6 +1890,11 @@ async function storeGroup(id) {
   try {
     const { written } = await storeValues(values);
     card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
+    if (g.id === 'google' || g.id === 'apple') { // a saved provider re-verifies every environment's registration by itself
+      for (const k of [...S.autoVerified]) if (k.endsWith(':' + g.id)) S.autoVerified.delete(k);
+      for (const s of Object.keys(S.regVerdicts)) delete S.regVerdicts[s][g.id];
+      setTimeout(() => autoVerifyRegistrations().catch(() => {}), 300);
+    }
     const where = S.platform === 'nas'
       ? (written.length ? ` and into ${[...new Set(written.map((w) => w.split(':')[0]))].join(', ')} on GitHub` : (connected() ? '' : ' — connect GitHub and Set up shared services copies it into the GitHub environments'))
       : ' — the platform reads it (running containers pick it up on the next Set up)';
@@ -2284,6 +2290,8 @@ function pickPlatform(id) {
   // platforms share nothing: ticks, skips, saved values, verdicts and the GitHub connection are each their own
   S.features = featuresFor(id);
   S.skipped = new Set(LS.get('skipped.' + id, []));
+  S.regVerdicts = LS.get('reg-verdicts.' + id, {});
+  S.autoVerified = new Set();
   S.recentlyStored.clear();
   S.verdicts = {};
   S.pat = ''; S.user = null;
@@ -2953,13 +2961,21 @@ function overviewHtml(env) {
     <p class="why" style="margin-top:8px">What this environment still needs from you — in order:</p>
     <ul class="todo" id="env-todo-${s}"></ul>`;
 }
-const regBlock = (s, provider, title, where, href, values, verifiable) => `
+const regBlock = (s, provider, title, where, href, values, verifiable) => {
+  // no API at the provider: the operator ticks done — the same item the Setup status rail lists
+  const todoId = `reg-${provider === 'enablebanking' ? 'eb' : provider}-${s}`;
+  const done = !verifiable && Boolean(todoDone()[`${S.platform}:${todoId}`]);
+  const pill = verifiable ? 'not checked yet' : (done ? 'done ✓ (marked by you)' : 'no API to verify — tick done once registered');
+  const manual = verifiable ? '' : `<div class="runrow"><label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-todo="${escAttr(todoId)}" ${done ? 'checked' : ''}/> done — registered by hand</label></div>`;
+  return `
   <div class="reg" data-reg="${provider}" data-env="${s}">
-    <div class="reg-h"><b>${title}</b> <span class="pill" id="reg-pill-${provider}-${s}">${verifiable ? 'not checked yet' : 'no API to verify'}</span></div>
+    <div class="reg-h"><b>${title}</b> <span class="pill${done ? ' ok' : ''}" id="reg-pill-${provider}-${s}">${pill}</span></div>
     <div class="why">Where: <a href="${href}" target="_blank" rel="noreferrer">${where}</a></div>
     ${values.map(copyBlock).join('')}
     ${verifiable ? `<div class="runrow"><button class="ghost" data-verify="${provider}" data-env="${s}">Verify with ${provider === 'google' ? 'Google' : 'Apple'}</button><span class="envtag">asks the provider about this environment's URL only — nothing changes</span></div>` : ''}
+    ${manual}
   </div>`;
+};
 const regNote = (title, text) => `<div class="reg"><div class="reg-h"><b>${title}</b> <span class="pill">needs https</span></div><div class="why">${text}</div></div>`;
 function registrationsHtml(env) {
   const s = env.env;
@@ -3046,6 +3062,7 @@ function renderWorkspaces() {
     box.innerHTML = list.length ? list.map(envWorkspaceHtml).join('') : `<p class="why">No environment on ${esc(platformLabel())} yet — ${isLcl() ? '<b>Set up &amp; start</b> creates prod; more can be added above.' : 'add one above.'}</p>`;
     applyIcons(box);
     for (const env of list) renderRegistrations(env);
+    setTimeout(() => autoVerifyRegistrations().catch(() => {}), 800);
   }
   setPill('envs-pill', list.length ? `${list.length} environment${list.length > 1 ? 's' : ''}` : 'none yet', list.length > 0);
   renderEnvStatus();
@@ -3059,7 +3076,8 @@ function renderRegistrations(env) {
 function applyRegPill(s, provider) {
   const v = S.regVerdicts[s]?.[provider];
   if (!v) return;
-  const text = v.ok && !v.warn ? 'registered ✓' : (v.warn ? `refused — ${v.detail}` : `✗ ${v.detail}`);
+  const when = v.at ? ` · checked ${ago(v.at)}` : '';
+  const text = v.ok && !v.warn ? `registered ✓${when}` : (v.warn ? `refused — ${v.detail}` : `✗ ${v.detail}`);
   setPill(`reg-pill-${provider}-${s}`, text.slice(0, 240), v.ok && !v.warn);
 }
 async function verifyRegistration(env, provider) {
@@ -3069,9 +3087,29 @@ async function verifyRegistration(env, provider) {
   let verdict;
   try { verdict = await hjson('/api/validate', { method: 'POST', body: JSON.stringify({ provider, values: {}, platform: S.platform, redirectUris: [`${logto}/callback/${provider}-universal`] }) }); }
   catch (e) { verdict = { ok: false, unreachable: true, detail: e.message }; }
+  verdict.at = new Date().toISOString();
   (S.regVerdicts[s] ??= {})[provider] = verdict;
+  LS.set('reg-verdicts.' + S.platform, S.regVerdicts);
   applyRegPill(s, provider);
   renderTodo();
+}
+/** registrations verify themselves: on load, on a platform switch and after a provider is saved, every verifiable provider of every environment is asked once — a verdict younger than 30 minutes is kept across reloads */
+async function autoVerifyRegistrations() {
+  if (!HELPER) return;
+  for (const env of S.envList) {
+    const f = env.features ?? {};
+    const logto = stackUrls(env.stack)?.logto ?? '';
+    const providers = [];
+    if ((f.signin ?? []).includes('google') && secretPresent('LOGTO_GOOGLE_CLIENT_ID') && logto) providers.push('google');
+    if ((f.signin ?? []).includes('apple') && secretPresent('LOGTO_APPLE_CLIENT_ID') && logto.startsWith('https://')) providers.push('apple');
+    for (const provider of providers) {
+      const key = `${S.platform}:${env.env}:${provider}`;
+      const last = S.regVerdicts[env.env]?.[provider];
+      if (S.autoVerified.has(key) || (last?.at && Date.now() - Date.parse(last.at) < 30 * 60000)) continue;
+      S.autoVerified.add(key);
+      await verifyRegistration(env, provider).catch(() => {});
+    }
+  }
 }
 /** what an environment has: sign-in ids written back, DSNs written back — lcl from the stack's store names, nas from its GitHub variables + the last run's verdict */
 function envCodeState(env) {
@@ -3240,6 +3278,16 @@ document.getElementById('env-cards')?.addEventListener('click', async (e) => {
   await envAction(btn.dataset.act, env, btn);
 });
 document.getElementById('env-cards')?.addEventListener('change', (e) => {
+  const td = e.target.closest('[data-todo]');
+  if (td) {
+    const m = todoDone();
+    m[`${S.platform}:${td.dataset.todo}`] = td.checked;
+    LS.set('todo-done', m);
+    renderTodo();
+    const env = envByName(td.closest('[data-env]')?.dataset.env);
+    if (env) renderRegistrations(env);
+    return;
+  }
   const cb = e.target.closest('[data-access-toggle]');
   if (!cb) return;
   const env = envByName(cb.dataset.env);
@@ -3709,7 +3757,7 @@ function renderTodo() {
     setPill(`tabpill-registrations-${env.env}`, regs.length ? `${regs.filter((it) => it.done).length}/${regs.length}` : '', regs.length > 0 && regs.every((it) => it.done));
     setPill(`tabpill-phones-${env.env}`, phones.length ? `${phones.filter((it) => it.done).length}/${phones.length}` : '', phones.length > 0 && phones.every((it) => it.done));
   }
-  document.querySelectorAll('[data-todo]').forEach((cb) => cb.addEventListener('change', () => {
+  document.querySelectorAll('#rail [data-todo]').forEach((cb) => cb.addEventListener('change', () => {
     const m = todoDone();
     m[`${S.platform}:${cb.dataset.todo}`] = cb.checked;
     LS.set('todo-done', m);

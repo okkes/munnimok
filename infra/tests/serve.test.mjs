@@ -322,6 +322,14 @@ test('access/users: an environment stack only; no machine credential → 502 nam
   const nasNoVault = await call(app, { url: '/api/access/users?stack=munni-nas-prod' });
   assert.equal(nasNoVault.statusCode, 502);
   assert.match(nasNoVault.json().error, /vault account/);
+  // with the vault account stored, the nas path reaches the platform vault — the shared stack resolves with the domain the wizard holds (it used to throw "PLATFORM_DOMAIN is not set")
+  await post(app, '/api/wizard/values', { values: { VAULT_ADMIN_EMAIL: 'vault@munni.nas', VAULT_MASTER_PASSWORD: 'nas-master' }, platform: 'nas' });
+  const vaultDown = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}), text: async () => '' }) });
+  const nasVault = await call(vaultDown, { url: '/api/access/users?stack=munni-nas-prod' });
+  assert.equal(nasVault.statusCode, 502, nasVault.text());
+  assert.match(nasVault.json().error, /vault: sign-in as vault@munni.nas failed/);
+  assert.ok(!/PLATFORM_DOMAIN/.test(nasVault.json().error), 'the platform domain comes from the wizard\'s store');
+  await post(app, '/api/wizard/values', { values: { VAULT_ADMIN_EMAIL: '', VAULT_MASTER_PASSWORD: '' }, platform: 'nas' });
   saveLocalValues(PROD(), { ...loadLocalValues(PROD()), LOGTO_INFRA_M2M_ID: 'infra0123456789abcdef', LOGTO_INFRA_M2M_SECRET: 'f'.repeat(48) });
   const logto = fakeLogto({ users: [{ id: 'usr_ann', name: 'Ann', primaryEmail: 'ann@example.com', avatar: null, lastSignInAt: 1700000000000 }, { id: 'usr_bob', username: 'bob' }], admins: ['usr_ann'] });
   const res = await call(appWith(logto.fetch), { url: '/api/access/users?stack=munni-lcl-prod' });

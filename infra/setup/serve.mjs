@@ -456,7 +456,7 @@ async function glitchtipSetupEndpoint(req, res, spawnImpl) {
 }
 
 /* ── admin access: list the environment's users, toggle the admin role ── */
-async function accessCredential(stack) {
+async function accessCredential(stack, fetchImpl = localAwareFetch) {
   if (stack.delivery === 'docker') {
     const v = stackValues(stack);
     if (!v.LOGTO_INFRA_M2M_ID || !v.LOGTO_INFRA_M2M_SECRET) throw new Error('this environment has no Logto machine credential yet — run its sign-in setup first');
@@ -465,8 +465,9 @@ async function accessCredential(stack) {
   // nas: the CI bootstrap kept the credential in the platform's vault, folder <stack>
   const v = wizardValues(stack.platform);
   if (!v.VAULT_ADMIN_EMAIL || !v.VAULT_MASTER_PASSWORD) throw new Error('the platform\'s vault account is not in the wizard\'s store — generate it on the platform card first');
-  const shared = sharedOf(stack);
-  const items = await vaultReadFolder(shared.urls.vault, { email: v.VAULT_ADMIN_EMAIL, password: v.VAULT_MASTER_PASSWORD, folder: stack.stack }, localAwareFetch);
+  // the shared sibling of a nas stack needs the platform domain to resolve its hosts — the wrapper provides it from the wizard's store
+  const shared = withPlatformEnv(stack.platform, () => sharedOf(stack));
+  const items = await vaultReadFolder(shared.urls.vault, { email: v.VAULT_ADMIN_EMAIL, password: v.VAULT_MASTER_PASSWORD, folder: stack.stack }, fetchImpl);
   const item = items.find((i) => i.name === 'Logto infra M2M');
   if (!item?.username || !item?.password) throw new Error(`the vault holds no "Logto infra M2M" item in folder ${stack.stack} yet — the environment's bootstrap keeps it there once Logto is seeded`);
   return { m2mId: item.username, m2mSecret: item.password };
@@ -478,7 +479,7 @@ async function accessUsersEndpoint(res, url, netFetchImpl) {
   try { stack = loadAnyStack(name); } catch (e) { return json(res, 400, { error: e.message }); }
   if (stack.role !== 'env') return json(res, 400, { error: 'admin access belongs to an environment' });
   try {
-    const creds = await accessCredential(stack);
+    const creds = await accessCredential(stack, netFetchImpl);
     const users = await withPlatformEnv(stack.platform, () => listUsers(stack, creds, { fetchImpl: netFetchImpl }));
     return json(res, 200, { stack: stack.stack, users });
   } catch (e) {
@@ -494,7 +495,7 @@ async function accessToggleEndpoint(req, res, netFetchImpl) {
   const userId = String(body.userId ?? '');
   if (!/^[A-Za-z0-9_-]{4,64}$/.test(userId)) return json(res, 400, { error: 'bad user id' });
   try {
-    const creds = await accessCredential(stack);
+    const creds = await accessCredential(stack, netFetchImpl);
     const r = await withPlatformEnv(stack.platform, () => setAdmin(stack, creds, userId, Boolean(body.admin), { fetchImpl: netFetchImpl }));
     return json(res, 200, r);
   } catch (e) {
