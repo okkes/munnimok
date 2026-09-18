@@ -1,0 +1,27 @@
+{
+  "env": "dev",
+  "slot": 1,
+  "channel": "dev",
+  "appChannel": "staging",
+  "label": "munni dev-nas",
+  "features": {
+    "android": true,
+    "ios": true,
+    "push": true,
+    "logos": true,
+    "telemetry": true,
+    "pgadmin": true,
+    "banking": [
+      "gocardless",
+      "enablebanking"
+    ],
+    "signin": [
+      "google",
+      "apple"
+    ]
+  },
+  "store": {
+    "androidPackage": "app.munni.nas.dev",
+    "iosBundleId": "app.munni.nas.dev"
+  }
+}
