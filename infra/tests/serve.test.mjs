@@ -144,6 +144,7 @@ test('status: the platforms, the lcl stacks, and the stores by NAME — never a 
   assert.ok(body.wizardStored.platforms.nas.includes('GOCARDLESS_SECRET_ID'));
   assert.deepEqual(body.wizardStored.machine, []);
   assert.ok(body.wizardStored.platforms.nas.includes('PLATFORM_DOMAIN'));
+  assert.deepEqual(body.googleProjects, { lcl: null, nas: null }, 'one Google project per platform, none stored here');
   const text = res.text();
   assert.ok(!text.includes('gc-id-value') && !text.includes('nas.example'), 'status must carry names only');
   assert.equal(body.lan, null);

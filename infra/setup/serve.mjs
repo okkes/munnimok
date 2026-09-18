@@ -192,10 +192,11 @@ async function statusEndpoint(res, probeImpl) {
   const stacks = {};
   for (const name of LCL_STACKS()) stacks[name] = await stackStatus(name, probeImpl);
   const { enabled, lastCheckAt, lastResult } = loadAutonomy();
-  let googleProject = null;
-  try {
-    googleProject = JSON.parse(wizardValues(LCL).PLAY_SERVICE_ACCOUNT_JSON ?? 'null')?.project_id ?? null;
-  } catch { /* no or malformed service account — generic links */ }
+  // the Google project behind each platform's Play service account (console links) — one per platform, never shared
+  const googleProjects = {};
+  for (const p of listPlatforms()) {
+    try { googleProjects[p.platform] = JSON.parse(wizardValues(p.platform).PLAY_SERVICE_ACCOUNT_JSON ?? 'null')?.project_id ?? null; } catch { googleProjects[p.platform] = null; }
+  }
   const store = loadWizardStore();
   return json(res, 200, {
     docker,
@@ -203,7 +204,7 @@ async function statusEndpoint(res, probeImpl) {
     platforms: platformsView(),
     wizardStored: { machine: Object.keys(store.machine).filter((k) => store.machine[k]), platforms: Object.fromEntries(Object.entries(store.platforms).map(([p, v]) => [p, Object.keys(v).filter((k) => v[k])])) },
     lan: lanHost(),
-    googleProject,
+    googleProjects,
     autonomy: { enabled, lastCheckAt, lastResult, running: autonomyRunning },
   });
 }

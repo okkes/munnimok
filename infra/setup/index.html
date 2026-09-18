@@ -1113,12 +1113,14 @@ const UPSTREAM = 'okkes/munnimok';
 
 /** the ticks a fresh platform starts with — kept per platform, like everything else the page holds */
 const FEATURE_DEFAULTS = { gocardless: true, enablebanking: false, logos: false, push: false, google: false, apple: false, email: false, android: false, ios: false };
+/** a platform's ticks: ITS stored set over the defaults — always a fresh object, so no platform can ever mutate another's */
+const featuresFor = (p) => ({ ...FEATURE_DEFAULTS, ...(LS.get('features.' + p, null) ?? {}) });
 const S = {
   pat: '',
   slug: LS.get('slug', UPSTREAM),
   ref: LS.get('ref', 'dev'),
   platform: LS.get('platform', 'lcl'),      // the platform the page works on: lcl | nas
-  features: LS.get('features.' + LS.get('platform', 'lcl'), FEATURE_DEFAULTS), // per platform — platforms share nothing
+  features: featuresFor(LS.get('platform', 'lcl')), // per platform — platforms share nothing
   domain: LS.get('domain', ''),             // PLATFORM_DOMAIN mirror — personalizes the nas links (the value itself lives in the helper's store)
   user: null,
   status: null,            // the helper's /api/status answer
@@ -1502,7 +1504,7 @@ async function gh(path, init = {}) {
       headers: {
         accept: 'application/vnd.github+json',
         'x-github-api-version': '2022-11-28',
-        authorization: 'Bearer ' + S.pat,
+        ...(S.pat ? { authorization: 'Bearer ' + S.pat } : {}), // no token (another platform, or none yet): no header, no 401 noise
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         ...(init.headers || {}),
       },
@@ -1996,21 +1998,26 @@ async function checkManifest() {
 /* ── live GitHub status: the picked platform's environments, the runs, the NAS verdict ── */
 async function refresh() {
   if (!connected()) return;
+  const epoch = platformEpoch;
   const names = (r, key) => new Set((r?.[key] ?? []).map((x) => x.name));
   const wanted = [sharedEnvOf(), ...S.envList.map((e) => e.environment)];
   const envList = await gh(`/repos/${S.slug}/environments?per_page=100`, { allow404: true }).catch(() => null);
+  if (epoch !== platformEpoch) return;
   const known = envList ? wanted.filter((n) => (envList.environments ?? []).some((e) => e.name === n)) : [];
   const [repoSecrets, ...perEnv] = await Promise.all([
     gh(`/repos/${S.slug}/actions/secrets?per_page=100`, { allow404: true }),
     ...known.flatMap((env) => [gh(`${envBase(env)}/secrets?per_page=100`, { allow404: true }), gh(`${envBase(env)}/variables?per_page=100`, { allow404: true })]),
   ]);
+  if (epoch !== platformEpoch) return;
   S.repoSecrets = names(repoSecrets, 'secrets');
   S.envs = {};
   known.forEach((env, i) => { S.envs[env] = { secrets: names(perEnv[i * 2], 'secrets'), vars: names(perEnv[i * 2 + 1], 'variables') }; });
   const [iacRuns, nasRuns, andRuns, iosRuns] = await Promise.all([workflowRuns('iac.yml'), workflowRuns('deploy-nas.yml'), workflowRuns('native-android.yml'), workflowRuns('native-ios.yml')]);
+  if (epoch !== platformEpoch) return;
   S.runs = { iac: iacRuns?.workflow_runs ?? [], nas: nasRuns?.workflow_runs ?? [], native: [...(andRuns?.workflow_runs ?? []), ...(iosRuns?.workflow_runs ?? [])] };
   await mapRunStacks([...S.runs.iac, ...S.runs.nas, ...S.runs.native]);
   const nasStateVar = await gh(`/repos/${S.slug}/actions/variables/NAS_STATE`, { allow404: true }).catch(() => null);
+  if (epoch !== platformEpoch) return;
   try { S.nasState = nasStateVar?.value ? JSON.parse(nasStateVar.value) : null; } catch { S.nasState = null; }
   renderNasStatus();
   renderEnvStatus();
@@ -2206,6 +2213,7 @@ function renderPlatformCards() {
   box.innerHTML = html;
   box.querySelectorAll('[data-platform-pick]').forEach((el) => el.addEventListener('click', () => pickPlatform(el.dataset.platformPick)));
 }
+let platformEpoch = 0; // bumped on every platform switch: a refresh that started under another platform stops instead of painting it or calling GitHub with the wrong token
 /** a stored GitHub token reconnects by itself — per platform, since platforms share nothing; Connect is one click when the repo name was cleared */
 async function restoreConnection() {
   try {
@@ -2224,13 +2232,17 @@ async function restoreConnection() {
 function pickPlatform(id) {
   if (S.platform === id) return;
   S.platform = id;
+  platformEpoch++;
+  clearTimeout(S.pollTimer);
   LS.set('platform', id);
   // platforms share nothing: ticks, skips, saved values, verdicts and the GitHub connection are each their own
-  S.features = LS.get('features.' + id, FEATURE_DEFAULTS);
+  S.features = featuresFor(id);
   S.skipped = new Set(LS.get('skipped.' + id, []));
   S.recentlyStored.clear();
   S.verdicts = {};
   S.pat = ''; S.user = null;
+  S.googleProject = S.status?.googleProjects?.[id] ?? null;
+  document.querySelectorAll('.tile [data-secret]').forEach((el) => { el.value = ''; }); // typed, unsaved values never cross to another platform
   const field = document.getElementById('in-pat'); if (field) field.value = '';
   msg('msg-connect', '', true);
   applyPlatform().then(restoreConnection).catch(() => {});
@@ -2284,14 +2296,16 @@ async function refreshLocal() {
   if (!HELPER) return;
   const box = document.getElementById('local-status');
   try {
+    const epoch = platformEpoch;
     const st = await hjson('/api/status');
+    if (epoch !== platformEpoch) return;
     S.status = st;
     S.platforms = st.platforms ?? [];
     S.envList = (platformCfg()?.envs ?? []).map((e) => ({ ...e }));
     const names = new Set([...(st.wizardStored?.machine ?? []), ...(st.wizardStored?.platforms?.[S.platform] ?? [])]);
     if (isLcl()) for (const s of Object.values(st.stacks ?? {})) for (const n of s.stored ?? []) names.add(n);
     S.localStore = names;
-    S.googleProject = st.googleProject ?? null;
+    S.googleProject = st.googleProjects?.[S.platform] ?? null;
     if (syncFeaturesFromEnvs()) { renderCards(); renderEnvAddFeatures(); }
     renderPlatformCards();
     renderWorkspaces();
@@ -2301,6 +2315,7 @@ async function refreshLocal() {
       isLcl() ? hjson('/api/local/ca-trust').catch(() => null) : Promise.resolve(null),
       hjson('/api/local/registry').catch(() => null),
     ]);
+    if (epoch !== platformEpoch) return;
     S.caTrust = trust;
     S.registry = registry;
     if (isLcl()) {
