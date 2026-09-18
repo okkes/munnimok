@@ -1,0 +1,26 @@
+{
+  "env": "prod",
+  "slot": 0,
+  "channel": "latest",
+  "appChannel": "production",
+  "label": "munni prod-nas",
+  "features": {
+    "android": true,
+    "ios": true,
+    "push": true,
+    "logos": true,
+    "telemetry": true,
+    "pgadmin": true,
+    "banking": [
+      "gocardless",
+      "enablebanking"
+    ],
+    "signin": [
+      "google"
+    ]
+  },
+  "store": {
+    "androidPackage": "app.munni.nas.prod",
+    "iosBundleId": "app.munni.nas.prod"
+  }
+}
