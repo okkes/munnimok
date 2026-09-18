@@ -85,8 +85,11 @@ Generate new private key).
 
 1. **App Store Connect key** (tile *App Store Connect key*): App Store
    Connect → Users and Access → Integrations → App Store Connect API →
-   generate with **App Manager** access; note Key ID and Issuer ID,
-   download the .p8 once and paste its content. The Team ID is on
+   generate with **Admin** access (the upload signs with Apple's
+   cloud-managed Distribution certificate, which an App Manager key may
+   not use unless "Access to Cloud Managed Distribution Certificate" is
+   ticked on it); note Key ID and Issuer ID, download the .p8 once and
+   paste its content. The Team ID is on
    developer.apple.com → Membership details.
 2. **App ID and capabilities:** nothing to click at developer.apple.com —
    Build (or *Register the App ID*) registers the App ID with push,
@@ -116,6 +119,13 @@ Generate new private key).
 - **Sign-in registrations** (Registrations tab): Google's redirect URI
   and Apple's return URL per environment — the tab lists the exact
   values and verifies them where a provider offers an API.
+- **Sign in with Apple** is configured on its tile only after the first
+  environment with Apple exists and the App Store Connect key is saved:
+  the tile then names that environment's App ID (the wizard registers
+  it), a platform-specific Services ID name, and every environment's
+  domain and return URL for the Services ID configuration; the key is
+  created against the same App ID. Before that the tile says "Not yet"
+  and why.
 
 ## 6. Removing
 

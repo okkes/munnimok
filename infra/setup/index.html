@@ -1256,7 +1256,7 @@ const GROUPS = [
     id: 'ascstore', title: 'App Store Connect key', feature: 'ios', check: 'ascstore',
     why: 'CI uploads iOS builds to TestFlight with an App Store Connect API key — and this page uses it to check when the app record exists and to register the App ID.',
     how: [
-      '<a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noreferrer">App Store Connect → Integrations</a> → generate an API key with <b>App Manager</b> access; note the Key ID and the Issuer ID shown above the list.',
+      '<a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noreferrer">App Store Connect → Integrations</a> → generate an API key with <b>Admin</b> access — the upload signs with Apple\'s cloud-managed Distribution certificate, which an App Manager key may not use (unless "Access to Cloud Managed Distribution Certificate" is ticked on it); note the Key ID and the Issuer ID shown above the list.',
       'Download the <code>.p8</code> (offered ONCE), open it in a text editor and paste its WHOLE content below — conversion happens here.',
       'The Team ID (10 characters) is under Membership details on developer.apple.com.',
     ],
@@ -1290,13 +1290,18 @@ const GROUPS = [
     fields: [{ name: 'LOGTO_GOOGLE_CLIENT_ID' }, { name: 'LOGTO_GOOGLE_CLIENT_SECRET', secret: true }],
   },
   {
-    id: 'apple', title: 'Apple sign-in', feature: 'apple', check: 'apple',
-    why: 'Sign in with Apple for web + iOS. Requires an Apple Developer membership. One Services ID + key serves every environment.',
+    id: 'apple', title: 'Apple sign-in', feature: 'apple', check: 'apple', ready: () => appleLock(),
+    why: 'Sign in with Apple for the web and the iOS app — one Services ID and one key per platform serve every environment. It hangs on an App ID the wizard registers, so it comes after the first environment with Apple sign-in; the steps then name the exact values Apple asks for.',
     how: [
-      'Apple keeps this manual, once per team. Its "Finish Setting up Sign in with Apple" banner lists four steps: ① <b>Enable App ID</b> — done by the iOS Build. ② <b>Create Service ID</b> — the ONLY place that takes domains + return URLs. ③ <b>Create Key</b> — the .p8 pasted below. ④ <b>Register Email Sources</b> — skip, munni never mails through Apple\'s relay.',
-      'The Services ID: <a href="https://developer.apple.com/account/resources/identifiers/list/serviceId" target="_blank" rel="noreferrer">Identifiers → Services IDs</a> → ＋ → identifier (this becomes the client ID below) → Register → open it → tick <b>Sign in with Apple</b> → <b>Configure</b>: primary App ID = the munni App ID, then the domains + return URLs each environment lists under Registrations.',
-      'The key: <a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">Keys</a> → ＋ → tick <b>Sign in with Apple</b> (Configure → the primary App ID) — and <b>APNs</b> on the same key if you plan push → Register → <b>Download</b> the .p8 (handed out exactly once) → note the <b>Key ID</b> → paste the file contents below.',
-      'Team ID: empty takes the App Store Connect tile\'s. <b>Check</b> then asks Apple whether every environment\'s return URL is accepted.',
+      () => `<b>The App ID</b> — the wizard\'s: ${appleEnvs().map((e) => `<code>${esc(appleIdOf(e))}</code> (${esc(e.env)})`).join(', ')}. <b>Build</b> or <b>Register the App ID</b> on that environment\'s Phones tab registers it at Apple with Sign in with Apple as the primary App ID — nothing to click at developer.apple.com.`,
+      () => {
+        const urls = callbackUrlsFor('apple-universal');
+        const domains = [...new Set(urls.map((u) => new URL(u).host))];
+        const code = (v) => `<code style="user-select:all">${esc(v)}</code>`;
+        return `<b>The Services ID</b> (it becomes the client ID below): <a href="https://developer.apple.com/account/resources/identifiers/list/serviceId" target="_blank" rel="noreferrer">Identifiers → Services IDs</a> → ＋ → identifier ${code(`app.munni.${S.platform}.signin`)} (any reverse-DNS name, one per platform) → Register → open it → tick <b>Sign in with Apple</b> → <b>Configure</b>: primary App ID ${code(appleIdOf(appleEnvs()[0]))}; Domains: ${domains.map(code).join(', ')}; Return URLs: ${urls.map(code).join(', ')} → Done → Continue → <b>Save</b>.`;
+      },
+      () => `<b>The key</b>: <a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">Keys</a> → ＋ → any name → tick <b>Sign in with Apple</b> → Configure → primary App ID <code style="user-select:all">${esc(appleIdOf(appleEnvs()[0]))}</code> (tick <b>APNs</b> on the same key if you plan push) → Register → <b>Download</b> the .p8 (handed out exactly once) → note the <b>Key ID</b> → paste the file contents below.`,
+      'Save, then <b>Check</b>: Apple is asked whether every environment\'s return URL is accepted. The Team ID may stay empty — the App Store Connect tile\'s is used. An environment added later: put its domain + return URL on the same Services ID; its Registrations tab lists them and verifies.',
     ],
     fields: [
       { name: 'LOGTO_APPLE_CLIENT_ID', ph: 'the Services ID identifier (NOT the App ID), e.g. app.munni.signin' },
@@ -1586,8 +1591,18 @@ const rowSaved = (g) => {
   const saved = fields.filter((f) => secretPresent(f.name)).length;
   return { saved, total: fields.length, complete: saved === fields.length };
 };
+/** Sign in with Apple hangs on an App ID the wizard registers per environment — before that there is nothing Apple would accept */
+const appleEnvs = () => S.envList.filter((e) => (e.features?.signin ?? []).includes('apple'));
+const appleIdOf = (e) => e?.store?.iosBundleId ?? e?.store?.androidPackage ?? '';
+function appleLock() {
+  if (!secretPresent('ASC_KEY_P8')) return 'save the App Store Connect key first — it registers the App ID that Sign in with Apple hangs on';
+  if (!appleEnvs().length) return 'add an environment with Sign in with Apple ticked first (step 4) — Apple wants its App ID and its https return URL';
+  if (!callbackUrlsFor('apple-universal').length) return isLcl() ? 'Apple takes https return URLs only — LAN mode gives every environment one (Set up & start with a phone or https feature ticked)' : 'the environment has no https address yet';
+  return null;
+}
 const rowChip = (g) => {
   if (S.skipped.has(g.id)) return '<span class="pill">Skipped</span>';
+  if (g.ready?.()) return '<span class="pill" title="' + escAttr(g.ready()) + '">Later</span>';
   if (g.verify) {
     const v = S.verdicts[g.id];
     if (v?.checking) return '<span class="pill">Checking…</span>';
@@ -1632,14 +1647,22 @@ function syncFeaturesFromEnvs() {
 
 function renderCards() {
   const scopeTag = (f) => (isPlatformScoped(f.name) ? `platform (${S.platform})` : 'every environment that needs it');
-  const howSteps = (g) => g.how.map((h) => (typeof h === 'string' ? h : h[S.platform])).filter(Boolean);
+  const howSteps = (g) => g.how.map((h) => (typeof h === 'string' ? h : (typeof h === 'function' ? h() : h[S.platform]))).filter(Boolean);
+  /** a tile that cannot be filled yet: its why + the reason, Skip stays, nothing to type or check */
+  const lockedBody = (g, lock) => `
+      <div class="crow-b" data-body="${g.id}">
+      <p class="why">${g.why}</p>
+      <p class="why"><b>Not yet</b> — ${lock}</p>
+      <button class="ghost" data-skip-group="${g.id}" title="counts this integration as done for now — undo any time">${S.skipped.has(g.id) ? 'Skipped — undo' : 'Skip for now'}</button>
+      <div class="msg" id="msg-group-${g.id}"></div>
+      </div>`;
   const wrap = document.getElementById('cred-cards');
   const pwrap = document.getElementById('platform-tiles');
   const connect = document.getElementById('connect-card');
   if (connect && wrap.contains(connect)) wrap.before(connect);
   const typed = Object.fromEntries([...document.querySelectorAll('.tile [data-secret]')].map((el) => [el.dataset.secret, el.value]).filter(([, v]) => v));
   const openHow = new Set([...document.querySelectorAll('.tile')].filter((c) => c.querySelector('details.how')?.open).map((c) => c.dataset.group));
-  const bodyHtml = (g) => `
+  const bodyHtml = (g) => g.ready?.() ? lockedBody(g, g.ready()) : `
       <div class="crow-b" data-body="${g.id}">
       <div class="crow-vars">${g.fields.length ? g.fields.map((f) => f.name).join(' · ') : 'nothing to type — Check verifies the setup'}</div>
       <p class="why">${g.why}${isOptional(g) ? ' <b>Optional</b> — skip it below and it counts as done.' : ''}</p>
@@ -1900,6 +1923,7 @@ async function checkGroup(id) {
 /* ── integration health: one line per integration the picked features need ── */
 function healthOf(g) {
   if (S.skipped.has(g.id)) return { cls: '', label: 'Skipped' };
+  if (g.ready?.()) return { cls: '', label: 'Later', title: g.ready() };
   if (g.verify) {
     const v = S.verdicts[g.id];
     if (v?.checking) return { cls: '', label: 'Checking…' };
@@ -3635,7 +3659,7 @@ function platformTodoItems() {
   if (phones && f.push) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Check on the Firebase tile verifies both — Build needs them', state: (S.verdicts.fcm && !S.verdicts.fcm.unreachable) ? Boolean(S.verdicts.fcm.ok) : Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).length ? Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
   if (f.ios && f.push) items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'team-wide, iOS push only — Google offers no API for it (Leftovers)', manual: true, href: '#s-leftovers' });
   if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in tile — each environment registers its redirect URI in its workspace', state: (has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET')) || S.skipped.has('google'), href: '[data-group="google"]', spot: '#field-LOGTO_GOOGLE_CLIENT_ID' });
-  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: 'the Apple sign-in tile — each environment registers its return URL in its workspace', state: (has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY')) || S.skipped.has('apple'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });
+  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: appleLock() ?? 'the Apple sign-in tile lists every environment\'s domain + return URL for the Services ID', state: appleLock() ? null : (has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY')) || S.skipped.has('apple'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });
   const done = todoDone();
   return items.map((it) => ({ ...it, done: it.manual ? Boolean(done[`${S.platform}:${it.id}`]) : it.state === true }));
 }
