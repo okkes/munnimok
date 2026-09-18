@@ -374,7 +374,7 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       shared: {}
 
   logto-${e}:
-    image: svhd/logto:1.41
+    image: svhd/logto:1.43
     restart: unless-stopped
     # SEED FIRST: alteration-before-seed on an empty db half-creates tables and seed --swe then skips forever
     entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]

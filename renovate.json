@@ -36,5 +36,14 @@
       "dependencyDashboardApproval": true
     }
   ],
-  "vulnerabilityAlerts": { "enabled": true }
+  "vulnerabilityAlerts": { "enabled": true },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "the platform stacks' Logto image is pinned in a JS template the docker-compose manager cannot see — same depName as the dev-source compose, so both bump in one PR",
+      "managerFilePatterns": ["infra/modules/render.mjs"],
+      "matchStrings": ["image: (?<depName>svhd/logto):(?<currentValue>[0-9.]+)"],
+      "datasourceTemplate": "docker"
+    }
+  ]
 }
