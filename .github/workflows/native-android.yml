@@ -79,7 +79,7 @@ jobs:
       - uses: actions/setup-java@v6
         with:
           distribution: temurin
-          java-version: 21
+          java-version: 25
 
       - name: Resolve the app's host (universal links) from its public origin
         run: echo "MUNNI_HOST=$(node -p "new URL(process.env.ORIGIN || 'https://local.munni.invalid').hostname")" >> "$GITHUB_ENV"
