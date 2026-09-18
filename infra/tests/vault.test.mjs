@@ -84,7 +84,7 @@ test('vaultLogin sends the password grant with the auth-email header; bad creds 
 import { randomBytes as rnd64 } from 'node:crypto';
 import { vaultReplaceFolder, userKeysOf } from '../modules/vault.mjs';
 
-test('vaultReplaceFolder: an existing account is read with its REAL user key, only the named folder\'s items are replaced, other folders survive; a missing account is registered first', async () => {
+test('vaultReplaceFolder: an existing account is read with its REAL user key; the named folder\'s items are replaced one by one, filed by folderId; our own stray unfiled twins go; other folders survive; a missing account is registered and a missing folder created first', async () => {
   const email = 'ops@munni.test';
   const password = 'master-pw';
   const sym = rnd64(64);
@@ -92,29 +92,38 @@ test('vaultReplaceFolder: an existing account is read with its REAL user key, on
   const profileKey = encString(stretchKey(masterKey(email, password)), sym);
   assert.deepEqual(userKeysOf(email, password, profileKey), keys, 'the profile key decrypts to the user key');
   const seen = [];
-  const vault = ({ accountExists }) => async (url, init = {}) => {
+  const vault = ({ accountExists, folderExists }) => async (url, init = {}) => {
     seen.push({ url, method: init.method ?? 'GET', body: init.body ? JSON.parse(String(init.body).startsWith('{') ? String(init.body) : '{}') : null });
-    if (url.endsWith('/identity/connect/token')) return { ok: accountExists || seen.some((s) => s.url.endsWith('/accounts/register')), status: 200, json: async () => ({ access_token: 'T' }) };
+    if (url.endsWith('/identity/connect/token')) return { ok: accountExists || seen.some((x) => x.url.endsWith('/accounts/register')), status: 200, json: async () => ({ access_token: 'T' }) };
     if (url.endsWith('/identity/accounts/register')) return { ok: true, status: 200, json: async () => ({}) };
-    if (url.includes('/api/sync')) return { ok: true, status: 200, json: async () => ({ profile: { key: profileKey }, folders: [{ id: 'f-munni', name: encString(keys, 'munni-iac-prod') }, { id: 'f-mine', name: encString(keys, 'personal') }], ciphers: [{ id: 'c-old', folderId: 'f-munni' }, { id: 'c-mine', folderId: 'f-mine' }, { id: 'c-loose', folderId: null }] }) };
+    if (url.includes('/api/sync')) return { ok: true, status: 200, json: async () => ({ profile: { key: profileKey }, folders: [...(folderExists ? [{ id: 'f-munni', name: encString(keys, 'munni-iac-prod') }] : []), { id: 'f-mine', name: encString(keys, 'personal') }], ciphers: [
+      { id: 'c-old', folderId: folderExists ? 'f-munni' : 'f-none', name: encString(keys, 'Logto console') },
+      { id: 'c-mine', folderId: 'f-mine', name: encString(keys, 'my bank') },
+      { id: 'c-junk', folderId: null, name: encString(keys, 'Logto console') },
+      { id: 'c-other', folderId: null, name: encString(keys, 'something else') },
+    ] }) };
     if (init.method === 'DELETE') return { ok: true, status: 200 };
-    if (url.endsWith('/api/ciphers/import')) return { ok: true, status: 200 };
+    if (url.endsWith('/api/folders')) return { ok: true, status: 200, json: async () => ({ id: 'f-new' }) };
+    if (url.endsWith('/api/ciphers')) return { ok: true, status: 200, json: async () => ({ id: 'c-new' }) };
     return { ok: false, status: 404 };
   };
-  const existing = vault({ accountExists: true });
+  const existing = vault({ accountExists: true, folderExists: true });
   const r = await vaultReplaceFolder('http://vault.test', { email, password, folder: 'munni-iac-prod', items: [{ name: 'Logto console', username: 'admin', password: 'pw', uri: 'http://admin.logto.test' }] }, existing);
-  assert.deepEqual(r, { registered: false, folder: 'munni-iac-prod', replaced: 1, imported: 1 });
-  assert.deepEqual(seen.filter((s) => s.method === 'DELETE').map((s) => s.url), ['http://vault.test/api/ciphers/c-old'], 'only the munni folder\'s item goes');
-  const imp = seen.find((s) => s.url.endsWith('/api/ciphers/import'));
-  assert.equal(imp.body.folders.length, 0, 'the folder exists — reused');
-  assert.equal(imp.body.ciphers[0].folderId, 'f-munni');
-  assert.equal(decString(keys, imp.body.ciphers[0].name).toString('utf8'), 'Logto console', 'encrypted with the account\'s real key');
-  assert.equal(decString(keys, imp.body.ciphers[0].login.password).toString('utf8'), 'pw');
+  assert.deepEqual(r, { registered: false, folder: 'munni-iac-prod', replaced: 1, unfiled: 1, imported: 1 });
+  assert.deepEqual(seen.filter((x) => x.method === 'DELETE').map((x) => x.url).sort(), ['http://vault.test/api/ciphers/c-junk', 'http://vault.test/api/ciphers/c-old'], 'the folder\'s item and our stray unfiled twin go; the personal item and the stranger stay');
+  assert.ok(!seen.some((x) => x.url.endsWith('/api/folders')), 'the folder exists — reused');
+  const created = seen.filter((x) => x.url.endsWith('/api/ciphers') && x.method === 'POST');
+  assert.equal(created.length, 1, 'one item, one create call');
+  assert.equal(created[0].body.folderId, 'f-munni', 'filed by folderId — the create endpoint honours it');
+  assert.equal(decString(keys, created[0].body.name).toString('utf8'), 'Logto console', 'encrypted with the account\'s real key');
+  assert.equal(decString(keys, created[0].body.login.password).toString('utf8'), 'pw');
   seen.length = 0;
-  const fresh = vault({ accountExists: false });
+  const fresh = vault({ accountExists: false, folderExists: false });
   const r2 = await vaultReplaceFolder('http://vault.test', { email, password, folder: 'munni-iac-prod', items: [{ name: 'x', password: 'y' }] }, fresh);
   assert.equal(r2.registered, true);
-  assert.ok(seen.some((s) => s.url.endsWith('/identity/accounts/register')), 'registered first');
+  assert.ok(seen.some((x) => x.url.endsWith('/identity/accounts/register')), 'registered first');
+  assert.ok(seen.some((x) => x.url.endsWith('/api/folders') && x.method === 'POST'), 'the folder is created first');
+  assert.equal(seen.find((x) => x.url.endsWith('/api/ciphers') && x.method === 'POST').body.folderId, 'f-new', 'then the item is filed in it');
 });
 
 test('platformValuesFromItems: the shared folder\'s items map to the secret names an environment needs; strangers and empty passwords are ignored', async () => {

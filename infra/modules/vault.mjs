@@ -161,6 +161,14 @@ export function userKeysOf(email, password, profileKey) {
 export const vaultDeleteCipher = (base, token, id, fetchImpl = insecureFetch) =>
   fetchImpl(`${base}/api/ciphers/${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` } });
 
+/** POST /api/folders — a folder by its (encrypted) name; the answer carries the folder's id */
+export const vaultCreateFolder = (base, token, encName, fetchImpl = insecureFetch) =>
+  fetchImpl(`${base}/api/folders`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ name: encName }) });
+
+/** POST /api/ciphers — one item, filed by its folderId (the create endpoint honours it; the import endpoint does not) */
+export const vaultCreateCipher = (base, token, cipher, fetchImpl = insecureFetch) =>
+  fetchImpl(`${base}/api/ciphers`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(cipher) });
+
 /**
  * ONE folder of the vault as code (part 4 of Logto OOBE on the NAS): sign
  * in — register the account when it does not exist yet (signups must be
@@ -187,21 +195,40 @@ export async function vaultReplaceFolder(base, { email, password, folder, items 
   const folders = sync.folders ?? sync.Folders ?? [];
   const nameOf = (f) => { try { return decString(keys, f.name ?? f.Name).toString('utf8'); } catch { return null; } };
   const existing = folders.find((f) => nameOf(f) === folder);
-  const existingId = existing ? (existing.id ?? existing.Id) : null;
-  let replaced = 0;
-  for (const c of (sync.ciphers ?? sync.Ciphers ?? [])) {
-    if (existingId && (c.folderId ?? c.FolderId) === existingId) {
-      const del = await vaultDeleteCipher(base, token, c.id ?? c.Id, fetchImpl);
-      if (del.ok) replaced++;
+  let folderId = existing ? (existing.id ?? existing.Id) : null;
+  if (!folderId) {
+    // Vaultwarden's import endpoint files ciphers only through the folderRelationships of folders it creates in the SAME
+    // call and ignores a cipher's own folderId — a second run through it left every item unfiled (found 2026-09-18).
+    // So: the folder first, then every item on its own with its folderId, which the create endpoint honours.
+    const made = await vaultCreateFolder(base, token, encString(keys, folder), fetchImpl);
+    if (!made.ok) throw new Error(`vault: creating folder ${folder} failed (${made.status})`);
+    const body = await made.json().catch(() => ({}));
+    folderId = body.id ?? body.Id ?? null;
+    if (!folderId) {
+      const again = await vaultSync(base, token, fetchImpl);
+      const found = (again.folders ?? again.Folders ?? []).find((f) => nameOf(f) === folder);
+      folderId = found ? (found.id ?? found.Id) : null;
     }
+    if (!folderId) throw new Error(`vault: folder ${folder} has no id after creation`);
   }
-  const ciphers = items.map((it) => ({ ...buildCipher(keys, it), folderId: existingId }));
-  const payload = existingId
-    ? { ciphers, folders: [], folderRelationships: [] }
-    : { ciphers, folders: [{ name: encString(keys, folder) }], folderRelationships: items.map((_, i) => ({ key: i, value: 0 })) };
-  const imp = await vaultImport(base, token, payload, fetchImpl);
-  if (!imp.ok) throw new Error(`vault import failed (${imp.status})`);
-  return { registered, folder, replaced, imported: items.length };
+  const names = new Set(items.map((it) => it.name));
+  let replaced = 0;
+  let unfiled = 0;
+  for (const c of (sync.ciphers ?? sync.Ciphers ?? [])) {
+    const inFolder = (c.folderId ?? c.FolderId) === folderId;
+    // our own strays: unfiled items with a name this folder writes — leftovers of the import path, never the operator's
+    const strayOfOurs = !(c.folderId ?? c.FolderId) && names.has(nameOf(c));
+    if (!inFolder && !strayOfOurs) continue;
+    const del = await vaultDeleteCipher(base, token, c.id ?? c.Id, fetchImpl);
+    if (del.ok) { if (inFolder) replaced++; else unfiled++; }
+  }
+  let imported = 0;
+  for (const it of items) {
+    const made = await vaultCreateCipher(base, token, { ...buildCipher(keys, it), folderId }, fetchImpl);
+    if (!made.ok) throw new Error(`vault: creating item "${it.name}" failed (${made.status})`);
+    imported++;
+  }
+  return { registered, folder, replaced, unfiled, imported };
 }
 
 /**
