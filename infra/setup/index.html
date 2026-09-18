@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>munni setup</title>
+<link rel="icon" href="data:,">
 <!--
   munni setup wizard — the operator's page over infra/platforms/README.md:
   every platform (lcl = this computer, nas = a Synology NAS) runs ONE
@@ -313,7 +314,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
 
 <section id="s-features" data-step="Features &amp; accounts">
   <h2><span class="n">2</span> Features &amp; accounts <span class="pill" id="creds-pill"></span></h2>
-  <p class="sub">Tick what you want — everything else works out of the box (offline-first app, web push, sync). Each tile is one feature with its account: the chip says what it still needs, Manage opens what the service is, why munni needs it, where the values come from and the fields. Save keeps a value in the helper's store on this machine and — for the NAS — copies it into every GitHub environment that needs it (values are write-only there). The ticks are the defaults of every environment you add; an environment's own features can differ. Skip for now counts an integration as done until you come back to it.</p>
+  <p class="sub">Tick what you want — everything else works out of the box (offline-first app, web push, sync). Each tile is one feature with its account: the chip says what it still needs, Manage opens what the service is, why munni needs it, where the values come from and the fields. Save keeps a value in the helper's store for this platform only — platforms share nothing: each has its own values, ticks and GitHub connection — and, for the NAS, copies it into this platform's GitHub environments (values are write-only there). The ticks are the defaults of every environment you add; an environment's own features can differ. Skip for now counts an integration as done until you come back to it.</p>
 
   <div class="card" id="health-card">
     <div class="health-h"><span class="ico" data-ico="pulse"></span><div><b>Integration health</b><div class="why" style="margin:0" id="health-sub">checking…</div></div><button class="ghost" id="btn-check-all">Check all</button></div>
@@ -328,7 +329,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
     <div class="tile-d">the NAS deploys and every phone build run in your repo's Actions · <code>GH_PAT</code></div>
     <div class="tile-f"><span class="tag info">Connection</span><button class="ghost mini" data-manage="github">Manage</button></div>
     <div class="crow-b" data-body="github">
-    <p class="why">One fine-grained token drives this page live and is stored as the repository secret <code>GH_PAT</code> so the workflows can manage environments and write secrets back. Point it at a repo that carries munni — or at a name that does not exist yet, and this page copies <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically. A working token is kept in the helper's store — the next visit reconnects by itself.</p>
+    <p class="why">One fine-grained token per platform drives this page live and is stored as the repository secret <code>GH_PAT</code> so the workflows can manage environments and write secrets back. Point it at a repo that carries munni — or at a name that does not exist yet, and this page copies <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically. A working token is kept in the helper's store — the next visit reconnects by itself.</p>
     <div id="connect-body">
     <details class="how"><summary>How to create the token (2 minutes)</summary>
       <ol>
@@ -1110,12 +1111,14 @@ const LS = {
 const HELPER = globalThis.__SETUP_HELPER__ ?? null;
 const UPSTREAM = 'okkes/munnimok';
 
+/** the ticks a fresh platform starts with — kept per platform, like everything else the page holds */
+const FEATURE_DEFAULTS = { gocardless: true, enablebanking: false, logos: false, push: false, google: false, apple: false, email: false, android: false, ios: false };
 const S = {
   pat: '',
   slug: LS.get('slug', UPSTREAM),
   ref: LS.get('ref', 'dev'),
   platform: LS.get('platform', 'lcl'),      // the platform the page works on: lcl | nas
-  features: LS.get('features', { gocardless: true, enablebanking: false, logos: false, push: false, google: false, apple: false, email: false, android: false, ios: false }),
+  features: LS.get('features.' + LS.get('platform', 'lcl'), FEATURE_DEFAULTS), // per platform — platforms share nothing
   domain: LS.get('domain', ''),             // PLATFORM_DOMAIN mirror — personalizes the nas links (the value itself lives in the helper's store)
   user: null,
   status: null,            // the helper's /api/status answer
@@ -1130,7 +1133,7 @@ const S = {
   localStore: new Set(),   // names the helper's stores hold for the picked platform (never values)
   storeStatusByEnv: {},    // store-status verdicts per environment name
   regVerdicts: {},         // registration verdicts per environment name → provider
-  skipped: new Set(LS.get('skipped', [])),
+  skipped: new Set(LS.get('skipped.' + LS.get('platform', 'lcl'), [])),
   verdicts: {},            // the last Check verdict per integration (feeds the health card)
   recentlyStored: new Map(),
   caTrust: null,
@@ -1590,7 +1593,7 @@ const rowChip = (g) => {
 };
 function setSkipped(id, on) {
   if (on) S.skipped.add(id); else S.skipped.delete(id);
-  LS.set('skipped', [...S.skipped]);
+  LS.set('skipped.' + S.platform, [...S.skipped]);
 }
 function toggleSkip(id) {
   const g = GROUPS.find((x) => x.id === id);
@@ -1602,7 +1605,7 @@ function toggleSkip(id) {
 }
 function selectRecommended() {
   FEATURES.forEach((f) => { if (f.rec) S.features[f.id] = true; });
-  LS.set('features', S.features);
+  LS.set('features.' + S.platform, S.features);
   renderCards();
   renderStatus();
 }
@@ -1614,7 +1617,7 @@ function syncFeaturesFromEnvs() {
     const on = { android: f.android, ios: f.ios, push: f.push, logos: f.logos, gocardless: (f.banking ?? []).includes('gocardless'), enablebanking: (f.banking ?? []).includes('enablebanking'), google: (f.signin ?? []).includes('google'), apple: (f.signin ?? []).includes('apple') };
     for (const [k, v] of Object.entries(on)) if (v && !S.features[k]) { S.features[k] = true; changed = true; }
   }
-  if (changed) LS.set('features', S.features);
+  if (changed) LS.set('features.' + S.platform, S.features);
   return changed;
 }
 
@@ -1669,9 +1672,9 @@ function renderCards() {
     const box = document.getElementById('feat-' + f.id);
     if (!box) return;
     box.addEventListener('change', async (e) => {
-      S.features[f.id] = e.target.checked; LS.set('features', S.features);
+      S.features[f.id] = e.target.checked; LS.set('features.' + S.platform, S.features);
+      // a tick only records the default for the next environment — nothing starts; LAN mode follows the ticks at the next Set up & start
       renderCards(); renderEnvAddFeatures(); renderStatus();
-      if (isLcl() && HELPER) await reconcileLanMode().catch(() => {});
     });
   });
   for (const grid of [wrap, pwrap].filter(Boolean)) {
@@ -2092,7 +2095,7 @@ async function connectRepo(repo) {
   }
   pill.textContent = `connected as ${S.user.login} ✓`;
   pill.className = 'pill ok';
-  hfetch('/api/local/gh-pat', { method: 'POST', body: JSON.stringify({ pat: S.pat }) }).catch(() => {});
+  hfetch('/api/local/gh-pat', { method: 'POST', body: JSON.stringify({ pat: S.pat, platform: S.platform }) }).catch(() => {});
   await ghUpsertRepoVar('MUNNI_INITIALIZED', 'true').catch(() => {});
   let patNote = '';
   try {
@@ -2203,11 +2206,34 @@ function renderPlatformCards() {
   box.innerHTML = html;
   box.querySelectorAll('[data-platform-pick]').forEach((el) => el.addEventListener('click', () => pickPlatform(el.dataset.platformPick)));
 }
+/** a stored GitHub token reconnects by itself — per platform, since platforms share nothing; Connect is one click when the repo name was cleared */
+async function restoreConnection() {
+  try {
+    const v = await hjson(`/api/wizard/values?platform=${encodeURIComponent(S.platform)}`);
+    const pat = v.platform?.GH_PAT;
+    const field = document.getElementById('in-pat');
+    if (!pat || field.value) return;
+    field.value = pat;
+    S.pat = pat;
+    if (S.slug && /^[^/\s]+\/[^/\s]+$/.test(S.slug)) {
+      msg('msg-connect', `reconnecting with the token saved for ${platformLabel()}…`, true);
+      document.getElementById('btn-connect').click();
+    }
+  } catch { /* helper hiccup — the manual flow still works */ }
+}
 function pickPlatform(id) {
   if (S.platform === id) return;
   S.platform = id;
   LS.set('platform', id);
-  applyPlatform().catch(() => {});
+  // platforms share nothing: ticks, skips, saved values, verdicts and the GitHub connection are each their own
+  S.features = LS.get('features.' + id, FEATURE_DEFAULTS);
+  S.skipped = new Set(LS.get('skipped.' + id, []));
+  S.recentlyStored.clear();
+  S.verdicts = {};
+  S.pat = ''; S.user = null;
+  const field = document.getElementById('in-pat'); if (field) field.value = '';
+  msg('msg-connect', '', true);
+  applyPlatform().then(restoreConnection).catch(() => {});
 }
 const COPY = {
   lcl: {
@@ -2262,7 +2288,7 @@ async function refreshLocal() {
     S.status = st;
     S.platforms = st.platforms ?? [];
     S.envList = (platformCfg()?.envs ?? []).map((e) => ({ ...e }));
-    const names = new Set([...(st.wizardStored?.family ?? []), ...(st.wizardStored?.platforms?.[S.platform] ?? [])]);
+    const names = new Set([...(st.wizardStored?.machine ?? []), ...(st.wizardStored?.platforms?.[S.platform] ?? [])]);
     if (isLcl()) for (const s of Object.values(st.stacks ?? {})) for (const n of s.stored ?? []) names.add(n);
     S.localStore = names;
     S.googleProject = st.googleProject ?? null;
@@ -2279,7 +2305,6 @@ async function refreshLocal() {
     S.registry = registry;
     if (isLcl()) {
       refreshAutonomy().catch(() => {});
-      if (!S.lanReconciled && Object.values(st.stacks ?? {}).some((s) => s.rendered)) { S.lanReconciled = true; reconcileLanMode().catch(() => {}); }
     } else {
       refreshNasProbe().catch(() => {});
     }
@@ -2406,10 +2431,7 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
   setMasterBusy(true);
   try {
     await refreshLocal();
-    if (!S.envList.length) {
-      if (!(await streamLocal('/api/envs', { platform: 'lcl', env: 'prod', channel: 'dev', appChannel: 'production', features: featuresFromToggles() }, 'create the prod environment (infra/platforms/lcl/envs/prod.json + render)'))) return;
-      await refreshLocal();
-    }
+    if (!S.envList.length) localLog('\nno environment yet — the shared services come up now; add environments in step 4 (nothing is created on its own)\n');
     if (!(await streamLocal('/api/local/run', { stack: shared }, 'mint secrets + render the shared services'))) return;
     if (!(await streamLocal('/api/local/tool', { tool: `${shared}:up` }, 'start the shared services (glitchtip, vault, ocr, control, pgadmin)'))) return;
     if (!(await waitForServices(shared, ['glitchtip', 'vault'], 'wait for the shared services'))) return;
@@ -2552,7 +2574,7 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
     ? { name: 'Vaultwarden (master password)', url: urls.vault ?? '', user: vault.VAULT_ADMIN_EMAIL, pass: vault.VAULT_MASTER_PASSWORD }
     : { name: 'Vaultwarden', url: urls.vault ?? '', user: '(not set up yet)', pass: '(press Set up the vault automatically)' });
   const signInRows = signIns.map((l) => `<tr><td style="padding:2px 10px 2px 0"><b>${esc(l.name)}</b>${l.url ? ` <a href="${escAttr(l.url)}" target="_blank" rel="noreferrer" style="font-size:11px">open</a>` : ''}</td><td style="padding:2px 10px 2px 0"><code style="user-select:all">${esc(l.user)}</code></td><td><code style="user-select:all">${esc(l.pass)}</code></td></tr>`);
-  const raw = [['WIZARD STORE (this platform)', { ...(all.wizard?.family ?? {}), ...(all.wizard?.platforms?.lcl ?? {}) }], ...Object.entries(all.values ?? {}).map(([stack, vals]) => [stackLabel(stack).toUpperCase(), vals])];
+  const raw = [['WIZARD STORE (this platform)', { ...(all.wizard?.machine ?? {}), ...(all.wizard?.platforms?.lcl ?? {}) }], ...Object.entries(all.values ?? {}).map(([stack, vals]) => [stackLabel(stack).toUpperCase(), vals])];
   box.innerHTML = `<p class="why">Shown on your request only — nothing here is logged. Click a value to select it.</p>
     <div style="font-size:11px;color:var(--muted);margin:4px 0">SIGN-INS</div>
     <div style="overflow-x:auto"><table style="font-size:12px">${signInRows.join('')}</table></div>
@@ -2618,7 +2640,7 @@ document.getElementById('btn-nas-reveal')?.addEventListener('click', async () =>
   const all = await hjson('/api/local/secrets');
   box.innerHTML = `<p class="why">Shown on your request only — nothing here is logged. The nas platform's values as the helper holds them; the generated ones (Postgres, Logto, GlitchTip, …) are minted by the bootstrap into GitHub and kept in the platform's vault.</p>
     <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">PLATFORM (nas)</div>${secretsTable(all.wizard?.platforms?.nas ?? {})}
-    <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">EVERY PLATFORM (family)</div>${secretsTable(all.wizard?.family ?? {})}`;
+    <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">THIS COMPUTER (the Apple Development certificate — Apple caps those per account)</div>${secretsTable(all.wizard?.machine ?? {})}`;
   box.hidden = false;
   btn.textContent = 'Hide platform secrets';
 });
@@ -2626,10 +2648,10 @@ const NAS_PLATFORM_REQUIRED = ['PLATFORM_DOMAIN', 'SYNOLOGY_URL', 'SYNOLOGY_USER
 /** the platform's values, as the helper holds them, sorted into platform-scoped and the rest */
 async function platformValuesFor(platform) {
   const v = await hjson(`/api/wizard/values?platform=${encodeURIComponent(platform)}`);
-  const merged = { ...(v.family ?? {}), ...(v.platform ?? {}) };
+  const merged = { ...(v.machine ?? {}), ...(v.platform ?? {}) };
   const platformScoped = Object.fromEntries(Object.entries(merged).filter(([n, val]) => isPlatformScoped(n) && val));
-  const family = Object.fromEntries(Object.entries(merged).filter(([n, val]) => !isPlatformScoped(n) && n !== 'GH_PAT' && val));
-  return { platformScoped, family };
+  const envScoped = Object.fromEntries(Object.entries(merged).filter(([n, val]) => !isPlatformScoped(n) && n !== 'GH_PAT' && val));
+  return { platformScoped, envScoped };
 }
 /** ONE button for the shared stack: GitHub environment + every platform value, the config on the branch, Bootstrap → Deploy */
 async function setupSharedServices() {
@@ -2772,11 +2794,11 @@ function envFeaturesFromForm() {
 /** a nas environment after its JSON exists: GitHub environment + every value it needs, the config on the branch, Bootstrap → Deploy */
 async function setupNasEnvironment(env) {
   requireConnection();
-  const { platformScoped, family } = await platformValuesFor('nas');
+  const { platformScoped, envScoped } = await platformValuesFor('nas');
   await ensureEnv(env.environment);
   let n = 0;
   for (const [name, value] of Object.entries(platformScoped)) { await putSecretAt(envBase(env.environment), name, value); n++; }
-  for (const [name, value] of Object.entries(family)) {
+  for (const [name, value] of Object.entries(envScoped)) {
     if (!envNeeds(env, name)) continue;
     await putSecretAt(envBase(env.environment), name, value); n++;
   }
@@ -3234,9 +3256,9 @@ async function envAction(act, env, btn) {
 /** the family values an environment's (changed) features need, into its GitHub environment */
 async function mirrorFamilyFor(env) {
   if (!connected() || !env || S.platform !== 'nas') return 0;
-  const { family } = await platformValuesFor('nas');
+  const { envScoped } = await platformValuesFor('nas');
   let n = 0;
-  for (const [name, value] of Object.entries(family)) {
+  for (const [name, value] of Object.entries(envScoped)) {
     if (!envNeeds(env, name)) continue;
     await putEnvSecret(env.environment, name, value); n++;
   }
@@ -3368,7 +3390,7 @@ async function ensureEnvSecrets(environment, names, label, { force = false } = {
   const missing = force ? names.slice() : names.filter((n) => !have.has(n));
   if (!missing.length) return true;
   const all = await hjson('/api/local/secrets');
-  const store = { ...(all.wizard?.family ?? {}), ...(all.wizard?.platforms?.[S.platform] ?? {}) };
+  const store = { ...(all.wizard?.machine ?? {}), ...(all.wizard?.platforms?.[S.platform] ?? {}) };
   const absent = missing.filter((n) => !store[n]);
   for (const n of missing) if (store[n]) await putSecretAt(envBase(environment), n, store[n]);
   if (absent.length) { localLog(`\n✗ ${label} needs ${absent.join(', ')} — save it under Features & accounts first\n`); return false; }
@@ -3408,7 +3430,7 @@ async function buildAndroid(env) {
     if (env.features?.push) await streamLocal('/api/local/firebase-setup', { stack: env.stack }, `wire ${env.label}'s Firebase push (project + app registrations + configs, zero input)`, { refresh: false });
     say(`writing the config into the GitHub environment ${env.environment}…`);
     const cfg = await writeNativeEnv(env);
-    await streamLocal('/api/local/mint-keystore', {}, 'ensure the machine upload keystore (one key across every environment)', { refresh: false });
+    await streamLocal('/api/local/mint-keystore', { platform: S.platform }, 'ensure this platform\'s upload keystore (one key across its environments)', { refresh: false });
     await ensureEnvSecrets(env.environment, ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'], 'build signing').catch(() => {});
     if (env.features?.push) await ensureEnvSecrets(env.environment, ['FCM_SERVICE_ACCOUNT_JSON'], 'push sender').catch(() => {});
     let publish = (await playStateFor(env.stack)) === 'ready' ? 'auto' : 'skip';
@@ -3499,7 +3521,7 @@ async function ensureAppleCert(env) {
       if (Date.now() - started > 15 * 60 * 1000) { localLog('the mint never finished within 15 minutes — check the Actions tab; this build signs with a throwaway certificate\n'); return false; }
     }
     if (run.conclusion !== 'success') { localLog(`the mint ended ${run.conclusion} — open run #${run.run_number}; this build signs with a throwaway certificate\n`); return false; }
-    if (!(await streamLocal('/api/local/apple-cert/import', { slug: S.slug, runId: run.id }, 'store the minted certificate in the helper\'s store', { refresh: false }))) return false;
+    if (!(await streamLocal('/api/local/apple-cert/import', { slug: S.slug, runId: run.id, platform: S.platform }, 'store the minted certificate in the helper\'s store', { refresh: false }))) return false;
   } else if (st.apple?.state === 'valid') {
     localLog(`signing certificate: the machine's, valid until ${String(st.apple.expires).slice(0, 10)}\n`);
   }
@@ -3538,7 +3560,8 @@ function platformTodoItems() {
     items.push(
       { id: 'docker', title: 'Docker Desktop running', detail: 'the whole platform lives in containers', state: st ? Boolean(st.docker?.ok) : null, href: '#local-status' },
       { id: 'creds', title: 'Accounts the platform needs', detail: missing.length ? `still missing: ${missing.join(', ')}` : 'every value the platform reads is saved', state: st ? missing.length === 0 : null, href: firstMissing ? `[data-group="${firstMissing.id}"]` : '#s-features' },
-      { id: 'setup', title: 'Press Set up & start', detail: 'shared services, every environment, sign-in, crash tracking, the vault — one button, safe to repeat', state: st ? Boolean(shared?.services?.glitchtip) && envsUp : null, href: '#btn-local-setup' },
+      { id: 'setup', title: 'Press Set up & start', detail: 'the shared services and every environment added in step 4, sign-in, crash tracking, the vault — one button, safe to repeat', state: st ? Boolean(shared?.services?.glitchtip) && envsUp : null, href: '#btn-local-setup' },
+      { id: 'lan', title: needLanNow() ? 'LAN https mode on (a phone or https feature is ticked)' : 'Plain localhost (no phone or https feature ticked)', detail: 'LAN mode follows the ticks at the next Set up & start — a tick alone starts nothing', state: st ? Boolean(st.lan) === needLanNow() : null, href: '#btn-local-setup' },
     );
     if (st?.lan) {
       const t = S.caTrust;
@@ -3783,21 +3806,7 @@ if (!HELPER) {
   });
   setInterval(() => { refreshStoreStatus().catch(() => {}); }, STORE_POLL_MS);
   setTimeout(() => refreshStoreStatus().catch(() => {}), 4000);
-  applyPlatform().then(async () => {
-    /* a stored GitHub token reconnects by itself — Connect is one click when the repo name was cleared */
-    try {
-      const all = await hjson('/api/local/secrets');
-      const pat = all.wizard?.family?.GH_PAT;
-      const field = document.getElementById('in-pat');
-      if (!pat || field.value) return;
-      field.value = pat;
-      S.pat = pat;
-      if (S.slug && /^[^/\s]+\/[^/\s]+$/.test(S.slug)) {
-        msg('msg-connect', 'reconnecting with the token saved on this machine…', true);
-        document.getElementById('btn-connect').click();
-      }
-    } catch { /* helper hiccup — the manual flow still works */ }
-  }).catch(() => {});
+  applyPlatform().then(restoreConnection).catch(() => {});
 }
 </script>
 </body>

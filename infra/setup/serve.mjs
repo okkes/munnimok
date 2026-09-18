@@ -27,7 +27,7 @@ import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST, entriesFor } from '../modules/secrets.mjs';
-import { ensureLocalSecrets, familyValues, forgetWizardValues, loadLocalValues, loadWizardStore, saveLocalValues, setWizardValues, wizardValues } from '../modules/localstore.mjs';
+import { ensureLocalSecrets, forgetWizardValues, loadLocalValues, loadWizardStore, machineValues, saveLocalValues, setWizardValues, stackValues, wizardValues } from '../modules/localstore.mjs';
 import { insecureFetch, localAwareFetch } from '../modules/insecure-fetch.mjs';
 import { ENV_NAME_RE, RESERVED_ENV_NAMES, lanHost, listPlatforms, loadAutonomy, loadEnv, loadPlatform, loadStack, nextSlot, parseStackName, platformEnvStacks, platformEnvs, removeEnv, saveAutonomy, saveEnv, savePlatform, sharedOf, stackName } from '../modules/stack.mjs';
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
@@ -76,7 +76,7 @@ function withPlatformEnv(platform, fn) {
 }
 const loadAnyStack = (name) => withPlatformEnv(parseStackName(name)?.platform, () => loadStack(name));
 /** the values a stack's setup sees: lcl = the stores, nas = the wizard's own values */
-const valuesFor = (stack) => (stack.delivery === 'docker' ? familyValues(stack) : wizardValues(stack.platform));
+const valuesFor = (stack) => (stack.delivery === 'docker' ? stackValues(stack) : wizardValues(stack.platform));
 
 const DEVSOURCE_COMPOSE = ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml'];
 /** fixed verb set over the KNOWN lcl stacks — nothing here is caller-controlled beyond picking one */
@@ -201,7 +201,7 @@ async function statusEndpoint(res, probeImpl) {
     docker,
     stacks,
     platforms: platformsView(),
-    wizardStored: { family: Object.keys(store.family).filter((k) => store.family[k]), platforms: Object.fromEntries(Object.entries(store.platforms).map(([p, v]) => [p, Object.keys(v).filter((k) => v[k])])) },
+    wizardStored: { machine: Object.keys(store.machine).filter((k) => store.machine[k]), platforms: Object.fromEntries(Object.entries(store.platforms).map(([p, v]) => [p, Object.keys(v).filter((k) => v[k])])) },
     lan: lanHost(),
     googleProject,
     autonomy: { enabled, lastCheckAt, lastResult, running: autonomyRunning },
@@ -212,12 +212,13 @@ async function statusEndpoint(res, probeImpl) {
 function wizardValuesGet(res, url) {
   const platform = url.searchParams.get('platform') || null;
   const store = loadWizardStore();
-  return json(res, 200, { family: store.family, platform: platform ? (store.platforms[platform] ?? {}) : {} });
+  return json(res, 200, { machine: store.machine, platform: platform ? (store.platforms[platform] ?? {}) : {} });
 }
 
 async function wizardValuesSet(req, res) {
   const body = await readBody(req);
   const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
+  if (!platform) return json(res, 400, { error: 'platform required — every value belongs to one platform' });
   const values = {};
   for (const [name, value] of Object.entries(body.values ?? {})) {
     if (OPERATOR_NAMES.has(name) && typeof value === 'string') values[name] = value;
@@ -456,7 +457,7 @@ async function glitchtipSetupEndpoint(req, res, spawnImpl) {
 /* ── admin access: list the environment's users, toggle the admin role ── */
 async function accessCredential(stack) {
   if (stack.delivery === 'docker') {
-    const v = familyValues(stack);
+    const v = stackValues(stack);
     if (!v.LOGTO_INFRA_M2M_ID || !v.LOGTO_INFRA_M2M_SECRET) throw new Error('this environment has no Logto machine credential yet — run its sign-in setup first');
     return { m2mId: v.LOGTO_INFRA_M2M_ID, m2mSecret: v.LOGTO_INFRA_M2M_SECRET };
   }
@@ -1145,7 +1146,7 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
     res.write('  GoogleService-Info.plist ready — the next iOS build bakes it in\n');
     // the api's SENDER credential: the same service account, stored once in the wizard's family values
     if (!values.FCM_SERVICE_ACCOUNT_JSON) {
-      setWizardValues({ FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON });
+      setWizardValues({ FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON }, stack.platform);
       res.write('sender credential: the api sends push with the SAME service account — stored ✓\n');
     } else {
       res.write('sender credential: already stored ✓\n');
@@ -1165,9 +1166,12 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
 
 /* ── the machine owns the upload keystore (Play pins the first upload key per package) ── */
 async function mintKeystoreEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
+  if (!platform) return json(res, 400, { error: 'platform required — each platform holds its own upload keystore' });
   streamHead(res);
-  if (wizardValues().ANDROID_KEYSTORE_BASE64) {
-    res.write('the machine already holds the upload keystore — every environment signs with the same key ✓\n');
+  if (wizardValues(platform).ANDROID_KEYSTORE_BASE64) {
+    res.write(`the ${platform} platform already holds its upload keystore — every environment of it signs with the same key ✓\n`);
     return res.end('[exit 0]\n');
   }
   const pass = randomBytes(24).toString('hex');
@@ -1179,14 +1183,14 @@ async function mintKeystoreEndpoint(req, res, spawnImpl) {
   const b64 = /KEYSTORE_B64:(\S+)/.exec(mint.out)?.[1];
   const cert = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/.exec(mint.out)?.[0];
   if (!b64) { res.write('could not read the keystore back from the container\n'); return res.end('[exit 1]\n'); }
-  setWizardValues({ ANDROID_KEYSTORE_BASE64: b64, ANDROID_KEYSTORE_PASSWORD: pass, ANDROID_KEY_ALIAS: 'munni-upload', ANDROID_KEY_PASSWORD: pass });
+  setWizardValues({ ANDROID_KEYSTORE_BASE64: b64, ANDROID_KEYSTORE_PASSWORD: pass, ANDROID_KEY_ALIAS: 'munni-upload', ANDROID_KEY_PASSWORD: pass }, platform);
   if (cert) {
-    const certFile = join(dirname(LAN_FILE()), 'wizard', 'upload-cert.pem');
+    const certFile = join(dirname(LAN_FILE()), 'wizard', `upload-cert-${platform}.pem`);
     mkdirSync(dirname(certFile), { recursive: true });
     writeFileSync(certFile, `${cert}\n`);
     res.write(`upload certificate → ${certFile} (only needed for a Play UPLOAD-KEY RESET)\n`);
   }
-  res.write('upload keystore minted into the wizard\'s store ✓ — every environment signs with the SAME key\n');
+  res.write(`upload keystore minted into the wizard's store for ${platform} ✓ — every environment of it signs with the SAME key\n`);
   return res.end('[exit 0]\n');
 }
 
@@ -1340,7 +1344,7 @@ async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
   }
   try {
     const shared = loadStack(LCL_SHARED);
-    const token = familyValues(shared).GLITCHTIP_API_TOKEN;
+    const token = stackValues(shared).GLITCHTIP_API_TOKEN;
     if (token) { const r = await removeProjects(shared, loadStack(name), token, { fetchImpl: netFetchImpl }); res.write(`GlitchTip projects removed: ${r.removed.join(', ') || 'none'}\n`); }
   } catch (e) {
     res.write(`GlitchTip project purge failed (${e.message}) — remove them in the console if they linger\n`);
@@ -1418,7 +1422,9 @@ async function ghPatEndpoint(req, res) {
   const body = await readBody(req);
   const pat = String(body.pat ?? '').trim();
   if (!pat) return json(res, 400, { error: 'no token given' });
-  setWizardValues({ GH_PAT: pat });
+  const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
+  if (!platform) return json(res, 400, { error: 'platform required — each platform connects on its own' });
+  setWizardValues({ GH_PAT: pat }, platform);
   return json(res, 200, { ok: true });
 }
 
@@ -1504,7 +1510,7 @@ function stackVaultItems(name) {
 function buildVaultItems() {
   const items = [];
   const store = loadWizardStore();
-  for (const [n, value] of Object.entries({ ...store.family, ...(store.platforms[LCL] ?? {}) })) {
+  for (const [n, value] of Object.entries({ ...store.machine, ...(store.platforms[LCL] ?? {}) })) {
     if (VAULT_SKIP_NAMES.has(n) || !value) continue;
     items.push({ folder: 'wizard', name: n, password: String(value), notes: vaultNote(n) });
   }
@@ -1632,7 +1638,7 @@ async function appleCertAtApple(values, fetchImpl) {
 }
 
 async function appleCertStatusEndpoint(res, fetchImpl) {
-  const v = wizardValues();
+  const v = machineValues();
   const out = { present: Boolean(v.APPLE_DEV_CERT_P12 && v.APPLE_DEV_CERT_PASSWORD), password: Boolean(v.APPLE_DEV_CERT_PASSWORD) };
   if (v.APPLE_DEV_CERT_SERIAL) out.serial = v.APPLE_DEV_CERT_SERIAL;
   if (out.present) out.apple = await appleCertAtApple(v, fetchImpl);
@@ -1645,7 +1651,7 @@ function appleCertForgetEndpoint(res) {
 }
 
 function appleCertPasswordEndpoint(res) {
-  if (!wizardValues().APPLE_DEV_CERT_PASSWORD) setWizardValues({ APPLE_DEV_CERT_PASSWORD: randomBytes(24).toString('hex') });
+  if (!machineValues().APPLE_DEV_CERT_PASSWORD) setWizardValues({ APPLE_DEV_CERT_PASSWORD: randomBytes(24).toString('hex') });
   return json(res, 200, { ok: true });
 }
 
@@ -1655,8 +1661,9 @@ async function appleCertImportEndpoint(req, res, netFetchImpl) {
   const runId = Number(body.runId);
   streamHead(res);
   if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isInteger(runId) || runId <= 0) { res.write('need the repo slug and the mint run id\n'); return res.end('[exit 1]\n'); }
-  const values = wizardValues();
-  if (!values.GH_PAT) { res.write('no GitHub token in the wizard\'s store — connect GitHub first\n'); return res.end('[exit 1]\n'); }
+  const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
+  const values = platform ? wizardValues(platform) : machineValues();
+  if (!values.GH_PAT) { res.write('no GitHub token for this platform in the wizard\'s store — connect GitHub on this platform first\n'); return res.end('[exit 1]\n'); }
   const api = (path, init = {}) => netFetchImpl(`https://api.github.com${path}`, { ...init, headers: { authorization: `Bearer ${values.GH_PAT}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...init.headers }, signal: AbortSignal.timeout(30000) });
   try {
     const list = await api(`/repos/${slug}/actions/runs/${runId}/artifacts`);

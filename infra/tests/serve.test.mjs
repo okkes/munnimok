@@ -101,19 +101,22 @@ test('guards: no token 401, bad host 403, the served page carries the token, non
 });
 
 /* ── the wizard's store ── */
-test('wizard values: the manifest routes a value to the family or to the platform; non-operator names are dropped; an empty value forgets', async () => {
+test('wizard values: every value lands in the named platform and nowhere else; no platform, no store; non-operator names are dropped; an empty value forgets', async () => {
+  assert.equal((await post(app, '/api/wizard/values', { values: { GOCARDLESS_SECRET_ID: 'nowhere' } })).statusCode, 400, 'a value without a platform is refused');
   const r = await post(app, '/api/wizard/values', { values: { GOCARDLESS_SECRET_ID: 'gc-id-value', SYNOLOGY_URL: 'https://nas:5001', PLATFORM_DOMAIN: 'nas.example', PATH: 'evil', POSTGRES_PASSWORD: 'not-yours' }, platform: 'nas' });
   assert.equal(r.statusCode, 200);
   assert.deepEqual(r.json().stored.sort(), ['GOCARDLESS_SECRET_ID', 'PLATFORM_DOMAIN', 'SYNOLOGY_URL']);
   const store = loadWizardStore();
-  assert.equal(store.family.GOCARDLESS_SECRET_ID, 'gc-id-value');
+  assert.equal(store.platforms.nas.GOCARDLESS_SECRET_ID, 'gc-id-value', 'the bank provider is the nas platform\'s alone');
   assert.equal(store.platforms.nas.SYNOLOGY_URL, 'https://nas:5001');
   assert.equal(store.platforms.nas.PLATFORM_DOMAIN, 'nas.example');
-  assert.equal(store.family.SYNOLOGY_URL, undefined, 'a platform-scoped value never lands in the family');
-  assert.equal(store.family.PATH, undefined);
-  assert.equal(store.family.POSTGRES_PASSWORD, undefined, 'generated names are not operator input');
+  assert.equal(store.platforms.lcl?.GOCARDLESS_SECRET_ID, undefined, 'nothing of it reaches another platform');
+  assert.deepEqual(store.machine, {}, 'nothing of it is this computer\'s');
+  assert.equal(store.platforms.nas.PATH, undefined);
+  assert.equal(store.platforms.nas.POSTGRES_PASSWORD, undefined, 'generated names are not operator input');
   const get = await call(app, { url: '/api/wizard/values?platform=nas' });
-  assert.equal(get.json().family.GOCARDLESS_SECRET_ID, 'gc-id-value');
+  assert.equal(get.json().platform.GOCARDLESS_SECRET_ID, 'gc-id-value');
+  assert.deepEqual((await call(app, { url: '/api/wizard/values?platform=lcl' })).json().platform, {}, 'the lcl view is empty');
   assert.equal(get.json().platform.SYNOLOGY_URL, 'https://nas:5001');
   assert.deepEqual((await call(app, { url: '/api/wizard/values' })).json().platform, {});
   const forget = await post(app, '/api/wizard/values', { values: { SYNOLOGY_URL: '' }, platform: 'nas' });
@@ -138,7 +141,8 @@ test('status: the platforms, the lcl stacks, and the stores by NAME — never a 
   assert.deepEqual(Object.keys(body.stacks), ['munni-lcl-shared', 'munni-lcl-prod']);
   assert.equal(body.stacks['munni-lcl-prod'].env, 'prod');
   assert.equal(body.stacks['munni-lcl-prod'].urls.web, 'http://localhost:8380');
-  assert.ok(body.wizardStored.family.includes('GOCARDLESS_SECRET_ID'));
+  assert.ok(body.wizardStored.platforms.nas.includes('GOCARDLESS_SECRET_ID'));
+  assert.deepEqual(body.wizardStored.machine, []);
   assert.ok(body.wizardStored.platforms.nas.includes('PLATFORM_DOMAIN'));
   const text = res.text();
   assert.ok(!text.includes('gc-id-value') && !text.includes('nas.example'), 'status must carry names only');
@@ -441,10 +445,12 @@ test('config/commit: nothing to commit exits 0 without a commit; changes are sta
   assert.deepEqual(spawned3.map((s) => s.args[0]), ['status', 'add', 'commit'], 'no push after a failed commit');
 });
 
-test('gh-pat: a token lands in the family store; an empty one is refused', async () => {
-  assert.equal((await post(app, '/api/local/gh-pat', { pat: '  ' })).statusCode, 400);
-  assert.equal((await post(app, '/api/local/gh-pat', { pat: 'github_pat_x' })).statusCode, 200);
-  assert.equal(loadWizardStore().family.GH_PAT, 'github_pat_x');
+test('gh-pat: a token lands in the named platform\'s store; an empty one or no platform is refused', async () => {
+  assert.equal((await post(app, '/api/local/gh-pat', { pat: '  ', platform: 'lcl' })).statusCode, 400);
+  assert.equal((await post(app, '/api/local/gh-pat', { pat: 'github_pat_x' })).statusCode, 400, 'a platform is named or nothing is stored');
+  assert.equal((await post(app, '/api/local/gh-pat', { pat: 'github_pat_x', platform: 'lcl' })).statusCode, 200);
+  assert.equal(loadWizardStore().platforms.lcl.GH_PAT, 'github_pat_x');
+  assert.equal(loadWizardStore().platforms.nas?.GH_PAT, undefined, 'the other platform connects on its own');
 });
 
 /* ── the lcl tools ── */
@@ -559,17 +565,21 @@ test('lan: candidates rank private IPv4 first; a host this machine does not have
   assert.match(trust.text(), /\[exit 1\]/);
 });
 
-test('secrets + vault-export: the wizard store and every lcl stack come back on request; the export skips VAPID and shapes real logins', async () => {
+test('secrets + vault-export: the wizard store and every lcl stack come back on request; the lcl vault carries lcl values only; the export skips VAPID and shapes real logins', async () => {
   saveLocalValues(PROD(), { ...loadLocalValues(PROD()), POSTGRES_PASSWORD: 'pg-prod', PUSH_VAPID_PRIVATE_KEY: 'vapid-private', PUSH_VAPID_PUBLIC_KEY: 'vapid-public' });
+  await post(app, '/api/wizard/values', { values: { GOCARDLESS_SECRET_KEY: 'gc-key-lcl' }, platform: 'lcl' });
   const res = await call(app, { url: '/api/local/secrets' });
   const body = res.json();
-  assert.equal(body.wizard.family.GOCARDLESS_SECRET_ID, 'gc-id-value');
+  assert.equal(body.wizard.platforms.nas.GOCARDLESS_SECRET_ID, 'gc-id-value');
+  assert.equal(body.wizard.platforms.lcl.GOCARDLESS_SECRET_ID, undefined, 'the lcl platform never saw the nas credential');
+  assert.equal(body.wizard.platforms.lcl.GOCARDLESS_SECRET_KEY, 'gc-key-lcl');
   assert.equal(body.wizard.platforms.lcl.VAULT_ADMIN_EMAIL, 'vault@munni.lcl');
   assert.deepEqual(Object.keys(body.values), ['munni-lcl-shared', 'munni-lcl-prod', 'munni-lcl-test']);
   assert.equal(body.values['munni-lcl-prod'].POSTGRES_PASSWORD, 'pg-prod');
   const exp = (await call(app, { url: '/api/local/vault-export' })).json();
   const names = exp.items.map((i) => i.name);
-  assert.ok(names.includes('Postgres') && names.includes('GOCARDLESS_SECRET_ID') && names.includes('Logto infra M2M'));
+  assert.ok(names.includes('Postgres') && names.includes('GOCARDLESS_SECRET_KEY') && names.includes('Logto infra M2M'));
+  assert.ok(!names.includes('GOCARDLESS_SECRET_ID'), 'the nas platform\'s bank credential never enters the lcl vault');
   assert.ok(!JSON.stringify(exp).includes('vapid-private'), 'VAPID never goes to a human vault');
   assert.ok(!names.includes('VAULT_MASTER_PASSWORD'));
   const pg = exp.items.find((i) => i.name === 'Postgres' && i.login.password === 'pg-prod');
@@ -592,23 +602,25 @@ test('autonomy: settings persist and the status reports them; the interval floor
   await post(app, '/api/local/autonomy', { enabled: false });
 });
 
-test('apple cert + keystore: the p12 password is minted once; forget drops the certificate; a stored keystore is reused without docker', async () => {
+test('apple cert + keystore: the p12 password is minted once and is this computer\'s; forget drops the certificate; a platform\'s stored keystore is reused without docker', async () => {
   assert.equal((await call(app, { url: '/api/local/apple-cert' })).json().present, false);
   await post(app, '/api/local/apple-cert/password', {});
-  const pw = loadWizardStore().family.APPLE_DEV_CERT_PASSWORD;
+  const pw = loadWizardStore().machine.APPLE_DEV_CERT_PASSWORD;
   assert.match(pw, /^[a-f0-9]{48}$/);
   await post(app, '/api/local/apple-cert/password', {});
-  assert.equal(loadWizardStore().family.APPLE_DEV_CERT_PASSWORD, pw, 'never re-minted');
-  await post(app, '/api/wizard/values', { values: { APPLE_DEV_CERT_P12: 'p12-b64' } });
+  assert.equal(loadWizardStore().machine.APPLE_DEV_CERT_PASSWORD, pw, 'never re-minted');
+  await post(app, '/api/wizard/values', { values: { APPLE_DEV_CERT_P12: 'p12-b64' }, platform: 'lcl' });
+  assert.equal(loadWizardStore().platforms.lcl?.APPLE_DEV_CERT_P12, undefined, 'the certificate is the machine\'s whichever platform stored it');
   assert.equal((await call(app, { url: '/api/local/apple-cert' })).json().present, true);
   await post(app, '/api/local/apple-cert/forget', {});
-  assert.equal(loadWizardStore().family.APPLE_DEV_CERT_P12, undefined);
-  assert.equal(loadWizardStore().family.APPLE_DEV_CERT_PASSWORD, pw, 'the password survives a forget');
+  assert.equal(loadWizardStore().machine.APPLE_DEV_CERT_P12, undefined);
+  assert.equal(loadWizardStore().machine.APPLE_DEV_CERT_PASSWORD, pw, 'the password survives a forget');
   const spawned = [];
   const app2 = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned) });
-  await post(app, '/api/wizard/values', { values: { ANDROID_KEYSTORE_BASE64: 'ks', ANDROID_KEYSTORE_PASSWORD: 'p', ANDROID_KEY_ALIAS: 'munni-upload', ANDROID_KEY_PASSWORD: 'p' } });
-  const mint = await post(app2, '/api/local/mint-keystore', {});
-  assert.match(mint.text(), /already holds the upload keystore/);
+  await post(app, '/api/wizard/values', { values: { ANDROID_KEYSTORE_BASE64: 'ks', ANDROID_KEYSTORE_PASSWORD: 'p', ANDROID_KEY_ALIAS: 'munni-upload', ANDROID_KEY_PASSWORD: 'p' }, platform: 'lcl' });
+  assert.equal((await post(app2, '/api/local/mint-keystore', {})).statusCode, 400, 'no platform, no keystore');
+  const mint = await post(app2, '/api/local/mint-keystore', { platform: 'lcl' });
+  assert.match(mint.text(), /already holds its upload keystore/);
   assert.equal(spawned.length, 0);
 });
 

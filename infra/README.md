@@ -29,7 +29,10 @@ infra/rendered/                      gitignored: rendered compose/env files, the
    fine-grained token for this repo: Administration, Secrets, Variables,
    Actions, Contents — read/write), tick the features you want and store
    the credentials on their tiles. Every value lands in the wizard's own
-   store (`infra/rendered/wizard/.secrets.json`).
+   store (`infra/rendered/wizard/.secrets.json`), one set per platform:
+   platforms share nothing — values, ticks, the GitHub token and the
+   upload keystore are each their own; only the Apple Development
+   certificate is this computer's (Apple caps those per account).
 2. On the platform card: *Set up & start*. The helper mints the shared
    stack's secrets, renders it, starts it (GlitchTip, the vault, pgAdmin,
    control, the family Caddy), then does the same for every environment
@@ -118,7 +121,7 @@ lists them and the Clean up log counts the roots.
 `infra/secrets.manifest.json` names every secret with its owner and
 scope. `generated` ones are minted by the bootstrap (nas: into the GitHub
 environment; lcl: into the stack's store); `operator` ones are typed once
-in the wizard and copied wherever the manifest says (platform scope →
+per platform in the wizard and copied wherever the manifest says (platform scope →
 `<platform>-shared` and every `<platform>-<env>`; env scope → the
 environments whose features need it); `module` ones are written back by
 Logto/GlitchTip after they ran. `--verify` fails loudly on drift.
