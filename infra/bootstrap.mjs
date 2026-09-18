@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { listStacks, loadStack, platformEnvStacks, removeEnv, sharedOf } from './modules/stack.mjs';
 import { deleteEnvironment, ensureSecrets, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
-import { ensureLocalSecrets, familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
+import { ensureLocalSecrets, stackValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
 import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAdminRole, logtoAnswers, removeApps, writeBack } from './modules/logto.mjs';
 import { vaultReplaceFolder } from './modules/vault.mjs';
 import { applyGlitchTip, glitchtipAnswers, removeProjects, writeBackDsns } from './modules/glitchtip.mjs';
@@ -234,7 +234,7 @@ async function applyGlitchtipFor(values, write) {
 
 async function localVerify() {
   console.log(`verify ${stack.stack} (${stack.platformLabel})`);
-  const values = familyValues(stack);
+  const values = stackValues(stack);
   const missing = stackManifestEntries(stack).filter((s) => !s.optional && s.owner !== 'module' && !values[s.name]).map((s) => s.name);
   if (missing.length) console.log(`  ✗ values missing from the local stores: ${missing.join(', ')}`);
   else console.log('  ✓ local stores satisfy the manifest');
@@ -263,8 +263,8 @@ async function localApply() {
     await applyLogto(values, write, fresh);
     await applyGlitchtipFor(values, write);
   }
-  await keepInVault(familyValues(stack), fresh);
-  const dir = renderStack(stack, familyValues(stack));
+  await keepInVault(stackValues(stack), fresh);
+  const dir = renderStack(stack, stackValues(stack));
   console.log(`  rendered compose + .env (real values) → ${dir}`);
   console.log(`  runbook → ${renderRunbook(stack, { minted, missingOperator })}`);
   console.log(`done. Next: cd ${dir} && docker compose --env-file .env.${stack.stack} -f docker-compose.${stack.stack}.yml up -d`);

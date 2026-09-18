@@ -22,6 +22,21 @@ const need = (values, names) => {
   return missing.length ? `missing: ${missing.join(', ')}` : null;
 };
 
+/** a Google OAuth access token for a service account (jwt-bearer grant against its token_uri): {ok, access} or {ok:false, detail} */
+async function googleAccess(sa, scope, fetchImpl) {
+  const now = Math.floor(Date.now() / 1000);
+  let assertion;
+  try {
+    assertion = jwtRS256({ header: { alg: 'RS256', typ: 'JWT' }, payload: { iss: sa.client_email, scope, aud: sa.token_uri, iat: now, exp: now + 300 }, pem: sa.private_key });
+  } catch (e) {
+    return { ok: false, detail: `the embedded private key does not parse (${e.message})` };
+  }
+  const res = await fetchImpl(sa.token_uri, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(), signal: T() });
+  if (!res.ok) return { ok: false, detail: `Google rejected the service account (${res.status}): ${(await res.text()).slice(0, 160)}` };
+  return { ok: true, access: (await res.json()).access_token };
+}
+const errorText = async (res) => { try { return (await res.text()).slice(0, 200); } catch { return ''; } };
+
 export function jwtRS256({ header, payload, pem }) {
   const input = `${b64url(JSON.stringify(header))}.${b64url(JSON.stringify(payload))}`;
   const sig = createSign('RSA-SHA256').update(input).end().sign(pem);
@@ -93,39 +108,41 @@ export const VALIDATORS = {
     return { ok: false, detail: `Enable Banking rejected them (${res.status}): ${body}` };
   },
 
-  /** parse the service account + actually mint a Google OAuth token */
+  /** the roles Build needs on the GOOGLE PLAY service account (push has nothing of its own to type): switching the
+   *  Firebase Management API on — Service Usage Admin, idempotent, Build does it anyway — and reading the project
+   *  (Firebase Admin). A missing role is named with the IAM page to fix it on. */
   async fcm(values, fetchImpl) {
-    const gap = need(values, ['FCM_SERVICE_ACCOUNT_JSON']);
-    if (gap) return { ok: false, detail: gap };
+    if (!values.PLAY_SERVICE_ACCOUNT_JSON) return { ok: false, detail: 'save the Google Play tile first — push uses its service account' };
     let sa;
     try {
-      sa = JSON.parse(values.FCM_SERVICE_ACCOUNT_JSON);
+      sa = JSON.parse(values.PLAY_SERVICE_ACCOUNT_JSON);
     } catch {
-      return { ok: false, detail: 'not valid JSON — paste the WHOLE downloaded service-account file' };
+      return { ok: false, detail: 'the Google Play tile holds no valid service-account JSON' };
     }
     for (const field of ['private_key', 'client_email', 'token_uri', 'project_id']) {
-      if (!sa[field]) return { ok: false, detail: `service-account JSON lacks "${field}" — wrong file?` };
+      if (!sa[field]) return { ok: false, detail: `the Google Play service-account JSON lacks "${field}" — wrong file?` };
     }
-    const now = Math.floor(Date.now() / 1000);
-    let assertion;
-    try {
-      assertion = jwtRS256({
-        header: { alg: 'RS256', typ: 'JWT' },
-        payload: { iss: sa.client_email, scope: 'https://www.googleapis.com/auth/firebase.messaging', aud: sa.token_uri, iat: now, exp: now + 300 },
-        pem: sa.private_key,
-      });
-    } catch (e) {
-      return { ok: false, detail: `the embedded private key does not parse (${e.message})` };
+    const token = await googleAccess(sa, 'https://www.googleapis.com/auth/cloud-platform', fetchImpl);
+    if (!token.ok) return token;
+    const auth = { authorization: `Bearer ${token.access}` };
+    const iam = `https://console.cloud.google.com/iam-admin/iam?project=${encodeURIComponent(sa.project_id)}`;
+    const su = await fetchImpl(`https://serviceusage.googleapis.com/v1/projects/${sa.project_id}/services/firebase.googleapis.com:enable`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: '{}', signal: T(20000) });
+    const suDetail = su.ok ? '' : await errorText(su);
+    const fb = await fetchImpl(`https://firebase.googleapis.com/v1beta1/projects/${sa.project_id}`, { headers: auth, signal: T() });
+    let firebase = 'added';
+    if (!fb.ok) {
+      const text = await errorText(fb);
+      if (fb.status === 404) firebase = 'not-yet';
+      else if (fb.status === 403 && /SERVICE_DISABLED|has not been used|is disabled/i.test(text)) firebase = 'api-off';
+      else if (fb.status === 403) firebase = 'denied';
+      else firebase = `error ${fb.status}`;
     }
-    const res = await fetchImpl(sa.token_uri, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion }).toString(),
-      signal: T(),
-    });
-    if (res.ok) return { ok: true, detail: `Google accepted the service account (${sa.client_email}, project ${sa.project_id})` };
-    const body = (await res.text()).slice(0, 160);
-    return { ok: false, detail: `Google rejected the service account (${res.status}): ${body}` };
+    const gaps = [];
+    if (!su.ok) gaps.push(`Service Usage Admin — ${sa.client_email} may not switch APIs on (${su.status}: ${suDetail})`);
+    if (firebase === 'denied') gaps.push(`Firebase Admin — ${sa.client_email} may not read Firebase in ${sa.project_id}`);
+    if (gaps.length) return { ok: false, detail: `missing in ${sa.project_id}: ${gaps.join('; ')} — grant it at ${iam}, wait a minute, Check again` };
+    const note = { added: 'Firebase is added to the project', 'not-yet': 'Firebase is not added yet — Build does that', 'api-off': 'the Firebase Management API was just switched on — Build adds Firebase' }[firebase] ?? `Firebase answered ${firebase}`;
+    return { ok: true, detail: `${sa.client_email} holds both roles in ${sa.project_id}; ${note}` };
   },
 
   /** sk_ search auth + pk_ image fetch — mirrors LogoEndpoints incl. the swap check */

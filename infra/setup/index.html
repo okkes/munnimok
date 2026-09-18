@@ -1177,12 +1177,12 @@ const FEATURES = [
   { id: 'gocardless', label: 'Bank sync via GoCardless', tags: ['Recommended'], rec: true, hint: 'live transactions from 2500+ EU banks (read-only PSD2 AIS) — the heart of the product' },
   { id: 'enablebanking', label: 'Enable Banking as a second bank provider', tags: ['Optional'], hint: 'optional fallback aggregator; banks missing at GoCardless. https-only — on this computer the LAN mode gives every environment real https' },
   { id: 'logos', label: 'Merchant logos (logo.dev)', tags: ['Recommended'], rec: true, hint: 'brand logos on transactions and recurring costs' },
-  { id: 'push', label: 'Native push notifications (Firebase FCM)', tags: ['With the apps'], hint: 'push for the Android/iOS shells — web push works without this' },
   { id: 'google', label: 'Sign in with Google', tags: ['Popular'], rec: true, hint: 'social login button on the sign-in screen' },
   { id: 'apple', label: 'Sign in with Apple', tags: ['Optional'], hint: 'required by Apple if you ship the iOS app with any social login; https return URLs only' },
   { id: 'email', label: 'Crash-report emails', tags: ['Optional'], hint: 'GlitchTip mails on new errors through an SMTP url — without it, reports simply stay in the web UI' },
   { id: 'android', label: 'Android app', tags: ['App distribution'], hint: 'the native Android shell — CI builds and publishes it to the Play internal track; only the store record is manual, by store rule' },
   { id: 'ios', label: 'iOS app', tags: ['App distribution'], hint: 'the native iOS shell — CI signs and uploads straight to TestFlight (Apple allows no sideloading)' },
+  { id: 'push', label: 'Native push notifications (Firebase FCM)', tags: ['With the apps'], hint: 'push for the Android/iOS shells, through the Google Play service account — web push works without this' },
 ];
 
 /* ── the accounts: what/why/how per provider. placement 'platform' = the
@@ -1263,17 +1263,14 @@ const GROUPS = [
     fields: [{ name: 'ASC_KEY_ID' }, { name: 'ASC_ISSUER_ID' }, { name: 'ASC_KEY_P8', area: true }, { name: 'APPLE_TEAM_ID' }],
   },
   {
-    id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'push', check: 'fcm',
-    why: 'Push for the native apps rides Firebase Cloud Messaging: the api sends with a Google service account, the apps carry a Firebase config that CI bakes in (web push needs none of this — it uses self-minted VAPID keys). The Phones tab\'s Firebase button wires all of it; what stays yours is Google\'s floor — a Cloud project for this platform, one service account with two roles and, for iOS, the APNs key. Usually nothing to paste here.',
+    id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'push', check: 'fcm', verify: true,
+    why: 'Push for the phone apps rides Firebase Cloud Messaging with the <b>Google Play</b> service account — nothing to type: Build on the Phones tab adds Firebase to that account\'s project, registers the apps, bakes their config into the builds and stores the sender credential by itself. <b>Check</b> verifies the one thing that is yours: the account\'s two roles.',
     how: [
-      'A Google Cloud project for this platform — platforms share nothing, so one project each (e.g. <code>munni-nas</code>): <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noreferrer">console.cloud.google.com → New project</a>. Already saved the <b>Google Play</b> tile for this platform? Then its service account\'s project is the one — continue at step 3.',
-      'A service account in that project: <a data-gcp-link="sa" href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noreferrer">IAM &amp; Admin → Service Accounts</a> → Create service account (any name, e.g. <code>munni-nas</code>) → Done → open it → <b>Keys</b> → Add key → <b>JSON</b>. Paste that whole file on the <b>Google Play</b> tile: the same account publishes to Play and drives Firebase. A fresh project lists no other accounts, and none are needed — the <code>firebase-adminsdk</code> agent you may know from an older project appears by itself once Firebase is added.',
-      'Two roles on it: <a data-gcp-link="iam" href="https://console.cloud.google.com/iam-admin/iam" target="_blank" rel="noreferrer">IAM &amp; Admin → IAM</a> → <b>Grant access</b> → principal = the service account\'s email → roles <b>Firebase Admin</b> AND <b>Service Usage Admin</b> → Save. (Firebase Admin alone cannot switch the Firebase API on; Service Usage Admin does that.)',
-      'Nothing in the Firebase console: <b>Build</b> (or Wire Firebase push) on the Phones tab adds Firebase to the project, registers this platform\'s Android and iOS apps, hands CI their configs and stores this sender credential. A missing role is named in the output — fix it in IAM and press again.',
+      '<a data-gcp-link="iam" href="https://console.cloud.google.com/iam-admin/iam" target="_blank" rel="noreferrer">IAM &amp; Admin → IAM</a> of the Google Play account\'s project → <b>Grant access</b> → principal = the service account\'s email → roles <b>Firebase Admin</b> AND <b>Service Usage Admin</b> → Save. (Firebase Admin alone cannot switch the Firebase API on.)',
+      'Press <b>Check</b>: it switches the Firebase Management API on with that account — what Build needs anyway — and reads the project; a missing role is named. The <code>firebase-adminsdk</code> agent you may know from an older project appears by itself once Build adds Firebase.',
       'iOS push only, once per Apple team: an <b>APNs key</b> — developer.apple.com → Keys → Apple Push Notifications service → download the .p8 → Firebase console → Project settings → Cloud Messaging → Apple app configuration → upload it (Leftovers card, item 4). Without it iPhones register but receive nothing.',
-      'Paste here only for a deliberately separate sender: Firebase console → Project settings → Service accounts → Generate new private key → the JSON below.',
     ],
-    fields: [{ name: 'FCM_SERVICE_ACCOUNT_JSON', area: true }],
+    fields: [],
   },
   {
     id: 'logodev', title: 'logo.dev', feature: 'logos', check: 'logodev',
@@ -1591,6 +1588,12 @@ const rowSaved = (g) => {
 };
 const rowChip = (g) => {
   if (S.skipped.has(g.id)) return '<span class="pill">Skipped</span>';
+  if (g.verify) {
+    const v = S.verdicts[g.id];
+    if (v?.checking) return '<span class="pill">Checking…</span>';
+    if (v && !v.unreachable) return v.ok ? '<span class="pill ok">Roles OK ✓</span>' : '<span class="pill warn">Needs roles</span>';
+    return '<span class="pill warn">Check the roles</span>';
+  }
   const { saved, total, complete } = rowSaved(g);
   if (complete) return '<span class="pill ok">Saved ✓</span>';
   if (saved) return `<span class="pill warn">${saved}/${total} saved</span>`;
@@ -1638,26 +1641,33 @@ function renderCards() {
   const openHow = new Set([...document.querySelectorAll('.tile')].filter((c) => c.querySelector('details.how')?.open).map((c) => c.dataset.group));
   const bodyHtml = (g) => `
       <div class="crow-b" data-body="${g.id}">
-      <div class="crow-vars">${g.fields.map((f) => f.name).join(' · ')}</div>
+      <div class="crow-vars">${g.fields.length ? g.fields.map((f) => f.name).join(' · ') : 'nothing to type — Check verifies the setup'}</div>
       <p class="why">${g.why}${isOptional(g) ? ' <b>Optional</b> — skip it below and it counts as done.' : ''}</p>
-      <details class="how"><summary>Where these values come from</summary><ol>${howSteps(g).map((h) => `<li>${h}</li>`).join('')}</ol></details>
+      <details class="how"><summary>${g.verify ? 'What to set up' : 'Where these values come from'}</summary><ol>${howSteps(g).map((h) => `<li>${h}</li>`).join('')}</ol></details>
       ${g.fields.map((f) => `
         <label class="f" for="field-${f.name}">${f.name} <span class="envtag">${scopeTag(f)}</span></label>
         ${f.area ? `<textarea id="field-${f.name}" data-secret="${f.name}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''}></textarea>`
                  : `<input id="field-${f.name}" type="${f.secret ? 'password' : 'text'}" data-secret="${f.name}" placeholder="${escAttr(f.ph ?? '')}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''} autocomplete="off"/>`}`).join('')}
-      <button data-store-group="${g.id}">Save</button>${g.check ? `
+      ${g.fields.length ? `<button data-store-group="${g.id}">Save</button>` : ''}${g.check ? `
       <button class="ghost" data-check-group="${g.id}">Check</button>` : ''}
       <button class="ghost" data-skip-group="${g.id}" title="counts this integration as done for now — undo any time">${S.skipped.has(g.id) ? 'Skipped — undo' : 'Skip for now'}</button>
       <div class="msg" id="msg-group-${g.id}"></div>
       </div>`;
+  /** push rides the phone apps and their Google Play service account — until both exist there is nothing to configure */
+  const pushLock = () => {
+    if (!(S.features.android || S.features.ios)) return 'tick the Android or iOS app first — push is for the phone apps';
+    if (!secretPresent('PLAY_SERVICE_ACCOUNT_JSON')) return 'save the Google Play account first — push uses that service account';
+    return null;
+  };
   const tileHtml = ({ f, g }) => {
-    const on = f ? Boolean(S.features[f.id]) : true;
+    const lock = f?.id === 'push' ? pushLock() : null;
+    const on = f ? Boolean(S.features[f.id]) && !lock : true;
     const managed = Boolean(g && on);
-    const hint = f ? f.hint : `needed for ${NEEDED_FOR[g.id] ?? g.title}`;
+    const hint = f ? (lock ?? f.hint) : `needed for ${NEEDED_FOR[g.id] ?? g.title}`;
     const tags = f ? (f.tags ?? []) : [g.placement === 'platform' ? 'Platform' : 'Connection'];
     return `
     <div class="card tile ${f ? 'feat' : 'int'} crow ${on ? 'on' : ''}" ${f ? `data-feature="${f.id}"` : ''} ${g ? `data-group="${g.id}"` : ''}>
-      <div class="tile-h"><span class="bico" data-bico="${BRAND_OF[f?.id ?? g.id] ?? 'key'}"></span><span class="sp"></span>${managed ? `<span data-chip>${rowChip(g)}</span>` : ''}${f ? `<label class="switch"><input type="checkbox" id="feat-${f.id}" ${on ? 'checked' : ''}/><span class="sw"></span></label>` : ''}</div>
+      <div class="tile-h"><span class="bico" data-bico="${BRAND_OF[f?.id ?? g.id] ?? 'key'}"></span><span class="sp"></span>${managed ? `<span data-chip>${rowChip(g)}</span>` : ''}${f ? `<label class="switch" ${lock ? `title="${escAttr(lock)}"` : ''}><input type="checkbox" id="feat-${f.id}" ${on ? 'checked' : ''} ${lock ? 'disabled' : ''}/><span class="sw"></span></label>` : ''}</div>
       ${f ? `<label class="tile-t" for="feat-${f.id}">${f.label}</label>` : `<div class="tile-t">${g.title}</div>`}
       <div class="tile-d">${hint ?? ''}</div>
       <div class="tile-f">${tags.map((t) => `<span class="tag ${TAG_CLS[t] ?? ''}">${t}</span>`).join('')}${managed ? `<button class="ghost mini" data-manage="${g.id}">Manage</button>` : ''}</div>
@@ -1678,7 +1688,9 @@ function renderCards() {
     const box = document.getElementById('feat-' + f.id);
     if (!box) return;
     box.addEventListener('change', async (e) => {
-      S.features[f.id] = e.target.checked; LS.set('features.' + S.platform, S.features);
+      S.features[f.id] = e.target.checked;
+      if (!(S.features.android || S.features.ios)) S.features.push = false; // push is for the phone apps — without them it has nothing to do
+      LS.set('features.' + S.platform, S.features);
       // a tick only records the default for the next environment — nothing starts; LAN mode follows the ticks at the next Set up & start
       renderCards(); renderEnvAddFeatures(); renderStatus();
     });
@@ -1888,6 +1900,12 @@ async function checkGroup(id) {
 /* ── integration health: one line per integration the picked features need ── */
 function healthOf(g) {
   if (S.skipped.has(g.id)) return { cls: '', label: 'Skipped' };
+  if (g.verify) {
+    const v = S.verdicts[g.id];
+    if (v?.checking) return { cls: '', label: 'Checking…' };
+    if (v && !v.unreachable) return v.ok ? { cls: 'ok', label: 'Roles OK ✓', title: v.detail } : { cls: 'bad', label: 'Needs roles', title: v.detail };
+    return { cls: 'warn', label: 'Check the roles' };
+  }
   const { saved, complete } = rowSaved(g);
   const v = S.verdicts[g.id];
   if (complete) {
@@ -2570,8 +2588,8 @@ document.getElementById('btn-local-vault-export')?.addEventListener('click', asy
   localLog('\nVault import file downloaded — in Vaultwarden: Tools → Import data → Bitwarden (json). Delete the file after importing.\n');
 });
 const secretsTable = (vals) => {
-  const rows = Object.entries(vals ?? {}).filter(([, v]) => v).map(([name, value]) => `<tr><td style="padding:2px 10px 2px 0"><code>${esc(name)}</code></td><td><code style="user-select:all">${esc(value)}</code></td></tr>`);
-  return rows.length ? `<div style="overflow-x:auto"><table style="font-size:12px">${rows.join('')}</table></div>` : '<p class="why">nothing stored yet</p>';
+  const rows = Object.entries(vals ?? {}).filter(([, v]) => v).map(([name, value]) => `<tr><td style="padding:2px 10px 2px 0;vertical-align:top;white-space:nowrap"><code>${esc(name)}</code></td><td><code style="user-select:all;word-break:break-all;white-space:pre-wrap">${esc(value)}</code></td></tr>`);
+  return rows.length ? `<div style="overflow:auto;max-height:55vh;min-width:0;max-width:100%"><table style="font-size:12px;width:100%;table-layout:fixed"><colgroup><col style="width:240px"><col></colgroup>${rows.join('')}</table></div>` : '<p class="why">nothing stored yet</p>';
 };
 document.getElementById('btn-local-reveal')?.addEventListener('click', async () => {
   const box = document.getElementById('local-secrets');
@@ -3350,7 +3368,7 @@ function phonesHtml(env) {
         </ol>
       </details>
     </div>`;
-  const push = !f.push ? '' : '<p class="why">Push rides the builds: Build (or Wire Firebase push) Firebase-enables the Play service account\'s project, registers this environment\'s apps and bakes their config in — the push pill says what is wired. The one-time floors: the two IAM roles on this platform\'s service account (the Firebase tile has the whole recipe, from an empty Google account) and, for iOS, the APNs key upload (Leftovers).</p>';
+  const push = !f.push ? '' : '<p class="why">Push rides the builds: Build (or Wire Firebase push) Firebase-enables the Play service account\'s project, registers this environment\'s apps and bakes their config in — the push pill says what is wired. The one-time floors: the two IAM roles on this platform\'s Google Play service account (Check on the Firebase tile verifies them) and, for iOS, the APNs key upload (Leftovers).</p>';
   return android + ios + push;
 }
 function updateNativeIdLabels(env, androidId, iosId) {
@@ -3604,7 +3622,7 @@ function platformTodoItems() {
   }
   if (f.android) items.push({ id: 'play-sa', title: 'Play service account saved', detail: 'the Google Play publishing tile', state: has('PLAY_SERVICE_ACCOUNT_JSON') || S.skipped.has('playstore'), href: '[data-group="playstore"]', spot: '#field-PLAY_SERVICE_ACCOUNT_JSON' });
   if (f.ios) items.push({ id: 'asc-key', title: 'App Store Connect key saved', detail: 'the App Store Connect tile', state: (has('ASC_KEY_ID') && has('ASC_KEY_P8')) || S.skipped.has('ascstore'), href: '[data-group="ascstore"]', spot: '#field-ASC_KEY_P8' });
-  if (phones && f.push) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Google\'s floor for push as code — Wire Firebase push names the exact gap', state: Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).length ? Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
+  if (phones && f.push) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Check on the Firebase tile verifies both — Build needs them', state: (S.verdicts.fcm && !S.verdicts.fcm.unreachable) ? Boolean(S.verdicts.fcm.ok) : Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).length ? Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
   if (f.ios && f.push) items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'team-wide, iOS push only — Google offers no API for it (Leftovers)', manual: true, href: '#s-leftovers' });
   if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in tile — each environment registers its redirect URI in its workspace', state: (has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET')) || S.skipped.has('google'), href: '[data-group="google"]', spot: '#field-LOGTO_GOOGLE_CLIENT_ID' });
   if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: 'the Apple sign-in tile — each environment registers its return URL in its workspace', state: (has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY')) || S.skipped.has('apple'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });

@@ -57,9 +57,13 @@ the platform, e.g. `munni-nas`). In it:
 ## 3. Firebase push, per platform — wired by the wizard
 
 The api sends push with the same service account; the apps carry a
-Firebase config that CI bakes in. With the roles from step 2.3 in
-place, **Build** (or **Wire Firebase push**) on an environment's Phones
-tab: adds Firebase to the project if it is not one yet, registers the
+Firebase config that CI bakes in. The Firebase tile asks for nothing:
+it unlocks once a phone app is ticked and the Google Play tile is
+saved, and its **Check** verifies the two roles from step 2.3 by
+switching the Firebase Management API on with that account (which
+Build needs anyway) and reading the project — a missing role is named
+with the IAM page to fix it on. With the roles in place, **Build** (or
+**Wire Firebase push**) on an environment's Phones tab: adds Firebase to the project if it is not one yet, registers the
 environment's Android and iOS apps there, hands CI their
 `google-services.json` / `GoogleService-Info.plist`, stores the sender
 credential on the Firebase tile (`FCM_SERVICE_ACCOUNT_JSON`) and, on
