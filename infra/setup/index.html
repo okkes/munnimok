@@ -1245,8 +1245,8 @@ const GROUPS = [
     id: 'playstore', title: 'Google Play publishing', feature: 'android', check: 'playstore',
     why: 'CI publishes the Android builds with a Play service account — and this page uses the SAME credential to notice when the store record exists, so publishing turns on by itself. One manual invite, once, is Google\'s hard floor.',
     how: [
-      '<a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noreferrer">Google Cloud → IAM → Service accounts</a> → create one in any project → copy its email (<code>…@…iam.gserviceaccount.com</code>).',
-      'Same project: <a href="https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com" target="_blank" rel="noreferrer">enable the <b>Google Play Android Developer API</b></a> — one click.',
+      'A Google Cloud project for this platform if you have none (<a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noreferrer">New project</a>, e.g. <code>munni-nas</code> — platforms share nothing, so one each). Then <a data-gcp-link="sa" href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noreferrer">IAM &amp; Admin → Service Accounts</a> → Create service account → copy its email (<code>…@…iam.gserviceaccount.com</code>).',
+      'Same project: <a data-gcp-link="playapi" href="https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com" target="_blank" rel="noreferrer">enable the <b>Google Play Android Developer API</b></a> — one click.',
       '<a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → <b>Users and permissions</b> → Invite new user → that email, account-level <b>Release to testing tracks</b> + <b>View app information</b> — every new munni package is covered without re-inviting.',
       'Back in Google Cloud: the service account → <b>Keys</b> → Add key → <b>JSON</b> — paste the WHOLE downloaded file below.',
     ],
@@ -1264,10 +1264,14 @@ const GROUPS = [
   },
   {
     id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'push', check: 'fcm',
-    why: 'The api\'s push sender credential (web push uses self-minted VAPID keys — no Google involved there). Usually nothing to paste: the Phones tab\'s Firebase button fills it from the Play service account, which also drives Firebase.',
+    why: 'Push for the native apps rides Firebase Cloud Messaging: the api sends with a Google service account, the apps carry a Firebase config that CI bakes in (web push needs none of this — it uses self-minted VAPID keys). The Phones tab\'s Firebase button wires all of it; what stays yours is Google\'s floor — a Cloud project for this platform, one service account with two roles and, for iOS, the APNs key. Usually nothing to paste here.',
     how: [
-      'One-time (Google\'s floor): grant the Play service account the roles Firebase Admin AND Service Usage Admin (console.cloud.google.com → IAM). The Phones tab then wires Firebase and the sender by itself.',
-      'Manual paste is only for a deliberately separate sender: console.firebase.google.com → project → Service accounts → Generate new private key → paste the JSON here.',
+      'A Google Cloud project for this platform — platforms share nothing, so one project each (e.g. <code>munni-nas</code>): <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noreferrer">console.cloud.google.com → New project</a>. Already saved the <b>Google Play</b> tile for this platform? Then its service account\'s project is the one — continue at step 3.',
+      'A service account in that project: <a data-gcp-link="sa" href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noreferrer">IAM &amp; Admin → Service Accounts</a> → Create service account (any name, e.g. <code>munni-nas</code>) → Done → open it → <b>Keys</b> → Add key → <b>JSON</b>. Paste that whole file on the <b>Google Play</b> tile: the same account publishes to Play and drives Firebase. A fresh project lists no other accounts, and none are needed — the <code>firebase-adminsdk</code> agent you may know from an older project appears by itself once Firebase is added.',
+      'Two roles on it: <a data-gcp-link="iam" href="https://console.cloud.google.com/iam-admin/iam" target="_blank" rel="noreferrer">IAM &amp; Admin → IAM</a> → <b>Grant access</b> → principal = the service account\'s email → roles <b>Firebase Admin</b> AND <b>Service Usage Admin</b> → Save. (Firebase Admin alone cannot switch the Firebase API on; Service Usage Admin does that.)',
+      'Nothing in the Firebase console: <b>Build</b> (or Wire Firebase push) on the Phones tab adds Firebase to the project, registers this platform\'s Android and iOS apps, hands CI their configs and stores this sender credential. A missing role is named in the output — fix it in IAM and press again.',
+      'iOS push only, once per Apple team: an <b>APNs key</b> — developer.apple.com → Keys → Apple Push Notifications service → download the .p8 → Firebase console → Project settings → Cloud Messaging → Apple app configuration → upload it (Leftovers card, item 4). Without it iPhones register but receive nothing.',
+      'Paste here only for a deliberately separate sender: Firebase console → Project settings → Service accounts → Generate new private key → the JSON below.',
     ],
     fields: [{ name: 'FCM_SERVICE_ACCOUNT_JSON', area: true }],
   },
@@ -2375,8 +2379,9 @@ function renderLclStatus(st) {
 /** the shared services' addresses and the Google console links follow the platform */
 function fillDynamicCopy() {
   const project = S.googleProject;
+  const GCP = { consent: 'https://console.cloud.google.com/apis/credentials/consent', client: 'https://console.cloud.google.com/apis/credentials/oauthclient', iam: 'https://console.cloud.google.com/iam-admin/iam', sa: 'https://console.cloud.google.com/iam-admin/serviceaccounts', playapi: 'https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com' };
   document.querySelectorAll('[data-gcp-link]').forEach((a) => {
-    const base = a.dataset.gcpLink === 'consent' ? 'https://console.cloud.google.com/apis/credentials/consent' : 'https://console.cloud.google.com/apis/credentials/oauthclient';
+    const base = GCP[a.dataset.gcpLink] ?? GCP.client;
     a.href = project ? `${base}?project=${encodeURIComponent(project)}` : base;
   });
   document.querySelectorAll('[data-gcp-project]').forEach((el) => { el.innerHTML = project ? `the Play service account's project <code>${esc(project)}</code>` : 'any Cloud project'; });
@@ -3345,7 +3350,7 @@ function phonesHtml(env) {
         </ol>
       </details>
     </div>`;
-  const push = !f.push ? '' : '<p class="why">Push rides the builds: Build (or Wire Firebase push) Firebase-enables the Play service account\'s project, registers this environment\'s apps and bakes their config in — the push pill says what is wired. The one-time floors are team-wide: the two IAM roles (Firebase tile) and, for iOS, the APNs key upload (Leftovers).</p>';
+  const push = !f.push ? '' : '<p class="why">Push rides the builds: Build (or Wire Firebase push) Firebase-enables the Play service account\'s project, registers this environment\'s apps and bakes their config in — the push pill says what is wired. The one-time floors: the two IAM roles on this platform\'s service account (the Firebase tile has the whole recipe, from an empty Google account) and, for iOS, the APNs key upload (Leftovers).</p>';
   return android + ios + push;
 }
 function updateNativeIdLabels(env, androidId, iosId) {

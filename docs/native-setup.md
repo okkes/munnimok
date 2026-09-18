@@ -1,410 +1,133 @@
-# Getting the native apps running — your one-time checklist
+# Phones — Android and iOS, from nothing to the stores
 
-Status 2026-07-15: **steps 1–3 are DONE** (repo variables set, native
-Logto app created, Firebase json committed + FCM key on the NAS is the
-only piece left there). What remains is finishing Play (step 4) and,
-later, Apple (step 5).
+What the wizard does and what stays yours, per platform and per
+environment. The wizard (`infra/setup/index.html`, run by the helper)
+is the working surface; this page is the same story in prose, for when
+you want to know what a button is about to do. Nothing here is a
+status list — the Setup status rail on the page is.
 
-## 1. GitHub repository variables — DONE ✓
+## 1. The model
 
-`NATIVE_API_URL`, `NATIVE_PUBLIC_ORIGIN`, `NATIVE_LOGTO_ENDPOINT`,
-`NATIVE_LOGTO_APP_ID`, `NATIVE_LOGTO_RESOURCE` are set. The resource is
-the **API resource indicator** — the identifier of the API in Logto's
-"API resources" (here `https://munni-api.<your-domain>`), which the
-app requests access tokens FOR. Same value the web build uses as
-`VITE_LOGTO_RESOURCE`.
+- Every **platform** (`lcl` = this computer, `nas` = the Synology) is
+  independent: its own Google Cloud project, its own service account,
+  its own Apple keys, its own upload keystore. Platforms share exactly
+  one thing on purpose: the Apple Development certificate, because Apple
+  caps those per developer account (it identifies the machine that
+  builds, not a platform).
+- Every **environment** of a platform is its own app in the stores:
+  package and bundle id `app.munni.<platform>.<env>` (the Phones tab
+  shows them), its own deep-link scheme, its own Firebase apps, its own
+  GlitchTip projects, its own Logto native app. CI builds it
+  (`native-android.yml`, `native-ios.yml`) from the committed platform
+  config and delivers to the Play internal track and TestFlight.
+- The tiles under **Features & accounts** hold the credentials
+  (Google Play, App Store Connect key, Firebase Cloud Messaging); the
+  **Phones** tab of an environment holds the buttons (Build, Wire
+  Firebase push, Register the App ID, Retire).
 
-Every master merge now produces, under **Actions → Native Android →
-Artifacts**: `munni-android-debug` (sideloadable APK) and
-`munni-android-release` (Play-ready signed .aab).
+## 2. Google, per platform: project, service account, roles, Play
 
-## 2. Logto — DONE ✓ (with a correction)
+One Google Cloud project per platform keeps them apart (name it after
+the platform, e.g. `munni-nas`). In it:
 
-You were right to create a **separate Native-type application** instead
-of reusing the SPA app — Logto validates redirect types per app kind,
-and `munni://auth-callback` only fits a native app. The original
-instruction here said otherwise; corrected. `NATIVE_LOGTO_APP_ID` now
-carries the native app's id. One follow-up inside Logto: if the API
-resource uses role-based access control, grant the native app the same
-role as the SPA — without RBAC nothing more is needed.
+1. **Project:** console.cloud.google.com → project picker → New project.
+2. **Service account:** IAM & Admin → Service Accounts → Create service
+   account (any name) → Done. Open it → Keys → Add key → JSON. That
+   whole file is the value of the **Google Play** tile — it publishes
+   to Play *and* drives Firebase; a fresh project has no other accounts
+   and needs none (the `firebase-adminsdk-…` agent you may know from an
+   older project is created by Firebase itself, see 3).
+3. **Roles:** IAM & Admin → IAM → Grant access → the service account's
+   email → **Firebase Admin** and **Service Usage Admin** → Save.
+   Firebase Admin alone cannot switch the Firebase Management API on;
+   Service Usage Admin can.
+4. **Play API:** APIs & Services → Library → *Google Play Android
+   Developer API* → Enable (same project).
+5. **Play Console:** Users and permissions → Invite new user → the
+   service account's email → account-level *Release to testing tracks*
+   and *View app information*. Every new munni package is covered
+   without re-inviting.
+6. **The app record**, once per environment, by hand (Play has no API
+   for it): Play Console → Create app → name and package as the Phones
+   tab shows. The page polls the store status and turns publishing on
+   by itself once the record exists; CI's first upload binds the
+   package. Content rating and Data safety are Play's own forms, also
+   yours.
 
-## 3. Firebase — DONE ✓ (one NAS step left)
+## 3. Firebase push, per platform — wired by the wizard
 
-`google-services.json` is committed and the shell builds with the FCM
-plugin active. Remaining: put the **service-account key** (Project
-settings → Service accounts → Generate new private key) into the NAS
-`.env` as ONE line, **wrapped in single quotes** (the JSON contains
-spaces, which otherwise break scripts that read the file):
+The api sends push with the same service account; the apps carry a
+Firebase config that CI bakes in. With the roles from step 2.3 in
+place, **Build** (or **Wire Firebase push**) on an environment's Phones
+tab: adds Firebase to the project if it is not one yet, registers the
+environment's Android and iOS apps there, hands CI their
+`google-services.json` / `GoogleService-Info.plist`, stores the sender
+credential on the Firebase tile (`FCM_SERVICE_ACCOUNT_JSON`) and, on
+lcl, restarts the api so it carries it. A missing role is named in the
+output; fix it in IAM and press again. The environment's `/health`
+answers `fcm: true` once the api holds the credential.
 
-```
-FCM_SERVICE_ACCOUNT_JSON='{"type": "service_account", "project_id": "munni-fb316", ...}'
-```
+**iOS push** additionally needs an APNs key, once per Apple team:
+developer.apple.com → Keys → Apple Push Notifications service →
+download the .p8 → Firebase console → Project settings → Cloud
+Messaging → Apple app configuration → upload. Until then iPhones
+register but receive nothing (Leftovers card, item 4).
 
-Keep the `\n` sequences inside `private_key` exactly as Google exported
-them. Then redeploy the api container and check
-`https://munni-api.<domain>/health` — it reports `"fcm": true` only
-when the key parses (project_id + client_email + private_key present).
-Until then native devices register fine but receive no pushes.
+The Firebase tile's text field is only for a deliberately separate
+sender (Firebase console → Project settings → Service accounts →
+Generate new private key).
 
-## 3b. iOS push (added 2026-07-16) — your checklist
+## 4. Apple, per platform
 
-The "enable notifications → hangs → stays off" iOS bug is fixed in code
-(AppDelegate now forwards the APNs registration callbacks the Capacitor
-plugin waits for). For pushes to actually ARRIVE on iOS, Firebase needs
-to know the iOS apps:
+1. **App Store Connect key** (tile *App Store Connect key*): App Store
+   Connect → Users and Access → Integrations → App Store Connect API →
+   generate with **App Manager** access; note Key ID and Issuer ID,
+   download the .p8 once and paste its content. The Team ID is on
+   developer.apple.com → Membership details.
+2. **App ID and capabilities:** nothing to click at developer.apple.com —
+   Build (or *Register the App ID*) registers the App ID with push,
+   Sign in with Apple and the associated domains through the API.
+3. **Development certificate:** minted once for this machine by the
+   *Mint Apple signing certificate* workflow, kept in the helper's store
+   and shipped into every iOS environment of every platform. Never mint
+   a second one by hand: Apple caps them and a revocation breaks every
+   build that used the old one.
+4. **The app record**, once per environment, by hand: App Store Connect
+   → Apps → New App with the pre-registered bundle id. TestFlight
+   uploads start with the next Build. Accept any pending agreements
+   under Business first, or uploads fail.
 
-1. Firebase console → Project settings → **Add app → iOS**, bundle id
-   **`app.munni`** → download `GoogleService-Info.plist` and replace the
-   committed placeholder at
-   `apps/native/ios/App/App/GoogleService-Info.plist`.
-2. Repeat for **`app.munni.dev`** → save as
-   `apps/native/ios/App/App/GoogleService-Info-Dev.plist` (CI swaps it
-   in for the staging build).
-3. Firebase console → Project settings → **Cloud Messaging → Apple app
-   configuration**: upload an **APNs authentication key** (create at
-   developer.apple.com → Keys → “+” → Apple Push Notifications service;
-   one key covers both apps).
+## 5. Per environment: build and check
 
-Until 1–3 are done the app degrades gracefully: registration succeeds
-with a raw APNs token, but the server's FCM sender cannot deliver to it.
+- **Build** on the Phones tab dispatches CI for that environment and
+  follows the run; the pills say what is wired (store record, push,
+  App ID). LAN https is needed on lcl for the phones to reach the
+  environment; Set up & start turns it on when a phone feature is
+  ticked.
+- Check: the Play internal track lists the release, TestFlight lists
+  the build, `/health` says `fcm: true`, and a phone with notifications
+  switched on in munni registers a push token.
+- **Sign-in registrations** (Registrations tab): Google's redirect URI
+  and Apple's return URL per environment — the tab lists the exact
+  values and verifies them where a provider offers an API.
 
-## 4. Google Play — account exists; three steps left
+## 6. Removing
 
-Signing is fully handled: an upload keystore was generated, lives in
-the repo secrets (`ANDROID_KEYSTORE_*`) and as a local copy at
-`deploy/env/upload.keystore` (gitignored; password in
-`deploy/env/.env.local`). CI already produces the signed .aab.
+**Retire** withdraws the Play internal release and expires the
+TestFlight builds; **Clean up** removes the environment. The store
+records themselves have no delete API and stay yours (Leftovers card,
+item 1).
 
-1. **Create the app** in the Play Console (your Jinbu account): Create
-   app → name "munni" → package name will bind on first upload. Note:
-   the old `com.okkes.munni.preview` / `com.ashblossom.munni.preview`
-   entries are the legacy prototype — this is a NEW app with package
-   **`app.munni`**. Also register `app.munni` under the "Android
-   developer verification" banner you're seeing.
-2. **Upload the first .aab by hand** (Play's API cannot create apps):
-   download `munni-android-release` from the latest master Actions run
-   and drop it into Internal testing → Create release. Enable **Play
-   App Signing** when asked (default) — our key is then just the upload
-   key and can be reset if ever lost.
-3. **Service account for CI uploads**: Play Console → Setup → API
-   access → link a Google Cloud project → create a service account with
-   the "Release manager" role → download its JSON key → save it as the
-   repo secret `PLAY_SERVICE_ACCOUNT_JSON`. From then on every master
-   merge publishes to the internal track automatically.
+## 7. Troubleshooting
 
-## 5. iOS — DONE ✓ (TestFlight uploads work end-to-end)
-
-Verified 2026-07-15: archive → cloud signing → TestFlight upload all
-green on CI (run 29414308155). Two hard-won requirements are baked into
-the workflow: the ASC key must be **Admin** role (see step 2), and
-uploads must be built with the iOS 26 SDK — the workflow selects the
-newest installed Xcode on the runner because the default is too old.
-The steps below are kept for reference / re-setup:
-
-1. **App record**: [App Store Connect](https://appstoreconnect.apple.com)
-   → Apps → **+ New App** → platform iOS, name "munni", bundle ID
-   `app.munni` (register it as an explicit App ID when prompted), SKU
-   `munni`.
-2. **API key**: App Store Connect → Users and Access → **Integrations →
-   App Store Connect API** → Team Keys → generate, role **Admin**. Note
-   the Key ID + Issuer ID and download the `.p8` (one chance!).
-   > ⚠ The role must be **Admin**, not App Manager. CI signs the build
-   > with a *cloud-managed distribution certificate*, which only an
-   > Admin key may create — an App Manager key fails the export with
-   > "Cloud signing permission error / No signing certificate 'iOS
-   > Distribution' found" (this is what the first TestFlight run hit).
-   > Also make sure any pending agreements are accepted under
-   > Business / Agreements, Tax, and Banking, or cert creation is blocked.
-3. **Repo secrets**: `ASC_KEY_ID` (key id), `ASC_ISSUER_ID` (issuer),
-   `ASC_KEY_P8` (the .p8 file base64-encoded:
-   `base64 -w0 AuthKey_XXXX.p8`), `APPLE_TEAM_ID` (Membership page).
-4. Flip the repo variable **`IOS_BUILD_ENABLED=true`** — the next
-   master merge archives, signs and uploads build N to TestFlight.
-   (With the variable on but no secrets, CI only does a cheap unsigned
-   smoke build.)
-
-Push on iOS additionally needs: Apple portal → Keys → create an
-**APNs key**, upload it in Firebase → Project settings → Cloud
-Messaging → Apple app configuration (add an iOS app with bundle
-`app.munni` there first, and drop its `GoogleService-Info.plist` into
-`apps/native/ios/App/App/` — tell me when it exists and I wire it in).
-
-## 5b. Stop the "certificate revoked" emails — automated, no Mac (updated 2026-07-16)
-
-Each CI run used to mint a fresh Apple Development certificate and a
-cleanup script revoked the old ones — every revocation triggers an
-Apple email. With a persistent certificate in the repo secrets, CI
-reuses it and nothing is minted or revoked anymore.
-
-No Mac needed (you don't have one): the **"Mint Apple signing
-certificate"** workflow (`mint-apple-cert.yml`, manual dispatch) makes
-the key + CSR with openssl, has the App Store Connect API sign it, and
-uploads the encrypted `.p12` as a 1-day artifact. The
-`APPLE_DEV_CERT_PASSWORD` secret was generated and set already; after a
-dispatch, the artifact content goes into `APPLE_DEV_CERT_P12`
-(`gh secret set APPLE_DEV_CERT_P12 < APPLE_DEV_CERT_P12.b64`). This was
-run once on 2026-07-16 — rerun it only if the cert ever expires
-(1 year) or gets revoked.
-
-The workflow now takes an `environment` input (default `local`, added
-for the wizard); on the NAS track dispatch it as is — repository-level
-secrets are visible from any environment.
-
-On the LOCAL track the wizard does all of this by itself (2026-09-08):
-the first iOS build mints the certificate through the same workflow
-(dispatched into the GitHub environment `local` — the workflow gained an
-`environment` input for that), the helper pulls the run artifact back
-into the machine store (`APPLE_DEV_CERT_P12` + `APPLE_DEV_CERT_PASSWORD`
-+ the certificate's serial, family-wide like the upload keystore) and
-the wizard ships both secrets into every repo's environment `local`
-before each build, rewriting them so a stale same-name copy cannot
-linger. Before a build the helper asks Apple by serial whether the
-machine's certificate is still listed; a revoked or expired one is
-forgotten and minted again without a click.
-
-**One certificate per Apple team (learned 2026-09-09).** Development
-certificates are team-wide, and the mint's cleanup of throwaway
-certificates cannot tell a persistent one apart from junk — so the whole
-team runs on ONE persistent certificate, and every place the secret
-lives must hold the same p12: the repository-level secret (the hosted
-track), each environment that overrides it (`staging`, `production`,
-`local`), the machine store and every template copy's environment
-`local`. The first wizard mint cleared the deck blindly, revoked the
-hosted track's July certificate, and every hosted build after it
-silently minted a throwaway (the imported p12 was dead and the prune
-sweep was skipped in "persistent" mode) until Apple refused the twelfth.
-Since then: the mint protects the certificate its environment still
-holds (`PROTECT_SERIALS` in `asc-prune.js`), the iOS workflow reads the
-p12's serial, fails fast with the repair when Apple no longer lists it
-(`asc-cert-check.js`) and runs the prune as a sweep that revokes only
-throwaways other builds left behind, and a wizard build on a repo that
-already holds `APPLE_DEV_CERT_P12` at repository level does not mint at
-all — the environment falls back to that secret.
-
-## 6. The dedicated staging apps (`app.munni.dev`) — your checklist
-
-The code side is DONE: an Android `dev` product flavor and an iOS
-bundle-id override build **app.munni.dev** ("munni dev", deep-link
-scheme `munni-dev://`) from every dev push — installable side by side
-with the production app. It all activates with one switch: the repo
-variable **`NATIVE_DEV_CHANNEL=true`**. Until then, dev pushes keep
-building the prod flavor as artifacts and publish nothing.
-
-Do these in order BEFORE flipping the variable:
-
-1. **Firebase** (console → project munni-fb316 → Project settings →
-   Your apps): **Add app → Android**, package name `app.munni.dev`.
-   Then **re-download `google-services.json`** (it now contains both
-   apps) and replace `apps/native/android/app/google-services.json` in
-   the repo (commit it — tell me and I'll do it if you drop the file in
-   the repo root). Without this the dev-flavor Gradle build fails.
-2. **Play Console**: Create app → name **"munni dev"** → this app binds
-   to package `app.munni.dev` on first upload. Then, like last time:
-   download the `munni-android-release` artifact from a dev-branch
-   Actions run (AFTER step 1 + the variable are done — or ask me to
-   dispatch one) and upload it by hand to Internal testing → Create
-   release, enabling Play App Signing. Finally Setup → API access →
-   grant your existing CI service account **Release manager** on this
-   app too (same `PLAY_SERVICE_ACCOUNT_JSON`, no new secret).
-3. **App Store Connect**: Apps → **+ New App** → iOS, name **"munni
-   dev"**, bundle ID `app.munni.dev` (register it as a new explicit App
-   ID when prompted), SKU `munni-dev`. Nothing else — the same ASC API
-   key signs and uploads it; TestFlight builds of the staging app land
-   in this record.
-4. **Logto** (admin console → the native application): add a second
-   redirect URI **`munni-dev://auth-callback`**. (If you later create a
-   separate Logto app for staging, put its id in the **staging GitHub
-   Environment** as `NATIVE_LOGTO_APP_ID` — see below.)
-5. Flip the variable **`NATIVE_DEV_CHANNEL=true`** (repo level, or in
-   the staging environment) — the next dev push builds, signs and
-   publishes app.munni.dev to its own Play internal track + TestFlight
-   app.
-
-**Per-stack configuration lives in GitHub Environments** (Settings →
-Environments → `production` / `staging`): dev-branch jobs run in
-`staging`, master jobs in `production`, and a variable defined there
-overrides the repo-level variable of the SAME name (no more `_DEV`
-suffixes). To point dev builds at the staging stack, define in the
-staging environment: `NATIVE_API_URL=https://munni-test-api.<your-domain>`,
-`NATIVE_PUBLIC_ORIGIN=https://munni-test.<your-domain>`,
-`NATIVE_LOGTO_RESOURCE=https://munni-test-api.<your-domain>`.
-When a name is absent there, the repo-level (production) value applies.
-
-Export compliance: answered once and encoded — Info.plist carries
-`ITSAppUsesNonExemptEncryption=false` ("None of the algorithms": munni
-only uses the OS's TLS/crypto), so the TestFlight popup won't return.
-
-## 7. Crash reporting per platform (GlitchTip) — your checklist
-
-CI bakes a GlitchTip DSN into each build, so crashes separate cleanly
-by project. In GlitchTip (org **munni** → Create new project, platform
-"Browser JavaScript" for the clients, ".NET" for the api), create:
-
-| Project | DSN goes into | Scope |
-|---|---|---|
-| `pwa-production` | variable `VITE_GLITCHTIP_DSN` | env production |
-| `pwa-staging` | variable `VITE_GLITCHTIP_DSN` | env staging |
-| `android-production` | variable `NATIVE_GLITCHTIP_DSN_ANDROID` | env production |
-| `android-staging` | variable `NATIVE_GLITCHTIP_DSN_ANDROID` | env staging |
-| `ios-production` | variable `NATIVE_GLITCHTIP_DSN_IOS` | env production |
-| `ios-staging` | variable `NATIVE_GLITCHTIP_DSN_IOS` | env staging |
-| `api-production` | secret `NAS_API_SENTRY_DSN` | env production |
-| `api-staging` | secret `NAS_API_SENTRY_DSN` | env staging |
-
-DSNs are not secret (client ones ship inside public JS bundles), so
-variables are fine; only the api's rides the env render, which reads
-secrets — hence `NAS_API_SENTRY_DSN` stays a secret. If a repo-level
-`NAS_API_SENTRY_DSN` exists, delete it after adding the env-scoped
-ones. Missing/empty DSN = that platform simply doesn't report.
-
-Note the telemetry policy still applies on top: offline/demo identities
-never send anything; signed-in users queue crash reports offline.
-
-## 8. Separate Logto apps per platform — prepared
-
-The workflows now prefer per-platform variables and fall back to the
-shared `NATIVE_LOGTO_APP_ID` until you create the apps:
-
-1. Logto console → Create application → **Native**, name "munni
-   Android", redirect URIs `munni://auth-callback` AND
-   `munni-dev://auth-callback` → its App ID becomes repo variable
-   **`NATIVE_LOGTO_APP_ID_ANDROID`**.
-2. Same again as "munni iOS" → **`NATIVE_LOGTO_APP_ID_IOS`**.
-3. Delete the old shared `NATIVE_LOGTO_APP_ID` variable (and the old
-   shared native app in Logto once no released build still uses it —
-   safest a release cycle later).
-
-Repo-level is fine for these (same app id serves prod + staging;
-scope them per environment only if you later want staging-only Logto
-apps).
-
-## 9. The LOCAL store channels (added 2026-08-28) — wizard-managed
-
-Every LOCAL ENVIRONMENT is its own store identity beside prod and dev:
-**`app.munni.local.<env>`** ("munni <env>", `munni-local[-<env>]://`,
-the staging icon) — Android product flavor `local` (own
-`src/local/google-services.json` stub), rebranded per environment by CI
-(`sed` over the stub + shortcuts before the build; iOS generalizes the
-bundle-id rebrand the same way, associated domains stripped — the LAN
-app claims no universal links; auth returns ride the scheme). **Push is
-wired as code** (2026-09-08): pressing Build runs the wizard's
-`firebase-setup` — the Play service account's own Cloud project is
-Firebase-enabled via the Management API, the env's Android/iOS apps are
-registered there, and `native-config` hands CI the real
-google-services.json / GoogleService-Info.plist
-(`NATIVE_GOOGLE_SERVICES_B64` / `NATIVE_IOS_FIREBASE_PLIST_B64`) to
-bake over the stubs; the same service account doubles as the FCM
-sender (auto-copied into `NAS_FCM_SERVICE_ACCOUNT_JSON`, and the env is
-re-rendered + brought up again whenever its api does not carry it yet —
-`/health` must answer `fcm: true`, found live 2026-09-08: the stored
-credential never reached a running api). The Firebase apps are named
-`munni local <env> android|ios` (the Apple App ID `munni local <env>`)
-so the local track reads apart from the hosted twins. One-time
-floors: grant that service account the **Firebase Admin** AND the
-**Service Usage Admin** roles in IAM — adding Firebase to a Cloud
-project switches APIs on, which Google gates behind
-`serviceusage.services.enable`, a permission Firebase Admin does NOT
-carry (found live 2026-09-08; by hand instead: add Firebase to the
-project once in the Firebase console, then Firebase Admin alone is
-enough) — and for iOS push upload the APNs key once (Firebase console
-→ Cloud Messaging). Until then the stub keeps builds green with push
-inactive and the Android card's push pill names the exact blocker.
-iOS push in full (the wizard's iOS card carries the same fold): create
-an APNs key at developer.apple.com → Keys (tick APNs; the same `.p8`
-may carry Sign in with Apple), upload it in the Firebase console →
-project → Cloud Messaging → Apple app configuration for
-`munni local <env> ios` (Key ID + Team ID — no API exists for this),
-then on the iPhone switch notifications on in munni's settings: nothing
-registers by itself, and the simulator cannot receive push. A missing
-APNs key surfaces in the api log as `THIRD_PARTY_AUTH_ERROR`.
-Sign in with Apple works on the local track too (2026-09-08): LAN mode
-serves real https, which Apple demands — tick the feature (LAN mode
-follows by itself), paste the Services ID + key in step 3 (family-wide),
-and register every environment's return URL
-`https://munni-<env>-logto.<ip-dashed>.sslip.io/callback/apple-universal`
-in the Services ID (the Apple card lists them; a changed wifi address
-changes them). Headless re-renders feed the stored social credentials to
-the Logto connector module, so the wizard's values are not needed.
-
-Both native workflows accept `environment: local` + `localEnv: <env>`
-(+ Android: `publish: auto|skip`) on dispatch and then build against
-the machine's LAN family. The wizard's local track drives everything:
-it turns on **LAN mode** — the family re-renders onto REAL https
-hostnames `https://munni-<env>.<ip-dashed>.sslip.io` behind one family
-Caddy with a locally-minted CA (localhost keeps working alongside;
-Enable Banking consents work locally because the redirect is genuine
-https) — writes `NATIVE_API_URL`/`NATIVE_PUBLIC_ORIGIN`/
-`NATIVE_LOGTO_*`/DSNs into the GitHub environment `local`, dispatches
-the build — and DELIVERY GOES THROUGH THE STORES like every other
-channel:
-
-- **Android** → Play **internal testing** track, auto-published once
-  `NATIVE_LOCAL_CHANNEL_<ENV>=true` (env `local` variable, the wizard's
-  per-environment "Enable auto-publish" button; the wizard resolves it
-  into the dispatch's `publish` input — until then builds pass with the
-  upload skipped, no red runs). The store-mandated first upload stays
-  manual ONCE PER ENVIRONMENT: the wizard downloads the signed `.aab`
-  from the first green build → Play Console → create app
-  `app.munni.local.<env>` → Internal testing → upload → grant the CI
-  service account.
-- **iOS** → TestFlight, after the one-time App Store Connect record per
-  environment (New App, bundle `app.munni.local.<env>`). Until that
-  record exists the export dies with `error: exportArchive Error
-  Downloading App Information` — the local channel degrades it to a
-  warning (skipped-not-red, like Android's first upload) and the
-  wizard's ASC pill + build verdict name the missing record with the
-  exact bundle id. Local builds number themselves in seconds since
-  2026-01-01 (redispatching the same commit must not reuse a TestFlight
-  build number — same practice as the Android versionCode). The iOS
-  bundle id has its OWN wizard field and CI variable
-  (`NATIVE_LOCAL_APP_ID_IOS`, falling back to the Android id): Play
-  burns package names when an upload key is lost while ASC records live
-  on, so Android may roll to `prod2` while iOS keeps `prod`. The
-  export additionally needs the ASC key to hold cloud-signing rights —
-  role **Admin** (or App Manager + "Access to Cloud Managed
-  Distribution Certificate"); without it the export fails with `Cloud
-  signing permission error` / `No signing certificate "iOS
-  Distribution"`, and CI names that fix. Creating the app RECORD stays
-  manual at BOTH stores by design of their APIs (automation like
-  fastlane produce drives an interactive Apple-ID session with 2FA —
-  not CI-able); a pending Program License Agreement must be accepted by
-  the Account Holder or store operations fail account-wide.
-
-Phones must trust the family's CA once per device (download
-`http://ca.<ip-dashed>.sslip.io` → root.crt). Android: install it as a
-CA certificate (Settings → Security). iPhone: the download lands as a
-PENDING profile — Settings → **Profile Downloaded** (or General → VPN &
-Device Management) → Install, then Settings → General → About →
-**Certificate Trust Settings** → full trust; both steps, or the in-app
-OIDC discovery fetch dies on TLS and the sign-in button appears dead
-(2026-09-08 report — the login screen now surfaces that failure with
-the exact hint). The local Android flavor ships a
-`network_security_config` that trusts user-installed CAs for exactly
-this; hosted flavors stay system-CAs-only.
-
-Caveats, stated in the wizard too: the build bakes the LAN hostnames (a
-DHCP change changes them — reserve the address), and it only works on
-that wifi. Deleting an environment (or everything) cascades: containers
-\+ volumes, its GoCardless consents, its vault folder, its auto-publish
-flag — plus an OPT-IN store retirement (offered when step-3 store
-credentials exist): the Play internal-testing track is cleared and the
-TestFlight builds are expired, so testers lose the app immediately.
-What no API can do: delete the store RECORDS — the Play app record, the
-ASC app record and the burned package name stay (remove never-published
-records by hand in the consoles; a later build re-publishes under the
-same identity). One exception: an `app.munni.local.*` bundle id that
-never got its ASC app record IS deleted from the developer portal.
-Delete-everything ends with a **cleanup verification**: containers,
-volumes, networks (matched by compose project `munni-local-*` — the
-from-source dev loop, project `munni-local`, and munni-sonar don't
-count), rendered folders, the registry and the LAN marker must all be
-gone; only then does the Delete button retire. The step-3 credential
-store and the upload keystore's reset certificate survive on purpose.
-
-## What works today
-
-The debug APK runs fully offline (demo/offline identities), keeps data
-forever (app-scoped storage), uses munni:// deep links, and — once the
-FCM key is on the NAS — receives pushes. Native sign-in works as soon
-as the app is built with the new `NATIVE_LOGTO_APP_ID` (next master
-merge).
+- *"may not switch APIs on … serviceusage.services.enable"*: the
+  service account lacks Service Usage Admin (step 2.3), or add Firebase
+  to the project once by hand in the Firebase console.
+- *"lacks Firebase rights"*: Firebase Admin missing (step 2.3); IAM
+  changes take a minute to apply.
+- The Firebase button says *not stored yet*: the Google Play tile of
+  this platform has no service account JSON — every platform has its
+  own.
+- Android builds fine but Play shows nothing: the app record (step
+  2.6) or the Play Console invite (2.5) is missing; the store pill on
+  the Phones tab names which.
