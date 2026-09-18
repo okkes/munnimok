@@ -2961,18 +2961,23 @@ function overviewHtml(env) {
     <p class="why" style="margin-top:8px">What this environment still needs from you — in order:</p>
     <ul class="todo" id="env-todo-${s}"></ul>`;
 }
+/** what a provider is asked WITH — the sign-in tile's values; without them a registration cannot be verified, only the tile saved */
+const REG_NEEDS = { google: ['LOGTO_GOOGLE_CLIENT_ID', 'LOGTO_GOOGLE_CLIENT_SECRET'], apple: ['LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY'] };
+const regTileMissing = (provider) => (REG_NEEDS[provider] ?? []).some((n) => !secretPresent(n));
+const regTileName = (provider) => (provider === 'apple' ? 'Apple sign-in' : 'Google sign-in');
 const regBlock = (s, provider, title, where, href, values, verifiable) => {
   // no API at the provider: the operator ticks done — the same item the Setup status rail lists
   const todoId = `reg-${provider === 'enablebanking' ? 'eb' : provider}-${s}`;
   const done = !verifiable && Boolean(todoDone()[`${S.platform}:${todoId}`]);
-  const pill = verifiable ? 'not checked yet' : (done ? 'done ✓ (marked by you)' : 'no API to verify — tick done once registered');
+  const unsaved = verifiable && regTileMissing(provider);
+  const pill = verifiable ? (unsaved ? `${regTileName(provider)} tile not saved yet` : 'not checked yet') : (done ? 'done ✓ (marked by you)' : 'no API to verify — tick done once registered');
   const manual = verifiable ? '' : `<div class="runrow"><label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-todo="${escAttr(todoId)}" ${done ? 'checked' : ''}/> done — registered by hand</label></div>`;
   return `
   <div class="reg" data-reg="${provider}" data-env="${s}">
     <div class="reg-h"><b>${title}</b> <span class="pill${done ? ' ok' : ''}" id="reg-pill-${provider}-${s}">${pill}</span></div>
     <div class="why">Where: <a href="${href}" target="_blank" rel="noreferrer">${where}</a></div>
     ${values.map(copyBlock).join('')}
-    ${verifiable ? `<div class="runrow"><button class="ghost" data-verify="${provider}" data-env="${s}">Verify with ${provider === 'google' ? 'Google' : 'Apple'}</button><span class="envtag">asks the provider about this environment's URL only — nothing changes</span></div>` : ''}
+    ${verifiable ? `<div class="runrow"><button class="ghost" data-verify="${provider}" data-env="${s}"${unsaved ? ' disabled' : ''}>Verify with ${provider === 'google' ? 'Google' : 'Apple'}</button><span class="envtag">${unsaved ? `save the ${regTileName(provider)} tile under Features &amp; accounts first — the check asks the provider with those values` : 'asks the provider about this environment\'s URL only — nothing changes'}</span></div>` : ''}
     ${manual}
   </div>`;
 };
@@ -3083,8 +3088,17 @@ function applyRegPill(s, provider) {
 async function verifyRegistration(env, provider) {
   const s = env.env;
   const logto = stackUrls(env.stack)?.logto ?? '';
-  setPill(`reg-pill-${provider}-${s}`, 'asking…', false);
   let verdict;
+  if (regTileMissing(provider)) {
+    // nothing to ask the provider with: say which tile, never a raw list of secret names
+    verdict = { ok: false, detail: `save the ${regTileName(provider)} tile first (Features & accounts) — the check asks ${provider === 'apple' ? 'Apple' : 'Google'} with its values`, at: new Date().toISOString() };
+    (S.regVerdicts[s] ??= {})[provider] = verdict;
+    LS.set('reg-verdicts.' + S.platform, S.regVerdicts);
+    applyRegPill(s, provider);
+    renderTodo();
+    return;
+  }
+  setPill(`reg-pill-${provider}-${s}`, 'asking…', false);
   try { verdict = await hjson('/api/validate', { method: 'POST', body: JSON.stringify({ provider, values: {}, platform: S.platform, redirectUris: [`${logto}/callback/${provider}-universal`] }) }); }
   catch (e) { verdict = { ok: false, unreachable: true, detail: e.message }; }
   verdict.at = new Date().toISOString();
