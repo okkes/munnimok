@@ -16,7 +16,8 @@
       "enablebanking"
     ],
     "signin": [
-      "google"
+      "google",
+      "apple"
     ]
   },
   "store": {
