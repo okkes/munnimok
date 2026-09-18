@@ -97,9 +97,11 @@ Generate new private key).
    a second one by hand: Apple caps them and a revocation breaks every
    build that used the old one.
 4. **The app record**, once per environment, by hand: App Store Connect
-   → Apps → New App with the pre-registered bundle id. TestFlight
-   uploads start with the next Build. Accept any pending agreements
-   under Business first, or uploads fail.
+   → Apps → New App with the pre-registered bundle id, any name and SKU.
+   Every push builds the environment's iOS app as well; until the record
+   exists a build archives and signs and says so in a notice, and the
+   first build after the record uploads to TestFlight by itself. Accept
+   any pending agreements under Business first, or uploads fail.
 
 ## 5. Per environment: build and check
 

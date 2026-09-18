@@ -30,7 +30,7 @@ permissions:
 jobs:
   stacks:
     # first-boot latch (MUNNI_INITIALIZED) + the iOS opt-in flag
-    if: ${{ vars.MUNNI_INITIALIZED == 'true' && vars.IOS_BUILD_ENABLED == 'true' }}
+    if: ${{ vars.MUNNI_INITIALIZED == 'true' }}
     runs-on: ubuntu-latest
     outputs:
       include: ${{ steps.m.outputs.include }}
@@ -270,8 +270,26 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
 
-      - name: Export and upload to TestFlight
+      # Apple keeps ONE step manual — the app record (no create-API). Ask before exporting:
+      # a missing record is a notice and the signed archive the deliverable, never an "EXPORT FAILED"
+      - name: App Store Connect record?
+        id: record
         if: steps.asc.outputs.present == 'true'
+        run: node .github/scripts/asc-app-record.js
+        env:
+          BUNDLE_ID: ${{ matrix.iosBundleId }}
+          ASC_KEY_PATH: ${{ runner.temp }}/asc.p8
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+
+      - name: No app record yet — the signed archive is the deliverable
+        if: steps.asc.outputs.present == 'true' && steps.record.outputs.exists == 'false'
+        run: |
+          echo "::notice title=TestFlight upload skipped::App Store Connect has no app record for ${{ matrix.iosBundleId }} yet — the build archived and signed fine. Create the record once (appstoreconnect.apple.com → Apps → ＋ → New App, platform iOS, bundle ${{ matrix.iosBundleId }}, any name and SKU); every build after that uploads to TestFlight by itself."
+          echo "TestFlight upload skipped: App Store Connect has no app record for ${{ matrix.iosBundleId }} yet — create it once, the next build uploads" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Export and upload to TestFlight
+        if: steps.asc.outputs.present == 'true' && steps.record.outputs.exists != 'false'
         working-directory: apps/native/ios/App
         run: |
           cat > "$RUNNER_TEMP/exportOptions.plist" <<PLIST

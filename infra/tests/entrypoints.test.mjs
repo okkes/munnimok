@@ -13,12 +13,12 @@ import assert from 'node:assert/strict';
 const at = (p) => fileURLToPath(new URL(p, import.meta.url));
 const ROOT = at('../..');
 
-const walk = (dir, out = []) => {
+const walk = (dir, out = [], exts = ['.mjs']) => {
   for (const name of readdirSync(dir)) {
     if (name === 'node_modules' || name === 'rendered') continue;
     const p = join(dir, name);
-    if (statSync(p).isDirectory()) walk(p, out);
-    else if (name.endsWith('.mjs')) out.push(p);
+    if (statSync(p).isDirectory()) walk(p, out, exts);
+    else if (exts.some((x) => name.endsWith(x))) out.push(p);
   }
   return out;
 };
@@ -30,8 +30,8 @@ test('bootstrap.mjs loads every module it imports and asks for a stack when call
   assert.ok(!/SyntaxError|does not provide an export|Cannot find module/.test(r.stderr), r.stderr);
 });
 
-test('every script and module under infra/ and deploy/ parses', () => {
-  const files = [...walk(join(ROOT, 'infra')), ...walk(join(ROOT, 'deploy'))];
+test('every script and module under infra/, deploy/ and .github/scripts parses', () => {
+  const files = [...walk(join(ROOT, 'infra')), ...walk(join(ROOT, 'deploy')), ...walk(join(ROOT, '.github', 'scripts'), [], ['.js', '.mjs'])];
   assert.ok(files.length > 20, 'the walk found the modules');
   const broken = files.filter((f) => spawnSync(process.execPath, ['--check', f], { encoding: 'utf8' }).status !== 0);
   assert.deepEqual(broken, []);

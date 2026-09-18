@@ -3522,7 +3522,6 @@ async function buildIos(env) {
     if (env.features?.push) await streamLocal('/api/local/firebase-setup', { stack: env.stack }, `wire ${env.label}'s Firebase push (project + app registrations + configs, zero input)`, { refresh: false });
     await ensureAppleCert(env).catch((e) => localLog(`✗ signing certificate: ${e.message} — this build signs with a throwaway one\n`));
     const cfg = await writeNativeEnv(env);
-    await ghUpsertRepoVar('IOS_BUILD_ENABLED', 'true');
     await streamLocal('/api/local/ios-appid', { stack: env.stack }, 'register the Apple App ID + capabilities (push, Sign in with Apple as primary, associated domains)', { refresh: false });
     await ensureEnvSecrets(env.environment, ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8', 'APPLE_TEAM_ID'], 'TestFlight upload').catch(() => {});
     const iosId = cfg.iosAppId ?? cfg.appId;
@@ -3530,7 +3529,7 @@ async function buildIos(env) {
     await dispatch('native-ios.yml', { stack: env.stack });
     say(`iOS build dispatched for ${iosId} — CI signs and uploads to TestFlight (usually 15-25 min)…`);
     const run = await awaitRun('native-ios.yml', started, env.stack, 45 * 60 * 1000, say);
-    if (run.conclusion === 'skipped') say('the iOS job was SKIPPED — its gates (IOS_BUILD_ENABLED, repo initialization) were off when it started. Both are set now: press Build again.', false);
+    if (run.conclusion === 'skipped') say('the iOS job was SKIPPED — the repo initialization gate (MUNNI_INITIALIZED) was off when it started; it is set now: press Build again.', false);
     else if (run.conclusion === 'success') {
       let iosState = 'ready';
       try { iosState = (await hjson(`/api/local/store-status?stack=${encodeURIComponent(env.stack)}`)).ios?.state ?? 'ready'; } catch { /* poll again later */ }
