@@ -250,10 +250,18 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
 
-      - name: Archive (automatic signing via ASC key)
+      # The App target's Release configuration names "Apple Distribution" (project.pbxproj),
+      # so automatic signing takes the App Store profile Xcode manages for the archive:
+      # no registered device — a DEVELOPMENT profile needs one ("Your team has no devices
+      # from which to generate a provisioning profile", nas-dev 2026-09-19) — and no
+      # development certificate on the runner. The identity lives in the project file,
+      # never on the command line: a command-line CODE_SIGN_IDENTITY hits every target,
+      # the Capacitor pods included.
+      - name: Archive (distribution signing via the ASC key)
         if: steps.asc.outputs.present == 'true'
         working-directory: apps/native/ios/App
         run: |
+          set +e
           xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
             -archivePath "$RUNNER_TEMP/App.xcarchive" archive \
             -destination "generic/platform=iOS" \
@@ -264,7 +272,13 @@ jobs:
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
             CODE_SIGN_ENTITLEMENTS=App/App.entitlements \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.code }}" \
-            MARKETING_VERSION="${{ steps.version.outputs.name }}"
+            MARKETING_VERSION="${{ steps.version.outputs.name }}" 2>&1 | tee "$RUNNER_TEMP/archive.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -ne 0 ] && grep -q "Cloud signing permission error" "$RUNNER_TEMP/archive.log"; then
+            echo "::error title=ASC key cannot cloud-sign::The App Store Connect API key cannot create/use the cloud-managed Apple Distribution certificate the archive signs with. Fix once: App Store Connect → Users and Access → Integrations → this key → role Admin (or App Manager WITH 'Access to Cloud Managed Distribution Certificate' ticked), wait a minute, rebuild."
+          fi
+          exit "$status"
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}

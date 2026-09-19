@@ -81,7 +81,10 @@ export function buildAccount(email, password) {
 }
 
 /** {name, username, password, uri, notes} → encrypted Bitwarden cipher */
-export const buildCipher = (userKeys, item) => ({
+/** a login item (type 1) — or, for kind 'note', a secure note (type 2) whose whole text sits in notes */
+export const buildCipher = (userKeys, item) => (item.kind === 'note'
+  ? { type: 2, name: encString(userKeys, item.name), notes: item.notes ? encString(userKeys, item.notes) : null, favorite: false, secureNote: { type: 0 }, fields: null, folderId: null }
+  : {
   type: 1,
   name: encString(userKeys, item.name),
   notes: item.notes ? encString(userKeys, item.notes) : null,

@@ -132,6 +132,8 @@ interface AdminAppProps {
   config: AdminConfig;
   /** null = test-auth mode (X-User-Sub header from the sub box) */
   getToken: (() => Promise<string | undefined>) | null;
+  /** ends the Logto session (absent in test-auth mode) — a freshly granted admin role rides on the next token */
+  signOut?: () => void;
 }
 
 /**
@@ -140,7 +142,7 @@ interface AdminAppProps {
  * upkeep. Talks to the same API (/admin/* gated server-side); it
  * deliberately shares no code with the member app.
  */
-export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
+export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>) {
   // survives the full page reload a Logto re-auth causes (else every token
   // hiccup dumps the operator back on Overview mid-task)
   const [screen, setScreen] = useState<Screen>(() => {
@@ -274,6 +276,11 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
           ))}
         </nav>
         <div className="sidebar-foot">
+          {signOut && (
+            <button className="btn" data-testid="admin-signout" onClick={signOut}>
+              Sign out
+            </button>
+          )}
           {!getToken && (
             <input
               data-testid="admin-sub"
@@ -289,7 +296,12 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
       </aside>
 
       <main className="content">
-        {denied && <p className="denied">This account has no admin access — its sign-in carries no admin scope.</p>}
+        {denied && (
+          <p className="denied">
+            This account has no admin access yet — its sign-in carries no admin scope. An operator switches admin on for it in the setup wizard
+            (the environment&apos;s Access tab); then sign out and in again — the role rides on the next token.
+          </p>
+        )}
         {unreachable && <p className="denied">The admin API did not answer — is the environment running (and this origin allowed)?</p>}
         {disconnected && <p className="denied">This browser was disconnected from the account — reload to register it again.</p>}
         {/* blocked: no data loaded — the empty screens would only mislead */}

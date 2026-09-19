@@ -205,3 +205,9 @@ td.warn { color: var(--warn); font-weight: 700; }
   .sidebar-foot input { min-width: 150px; }
   .content { padding: 18px 14px 72px; }
 }
+
+/* the sign-in gate: the button and the one line that says whose account */
+.center { flex-direction: column; gap: 14px; }
+.center .hint { max-width: 400px; margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink3); text-align: center; }
+.sidebar-foot .btn { width: 100%; background: rgb(255 255 255 / 12%); margin-bottom: 8px; }
+.sidebar-foot .btn:hover:not(:disabled) { background: rgb(255 255 255 / 22%); }

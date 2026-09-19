@@ -86,6 +86,15 @@ describe('AdminApp (test-auth mode)', () => {
     expect(screen.queryByText(/did not answer/)).toBeNull();
   });
 
+  it('a Logto session offers Sign out — a freshly granted admin role rides on the next token', async () => {
+    scriptFetch({ 'GET /admin/ping': () => ({ status: 403 }) });
+    const signOut = vi.fn();
+    render(<AdminApp config={CONFIG} getToken={async () => 'tok'} signOut={signOut} />);
+    await screen.findByText(/no admin access/);
+    fireEvent.click(screen.getByTestId('admin-signout'));
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
   it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the denied one', async () => {
     scriptFetch({ 'GET /admin/ping': () => ({ status: 500 }) });
     render(<AdminApp config={CONFIG} getToken={null} />);

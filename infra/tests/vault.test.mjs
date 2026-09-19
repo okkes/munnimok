@@ -63,6 +63,16 @@ test('buildCipher encrypts every present field and keeps absent ones null', () =
   assert.equal(bare.notes, null);
 });
 
+test('buildCipher: kind note is a secure note — type 2, the text in notes, no login block', () => {
+  const keys = splitSymKey(Buffer.alloc(64, 4));
+  const note = buildCipher(keys, { name: 'Admin portal (no password)', kind: 'note', notes: 'sign in with your own account' });
+  assert.equal(note.type, 2);
+  assert.deepEqual(note.secureNote, { type: 0 });
+  assert.equal(note.login, undefined);
+  assert.equal(decString(keys, note.name).toString(), 'Admin portal (no password)');
+  assert.equal(decString(keys, note.notes).toString(), 'sign in with your own account');
+});
+
 test('vaultLogin sends the password grant with the auth-email header; bad creds → null', async () => {
   const calls = [];
   const fetchImpl = async (url, init) => {

@@ -128,9 +128,10 @@ test('ensureAdminRole: the API resource carries the `admin` scope and the role "
 
 test('listUsers + setAdmin: every user of the environment with whether they hold the admin role; granting and revoking go through the role\'s members, never twice', async () => {
   const prod = loadStack('munni-nas-prod');
-  const logto = fakeLogto({ users: [{ id: 'u1', username: 'ann', name: 'Ann', primaryEmail: 'ann@x', avatar: null, lastSignInAt: 5 }, { id: 'u2', username: 'bob' }] });
+  const logto = fakeLogto({ users: [{ id: 'u1', username: 'ann', name: 'Ann', primaryEmail: 'ann@x', avatar: null, lastSignInAt: 1758240000000 }, { id: 'u2', username: 'bob' }] });
   assert.deepEqual(await listUsers(prod, creds, { fetchImpl: logto.fetchImpl }), [
-    { id: 'u1', username: 'ann', name: 'Ann', email: 'ann@x', avatar: null, admin: false, lastSignInAt: 5 },
+    // Logto hands epoch milliseconds; the listing speaks ISO like every other date (the page printed "NaN d ago" before)
+    { id: 'u1', username: 'ann', name: 'Ann', email: 'ann@x', avatar: null, admin: false, lastSignInAt: new Date(1758240000000).toISOString() },
     { id: 'u2', username: 'bob', name: null, email: null, avatar: null, admin: false, lastSignInAt: null },
   ], 'no role yet: nobody is an admin');
   assert.deepEqual(await setAdmin(prod, creds, 'u2', true, { fetchImpl: logto.fetchImpl }), { userId: 'u2', admin: true });

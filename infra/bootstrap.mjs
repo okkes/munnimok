@@ -93,7 +93,7 @@ async function keepInVault(values, fresh = []) {
     return 'no-account';
   }
   const byName = new Map();
-  const add = (item) => { if (item.password || item.username) byName.set(item.name, item); };
+  const add = (item) => { if (item.password || item.username || item.kind === 'note') byName.set(item.name, item); };
   if (isShared) {
     if (values.GLITCHTIP_ADMIN_PASSWORD) add({ name: 'GlitchTip', username: `admin@munni.${stack.platform}`, password: values.GLITCHTIP_ADMIN_PASSWORD, uri: stack.urls.glitchtip, notes: 'GlitchTip admin (crash reports) — created inside the container by the deploy from the password the setup minted.' });
     if (values.GLITCHTIP_API_TOKEN) add({ name: 'GlitchTip API token', username: 'setup', password: values.GLITCHTIP_API_TOKEN, uri: stack.urls.glitchtip, notes: 'The API token the setup uses for GlitchTip as code (org, projects, DSNs).' });
@@ -104,6 +104,8 @@ async function keepInVault(values, fresh = []) {
     if (values.LOGTO_INFRA_M2M_ID) add({ name: 'Logto infra M2M', username: values.LOGTO_INFRA_M2M_ID, password: values.LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto, notes: 'Machine credential for Logto as code (Management API) — the wizard\'s Access tab uses it to list users and grant admin.' });
     if (values.LOGTO_ADMIN_M2M_ID) add({ name: 'Logto admin-tenant M2M', username: values.LOGTO_ADMIN_M2M_ID, password: values.LOGTO_ADMIN_M2M_SECRET ?? '', uri: stack.urls.logtoAdmin, notes: 'Machine credential that claimed the console admin.' });
     if (values.POSTGRES_PASSWORD) add({ name: `Postgres (${stack.stack})`, username: 'munni', password: values.POSTGRES_PASSWORD, notes: 'The environment\'s database server (munni + logto databases).' });
+    // the item the operator looks for first — and the one that has no password: the admin portal takes the operator's own app account
+    add({ name: 'Admin portal (no password)', kind: 'note', notes: `${stack.urls.admin}\n\nNo account of its own: sign in with the account you use in the app (${stack.urls.web}) — Google, Apple or e-mail. Then, in the setup wizard, environment "${stack.env}" → Access → switch admin on for that account (a session opened before that signs out and in again). The "Logto console" item is Logto's own console at ${stack.urls.logtoAdmin}, not the admin portal.` });
   }
   for (const item of fresh) add(item);
   const items = [...byName.values()];

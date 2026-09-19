@@ -1893,6 +1893,7 @@ async function storeGroup(id) {
     if (g.id === 'google' || g.id === 'apple') { // a saved provider re-verifies every environment's registration by itself
       for (const k of [...S.autoVerified]) if (k.endsWith(':' + g.id)) S.autoVerified.delete(k);
       for (const s of Object.keys(S.regVerdicts)) delete S.regVerdicts[s][g.id];
+      for (const env of S.envList) renderRegistrations(env); // the blocks said "tile not saved yet" with Verify disabled — the values are here now
       setTimeout(() => autoVerifyRegistrations().catch(() => {}), 300);
     }
     const where = S.platform === 'nas'
@@ -2291,6 +2292,7 @@ function pickPlatform(id) {
   S.features = featuresFor(id);
   S.skipped = new Set(LS.get('skipped.' + id, []));
   S.regVerdicts = LS.get('reg-verdicts.' + id, {});
+  S.accessUsers = {};
   S.autoVerified = new Set();
   S.recentlyStored.clear();
   S.verdicts = {};
@@ -3006,10 +3008,18 @@ function registrationsHtml(env) {
 }
 function accessHtml(env) {
   const s = env.env;
+  const u = stackUrls(env.stack) ?? {};
+  const link = (href) => (href ? `<a href="${escAttr(href)}" target="_blank" rel="noreferrer">${esc(href)}</a>` : '<i>(address known once the environment is set up)</i>');
   return `
-    <p class="why">Who may use the admin portal and the control cockpit of this environment: the users of its own Logto, with the role <b>munni admin</b> toggled here. Nothing is typed — sign in to the app once and the account appears.</p>
+    <p class="why">The admin portal and the control cockpit have <b>no account and no password of their own</b>: they let in the users of this environment's own Logto that hold the role <b>munni admin</b>, switched on here. Nothing is typed anywhere and the setup creates no user.</p>
+    <ol class="why" style="padding-left:18px;margin:6px 0">
+      <li>Sign in to the app once — ${link(u.web)} — with the account you want to operate with (Google, Apple or e-mail, whatever this environment offers). That creates the user.</li>
+      <li>It appears below (<b>Reload users</b> if not yet); switch <b>admin</b> on.</li>
+      <li>Open the admin portal — ${link(u.admin)} — with the same account. A session opened before the switch signs out and in again: the role rides on the next token.</li>
+    </ol>
+    <p class="why">The vault's <i>Logto console</i> item is Logto's own console (${link(u.logtoAdmin)}), not the admin portal.</p>
     <div class="runrow"><button class="ghost" data-act="access" data-stack="${env.stack}">Reload users</button></div>
-    <ul class="health-list access-list" id="access-list-${s}"><li><span class="hn">press Reload users</span></li></ul>
+    <ul class="health-list access-list" id="access-list-${s}"><li><span class="hn">not listed yet</span></li></ul>
     <div class="msg" id="msg-access-${s}"></div>`;
 }
 function cleanupHtml(env) {
@@ -3046,7 +3056,7 @@ function envWorkspaceHtml(env) {
         <button class="tab sel" data-tab="overview" data-env="${s}">Overview</button>
         <button class="tab" data-tab="registrations" data-env="${s}">Registrations <span class="pill" id="tabpill-registrations-${s}"></span></button>
         <button class="tab" data-tab="phones" data-env="${s}">Phones <span class="pill" id="tabpill-phones-${s}"></span></button>
-        <button class="tab" data-tab="access" data-env="${s}">Access</button>
+        <button class="tab" data-tab="access" data-env="${s}">Access <span class="pill" id="tabpill-access-${s}"></span></button>
         <button class="tab" data-tab="cleanup" data-env="${s}">Clean up</button>
       </div>
       <div class="tab-body" data-tab="overview" data-env="${s}">${overviewHtml(env)}</div>
@@ -3068,6 +3078,7 @@ function renderWorkspaces() {
     applyIcons(box);
     for (const env of list) renderRegistrations(env);
     setTimeout(() => autoVerifyRegistrations().catch(() => {}), 800);
+    setTimeout(() => autoLoadAccess().catch(() => {}), 1200);
   }
   setPill('envs-pill', list.length ? `${list.length} environment${list.length > 1 ? 's' : ''}` : 'none yet', list.length > 0);
   renderEnvStatus();
@@ -3214,27 +3225,37 @@ function switchTab(s, tab) {
 }
 
 /* ── Access: the environment's Logto users, the admin role toggled ── */
-async function loadAccess(env) {
+async function loadAccess(env, { quiet = false } = {}) {
   const s = env.env;
   const list = document.getElementById(`access-list-${s}`);
   if (!list) return;
+  const epoch = platformEpoch;
   list.innerHTML = '<li><span class="hn">asking the environment\'s Logto…</span></li>';
-  msg(`msg-access-${s}`, '', true);
+  if (!quiet) msg(`msg-access-${s}`, '', true);
   try {
     const r = await hjson(`/api/access/users?stack=${encodeURIComponent(env.stack)}`);
+    if (epoch !== platformEpoch) return;
     S.accessUsers[s] = r.users ?? [];
     renderAccess(env);
+    renderTodo();
   } catch (e) {
+    if (epoch !== platformEpoch) return;
+    if (quiet) { list.innerHTML = `<li><span class="hn">not listed yet — ${esc(e.message)}; Reload users once the environment answers</span></li>`; return; }
     list.innerHTML = '';
     msg(`msg-access-${s}`, `✗ ${e.message}`, false);
   }
+}
+/** the listing loads itself once per page load — the environment's todo then says whether anyone holds admin */
+async function autoLoadAccess() {
+  if (!HELPER) return;
+  for (const env of S.envList) if (!S.accessUsers[env.env]) await loadAccess(env, { quiet: true }).catch(() => {});
 }
 function renderAccess(env) {
   const s = env.env;
   const list = document.getElementById(`access-list-${s}`);
   if (!list) return;
   const users = S.accessUsers[s] ?? [];
-  if (!users.length) { list.innerHTML = '<li><span class="hn">no users yet — sign in to the app once, then reload</span></li>'; return; }
+  if (!users.length) { list.innerHTML = '<li><span class="hn">no users yet — sign in to the app once (step 1 above), then Reload users</span></li>'; return; }
   list.innerHTML = users.map((u) => {
     const who = u.name || u.username || u.email || u.id;
     const initials = String(who).slice(0, 2).toUpperCase();
@@ -3249,6 +3270,7 @@ async function toggleAccess(env, userId, admin, box) {
     const u = (S.accessUsers[s] ?? []).find((x) => x.id === userId);
     if (u) u.admin = admin;
     renderAccess(env);
+    renderTodo();
     msg(`msg-access-${s}`, `${admin ? 'granted' : 'revoked'} admin for ${userId} ✓ — takes effect on the user's next token`, true);
   } catch (e) {
     box.checked = !admin;
@@ -3740,6 +3762,8 @@ function envTodoItems(env) {
   if ((f.signin ?? []).includes('google')) items.push({ id: `reg-google-${s}`, title: 'Register the Google redirect URI', detail: 'Registrations → Verify with Google tells', state: regState('google'), tab: 'registrations', env: s, sel: '.reg[data-reg="google"]' });
   if ((f.signin ?? []).includes('apple')) items.push({ id: `reg-apple-${s}`, title: 'Register the Apple domain + return URL', detail: https(urls.logto) ? 'Registrations → Verify with Apple tells' : 'needs an https address first', state: https(urls.logto) ? regState('apple') : false, tab: 'registrations', env: s, sel: '.reg[data-reg="apple"], .reg' });
   if ((f.banking ?? []).includes('enablebanking')) items.push({ id: `reg-eb-${s}`, title: 'Register the Enable Banking redirect URL', detail: 'Registrations lists it — no API to verify', manual: true, tab: 'registrations', env: s, sel: '.reg[data-reg="enablebanking"]' });
+  const admins = S.accessUsers[s];
+  items.push({ id: `admin-${s}`, title: 'Someone holds admin (admin portal + control cockpit)', detail: 'sign in to the app once with your own account, then Access → switch admin on for it', state: admins ? admins.some((x) => x.admin) : null, tab: 'access', env: s, sel: `#access-list-${s}` });
   if (f.android) items.push({ id: `play-record-${s}`, title: `Create the Play app record${ss?.appId ? ` ${ss.appId}` : ''}`, detail: 'Play Console → Create app; this page notices and turns publishing on', state: ss?.play ? ss.play.state === 'ready' : null, tab: 'phones', env: s, sel: '[data-phone="android"] details.how' });
   if (f.ios) items.push({ id: `asc-record-${s}`, title: `Create the App Store Connect record${ss?.iosAppId ? ` ${ss.iosAppId}` : ''}`, detail: 'New App with the pre-registered bundle id', state: ss?.ios ? ss.ios.state === 'ready' : null, tab: 'phones', env: s, sel: '[data-phone="ios"] details.how:last-of-type' });
   if ((f.android || f.ios) && f.push) items.push({ id: `push-${s}`, title: 'Push wired (Firebase apps registered)', detail: 'Build or Wire Firebase push does it once the roles are granted', state: ss?.firebase ? ss.firebase.state === 'ready' : null, soft: true, tab: 'phones', env: s, sel: `#fcm-status-pill-${s}` });
@@ -3770,6 +3794,8 @@ function renderTodo() {
     const phones = items.filter((it) => /^(play-record|asc-record|push)-/.test(it.id));
     setPill(`tabpill-registrations-${env.env}`, regs.length ? `${regs.filter((it) => it.done).length}/${regs.length}` : '', regs.length > 0 && regs.every((it) => it.done));
     setPill(`tabpill-phones-${env.env}`, phones.length ? `${phones.filter((it) => it.done).length}/${phones.length}` : '', phones.length > 0 && phones.every((it) => it.done));
+    const adm = items.find((it) => it.id === `admin-${env.env}`);
+    setPill(`tabpill-access-${env.env}`, adm?.done ? 'admin ✓' : (adm?.state === false ? 'nobody yet' : ''), Boolean(adm?.done));
   }
   document.querySelectorAll('#rail [data-todo]').forEach((cb) => cb.addEventListener('change', () => {
     const m = todoDone();

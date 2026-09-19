@@ -19,7 +19,7 @@ export function renderRunbook(stack, { minted = [], missingOperator = [] } = {})
   const nas = stack.delivery === 'synology';
   const links = stack.role === 'shared'
     ? `- crash reports ${stack.urls.glitchtip} · vault ${stack.urls.vault} · control ${stack.urls.control} · pgAdmin ${stack.urls.pgadmin}`
-    : `- app ${stack.urls.web} · admin ${stack.urls.admin} · api ${stack.urls.api}/health\n- sign-in ${stack.urls.logto} · Logto console ${stack.urls.logtoAdmin}\n- crash reports (shared) ${shared.urls.glitchtip} · vault (shared) ${shared.urls.vault}`;
+    : `- app ${stack.urls.web} · admin ${stack.urls.admin} · api ${stack.urls.api}/health\n- sign-in ${stack.urls.logto} · Logto console ${stack.urls.logtoAdmin}\n- admin portal: your own app account holding the role munni admin (wizard → Access) — no password of its own\n- crash reports (shared) ${shared.urls.glitchtip} · vault (shared) ${shared.urls.vault}`;
   const rules = Object.keys(stack.hosts).map((k) => `- ${stack.host(k)} → localhost:${stack.ports[k]}`).join('\n');
   writeFileSync(file, `# Runbook — ${stack.stack} (${stack.platformLabel}, ${stack.role === 'shared' ? 'shared services' : `environment "${stack.env}"`})
 

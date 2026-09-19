@@ -84,6 +84,8 @@ interface ControlAppProps {
   config: ControlConfig;
   /** null = test-auth mode (X-User-Sub header from the sub box) */
   getToken: (() => Promise<string | undefined>) | null;
+  /** ends the Logto session (absent in test-auth mode) — a freshly granted admin role rides on the next token */
+  signOut?: () => void;
 }
 
 /**
@@ -94,7 +96,7 @@ interface ControlAppProps {
  * GoCardless account attributed per environment, plus the account-wide
  * quota. Deletion stays in each environment's own admin portal.
  */
-export function ControlApp({ config, getToken }: Readonly<ControlAppProps>) {
+export function ControlApp({ config, getToken, signOut }: Readonly<ControlAppProps>) {
   // survives the full page reload a Logto re-auth causes (else every token
   // hiccup dumps the operator back on Overview mid-task)
   const [screen, setScreen] = useState<Screen>(() => {
@@ -179,6 +181,11 @@ export function ControlApp({ config, getToken }: Readonly<ControlAppProps>) {
           ))}
         </nav>
         <div className="sidebar-foot">
+          {signOut && (
+            <button className="btn" data-testid="control-signout" onClick={signOut}>
+              Sign out
+            </button>
+          )}
           {!getToken && (
             <input
               data-testid="control-sub"
@@ -194,7 +201,12 @@ export function ControlApp({ config, getToken }: Readonly<ControlAppProps>) {
       </aside>
 
       <main className="content">
-        {denied && <p className="denied">This account has no admin access — its sign-in carries no admin scope.</p>}
+        {denied && (
+          <p className="denied">
+            This account has no admin access yet — its sign-in carries no admin scope. An operator switches admin on for it in the setup wizard
+            (the environment&apos;s Access tab); then sign out and in again — the role rides on the next token.
+          </p>
+        )}
         {unreachable && <p className="denied">The control API did not answer — is the environment running (and this origin allowed)?</p>}
         {disconnected && <p className="denied">This browser was disconnected from the account — reload to register it again.</p>}
         {!blocked && screen === 'overview' && <OverviewScreen consents={consents} health={health} />}

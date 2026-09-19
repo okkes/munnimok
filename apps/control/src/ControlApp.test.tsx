@@ -70,6 +70,15 @@ describe('ControlApp (test-auth mode)', () => {
     expect(screen.queryByText(/did not answer/)).toBeNull();
   });
 
+  it('a Logto session offers Sign out — a freshly granted admin role rides on the next token', async () => {
+    scriptFetch({ 'GET /control/ping': () => ({ status: 403 }) });
+    const signOut = vi.fn();
+    render(<ControlApp config={CONFIG} getToken={async () => 'tok'} signOut={signOut} />);
+    await screen.findByText(/no admin access/);
+    fireEvent.click(screen.getByTestId('control-signout'));
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
   it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the denied one', async () => {
     scriptFetch({ 'GET /control/ping': () => ({ status: 500 }) });
     render(<ControlApp config={CONFIG} getToken={null} />);

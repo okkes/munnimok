@@ -125,7 +125,8 @@ export async function listUsers(stack, creds, { fetchImpl = localAwareFetch } = 
   const roles = await call('/roles?page_size=100');
   const role = roles.find((r) => r.name === ADMIN_ROLE);
   const admins = new Set(role ? (await call(`/roles/${role.id}/users?page_size=100`)).map((u) => u.id) : []);
-  return users.map((u) => ({ id: u.id, username: u.username ?? null, name: u.name ?? null, email: u.primaryEmail ?? null, avatar: u.avatar ?? null, admin: admins.has(u.id), lastSignInAt: u.lastSignInAt ?? null }));
+  // Logto's timestamps are epoch milliseconds — handed on as ISO strings, the shape every other date on the page has
+  return users.map((u) => ({ id: u.id, username: u.username ?? null, name: u.name ?? null, email: u.primaryEmail ?? null, avatar: u.avatar ?? null, admin: admins.has(u.id), lastSignInAt: u.lastSignInAt ? new Date(u.lastSignInAt).toISOString() : null }));
 }
 
 /** grant or revoke the admin role for one user (the role is ensured first) */
