@@ -188,7 +188,7 @@ tbody tr:hover td { background: color-mix(in srgb, var(--accent-soft) 45%, trans
 td.warn { color: var(--warn); font-weight: 700; }
 
 /* ── controls & layout helpers ────────────────────────────────────── */
-.center { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.center { display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; min-height: 100vh; }
 .denied { color: var(--danger); font-weight: 600; }
 .error { color: var(--danger); font-size: 13px; }
 .hint { color: var(--ink3); font-size: 12px; margin: 0 0 12px; }
@@ -207,7 +207,6 @@ td.warn { color: var(--warn); font-weight: 700; }
 }
 
 /* the sign-in gate: the button and the one line that says whose account */
-.center { flex-direction: column; gap: 14px; }
 .center .hint { max-width: 400px; margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink3); text-align: center; }
 .sidebar-foot .btn { width: 100%; background: rgb(255 255 255 / 12%); margin-bottom: 8px; }
 .sidebar-foot .btn:hover:not(:disabled) { background: rgb(255 255 255 / 22%); }

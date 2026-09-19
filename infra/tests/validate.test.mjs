@@ -120,12 +120,24 @@ test('playstore: parses the service account and mints an androidpublisher-scoped
   assert.equal(rejected.ok, false);
 });
 
-test('ascstore: ES256 App Store Connect jwt against /v1/apps; team-id format guard', async () => {
+test('ascstore: ES256 App Store Connect jwt against /v1/apps; the team\'s iOS devices are counted — none enabled is a warning naming the step; team-id format guard', async () => {
   const p8 = Buffer.from(ecPem()).toString('base64');
   const { calls, fetchImpl } = capture(200, { data: [] });
   const verdict = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: p8, APPLE_TEAM_ID: 'ABCDE12345' }, { fetchImpl });
   assert.equal(verdict.ok, true);
+  assert.equal(verdict.warn, true, 'the key works, but a device-less team cannot archive');
+  assert.match(verdict.detail, /no registered iOS device/);
+  assert.deepEqual(verdict.devices, { enabled: 0, disabled: 0 });
   assert.match(calls[0].url, /appstoreconnect\.apple\.com\/v1\/apps/);
+  assert.match(calls[1].url, /\/v1\/devices\?filter%5Bplatform%5D=IOS/);
+  const withDevices = (statuses) => async (url) => ({ ok: true, status: 200, json: async () => ({ data: url.includes('/v1/devices') ? statuses.map((status, i) => ({ id: `d${i}`, attributes: { status } })) : [] }) });
+  const allOff = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: p8 }, { fetchImpl: withDevices(['DISABLED', 'DISABLED', 'DISABLED']) });
+  assert.equal(allOff.warn, true);
+  assert.match(allOff.detail, /all 3 registered iPhones are disabled/, 'the wipe switched the phones off — the fix is one click, not a registration');
+  assert.deepEqual(allOff.devices, { enabled: 0, disabled: 3 });
+  const fine = await validate('ascstore', { ASC_KEY_ID: 'K1', ASC_ISSUER_ID: 'ISS', ASC_KEY_P8: p8 }, { fetchImpl: withDevices(['ENABLED', 'DISABLED']) });
+  assert.equal(fine.warn, undefined);
+  assert.match(fine.detail, /1 enabled iOS device$/);
   const jwt = calls[0].init.headers.authorization.replace('Bearer ', '');
   const { header, payload } = decodeJwt(jwt);
   assert.equal(header.kid, 'K1');

@@ -3473,6 +3473,7 @@ function phonesHtml(env) {
           <li>Nothing to click at developer.apple.com: <b>Build</b> (or Register the App ID) registers the App ID through the API with the capabilities munni needs long-run — Push Notifications, Sign in with Apple as the primary App ID, Associated Domains.</li>
           <li>The one step neither store gives an API for is the app RECORD: <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> → <b>New App</b> → platform iOS, any name, pick the pre-registered bundle id, <b>SKU</b> = anything unique → create. The pill above detects it and every build then uploads to TestFlight by itself.</li>
           <li>Two account-side switches that block uploads when off: a pending <b>Program License Agreement</b> must be accepted by the Account Holder, and the App Store Connect key needs cloud-signing rights — Users and Access → Integrations → the key → role Admin.</li>
+          <li>Once per Apple team, one <b>enabled</b> registered device: automatic signing archives against a development profile, and Apple issues one only for a team that has one — <a href="https://developer.apple.com/account/resources/devices/list" target="_blank" rel="noreferrer">Devices</a> → enable a registered iPhone, or ＋ to register any iPhone you own (name + UDID; iTunes or Finder shows the UDID behind the serial number). The App Store Connect tile's Check counts them, Build refuses to dispatch without one; TestFlight itself needs none.</li>
         </ol>
       </details>
     </div>`;
@@ -3627,6 +3628,9 @@ async function buildIos(env) {
   if (btn) btn.disabled = true;
   try {
     if (isLcl() && !(await ensureLanMode())) { say('LAN mode could not come up — see the output box.', false); return; }
+    // Apple issues the development profile the archive needs only for a team with an enabled device — asked here, not after a ten-minute run
+    const asc = await hjson('/api/validate', { method: 'POST', body: JSON.stringify({ provider: 'ascstore', values: {}, platform: S.platform }) }).catch(() => null);
+    if (asc?.devices && !asc.devices.enabled) { say(`✗ not dispatched — ${asc.detail}`, false); return; }
     if (env.features?.push) await streamLocal('/api/local/firebase-setup', { stack: env.stack }, `wire ${env.label}'s Firebase push (project + app registrations + configs, zero input)`, { refresh: false });
     await ensureAppleCert(env).catch((e) => localLog(`✗ signing certificate: ${e.message} — this build signs with a throwaway one\n`));
     const cfg = await writeNativeEnv(env);

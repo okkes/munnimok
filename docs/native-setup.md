@@ -105,6 +105,13 @@ Generate new private key).
    exists a build archives and signs and says so in a notice, and the
    first build after the record uploads to TestFlight by itself. Accept
    any pending agreements under Business first, or uploads fail.
+5. **One enabled registered device**, once per Apple team: automatic
+   signing archives against a development profile, and Apple issues one
+   only for a team that has an enabled device — developer.apple.com →
+   Devices → enable a registered iPhone, or ＋ to register any iPhone you
+   own (name + UDID; iTunes or Finder shows the UDID behind the serial
+   number). The App Store Connect tile's Check counts them and Build
+   refuses to dispatch without one; TestFlight itself needs none.
 
 ## 5. Per environment: build and check
 

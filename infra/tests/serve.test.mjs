@@ -337,7 +337,7 @@ test('access/users: an environment stack only; no machine credential → 502 nam
   const body = res.json();
   assert.equal(body.stack, 'munni-lcl-prod');
   assert.deepEqual(body.users, [
-    { id: 'usr_ann', username: null, name: 'Ann', email: 'ann@example.com', avatar: null, admin: true, lastSignInAt: 1700000000000 },
+    { id: 'usr_ann', username: null, name: 'Ann', email: 'ann@example.com', avatar: null, admin: true, lastSignInAt: new Date(1700000000000).toISOString() },
     { id: 'usr_bob', username: 'bob', name: null, email: null, avatar: null, admin: false, lastSignInAt: null },
   ]);
   assert.match(logto.calls[0], /^POST \/oidc\/token/);

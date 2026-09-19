@@ -307,8 +307,20 @@ export const VALIDATORS = {
       headers: { authorization: `Bearer ${jwt}` },
       signal: T(),
     });
-    if (res.ok) return { ok: true, detail: 'App Store Connect accepted the key' };
-    return { ok: false, detail: `App Store Connect rejected it (${res.status}) — check Key ID, Issuer ID and the .p8 together` };
+    if (!res.ok) return { ok: false, detail: `App Store Connect rejected it (${res.status}) — check Key ID, Issuer ID and the .p8 together` };
+    // every iOS build archives against a development profile (automatic signing; the export re-signs for the store), and
+    // Apple issues one only for a team with at least one ENABLED registered device — said here, before a build fails on it
+    const dev = await fetchImpl('https://api.appstoreconnect.apple.com/v1/devices?filter%5Bplatform%5D=IOS&limit=200', {
+      headers: { authorization: `Bearer ${jwt}` },
+      signal: T(),
+    });
+    if (!dev.ok) return { ok: true, detail: 'App Store Connect accepted the key' };
+    const list = (await dev.json()).data ?? [];
+    const devices = { enabled: list.filter((d) => d.attributes?.status === 'ENABLED').length, disabled: list.filter((d) => d.attributes?.status !== 'ENABLED').length };
+    const why = 'Apple issues the development profile every iOS build archives against only for a team with an enabled registered device';
+    if (!devices.enabled && devices.disabled) return { ok: true, warn: true, devices, detail: `App Store Connect accepted the key — but all ${devices.disabled} registered iPhone${devices.disabled > 1 ? 's are' : ' is'} disabled, and ${why}. Once: developer.apple.com → Devices → the phone → Enable. TestFlight itself needs none.` };
+    if (!devices.enabled) return { ok: true, warn: true, devices, detail: `App Store Connect accepted the key — but the team has no registered iOS device, and ${why}. Once per team: developer.apple.com → Devices → ＋ → any iPhone you own (name + UDID; iTunes or Finder shows the UDID behind the serial number). TestFlight itself needs none.` };
+    return { ok: true, devices, detail: `App Store Connect accepted the key — ${devices.enabled} enabled iOS device${devices.enabled > 1 ? 's' : ''}` };
   },
 
   /** a real DSM login + logout via the same module the bootstrap uses */

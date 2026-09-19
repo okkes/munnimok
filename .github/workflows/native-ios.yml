@@ -173,8 +173,26 @@ jobs:
           retention-days: 14
 
       # ---- Apple key present: archive, sign automatically, upload to TestFlight ----
-      - name: Compute build number (push = commit count, dev gets .1; dispatch = seconds since 2026)
+      # Automatic signing archives against a development profile, and Apple issues one
+      # only for a team with an ENABLED registered device — ask first: a team without one
+      # is a notice naming the one-click fix, never an ARCHIVE FAILED on every push
+      - name: Enabled device at Apple?
+        id: devices
         if: steps.asc.outputs.present == 'true'
+        run: node .github/scripts/asc-devices.js
+        env:
+          ASC_KEY_PATH: ${{ runner.temp }}/asc.p8
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+
+      - name: No enabled device — the archive waits for one
+        if: steps.asc.outputs.present == 'true' && steps.devices.outputs.enabled == '0'
+        run: |
+          echo "::warning title=iOS archive skipped::Apple issues the development profile automatic signing archives against only for a team with an ENABLED registered device — this team has ${{ steps.devices.outputs.disabled }} registered, none enabled. Once: developer.apple.com → Certificates, Identifiers & Profiles → Devices → enable a registered iPhone (or ＋ to register any iPhone you own: name + UDID, which iTunes or Finder shows behind the serial number). Every push after that builds; TestFlight itself needs no device."
+          echo "iOS archive skipped: no enabled registered device on the Apple team (${{ steps.devices.outputs.disabled }} registered, all disabled) — enable one at developer.apple.com → Devices, the next push builds" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Compute build number (push = commit count, dev gets .1; dispatch = seconds since 2026)
+        if: steps.asc.outputs.present == 'true' && steps.devices.outputs.enabled != '0'
         id: version
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -196,7 +214,7 @@ jobs:
       # every environment that builds iOS.
       - name: Import persistent signing certificate
         id: signingcert
-        if: steps.asc.outputs.present == 'true'
+        if: steps.asc.outputs.present == 'true' && steps.devices.outputs.enabled != '0'
         run: |
           if [ -z "$CERT_B64" ]; then
             echo "no persistent cert configured — automatic signing will mint one"
@@ -241,7 +259,7 @@ jobs:
       # until Apple's cap. Prune the stale dev certs via the ASC API; the
       # persistent cert is protected by serial, never by age.
       - name: Prune CI-minted development certificates
-        if: steps.asc.outputs.present == 'true'
+        if: steps.asc.outputs.present == 'true' && steps.devices.outputs.enabled != '0'
         run: node .github/scripts/asc-prune.js
         env:
           PROTECT_SERIALS: ${{ steps.signingcert.outputs.serial }}
@@ -250,15 +268,16 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
 
-      # The App target's Release configuration names "Apple Distribution" (project.pbxproj),
-      # so automatic signing takes the App Store profile Xcode manages for the archive:
-      # no registered device — a DEVELOPMENT profile needs one ("Your team has no devices
-      # from which to generate a provisioning profile", nas-dev 2026-09-19) — and no
-      # development certificate on the runner. The identity lives in the project file,
-      # never on the command line: a command-line CODE_SIGN_IDENTITY hits every target,
-      # the Capacitor pods included.
-      - name: Archive (distribution signing via the ASC key)
-        if: steps.asc.outputs.present == 'true'
+      # Automatic signing archives against a DEVELOPMENT profile (the export re-signs for
+      # the store), and Apple issues one only for a team with at least one ENABLED registered
+      # device ("Your team has no devices from which to generate a provisioning profile",
+      # nas-dev 2026-09-19: three iPhones registered, all disabled). "Apple Distribution"
+      # under automatic style conflicts ("App is automatically signed for development, but a
+      # conflicting code signing identity Apple Distribution has been manually specified") —
+      # from the project file just as from the command line, both proven 2026-09-19. So the
+      # archive stays automatic and a device-less team is named as the fix.
+      - name: Archive (automatic signing via the ASC key)
+        if: steps.asc.outputs.present == 'true' && steps.devices.outputs.enabled != '0'
         working-directory: apps/native/ios/App
         run: |
           set +e
@@ -276,7 +295,10 @@ jobs:
           status=${PIPESTATUS[0]}
           set -e
           if [ "$status" -ne 0 ] && grep -q "Cloud signing permission error" "$RUNNER_TEMP/archive.log"; then
-            echo "::error title=ASC key cannot cloud-sign::The App Store Connect API key cannot create/use the cloud-managed Apple Distribution certificate the archive signs with. Fix once: App Store Connect → Users and Access → Integrations → this key → role Admin (or App Manager WITH 'Access to Cloud Managed Distribution Certificate' ticked), wait a minute, rebuild."
+            echo "::error title=ASC key cannot cloud-sign::The App Store Connect API key cannot create/use the cloud-managed certificate. Fix once: App Store Connect → Users and Access → Integrations → this key → role Admin (or App Manager WITH 'Access to Cloud Managed Distribution Certificate' ticked), wait a minute, rebuild."
+          fi
+          if [ "$status" -ne 0 ] && grep -q "has no devices from which to generate a provisioning profile" "$RUNNER_TEMP/archive.log"; then
+            echo "::error title=Enable one device at Apple::Automatic signing archives against a development profile, and Apple issues one only for a team with at least one ENABLED registered device — yours has none. Once: developer.apple.com → Certificates, Identifiers & Profiles → Devices → enable a registered iPhone (or ＋ to register any iPhone you own: name + UDID, which iTunes or Finder shows behind the serial number). Then press Build again. TestFlight itself needs no device."
           fi
           exit "$status"
         env:
@@ -288,7 +310,7 @@ jobs:
       # a missing record is a notice and the signed archive the deliverable, never an "EXPORT FAILED"
       - name: App Store Connect record?
         id: record
-        if: steps.asc.outputs.present == 'true'
+        if: steps.asc.outputs.present == 'true' && steps.devices.outputs.enabled != '0'
         run: node .github/scripts/asc-app-record.js
         env:
           BUNDLE_ID: ${{ matrix.iosBundleId }}
@@ -297,13 +319,13 @@ jobs:
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
 
       - name: No app record yet — the signed archive is the deliverable
-        if: steps.asc.outputs.present == 'true' && steps.record.outputs.exists == 'false'
+        if: steps.asc.outputs.present == 'true' && steps.devices.outputs.enabled != '0' && steps.record.outputs.exists == 'false'
         run: |
           echo "::notice title=TestFlight upload skipped::App Store Connect has no app record for ${{ matrix.iosBundleId }} yet — the build archived and signed fine. Create the record once (appstoreconnect.apple.com → Apps → ＋ → New App, platform iOS, bundle ${{ matrix.iosBundleId }}, any name and SKU); every build after that uploads to TestFlight by itself."
           echo "TestFlight upload skipped: App Store Connect has no app record for ${{ matrix.iosBundleId }} yet — create it once, the next build uploads" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Export and upload to TestFlight
-        if: steps.asc.outputs.present == 'true' && steps.record.outputs.exists != 'false'
+        if: steps.asc.outputs.present == 'true' && steps.devices.outputs.enabled != '0' && steps.record.outputs.exists != 'false'
         working-directory: apps/native/ios/App
         run: |
           cat > "$RUNNER_TEMP/exportOptions.plist" <<PLIST
