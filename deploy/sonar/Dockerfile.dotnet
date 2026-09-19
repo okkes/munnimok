@@ -1,7 +1,7 @@
 # SonarScanner for .NET in a box: dotnet SDK + Java runtime + the
 # dotnet-sonarscanner global tool. Built/used by deploy/sonar/analyze.ps1
 # so the API can be analyzed without installing Java on the host.
-FROM mcr.microsoft.com/dotnet/sdk:10.0
+FROM mcr.microsoft.com/dotnet/sdk:11.0
 RUN apt-get update \
     && apt-get install -y --no-install-recommends default-jre-headless \
     && rm -rf /var/lib/apt/lists/*
