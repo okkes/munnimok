@@ -242,29 +242,33 @@ export async function claimConsole(stack, { adminId, adminSecret }, { fetchImpl 
   return { created, existing: users.length > 0, modeSet, membership };
 }
 
-/** the admin tenant's organization (t-default on OSS) with its "admin" organization role, for one user — idempotent */
+/**
+ * every TENANT organization of the admin tenant takes the user with the "admin" organization role — Logto OSS has two
+ * (t-default = the default tenant the console manages, t-admin = the admin tenant itself; a first run that joined only
+ * the first one listed left the console on "Access denied", nas prod 2026-09-28). Idempotent.
+ */
 async function ensureConsoleMembership(base, token, userId, fetchImpl) {
   const list = (x) => (Array.isArray(x) ? x : []);
-  const orgs = list(await api(base, token, '/organizations?page_size=20', {}, fetchImpl));
-  const org = orgs.find((o) => String(o.id).startsWith('t-')) ?? orgs[0];
-  if (!org) return { organization: null, role: null, joined: false, granted: false };
-  const members = list(await api(base, token, `/organizations/${org.id}/users?page_size=100`, {}, fetchImpl));
-  let joined = false;
-  if (!members.some((u) => u.id === userId)) {
-    await api(base, token, `/organizations/${org.id}/users`, { method: 'POST', body: JSON.stringify({ userIds: [userId] }) }, fetchImpl);
-    joined = true;
-  }
+  const orgs = list(await api(base, token, '/organizations?page_size=20', {}, fetchImpl)).filter((o) => String(o.id).startsWith('t-'));
+  if (!orgs.length) return { organizations: [], role: null, joined: [], granted: [] };
   const roles = list(await api(base, token, '/organization-roles?page_size=50', {}, fetchImpl));
   const admin = roles.find((r) => r.name === 'admin') ?? roles[0];
-  let granted = false;
-  if (admin) {
+  const joined = [];
+  const granted = [];
+  for (const org of orgs) {
+    const members = list(await api(base, token, `/organizations/${org.id}/users?page_size=100`, {}, fetchImpl));
+    if (!members.some((u) => u.id === userId)) {
+      await api(base, token, `/organizations/${org.id}/users`, { method: 'POST', body: JSON.stringify({ userIds: [userId] }) }, fetchImpl);
+      joined.push(org.id);
+    }
+    if (!admin) continue;
     const have = list(await api(base, token, `/organizations/${org.id}/users/${userId}/roles?page_size=50`, {}, fetchImpl));
     if (!have.some((r) => r.id === admin.id)) {
       await api(base, token, `/organizations/${org.id}/users/${userId}/roles`, { method: 'POST', body: JSON.stringify({ organizationRoleIds: [admin.id] }) }, fetchImpl);
-      granted = true;
+      granted.push(org.id);
     }
   }
-  return { organization: org.id, role: admin?.name ?? null, joined, granted };
+  return { organizations: orgs.map((o) => o.id), role: admin?.name ?? null, joined, granted };
 }
 
 /** true once Logto issues a token for the infra credential — the seed has landed */

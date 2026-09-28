@@ -204,7 +204,9 @@ async function applyLogto(values, write, fresh) {
         fresh.push({ name: 'Logto console', username: c.created.username, password: c.created.password, uri: stack.urls.logtoAdmin, notes: 'The environment\'s Logto admin console — created by the setup.' });
       }
       state.console = c.created ? 'created' : 'existing';
-      console.log(c.created ? `  logto: console admin created (username admin)${c.modeSet ? '; console switched to sign-in' : ''} — password in the vault` : '  logto: the console already has its admin');
+      const changed = [...new Set([...(c.membership?.joined ?? []), ...(c.membership?.granted ?? [])])];
+      const org = c.membership ? (c.membership.organizations.length ? `tenant organizations ${c.membership.organizations.join(', ')}: ${changed.length ? `joined as admin now (${changed.join(', ')})` : 'member + admin ✓'}` : 'no tenant organization found') : 'tenant organization not checked';
+      console.log(c.created ? `  logto: console admin created (username admin)${c.modeSet ? '; console switched to sign-in' : ''} — password in the vault; ${org}` : `  logto: the console already has its admin; ${org}`);
     } catch (e) {
       state.console = 'failed';
       console.log(`  logto: console admin not claimed (${e.message}) — retried next run`);
@@ -378,7 +380,8 @@ async function ciApply() {
     waitingForShared = waitingForShared.filter((n) => !pulled.includes(n));
   }
   if (waitingForShared.length) console.log(`  ⏳ platform values the shared stack's bootstrap mirrors, not in this environment yet: ${waitingForShared.join(', ')}`);
-  if (missingOperator.length) console.log(`  ⚠ operator secrets still missing (the wizard's tiles store them): ${missingOperator.join(', ')}`);
+  const stillMissing = missingOperator.filter((n) => n !== 'LOGTO_APPLE_TEAM_ID' || !(process.env.LOGTO_APPLE_TEAM_ID || process.env.APPLE_TEAM_ID));
+  if (stillMissing.length) console.log(`  ⚠ operator secrets still missing (the wizard's tiles store them): ${stillMissing.join(', ')}`);
   const dir = renderStack(stack);
   console.log(`  rendered compose + env template → ${dir}`);
   const values = process.env;
