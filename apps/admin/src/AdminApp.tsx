@@ -53,6 +53,19 @@ interface HealthInfo {
   capabilities?: Record<string, unknown>;
 }
 
+/** "1 space · 2 bank feeds" — the IBAN-keyed feeds a bank connection adds are counted apart from the spaces */
+function membershipLabel(u: AdminUser): string {
+  const spaces = `${u.spaceCount} space${u.spaceCount === 1 ? '' : 's'}`;
+  if (!u.feedCount) return spaces;
+  return `${spaces} · ${u.feedCount} bank feed${u.feedCount === 1 ? '' : 's'}`;
+}
+
+/** the row's attribution: a foreign consent shows the environment it was started from, an own one its owner */
+function requisitionAttribution(r: AdminRequisition): string {
+  if (r.foreign) return ` · ${r.environmentOrigin ?? 'unknown origin'}`;
+  return r.ownerSub ? ` · ${r.ownerSub.slice(0, 12)}` : '';
+}
+
 const STATUS_LABEL: Record<string, string> = {
   CR: 'created', LN: 'linked', EX: 'expired', RJ: 'rejected', SU: 'suspended',
   GA: 'authorizing', UA: 'authorizing', GC: 'consenting', SA: 'selecting',
@@ -517,10 +530,7 @@ function UsersScreen({
                   </div>
                 </td>
                 <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-                <td>
-                  {u.spaceCount} space{u.spaceCount === 1 ? '' : 's'}
-                  {u.feedCount ? ` · ${u.feedCount} bank feed${u.feedCount === 1 ? '' : 's'}` : ''}
-                </td>
+                <td>{membershipLabel(u)}</td>
                 <td className="cell-actions">
                   <button
                     data-testid={`diagnose-${u.sub}`}
@@ -658,7 +668,7 @@ function ConnectionsScreen({
                   </div>
                   <div className="cell-sub">
                     {r.requisitionId.slice(0, 13)}… · {r.created ? new Date(r.created).toLocaleDateString() : '—'}
-                    {r.foreign ? ` · ${r.environmentOrigin ?? 'unknown origin'}` : r.ownerSub ? ` · ${r.ownerSub.slice(0, 12)}` : ''}
+                    {requisitionAttribution(r)}
                   </div>
                 </td>
                 <td>{STATUS_LABEL[r.status] ?? r.status}</td>

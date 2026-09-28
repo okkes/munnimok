@@ -239,7 +239,11 @@ export function GlobalSettingsScreen() {
     setTestBusy(true);
     try {
       const sent = await sendTestPush();
-      setTestNote(sent === null ? t('push.testFailed') : sent === 0 ? t('push.testNone') : t('push.testSent', { n: sent }));
+      let note: string;
+      if (sent === null) note = t('push.testFailed');
+      else if (sent === 0) note = t('push.testNone');
+      else note = t('push.testSent', { n: sent });
+      setTestNote(note);
     } finally {
       setTestBusy(false);
     }
