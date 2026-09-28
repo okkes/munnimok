@@ -1229,6 +1229,13 @@ public sealed class FakeEnableBankingBankApi : Munni.Api.Banking.IBankDataApi
 {
     public int InstitutionCalls;
     public string ProviderId => Munni.Api.Banking.EnableBankingApi.Id;
+    public List<string> Deleted { get; } = [];
+
+    public Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default)
+    {
+        Deleted.Add(requisitionId);
+        return Task.CompletedTask;
+    }
 
     public Task<IReadOnlyList<GcInstitution>> GetInstitutionsAsync(string country, CancellationToken ct = default)
     {

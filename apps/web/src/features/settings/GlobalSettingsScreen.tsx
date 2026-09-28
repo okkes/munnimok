@@ -17,7 +17,7 @@ import { Pill, Row } from '@/ui/primitives';
 import { useQuery } from '@/db/useQuery';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { Sheet } from '@/ui/Sheet';
-import { disablePush, enablePush, pushEnabled, pushSupported } from '@/lib/push';
+import { disablePush, enablePush, pushEnabled, pushSupported, sendTestPush } from '@/lib/push';
 import { ExportSheet } from './ExportSheet';
 import {
   biometricAvailable,
@@ -147,6 +147,9 @@ export function GlobalSettingsScreen() {
   const [vapidKey, setVapidKey] = useState('');
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
+  // the test push row: what the last attempt said (sent to n devices / no device / failed)
+  const [testNote, setTestNote] = useState<string | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
   const [lockOn, setLockOn] = useState(() => readLockConfig() !== null);
   const [lockSheetOpen, setLockSheetOpen] = useState(false);
   const [lockPin, setLockPin] = useState('');
@@ -231,6 +234,16 @@ export function GlobalSettingsScreen() {
     setLockSheetOpen(false);
   };
 
+  const sendTest = async () => {
+    if (testBusy) return;
+    setTestBusy(true);
+    try {
+      const sent = await sendTestPush();
+      setTestNote(sent === null ? t('push.testFailed') : sent === 0 ? t('push.testNone') : t('push.testSent', { n: sent }));
+    } finally {
+      setTestBusy(false);
+    }
+  };
   const togglePush = async () => {
     if (pushBusy) return;
     setPushBusy(true);
@@ -322,6 +335,17 @@ export function GlobalSettingsScreen() {
                 </Pill>
               }
               onClick={() => void togglePush()}
+            />
+          )}
+          {vapidKey && pushOn && (
+            <Row
+              testId="settings-push-test"
+              icon="bell-ring-outline"
+              title={t('push.testTitle')}
+              sub={testNote ?? t('push.testSub')}
+              chevron={false}
+              disabled={testBusy}
+              onClick={() => void sendTest()}
             />
           )}
           <Row

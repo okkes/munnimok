@@ -16,7 +16,9 @@ interface AdminUser {
   displayName: string | null;
   email: string | null;
   createdAt: string;
+  /** spaces the user is a member of — the IBAN-keyed bank feeds are counted apart */
   spaceCount: number;
+  feedCount?: number;
 }
 interface AdminRequisition {
   requisitionId: string;
@@ -26,6 +28,10 @@ interface AdminRequisition {
   accountCount: number;
   stale: boolean;
   ownerSub: string | null;
+  /** another environment's consent on the shared account (the all-environments view) */
+  foreign?: boolean;
+  /** the environment it was started from — its redirect origin */
+  environmentOrigin?: string | null;
 }
 /** THIS environment's connections + a count of foreign ones (the GC
  * account is shared across environments; foreign consents are neither
@@ -157,6 +163,8 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requisitions, setRequisitions] = useState<AdminRequisition[] | null>(null);
   const [foreignCount, setForeignCount] = useState(0);
+  // the shared GoCardless account's OTHER environments — on request only, so leftovers of removed environments can go
+  const [showAll, setShowAll] = useState(false);
   const [quota, setQuota] = useState<ProviderQuota[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
@@ -202,7 +210,7 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
     if (!ping?.ok) return;
     const [usersRes, reqRes, quotaRes, healthRes] = await Promise.all([
       call('/admin/users'),
-      call('/admin/gocardless/requisitions'),
+      call(`/admin/gocardless/requisitions${showAll ? '?all=true' : ''}`),
       call('/admin/quota'),
       fetch(`${config.apiUrl}/health`).catch(() => null),
     ]);
@@ -217,7 +225,7 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
     const catalogRes = await call('/catalog').catch(() => null);
     if (catalogRes?.status === 204) setCatalog(EMPTY_CATALOG);
     else if (catalogRes?.ok) setCatalog((await catalogRes.json()) as CatalogDoc);
-  }, [call, config.apiUrl]);
+  }, [call, config.apiUrl, showAll]);
 
   useEffect(() => {
     if (getToken || sub) void reload();
@@ -241,9 +249,17 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
     act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords, stores }) }));
 
   const deleteSelected = async () => {
+    const byId = (id: string) => requisitions?.find((r) => r.requisitionId === id);
+    const foreignIds = [...selected].filter((id) => byId(id)?.foreign);
+    if (foreignIds.length > 0) {
+      // revoking another environment's bank access is deliberate here, never a slip
+      const origins = [...new Set(foreignIds.map((id) => byId(id)?.environmentOrigin ?? 'unknown origin'))].join(', ');
+      const plural = foreignIds.length === 1 ? '' : 's';
+      if (!window.confirm(`Delete ${foreignIds.length} connection${plural} of OTHER environments (${origins})? This revokes their bank access — meant for leftovers of removed environments.`)) return;
+    }
     setBusy(true);
     for (const id of selected) {
-      await call(`/admin/gocardless/requisitions/${id}`, { method: 'DELETE' }).catch(() => undefined);
+      await call(`/admin/gocardless/requisitions/${id}${foreignIds.includes(id) ? '?foreign=true' : ''}`, { method: 'DELETE' }).catch(() => undefined);
     }
     setSelected(new Set());
     await reload();
@@ -333,6 +349,8 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
           <ConnectionsScreen
             requisitions={requisitions}
             foreignCount={foreignCount}
+            showAll={showAll}
+            onShowAll={setShowAll}
             selected={selected}
             busy={busy}
             onToggle={(id) =>
@@ -499,7 +517,10 @@ function UsersScreen({
                   </div>
                 </td>
                 <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-                <td>{u.spaceCount} spaces</td>
+                <td>
+                  {u.spaceCount} space{u.spaceCount === 1 ? '' : 's'}
+                  {u.feedCount ? ` · ${u.feedCount} bank feed${u.feedCount === 1 ? '' : 's'}` : ''}
+                </td>
                 <td className="cell-actions">
                   <button
                     data-testid={`diagnose-${u.sub}`}
@@ -559,6 +580,8 @@ function UsersScreen({
 function ConnectionsScreen({
   requisitions,
   foreignCount,
+  showAll,
+  onShowAll,
   selected,
   busy,
   onToggle,
@@ -566,6 +589,8 @@ function ConnectionsScreen({
 }: Readonly<{
   requisitions: AdminRequisition[] | null;
   foreignCount: number;
+  showAll: boolean;
+  onShowAll: (on: boolean) => void;
   selected: Set<string>;
   busy: boolean;
   onToggle: (id: string) => void;
@@ -578,12 +603,15 @@ function ConnectionsScreen({
     <>
       <h1>Bank connections</h1>
       <p className="muted">
-        This environment&apos;s consents only.
+        {showAll ? 'Every connection on the shared GoCardless account.' : "This environment's consents only."}
         {foreignCount > 0 && (
           <span data-testid="connections-foreign-note">
             {' '}
             {foreignCount} other connection{foreignCount === 1 ? '' : 's'} on the shared GoCardless account belong
-            {foreignCount === 1 ? 's' : ''} to other environments — manage those from their own admin.
+            {foreignCount === 1 ? 's' : ''} to other environments —{' '}
+            {showAll
+              ? "listed with the environment each was started from; deleting one revokes that environment's bank access, so only leftovers of removed environments should go."
+              : 'manage those from their own admin, or show them here.'}
           </span>
         )}
       </p>
@@ -596,6 +624,10 @@ function ConnectionsScreen({
             onChange={(e) => setOnlyExpiring(e.target.checked)}
           />{' '}
           expiring soon only
+        </label>
+        <label className="radio">
+          <input type="checkbox" data-testid="connections-all-filter" checked={showAll} onChange={(e) => onShowAll(e.target.checked)} />{' '}
+          other environments too
         </label>
         {selected.size > 0 && (
           <button className="btn danger" disabled={busy} onClick={onDeleteSelected}>
@@ -621,11 +653,12 @@ function ConnectionsScreen({
                 </td>
                 <td>
                   <div className="cell-title">
-                    {r.institutionId} {r.stale && <em>stale</em>} {expiresSoon(r) && <span className="chip warn-chip">expiring</span>}
+                    {r.institutionId} {r.stale && <em>stale</em>} {r.foreign && <em>other environment</em>}{' '}
+                    {expiresSoon(r) && <span className="chip warn-chip">expiring</span>}
                   </div>
                   <div className="cell-sub">
                     {r.requisitionId.slice(0, 13)}… · {r.created ? new Date(r.created).toLocaleDateString() : '—'}
-                    {r.ownerSub ? ` · ${r.ownerSub.slice(0, 12)}` : ''}
+                    {r.foreign ? ` · ${r.environmentOrigin ?? 'unknown origin'}` : r.ownerSub ? ` · ${r.ownerSub.slice(0, 12)}` : ''}
                   </div>
                 </td>
                 <td>{STATUS_LABEL[r.status] ?? r.status}</td>

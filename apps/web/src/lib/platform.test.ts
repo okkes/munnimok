@@ -31,6 +31,10 @@ describe('platform seam', () => {
     expect(deepLinkToPath('munni://gc-callback?ref=r-1&code=c-1')).toBe('/gc-callback?ref=r-1&code=c-1');
     expect(deepLinkToPath('munni://auth-callback?code=x')).toBe('/auth-callback?code=x');
     expect(deepLinkToPath('munni-dev://auth-callback?code=x')).toBe('/auth-callback?code=x'); // staging app scheme
+    // the platform model's scheme carries two dashes (munni-<env>-<platform>): the hosted /native-auth bounce and the
+    // bank's return both arrive on it
+    expect(deepLinkToPath('munni-prod-nas://native-auth?code=x&state=s')).toBe('/native-auth?code=x&state=s');
+    expect(deepLinkToPath('munni-dev-lcl://gc-callback?ref=r-1')).toBe('/gc-callback?ref=r-1');
     expect(deepLinkToPath('munni://')).toBe('/');
     expect(deepLinkToPath('https://evil.example/gc-callback')).toBeNull();
     expect(deepLinkToPath('intent://foo')).toBeNull();

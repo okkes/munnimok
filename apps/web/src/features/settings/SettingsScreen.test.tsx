@@ -351,6 +351,30 @@ describe('Settings screens (user identity, scripted server)', () => {
     await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent?.length).toBeGreaterThan(0));
   }, 15_000);
 
+  it('a registered device can be sent a test notification from the row under the notifications switch', async () => {
+    installPushEnv();
+    let tests = 0;
+    renderAppAsUser('/settings/global', {
+      api: {
+        'GET /health': () => ({
+          status: 'ok',
+          capabilities: { gocardless: false, push: true, vapidPublicKey: 'BPtest-key_123' },
+          protocol: CLIENT_PROTOCOL,
+          minClientProtocol: 1,
+        }),
+        'POST /me/push-subscriptions': () => ({}),
+        'POST /me/push-subscriptions/test': () => {
+          tests++;
+          return { sent: 1 };
+        },
+      },
+    });
+    fireEvent.click(await screen.findByTestId('settings-push-toggle'));
+    fireEvent.click(await screen.findByTestId('settings-push-test'));
+    await waitFor(() => expect(tests).toBe(1));
+    await waitFor(() => expect(screen.getByTestId('settings-push-test').textContent).toContain('Sent to 1'));
+  }, 15_000);
+
   it('user sign-out keeps the local database (sync is the source of truth)', async () => {
     renderAppAsUser('/settings', {
       api: { 'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }) },

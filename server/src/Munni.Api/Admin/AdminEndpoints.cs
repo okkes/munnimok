@@ -1,3 +1,4 @@
+using Munni.Api.Banking;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
 using Munni.Api.Data;
@@ -6,7 +7,9 @@ using Munni.Api.Validation;
 
 namespace Munni.Api.Admin;
 
-public sealed record AdminUserDto(Guid Id, string Sub, string? DisplayName, string? Email, DateTimeOffset CreatedAt, int SpaceCount);
+/// <summary>SpaceCount = the spaces the user is a member of; FeedCount = the IBAN-keyed feed spaces a bank connection
+/// adds — counted apart, or "3 spaces" reads as three duplicates of one personal space (user report 2026-09-28)</summary>
+public sealed record AdminUserDto(Guid Id, string Sub, string? DisplayName, string? Email, DateTimeOffset CreatedAt, int SpaceCount, int FeedCount = 0);
 public sealed record AdminFeedDto(string FeedSpaceId, long MaxSeq);
 public sealed record AdminAttachmentDto(string SpaceId, string FeedSpaceId, string AccountId);
 public sealed record AdminGcLinkDto(string GcAccountId, string SpaceId, string AccountEntityId, string Iban, string Provider, DateTimeOffset? LastFetchAt, string RequisitionId);
@@ -25,7 +28,11 @@ public sealed record AdminRequisitionDto(
     int AccountCount,
     /// <summary>true when the consent is dead at GoCardless (gone or expired) while THIS environment still records it</summary>
     bool Stale,
-    string? OwnerSub);
+    string? OwnerSub,
+    /// <summary>another environment's consent on the shared account — the all-environments view only</summary>
+    bool Foreign = false,
+    /// <summary>origin of the consent's redirect: the environment it was started from</summary>
+    string? EnvironmentOrigin = null);
 
 /// <summary>
 /// THIS environment's connections only. The GoCardless account is shared
@@ -67,11 +74,13 @@ public static class AdminEndpoints
     private static async Task<IResult> ListUsers(AppDbContext db)
     {
         var users = await db.Users.ToListAsync();
-        var counts = await db.SpaceMembers.GroupBy(m => m.UserId)
-            .Select(g => new { g.Key, Count = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count);
+        var feedIds = (await db.FeedSpaces.Select(f => f.Id).ToListAsync()).ToHashSet();
+        var memberships = await db.SpaceMembers.Select(m => new { m.UserId, m.SpaceId }).ToListAsync();
+        var spaces = memberships.Where(m => !feedIds.Contains(m.SpaceId)).GroupBy(m => m.UserId).ToDictionary(g => g.Key, g => g.Count());
+        var feeds = memberships.Where(m => feedIds.Contains(m.SpaceId)).GroupBy(m => m.UserId).ToDictionary(g => g.Key, g => g.Count());
         return Results.Ok(users
             .OrderBy(u => u.CreatedAt)
-            .Select(u => new AdminUserDto(u.Id, u.Sub, u.DisplayName, u.Email, u.CreatedAt, counts.GetValueOrDefault(u.Id)))
+            .Select(u => new AdminUserDto(u.Id, u.Sub, u.DisplayName, u.Email, u.CreatedAt, spaces.GetValueOrDefault(u.Id), feeds.GetValueOrDefault(u.Id)))
             .ToList());
     }
 
@@ -126,43 +135,84 @@ public static class AdminEndpoints
         return Results.Ok(new { deleted = sub });
     }
 
-    private static async Task<IResult> ListRequisitions(AppDbContext db, IGoCardlessApi gc)
+    /// <summary>this environment's consents, each asked at ITS provider; with all=true every other environment's
+    /// consent on the shared GoCardless account joins the list, attributed by its redirect origin — so leftovers of
+    /// removed environments can be cleaned up from any admin (user 2026-09-28)</summary>
+    private static async Task<IResult> ListRequisitions(AppDbContext db, IGoCardlessApi gc, BankProviderRegistry registry, bool all = false)
     {
         var remote = await gc.ListRequisitionsAsync();
         var local = await db.GcRequisitions.ToListAsync();
         var owners = await db.Users.ToDictionaryAsync(u => u.Id, u => u.Sub);
         var remoteById = remote.ToDictionary(r => r.Id);
         var localIds = local.Select(l => l.RequisitionId).ToHashSet();
-        var requisitions = local
-            // interrupted journeys can re-use a consent — one row per consent
-            .GroupBy(l => l.RequisitionId)
-            .Select(g => g.OrderByDescending(l => l.CreatedAt).First())
-            .Select(l =>
-            {
-                var r = remoteById.GetValueOrDefault(l.RequisitionId);
-                return new AdminRequisitionDto(
-                    l.RequisitionId,
-                    r?.Status ?? "gone",
-                    l.InstitutionId,
-                    r?.Created ?? l.CreatedAt,
-                    r?.Accounts.Count ?? 0,
-                    // dead at the provider while we still track it
-                    Stale: r is null || r.Status == "EX",
-                    OwnerSub: owners.GetValueOrDefault(l.UserId));
-            })
-            .OrderByDescending(d => d.Created)
-            .ToList();
-        return Results.Ok(new AdminRequisitionListDto(requisitions, ForeignCount: remote.Count(r => !localIds.Contains(r.Id))));
+        var eb = registry.Find(EnableBankingApi.Id);
+        var requisitions = new List<AdminRequisitionDto>();
+        // interrupted journeys can re-use a consent — one row per consent
+        foreach (var l in local.GroupBy(l => l.RequisitionId).Select(g => g.OrderByDescending(l => l.CreatedAt).First()))
+        {
+            requisitions.Add(l.Provider == EnableBankingApi.Id
+                ? await EnableBankingRowAsync(l, eb, owners)
+                : GoCardlessRow(l, remoteById.GetValueOrDefault(l.RequisitionId), owners));
+        }
+        if (all)
+        {
+            requisitions.AddRange(remote.Where(r => !localIds.Contains(r.Id)).Select(r => new AdminRequisitionDto(
+                r.Id, r.Status, r.InstitutionId, r.Created, r.Accounts.Count, Stale: r.Status == "EX", OwnerSub: null,
+                Foreign: true, EnvironmentOrigin: OriginOf(r.Redirect))));
+        }
+        return Results.Ok(new AdminRequisitionListDto(
+            requisitions.OrderByDescending(d => d.Created).ToList(),
+            ForeignCount: remote.Count(r => !localIds.Contains(r.Id))));
     }
 
-    private static async Task<IResult> DeleteRequisition(string requisitionId, AppDbContext db, IGoCardlessApi gc)
+    private static AdminRequisitionDto GoCardlessRow(GcRequisition l, GcRequisitionListItem? r, Dictionary<Guid, string> owners) =>
+        new(l.RequisitionId, r?.Status ?? "gone", l.InstitutionId, r?.Created ?? l.CreatedAt, r?.Accounts.Count ?? 0,
+            // dead at the provider while we still track it
+            Stale: r is null || r.Status == "EX",
+            OwnerSub: owners.GetValueOrDefault(l.UserId));
+
+    /// <summary>an Enable Banking session is asked at Enable Banking — the GoCardless listing knows nothing of it, and
+    /// looking it up there showed every EB connection as "gone" and stale (user report, nas prod 2026-09-28)</summary>
+    private static async Task<AdminRequisitionDto> EnableBankingRowAsync(GcRequisition l, IBankDataApi? eb, Dictionary<Guid, string> owners)
+    {
+        var status = "gone";
+        var accounts = 0;
+        if (eb is not null)
+        {
+            try
+            {
+                var session = await eb.CompleteAuthAsync(l.RequisitionId, null);
+                status = session.Status;
+                accounts = session.Accounts.Count;
+            }
+            catch (HttpRequestException)
+            {
+                // the session is unknown or refused at the provider: dead, like a GoCardless requisition it no longer lists
+            }
+        }
+        return new AdminRequisitionDto(l.RequisitionId, status, l.InstitutionId, l.CreatedAt, accounts,
+            Stale: status is "gone" or "EX" or "EXPIRED" or "REVOKED" or "CLOSED",
+            OwnerSub: owners.GetValueOrDefault(l.UserId));
+    }
+
+    private static string? OriginOf(string? redirect) =>
+        Uri.TryCreate(redirect, UriKind.Absolute, out var uri) ? uri.GetLeftPart(UriPartial.Authority) : null;
+
+    private static async Task<IResult> DeleteRequisition(string requisitionId, AppDbContext db, IGoCardlessApi gc, BankProviderRegistry registry, bool foreign = false)
     {
         var local = await db.GcRequisitions.FirstOrDefaultAsync(r => r.RequisitionId == requisitionId);
-        // NEVER touch a consent this environment doesn't own — the GC
-        // account is shared, and deleting here would revoke another
-        // environment's live bank connection
-        if (local is null) return Results.NotFound(new { error = "not this environment's connection — manage it from its own admin" });
-        await gc.DeleteRequisitionAsync(requisitionId); // frees the GC connection slot
+        if (local is null)
+        {
+            // NEVER touch a consent this environment doesn't own by accident — the GC account is shared, and deleting
+            // here would revoke another environment's live bank connection. Only an EXPLICIT foreign=true (the portal's
+            // all-environments view, confirmed by the operator) removes the leftover of a removed environment.
+            if (!foreign) return Results.NotFound(new { error = "not this environment's connection — manage it from its own admin, or from the all-environments view here" });
+            await gc.DeleteRequisitionAsync(requisitionId);
+            return Results.Ok(new { deleted = requisitionId, foreign = true });
+        }
+        // the provider that created the consent revokes it — an Enable Banking session is not a GoCardless requisition
+        var provider = registry.Find(local.Provider);
+        if (provider is not null) await provider.DeleteRequisitionAsync(requisitionId); // frees the provider's connection slot
         var linked = await db.GcLinkedAccounts.Where(a => a.RequisitionId == local.Id).ToListAsync();
         db.GcLinkedAccounts.RemoveRange(linked); // stops scheduled fetching
         db.GcRequisitions.RemoveRange(await db.GcRequisitions.Where(r => r.RequisitionId == requisitionId).ToListAsync());

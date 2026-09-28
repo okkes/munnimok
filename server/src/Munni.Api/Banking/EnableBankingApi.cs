@@ -152,6 +152,17 @@ public sealed class EnableBankingApi(HttpClient http, IConfiguration config) : I
         return new GcRequisitionStatus(requisitionId, status, existing.Accounts ?? []);
     }
 
+    /// <summary>DELETE /sessions/{id}: the session (and the bank consent behind it) is revoked; a session Enable
+    /// Banking no longer knows is already gone — the admin's delete used to hand an EB session id to GoCardless</summary>
+    public async Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"sessions/{Uri.EscapeDataString(requisitionId)}");
+        request.Headers.Authorization = new("Bearer", GetJwt());
+        var response = await http.SendAsync(request, ct);
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return;
+        response.EnsureSuccessStatusCode();
+    }
+
     // ── account data ────────────────────────────────────────────────────
     private sealed record EbAccountId([property: JsonPropertyName("iban")] string? Iban);
     private sealed record EbDetails(

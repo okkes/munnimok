@@ -27,6 +27,8 @@ interface PushTexts {
   roles: Record<string, string>;
   someone: string;
   aSpace: string;
+  /** the Settings row's test push */
+  test: string;
 }
 
 const TEXTS: Record<string, PushTexts> = {
@@ -43,6 +45,7 @@ const TEXTS: Record<string, PushTexts> = {
     roles: { owner: 'owner', contributor: 'contributor', reader: 'reader' },
     someone: 'Someone',
     aSpace: 'a space',
+    test: 'Test notification — push reaches this device ✓',
   },
   nl: {
     title: 'munni',
@@ -57,6 +60,7 @@ const TEXTS: Record<string, PushTexts> = {
     roles: { owner: 'eigenaar', contributor: 'bijdrager', reader: 'lezer' },
     someone: 'Iemand',
     aSpace: 'een ruimte',
+    test: 'Testmelding — push bereikt dit apparaat ✓',
   },
   tr: {
     title: 'munni',
@@ -71,6 +75,7 @@ const TEXTS: Record<string, PushTexts> = {
     roles: { owner: 'sahip', contributor: 'katkıda bulunan', reader: 'okuyucu' },
     someone: 'Birisi',
     aSpace: 'bir alan',
+    test: 'Test bildirimi — anlık bildirim bu cihaza ulaşıyor ✓',
   },
 };
 
@@ -125,6 +130,10 @@ export function buildNotification(payload: PushPayload, lang: string): WorkerNot
       pullSpaceId: payload.spaceId,
       pull: true,
     };
+  }
+  if (payload.type === 'test') {
+    // the Settings row's proof that push reaches this device — the tap lands back on that row
+    return { title: texts.title, body: texts.test, tag: 'test', url: './#/settings/global', pull: false };
   }
   const social = socialBody(payload, texts);
   return social ? { title: texts.title, ...social, pull: false } : null;

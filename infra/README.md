@@ -113,8 +113,8 @@ same through the API and the poller, deletes the GitHub environment and
 commits the removed config file. The shared stack goes last, once no
 environment is left (rules, containers, poller task, live dir, its
 environment). Two things stay by hand — store records, and on a PC the
-trusted roots of earlier https families — the wizard's Leftovers card
-lists them and the Clean up log counts the roots.
+trusted roots of earlier https families — the Clean up tab and the local
+platform card name the console steps, and the Clean up log counts the roots.
 
 ## Secrets
 

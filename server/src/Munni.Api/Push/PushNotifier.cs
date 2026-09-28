@@ -103,10 +103,15 @@ public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<Pu
     public Task NotifyMemberRoleChangedAsync(Guid toUserId, string? spaceName, string role, CancellationToken ct) =>
         SendToUsersAsync([toUserId], new { type = "member-role", spaceName, role }, ct);
 
-    private async Task SendToUsersAsync(IReadOnlyCollection<Guid> userIds, object payload, CancellationToken ct)
+    /// <summary>"Test notification" to every device of ONE user — the Settings row that proves push works end to
+    /// end (user request 2026-09-28); returns how many devices were tried</summary>
+    public Task<int> NotifyTestAsync(Guid userId, CancellationToken ct) =>
+        SendToUsersAsync([userId], new { type = "test" }, ct);
+
+    private async Task<int> SendToUsersAsync(IReadOnlyCollection<Guid> userIds, object payload, CancellationToken ct)
     {
         var subscriptions = await db.PushSubscriptions.Where(s => userIds.Contains(s.UserId)).ToListAsync(ct);
-        if (subscriptions.Count == 0) return;
+        if (subscriptions.Count == 0) return 0;
 
         var json = JsonSerializer.Serialize(payload);
         foreach (var subscription in subscriptions)
@@ -125,5 +130,6 @@ public sealed class PushNotifier(AppDbContext db, IPushSender sender, ILogger<Pu
             }
         }
         await db.SaveChangesAsync(ct);
+        return subscriptions.Count;
     }
 }

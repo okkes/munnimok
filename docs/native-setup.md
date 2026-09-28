@@ -75,7 +75,8 @@ answers `fcm: true` once the api holds the credential.
 developer.apple.com → Keys → Apple Push Notifications service →
 download the .p8 → Firebase console → Project settings → Cloud
 Messaging → Apple app configuration → upload. Until then iPhones
-register but receive nothing (Leftovers card, item 4).
+register but receive nothing (the push card on the environment's
+Phones tab walks the upload and takes a done tick).
 
 The Firebase tile's text field is only for a deliberately separate
 sender (Firebase console → Project settings → Service accounts →
@@ -142,8 +143,8 @@ Generate new private key).
 
 **Retire** withdraws the Play internal release and expires the
 TestFlight builds; **Clean up** removes the environment. The store
-records themselves have no delete API and stay yours (Leftovers card,
-item 1).
+records themselves have no delete API and stay yours (the Clean up tab
+names the console steps).
 
 ## 7. Troubleshooting
 

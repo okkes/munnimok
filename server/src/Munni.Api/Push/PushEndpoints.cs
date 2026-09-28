@@ -44,6 +44,11 @@ public static class PushEndpoints
             return Results.Ok();
         }).WithValidation<SubscribeRequest>();
 
+        // the Settings row "Send a test notification": every registered device of the caller gets one — the way to
+        // see that push reaches a phone end to end (user request 2026-09-28)
+        group.MapPost("/test", async (PushNotifier notifier, HttpContext http, CancellationToken ct) =>
+            Results.Ok(new { sent = await notifier.NotifyTestAsync(http.GetUserId(), ct) }));
+
         // endpoint passed as query param: DELETE bodies are unreliable across proxies
         group.MapDelete("", async (string endpoint, AppDbContext db, HttpContext http) =>
         {

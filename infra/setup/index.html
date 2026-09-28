@@ -29,7 +29,8 @@
   Structure (2026-09-17, user rulings): 1 Platforms · 2 Features &
   accounts · 3 Shared services of the picked platform · 4 Environments
   (a workspace each: Overview · Registrations · Phones · Access · Clean
-  up) · 5 Leftovers — by hand. No manual path is left on the page.
+  up). The by-hand steps sit where they belong, each with a tick or an
+  automatic check — no separate leftovers list.
 -->
 <style>
 :root{
@@ -396,6 +397,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
             <button class="ghost" id="btn-trust-ca">Trust the certificate again</button> <span class="pill" id="trust-pill" title="read from this user's Root store while the platform runs"></span>
             <button class="ghost danger" id="btn-local-nuke-all">Delete everything…</button>
           </div>
+          <p class="why">Delete everything takes the platform off this computer. The one thing Windows keeps is each https family's trusted "Caddy Local Authority" root — <code>certmgr.msc</code> → Trusted Root Certification Authorities → Certificates → delete those rows, one consent dialog each; the Clean up log counts them.</p>
           <p class="why" id="local-links"></p>
         </div>
       </div>
@@ -557,18 +559,6 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
   </div>
 
   <div id="env-cards"></div>
-</section>
-
-<section id="s-leftovers" data-step="Leftovers">
-  <h2><span class="n">5</span> Leftovers — by hand</h2>
-  <p class="sub">Everything else on this page is code. These have no API — they stay yours, each once.</p>
-  <ul class="todo leftovers" id="leftovers">
-    <li><span class="num">1</span><div class="body"><div class="t">Store records of removed environments</div><div class="d">Play Console and App Store Connect cannot delete an app record by API. After a Clean up, retire them there: Play Console → the app → Advanced settings → unpublish/delete; App Store Connect → the app → Remove app (once every build is expired — the Phones tab's Retire does that part).</div></div></li>
-    <li><span class="num">2</span><div class="body"><div class="t">The DSM deploy account (Synology NAS)</div><div class="d">Control Panel → User &amp; Group → the deploy user → Edit → Applications: DSM = Allow, File Station = Allow (a group's Deny beats Allow) → User groups: administrators → Save. 2-step verification off for it, and Adaptive MFA off for administrators (Security → Account) — no account can grant itself any of this. Check on the Synology tile tells whether DSM accepts it.</div></div></li>
-    <li><span class="num">3</span><div class="body"><div class="t">DNS for an own domain</div><div class="d">Synology DDNS resolves <code>*.&lt;domain&gt;</code> by itself — nothing to do. An own domain needs a wildcard record pointing at the NAS (the hosts are <code>munni-&lt;env&gt;-nas</code>, <code>-api</code>, <code>-admin</code>, <code>-logto</code>, <code>-logto-admin</code>, and <code>glitchtip-nas</code>, <code>vault-nas</code>, <code>control-nas</code>, <code>pgadmin-nas</code>); the wildcard certificate then comes from acme.sh with the synology_dsm hook.</div></div></li>
-    <li><span class="num">4</span><div class="body"><div class="t">The APNs key upload for iOS push</div><div class="d">Once per Apple team: developer.apple.com → Keys → a key with Apple Push Notifications service → download the .p8. Then Firebase console → the Play service account's project → Project settings → Cloud Messaging → the iOS app → APNs Authentication Key → Upload (key, Key ID, Team ID). Google offers no API for this step.</div></div></li>
-    <li><span class="num">5</span><div class="body"><div class="t">Trusted local CA roots on this computer</div><div class="d">Every https family (LAN mode) mints its own "Caddy Local Authority" root and Trust CA puts it in your Windows user store. No wipe can take it out again — Windows untrusts a root only through its own consent dialog, one per entry. After a Clean up: <code>certmgr.msc</code> → Trusted Root Certification Authorities → Certificates → delete every "Caddy Local Authority" row. The Clean up log counts the stale ones for you.</div></div></li>
-  </ul>
 </section>
 
 <footer>munni setup · this file lives at <code>infra/setup/index.html</code> · the model: <code>infra/platforms/README.md</code></footer>
@@ -1193,7 +1183,11 @@ const GROUPS = [
   {
     id: 'domain', title: 'Your domain', placement: 'platform', platforms: ['nas'], check: 'browser:domain',
     why: 'Every service becomes a subdomain of the platform\'s domain (munni-<env>-nas.…, glitchtip-nas.…). It is kept as the secret PLATFORM_DOMAIN because this repo is public — the committed platform.json only carries a placeholder.',
-    how: ['DSM → Control Panel → External Access → DDNS — add or read your hostname (e.g. yourname.synology.me).', 'Paste it below; it also personalizes every link on this page.'],
+    how: [
+      'DSM → Control Panel → External Access → DDNS — add or read your hostname (e.g. yourname.synology.me).',
+      'Paste it below; it also personalizes every link on this page.',
+      'DNS: Synology DDNS resolves *.<domain> by itself — nothing to do. An own domain instead needs a wildcard record pointing at the NAS (munni-<env>-nas, -api, -admin, -logto, -logto-admin and glitchtip-nas, vault-nas, control-nas, pgadmin-nas); the wildcard certificate then comes from acme.sh with the synology_dsm hook. The NAS status (step 3) tells whether the names resolve.',
+    ],
     fields: [{ name: 'PLATFORM_DOMAIN', ph: 'yourname.synology.me', mirror: 'domain' }],
   },
   {
@@ -2039,6 +2033,8 @@ async function checkManifest() {
       'GH_PAT', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD',
       // machine-owned — minted by the helper, never pasted
       'ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD', 'APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD',
+      // filled by Wire Firebase push from the Play service account's project — never pasted
+      'FCM_SERVICE_ACCOUNT_JSON',
     ]);
     const uncovered = manifest.secrets.filter((s) => s.owner === 'operator' && !known.has(s.name)).map((s) => s.name);
     const scopeDrift = manifest.secrets.filter((s) => s.owner === 'operator' && known.has(s.name) && (s.scope === 'platform') !== isPlatformScoped(s.name)).map((s) => s.name);
@@ -2563,7 +2559,7 @@ document.getElementById('btn-local-nuke-all')?.addEventListener('click', async (
     await streamLocal('/api/config/commit', { message: 'chore(platforms): wipe the lcl environments' }, 'commit the platform config (the removal is recorded)', { refresh: false });
     try {
       const chk = await hjson('/api/local/cleanup-check');
-      const byHand = chk.byHand?.length ? `  by hand — no API can do these (Leftovers card, item 5):\n${chk.byHand.map((l) => `  · ${l}`).join('\n')}\n` : '';
+      const byHand = chk.byHand?.length ? `  by hand — no API can do these — Windows untrusts a root only through its own dialog (certmgr.msc → Trusted Root Certification Authorities → delete every "Caddy Local Authority" row):\n${chk.byHand.map((l) => `  · ${l}`).join('\n')}\n` : '';
       localLog(chk.clean
         ? `\n✓ cleanup verified: no platform containers, volumes, networks, renders or environment files remain.${chk.kept?.length ? ` Kept on purpose: ${chk.kept.join(' + ')}.` : ''}\n${byHand}`
         : `\n✗ the cleanup left traces — press Delete everything again to finish:\n${chk.leftovers.map((l) => `  · ${l}`).join('\n')}\n${byHand}`);
@@ -2734,6 +2730,7 @@ async function setupSharedServices() {
     const missing = NAS_PLATFORM_REQUIRED.filter((n) => !secretPresent(n));
     if (missing.length) throw new Error(`save the platform accounts first — still missing: ${missing.join(', ')}`);
     btn.disabled = true;
+    btn.dataset.running = '1';
     say('generating the vault account (if missing)…');
     await ensureVaultAccount({ quiet: true });
     say('storing every platform value into the GitHub environments…');
@@ -2751,6 +2748,7 @@ async function setupSharedServices() {
   } catch (e) {
     say(`✗ ${e.message}`, false);
   } finally {
+    delete btn.dataset.running;
     btn.disabled = false;
   }
 }
@@ -2820,12 +2818,26 @@ function renderNasStatus() {
   if (!p) row('Hosts', '', S.domain ? 'probe pending' : 'save the domain first', '');
   else {
     const s = p.summary;
-    row(`Names resolve (*.${p.domain})`, s.dns ? 'ok' : 'bad', s.dns ? 'DNS ✓' : 'some names do not resolve', s.dns ? '' : 'Synology DDNS resolves *.<domain> by itself; an own domain needs a wildcard record (Leftovers)');
+    row(`Names resolve (*.${p.domain})`, s.dns ? 'ok' : 'bad', s.dns ? 'DNS ✓' : 'some names do not resolve', s.dns ? '' : 'Synology DDNS resolves *.<domain> by itself; an own domain needs a wildcard record — the domain tile explains');
     const certKnown = p.stacks.flatMap((x) => x.hosts).some((h) => h.state !== 'no-dns' && h.state !== 'unreachable');
     row(`Certificate covers *.${p.domain}`, !certKnown ? '' : (s.certificate ? 'ok' : 'bad'), !certKnown ? 'unknown' : (s.certificate ? 'wildcard certificate ✓' : 'certificate misses the hosts'), s.certificate ? '' : 'Bootstrap (the shared stack) requests the wildcard through DSM once the deploy account may use DSM');
     probeRowsFor(sharedStackOf('nas'), row);
   }
   list.innerHTML = rows.map((r) => `<li ${r.jump ? jumpAttr(r.jump) : ''} title="${escAttr(r.title ?? '')}"><span class="hn">${esc(r.name)}</span><span class="hs ${r.cls}"><i class="dot ${dotCls(r.cls)}"></i>${esc(r.label)}</span></li>`).join('');
+  // the two buttons follow the state: Set up is spent once the last Bootstrap found everything in place (it wakes up
+  // again if a piece goes missing); Deploy again needs a deployment to repeat
+  const sharedSetUp = Boolean(ci?.dsm?.ok && ci.wildcard && ci.task?.enabled);
+  const sharedProbe = S.nasProbe?.stacks?.find((x) => x.stack === sharedStackOf('nas'));
+  const sharedUp = Boolean(sharedProbe?.hosts?.some((h) => (h.state === 'no-cert' && h.behind ? h.behind : h.state) === 'up'));
+  const sharedDeployed = sharedUp || runsFor(S.runs?.nas ?? [], sharedStackOf('nas')).some((r) => r.status === 'completed' && r.conclusion === 'success');
+  const setupBtn = document.getElementById('btn-nas-shared-setup');
+  const deployBtn = document.getElementById('btn-nas-shared-deploy');
+  if (setupBtn && !setupBtn.dataset.running) {
+    setupBtn.disabled = sharedSetUp;
+    setupBtn.textContent = sharedSetUp ? '✓ Shared services are set up' : '▶ Set up shared services';
+    setupBtn.title = sharedSetUp ? 'the last Bootstrap found DSM, the wildcard certificate and the poller in place — Deploy again redeploys the shared stack, Add environment (step 4) adds an environment' : '';
+  }
+  if (deployBtn) { deployBtn.disabled = !sharedDeployed; deployBtn.title = sharedDeployed ? '' : 'nothing deployed yet — Set up shared services runs the first Bootstrap → Deploy'; }
   const open = rows.filter((r) => r.cls === 'bad' || r.cls === 'warn');
   const fix = document.getElementById('nas-status-fix');
   const todo = open.filter((r) => r.title);
@@ -3025,10 +3037,10 @@ function accessHtml(env) {
 function cleanupHtml(env) {
   const s = env.env;
   if (isLcl()) return `
-    <p class="why">Deletes the environment COMPLETELY: containers, volumes INCLUDING its database server, its GoCardless consents, its GlitchTip projects, its vault folder — and its file under infra/platforms. Other environments and the shared services are untouched. The one thing no API deletes: the store records of its package (Retire on the Phones tab withdraws the distribution; the records go by hand — see Leftovers).</p>
+    <p class="why">Deletes the environment COMPLETELY: containers, volumes INCLUDING its database server, its GoCardless consents, its GlitchTip projects, its vault folder — and its file under infra/platforms. Other environments and the shared services are untouched. The one thing no API deletes: the store records of its package — Retire on the Phones tab withdraws the distribution first, then by hand: Play Console → the app → Advanced settings → unpublish/delete; App Store Connect → the app → Remove app (once every build is expired).</p>
     <div class="runrow"><button class="ghost danger" data-act="delete" data-stack="${env.stack}">Delete ${esc(env.label)}…</button></div>`;
   return `
-    <p class="why">Takes the environment OFF the NAS and GitHub through one workflow run: its reverse-proxy rules, its containers + volumes + folder (the poller does it within five minutes), its GlitchTip projects, its GitHub environment with every secret, and its file under infra/platforms (the run commits the removal). Its Logto lives inside the environment and goes with the containers. The one thing left to you: the store records of its package (Leftovers).</p>
+    <p class="why">Takes the environment OFF the NAS and GitHub through one workflow run: its reverse-proxy rules, its containers + volumes + folder (the poller does it within five minutes), its GlitchTip projects, its GitHub environment with every secret, and its file under infra/platforms (the run commits the removal). Its Logto lives inside the environment and goes with the containers. The one thing left to you: the store records of its package — Retire on the Phones tab first, then Play Console → the app → Advanced settings → unpublish/delete and App Store Connect → the app → Remove app (once every build is expired).</p>
     <div class="runrow" style="align-items:center"><input type="text" id="cleanup-confirm-${s}" placeholder="type ${escAttr(s)} to confirm" style="max-width:220px" autocomplete="off"/><button class="ghost danger" data-act="cleanup" data-stack="${env.stack}">Clean up ${esc(env.label)}</button></div>
     <div class="msg" id="msg-cleanup-${s}"></div>`;
 }
@@ -3322,6 +3334,8 @@ document.getElementById('env-cards')?.addEventListener('change', (e) => {
     renderTodo();
     const env = envByName(td.closest('[data-env]')?.dataset.env);
     if (env) renderRegistrations(env);
+    const pushCard = td.closest('[data-push-card]');
+    if (pushCard) { const pill = pushCard.querySelector('summary .pill'); if (pill) { pill.textContent = td.checked ? 'done ✓' : 'to do'; pill.classList.toggle('ok', td.checked); } }
     return;
   }
   const cb = e.target.closest('[data-access-toggle]');
@@ -3428,13 +3442,11 @@ function phonesHtml(env) {
       <p class="why">This environment's own store identity: package <code data-native-appid data-env="${s}">${esc(ids.android)}</code> on the Play <b>internal testing</b> track. <b>Build</b> writes the environment's config into the GitHub environment <code>${esc(env.environment)}</code>; CI compiles, signs with the machine's upload key, wires push and publishes — the phone then updates through Play. Until the Play record exists the upload is skipped (green run, signed bundle offered here); once the record shows up, publishing turns on by itself.${isLcl() ? ' The app trusts the platform certificate out of the box — CI bakes it in.' : ''}</p>
       <div class="runrow">
         <button data-native-build="android" data-env="${s}">Build the Android app (CI)</button>
-        <span class="pill" id="fcm-status-pill-${s}" hidden></span>
       </div>
       <div class="runrow" style="align-items:center">
         <label class="f" for="native-id-android-${s}" style="margin:0">store package</label>
         <input id="native-id-android-${s}" type="text" maxlength="60" style="max-width:260px" value="${escAttr(ids.android)}" autocomplete="off"/>
         <button class="ghost" data-apply-package="android" data-env="${s}" title="a fresh package name — for when Play has pinned a lost upload key, or just to name it yourself">Apply package name</button>
-        ${f.push ? `<button class="ghost" data-act="firebase" data-stack="${env.stack}" title="Firebase project + app registrations + configs from the Play service account — and the api's sender credential">Wire Firebase push</button>` : ''}
         <button class="ghost danger" data-act="retire" data-stack="${env.stack}" title="withdraws the Play internal release and expires the TestFlight builds — testers lose the app; the records stay">Retire at the stores…</button>
       </div>
       <div class="msg" id="msg-native-android-${s}"></div>
@@ -3477,8 +3489,23 @@ function phonesHtml(env) {
         </ol>
       </details>
     </div>`;
-  const push = !f.push ? '' : '<p class="why">Push rides the builds: Build (or Wire Firebase push) Firebase-enables the Play service account\'s project, registers this environment\'s apps and bakes their config in — the push pill says what is wired. The one-time floors: the two IAM roles on this platform\'s Google Play service account (Check on the Firebase tile verifies them) and, for iOS, the APNs key upload (Leftovers).</p>';
-  return android + ios + push;
+  const apnsDone = Boolean(todoDone()[`${S.platform}:apns`]);
+  const firebaseConsole = S.googleProject ? `https://console.firebase.google.com/project/${encodeURIComponent(S.googleProject)}/settings/cloudmessaging` : 'https://console.firebase.google.com/';
+  const pushCard = !f.push ? '' : `
+    <div class="card" data-push-card data-env="${s}">
+      <h3>Push notifications (Firebase) — both phones <span class="pill" id="fcm-status-pill-${s}">not checked yet</span></h3>
+      <p class="why">One Firebase project per platform — the Play service account's own, <code>${esc(S.googleProject ?? 'project')}</code> — carries an Android and an iOS app record per environment: <b>Build</b> (or the button here) registers this environment's two, bakes their configs into the builds and hands the api its sender credential. The one-time floors: the two IAM roles on the platform's Play service account (Check on the Firebase tile verifies them)${f.ios ? ' and, for iOS, the APNs key upload below' : ''}.</p>
+      <div class="runrow"><button class="ghost" data-act="firebase" data-stack="${env.stack}" title="Firebase project + app registrations + configs from the Play service account — and the api's sender credential">Wire Firebase push</button><span class="envtag">registers both apps — the same project serves every environment of the platform</span></div>
+      ${f.ios ? `<details class="how"${apnsDone ? '' : ' open'}><summary>The APNs key upload for iOS push — once per Apple team, by hand <span class="pill${apnsDone ? ' ok' : ''}">${apnsDone ? 'done ✓' : 'to do'}</span></summary>
+        <ol>
+          <li><a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">developer.apple.com → Keys</a> → ＋ → tick <b>Apple Push Notifications service (APNs)</b> → Register → download the .p8 (the Sign in with Apple key may carry APNs as well — then reuse that one).</li>
+          <li><a href="${escAttr(firebaseConsole)}" target="_blank" rel="noreferrer">Firebase console → Project settings → Cloud Messaging</a> → the iOS app <code>${esc(ids.ios)}</code> → APNs Authentication Key → Upload (the .p8, its Key ID, the Team ID). Google offers no API for this step.</li>
+        </ol>
+        <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-todo="apns" ${apnsDone ? 'checked' : ''}/> done — uploaded for this Apple team (every environment of every platform shares it)</label>
+      </details>` : ''}
+      <div class="msg" id="msg-push-${s}"></div>
+    </div>`;
+  return android + ios + pushCard;
 }
 function updateNativeIdLabels(env, androidId, iosId) {
   const s = env.env;
@@ -3745,7 +3772,10 @@ function platformTodoItems() {
   if (f.android) items.push({ id: 'play-sa', title: 'Play service account saved', detail: 'the Google Play publishing tile', state: has('PLAY_SERVICE_ACCOUNT_JSON') || S.skipped.has('playstore'), href: '[data-group="playstore"]', spot: '#field-PLAY_SERVICE_ACCOUNT_JSON' });
   if (f.ios) items.push({ id: 'asc-key', title: 'App Store Connect key saved', detail: 'the App Store Connect tile', state: (has('ASC_KEY_ID') && has('ASC_KEY_P8')) || S.skipped.has('ascstore'), href: '[data-group="ascstore"]', spot: '#field-ASC_KEY_P8' });
   if (phones && f.push) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Check on the Firebase tile verifies both — Build needs them', state: (S.verdicts.fcm && !S.verdicts.fcm.unreachable) ? Boolean(S.verdicts.fcm.ok) : Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).length ? Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
-  if (f.ios && f.push) items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'team-wide, iOS push only — Google offers no API for it (Leftovers)', manual: true, href: '#s-leftovers' });
+  if (f.ios && f.push) {
+    const pushEnv = S.envList.find((e) => e.features?.push && e.features?.ios);
+    items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'once per Apple team, iOS push only — Google offers no API for it; the push card on a Phones tab walks it', manual: true, ...(pushEnv ? { tab: 'phones', env: pushEnv.env, sel: '[data-push-card]' } : { href: '#s-envs' }) });
+  }
   if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in tile — each environment registers its redirect URI in its workspace', state: (has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET')) || S.skipped.has('google'), href: '[data-group="google"]', spot: '#field-LOGTO_GOOGLE_CLIENT_ID' });
   if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: appleLock() ?? 'the Apple sign-in tile lists every environment\'s domain + return URL for the Services ID', state: appleLock() ? null : (has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY')) || S.skipped.has('apple'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });
   const done = todoDone();
@@ -3898,7 +3928,6 @@ function stepStates() {
     's-features': { state: required.length && saved === required.length ? 'done' : (saved ? 'progress' : 'todo'), sub: `${featureCount} of ${FEATURES.length} on · ${saved}/${required.length} saved` },
     's-shared': { state: sharedDone ? 'done' : (sharedStarted ? 'progress' : 'todo'), sub: sharedDone ? 'running' : (isLcl() ? 'shared services + prod' : 'Bootstrap → Deploy') },
     's-envs': { state: S.envList.length ? (envItems.every((i) => i.done) ? 'done' : 'progress') : 'todo', sub: S.envList.length ? `${S.envList.length} environment${S.envList.length > 1 ? 's' : ''}${envItems.length ? ` · ${envItems.filter((i) => i.done).length}/${envItems.length} done` : ''}` : 'none yet' },
-    's-leftovers': { state: 'none', sub: 'by hand' },
   };
 }
 function renderStepper() {

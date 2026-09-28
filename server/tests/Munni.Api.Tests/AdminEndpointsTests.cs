@@ -19,7 +19,8 @@ public sealed class FakeGoCardless : IGoCardlessApi
     public List<GcRequisitionListItem> Requisitions { get; } =
     [
         new("req-known", "LN", "ING_INGBNL2A", DateTimeOffset.UtcNow.AddDays(-2), null, ["acc-1"]),
-        new("req-stale", "CR", "ING_INGBNL2A", DateTimeOffset.UtcNow.AddDays(-9), null, []),
+        // another environment's consent: its redirect names the environment it was started from
+        new("req-stale", "CR", "ING_INGBNL2A", DateTimeOffset.UtcNow.AddDays(-9), null, [], "https://munni-old.example/gc-callback"),
     ];
 
     public Task<IReadOnlyList<GcRequisitionListItem>> ListRequisitionsAsync(CancellationToken ct = default) =>
@@ -57,6 +58,7 @@ public sealed class FakeGoCardless : IGoCardlessApi
 public class AdminApiFactory : WebApplicationFactory<Program>
 {
     public FakeGoCardless Gc { get; } = new();
+    public FakeEnableBankingBankApi Eb { get; } = new();
     private readonly string _databaseName = $"admin-tests-{Guid.NewGuid():N}";
 
     protected override void ConfigureWebHost(Microsoft.AspNetCore.Hosting.IWebHostBuilder builder)
@@ -80,6 +82,7 @@ public class AdminApiFactory : WebApplicationFactory<Program>
             }
             services.AddDbContext<AppDbContext>(o => o.UseInMemoryDatabase(_databaseName));
             services.AddSingleton<IGoCardlessApi>(Gc);
+            services.AddScoped<Munni.Api.Banking.IBankDataApi>(_ => Eb);
         });
     }
 }
@@ -237,6 +240,85 @@ public class AdminEndpointsTests : IClassFixture<AdminApiFactory>
         Assert.Contains("req-known", _factory.Gc.Deleted);
         var after = await admin.GetFromJsonAsync<AdminRequisitionListDto>("/admin/gocardless/requisitions");
         Assert.Single(after!.Requisitions);
+
+        // the all-environments view lists the foreign consent too, attributed by its redirect origin and never owned
+        var everything = await admin.GetFromJsonAsync<AdminRequisitionListDto>("/admin/gocardless/requisitions?all=true");
+        var foreign = everything!.Requisitions.Single(r => r.RequisitionId == "req-stale");
+        Assert.True(foreign.Foreign);
+        Assert.Equal("https://munni-old.example", foreign.EnvironmentOrigin);
+        Assert.Null(foreign.OwnerSub);
+        Assert.DoesNotContain(everything.Requisitions, r => r.RequisitionId == "req-dead-at-gc" && r.Foreign);
+
+        // an EXPLICIT foreign delete removes the leftover of a removed environment
+        Assert.True((await admin.DeleteAsync("/admin/gocardless/requisitions/req-stale?foreign=true")).IsSuccessStatusCode);
+        Assert.Contains("req-stale", _factory.Gc.Deleted);
+        Assert.Equal(0, (await admin.GetFromJsonAsync<AdminRequisitionListDto>("/admin/gocardless/requisitions"))!.ForeignCount);
+    }
+
+    [Fact]
+    public async Task EnableBankingConnectionsAreAskedAtEnableBanking_AndDeletedThere()
+    {
+        var admin = ClientFor("the-admin-eb", "admin");
+        Guid ownerId;
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var owner = new User { Id = Guid.NewGuid(), Sub = "the-eb-owner" };
+            ownerId = owner.Id;
+            db.Users.Add(owner);
+            db.GcRequisitions.Add(new GcRequisition
+            {
+                Id = Guid.NewGuid(),
+                UserId = owner.Id,
+                SpaceId = "s-eb",
+                InstitutionId = "ING|NL",
+                RequisitionId = "eb-session-1",
+                Status = "linked",
+                Provider = Munni.Api.Banking.EnableBankingApi.Id,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // the GoCardless listing knows nothing of the session — the row is asked at Enable Banking: linked, one account, not stale
+        var list = await admin.GetFromJsonAsync<AdminRequisitionListDto>("/admin/gocardless/requisitions");
+        var eb = list!.Requisitions.Single(r => r.RequisitionId == "eb-session-1");
+        Assert.Equal("LN", eb.Status);
+        Assert.Equal(1, eb.AccountCount);
+        Assert.False(eb.Stale);
+        Assert.Equal("the-eb-owner", eb.OwnerSub);
+
+        // deleting it revokes the SESSION at Enable Banking, never a GoCardless requisition of the same id
+        Assert.True((await admin.DeleteAsync("/admin/gocardless/requisitions/eb-session-1")).IsSuccessStatusCode);
+        Assert.Contains("eb-session-1", _factory.Eb.Deleted);
+        Assert.DoesNotContain("eb-session-1", _factory.Gc.Deleted);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            Assert.Empty(await db.GcRequisitions.Where(r => r.UserId == ownerId).ToListAsync());
+        }
+    }
+
+    [Fact]
+    public async Task UsersListCountsBankFeedsApartFromSpaces()
+    {
+        var admin = ClientFor("the-admin-feeds", "admin");
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var owner = new User { Id = Guid.NewGuid(), Sub = "the-feed-owner" };
+            db.Users.Add(owner);
+            db.Spaces.Add(new Space { Id = "space-personal-feeds" });
+            db.FeedSpaces.Add(new Munni.Api.Accounts.FeedSpace { Id = "feed-1", OwnerUserId = owner.Id, AccountRef = "NL00TEST0000000001" });
+            db.FeedSpaces.Add(new Munni.Api.Accounts.FeedSpace { Id = "feed-2", OwnerUserId = owner.Id, AccountRef = "NL00TEST0000000002" });
+            foreach (var spaceId in new[] { "space-personal-feeds", "feed-1", "feed-2" })
+                db.SpaceMembers.Add(new SpaceMember { SpaceId = spaceId, UserId = owner.Id, Role = Munni.Api.Social.SpaceRoles.Owner });
+            await db.SaveChangesAsync();
+        }
+        var users = await admin.GetFromJsonAsync<List<AdminUserDto>>("/admin/users");
+        var me = users!.Single(u => u.Sub == "the-feed-owner");
+        // one personal space + a bank connection with two accounts: 1 space and 2 feeds, not "3 spaces"
+        Assert.Equal(1, me.SpaceCount);
+        Assert.Equal(2, me.FeedCount);
     }
 
     [Fact]

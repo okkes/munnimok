@@ -4,6 +4,12 @@ import { describe, expect, it } from 'vitest';
 import { buildNotification, readWorkerLang } from './swNotifications';
 
 describe('buildNotification', () => {
+  it('renders the Settings test push in every language, landing back on the notifications row', () => {
+    expect(buildNotification({ type: 'test' }, 'en')).toMatchObject({ body: 'Test notification — push reaches this device ✓', tag: 'test', url: './#/settings/global', pull: false });
+    expect(buildNotification({ type: 'test' }, 'nl')!.body).toContain('Testmelding');
+    expect(buildNotification({ type: 'test' }, 'tr')!.body).toContain('Test bildirimi');
+  });
+
   it('announces new transactions with count, per-space tag and a pre-sync pull', () => {
     const one = buildNotification({ type: 'new-transactions', spaceId: 's1', count: 1 }, 'en')!;
     expect(one).toMatchObject({ body: '1 new transaction arrived', tag: 'new-tx-s1', pull: true, pullSpaceId: 's1' });

@@ -34,7 +34,12 @@ async function mgmtToken(logtoUrl, m2mId, m2mSecret, fetchImpl = localAwareFetch
 async function api(logtoUrl, token, path, init = {}, fetchImpl = localAwareFetch) {
   const res = await fetchImpl(`${logtoUrl}/api${path}`, { ...init, headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', ...init.headers } });
   if (!res.ok) throw new Error(`logto ${init.method ?? 'GET'} ${path} failed (${res.status}): ${await res.text()}`);
-  return res.status === 204 ? null : res.json();
+  // some writes answer a bare word ("Created" on POST /roles/{id}/users, 201) — only JSON is parsed; the wizard's admin
+  // switch showed "Unexpected token 'C'" on it although the role had been granted (2026-09-28)
+  if (res.status === 204) return null;
+  const text = await res.text();
+  if (!text.trim()) return null;
+  try { return JSON.parse(text); } catch { return text; }
 }
 
 /** a logged-in Management API client for the environment's own Logto */
@@ -213,8 +218,9 @@ export function writeBack(stack, apps) {
 export async function claimConsole(stack, { adminId, adminSecret }, { fetchImpl = localAwareFetch, password = null } = {}) {
   const base = stack.urls.logtoAdmin;
   const token = await mgmtToken(base, adminId, adminSecret, fetchImpl, ADMIN_RESOURCE);
-  const users = await api(base, token, '/users?page_size=1', {}, fetchImpl);
+  const users = await api(base, token, '/users?page_size=20', {}, fetchImpl);
   let created = null;
+  let userId = users.find((u) => u.username === 'admin')?.id ?? users[0]?.id ?? null;
   if (!users.length) {
     const pw = password ?? randomBytes(12).toString('base64url');
     const user = await api(base, token, '/users', { method: 'POST', body: JSON.stringify({ username: 'admin', password: pw }) }, fetchImpl);
@@ -222,14 +228,43 @@ export async function claimConsole(stack, { adminId, adminSecret }, { fetchImpl 
     const roleIds = roles.filter((r) => ['user', 'default:admin'].includes(r.name)).map((r) => r.id);
     if (roleIds.length) await api(base, token, `/users/${user.id}/roles`, { method: 'POST', body: JSON.stringify({ roleIds }) }, fetchImpl);
     created = { username: 'admin', password: pw, id: user.id };
+    userId = user.id;
   }
+  // the console admits a user through the TENANT ORGANIZATION (t-<tenant>): a member holding the organization role
+  // "admin" — the legacy roles alone open on "Oops! Access denied" (getOrganizationTokenClaims), nas prod 2026-09-28
+  const membership = userId ? await ensureConsoleMembership(base, token, userId, fetchImpl) : null;
   const exp = await api(base, token, '/sign-in-exp', {}, fetchImpl);
   let modeSet = false;
   if (exp?.signInMode !== 'SignIn') {
     await api(base, token, '/sign-in-exp', { method: 'PATCH', body: JSON.stringify({ signInMode: 'SignIn' }) }, fetchImpl);
     modeSet = true;
   }
-  return { created, existing: users.length > 0, modeSet };
+  return { created, existing: users.length > 0, modeSet, membership };
+}
+
+/** the admin tenant's organization (t-default on OSS) with its "admin" organization role, for one user — idempotent */
+async function ensureConsoleMembership(base, token, userId, fetchImpl) {
+  const list = (x) => (Array.isArray(x) ? x : []);
+  const orgs = list(await api(base, token, '/organizations?page_size=20', {}, fetchImpl));
+  const org = orgs.find((o) => String(o.id).startsWith('t-')) ?? orgs[0];
+  if (!org) return { organization: null, role: null, joined: false, granted: false };
+  const members = list(await api(base, token, `/organizations/${org.id}/users?page_size=100`, {}, fetchImpl));
+  let joined = false;
+  if (!members.some((u) => u.id === userId)) {
+    await api(base, token, `/organizations/${org.id}/users`, { method: 'POST', body: JSON.stringify({ userIds: [userId] }) }, fetchImpl);
+    joined = true;
+  }
+  const roles = list(await api(base, token, '/organization-roles?page_size=50', {}, fetchImpl));
+  const admin = roles.find((r) => r.name === 'admin') ?? roles[0];
+  let granted = false;
+  if (admin) {
+    const have = list(await api(base, token, `/organizations/${org.id}/users/${userId}/roles?page_size=50`, {}, fetchImpl));
+    if (!have.some((r) => r.id === admin.id)) {
+      await api(base, token, `/organizations/${org.id}/users/${userId}/roles`, { method: 'POST', body: JSON.stringify({ organizationRoleIds: [admin.id] }) }, fetchImpl);
+      granted = true;
+    }
+  }
+  return { organization: org.id, role: admin?.name ?? null, joined, granted };
 }
 
 /** true once Logto issues a token for the infra credential — the seed has landed */

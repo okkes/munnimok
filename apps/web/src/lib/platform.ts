@@ -79,13 +79,17 @@ export async function ensurePersistentStorage(): Promise<void> {
 }
 
 /** munni://gc-callback?ref=… → /gc-callback?ref=… (null for foreign urls).
- *  Accepts channel-suffixed schemes too (munni-dev:// in the staging app). */
+ *  Accepts the suffixed schemes too: munni-dev:// (the legacy staging app) and
+ *  munni-<env>-<platform>:// (every environment of the platform model, e.g.
+ *  munni-prod-nas://) — a dash-blind pattern dropped the latter, so the hosted
+ *  /native-auth bounce was ignored and the native login landed back on the
+ *  login screen (nas prod, 2026-09-28). */
 /** the https paths a verified App Link / universal link may hand us —
  *  a tight allowlist so nothing else ever routes into the shell */
 const UNIVERSAL_LINK_PATHS = ['/gc-callback', '/splits/join/', '/native-auth', '/native-signed-out'];
 
 export function deepLinkToPath(url: string): string | null {
-  const match = /^munni(?:-\w+)?:\/\/([\w./-]*)(\?[^#]*)?/.exec(url);
+  const match = /^munni(?:-[\w-]+)?:\/\/([\w./-]*)(\?[^#]*)?/.exec(url);
   if (match) {
     const path = match[1].replace(/^\/+/, '');
     return `/${path}${match[2] ?? ''}`;
