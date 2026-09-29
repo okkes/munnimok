@@ -17,7 +17,7 @@ is a bug in this folder.
 | [contract.md](contract.md) | The HTTP contract a consumer codes against: headers, routes, the error table, challenges, the agent protocol |
 | [adapters.md](adapters.md) | Every provider the packs ship, what each can and cannot do, and how to add one |
 | [relay.md](relay.md) | The munni API's side (slice M1): configuration, the routes the app calls, subjects and bindings, the event bridge, how records land in the feeds, the operator's routes |
-| [client.md](client.md) | The app's side (slice M3): the Connections hub, the connect flow and its challenges, custody of the bundle, sync and matching, the E2EE device sync, what the app never does |
+| [client.md](client.md) | The app's side (slices M3–M4): the Connections hub, the connect flow and its challenges, custody of the bundle, sync and matching, banks and the attach step, the E2EE device sync, what the app never does |
 | [deploy.md](deploy.md) | Running it: the local loop, the images, the household agent, what munni's platform renders |
 | [../connector-integration-plan.md](../connector-integration-plan.md) | The plan that brought it here and the slices that follow (relay, platform, hub, banks, registries, admin) |
 | [research/](research/) | Provider research notes |

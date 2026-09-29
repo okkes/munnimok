@@ -132,6 +132,44 @@ transaction itself. Yes attaches it; no adds the transaction to
 those. A receipt's invoices (`documents[]`) ride the link snapshot like
 a photo's image, so a member opens them without the owner's feed.
 
+## Banks (M4)
+
+A bank connection is the same rows as a shop's, minus the receipts
+machinery: `adopt` writes the synced connection row with `kind: 'bank'`
+and the device row, and no `storeConnLink` — a bank's accounts attach one
+by one, like every other feed account. The relay's ingest files the
+party's accounts into the IBAN's feed (`feed:{iban}`, co-owned when
+someone else connected it first) or a personal `CONN:{provider}:{id}`
+feed for a card without an IBAN, with `source: 'connector'`, the party as
+`provider`, `lastSyncedAt`, the balance and its date, and the
+transactions behind them; the feed is listed by `/me/spaces` on the next
+pull, so a sync (`engine.syncAll()` after the relay answered) lands the
+rows without a client change.
+
+The hub's bank card lists those accounts (`useConnectorAccounts`: every
+`source: 'connector'` account with the spaces it is attached to). An
+account not attached to the active space offers *Attach to {space}*: the
+door sets the space attach intent (#310) and opens the space's accounts
+screen on the final step, the account picked, the type and the history
+start to choose. Nothing joins a space by itself. *Sync now* speaks
+transactions and accounts for a bank.
+
+No bank adapter asks the app which accounts to fetch (`select_option` is
+unused by the packs; ASN confirms all accounts inside its own page), so
+there is no pick at connect time. ING signs in with a form and the app's
+approval (`app_approval`), ASN with its own page streamed (`live_view`,
+the QR rotates in the frames), the mock banks with a form; a bank that
+keeps its sign-in on the user's own computer (`asn-persistent`) is marked
+"needs your own computer" in the catalogue and refused with the
+connector's `agent_unavailable` until the household agent exists (M5).
+
+On the accounts screens a connector-fed row is treated like an
+open-banking one (`fetchesItself()`): the synced-empty fact and the
+reconnect hint apply, the stale-export warning does not, and the source
+label reads "Fetched by munni from {party}". Beside a statement import
+of the same IBAN the bank keeps its own `acct:{iban}:bank` row until the
+explicit merge — the ingest follows #311 r4 exactly as open banking does.
+
 ## Removing a connection
 
 The party is told first (`DELETE /connectors/{provider}/sessions/{id}`

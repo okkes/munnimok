@@ -742,3 +742,35 @@ Connections hub`; docs/connectors/client.md). Where it departs from §10, and wh
   work; a gallery spec for the hub (the RTL suite drives the catalogue, the form, a code challenge,
   a refusal, *Sync now* and removal against a mocked relay); a live Albert Heijn connect on dev, which
   waits for the first environment that runs connectors.
+
+**2026-09-30 — M4 delivered** (`feat(web): banks in the Connections hub`; docs/connectors/client.md
+"Banks"). Where it departs from §10.1 and the M4 row, and why:
+
+- **The server side was already M1's.** The ingest files a bank's accounts into the IBAN's feed
+  (co-owned when someone else connected it first) or a personal `CONN:` feed, transactions behind
+  them, `source: 'connector'` and the party as `provider`, and the feed appears in `/me/spaces` on the
+  next pull — M4 added no relay route; it added the test that a bank beside a statement import of the
+  same IBAN forks its own `acct:{iban}:bank` row until the explicit merge (#311 r4), the way open
+  banking does.
+- **No `select_option` at connect time.** No bank adapter asks the app which accounts to fetch (ASN
+  confirms all of them inside its own page); the user picks accounts where they always did — at
+  attach time, on the space's accounts screen. The hub's card lists the fetched accounts with the
+  spaces each is attached to and an *Attach to {space}* door that lands on the final attach step with
+  the account picked (#310's intent), closing the gap the GoCardless callback left open.
+- **A bank connection writes no `storeConnLink`.** Inclusion is per account (`accountLink`), so
+  `adopt` writes the synced connection row (now with the party's `kind`, so the hub's sections render
+  offline) and nothing else; the receipts machinery stays a shop's.
+- **Open banking stays on its own door.** §10.1 wanted the GoCardless / Enable Banking consents in the
+  Banks section; they keep their sheet under Settings and the accounts overview — folding a consent
+  list without a connector behind it into the hub would have been the M3 pretence in another form.
+  The hub lists what the connector platform holds.
+- **Source-sniffing became a predicate.** The accounts screens asked `source === 'gocardless'` to
+  decide which rows a party keeps current; `fetchesItself()` answers that for open banking and the
+  connector alike (synced-empty fact, reconnect hint, no stale-export warning), and the source label
+  names the party.
+- **What a fetch says about itself is shown** (`fetch.*` resource notes — ASN hands over its whole
+  export); the copy test walks `fetch.*` keys as well as `connect.*`.
+- **Deferred**: `asn-persistent` (a household agent, M5) — the catalogue marks it "needs your own
+  computer" and a login without an agent is refused with the connector's own `agent_unavailable`;
+  the live ING connect on dev and the live view on a phone, which wait for an environment that runs
+  connectors and a pooled agent; the review deck's *Receipt* row still.
