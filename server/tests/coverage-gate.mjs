@@ -44,19 +44,26 @@ if (reports.length === 0) {
   process.exit(1);
 }
 
-/** assembly -> Map("file:line" -> hits) */
+/** assembly -> Map("absolute file:line" -> hits) */
 const lines = new Map();
 for (const file of reports) {
   const xml = readFileSync(file, 'utf8');
+  // a class's filename is relative to the report's <source> root, and that
+  // root is the common parent of everything the run touched — a suite that
+  // covers both the API and the connectors roots at server/src while the
+  // connector suites root at server/src/connectors, so the same file would
+  // be two keys and every line counted twice; absolute paths merge them
+  const source = /<source>([^<]+)<\/source>/.exec(xml)?.[1] ?? '';
   for (const pkg of xml.split('<package name="').slice(1)) {
     const name = pkg.slice(0, pkg.indexOf('"'));
     const map = lines.get(name) ?? new Map();
     lines.set(name, map);
     for (const cls of pkg.split('<class name="').slice(1)) {
       const fileName = /filename="([^"]+)"/.exec(cls)?.[1] ?? '?';
+      const absolute = resolve(source, fileName).replaceAll('\\', '/').toLowerCase();
       const body = cls.slice(0, cls.indexOf('</class>'));
       for (const m of body.matchAll(/<line number="(\d+)" hits="(\d+)"/g)) {
-        const key = `${fileName}:${m[1]}`;
+        const key = `${absolute}:${m[1]}`;
         map.set(key, (map.get(key) ?? 0) + Number(m[2]));
       }
     }
