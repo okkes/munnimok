@@ -234,8 +234,13 @@ public sealed class OneAgentManyConnectorsTests
 
             // The revoked connector is not merely quiet: its loops are over.
             // A host still running is one still polling a control plane that
-            // has revoked it, which nothing at either end would say.
-            Assert.True(machine.Host(Bank).ExecuteTask?.IsCompleted, "the revoked connector is still running");
+            // has revoked it, which nothing at either end would say. The
+            // roster hears of the retire from inside the heartbeat loop; the
+            // lease loop ends on the same token a moment later, so the host
+            // is given that moment (a loaded runner once asked before it).
+            Assert.True(
+                await Machine.UntilAsync(() => machine.Host(Bank).ExecuteTask?.IsCompleted == true),
+                "the revoked connector is still running");
             Assert.False(machine.Host(Registry).ExecuteTask?.IsCompleted, "the other connector stopped too");
 
             // And when the last connector goes, there is nothing left to
