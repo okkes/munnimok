@@ -698,3 +698,47 @@ departs from §5, and why:
 - **Deferred**: the smoke tool (§7.3) — the relay's in-process control plane tests drive every mock
   through the real routes, which is what the tool was for; a CLI against a deployed image can follow
   when a deployed environment exists to point it at.
+
+**2026-09-29 — M3 delivered** (`feat(api): connection sync replaces store sync`, `feat(web): the
+Connections hub`; docs/connectors/client.md). Where it departs from §10, and why:
+
+- **No `existing_refresh_token` adoption (§10.7).** No shipped manifest carries the input — Albert
+  Heijn signs in through the live view — and an input that exists for one migration would be carried by
+  the adapter forever. Every pre-existing store connection is a fresh sign-in through the hub. Since
+  the hub keeps the connection's id, the receipts already on a device keep their rows:
+  `rcpt:{provider}:{connectionId}:{external id}` is the shape both sides always used.
+- **Shops only in the hub (§10.1).** The Banks and Registries sections are not rendered until their
+  slices exist; a section listing the open-banking consents beside no connector would be the hub
+  pretending. The catalogue sheet filters to `kind: store` for the same reason.
+- **Custody is one function** (`features/connectors/bundles.ts`): a bundle in the device-only row
+  means device custody wherever the row was written; the web keeps the bundle in `sessionStorage` and
+  the row without it — so a ciphertext pulled from the E2EE sync lands in the right place on either
+  device class, and the row reads "sign in to sync" when the tab is gone.
+- **The synced rows stay `storeConn` / `storeConnLink`** (§10.1, "the same rows as today"); their
+  `store` field carries the connector provider id now, `ReceiptSource` is `'photo' | provider id`,
+  and the dead `storeMarker` entity and the `storeInstances` token table go — Dexie version 2, the
+  schema's first delta since the clean slate.
+- **The invoice rides the snapshot.** A `receiptLink` carries `documents[]` the way it carries a
+  photo's image: a member opens the invoice without reading the owner's feed.
+- **Proposals live on the link** (§5.7): `proposedTxId` and `rejectedTxIds`, written by the matcher,
+  decided under *Matches to check* on the Receipts screen or on the transaction itself. A pass never
+  attaches to a reviewed transaction and never re-proposes a rejected one; a receipt with a proposal
+  is still re-evaluated when better candidates arrive.
+- **Connector frames are one in-process bus** (`features/connectors/events.ts`): the sync engine
+  hands every `{ kind: "connector" }` frame to it, and a flow or a sync in flight subscribes to its
+  session or job and reads the view afresh — a frame says "something moved", never what the bundle is.
+- **A job's question waits for a human.** An unattended sync (app open, after a bank sync) that
+  meets a question stops with `asking`; *Sync now* in the hub answers it in a sheet. Nothing is
+  answered on the user's behalf.
+- **The connection sync is renamed, not versioned** (`/me/connection-sync/*`, tables
+  `ConnectionSyncDevices` / `ConnectionCiphers`, the HKDF label `munni-connection-sync-v1`): a rename
+  migration keeps the ciphertext rows; no compatibility layer keeps anything else.
+- **The copy test walks the sources** (`features/connectors/copyCoverage.test.ts`): every
+  `connect.*` literal under `server/src/connectors` and every member of the wire enums (error codes,
+  job steps, session states, user actions, challenge types) must have EN, NL and TR copy — the test
+  lives in the web suite, where the copy lives, and fails before a raw key reaches a screen.
+- **Deferred**: the household agents screen (M5); the review deck's *Receipt* row (§5.7) — the
+  transaction detail carries the proposal for now, the deck row follows with the bank slice's review
+  work; a gallery spec for the hub (the RTL suite drives the catalogue, the form, a code challenge,
+  a refusal, *Sync now* and removal against a mocked relay); a live Albert Heijn connect on dev, which
+  waits for the first environment that runs connectors.

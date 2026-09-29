@@ -228,15 +228,18 @@ whatever screen you're watching refreshes in place.
 - Errors: Sentry-protocol → GlitchTip; demo/offline identities send
   nothing, signed-in users queue crash reports offline and flush later.
 
-## 7b. Store logins on your other devices (E2EE, opt-in)
+## 7b. Connections on your other devices (E2EE, opt-in)
 
-Store connections (AH/Jumbo tokens) are device-only by default. The
-opt-in sync (store-connection-sync design, SC1–SC3) keeps the privacy
-law intact by making the server **dumb storage for ciphertext**:
+A connection's credential bundle — the sealed session key a party hands
+munni through the connector platform (#367, docs/connectors/client.md) —
+is device-only by default: the phone keeps it in its encrypted store, the
+web keeps it in the tab. The opt-in sync (the SC1–SC3 design, carrying
+bundles now) keeps the privacy law intact by making the server **dumb
+storage for ciphertext**:
 
 - **CSK** — one AES-GCM-256 *Connection Sync Key* per user, minted on
   the first device that enables the feature. It encrypts every
-  connection row before upload and never leaves a device unwrapped.
+  connection's bundle before upload and never leaves a device unwrapped.
 - **Device keys** — each device holds a P-256 ECDH keypair; only the
   public half is uploaded. The CSK travels between devices ECIES-style:
   an ephemeral keypair agrees (ECDH → HKDF-SHA256 → AES-GCM) with the
@@ -244,9 +247,10 @@ law intact by making the server **dumb storage for ciphertext**:
 - **Fingerprints** — SHA-256 of the public point, shown as a 6-digit
   code on both screens during approval. The human comparison is the
   defence against the server substituting its own key (MITM).
-- **Server surface** (`/me/store-sync/*`): device registry (public key
-  + optional wrap), one ciphertext blob per store, and DELETEs for
-  revocation. No crypto server-side; nothing stored is readable.
+- **Server surface** (`/me/connection-sync/*`): device registry (public
+  key + optional wrap), one ciphertext blob per connection id, and
+  DELETEs for revocation. No crypto server-side; nothing stored is
+  readable.
 
 ### Enrollment & approval
 
@@ -268,25 +272,25 @@ sequenceDiagram
     S-->>D: wrappedCsk (opaque to S)
     D->>D: unwrap with private key → CSK
     D->>S: fetch connection ciphertext
-    D->>D: decrypt with CSK → tokens work
+    D->>D: decrypt with CSK → the bundle syncs here too
 ```
 
 ### Day-to-day flow
 
 ```mermaid
 flowchart LR
-    A[connect / refresh a store] -->|encrypt with CSK| B[(server: ciphertext per store)]
+    A[sign in / a sync rotates the bundle] -->|encrypt with CSK| B[(server: ciphertext per connection)]
     B -->|pull at app open| C[other device]
-    C -->|newer refreshedAt wins| D[local StoreConnectionRow]
+    C -->|newer refreshedAt wins| D[local connectorConn row + custody]
     E[revoke a device] --> F[server deletes its wrap]
-    F --> G[next token refresh rotates the store tokens]
+    F --> G[the next rotation leaves the revoked device behind]
 ```
 
 Loss of *all* devices means the CSK is gone — which loses ONLY the
-synced store LOGINS (AH/Jumbo credentials): financial data, receipts
-and everything else live in normal server-side sync and come back with
-a fresh sign-in. You reconnect the stores once. That asymmetry is
-deliberate — no escrow, no server-side recovery, no honeypot.
+synced session bundles: financial data, receipts and everything else
+live in normal server-side sync and come back with a fresh sign-in. You
+sign in to the parties once more. That asymmetry is deliberate — no
+escrow, no server-side recovery, no honeypot.
 
 ## 8. Activity, admin & the rest of the household
 
