@@ -72,16 +72,14 @@ function toCat(row: CategoryRow, parentById: Map<string, CategoryRow>): Cat {
   };
 }
 
-/** the custom rows visible from `spaceId` (legacy scope rule: personal
- *  spaces share user-scoped categories, shared spaces keep their own) */
+/** the custom rows visible from `spaceId`: the space's own only — every
+ *  custom category belongs to the space it was created in (#387; the old
+ *  rule let a personal space's categories show up in every other personal
+ *  space). Another space's categories are COPIED over, never shared (#390). */
 export function visibleCategoryRows(spaces: readonly SpaceRow[], rows: readonly CategoryRow[], spaceId: string): { rows: CategoryRow[]; sharedScope: boolean; hiddenMains: string[] } {
   const active = spaces.find((s) => s.id === spaceId);
-  const visibleSpaceIds =
-    active?.kind === 'shared'
-      ? new Set([spaceId])
-      : new Set(spaces.filter((s) => s.kind !== 'shared').map((s) => s.id));
   return {
-    rows: rows.filter((c) => c.deleted === 0 && visibleSpaceIds.has(c.spaceId)),
+    rows: rows.filter((c) => c.deleted === 0 && c.spaceId === spaceId),
     sharedScope: active?.kind === 'shared',
     hiddenMains: active?.hiddenMains ?? [],
   };
@@ -104,13 +102,21 @@ export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: bo
     if (LOCKED_MAIN_IDS.has(c.id)) return 2;
     return c.id === 'income' ? 1 : 0;
   };
+  const childRank = (c: Cat): number => {
+    if (c.isOther) return 2;
+    return c.custom ? 1 : 0;
+  };
   const allParents = all
     .filter((c) => c.isParent && !c.hidden)
     .sort((a, b) => parentRank(a) - parentRank(b));
   return {
     all,
     byId: (id) => (id && map.get(id)) || FALLBACK,
-    childrenOf: (parentId) => all.filter((c) => c.parentId === parentId && !c.hidden),
+    // #388: the catalog's own subs keep their curated order, custom subs follow alphabetically, "Other" closes the list
+    childrenOf: (parentId) =>
+      all
+        .filter((c) => c.parentId === parentId && !c.hidden)
+        .sort((a, b) => childRank(a) - childRank(b) || (a.custom && b.custom ? (a.name ?? '').localeCompare(b.name ?? '', undefined, { sensitivity: 'base' }) : 0)),
     parents: allParents.filter((c) => !off.has(c.id)),
     allParents,
     hiddenMains: off,

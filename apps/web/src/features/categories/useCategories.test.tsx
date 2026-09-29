@@ -133,7 +133,7 @@ describe('useCategories', () => {
       const sub = latest!.byId('sub1');
       expect(sub.direction).toBe('credit');
       expect(sub.txTypes).toEqual(['income']); // inherited from main1
-      expect(latest!.childrenOf('main1').map((c) => c.id)).toEqual(['main1_other', 'sub1']);
+      expect(latest!.childrenOf('main1').map((c) => c.id)).toEqual(['sub1', 'main1_other']); // #388: Other closes the list
     });
   });
 });

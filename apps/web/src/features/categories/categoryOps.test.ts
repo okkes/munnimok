@@ -1,12 +1,11 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { MunniDB } from '@/db/schema';
 import { Repo } from '@/db/repo';
 import { DexieBackend } from '@/db/backend';
 import { HlcClock } from '@/sync/hlc';
-import { adoptedCategoryId } from '@/domain/feedIds';
-import { adoptUserCategoriesOnShare, createSubCategory, directionForType } from './categoryOps';
+import { copyableUnits, createSubCategory, directionForType, iconConflict } from './categoryOps';
 
 describe('#244: direction derives from the parent — the user never states it', () => {
   it('income subs are credit, expense subs debit, anything else open', () => {
@@ -26,78 +25,37 @@ describe('#244: direction derives from the parent — the user never states it',
   });
 });
 
-describe('adoptUserCategoriesOnShare', () => {
-  let db: MunniDB;
-  let repo: Repo;
-
-  beforeEach(async () => {
-    db = new MunniDB(`munni_test_adopt_${Math.random().toString(36).slice(2)}`);
-    repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
-
-    await repo.upsert('space', 'p1', 'p1', { name: 'Personal', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
-    await repo.upsert('space', 'tgt', 'tgt', { name: 'Family', kind: 'personal', currency: 'EUR', periodType: 'month', periodDay: 1 });
-
-    // user-scoped custom main with two subs (one is the locked Other)
-    await repo.upsert('category', 'p1', 'main1', { name: 'Padel Club', icon: 'dumbbell', color: '#112233', txType: 'expense', isParent: 1, sortOrder: 1, builtin: 0 });
-    await repo.upsert('category', 'p1', 'sub1', { parentId: 'main1', name: 'Gear', icon: 'bag-personal', color: '', txType: 'expense', direction: 'debit', sortOrder: 2, builtin: 0 });
-    await repo.upsert('category', 'p1', 'subOther', { parentId: 'main1', name: 'Other', icon: 'dumbbell', color: '', txType: 'expense', direction: 'both', isOther: 1, sortOrder: 9999, builtin: 0 });
-    // user-scoped custom sub under a BUILTIN parent
-    await repo.upsert('category', 'p1', 'lonesub', { parentId: 'sport', name: 'Padel', icon: 'dumbbell', color: '', txType: 'expense', direction: 'both', sortOrder: 3, builtin: 0 });
-
-    // the soon-to-be-shared space uses them: directly, in splits and in an overlay
-    await repo.upsert('transaction', 'tgt', 'tx1', { accountId: 'a', date: '2026-07-01', amountCents: -1000, currency: 'EUR', merchant: 'Decathlon', catId: 'sub1', needsReview: 0 });
-    await repo.upsert('transaction', 'tgt', 'tx2', {
-      accountId: 'a', date: '2026-07-02', amountCents: -2000, currency: 'EUR', merchant: 'Mix', catId: 'groceries',
-      splits: [{ catId: 'lonesub', amountCents: 500 }, { catId: 'groceries', amountCents: 1500 }],
-      needsReview: 0,
-    });
-    await repo.upsert('txMeta', 'tgt', 'meta1', { txId: 'raw1', catId: 'sub1', needsReview: 0 });
+describe('#389 iconConflict / #390 copyableUnits', () => {
+  it('a sub may not take the icon of a sibling under the same main; itself and other mains do not count', () => {
+    const rows = [
+      { id: 'a', icon: 'coffee-outline', parentId: 'food' },
+      { id: 'b', icon: 'pizza', parentId: 'food' },
+      { id: 'c', icon: 'coffee-outline', parentId: 'sport' },
+    ];
+    expect(iconConflict({ icon: 'coffee-outline', parentId: 'food' }, rows)).toBe(true);
+    expect(iconConflict({ icon: 'coffee-outline', parentId: 'food', selfId: 'a' }, rows)).toBe(false);
+    expect(iconConflict({ icon: 'coffee-outline', parentId: 'sport', selfId: 'c' }, rows)).toBe(false);
+    expect(iconConflict({ icon: 'coffee-outline' }, rows)).toBe(false);
   });
 
-  it('copies used units into the space and rewrites every reference', async () => {
-    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
-
-    const newMain = adoptedCategoryId('tgt', 'main1');
-    const newSub1 = adoptedCategoryId('tgt', 'sub1');
-    const newOther = adoptedCategoryId('tgt', 'subOther');
-    const newLone = adoptedCategoryId('tgt', 'lonesub');
-
-    // the whole unit moved: parent, the used sub AND its Other sibling
-    const copies = await db.categories.filter((c) => c.spaceId === 'tgt' && c.deleted === 0).toArray();
-    expect(new Set(copies.map((c) => c.id))).toEqual(new Set([newMain, newSub1, newOther, newLone]));
-    expect(copies.find((c) => c.id === newMain)?.isParent).toBe(1);
-    expect(copies.find((c) => c.id === newSub1)?.parentId).toBe(newMain);
-    expect(copies.find((c) => c.id === newOther)?.isOther).toBe(1);
-    // sub under a builtin parent keeps pointing at the builtin
-    expect(copies.find((c) => c.id === newLone)?.parentId).toBe('sport');
-
-    // references rewritten — builtin references untouched
-    expect((await db.transactions.get('tx1'))?.catId).toBe(newSub1);
-    const tx2 = await db.transactions.get('tx2');
-    expect(tx2?.catId).toBe('groceries');
-    expect(tx2?.splits).toEqual([
-      { catId: newLone, amountCents: 500 },
-      { catId: 'groceries', amountCents: 1500 },
-    ]);
-    expect((await db.txMeta.get('meta1'))?.catId).toBe(newSub1);
-
-    // originals stay in the personal space, untouched
-    expect((await db.categories.get('sub1'))?.spaceId).toBe('p1');
-    expect((await db.categories.get('main1'))?.deleted).toBe(0);
-  });
-
-  it('is idempotent — a second run copies nothing new', async () => {
-    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
-    const after1 = await db.categories.filter((c) => c.spaceId === 'tgt' && c.deleted === 0).count();
-    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
-    expect(await db.categories.filter((c) => c.spaceId === 'tgt' && c.deleted === 0).count()).toBe(after1);
-  });
-
-  it('does nothing when the space only uses builtin categories', async () => {
-    await repo.upsert('transaction', 'tgt', 'tx1', { catId: 'groceries' });
-    await repo.upsert('transaction', 'tgt', 'tx2', { catId: 'groceries', splits: undefined });
-    await repo.upsert('txMeta', 'tgt', 'meta1', { catId: 'restaurants' });
-    await adoptUserCategoriesOnShare(new DexieBackend(db), repo, 'tgt');
-    expect(await db.categories.filter((c) => c.spaceId === 'tgt').count()).toBe(0);
+  it('offers the other spaces\' custom categories this space lacks — mains with their subs, lone subs under catalog mains — by name', () => {
+    const spaces = [
+      { id: 'here', name: 'Home', kind: 'personal', deleted: 0 },
+      { id: 'other', name: 'Family', kind: 'shared', deleted: 0 },
+      { id: 'gone', name: 'Old', kind: 'personal', deleted: 1 },
+    ] as never[];
+    const rows = [
+      { id: 'm1', spaceId: 'other', isParent: 1, name: 'Padel', icon: 'tennis', deleted: 0 },
+      { id: 'm1-other', spaceId: 'other', isParent: 0, isOther: 1, parentId: 'm1', name: 'Other', icon: 'dots', deleted: 0 },
+      { id: 's1', spaceId: 'other', isParent: 0, parentId: 'm1', name: 'Court', icon: 'map', deleted: 0 },
+      { id: 's2', spaceId: 'other', isParent: 0, parentId: 'sport', name: 'Swim', icon: 'swim', deleted: 0 },
+      { id: 's3', spaceId: 'other', isParent: 0, parentId: 'sport', name: 'Yoga', icon: 'yoga', deleted: 0 },
+      { id: 'h1', spaceId: 'here', isParent: 0, parentId: 'sport', name: 'yoga', icon: 'meditation', deleted: 0 },
+      { id: 'x1', spaceId: 'gone', isParent: 1, name: 'Ghost', icon: 'ghost', deleted: 0 },
+    ] as never[];
+    const units = copyableUnits('here', spaces, rows);
+    expect(units.map((u) => u.row.id)).toEqual(['m1', 's2']);
+    expect(units[0].subs.map((r) => r.id)).toEqual(['s1']); // the main brings its subs, not its Other
+    expect(units[0].space.name).toBe('Family');
   });
 });

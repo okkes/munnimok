@@ -4,12 +4,7 @@ import { HlcClock } from '@/sync/hlc';
 import { MunniDB } from '@/db/schema';
 import { DexieBackend } from '@/db/backend';
 import { Repo } from '@/db/repo';
-import { adoptUserCategoriesOnShare } from '@/features/categories/categoryOps';
 import { ensureSpaceShared, healSharedKind, stampJoinedSharedSpace } from './spaces';
-
-vi.mock('@/features/categories/categoryOps', () => ({
-  adoptUserCategoriesOnShare: vi.fn(async () => undefined),
-}));
 
 const SPACE = 'sp-277';
 const spaceFields = (name: string) =>
@@ -19,7 +14,6 @@ describe('application/spaces (#277 r2)', () => {
   const stores: DexieBackend[] = [];
   afterEach(async () => {
     for (const s of stores.splice(0)) await s.destroy();
-    vi.mocked(adoptUserCategoriesOnShare).mockClear();
   });
 
   async function makeStore() {
@@ -29,7 +23,7 @@ describe('application/spaces (#277 r2)', () => {
     return { store, repo };
   }
 
-  it('ensureSpaceShared flips personal → shared once, adopting categories BEFORE the flip', async () => {
+  it('ensureSpaceShared flips personal → shared once', async () => {
     const { store, repo } = await makeStore();
     await repo.upsert('space', SPACE, SPACE, spaceFields('Fam'));
 
@@ -37,12 +31,10 @@ describe('application/spaces (#277 r2)', () => {
     const row = await store.get('space', SPACE);
     expect(row?.kind).toBe('shared');
     expect(row?.createdByName).toBe('Bob');
-    expect(adoptUserCategoriesOnShare).toHaveBeenCalledTimes(1);
 
     // idempotent — and an established creator is never overwritten
     expect(await ensureSpaceShared(store, repo, SPACE, 'Mallory')).toBe(false);
     expect((await store.get('space', SPACE))?.createdByName).toBe('Bob');
-    expect(adoptUserCategoriesOnShare).toHaveBeenCalledTimes(1);
   });
 
   it('a row the store does not have is left alone', async () => {

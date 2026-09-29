@@ -32,7 +32,7 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     expandGroup('consumption');
     const row = await screen.findByTestId('managecat-groceries');
     expect((row as HTMLButtonElement).disabled).toBe(true);
-    expect(row.textContent).not.toContain('Custom');
+    expect(row.dataset.custom).toBeUndefined();
   });
 
   it('#261: Adjustment is a locked special — ◆-marked, no add-sub door through either entrance', async () => {
@@ -117,12 +117,20 @@ describe('ManageCategoriesScreen (demo identity)', { timeout: 15_000 }, () => {
     fireEvent.change(screen.getByTestId('catform-name'), { target: { value: 'Padel' } });
     // #244: the direction question is gone from the form
     expect(screen.queryByTestId('catform-direction-debit')).toBeNull();
+    // #389: "gym" already wears the dumbbell under sport — the grid says so, and saving with it is refused
+    expect(screen.getByTestId('catform-icon-dumbbell').dataset.worn).toBe('1');
     fireEvent.click(screen.getByTestId('catform-icon-dumbbell'));
+    fireEvent.click(screen.getByTestId('catform-save'));
+    await screen.findByTestId('catform-icon-error');
+    fireEvent.click(screen.getByTestId('catform-icon-tent'));
+    expect(screen.queryByTestId('catform-icon-error')).toBeNull();
     fireEvent.click(screen.getByTestId('catform-save'));
 
     // live query re-render after the write can lag under coverage load
     const custom = await screen.findByText('Padel', {}, { timeout: 5000 });
-    expect(custom.closest('button')!.textContent).toContain('Custom');
+    // #386: no badge — the row is simply editable (and carries its pencil)
+    expect(custom.closest('button')!.dataset.custom).toBe('1');
+    expect((custom.closest('button') as HTMLButtonElement).disabled).toBe(false);
   });
 
   it('drags a custom sub onto another main group to move it (restored)', async () => {
