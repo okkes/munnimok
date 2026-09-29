@@ -1,3 +1,4 @@
+import { ScrollRow } from '@/ui/ScrollRow';
 import { useEffect, useMemo, useState } from 'react';
 import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useQuery } from '@/db/useQuery';
@@ -278,7 +279,7 @@ export function RecurringScreen() {
       <div ref={(el) => attachScrollMemory(el, 'recurring')} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         {/* date-range filter (#188): current range / next range / this
             year / next year / all — five tabs scroll when tight */}
-        <div className="mt-1 flex overflow-x-auto rounded-xl bg-bg-2 p-0.5">
+        <ScrollRow className="mt-1" tone="bg-2" scrollerClassName="rounded-xl bg-bg-2 p-0.5">
           {(
             [
               ['period', rangeLabelFor(period)],
@@ -299,7 +300,7 @@ export function RecurringScreen() {
               {label}
             </button>
           ))}
-        </div>
+        </ScrollRow>
 
         {/* detection inbox entry: one quiet notification, details behind it */}
         {suggestionCount > 0 && (

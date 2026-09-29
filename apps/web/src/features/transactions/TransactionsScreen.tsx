@@ -1,3 +1,4 @@
+import { ScrollRow } from '@/ui/ScrollRow';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
@@ -411,7 +412,7 @@ export function TransactionsScreen() {
       {/* search + filters */}
       <div className="shrink-0 px-5 pb-1">
         <SearchField testId="tx-search" value={query} onChange={setQuery} placeholder={t('tx.searchPlaceholder')} />
-        <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+        <ScrollRow className="mt-2">
           {/* accounts/types/categories/dates live in the filter sheet —
               chips per account stopped scaling once feeds multiplied */}
           <Chip testId="tx-filter-open" selected={activeCount > 0} onClick={() => setFilterOpen(true)}>
@@ -448,7 +449,7 @@ export function TransactionsScreen() {
               {t('tx.filtersReset')}
             </button>
           )}
-        </div>
+        </ScrollRow>
       </div>
       <FilterSheet open={filterOpen} onOpenChange={setFilterOpen} value={filters} onChange={setFilters} />
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-5 pb-6" data-testid="tx-list">

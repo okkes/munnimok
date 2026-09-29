@@ -1,3 +1,4 @@
+import { ScrollRow } from '@/ui/ScrollRow';
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { minaSuggestedAccountName } from '@/features/mina/steps';
@@ -385,13 +386,13 @@ export function AddAccountChooser({
               )}
               <FormBlockerNote show={!nameBad && balanceBad} text={t('form.needAmount')} testId="chooser-acctform-save-blocker" />
               <div className="m-cap px-1">{t('space.currency')}</div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
+              <ScrollRow tone="surface">
                 {CURRENCIES.map((c) => (
                   <Chip key={c} className="font-mono" testId={`chooser-currency-${c}`} selected={effectiveCurrency === c} onClick={() => setCurrency(c)}>
                     {c}
                   </Chip>
                 ))}
-              </div>
+              </ScrollRow>
               {/* the debt story (loans v2): a liability account IS the
                   loan — interest, size and plan live right on it */}
               {isLiability(newType) && (

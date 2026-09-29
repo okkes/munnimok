@@ -1,3 +1,4 @@
+import { ScrollRow } from '@/ui/ScrollRow';
 import { useEffect, useRef, useState } from 'react';
 import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useNavigate } from '@tanstack/react-router';
@@ -141,7 +142,7 @@ export function EventFormSheet({
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('events.edit') : t('events.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* the picture defines the event — pick a bundled one or upload */}
-        <div className="flex gap-2 overflow-x-auto pb-1" data-testid="eventform-pictures">
+        <ScrollRow tone="surface" testId="eventform-pictures">
           <button
             data-testid="eventform-upload"
             onClick={pickPhoto}
@@ -173,7 +174,7 @@ export function EventFormSheet({
               <img src={candidate} alt="" loading="lazy" className="h-full w-full object-cover" />
             </button>
           ))}
-        </div>
+        </ScrollRow>
         {picture.startsWith('data:') && (
           <div className="flex items-center gap-2 overflow-hidden rounded-xl border-2 border-accent" data-testid="eventform-uploaded">
             <img src={picture} alt="" className="h-16 w-full object-cover" />

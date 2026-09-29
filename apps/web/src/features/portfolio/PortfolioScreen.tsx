@@ -1,3 +1,4 @@
+import { ScrollRow } from '@/ui/ScrollRow';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
@@ -172,7 +173,7 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
         />
         {/* #195 r2 (user): the blocker sits AT the field */}
         <FormBlockerNote show={attempted && !name.trim()} text={t('form.needName')} testId="pf-save-blocker" />
-        <div className="flex gap-1.5 overflow-x-auto pb-1">
+        <ScrollRow tone="surface" scrollerClassName="gap-1.5 pb-1">
           {ASSET_CLASSES.map((candidate) => (
             <Chip
               key={candidate.id}
@@ -184,7 +185,7 @@ export function HoldingFormSheet({ initial, onClose }: Readonly<{ initial: Holdi
               {t(candidate.labelKey)}
             </Chip>
           ))}
-        </div>
+        </ScrollRow>
         {priceKey ? (
           <div className="flex items-center gap-2 rounded-card border border-line bg-surface px-3 py-2.5 text-[12px] text-ink-2" data-testid="pf-live-price">
             <Icon name="lightning-bolt-outline" size={15} color="var(--m-accent-deep)" />

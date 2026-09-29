@@ -1,3 +1,4 @@
+import { ScrollRow } from '@/ui/ScrollRow';
 import { downscaleImage } from '@/lib/image';
 import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { attachScrollMemory } from '@/lib/scrollMemory';
@@ -125,7 +126,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('goals.edit') : t('goals.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* optional cover, same mechanics as events (user request) */}
-        <div className="flex gap-2 overflow-x-auto pb-1" data-testid="goalform-pictures">
+        <ScrollRow tone="surface" testId="goalform-pictures">
           <button
             data-testid="goalform-pic-none"
             onClick={() => setPicture(null)}
@@ -167,7 +168,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
               <img src={candidate} alt="" loading="lazy" className="h-full w-full object-cover" />
             </button>
           ))}
-        </div>
+        </ScrollRow>
         {picture?.startsWith('data:') && (
           <div className="overflow-hidden rounded-xl border-2 border-accent" data-testid="goalform-uploaded">
             <img src={picture} alt="" className="h-16 w-full object-cover" />
@@ -175,7 +176,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
         )}
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="goalform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <ScrollRow tone="surface">
           {GOAL_ICONS.map((candidate) => (
             <button
               key={candidate}
@@ -188,7 +189,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
               <Icon name={candidate} size={19} />
             </button>
           ))}
-        </div>
+        </ScrollRow>
         <input
           data-testid="goalform-name"
           value={name}

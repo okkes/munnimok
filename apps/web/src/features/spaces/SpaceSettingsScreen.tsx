@@ -1,3 +1,4 @@
+import { ScrollRow } from '@/ui/ScrollRow';
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate, useParams, useRouter } from '@tanstack/react-router';
@@ -77,7 +78,7 @@ export function SpacePhotoStrip({
           if (file) applySpacePhoto(file, onPicture);
         }}
       />
-      <div className="flex gap-2 overflow-x-auto pb-1">
+      <ScrollRow>
         {/* own image: shown first, wins over the icon everywhere */}
         {picture ? (
           <button
@@ -116,7 +117,7 @@ export function SpacePhotoStrip({
             <Icon name="camera-outline" size={17} />
           </button>
         )}
-      </div>
+      </ScrollRow>
     </>
   );
 }
