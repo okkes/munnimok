@@ -1,7 +1,24 @@
+import type { KeyboardEvent } from 'react';
 /**
  * Minimal theme-aware SVG bar chart (trends design) — no library, the
  * bundle stays local-first-small. Bars are focusable for screen readers.
  */
+/** #375: a tap or Enter/Space on a bar reports its index — only when the chart takes selections */
+function barInteraction(onSelect: ((index: number) => void) | undefined, index: number) {
+  if (!onSelect) return {};
+  return {
+    role: 'button',
+    style: { cursor: 'pointer' },
+    onClick: () => onSelect(index),
+    onKeyDown: (e: KeyboardEvent<SVGGElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') onSelect(index);
+    },
+  };
+}
+/** a hollow (forecast) bar is an outline in the series colour */
+const barPaint = (hollow: boolean, color: string) =>
+  hollow ? { fill: 'transparent', stroke: color, strokeWidth: 1.5 } : { fill: color, stroke: 'none', strokeWidth: 0 };
+
 export function Bars({
   values,
   labels,
@@ -61,11 +78,8 @@ export function Bars({
             key={x}
             tabIndex={0}
             aria-label={ariaLabels?.[i]}
-            role={onSelect ? 'button' : undefined}
             data-testid={testId ? `${testId}-bar-${i}` : undefined}
-            style={onSelect ? { cursor: 'pointer' } : undefined}
-            onClick={onSelect ? () => onSelect(i) : undefined}
-            onKeyDown={onSelect ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(i); } : undefined}
+            {...barInteraction(onSelect, i)}
           >
             <rect
               x={x}
@@ -73,9 +87,7 @@ export function Bars({
               width={barW}
               height={h}
               rx={3}
-              fill={hollow ? 'transparent' : color}
-              stroke={hollow ? color : 'none'}
-              strokeWidth={hollow ? 1.5 : 0}
+              {...barPaint(hollow, color)}
             />
             {negativeValues && (
               <rect

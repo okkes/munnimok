@@ -228,6 +228,16 @@ function GroupHeader({
   );
 }
 
+/** the parent a sub form files under: a new sub's parent, or an edited sub's (possibly moved) one */
+const parentIdOf = (mode: FormMode | null, moveTo: string | null): string | undefined => {
+  if (mode?.kind === 'newSub') return mode.parentId;
+  if (mode?.kind === 'editSub') return moveTo ?? mode.row.parentId;
+  return undefined;
+};
+/** the row an edit form stands for — excluded from its own conflict checks */
+const selfIdOf = (mode: FormMode | null): string | undefined =>
+  mode?.kind === 'editMain' || mode?.kind === 'editSub' ? mode.row.id : undefined;
+
 export function ManageCategoriesScreen() {
   // fold state (user redesign): everything starts collapsed
   const [expandedGroups, setExpandedGroups] = useState<ReadonlySet<string>>(new Set());
@@ -250,6 +260,13 @@ export function ManageCategoriesScreen() {
   const [iconError, setIconError] = useState(false);
   // #390: the other spaces' custom categories this space lacks, ticked for copying
   const [copyPicked, setCopyPicked] = useState<ReadonlySet<string>>(new Set());
+  const toggleCopyUnit = (id: string, on: boolean) =>
+    setCopyPicked((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   const [color, setColor] = useState(COLORS[0]);
   const [txType, setTxType] = useState<TxType>('expense');
   const [moveTo, setMoveTo] = useState<string | null>(null);
@@ -383,22 +400,13 @@ export function ManageCategoriesScreen() {
 
   const save = async () => {
     if (!mode || !name.trim()) return;
-    let candidateParentId: string | undefined;
-    if (mode.kind === 'newSub') candidateParentId = mode.parentId;
-    else if (mode.kind === 'editSub') candidateParentId = moveTo ?? mode.row.parentId;
-    const conflict = categoryNameConflict(
-      {
-        name,
-        parentId: candidateParentId,
-        selfId: mode.kind === 'editMain' || mode.kind === 'editSub' ? mode.row.id : undefined,
-      },
-      namedCategories(),
-    );
+    const candidateParentId = parentIdOf(mode, moveTo);
+    const conflict = categoryNameConflict({ name, parentId: candidateParentId, selfId: selfIdOf(mode) }, namedCategories());
     if (conflict) {
       setNameError(conflict);
       return;
     }
-    if (mode.kind !== 'newMain' && mode.kind !== 'editMain' && iconConflict({ icon, parentId: candidateParentId, selfId: mode.kind === 'editSub' ? mode.row.id : undefined }, cats.all)) {
+    if (mode.kind !== 'newMain' && mode.kind !== 'editMain' && iconConflict({ icon, parentId: candidateParentId, selfId: selfIdOf(mode) }, cats.all)) {
       setIconError(true);
       return;
     }
@@ -539,9 +547,9 @@ export function ManageCategoriesScreen() {
   const editing = mode?.kind === 'editMain' || mode?.kind === 'editSub';
   // #389: the icons the form's siblings already wear (the row being edited excluded) — dimmed in the grid
   const wornIcons = (() => {
-    const parentId = mode?.kind === 'newSub' ? mode.parentId : mode?.kind === 'editSub' ? (moveTo ?? mode.row.parentId) : undefined;
+    const parentId = parentIdOf(mode, moveTo);
     if (!parentId) return new Set<string>();
-    const selfId = mode?.kind === 'editSub' ? mode.row.id : undefined;
+    const selfId = selfIdOf(mode);
     return new Set(cats.childrenOf(parentId).filter((c) => c.id !== selfId).map((c) => c.icon));
   })();
   const isMainForm = mode?.kind === 'newMain' || mode?.kind === 'editMain';
@@ -1058,14 +1066,7 @@ export function ManageCategoriesScreen() {
                       type="checkbox"
                       data-testid={`cats-copy-unit-${u.row.id}`}
                       checked={copyPicked.has(u.row.id)}
-                      onChange={(e) =>
-                        setCopyPicked((prev) => {
-                          const next = new Set(prev);
-                          if (e.target.checked) next.add(u.row.id);
-                          else next.delete(u.row.id);
-                          return next;
-                        })
-                      }
+                      onChange={(e) => toggleCopyUnit(u.row.id, e.target.checked)}
                     />
                     <Icon name={u.row.icon} size={19} color={u.row.color || 'var(--m-ink-3)'} />
                     <span className="min-w-0 flex-1">

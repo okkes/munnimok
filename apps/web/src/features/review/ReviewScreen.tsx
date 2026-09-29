@@ -2049,17 +2049,21 @@ export function ReviewScreen() {
     setStagedDraft({ ...next, linkedAccountId: entry.linkedAccountId });
   };
 
+  // r7: a blocked Confirm POINTS at what holds it back — the deck badges
+  // the parts that still need a category; #410 (user): a single card
+  // names the missing category under its row, and a transfer that has
+  // one names its missing counterparty
+  const pointAtBlocker = (blocked: ReviewDraft) => {
+    if (multiPartSplits(blocked)) setPartsAttention(true);
+    else if (!catChosen) setCatRequired(true);
+    else setCounterRequired(true);
+  };
+
   const confirm = async () => {
     // #268 r2 (user): a held deck accepts no further confirms
     if (!tx || !draft || counterBulk) return;
     if (!draftReady(draft)) {
-      // r7: a blocked Confirm POINTS at what holds it back — the deck
-      // badges the parts that still need a category; #410 (user): a
-      // single card names the missing category under its row, and a
-      // transfer that has one names its missing counterparty
-      if (multiPartSplits(draft)) setPartsAttention(true);
-      else if (!catChosen) setCatRequired(true);
-      else setCounterRequired(true);
+      pointAtBlocker(draft);
       return;
     }
     // #309 (user): a movement category REQUIRES its counterparty — no

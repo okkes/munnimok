@@ -131,6 +131,32 @@ function ThemeModeSwitch() {
  * space-scoped and app-wide rows in one list was confusing).
  */
 
+/** #370: the calendar's first weekday — every new space copies it, a space may override it */
+function WeekStartRow() {
+  const { t } = useLang();
+  const [weekStart, setWeekStart] = useState<WeekStart>(globalWeekStart());
+  const toggle = () => {
+    const next = weekStart === 'monday' ? 'sunday' : 'monday';
+    setGlobalWeekStart(next);
+    setWeekStart(next);
+  };
+  return (
+    <Row
+      testId="settings-weekstart-row"
+      icon="calendar-week-begin"
+      title={t('settings.weekStart')}
+      sub={t('settings.weekStartSub')}
+      chevron={false}
+      trailing={
+        <Pill tone="neutral" testId="settings-weekstart-state">
+          {t(weekStart === 'sunday' ? 'weekday.sunday' : 'weekday.monday')}
+        </Pill>
+      }
+      onClick={toggle}
+    />
+  );
+}
+
 export function GlobalSettingsScreen() {
   const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
   const { theme, mode: themeMode, setMode: setThemeMode } = useTheme();
@@ -148,7 +174,6 @@ export function GlobalSettingsScreen() {
   >(null);
   const [vapidKey, setVapidKey] = useState('');
   const [pushOn, setPushOn] = useState(false);
-  const [weekStart, setWeekStart] = useState<WeekStart>(globalWeekStart());
   const [pushBusy, setPushBusy] = useState(false);
   // the test push row: what the last attempt said (sent to n devices / no device / failed)
   const [testNote, setTestNote] = useState<string | null>(null);
@@ -318,24 +343,7 @@ export function GlobalSettingsScreen() {
             }
             onClick={() => setLangSheetOpen(true)}
           />
-          {/* #370: the calendar's first weekday — every new space copies it, a space may override it */}
-          <Row
-            testId="settings-weekstart-row"
-            icon="calendar-week-begin"
-            title={t('settings.weekStart')}
-            sub={t('settings.weekStartSub')}
-            chevron={false}
-            trailing={
-              <Pill tone="neutral" testId="settings-weekstart-state">
-                {t(weekStart === 'sunday' ? 'weekday.sunday' : 'weekday.monday')}
-              </Pill>
-            }
-            onClick={() => {
-              const next = weekStart === 'monday' ? 'sunday' : 'monday';
-              setGlobalWeekStart(next);
-              setWeekStart(next);
-            }}
-          />
+          <WeekStartRow />
           {/* receipts moved to the space section (v3: they are a space
               view); the global door keeps the store CONNECTIONS */}
           <Row testId="settings-shopping-row" icon="storefront-outline" title={t('shop.title')} onClick={() => void navigate({ to: '/shopping' })} />

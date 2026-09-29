@@ -26,6 +26,19 @@ import { SpacePhotoStrip } from '@/features/spaces/SpaceSettingsScreen';
  * cadence + anchor, the category checklist with exclusivity badges,
  * carry-over configuration and the warning threshold.
  */
+/** #374: a category row's tick — full, half (some free subs picked) or empty */
+type TickState = 'checked' | 'half' | 'off';
+const tickStateOf = (checked: boolean, half: boolean): TickState => {
+  if (checked) return 'checked';
+  if (half) return 'half';
+  return 'off';
+};
+const TICK_BOX: Record<TickState, string> = {
+  checked: 'border-accent bg-accent',
+  half: 'border-accent bg-accent-soft',
+  off: 'border-line bg-transparent',
+};
+
 export function BudgetFormScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -114,7 +127,8 @@ export function BudgetFormScreen() {
       return;
     }
     if (claimedSubsOf(parentId) === 0) {
-      setCatIds((prev) => [...prev.filter((x) => !cats.childrenOf(parentId).some((sub) => sub.id === x)), parentId]);
+      const subIds = new Set(cats.childrenOf(parentId).map((sub) => sub.id));
+      setCatIds((prev) => [...prev.filter((x) => !subIds.has(x)), parentId]);
       return;
     }
     const free = freeSubsOf(parentId);
@@ -189,17 +203,18 @@ export function BudgetFormScreen() {
     const free = isMain ? freeSubsOf(id) : [];
     const half = isMain && !catIds.includes(id) && free.some((sub) => catIds.includes(sub));
     const checked = catIds.includes(id) || coveredByMain || (isMain && free.length > 0 && free.every((sub) => catIds.includes(sub)) && claimedSubsOf(id) > 0);
+    const tick = tickStateOf(checked, half);
     return (
       <button
         key={id}
         data-testid={`budget-cat-${id}`}
-        data-state={checked ? 'checked' : half ? 'half' : 'off'}
+        data-state={tick}
         disabled={disabled}
         onClick={() => (isMain ? toggleMain(id) : toggleCat(id))}
         className={`m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left last:border-0 ${indent ? 'pl-8' : 'pl-1'} ${disabled ? 'opacity-45' : ''}`}
       >
         <span
-          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${checked ? 'border-accent bg-accent' : half ? 'border-accent bg-accent-soft' : 'border-line bg-transparent'}`}
+          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${TICK_BOX[tick]}`}
         >
           {checked && <Icon name="check" size={12} color="#fff" />}
           {!checked && half && <Icon name="minus" size={12} color="var(--m-accent-deep)" />}

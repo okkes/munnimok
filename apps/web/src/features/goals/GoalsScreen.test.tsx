@@ -121,7 +121,7 @@ describe('Goals (demo identity)', () => {
     fireEvent.change(screen.getByTestId('goalform-date'), { target: { value: soon.toISOString().slice(0, 10) } });
     await screen.findByTestId('goalform-shortterm');
     fireEvent.click(screen.getByTestId('goalform-shortterm-go'));
-    await screen.findByTestId('screen-allocate');
+    expect(await screen.findByTestId('screen-allocate')).toBeTruthy();
   }, 15_000);
 
   it('the home block surfaces progress; the settings row reaches goals', async () => {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useSession } from '@/app/session';
+import type { Identity } from '@/app/session';
 import { apiFetch } from '@/lib/api';
 import { netPositions } from '@/domain/splitLedger';
 
@@ -22,14 +23,20 @@ export interface TopSplit {
 /** #361: the last answer per identity — a tab return shows the block at once, the fetch refreshes it */
 let lastTop: { key: string; value: TopSplit | null } | null = null;
 
+/** the identity's cache key — the sub for a user, the kind alone otherwise */
+const identityKeyOf = (identity: Identity | null): string => {
+  if (!identity) return '';
+  return `${identity.kind}:${'sub' in identity ? identity.sub : ''}`;
+};
+
 export function useTopSplit(): TopSplit | null | undefined {
   const { identity } = useSession();
-  const identityKey = identity ? `${identity.kind}:${'sub' in identity ? identity.sub : ''}` : '';
-  const [top, setState] = useState<TopSplit | null | undefined>(() => (lastTop?.key === identityKey ? lastTop.value : undefined));
-  const setTop = (value: TopSplit | null) => {
-    lastTop = { key: identityKey, value };
-    setState(value);
-  };
+  const identityKey = identityKeyOf(identity);
+  const [top, setTop] = useState<TopSplit | null | undefined>(() => (lastTop?.key === identityKey ? lastTop.value : undefined));
+  // the settled answer is remembered for the next mount under this identity
+  useEffect(() => {
+    if (top !== undefined) lastTop = { key: identityKey, value: top };
+  }, [top, identityKey]);
 
   useEffect(() => {
     if (identity?.kind !== 'user') {
