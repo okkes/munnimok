@@ -1,0 +1,207 @@
+{
+  "agreements": [
+    {
+      "type": "CURRENT",
+      "group": "CURRENT",
+      "subType": "NL_1000",
+      "status": "ACTIVE",
+      "role": "HOLDER",
+      "identifierType": "UUID",
+      "id": "11111111-2222-3333-4444-555555555555",
+      "commercialId": {
+        "type": "IBAN",
+        "value": "NL01INGB0002345678"
+      },
+      "accountId": "2345678",
+      "holderName": "V Oorbeeld",
+      "preferred": true,
+      "visible": true,
+      "visibleMobile": true,
+      "visibleWeb": true,
+      "isKidsAccount": false,
+      "totalBalance": true,
+      "totalBalanceAllowed": true,
+      "balance": {
+        "currency": "EUR",
+        "value": "-1730.01",
+        "view": ["-1.730", "01"]
+      },
+      "startDate": "2011-03-14",
+      "productName": "Betaalrekening",
+      "displayAlias": "Mijn betaalrekening",
+      "agreementDisplayPositions": {
+        "top": "commercialId",
+        "middle": "displayAlias"
+      },
+      "notifications": [],
+      "_messages": [],
+      "_links": [
+        {
+          "rel": "self",
+          "href": "/agreements/x1"
+        }
+      ]
+    },
+    {
+      "type": "SAVINGS",
+      "group": "SAVINGS",
+      "subType": "NL_9200",
+      "status": "ACTIVE",
+      "role": "HOLDER",
+      "identifierType": "UUID",
+      "iconId": "SAV-11",
+      "id": "66666666-7777-8888-9999-000000000000",
+      "commercialId": {
+        "type": "IBAN",
+        "value": "NL02INGB0009876543"
+      },
+      "accountId": "9876543",
+      "holderName": "V Oorbeeld",
+      "preferred": false,
+      "visible": true,
+      "visibleMobile": true,
+      "visibleWeb": true,
+      "balance": {
+        "currency": "EUR",
+        "value": "8.20",
+        "view": ["8", "20"]
+      },
+      "startDate": "2016-10-04",
+      "productName": "Oranje Spaarrekening",
+      "displayAlias": "Nieuwe keuken",
+      "referenceAgreement": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "number": "NL01INGB0002345678",
+        "holderName": "V Oorbeeld"
+      },
+      "notifications": [],
+      "_messages": [],
+      "_links": [
+        {
+          "rel": "self",
+          "href": "/agreements/x2"
+        },
+        {
+          "rel": "transactions",
+          "href": "/v1/agreements/x2/transactions"
+        }
+      ]
+    },
+    {
+      "type": "CARD",
+      "group": "CARD",
+      "subType": "NL_PLATINUMCARD",
+      "status": "ACTIVE",
+      "role": "HOLDER",
+      "identifierType": "LOCAL_ID",
+      "iconId": "PLATINUMCARD",
+      "id": "900012345678",
+      "holderName": "V OORBEELD",
+      "preferred": false,
+      "visible": true,
+      "visibleMobile": true,
+      "visibleWeb": true,
+      "startDate": "2024-07-05",
+      "productName": "Creditcard Extra",
+      "displayAlias": "Creditcard Extra",
+      "referenceAgreement": {
+        "id": "11111111-2222-3333-4444-555555555555",
+        "number": "NL01INGB0002345678",
+        "holderName": "V Oorbeeld"
+      },
+      "notifications": [],
+      "_messages": [],
+      "_links": [
+        {
+          "rel": "self",
+          "href": "/nl/agreements/900012345678/carddetails"
+        },
+        {
+          "rel": "transactions",
+          "href": "/v1/agreements/900012345678/transactions"
+        },
+        {
+          "rel": "edit",
+          "href": "/agreementpreferences/900012345678"
+        }
+      ]
+    },
+    {
+      "type": "LOAN",
+      "group": "LOAN",
+      "subType": "PL",
+      "status": "ACTIVE",
+      "role": "HOLDER",
+      "identifierType": "LOCAL_ID",
+      "id": "700000000009",
+      "commercialId": {
+        "type": "NL_CORBANK_ID",
+        "value": "700000000009"
+      },
+      "accountId": "0000009",
+      "holderName": "V Oorbeeld",
+      "preferred": false,
+      "visible": true,
+      "visibleMobile": true,
+      "visibleWeb": true,
+      "balance": {
+        "currency": "EUR",
+        "value": "-12500.00",
+        "view": ["-12.500", "00"]
+      },
+      "startDate": "2023-01-09",
+      "productName": "Persoonlijke Lening",
+      "displayAlias": "Persoonlijke Lening",
+      "notifications": [],
+      "_messages": [],
+      "_links": [
+        {
+          "rel": "self",
+          "href": "/agreements/x4"
+        },
+        {
+          "rel": "transactions",
+          "href": "/v1/agreements/x4/transactions"
+        }
+      ]
+    },
+    {
+      "type": "LOYALTY",
+      "group": "LOYALTY",
+      "status": "ACTIVE",
+      "role": "HOLDER",
+      "identifierType": "LOCAL_ID",
+      "id": "0000001",
+      "accountId": "0000001",
+      "holderName": "V Oorbeeld",
+      "preferred": false,
+      "visible": true,
+      "visibleMobile": true,
+      "visibleWeb": true,
+      "balance": {
+        "currency": "PTS",
+        "value": "1420",
+        "view": ["1.420", ""]
+      },
+      "startDate": "2019-05-22",
+      "productName": "ING Punten",
+      "displayAlias": "ING Punten",
+      "notifications": [],
+      "_messages": [],
+      "_links": [
+        {
+          "rel": "self",
+          "href": "/agreements/x5"
+        }
+      ]
+    }
+  ],
+  "packagesWidget": {
+    "packages": [
+      {
+        "productType": "NL_ORANJEPAKKT",
+        "agreementIds": ["11111111-2222-3333-4444-555555555555"]
+      }
+    ]
+  }
+}

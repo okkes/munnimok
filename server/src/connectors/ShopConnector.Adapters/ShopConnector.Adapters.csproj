@@ -1,0 +1,117 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The shopping providers. Nothing here knows about HTTP routing, the
+    database, or the job queue - an adapter sees only IJobContext.
+  -->
+  <PropertyGroup>
+    <RootNamespace>ShopConnector.Adapters</RootNamespace>
+    <AssemblyName>ShopConnector.Adapters</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Connector.Kit\Connector.Kit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      The browser-login seam - ILoginPage, IRedirectWaiter and their Playwright
+      implementations - moved into the kit when the registry connector needed
+      it too. Nothing about driving a sign-in page is shop-specific, and a
+      second copy would have been the third place a selector bug could hide.
+
+      Imported project-wide rather than edited into thirteen files: the types
+      did not change, only where they live.
+    -->
+    <Using Include="Connector.Kit.Browsing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Parsers are internal because they are not a contract - only the
+      adapters and the fixture catalogue are. The offline suite still needs
+      to reach them: a parse test that has to build an HTTP stub to check a
+      discount sign is a test nobody writes.
+    -->
+    <InternalsVisibleTo Include="ShopConnector.Adapters.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Fixtures ship both ways on purpose: embedded so a parse test needs no
+      file paths and cannot drift from the assembly it tests, and copied so
+      an operator diffing a live capture against the recorded shape can just
+      open the file.
+    -->
+    <None Remove="Fixtures\**\*.json" />
+    <EmbeddedResource Include="Fixtures\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      bol.com's recorded pages. Scoped to Fixtures\bol\ rather than
+      Fixtures\**\ deliberately: a provider whose payload is HTML is the
+      exception here, and a wildcard would collide with the next one instead
+      of sitting beside it.
+
+      HTML rather than JSON-wrapped HTML because the whole value of a fixture
+      is that an operator can diff a live capture against it. bol's consumer
+      order list has never been seen by anyone on this project - it needs an
+      account - so these files are SYNTHETIC and say so in their own first
+      lines. Replacing them with a real capture is the first thing a live run
+      should produce.
+    -->
+    <None Remove="Fixtures\bol\*.html" />
+    <EmbeddedResource Include="Fixtures\bol\*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Binary fixtures. One so far: a small, genuinely valid PDF standing in for
+      a bol invoice.
+
+      Deliberately not sized off the live capture's 33667 bytes. That figure is
+      the browser's UTF-8 mangling of a roughly 18.9KB file - the document's own
+      startxref gives it away - and a test asserting it would pin a number that
+      was never the document's real length.
+    -->
+    <None Remove="Fixtures\**\*.pdf" />
+    <EmbeddedResource Include="Fixtures\**\*.pdf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      amazon.nl's invoice lists. Bare HTML rather than the { url, status, html }
+      wrapper the order pages use, because these are not pages: they are the
+      AJAX fragment behind the "Factuur" control, and there is no navigation
+      whose status would mean anything.
+
+      REAL captures, taken 2026-08-06 and redacted - order numbers substituted,
+      document ids replaced with same-shaped fakes. The four-invoice one is not
+      a contrivance: one order on a real account genuinely had four, which is
+      why the record carries a list.
+    -->
+    <None Remove="Fixtures\amazon\*.html" />
+    <EmbeddedResource Include="Fixtures\amazon\*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      coolblue's account and sign-in pages. REAL captures, redacted: the
+      account owner's address is substituted and every csrf token, PKCE
+      challenge, nonce and state is replaced with a same-shaped fake.
+      CoolblueLoginFormTests asserts that, because the first of these files
+      shipped with three live signed tokens still in it.
+
+      Two of them are sign-in screens rather than one, and that is the point.
+      Each carries a control that looks exactly like the one to press and is
+      not: the first screen's only password input is a DECOY Coolblue keeps for
+      password managers, and the second screen's first submit button asks
+      Coolblue to RESET THE PASSWORD. Both were pressed for real before they
+      were captured.
+    -->
+    <None Remove="Fixtures\coolblue\*.html" />
+    <EmbeddedResource Include="Fixtures\coolblue\*.html" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

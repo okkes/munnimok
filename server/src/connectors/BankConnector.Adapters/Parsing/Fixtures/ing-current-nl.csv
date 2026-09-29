@@ -1,0 +1,5 @@
+"Datum";"Naam / Omschrijving";"Rekening";"Tegenrekening";"Code";"Af Bij";"Bedrag (EUR)";"Mutatiesoort";"Mededelingen";"Saldo na mutatie";"Tag"
+"11-06-2026";"VOORBEELD WEBWINKEL";"NL01TEST0123456789";"NL44TEST0009988776";"ID";"Af";"18,49";"iDEAL";"Kenmerk: 90000001";"1069,20";""
+"07-06-2026";"V. OORBEELD";"NL01TEST0123456789";"NL33TEST0000112233";"GT";"Bij";"250,00";"Online bankieren";"Omschrijving: Terugbetaling";"1087,69";""
+"03-06-2026";"VOORBEELD ENERGIE";"NL01TEST0123456789";"NL22TEST0123409876";"IC";"Af";"120,00";"Incasso";"Incassant ID: NL00TST000000000 Kenmerk: 2026-06";"837,69";""
+"01-06-2026";"VOORBEELD SUPERMARKT";"NL01TEST0123456789";"";"BA";"Af";"42,31";"Betaalautomaat";"Naam: VOORBEELD SUPERMARKT Omschrijving: Pas 001";"957,69";""

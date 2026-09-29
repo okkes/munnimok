@@ -1,0 +1,5 @@
+"Date";"Name / Description";"Account";"Counterparty";"Code";"Debit/credit";"Amount (EUR)";"Transaction type";"Notifications";"Resulting balance";"Tag"
+"11-06-2026";"VOORBEELD WEBWINKEL";"NL01TEST0123456789";"NL44TEST0009988776";"ID";"Debit";"18,49";"iDEAL";"Reference: 90000001";"1069,20";""
+"07-06-2026";"V. OORBEELD";"NL01TEST0123456789";"NL33TEST0000112233";"GT";"Credit";"250,00";"Online Banking";"Description: Refund";"1087,69";""
+"03-06-2026";"VOORBEELD ENERGIE";"NL01TEST0123456789";"NL22TEST0123409876";"IC";"Debit";"120,00";"SEPA direct debit";"Creditor ID: NL00TST000000000 Reference: 2026-06";"837,69";""
+"01-06-2026";"VOORBEELD SUPERMARKT";"NL01TEST0123456789";"";"BA";"Debit";"42,31";"Payment terminal";"Name: VOORBEELD SUPERMARKT Description: Card 001";"957,69";""

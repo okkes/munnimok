@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "accountId": {
+        "commercialId": "V90000001",
+        "iban": "NL02INGB0009876543",
+        "encryptedIban": "Zm9vYmFyLWZpeHR1cmUtb25seS1ub3QtYS1yZWFsLWFncmVlbWVudC1pZA"
+      },
+      "agreementIdentifiers": [
+        {
+          "type": "IBAN",
+          "value": "NL02INGB0009876543"
+        },
+        {
+          "type": "NL_CORBANK_ID",
+          "value": "700000000001"
+        }
+      ],
+      "productCode": "NL_ORANJE_SPRRKG",
+      "productName": "Oranje Spaarrekening",
+      "productFamily": "SAVINGS",
+      "currency": "EUR",
+      "openingDate": "2016-10-04",
+      "dynamicBalance": {
+        "amount": 8.2,
+        "currency": "EUR"
+      },
+      "target": {
+        "categoryId": 11,
+        "targetAmount": 20000,
+        "nickName": "Nieuwe keuken",
+        "categoryName": "Verbouwen"
+      },
+      "holders": [
+        {
+          "type": "UUID",
+          "value": "99999999-8888-7777-6666-555555555555"
+        }
+      ],
+      "ascription": "Hr V Oorbeeld",
+      "savingsLockAllowed": true
+    }
+  ]
+}

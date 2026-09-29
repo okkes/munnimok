@@ -1,0 +1,466 @@
+using Connector.Kit.Adapters;
+using Connector.Kit.Challenges;
+using Connector.Kit.Errors;
+using Connector.Kit.Jobs;
+using Connector.Kit.Manifests;
+using Connector.Kit.Normalization;
+using Connector.Kit.Security;
+using RegistryConnector.Adapters.Support;
+
+namespace RegistryConnector.Adapters.Bkr;
+
+/// <summary>
+/// BKR - the Dutch credit register - through its consumer portal.
+///
+/// Sign-in is Azure AD B2C (tenant <c>bkrconsp.onmicrosoft.com</c>, policy
+/// <c>B2C_1A_SignUp_SignIn_SmsOrTotp</c>) and asks for a second factor EVERY
+/// time. There is no refresh token: B2C hands the portal an id_token by
+/// form_post and the portal keeps a cookie, so every sync is a fresh sign-in.
+///
+/// That shape decides the whole design. How much of it a person has to watch
+/// depends only on what they chose to store:
+///
+///   nothing               the page is streamed from its first screen
+///   username + password   both are typed, then the page is streamed for the
+///                         second factor - which covers a texted code, an
+///                         authenticator code, and any screen offering a
+///                         choice between them
+///   ...plus the seed      the code is computed here and nobody is disturbed
+///
+/// The last of those is a deliberate weakening of the user's second factor and
+/// is never the default. It is worth being plain about what it buys: BKR is a
+/// standing position rather than a feed, so this is a monthly sync, and what
+/// is removed is one prompt a month. See connect.bkr.totp for what the user is
+/// told before they choose it.
+/// </summary>
+public sealed class BkrAdapter : IProviderAdapter
+{
+    public const string ProviderId = "bkr";
+    public const string CreditsResource = "credits";
+
+    private static readonly ProviderManifest Manifest = BkrManifest.Build();
+
+    private readonly BkrOptions _options;
+    private readonly TimeProvider _time;
+
+    public BkrAdapter(BkrOptions? options = null, TimeProvider? time = null)
+    {
+        _options = options ?? new BkrOptions();
+        _time = time ?? TimeProvider.System;
+    }
+
+    public ProviderManifest Describe() => Manifest;
+
+    public async Task<LoginResult> LoginAsync(IJobContext ctx, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+
+        ctx.Progress(JobStep.OpeningProvider);
+
+        var page = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
+        var login = new PlaywrightLoginPage(page, Manifest);
+        var watcher = new BkrSignedInWatcher(login, _options, _time);
+
+        return await LoginAsync(ctx, login, watcher, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The kit's already-signed-in capability, answered for BKR.
+    /// </summary>
+    /// <remarks>
+    /// It navigates and <see cref="PresenceAsync"/> does not, for the same
+    /// reason the login navigates before it asks: the whole answer is which
+    /// host the browser ends up on, and a browser that has been nowhere is on
+    /// neither.
+    /// </remarks>
+    public async Task<SessionPresence> AlreadySignedInAsync(IJobContext ctx, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+
+        var browser = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
+        var page = new PlaywrightLoginPage(browser, Manifest);
+
+        await page.GotoAsync(_options.PortalUrl, ct).ConfigureAwait(false);
+
+        return await PresenceAsync(page, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Whether this browser is still inside the portal, asked of the only
+    /// witness BKR has.
+    /// </summary>
+    /// <remarks>
+    /// Assumes the browser has already been sent to <see cref="BkrOptions.PortalUrl"/>.
+    /// <para>
+    /// ONE WITNESS, WHICH IS WHY THE WINDOW MATTERS MORE HERE THAN ANYWHERE.
+    /// DUO can fall back on its own session endpoint and ASN on a menu only a
+    /// signed-in page draws; BKR has neither. A completed B2C sign-in POSTs an
+    /// id_token to <c>/signin-oidc</c> and the portal answers with a cookie and
+    /// its own page, so there is nothing to ask and the address is the entire
+    /// answer - which is exactly the situation lesson one is about. The page is
+    /// therefore given <see cref="BkrOptions.SignedOutBounceSeconds"/> to say
+    /// NO before anything positive is believed.
+    /// </para>
+    /// <para>
+    /// AND THE POSITIVE IS <see cref="BkrSignedInWatcher.SignedIn"/> RATHER
+    /// THAN "did not bounce". Both halves of that rule are load-bearing: the
+    /// portal's own address appears on the login host too - B2C embeds it as a
+    /// <c>redirect_uri</c> and pulls a template from <c>/login-template</c> -
+    /// so a check for the portal's name alone would report a session while the
+    /// password box was still on screen.
+    /// </para>
+    /// </remarks>
+    private Task<SessionPresence> PresenceAsync(ILoginPage page, CancellationToken ct) =>
+        SessionProbe.OnPageAsync(
+            page,
+            url => url.Contains(_options.LoginHost, StringComparison.OrdinalIgnoreCase),
+            _ => Task.FromResult(BkrSignedInWatcher.SignedIn(page.Url, _options)),
+            TimeSpan.FromSeconds(_options.SignedOutBounceSeconds),
+            TimeSpan.FromMilliseconds(_options.SignedOutPollMs),
+            _time,
+            ct);
+
+    /// <summary>
+    /// The login, behind the page seam so the offline suite can drive all
+    /// three tiers without a browser or an account.
+    /// </summary>
+    internal async Task<LoginResult> LoginAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        ArgumentNullException.ThrowIfNull(page);
+        ArgumentNullException.ThrowIfNull(watcher);
+
+        var username = Optional(ctx, "username");
+        var password = Optional(ctx, "password");
+        var seed = ReadSeed(ctx);
+
+        await page.GotoAsync(_options.PortalUrl, ct).ConfigureAwait(false);
+
+        // ALREADY INSIDE? THEN NOTHING IS ASKED, and on this register that is
+        // worth more than on most.
+        //
+        // BKR's policy is B2C_1A_SignUp_SignIn_SmsOrTotp and it asks for a
+        // second factor EVERY time: there is no refresh token, so every sync a
+        // user has ever made has cost them a password and six digits. On an
+        // agent that keeps a browser profile, the portal cookie from the last
+        // sync is still in it, and a connect made while it lives asks for
+        // neither.
+        //
+        // BEFORE JobStep.Authenticating and before a single input is read,
+        // which is the same placement DUO needed: nothing below this line
+        // happens on a browser that was already in, so nothing below it can
+        // spend an attempt that did not need spending.
+        if (await SessionProbe.AskAsync(ctx, (_, t) => PresenceAsync(page, t), ct)
+                .ConfigureAwait(false) is SessionPresence.SignedIn)
+        {
+            ctx.Note(
+                $"{ProviderId}: this browser was still signed in to the portal, so nothing was asked of you - " +
+                "which on a register that demands a second factor every single sync is the whole reason for " +
+                "keeping a profile");
+
+            ctx.Progress(JobStep.Finalizing);
+
+            return await SignedAsync(ctx, ct).ConfigureAwait(false);
+        }
+
+        ctx.Progress(JobStep.Authenticating);
+
+        // Tier one: nothing to type. A first connect, or somebody who would
+        // rather not hand over a password at all.
+        if (username is null || password is null)
+        {
+            return await LiveSignInAsync(ctx, page, watcher, ct).ConfigureAwait(false);
+        }
+
+        try
+        {
+            return await TypedSignInAsync(ctx, page, watcher, username, password, seed, ct).ConfigureAwait(false);
+        }
+        catch (ConnectorException ex)
+            when (ex.Code is ErrorCode.ProviderChanged or ErrorCode.BlockedByProvider or ErrorCode.MfaFailed)
+        {
+            // The page moved, the register refused us, or a computed code was
+            // rejected - a drifted clock, a mistyped seed, a second factor
+            // that turned out to be SMS after all. None of those is worth
+            // ending a connect attempt over while a human is right there.
+            return await LiveSignInAsync(ctx, page, watcher, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Types what it was given, then either computes the second factor or asks
+    /// for it.
+    /// </summary>
+    private async Task<LoginResult> TypedSignInAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher,
+        string username, string password, TotpSecret? seed, CancellationToken ct)
+    {
+        if (!await page.FillAsync(_options.UsernameSelectors, username, _options.SelectorTimeoutMs, ct)
+                .ConfigureAwait(false))
+        {
+            throw Missing("the e-mail box", _options.UsernameSelectors);
+        }
+
+        // BKR asks for the two credentials on two SCREENS: the e-mail, then
+        // "Start inzage", then the password on a page that shows the e-mail
+        // back read-only. CONFIRMED live - the password box does not exist
+        // until the first button is clicked, so filling both up front finds
+        // nothing and reports the page as changed.
+        //
+        // Probed rather than assumed. A single-page form would be handled by
+        // the first attempt, so this survives BKR moving in either direction
+        // and a layout change does not need a release. The probe is short
+        // because on the real page it always misses, and that wait is pure
+        // latency on every sign-in.
+        if (!await page.FillAsync(_options.PasswordSelectors, password, _options.ProbeMs, ct).ConfigureAwait(false))
+        {
+            // Advancing the wizard submits the e-mail, so the account is
+            // touched from here. Latched first: a lease lost between the click
+            // and the next line would requeue a sign-in that already reached
+            // BKR, and a retried sign-in is how an account gets locked.
+            ctx.CredentialSubmitted();
+
+            if (!await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct)
+                    .ConfigureAwait(false))
+            {
+                throw Missing("the 'Start inzage' button", _options.SubmitSelectors);
+            }
+
+            if (!await page.FillAsync(_options.PasswordSelectors, password, _options.SelectorTimeoutMs, ct)
+                    .ConfigureAwait(false))
+            {
+                // Both layouts have now been tried, so this is a real shape
+                // change rather than the wizard we were expecting.
+                throw Missing(
+                    "the password box, on either the first or the second screen", _options.PasswordSelectors);
+            }
+        }
+
+        // Idempotent, so the two-screen path above having latched already is
+        // fine.
+        ctx.CredentialSubmitted();
+
+        if (!await page.ClickAsync(_options.SubmitSelectors, _options.SelectorTimeoutMs, ct).ConfigureAwait(false))
+        {
+            throw Missing("the sign-in button", _options.SubmitSelectors);
+        }
+
+        // Tier two: no seed, so the six digits have to come from a person.
+        // Asked for rather than streamed - a code box is a question the
+        // challenge protocol already carries well, and streaming a whole
+        // browser to type six digits is the worse experience.
+        var code = seed is null
+            ? await AskForCodeAsync(ctx, ct).ConfigureAwait(false)
+            : seed.Now(_time);
+
+        if (!await page.FillAsync(_options.CodeSelectors, code, _options.SelectorTimeoutMs, ct).ConfigureAwait(false))
+        {
+            throw Missing("the code box", _options.CodeSelectors);
+        }
+
+        if (!await page.ClickAsync(_options.CodeSubmitSelectors, _options.SelectorTimeoutMs, ct).ConfigureAwait(false))
+        {
+            throw Missing("the code's submit button", _options.CodeSubmitSelectors);
+        }
+
+        ctx.Progress(JobStep.Finalizing);
+
+        var landed = await watcher.WaitAsync(TimeSpan.FromSeconds(_options.SignInSeconds), ct).ConfigureAwait(false);
+
+        if (landed is null)
+        {
+            // Never "wrong password": a code the register refused and a
+            // password it refused look identical from here, and telling
+            // somebody to reset a password that was fine leaves the real
+            // problem undiagnosed. The caller turns this into a streamed
+            // hand-over, where the page itself can say which it was.
+            throw new ConnectorException(
+                ErrorCode.MfaFailed,
+                $"{ProviderId}: the sign-in did not reach the portal after the code was submitted");
+        }
+
+        return await SignedAsync(ctx, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// BKR's own page, streamed to whoever owns the account.
+    ///
+    /// Ends when the browser reaches the portal, which is the same terminal
+    /// signal the typed path settles on - so somebody who signs in and never
+    /// returns to the consumer's UI still finishes.
+    /// </summary>
+    private async Task<LoginResult> LiveSignInAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
+    {
+        // Whatever route arrived here, the page must hold no secret before it
+        // is photographed: the redactor refuses to shoot a page while a field
+        // the manifest calls secret has content in it, so a password left in
+        // the box would relay a live view of nothing at all.
+        await page.ClearSecretsAsync(ct).ConfigureAwait(false);
+
+        ctx.CredentialSubmitted();
+        ctx.Progress(JobStep.AwaitingHuman);
+
+        using var view = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        var asked = ctx.AskAsync(new Challenge
+        {
+            Type = ChallengeType.LiveView,
+            PromptKey = MessageKeys.LiveLogin,
+            ExpiresAt = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds),
+        }, view.Token);
+
+        var poll = TimeSpan.FromSeconds(_options.SettlePollSeconds);
+        var deadline = _time.GetUtcNow().AddSeconds(_options.LiveLoginSeconds);
+
+        try
+        {
+            while (_time.GetUtcNow() < deadline)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null)
+                {
+                    ctx.Progress(JobStep.Finalizing);
+                    return await SignedAsync(ctx, ct).ConfigureAwait(false);
+                }
+
+                if (asked.IsCompleted) break;
+            }
+
+            throw ConnectorException.Blocked(
+                $"{ProviderId}: the live sign-in ended without reaching the portal");
+        }
+        finally
+        {
+            await view.CancelAsync().ConfigureAwait(false);
+            _ = asked.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+        }
+    }
+
+    private async Task<string> AskForCodeAsync(IJobContext ctx, CancellationToken ct)
+    {
+        ctx.Progress(JobStep.AwaitingHuman);
+
+        var answer = await ctx.AskAsync(new Challenge
+        {
+            Type = ChallengeType.MfaCode,
+            PromptKey = MessageKeys.BkrCode,
+            Length = Totp.DefaultDigits,
+            ExpiresAt = _time.GetUtcNow().AddSeconds(_options.CodeChallengeSeconds),
+        }, ct).ConfigureAwait(false);
+
+        var code = answer.Value?.Trim();
+
+        return string.IsNullOrWhiteSpace(code)
+            ? throw new ConnectorException(ErrorCode.MfaFailed, $"{ProviderId}: no code was given")
+            : code;
+    }
+
+    public async Task<FetchResult> FetchAsync(IJobContext ctx, ResourceRequest request, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(ctx);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!string.Equals(request.ResourceId, CreditsResource, StringComparison.Ordinal))
+        {
+            throw ConnectorException.Unsupported($"{ProviderId}: no resource '{request.ResourceId}'");
+        }
+
+        ctx.Progress(JobStep.Downloading);
+
+        // One page. The portal's own print block carries every credit's full
+        // detail and the consumer's own record, so walking a detail page per
+        // credit would be five extra requests for data already in hand.
+        var page = await ctx.Browser.PageAsync(ct).ConfigureAwait(false);
+        await page.GotoAsync(_options.PortalUrl, new() { Timeout = _options.SelectorTimeoutMs }).ConfigureAwait(false);
+
+        var html = await page.ContentAsync().ConfigureAwait(false);
+
+        ctx.Progress(JobStep.Parsing);
+
+        var credits = Credits(page.Url, html, ctx.SessionId);
+
+        ctx.Progress(JobStep.Normalizing);
+
+        return new FetchResult
+        {
+            Registrations = credits,
+            Complete = true,
+            Via = "portal",
+            Raw = request.WantsRaw
+                ? new Dictionary<string, string>(StringComparer.Ordinal)
+                : new Dictionary<string, string>(StringComparer.Ordinal),
+        };
+    }
+
+    /// <summary>
+    /// The cookie jar IS the session, so it has to travel.
+    ///
+    /// B2C hands the portal an id_token by form_post and the portal answers
+    /// with its own cookie; the browser is never given a token we could store
+    /// instead. A login that returned only a device id looked like it had
+    /// succeeded - it says "Connected" and the bundle is real - and then every
+    /// fetch opened a fresh browser with no cookies, landed on the sign-in
+    /// page, and reported the portal as rebuilt.
+    /// </summary>
+    /// <summary>
+    /// What the page we landed on actually means.
+    ///
+    /// Behind a seam rather than inline in the fetch, because the decision is
+    /// the part worth testing and the browser plumbing around it is not: a
+    /// dead session and a rebuilt portal BOTH arrive as "no print block", they
+    /// call for opposite responses, and only the URL tells them apart.
+    /// </summary>
+    internal IReadOnlyList<CreditRegistration> Credits(string? url, string? html, string sessionId)
+    {
+        // Checked before the parser, which cannot tell: the portal bounces a
+        // signed-out visitor to B2C, and reporting that as "the provider
+        // changed its site" sends the user to wait for an engineer when what
+        // they need is a sign-in button.
+        if (url is not null && url.Contains(_options.LoginHost, StringComparison.OrdinalIgnoreCase))
+        {
+            throw ConnectorException.SessionExpired(
+                $"{ProviderId}: the portal sent us back to the sign-in page, so the stored session is over. " +
+                "BKR issues no refresh token, so this needs a new sign-in.");
+        }
+
+        return BkrCreditParser.Parse(html, _options, sessionId);
+    }
+
+    private async Task<LoginResult> SignedAsync(IJobContext ctx, CancellationToken ct)
+    {
+        var storageState = await ctx.Browser.StorageStateAsync(ct).ConfigureAwait(false);
+
+        return new LoginResult
+        {
+            Material = new SessionMaterial
+            {
+                StorageState = storageState,
+                DeviceId = ctx.Material?.DeviceId ?? Guid.NewGuid().ToString(),
+            },
+            Account = new ProviderAccount { DisplayName = Manifest.Name },
+            ExpiresAt = _time.GetUtcNow().AddSeconds(BkrManifest.SessionTtlSeconds),
+        };
+    }
+
+    /// <summary>
+    /// The stored seed, if there is one. A seed that cannot be read is a
+    /// refusal rather than a silent fall back to asking: somebody who pasted
+    /// their authenticator's export deserves to be told it was not usable,
+    /// not to be quietly prompted for six digits forever.
+    /// </summary>
+    private static TotpSecret? ReadSeed(IJobContext ctx)
+    {
+        var raw = Optional(ctx, "totp");
+        return raw is null ? null : TotpSecretReader.Read(raw);
+    }
+
+    private static string? Optional(IJobContext ctx, string key) =>
+        ctx.Inputs.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
+
+    private static ConnectorException Missing(string what, IReadOnlyList<string> selectors) =>
+        ConnectorException.ProviderChanged(
+            $"{ProviderId}: no element for {what}; tried [{string.Join(", ", selectors)}]");
+}

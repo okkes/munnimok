@@ -1,0 +1,108 @@
+<!--
+  coolblue order overview. Built from the REAL capture of 2026-08-07 and
+  faithful to its structure, with this account's products, ids and dates
+  replaced.
+
+  Everything here that looks like noise is the point:
+
+  * Every class is a css-<hash> emitted by CSS-in-JS, and the inline
+    data-emotion style elements beside them are what the real page looks like.
+    They change on Coolblue's next deploy, so NO SELECTOR MAY USE THEM. The
+    fixture keeps them so a reader that quietly starts depending on one fails
+    here.
+  * THE DATE IS NOT NEXT TO ITS LABEL. The card writes the words, then React's
+    empty-comment separator, then a colon, and closes the paragraph; the date
+    opens the NEXT one. On the first card of every page - and only the first -
+    emotion emits its 406-character style block for that paragraph's class in
+    between, because that is the first use of the class. An earlier version of
+    this fixture put the words and the date in one string with a space between
+    them, and the reader built against it matched nothing at all on any real
+    page. Both shapes are below.
+  * NOTHING IN THIS COMMENT MAY BE A LITERAL THE READER LOOKS FOR. Comments are
+    stripped before parsing, but only whole ones - and this file's own
+    commentary once contained a style tag and an empty comment, which ended it
+    early and fed its prose to the parser as content.
+  * The overview states NO MONEY. Not a total, not a line price. The only euro
+    sign on the real 610KB page sits inside the flight payload, kept below for
+    exactly that reason - a reader that goes looking for money on this page
+    must find the wrong thing and be caught.
+  * Order three has TWO invoices and order two has NONE.
+  * The account nav links to /mijn-facturen AND /mijn-facturen/2025 - both
+    pages, neither a document. The second exists so a pattern anchored on
+    the word rather than the /mijn-factuur/ path segment is caught.
+  * Order one links its single invoice TWICE, which is what Coolblue really
+    does: an invisible overlay anchor beside the visible one.
+  * THE WHOLE PAGE APPEARS TWICE. Below the markup a browser paints, Next.js
+    pushes the same three orders again as React Server Component flight data,
+    with the app's Dutch translation dictionary alongside - and that dictionary
+    DEFINES the word "Totaalbedrag" on a page that states no total at all.
+    Reading it would find a label with no value, or an order twice.
+-->
+<!DOCTYPE html>
+<html lang="nl">
+<head><title>Bestellingen en facturen | Coolblue</title></head>
+<body>
+<nav>
+  <a href="/mijn-coolblue-account/mijn-facturen">Facturen</a>
+  <a href="/mijn-coolblue-account/mijn-facturen/2025">Facturen 2025</a>
+</nav>
+<main>
+  <div class="css-4miz4d">
+    <p class="css-1x2y3z">Besteld op<!-- -->:</p><style data-emotion="css i623zk">.css-i623zk{margin:0;font-size:var(--cb-font-size-md);line-height:var(--cb-line-height-500);font-family:"Open Sans","Arial","Helvetica","Verdana",sans-serif;font-style:normal;font-weight:var(--cb-font-weight-regular);color:var(--cb-color-font-base);-webkit-text-decoration:none;text-decoration:none;overflow-wrap:break-word;}</style><p class="css-i623zk">15 december 2025</p>
+    <div class="css-nqc4c6">
+      <img alt="" loading="lazy" src="https://image.coolblue.nl/max/100xauto/products/1900001"/>
+      <h2 class="css-807ot0">Testmerk Koelkast RB100</h2>
+    </div>
+    <div class="css-nqc4c6">
+      <a href="/mijn-coolblue-account/orderoverzicht/80000001"
+         aria-label="Bekijk bestelling met product: Testmerk Koelkast RB100" class="css-ov5677"></a>
+      <a href="/mijn-coolblue-account/orderoverzicht/80000001"
+         aria-label="Bekijk bestelling met product: Testmerk Koelkast RB100" class="css-j23zfs">
+        <span class="css-1u8qly9">Bekijk bestelling</span></a>
+      <div><a download="1300000001.pdf" href="/mijn-coolblue-account/mijn-factuur/80000001/1300000001" aria-label="Download factuur voor bestelling: 80000001" class="css-ov5677"></a><a download="1300000001.pdf" href="/mijn-coolblue-account/mijn-factuur/80000001/1300000001" aria-label="Download factuur voor bestelling: 80000001" class="css-j23zfs"><span class="css-1u8qly9">Factuur</span></a></div>
+    </div>
+  </div>
+  <div class="css-4miz4d">
+    <p class="css-1x2y3z">Besteld op<!-- -->:</p><p class="css-i623zk">22 september 2025</p>
+    <div class="css-nqc4c6">
+      <img alt="" loading="lazy" src="https://image.coolblue.nl/max/100xauto/products/1900002"/>
+      <h2 class="css-807ot0">Testmerk Waterkoker WK20</h2>
+    </div>
+    <div class="css-nqc4c6">
+      <a href="/mijn-coolblue-account/orderoverzicht/80000002"
+         aria-label="Bekijk bestelling met product: Testmerk Waterkoker WK20" class="css-ov5677"></a>
+      <a href="/mijn-coolblue-account/orderoverzicht/80000002"
+         aria-label="Bekijk bestelling met product: Testmerk Waterkoker WK20" class="css-j23zfs">
+        <span class="css-1u8qly9">Bekijk bestelling</span></a>
+
+    </div>
+  </div>
+  <div class="css-4miz4d">
+    <p class="css-1x2y3z">Besteld op<!-- -->:</p><p class="css-i623zk">5 juli 2025</p>
+    <div class="css-nqc4c6">
+      <img alt="" loading="lazy" src="https://image.coolblue.nl/max/100xauto/products/1900003"/>
+      <h2 class="css-807ot0">Testmerk Hoofdtelefoon HT30</h2>
+    </div>
+    <div class="css-nqc4c6">
+      <a href="/mijn-coolblue-account/orderoverzicht/80000003"
+         aria-label="Bekijk bestelling met product: Testmerk Hoofdtelefoon HT30" class="css-ov5677"></a>
+      <a href="/mijn-coolblue-account/orderoverzicht/80000003"
+         aria-label="Bekijk bestelling met product: Testmerk Hoofdtelefoon HT30" class="css-j23zfs">
+        <span class="css-1u8qly9">Bekijk bestelling</span></a>
+      <div><a download="1300000003.pdf" href="/mijn-coolblue-account/mijn-factuur/80000003/1300000003" aria-label="Download factuur voor bestelling: 80000003" class="css-j23zfs"><span class="css-1u8qly9">Factuur</span></a></div><div><a download="1300000004.pdf" href="/mijn-coolblue-account/mijn-factuur/80000003/1300000004" aria-label="Download factuur voor bestelling: 80000003" class="css-j23zfs"><span class="css-1u8qly9">Factuur</span></a></div>
+    </div>
+  </div>
+</main>
+<nav aria-label="Paginering">
+  <a href="/mijn-coolblue-account/orderoverzicht?page=2">2</a>
+</nav>
+<footer>
+  <a href="https://accounts.coolblue.nl/uitloggen">Uitloggen</a>
+  <p>&copy; 1999 - 2026 - Coolblue B.V.</p>
+</footer>
+<script>
+  self.__next_f.push([1, "{\"vriendenbonus\":{\"body\":\"Het minimale bestedingsbedrag is €50.\"},\"orderDetails\":{\"paymentDetails\":\"Betalingsdetails\",\"totalAmount\":\"Totaalbedrag\",\"subTotal\":\"Subtotaal\",\"deliveryCost\":\"Bezorging\",\"orderedOn\":\"Besteld op\"}}"])
+  self.__next_f.push([1, "12:[\"$\",\"div\",null,{\"children\":[[\"$\",\"a\",null,{\"href\":\"/mijn-coolblue-account/orderoverzicht/80000001\",\"children\":\"Bekijk bestelling\"}],[\"$\",\"p\",null,{\"children\":\"15 december 2025\"}],[\"$\",\"a\",null,{\"href\":\"/mijn-coolblue-account/orderoverzicht/80000002\",\"children\":\"Bekijk bestelling\"}],[\"$\",\"p\",null,{\"children\":\"22 september 2025\"}],[\"$\",\"a\",null,{\"href\":\"/mijn-coolblue-account/orderoverzicht/80000003\",\"children\":\"Bekijk bestelling\"}],[\"$\",\"p\",null,{\"children\":\"5 juli 2025\"}]]}]\n"])
+</script>
+</body>
+</html>

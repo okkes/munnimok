@@ -1,0 +1,35 @@
+{
+  "creditCards": [
+    {
+      "arrangementId": "900012345678",
+      "accountStartDate": "2024-07-05",
+      "maskedCardNumber": "5100 **** **** 0001",
+      "cardStatus": "ACTIVE",
+      "creditCardType": "PRIMARY",
+      "creditCardProductName": "Creditcard Extra",
+      "ascription": "V OORBEELD",
+      "statementsList": [
+        {
+          "startDate": "2026-07-05",
+          "endDate": "2026-08-04",
+          "statementDate": "2026-08-04"
+        },
+        {
+          "startDate": "2026-06-05",
+          "endDate": "2026-07-04",
+          "statementDate": "2026-07-04"
+        }
+      ],
+      "formats": [
+        {
+          "formatCode": "PDF",
+          "formatDescription": "PDF (datum aflopend)"
+        },
+        {
+          "formatCode": "CSV",
+          "formatDescription": "Puntkommagescheiden CSV"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+# The connector agent a household runs on its own machine (#367).
+#
+# One container, every provider pack, attached to the ONE connector control
+# plane of the munni environment the person uses. The app renders this file
+# with the two values filled in — the control plane's address and a one-time
+# enrollment code minted for the signed-in user — and shows it beside the
+# `docker compose up -d` line. Nothing here is a secret once the code has
+# been redeemed: it is single-use and expires in fifteen minutes.
+#
+# Why a person would run this: some parties will only ever talk to a browser
+# on the account holder's own connection (DUO signs in through DigiD, whose
+# operator scores the address; ASN keeps an "edge login" alive in a browser
+# profile). The agent dials OUT to the control plane — no port, no
+# hostname, no certificate, no firewall rule on this machine.
+#
+# What it keeps: `agent_profiles` holds logged-in browser profiles, one per
+# provider, on hardware the person controls; `agent_state` holds the
+# enrollment. An agent that loses its state comes back as a stranger and
+# needs a fresh code. Two agent processes must never share these volumes.
+#
+# Egress is a CLAIM and the control plane believes it: the defaults say a
+# Dutch residential line because that is what a home is. A machine in a
+# data centre must say so (AGENT_EGRESS_KIND=datacenter) or it will be
+# offered work its address fails.
+#
+# stop_grace_period: the agent drains a running job for 20 s and reports an
+# abort for 8 s more; Docker's default 10 s would SIGKILL a Chromium holding
+# a signed-in profile mid-form.
+
+name: munni-connector-agent
+services:
+  agent:
+    image: ${AGENT_IMAGE:-ghcr.io/okkes/munni-connector-agent:latest}
+    restart: unless-stopped
+    shm_size: 1gb
+    init: true
+    stop_grace_period: 45s
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectorAgent__Class: byo
+      ConnectorAgent__Egress__Country: ${AGENT_EGRESS_COUNTRY:-NL}
+      ConnectorAgent__Egress__Kind: ${AGENT_EGRESS_KIND:-residential}
+      ConnectorAgent__BrowserLocale: nl-NL
+      ConnectorAgent__BrowserTimezoneId: Europe/Amsterdam
+      ConnectorAgent__MaxConcurrency: "1"
+      ConnectorAgent__Headless: "false"
+      ConnectorAgent__StateFilePath: /state/agent-state.json
+      ConnectorAgent__ProfileRootDirectory: /profiles
+      ConnectorAgent__AgentName: ${AGENT_NAME:-my computer}
+      # the environment's connector control plane, reached through the munni API's public host
+      ConnectorAgent__Connections__0__Name: munni
+      ConnectorAgent__Connections__0__ControlPlaneBaseUrl: ${CONNECTOR_URL:?set CONNECTOR_URL to the address the app shows}
+      ConnectorAgent__Connections__0__EnrollmentCode: ${ENROLLMENT_CODE:-}
+    volumes:
+      - agent_state:/state
+      - agent_profiles:/profiles
+volumes:
+  agent_state:
+  agent_profiles:

@@ -1,0 +1,301 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using Connector.Kit.Adapters;
+using Connector.Kit.Hosting.Agents;
+using Connector.Kit.Hosting.Data;
+using Connector.Kit.Hosting.Infrastructure;
+using Connector.Kit.Hosting.Providers;
+using Connector.Kit.Hosting.Sessions;
+using Connector.Kit.Jobs;
+using Connector.Kit.Manifests;
+using Connector.Kit.Sessions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+using Microsoft.EntityFrameworkCore;
+
+namespace Connector.Kit.Hosting.Endpoints;
+
+/// <summary>
+/// The catalogue, health and the kill switch.
+///
+/// The catalogue is the only contract a consumer codes against: it renders
+/// login forms from it, decides which resources to offer from it, and knows
+/// before asking whether scheduled sync is offerable. Its digest is an ETag
+/// so a consumer can cache it and revalidate instead of refetching a document
+/// that changes on a deploy at most.
+/// </summary>
+internal static class CatalogEndpoints
+{
+    public static void Map(IEndpointRouteBuilder api, IEndpointRouteBuilder root, ConnectorPlatformOptions platform)
+    {
+        api.MapGet("/providers", async (
+            HttpContext http,
+            IProviderRegistry registry,
+            ProviderStatusService statuses,
+            CancellationToken ct) =>
+        {
+            // Health is read BEFORE the ETag is decided, because health is part
+            // of the document and therefore part of what the ETag identifies.
+            // Hashing the manifests alone made a degraded provider that
+            // recovered answer 304 for ever: the body said "degraded", the card
+            // said "a run that succeeds clears this", and no run ever could.
+            // One indexed read per revalidation is the price of the ETag
+            // meaning what HTTP says it means.
+            var health = await statuses.AllAsync(ct);
+
+            var etag = $"\"{registry.CatalogDigest}:{HealthDigest(health.Values)}\"";
+            if (NotModified(http, etag)) return Results.StatusCode(StatusCodes.Status304NotModified);
+
+            http.Response.Headers.ETag = etag;
+
+            var providers = registry.Manifests.Select(m => Describe(m, health.GetValueOrDefault(m.Id))).ToList();
+
+            return ConnectorResults.Json(new CatalogResponse
+            {
+                Providers = providers,
+                Service = Descriptor(platform, registry),
+            });
+        })
+        // Named here rather than inferred: this handler also answers 304, so
+        // its declared type is the bare IResult the two branches share and the
+        // funnel's own claim never reaches the document.
+        .Produces<CatalogResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status304NotModified);
+
+        api.MapGet("/providers/{id}", async (
+            HttpContext http,
+            string id,
+            IProviderRegistry registry,
+            ProviderStatusService statuses,
+            CancellationToken ct) =>
+        {
+            var manifest = registry.RequireManifest(id);
+            RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
+
+            // Same reason as above: this document carries this provider's
+            // health, so the ETag has to move when that health does.
+            var status = await statuses.GetAsync(manifest.Id, ct);
+
+            var etag = $"\"{registry.CatalogDigest}:{manifest.Id}:{HealthDigest([status])}\"";
+            if (NotModified(http, etag)) return Results.StatusCode(StatusCodes.Status304NotModified);
+
+            http.Response.Headers.ETag = etag;
+            return ConnectorResults.Json(Describe(manifest, status));
+        })
+        // A free-form object, exactly as CatalogResponse.Providers already
+        // declares one: the manifest is serialised through a node so the
+        // document's shape stays the spec's, and a wrapper type here would
+        // describe our storage rather than the contract.
+        .Produces<JsonObject>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status304NotModified);
+
+        // Liveness carries no auth and no data: a probe that needs a
+        // credential is a probe that fails for the wrong reason.
+        root.MapGet("/v1/health", () => ConnectorResults.Json(new HealthResponse
+        {
+            Status = "ok",
+            Version = platform.ServiceVersion,
+        }));
+
+        api.MapGet("/status", async (
+            IProviderRegistry registry,
+            ProviderStatusService statuses,
+            ConnectorDbContext db,
+            TimeProvider time,
+            CancellationToken ct) =>
+        {
+            var health = await statuses.AllAsync(ct);
+            var now = time.GetUtcNow();
+
+            var agents = await db.Agents.AsNoTracking().ToListAsync(ct);
+            var queued = await db.Jobs.CountAsync(j => j.State == JobState.Queued, ct);
+            var running = await db.Jobs.CountAsync(j => j.State == JobState.Leased || j.State == JobState.Running, ct);
+            var awaiting = await db.Jobs.CountAsync(j => j.State == JobState.AwaitingInput, ct);
+
+            return ConnectorResults.Json(new StatusResponse
+            {
+                Service = Descriptor(platform, registry),
+                Providers = [.. health.Values.OrderBy(p => p.ProviderId, StringComparer.Ordinal)],
+                Agents = new AgentPoolView
+                {
+                    Total = agents.Count,
+                    Online = agents.Count(a => AgentLiveness.IsOnline(a, now)),
+                    Revoked = agents.Count(a => a.Revoked),
+                },
+                Queue = new QueueView { Queued = queued, Running = running, AwaitingInput = awaiting },
+            });
+        });
+
+        // The kill switch. Pausing a provider stops new work for every user of
+        // it within one lease poll, and lets the consumer say something true
+        // instead of showing a spinner.
+        api.MapPost("/admin/providers/{id}/status", async (
+            string id,
+            ProviderStatusUpdate update,
+            ProviderStatusService statuses,
+            SessionService sessions,
+            ConnectorDbContext db,
+            CancellationToken ct) =>
+        {
+            var status = await statuses.SetAsync(id, update.State, update.ReasonKey, ct);
+
+            if (update.State == ProviderState.Retired)
+            {
+                // Retired means gone for good, so existing sessions are not
+                // merely paused - they are invalid, and saying so now beats
+                // failing every one of them individually later.
+                var live = await db.Sessions
+                    .Where(s => s.ProviderId == id && s.State != SessionState.Disabled && s.State != SessionState.Expired)
+                    .ToListAsync(ct);
+
+                foreach (var session in live)
+                {
+                    await sessions.TransitionOrTerminateAsync(session, SessionState.Expired, ct);
+                }
+            }
+
+            return ConnectorResults.Json(status);
+        });
+
+        MapCanaries(api);
+    }
+
+    /// <summary>
+    /// The operator's own connections: enrol one, list what they last said,
+    /// forget one.
+    /// </summary>
+    /// <remarks>
+    /// Admin-only, and under <c>/admin</c> beside the kill switch rather than
+    /// on the provider's public surface, because none of this is a consumer's
+    /// business. What it manages is the single credential this platform keeps
+    /// at rest - see <see cref="Data.CanaryRow"/> - so the routes that write it
+    /// sit where the other operator powers do.
+    /// </remarks>
+    private static void MapCanaries(IEndpointRouteBuilder api)
+    {
+        api.MapGet("/admin/canaries", async (CanaryService canaries, CancellationToken ct) =>
+        {
+            var rows = await canaries.AllAsync(ct);
+
+            return ConnectorResults.Json(new CanaryListResponse
+            {
+                Canaries =
+                [
+                    .. rows.Select(row => new CanaryView
+                    {
+                        ProviderId = row.ProviderId,
+                        Resource = row.ResourceId,
+                        IntervalMinutes = row.IntervalMinutes,
+                        LastRunAt = row.LastRunAt,
+                        LastJobId = row.LastJobId,
+                        Intact = row.LastIntact,
+                        Verdict = row.LastVerdict,
+                    }),
+                ],
+            });
+        });
+
+        api.MapPut("/admin/providers/{id}/canary", async (
+            string id,
+            CanaryEnrolmentRequest request,
+            CanaryService canaries,
+            CancellationToken ct) =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            var row = await canaries.EnrolAsync(
+                id, request.Subject, request.Bundle, request.Resource, request.IntervalMinutes, ct);
+
+            // THE BUNDLE IS NEVER ECHOED. It went in; there is no reason for it
+            // to come back out, and a response that carried it would put a live
+            // credential into every proxy log between here and the operator.
+            return ConnectorResults.Json(new CanaryView
+            {
+                ProviderId = row.ProviderId,
+                Resource = row.ResourceId,
+                IntervalMinutes = row.IntervalMinutes,
+                LastRunAt = null,
+                LastJobId = null,
+                Intact = null,
+                Verdict = null,
+            });
+        });
+
+        api.MapDelete("/admin/providers/{id}/canary", async (
+            string id,
+            CanaryService canaries,
+            CancellationToken ct) =>
+            await canaries.RemoveAsync(id, ct) ? Results.NoContent() : Results.NotFound());
+    }
+
+    /// <summary>
+    /// The manifest exactly as the kit defines it, with its health grafted on.
+    ///
+    /// Serialising through a node rather than a wrapper type keeps the
+    /// document's shape identical to the schema in the spec - a consumer
+    /// should never have to unwrap our storage decisions to read a manifest.
+    /// </summary>
+    private static JsonObject Describe(ProviderManifest manifest, ProviderStatus? status)
+    {
+        var node = JsonSerializer.SerializeToNode(manifest, ConnectorJson.Options)!.AsObject();
+        if (status is not null)
+        {
+            node["status"] = JsonSerializer.SerializeToNode(status, ConnectorJson.Options);
+        }
+
+        return node;
+    }
+
+    private static ServiceDescriptor Descriptor(ConnectorPlatformOptions platform, IProviderRegistry registry) => new()
+    {
+        Kinds = registry.Manifests.Select(m => m.Kind).Distinct().OrderBy(k => k.ToString(), StringComparer.Ordinal).ToList(),
+        Version = platform.ServiceVersion,
+        ManifestDigest = registry.CatalogDigest,
+    };
+
+    /// <summary>
+    /// The mutable half of the catalogue's identity.
+    /// </summary>
+    /// <remarks>
+    /// State and reason only, deliberately not <c>Since</c>. A provider that
+    /// has never had an incident carries no stored row and is reported healthy
+    /// "as of now", so a timestamp here would move on every single request and
+    /// the ETag would never match anything - which is the opposite failure to
+    /// the one this fixes, and a worse one for a document consumers are told
+    /// to cache. State and reason are what a consumer branches on; a `since`
+    /// that drifts while nothing has happened carries no information.
+    /// </remarks>
+    /// <summary>
+    /// ASCII unit separator, as a numeric escape rather than a literal so this
+    /// source carries no invisible control characters - the same convention
+    /// <see cref="Connector.Kit.Normalization.ContentHash"/> follows.
+    /// </summary>
+    private const char Separator = (char)0x1F;
+
+    private static string HealthDigest(IEnumerable<ProviderStatus> statuses)
+    {
+        // Ordered, so two servers with the same health agree on the tag and a
+        // load-balanced consumer does not thrash between two of them.
+        var parts = statuses
+            .OrderBy(s => s.ProviderId, StringComparer.Ordinal)
+            .Select(s => $"{s.ProviderId}={s.State}:{s.ReasonKey ?? "-"}");
+
+        var bytes = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(string.Join(Separator, parts)));
+
+        return Convert.ToHexStringLower(bytes)[..16];
+    }
+
+    private static bool NotModified(HttpContext http, string etag)
+    {
+        var presented = http.Request.Headers.IfNoneMatch;
+        foreach (var candidate in presented)
+        {
+            if (candidate is null) continue;
+            if (candidate == "*" || candidate.Split(',').Any(c => c.Trim() == etag)) return true;
+        }
+
+        return false;
+    }
+}

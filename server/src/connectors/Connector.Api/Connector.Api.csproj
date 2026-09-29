@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!--
+    The shopping product's control plane. A shell, deliberately: everything a
+    control plane does lives in Connector.Kit.Hosting, so a behaviour cannot
+    exist here and be silently missing from the bank connector.
+
+    No Playwright reference and no browser binaries. The control plane never
+    touches a provider.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Connector.Api</RootNamespace>
+    <AssemblyName>Connector.Api</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Development settings reach bin/ for `dotnet run` and never reach an
+      image. A development configuration inside a deployed container is a
+      foot-gun: one misspelled environment variable and the service silently
+      falls back to Sqlite and an ephemeral bundle key ring, looking perfectly
+      healthy while it seals people's credentials under a key that dies with
+      the process.
+    -->
+    <Content Update="appsettings.Development.json" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Connector.Kit.Hosting\Connector.Kit.Hosting.csproj" />
+    <ProjectReference Include="..\BankConnector.Adapters\BankConnector.Adapters.csproj" />
+    <ProjectReference Include="..\ShopConnector.Adapters\ShopConnector.Adapters.csproj" />
+    <ProjectReference Include="..\RegistryConnector.Adapters\RegistryConnector.Adapters.csproj" />
+  </ItemGroup>
+
+</Project>

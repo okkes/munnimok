@@ -1,0 +1,25 @@
+<Project>
+  <!-- munni's shared test settings first (coverlet run settings, the 85 % coverage gate) -->
+  <Import Project="$(MSBuildThisFileDirectory)../Directory.Build.props" />
+  <!-- then the connector platform's own build settings -->
+  <Import Project="$(MSBuildThisFileDirectory)../../src/connectors/Directory.Build.props" />
+  <!-- every test project here collects coverage the way Munni.Api.Tests does -->
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+  <!--
+    The per-project MSBuild gate reads ONE report as "the API's" coverage. A
+    connector assembly is exercised by several suites — the kit by six of
+    them — and no single suite's report says how covered it is, so the gate
+    for these projects is server/tests/coverage-gate.mjs: it unions every
+    report of the run and holds each connector assembly to the same 85 %
+    floor (release-images.yml runs it right after dotnet test; so does the
+    Sonar script). Collection stays on; only the per-report check is off.
+  -->
+  <PropertyGroup>
+    <_MunniCollectsCoverage>false</_MunniCollectsCoverage>
+  </PropertyGroup>
+</Project>

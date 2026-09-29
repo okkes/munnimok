@@ -1,0 +1,193 @@
+{
+  "transactions": [
+    {
+      "executionDate": "2026-08-12",
+      "amount": {
+        "currency": "EUR",
+        "value": "-9.99"
+      },
+      "type": {
+        "id": "BA",
+        "description": "Betaalautomaat"
+      },
+      "subject": "SUPERMARKT 0001",
+      "id": "010305900000000010000000",
+      "executionDateTime": "2026-08-12T09:14:02+02:00",
+      "transactionInitiationDateTime": "2026-08-12T08:02:11+02:00",
+      "iconId": "PAY-BA",
+      "counterAccount": {
+        "name": "SUPERMARKT 0001",
+        "accountNumber": {
+          "type": "UNKNOWN",
+          "value": ""
+        }
+      },
+      "subjectLines": [
+        "SUPERMARKT 0001",
+        "Kaartnr: 5100 **** **** 0001 ",
+        "Datum: 12-08-2026 ",
+        "Valutadatum: 12-08-2026"
+      ],
+      "reservation": true,
+      "invoiceLinks": [],
+      "category": {
+        "code": "NL_R_GRO",
+        "description": "Boodschappen & huishouden"
+      },
+      "_links": [
+        {
+          "rel": "pr_from_transaction",
+          "href": "/mb/payments/api/payment-requests"
+        },
+        {
+          "rel": "dispute",
+          "href": "/banking/money-refund?EW=true&transactionId=010305900000000010000000&date=20260812&productAgreementId=11111111-2222-3333-4444-555555555555"
+        }
+      ]
+    },
+    {
+      "executionDate": "2026-08-12",
+      "amount": {
+        "currency": "EUR",
+        "value": "-41.71"
+      },
+      "type": {
+        "id": "BA",
+        "description": "Betaalautomaat"
+      },
+      "subject": "SUPERMARKT 0001",
+      "id": "010305900000000020000000",
+      "executionDateTime": "2026-08-12T09:14:02+02:00",
+      "transactionInitiationDateTime": "2026-08-12T08:02:11+02:00",
+      "iconId": "PAY-BA",
+      "counterAccount": {
+        "name": "SUPERMARKT 0001",
+        "accountNumber": {
+          "type": "UNKNOWN",
+          "value": ""
+        }
+      },
+      "subjectLines": [
+        "SUPERMARKT 0001",
+        "Kaartnr: 5100 **** **** 0001 ",
+        "Datum: 12-08-2026 ",
+        "Valutadatum: 12-08-2026"
+      ],
+      "reservation": false,
+      "invoiceLinks": [],
+      "category": {
+        "code": "NL_R_GRO",
+        "description": "Boodschappen & huishouden"
+      },
+      "endingBalance": {
+        "currency": "EUR",
+        "value": "-1730.01"
+      },
+      "_links": [
+        {
+          "rel": "pr_from_transaction",
+          "href": "/mb/payments/api/payment-requests"
+        },
+        {
+          "rel": "dispute",
+          "href": "/banking/money-refund?EW=true&transactionId=010305900000000020000000&date=20260812&productAgreementId=11111111-2222-3333-4444-555555555555"
+        }
+      ]
+    },
+    {
+      "executionDate": "2026-08-11",
+      "amount": {
+        "currency": "EUR",
+        "value": "-32.30"
+      },
+      "type": {
+        "id": "IC",
+        "description": "Incasso"
+      },
+      "subject": "VOORBEELD TELECOM B.V.",
+      "id": "010305900000000030000000",
+      "executionDateTime": "2026-08-11T09:14:02+02:00",
+      "transactionInitiationDateTime": "2026-08-11T08:02:11+02:00",
+      "iconId": "PAY-IC",
+      "counterAccount": {
+        "name": "VOORBEELD TELECOM B.V.",
+        "accountNumber": {
+          "type": "IBAN",
+          "value": "NL03BANK0000000001"
+        }
+      },
+      "subjectLines": [
+        "Naam: VOORBEELD TELECOM B.V.",
+        "Omschrijving: Klantnr 9.99999999 Factuur 900000000001 | 500000000001",
+        "IBAN: NL03BANK0000000001",
+        "Kenmerk: 500000000001",
+        "Incassant ID: NL99ZZZ000000000001",
+        "Valutadatum: 11-08-2026"
+      ],
+      "reservation": false,
+      "invoiceLinks": [],
+      "category": {
+        "code": "NL_R_UTL",
+        "description": "Vaste lasten"
+      },
+      "endingBalance": {
+        "currency": "EUR",
+        "value": "-1688.3"
+      },
+      "originalMemos": [
+        "Klantnr 9.99999999 Factuur 900000000001 | 500000000001"
+      ],
+      "_links": [
+        {
+          "rel": "pr_from_transaction",
+          "href": "/mb/payments/api/payment-requests"
+        },
+        {
+          "rel": "dispute",
+          "href": "/banking/money-refund?EW=true&transactionId=010305900000000030000000&date=20260811&productAgreementId=11111111-2222-3333-4444-555555555555"
+        }
+      ]
+    },
+    {
+      "executionDate": "2026-08-06",
+      "amount": {
+        "currency": "EUR",
+        "value": "-1205.00"
+      },
+      "type": {
+        "id": "DV",
+        "description": "Diversen"
+      },
+      "subject": "Incasso ING creditcard             ",
+      "id": "010305900000000040000000",
+      "executionDateTime": "2026-08-06T09:14:02+02:00",
+      "transactionInitiationDateTime": "2026-08-06T08:02:11+02:00",
+      "iconId": "PAY-DV",
+      "subjectLines": [
+        "Incasso ING creditcard",
+        "Valutadatum: 06-08-2026"
+      ],
+      "reservation": false,
+      "invoiceLinks": [],
+      "category": {
+        "code": "NL_R_FIN",
+        "description": "Financiën"
+      },
+      "endingBalance": {
+        "currency": "EUR",
+        "value": "-1656"
+      }
+    }
+  ],
+  "availableBalance": {
+    "currency": "EUR",
+    "value": "-1230.01"
+  },
+  "_links": [
+    {
+      "rel": "next",
+      "href": "/v1/agreements/Zm9vYmFyLWZpeHR1cmUtb25seS1ub3QtYS1yZWFsLWFncmVlbWVudC1pZA/transactions?senderref=MOBIEL&curcode=EUR&maxrec=40&showNote=true&showCategory=true&addTransactionLinks=true&cursor=Zm9vYmFyLWZpeHR1cmUtb25seS1ub3QtYS1yZWFsLWFncmVlbWVudC1pZA&productType=NL_CURRENT"
+    }
+  ],
+  "_messages": []
+}

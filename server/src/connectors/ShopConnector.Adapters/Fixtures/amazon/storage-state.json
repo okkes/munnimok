@@ -1,0 +1,105 @@
+{
+  "cookies": [
+    {
+      "name": "session-id",
+      "value": "260-0000000-0000000",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "session-token",
+      "value": "REDACTED-SESSION-TOKEN",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "ubid-acbnl",
+      "value": "261-1111111-1111111",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "lc-acbnl",
+      "value": "nl_NL",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "sst-acbnl",
+      "value": "REDACTED-SST",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "i18n-prefs",
+      "value": "EUR",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "x-acbnl",
+      "value": "REDACTED-AUTHENTICATED-MARKER",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "at-acbnl",
+      "value": "REDACTED-ACCESS-TOKEN",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "sess-at-acbnl",
+      "value": "REDACTED-SESSION-ACCESS-TOKEN",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": true,
+      "secure": true,
+      "sameSite": "Lax"
+    },
+    {
+      "name": "sso-state-acbnl",
+      "value": "REDACTED-SSO-STATE",
+      "domain": ".amazon.nl",
+      "path": "/",
+      "expires": 1798761600,
+      "httpOnly": false,
+      "secure": true,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": []
+}

@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    THE AGENT A PERSON RUNS AT HOME - one container for the whole household.
+
+    The other three agent images each carry one connector's adapters, which
+    is right for the operator's fleet: a pooled bank agent has no business
+    holding shop binaries. It is wrong for the person this platform is
+    actually for. They asked for one agent of their own, and the answer was
+    "three containers, three volumes, three enrollment codes", because the
+    platform is three products - a split that is ours and not theirs.
+
+    So this image carries ALL of them and the kit's connection list attaches
+    it to as many connectors as the household uses. One browser root, one job
+    at a time, one thing to keep running.
+
+    It lives OUTSIDE the three connector folders on purpose. It belongs to
+    none of them and it references all three adapter libraries, so putting it
+    under any one would point that connector's folder at the other two -
+    inverting the direction every other project in this repository depends in
+    - and would bury the one image an ordinary person installs inside the
+    product whose name they happened to look under first.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Connector.Agent</RootNamespace>
+    <AssemblyName>Connector.Agent</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Referenced directly because Program.cs uses the generic host; it also
+         arrives transitively, and depending on that would be luck. -->
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The Web SDK does this for its hosts; the plain one does not, and an
+         agent that publishes without its settings has no control plane to
+         call. -->
+    <Content Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <!--
+      Development settings reach bin/ for `dotnet run` and never reach an
+      image. A development configuration inside a deployed container is a
+      foot-gun: one misspelled environment variable and an agent on a
+      residential box quietly long-polls localhost instead of the connector,
+      looking perfectly healthy while it does it.
+    -->
+    <Content Include="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="Never" DependentUpon="appsettings.json" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Connector.Kit.Agent\Connector.Kit.Agent.csproj" />
+    <ProjectReference Include="..\BankConnector.Adapters\BankConnector.Adapters.csproj" />
+    <ProjectReference Include="..\ShopConnector.Adapters\ShopConnector.Adapters.csproj" />
+    <ProjectReference Include="..\RegistryConnector.Adapters\RegistryConnector.Adapters.csproj" />
+  </ItemGroup>
+
+</Project>

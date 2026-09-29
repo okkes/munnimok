@@ -1,0 +1,3 @@
+"Datum";"Omschrijving";"Rekening";"Rekening naam";"Tegenrekening";"Af Bij";"Bedrag";"Valuta";"Mutatiesoort";"Mededelingen";"Saldo na mutatie"
+"15-02-2026";"Overboeking";"V00000001";"Spaarrekening V. Oorbeeld";"NL01TEST0123456789";"Bij";"500,00";"EUR";"Overschrijving";"";"5.512,34"
+"01-01-2026";"Rente";"V00000001";"Spaarrekening V. Oorbeeld";"";"Bij";"12,34";"EUR";"Rente";"";"5.012,34"

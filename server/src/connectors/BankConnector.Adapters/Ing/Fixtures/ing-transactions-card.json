@@ -1,0 +1,114 @@
+{
+  "transactions": [
+    {
+      "iconId": "CRD-debit",
+      "executionDate": "2026-08-11",
+      "amount": {
+        "currency": "EUR",
+        "value": "-12.55"
+      },
+      "type": {
+        "id": ""
+      },
+      "description": "Aankoop",
+      "id": "",
+      "reservation": false,
+      "cardNumber": "5248XXXXXXXX7201",
+      "merchant": {
+        "name": "SLAGERIJ OZHALK NIJEHO",
+        "country": "NL"
+      },
+      "informationCardFlag": "NORMAL",
+      "_links": [
+        {
+          "rel": "transactiondetails",
+          "href": "/nl/card-transactions/1"
+        }
+      ]
+    },
+    {
+      "iconId": "CRD-debit",
+      "executionDate": "2026-08-11",
+      "amount": {
+        "currency": "EUR",
+        "value": "-12.55"
+      },
+      "type": {
+        "id": ""
+      },
+      "description": "Aankoop",
+      "id": "",
+      "reservation": false,
+      "cardNumber": "5248XXXXXXXX7201",
+      "merchant": {
+        "name": "SLAGERIJ OZHALK NIJEHO",
+        "country": "NL"
+      },
+      "informationCardFlag": "NORMAL",
+      "_links": [
+        {
+          "rel": "transactiondetails",
+          "href": "/nl/card-transactions/2"
+        }
+      ]
+    },
+    {
+      "iconId": "CRD-credit",
+      "executionDate": "2026-08-04",
+      "amount": {
+        "currency": "EUR",
+        "value": "204.18"
+      },
+      "type": {
+        "id": ""
+      },
+      "description": "Inleg",
+      "id": "",
+      "reservation": false,
+      "cardNumber": "5248XXXXXXXX7201",
+      "merchant": {
+        "name": "ING BANK NV",
+        "country": "NL"
+      },
+      "informationCardFlag": "NORMAL",
+      "_links": [
+        {
+          "rel": "transactiondetails",
+          "href": "/nl/card-transactions/3"
+        }
+      ]
+    },
+    {
+      "iconId": "CRD-debit",
+      "executionDate": "2026-08-02",
+      "amount": {
+        "currency": "EUR",
+        "value": "-87.78"
+      },
+      "type": {
+        "id": ""
+      },
+      "description": "Aankoop",
+      "id": "",
+      "reservation": true,
+      "cardNumber": "5248XXXXXXXX7201",
+      "merchant": {
+        "name": "BERKMAN DELFT",
+        "country": "NL"
+      },
+      "informationCardFlag": "NORMAL",
+      "_links": [
+        {
+          "rel": "transactiondetails",
+          "href": "/nl/card-transactions/4"
+        }
+      ]
+    }
+  ],
+  "_links": [
+    {
+      "rel": "self",
+      "href": "/v1/agreements/x3/transactions?maxrec=40"
+    }
+  ]
+}

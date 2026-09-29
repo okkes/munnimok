@@ -1,0 +1,24 @@
+{
+  "currentAccounts": {
+    "internetProxyAccounts": [],
+    "holderAccounts": [
+      {
+        "accountNumber": "NL01INGB0002345678",
+        "encryptedAccountNumber": "Zm9vYmFyLWZpeHR1cmUtb25seS1ub3QtYS1yZWFsLWFncmVlbWVudC1pZA",
+        "name": "Hr V Oorbeeld",
+        "dynamicBalance": "-1730.01",
+        "dynamicBalanceCurrency": "EUR",
+        "type": {
+          "code": "20",
+          "encryptedCode": "Zm9vYmFyLWZpeHR1cmUtb25seS1ub3QtYS1yZWFsLWFncmVlbWVudC1pZA",
+          "description": "Betaalrekening"
+        },
+        "preferred": true,
+        "sequenceNumber": 1,
+        "uuid": "11111111-2222-3333-4444-555555555555",
+        "productType": "NL_BTLRKG"
+      }
+    ]
+  },
+  "accountWithLastDownload": "NL01INGB0002345678"
+}

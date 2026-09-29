@@ -2,7 +2,25 @@
   <Folder Name="/src/">
     <Project Path="src/Munni.Api/Munni.Api.csproj" />
   </Folder>
+  <Folder Name="/src/connectors/">
+    <Project Path="src/connectors/Connector.Kit/Connector.Kit.csproj" />
+    <Project Path="src/connectors/Connector.Kit.Hosting/Connector.Kit.Hosting.csproj" />
+    <Project Path="src/connectors/Connector.Kit.Agent/Connector.Kit.Agent.csproj" />
+    <Project Path="src/connectors/BankConnector.Adapters/BankConnector.Adapters.csproj" />
+    <Project Path="src/connectors/ShopConnector.Adapters/ShopConnector.Adapters.csproj" />
+    <Project Path="src/connectors/RegistryConnector.Adapters/RegistryConnector.Adapters.csproj" />
+    <Project Path="src/connectors/Connector.Api/Connector.Api.csproj" />
+    <Project Path="src/connectors/Connector.Agent/Connector.Agent.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Munni.Api.Tests/Munni.Api.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tests/connectors/">
+    <Project Path="tests/connectors/Connector.Kit.Tests/Connector.Kit.Tests.csproj" />
+    <Project Path="tests/connectors/Connector.Kit.Agent.Tests/Connector.Kit.Agent.Tests.csproj" />
+    <Project Path="tests/connectors/BankConnector.Adapters.Tests/BankConnector.Adapters.Tests.csproj" />
+    <Project Path="tests/connectors/ShopConnector.Adapters.Tests/ShopConnector.Adapters.Tests.csproj" />
+    <Project Path="tests/connectors/RegistryConnector.Adapters.Tests/RegistryConnector.Adapters.Tests.csproj" />
+    <Project Path="tests/connectors/Connector.Api.Tests/Connector.Api.Tests.csproj" />
   </Folder>
 </Solution>
