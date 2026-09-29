@@ -3,26 +3,26 @@ using Munni.Api.Auth;
 using Munni.Api.Data;
 using Munni.Api.Validation;
 
-namespace Munni.Api.Shopping;
+namespace Munni.Api.Connectors;
 
 /// <summary>
-/// Opt-in E2EE sync of store connections (store-connection-sync design,
-/// SC1). The server is DUMB STORAGE plus a tiny approval handshake: it
-/// keeps device public keys, per-device wrapped copies of the user's
-/// Connection Sync Key, and AES-GCM ciphertext of the connection tokens.
-/// No plaintext, no server-side crypto — the server cannot read any of
-/// it, which is the whole point.
+/// Opt-in E2EE sync of connector credential bundles. The server is DUMB
+/// STORAGE plus a tiny approval handshake: it keeps device public keys,
+/// per-device wrapped copies of the user's Connection Sync Key, and the
+/// AES-GCM ciphertext of one connection's credential bundle. No plaintext,
+/// no server-side crypto — the server cannot read any of it, which is the
+/// whole point.
 /// </summary>
 public sealed record RegisterDeviceRequest(string DeviceId, string PublicJwk, string Name);
 public sealed record WrapRequest(string WrappedCsk);
 public sealed record ConnectionCipherRequest(string Cipher);
-public sealed record StoreSyncDeviceDto(string DeviceId, string PublicJwk, string Name, bool HasWrap, DateTimeOffset CreatedAt);
+public sealed record ConnectionSyncDeviceDto(string DeviceId, string PublicJwk, string Name, bool HasWrap, DateTimeOffset CreatedAt);
 
-public static class StoreSyncEndpoints
+public static class ConnectionSyncEndpoints
 {
-    public static void MapStoreSync(this IEndpointRouteBuilder app)
+    public static void MapConnectionSync(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/me/store-sync").RequireAuthorization();
+        var group = app.MapGroup("/me/connection-sync").RequireAuthorization();
         MapDevices(group);
         MapConnections(group);
     }
@@ -36,8 +36,8 @@ public static class StoreSyncEndpoints
         group.MapGet("/devices", async (AppDbContext db, HttpContext http) =>
         {
             var me = http.GetUserId();
-            var devices = await db.StoreSyncDevices.Where(d => d.UserId == me).OrderBy(d => d.CreatedAt).ToListAsync();
-            return Results.Ok(devices.Select(d => new StoreSyncDeviceDto(d.DeviceId, d.PublicJwk, d.Name, d.WrappedCsk != null, d.CreatedAt)));
+            var devices = await db.ConnectionSyncDevices.Where(d => d.UserId == me).OrderBy(d => d.CreatedAt).ToListAsync();
+            return Results.Ok(devices.Select(d => new ConnectionSyncDeviceDto(d.DeviceId, d.PublicJwk, d.Name, d.WrappedCsk != null, d.CreatedAt)));
         });
 
         // approval: an enrolled device publishes the CSK wrapped to another
@@ -45,7 +45,7 @@ public static class StoreSyncEndpoints
         {
             if (request.WrappedCsk.Length is 0 or > 4096) return Results.BadRequest();
             var me = http.GetUserId();
-            var device = await db.StoreSyncDevices.FirstOrDefaultAsync(d => d.UserId == me && d.DeviceId == deviceId);
+            var device = await db.ConnectionSyncDevices.FirstOrDefaultAsync(d => d.UserId == me && d.DeviceId == deviceId);
             if (device is null) return Results.NotFound();
             device.WrappedCsk = request.WrappedCsk;
             await db.SaveChangesAsync();
@@ -56,7 +56,7 @@ public static class StoreSyncEndpoints
         group.MapGet("/devices/{deviceId}/wrap", async (string deviceId, AppDbContext db, HttpContext http) =>
         {
             var me = http.GetUserId();
-            var device = await db.StoreSyncDevices.FirstOrDefaultAsync(d => d.UserId == me && d.DeviceId == deviceId);
+            var device = await db.ConnectionSyncDevices.FirstOrDefaultAsync(d => d.UserId == me && d.DeviceId == deviceId);
             return device?.WrappedCsk is null ? Results.NoContent() : Results.Ok(new { wrappedCsk = device.WrappedCsk });
         });
 
@@ -64,7 +64,7 @@ public static class StoreSyncEndpoints
         group.MapDelete("/devices/{deviceId}", async (string deviceId, AppDbContext db, HttpContext http) =>
         {
             var me = http.GetUserId();
-            db.StoreSyncDevices.RemoveRange(db.StoreSyncDevices.Where(d => d.UserId == me && d.DeviceId == deviceId));
+            db.ConnectionSyncDevices.RemoveRange(db.ConnectionSyncDevices.Where(d => d.UserId == me && d.DeviceId == deviceId));
             await db.SaveChangesAsync();
             return Results.Ok();
         });
@@ -74,10 +74,10 @@ public static class StoreSyncEndpoints
     private static async Task<IResult> RegisterDevice(RegisterDeviceRequest request, AppDbContext db, HttpContext http)
     {
         var me = http.GetUserId();
-        var existing = await db.StoreSyncDevices.FirstOrDefaultAsync(d => d.UserId == me && d.DeviceId == request.DeviceId);
+        var existing = await db.ConnectionSyncDevices.FirstOrDefaultAsync(d => d.UserId == me && d.DeviceId == request.DeviceId);
         if (existing is null)
         {
-            db.StoreSyncDevices.Add(new StoreSyncDevice
+            db.ConnectionSyncDevices.Add(new ConnectionSyncDevice
             {
                 Id = Guid.NewGuid(),
                 UserId = me,
@@ -100,20 +100,20 @@ public static class StoreSyncEndpoints
 
     private static void MapConnections(RouteGroupBuilder group)
     {
-        // connection ciphertext, one blob per connection INSTANCE — keyed by
-        // the instance's uuid (receipts v3), nothing else
-        group.MapPut("/connections/{store}", async (string store, ConnectionCipherRequest request, AppDbContext db, HttpContext http) =>
+        // one bundle ciphertext per connection, keyed by the relay's stable
+        // connection id — the same shape the relay's own bodies must carry
+        group.MapPut("/connections/{connectionId}", async (string connectionId, ConnectionCipherRequest request, AppDbContext db, HttpContext http) =>
         {
-            if (!Guid.TryParseExact(store, "D", out _) || request.Cipher.Length is 0 or > 16384) return Results.BadRequest();
+            if (!ConnectionIds.IsValid(connectionId) || request.Cipher.Length is 0 or > 16384) return Results.BadRequest();
             var me = http.GetUserId();
-            var row = await db.StoreConnCiphers.FirstOrDefaultAsync(c => c.UserId == me && c.Store == store);
+            var row = await db.ConnectionCiphers.FirstOrDefaultAsync(c => c.UserId == me && c.ConnectionId == connectionId);
             if (row is null)
             {
-                db.StoreConnCiphers.Add(new StoreConnCipher
+                db.ConnectionCiphers.Add(new ConnectionCipher
                 {
                     Id = Guid.NewGuid(),
                     UserId = me,
-                    Store = store,
+                    ConnectionId = connectionId,
                     Cipher = request.Cipher,
                     UpdatedAt = DateTimeOffset.UtcNow,
                 });
@@ -130,14 +130,14 @@ public static class StoreSyncEndpoints
         group.MapGet("/connections", async (AppDbContext db, HttpContext http) =>
         {
             var me = http.GetUserId();
-            var rows = await db.StoreConnCiphers.Where(c => c.UserId == me).ToListAsync();
-            return Results.Ok(rows.Select(r => new { store = r.Store, cipher = r.Cipher, updatedAt = r.UpdatedAt }));
+            var rows = await db.ConnectionCiphers.Where(c => c.UserId == me).ToListAsync();
+            return Results.Ok(rows.Select(r => new { connectionId = r.ConnectionId, cipher = r.Cipher, updatedAt = r.UpdatedAt }));
         });
 
-        group.MapDelete("/connections/{store}", async (string store, AppDbContext db, HttpContext http) =>
+        group.MapDelete("/connections/{connectionId}", async (string connectionId, AppDbContext db, HttpContext http) =>
         {
             var me = http.GetUserId();
-            db.StoreConnCiphers.RemoveRange(db.StoreConnCiphers.Where(c => c.UserId == me && c.Store == store));
+            db.ConnectionCiphers.RemoveRange(db.ConnectionCiphers.Where(c => c.UserId == me && c.ConnectionId == connectionId));
             await db.SaveChangesAsync();
             return Results.Ok();
         });
@@ -146,8 +146,8 @@ public static class StoreSyncEndpoints
         group.MapDelete("", async (AppDbContext db, HttpContext http) =>
         {
             var me = http.GetUserId();
-            db.StoreConnCiphers.RemoveRange(db.StoreConnCiphers.Where(c => c.UserId == me));
-            db.StoreSyncDevices.RemoveRange(db.StoreSyncDevices.Where(d => d.UserId == me));
+            db.ConnectionCiphers.RemoveRange(db.ConnectionCiphers.Where(c => c.UserId == me));
+            db.ConnectionSyncDevices.RemoveRange(db.ConnectionSyncDevices.Where(d => d.UserId == me));
             await db.SaveChangesAsync();
             return Results.Ok();
         });

@@ -77,11 +77,6 @@ var connectorsEnabled = connectors == ConnectorPresence.Enabled;
 // the service exits immediately when ImportWatch:* is unconfigured
 builder.Services.AddHostedService<WatchFolderService>();
 
-// store pass-through proxy (receipts design): no secrets, always on —
-// the client brings its own token; the allowlist lives in the endpoint
-builder.Services.AddHttpClient(StoreProxyEndpoints.HttpClientName,
-    client => client.Timeout = TimeSpan.FromSeconds(15));
-
 // Logto Management API (account deletion): activates with Logto:M2m* config
 builder.Services.AddHttpClient("logto-m2m", client => client.Timeout = TimeSpan.FromSeconds(10));
 builder.Services.AddHttpClient("geo", client => client.Timeout = TimeSpan.FromSeconds(4));
@@ -260,7 +255,6 @@ app.MapGet("/health", () => Results.Ok(new
         fcm = pushCaps.Fcm,
         vapidPublicKey = app.Configuration["Push:VapidPublicKey"] ?? "",
         logos = logosEnabled,
-        shopProxy = true,
         ocr = ocrEnabled,
         quotes = true,
         // the Connections hub's "connect a party" door (#367)
@@ -273,7 +267,6 @@ app.MapSocial();
 app.MapSplits();
 app.MapPush();
 app.MapLogos(app.Configuration);
-app.MapStoreProxy();
 if (ocrEnabled) app.MapOcr();
 app.MapQuotes();
 app.MapRates();
@@ -281,7 +274,7 @@ app.MapAccounts();
 app.MapAdmin(gcConfigured, bankingEnabled);
 app.MapControl(gcConfigured, bankingEnabled);
 app.MapCatalog();
-app.MapStoreSync();
+app.MapConnectionSync();
 if (bankingEnabled) app.MapGoCardless();
 ConnectorSetup.Map(app, connectors);
 

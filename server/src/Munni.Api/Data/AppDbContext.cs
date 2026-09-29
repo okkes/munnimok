@@ -25,9 +25,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<GcPendingTx> GcPendingTxs => Set<GcPendingTx>();
     public DbSet<GcInstitutionLogo> GcInstitutionLogos => Set<GcInstitutionLogo>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
-    public DbSet<StoreSyncDevice> StoreSyncDevices => Set<StoreSyncDevice>();
+    public DbSet<ConnectionSyncDevice> ConnectionSyncDevices => Set<ConnectionSyncDevice>();
     public DbSet<UserDevice> UserDevices => Set<UserDevice>();
-    public DbSet<StoreConnCipher> StoreConnCiphers => Set<StoreConnCipher>();
+    public DbSet<ConnectionCipher> ConnectionCiphers => Set<ConnectionCipher>();
     public DbSet<ProviderQuota> ProviderQuotas => Set<ProviderQuota>();
     public DbSet<Split> Splits => Set<Split>();
     public DbSet<SplitMember> SplitMembers => Set<SplitMember>();
@@ -114,15 +114,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         });
         modelBuilder.Entity<GcPendingTx>(e => e.HasKey(x => new { x.GcAccountId, x.EntityId }));
         modelBuilder.Entity<AppSetting>(e => e.HasKey(x => x.Key));
-        modelBuilder.Entity<StoreSyncDevice>(e =>
+        modelBuilder.Entity<ConnectionSyncDevice>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.UserId, x.DeviceId }).IsUnique();
         });
-        modelBuilder.Entity<StoreConnCipher>(e =>
+        modelBuilder.Entity<ConnectionCipher>(e =>
         {
             e.HasKey(x => x.Id);
-            e.HasIndex(x => new { x.UserId, x.Store }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.ConnectionId }).IsUnique();
         });
         modelBuilder.Entity<ProviderQuota>(e =>
         {
@@ -262,7 +262,9 @@ public class UserDevice
     public DateTimeOffset? RevokedAt { get; set; }
 }
 
-public class StoreSyncDevice
+/// <summary>A device enrolled in connection sync: its public key and the
+/// Connection Sync Key wrapped to it (null until another device approves)</summary>
+public class ConnectionSyncDevice
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
@@ -273,13 +275,14 @@ public class StoreSyncDevice
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-/// <summary>AES-GCM ciphertext of one store connection's tokens (SC1) —
+/// <summary>AES-GCM ciphertext of one connection's credential bundle —
 /// opaque to the server by design</summary>
-public class StoreConnCipher
+public class ConnectionCipher
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
-    public required string Store { get; set; }
+    /// <summary>the relay's stable connection id</summary>
+    public required string ConnectionId { get; set; }
     public required string Cipher { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

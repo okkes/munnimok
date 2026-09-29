@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FluentValidation;
 using Munni.Api.Accounts;
 using Munni.Api.GoCardless;
@@ -5,6 +6,22 @@ using Munni.Api.Social;
 using Munni.Api.Sync;
 
 namespace Munni.Api.Validation;
+
+/// <summary>
+/// The relay's stable connection id (#367) is opaque to us, so only its
+/// shape is policed — and by ONE rule, because bodies (validators) and
+/// route segments (connection sync) both have to agree on it.
+/// </summary>
+public static partial class ConnectionIds
+{
+    public const int MaxLength = 64;
+    public const string Pattern = "^[A-Za-z0-9._:-]+$";
+
+    public static bool IsValid(string id) => id.Length is > 0 and <= MaxLength && Shape().IsMatch(id);
+
+    [GeneratedRegex(Pattern)]
+    private static partial Regex Shape();
+}
 
 public sealed class RegisterFeedRequestValidator : AbstractValidator<RegisterFeedRequest>
 {
@@ -167,7 +184,7 @@ public sealed class ConnectorLoginRequestValidator : AbstractValidator<Connector
 {
     public ConnectorLoginRequestValidator()
     {
-        RuleFor(r => r.ConnectionId).NotEmpty().MaximumLength(64).Matches("^[A-Za-z0-9._:-]+$");
+        RuleFor(r => r.ConnectionId).NotEmpty().MaximumLength(ConnectionIds.MaxLength).Matches(ConnectionIds.Pattern);
         RuleFor(r => r.Label).MaximumLength(80);
         RuleFor(r => r.CredentialBundle).MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
         RuleFor(r => r.PreferAgent).MaximumLength(64);
@@ -193,7 +210,7 @@ public sealed class ConnectorSyncRequestValidator : AbstractValidator<Connectors
 {
     public ConnectorSyncRequestValidator()
     {
-        RuleFor(r => r.ConnectionId).NotEmpty().MaximumLength(64).Matches("^[A-Za-z0-9._:-]+$");
+        RuleFor(r => r.ConnectionId).NotEmpty().MaximumLength(ConnectionIds.MaxLength).Matches(ConnectionIds.Pattern);
         RuleFor(r => r.Bundle).NotEmpty().MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
         RuleFor(r => r.Since).Matches(@"^\d{4}-\d{2}-\d{2}$").When(r => r.Since is not null).WithMessage("since must be yyyy-mm-dd");
     }
@@ -232,7 +249,7 @@ public sealed class ConnectorEnrollmentRequestValidator : AbstractValidator<Conn
     }
 }
 
-public sealed class RegisterDeviceRequestValidator : AbstractValidator<Shopping.RegisterDeviceRequest>
+public sealed class RegisterDeviceRequestValidator : AbstractValidator<Connectors.RegisterDeviceRequest>
 {
     public RegisterDeviceRequestValidator()
     {
@@ -242,7 +259,7 @@ public sealed class RegisterDeviceRequestValidator : AbstractValidator<Shopping.
     }
 }
 
-public sealed class WrapRequestValidator : AbstractValidator<Shopping.WrapRequest>
+public sealed class WrapRequestValidator : AbstractValidator<Connectors.WrapRequest>
 {
     public WrapRequestValidator()
     {
@@ -250,7 +267,7 @@ public sealed class WrapRequestValidator : AbstractValidator<Shopping.WrapReques
     }
 }
 
-public sealed class ConnectionCipherRequestValidator : AbstractValidator<Shopping.ConnectionCipherRequest>
+public sealed class ConnectionCipherRequestValidator : AbstractValidator<Connectors.ConnectionCipherRequest>
 {
     public ConnectionCipherRequestValidator()
     {
