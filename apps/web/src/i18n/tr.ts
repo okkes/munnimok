@@ -1331,7 +1331,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'space.historyApply': 'Yeni başlangıç tarihini uygula',
   'txform.beforeStart': 'Bu tarih alanın başlangıcından ({date}) önce.',
   'txform.moveStart': 'Alanın başlangıcını bu tarihe taşı',
-  'space.picStompsIcon': 'Bir fotoğraf ayarlıyken simge ve renk görünmez kalır — kullanmak için fotoğrafı kaldır.',  'space.sharingTitle': 'Paylaşım',
+  'space.picStompsIcon': 'Bir fotoğraf ayarlıyken simge ve renk görünmez kalır — kullanmak için fotoğrafı kaldır.',
+  'space.sharingTitle': 'Paylaşım',
   'space.toReview': '{n} incelenecek',
   'space.inviteLockLabel': 'Bu space için davetleri kapat',
   'space.inviteLockSub': 'Bu işaretliyken kimse davet edilemez. Davet etmeye izin vermek için işareti kaldır.',
@@ -1429,7 +1430,8 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   // #303: withdrawing a pending invite asks first
   'space.cancelInviteTitle': 'Davet iptal edilsin mi?',
   'space.cancelInviteBody': '{name} bu daveti artık kabul edemez.',
-  // #302: the locked note links straight to the switch that lifts the lock  'sync.offlineBanner': 'Çevrimdışı — değişiklikler bu cihazda saklanır.',
+  // #302: the locked note links straight to the switch that lifts the lock
+  'sync.offlineBanner': 'Çevrimdışı — değişiklikler bu cihazda saklanır.',
   'sync.offlineShort': 'Çevrimdışı',
   'login.offlineNote': 'Çevrimdışısın — giriş için bağlantı gerekli. Demo ve çevrimdışı mod çalışmaya devam eder.',
   'home.reviewSub': '{n} işlem onayını bekliyor',

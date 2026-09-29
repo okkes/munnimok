@@ -1329,7 +1329,8 @@ export const en = {
   'space.historyApply': 'Apply new start date',
   'txform.beforeStart': 'This date is before the space starts ({date}).',
   'txform.moveStart': 'Move the space start to this date',
-  'space.picStompsIcon': 'While a picture is set, the symbol and color stay out of sight — remove the picture to use them.',  'space.sharingTitle': 'Sharing',
+  'space.picStompsIcon': 'While a picture is set, the symbol and color stay out of sight — remove the picture to use them.',
+  'space.sharingTitle': 'Sharing',
   'space.toReview': '{n} to review',
   'space.inviteLockLabel': 'Disable invitations to this space',
   'space.inviteLockSub': 'While ticked, nobody can be invited. Untick to allow inviting people.',
@@ -1427,7 +1428,8 @@ export const en = {
   // #303: withdrawing a pending invite asks first
   'space.cancelInviteTitle': 'Cancel invitation?',
   'space.cancelInviteBody': '{name} will no longer be able to accept this invitation.',
-  // #302: the locked note links straight to the switch that lifts the lock  'sync.offlineBanner': 'Offline — changes are saved on this device.',
+  // #302: the locked note links straight to the switch that lifts the lock
+  'sync.offlineBanner': 'Offline — changes are saved on this device.',
   'sync.offlineShort': 'Offline',
   'login.offlineNote': 'You’re offline — signing in needs a connection. Demo and offline mode still work.',
   'home.reviewSub': '{n} transactions need your confirmation',

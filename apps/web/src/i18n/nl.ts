@@ -1331,7 +1331,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'space.historyApply': 'Nieuwe startdatum toepassen',
   'txform.beforeStart': 'Deze datum ligt vóór de start van de ruimte ({date}).',
   'txform.moveStart': 'Zet de start van de ruimte op deze datum',
-  'space.picStompsIcon': 'Zolang er een foto is ingesteld, blijven het symbool en de kleur buiten beeld — verwijder de foto om ze te gebruiken.',  'space.sharingTitle': 'Delen',
+  'space.picStompsIcon': 'Zolang er een foto is ingesteld, blijven het symbool en de kleur buiten beeld — verwijder de foto om ze te gebruiken.',
+  'space.sharingTitle': 'Delen',
   'space.toReview': '{n} te beoordelen',
   'space.inviteLockLabel': 'Uitnodigingen voor deze space uitschakelen',
   'space.inviteLockSub': 'Zolang dit aan staat, kan niemand worden uitgenodigd. Vink uit om uitnodigen toe te staan.',
@@ -1429,7 +1430,8 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   // #303: withdrawing a pending invite asks first
   'space.cancelInviteTitle': 'Uitnodiging intrekken?',
   'space.cancelInviteBody': '{name} kan deze uitnodiging daarna niet meer accepteren.',
-  // #302: the locked note links straight to the switch that lifts the lock  'sync.offlineBanner': 'Offline — wijzigingen worden op dit apparaat bewaard.',
+  // #302: the locked note links straight to the switch that lifts the lock
+  'sync.offlineBanner': 'Offline — wijzigingen worden op dit apparaat bewaard.',
   'sync.offlineShort': 'Offline',
   'login.offlineNote': 'Je bent offline — inloggen heeft verbinding nodig. Demo en offline-modus werken wel.',
   'home.reviewSub': '{n} transacties wachten op je bevestiging',
