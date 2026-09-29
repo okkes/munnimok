@@ -8,7 +8,7 @@ import { linkAllCounterparties } from '@/application/counterLink';
 import { applyTitleMemory } from '@/application/titleMemory';
 import { linkPaypalFunding } from '@/application/paypalLink';
 import { fetchMyFeedIds } from './feedGateway';
-import { AttachSheet } from './AttachSheet';
+import { AttachSheet, fetchesItself } from './AttachSheet';
 import { EditAccountSheet } from './EditAccountSheet';
 import { ReconcileSheet } from './ReconcileSheet';
 import { StatementImportFlow } from './StatementImportFlow';
@@ -218,14 +218,14 @@ function AccountRowButton({
         )}
         {/* export-vs-upload insight (user request): a recent import of an
             OLD export leaves a silent hole — say where the data ends */}
-        {account.source !== 'gocardless' && daysSince(account.dataThroughDate) > 14 && (
+        {!fetchesItself(account) && daysSince(account.dataThroughDate) > 14 && (
           <span className="block truncate text-[11px] text-warning" data-testid={`account-datathrough-${account.id}`}>
             {t('acct.dataThrough', { when: fmtTimeAgo(account.dataThroughDate!, lang) })}
           </span>
         )}
         {/* #240 r3: "synced fine, zero rows" must say so — an empty
             answer from the bank is a fact, not a healthy silence */}
-        {account.source === 'gocardless' && account.lastFetchReceived === 0 && (
+        {fetchesItself(account) && account.lastFetchReceived === 0 && (
           <span className="block truncate text-[11px] text-warning" data-testid={`account-syncempty-${account.id}`}>
             {t('acct.syncEmpty')}
           </span>

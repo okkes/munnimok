@@ -95,6 +95,9 @@ export interface AccountRow extends SyncEnvelope {
   lastFetchReceived?: number;
   lastFetchDropped?: number;
   iban?: string;
+  /** #367: the party's own masking of a card or wallet number — the
+   *  connector ingest writes it for an account that has no IBAN */
+  maskedNumber?: string;
   bankId?: string;
   color?: string;
   /** user-chosen icon override: '/brands/{slug}.svg' or a logo.dev URL —
@@ -610,6 +613,9 @@ export interface StoreConnRow extends SyncEnvelope {
   spaceId: string; // the owner's store feed
   /** the provider id as the catalogue names it */
   store: string;
+  /** the party's kind, frozen at connect time so the hub sections render
+   *  offline; absent on rows written before banks joined (= a shop) */
+  kind?: 'store' | 'bank' | 'registry';
   displayName: string;
   /** BrandIconPicker result ('brands/….svg' or a logo URL) */
   icon?: string;

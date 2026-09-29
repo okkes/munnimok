@@ -27,6 +27,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
         tr: 'Bağlantılar: her taraf için tek yer. Katalogdan bir mağaza bağla ve tarafın istediği gibi giriş yap — bir kod, bir onay ya da sana aktarılan kendi sayfası — sonra bağlantıya ad ver ve beslediği alanları seç. Giriş bilgilerin sende kalır: munni yalnızca kendi cihazlarında mühürlü bir oturum anahtarı tutar.',
       },
       {
+        en: 'Banks in Connections too: connect ING or ASN through munni’s own platform — ING with the app’s approval, ASN on its own page streamed to you — and the accounts the bank hands over appear under the card, each with an Attach button that lands on the space’s accounts screen with the account already picked. Nothing joins a space by itself.',
+        nl: 'Ook banken in Koppelingen: koppel ING of ASN via munni’s eigen platform — ING met goedkeuring in de app, ASN op de eigen pagina naar je gestreamd — en de rekeningen die de bank overhandigt verschijnen onder de kaart, elk met een koppelknop die op het rekeningenscherm van de space landt met de rekening al gekozen. Niets komt vanzelf in een space.',
+        tr: 'Bağlantılar’da bankalar da var: ING ya da ASN’yi munni’nin kendi platformu üzerinden bağla — ING uygulama onayıyla, ASN sana aktarılan kendi sayfasında — ve bankanın verdiği hesaplar kartın altında belirir; her birinin, alanın hesaplar ekranına hesap seçili olarak inen bir bağla düğmesi vardır. Hiçbir şey kendiliğinden bir alana katılmaz.',
+      },
+      {
         en: 'Fetched receipts bring their invoices along — open the PDF right from the receipt.',
         nl: 'Opgehaalde bonnen nemen hun facturen mee — open de pdf direct vanuit de bon.',
         tr: 'Getirilen fişler faturalarını da getirir — PDF’i doğrudan fişten aç.',

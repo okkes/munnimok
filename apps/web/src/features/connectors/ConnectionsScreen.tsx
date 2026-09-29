@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
+import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
-import { connectorsAvailable, useConnectionOps, useConnections } from '@/application/connections';
-import type { AdoptResult, ConnectionView } from '@/application/connections';
+import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts } from '@/application/connections';
+import type { AdoptResult, ConnectionView, ConnectorAccountView } from '@/application/connections';
+import { setSpaceAttachIntent } from '@/features/accounts/openHandoff';
 import { fmtTimeAgo } from '@/lib/text';
 import { HelpButton } from '@/features/help/HelpButton';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -20,8 +22,38 @@ import { ConnectionSyncCard } from './ConnectionSyncCard';
 import type { SyncReport } from './connectorSync';
 import { kindIcon, partyLogo } from './logos';
 import { errorKey } from './manifestForm';
-import type { JobView, ProviderManifest } from './types';
+import type { JobView, ProviderKind, ProviderManifest } from './types';
 import { useCatalogue } from './useCatalogue';
+
+/** the hub's sections, in the order they read */
+const SECTIONS: { kind: ProviderKind; captionKey: 'conn.banks' | 'conn.shops' | 'conn.registries' }[] = [
+  { kind: 'bank', captionKey: 'conn.banks' },
+  { kind: 'store', captionKey: 'conn.shops' },
+  { kind: 'registry', captionKey: 'conn.registries' },
+];
+
+type Translate = ReturnType<typeof useLang>['t'];
+
+/** what a settled sync brought: bank rows first, else receipts, then what the matcher did with them */
+function okLine(state: SyncReport, t: Translate): string {
+  let text: string;
+  if (state.transactions > 0 || state.accounts > 0) {
+    text = t('conn.syncAddedTx', { n: state.transactions });
+    if (state.accounts > 0) text += ` · ${t('conn.syncAccounts', { n: state.accounts })}`;
+  } else {
+    text = state.added > 0 ? t('conn.syncAdded', { n: state.added }) : t('conn.syncNone');
+  }
+  if (state.linked > 0) text += ` · ${t('conn.syncLinked', { n: state.linked })}`;
+  if (state.proposed > 0) text += ` · ${t('conn.syncProposed', { n: state.proposed })}`;
+  return text;
+}
+
+const REFUSAL_KEYS: Partial<Record<SyncReport['status'], TranslationKey>> = {
+  signin: 'conn.state.signIn',
+  blocked: 'conn.state.blocked',
+  wait: 'conn.state.wait',
+  asking: 'conn.state.asking',
+};
 
 /** a sync attempt's outcome, spoken out loud */
 function SyncResultLine({ id, state }: Readonly<{ id: string; state: 'busy' | SyncReport }>) {
@@ -33,31 +65,8 @@ function SyncResultLine({ id, state }: Readonly<{ id: string; state: 'busy' | Sy
       </span>
     );
   }
-  let text: string;
-  let ok = false;
-  switch (state.status) {
-    case 'ok': {
-      ok = true;
-      text = state.added > 0 ? t('conn.syncAdded', { n: state.added }) : t('conn.syncNone');
-      if (state.linked > 0) text += ` · ${t('conn.syncLinked', { n: state.linked })}`;
-      if (state.proposed > 0) text += ` · ${t('conn.syncProposed', { n: state.proposed })}`;
-      break;
-    }
-    case 'signin':
-      text = t('conn.state.signIn');
-      break;
-    case 'blocked':
-      text = t('conn.state.blocked');
-      break;
-    case 'wait':
-      text = t('conn.state.wait');
-      break;
-    case 'asking':
-      text = t('conn.state.asking');
-      break;
-    default:
-      text = t(errorKey(state.error?.code));
-  }
+  const ok = state.status === 'ok';
+  const text = ok ? okLine(state, t) : t(REFUSAL_KEYS[state.status] ?? errorKey(state.error?.code));
   return (
     <span className={`block text-[11px] ${ok ? 'text-accent-deep' : 'text-negative'}`} data-testid={`conn-result-${id}`}>
       {text}
@@ -72,18 +81,22 @@ interface JobAsk {
   resolve: (value: string | null) => void;
 }
 
+const accountTail = (account: ConnectorAccountView['account']): string =>
+  account.iban ? `…${account.iban.slice(-4)}` : (account.maskedNumber ?? '');
+
 /**
  * Settings → Connections (#367, the hub): every party the user connected,
  * as cards with the party's status and the connection's state, one
- * primary action per state, the spaces it is used in — and the catalogue
- * to connect one more. Shops first; banks and registries join with their
- * slices.
+ * primary action per state, the spaces a shop's receipts flow into or
+ * the accounts a bank handed over — and the catalogue to connect one
+ * more. Banks and shops; registries join with their slice.
  */
 export function ConnectionsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
-  const { store } = useData();
+  const { store, spaceId } = useData();
   const connections = useConnections();
+  const bankAccounts = useConnectorAccounts();
   const ops = useConnectionOps();
   const catalogue = useCatalogue();
   const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
@@ -101,6 +114,7 @@ export function ConnectionsScreen() {
   const signedIn = connectorsAvailable();
   const managed = connections?.find((c) => c.meta.id === manageId) ?? null;
   const spaceNames = new Map((allSpaces ?? []).map((s) => [s.id, s.name]));
+  const kindOf = (view: ConnectionView): ProviderKind => view.meta.kind ?? catalogue.byId.get(view.meta.store)?.kind ?? 'store';
 
   const runSync = async (view: ConnectionView) => {
     setSyncStates((s) => ({ ...s, [view.meta.id]: 'busy' }));
@@ -131,6 +145,12 @@ export function ConnectionsScreen() {
   const openFlow = (manifest: ProviderManifest, reconnectId: string | null) => {
     setCatalogueOpen(false);
     setFlow({ manifest, reconnectId });
+  };
+
+  /** the attach step on the active space's accounts screen, the account already picked (#310) */
+  const attach = (accountId: string) => {
+    setSpaceAttachIntent(accountId);
+    void navigate({ to: '/spaces/$spaceId/accounts', params: { spaceId } });
   };
 
   const stateLine = (view: ConnectionView) => {
@@ -180,10 +200,66 @@ export function ConnectionsScreen() {
     );
   };
 
+  /** a shop's receipts flow into these spaces */
+  const usedIn = (view: ConnectionView) => {
+    const names = (links ?? []).filter((l) => l.instanceId === view.meta.id).map((l) => spaceNames.get(l.spaceId) ?? '').filter(Boolean);
+    if (names.length === 0) return null;
+    return (
+      <div className="mt-1.5 flex flex-wrap items-center gap-1 pl-9" data-testid={`conn-usedin-${view.meta.id}`}>
+        <span className="text-[10px] text-ink-4">{t('conn.usedIn')}</span>
+        {names.map((name) => (
+          <span key={name} className="rounded-full bg-bg-2 px-2 py-0.5 text-[10px] font-medium text-ink-3">
+            {name}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  /** a bank's accounts, each with where it is attached and the door to attach it here */
+  const accountsOf = (view: ConnectionView) => {
+    const mine = (bankAccounts ?? []).filter((a) => a.account.provider === view.meta.store);
+    return (
+      <div className="mt-1.5 pl-9" data-testid={`conn-accounts-${view.meta.id}`}>
+        {mine.length === 0 ? (
+          <span className="block text-[11px] text-ink-4">{t('conn.noAccountsYet')}</span>
+        ) : (
+          mine.map(({ account, attachedTo }) => {
+            const here = attachedTo.some((s) => s.spaceId === spaceId);
+            return (
+              <div key={account.id} className="flex items-center gap-2 py-1" data-testid={`conn-account-${account.id}`}>
+                <Icon name="bank-outline" size={14} color="var(--m-ink-4)" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[12px] text-ink">
+                    {account.name} <span className="text-ink-4">{accountTail(account)}</span>
+                  </span>
+                  {attachedTo.length > 0 && (
+                    <span className="flex flex-wrap gap-1" data-testid={`conn-account-usedin-${account.id}`}>
+                      {attachedTo.map((s) => (
+                        <span key={s.spaceId} className="rounded-full bg-bg-2 px-2 py-0.5 text-[10px] font-medium text-ink-3">
+                          {s.name}
+                        </span>
+                      ))}
+                    </span>
+                  )}
+                </span>
+                {signedIn && !here && (
+                  <Button size="sm" variant="outline" data-testid={`conn-attach-${account.id}`} onClick={() => attach(account.id)}>
+                    {t('conn.attachTo', { space: spaceNames.get(spaceId) ?? '' })}
+                  </Button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    );
+  };
+
   const renderCard = (view: ConnectionView) => {
     const manifest = catalogue.byId.get(view.meta.store);
+    const kind = kindOf(view);
     const logo = view.meta.icon ?? partyLogo(manifest?.logoRef);
-    const usedIn = (links ?? []).filter((l) => l.instanceId === view.meta.id).map((l) => spaceNames.get(l.spaceId) ?? '').filter(Boolean);
     const healthy = view.device?.state === 'active' && view.hasBundle;
     return (
       <div key={view.meta.id} className="border-b border-line-2 px-4 py-3.5 last:border-0" data-testid={`conn-card-${view.meta.id}`}>
@@ -191,7 +267,7 @@ export function ConnectionsScreen() {
           {logo ? (
             <img src={logo} alt="" className="h-6 w-6 rounded object-contain" />
           ) : (
-            <Icon name={kindIcon(manifest?.kind)} size={20} color={healthy ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
+            <Icon name={kindIcon(kind)} size={20} color={healthy ? 'var(--m-accent-deep)' : 'var(--m-ink-3)'} />
           )}
           <span className="min-w-0 flex-1">
             <span className="flex items-center gap-1.5">
@@ -220,16 +296,7 @@ export function ConnectionsScreen() {
             <Icon name="dots-horizontal" size={18} />
           </button>
         </div>
-        {usedIn.length > 0 && (
-          <div className="mt-1.5 flex flex-wrap items-center gap-1 pl-9" data-testid={`conn-usedin-${view.meta.id}`}>
-            <span className="text-[10px] text-ink-4">{t('conn.usedIn')}</span>
-            {usedIn.map((name) => (
-              <span key={name} className="rounded-full bg-bg-2 px-2 py-0.5 text-[10px] font-medium text-ink-3">
-                {name}
-              </span>
-            ))}
-          </div>
-        )}
+        {kind === 'bank' ? accountsOf(view) : usedIn(view)}
       </div>
     );
   };
@@ -257,14 +324,18 @@ export function ConnectionsScreen() {
           </p>
         )}
 
-        {connections && connections.length > 0 && (
-          <>
-            <div className="m-cap mt-4 mb-1 px-1">{t('conn.shops')}</div>
-            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="conn-list">
-              {connections.map(renderCard)}
+        {SECTIONS.map(({ kind, captionKey }) => {
+          const rows = (connections ?? []).filter((c) => kindOf(c) === kind);
+          if (rows.length === 0) return null;
+          return (
+            <div key={kind}>
+              <div className="m-cap mt-4 mb-1 px-1">{t(captionKey)}</div>
+              <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`conn-list-${kind}`}>
+                {rows.map(renderCard)}
+              </div>
             </div>
-          </>
-        )}
+          );
+        })}
 
         {/* the catalogue door — always visible, honest about sign-in */}
         <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface">
@@ -381,7 +452,7 @@ export function ConnectionsScreen() {
       {managed && (
         <ConnectionSheet
           view={managed}
-          kind={catalogue.byId.get(managed.meta.store)?.kind}
+          kind={kindOf(managed)}
           allSpaces={allSpaces ?? []}
           includedSpaceIds={(links ?? []).filter((l) => l.instanceId === managed.meta.id).map((l) => l.spaceId)}
           onClose={() => setManageId(null)}

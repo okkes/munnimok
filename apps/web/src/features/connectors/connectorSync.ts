@@ -20,6 +20,9 @@ export interface SyncReport {
   status: 'ok' | 'signin' | 'blocked' | 'wait' | 'error' | 'asking';
   /** receipts the relay filed this pass */
   added: number;
+  /** bank rows the relay filed this pass (M4) */
+  accounts: number;
+  transactions: number;
   linked: number;
   proposed: number;
   error?: ErrorEnvelope;
@@ -59,7 +62,7 @@ const lastErrorOf = (envelope: ErrorEnvelope): ConnectorLastError => ({
   retryAfterSeconds: envelope.retryAfterSeconds ?? undefined,
 });
 
-const empty = (): SyncReport => ({ status: 'error', added: 0, linked: 0, proposed: 0 });
+const empty = (): SyncReport => ({ status: 'error', added: 0, accounts: 0, transactions: 0, linked: 0, proposed: 0 });
 
 /** pull the rows the relay filed, then match them into every included space */
 async function landAndMatch(storage: StorageBackend, repo: Repo, engine: SyncEngine | null | undefined, connectionId: string): Promise<Pick<SyncReport, 'linked' | 'proposed'>> {
@@ -186,7 +189,14 @@ export async function syncConnection(storage: StorageBackend, repo: Repo, connec
     }
     await patchRow(storage, connectionId, { state: 'active', lastSyncAt: new Date().toISOString(), lastError: undefined });
     const matched = await landAndMatch(storage, repo, options.engine, connectionId);
-    return { ...empty(), status: 'ok', added: landed.ingested?.receipts ?? 0, ...matched };
+    return {
+      ...empty(),
+      status: 'ok',
+      added: landed.ingested?.receipts ?? 0,
+      accounts: landed.ingested?.accounts ?? 0,
+      transactions: landed.ingested?.transactions ?? 0,
+      ...matched,
+    };
   } catch (err) {
     if (err instanceof ConnectorError) return refused(storage, connectionId, err);
     throw err;

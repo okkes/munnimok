@@ -47,9 +47,11 @@ describe('connector copy coverage (EN/NL/TR)', () => {
   const files = csFiles(ROOT);
   const sources = files.map((f) => readFileSync(f, 'utf8'));
 
+  // `connect.*` is what a manifest, a step, a field or a challenge names;
+  // `fetch.*` is what a resource says about itself (a note on the fetch)
   const literal = new Set<string>();
   for (const source of sources) {
-    for (const m of source.matchAll(/"(connect\.[a-z0-9_.]+)"/g)) literal.add(m[1]);
+    for (const m of source.matchAll(/"((?:connect|fetch)\.[a-z0-9_.]+)"/g)) literal.add(m[1]);
   }
   const derived = [
     ...enumMembers(sources, 'ErrorCode').map((c) => `connect.error.${c}`),

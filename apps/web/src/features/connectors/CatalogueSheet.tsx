@@ -37,19 +37,25 @@ export function CatalogueSheet({
   const [query, setQuery] = useState('');
   const device = deviceClass();
 
-  const shops = useMemo(() => {
+  // banks first, then shops; registries join with their slice
+  const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return providers
-      .filter((p) => p.kind === 'store' && p.status.state !== 'retired')
+    const matching = providers
+      .filter((p) => p.status.state !== 'retired')
       .filter((p) => !q || p.name.toLowerCase().includes(q) || p.id.includes(q))
       .sort((a, b) => a.name.localeCompare(b.name));
+    return [
+      { kind: 'bank' as const, captionKey: 'conn.banks' as const, rows: matching.filter((p) => p.kind === 'bank') },
+      { kind: 'store' as const, captionKey: 'conn.shops' as const, rows: matching.filter((p) => p.kind === 'store') },
+    ].filter((g) => g.rows.length > 0);
   }, [providers, query]);
+  const shown = groups.reduce((n, g) => n + g.rows.length, 0);
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange} title={t('conn.catalogueTitle')} size="tall" steady>
       <div className="flex flex-col gap-3 pt-1">
         <SearchField testId="conn-catalogue-search" value={query} onChange={setQuery} placeholder={t('conn.searchParties')} />
-        {error && shops.length === 0 && (
+        {error && shown === 0 && (
           <div className="flex flex-col items-center gap-2 px-4 py-6 text-center" data-testid="conn-catalogue-failed">
             <p className="text-[13px] text-ink-3">{t('conn.catalogueFailed')}</p>
             <Button size="sm" variant="outline" onClick={onRetry}>
@@ -57,11 +63,11 @@ export function CatalogueSheet({
             </Button>
           </div>
         )}
-        {shops.length > 0 && (
-          <>
-            <div className="m-cap px-1">{t('conn.shops')}</div>
-            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="conn-catalogue">
-              {shops.map((manifest) => {
+        {groups.map((group) => (
+          <div key={group.kind}>
+            <div className="m-cap mb-1 px-1">{t(group.captionKey)}</div>
+            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`conn-catalogue-${group.kind}`}>
+              {group.rows.map((manifest) => {
                 const logo = partyLogo(manifest.logoRef);
                 const offered = connectableHere(manifest, device);
                 const ownComputer = needsOwnComputer(manifest);
@@ -98,14 +104,14 @@ export function CatalogueSheet({
                 );
               })}
             </div>
-          </>
-        )}
-        {!loading && !error && shops.length === 0 && (
+          </div>
+        ))}
+        {!loading && !error && shown === 0 && (
           <p className="px-1 py-6 text-center text-[13px] text-ink-4" data-testid="conn-catalogue-empty">
             {t('conn.catalogueEmpty')}
           </p>
         )}
-        {loading && shops.length === 0 && !error && (
+        {loading && shown === 0 && !error && (
           <p className="px-1 py-6 text-center text-[13px] text-ink-4" data-testid="conn-catalogue-loading">
             {t('conn.catalogueLoading')}
           </p>

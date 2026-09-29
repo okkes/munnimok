@@ -132,6 +132,41 @@ describe('AccountsScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('attach-newest-tx').textContent).toContain('2026-06-10'));
   });
 
+  it('a connector-fed account names its party and says when the party answered empty (#367 M4)', async () => {
+    const first = renderApp('/accounts');
+    await screen.findByTestId('accounts-space-head-demo_space');
+    const { MunniDB } = await import('@/db/schema');
+    const { Repo } = await import('@/db/repo');
+    const { DexieBackend } = await import('@/db/backend');
+    const { HlcClock } = await import('@/sync/hlc');
+    const db = new MunniDB('munni_demo');
+    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
+    await repo.upsert('account', 'feed-2', 'feedacct-conn', {
+      name: 'Betaalrekening',
+      type: 'checking',
+      source: 'connector',
+      provider: 'ing',
+      currency: 'EUR',
+      balanceCents: 5000,
+      iban: 'NL69INGB0123456789',
+      lastSyncedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+      // a fetched row's data-through is its sync — an old export warning would be wrong here
+      dataThroughDate: '2026-01-01',
+      lastFetchReceived: 0,
+    });
+    await repo.upsert('accountLink', 'demo_space', 'link-conn', { feedSpaceId: 'feed-2', accountId: 'feedacct-conn', attachedByName: 'Okkes' });
+    db.close();
+    first.unmount();
+
+    renderApp('/accounts');
+    const row = await screen.findByTestId('account-row-feedacct-conn');
+    // fetched by a party: "synced empty" is a fact, the stale-export warning is not
+    expect(screen.getByTestId('account-syncempty-feedacct-conn')).toBeTruthy();
+    expect(screen.queryByTestId('account-datathrough-feedacct-conn')).toBeNull();
+    fireEvent.click(row);
+    expect((await screen.findByTestId('attach-source')).textContent).toContain('Ing');
+  });
+
   it('an icon pick shows up while the attach sheet stays open', async () => {
     // regression: the sheet rendered the entry SNAPSHOT, so a freshly
     // picked icon looked like it did nothing until the screen was reopened

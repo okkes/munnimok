@@ -261,4 +261,73 @@ describe('Connections hub (signed-in user)', () => {
     });
     db.close();
   }, 20_000);
+
+  it('connects a bank: listed under Banks, the sync counts its rows, the fetched account offers the attach step (M4)', async () => {
+    const bank = manifestOf({
+      id: 'mock-bank-simple',
+      name: 'Mock Bank',
+      kind: 'bank',
+      logoRef: 'mock-bank',
+      notesKey: 'connect.mock_bank.notes',
+      resources: [
+        { id: 'accounts', returns: 'account', typicalDurationSeconds: 5, maxRecordsPerFetch: 50 },
+        { id: 'transactions', returns: 'transaction', typicalDurationSeconds: 5, maxRecordsPerFetch: 500, notesKey: 'fetch.asn.notes.whole_export' },
+      ],
+    });
+    const feedAccountOp = {
+      opId: 'srv-acct-mock',
+      spaceId: 'feed-mock',
+      entity: 'account',
+      entityId: 'acct-mock-1',
+      fields: { name: 'Betaalrekening', type: 'checking', source: 'connector', provider: 'mock-bank-simple', currency: 'EUR', balanceCents: 12_345, iban: 'NL00MOCK0000000001', lastSyncedAt: new Date().toISOString() },
+      hlc: '000000100-0000-server',
+    };
+    renderAppAsUser('/connections', {
+      api: {
+        'GET /connectors/providers': () => catalogueOf(bank, manifestOf()),
+        ...feeds,
+        // the relay's ingest wrote the bank's feed: the next pull lists it and hands its account over
+        'GET /me/spaces': () => ['s-user', 'feed-mock'],
+        'GET /me/feeds': () => [{ feedSpaceId: 'feed-mock' }],
+        'GET /sync/feed-mock/pull': (_body, url) => (Number(url.searchParams.get('since') ?? 0) === 0 ? { ops: [feedAccountOp], latestSeq: 1 } : { ops: [], latestSeq: 1 }),
+        'POST /connectors/mock-bank-simple/login': () => ({ sessionId: 'ses_b', state: 'active', bundle: 'sb_v1.bank', notes: [] }),
+        'POST /connectors/mock-bank-simple/sync': () => ({ sessionId: 'ses_b', state: 'active', ingested: { ...NO_INGEST, records: 6, accounts: 1, transactions: 5 } }),
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-add-open'));
+    // the catalogue groups by kind, banks first
+    const banks = await screen.findByTestId('conn-catalogue-bank', {}, { timeout: 5000 });
+    expect(banks.querySelector('[data-testid="conn-party-mock-bank-simple"]')).toBeTruthy();
+    expect(screen.getByTestId('conn-catalogue-store').querySelector('[data-testid="conn-party-mock-store-simple"]')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('conn-party-mock-bank-simple'));
+    // what the fetch says about itself rides the form
+    expect((await screen.findByTestId('connect-resource-note-transactions')).textContent).toContain('one file');
+    fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'me' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+    fireEvent.click(await screen.findByTestId('conn-name-save', {}, { timeout: 5000 }));
+
+    // the card sits under Banks with the fetched account beneath it, unattached
+    const list = await screen.findByTestId('conn-list-bank', {}, { timeout: 5000 });
+    const card = list.querySelector('[data-testid^="conn-card-"]')!;
+    const id = card.getAttribute('data-testid')!.slice('conn-card-'.length);
+    await screen.findByTestId('conn-account-acct-mock-1', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('conn-account-usedin-acct-mock-1')).toBeNull();
+    // no storeConnLink for a bank: its accounts attach one by one
+    const db = await userDb();
+    expect((await db.storeConnLinks.toArray()).filter((l) => l.deleted === 0)).toHaveLength(0);
+    expect((await db.storeConns.toArray()).find((c) => c.deleted === 0)?.kind).toBe('bank');
+    db.close();
+
+    // Sync now speaks bank counts, not receipts
+    fireEvent.click(await screen.findByTestId(`conn-sync-${id}`));
+    await waitFor(() => expect(screen.getByTestId(`conn-result-${id}`).textContent).toContain('5 new transactions'), { timeout: 5000 });
+    expect(screen.getByTestId(`conn-result-${id}`).textContent).toContain('1 accounts');
+
+    // the attach door lands on the space's accounts screen with the account already picked (#310)
+    fireEvent.click(screen.getByTestId('conn-attach-acct-mock-1'));
+    await screen.findByTestId('screen-space-accounts', {}, { timeout: 5000 });
+    expect((await screen.findByTestId('space-attach-focus', {}, { timeout: 5000 })).textContent).toContain('Betaalrekening');
+  }, 25_000);
 });

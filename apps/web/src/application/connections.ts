@@ -14,7 +14,7 @@ import type { SyncOptions, SyncReport } from '@/features/connectors/connectorSyn
 import type { ProviderManifest, SessionView } from '@/features/connectors/types';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
-import type { ConnectorConnRow, ReceiptRow, StoreConnLinkRow, StoreConnRow } from '@/db/types';
+import type { AccountRow, ConnectorConnRow, ReceiptRow, StoreConnLinkRow, StoreConnRow } from '@/db/types';
 
 /**
  * Connections (#367, the hub): a connection is a synced, secret-free
@@ -73,6 +73,39 @@ export function useConnections(): ConnectionView[] | undefined {
         views.push({ meta, device: devices.get(meta.id), hasBundle: !!(await readBundle(store, meta.id)) });
       }
       return views.sort((a, b) => a.meta.displayName.localeCompare(b.meta.displayName));
+    },
+    [],
+  );
+}
+
+/** a bank account the connector platform fetched, with the spaces it is attached to */
+export interface ConnectorAccountView {
+  account: AccountRow;
+  attachedTo: { spaceId: string; name: string }[];
+}
+
+/**
+ * Every account a party fetched for this user (M4): the feed rows with
+ * `source: 'connector'`, joined with their attachments — the hub lists
+ * them under the party's card and offers the attach step for each.
+ */
+export function useConnectorAccounts(): ConnectorAccountView[] | undefined {
+  const { store } = useData();
+  return useQuery(
+    store,
+    async () => {
+      const accounts = (await store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'connector' && !a.archived);
+      if (accounts.length === 0) return [];
+      const spaces = new Map((await store.allRows('space')).filter((s) => s.deleted === 0).map((s) => [s.id, s.name]));
+      const links = (await store.allRows('accountLink')).filter((l) => l.deleted === 0 && !l.archived);
+      return accounts
+        .map((account) => ({
+          account,
+          attachedTo: links
+            .filter((l) => l.accountId === account.id && spaces.has(l.spaceId))
+            .map((l) => ({ spaceId: l.spaceId, name: spaces.get(l.spaceId)! })),
+        }))
+        .sort((a, b) => a.account.name.localeCompare(b.account.name));
     },
     [],
   );
@@ -199,17 +232,22 @@ export function useConnectionOps(): ConnectionOps {
       const displayName = label?.trim() || defaultName(metas, manifest.name);
       await repo.upsert('storeConn', feedId, connectionId, {
         store: manifest.id,
+        kind: manifest.kind,
         displayName,
         providerAccountHash,
         connectedAt: new Date().toISOString().slice(0, 10),
         status: 'ok',
       });
-      // starts included in the connecting space (v2 behavior, user ruling)
-      await repo.upsert('storeConnLink', spaceId, storeConnLinkId(spaceId, connectionId), {
-        instanceId: connectionId,
-        store: manifest.id,
-        displayName,
-      });
+      // a shop's receipts start included in the connecting space (v2
+      // behavior, user ruling); a bank's accounts are attached one by one
+      // on the space's accounts screen, like every other feed account
+      if (manifest.kind === 'store') {
+        await repo.upsert('storeConnLink', spaceId, storeConnLinkId(spaceId, connectionId), {
+          instanceId: connectionId,
+          store: manifest.id,
+          displayName,
+        });
+      }
       void logActivity(storage, repo, spaceId, 'storeConnect', displayName);
       firstSync(connectionId);
       return { connectionId, duplicateOf };

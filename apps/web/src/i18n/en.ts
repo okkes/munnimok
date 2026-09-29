@@ -2250,7 +2250,7 @@ export const en = {
   'conn.signInShort': 'Sign in first',
   'conn.shops': 'Shops',
   'conn.add': 'Connect a party',
-  'conn.addSub': 'Shops first; banks and registries follow.',
+  'conn.addSub': 'Shops and banks; registries follow.',
   'conn.connect': 'Connect',
   'conn.catalogueTitle': 'Connect a party',
   'conn.searchParties': 'Search parties…',
@@ -2453,7 +2453,7 @@ export const en = {
   'receipts.accept': 'Yes, attach',
   'receipts.reject': 'No',
   'receipts.proposedBadge': 'Receipt to check',
-  'acct.sourceConnector': 'Connected through munni',
+  'acct.sourceConnector': 'Fetched by munni from {party}',
   'tour.conn.1t': 'Every party in one place',
   'tour.conn.1b': 'Shops you connect fetch their receipts for you; banks and registries join here too. Each card shows the party’s health and what your connection needs.',
   'tour.conn.2t': 'Connect a party',
@@ -2470,6 +2470,13 @@ export const en = {
   'tour.receipts.2b': 'A receipt that fits a transaction you already reviewed asks first. Yes attaches it; no makes sure that transaction is never proposed again.',
   'tour.receipts.3t': 'Photos become items',
   'tour.receipts.3b': 'Read items from a receipt photo and the line items appear — handled by your own server, stored nowhere else.',
+  'conn.banks': 'Banks',
+  'conn.registries': 'Registries',
+  'conn.attachTo': 'Attach to {space}',
+  'conn.noAccountsYet': 'No accounts yet — sync to fetch them.',
+  'conn.syncAddedTx': '{n} new transactions',
+  'conn.syncAccounts': '{n} accounts',
+  'fetch.asn.notes.whole_export': 'Every account comes down in one file, whatever you filter by — munni keeps only what is new.',
 } as const;
 
 export type TranslationKey = keyof typeof en;
