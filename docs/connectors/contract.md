@@ -50,7 +50,7 @@ omitted.
 
 | Route | What it does |
 | --- | --- |
-| `POST /providers/{id}/status` | the kill switch: `state` (`active`, `paused`, `degraded`, `retired`), `reason_key`; retiring expires every session |
+| `POST /providers/{id}/status` | the kill switch: `state` (`healthy`, `degraded`, `paused`, `retired`), `reason_key`; retiring expires every session |
 | `GET /canaries`, `PUT /providers/{id}/canary`, `DELETE /providers/{id}/canary` | the operator's own connections that prove a provider still works |
 | `GET /agents`, `DELETE /agents/{agentId}` | every agent, whoever owns it; revoke any |
 

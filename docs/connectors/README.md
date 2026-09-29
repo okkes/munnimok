@@ -16,6 +16,7 @@ is a bug in this folder.
 | [architecture.md](architecture.md) | The planes, the tiers, who holds which secret, how a job runs, what is kept and for how long, the security model |
 | [contract.md](contract.md) | The HTTP contract a consumer codes against: headers, routes, the error table, challenges, the agent protocol |
 | [adapters.md](adapters.md) | Every provider the packs ship, what each can and cannot do, and how to add one |
+| [relay.md](relay.md) | The munni API's side (slice M1): configuration, the routes the app calls, subjects and bindings, the event bridge, how records land in the feeds, the operator's routes |
 | [deploy.md](deploy.md) | Running it: the local loop, the images, the household agent, what munni's platform renders |
 | [../connector-integration-plan.md](../connector-integration-plan.md) | The plan that brought it here and the slices that follow (relay, platform, hub, banks, registries, admin) |
 | [research/](research/) | Provider research notes |

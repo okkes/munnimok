@@ -156,6 +156,82 @@ public sealed class CreateRequisitionRequestValidator : AbstractValidator<Create
     }
 }
 
+/// <summary>
+/// The relay's request bodies (#367). Bundles are sealed material a browser
+/// profile can make large, so their cap is generous; everything else is a
+/// name, a key or a typed value. Input VALUES are never inspected beyond
+/// their length: what a user typed into a provider's form is the provider's
+/// business, sealed before it rests anywhere.
+/// </summary>
+public sealed class ConnectorLoginRequestValidator : AbstractValidator<Connectors.ConnectorLoginRequest>
+{
+    public ConnectorLoginRequestValidator()
+    {
+        RuleFor(r => r.ConnectionId).NotEmpty().MaximumLength(64).Matches("^[A-Za-z0-9._:-]+$");
+        RuleFor(r => r.Label).MaximumLength(80);
+        RuleFor(r => r.CredentialBundle).MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
+        RuleFor(r => r.PreferAgent).MaximumLength(64);
+        RuleFor(r => r.IdempotencyKey).MaximumLength(128);
+        RuleFor(r => r.Inputs).Must(SmallMap).When(r => r.Inputs is not null).WithMessage("inputs: at most 32 keys of 64 chars, values of 4096");
+        RuleFor(r => r.Config).Must(SmallMap).When(r => r.Config is not null).WithMessage("config: at most 32 keys of 64 chars, values of 4096");
+    }
+
+    private static bool SmallMap(Dictionary<string, string>? map) =>
+        map is null || (map.Count <= 32 && map.All(p => p.Key.Length is > 0 and <= 64 && p.Value.Length <= 4096));
+}
+
+public sealed class ConnectorAnswerRequestValidator : AbstractValidator<Connectors.ConnectorAnswerRequest>
+{
+    public ConnectorAnswerRequestValidator()
+    {
+        RuleFor(r => r.ChallengeId).NotEmpty().MaximumLength(64);
+        RuleFor(r => r.Value).MaximumLength(4096);
+    }
+}
+
+public sealed class ConnectorSyncRequestValidator : AbstractValidator<Connectors.ConnectorSyncRequest>
+{
+    public ConnectorSyncRequestValidator()
+    {
+        RuleFor(r => r.ConnectionId).NotEmpty().MaximumLength(64).Matches("^[A-Za-z0-9._:-]+$");
+        RuleFor(r => r.Bundle).NotEmpty().MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
+        RuleFor(r => r.Since).Matches(@"^\d{4}-\d{2}-\d{2}$").When(r => r.Since is not null).WithMessage("since must be yyyy-mm-dd");
+    }
+}
+
+public sealed class ConnectorCollectRequestValidator : AbstractValidator<Connectors.ConnectorCollectRequest>
+{
+    public ConnectorCollectRequestValidator()
+    {
+        RuleFor(r => r.Bundle).NotEmpty().MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
+    }
+}
+
+public sealed class ConnectorDisconnectRequestValidator : AbstractValidator<Connectors.ConnectorDisconnectRequest>
+{
+    public ConnectorDisconnectRequestValidator()
+    {
+        RuleFor(r => r.Bundle).MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
+    }
+}
+
+public sealed class ConnectorProviderStatusRequestValidator : AbstractValidator<Connectors.ConnectorProviderStatusRequest>
+{
+    public ConnectorProviderStatusRequestValidator()
+    {
+        RuleFor(r => r.State).Must(Connectors.ConnectorAdminEndpoints.IsState).WithMessage("state must be healthy, degraded, paused or retired");
+        RuleFor(r => r.ReasonKey).MaximumLength(120);
+    }
+}
+
+public sealed class ConnectorEnrollmentRequestValidator : AbstractValidator<Connectors.ConnectorEnrollmentRequest>
+{
+    public ConnectorEnrollmentRequestValidator()
+    {
+        RuleFor(r => r.Name).NotEmpty().MaximumLength(80);
+    }
+}
+
 public sealed class RegisterDeviceRequestValidator : AbstractValidator<Shopping.RegisterDeviceRequest>
 {
     public RegisterDeviceRequestValidator()

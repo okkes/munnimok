@@ -9,6 +9,7 @@ using Munni.Api;
 using Munni.Api.Accounts;
 using Munni.Api.Auth;
 using Munni.Api.Banking;
+using Munni.Api.Connectors;
 using Munni.Api.Data;
 using Munni.Api.Admin;
 using Munni.Api.GoCardless;
@@ -64,6 +65,10 @@ var pushCaps = PushSetup.Register(builder.Services, builder.Configuration);
 
 // bank-data providers (admin-selectable for new consents)
 var (gcConfigured, bankingEnabled) = BankingSetup.Register(builder.Services, builder.Configuration);
+
+// the connector relay (#367): present only when this environment names
+// its control plane; every setting it then needs is checked at start-up
+var connectorsEnabled = ConnectorSetup.Register(builder.Services, builder.Configuration);
 
 // watch-folder importer (user request): CAMT exports dropped into the
 // mounted folder ingest as raw feed rows for the configured owner —
@@ -256,6 +261,8 @@ app.MapGet("/health", () => Results.Ok(new
         shopProxy = true,
         ocr = ocrEnabled,
         quotes = true,
+        // the Connections hub's "connect a party" door (#367)
+        connectors = connectorsEnabled,
     },
 }));
 app.MapSync();
@@ -274,5 +281,6 @@ app.MapControl(gcConfigured, bankingEnabled);
 app.MapCatalog();
 app.MapStoreSync();
 if (bankingEnabled) app.MapGoCardless();
+ConnectorSetup.Map(app, connectorsEnabled);
 
 await app.RunAsync();

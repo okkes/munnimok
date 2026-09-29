@@ -102,6 +102,12 @@ public static class ImportIds
     public static string TransactionId(string iban, string reference) => V5($"tx:{Normalize(iban)}:{reference}").ToString();
     /// <summary>sync-space id of a bank account's feed (matches client feedIds.ts)</summary>
     public static string FeedSpaceId(string iban) => V5($"feed:{Normalize(iban)}").ToString();
+    /// <summary>a PERSONAL feed — the owner's subject in the seed, so the id is
+    /// deterministic for their reconnects and unguessable for anyone else
+    /// (matches client feedIds.ts personalFeedSpaceId: the store feed is
+    /// <c>STORES</c>, the connector registry feed <c>REG</c>, a card or
+    /// wallet without an IBAN its <c>CONN:</c> reference)</summary>
+    public static string PersonalFeedSpaceId(string accountRef, string sub) => V5($"feed:{Normalize(accountRef)}:{sub}").ToString();
     /// <summary>per-space overlay row id for a raw transaction (matches client feedIds.ts)</summary>
     public static string TxMetaId(string spaceId, string txId) => V5($"meta:{spaceId}:{txId}").ToString();
     /// <summary>attachment mirror row id, one per account per space (matches client feedIds.ts)</summary>

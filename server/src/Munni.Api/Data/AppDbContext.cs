@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Accounts;
+using Munni.Api.Connectors;
 using Munni.Api.GoCardless;
 using Munni.Api.Push;
 using Munni.Api.Social;
@@ -32,9 +33,23 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SplitMember> SplitMembers => Set<SplitMember>();
     public DbSet<SplitEntry> SplitEntries => Set<SplitEntry>();
     public DbSet<SplitInvite> SplitInvites => Set<SplitInvite>();
+    public DbSet<ConnectorSession> ConnectorSessions => Set<ConnectorSession>();
+    public DbSet<ConnectorAccountRef> ConnectorAccountRefs => Set<ConnectorAccountRef>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ConnectorSession>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.UserId);
+            // one row per connection: a re-login replaces the session
+            e.HasIndex(x => new { x.UserId, x.Provider, x.ConnectionId }).IsUnique();
+        });
+        modelBuilder.Entity<ConnectorAccountRef>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.UserId);
+        });
         modelBuilder.Entity<User>(e =>
         {
             e.HasKey(x => x.Id);

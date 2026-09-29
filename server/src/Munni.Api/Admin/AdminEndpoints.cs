@@ -18,7 +18,9 @@ public sealed record AdminUserDiagnosisDto(
     List<string> MemberSpaces,
     List<AdminFeedDto> OwnedFeeds,
     List<AdminAttachmentDto> Attachments,
-    List<AdminGcLinkDto> GcLinks);
+    List<AdminGcLinkDto> GcLinks,
+    /// <summary>#367: the user's connector sessions as the relay binds them — ids and state, never a bundle</summary>
+    List<Connectors.AdminConnectorSessionDto>? ConnectorSessions = null);
 public sealed record ProviderQuotaDto(string Provider, string Scope, int? Limit, int? Remaining, DateTimeOffset? ResetAtUtc, DateTimeOffset CapturedAtUtc);
 public sealed record AdminRequisitionDto(
     string RequisitionId,
@@ -115,7 +117,8 @@ public static class AdminEndpoints
             memberSpaces,
             ownedFeedIds.Select(id => new AdminFeedDto(id, maxSeqs.GetValueOrDefault(id))).ToList(),
             attachments,
-            gcLinks));
+            gcLinks,
+            await Connectors.ConnectorAdminEndpoints.SessionsOfAsync(db, user.Id)));
     }
 
     private static async Task<IResult> DeleteUser(

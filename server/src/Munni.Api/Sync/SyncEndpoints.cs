@@ -171,20 +171,18 @@ public static class SyncEndpoints
             {
                 using var keepalive = CancellationTokenSource.CreateLinkedTokenSource(http.RequestAborted);
                 keepalive.CancelAfter(TimeSpan.FromSeconds(25));
-                string? spaceId = null;
+                SyncEvent? evt = null;
                 try
                 {
-                    spaceId = await reader.ReadAsync(keepalive.Token);
+                    evt = await reader.ReadAsync(keepalive.Token);
                 }
                 catch (OperationCanceledException) when (!http.RequestAborted.IsCancellationRequested)
                 {
                     // no events for a while — keepalive comment holds proxies open
                 }
 
-                if (spaceId is not null && !mySpaces.Contains(spaceId)) continue;
-                var frame = spaceId is null
-                    ? ": keepalive\n\n"
-                    : $"data: {JsonSerializer.Serialize(new { spaceId })}\n\n";
+                var frame = FrameFor(evt, userId, mySpaces);
+                if (frame is null) continue;
                 await http.Response.WriteAsync(frame, http.RequestAborted);
                 await http.Response.Body.FlushAsync(http.RequestAborted);
             }
@@ -197,5 +195,19 @@ public static class SyncEndpoints
         {
             events.Unsubscribe(id);
         }
+    }
+
+    /// <summary>
+    /// What one connection writes for an event: a keepalive when there was
+    /// none, the space id when it is one of the caller's spaces, the frame
+    /// itself when it is addressed to the caller — and nothing when the
+    /// event is somebody else's.
+    /// </summary>
+    internal static string? FrameFor(SyncEvent? evt, Guid userId, HashSet<string> mySpaces)
+    {
+        if (evt is null) return ": keepalive\n\n";
+        if (evt.UserId is { } target) return target == userId && evt.Json is not null ? $"data: {evt.Json}\n\n" : null;
+        if (evt.SpaceId is null || !mySpaces.Contains(evt.SpaceId)) return null;
+        return $"data: {JsonSerializer.Serialize(new { spaceId = evt.SpaceId })}\n\n";
     }
 }
