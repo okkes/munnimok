@@ -1,3 +1,4 @@
+import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from '@/db/useQuery';
@@ -913,7 +914,10 @@ export function ReviewPartDeck({
               </button>
             );
           })()}
-          {/* r7: parts link recurring costs, exactly like the card does */}
+          {/* r7: parts link recurring costs, exactly like the card does —
+              #339 (user): only once the part has a real category, like the card's rows */}
+          {!!active.catId && active.catId !== UNCATEGORIZED_ID && (
+          <>
           <button
             data-testid={`deck-rec-${openIdx}`}
             onClick={() => setRecFor(openIdx)}
@@ -934,6 +938,8 @@ export function ReviewPartDeck({
             <span className="text-[11px] text-ink-4">{t('events.linkTitle')}</span>
             <Icon name="pencil-outline" size={13} color="var(--m-ink-4)" />
           </button>
+          </>
+          )}
         </div>
       </div>
 
@@ -1303,16 +1309,14 @@ function BulkConfirmSection({
           redesign): TxRow rows with a checkbox rail, select/unselect all,
           and a row tap opens a compact READ-ONLY detail as a stacked sheet */}
       <Sheet open={open} onOpenChange={setOpen} title={countLine} height={760} dragHandle>
-        <div className="flex items-center justify-between pb-2">
-          <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: similar.length })}</span>
-          <button
-            data-testid="review-bulk-select-all"
-            onClick={() => onChange(all ? new Set() : new Set(similar.map((s) => s.id)))}
-            className="m-tap border-none bg-transparent text-[12px] font-semibold text-accent-deep"
-          >
-            {all ? t('review.bulkUnselectAll') : t('review.bulkSelectAll')}
-          </button>
-        </div>
+        {/* #378: the one select-all row every transaction list wears */}
+        <SelectAllRow
+          total={similar.length}
+          selected={similar.filter((s) => selected.has(s.id)).length}
+          onChange={(next) => onChange(next ? new Set(similar.map((s) => s.id)) : new Set())}
+          testId="review-bulk-select-all"
+          className="mb-1"
+        />
         {/* fixed px so the list scrolls INSIDE the sheet (sheet rules) */}
         <div className="max-h-[620px] overflow-y-auto overscroll-contain" data-testid="review-bulk-list">
           {similar.map((item) => {
@@ -1558,6 +1562,9 @@ export function ReviewScreen() {
   const [partsAttention, setPartsAttention] = useState(false);
   // #309 (user): a refused Confirm marks the REQUIRED counterparty red
   const [counterRequired, setCounterRequired] = useState(false);
+  // #410 (user): a refused Confirm names the missing category under its
+  // row instead of greying the button out
+  const [catRequired, setCatRequired] = useState(false);
   // r7 (user rule): splitting RESETS the card's own decisions — staged
   // edits get a conscious warning before the split flow opens. #330
   // (user): the reset itself now waits for the split editor's DONE —
@@ -1862,6 +1869,7 @@ export function ReviewScreen() {
     setDescExpanded(false);
     setPartsAttention(false);
     setCounterRequired(false);
+    setCatRequired(false);
     setSplitResetOpen(false);
     splitResetArmed.current = false;
     setPickedPeer(null);
@@ -2046,8 +2054,12 @@ export function ReviewScreen() {
     if (!tx || !draft || counterBulk) return;
     if (!draftReady(draft)) {
       // r7: a blocked Confirm POINTS at what holds it back — the deck
-      // badges the parts that still need a category
+      // badges the parts that still need a category; #410 (user): a
+      // single card names the missing category under its row, and a
+      // transfer that has one names its missing counterparty
       if (multiPartSplits(draft)) setPartsAttention(true);
+      else if (!catChosen) setCatRequired(true);
+      else setCounterRequired(true);
       return;
     }
     // #309 (user): a movement category REQUIRES its counterparty — no
@@ -2276,6 +2288,8 @@ export function ReviewScreen() {
                   counterRequired={counterRequired}
                   counterTx={counterTxRow}
                 />
+                {/* #410: the honest reason the Confirm refused, under the category row */}
+                <FormBlockerNote show={catRequired && !catChosen} text={t('review.catRequired')} testId="review-cat-required" className="px-4 pb-2" />
 
                 {/* #339 (user): recurring + event rows appear once a
                     category is chosen — like the loan row, they only
@@ -2397,9 +2411,10 @@ export function ReviewScreen() {
                 variant="primary"
                 className="min-w-0 flex-1"
                 data-testid="review-confirm-btn"
-                // r7: a split whose parts are incomplete keeps the button
-                // TAPPABLE — the tap marks the parts needing attention
-                disabled={!draft || (!draftReady(draft) && !multiPartSplits(draft))}
+                // r7 + #410 (user): the button stays TAPPABLE — the tap
+                // marks the parts needing attention, or names the missing
+                // category / counterparty under its row
+                disabled={!draft}
                 onClick={() => void confirm()}
               >
                 <span className="truncate">

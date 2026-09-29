@@ -1,3 +1,4 @@
+import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
@@ -117,27 +118,14 @@ export function EventAttachScreen() {
         }
       />
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
-        {/* one tap for the whole list, either way */}
-        <div className="flex gap-2 pb-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1"
-            data-testid="eventpick-all"
-            onClick={() => setPicked(new Set(allKeys))}
-          >
-            {t('events.pickAll')}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            className="flex-1"
-            data-testid="eventpick-none"
-            onClick={() => setPicked(new Set())}
-          >
-            {t('events.pickNone')}
-          </Button>
-        </div>
+        {/* #378: the one select-all row every transaction list wears */}
+        <SelectAllRow
+          total={allKeys.length}
+          selected={picked?.size ?? 0}
+          onChange={(next) => setPicked(next ? new Set(allKeys) : new Set())}
+          testId="eventpick-all"
+          className="mb-2"
+        />
         <div className="divide-y divide-line-2 rounded-card border border-line bg-surface px-3 py-1" data-testid="eventpick-list">
           {(suggestions ?? []).flatMap((tx) => {
             // #143: a split offers its PARTS, one checkbox each — the

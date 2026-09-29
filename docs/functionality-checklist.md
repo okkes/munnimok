@@ -36,6 +36,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 
 ## Review
 - [ ] Walk the queue: split leads the card, then category, counterparty (movement confirms require one; the row hides after an explicit plain filing), counter-transaction, recurring + event (appear once a category stands), notes — confirm and skip; titles wrap in full; the category picker can filter BY counter account (pick suggests that account)
+- [ ] Review card, 2026-09-29: Confirm stays tappable — a tap without a category names it under the category row (a transfer with one names its missing counterparty), the deck badges incomplete parts as before (#410); a split part’s recurring and event rows appear once the part has a real category, like the card (#339); every transaction list — the review bulk sheet, the detail’s bulk sheet, an event’s attach picker, the loan and recurring match sheets, the reconcile matches — selects and deselects all with the one SelectAllRow (square check, half-filled while partial, the count on the right) (#378)
 - [ ] Memory pre-fills return; bulk "apply to similar" applies what it promised and resets to select-all on every new card; the per-sibling counter queue holds the deck and counts down
 
 ## Categories

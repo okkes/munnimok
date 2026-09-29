@@ -180,14 +180,16 @@ describe('Events (demo identity)', () => {
     await screen.findByTestId('eventpick-list');
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
 
-    // none → the attach button disarms; all → it arms again
-    fireEvent.click(screen.getByTestId('eventpick-none'));
+    // #378: one row toggles — a full pick clears, an empty pick selects all
+    expect(screen.getByTestId('eventpick-all').dataset.state).toBe('all');
+    fireEvent.click(screen.getByTestId('eventpick-all'));
     expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByTestId('eventpick-all'));
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false));
   }, 20_000);
 
   it('tapping a breakdown category unfolds subs and filters the payments (user request)', async () => {
+    expect(screen.getByTestId('eventpick-all').dataset.state).toBe('none');
     renderApp('/events');
     await screen.findByTestId('screen-events');
     const card = await createEvent('Rome trip', isoDaysAgo(180), isoDaysAgo(160));

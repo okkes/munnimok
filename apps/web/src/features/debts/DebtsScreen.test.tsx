@@ -497,8 +497,8 @@ describe('Debts (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('loanmatch-pick-bulk1') as HTMLInputElement).checked).toBe(true));
 
     // both strong matches arrive picked — the master unpicks, then re-picks
-    const pickAll = screen.getByTestId('loanmatch-pick-all') as HTMLInputElement;
-    expect(pickAll.checked).toBe(true);
+    const pickAll = screen.getByTestId('loanmatch-pick-all');
+    expect(pickAll.dataset.state).toBe('all');
     fireEvent.click(pickAll);
     expect(screen.getByTestId('loanmatch-summary').textContent).toContain('0 selected');
     expect((screen.getByTestId('loanmatch-pick-bulk1') as HTMLInputElement).checked).toBe(false);
