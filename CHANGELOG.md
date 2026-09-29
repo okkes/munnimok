@@ -1,5 +1,46 @@
 # Changelog
 
+## [4.1.0](https://github.com/okkes/munnimok/compare/v4.0.1...v4.1.0) (2026-09-29)
+
+
+### ✨ Features
+
+* **admin,control:** the denied note carries its own Sign out — the fix it names is one tap away ([ea1d9c6](https://github.com/okkes/munnimok/commit/ea1d9c618f5cbdf5c2a0d37a4b0b8376a05e98ed))
+* **goals:** goals draw from a savings pool — the ticked savings accounts, funding never beyond what is unallocated, short-term plans pointed at allocation ([307b49c](https://github.com/okkes/munnimok/commit/307b49c4608cb0f89bd8570ee1bb2ffbbc091906)), closes [#368](https://github.com/okkes/munnimok/issues/368)
+* **native,web:** sign-in on the phone runs in the platform auth session — the scheme callback comes straight back, no "open in munni?" question ([aab5ae4](https://github.com/okkes/munnimok/commit/aab5ae441a24c0e97f392b28e5d825726d438c36))
+* **review:** Confirm stays tappable and names what is missing, split parts gate their rows like the card, one select-all row for every transaction list ([ad1bdc4](https://github.com/okkes/munnimok/commit/ad1bdc49cb3d1b53f356b0aea4618f4698df23c3))
+* **spaces,events:** invitations are switched on the members page, an event with payments offers a quiet find-more, a linked pair's second leg keeps its edge ([c5c630f](https://github.com/okkes/munnimok/commit/c5c630f0dc4ebdc9ec151d686727bcb8413e8160))
+* **ui:** horizontal strips say they scroll, and the desktop shell is one centred frame ([2aa52d2](https://github.com/okkes/munnimok/commit/2aa52d24822e12ea67b537e936e09e9c65193195))
+* **web,infra,wizard:** app links per environment — the container renders its own /.well-known files, the wizard holds the one manual value ([3ead562](https://github.com/okkes/munnimok/commit/3ead5623d6f6d4216175e13eafd5fe8abdf49397))
+* **web:** budget cycles start on their start date — monthly ones reset on a chosen day, weekly ones on the space's first weekday, or with the space period ([236c449](https://github.com/okkes/munnimok/commit/236c4495adda4621944ad4b5dd3a19f1d7d1c8b9))
+* **web:** categories belong to the space they were made in, Other closes the list, siblings never share an icon, copies come per space ([d5d416a](https://github.com/okkes/munnimok/commit/d5d416a72e1683d0504dfecb06d8144fd13049fe))
+* **wizard,admin,api,web:** phone login on the platform scheme, console admin membership, provider-aware bank connections, the leftovers folded in, a push card and a test notification ([a79b9bb](https://github.com/okkes/munnimok/commit/a79b9bb60e006931a3510a26c384fb8b1bab174f))
+
+
+### 🐞 Bug Fixes
+
+* **auth:** the identity wipe closes the live store first, verifies the delete and clears the cached rows and Logto state ([20bf113](https://github.com/okkes/munnimok/commit/20bf11396feae6da6a096280451d8b23055e6461)), closes [#363](https://github.com/okkes/munnimok/issues/363)
+* **ci:** iOS builds follow the config on every push; a missing App Store Connect record is a notice, not an EXPORT FAILED ([f050b00](https://github.com/okkes/munnimok/commit/f050b00885d020d60400e9cfaf27feef4b7af87a))
+* **deps:** the lockfile keeps every platform's optional binaries ([e6a4b4a](https://github.com/okkes/munnimok/commit/e6a4b4a55c22b4e787a206c77137d4a35ce24895))
+* **deps:** update android minor & patch ([e8fa2ec](https://github.com/okkes/munnimok/commit/e8fa2ecc2f4d8ad52c80e5e9e73924626944beee))
+* **home:** every home hook renders its last rows on a tab return — the remount cache covers categories, markers, budgets, events, goals, allocations, insights and the open split ([a788fd1](https://github.com/okkes/munnimok/commit/a788fd1b30589973d30d3bf6898bf366a3d88ae5)), closes [#361](https://github.com/okkes/munnimok/issues/361)
+* **home:** the onboarding flag never seeds from the remount cache — a stale true bounced a returning Home to onboarding ([a0121f0](https://github.com/okkes/munnimok/commit/a0121f0fc071855020dc7dd2d31dbe98136ae6fd)), closes [#361](https://github.com/okkes/munnimok/issues/361)
+* **ios,wizard,consoles:** the archive signs for distribution; a saved sign-in tile enables Verify; admin access says whose account and where ([bb38799](https://github.com/okkes/munnimok/commit/bb3879946d48899da2fbfa88d474908d3c2a7376))
+* **ios,wizard:** a team without an enabled device is named, never archived against; the helper test follows the ISO timestamp ([7052239](https://github.com/okkes/munnimok/commit/70522391d21071d1fee883156da7d51d3b4176cc))
+* **logto:** the console admin joins every tenant organization, not the first one listed ([c94c9ac](https://github.com/okkes/munnimok/commit/c94c9acb677ab32813d1fe04690e7cf5042a2edc))
+* **nas:** the poller drops a stale registry login before pulling, and a deploy the NAS never applied fails the run ([6fa328f](https://github.com/okkes/munnimok/commit/6fa328fef5d6ca9baf0fc97e8b84ee3672b89445))
+* **recurring:** exact-amount tiers under one provider are separate plans, a skipped or drifting charge keeps its rhythm, the due day follows the cadence ([23e9d2a](https://github.com/okkes/munnimok/commit/23e9d2adf9714cbe053cf94571d5944d0f17c012))
+* **ui:** a drag from a text field still closes the sheet, and Discard no longer freezes the app ([1d5d482](https://github.com/okkes/munnimok/commit/1d5d482ffe7eb8c485d62b7e13b2c472803c5379))
+* **vault:** a folder's items are filed one by one — the import endpoint left them unfiled on every run after the first ([2e9d0d3](https://github.com/okkes/munnimok/commit/2e9d0d317c25754d4339f600e1099b731e8ff8c7))
+* **web:** a built-in main's Other closes its list too — a new custom sub landed below Consumption's Other ([30da40e](https://github.com/okkes/munnimok/commit/30da40e7fe0c572311aeb2bfd27d6ce8aa58ea43)), closes [#388](https://github.com/okkes/munnimok/issues/388)
+* **wizard:** a registration block says which sign-in tile to save instead of listing missing secret names ([24a0c27](https://github.com/okkes/munnimok/commit/24a0c2721578cea3355bb01f1dcc9ccfaf7a91e8))
+* **wizard:** a tick on one platform never reaches the other ([55e62ac](https://github.com/okkes/munnimok/commit/55e62ac82d8dd534075cb2b6c6da7376f919e3a3))
+* **wizard:** platforms share nothing, and a tick never starts anything ([ac20845](https://github.com/okkes/munnimok/commit/ac208455a2986ad974d08788d6fe2e9a7d0968bd))
+* **wizard:** registrations verify themselves and survive reloads; a provider without an API takes a done tick; the Access tab of a NAS environment finds its domain ([53c6c93](https://github.com/okkes/munnimok/commit/53c6c937f8be50a6c9f500db7989f66fef72e8fd))
+* **wizard:** the App Store Connect key asks for Admin; Sign in with Apple waits for its App ID and then names every value Apple asks for ([428a897](https://github.com/okkes/munnimok/commit/428a897730d4921c6051401fc3ecc1104759d246))
+* **wizard:** the Bootstrap loads again after the store rename; push asks for nothing and checks the roles; the secrets reveal stays in its card ([ae0beac](https://github.com/okkes/munnimok/commit/ae0beac2f582ef69d0c33abfb39aaf6319b46c69))
+* **wizard:** the phone build sends no empty variable; an environment added after the shared stack takes its platform values from the vault ([23881dc](https://github.com/okkes/munnimok/commit/23881dcdf45fd579785f31336c7293f5ff627a60))
+
 ## [4.0.1](https://github.com/okkes/munnimok/compare/v4.0.0...v4.0.1) (2026-09-17)
 
 
