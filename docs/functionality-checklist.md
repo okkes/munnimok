@@ -72,6 +72,9 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Split session with a friend end to end (invite, expenses, settle)
 - [ ] Friends: add by ID, accept, profile sheet (copy ID, remove)
 
+## Connectors (server platform, #367)
+- [ ] The connector platform lives in the monorepo (2026-09-29, docs/connectors/): one control plane image and one agent image carry every adapter pack (shops, banks, registries); in production the control plane takes only a machine token for its audience (mTLS is gone), `/v1/admin/*` wants the admin scope on top (403 without it), every session/job/ticket/agent route answers only the `X-Connector-Subject` it belongs to (somebody else gets "unknown"), a call that declares `X-Connector-Trigger: schedule` inside the provider's `min_interval_seconds` is answered `rate_limited` with `retry_after_seconds` while a person is never held to it, and an agent on another adapter catalogue (digest) is enrolled, alive, listed as stale and leased nothing; nothing of it is wired into munni's platform, API or app yet (slices M1–M6)
+
 ## Settings & platform
 - [ ] Layout, 2026-09-29: every horizontal strip (filter chips, counter-account chips, currency and asset-class chips, icon and picture tiles, the recurring range tabs) fades at the edge with more content under a small chevron and lifts the fade at the end (#376, ScrollRow); on a wide monitor the shell is one centred frame with the navigation beside the content (#409)
 - [ ] Space settings rows all lead somewhere sane; global settings: profile (account deletion narrates its progress), devices, language (EN/NL/TR), appearance cycle, export, push, tips
