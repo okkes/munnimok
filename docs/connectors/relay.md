@@ -38,9 +38,14 @@ An unconfigured one is simply absent — never a stand-in.
   `{sessionId}` route is 404 `unsupported_resource` for anyone else and for
   an id that does not exist — one answer for both. Sync and disconnect are
   bound through the bundle itself (the connector rejects a foreign subject).
-- **Bundles pass through memory only.** The two tables the relay owns hold
-  ids, state and references; a test walks their properties and the rows
-  after every flow and finds no bundle. Nothing the relay logs carries a body.
+- **Bundles pass through memory only** — with one documented exception. The
+  two tables the relay owns hold ids, state and references; a test walks
+  their properties and the rows after every flow and finds no bundle.
+  The exception is a household agent's bundle (`secret_custody: agent`): it
+  names an agent and a profile and holds no secret, so the relay keeps it
+  on the session row to sync unattended ("Scheduled syncs" below); the
+  same scan proves a client-custody bundle never lands there. Nothing the
+  relay logs carries a body.
 - **One connection, one row.** The client names a stable `connectionId` on
   every login; a re-login replaces the connection's row, and what the
   connection pulled stays keyed by it (`rcpt:{provider}:{connectionId}:{external id}`).
@@ -61,7 +66,7 @@ An unconfigured one is simply absent — never a stand-in.
 | --- | --- |
 | `GET /connectors` | what this environment runs: the service descriptor, the provider count, whether household agents are offered |
 | `GET /connectors/providers` | the catalogue, with the connector's ETag (send `If-None-Match`, get 304) |
-| `GET /connectors/sessions` | the caller's bindings: session, provider, connection, state, label, times |
+| `GET /connectors/sessions` | the caller's bindings: session, provider, connection, state, label, times, and whether the relay syncs it by itself (`scheduled`, `lastScheduledSyncAt`, `lastScheduleError`) |
 | `POST /connectors/{provider}/login` | `{ connectionId, inputs?, credentialBundle?, config?, label?, preferAgent?, idempotencyKey? }` → the session view; 200 with the bundle attached, or 202 to follow. `X-Device-Class: native\|web` is honoured; absent, the platform header decides (web bundles live shorter) |
 | `GET …/login/{sessionId}` | the view; the bundle is handed over exactly once |
 | `POST …/login/{sessionId}/answer` | `{ challengeId, value }` |
@@ -74,6 +79,32 @@ An unconfigured one is simply absent — never a stand-in.
 | `POST …/jobs/{jobId}/collect` | `{ bundle }` once the job succeeded: ingests its page, acknowledges it, hands back the rotated bundle; 202 with the view while it runs |
 | `DELETE /connectors/{provider}/sessions/{sessionId}` | `{ bundle? }` → `{ loggedOut, jobId?, reason? }`; the binding row is removed. Reaches the control plane row or no row: a caller must always be able to remove a connection |
 | `GET /connectors/agents`, `POST /connectors/agents/enrollment`, `DELETE /connectors/agents/{agentId}`, `GET …/{agentId}/profiles` | the caller's household agents; enrollment answers `{ code, expiresAt, controlPlaneUrl, composeCommand }` — the one line beside `deploy/connectors/household-agent.yml` |
+
+## Scheduled syncs
+
+Client custody syncs only when a device holds the bundle: the app on open,
+*Sync now*, after a bank sync. A household-agent party is different —
+its bundle is a pointer to an agent and a profile on the person's own
+machine, and the agent does the fetching — so the relay keeps that bundle
+(`ConnectorSession.KeptBundle`, written at the single delivery and
+followed through every rotation) and `ConnectorScheduleService` drives it
+the way `GcFetchService` drives open banking:
+
+- an hourly tick over every kept and active session; a session runs when
+  the provider fetches unattended and its own `min_interval_seconds` has
+  passed since the last scheduled run — and the fetches declare
+  `X-Connector-Trigger: schedule`, so the control plane holds them to the
+  interval as well (a refusal is remembered, not fought);
+- a fetch that became a job is followed for ten minutes and collected
+  with the kept bundle; a job that asks a question leaves the session
+  `awaiting_input` — the app's card says so and *Sync now* answers it;
+- a refusal the person must act on (`session_expired`,
+  `invalid_credentials`, `mfa_failed`, `consent_expired`,
+  `unsupported_resource`, `agent_revoked`) drops the kept bundle and marks
+  the session `needs_reauth`; `blocked_by_provider` marks it `blocked`;
+  every other refusal is kept as `lastScheduleError` and retried next tick;
+- `GET /connectors/sessions` reports `scheduled`, `lastScheduledSyncAt` and
+  `lastScheduleError` per binding.
 
 ## Events
 

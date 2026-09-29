@@ -774,3 +774,41 @@ Connections hub`; docs/connectors/client.md). Where it departs from §10, and wh
   computer" and a login without an agent is refused with the connector's own `agent_unavailable`;
   the live ING connect on dev and the live view on a phone, which wait for an environment that runs
   connectors and a pooled agent; the review deck's *Receipt* row still.
+
+**2026-09-30 — M5 delivered** (`feat(api): scheduled syncs for household-agent custody`, `feat(web):
+registries and your own computer in the hub`; docs/connectors/client.md "Your own computer",
+docs/connectors/relay.md "Scheduled syncs"). Where it departs from §5.5 and §10.4, and why:
+
+- **The relay keeps exactly one kind of bundle.** A household-agent bundle (`secret_custody: agent`)
+  names an agent and a profile and holds no secret, so the relay keeps it on the session row
+  (`KeptBundle`) at the single delivery — a login that settled, or the first view read after it —
+  and follows every rotation. Every other custody's bundle still passes through memory only; the
+  write-path scan now walks `KeptBundle` too and the client-custody flows prove it stays empty.
+- **`ConnectorScheduleService` is the `GcFetchService` shape**: an hourly tick, every kept and
+  active session, the provider's own `min_interval_seconds` respected on the relay's side and
+  declared as `X-Connector-Trigger: schedule` so the control plane holds it to the interval as well;
+  a fetch that became a job is followed for ten minutes and collected with the kept bundle; a job
+  that asks leaves the session `awaiting_input` for the person; a refusal the person must act on
+  (`session_expired`, `invalid_credentials`, `mfa_failed`, `consent_expired`,
+  `unsupported_resource`, `agent_revoked`) drops the kept bundle and marks `needs_reauth`; every
+  other refusal is remembered (`lastScheduleError`) and retried next tick. `GET /connectors/sessions`
+  says `scheduled`, when the scheduler last ran and what it last ended on.
+- **The card listens to the relay.** The hub reads the relay's bindings once per open; where the relay
+  knows more than the device — a question the scheduler left, a session it found dead, a sync it ran
+  itself — its word wins on the state line ("syncs by itself · last …"). Custody stays the device's.
+- **No agent picker on the relay.** The control plane routes a login by `prefer_agent`; the app asks
+  the person which of their online agents holds the sign-in for a `byo` party (offline ones are shown,
+  not offered) and doors into *Your own computer* when there is none. §10.4's "first-class in the
+  flow for those providers, a settings-level door otherwise" is exactly this: the agent step is the
+  first thing a `byo` login shows, and the hub carries the door for everyone signed in.
+- **Registries are the bank pattern.** BKR's and DUO's liability accounts land in the personal `REG`
+  feed as `account` rows (M1); the hub lists them under the registry's card with the same attach door
+  a bank's accounts have. Nothing joins a space by itself.
+- **The compose line is the enrollment.** `POST /connectors/agents/enrollment` hands back the code,
+  its expiry and the one line (`CONNECTOR_URL`, `ENROLLMENT_CODE`, `docker compose … up -d`) beside
+  `deploy/connectors/household-agent.yml`; the screen renders it with a copy button, keeps polling the
+  agent list while a code is out, and explains what the agent is and is not (nothing connects to it).
+  Revoking says what it destroys.
+- **Deferred**: a DUO fetch on the owner's account and an agent enrolled from the app against a
+  deployed control plane — both need an environment that runs connectors; the "needs you" card on the
+  home screen (the hub's card carries the question for now); the admin's view of the fleet (M6).

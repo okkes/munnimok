@@ -170,6 +170,60 @@ label reads "Fetched by munni from {party}". Beside a statement import
 of the same IBAN the bank keeps its own `acct:{iban}:bank` row until the
 explicit merge — the ingest follows #311 r4 exactly as open banking does.
 
+## Registries (M5)
+
+A registry (BKR, DUO, the mock registries) is the bank pattern: the
+relay's ingest files the party's credit registrations and student debt
+into the personal `REG` feed as liability `account` rows (`loan`,
+`credit`, `mortgage`; `source: 'connector'`, the party as `provider`),
+and the hub's registry card lists them with the same *Attach to {space}*
+door a bank's accounts have. BKR signs in with an authenticator code;
+DUO signs in with DigiD on the person's own computer — a household
+agent (below) — and the catalogue says so.
+
+## Your own computer (`AgentsScreen`, §10.4)
+
+Settings → Connections → *Your own computer*, route
+`/connections/agents`. Some parties will only ever talk to a browser on
+the account holder's own connection (DigiD scores the address; ASN keeps
+a signed-in profile). A household agent is a container the person runs
+on their own machine (`deploy/connectors/household-agent.yml`); it dials
+OUT to the environment's control plane, keeps those sign-ins in browser
+profiles on that machine, and fetches when asked.
+
+The screen lists the agents the relay knows (`GET /connectors/agents`):
+name, health (online · offline · needs an update — the agent runs another
+adapter catalogue — · removed), when it last dialled in, and the logins
+it keeps as one chip per party. *Add your computer* asks a name and
+mints an enrollment (`POST /connectors/agents/enrollment`): a one-time
+code, its expiry, and the compose line — `CONNECTOR_URL`,
+`ENROLLMENT_CODE`, `docker compose … up -d` — shown with a copy button;
+the list keeps polling while a code is out, so the machine appears the
+minute it dials in. *Remove* revokes (`DELETE /connectors/agents/{id}`)
+after the warning that revoking destroys the profiles that keep the
+logins alive. Where the environment publishes no agent address
+(`householdAgents: false` on `GET /connectors`) the screen says agents
+are not offered and shows no door.
+
+A `byo` party (`agent.required` and `agent.class: byo`) puts the agent
+step first in the connect flow: the person's online agents to pick
+from (offline ones shown, not offered), the door to *Your own computer*
+when there is none, and the login names the pick as `preferAgent`. The
+catalogue marks such a party "needs your own computer".
+
+## Scheduled syncs (§5.5)
+
+For a household-agent party the bundle names an agent and a profile and
+holds no secret, so the relay keeps it (see relay.md, "Scheduled
+syncs") and syncs the connection by itself: every hour, on the party's
+own interval, declared as a scheduled trigger. The hub reads the relay's
+bindings once per open (`GET /connectors/sessions`) and, where the relay
+knows more than the device, its word wins on the card: *syncs by itself
+· last …*, the refusal it last ended on, *the party has a question* when
+a scheduled fetch stopped for one (Sync now answers it in the sheet), or
+*reconnect needed* when the relay found the session dead. The device's
+own row stays the truth for custody.
+
 ## Removing a connection
 
 The party is told first (`DELETE /connectors/{provider}/sessions/{id}`
