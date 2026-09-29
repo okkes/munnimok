@@ -51,14 +51,23 @@ if (!SYNOLOGY_URL || !SYNOLOGY_USER || !SYNOLOGY_PASS || !SYNOLOGY_PATH || !stam
     }
     await sleep(pollMs);
   }
-  console.log(applied ? `poller applied ${stamp.slice(0, 8)} for ${stackName} (${Math.round((Date.now() - started) / 1000)} s)` : `::warning::the poller has not applied ${stamp.slice(0, 8)} for ${stackName} within ${waitMs / 60000} minutes (marker ${marker} holds ${lastSeen ?? 'nothing'}) — its log below says what it is doing`);
+  console.log(applied ? `poller applied ${stamp.slice(0, 8)} for ${stackName} (${Math.round((Date.now() - started) / 1000)} s)` : `the poller has not applied ${stamp.slice(0, 8)} for ${stackName} within ${waitMs / 60000} minutes (marker ${marker} holds ${lastSeen ?? 'nothing'}) — its log below says what it is doing`);
   out('applied', String(applied));
+  let logLines = [];
   try {
     const log = await readPollerLog(creds, { publishedPath: SYNOLOGY_PATH, lines: 40 });
+    logLines = log.lines;
     console.log(`poller log ${log.path} (last ${log.lines.length} lines):`);
     for (const l of log.lines) console.log(`    ${l}`);
   } catch (e) {
     console.log(`poller log not readable (${e.message})`);
+  }
+  if (!applied) {
+    // a deploy the NAS never applied is a failed deploy — name what the poller saw instead of a green run that
+    // changed nothing (#365: "denied: denied" on every pull went unnoticed for ten days)
+    const why = logLines.filter((l) => /Error response from daemon|denied|pull access|pull failed|update\.sh|failed/i.test(l)).slice(-3).map((l) => l.trim());
+    console.log(`::error title=The NAS did not apply ${stackName}::${why.length ? why.join(' | ') : 'the poller wrote no marker for this stamp'} — a stale registry login makes public pulls answer "denied" (the bundle's update.sh drops it when no GHCR_PAT is set; store a token on the Registry tile only if the images are private); the poller retries every cycle, so a fixed cause applies by itself`);
+    process.exitCode = 1;
   }
   const waitFor = async (label, check) => {
     const until = Date.now() + (applied ? seedWaitMs : 0);

@@ -121,11 +121,22 @@ if [ "$MODE" = "seed" ]; then
   exit 0
 fi
 
+# the registry: with a token, log in fresh; without one, DROP whatever credential the daemon still holds — the images
+# are public, and a login left behind by an earlier token (revoked with the old secrets) makes every pull answer
+# "denied: denied" (#365: the NAS ran weeks behind while every deploy reported green)
 if [ -n "$GHCR_PAT" ]; then
-  printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:-okkes}" --password-stdin
+  if ! printf '%s' "$GHCR_PAT" | docker login ghcr.io -u "${GHCR_USER:-okkes}" --password-stdin; then
+    echo "ghcr login failed — dropping the stored credential, pulling anonymously"
+    docker logout ghcr.io >/dev/null 2>&1 || true
+  fi
+else
+  docker logout ghcr.io >/dev/null 2>&1 || true
 fi
 
-compose pull
+if ! compose pull; then
+  echo "image pull failed — the registry refused (see above); nothing changed, the poller retries next cycle"
+  exit 1
+fi
 
 # don't die before the status dump below — it captures WHY up failed
 UP_RC=0
