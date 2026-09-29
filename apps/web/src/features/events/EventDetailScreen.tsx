@@ -149,8 +149,10 @@ export function EventDetailScreen() {
         {/* SP5: my split wired to this event — who owes whom, one tap away */}
         <SplitEventSummary eventId={eventId} />
 
-        {/* the fast path after a trip: review the date range, attach your picks */}
-        {view.suggestions.length > 0 && (
+        {/* the fast path after a trip: review the date range, attach your picks —
+            #379 (user): loud only while nothing is attached yet; afterwards a
+            quiet "find more" sits with the payments header */}
+        {view.suggestions.length > 0 && view.list.length === 0 && (
           <div className="mt-3 flex items-center gap-3 rounded-card border border-accent bg-accent-soft/40 px-4 py-3" data-testid="eventdetail-suggest">
             <Icon name="creation" size={17} color="var(--m-accent-deep)" />
             <span className="min-w-0 flex-1 text-[13px] text-ink-2">
@@ -223,6 +225,16 @@ export function EventDetailScreen() {
           <span>
             {t('overview.payments')} · {filteredList.length}
           </span>
+          {view.suggestions.length > 0 && view.list.length > 0 && (
+            <button
+              data-testid="eventdetail-find-more"
+              onClick={() => void navigate({ to: '/events/$eventId/attach', params: { eventId: event.id } })}
+              className="m-tap ml-auto flex items-center gap-1 border-none bg-transparent p-0 text-[11px] font-semibold text-accent-deep normal-case"
+            >
+              <Icon name="magnify" size={13} />
+              {t('events.findMore', { n: view.suggestions.length })}
+            </button>
+          )}
           {drillMain && (
             <button
               data-testid="eventdetail-filter-clear"

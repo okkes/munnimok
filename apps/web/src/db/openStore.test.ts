@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FLAG_KEY, activeStoreBackend, openStorageBackend } from './openStore';
+import { FLAG_KEY, activeStoreBackend, destroyStorage, openStorageBackend } from './openStore';
+import Dexie from 'dexie';
+import { MunniDB } from './schema';
 
 vi.mock('@/lib/platform', () => ({ isNativeApp: () => true }));
 
@@ -58,4 +60,15 @@ describe('E4: native always opens the encrypted store', () => {
     expect(activeStoreBackend()).toBe('dexie');
     backend2.close();
   });
+});
+
+describe('#363: the identity wipe', () => {
+  it('removes the database even while another handle still holds it open, and says so when it could not', async () => {
+    const name = `munni_wipe_${Math.random().toString(36).slice(2)}`;
+    const open = new MunniDB(name);
+    await open.open();
+    await open.meta.put({ key: 'probe', value: 1 });
+    await destroyStorage(name);
+    expect(await Dexie.exists(name)).toBe(false);
+  }, 10_000);
 });

@@ -76,13 +76,52 @@ describe('Goals (demo identity)', () => {
 
     fireEvent.click(card);
     await screen.findByTestId('goaldetail-hero');
-    // €9,000 into €8,150 of savings → unallocated −€850 (user must fix it)
-    await fund('goaldetail-fund', '9000', /€9[.,]000[.,]00/);
+    // €8,000 into €8,150 of savings is fine; the savings then drop to
+    // €5,000 → unallocated −€3,000 (user must fix it)
+    await fund('goaldetail-fund', '8000', /€8[.,]000[.,]00/);
+    const { MunniDB } = await import('@/db/schema');
+    const db = new MunniDB('munni_demo');
+    await db.accounts.update('demo_save', { balanceCents: 500_000 });
+    db.close();
 
     cleanup();
     renderApp('/goals');
     const note = await screen.findByTestId('goals-negative-note', {}, { timeout: 5000 });
-    expect(note.textContent).toMatch(/850/);
+    expect(note.textContent).toMatch(/3[.,]000/);
+  }, 15_000);
+
+  it('#368: funding beyond the savings pool is refused with what is left; the pool is the ticked savings accounts', async () => {
+    renderApp('/goals');
+    await screen.findByTestId('screen-goals');
+    const card = await createGoal('House', '20000');
+    fireEvent.click(card);
+    await screen.findByTestId('goaldetail-hero');
+    fireEvent.click(screen.getByTestId('goaldetail-fund'));
+    fireEvent.change(await screen.findByTestId('goalfund-amount'), { target: { value: '9000' } });
+    await waitFor(() => expect(screen.getByTestId('goalfund-pool').textContent).toMatch(/8[.,]150/));
+    fireEvent.click(screen.getByTestId('goalfund-save'));
+    await screen.findByTestId('goalfund-pool-blocker');
+    expect(screen.getByTestId('goaldetail-allocated').textContent).toMatch(/€0[.,]00/);
+
+    cleanup();
+    renderApp('/goals');
+    await waitFor(() => expect(screen.getByTestId('goals-overview-saved').textContent).toMatch(/8[.,]150/));
+    fireEvent.click(screen.getByTestId('goals-pool-toggle'));
+    fireEvent.click(await screen.findByTestId('goalpool-acct-demo_save'));
+    await waitFor(() => expect(screen.getByTestId('goals-overview-saved').textContent).toMatch(/€0[.,]00/), { timeout: 5000 });
+  }, 20_000);
+
+  it('#368: a goal due within three months is pointed at allocation', async () => {
+    renderApp('/goals');
+    await screen.findByTestId('screen-goals');
+    fireEvent.click(await screen.findByTestId('goals-add'));
+    await screen.findByTestId('goalform-name');
+    const soon = new Date();
+    soon.setMonth(soon.getMonth() + 2);
+    fireEvent.change(screen.getByTestId('goalform-date'), { target: { value: soon.toISOString().slice(0, 10) } });
+    await screen.findByTestId('goalform-shortterm');
+    fireEvent.click(screen.getByTestId('goalform-shortterm-go'));
+    expect(await screen.findByTestId('screen-allocate')).toBeTruthy();
   }, 15_000);
 
   it('the home block surfaces progress; the settings row reaches goals', async () => {

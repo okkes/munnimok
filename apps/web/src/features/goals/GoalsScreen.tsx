@@ -1,3 +1,4 @@
+import { ScrollRow } from '@/ui/ScrollRow';
 import { downscaleImage } from '@/lib/image';
 import { isNativeApp, pickPhotoNative } from '@/lib/platform';
 import { attachScrollMemory } from '@/lib/scrollMemory';
@@ -9,8 +10,9 @@ import { useData } from '@/app/data';
 import { useGoalOps, useGoals } from '@/application/goals';
 import { useSpaceAccounts } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
-import { goalOverview, goalProgress, paceCentsPerMonth } from '@/domain/goals';
-import type { GoalRow } from '@/db/types';
+import { goalOverview, goalProgress, monthsLeft, paceCentsPerMonth, poolAccounts } from '@/domain/goals';
+import type { GoalRow, SpaceRow } from '@/db/types';
+import type { SpaceAccount } from '@/db/joined';
 import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { HelpButton } from '@/features/help/HelpButton';
@@ -125,7 +127,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
     <Sheet open={initial !== null} onOpenChange={(open) => !open && onClose()} title={editing ? t('goals.edit') : t('goals.new')} size="tall" dirty={dirty}>
       <div className="flex flex-col gap-3 pt-1">
         {/* optional cover, same mechanics as events (user request) */}
-        <div className="flex gap-2 overflow-x-auto pb-1" data-testid="goalform-pictures">
+        <ScrollRow tone="surface" testId="goalform-pictures">
           <button
             data-testid="goalform-pic-none"
             onClick={() => setPicture(null)}
@@ -167,7 +169,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
               <img src={candidate} alt="" loading="lazy" className="h-full w-full object-cover" />
             </button>
           ))}
-        </div>
+        </ScrollRow>
         {picture?.startsWith('data:') && (
           <div className="overflow-hidden rounded-xl border-2 border-accent" data-testid="goalform-uploaded">
             <img src={picture} alt="" className="h-16 w-full object-cover" />
@@ -175,7 +177,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
         )}
         <input ref={uploadRef} type="file" accept="image/*" className="hidden" data-testid="goalform-upload-input" onChange={(e) => void onUpload(e.target.files?.[0])} />
 
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <ScrollRow tone="surface">
           {GOAL_ICONS.map((candidate) => (
             <button
               key={candidate}
@@ -188,7 +190,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
               <Icon name={candidate} size={19} />
             </button>
           ))}
-        </div>
+        </ScrollRow>
         <input
           data-testid="goalform-name"
           value={name}
@@ -223,6 +225,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
             className="h-10 min-w-0 flex-1 appearance-none rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none"
           />
         </label>
+        <ShortTermNote targetDate={targetDate} />
         <Button
           data-testid="goalform-save"
           onClick={() => {
@@ -249,10 +252,89 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
 }
 
 /** All goals + the honesty header: saved vs allocated vs unallocated. */
+/** #368: short-term money belongs in allocation — goals are the long game */
+function ShortTermNote({ targetDate }: Readonly<{ targetDate: string }>) {
+  const { t } = useLang();
+  const navigate = useNavigate();
+  const months = targetDate ? monthsLeft({ targetDate }, localToday()) : null;
+  if (months === null || months > 3) return null;
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 rounded-card bg-bg-2 px-3 py-2 text-[12px] leading-snug text-ink-2" data-testid="goalform-shortterm">
+      {t('goals.shortTermHint')}
+      <button
+        data-testid="goalform-shortterm-go"
+        onClick={() => void navigate({ to: '/allocate' })}
+        className="m-tap border-none bg-transparent p-0 font-medium text-accent-deep"
+      >
+        {t('goals.shortTermGo')}
+      </button>
+    </p>
+  );
+}
+
+/** #368 (user): the savings accounts that feed the goals — every savings
+ *  account counts until the user picks; the pick is a space fact (synced) */
+function GoalPoolCard({
+  accounts,
+  space,
+  money,
+  onToggle,
+}: Readonly<{
+  accounts: readonly SpaceAccount[];
+  space: SpaceRow | undefined;
+  money: (cents: number) => string;
+  onToggle: (accountId: string) => void;
+}>) {
+  const { t } = useLang();
+  const [open, setOpen] = useState(false);
+  const candidates = accounts.filter((a) => a.deleted === 0 && a.type === 'savings' && a.archived !== 1);
+  const pool = new Set(poolAccounts(candidates, space).map((a) => a.id));
+  return (
+    <div className="mt-3 rounded-card border border-line bg-surface" data-testid="goals-pool">
+      <button
+        data-testid="goals-pool-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="m-tap flex w-full items-center gap-3 border-none bg-transparent px-4 py-3 text-left"
+      >
+        <Icon name="piggy-bank-outline" size={18} color="var(--m-ink-3)" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-medium text-ink">{t('goals.poolTitle')}</span>
+          <span className="block text-[12px] text-ink-3">{t('goals.poolCount', { n: pool.size, total: candidates.length })}</span>
+        </span>
+        <Icon name={open ? 'chevron-up' : 'chevron-down'} size={16} color="var(--m-ink-4)" />
+      </button>
+      {open && (
+        <div className="border-t border-line-2 px-4 pt-2 pb-3">
+          <p className="pb-2 text-[12px] leading-snug text-ink-3">{t('goals.poolSub')}</p>
+          {candidates.length === 0 && (
+            <p className="text-[12px] text-ink-4" data-testid="goals-pool-empty">
+              {t('goals.poolEmpty')}
+            </p>
+          )}
+          {candidates.map((a) => (
+            <label key={a.id} className="flex items-center gap-2 py-1.5 text-[13px]">
+              <input
+                data-testid={`goalpool-acct-${a.id}`}
+                type="checkbox"
+                checked={pool.has(a.id)}
+                onChange={() => onToggle(a.id)}
+                className="h-4 w-4 shrink-0 accent-[var(--m-accent)]"
+              />
+              <span className="min-w-0 flex-1 truncate text-ink">{a.name}</span>
+              <span className="m-num text-ink-3">{money(a.balanceCents)}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function GoalsScreen() {
   const { t } = useLang();
   const navigate = useNavigate();
-  const { store, spaceId } = useData();
+  const { store, repo, spaceId } = useData();
   const goals = useGoals();
   const accounts = useSpaceAccounts();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
@@ -261,9 +343,18 @@ export function GoalsScreen() {
 
   const { fmt } = useDisplayMoney();
   const money = (cents: number) => fmt(cents, currency);
-  const overview = goalOverview(goals ?? [], accounts ?? []);
+  const overview = goalOverview(goals ?? [], accounts ?? [], space);
   const negative = overview.unallocatedCents < 0;
   const today = localToday();
+  // #368: which savings accounts feed the goals — the row is read FRESH
+  // (two quick ticks from a render-stale object dropped the first write)
+  const togglePoolAccount = async (accountId: string) => {
+    const live = await store.get('space', spaceId);
+    if (!live) return;
+    const current = live.goalPoolAccountIds ?? poolAccounts(accounts ?? [], undefined).map((a) => a.id);
+    const next = current.includes(accountId) ? current.filter((id) => id !== accountId) : [...current, accountId];
+    await repo.upsert('space', spaceId, spaceId, { goalPoolAccountIds: next });
+  };
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-goals">
@@ -297,7 +388,7 @@ export function GoalsScreen() {
                   ['goals.unallocated', overview.unallocatedCents, negative ? 'var(--m-negative)' : 'var(--m-ink)'],
                 ] as const
               ).map(([key, cents, color]) => (
-                <div key={key}>
+                <div key={key} data-testid={`goals-overview-${key.slice('goals.'.length)}`}>
                   <div className="text-[10px] font-semibold tracking-wide text-ink-4 uppercase">{t(key)}</div>
                   <div className="mt-0.5 font-mono text-[15px] font-semibold" style={{ color }}>
                     {money(cents)}
@@ -313,6 +404,7 @@ export function GoalsScreen() {
             )}
           </div>
         )}
+        {goals && accounts && <GoalPoolCard accounts={accounts} space={space} money={money} onToggle={(id) => void togglePoolAccount(id)} />}
 
         <div className="flex flex-col gap-2.5 pt-3">
           {(goals ?? []).map((goal) => {

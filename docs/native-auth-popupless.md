@@ -72,3 +72,20 @@ assetlinks.dev.json for Play-installed dev builds.
 Result: login never leaves the app and ends popup-free on both
 platforms; bank consent keeps full app-to-app capability; web keeps
 plain redirects everywhere.
+
+## Status 2026-09-29
+
+- **Built — app links per environment**: the web image no longer ships
+  static per-channel files; its start script renders both files from the
+  deployment's env (package + Play app-signing fingerprint from the
+  committed environment config, team id + bundle id from the env file).
+  The wizard's Phones tab carries the App links card: the one manual value
+  (the Play fingerprint) with its console path, a Check against the live
+  host and Google's statement list, and a todo item per environment.
+- **Built — NA1/NA2**: sign-in on the phone runs in the platform's auth
+  session — ASWebAuthenticationSession on iOS (the AuthSession plugin in
+  AppDelegate.swift), a Custom Tab (@capacitor/browser) on Android — with
+  the app's scheme as the callback (`munni-<env>-<platform>://auth-callback`,
+  `…://signed-out`). The hosted `/native-auth` bounce stays for builds that
+  predate this (NA4's retirement waits for them to age out).
+- The Play fingerprint pending item above is superseded by the card.

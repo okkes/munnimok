@@ -69,73 +69,6 @@ describe('SettingsScreen (demo identity)', () => {
     db.close();
   });
 
-  it('#302: with an app lock armed, ENABLING invitations asks for the PIN first', async () => {
-    // arm the app lock for the demo identity (hash of '1234' with salt 's')
-    const { hashPin } = await import('@/features/lock/lock');
-    const pinHash = await hashPin('1234', 'salty');
-    localStorage.setItem('munni_lock_demo', JSON.stringify({ enabled: true, pinSalt: 'salty', pinHash, timeoutSec: 0 }));
-
-    renderApp('/settings');
-    await screen.findByTestId('screen-settings');
-    const toggle = (await screen.findByTestId('settings-space-private-toggle')) as HTMLInputElement;
-    // arm the space lock first (checking is free)
-    if (!toggle.checked) {
-      fireEvent.click(toggle);
-      await waitFor(() => expect((screen.getByTestId('settings-space-private-toggle') as HTMLInputElement).checked).toBe(true), { timeout: 5000 });
-    }
-    // unchecking = opening the space for invitations → the challenge
-    fireEvent.click(screen.getByTestId('settings-space-private-toggle'));
-    await screen.findByTestId('pin-challenge-sheet');
-    // still locked — nothing wrote yet
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB('munni_demo');
-    expect((await db.spaces.toArray()).some((sp) => sp.deleted === 0 && sp.inviteLock === 1)).toBe(true);
-    // a wrong 8-digit pin errors; the right one passes and writes
-    fireEvent.change(screen.getByTestId('pin-challenge-pin'), { target: { value: '99999999' } });
-    await screen.findByTestId('pin-challenge-error');
-    fireEvent.change(screen.getByTestId('pin-challenge-pin'), { target: { value: '1234' } });
-    await waitFor(async () => {
-      expect((await db.spaces.toArray()).some((sp) => sp.deleted === 0 && sp.inviteLock === 1)).toBe(false);
-    }, { timeout: 5000 });
-    db.close();
-    localStorage.removeItem('munni_lock_demo');
-  }, 15_000);
-
-  it('the private lock is an owner toggle in the Setup group now (#162)', async () => {
-    renderApp('/settings');
-    await screen.findByTestId('screen-settings');
-    expect(await screen.findByTestId('settings-space-private-row')).toBeTruthy();
-    // demo space predates the lock: unlocked until the owner arms it
-    const toggle = screen.getByTestId('settings-space-private-toggle') as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
-    fireEvent.click(toggle);
-
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB('munni_demo');
-    await waitFor(
-      async () => {
-        const spaces = await db.spaces.toArray();
-        expect(spaces.some((s) => s.deleted === 0 && s.inviteLock === 1)).toBe(true);
-      },
-      { timeout: 5000 },
-    );
-    // the controlled checkbox must SHOW the write before the next tap —
-    // clicking mid-liveQuery-emission would re-toggle from stale state
-    await waitFor(
-      () => expect((screen.getByTestId('settings-space-private-toggle') as HTMLInputElement).checked).toBe(true),
-      { timeout: 5000 },
-    );
-    fireEvent.click(screen.getByTestId('settings-space-private-toggle'));
-    await waitFor(
-      async () => {
-        const spaces = await db.spaces.toArray();
-        expect(spaces.some((s) => s.deleted === 0 && s.inviteLock === 1)).toBe(false);
-      },
-      { timeout: 5000 },
-    );
-    db.close();
-  }, 15_000);
-
   it('demo sign-out returns to the login screen and wipes the demo db', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
@@ -349,6 +282,30 @@ describe('Settings screens (user identity, scripted server)', () => {
     expect(pushManager.subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }));
     expect(registrations[0]).toMatchObject({ endpoint: 'https://push.example/settings' });
     await waitFor(() => expect(screen.getByTestId('settings-push-state').textContent?.length).toBeGreaterThan(0));
+  }, 15_000);
+
+  it('a registered device can be sent a test notification from the row under the notifications switch', async () => {
+    installPushEnv();
+    let tests = 0;
+    renderAppAsUser('/settings/global', {
+      api: {
+        'GET /health': () => ({
+          status: 'ok',
+          capabilities: { gocardless: false, push: true, vapidPublicKey: 'BPtest-key_123' },
+          protocol: CLIENT_PROTOCOL,
+          minClientProtocol: 1,
+        }),
+        'POST /me/push-subscriptions': () => ({}),
+        'POST /me/push-subscriptions/test': () => {
+          tests++;
+          return { sent: 1 };
+        },
+      },
+    });
+    fireEvent.click(await screen.findByTestId('settings-push-toggle'));
+    fireEvent.click(await screen.findByTestId('settings-push-test'));
+    await waitFor(() => expect(tests).toBe(1));
+    await waitFor(() => expect(screen.getByTestId('settings-push-test').textContent).toContain('Sent to 1'));
   }, 15_000);
 
   it('user sign-out keeps the local database (sync is the source of truth)', async () => {

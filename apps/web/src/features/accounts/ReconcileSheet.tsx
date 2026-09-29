@@ -1,3 +1,4 @@
+import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -191,6 +192,14 @@ export function ReconcileSheet({
               {matchesOpen && (
                 <>
                   <p className="mb-1 px-1 text-[11px] text-ink-4">{t('reconcile.matchSub')}</p>
+                  {/* #378: the one select-all row every transaction list wears */}
+                  <SelectAllRow
+                    total={plan.matches.length}
+                    selected={plan.matches.filter((match) => !ignored.has(match.imported.id)).length}
+                    onChange={(next) => setIgnored(next ? new Set() : new Set(plan.matches.map((match) => match.imported.id)))}
+                    testId="reconcile-migrate-all"
+                    className="mb-1"
+                  />
                   <div className="overflow-hidden rounded-card border border-line bg-surface">
                     {plan.matches.map((match) => (
                       <label

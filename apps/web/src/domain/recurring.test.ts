@@ -217,6 +217,34 @@ describe('detectRecurring', () => {
     expect(detectRecurring(linked, { today: '2026-07-08' })).toEqual([]);
   });
 
+  it('#346: exact amount tiers under one provider stay apart even inside each other\'s wide band', () => {
+    const dates = ['2026-04-03', '2026-05-03', '2026-06-03', '2026-07-03'];
+    const txs = [...monthly(dates, -6324, 'KPN'), ...monthly(dates, -5520, 'KPN'), ...monthly(dates, -44197, 'KPN')];
+    const found = detectRecurring(txs, { today: '2026-07-22' });
+    // 55.20 and 63.24 sit within 20% of each other — separate plans all the same
+    expect(found.map((s) => s.amountCents).sort((a, b) => a - b)).toEqual([5520, 6324, 44197]);
+    expect(found.every((s) => s.count === 4)).toBe(true);
+  });
+
+  it('#346: a skipped month and a few days of drift keep the rhythm; the legal form behind the name is no second merchant', () => {
+    const txs = [
+      ...monthly(['2026-03-05', '2026-04-08'], -3200, 'ODIDO NEDERLAND B.V.'),
+      ...monthly(['2026-06-06', '2026-07-03'], -3200, 'Odido Nederland BV'),
+    ];
+    const [s] = detectRecurring(txs, { today: '2026-07-10' });
+    expect(s).toMatchObject({ every: 'month', count: 4, merchantKey: 'odido nederland' });
+  });
+
+  it('#346: a varying bill without exact tiers still clusters as ONE series', () => {
+    const txs = [-3401, -3388, -3450, -3395].map((amountCents, i) => ({
+      merchant: 'ENECO',
+      date: `2026-0${4 + i}-10`,
+      amountCents,
+      txType: 'expense' as const,
+    }));
+    expect(detectRecurring(txs, { today: '2026-07-12' })).toHaveLength(1);
+  });
+
   it('#346: one merchant with several steady amounts yields one pattern PER amount', () => {
     const txs = [
       ...monthly(['2026-04-03', '2026-05-03', '2026-06-03', '2026-07-03'], -3200, 'ODIDO'),

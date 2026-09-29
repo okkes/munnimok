@@ -1,6 +1,7 @@
-import type { BudgetRow, TxView } from '@/db/types';
+import type { BudgetRow, SpacePeriodType, TxView, WeekStart } from '@/db/types';
 import { txSliceViews } from './txSlices';
 import type { Period } from './periods';
+import { nextPeriod } from './periods';
 
 /**
  * Budget math, all pure (budgets design doc, approved 2026-07-09):
@@ -21,47 +22,90 @@ const parse = (iso: string): Date => {
 };
 const shiftDays = (d: Date, days: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + days);
 
-/** clamp an anchor day into a target month (31st → Feb 28) */
-const monthStart = (anchor: Date, monthOffset: number): Date => {
-  const first = new Date(anchor.getFullYear(), anchor.getMonth() + monthOffset, 1);
+/** the space facts a budget's cycle depends on: the week's first day (weekly cadences) and the space period ('period' cadence) */
+export interface BudgetPeriodOpts {
+  weekStart?: WeekStart;
+  spacePeriod?: { periodType: SpacePeriodType; periodDay: number };
+}
+/** the options every budget call derives from the space row (no space = Monday, monthly from the 1st) */
+export const budgetOptsFor = (
+  space: { weekStart?: WeekStart; periodType: SpacePeriodType; periodDay: number } | null | undefined,
+): BudgetPeriodOpts => (space ? { weekStart: space.weekStart, spacePeriod: { periodType: space.periodType, periodDay: space.periodDay } } : {});
+
+const MAX_CYCLES = 2000;
+/** day `day` of the month `m` of year `y`, clamped into short months (31st → Feb 28) */
+const dayOfMonth = (y: number, m: number, day: number): Date => {
+  const first = new Date(y, m, 1);
   const lastDay = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
-  return new Date(first.getFullYear(), first.getMonth(), Math.min(anchor.getDate(), lastDay));
+  return new Date(first.getFullYear(), first.getMonth(), Math.min(day, lastDay));
 };
+/** the first date on/after `d` that falls on the week's first day */
+const weekStartOnOrAfter = (d: Date, weekStart: WeekStart): Date => {
+  const target = weekStart === 'sunday' ? 0 : 1;
+  return shiftDays(d, (target - d.getDay() + 7) % 7);
+};
+/** the first reset on/after `d` for a monthly budget resetting on `day` */
+const monthResetOnOrAfter = (d: Date, day: number): Date => {
+  const inMonth = dayOfMonth(d.getFullYear(), d.getMonth(), day);
+  return inMonth >= d ? inMonth : dayOfMonth(d.getFullYear(), d.getMonth() + 1, day);
+};
+/** the start of the space period that follows the one containing `d` */
+const spacePeriodStartAfter = (d: Date, sp: NonNullable<BudgetPeriodOpts['spacePeriod']>): Date =>
+  parse(nextPeriod(sp.periodType, sp.periodDay, d).start);
 
-/** how many whole cycles lie between the anchor and `today` */
-export function cycleIndex(budget: BudgetRow, today: string): number {
+/**
+ * The start of cycle `index`. Cycle 0 opens on the start date and runs
+ * until the first reset after it — so it may be partial: a monthly budget
+ * started mid-month resets on its reset day (#371), a weekly one on the
+ * space's first weekday (#370); every later cycle is a full one. A weekly
+ * budget that STARTS on the week's first day keeps whole weeks from day
+ * one. 'period' follows the space's own budget period (#369).
+ */
+function cycleStart(budget: BudgetRow, index: number, opts: BudgetPeriodOpts): Date {
   const anchor = parse(budget.anchor);
+  if (index <= 0) return anchor;
+  const weekStart = opts.weekStart ?? 'monday';
+  const sp = opts.spacePeriod ?? { periodType: 'month' as SpacePeriodType, periodDay: 1 };
+  const len = budget.every === 'week' ? 7 : 14;
+  const resetDay = budget.resetDay ?? anchor.getDate();
+  let start: Date;
+  if (budget.every === 'month') start = monthResetOnOrAfter(shiftDays(anchor, 1), resetDay);
+  else if (budget.every === 'period') start = spacePeriodStartAfter(anchor, sp);
+  else {
+    const aligned = weekStartOnOrAfter(anchor, weekStart);
+    start = aligned.getTime() === anchor.getTime() ? shiftDays(anchor, len) : aligned;
+  }
+  for (let i = 1; i < index; i += 1) {
+    if (budget.every === 'month') start = dayOfMonth(start.getFullYear(), start.getMonth() + 1, resetDay);
+    else if (budget.every === 'period') start = spacePeriodStartAfter(start, sp);
+    else start = shiftDays(start, len);
+  }
+  return start;
+}
+
+/** the budget's period at cycle `index` (0 = the period the start date opens) */
+export function budgetPeriodAt(budget: BudgetRow, index: number, opts: BudgetPeriodOpts = {}): Period {
+  const i = Math.max(0, index);
+  return { start: localIso(cycleStart(budget, i, opts)), end: localIso(shiftDays(cycleStart(budget, i + 1, opts), -1)) };
+}
+
+/** how many whole cycles lie between the start date and `today` */
+export function cycleIndex(budget: BudgetRow, today: string, opts: BudgetPeriodOpts = {}): number {
   const now = parse(today);
-  if (now < anchor) return 0;
-  if (budget.every === 'month') {
-    const months = (now.getFullYear() - anchor.getFullYear()) * 12 + (now.getMonth() - anchor.getMonth());
-    // not yet reached this month's anchor day → still the previous cycle
-    return now < monthStart(anchor, months) ? months - 1 : months;
+  if (now < parse(budget.anchor)) return 0;
+  for (let index = 0; index < MAX_CYCLES; index += 1) {
+    if (now < cycleStart(budget, index + 1, opts)) return index;
   }
-  const len = budget.every === 'week' ? 7 : 14;
-  const days = Math.round((now.getTime() - anchor.getTime()) / DAY_MS);
-  return Math.floor(days / len);
+  return MAX_CYCLES;
 }
 
-/** the budget's period at cycle `index` (0 = the anchor's own period) */
-export function budgetPeriodAt(budget: BudgetRow, index: number): Period {
-  const anchor = parse(budget.anchor);
-  if (budget.every === 'month') {
-    const start = monthStart(anchor, index);
-    return { start: localIso(start), end: localIso(shiftDays(monthStart(anchor, index + 1), -1)) };
-  }
-  const len = budget.every === 'week' ? 7 : 14;
-  const start = shiftDays(anchor, index * len);
-  return { start: localIso(start), end: localIso(shiftDays(start, len - 1)) };
-}
-
-/** the period containing `today` (or the anchor period before it starts) */
-export const currentBudgetPeriod = (budget: BudgetRow, today: string): Period =>
-  budgetPeriodAt(budget, cycleIndex(budget, today));
+/** the period containing `today` (or the start date's period before it opens) */
+export const currentBudgetPeriod = (budget: BudgetRow, today: string, opts: BudgetPeriodOpts = {}): Period =>
+  budgetPeriodAt(budget, cycleIndex(budget, today, opts), opts);
 
 /** whole days until the cycle resets, today included (list/home/detail) */
-export const budgetDaysLeft = (budget: BudgetRow, today: string): number =>
-  Math.max(0, Math.round((Date.parse(currentBudgetPeriod(budget, today).end) - Date.parse(today)) / 86_400_000)) + 1;
+export const budgetDaysLeft = (budget: BudgetRow, today: string, opts: BudgetPeriodOpts = {}): number =>
+  Math.max(0, Math.round((Date.parse(currentBudgetPeriod(budget, today, opts).end) - Date.parse(today)) / DAY_MS)) + 1;
 
 interface CatalogLookup {
   byId: (id: string | undefined) => { id: string; parentId?: string };
@@ -107,9 +151,10 @@ export function carriedCents(
   txs: readonly TxView[],
   family: ReadonlySet<string>,
   today: string,
+  opts: BudgetPeriodOpts = {},
 ): number {
   if (budget.carryOver !== 1) return 0;
-  const current = cycleIndex(budget, today);
+  const current = cycleIndex(budget, today, opts);
   if (current <= 0) return 0;
 
   const window =
@@ -120,7 +165,7 @@ export function carriedCents(
 
   let carried = 0;
   for (let index = current - window; index < current; index++) {
-    const spent = budgetSpentCents(txs, family, budgetPeriodAt(budget, index));
+    const spent = budgetSpentCents(txs, family, budgetPeriodAt(budget, index, opts));
     const leftover = budget.amountCents + carried - spent;
     carried = Math.min(Math.max(leftover, 0), cap);
   }
@@ -145,10 +190,11 @@ export function budgetStatus(
   txs: readonly TxView[],
   catalog: CatalogLookup,
   today: string,
+  opts: BudgetPeriodOpts = {},
 ): BudgetStatus {
   const family = budgetFamily(budget.catIds, catalog);
-  const period = currentBudgetPeriod(budget, today);
-  const carried = carriedCents(budget, txs, family, today);
+  const period = currentBudgetPeriod(budget, today, opts);
+  const carried = carriedCents(budget, txs, family, today, opts);
   const spent = budgetSpentCents(txs, family, period);
   const limit = budget.amountCents + carried;
   return {

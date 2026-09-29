@@ -11,6 +11,8 @@ export function useAllocations(): AllocationRow[] | undefined {
     store,
     async () => (await store.bySpace('allocation', spaceId)).filter((a) => a.deleted === 0),
     [spaceId],
+    undefined,
+    `allocations:${spaceId}`, // #361: remount cache
   );
 }
 

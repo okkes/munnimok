@@ -46,7 +46,7 @@ function singleFlight(fetchToken: () => Promise<string | undefined>): Promise<st
 }
 
 function LogtoGate() {
-  const { isAuthenticated, isLoading, signIn, getAccessToken } = useLogto();
+  const { isAuthenticated, isLoading, signIn, signOut, getAccessToken } = useLogto();
   const isCallback = window.location.pathname.endsWith('/auth-callback');
   if (isCallback) return <Callback />;
   if (isLoading) return <p className="center">…</p>;
@@ -56,10 +56,20 @@ function LogtoGate() {
         <button className="btn" onClick={() => void signIn(`${window.location.origin}/auth-callback`)}>
           Sign in
         </button>
+        <p className="hint">
+          Same account as the munni app — there is no admin password. An operator grants admin per account in the setup wizard (the
+          environment&apos;s Access tab).
+        </p>
       </div>
     );
   }
-  return <ControlApp config={config} getToken={() => singleFlight(() => getAccessToken(config.logtoResource || undefined))} />;
+  return (
+    <ControlApp
+      config={config}
+      getToken={() => singleFlight(() => getAccessToken(config.logtoResource || undefined))}
+      signOut={() => void signOut(window.location.origin)}
+    />
+  );
 }
 
 function Callback() {

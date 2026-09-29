@@ -1,3 +1,4 @@
+import { ScrollRow } from '@/ui/ScrollRow';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { directionAllows } from '@/domain/categoryRules';
@@ -184,7 +185,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
               <Icon name="information-outline" size={13} color="var(--m-ink-4)" />
             </span>
           </div>
-          <div className="mt-1 flex gap-2 overflow-x-auto pb-1">
+          <ScrollRow className="mt-1" tone="surface">
             {counterAccounts.map((a) => (
               <Chip
                 key={a.id}
@@ -195,7 +196,7 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
                 {a.name}
               </Chip>
             ))}
-          </div>
+          </ScrollRow>
           {counterAcct && (
             <p className="px-1 pt-0.5 text-[11px] text-ink-4" data-testid="catpicker-counter-note">
               {t('cats.counterFilterActive')}

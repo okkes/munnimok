@@ -11,6 +11,8 @@ import type { SyncEnvelope } from '@/sync/merge';
 export type SpaceKind = 'personal' | 'shared';
 
 export type SpacePeriodType = 'month' | 'week' | 'biweekly' | 'custom';
+/** #370: the calendar's first weekday — a device preference every new space copies, each space may override */
+export type WeekStart = 'monday' | 'sunday';
 
 export interface SpaceRow extends SyncEnvelope {
   id: string;
@@ -19,6 +21,8 @@ export interface SpaceRow extends SyncEnvelope {
   currency: string; // ISO 4217, e.g. 'EUR'
   periodType: SpacePeriodType;
   periodDay: number; // day of month the budget period starts (month type)
+  /** #370: this space's first weekday (weekly budgets, week views); set from the device preference at creation */
+  weekStart?: WeekStart;
   /** creator's display name at creation — distinguishes same-named
    *  shared spaces in lists (user rule; private names stay unique) */
   createdByName?: string;
@@ -45,6 +49,8 @@ export interface SpaceRow extends SyncEnvelope {
   balanceBandMode?: 'networth' | 'cash' | 'spendable' | 'custom';
   /** the custom mode's explicit include list */
   balanceBandAccounts?: string[];
+  /** #368: the savings accounts that feed the goals; absent = every savings account */
+  goalPoolAccountIds?: string[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
@@ -372,7 +378,8 @@ export interface TxSeenRow extends SyncEnvelope {
   baseline?: 0 | 1;
 }
 
-export type BudgetEvery = 'week' | '2weeks' | 'month';
+/** #369: 'period' resets together with the space's own budget period */
+export type BudgetEvery = 'week' | '2weeks' | 'month' | 'period';
 export type BudgetCarryMode = 'periods' | 'cap';
 
 /**
@@ -388,11 +395,15 @@ export interface BudgetRow extends SyncEnvelope {
   name: string;
   /** MDI icon */
   icon?: string;
+  /** #373: own image (small data URL, client-downscaled) — wins over `icon` in lists */
+  picture?: string;
   /** the limit per period, positive minor units */
   amountCents: number;
   every: BudgetEvery;
-  /** yyyy-mm-dd the cycle counts from */
+  /** yyyy-mm-dd the budget starts on: its first period opens here (and may be partial) */
   anchor: string;
+  /** #371: monthly budgets reset on this day of the month (1-28); absent = the start date's day */
+  resetDay?: number;
   /** main and/or sub category ids; exclusive across a space's budgets */
   catIds: string[];
   carryOver?: 0 | 1;

@@ -1,6 +1,6 @@
-import type { AccountRow, BudgetRow, RecurringRow, TxView } from '@/db/types';
+import type { AccountRow, BudgetRow, RecurringRow, SpacePeriodType, TxView, WeekStart } from '@/db/types';
 import type { TranslationKey } from '@/i18n';
-import { budgetFamily, budgetPeriodAt, budgetSpentCents, cycleIndex } from './budgets';
+import { budgetFamily, budgetOptsFor, budgetPeriodAt, budgetSpentCents, cycleIndex } from './budgets';
 import { mainCatOf } from './categories';
 import { projectPayoff } from './debts';
 import { cycleMonths } from './recurring';
@@ -49,6 +49,8 @@ export interface InsightInputs {
   /** oldest → current, e.g. the last 6 space periods */
   periods: readonly Period[];
   today: string;
+  /** the space's first weekday + period shape — budget cycles depend on them (#369, #370) */
+  space?: { weekStart?: WeekStart; periodType: SpacePeriodType; periodDay: number } | null;
 }
 
 // ── leaks ───────────────────────────────────────────────────────────────
@@ -195,10 +197,11 @@ export function budgetRealityCheck(inputs: InsightInputs): Insight[] {
   const out: Insight[] = [];
   for (const budget of inputs.budgets) {
     if (budget.deleted !== 0) continue;
-    const current = cycleIndex(budget, inputs.today);
+    const opts = budgetOptsFor(inputs.space);
+    const current = cycleIndex(budget, inputs.today, opts);
     if (current < 3) continue;
     const family = budgetFamily(budget.catIds, inputs.catalog);
-    const spends = [1, 2, 3].map((back) => budgetSpentCents(inputs.txs, family, budgetPeriodAt(budget, current - back)));
+    const spends = [1, 2, 3].map((back) => budgetSpentCents(inputs.txs, family, budgetPeriodAt(budget, current - back, opts)));
     if (!spends.every((spent) => spent > budget.amountCents)) continue;
     const suggested = Math.round(spends.reduce((sum, s) => sum + s, 0) / spends.length / 100) * 100;
     out.push({

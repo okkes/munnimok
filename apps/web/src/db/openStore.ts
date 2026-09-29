@@ -1,6 +1,7 @@
 import { isNativeApp } from '@/lib/platform';
 import { DexieBackend } from './backend';
 import type { StorageBackend } from './backend';
+import Dexie from 'dexie';
 import { MunniDB } from './schema';
 import { sqliteAvailable } from './capacitorSql';
 
@@ -57,4 +58,7 @@ export async function destroyStorage(name: string): Promise<void> {
     await executor.destroy();
   }
   await new DexieBackend(new MunniDB(name)).destroy();
+  // #363: a wipe that silently left the database behind is worse than a
+  // loud one — the caller shows the failure instead of a clean login
+  if (await Dexie.exists(name)) throw new Error(`local database ${name} survived the wipe`);
 }

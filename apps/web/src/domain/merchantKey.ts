@@ -57,12 +57,30 @@ function stripTrailingCity(value: string): string {
   return tokens.join(' ');
 }
 
+// #346: legal forms behind a name are spelled differently per bank line
+// ("ODIDO NEDERLAND B.V." on one statement, "Odido Nederland BV" on the
+// next) — trailing tokens only, one or two words after the punctuation
+// collapse ("b v")
+const LEGAL_FORMS = new Set(['bv', 'b v', 'nv', 'n v', 'vof', 'v o f', 'ltd', 'llc', 'inc', 'gmbh', 'plc', 'sarl']);
+
+function stripLegalForms(value: string): string {
+  const tokens = value.split(' ');
+  while (tokens.length > 1) {
+    if (tokens.length > 2 && LEGAL_FORMS.has(tokens.slice(-2).join(' '))) tokens.splice(-2, 2);
+    else if (tokens.length > 3 && LEGAL_FORMS.has(tokens.slice(-3).join(' '))) tokens.splice(-3, 3);
+    else if (LEGAL_FORMS.has(tokens.at(-1) ?? '')) tokens.pop();
+    else break;
+  }
+  return tokens.join(' ');
+}
+
 export function merchantKey(merchant: string): string {
   const base = stripProcessorPrefix(merchant.toLowerCase().trim())
     .replaceAll(/\b\d{2,}[\d./:-]*/g, ' ') // store nrs, dates, terminal ids
     .replaceAll(/[^\p{L}\p{N}&' ]+/gu, ' ')
     .replaceAll(/\s+/g, ' ')
     .trim();
-  // branch cities differ per charge, the merchant doesn't (user request)
-  return stripTrailingCity(base).slice(0, 40);
+  // branch cities differ per charge, the merchant doesn't (user request);
+  // the legal form behind the name neither (#346)
+  return stripLegalForms(stripTrailingCity(base)).slice(0, 40);
 }

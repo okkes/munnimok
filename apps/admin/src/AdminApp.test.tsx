@@ -24,7 +24,7 @@ const QUOTA = [
 ];
 const HEALTH = { status: 'ok', build: '640', capabilities: { gocardless: true, fcm: true, push: false } };
 
-type Handler = (init?: RequestInit) => { status?: number; body?: unknown };
+type Handler = (init?: RequestInit, url?: URL) => { status?: number; body?: unknown };
 
 function scriptFetch(routes: Record<string, Handler>) {
   const calls: string[] = [];
@@ -34,7 +34,7 @@ function scriptFetch(routes: Record<string, Handler>) {
       const url = new URL(String(input));
       const key = `${(init?.method ?? 'GET').toUpperCase()} ${url.pathname}`;
       calls.push(key);
-      const out = routes[key]?.(init) ?? { status: 404 };
+      const out = routes[key]?.(init, url) ?? { status: 404 };
       return new Response(JSON.stringify(out.body ?? {}), {
         status: out.status ?? 200,
         headers: { 'Content-Type': 'application/json' },
@@ -84,6 +84,18 @@ describe('AdminApp (test-auth mode)', () => {
     await waitFor(() => expect(screen.getByText(/no admin access/)).toBeTruthy());
     expect(screen.queryByTestId('overview-tiles')).toBeNull();
     expect(screen.queryByText(/did not answer/)).toBeNull();
+  });
+
+  it('a Logto session offers Sign out — a freshly granted admin role rides on the next token', async () => {
+    scriptFetch({ 'GET /admin/ping': () => ({ status: 403 }) });
+    const signOut = vi.fn();
+    render(<AdminApp config={CONFIG} getToken={async () => 'tok'} signOut={signOut} />);
+    await screen.findByText(/no admin access/);
+    fireEvent.click(screen.getByTestId('admin-signout'));
+    expect(signOut).toHaveBeenCalledTimes(1);
+    // the denied note carries its own Sign out — the fix it names is one tap away
+    fireEvent.click(screen.getByTestId('admin-denied-signout'));
+    expect(signOut).toHaveBeenCalledTimes(2);
   });
 
   it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the denied one', async () => {
@@ -221,6 +233,38 @@ describe('AdminApp (test-auth mode)', () => {
     await waitFor(() => expect(screen.getByTestId('admin-requisitions').textContent).not.toContain('ASN_NL'));
     expect(calls).toContain('DELETE /admin/gocardless/requisitions/req-stale-0002');
     expect(screen.queryByText(/Delete selected/)).toBeNull(); // selection cleared
+  });
+
+  it('connections: "other environments too" lists the shared account\'s foreign consents with their origin; deleting one asks first and sends foreign=true', async () => {
+    const seen: string[] = [];
+    const foreign = { requisitionId: 'req-foreign-0009', status: 'LN', institutionId: 'ABN_NL', created: new Date(Date.now() - 3 * 86_400_000).toISOString(), accountCount: 1, stale: false, ownerSub: null, foreign: true, environmentOrigin: 'https://munni-old.example' };
+    const calls = scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/gocardless/requisitions': (_init, url) => {
+        seen.push(url?.search ?? '');
+        return { body: url?.search === '?all=true' ? { requisitions: [...REQUISITIONS, foreign], foreignCount: 1 } : requisitionList(REQUISITIONS, 1) };
+      },
+      'DELETE /admin/gocardless/requisitions/req-foreign-0009': (_init, url) => {
+        seen.push(`delete${url?.search ?? ''}`);
+        return {};
+      },
+    });
+    const confirmMock = vi.fn(() => true);
+    vi.stubGlobal('confirm', confirmMock); // happy-dom has no confirm — the component asks before touching another environment's consent
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-connections'));
+    const table = await screen.findByTestId('admin-requisitions');
+    expect(table.textContent).not.toContain('ABN_NL'); // the default view keeps the foreign consent out
+    fireEvent.click(screen.getByTestId('connections-all-filter'));
+    await waitFor(() => expect(screen.getByTestId('admin-requisitions').textContent).toContain('ABN_NL'));
+    expect(seen).toContain('?all=true');
+    expect(screen.getByTestId('admin-requisitions').textContent).toContain('munni-old.example');
+    const row = screen.getAllByRole('checkbox').find((box) => box.closest('tr')?.textContent?.includes('ABN_NL'))!;
+    fireEvent.click(row);
+    fireEvent.click(screen.getByText('Delete selected (1)'));
+    await waitFor(() => expect(seen).toContain('delete?foreign=true'));
+    expect(confirmMock).toHaveBeenCalledTimes(1);
+    expect(calls).toContain('DELETE /admin/gocardless/requisitions/req-foreign-0009');
   });
 
   it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {

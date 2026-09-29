@@ -1,3 +1,4 @@
+import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -122,6 +123,15 @@ export function RecurringMatchSheet({ recId, onClose }: Readonly<{ recId: string
         <p className="px-1 py-6 text-center text-[13px] text-ink-4" data-testid="recmatch-empty">
           {t('recurring.matchEmpty')}
         </p>
+      )}
+      {/* #378: the one select-all row every transaction list wears */}
+      {candidates.length > 0 && (
+        <SelectAllRow
+          total={candidates.length}
+          selected={picked.size}
+          onChange={(next) => setPicked(next ? new Set(candidates.map((tx) => tx.id)) : new Set())}
+          testId="recmatch-pick-all"
+        />
       )}
       <div className="flex flex-col" data-testid="recmatch-list">
         {candidates.map((tx) => (

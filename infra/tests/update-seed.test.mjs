@@ -39,6 +39,18 @@ exit 0
 const ENV_COMPOSE = 'services:\n  postgres-prod:\n    image: postgres\n  web-prod:\n    image: web\n  logto-prod:\n    image: svhd/logto\n';
 const SHARED_COMPOSE = 'services:\n  glitchtip-db:\n    image: postgres\n  glitchtip:\n    image: glitchtip/glitchtip\n';
 
+/** run `update.sh` in APPLY mode (pull + up) in a folder shaped like a deployed stack */
+function apply({ token = '' } = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'munni-apply-'));
+  copyFileSync(UPDATE, join(dir, 'update.sh'));
+  const compose = 'docker-compose.munni-nas-prod.yml';
+  writeFileSync(join(dir, compose), ENV_COMPOSE);
+  writeFileSync(join(dir, '.env'), ['GHCR_USER=okkes', `GHCR_PAT=${token}`, 'LOGTO_SEED_INFRA_ID=infra0123456789abcdef', 'LOGTO_SEED_INFRA_SECRET=s3cr3t', ''].join('\n'));
+  const fake = fakeBin(dir);
+  const out = execFileSync('sh', ['./update.sh', compose], { cwd: dir, env: fake.env(), encoding: 'utf8' });
+  return { dir, out, calls: fake.calls() };
+}
+
 /** run `update.sh --seed` in a folder shaped like a deployed stack */
 function seed({ ready = true, admin = true, shared = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'munni-seed-'));
@@ -55,6 +67,18 @@ function seed({ ready = true, admin = true, shared = false } = {}) {
   const out = execFileSync('sh', ['./update.sh', '--seed', compose], { cwd: dir, env: fake.env({ FAKE_READY: ready ? '1' : '0' }), encoding: 'utf8' });
   return { dir, out, calls: fake.calls(), raw: readFileSync(fake.log, 'utf8') };
 }
+
+test('update.sh apply: without a registry token the stored ghcr login is DROPPED before the pull (a revoked one made every public pull answer "denied", #365); with a token it logs in fresh', () => {
+  const anonymous = apply();
+  const pullAt = anonymous.calls.findIndex((c) => c.startsWith('compose ') && c.includes(' pull'));
+  assert.ok(pullAt > 0, 'the pull happens');
+  assert.ok(anonymous.calls.slice(0, pullAt).some((c) => c === 'logout ghcr.io'), 'the daemon forgets the old credential first');
+  assert.ok(!anonymous.calls.some((c) => c.startsWith('login ')), 'nothing to log in with');
+  const withToken = apply({ token: 'ghp_fresh' });
+  assert.ok(withToken.calls.some((c) => c === 'login ghcr.io -u okkes --password-stdin'), 'a token logs in');
+  assert.ok(!withToken.calls.some((c) => c === 'logout ghcr.io'), 'a working login is kept');
+  assert.ok(withToken.calls.some((c) => c.includes(' up -d')), 'then the stack comes up');
+});
 
 test('logto seed (an environment): waits for Logto\'s roles in the environment\'s OWN postgres service, then upserts the infra app + its Management API role and the admin-tenant app with m-admin\'s roles — idempotent statements only', () => {
   const { dir, out, calls } = seed();

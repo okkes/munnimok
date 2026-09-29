@@ -52,6 +52,23 @@ describe('Events (demo identity)', () => {
     expect(document.querySelector('[data-testid^="event-card-"]')).toBeNull();
   }, 15_000);
 
+  it('#366: an ask whose edits settle underneath it still answers — Discard closes, nothing is left hidden', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    fireEvent.click(await screen.findByTestId('events-add'));
+    fireEvent.change(await screen.findByTestId('eventform-name'), { target: { value: 'Ski trip' } });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await screen.findByTestId('sheet-discard');
+    // the draft goes back to its baseline while the ask is up
+    fireEvent.change(screen.getByTestId('eventform-name'), { target: { value: '' } });
+    expect(screen.getByTestId('sheet-discard')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('sheet-discard'));
+    await waitFor(() => expect(screen.queryByTestId('sheet-discard')).toBeNull());
+    // the form is closed for real — the add door opens a fresh one
+    fireEvent.click(await screen.findByTestId('events-add'));
+    expect((await screen.findByTestId('eventform-name') as HTMLInputElement).value).toBe('');
+  }, 15_000);
+
   it('creates an event; the card shows range and a zero total', async () => {
     renderApp('/events');
     await screen.findByTestId('screen-events');
@@ -108,10 +125,15 @@ describe('Events (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach'));
     await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/€[1-9]/), { timeout: 15_000 });
-    // the excluded transaction keeps the banner alive with exactly one left
-    await waitFor(() => expect(screen.getByTestId('eventdetail-suggest').textContent).toMatch(/1 /), { timeout: 8000 });
+    // #379: with payments attached the loud card yields to the quiet
+    // "find more" — the excluded transaction keeps it alive with exactly one
+    await waitFor(() => expect(screen.getByTestId('eventdetail-find-more').textContent).toMatch(/1/), { timeout: 8000 });
+    expect(screen.queryByTestId('eventdetail-suggest')).toBeNull();
     expect(screen.getByTestId('eventdetail-cats')).toBeTruthy();
     expect(screen.getByTestId('eventdetail-txs')).toBeTruthy();
+    // the quiet door opens the same picker
+    fireEvent.click(screen.getByTestId('eventdetail-find-more'));
+    await screen.findByTestId('eventpick-list');
   }, 45_000);
 
   it('#143: a split offers its parts one by one — the container itself is never a pick', async () => {
@@ -163,9 +185,11 @@ describe('Events (demo identity)', () => {
     await screen.findByTestId('eventpick-list');
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
 
-    // none → the attach button disarms; all → it arms again
-    fireEvent.click(screen.getByTestId('eventpick-none'));
+    // #378: one row toggles — a full pick clears, an empty pick selects all
+    expect(screen.getByTestId('eventpick-all').dataset.state).toBe('all');
+    fireEvent.click(screen.getByTestId('eventpick-all'));
     expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('eventpick-all').dataset.state).toBe('none');
     fireEvent.click(screen.getByTestId('eventpick-all'));
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false));
   }, 20_000);

@@ -5,6 +5,7 @@ import { LogtoProvider, useHandleSignInCallback, useLogto } from '@logto/react';
 import * as Sentry from '@sentry/react';
 import { config, logtoConfigured, publicOrigin } from '@/app/config';
 import { NATIVE_CALLBACK_KEY, isNativeApp } from '@/lib/platform';
+import { NativeLogtoClient, nativeCallbackUri } from './nativeAuth';
 import { setAccessTokenGetter, setOidcSignIn, setOidcSignOut, signalAuthReady } from '@/app/authToken';
 import {
   attemptSilentReentry,
@@ -26,9 +27,9 @@ import { Logo } from '@/ui/Logo';
  * handler re-enters /auth-callback with the same params.
  */
 export const callbackUri = () =>
-  // native uses the UNIVERSAL LINK return (no "Open in munni?" popup);
-  // the hosted /native-auth page scheme-bounces when the link fails
-  isNativeApp() ? `${publicOrigin()}/native-auth` : `${window.location.origin}/auth-callback`;
+  // native: the scheme callback the auth session hands straight back (nativeAuth.ts) —
+  // the hosted /native-auth bounce stays only for builds that predate it
+  isNativeApp() ? nativeCallbackUri() : `${window.location.origin}/auth-callback`;
 export const isCallbackPath = () => window.location.pathname.endsWith('/auth-callback');
 
 export function LogtoAppProvider({ children }: { children: ReactNode }) {
@@ -43,6 +44,8 @@ export function LogtoAppProvider({ children }: { children: ReactNode }) {
         appId: config.logto.appId,
         resources: config.logto.resource ? [config.logto.resource] : [],
       }}
+      // the phone's client navigates through the platform auth session (ASWebAuthenticationSession / Custom Tab)
+      LogtoClientClass={isNativeApp() ? NativeLogtoClient : undefined}
     >
       <TokenBridge />
       {children}

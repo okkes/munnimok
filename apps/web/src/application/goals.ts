@@ -30,6 +30,8 @@ export function useGoals(): GoalRow[] | undefined {
       return goals;
     },
     [spaceId],
+    undefined,
+    `goals:${spaceId}`, // #361: remount cache
   );
 }
 

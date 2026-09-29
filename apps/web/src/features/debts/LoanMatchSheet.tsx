@@ -1,3 +1,4 @@
+import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -239,25 +240,20 @@ function BulkBar({
   onCounted: (next: Set<string>) => void;
 }>) {
   const { t } = useLang();
-  const allPicked = candidates.every((c) => picked.has(c.tx.id));
   const preIds = candidates.filter((c) => c.preAnchor).map((c) => c.tx.id);
   // vacuously true with nothing togglable — matches the rows' disabled-ON
   const allDeduct = preIds.every((id) => counted.has(id));
   return (
     <div className="mb-1 flex items-center justify-between gap-2 border-b border-line pb-2">
-      <label className="flex items-center gap-2 text-[11px] font-medium text-ink-3">
-        <input
-          data-testid="loanmatch-pick-all"
-          type="checkbox"
-          checked={allPicked}
-          ref={(el) => {
-            if (el) el.indeterminate = picked.size > 0 && !allPicked;
-          }}
-          onChange={() => onPicked(allPicked ? new Set() : new Set(candidates.map((c) => c.tx.id)))}
-          className="h-5 w-5 accent-[var(--m-accent)]"
-        />
-        {t('debts.matchPickAll')}
-      </label>
+      {/* #378: the one select-all row every transaction list wears */}
+      <SelectAllRow
+        total={candidates.length}
+        selected={picked.size}
+        onChange={(next) => onPicked(next ? new Set(candidates.map((c) => c.tx.id)) : new Set())}
+        testId="loanmatch-pick-all"
+        divider={false}
+        className="min-w-0 flex-1"
+      />
       <span className="flex items-center gap-2 text-[11px] font-medium text-ink-3">
         {t('debts.matchDeductAll')}
         <Switch

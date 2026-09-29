@@ -12,7 +12,8 @@ export const budgetSoft = (ratio: number): string => `color-mix(in srgb, ${budge
 
 export const ratioPct = (status: BudgetStatus): number => Math.min(100, Math.round(status.ratio * 100));
 
-export const CADENCE_KEYS: Record<'week' | '2weeks' | 'month', TranslationKey> = {
+export const CADENCE_KEYS: Record<'week' | '2weeks' | 'month' | 'period', TranslationKey> = {
+  period: 'budgets.resetsPeriod',
   week: 'budgets.resetsWeek',
   '2weeks': 'budgets.resets2Weeks',
   month: 'budgets.resetsMonth',

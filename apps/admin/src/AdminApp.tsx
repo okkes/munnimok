@@ -16,7 +16,9 @@ interface AdminUser {
   displayName: string | null;
   email: string | null;
   createdAt: string;
+  /** spaces the user is a member of — the IBAN-keyed bank feeds are counted apart */
   spaceCount: number;
+  feedCount?: number;
 }
 interface AdminRequisition {
   requisitionId: string;
@@ -26,6 +28,10 @@ interface AdminRequisition {
   accountCount: number;
   stale: boolean;
   ownerSub: string | null;
+  /** another environment's consent on the shared account (the all-environments view) */
+  foreign?: boolean;
+  /** the environment it was started from — its redirect origin */
+  environmentOrigin?: string | null;
 }
 /** THIS environment's connections + a count of foreign ones (the GC
  * account is shared across environments; foreign consents are neither
@@ -45,6 +51,19 @@ interface ProviderQuota {
 interface HealthInfo {
   build?: string;
   capabilities?: Record<string, unknown>;
+}
+
+/** "1 space · 2 bank feeds" — the IBAN-keyed feeds a bank connection adds are counted apart from the spaces */
+function membershipLabel(u: AdminUser): string {
+  const spaces = `${u.spaceCount} space${u.spaceCount === 1 ? '' : 's'}`;
+  if (!u.feedCount) return spaces;
+  return `${spaces} · ${u.feedCount} bank feed${u.feedCount === 1 ? '' : 's'}`;
+}
+
+/** the row's attribution: a foreign consent shows the environment it was started from, an own one its owner */
+function requisitionAttribution(r: AdminRequisition): string {
+  if (r.foreign) return ` · ${r.environmentOrigin ?? 'unknown origin'}`;
+  return r.ownerSub ? ` · ${r.ownerSub.slice(0, 12)}` : '';
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -132,6 +151,8 @@ interface AdminAppProps {
   config: AdminConfig;
   /** null = test-auth mode (X-User-Sub header from the sub box) */
   getToken: (() => Promise<string | undefined>) | null;
+  /** ends the Logto session (absent in test-auth mode) — a freshly granted admin role rides on the next token */
+  signOut?: () => void;
 }
 
 /**
@@ -140,7 +161,7 @@ interface AdminAppProps {
  * upkeep. Talks to the same API (/admin/* gated server-side); it
  * deliberately shares no code with the member app.
  */
-export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
+export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>) {
   // survives the full page reload a Logto re-auth causes (else every token
   // hiccup dumps the operator back on Overview mid-task)
   const [screen, setScreen] = useState<Screen>(() => {
@@ -155,6 +176,8 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [requisitions, setRequisitions] = useState<AdminRequisition[] | null>(null);
   const [foreignCount, setForeignCount] = useState(0);
+  // the shared GoCardless account's OTHER environments — on request only, so leftovers of removed environments can go
+  const [showAll, setShowAll] = useState(false);
   const [quota, setQuota] = useState<ProviderQuota[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
@@ -200,7 +223,7 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     if (!ping?.ok) return;
     const [usersRes, reqRes, quotaRes, healthRes] = await Promise.all([
       call('/admin/users'),
-      call('/admin/gocardless/requisitions'),
+      call(`/admin/gocardless/requisitions${showAll ? '?all=true' : ''}`),
       call('/admin/quota'),
       fetch(`${config.apiUrl}/health`).catch(() => null),
     ]);
@@ -215,7 +238,7 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     const catalogRes = await call('/catalog').catch(() => null);
     if (catalogRes?.status === 204) setCatalog(EMPTY_CATALOG);
     else if (catalogRes?.ok) setCatalog((await catalogRes.json()) as CatalogDoc);
-  }, [call, config.apiUrl]);
+  }, [call, config.apiUrl, showAll]);
 
   useEffect(() => {
     if (getToken || sub) void reload();
@@ -239,9 +262,17 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
     act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords, stores }) }));
 
   const deleteSelected = async () => {
+    const byId = (id: string) => requisitions?.find((r) => r.requisitionId === id);
+    const foreignIds = [...selected].filter((id) => byId(id)?.foreign);
+    if (foreignIds.length > 0) {
+      // revoking another environment's bank access is deliberate here, never a slip
+      const origins = [...new Set(foreignIds.map((id) => byId(id)?.environmentOrigin ?? 'unknown origin'))].join(', ');
+      const plural = foreignIds.length === 1 ? '' : 's';
+      if (!window.confirm(`Delete ${foreignIds.length} connection${plural} of OTHER environments (${origins})? This revokes their bank access — meant for leftovers of removed environments.`)) return;
+    }
     setBusy(true);
     for (const id of selected) {
-      await call(`/admin/gocardless/requisitions/${id}`, { method: 'DELETE' }).catch(() => undefined);
+      await call(`/admin/gocardless/requisitions/${id}${foreignIds.includes(id) ? '?foreign=true' : ''}`, { method: 'DELETE' }).catch(() => undefined);
     }
     setSelected(new Set());
     await reload();
@@ -274,6 +305,11 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
           ))}
         </nav>
         <div className="sidebar-foot">
+          {signOut && (
+            <button className="btn" data-testid="admin-signout" onClick={signOut}>
+              Sign out
+            </button>
+          )}
           {!getToken && (
             <input
               data-testid="admin-sub"
@@ -289,7 +325,17 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
       </aside>
 
       <main className="content">
-        {denied && <p className="denied">This account has no admin access — its sign-in carries no admin scope.</p>}
+        {denied && (
+          <p className="denied">
+            This account has no admin access yet — its sign-in carries no admin scope. An operator switches admin on for it in the setup wizard
+            (the environment&apos;s Access tab); then sign out and in again — the role rides on the next token.
+            {signOut && (
+              <button className="btn" data-testid="admin-denied-signout" style={{ marginLeft: 12 }} onClick={signOut}>
+                Sign out
+              </button>
+            )}
+          </p>
+        )}
         {unreachable && <p className="denied">The admin API did not answer — is the environment running (and this origin allowed)?</p>}
         {disconnected && <p className="denied">This browser was disconnected from the account — reload to register it again.</p>}
         {/* blocked: no data loaded — the empty screens would only mislead */}
@@ -321,6 +367,8 @@ export function AdminApp({ config, getToken }: Readonly<AdminAppProps>) {
           <ConnectionsScreen
             requisitions={requisitions}
             foreignCount={foreignCount}
+            showAll={showAll}
+            onShowAll={setShowAll}
             selected={selected}
             busy={busy}
             onToggle={(id) =>
@@ -487,7 +535,7 @@ function UsersScreen({
                   </div>
                 </td>
                 <td>{new Date(u.createdAt).toLocaleDateString()}</td>
-                <td>{u.spaceCount} spaces</td>
+                <td>{membershipLabel(u)}</td>
                 <td className="cell-actions">
                   <button
                     data-testid={`diagnose-${u.sub}`}
@@ -547,6 +595,8 @@ function UsersScreen({
 function ConnectionsScreen({
   requisitions,
   foreignCount,
+  showAll,
+  onShowAll,
   selected,
   busy,
   onToggle,
@@ -554,6 +604,8 @@ function ConnectionsScreen({
 }: Readonly<{
   requisitions: AdminRequisition[] | null;
   foreignCount: number;
+  showAll: boolean;
+  onShowAll: (on: boolean) => void;
   selected: Set<string>;
   busy: boolean;
   onToggle: (id: string) => void;
@@ -566,12 +618,15 @@ function ConnectionsScreen({
     <>
       <h1>Bank connections</h1>
       <p className="muted">
-        This environment&apos;s consents only.
+        {showAll ? 'Every connection on the shared GoCardless account.' : "This environment's consents only."}
         {foreignCount > 0 && (
           <span data-testid="connections-foreign-note">
             {' '}
             {foreignCount} other connection{foreignCount === 1 ? '' : 's'} on the shared GoCardless account belong
-            {foreignCount === 1 ? 's' : ''} to other environments — manage those from their own admin.
+            {foreignCount === 1 ? 's' : ''} to other environments —{' '}
+            {showAll
+              ? "listed with the environment each was started from; deleting one revokes that environment's bank access, so only leftovers of removed environments should go."
+              : 'manage those from their own admin, or show them here.'}
           </span>
         )}
       </p>
@@ -584,6 +639,10 @@ function ConnectionsScreen({
             onChange={(e) => setOnlyExpiring(e.target.checked)}
           />{' '}
           expiring soon only
+        </label>
+        <label className="radio">
+          <input type="checkbox" data-testid="connections-all-filter" checked={showAll} onChange={(e) => onShowAll(e.target.checked)} />{' '}
+          other environments too
         </label>
         {selected.size > 0 && (
           <button className="btn danger" disabled={busy} onClick={onDeleteSelected}>
@@ -609,11 +668,12 @@ function ConnectionsScreen({
                 </td>
                 <td>
                   <div className="cell-title">
-                    {r.institutionId} {r.stale && <em>stale</em>} {expiresSoon(r) && <span className="chip warn-chip">expiring</span>}
+                    {r.institutionId} {r.stale && <em>stale</em>} {r.foreign && <em>other environment</em>}{' '}
+                    {expiresSoon(r) && <span className="chip warn-chip">expiring</span>}
                   </div>
                   <div className="cell-sub">
                     {r.requisitionId.slice(0, 13)}… · {r.created ? new Date(r.created).toLocaleDateString() : '—'}
-                    {r.ownerSub ? ` · ${r.ownerSub.slice(0, 12)}` : ''}
+                    {requisitionAttribution(r)}
                   </div>
                 </td>
                 <td>{STATUS_LABEL[r.status] ?? r.status}</td>

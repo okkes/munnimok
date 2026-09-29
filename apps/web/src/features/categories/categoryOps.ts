@@ -5,10 +5,9 @@ import {
   affectedByTypeChange,
   detachCategoryPatch,
 } from '@/domain/categoryRules';
-import { adoptedCategoryId } from '@/domain/feedIds';
 import { historyTransactions, writeTxTransform } from '@/db/joined';
 import type { SpaceTx } from '@/db/joined';
-import type { CategoryRow, CatDirection, TxSplit, TxType } from '@/db/types';
+import type { CategoryRow, CatDirection, SpaceRow, TxType } from '@/db/types';
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
 
@@ -35,12 +34,55 @@ export interface PendingCommit {
   commit: () => Promise<void>;
 }
 
-/** spaces whose transactions can reference this category (its visibility) */
-async function visibleSpaceIds(store: StorageBackend, row: CategoryRow): Promise<string[]> {
-  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
-  const home = spaces.find((s) => s.id === row.spaceId);
-  if (home?.kind === 'shared') return [row.spaceId];
-  return spaces.filter((s) => s.kind !== 'shared').map((s) => s.id);
+/** spaces whose transactions can reference this category: its own (#387 — a custom category belongs to the space it was created in) */
+async function visibleSpaceIds(_store: StorageBackend, row: CategoryRow): Promise<string[]> {
+  return [row.spaceId];
+}
+
+/** #389: sub-categories under one main must not share an icon — the icon is the row's face in every list */
+export const iconConflict = (
+  candidate: { icon: string; parentId?: string; selfId?: string },
+  rows: readonly { id: string; icon: string; parentId?: string }[],
+): boolean =>
+  !!candidate.parentId && rows.some((r) => r.parentId === candidate.parentId && r.id !== candidate.selfId && r.icon === candidate.icon);
+
+/** one thing the copy sheet offers: a custom main with its subs, or a lone sub under a catalog main */
+export interface CopyUnit {
+  row: CategoryRow;
+  subs: CategoryRow[];
+  space: SpaceRow;
+}
+
+/**
+ * #390: the custom categories of the user's OTHER spaces that this space
+ * does not have yet — grouped as copy units (a custom main comes with every
+ * sub of its own; a sub under a catalog main comes alone). "Has already" is
+ * decided by name: a main of the same name, or a sub of the same name under
+ * the same catalog main. Rows of the active space never appear.
+ */
+export function copyableUnits(spaceId: string, spaces: readonly SpaceRow[], rows: readonly CategoryRow[]): CopyUnit[] {
+  const live = rows.filter((r) => r.deleted === 0);
+  const here = live.filter((r) => r.spaceId === spaceId);
+  const norm = (name?: string) => (name ?? '').trim().toLowerCase();
+  const hereMains = new Set(here.filter((r) => r.isParent === 1).map((r) => norm(r.name)));
+  const hereSubs = new Set(here.filter((r) => r.isParent !== 1).map((r) => `${r.parentId}|${norm(r.name)}`));
+  const units: CopyUnit[] = [];
+  const spaceById = new Map(spaces.filter((sp) => sp.deleted === 0).map((sp) => [sp.id, sp]));
+  const custom = new Set(live.filter((r) => r.isParent === 1).map((r) => r.id));
+  for (const row of live) {
+    if (row.spaceId === spaceId || row.isOther === 1) continue;
+    const space = spaceById.get(row.spaceId);
+    if (!space) continue;
+    if (row.isParent === 1) {
+      if (hereMains.has(norm(row.name))) continue;
+      units.push({ row, subs: live.filter((r) => r.parentId === row.id && r.isOther !== 1), space });
+    } else if (row.parentId && !custom.has(row.parentId)) {
+      // a sub under a catalog main (a sub of a custom main travels with its main)
+      if (hereSubs.has(`${row.parentId}|${norm(row.name)}`)) continue;
+      units.push({ row, subs: [], space });
+    }
+  }
+  return units.sort((a, b) => a.space.name.localeCompare(b.space.name) || (a.row.name ?? '').localeCompare(b.row.name ?? ''));
 }
 
 /** every transaction those spaces SEE — own rows and attached feeds,
@@ -261,142 +303,4 @@ export async function copyCategoryToSpace(
   } else {
     await repo.upsert('category', targetSpaceId, repo.newId(), categoryCopyFields(row, {}));
   }
-}
-
-/** rewrites a category-entry array through the id map; undefined when
- *  nothing changed — shared by row `cats` (#211) and part spreads */
-const remapCatEntries = <T extends { catId: string }>(entries: T[] | undefined, idMap: Map<string, string>): T[] | undefined => {
-  if (!entries?.some((c) => idMap.has(c.catId))) return undefined;
-  return entries.map((c) => (idMap.has(c.catId) ? { ...c, catId: idMap.get(c.catId)! } : c));
-};
-
-/** rewrites a splits array through the id map; undefined when nothing changed */
-const remapSplits = (splits: TxSplit[] | undefined, idMap: Map<string, string>): TxSplit[] | undefined => {
-  if (!splits?.some((s) => idMap.has(s.catId) || (s.cats ?? []).some((c) => idMap.has(c.catId)))) return undefined;
-  return splits.map((s) => ({
-    ...s,
-    ...(idMap.has(s.catId) ? { catId: idMap.get(s.catId)! } : {}),
-    ...(s.cats?.length ? { cats: remapCatEntries(s.cats, idMap) ?? s.cats } : {}),
-  }));
-};
-
-/** rows that reference categories (transactions and overlays share the shape) */
-type CatHolder = Pick<SpaceTx, 'id' | 'catId' | 'cats' | 'splits'>;
-
-/** every category id one row references: its own, its `cats` entries and
- *  each part's own + spread (#211) */
-const holderCatIds = (holder: CatHolder): (string | undefined)[] => [
-  holder.catId,
-  ...(holder.cats ?? []).map((c) => c.catId),
-  ...(holder.splits ?? []).flatMap((s) => [s.catId, ...(s.cats ?? []).map((c) => c.catId)]),
-];
-
-const collectUserScopedUse = (holders: CatHolder[], userScoped: (id?: string) => CategoryRow | undefined): Set<string> => {
-  const used = new Set<string>();
-  for (const holder of holders) {
-    for (const catId of holderCatIds(holder)) {
-      if (userScoped(catId)) used.add(catId!);
-    }
-  }
-  return used;
-};
-
-/**
- * Copy whole units: a used sub pulls its custom parent with ALL siblings
- * (a half-copied group would be confusing); subs under builtin parents
- * copy alone.
- */
-const planCopyUnits = (used: Set<string>, catById: Map<string, CategoryRow>, personalIds: Set<string>) => {
-  const parentUnits = new Map<string, CategoryRow>();
-  const loneSubs: CategoryRow[] = [];
-  for (const id of used) {
-    const row = catById.get(id)!;
-    if (row.isParent === 1) {
-      parentUnits.set(row.id, row);
-      continue;
-    }
-    const parent = row.parentId ? catById.get(row.parentId) : undefined;
-    if (parent && personalIds.has(parent.spaceId)) parentUnits.set(parent.id, parent);
-    else loneSubs.push(row);
-  }
-  return { parentUnits, loneSubs };
-};
-
-async function copyUnitsIntoSpace(
-  store: StorageBackend,
-  repo: Repo,
-  spaceId: string,
-  parentUnits: Map<string, CategoryRow>,
-  loneSubs: CategoryRow[],
-): Promise<Map<string, string>> {
-  const idMap = new Map<string, string>();
-  const copy = async (row: CategoryRow, overrides: Partial<CategoryRow>): Promise<string> => {
-    const newId = adoptedCategoryId(spaceId, row.id);
-    idMap.set(row.id, newId);
-    await repo.upsert('category', spaceId, newId, categoryCopyFields(row, overrides));
-    return newId;
-  };
-  for (const parent of parentUnits.values()) {
-    const newParentId = await copy(parent, { parentId: undefined });
-    for (const sub of await subsOf(store, parent)) await copy(sub, { parentId: newParentId });
-  }
-  for (const sub of loneSubs) await copy(sub, {});
-  return idMap;
-}
-
-async function rewriteReferences(
-  repo: Repo,
-  entity: 'transaction' | 'txMeta',
-  spaceId: string,
-  holders: CatHolder[],
-  idMap: Map<string, string>,
-): Promise<void> {
-  for (const holder of holders) {
-    const catId = holder.catId ? idMap.get(holder.catId) : undefined;
-    const cats = remapCatEntries(holder.cats, idMap);
-    const splits = remapSplits(holder.splits, idMap);
-    if (!catId && !cats && !splits) continue;
-    await repo.upsert(entity, spaceId, holder.id, {
-      ...(catId ? { catId } : {}),
-      ...(cats ? { cats } : {}),
-      ...(splits ? { splits } : {}),
-    });
-  }
-}
-
-/**
- * A personal space that becomes shared adopts every user-scoped custom
- * category its transactions use: the rows are copied into the space
- * (deterministic ids — concurrent inviters converge) and the space's
- * transactions and overlays are rewritten to the copies. Without this,
- * those references stop resolving the moment the space turns shared —
- * for every member INCLUDING the owner — and render as Uncategorized.
- * Idempotent: after adoption the references point at space-local rows,
- * so a second run finds nothing user-scoped in use.
- */
-export async function adoptUserCategoriesOnShare(store: StorageBackend, repo: Repo, spaceId: string): Promise<void> {
-  const spaces = (await store.allRows('space')).filter((s) => s.deleted === 0);
-  const personalIds = new Set(spaces.filter((s) => s.kind !== 'shared' && s.id !== spaceId).map((s) => s.id));
-
-  const [allTxs, allMetas, allCats] = await Promise.all([
-    store.bySpace('transaction', spaceId),
-    store.bySpace('txMeta', spaceId),
-    store.allRows('category'),
-  ]);
-  const txs = allTxs.filter((t) => t.deleted === 0);
-  const metas = allMetas.filter((m) => m.deleted === 0);
-  const cats = allCats.filter((c) => c.deleted === 0);
-  const catById = new Map(cats.map((c) => [c.id, c]));
-  const userScoped = (id: string | undefined): CategoryRow | undefined => {
-    const row = id ? catById.get(id) : undefined;
-    return row && personalIds.has(row.spaceId) ? row : undefined;
-  };
-
-  const used = collectUserScopedUse([...txs, ...metas], userScoped);
-  if (used.size === 0) return;
-
-  const { parentUnits, loneSubs } = planCopyUnits(used, catById, personalIds);
-  const idMap = await copyUnitsIntoSpace(store, repo, spaceId, parentUnits, loneSubs);
-  await rewriteReferences(repo, 'transaction', spaceId, txs, idMap);
-  await rewriteReferences(repo, 'txMeta', spaceId, metas, idMap);
 }

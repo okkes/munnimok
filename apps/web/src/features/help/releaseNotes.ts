@@ -18,6 +18,52 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '4.1.0',
+    date: '2026-09-29',
+    items: [
+      {
+        en: 'Signing in on the phone opens a secure browser sheet and comes straight back into the app — no more "open in munni?" question.',
+        nl: 'Inloggen op de telefoon opent een beveiligd browservenster en komt meteen terug in de app — geen "openen in munni?"-vraag meer.',
+        tr: 'Telefonda giriş yapmak güvenli bir tarayıcı sayfası açar ve doğrudan uygulamaya döner — artık "munni’de açılsın mı?" sorusu yok.',
+      },
+      {
+        en: 'Budgets start on their start date: a monthly budget resets on the day you choose, weekly ones on your week’s first day (a new setting), or together with the space’s own period. Tap a bar in the chart to jump to that period, search every icon or add a picture, and pick a main category even when another budget already holds some of its subs.',
+        nl: 'Budgetten beginnen op hun startdatum: een maandbudget reset op de dag die je kiest, weekbudgetten op de eerste dag van je week (een nieuwe instelling), of samen met de periode van de ruimte. Tik op een balk in de grafiek om naar die periode te springen, zoek in alle iconen of voeg een foto toe, en kies een hoofdcategorie ook als een ander budget al enkele subcategorieën heeft.',
+        tr: 'Bütçeler başlangıç tarihinde başlar: aylık bütçe seçtiğin günde, haftalık bütçeler haftanın ilk gününde (yeni bir ayar) ya da alanın kendi dönemiyle sıfırlanır. O döneme atlamak için grafikteki çubuğa dokun, tüm simgelerde ara veya bir fotoğraf ekle ve alt kategorilerinin bir kısmı başka bir bütçede olsa bile ana kategoriyi seç.',
+      },
+      {
+        en: 'Categories belong to the space they were made in, "Other" always closes the list, two subs under one main never share an icon, and copying from another space brings a main with its subs in one go.',
+        nl: 'Categorieën horen bij de ruimte waarin ze zijn gemaakt, "Overig" sluit altijd de lijst af, twee subcategorieën onder één hoofdcategorie delen nooit een icoon, en kopiëren uit een andere ruimte brengt een hoofdcategorie met haar subcategorieën in één keer mee.',
+        tr: 'Kategoriler oluşturuldukları alana aittir, "Diğer" listeyi her zaman kapatır, aynı ana kategori altındaki iki alt kategori asla aynı simgeyi paylaşmaz ve başka bir alandan kopyalama bir ana kategoriyi alt kategorileriyle birlikte getirir.',
+      },
+      {
+        en: 'Recurring detection tells apart several fixed amounts from one provider, forgives a charge that lands a few days late or skips a month, and reads "B.V." and "BV" as the same company. Upcoming rows on Home say how many days are left, and a loan’s due day is asked after its rhythm.',
+        nl: 'Herkenning van vaste lasten onderscheidt meerdere vaste bedragen van één aanbieder, vergeeft een afschrijving die een paar dagen later valt of een maand overslaat, en leest "B.V." en "BV" als hetzelfde bedrijf. Aankomende regels op Home zeggen hoeveel dagen er nog zijn, en de vervaldag van een lening wordt na het ritme gevraagd.',
+        tr: 'Düzenli ödeme algılama tek bir sağlayıcının birden fazla sabit tutarını ayırt eder, birkaç gün geç gelen ya da bir ay atlayan ödemeyi affeder ve "B.V." ile "BV"yi aynı şirket olarak okur. Ana ekrandaki yaklaşan satırlar kaç gün kaldığını söyler ve bir kredinin vade günü ritminden sonra sorulur.',
+      },
+      {
+        en: 'Review: Confirm stays tappable and tells you what is missing; recurring and event rows appear once a category is chosen, in split parts too; every transaction list selects all with the same row.',
+        nl: 'Beoordelen: Bevestigen blijft tikbaar en zegt wat er ontbreekt; regels voor vaste lasten en gebeurtenissen verschijnen zodra een categorie is gekozen, ook in gesplitste delen; elke transactielijst selecteert alles met dezelfde rij.',
+        tr: 'İnceleme: Onayla dokunulabilir kalır ve neyin eksik olduğunu söyler; düzenli ödeme ve etkinlik satırları bir kategori seçildiğinde görünür, bölünmüş parçalarda da; her işlem listesi aynı satırla tümünü seçer.',
+      },
+      {
+        en: 'Goals draw from a savings pool: tick which savings accounts feed them, funding never exceeds what is unallocated, and a goal due within three months points you to allocation instead.',
+        nl: 'Doelen putten uit een spaarpot: vink aan welke spaarrekeningen ze voeden, toewijzen gaat nooit boven wat nog vrij is, en een doel binnen drie maanden verwijst je naar toewijzing.',
+        tr: 'Hedefler bir birikim havuzundan beslenir: hangi birikim hesaplarının besleyeceğini işaretle, fonlama ayrılmamış olanı asla aşmaz ve üç ay içindeki bir hedef seni tahsise yönlendirir.',
+      },
+      {
+        en: 'Invitations are switched on and off on the members page, an event that already has payments offers a quiet "find more", a strip that scrolls sideways now fades at the edge with more, the desktop frame is centred, and Home returns from another tab without a flash.',
+        nl: 'Uitnodigingen zet je aan en uit op de ledenpagina, een gebeurtenis met betalingen biedt een rustige "meer zoeken", een zijwaarts scrollende strook vervaagt nu aan de kant met meer, het desktopkader is gecentreerd, en Home komt zonder flits terug van een ander tabblad.',
+        tr: 'Davetler üyeler sayfasından açılıp kapatılır, ödemeleri olan bir etkinlik sessiz bir "daha fazla bul" sunar, yana kayan bir şerit artık devamı olan kenarda solar, masaüstü çerçevesi ortalanır ve Ana ekran başka bir sekmeden yanıp sönmeden döner.',
+      },
+      {
+        en: 'Fixes: a sheet closes when you drag it down from a text field, Discard no longer freezes the app, and deleting your account really wipes this device.',
+        nl: 'Reparaties: een venster sluit als je het vanaf een tekstveld omlaag sleept, Weggooien bevriest de app niet meer, en je account verwijderen wist dit apparaat echt.',
+        tr: 'Düzeltmeler: bir metin alanından aşağı sürüklediğinde sayfa kapanır, Vazgeç artık uygulamayı dondurmaz ve hesabını silmek bu cihazı gerçekten temizler.',
+      },
+    ],
+  },
+  {
     version: '4.0.0',
     date: '2026-09-18',
     items: [

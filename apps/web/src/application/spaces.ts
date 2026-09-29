@@ -1,6 +1,5 @@
 import type { StorageBackend } from '@/db/backend';
 import type { Repo } from '@/db/repo';
-import { adoptUserCategoriesOnShare } from '@/features/categories/categoryOps';
 
 /**
  * #277 r2 (user): "the other side must also see that they joined a
@@ -18,11 +17,10 @@ interface MemberLike {
 }
 
 /**
- * Make the local space row carry the shared fact. Adopts user-scoped
- * categories BEFORE the kind flip (same order as the owner-side invite
- * flip — the scope change must not orphan category references), then
- * writes only the fields that are actually missing. Returns whether the
- * kind flipped (callers log activity for deliberate shares only).
+ * Make the local space row carry the shared fact, writing only the fields
+ * that are actually missing. Returns whether the kind flipped (callers log
+ * activity for deliberate shares only). Categories need no adoption any
+ * more: every custom category belongs to the space it was created in (#387).
  */
 export async function ensureSpaceShared(
   store: StorageBackend,
@@ -37,7 +35,6 @@ export async function ensureSpaceShared(
   if (flip) fields.kind = 'shared';
   if (!space.createdByName && creatorName) fields.createdByName = creatorName;
   if (fields.kind === undefined && fields.createdByName === undefined) return false;
-  if (flip) await adoptUserCategoriesOnShare(store, repo, spaceId);
   await repo.upsert('space', spaceId, spaceId, fields);
   return flip;
 }

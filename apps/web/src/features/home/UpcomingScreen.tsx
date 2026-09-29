@@ -6,11 +6,13 @@ import type { AccountRow } from '@/db/types';
 import { typeDef } from '@/features/accounts/accountTypes';
 import {
   upcomingHorizon,
+  daysUntil,
   upcomingLoanAmountCents,
   upcomingLoanPayments,
   upcomingRecAmountCents,
   upcomingRecurrings,
 } from '@/domain/upcoming';
+import { dueInWords } from './upcomingWords';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { useData } from '@/app/data';
@@ -59,13 +61,7 @@ export function UpcomingScreen() {
   const fmtShort = (iso: string) =>
     new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short' });
   // #347: the date alone made the reader do the math — say the days too
-  const dueLabel = (iso: string) => {
-    const n = Math.max(0, Math.round((new Date(iso).getTime() - new Date(today).getTime()) / 86_400_000));
-    let rel = t('upcoming.dueInDays', { n });
-    if (n === 0) rel = t('upcoming.dueToday');
-    else if (n === 1) rel = t('upcoming.dueTomorrow');
-    return `${fmtShort(iso)} · ${rel}`;
-  };
+  const dueLabel = (iso: string) => `${fmtShort(iso)} · ${dueInWords(daysUntil(iso, today), t)}`;
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-upcoming">

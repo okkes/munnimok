@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>munni setup</title>
+<link rel="icon" href="data:,">
 <!--
   munni setup wizard — the operator's page over infra/platforms/README.md:
   every platform (lcl = this computer, nas = a Synology NAS) runs ONE
@@ -28,7 +29,8 @@
   Structure (2026-09-17, user rulings): 1 Platforms · 2 Features &
   accounts · 3 Shared services of the picked platform · 4 Environments
   (a workspace each: Overview · Registrations · Phones · Access · Clean
-  up) · 5 Leftovers — by hand. No manual path is left on the page.
+  up). The by-hand steps sit where they belong, each with a tick or an
+  automatic check — no separate leftovers list.
 -->
 <style>
 :root{
@@ -313,7 +315,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
 
 <section id="s-features" data-step="Features &amp; accounts">
   <h2><span class="n">2</span> Features &amp; accounts <span class="pill" id="creds-pill"></span></h2>
-  <p class="sub">Tick what you want — everything else works out of the box (offline-first app, web push, sync). Each tile is one feature with its account: the chip says what it still needs, Manage opens what the service is, why munni needs it, where the values come from and the fields. Save keeps a value in the helper's store on this machine and — for the NAS — copies it into every GitHub environment that needs it (values are write-only there). The ticks are the defaults of every environment you add; an environment's own features can differ. Skip for now counts an integration as done until you come back to it.</p>
+  <p class="sub">Tick what you want — everything else works out of the box (offline-first app, web push, sync). Each tile is one feature with its account: the chip says what it still needs, Manage opens what the service is, why munni needs it, where the values come from and the fields. Save keeps a value in the helper's store for this platform only — platforms share nothing: each has its own values, ticks and GitHub connection — and, for the NAS, copies it into this platform's GitHub environments (values are write-only there). The ticks are the defaults of every environment you add; an environment's own features can differ. Skip for now counts an integration as done until you come back to it.</p>
 
   <div class="card" id="health-card">
     <div class="health-h"><span class="ico" data-ico="pulse"></span><div><b>Integration health</b><div class="why" style="margin:0" id="health-sub">checking…</div></div><button class="ghost" id="btn-check-all">Check all</button></div>
@@ -328,7 +330,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
     <div class="tile-d">the NAS deploys and every phone build run in your repo's Actions · <code>GH_PAT</code></div>
     <div class="tile-f"><span class="tag info">Connection</span><button class="ghost mini" data-manage="github">Manage</button></div>
     <div class="crow-b" data-body="github">
-    <p class="why">One fine-grained token drives this page live and is stored as the repository secret <code>GH_PAT</code> so the workflows can manage environments and write secrets back. Point it at a repo that carries munni — or at a name that does not exist yet, and this page copies <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically. A working token is kept in the helper's store — the next visit reconnects by itself.</p>
+    <p class="why">One fine-grained token per platform drives this page live and is stored as the repository secret <code>GH_PAT</code> so the workflows can manage environments and write secrets back. Point it at a repo that carries munni — or at a name that does not exist yet, and this page copies <code>okkes/munnimok</code> under it. Branches are munni's own (<code>dev</code>/<code>master</code>), picked automatically. A working token is kept in the helper's store — the next visit reconnects by itself.</p>
     <div id="connect-body">
     <details class="how"><summary>How to create the token (2 minutes)</summary>
       <ol>
@@ -395,6 +397,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
             <button class="ghost" id="btn-trust-ca">Trust the certificate again</button> <span class="pill" id="trust-pill" title="read from this user's Root store while the platform runs"></span>
             <button class="ghost danger" id="btn-local-nuke-all">Delete everything…</button>
           </div>
+          <p class="why">Delete everything takes the platform off this computer. The one thing Windows keeps is each https family's trusted "Caddy Local Authority" root — <code>certmgr.msc</code> → Trusted Root Certification Authorities → Certificates → delete those rows, one consent dialog each; the Clean up log counts them.</p>
           <p class="why" id="local-links"></p>
         </div>
       </div>
@@ -556,18 +559,6 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
   </div>
 
   <div id="env-cards"></div>
-</section>
-
-<section id="s-leftovers" data-step="Leftovers">
-  <h2><span class="n">5</span> Leftovers — by hand</h2>
-  <p class="sub">Everything else on this page is code. These have no API — they stay yours, each once.</p>
-  <ul class="todo leftovers" id="leftovers">
-    <li><span class="num">1</span><div class="body"><div class="t">Store records of removed environments</div><div class="d">Play Console and App Store Connect cannot delete an app record by API. After a Clean up, retire them there: Play Console → the app → Advanced settings → unpublish/delete; App Store Connect → the app → Remove app (once every build is expired — the Phones tab's Retire does that part).</div></div></li>
-    <li><span class="num">2</span><div class="body"><div class="t">The DSM deploy account (Synology NAS)</div><div class="d">Control Panel → User &amp; Group → the deploy user → Edit → Applications: DSM = Allow, File Station = Allow (a group's Deny beats Allow) → User groups: administrators → Save. 2-step verification off for it, and Adaptive MFA off for administrators (Security → Account) — no account can grant itself any of this. Check on the Synology tile tells whether DSM accepts it.</div></div></li>
-    <li><span class="num">3</span><div class="body"><div class="t">DNS for an own domain</div><div class="d">Synology DDNS resolves <code>*.&lt;domain&gt;</code> by itself — nothing to do. An own domain needs a wildcard record pointing at the NAS (the hosts are <code>munni-&lt;env&gt;-nas</code>, <code>-api</code>, <code>-admin</code>, <code>-logto</code>, <code>-logto-admin</code>, and <code>glitchtip-nas</code>, <code>vault-nas</code>, <code>control-nas</code>, <code>pgadmin-nas</code>); the wildcard certificate then comes from acme.sh with the synology_dsm hook.</div></div></li>
-    <li><span class="num">4</span><div class="body"><div class="t">The APNs key upload for iOS push</div><div class="d">Once per Apple team: developer.apple.com → Keys → a key with Apple Push Notifications service → download the .p8. Then Firebase console → the Play service account's project → Project settings → Cloud Messaging → the iOS app → APNs Authentication Key → Upload (key, Key ID, Team ID). Google offers no API for this step.</div></div></li>
-    <li><span class="num">5</span><div class="body"><div class="t">Trusted local CA roots on this computer</div><div class="d">Every https family (LAN mode) mints its own "Caddy Local Authority" root and Trust CA puts it in your Windows user store. No wipe can take it out again — Windows untrusts a root only through its own consent dialog, one per entry. After a Clean up: <code>certmgr.msc</code> → Trusted Root Certification Authorities → Certificates → delete every "Caddy Local Authority" row. The Clean up log counts the stale ones for you.</div></div></li>
-  </ul>
 </section>
 
 <footer>munni setup · this file lives at <code>infra/setup/index.html</code> · the model: <code>infra/platforms/README.md</code></footer>
@@ -1110,12 +1101,16 @@ const LS = {
 const HELPER = globalThis.__SETUP_HELPER__ ?? null;
 const UPSTREAM = 'okkes/munnimok';
 
+/** the ticks a fresh platform starts with — kept per platform, like everything else the page holds */
+const FEATURE_DEFAULTS = { gocardless: true, enablebanking: false, logos: false, push: false, google: false, apple: false, email: false, android: false, ios: false };
+/** a platform's ticks: ITS stored set over the defaults — always a fresh object, so no platform can ever mutate another's */
+const featuresFor = (p) => ({ ...FEATURE_DEFAULTS, ...(LS.get('features.' + p, null) ?? {}) });
 const S = {
   pat: '',
   slug: LS.get('slug', UPSTREAM),
   ref: LS.get('ref', 'dev'),
   platform: LS.get('platform', 'lcl'),      // the platform the page works on: lcl | nas
-  features: LS.get('features', { gocardless: true, enablebanking: false, logos: false, push: false, google: false, apple: false, email: false, android: false, ios: false }),
+  features: featuresFor(LS.get('platform', 'lcl')), // per platform — platforms share nothing
   domain: LS.get('domain', ''),             // PLATFORM_DOMAIN mirror — personalizes the nas links (the value itself lives in the helper's store)
   user: null,
   status: null,            // the helper's /api/status answer
@@ -1129,8 +1124,9 @@ const S = {
   nasProbe: null,          // the helper's outside-in probe of the NAS hosts
   localStore: new Set(),   // names the helper's stores hold for the picked platform (never values)
   storeStatusByEnv: {},    // store-status verdicts per environment name
-  regVerdicts: {},         // registration verdicts per environment name → provider
-  skipped: new Set(LS.get('skipped', [])),
+  regVerdicts: LS.get('reg-verdicts.' + LS.get('platform', 'lcl'), {}), // registration verdicts per environment name → provider — per platform, kept across reloads
+  autoVerified: new Set(), // environment:provider pairs this page load already asked the provider about
+  skipped: new Set(LS.get('skipped.' + LS.get('platform', 'lcl'), [])),
   verdicts: {},            // the last Check verdict per integration (feeds the health card)
   recentlyStored: new Map(),
   caTrust: null,
@@ -1139,6 +1135,7 @@ const S = {
   defaultBranch: null,
   pollTimer: null,
   accessUsers: {},         // env name -> the Access tab's last listing
+  appLinksByEnv: {},       // env name -> the served /.well-known files vs the config (the Phones tab's App links card)
   busyEnvs: new Set(),
 };
 
@@ -1172,12 +1169,12 @@ const FEATURES = [
   { id: 'gocardless', label: 'Bank sync via GoCardless', tags: ['Recommended'], rec: true, hint: 'live transactions from 2500+ EU banks (read-only PSD2 AIS) — the heart of the product' },
   { id: 'enablebanking', label: 'Enable Banking as a second bank provider', tags: ['Optional'], hint: 'optional fallback aggregator; banks missing at GoCardless. https-only — on this computer the LAN mode gives every environment real https' },
   { id: 'logos', label: 'Merchant logos (logo.dev)', tags: ['Recommended'], rec: true, hint: 'brand logos on transactions and recurring costs' },
-  { id: 'push', label: 'Native push notifications (Firebase FCM)', tags: ['With the apps'], hint: 'push for the Android/iOS shells — web push works without this' },
   { id: 'google', label: 'Sign in with Google', tags: ['Popular'], rec: true, hint: 'social login button on the sign-in screen' },
   { id: 'apple', label: 'Sign in with Apple', tags: ['Optional'], hint: 'required by Apple if you ship the iOS app with any social login; https return URLs only' },
   { id: 'email', label: 'Crash-report emails', tags: ['Optional'], hint: 'GlitchTip mails on new errors through an SMTP url — without it, reports simply stay in the web UI' },
   { id: 'android', label: 'Android app', tags: ['App distribution'], hint: 'the native Android shell — CI builds and publishes it to the Play internal track; only the store record is manual, by store rule' },
   { id: 'ios', label: 'iOS app', tags: ['App distribution'], hint: 'the native iOS shell — CI signs and uploads straight to TestFlight (Apple allows no sideloading)' },
+  { id: 'push', label: 'Native push notifications (Firebase FCM)', tags: ['With the apps'], hint: 'push for the Android/iOS shells, through the Google Play service account — web push works without this' },
 ];
 
 /* ── the accounts: what/why/how per provider. placement 'platform' = the
@@ -1187,7 +1184,11 @@ const GROUPS = [
   {
     id: 'domain', title: 'Your domain', placement: 'platform', platforms: ['nas'], check: 'browser:domain',
     why: 'Every service becomes a subdomain of the platform\'s domain (munni-<env>-nas.…, glitchtip-nas.…). It is kept as the secret PLATFORM_DOMAIN because this repo is public — the committed platform.json only carries a placeholder.',
-    how: ['DSM → Control Panel → External Access → DDNS — add or read your hostname (e.g. yourname.synology.me).', 'Paste it below; it also personalizes every link on this page.'],
+    how: [
+      'DSM → Control Panel → External Access → DDNS — add or read your hostname (e.g. yourname.synology.me).',
+      'Paste it below; it also personalizes every link on this page.',
+      'DNS: Synology DDNS resolves *.<domain> by itself — nothing to do. An own domain instead needs a wildcard record pointing at the NAS (munni-<env>-nas, -api, -admin, -logto, -logto-admin and glitchtip-nas, vault-nas, control-nas, pgadmin-nas); the wildcard certificate then comes from acme.sh with the synology_dsm hook. The NAS status (step 3) tells whether the names resolve.',
+    ],
     fields: [{ name: 'PLATFORM_DOMAIN', ph: 'yourname.synology.me', mirror: 'domain' }],
   },
   {
@@ -1240,8 +1241,8 @@ const GROUPS = [
     id: 'playstore', title: 'Google Play publishing', feature: 'android', check: 'playstore',
     why: 'CI publishes the Android builds with a Play service account — and this page uses the SAME credential to notice when the store record exists, so publishing turns on by itself. One manual invite, once, is Google\'s hard floor.',
     how: [
-      '<a href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noreferrer">Google Cloud → IAM → Service accounts</a> → create one in any project → copy its email (<code>…@…iam.gserviceaccount.com</code>).',
-      'Same project: <a href="https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com" target="_blank" rel="noreferrer">enable the <b>Google Play Android Developer API</b></a> — one click.',
+      'A Google Cloud project for this platform if you have none (<a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noreferrer">New project</a>, e.g. <code>munni-nas</code> — platforms share nothing, so one each). Then <a data-gcp-link="sa" href="https://console.cloud.google.com/iam-admin/serviceaccounts" target="_blank" rel="noreferrer">IAM &amp; Admin → Service Accounts</a> → Create service account → copy its email (<code>…@…iam.gserviceaccount.com</code>).',
+      'Same project: <a data-gcp-link="playapi" href="https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com" target="_blank" rel="noreferrer">enable the <b>Google Play Android Developer API</b></a> — one click.',
       '<a href="https://play.google.com/console" target="_blank" rel="noreferrer">Play Console</a> → <b>Users and permissions</b> → Invite new user → that email, account-level <b>Release to testing tracks</b> + <b>View app information</b> — every new munni package is covered without re-inviting.',
       'Back in Google Cloud: the service account → <b>Keys</b> → Add key → <b>JSON</b> — paste the WHOLE downloaded file below.',
     ],
@@ -1251,20 +1252,21 @@ const GROUPS = [
     id: 'ascstore', title: 'App Store Connect key', feature: 'ios', check: 'ascstore',
     why: 'CI uploads iOS builds to TestFlight with an App Store Connect API key — and this page uses it to check when the app record exists and to register the App ID.',
     how: [
-      '<a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noreferrer">App Store Connect → Integrations</a> → generate an API key with <b>App Manager</b> access; note the Key ID and the Issuer ID shown above the list.',
+      '<a href="https://appstoreconnect.apple.com/access/integrations/api" target="_blank" rel="noreferrer">App Store Connect → Integrations</a> → generate an API key with <b>Admin</b> access — the upload signs with Apple\'s cloud-managed Distribution certificate, which an App Manager key may not use (unless "Access to Cloud Managed Distribution Certificate" is ticked on it); note the Key ID and the Issuer ID shown above the list.',
       'Download the <code>.p8</code> (offered ONCE), open it in a text editor and paste its WHOLE content below — conversion happens here.',
       'The Team ID (10 characters) is under Membership details on developer.apple.com.',
     ],
     fields: [{ name: 'ASC_KEY_ID' }, { name: 'ASC_ISSUER_ID' }, { name: 'ASC_KEY_P8', area: true }, { name: 'APPLE_TEAM_ID' }],
   },
   {
-    id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'push', check: 'fcm',
-    why: 'The api\'s push sender credential (web push uses self-minted VAPID keys — no Google involved there). Usually nothing to paste: the Phones tab\'s Firebase button fills it from the Play service account, which also drives Firebase.',
+    id: 'fcm', title: 'Firebase Cloud Messaging', feature: 'push', check: 'fcm', verify: true,
+    why: 'Push for the phone apps rides Firebase Cloud Messaging with the <b>Google Play</b> service account — nothing to type: Build on the Phones tab adds Firebase to that account\'s project, registers the apps, bakes their config into the builds and stores the sender credential by itself. <b>Check</b> verifies the one thing that is yours: the account\'s two roles.',
     how: [
-      'One-time (Google\'s floor): grant the Play service account the roles Firebase Admin AND Service Usage Admin (console.cloud.google.com → IAM). The Phones tab then wires Firebase and the sender by itself.',
-      'Manual paste is only for a deliberately separate sender: console.firebase.google.com → project → Service accounts → Generate new private key → paste the JSON here.',
+      '<a data-gcp-link="iam" href="https://console.cloud.google.com/iam-admin/iam" target="_blank" rel="noreferrer">IAM &amp; Admin → IAM</a> of the Google Play account\'s project → <b>Grant access</b> → principal = the service account\'s email → roles <b>Firebase Admin</b> AND <b>Service Usage Admin</b> → Save. (Firebase Admin alone cannot switch the Firebase API on.)',
+      'Press <b>Check</b>: it switches the Firebase Management API on with that account — what Build needs anyway — and reads the project; a missing role is named. The <code>firebase-adminsdk</code> agent you may know from an older project appears by itself once Build adds Firebase.',
+      'iOS push only, once per Apple team: an <b>APNs key</b> — developer.apple.com → Keys → Apple Push Notifications service → download the .p8 → Firebase console → Project settings → Cloud Messaging → Apple app configuration → upload it (Leftovers card, item 4). Without it iPhones register but receive nothing.',
     ],
-    fields: [{ name: 'FCM_SERVICE_ACCOUNT_JSON', area: true }],
+    fields: [],
   },
   {
     id: 'logodev', title: 'logo.dev', feature: 'logos', check: 'logodev',
@@ -1284,13 +1286,18 @@ const GROUPS = [
     fields: [{ name: 'LOGTO_GOOGLE_CLIENT_ID' }, { name: 'LOGTO_GOOGLE_CLIENT_SECRET', secret: true }],
   },
   {
-    id: 'apple', title: 'Apple sign-in', feature: 'apple', check: 'apple',
-    why: 'Sign in with Apple for web + iOS. Requires an Apple Developer membership. One Services ID + key serves every environment.',
+    id: 'apple', title: 'Apple sign-in', feature: 'apple', check: 'apple', ready: () => appleLock(),
+    why: 'Sign in with Apple for the web and the iOS app — one Services ID and one key per platform serve every environment. It hangs on an App ID the wizard registers, so it comes after the first environment with Apple sign-in; the steps then name the exact values Apple asks for.',
     how: [
-      'Apple keeps this manual, once per team. Its "Finish Setting up Sign in with Apple" banner lists four steps: ① <b>Enable App ID</b> — done by the iOS Build. ② <b>Create Service ID</b> — the ONLY place that takes domains + return URLs. ③ <b>Create Key</b> — the .p8 pasted below. ④ <b>Register Email Sources</b> — skip, munni never mails through Apple\'s relay.',
-      'The Services ID: <a href="https://developer.apple.com/account/resources/identifiers/list/serviceId" target="_blank" rel="noreferrer">Identifiers → Services IDs</a> → ＋ → identifier (this becomes the client ID below) → Register → open it → tick <b>Sign in with Apple</b> → <b>Configure</b>: primary App ID = the munni App ID, then the domains + return URLs each environment lists under Registrations.',
-      'The key: <a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">Keys</a> → ＋ → tick <b>Sign in with Apple</b> (Configure → the primary App ID) — and <b>APNs</b> on the same key if you plan push → Register → <b>Download</b> the .p8 (handed out exactly once) → note the <b>Key ID</b> → paste the file contents below.',
-      'Team ID: empty takes the App Store Connect tile\'s. <b>Check</b> then asks Apple whether every environment\'s return URL is accepted.',
+      () => `<b>The App ID</b> — the wizard\'s: ${appleEnvs().map((e) => `<code>${esc(appleIdOf(e))}</code> (${esc(e.env)})`).join(', ')}. <b>Build</b> or <b>Register the App ID</b> on that environment\'s Phones tab registers it at Apple with Sign in with Apple as the primary App ID — nothing to click at developer.apple.com.`,
+      () => {
+        const urls = callbackUrlsFor('apple-universal');
+        const domains = [...new Set(urls.map((u) => new URL(u).host))];
+        const code = (v) => `<code style="user-select:all">${esc(v)}</code>`;
+        return `<b>The Services ID</b> (it becomes the client ID below): <a href="https://developer.apple.com/account/resources/identifiers/list/serviceId" target="_blank" rel="noreferrer">Identifiers → Services IDs</a> → ＋ → identifier ${code(`app.munni.${S.platform}.signin`)} (any reverse-DNS name, one per platform) → Register → open it → tick <b>Sign in with Apple</b> → <b>Configure</b>: primary App ID ${code(appleIdOf(appleEnvs()[0]))}; Domains: ${domains.map(code).join(', ')}; Return URLs: ${urls.map(code).join(', ')} → Done → Continue → <b>Save</b>.`;
+      },
+      () => `<b>The key</b>: <a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">Keys</a> → ＋ → any name → tick <b>Sign in with Apple</b> → Configure → primary App ID <code style="user-select:all">${esc(appleIdOf(appleEnvs()[0]))}</code> (tick <b>APNs</b> on the same key if you plan push) → Register → <b>Download</b> the .p8 (handed out exactly once) → note the <b>Key ID</b> → paste the file contents below.`,
+      'Save, then <b>Check</b>: Apple is asked whether every environment\'s return URL is accepted. The Team ID may stay empty — the App Store Connect tile\'s is used. An environment added later: put its domain + return URL on the same Services ID; its Registrations tab lists them and verifies.',
     ],
     fields: [
       { name: 'LOGTO_APPLE_CLIENT_ID', ph: 'the Services ID identifier (NOT the App ID), e.g. app.munni.signin' },
@@ -1499,7 +1506,7 @@ async function gh(path, init = {}) {
       headers: {
         accept: 'application/vnd.github+json',
         'x-github-api-version': '2022-11-28',
-        authorization: 'Bearer ' + S.pat,
+        ...(S.pat ? { authorization: 'Bearer ' + S.pat } : {}), // no token (another platform, or none yet): no header, no 401 noise
         ...(init.body ? { 'content-type': 'application/json' } : {}),
         ...(init.headers || {}),
       },
@@ -1580,8 +1587,24 @@ const rowSaved = (g) => {
   const saved = fields.filter((f) => secretPresent(f.name)).length;
   return { saved, total: fields.length, complete: saved === fields.length };
 };
+/** Sign in with Apple hangs on an App ID the wizard registers per environment — before that there is nothing Apple would accept */
+const appleEnvs = () => S.envList.filter((e) => (e.features?.signin ?? []).includes('apple'));
+const appleIdOf = (e) => e?.store?.iosBundleId ?? e?.store?.androidPackage ?? '';
+function appleLock() {
+  if (!secretPresent('ASC_KEY_P8')) return 'save the App Store Connect key first — it registers the App ID that Sign in with Apple hangs on';
+  if (!appleEnvs().length) return 'add an environment with Sign in with Apple ticked first (step 4) — Apple wants its App ID and its https return URL';
+  if (!callbackUrlsFor('apple-universal').length) return isLcl() ? 'Apple takes https return URLs only — LAN mode gives every environment one (Set up & start with a phone or https feature ticked)' : 'the environment has no https address yet';
+  return null;
+}
 const rowChip = (g) => {
   if (S.skipped.has(g.id)) return '<span class="pill">Skipped</span>';
+  if (g.ready?.()) return '<span class="pill" title="' + escAttr(g.ready()) + '">Later</span>';
+  if (g.verify) {
+    const v = S.verdicts[g.id];
+    if (v?.checking) return '<span class="pill">Checking…</span>';
+    if (v && !v.unreachable) return v.ok ? '<span class="pill ok">Roles OK ✓</span>' : '<span class="pill warn">Needs roles</span>';
+    return '<span class="pill warn">Check the roles</span>';
+  }
   const { saved, total, complete } = rowSaved(g);
   if (complete) return '<span class="pill ok">Saved ✓</span>';
   if (saved) return `<span class="pill warn">${saved}/${total} saved</span>`;
@@ -1590,7 +1613,7 @@ const rowChip = (g) => {
 };
 function setSkipped(id, on) {
   if (on) S.skipped.add(id); else S.skipped.delete(id);
-  LS.set('skipped', [...S.skipped]);
+  LS.set('skipped.' + S.platform, [...S.skipped]);
 }
 function toggleSkip(id) {
   const g = GROUPS.find((x) => x.id === id);
@@ -1602,7 +1625,7 @@ function toggleSkip(id) {
 }
 function selectRecommended() {
   FEATURES.forEach((f) => { if (f.rec) S.features[f.id] = true; });
-  LS.set('features', S.features);
+  LS.set('features.' + S.platform, S.features);
   renderCards();
   renderStatus();
 }
@@ -1614,41 +1637,56 @@ function syncFeaturesFromEnvs() {
     const on = { android: f.android, ios: f.ios, push: f.push, logos: f.logos, gocardless: (f.banking ?? []).includes('gocardless'), enablebanking: (f.banking ?? []).includes('enablebanking'), google: (f.signin ?? []).includes('google'), apple: (f.signin ?? []).includes('apple') };
     for (const [k, v] of Object.entries(on)) if (v && !S.features[k]) { S.features[k] = true; changed = true; }
   }
-  if (changed) LS.set('features', S.features);
+  if (changed) LS.set('features.' + S.platform, S.features);
   return changed;
 }
 
 function renderCards() {
   const scopeTag = (f) => (isPlatformScoped(f.name) ? `platform (${S.platform})` : 'every environment that needs it');
-  const howSteps = (g) => g.how.map((h) => (typeof h === 'string' ? h : h[S.platform])).filter(Boolean);
+  const howSteps = (g) => g.how.map((h) => (typeof h === 'string' ? h : (typeof h === 'function' ? h() : h[S.platform]))).filter(Boolean);
+  /** a tile that cannot be filled yet: its why + the reason, Skip stays, nothing to type or check */
+  const lockedBody = (g, lock) => `
+      <div class="crow-b" data-body="${g.id}">
+      <p class="why">${g.why}</p>
+      <p class="why"><b>Not yet</b> — ${lock}</p>
+      <button class="ghost" data-skip-group="${g.id}" title="counts this integration as done for now — undo any time">${S.skipped.has(g.id) ? 'Skipped — undo' : 'Skip for now'}</button>
+      <div class="msg" id="msg-group-${g.id}"></div>
+      </div>`;
   const wrap = document.getElementById('cred-cards');
   const pwrap = document.getElementById('platform-tiles');
   const connect = document.getElementById('connect-card');
   if (connect && wrap.contains(connect)) wrap.before(connect);
   const typed = Object.fromEntries([...document.querySelectorAll('.tile [data-secret]')].map((el) => [el.dataset.secret, el.value]).filter(([, v]) => v));
   const openHow = new Set([...document.querySelectorAll('.tile')].filter((c) => c.querySelector('details.how')?.open).map((c) => c.dataset.group));
-  const bodyHtml = (g) => `
+  const bodyHtml = (g) => g.ready?.() ? lockedBody(g, g.ready()) : `
       <div class="crow-b" data-body="${g.id}">
-      <div class="crow-vars">${g.fields.map((f) => f.name).join(' · ')}</div>
+      <div class="crow-vars">${g.fields.length ? g.fields.map((f) => f.name).join(' · ') : 'nothing to type — Check verifies the setup'}</div>
       <p class="why">${g.why}${isOptional(g) ? ' <b>Optional</b> — skip it below and it counts as done.' : ''}</p>
-      <details class="how"><summary>Where these values come from</summary><ol>${howSteps(g).map((h) => `<li>${h}</li>`).join('')}</ol></details>
+      <details class="how"><summary>${g.verify ? 'What to set up' : 'Where these values come from'}</summary><ol>${howSteps(g).map((h) => `<li>${h}</li>`).join('')}</ol></details>
       ${g.fields.map((f) => `
         <label class="f" for="field-${f.name}">${f.name} <span class="envtag">${scopeTag(f)}</span></label>
         ${f.area ? `<textarea id="field-${f.name}" data-secret="${f.name}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''}></textarea>`
                  : `<input id="field-${f.name}" type="${f.secret ? 'password' : 'text'}" data-secret="${f.name}" placeholder="${escAttr(f.ph ?? '')}" ${f.mirror ? `data-mirror="${f.mirror}"` : ''} autocomplete="off"/>`}`).join('')}
-      <button data-store-group="${g.id}">Save</button>${g.check ? `
+      ${g.fields.length ? `<button data-store-group="${g.id}">Save</button>` : ''}${g.check ? `
       <button class="ghost" data-check-group="${g.id}">Check</button>` : ''}
       <button class="ghost" data-skip-group="${g.id}" title="counts this integration as done for now — undo any time">${S.skipped.has(g.id) ? 'Skipped — undo' : 'Skip for now'}</button>
       <div class="msg" id="msg-group-${g.id}"></div>
       </div>`;
+  /** push rides the phone apps and their Google Play service account — until both exist there is nothing to configure */
+  const pushLock = () => {
+    if (!(S.features.android || S.features.ios)) return 'tick the Android or iOS app first — push is for the phone apps';
+    if (!secretPresent('PLAY_SERVICE_ACCOUNT_JSON')) return 'save the Google Play account first — push uses that service account';
+    return null;
+  };
   const tileHtml = ({ f, g }) => {
-    const on = f ? Boolean(S.features[f.id]) : true;
+    const lock = f?.id === 'push' ? pushLock() : null;
+    const on = f ? Boolean(S.features[f.id]) && !lock : true;
     const managed = Boolean(g && on);
-    const hint = f ? f.hint : `needed for ${NEEDED_FOR[g.id] ?? g.title}`;
+    const hint = f ? (lock ?? f.hint) : `needed for ${NEEDED_FOR[g.id] ?? g.title}`;
     const tags = f ? (f.tags ?? []) : [g.placement === 'platform' ? 'Platform' : 'Connection'];
     return `
     <div class="card tile ${f ? 'feat' : 'int'} crow ${on ? 'on' : ''}" ${f ? `data-feature="${f.id}"` : ''} ${g ? `data-group="${g.id}"` : ''}>
-      <div class="tile-h"><span class="bico" data-bico="${BRAND_OF[f?.id ?? g.id] ?? 'key'}"></span><span class="sp"></span>${managed ? `<span data-chip>${rowChip(g)}</span>` : ''}${f ? `<label class="switch"><input type="checkbox" id="feat-${f.id}" ${on ? 'checked' : ''}/><span class="sw"></span></label>` : ''}</div>
+      <div class="tile-h"><span class="bico" data-bico="${BRAND_OF[f?.id ?? g.id] ?? 'key'}"></span><span class="sp"></span>${managed ? `<span data-chip>${rowChip(g)}</span>` : ''}${f ? `<label class="switch" ${lock ? `title="${escAttr(lock)}"` : ''}><input type="checkbox" id="feat-${f.id}" ${on ? 'checked' : ''} ${lock ? 'disabled' : ''}/><span class="sw"></span></label>` : ''}</div>
       ${f ? `<label class="tile-t" for="feat-${f.id}">${f.label}</label>` : `<div class="tile-t">${g.title}</div>`}
       <div class="tile-d">${hint ?? ''}</div>
       <div class="tile-f">${tags.map((t) => `<span class="tag ${TAG_CLS[t] ?? ''}">${t}</span>`).join('')}${managed ? `<button class="ghost mini" data-manage="${g.id}">Manage</button>` : ''}</div>
@@ -1669,9 +1707,11 @@ function renderCards() {
     const box = document.getElementById('feat-' + f.id);
     if (!box) return;
     box.addEventListener('change', async (e) => {
-      S.features[f.id] = e.target.checked; LS.set('features', S.features);
+      S.features[f.id] = e.target.checked;
+      if (!(S.features.android || S.features.ios)) S.features.push = false; // push is for the phone apps — without them it has nothing to do
+      LS.set('features.' + S.platform, S.features);
+      // a tick only records the default for the next environment — nothing starts; LAN mode follows the ticks at the next Set up & start
       renderCards(); renderEnvAddFeatures(); renderStatus();
-      if (isLcl() && HELPER) await reconcileLanMode().catch(() => {});
     });
   });
   for (const grid of [wrap, pwrap].filter(Boolean)) {
@@ -1845,6 +1885,12 @@ async function storeGroup(id) {
   try {
     const { written } = await storeValues(values);
     card.querySelectorAll('[data-secret]').forEach((el) => { if (!el.dataset.mirror) el.value = ''; });
+    if (g.id === 'google' || g.id === 'apple') { // a saved provider re-verifies every environment's registration by itself
+      for (const k of [...S.autoVerified]) if (k.endsWith(':' + g.id)) S.autoVerified.delete(k);
+      for (const s of Object.keys(S.regVerdicts)) delete S.regVerdicts[s][g.id];
+      for (const env of S.envList) renderRegistrations(env); // the blocks said "tile not saved yet" with Verify disabled — the values are here now
+      setTimeout(() => autoVerifyRegistrations().catch(() => {}), 300);
+    }
     const where = S.platform === 'nas'
       ? (written.length ? ` and into ${[...new Set(written.map((w) => w.split(':')[0]))].join(', ')} on GitHub` : (connected() ? '' : ' — connect GitHub and Set up shared services copies it into the GitHub environments'))
       : ' — the platform reads it (running containers pick it up on the next Set up)';
@@ -1879,6 +1925,13 @@ async function checkGroup(id) {
 /* ── integration health: one line per integration the picked features need ── */
 function healthOf(g) {
   if (S.skipped.has(g.id)) return { cls: '', label: 'Skipped' };
+  if (g.ready?.()) return { cls: '', label: 'Later', title: g.ready() };
+  if (g.verify) {
+    const v = S.verdicts[g.id];
+    if (v?.checking) return { cls: '', label: 'Checking…' };
+    if (v && !v.unreachable) return v.ok ? { cls: 'ok', label: 'Roles OK ✓', title: v.detail } : { cls: 'bad', label: 'Needs roles', title: v.detail };
+    return { cls: 'warn', label: 'Check the roles' };
+  }
   const { saved, complete } = rowSaved(g);
   const v = S.verdicts[g.id];
   if (complete) {
@@ -1981,6 +2034,8 @@ async function checkManifest() {
       'GH_PAT', 'VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD',
       // machine-owned — minted by the helper, never pasted
       'ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD', 'APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD',
+      // filled by Wire Firebase push from the Play service account's project — never pasted
+      'FCM_SERVICE_ACCOUNT_JSON',
     ]);
     const uncovered = manifest.secrets.filter((s) => s.owner === 'operator' && !known.has(s.name)).map((s) => s.name);
     const scopeDrift = manifest.secrets.filter((s) => s.owner === 'operator' && known.has(s.name) && (s.scope === 'platform') !== isPlatformScoped(s.name)).map((s) => s.name);
@@ -1993,21 +2048,26 @@ async function checkManifest() {
 /* ── live GitHub status: the picked platform's environments, the runs, the NAS verdict ── */
 async function refresh() {
   if (!connected()) return;
+  const epoch = platformEpoch;
   const names = (r, key) => new Set((r?.[key] ?? []).map((x) => x.name));
   const wanted = [sharedEnvOf(), ...S.envList.map((e) => e.environment)];
   const envList = await gh(`/repos/${S.slug}/environments?per_page=100`, { allow404: true }).catch(() => null);
+  if (epoch !== platformEpoch) return;
   const known = envList ? wanted.filter((n) => (envList.environments ?? []).some((e) => e.name === n)) : [];
   const [repoSecrets, ...perEnv] = await Promise.all([
     gh(`/repos/${S.slug}/actions/secrets?per_page=100`, { allow404: true }),
     ...known.flatMap((env) => [gh(`${envBase(env)}/secrets?per_page=100`, { allow404: true }), gh(`${envBase(env)}/variables?per_page=100`, { allow404: true })]),
   ]);
+  if (epoch !== platformEpoch) return;
   S.repoSecrets = names(repoSecrets, 'secrets');
   S.envs = {};
   known.forEach((env, i) => { S.envs[env] = { secrets: names(perEnv[i * 2], 'secrets'), vars: names(perEnv[i * 2 + 1], 'variables') }; });
   const [iacRuns, nasRuns, andRuns, iosRuns] = await Promise.all([workflowRuns('iac.yml'), workflowRuns('deploy-nas.yml'), workflowRuns('native-android.yml'), workflowRuns('native-ios.yml')]);
+  if (epoch !== platformEpoch) return;
   S.runs = { iac: iacRuns?.workflow_runs ?? [], nas: nasRuns?.workflow_runs ?? [], native: [...(andRuns?.workflow_runs ?? []), ...(iosRuns?.workflow_runs ?? [])] };
   await mapRunStacks([...S.runs.iac, ...S.runs.nas, ...S.runs.native]);
   const nasStateVar = await gh(`/repos/${S.slug}/actions/variables/NAS_STATE`, { allow404: true }).catch(() => null);
+  if (epoch !== platformEpoch) return;
   try { S.nasState = nasStateVar?.value ? JSON.parse(nasStateVar.value) : null; } catch { S.nasState = null; }
   renderNasStatus();
   renderEnvStatus();
@@ -2092,7 +2152,7 @@ async function connectRepo(repo) {
   }
   pill.textContent = `connected as ${S.user.login} ✓`;
   pill.className = 'pill ok';
-  hfetch('/api/local/gh-pat', { method: 'POST', body: JSON.stringify({ pat: S.pat }) }).catch(() => {});
+  hfetch('/api/local/gh-pat', { method: 'POST', body: JSON.stringify({ pat: S.pat, platform: S.platform }) }).catch(() => {});
   await ghUpsertRepoVar('MUNNI_INITIALIZED', 'true').catch(() => {});
   let patNote = '';
   try {
@@ -2203,11 +2263,43 @@ function renderPlatformCards() {
   box.innerHTML = html;
   box.querySelectorAll('[data-platform-pick]').forEach((el) => el.addEventListener('click', () => pickPlatform(el.dataset.platformPick)));
 }
+let platformEpoch = 0; // bumped on every platform switch: a refresh that started under another platform stops instead of painting it or calling GitHub with the wrong token
+/** a stored GitHub token reconnects by itself — per platform, since platforms share nothing; Connect is one click when the repo name was cleared */
+async function restoreConnection() {
+  try {
+    const v = await hjson(`/api/wizard/values?platform=${encodeURIComponent(S.platform)}`);
+    const pat = v.platform?.GH_PAT;
+    const field = document.getElementById('in-pat');
+    if (!pat || field.value) return;
+    field.value = pat;
+    S.pat = pat;
+    if (S.slug && /^[^/\s]+\/[^/\s]+$/.test(S.slug)) {
+      msg('msg-connect', `reconnecting with the token saved for ${platformLabel()}…`, true);
+      document.getElementById('btn-connect').click();
+    }
+  } catch { /* helper hiccup — the manual flow still works */ }
+}
 function pickPlatform(id) {
   if (S.platform === id) return;
   S.platform = id;
+  platformEpoch++;
+  clearTimeout(S.pollTimer);
   LS.set('platform', id);
-  applyPlatform().catch(() => {});
+  // platforms share nothing: ticks, skips, saved values, verdicts and the GitHub connection are each their own
+  S.features = featuresFor(id);
+  S.skipped = new Set(LS.get('skipped.' + id, []));
+  S.regVerdicts = LS.get('reg-verdicts.' + id, {});
+  S.accessUsers = {};
+  S.appLinksByEnv = {};
+  S.autoVerified = new Set();
+  S.recentlyStored.clear();
+  S.verdicts = {};
+  S.pat = ''; S.user = null;
+  S.googleProject = S.status?.googleProjects?.[id] ?? null;
+  document.querySelectorAll('.tile [data-secret]').forEach((el) => { el.value = ''; }); // typed, unsaved values never cross to another platform
+  const field = document.getElementById('in-pat'); if (field) field.value = '';
+  msg('msg-connect', '', true);
+  applyPlatform().then(restoreConnection).catch(() => {});
 }
 const COPY = {
   lcl: {
@@ -2258,14 +2350,16 @@ async function refreshLocal() {
   if (!HELPER) return;
   const box = document.getElementById('local-status');
   try {
+    const epoch = platformEpoch;
     const st = await hjson('/api/status');
+    if (epoch !== platformEpoch) return;
     S.status = st;
     S.platforms = st.platforms ?? [];
     S.envList = (platformCfg()?.envs ?? []).map((e) => ({ ...e }));
-    const names = new Set([...(st.wizardStored?.family ?? []), ...(st.wizardStored?.platforms?.[S.platform] ?? [])]);
+    const names = new Set([...(st.wizardStored?.machine ?? []), ...(st.wizardStored?.platforms?.[S.platform] ?? [])]);
     if (isLcl()) for (const s of Object.values(st.stacks ?? {})) for (const n of s.stored ?? []) names.add(n);
     S.localStore = names;
-    S.googleProject = st.googleProject ?? null;
+    S.googleProject = st.googleProjects?.[S.platform] ?? null;
     if (syncFeaturesFromEnvs()) { renderCards(); renderEnvAddFeatures(); }
     renderPlatformCards();
     renderWorkspaces();
@@ -2275,11 +2369,11 @@ async function refreshLocal() {
       isLcl() ? hjson('/api/local/ca-trust').catch(() => null) : Promise.resolve(null),
       hjson('/api/local/registry').catch(() => null),
     ]);
+    if (epoch !== platformEpoch) return;
     S.caTrust = trust;
     S.registry = registry;
     if (isLcl()) {
       refreshAutonomy().catch(() => {});
-      if (!S.lanReconciled && Object.values(st.stacks ?? {}).some((s) => s.rendered)) { S.lanReconciled = true; reconcileLanMode().catch(() => {}); }
     } else {
       refreshNasProbe().catch(() => {});
     }
@@ -2335,8 +2429,9 @@ function renderLclStatus(st) {
 /** the shared services' addresses and the Google console links follow the platform */
 function fillDynamicCopy() {
   const project = S.googleProject;
+  const GCP = { consent: 'https://console.cloud.google.com/apis/credentials/consent', client: 'https://console.cloud.google.com/apis/credentials/oauthclient', iam: 'https://console.cloud.google.com/iam-admin/iam', sa: 'https://console.cloud.google.com/iam-admin/serviceaccounts', playapi: 'https://console.cloud.google.com/apis/library/androidpublisher.googleapis.com' };
   document.querySelectorAll('[data-gcp-link]').forEach((a) => {
-    const base = a.dataset.gcpLink === 'consent' ? 'https://console.cloud.google.com/apis/credentials/consent' : 'https://console.cloud.google.com/apis/credentials/oauthclient';
+    const base = GCP[a.dataset.gcpLink] ?? GCP.client;
     a.href = project ? `${base}?project=${encodeURIComponent(project)}` : base;
   });
   document.querySelectorAll('[data-gcp-project]').forEach((el) => { el.innerHTML = project ? `the Play service account's project <code>${esc(project)}</code>` : 'any Cloud project'; });
@@ -2406,10 +2501,7 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
   setMasterBusy(true);
   try {
     await refreshLocal();
-    if (!S.envList.length) {
-      if (!(await streamLocal('/api/envs', { platform: 'lcl', env: 'prod', channel: 'dev', appChannel: 'production', features: featuresFromToggles() }, 'create the prod environment (infra/platforms/lcl/envs/prod.json + render)'))) return;
-      await refreshLocal();
-    }
+    if (!S.envList.length) localLog('\nno environment yet — the shared services come up now; add environments in step 4 (nothing is created on its own)\n');
     if (!(await streamLocal('/api/local/run', { stack: shared }, 'mint secrets + render the shared services'))) return;
     if (!(await streamLocal('/api/local/tool', { tool: `${shared}:up` }, 'start the shared services (glitchtip, vault, ocr, control, pgadmin)'))) return;
     if (!(await waitForServices(shared, ['glitchtip', 'vault'], 'wait for the shared services'))) return;
@@ -2469,7 +2561,7 @@ document.getElementById('btn-local-nuke-all')?.addEventListener('click', async (
     await streamLocal('/api/config/commit', { message: 'chore(platforms): wipe the lcl environments' }, 'commit the platform config (the removal is recorded)', { refresh: false });
     try {
       const chk = await hjson('/api/local/cleanup-check');
-      const byHand = chk.byHand?.length ? `  by hand — no API can do these (Leftovers card, item 5):\n${chk.byHand.map((l) => `  · ${l}`).join('\n')}\n` : '';
+      const byHand = chk.byHand?.length ? `  by hand — no API can do these — Windows untrusts a root only through its own dialog (certmgr.msc → Trusted Root Certification Authorities → delete every "Caddy Local Authority" row):\n${chk.byHand.map((l) => `  · ${l}`).join('\n')}\n` : '';
       localLog(chk.clean
         ? `\n✓ cleanup verified: no platform containers, volumes, networks, renders or environment files remain.${chk.kept?.length ? ` Kept on purpose: ${chk.kept.join(' + ')}.` : ''}\n${byHand}`
         : `\n✗ the cleanup left traces — press Delete everything again to finish:\n${chk.leftovers.map((l) => `  · ${l}`).join('\n')}\n${byHand}`);
@@ -2528,8 +2620,8 @@ document.getElementById('btn-local-vault-export')?.addEventListener('click', asy
   localLog('\nVault import file downloaded — in Vaultwarden: Tools → Import data → Bitwarden (json). Delete the file after importing.\n');
 });
 const secretsTable = (vals) => {
-  const rows = Object.entries(vals ?? {}).filter(([, v]) => v).map(([name, value]) => `<tr><td style="padding:2px 10px 2px 0"><code>${esc(name)}</code></td><td><code style="user-select:all">${esc(value)}</code></td></tr>`);
-  return rows.length ? `<div style="overflow-x:auto"><table style="font-size:12px">${rows.join('')}</table></div>` : '<p class="why">nothing stored yet</p>';
+  const rows = Object.entries(vals ?? {}).filter(([, v]) => v).map(([name, value]) => `<tr><td style="padding:2px 10px 2px 0;vertical-align:top;white-space:nowrap"><code>${esc(name)}</code></td><td><code style="user-select:all;word-break:break-all;white-space:pre-wrap">${esc(value)}</code></td></tr>`);
+  return rows.length ? `<div style="overflow:auto;max-height:55vh;min-width:0;max-width:100%"><table style="font-size:12px;width:100%;table-layout:fixed"><colgroup><col style="width:240px"><col></colgroup>${rows.join('')}</table></div>` : '<p class="why">nothing stored yet</p>';
 };
 document.getElementById('btn-local-reveal')?.addEventListener('click', async () => {
   const box = document.getElementById('local-secrets');
@@ -2552,7 +2644,7 @@ document.getElementById('btn-local-reveal')?.addEventListener('click', async () 
     ? { name: 'Vaultwarden (master password)', url: urls.vault ?? '', user: vault.VAULT_ADMIN_EMAIL, pass: vault.VAULT_MASTER_PASSWORD }
     : { name: 'Vaultwarden', url: urls.vault ?? '', user: '(not set up yet)', pass: '(press Set up the vault automatically)' });
   const signInRows = signIns.map((l) => `<tr><td style="padding:2px 10px 2px 0"><b>${esc(l.name)}</b>${l.url ? ` <a href="${escAttr(l.url)}" target="_blank" rel="noreferrer" style="font-size:11px">open</a>` : ''}</td><td style="padding:2px 10px 2px 0"><code style="user-select:all">${esc(l.user)}</code></td><td><code style="user-select:all">${esc(l.pass)}</code></td></tr>`);
-  const raw = [['WIZARD STORE (this platform)', { ...(all.wizard?.family ?? {}), ...(all.wizard?.platforms?.lcl ?? {}) }], ...Object.entries(all.values ?? {}).map(([stack, vals]) => [stackLabel(stack).toUpperCase(), vals])];
+  const raw = [['WIZARD STORE (this platform)', { ...(all.wizard?.machine ?? {}), ...(all.wizard?.platforms?.lcl ?? {}) }], ...Object.entries(all.values ?? {}).map(([stack, vals]) => [stackLabel(stack).toUpperCase(), vals])];
   box.innerHTML = `<p class="why">Shown on your request only — nothing here is logged. Click a value to select it.</p>
     <div style="font-size:11px;color:var(--muted);margin:4px 0">SIGN-INS</div>
     <div style="overflow-x:auto"><table style="font-size:12px">${signInRows.join('')}</table></div>
@@ -2618,7 +2710,7 @@ document.getElementById('btn-nas-reveal')?.addEventListener('click', async () =>
   const all = await hjson('/api/local/secrets');
   box.innerHTML = `<p class="why">Shown on your request only — nothing here is logged. The nas platform's values as the helper holds them; the generated ones (Postgres, Logto, GlitchTip, …) are minted by the bootstrap into GitHub and kept in the platform's vault.</p>
     <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">PLATFORM (nas)</div>${secretsTable(all.wizard?.platforms?.nas ?? {})}
-    <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">EVERY PLATFORM (family)</div>${secretsTable(all.wizard?.family ?? {})}`;
+    <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">THIS COMPUTER (the Apple Development certificate — Apple caps those per account)</div>${secretsTable(all.wizard?.machine ?? {})}`;
   box.hidden = false;
   btn.textContent = 'Hide platform secrets';
 });
@@ -2626,10 +2718,10 @@ const NAS_PLATFORM_REQUIRED = ['PLATFORM_DOMAIN', 'SYNOLOGY_URL', 'SYNOLOGY_USER
 /** the platform's values, as the helper holds them, sorted into platform-scoped and the rest */
 async function platformValuesFor(platform) {
   const v = await hjson(`/api/wizard/values?platform=${encodeURIComponent(platform)}`);
-  const merged = { ...(v.family ?? {}), ...(v.platform ?? {}) };
+  const merged = { ...(v.machine ?? {}), ...(v.platform ?? {}) };
   const platformScoped = Object.fromEntries(Object.entries(merged).filter(([n, val]) => isPlatformScoped(n) && val));
-  const family = Object.fromEntries(Object.entries(merged).filter(([n, val]) => !isPlatformScoped(n) && n !== 'GH_PAT' && val));
-  return { platformScoped, family };
+  const envScoped = Object.fromEntries(Object.entries(merged).filter(([n, val]) => !isPlatformScoped(n) && n !== 'GH_PAT' && val));
+  return { platformScoped, envScoped };
 }
 /** ONE button for the shared stack: GitHub environment + every platform value, the config on the branch, Bootstrap → Deploy */
 async function setupSharedServices() {
@@ -2640,6 +2732,7 @@ async function setupSharedServices() {
     const missing = NAS_PLATFORM_REQUIRED.filter((n) => !secretPresent(n));
     if (missing.length) throw new Error(`save the platform accounts first — still missing: ${missing.join(', ')}`);
     btn.disabled = true;
+    btn.dataset.running = '1';
     say('generating the vault account (if missing)…');
     await ensureVaultAccount({ quiet: true });
     say('storing every platform value into the GitHub environments…');
@@ -2657,6 +2750,7 @@ async function setupSharedServices() {
   } catch (e) {
     say(`✗ ${e.message}`, false);
   } finally {
+    delete btn.dataset.running;
     btn.disabled = false;
   }
 }
@@ -2726,12 +2820,26 @@ function renderNasStatus() {
   if (!p) row('Hosts', '', S.domain ? 'probe pending' : 'save the domain first', '');
   else {
     const s = p.summary;
-    row(`Names resolve (*.${p.domain})`, s.dns ? 'ok' : 'bad', s.dns ? 'DNS ✓' : 'some names do not resolve', s.dns ? '' : 'Synology DDNS resolves *.<domain> by itself; an own domain needs a wildcard record (Leftovers)');
+    row(`Names resolve (*.${p.domain})`, s.dns ? 'ok' : 'bad', s.dns ? 'DNS ✓' : 'some names do not resolve', s.dns ? '' : 'Synology DDNS resolves *.<domain> by itself; an own domain needs a wildcard record — the domain tile explains');
     const certKnown = p.stacks.flatMap((x) => x.hosts).some((h) => h.state !== 'no-dns' && h.state !== 'unreachable');
     row(`Certificate covers *.${p.domain}`, !certKnown ? '' : (s.certificate ? 'ok' : 'bad'), !certKnown ? 'unknown' : (s.certificate ? 'wildcard certificate ✓' : 'certificate misses the hosts'), s.certificate ? '' : 'Bootstrap (the shared stack) requests the wildcard through DSM once the deploy account may use DSM');
     probeRowsFor(sharedStackOf('nas'), row);
   }
   list.innerHTML = rows.map((r) => `<li ${r.jump ? jumpAttr(r.jump) : ''} title="${escAttr(r.title ?? '')}"><span class="hn">${esc(r.name)}</span><span class="hs ${r.cls}"><i class="dot ${dotCls(r.cls)}"></i>${esc(r.label)}</span></li>`).join('');
+  // the two buttons follow the state: Set up is spent once the last Bootstrap found everything in place (it wakes up
+  // again if a piece goes missing); Deploy again needs a deployment to repeat
+  const sharedSetUp = Boolean(ci?.dsm?.ok && ci.wildcard && ci.task?.enabled);
+  const sharedProbe = S.nasProbe?.stacks?.find((x) => x.stack === sharedStackOf('nas'));
+  const sharedUp = Boolean(sharedProbe?.hosts?.some((h) => (h.state === 'no-cert' && h.behind ? h.behind : h.state) === 'up'));
+  const sharedDeployed = sharedUp || runsFor(S.runs?.nas ?? [], sharedStackOf('nas')).some((r) => r.status === 'completed' && r.conclusion === 'success');
+  const setupBtn = document.getElementById('btn-nas-shared-setup');
+  const deployBtn = document.getElementById('btn-nas-shared-deploy');
+  if (setupBtn && !setupBtn.dataset.running) {
+    setupBtn.disabled = sharedSetUp;
+    setupBtn.textContent = sharedSetUp ? '✓ Shared services are set up' : '▶ Set up shared services';
+    setupBtn.title = sharedSetUp ? 'the last Bootstrap found DSM, the wildcard certificate and the poller in place — Deploy again redeploys the shared stack, Add environment (step 4) adds an environment' : '';
+  }
+  if (deployBtn) { deployBtn.disabled = !sharedDeployed; deployBtn.title = sharedDeployed ? '' : 'nothing deployed yet — Set up shared services runs the first Bootstrap → Deploy'; }
   const open = rows.filter((r) => r.cls === 'bad' || r.cls === 'warn');
   const fix = document.getElementById('nas-status-fix');
   const todo = open.filter((r) => r.title);
@@ -2772,11 +2880,11 @@ function envFeaturesFromForm() {
 /** a nas environment after its JSON exists: GitHub environment + every value it needs, the config on the branch, Bootstrap → Deploy */
 async function setupNasEnvironment(env) {
   requireConnection();
-  const { platformScoped, family } = await platformValuesFor('nas');
+  const { platformScoped, envScoped } = await platformValuesFor('nas');
   await ensureEnv(env.environment);
   let n = 0;
   for (const [name, value] of Object.entries(platformScoped)) { await putSecretAt(envBase(env.environment), name, value); n++; }
-  for (const [name, value] of Object.entries(family)) {
+  for (const [name, value] of Object.entries(envScoped)) {
     if (!envNeeds(env, name)) continue;
     await putSecretAt(envBase(env.environment), name, value); n++;
   }
@@ -2869,13 +2977,26 @@ function overviewHtml(env) {
     <p class="why" style="margin-top:8px">What this environment still needs from you — in order:</p>
     <ul class="todo" id="env-todo-${s}"></ul>`;
 }
-const regBlock = (s, provider, title, where, href, values, verifiable) => `
+/** what a provider is asked WITH — the sign-in tile's values; without them a registration cannot be verified, only the tile saved */
+const REG_NEEDS = { google: ['LOGTO_GOOGLE_CLIENT_ID', 'LOGTO_GOOGLE_CLIENT_SECRET'], apple: ['LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY'] };
+const regTileMissing = (provider) => (REG_NEEDS[provider] ?? []).some((n) => !secretPresent(n));
+const regTileName = (provider) => (provider === 'apple' ? 'Apple sign-in' : 'Google sign-in');
+const regBlock = (s, provider, title, where, href, values, verifiable) => {
+  // no API at the provider: the operator ticks done — the same item the Setup status rail lists
+  const todoId = `reg-${provider === 'enablebanking' ? 'eb' : provider}-${s}`;
+  const done = !verifiable && Boolean(todoDone()[`${S.platform}:${todoId}`]);
+  const unsaved = verifiable && regTileMissing(provider);
+  const pill = verifiable ? (unsaved ? `${regTileName(provider)} tile not saved yet` : 'not checked yet') : (done ? 'done ✓ (marked by you)' : 'no API to verify — tick done once registered');
+  const manual = verifiable ? '' : `<div class="runrow"><label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-todo="${escAttr(todoId)}" ${done ? 'checked' : ''}/> done — registered by hand</label></div>`;
+  return `
   <div class="reg" data-reg="${provider}" data-env="${s}">
-    <div class="reg-h"><b>${title}</b> <span class="pill" id="reg-pill-${provider}-${s}">${verifiable ? 'not checked yet' : 'no API to verify'}</span></div>
+    <div class="reg-h"><b>${title}</b> <span class="pill${done ? ' ok' : ''}" id="reg-pill-${provider}-${s}">${pill}</span></div>
     <div class="why">Where: <a href="${href}" target="_blank" rel="noreferrer">${where}</a></div>
     ${values.map(copyBlock).join('')}
-    ${verifiable ? `<div class="runrow"><button class="ghost" data-verify="${provider}" data-env="${s}">Verify with ${provider === 'google' ? 'Google' : 'Apple'}</button><span class="envtag">asks the provider about this environment's URL only — nothing changes</span></div>` : ''}
+    ${verifiable ? `<div class="runrow"><button class="ghost" data-verify="${provider}" data-env="${s}"${unsaved ? ' disabled' : ''}>Verify with ${provider === 'google' ? 'Google' : 'Apple'}</button><span class="envtag">${unsaved ? `save the ${regTileName(provider)} tile under Features &amp; accounts first — the check asks the provider with those values` : 'asks the provider about this environment\'s URL only — nothing changes'}</span></div>` : ''}
+    ${manual}
   </div>`;
+};
 const regNote = (title, text) => `<div class="reg"><div class="reg-h"><b>${title}</b> <span class="pill">needs https</span></div><div class="why">${text}</div></div>`;
 function registrationsHtml(env) {
   const s = env.env;
@@ -2901,19 +3022,27 @@ function registrationsHtml(env) {
 }
 function accessHtml(env) {
   const s = env.env;
+  const u = stackUrls(env.stack) ?? {};
+  const link = (href) => (href ? `<a href="${escAttr(href)}" target="_blank" rel="noreferrer">${esc(href)}</a>` : '<i>(address known once the environment is set up)</i>');
   return `
-    <p class="why">Who may use the admin portal and the control cockpit of this environment: the users of its own Logto, with the role <b>munni admin</b> toggled here. Nothing is typed — sign in to the app once and the account appears.</p>
+    <p class="why">The admin portal and the control cockpit have <b>no account and no password of their own</b>: they let in the users of this environment's own Logto that hold the role <b>munni admin</b>, switched on here. Nothing is typed anywhere and the setup creates no user.</p>
+    <ol class="why" style="padding-left:18px;margin:6px 0">
+      <li>Sign in to the app once — ${link(u.web)} — with the account you want to operate with (Google, Apple or e-mail, whatever this environment offers). That creates the user.</li>
+      <li>It appears below (<b>Reload users</b> if not yet); switch <b>admin</b> on.</li>
+      <li>Open the admin portal — ${link(u.admin)} — with the same account. A session opened before the switch signs out and in again: the role rides on the next token.</li>
+    </ol>
+    <p class="why">The vault's <i>Logto console</i> item is Logto's own console (${link(u.logtoAdmin)}), not the admin portal.</p>
     <div class="runrow"><button class="ghost" data-act="access" data-stack="${env.stack}">Reload users</button></div>
-    <ul class="health-list access-list" id="access-list-${s}"><li><span class="hn">press Reload users</span></li></ul>
+    <ul class="health-list access-list" id="access-list-${s}"><li><span class="hn">not listed yet</span></li></ul>
     <div class="msg" id="msg-access-${s}"></div>`;
 }
 function cleanupHtml(env) {
   const s = env.env;
   if (isLcl()) return `
-    <p class="why">Deletes the environment COMPLETELY: containers, volumes INCLUDING its database server, its GoCardless consents, its GlitchTip projects, its vault folder — and its file under infra/platforms. Other environments and the shared services are untouched. The one thing no API deletes: the store records of its package (Retire on the Phones tab withdraws the distribution; the records go by hand — see Leftovers).</p>
+    <p class="why">Deletes the environment COMPLETELY: containers, volumes INCLUDING its database server, its GoCardless consents, its GlitchTip projects, its vault folder — and its file under infra/platforms. Other environments and the shared services are untouched. The one thing no API deletes: the store records of its package — Retire on the Phones tab withdraws the distribution first, then by hand: Play Console → the app → Advanced settings → unpublish/delete; App Store Connect → the app → Remove app (once every build is expired).</p>
     <div class="runrow"><button class="ghost danger" data-act="delete" data-stack="${env.stack}">Delete ${esc(env.label)}…</button></div>`;
   return `
-    <p class="why">Takes the environment OFF the NAS and GitHub through one workflow run: its reverse-proxy rules, its containers + volumes + folder (the poller does it within five minutes), its GlitchTip projects, its GitHub environment with every secret, and its file under infra/platforms (the run commits the removal). Its Logto lives inside the environment and goes with the containers. The one thing left to you: the store records of its package (Leftovers).</p>
+    <p class="why">Takes the environment OFF the NAS and GitHub through one workflow run: its reverse-proxy rules, its containers + volumes + folder (the poller does it within five minutes), its GlitchTip projects, its GitHub environment with every secret, and its file under infra/platforms (the run commits the removal). Its Logto lives inside the environment and goes with the containers. The one thing left to you: the store records of its package — Retire on the Phones tab first, then Play Console → the app → Advanced settings → unpublish/delete and App Store Connect → the app → Remove app (once every build is expired).</p>
     <div class="runrow" style="align-items:center"><input type="text" id="cleanup-confirm-${s}" placeholder="type ${escAttr(s)} to confirm" style="max-width:220px" autocomplete="off"/><button class="ghost danger" data-act="cleanup" data-stack="${env.stack}">Clean up ${esc(env.label)}</button></div>
     <div class="msg" id="msg-cleanup-${s}"></div>`;
 }
@@ -2941,7 +3070,7 @@ function envWorkspaceHtml(env) {
         <button class="tab sel" data-tab="overview" data-env="${s}">Overview</button>
         <button class="tab" data-tab="registrations" data-env="${s}">Registrations <span class="pill" id="tabpill-registrations-${s}"></span></button>
         <button class="tab" data-tab="phones" data-env="${s}">Phones <span class="pill" id="tabpill-phones-${s}"></span></button>
-        <button class="tab" data-tab="access" data-env="${s}">Access</button>
+        <button class="tab" data-tab="access" data-env="${s}">Access <span class="pill" id="tabpill-access-${s}"></span></button>
         <button class="tab" data-tab="cleanup" data-env="${s}">Clean up</button>
       </div>
       <div class="tab-body" data-tab="overview" data-env="${s}">${overviewHtml(env)}</div>
@@ -2962,6 +3091,9 @@ function renderWorkspaces() {
     box.innerHTML = list.length ? list.map(envWorkspaceHtml).join('') : `<p class="why">No environment on ${esc(platformLabel())} yet — ${isLcl() ? '<b>Set up &amp; start</b> creates prod; more can be added above.' : 'add one above.'}</p>`;
     applyIcons(box);
     for (const env of list) renderRegistrations(env);
+    setTimeout(() => autoVerifyRegistrations().catch(() => {}), 800);
+    setTimeout(() => autoLoadAccess().catch(() => {}), 1200);
+    setTimeout(() => autoCheckAppLinks().catch(() => {}), 1600);
   }
   setPill('envs-pill', list.length ? `${list.length} environment${list.length > 1 ? 's' : ''}` : 'none yet', list.length > 0);
   renderEnvStatus();
@@ -2975,19 +3107,49 @@ function renderRegistrations(env) {
 function applyRegPill(s, provider) {
   const v = S.regVerdicts[s]?.[provider];
   if (!v) return;
-  const text = v.ok && !v.warn ? 'registered ✓' : (v.warn ? `refused — ${v.detail}` : `✗ ${v.detail}`);
+  const when = v.at ? ` · checked ${ago(v.at)}` : '';
+  const text = v.ok && !v.warn ? `registered ✓${when}` : (v.warn ? `refused — ${v.detail}` : `✗ ${v.detail}`);
   setPill(`reg-pill-${provider}-${s}`, text.slice(0, 240), v.ok && !v.warn);
 }
 async function verifyRegistration(env, provider) {
   const s = env.env;
   const logto = stackUrls(env.stack)?.logto ?? '';
-  setPill(`reg-pill-${provider}-${s}`, 'asking…', false);
   let verdict;
+  if (regTileMissing(provider)) {
+    // nothing to ask the provider with: say which tile, never a raw list of secret names
+    verdict = { ok: false, detail: `save the ${regTileName(provider)} tile first (Features & accounts) — the check asks ${provider === 'apple' ? 'Apple' : 'Google'} with its values`, at: new Date().toISOString() };
+    (S.regVerdicts[s] ??= {})[provider] = verdict;
+    LS.set('reg-verdicts.' + S.platform, S.regVerdicts);
+    applyRegPill(s, provider);
+    renderTodo();
+    return;
+  }
+  setPill(`reg-pill-${provider}-${s}`, 'asking…', false);
   try { verdict = await hjson('/api/validate', { method: 'POST', body: JSON.stringify({ provider, values: {}, platform: S.platform, redirectUris: [`${logto}/callback/${provider}-universal`] }) }); }
   catch (e) { verdict = { ok: false, unreachable: true, detail: e.message }; }
+  verdict.at = new Date().toISOString();
   (S.regVerdicts[s] ??= {})[provider] = verdict;
+  LS.set('reg-verdicts.' + S.platform, S.regVerdicts);
   applyRegPill(s, provider);
   renderTodo();
+}
+/** registrations verify themselves: on load, on a platform switch and after a provider is saved, every verifiable provider of every environment is asked once — a verdict younger than 30 minutes is kept across reloads */
+async function autoVerifyRegistrations() {
+  if (!HELPER) return;
+  for (const env of S.envList) {
+    const f = env.features ?? {};
+    const logto = stackUrls(env.stack)?.logto ?? '';
+    const providers = [];
+    if ((f.signin ?? []).includes('google') && secretPresent('LOGTO_GOOGLE_CLIENT_ID') && logto) providers.push('google');
+    if ((f.signin ?? []).includes('apple') && secretPresent('LOGTO_APPLE_CLIENT_ID') && logto.startsWith('https://')) providers.push('apple');
+    for (const provider of providers) {
+      const key = `${S.platform}:${env.env}:${provider}`;
+      const last = S.regVerdicts[env.env]?.[provider];
+      if (S.autoVerified.has(key) || (last?.at && Date.now() - Date.parse(last.at) < 30 * 60000)) continue;
+      S.autoVerified.add(key);
+      await verifyRegistration(env, provider).catch(() => {});
+    }
+  }
 }
 /** what an environment has: sign-in ids written back, DSNs written back — lcl from the stack's store names, nas from its GitHub variables + the last run's verdict */
 function envCodeState(env) {
@@ -3078,27 +3240,89 @@ function switchTab(s, tab) {
 }
 
 /* ── Access: the environment's Logto users, the admin role toggled ── */
-async function loadAccess(env) {
+async function loadAccess(env, { quiet = false } = {}) {
   const s = env.env;
   const list = document.getElementById(`access-list-${s}`);
   if (!list) return;
+  const epoch = platformEpoch;
   list.innerHTML = '<li><span class="hn">asking the environment\'s Logto…</span></li>';
-  msg(`msg-access-${s}`, '', true);
+  if (!quiet) msg(`msg-access-${s}`, '', true);
   try {
     const r = await hjson(`/api/access/users?stack=${encodeURIComponent(env.stack)}`);
+    if (epoch !== platformEpoch) return;
     S.accessUsers[s] = r.users ?? [];
     renderAccess(env);
+    renderTodo();
   } catch (e) {
+    if (epoch !== platformEpoch) return;
+    if (quiet) { list.innerHTML = `<li><span class="hn">not listed yet — ${esc(e.message)}; Reload users once the environment answers</span></li>`; return; }
     list.innerHTML = '';
     msg(`msg-access-${s}`, `✗ ${e.message}`, false);
   }
+}
+/* ── app links: the served /.well-known files of an environment against its config ── */
+async function checkAppLinks(env, { quiet = false } = {}) {
+  const s = env.env;
+  const epoch = platformEpoch;
+  if (!quiet) msg(`msg-applinks-${s}`, '', true);
+  setPill(`applinks-pill-${s}`, 'checking…', false);
+  let r;
+  try { r = await hjson(`/api/local/app-links?stack=${encodeURIComponent(env.stack)}`); }
+  catch (e) {
+    if (epoch !== platformEpoch) return;
+    setPill(`applinks-pill-${s}`, 'check failed', false);
+    if (!quiet) msg(`msg-applinks-${s}`, `✗ ${e.message}`, false);
+    return;
+  }
+  if (epoch !== platformEpoch) return;
+  S.appLinksByEnv[s] = r;
+  renderAppLinks(env);
+  renderTodo();
+}
+function renderAppLinks(env) {
+  const s = env.env;
+  const r = S.appLinksByEnv[s];
+  const list = document.getElementById(`applinks-list-${s}`);
+  if (!r || !list) return;
+  if (!r.verifiable) { setPill(`applinks-pill-${s}`, 'not verifiable here', false); return; }
+  const f = env.features ?? {};
+  const cls = (st) => (st === 'ok' ? 'ok' : (st === 'missing' ? 'bad' : 'warn'));
+  const rows = [];
+  if (f.android) rows.push({ name: `Android — ${r.android.package}`, cls: cls(r.android.state), label: r.android.detail, title: r.android.google === null ? '' : (r.android.google ? 'Google sees the statement ✓' : 'Google does not see the statement yet — it re-reads within minutes of a change') });
+  if (f.ios) rows.push({ name: `iOS — ${r.ios.appId ?? r.ios.bundle}`, cls: cls(r.ios.state), label: r.ios.detail, title: 'Apple\'s CDN re-reads the file within a day; a phone in developer mode reads it directly' });
+  list.innerHTML = rows.map((x) => `<li title="${escAttr(x.title)}"><span class="hn">${esc(x.name)}</span><span class="hs ${x.cls}"><i class="dot ${dotCls(x.cls)}"></i>${esc(x.label)}</span></li>`).join('');
+  const allOk = rows.length > 0 && rows.every((x) => x.cls === 'ok');
+  setPill(`applinks-pill-${s}`, allOk ? 'both served ✓' : (rows.some((x) => x.cls === 'bad') ? 'not served' : 'to do'), allOk);
+}
+async function applyAppLinks(env) {
+  const s = env.env;
+  const value = (document.getElementById(`applinks-fp-${s}`)?.value ?? '').trim();
+  const first = value.split(',')[0].trim();
+  if (value && !/^([0-9a-f]{2}:){31}[0-9a-f]{2}$/i.test(first)) { msg(`msg-applinks-${s}`, 'that is not a SHA-256 certificate fingerprint — 32 hex pairs separated by colons, as Play Console shows it', false); return; }
+  if (!(await streamLocal('/api/envs/app-links', { platform: S.platform, env: s, androidCertSha256: value }, `save ${env.label}'s app signing fingerprint`, { refresh: false }))) return;
+  delete S.appLinksByEnv[s];
+  if (isLcl()) { msg(`msg-applinks-${s}`, 'saved — Re-run setup restarts the web container with it', true); await refreshLocal(); return; }
+  await streamLocal('/api/config/commit', { message: `chore(platforms): ${S.platform} environment ${s} app signing fingerprint` }, 'commit + push the platform config', { refresh: false });
+  try { await envAction('deploy', env, null); msg(`msg-applinks-${s}`, 'saved, committed, Deploy dispatched — Check again once the run is through', true); }
+  catch (e) { msg(`msg-applinks-${s}`, `saved and committed — press Deploy again to publish it (${e.message})`, false); }
+  await refreshLocal();
+}
+/** the check runs itself once per page load per environment — the todo says whether the files are served */
+async function autoCheckAppLinks() {
+  if (!HELPER || isLcl()) return;
+  for (const env of S.envList) if (!S.appLinksByEnv[env.env] && (env.features?.android || env.features?.ios)) await checkAppLinks(env, { quiet: true }).catch(() => {});
+}
+/** the listing loads itself once per page load — the environment's todo then says whether anyone holds admin */
+async function autoLoadAccess() {
+  if (!HELPER) return;
+  for (const env of S.envList) if (!S.accessUsers[env.env]) await loadAccess(env, { quiet: true }).catch(() => {});
 }
 function renderAccess(env) {
   const s = env.env;
   const list = document.getElementById(`access-list-${s}`);
   if (!list) return;
   const users = S.accessUsers[s] ?? [];
-  if (!users.length) { list.innerHTML = '<li><span class="hn">no users yet — sign in to the app once, then reload</span></li>'; return; }
+  if (!users.length) { list.innerHTML = '<li><span class="hn">no users yet — sign in to the app once (step 1 above), then Reload users</span></li>'; return; }
   list.innerHTML = users.map((u) => {
     const who = u.name || u.username || u.email || u.id;
     const initials = String(who).slice(0, 2).toUpperCase();
@@ -3113,6 +3337,7 @@ async function toggleAccess(env, userId, admin, box) {
     const u = (S.accessUsers[s] ?? []).find((x) => x.id === userId);
     if (u) u.admin = admin;
     renderAccess(env);
+    renderTodo();
     msg(`msg-access-${s}`, `${admin ? 'granted' : 'revoked'} admin for ${userId} ✓ — takes effect on the user's next token`, true);
   } catch (e) {
     box.checked = !admin;
@@ -3141,6 +3366,10 @@ document.getElementById('env-cards')?.addEventListener('click', async (e) => {
   if (build) { const env = envByName(build.dataset.env); if (env) (build.dataset.nativeBuild === 'android' ? buildAndroid(env) : buildIos(env)); return; }
   const pkg = e.target.closest('[data-apply-package]');
   if (pkg) { const env = envByName(pkg.dataset.env); if (env) applyStoreId(pkg.dataset.applyPackage, env); return; }
+  const alc = e.target.closest('[data-applinks-check]');
+  if (alc) { const env = envByName(alc.dataset.env); if (env) checkAppLinks(env); return; }
+  const ala = e.target.closest('[data-applinks-apply]');
+  if (ala) { const env = envByName(ala.dataset.env); if (env) applyAppLinks(env); return; }
   const ver = e.target.closest('[data-verify]');
   if (ver) {
     const env = envByName(ver.dataset.env);
@@ -3156,6 +3385,18 @@ document.getElementById('env-cards')?.addEventListener('click', async (e) => {
   await envAction(btn.dataset.act, env, btn);
 });
 document.getElementById('env-cards')?.addEventListener('change', (e) => {
+  const td = e.target.closest('[data-todo]');
+  if (td) {
+    const m = todoDone();
+    m[`${S.platform}:${td.dataset.todo}`] = td.checked;
+    LS.set('todo-done', m);
+    renderTodo();
+    const env = envByName(td.closest('[data-env]')?.dataset.env);
+    if (env) renderRegistrations(env);
+    const pushCard = td.closest('[data-push-card]');
+    if (pushCard) { const pill = pushCard.querySelector('summary .pill'); if (pill) { pill.textContent = td.checked ? 'done ✓' : 'to do'; pill.classList.toggle('ok', td.checked); } }
+    return;
+  }
   const cb = e.target.closest('[data-access-toggle]');
   if (!cb) return;
   const env = envByName(cb.dataset.env);
@@ -3234,9 +3475,9 @@ async function envAction(act, env, btn) {
 /** the family values an environment's (changed) features need, into its GitHub environment */
 async function mirrorFamilyFor(env) {
   if (!connected() || !env || S.platform !== 'nas') return 0;
-  const { family } = await platformValuesFor('nas');
+  const { envScoped } = await platformValuesFor('nas');
   let n = 0;
-  for (const [name, value] of Object.entries(family)) {
+  for (const [name, value] of Object.entries(envScoped)) {
     if (!envNeeds(env, name)) continue;
     await putEnvSecret(env.environment, name, value); n++;
   }
@@ -3260,13 +3501,11 @@ function phonesHtml(env) {
       <p class="why">This environment's own store identity: package <code data-native-appid data-env="${s}">${esc(ids.android)}</code> on the Play <b>internal testing</b> track. <b>Build</b> writes the environment's config into the GitHub environment <code>${esc(env.environment)}</code>; CI compiles, signs with the machine's upload key, wires push and publishes — the phone then updates through Play. Until the Play record exists the upload is skipped (green run, signed bundle offered here); once the record shows up, publishing turns on by itself.${isLcl() ? ' The app trusts the platform certificate out of the box — CI bakes it in.' : ''}</p>
       <div class="runrow">
         <button data-native-build="android" data-env="${s}">Build the Android app (CI)</button>
-        <span class="pill" id="fcm-status-pill-${s}" hidden></span>
       </div>
       <div class="runrow" style="align-items:center">
         <label class="f" for="native-id-android-${s}" style="margin:0">store package</label>
         <input id="native-id-android-${s}" type="text" maxlength="60" style="max-width:260px" value="${escAttr(ids.android)}" autocomplete="off"/>
         <button class="ghost" data-apply-package="android" data-env="${s}" title="a fresh package name — for when Play has pinned a lost upload key, or just to name it yourself">Apply package name</button>
-        ${f.push ? `<button class="ghost" data-act="firebase" data-stack="${env.stack}" title="Firebase project + app registrations + configs from the Play service account — and the api's sender credential">Wire Firebase push</button>` : ''}
         <button class="ghost danger" data-act="retire" data-stack="${env.stack}" title="withdraws the Play internal release and expires the TestFlight builds — testers lose the app; the records stay">Retire at the stores…</button>
       </div>
       <div class="msg" id="msg-native-android-${s}"></div>
@@ -3305,11 +3544,52 @@ function phonesHtml(env) {
           <li>Nothing to click at developer.apple.com: <b>Build</b> (or Register the App ID) registers the App ID through the API with the capabilities munni needs long-run — Push Notifications, Sign in with Apple as the primary App ID, Associated Domains.</li>
           <li>The one step neither store gives an API for is the app RECORD: <a href="https://appstoreconnect.apple.com" target="_blank" rel="noreferrer">App Store Connect</a> → <b>New App</b> → platform iOS, any name, pick the pre-registered bundle id, <b>SKU</b> = anything unique → create. The pill above detects it and every build then uploads to TestFlight by itself.</li>
           <li>Two account-side switches that block uploads when off: a pending <b>Program License Agreement</b> must be accepted by the Account Holder, and the App Store Connect key needs cloud-signing rights — Users and Access → Integrations → the key → role Admin.</li>
+          <li>Once per Apple team, one <b>enabled</b> registered device: automatic signing archives against a development profile, and Apple issues one only for a team that has one — <a href="https://developer.apple.com/account/resources/devices/list" target="_blank" rel="noreferrer">Devices</a> → enable a registered iPhone, or ＋ to register any iPhone you own (name + UDID; iTunes or Finder shows the UDID behind the serial number). The App Store Connect tile's Check counts them, Build refuses to dispatch without one; TestFlight itself needs none.</li>
         </ol>
       </details>
     </div>`;
-  const push = !f.push ? '' : '<p class="why">Push rides the builds: Build (or Wire Firebase push) Firebase-enables the Play service account\'s project, registers this environment\'s apps and bakes their config in — the push pill says what is wired. The one-time floors are team-wide: the two IAM roles (Firebase tile) and, for iOS, the APNs key upload (Leftovers).</p>';
-  return android + ios + push;
+  // app links: the phone opens the app straight from links — the bank's return, an invite, the sign-in return
+  const webUrl = stackUrls(env.stack)?.web ?? '';
+  const linksCard = !(f.android || f.ios) ? '' : (isLcl() ? `
+    <div class="card" data-applinks data-env="${s}">
+      <h3>App links — opening the app from links <span class="pill">LAN — not verifiable</span></h3>
+      <p class="why">Google and Apple verify a domain's <code>/.well-known</code> files from the internet; a LAN address has nothing they can reach, so on this computer's platform the phone returns through the app's scheme (one "open in munni?" question). The NAS platform gets the popup-less links.</p>
+    </div>` : `
+    <div class="card" data-applinks data-env="${s}">
+      <h3>App links — the phone opens the app straight from links <span class="pill" id="applinks-pill-${s}">not checked yet</span></h3>
+      <p class="why">The web container serves <code>/.well-known/assetlinks.json</code> (Android) and <code>/.well-known/apple-app-site-association</code> (iOS) for this environment's own app — the bank's return, a split invite and the sign-in return then open the app directly instead of asking "open in munni?". iOS is as code (the App Store Connect tile's team id + the bundle id). Android verifies against the certificate <b>Play</b> signs the installed app with — the one value no API hands out.</p>
+      ${f.android ? `<div class="runrow" style="align-items:center">
+        <label class="f" for="applinks-fp-${s}" style="margin:0">App signing SHA-256</label>
+        <input id="applinks-fp-${s}" type="text" style="max-width:520px;font-family:ui-monospace,monospace;font-size:12px" placeholder="AA:BB:CC:… (32 pairs)" value="${escAttr(env.store?.androidCertSha256 ?? '')}" autocomplete="off"/>
+        <button class="ghost" data-applinks-apply data-env="${s}">Save</button>
+      </div>
+      <details class="how"><summary>Where the fingerprint is (once per environment, by hand)</summary>
+        <ol>
+          <li><a href="https://play.google.com/console/" target="_blank" rel="noreferrer">Play Console</a> → the app <code>${esc(ids.android)}</code> → <b>Test and release → Setup → App signing</b> → <b>App signing key certificate</b> → copy the <b>SHA-256 certificate fingerprint</b> (not the upload key's — Play re-signs what the phone installs).</li>
+          <li>Paste it above and Save: the config is committed and Deploy runs, the web container serves the new file. Google reads it within minutes; the phone verifies it on the next install or update of the app.</li>
+        </ol>
+      </details>` : ''}
+      <ul class="health-list" id="applinks-list-${s}"></ul>
+      <div class="runrow"><button class="ghost" data-applinks-check data-env="${s}">Check</button><span class="envtag">fetches both files from ${esc(webUrl || 'the web host')} and asks Google whether it sees the statement — nothing changes</span></div>
+      <div class="msg" id="msg-applinks-${s}"></div>
+    </div>`);
+  const apnsDone = Boolean(todoDone()[`${S.platform}:apns`]);
+  const firebaseConsole = S.googleProject ? `https://console.firebase.google.com/project/${encodeURIComponent(S.googleProject)}/settings/cloudmessaging` : 'https://console.firebase.google.com/';
+  const pushCard = !f.push ? '' : `
+    <div class="card" data-push-card data-env="${s}">
+      <h3>Push notifications (Firebase) — both phones <span class="pill" id="fcm-status-pill-${s}">not checked yet</span></h3>
+      <p class="why">One Firebase project per platform — the Play service account's own, <code>${esc(S.googleProject ?? 'project')}</code> — carries an Android and an iOS app record per environment: <b>Build</b> (or the button here) registers this environment's two, bakes their configs into the builds and hands the api its sender credential. The one-time floors: the two IAM roles on the platform's Play service account (Check on the Firebase tile verifies them)${f.ios ? ' and, for iOS, the APNs key upload below' : ''}.</p>
+      <div class="runrow"><button class="ghost" data-act="firebase" data-stack="${env.stack}" title="Firebase project + app registrations + configs from the Play service account — and the api's sender credential">Wire Firebase push</button><span class="envtag">registers both apps — the same project serves every environment of the platform</span></div>
+      ${f.ios ? `<details class="how"${apnsDone ? '' : ' open'}><summary>The APNs key upload for iOS push — once per Apple team, by hand <span class="pill${apnsDone ? ' ok' : ''}">${apnsDone ? 'done ✓' : 'to do'}</span></summary>
+        <ol>
+          <li><a href="https://developer.apple.com/account/resources/authkeys/list" target="_blank" rel="noreferrer">developer.apple.com → Keys</a> → ＋ → tick <b>Apple Push Notifications service (APNs)</b> → Register → download the .p8 (the Sign in with Apple key may carry APNs as well — then reuse that one).</li>
+          <li><a href="${escAttr(firebaseConsole)}" target="_blank" rel="noreferrer">Firebase console → Project settings → Cloud Messaging</a> → the iOS app <code>${esc(ids.ios)}</code> → APNs Authentication Key → Upload (the .p8, its Key ID, the Team ID). Google offers no API for this step.</li>
+        </ol>
+        <label style="font-size:12px;display:flex;align-items:center;gap:6px"><input type="checkbox" data-todo="apns" ${apnsDone ? 'checked' : ''}/> done — uploaded for this Apple team (every environment of every platform shares it)</label>
+      </details>` : ''}
+      <div class="msg" id="msg-push-${s}"></div>
+    </div>`;
+  return android + ios + linksCard + pushCard;
 }
 function updateNativeIdLabels(env, androidId, iosId) {
   const s = env.env;
@@ -3368,7 +3648,7 @@ async function ensureEnvSecrets(environment, names, label, { force = false } = {
   const missing = force ? names.slice() : names.filter((n) => !have.has(n));
   if (!missing.length) return true;
   const all = await hjson('/api/local/secrets');
-  const store = { ...(all.wizard?.family ?? {}), ...(all.wizard?.platforms?.[S.platform] ?? {}) };
+  const store = { ...(all.wizard?.machine ?? {}), ...(all.wizard?.platforms?.[S.platform] ?? {}) };
   const absent = missing.filter((n) => !store[n]);
   for (const n of missing) if (store[n]) await putSecretAt(envBase(environment), n, store[n]);
   if (absent.length) { localLog(`\n✗ ${label} needs ${absent.join(', ')} — save it under Features & accounts first\n`); return false; }
@@ -3380,8 +3660,19 @@ async function writeNativeEnv(env) {
   const cfg = await hjson(`/api/local/native-config?stack=${encodeURIComponent(env.stack)}`);
   if (!cfg.ready) throw new Error('not ready: ' + (cfg.missing ?? []).join(' · '));
   await ensureEnv(cfg.environment);
-  for (const [name, value] of Object.entries(cfg.variables)) await ghUpsertEnvVar(cfg.environment, name, value);
-  localLog(`\n${Object.keys(cfg.variables).length} NATIVE_* variables written into the GitHub environment ${cfg.environment}\n`);
+  const written = [];
+  for (const [name, value] of Object.entries(cfg.variables)) {
+    if (!value) continue; // GitHub refuses an empty variable, and an empty one would only erase a write-back
+    await ghUpsertEnvVar(cfg.environment, name, value);
+    written.push(name);
+  }
+  if (!isLcl()) {
+    // the write-backs of a NAS environment live in its GitHub environment: sign-in is a must, crash reporting a warning
+    const have = new Set(((await gh(`${envBase(cfg.environment)}/variables?per_page=100`, { allow404: true }))?.variables ?? []).map((v) => v.name));
+    if (!have.has('NATIVE_LOGTO_APP_ID')) throw new Error(`not ready: the sign-in wiring has not written NATIVE_LOGTO_APP_ID into ${cfg.environment} yet — Bootstrap + Deploy of ${env.env} does that (Re-run bootstrap on the Overview tab), then build again`);
+    if (!have.has('NATIVE_GLITCHTIP_DSN_ANDROID') || !have.has('NATIVE_GLITCHTIP_DSN_IOS')) localLog(`\n⚠ ${cfg.environment} has no GlitchTip DSN for the phones yet — the apps build without crash reporting until the Bootstrap writes it back (Re-run bootstrap once the shared stack answers)\n`);
+  }
+  localLog(`\n${written.length} NATIVE_* variables written into the GitHub environment ${cfg.environment}\n`);
   return cfg;
 }
 async function awaitRun(file, started, stack, maxMs, say) {
@@ -3408,7 +3699,7 @@ async function buildAndroid(env) {
     if (env.features?.push) await streamLocal('/api/local/firebase-setup', { stack: env.stack }, `wire ${env.label}'s Firebase push (project + app registrations + configs, zero input)`, { refresh: false });
     say(`writing the config into the GitHub environment ${env.environment}…`);
     const cfg = await writeNativeEnv(env);
-    await streamLocal('/api/local/mint-keystore', {}, 'ensure the machine upload keystore (one key across every environment)', { refresh: false });
+    await streamLocal('/api/local/mint-keystore', { platform: S.platform }, 'ensure this platform\'s upload keystore (one key across its environments)', { refresh: false });
     await ensureEnvSecrets(env.environment, ['ANDROID_KEYSTORE_BASE64', 'ANDROID_KEYSTORE_PASSWORD', 'ANDROID_KEY_ALIAS', 'ANDROID_KEY_PASSWORD'], 'build signing').catch(() => {});
     if (env.features?.push) await ensureEnvSecrets(env.environment, ['FCM_SERVICE_ACCOUNT_JSON'], 'push sender').catch(() => {});
     let publish = (await playStateFor(env.stack)) === 'ready' ? 'auto' : 'skip';
@@ -3448,10 +3739,12 @@ async function buildIos(env) {
   if (btn) btn.disabled = true;
   try {
     if (isLcl() && !(await ensureLanMode())) { say('LAN mode could not come up — see the output box.', false); return; }
+    // Apple issues the development profile the archive needs only for a team with an enabled device — asked here, not after a ten-minute run
+    const asc = await hjson('/api/validate', { method: 'POST', body: JSON.stringify({ provider: 'ascstore', values: {}, platform: S.platform }) }).catch(() => null);
+    if (asc?.devices && !asc.devices.enabled) { say(`✗ not dispatched — ${asc.detail}`, false); return; }
     if (env.features?.push) await streamLocal('/api/local/firebase-setup', { stack: env.stack }, `wire ${env.label}'s Firebase push (project + app registrations + configs, zero input)`, { refresh: false });
     await ensureAppleCert(env).catch((e) => localLog(`✗ signing certificate: ${e.message} — this build signs with a throwaway one\n`));
     const cfg = await writeNativeEnv(env);
-    await ghUpsertRepoVar('IOS_BUILD_ENABLED', 'true');
     await streamLocal('/api/local/ios-appid', { stack: env.stack }, 'register the Apple App ID + capabilities (push, Sign in with Apple as primary, associated domains)', { refresh: false });
     await ensureEnvSecrets(env.environment, ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_KEY_P8', 'APPLE_TEAM_ID'], 'TestFlight upload').catch(() => {});
     const iosId = cfg.iosAppId ?? cfg.appId;
@@ -3459,7 +3752,7 @@ async function buildIos(env) {
     await dispatch('native-ios.yml', { stack: env.stack });
     say(`iOS build dispatched for ${iosId} — CI signs and uploads to TestFlight (usually 15-25 min)…`);
     const run = await awaitRun('native-ios.yml', started, env.stack, 45 * 60 * 1000, say);
-    if (run.conclusion === 'skipped') say('the iOS job was SKIPPED — its gates (IOS_BUILD_ENABLED, repo initialization) were off when it started. Both are set now: press Build again.', false);
+    if (run.conclusion === 'skipped') say('the iOS job was SKIPPED — the repo initialization gate (MUNNI_INITIALIZED) was off when it started; it is set now: press Build again.', false);
     else if (run.conclusion === 'success') {
       let iosState = 'ready';
       try { iosState = (await hjson(`/api/local/store-status?stack=${encodeURIComponent(env.stack)}`)).ios?.state ?? 'ready'; } catch { /* poll again later */ }
@@ -3499,7 +3792,7 @@ async function ensureAppleCert(env) {
       if (Date.now() - started > 15 * 60 * 1000) { localLog('the mint never finished within 15 minutes — check the Actions tab; this build signs with a throwaway certificate\n'); return false; }
     }
     if (run.conclusion !== 'success') { localLog(`the mint ended ${run.conclusion} — open run #${run.run_number}; this build signs with a throwaway certificate\n`); return false; }
-    if (!(await streamLocal('/api/local/apple-cert/import', { slug: S.slug, runId: run.id }, 'store the minted certificate in the helper\'s store', { refresh: false }))) return false;
+    if (!(await streamLocal('/api/local/apple-cert/import', { slug: S.slug, runId: run.id, platform: S.platform }, 'store the minted certificate in the helper\'s store', { refresh: false }))) return false;
   } else if (st.apple?.state === 'valid') {
     localLog(`signing certificate: the machine's, valid until ${String(st.apple.expires).slice(0, 10)}\n`);
   }
@@ -3538,7 +3831,8 @@ function platformTodoItems() {
     items.push(
       { id: 'docker', title: 'Docker Desktop running', detail: 'the whole platform lives in containers', state: st ? Boolean(st.docker?.ok) : null, href: '#local-status' },
       { id: 'creds', title: 'Accounts the platform needs', detail: missing.length ? `still missing: ${missing.join(', ')}` : 'every value the platform reads is saved', state: st ? missing.length === 0 : null, href: firstMissing ? `[data-group="${firstMissing.id}"]` : '#s-features' },
-      { id: 'setup', title: 'Press Set up & start', detail: 'shared services, every environment, sign-in, crash tracking, the vault — one button, safe to repeat', state: st ? Boolean(shared?.services?.glitchtip) && envsUp : null, href: '#btn-local-setup' },
+      { id: 'setup', title: 'Press Set up & start', detail: 'the shared services and every environment added in step 4, sign-in, crash tracking, the vault — one button, safe to repeat', state: st ? Boolean(shared?.services?.glitchtip) && envsUp : null, href: '#btn-local-setup' },
+      { id: 'lan', title: needLanNow() ? 'LAN https mode on (a phone or https feature is ticked)' : 'Plain localhost (no phone or https feature ticked)', detail: 'LAN mode follows the ticks at the next Set up & start — a tick alone starts nothing', state: st ? Boolean(st.lan) === needLanNow() : null, href: '#btn-local-setup' },
     );
     if (st?.lan) {
       const t = S.caTrust;
@@ -3561,10 +3855,13 @@ function platformTodoItems() {
   }
   if (f.android) items.push({ id: 'play-sa', title: 'Play service account saved', detail: 'the Google Play publishing tile', state: has('PLAY_SERVICE_ACCOUNT_JSON') || S.skipped.has('playstore'), href: '[data-group="playstore"]', spot: '#field-PLAY_SERVICE_ACCOUNT_JSON' });
   if (f.ios) items.push({ id: 'asc-key', title: 'App Store Connect key saved', detail: 'the App Store Connect tile', state: (has('ASC_KEY_ID') && has('ASC_KEY_P8')) || S.skipped.has('ascstore'), href: '[data-group="ascstore"]', spot: '#field-ASC_KEY_P8' });
-  if (phones && f.push) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Google\'s floor for push as code — Wire Firebase push names the exact gap', state: Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).length ? Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
-  if (f.ios && f.push) items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'team-wide, iOS push only — Google offers no API for it (Leftovers)', manual: true, href: '#s-leftovers' });
+  if (phones && f.push) items.push({ id: 'firebase', title: 'Grant the service account Firebase Admin + Service Usage Admin', detail: 'Check on the Firebase tile verifies both — Build needs them', state: (S.verdicts.fcm && !S.verdicts.fcm.unreachable) ? Boolean(S.verdicts.fcm.ok) : Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).length ? Object.values(S.storeStatusByEnv).map((x) => x.firebase).filter(Boolean).every((x) => ['ready', 'missing-app'].includes(x.state)) : null, href: '[data-group="fcm"]', spot: '[data-group="fcm"] details.how' });
+  if (f.ios && f.push) {
+    const pushEnv = S.envList.find((e) => e.features?.push && e.features?.ios);
+    items.push({ id: 'apns', title: 'Upload the APNs key in the Firebase console', detail: 'once per Apple team, iOS push only — Google offers no API for it; the push card on a Phones tab walks it', manual: true, ...(pushEnv ? { tab: 'phones', env: pushEnv.env, sel: '[data-push-card]' } : { href: '#s-envs' }) });
+  }
   if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in tile — each environment registers its redirect URI in its workspace', state: (has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET')) || S.skipped.has('google'), href: '[data-group="google"]', spot: '#field-LOGTO_GOOGLE_CLIENT_ID' });
-  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: 'the Apple sign-in tile — each environment registers its return URL in its workspace', state: (has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY')) || S.skipped.has('apple'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });
+  if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: appleLock() ?? 'the Apple sign-in tile lists every environment\'s domain + return URL for the Services ID', state: appleLock() ? null : (has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY')) || S.skipped.has('apple'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });
   const done = todoDone();
   return items.map((it) => ({ ...it, done: it.manual ? Boolean(done[`${S.platform}:${it.id}`]) : it.state === true }));
 }
@@ -3583,8 +3880,15 @@ function envTodoItems(env) {
   if ((f.signin ?? []).includes('google')) items.push({ id: `reg-google-${s}`, title: 'Register the Google redirect URI', detail: 'Registrations → Verify with Google tells', state: regState('google'), tab: 'registrations', env: s, sel: '.reg[data-reg="google"]' });
   if ((f.signin ?? []).includes('apple')) items.push({ id: `reg-apple-${s}`, title: 'Register the Apple domain + return URL', detail: https(urls.logto) ? 'Registrations → Verify with Apple tells' : 'needs an https address first', state: https(urls.logto) ? regState('apple') : false, tab: 'registrations', env: s, sel: '.reg[data-reg="apple"], .reg' });
   if ((f.banking ?? []).includes('enablebanking')) items.push({ id: `reg-eb-${s}`, title: 'Register the Enable Banking redirect URL', detail: 'Registrations lists it — no API to verify', manual: true, tab: 'registrations', env: s, sel: '.reg[data-reg="enablebanking"]' });
+  const admins = S.accessUsers[s];
+  items.push({ id: `admin-${s}`, title: 'Someone holds admin (admin portal + control cockpit)', detail: 'sign in to the app once with your own account, then Access → switch admin on for it', state: admins ? admins.some((x) => x.admin) : null, tab: 'access', env: s, sel: `#access-list-${s}` });
   if (f.android) items.push({ id: `play-record-${s}`, title: `Create the Play app record${ss?.appId ? ` ${ss.appId}` : ''}`, detail: 'Play Console → Create app; this page notices and turns publishing on', state: ss?.play ? ss.play.state === 'ready' : null, tab: 'phones', env: s, sel: '[data-phone="android"] details.how' });
   if (f.ios) items.push({ id: `asc-record-${s}`, title: `Create the App Store Connect record${ss?.iosAppId ? ` ${ss.iosAppId}` : ''}`, detail: 'New App with the pre-registered bundle id', state: ss?.ios ? ss.ios.state === 'ready' : null, tab: 'phones', env: s, sel: '[data-phone="ios"] details.how:last-of-type' });
+  if ((f.android || f.ios) && !isLcl()) {
+    const al = S.appLinksByEnv[s];
+    const wanted = [f.android ? al?.android?.state : null, f.ios ? al?.ios?.state : null].filter(Boolean);
+    items.push({ id: `applinks-${s}`, title: 'App links served — the phone opens the app from links', detail: f.android ? 'Android needs the Play app signing fingerprint once (the App links card); iOS is as code' : 'as code — the web container serves the file', state: al?.verifiable ? wanted.length > 0 && wanted.every((st) => st === 'ok') : null, tab: 'phones', env: s, sel: '[data-applinks]' });
+  }
   if ((f.android || f.ios) && f.push) items.push({ id: `push-${s}`, title: 'Push wired (Firebase apps registered)', detail: 'Build or Wire Firebase push does it once the roles are granted', state: ss?.firebase ? ss.firebase.state === 'ready' : null, soft: true, tab: 'phones', env: s, sel: `#fcm-status-pill-${s}` });
   const done = todoDone();
   return items.map((it) => ({ ...it, done: it.manual ? Boolean(done[`${S.platform}:${it.id}`]) : it.state === true }));
@@ -3610,11 +3914,13 @@ function renderTodo() {
     const box = document.getElementById(`env-todo-${env.env}`);
     if (box) box.innerHTML = items.length ? items.map((it, i) => todoLi(it, i)).join('') : '<li><div class="body"><div class="d">nothing — this environment needs no manual step with its features</div></div></li>';
     const regs = items.filter((it) => it.id.startsWith('reg-'));
-    const phones = items.filter((it) => /^(play-record|asc-record|push)-/.test(it.id));
+    const phones = items.filter((it) => /^(play-record|asc-record|push|applinks)-/.test(it.id));
     setPill(`tabpill-registrations-${env.env}`, regs.length ? `${regs.filter((it) => it.done).length}/${regs.length}` : '', regs.length > 0 && regs.every((it) => it.done));
     setPill(`tabpill-phones-${env.env}`, phones.length ? `${phones.filter((it) => it.done).length}/${phones.length}` : '', phones.length > 0 && phones.every((it) => it.done));
+    const adm = items.find((it) => it.id === `admin-${env.env}`);
+    setPill(`tabpill-access-${env.env}`, adm?.done ? 'admin ✓' : (adm?.state === false ? 'nobody yet' : ''), Boolean(adm?.done));
   }
-  document.querySelectorAll('[data-todo]').forEach((cb) => cb.addEventListener('change', () => {
+  document.querySelectorAll('#rail [data-todo]').forEach((cb) => cb.addEventListener('change', () => {
     const m = todoDone();
     m[`${S.platform}:${cb.dataset.todo}`] = cb.checked;
     LS.set('todo-done', m);
@@ -3711,7 +4017,6 @@ function stepStates() {
     's-features': { state: required.length && saved === required.length ? 'done' : (saved ? 'progress' : 'todo'), sub: `${featureCount} of ${FEATURES.length} on · ${saved}/${required.length} saved` },
     's-shared': { state: sharedDone ? 'done' : (sharedStarted ? 'progress' : 'todo'), sub: sharedDone ? 'running' : (isLcl() ? 'shared services + prod' : 'Bootstrap → Deploy') },
     's-envs': { state: S.envList.length ? (envItems.every((i) => i.done) ? 'done' : 'progress') : 'todo', sub: S.envList.length ? `${S.envList.length} environment${S.envList.length > 1 ? 's' : ''}${envItems.length ? ` · ${envItems.filter((i) => i.done).length}/${envItems.length} done` : ''}` : 'none yet' },
-    's-leftovers': { state: 'none', sub: 'by hand' },
   };
 }
 function renderStepper() {
@@ -3783,21 +4088,7 @@ if (!HELPER) {
   });
   setInterval(() => { refreshStoreStatus().catch(() => {}); }, STORE_POLL_MS);
   setTimeout(() => refreshStoreStatus().catch(() => {}), 4000);
-  applyPlatform().then(async () => {
-    /* a stored GitHub token reconnects by itself — Connect is one click when the repo name was cleared */
-    try {
-      const all = await hjson('/api/local/secrets');
-      const pat = all.wizard?.family?.GH_PAT;
-      const field = document.getElementById('in-pat');
-      if (!pat || field.value) return;
-      field.value = pat;
-      S.pat = pat;
-      if (S.slug && /^[^/\s]+\/[^/\s]+$/.test(S.slug)) {
-        msg('msg-connect', 'reconnecting with the token saved on this machine…', true);
-        document.getElementById('btn-connect').click();
-      }
-    } catch { /* helper hiccup — the manual flow still works */ }
-  }).catch(() => {});
+  applyPlatform().then(restoreConnection).catch(() => {});
 }
 </script>
 </body>

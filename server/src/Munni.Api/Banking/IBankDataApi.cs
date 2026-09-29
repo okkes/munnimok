@@ -28,6 +28,9 @@ public interface IBankDataApi
     Task<GcAccountDetails> GetAccountDetailsAsync(string accountId, CancellationToken ct = default);
     Task<IReadOnlyList<GcBalance>> GetBalancesAsync(string accountId, CancellationToken ct = default);
     Task<GcTransactionsPage> GetTransactionsAsync(string accountId, DateOnly? from, CancellationToken ct = default);
+
+    /// <summary>revokes the consent at the provider (frees its connection slot); an unknown consent counts as gone</summary>
+    Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default);
 }
 
 /// <summary>GoCardless behind the provider-agnostic surface.</summary>
@@ -53,4 +56,7 @@ public sealed class GoCardlessBankApi(IGoCardlessApi gc) : IBankDataApi
 
     public Task<GcTransactionsPage> GetTransactionsAsync(string accountId, DateOnly? from, CancellationToken ct = default) =>
         gc.GetTransactionsAsync(accountId, from, ct);
+
+    public Task DeleteRequisitionAsync(string requisitionId, CancellationToken ct = default) =>
+        gc.DeleteRequisitionAsync(requisitionId, ct);
 }

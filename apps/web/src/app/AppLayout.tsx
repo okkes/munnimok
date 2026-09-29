@@ -285,7 +285,11 @@ export function AppLayout() {
   useWheelToHorizontal(); // #153: wheel-only mice reach sideways strips
 
   return (
-    <div className="flex h-full flex-row bg-bg text-ink">
+    // #409 (user): on a wide monitor the shell is ONE centred frame — the
+    // navigation sits beside the content instead of at the far left edge
+    // with the screens floating somewhere to the right
+    <div className="flex h-full flex-row justify-center bg-bg-2 text-ink">
+      <div className="flex h-full w-full flex-row bg-bg md:max-w-[1400px] md:border-x md:border-line">
       {/* Desktop sidebar */}
       <nav className={`w-60 shrink-0 flex-col border-r border-line bg-bg-2 px-4 pt-6 pb-4 ${hideNav ? 'hidden' : 'hidden md:flex'}`}>
         <div className="flex items-center gap-2 px-2 pb-8">
@@ -372,6 +376,7 @@ export function AppLayout() {
           })}
         </nav>
       </main>
+      </div>
     </div>
   );
 }

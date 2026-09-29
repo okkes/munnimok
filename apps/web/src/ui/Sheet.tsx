@@ -318,16 +318,22 @@ interface SheetProps {
 
 /**
  * Should this pointer/touch stay with the CONTENT instead of arming the
- * sheet drag? Yes when it lands on an editable, an element that owns its
- * gesture (`data-sheet-no-drag`, e.g. the color wheel), or inside ANY
- * scroller — nested or the lib's own — that is not scrolled to its top:
- * there, the gesture is a scroll. At the top, the drag arms and
+ * sheet drag? Yes when it lands on a control that owns its own gesture —
+ * a slider, a native picker, an element marked `data-sheet-no-drag` (the
+ * color wheel defends itself with native listeners as well) — or inside
+ * ANY scroller — nested or the lib's own — that is not scrolled to its
+ * top: there, the gesture is a scroll. At the top, the drag arms and
  * downward movement dismisses — scroll when you can, drag when you
  * can't, the behavior the user asked for (2026-08-01, replacing the
  * header-only drag regime of 2026-07-31).
+ *
+ * #364 (user): a TEXT field is not such a control — a finger that lands
+ * on the amount input and pulls down still closes the sheet (the library
+ * blurs the field when the drag really starts; a plain tap still focuses
+ * it). Only the sliders and pickers keep their gesture.
  */
-function gestureBelongsToContent(target: HTMLElement, stopAt: HTMLElement): boolean {
-  if (target.closest('input, textarea, select, [contenteditable="true"], [data-sheet-no-drag]')) return true;
+export function gestureBelongsToContent(target: HTMLElement, stopAt: HTMLElement): boolean {
+  if (target.closest('select, input[type="range"], input[type="color"], [contenteditable="true"], [data-sheet-no-drag]')) return true;
   for (let el: HTMLElement | null = target; el && el !== stopAt; el = el.parentElement) {
     if (el.scrollHeight > el.clientHeight + 1 && el.scrollTop > 0) {
       const overflowY = getComputedStyle(el).overflowY;
@@ -495,6 +501,15 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
       setHiddenForDiscard(false);
     }
   }, [open]);
+  // #366: the edits can settle while the ask is up (a host resets its
+  // draft, a candidate list empties) — the ask is moot then, and the
+  // hidden sheet must come back, or nothing on screen answers a tap
+  useEffect(() => {
+    if (dirty || !hiddenRef.current) return;
+    setConfirmDiscard(false);
+    setHidden(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty]);
   const requestDismiss = () => {
     // the tutorial locks only the ROOT sheet (the lesson's form) — a
     // nested picker (budget period, currency…) must stay dismissible or
@@ -582,7 +597,9 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
 
   // the "discard changes?" ask — its own stacked sheet, so the parent
   // recedes and the choice is explicit (never window.confirm)
-  const discardConfirm = dirty ? (
+  // #366: rendered while dirty OR while the ask is up — an ask whose
+  // subtree vanished mid-answer left the sheet hidden for good
+  const discardConfirm = dirty || confirmDiscard ? (
     <Sheet
       open={confirmDiscard}
       onOpenChange={(next) => {
@@ -609,8 +626,13 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
           variant="danger"
           data-testid="sheet-discard"
           onClick={() => {
+            // #366 (user): the app froze on Discard — un-hiding here
+            // flipped the library's isOpen back to true for the render
+            // before the host's close landed, and the re-open/close
+            // pair left its state machine stuck with the backdrop
+            // eating every tap. The `!open` effect resets the hidden
+            // flag once the close is real.
             setConfirmDiscard(false);
-            setHidden(false);
             onOpenChange(false);
           }}
         >
@@ -665,6 +687,12 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
           return;
         }
         onOpenChange(false);
+      }}
+      onOpenStart={() => {
+        // #366: a body that was ghosted for a close animation answers
+        // taps again when the same element opens once more
+        const body = coveredEls.get(id);
+        if (body) body.style.pointerEvents = '';
       }}
       onCloseStart={() => {
         syncCoveredStyles();

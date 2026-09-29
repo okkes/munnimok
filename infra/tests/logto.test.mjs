@@ -128,9 +128,10 @@ test('ensureAdminRole: the API resource carries the `admin` scope and the role "
 
 test('listUsers + setAdmin: every user of the environment with whether they hold the admin role; granting and revoking go through the role\'s members, never twice', async () => {
   const prod = loadStack('munni-nas-prod');
-  const logto = fakeLogto({ users: [{ id: 'u1', username: 'ann', name: 'Ann', primaryEmail: 'ann@x', avatar: null, lastSignInAt: 5 }, { id: 'u2', username: 'bob' }] });
+  const logto = fakeLogto({ users: [{ id: 'u1', username: 'ann', name: 'Ann', primaryEmail: 'ann@x', avatar: null, lastSignInAt: 1758240000000 }, { id: 'u2', username: 'bob' }] });
   assert.deepEqual(await listUsers(prod, creds, { fetchImpl: logto.fetchImpl }), [
-    { id: 'u1', username: 'ann', name: 'Ann', email: 'ann@x', avatar: null, admin: false, lastSignInAt: 5 },
+    // Logto hands epoch milliseconds; the listing speaks ISO like every other date (the page printed "NaN d ago" before)
+    { id: 'u1', username: 'ann', name: 'Ann', email: 'ann@x', avatar: null, admin: false, lastSignInAt: new Date(1758240000000).toISOString() },
     { id: 'u2', username: 'bob', name: null, email: null, avatar: null, admin: false, lastSignInAt: null },
   ], 'no role yet: nobody is an admin');
   assert.deepEqual(await setAdmin(prod, creds, 'u2', true, { fetchImpl: logto.fetchImpl }), { userId: 'u2', admin: true });
@@ -266,13 +267,20 @@ test('social connectors live under their FIXED ids — a generated-id instance i
 });
 
 /** a Logto admin + default tenant in a box: users, roles, sign-in experience */
-function fakeTenants({ consoleUsers = [], signInMode = 'SignInAndRegister' } = {}) {
+function fakeTenants({ consoleUsers = [], signInMode = 'SignInAndRegister', members = [], memberRoles = [] } = {}) {
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
     const raw = init.body === undefined ? null : String(init.body);
     const body = raw?.startsWith('{') ? JSON.parse(raw) : raw;
     calls.push({ url, method: init.method ?? 'GET', body, auth: init.headers?.authorization ?? null });
     if (url.endsWith('/oidc/token')) return ok({ access_token: url.startsWith('http://admin.') ? 'admin-token' : 'app-token' });
+    // the admin tenant's organization model: one tenant organization, its roles, the members and their roles
+    // Logto OSS carries TWO tenant organizations: the admin tenant's own and the default tenant's — the console manages the latter
+    if (url.includes('/api/organizations?')) return ok([{ id: 't-admin', name: 'Tenant admin' }, { id: 't-default', name: 'Tenant default' }, { id: 'o-other', name: 'not a tenant' }]);
+    if (url.includes('/api/organization-roles?')) return ok([{ id: 'or-admin', name: 'admin' }, { id: 'or-member', name: 'member' }]);
+    if (/\/api\/organizations\/t-[a-z]+\/users\/[^/]+\/roles\?/.test(url)) return ok(memberRoles.map((n) => ({ id: n === 'admin' ? 'or-admin' : 'or-member', name: n })));
+    if (/\/api\/organizations\/t-[a-z]+\/users\?/.test(url)) return ok(members.map((id) => ({ id })));
+    if (url.includes('/api/organizations/t-') && init.method === 'POST') return { ok: true, status: 201, json: async () => ({}), text: async () => 'Created' };
     if (url.includes('/api/users?')) return ok(consoleUsers);
     if (url.endsWith('/api/users') && init.method === 'POST') return ok({ id: 'u-console', username: body.username });
     if (url.includes('/api/roles?')) return ok([{ id: 'r-user', name: 'user' }, { id: 'r-admin', name: 'default:admin' }, { id: 'r-other', name: 'something else' }]);
@@ -283,10 +291,15 @@ function fakeTenants({ consoleUsers = [], signInMode = 'SignInAndRegister' } = {
 }
 const twoTenants = { urls: { logto: 'http://logto.test', logtoAdmin: 'http://admin.logto.test' } };
 
-test('claimConsole: with the admin-tenant credential the console admin is created once with the console roles and the console is switched to sign-in; an existing user is left alone', async () => {
+test('claimConsole: with the admin-tenant credential the console admin is created once with the console roles AND the tenant organization\'s admin role, the console is switched to sign-in; an existing member is left alone; an existing user without the membership gets it', async () => {
   const fresh = fakeTenants();
   const r = await claimConsole(twoTenants, { adminId: 'adminx', adminSecret: 's' }, { fetchImpl: fresh.fetchImpl, password: 'pw-for-test' });
-  assert.deepEqual(r, { created: { username: 'admin', password: 'pw-for-test', id: 'u-console' }, existing: false, modeSet: true });
+  assert.deepEqual(r, { created: { username: 'admin', password: 'pw-for-test', id: 'u-console' }, existing: false, modeSet: true, membership: { organizations: ['t-admin', 't-default'], role: 'admin', joined: ['t-admin', 't-default'], granted: ['t-admin', 't-default'] } });
+  for (const org of ['t-admin', 't-default']) {
+    assert.deepEqual(fresh.calls.find((c) => c.method === 'POST' && c.url.endsWith(`/api/organizations/${org}/users`)).body, { userIds: ['u-console'] }, `joined ${org}`);
+    assert.deepEqual(fresh.calls.find((c) => c.method === 'POST' && c.url.endsWith(`/api/organizations/${org}/users/u-console/roles`)).body, { organizationRoleIds: ['or-admin'] }, `as the admin of ${org} — the console opens on "Access denied" without t-default`);
+  }
+  assert.ok(!fresh.calls.some((c) => c.url.includes('/api/organizations/o-other/')), 'a non-tenant organization is left alone');
   const token = fresh.calls.find((c) => c.url.endsWith('/oidc/token'));
   assert.equal(token.url, 'http://admin.logto.test/oidc/token', 'the ADMIN endpoint issues the token');
   assert.match(String(token.body), new RegExp(`resource=${encodeURIComponent(ADMIN_RESOURCE)}`), 'for the admin tenant\'s Management API');
@@ -296,8 +309,13 @@ test('claimConsole: with the admin-tenant credential the console admin is create
   assert.deepEqual(fresh.calls.find((c) => c.method === 'PATCH').body, { signInMode: 'SignIn' });
   const generated = await claimConsole(twoTenants, { adminId: 'adminx', adminSecret: 's' }, { fetchImpl: fakeTenants().fetchImpl });
   assert.match(generated.created.password, /^[A-Za-z0-9_-]{16}$/, 'a password is generated when none is given');
-  const taken = fakeTenants({ consoleUsers: [{ id: 'someone' }], signInMode: 'SignIn' });
+  const taken = fakeTenants({ consoleUsers: [{ id: 'someone', username: 'admin' }], signInMode: 'SignIn', members: ['someone'], memberRoles: ['admin'] });
   const again = await claimConsole(twoTenants, { adminId: 'adminx', adminSecret: 's' }, { fetchImpl: taken.fetchImpl });
-  assert.deepEqual(again, { created: null, existing: true, modeSet: false });
+  assert.deepEqual(again, { created: null, existing: true, modeSet: false, membership: { organizations: ['t-admin', 't-default'], role: 'admin', joined: [], granted: [] } });
   assert.deepEqual(taken.calls.filter((c) => c.method && c.method !== 'GET').map((c) => c.method), ['POST'], 'only the token call writes — nothing created twice');
+  // the repair path: an admin created before the organization step (every console claimed up to 2026-09-28) is joined + promoted on the next run
+  const legacy = fakeTenants({ consoleUsers: [{ id: 'someone', username: 'admin' }], signInMode: 'SignIn' });
+  const repaired = await claimConsole(twoTenants, { adminId: 'adminx', adminSecret: 's' }, { fetchImpl: legacy.fetchImpl });
+  assert.deepEqual(repaired.membership, { organizations: ['t-admin', 't-default'], role: 'admin', joined: ['t-admin', 't-default'], granted: ['t-admin', 't-default'] });
+  assert.equal(repaired.created, null, 'nothing created twice');
 });

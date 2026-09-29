@@ -76,6 +76,14 @@ export async function enablePush(vapidPublicKey: string): Promise<boolean> {
   return response.ok;
 }
 
+/** the Settings row's test: the API pushes to every registered device of this user — how many, or null when it failed */
+export async function sendTestPush(): Promise<number | null> {
+  const response = await apiFetch('/me/push-subscriptions/test', { method: 'POST' }).catch(() => null);
+  if (!response?.ok) return null;
+  const body = (await response.json().catch(() => ({}))) as { sent?: number };
+  return body.sent ?? 0;
+}
+
 export async function disablePush(): Promise<void> {
   if (isNativeApp()) {
     const token = localStorage.getItem(FCM_TOKEN_KEY);

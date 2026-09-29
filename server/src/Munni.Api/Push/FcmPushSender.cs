@@ -28,13 +28,13 @@ public sealed class RoutingPushSender(IPushSender? webPush, IPushSender? fcm) : 
 /// </summary>
 public static class FcmTexts
 {
-    private sealed record Texts(string One, string Many, string FriendRequest, string FriendAccept, string SpaceInvite, string SpaceJoin, string Someone, string ASpace);
+    private sealed record Texts(string One, string Many, string FriendRequest, string FriendAccept, string SpaceInvite, string SpaceJoin, string Someone, string ASpace, string Test);
 
     private static readonly Dictionary<string, Texts> All = new()
     {
-        ["en"] = new("1 new transaction arrived", "{n} new transactions arrived", "{name} sent you a friend request", "{name} accepted your friend request", "{name} invited you to \"{space}\"", "{name} joined \"{space}\"", "Someone", "a space"),
-        ["nl"] = new("1 nieuwe transactie ontvangen", "{n} nieuwe transacties ontvangen", "{name} heeft je een vriendschapsverzoek gestuurd", "{name} heeft je vriendschapsverzoek geaccepteerd", "{name} heeft je uitgenodigd voor \"{space}\"", "{name} doet nu mee in \"{space}\"", "Iemand", "een ruimte"),
-        ["tr"] = new("1 yeni işlem geldi", "{n} yeni işlem geldi", "{name} sana arkadaşlık isteği gönderdi", "{name} arkadaşlık isteğini kabul etti", "{name} seni \"{space}\" alanına davet etti", "{name} \"{space}\" alanına katıldı", "Birisi", "bir alan"),
+        ["en"] = new("1 new transaction arrived", "{n} new transactions arrived", "{name} sent you a friend request", "{name} accepted your friend request", "{name} invited you to \"{space}\"", "{name} joined \"{space}\"", "Someone", "a space", "Test notification — push reaches this device ✓"),
+        ["nl"] = new("1 nieuwe transactie ontvangen", "{n} nieuwe transacties ontvangen", "{name} heeft je een vriendschapsverzoek gestuurd", "{name} heeft je vriendschapsverzoek geaccepteerd", "{name} heeft je uitgenodigd voor \"{space}\"", "{name} doet nu mee in \"{space}\"", "Iemand", "een ruimte", "Testmelding — push bereikt dit apparaat ✓"),
+        ["tr"] = new("1 yeni işlem geldi", "{n} yeni işlem geldi", "{name} sana arkadaşlık isteği gönderdi", "{name} arkadaşlık isteğini kabul etti", "{name} seni \"{space}\" alanına davet etti", "{name} \"{space}\" alanına katıldı", "Birisi", "bir alan", "Test bildirimi — anlık bildirim bu cihaza ulaşıyor ✓"),
     };
 
     /// <summary>title+body for a payload, or null for types with no visible text</summary>
@@ -56,6 +56,7 @@ public static class FcmTexts
             "friend-accept" => Social(texts.FriendAccept),
             "space-invite" => Social(texts.SpaceInvite),
             "space-join" => Social(texts.SpaceJoin),
+            "test" => texts.Test,
             _ => null,
         };
         return body is null ? null : ("munni", body);

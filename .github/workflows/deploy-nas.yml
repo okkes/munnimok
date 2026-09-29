@@ -126,6 +126,7 @@ jobs:
         env:
           PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
           # every placeholder of the rendered env template, by name
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           GLITCHTIP_SECRET_KEY: ${{ secrets.GLITCHTIP_SECRET_KEY }}

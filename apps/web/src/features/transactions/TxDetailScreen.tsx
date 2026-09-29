@@ -1,3 +1,4 @@
+import { SelectAllRow } from '@/ui/SelectAllRow';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { useQuery } from '@/db/useQuery';
@@ -431,7 +432,6 @@ function DetailBulkBar({
 }>) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
-  const all = targets.length > 0 && targets.every((item) => selected.has(item.id));
   const toggleOne = (id: string) => {
     const next = new Set(selected);
     if (next.has(id)) next.delete(id);
@@ -470,16 +470,14 @@ function DetailBulkBar({
 
       {/* selection sheet, same mechanics as the review bulk list */}
       <Sheet open={open} onOpenChange={setOpen} title={t('tx.bulkOffer', { n: selected.size })} height={760} dragHandle>
-        <div className="flex items-center justify-between pb-2">
-          <span className="text-[12px] text-ink-3">{t('review.bulkCount', { n: targets.length })}</span>
-          <button
-            data-testid="tx-detail-bulk-select-all"
-            onClick={() => onChange(all ? new Set() : new Set(targets.map((item) => item.id)))}
-            className="m-tap border-none bg-transparent text-[12px] font-semibold text-accent-deep"
-          >
-            {all ? t('review.bulkUnselectAll') : t('review.bulkSelectAll')}
-          </button>
-        </div>
+        {/* #378: the one select-all row every transaction list wears */}
+        <SelectAllRow
+          total={targets.length}
+          selected={targets.filter((item) => selected.has(item.id)).length}
+          onChange={(next) => onChange(next ? new Set(targets.map((item) => item.id)) : new Set())}
+          testId="tx-detail-bulk-select-all"
+          className="mb-1"
+        />
         {/* fixed px so the list scrolls INSIDE the sheet (sheet rules) */}
         <div className="max-h-[560px] overflow-y-auto overscroll-contain" data-testid="tx-detail-bulk-list">
           {targets.map((item) => {

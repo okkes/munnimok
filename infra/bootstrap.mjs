@@ -18,10 +18,10 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { listStacks, loadStack, platformEnvStacks, removeEnv, sharedOf } from './modules/stack.mjs';
-import { deleteEnvironment, ensureSecrets, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
-import { ensureLocalSecrets, familyValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
+import { deleteEnvironment, ensureSecrets, setEnvSecret, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
+import { ensureLocalSecrets, stackValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
 import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAdminRole, logtoAnswers, removeApps, writeBack } from './modules/logto.mjs';
-import { vaultReplaceFolder } from './modules/vault.mjs';
+import { vaultPlatformValues, vaultReplaceFolder } from './modules/vault.mjs';
 import { applyGlitchTip, glitchtipAnswers, removeProjects, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
 import { renderRunbook } from './modules/runbook.mjs';
@@ -93,7 +93,7 @@ async function keepInVault(values, fresh = []) {
     return 'no-account';
   }
   const byName = new Map();
-  const add = (item) => { if (item.password || item.username) byName.set(item.name, item); };
+  const add = (item) => { if (item.password || item.username || item.kind === 'note') byName.set(item.name, item); };
   if (isShared) {
     if (values.GLITCHTIP_ADMIN_PASSWORD) add({ name: 'GlitchTip', username: `admin@munni.${stack.platform}`, password: values.GLITCHTIP_ADMIN_PASSWORD, uri: stack.urls.glitchtip, notes: 'GlitchTip admin (crash reports) — created inside the container by the deploy from the password the setup minted.' });
     if (values.GLITCHTIP_API_TOKEN) add({ name: 'GlitchTip API token', username: 'setup', password: values.GLITCHTIP_API_TOKEN, uri: stack.urls.glitchtip, notes: 'The API token the setup uses for GlitchTip as code (org, projects, DSNs).' });
@@ -104,6 +104,8 @@ async function keepInVault(values, fresh = []) {
     if (values.LOGTO_INFRA_M2M_ID) add({ name: 'Logto infra M2M', username: values.LOGTO_INFRA_M2M_ID, password: values.LOGTO_INFRA_M2M_SECRET ?? '', uri: stack.urls.logto, notes: 'Machine credential for Logto as code (Management API) — the wizard\'s Access tab uses it to list users and grant admin.' });
     if (values.LOGTO_ADMIN_M2M_ID) add({ name: 'Logto admin-tenant M2M', username: values.LOGTO_ADMIN_M2M_ID, password: values.LOGTO_ADMIN_M2M_SECRET ?? '', uri: stack.urls.logtoAdmin, notes: 'Machine credential that claimed the console admin.' });
     if (values.POSTGRES_PASSWORD) add({ name: `Postgres (${stack.stack})`, username: 'munni', password: values.POSTGRES_PASSWORD, notes: 'The environment\'s database server (munni + logto databases).' });
+    // the item the operator looks for first — and the one that has no password: the admin portal takes the operator's own app account
+    add({ name: 'Admin portal (no password)', kind: 'note', notes: `${stack.urls.admin}\n\nNo account of its own: sign in with the account you use in the app (${stack.urls.web}) — Google, Apple or e-mail. Then, in the setup wizard, environment "${stack.env}" → Access → switch admin on for that account (a session opened before that signs out and in again). The "Logto console" item is Logto's own console at ${stack.urls.logtoAdmin}, not the admin portal.` });
   }
   for (const item of fresh) add(item);
   const items = [...byName.values()];
@@ -202,7 +204,9 @@ async function applyLogto(values, write, fresh) {
         fresh.push({ name: 'Logto console', username: c.created.username, password: c.created.password, uri: stack.urls.logtoAdmin, notes: 'The environment\'s Logto admin console — created by the setup.' });
       }
       state.console = c.created ? 'created' : 'existing';
-      console.log(c.created ? `  logto: console admin created (username admin)${c.modeSet ? '; console switched to sign-in' : ''} — password in the vault` : '  logto: the console already has its admin');
+      const changed = [...new Set([...(c.membership?.joined ?? []), ...(c.membership?.granted ?? [])])];
+      const org = c.membership ? (c.membership.organizations.length ? `tenant organizations ${c.membership.organizations.join(', ')}: ${changed.length ? `joined as admin now (${changed.join(', ')})` : 'member + admin ✓'}` : 'no tenant organization found') : 'tenant organization not checked';
+      console.log(c.created ? `  logto: console admin created (username admin)${c.modeSet ? '; console switched to sign-in' : ''} — password in the vault; ${org}` : `  logto: the console already has its admin; ${org}`);
     } catch (e) {
       state.console = 'failed';
       console.log(`  logto: console admin not claimed (${e.message}) — retried next run`);
@@ -234,7 +238,7 @@ async function applyGlitchtipFor(values, write) {
 
 async function localVerify() {
   console.log(`verify ${stack.stack} (${stack.platformLabel})`);
-  const values = familyValues(stack);
+  const values = stackValues(stack);
   const missing = stackManifestEntries(stack).filter((s) => !s.optional && s.owner !== 'module' && !values[s.name]).map((s) => s.name);
   if (missing.length) console.log(`  ✗ values missing from the local stores: ${missing.join(', ')}`);
   else console.log('  ✓ local stores satisfy the manifest');
@@ -263,8 +267,8 @@ async function localApply() {
     await applyLogto(values, write, fresh);
     await applyGlitchtipFor(values, write);
   }
-  await keepInVault(familyValues(stack), fresh);
-  const dir = renderStack(stack, familyValues(stack));
+  await keepInVault(stackValues(stack), fresh);
+  const dir = renderStack(stack, stackValues(stack));
   console.log(`  rendered compose + .env (real values) → ${dir}`);
   console.log(`  runbook → ${renderRunbook(stack, { minted, missingOperator })}`);
   console.log(`done. Next: cd ${dir} && docker compose --env-file .env.${stack.stack} -f docker-compose.${stack.stack}.yml up -d`);
@@ -339,12 +343,45 @@ async function ciVerify() {
   return missing.length || !allUp ? 1 : 0;
 }
 
+/** an environment added AFTER the shared stack ran: the platform values it needs sit in the platform vault, where the shared
+ *  stack's bootstrap files them — take them from there, store them into this environment, use them in this very run */
+async function pullPlatformValuesFromVault(names) {
+  const email = process.env.VAULT_ADMIN_EMAIL;
+  const password = process.env.VAULT_MASTER_PASSWORD;
+  if (isShared || !names.length || !email || !password || !shared.urls.vault) return [];
+  let found;
+  try {
+    found = await vaultPlatformValues(shared.urls.vault, { email, password, folder: shared.stack }, localAwareFetch);
+  } catch (e) {
+    console.log(`  vault: could not read the platform vault (${e.message}) — the shared stack's next bootstrap mirrors the values instead`);
+    return [];
+  }
+  const pulled = [];
+  for (const name of names) {
+    const value = found[name];
+    if (!value) continue;
+    setEnvSecret(stack.githubEnvironment, name, value);
+    process.env[name] = value;
+    pulled.push(name);
+  }
+  return pulled;
+}
+
 async function ciApply() {
   console.log(`bootstrap ${stack.stack} (${isShared ? 'shared services' : `environment ${stack.env}`} on ${stack.platformLabel})`);
-  const { minted, missingOperator, waitingForShared } = ensureSecrets(stack, { rotate });
+  const secretsState = ensureSecrets(stack, { rotate });
+  const { minted, mirrored, missingOperator } = secretsState;
+  let { waitingForShared } = secretsState;
   if (minted.length) console.log(`  minted: ${minted.join(', ')}`);
+  if (mirrored?.length) console.log(`  mirrored into the environments added since, same values: ${mirrored.join(', ')}`);
+  if (waitingForShared.length) {
+    const pulled = await pullPlatformValuesFromVault(waitingForShared);
+    if (pulled.length) console.log(`  vault: ${pulled.join(', ')} taken from the platform vault (the shared stack keeps them there) and stored into ${stack.githubEnvironment}`);
+    waitingForShared = waitingForShared.filter((n) => !pulled.includes(n));
+  }
   if (waitingForShared.length) console.log(`  ⏳ platform values the shared stack's bootstrap mirrors, not in this environment yet: ${waitingForShared.join(', ')}`);
-  if (missingOperator.length) console.log(`  ⚠ operator secrets still missing (the wizard's tiles store them): ${missingOperator.join(', ')}`);
+  const stillMissing = missingOperator.filter((n) => n !== 'LOGTO_APPLE_TEAM_ID' || !(process.env.LOGTO_APPLE_TEAM_ID || process.env.APPLE_TEAM_ID));
+  if (stillMissing.length) console.log(`  ⚠ operator secrets still missing (the wizard's tiles store them): ${stillMissing.join(', ')}`);
   const dir = renderStack(stack);
   console.log(`  rendered compose + env template → ${dir}`);
   const values = process.env;

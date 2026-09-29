@@ -310,6 +310,11 @@ services:
       MUNNI_CHANNEL: ${s.appChannel}
       MUNNI_NATIVE_SCHEME: ${s.native.scheme}
       MUNNI_PUBLIC_ORIGIN: ${s.urls.web}
+      # app links: the start script renders /.well-known/assetlinks.json + apple-app-site-association from these
+      MUNNI_ANDROID_PACKAGE: ${s.store.androidPackage}
+      MUNNI_ANDROID_CERT_SHA256: ${s.store.androidCertSha256 ?? ''}
+      MUNNI_IOS_BUNDLE_ID: ${s.store.iosBundleId}
+      MUNNI_APPLE_TEAM_ID: \${APPLE_TEAM_ID}
     ports:
       - "${p.web}:80"
     networks:
@@ -374,7 +379,7 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       shared: {}
 
   logto-${e}:
-    image: svhd/logto:1.41
+    image: svhd/logto:1.43
     restart: unless-stopped
     # SEED FIRST: alteration-before-seed on an empty db half-creates tables and seed --swe then skips forever
     entrypoint: ["sh", "-c", "npm run cli db seed -- --swe && npm run alteration deploy latest && npm start"]
@@ -414,6 +419,9 @@ GHCR_USER=okkes
 GHCR_PAT=\${GHCR_PAT}
 
 POSTGRES_PASSWORD=\${POSTGRES_PASSWORD}
+
+# app links: the web container serves /.well-known/apple-app-site-association from the Apple team id + the bundle id
+APPLE_TEAM_ID=\${APPLE_TEAM_ID}
 
 # Logto seed — the deploy inserts these machine credentials into Logto's own
 # database once (idempotent), so sign-in needs no console visit: infra = the

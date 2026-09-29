@@ -26,23 +26,23 @@ async function gotoMembersOf(page, spaceName, { unlock = false } = {}) {
   await page.locator(`[data-testid="screen-spaces"] button:has-text("${spaceName}")`).first().click();
   // the check-circle badge appearing on the row = the switch settled
   await page.locator(`[data-testid^="space-row-"]:has-text("${spaceName}") .mdi-check-circle`).waitFor();
-  if (unlock) {
-    // arc 4: spaces are born locked private — the OWNER lifts the lock.
-    // #162: the toggle lives in the Settings tab's setup group now
-    // (owner-only row), no space-settings detour anymore. Retried: the
-    // active-space switch can re-render mid-tap and swallow the click.
-    await page.click('[data-testid="tab-settings"]');
-    const lock = page.locator('[data-testid="settings-space-private-toggle"]');
-    await lock.waitFor({ timeout: 10000 });
-    for (let attempt = 0; attempt < 4 && (await lock.isChecked()); attempt++) {
-      await lock.click();
-      await page.waitForTimeout(500);
-    }
-    await expect(lock).not.toBeChecked({ timeout: 5000 });
-  }
   await page.click('[data-testid="tab-settings"]');
   await page.click('[data-testid="settings-space-members-row"]');
   await page.waitForSelector('[data-testid="space-members"]');
+  if (unlock) {
+    // arc 4: spaces are born closed to invitations — the OWNER opens them.
+    // #391: the switch lives on the members page (owner-only row), no
+    // Settings detour anymore. Retried: the members section can re-render
+    // mid-tap and swallow the click.
+    const toggle = page.locator('[data-testid="space-invite-toggle"]');
+    await toggle.waitFor({ timeout: 10000 });
+    for (let attempt = 0; attempt < 4 && (await toggle.getAttribute('aria-checked')) !== 'true'; attempt++) {
+      await toggle.click();
+      await page.waitForTimeout(500);
+    }
+    await expect(toggle).toHaveAttribute('aria-checked', 'true', { timeout: 5000 });
+    await page.waitForSelector('[data-testid="space-members-add"]');
+  }
 }
 
 async function addCashAccount(page, name, balance) {

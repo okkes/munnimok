@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { config, publicOrigin } from '@/app/config';
+import { config } from '@/app/config';
 import { isNativeApp } from '@/lib/platform';
+import { nativeSignedOutUri } from '@/features/auth/nativeAuth';
 import { LOCALES, useLang } from '@/i18n';
 import { destroyIdentityData, useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
@@ -14,10 +15,6 @@ import { AppBar } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Chip, Row } from '@/ui/primitives';
-import { PinChallengeSheet } from '@/features/lock/PinChallengeSheet';
-import { readLockConfig } from '@/features/lock/lock';
-import { takeSettingsJump } from './settingsJump';
-import { flashJumpTo } from '@/lib/flashJump';
 import { Sheet } from '@/ui/Sheet';
 import { useQuery } from '@/db/useQuery';
 import { useMyRole } from '@/features/spaces/SpaceSharing';
@@ -117,60 +114,6 @@ function SpaceHeaderRow({ space, onClick }: Readonly<{ space: SpaceRow | undefin
   );
 }
 
-/** #302 (user): the invite-lock setting — quick-link target (scroll +
- *  settle + flash on arrival) and PIN-protected on the way OPEN: with a
- *  lock configured, ENABLING invitations asks for the PIN first;
- *  locking the space back needs none. Module-level for S3776. */
-function InviteLockRow({
-  space,
-  onWrite,
-}: Readonly<{
-  space: { id: string; inviteLock?: 0 | 1 };
-  onWrite: (next: 0 | 1) => void;
-}>) {
-  const { t } = useLang();
-  const [challengeOpen, setChallengeOpen] = useState(false);
-  // the quick link's landing: consume the handoff once, then flash
-  useEffect(() => {
-    if (takeSettingsJump() !== 'invite-lock') return;
-    const row = document.querySelector<HTMLElement>('[data-testid="settings-space-private-row"]');
-    if (row) flashJumpTo(row);
-  }, []);
-  const toggle = (checked: boolean) => {
-    if (!checked && readLockConfig()) {
-      setChallengeOpen(true);
-      return;
-    }
-    onWrite(checked ? 1 : 0);
-  };
-  return (
-    <>
-      <Row
-        testId="settings-space-private-row"
-        icon="lock-outline"
-        title={t('space.inviteLockLabel')}
-        sub={t('space.inviteLockSub')}
-        trailing={
-          <input
-            type="checkbox"
-            data-testid="settings-space-private-toggle"
-            checked={space.inviteLock === 1}
-            onChange={(e) => toggle(e.target.checked)}
-            className="h-4 w-4 accent-[var(--m-accent)]"
-          />
-        }
-      />
-      <PinChallengeSheet
-        open={challengeOpen}
-        onOpenChange={setChallengeOpen}
-        title={t('space.inviteUnlockTitle')}
-        body={t('space.inviteUnlockBody')}
-        onPass={() => onWrite(0)}
-      />
-    </>
-  );
-}
-
 export function SettingsScreen() {
   const { t, lang } = useLang();
   const { store, repo, spaceId } = useData();
@@ -249,13 +192,12 @@ export function SettingsScreen() {
     // offline profiles keep their data too (this device IS the truth) —
     // only the demo resets to its pristine dataset on sign-out
     if (current?.kind === 'user') {
-      // native: the end-session round-trip opens in the system browser
-      // view (same place sign-in ran — that's where Logto's session
-      // cookie lives), so the landing must be the app's deep-link scheme
-      // (munni://signed-out + munni-dev://signed-out, registered as post
-      // sign-out redirect URIs); the deep-link handler brings the app to
-      // the login screen. Web keeps its own origin.
-      const postLogout = isNativeApp() ? `${publicOrigin()}/native-signed-out` : window.location.origin;
+      // native: the end-session round-trip runs in the auth session that
+      // signed in (that's where Logto's session cookie lives) and lands on
+      // the app's scheme (munni-<env>-<platform>://signed-out, registered
+      // as the post sign-out redirect URI); the deep-link handler brings the
+      // app to the login screen. Web keeps its own origin.
+      const postLogout = isNativeApp() ? nativeSignedOutUri() : window.location.origin;
       if (!current.testAuth && (await oidcSignOut(postLogout))) return; // full OIDC logout redirects
       await navigate({ to: '/login' });
       return;
@@ -354,17 +296,6 @@ export function SettingsScreen() {
                     }}
                   />
                 ))}
-              {/* #162: the private lock lives with the space's other
-                  settings now — owner-only, applies immediately (LWW) */}
-              {group.capKey === 'settings.groupSetup' && myRole === 'owner' && activeSpace && (
-                <InviteLockRow
-                  space={activeSpace}
-                  onWrite={(next) => {
-                    void repo.upsert('space', activeSpace.id, activeSpace.id, { inviteLock: next });
-                    void logActivity(store, repo, activeSpace.id, 'spaceEdit', activeSpace.name);
-                  }}
-                />
-              )}
             </div>
           </div>
         ))}

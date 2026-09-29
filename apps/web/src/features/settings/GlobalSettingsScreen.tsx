@@ -17,7 +17,9 @@ import { Pill, Row } from '@/ui/primitives';
 import { useQuery } from '@/db/useQuery';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { Sheet } from '@/ui/Sheet';
-import { disablePush, enablePush, pushEnabled, pushSupported } from '@/lib/push';
+import { disablePush, enablePush, pushEnabled, pushSupported, sendTestPush } from '@/lib/push';
+import { globalWeekStart, setGlobalWeekStart } from '@/lib/weekStart';
+import type { WeekStart } from '@/db/types';
 import { ExportSheet } from './ExportSheet';
 import {
   biometricAvailable,
@@ -129,6 +131,32 @@ function ThemeModeSwitch() {
  * space-scoped and app-wide rows in one list was confusing).
  */
 
+/** #370: the calendar's first weekday — every new space copies it, a space may override it */
+function WeekStartRow() {
+  const { t } = useLang();
+  const [weekStart, setWeekStart] = useState<WeekStart>(globalWeekStart());
+  const toggle = () => {
+    const next = weekStart === 'monday' ? 'sunday' : 'monday';
+    setGlobalWeekStart(next);
+    setWeekStart(next);
+  };
+  return (
+    <Row
+      testId="settings-weekstart-row"
+      icon="calendar-week-begin"
+      title={t('settings.weekStart')}
+      sub={t('settings.weekStartSub')}
+      chevron={false}
+      trailing={
+        <Pill tone="neutral" testId="settings-weekstart-state">
+          {t(weekStart === 'sunday' ? 'weekday.sunday' : 'weekday.monday')}
+        </Pill>
+      }
+      onClick={toggle}
+    />
+  );
+}
+
 export function GlobalSettingsScreen() {
   const { t, lang, setLang, langOverridden, followDeviceLang } = useLang();
   const { theme, mode: themeMode, setMode: setThemeMode } = useTheme();
@@ -147,6 +175,9 @@ export function GlobalSettingsScreen() {
   const [vapidKey, setVapidKey] = useState('');
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
+  // the test push row: what the last attempt said (sent to n devices / no device / failed)
+  const [testNote, setTestNote] = useState<string | null>(null);
+  const [testBusy, setTestBusy] = useState(false);
   const [lockOn, setLockOn] = useState(() => readLockConfig() !== null);
   const [lockSheetOpen, setLockSheetOpen] = useState(false);
   const [lockPin, setLockPin] = useState('');
@@ -231,6 +262,20 @@ export function GlobalSettingsScreen() {
     setLockSheetOpen(false);
   };
 
+  const sendTest = async () => {
+    if (testBusy) return;
+    setTestBusy(true);
+    try {
+      const sent = await sendTestPush();
+      let note: string;
+      if (sent === null) note = t('push.testFailed');
+      else if (sent === 0) note = t('push.testNone');
+      else note = t('push.testSent', { n: sent });
+      setTestNote(note);
+    } finally {
+      setTestBusy(false);
+    }
+  };
   const togglePush = async () => {
     if (pushBusy) return;
     setPushBusy(true);
@@ -298,6 +343,7 @@ export function GlobalSettingsScreen() {
             }
             onClick={() => setLangSheetOpen(true)}
           />
+          <WeekStartRow />
           {/* receipts moved to the space section (v3: they are a space
               view); the global door keeps the store CONNECTIONS */}
           <Row testId="settings-shopping-row" icon="storefront-outline" title={t('shop.title')} onClick={() => void navigate({ to: '/shopping' })} />
@@ -322,6 +368,17 @@ export function GlobalSettingsScreen() {
                 </Pill>
               }
               onClick={() => void togglePush()}
+            />
+          )}
+          {vapidKey && pushOn && (
+            <Row
+              testId="settings-push-test"
+              icon="bell-ring-outline"
+              title={t('push.testTitle')}
+              sub={testNote ?? t('push.testSub')}
+              chevron={false}
+              disabled={testBusy}
+              onClick={() => void sendTest()}
             />
           )}
           <Row

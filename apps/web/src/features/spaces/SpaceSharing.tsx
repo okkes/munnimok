@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
-import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
@@ -11,7 +10,8 @@ import { useServerRefresh } from '@/lib/serverEvents';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { postFriendRequest } from '@/features/friends/sendFriendRequest';
 import type { FriendRequestOutcome } from '@/features/friends/sendFriendRequest';
-import { setSettingsJump } from '@/features/settings/settingsJump';
+import { PinChallengeSheet } from '@/features/lock/PinChallengeSheet';
+import { readLockConfig } from '@/features/lock/lock';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
@@ -229,10 +229,58 @@ interface SpaceMembersSectionProps {
 }
 
 /** Members, roles + invite-a-friend for the space settings sheet (user identities). */
+/**
+ * #391 (user): the invitation switch lives HERE, with the members — not
+ * in the space settings. Closed = nobody can be invited (the invite door
+ * below hides). Opening invitations on a device with an app lock asks
+ * for the PIN first (#302); closing needs none.
+ */
+function InviteLockRow({ locked, onWrite }: Readonly<{ locked: boolean; onWrite: (next: 0 | 1) => void }>) {
+  const { t } = useLang();
+  const [challengeOpen, setChallengeOpen] = useState(false);
+  const toggle = () => {
+    if (locked && readLockConfig()) {
+      setChallengeOpen(true);
+      return;
+    }
+    onWrite(locked ? 0 : 1);
+  };
+  return (
+    <>
+      <div className="mt-3 flex items-center gap-3 rounded-card border border-line bg-surface px-4 py-3" data-testid="space-invite-lock-row">
+        <Icon name={locked ? 'lock-outline' : 'lock-open-variant-outline'} size={18} color="var(--m-ink-3)" />
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-medium text-ink">{t('space.invitesTitle')}</div>
+          <div className="text-[12px] leading-snug text-ink-3">{t(locked ? 'space.invitesClosed' : 'space.invitesOpen')}</div>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={!locked}
+          aria-label={t('space.invitesTitle')}
+          data-testid="space-invite-toggle"
+          onClick={toggle}
+          className={`flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-none p-0.5 transition-colors ${
+            locked ? 'justify-start bg-bg-2' : 'justify-end bg-accent'
+          }`}
+        >
+          <span className="h-4 w-4 rounded-full bg-surface shadow" />
+        </button>
+      </div>
+      <PinChallengeSheet
+        open={challengeOpen}
+        onOpenChange={setChallengeOpen}
+        title={t('space.inviteUnlockTitle')}
+        body={t('space.inviteUnlockBody')}
+        onPass={() => onWrite(0)}
+      />
+    </>
+  );
+}
+
 export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: SpaceMembersSectionProps) {
   const { t } = useLang();
   const { store, repo, engine, setActiveSpace, spaceId: activeSpaceId } = useData();
-  const navigate = useNavigate();
   // the private lock (arc 4): a locked space renders the invite tools as
   // an explainer — unlocking is an explicit owner act in space settings
   const spaceRow = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
@@ -419,24 +467,15 @@ export function SpaceMembersSection({ spaceId, spaceName, onMyRole, onLeft }: Sp
           </div>
         </>
       )}
-      {isOwner && locked && (
-        <div className="mt-3 flex items-start gap-3 rounded-card border border-line bg-bg-2 px-4 py-3" data-testid="space-invite-locked">
-          <Icon name="lock-outline" size={18} color="var(--m-ink-3)" />
-          <div className="min-w-0 flex-1 text-[12px] leading-relaxed text-ink-3">
-            {t('space.inviteLockedBody')}
-            {/* #302: straight to the switch that lifts the lock */}
-            <button
-              data-testid="space-invite-locked-go"
-              onClick={() => {
-                setSettingsJump('invite-lock');
-                void navigate({ to: '/settings' });
-              }}
-              className="m-tap mt-1.5 block border-none bg-transparent p-0 text-[12px] font-medium text-accent-deep"
-            >
-              {t('space.inviteLockedGo')}
-            </button>
-          </div>
-        </div>
+      {/* #391 (user): the invitation switch sits with the members — owner only, applies immediately (LWW) */}
+      {isOwner && (
+        <InviteLockRow
+          locked={locked}
+          onWrite={(next) => {
+            void repo.upsert('space', spaceId, spaceId, { inviteLock: next });
+            void logActivity(store, repo, spaceId, 'spaceEdit', spaceName);
+          }}
+        />
       )}
       {isOwner && !locked && (
         <>

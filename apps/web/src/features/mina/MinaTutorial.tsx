@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { globalWeekStart } from '@/lib/weekStart';
 import { createPortal } from 'react-dom';
 import { useNavigate } from '@tanstack/react-router';
 import { useData } from '@/app/data';
@@ -295,6 +296,7 @@ export function MinaTutorial() {
           currency: 'EUR',
           periodType: 'month',
           periodDay: 1,
+          weekStart: globalWeekStart(),
           historyStartDate: isoMonthsAgo(DEFAULT_HISTORY_MONTHS),
         });
         // #221: defaults exist from birth, this exit space included

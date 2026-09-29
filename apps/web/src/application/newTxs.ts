@@ -44,6 +44,8 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
     // never crash the screen that mounted the hook
     async () => (stateSpaceId ? await store.bySpace('txSeen', stateSpaceId).catch(() => []) : null),
     [stateSpaceId],
+    undefined,
+    `txSeen:${stateSpaceId ?? '-'}`, // #361: remount cache
   );
   const spaceSeen = useMemo(
     () => (seenRows ?? []).filter((row) => row.deleted === 0 && row.forSpaceId === spaceId),
@@ -60,6 +62,8 @@ export function useNewTransactions(txs: SpaceTx[] | undefined): { newTxs: SpaceT
       return ((await store.metaGet(key))?.value as NewMarker | undefined) ?? null;
     },
     [spaceId, stateSpaceId],
+    undefined,
+    `newMarker:${spaceId}:${stateSpaceId ?? '-'}`, // #361: remount cache
   );
 
   // label arrivals — one write per real change, whichever path owns it

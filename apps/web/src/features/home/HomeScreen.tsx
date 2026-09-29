@@ -2,18 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
-import { localToday } from '@/application/recurring';
+import { localToday, useRecurrings } from '@/application/recurring';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { addDays } from '@/domain/recurring';
 import {
+  daysUntil,
   upcomingHorizon,
   upcomingLoanAmountCents,
   upcomingLoanPayments,
   upcomingRecAmountCents,
   upcomingRecurrings,
 } from '@/domain/upcoming';
+import { dueInWords } from './upcomingWords';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { LoanFace } from './UpcomingScreen';
 import { LOCALES, useLang } from '@/i18n';
@@ -49,7 +51,7 @@ import { goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
 import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
-import { budgetDaysLeft } from '@/domain/budgets';
+import { budgetDaysLeft, budgetOptsFor } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
 import { convertCents, sumCents } from '@/lib/rates';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
@@ -226,6 +228,8 @@ export function HomeScreen() {
   const { newTxs } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
+  // no remount cache here (#361): a stale "true" would bounce a returning
+  // Home straight back to onboarding before the fresh flag arrives
   const needsOnboarding = useQuery(store, async () => store.metaGet('needsOnboarding'), []);
   useEffect(() => {
     if (needsOnboarding?.value === true) void navigate({ to: '/onboarding' });
@@ -269,11 +273,9 @@ export function HomeScreen() {
 
   // landing-zone block: recurring costs due within a week (user decision:
   // the home block shows only the upcoming ones; the tab has the rest)
-  const recurrings = useQuery(
-    store,
-    async () => (await store.bySpace('recurring', spaceId)).filter((r) => r.deleted === 0 && r.active === 1),
-    [spaceId],
-  );
+  // #361: the cached hook — a tab return renders the last rows instantly
+  const allRecurrings = useRecurrings();
+  const recurrings = useMemo(() => allRecurrings?.filter((r) => r.active === 1), [allRecurrings]);
   // landing-zone block: the 3 most urgent budgets (approved: 3)
   const budgetStatuses = useBudgetStatuses();
   const budgets = useBudgets();
@@ -899,14 +901,18 @@ export function HomeScreen() {
                 onClick={() => void navigate({ to: '/budgets/$budgetId', params: { budgetId: status.budget.id } })}
                 className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
               >
-                <Icon name={status.budget.icon ?? 'wallet-outline'} size={17} color={color} />
+                {status.budget.picture ? (
+                  <img src={status.budget.picture} alt="" className="h-5 w-5 shrink-0 rounded-md object-cover" />
+                ) : (
+                  <Icon name={status.budget.icon ?? 'wallet-outline'} size={17} color={color} />
+                )}
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-[13px] font-medium text-ink">{status.budget.name}</span>
                     <span className="flex shrink-0 items-baseline gap-1.5">
                       {/* days-to-reset on the landing zone too (user request) */}
                       <span className="text-[10px] text-ink-4" data-testid={`home-budget-days-${status.budget.id}`}>
-                        {t('budgets.daysLeft', { n: budgetDaysLeft(status.budget, localToday()) })}
+                        {t('budgets.daysLeft', { n: budgetDaysLeft(status.budget, localToday(), budgetOptsFor(space)) })}
                       </span>
                       <span className="m-num text-[12px] font-semibold" style={{ color }}>
                         {t(over ? 'budgets.over' : 'budgets.left', {
@@ -927,6 +933,9 @@ export function HomeScreen() {
 
   function renderUpcomingBlock() {
     if (upcoming.length === 0 && upcomingDebts.length === 0) return null;
+    // #347: the date alone made the reader do the math — say the days too
+    const today = localToday();
+    const dueLabel = (iso: string) => `${fmtShort(iso)} · ${dueInWords(daysUntil(iso, today), t)}`;
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
@@ -955,8 +964,8 @@ export function HomeScreen() {
               <RecurringVisual rec={rec} size={16} active={false} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
-                <span className="block text-[11px] text-ink-4">
-                  {fmtShort(nextDue)} · {t('home.upcomingRecurring')}
+                <span className="block truncate text-[11px] text-ink-4">
+                  {dueLabel(nextDue)} · {t('home.upcomingRecurring')}
                 </span>
               </span>
               {/* #334 r2 (user): unsigned — one sign story for both kinds */}
@@ -977,8 +986,8 @@ export function HomeScreen() {
               <LoanFace loan={loan} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink">{loan.name}</span>
-                <span className="block text-[11px] text-ink-4">
-                  {fmtShort(nextDue)} · {t('home.upcomingLoan')}
+                <span className="block truncate text-[11px] text-ink-4">
+                  {dueLabel(nextDue)} · {t('home.upcomingLoan')}
                 </span>
               </span>
               <span className="m-num text-[13px] font-semibold text-ink">

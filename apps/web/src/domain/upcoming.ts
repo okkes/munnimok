@@ -43,6 +43,10 @@ export function upcomingHorizon(space: Pick<SpaceRow, 'periodType' | 'periodDay'
 
 /** #334 r2 (user): costs are outgoing — block AND landing print both
  *  kinds as plain unsigned amounts (no minus, no plus, never mixed) */
+/** #347: whole days from today until the due date (0 = today) */
+export const daysUntil = (iso: string, today: string): number =>
+  Math.max(0, Math.round((Date.parse(iso) - Date.parse(today)) / 86_400_000));
+
 export const upcomingRecAmountCents = (rec: Pick<RecurringRow, 'amountCents'>): number => Math.abs(rec.amountCents);
 export const upcomingLoanAmountCents = (loan: Pick<AccountRow, 'paymentCents'>): number =>
   Math.abs(loan.paymentCents ?? 0);

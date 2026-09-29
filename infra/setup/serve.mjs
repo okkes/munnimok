@@ -27,7 +27,7 @@ import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST, entriesFor } from '../modules/secrets.mjs';
-import { ensureLocalSecrets, familyValues, forgetWizardValues, loadLocalValues, loadWizardStore, saveLocalValues, setWizardValues, wizardValues } from '../modules/localstore.mjs';
+import { ensureLocalSecrets, forgetWizardValues, loadLocalValues, loadWizardStore, machineValues, saveLocalValues, setWizardValues, stackValues, wizardValues } from '../modules/localstore.mjs';
 import { insecureFetch, localAwareFetch } from '../modules/insecure-fetch.mjs';
 import { ENV_NAME_RE, RESERVED_ENV_NAMES, lanHost, listPlatforms, loadAutonomy, loadEnv, loadPlatform, loadStack, nextSlot, parseStackName, platformEnvStacks, platformEnvs, removeEnv, saveAutonomy, saveEnv, savePlatform, sharedOf, stackName } from '../modules/stack.mjs';
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
@@ -76,7 +76,7 @@ function withPlatformEnv(platform, fn) {
 }
 const loadAnyStack = (name) => withPlatformEnv(parseStackName(name)?.platform, () => loadStack(name));
 /** the values a stack's setup sees: lcl = the stores, nas = the wizard's own values */
-const valuesFor = (stack) => (stack.delivery === 'docker' ? familyValues(stack) : wizardValues(stack.platform));
+const valuesFor = (stack) => (stack.delivery === 'docker' ? stackValues(stack) : wizardValues(stack.platform));
 
 const DEVSOURCE_COMPOSE = ['compose', '--env-file', 'deploy/env/.env.local', '-f', 'deploy/docker-compose.local.yml'];
 /** fixed verb set over the KNOWN lcl stacks — nothing here is caller-controlled beyond picking one */
@@ -192,18 +192,19 @@ async function statusEndpoint(res, probeImpl) {
   const stacks = {};
   for (const name of LCL_STACKS()) stacks[name] = await stackStatus(name, probeImpl);
   const { enabled, lastCheckAt, lastResult } = loadAutonomy();
-  let googleProject = null;
-  try {
-    googleProject = JSON.parse(wizardValues(LCL).PLAY_SERVICE_ACCOUNT_JSON ?? 'null')?.project_id ?? null;
-  } catch { /* no or malformed service account — generic links */ }
+  // the Google project behind each platform's Play service account (console links) — one per platform, never shared
+  const googleProjects = {};
+  for (const p of listPlatforms()) {
+    try { googleProjects[p.platform] = JSON.parse(wizardValues(p.platform).PLAY_SERVICE_ACCOUNT_JSON ?? 'null')?.project_id ?? null; } catch { googleProjects[p.platform] = null; }
+  }
   const store = loadWizardStore();
   return json(res, 200, {
     docker,
     stacks,
     platforms: platformsView(),
-    wizardStored: { family: Object.keys(store.family).filter((k) => store.family[k]), platforms: Object.fromEntries(Object.entries(store.platforms).map(([p, v]) => [p, Object.keys(v).filter((k) => v[k])])) },
+    wizardStored: { machine: Object.keys(store.machine).filter((k) => store.machine[k]), platforms: Object.fromEntries(Object.entries(store.platforms).map(([p, v]) => [p, Object.keys(v).filter((k) => v[k])])) },
     lan: lanHost(),
-    googleProject,
+    googleProjects,
     autonomy: { enabled, lastCheckAt, lastResult, running: autonomyRunning },
   });
 }
@@ -212,12 +213,13 @@ async function statusEndpoint(res, probeImpl) {
 function wizardValuesGet(res, url) {
   const platform = url.searchParams.get('platform') || null;
   const store = loadWizardStore();
-  return json(res, 200, { family: store.family, platform: platform ? (store.platforms[platform] ?? {}) : {} });
+  return json(res, 200, { machine: store.machine, platform: platform ? (store.platforms[platform] ?? {}) : {} });
 }
 
 async function wizardValuesSet(req, res) {
   const body = await readBody(req);
   const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
+  if (!platform) return json(res, 400, { error: 'platform required — every value belongs to one platform' });
   const values = {};
   for (const [name, value] of Object.entries(body.values ?? {})) {
     if (OPERATOR_NAMES.has(name) && typeof value === 'string') values[name] = value;
@@ -454,17 +456,18 @@ async function glitchtipSetupEndpoint(req, res, spawnImpl) {
 }
 
 /* ── admin access: list the environment's users, toggle the admin role ── */
-async function accessCredential(stack) {
+async function accessCredential(stack, fetchImpl = localAwareFetch) {
   if (stack.delivery === 'docker') {
-    const v = familyValues(stack);
+    const v = stackValues(stack);
     if (!v.LOGTO_INFRA_M2M_ID || !v.LOGTO_INFRA_M2M_SECRET) throw new Error('this environment has no Logto machine credential yet — run its sign-in setup first');
     return { m2mId: v.LOGTO_INFRA_M2M_ID, m2mSecret: v.LOGTO_INFRA_M2M_SECRET };
   }
   // nas: the CI bootstrap kept the credential in the platform's vault, folder <stack>
   const v = wizardValues(stack.platform);
   if (!v.VAULT_ADMIN_EMAIL || !v.VAULT_MASTER_PASSWORD) throw new Error('the platform\'s vault account is not in the wizard\'s store — generate it on the platform card first');
-  const shared = sharedOf(stack);
-  const items = await vaultReadFolder(shared.urls.vault, { email: v.VAULT_ADMIN_EMAIL, password: v.VAULT_MASTER_PASSWORD, folder: stack.stack }, localAwareFetch);
+  // the shared sibling of a nas stack needs the platform domain to resolve its hosts — the wrapper provides it from the wizard's store
+  const shared = withPlatformEnv(stack.platform, () => sharedOf(stack));
+  const items = await vaultReadFolder(shared.urls.vault, { email: v.VAULT_ADMIN_EMAIL, password: v.VAULT_MASTER_PASSWORD, folder: stack.stack }, fetchImpl);
   const item = items.find((i) => i.name === 'Logto infra M2M');
   if (!item?.username || !item?.password) throw new Error(`the vault holds no "Logto infra M2M" item in folder ${stack.stack} yet — the environment's bootstrap keeps it there once Logto is seeded`);
   return { m2mId: item.username, m2mSecret: item.password };
@@ -476,7 +479,7 @@ async function accessUsersEndpoint(res, url, netFetchImpl) {
   try { stack = loadAnyStack(name); } catch (e) { return json(res, 400, { error: e.message }); }
   if (stack.role !== 'env') return json(res, 400, { error: 'admin access belongs to an environment' });
   try {
-    const creds = await accessCredential(stack);
+    const creds = await accessCredential(stack, netFetchImpl);
     const users = await withPlatformEnv(stack.platform, () => listUsers(stack, creds, { fetchImpl: netFetchImpl }));
     return json(res, 200, { stack: stack.stack, users });
   } catch (e) {
@@ -492,7 +495,7 @@ async function accessToggleEndpoint(req, res, netFetchImpl) {
   const userId = String(body.userId ?? '');
   if (!/^[A-Za-z0-9_-]{4,64}$/.test(userId)) return json(res, 400, { error: 'bad user id' });
   try {
-    const creds = await accessCredential(stack);
+    const creds = await accessCredential(stack, netFetchImpl);
     const r = await withPlatformEnv(stack.platform, () => setAdmin(stack, creds, userId, Boolean(body.admin), { fetchImpl: netFetchImpl }));
     return json(res, 200, r);
   } catch (e) {
@@ -920,6 +923,66 @@ async function storeStatusEndpoint(res, url, fetchImpl) {
   return json(res, 200, { stack: stack.stack, env: stack.env, appId: stack.native.appId, iosAppId: stack.native.iosAppId, play, ios, firebase });
 }
 
+/* ── app links per environment: the served /.well-known files against the config, and whether Google sees the statement ── */
+const FINGERPRINT_RE = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/;
+const normalizeFingerprints = (raw) => String(raw ?? '').split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+async function appLinksEndpoint(res, url, fetchImpl) {
+  let stack;
+  try { stack = envStackFrom(url?.searchParams.get('stack')); } catch (e) { return json(res, 400, { error: e.message }); }
+  const web = stack.urls.web;
+  if (stack.delivery === 'docker') return json(res, 200, { stack: stack.stack, env: stack.env, web, verifiable: false, detail: 'a LAN address — Google and Apple cannot fetch its files, so the phone returns through the app\'s scheme here' });
+  const team = String(valuesFor(stack).APPLE_TEAM_ID ?? '').trim();
+  const android = stack.store?.androidPackage ?? '';
+  const ios = stack.store?.iosBundleId ?? '';
+  const saved = normalizeFingerprints(stack.store?.androidCertSha256);
+  const getJson = async (target) => {
+    const r = await fetchImpl(target, { signal: AbortSignal.timeout(15000), redirect: 'manual' });
+    if (!r.ok) throw new Error(`answered ${r.status}`);
+    return r.json();
+  };
+  const androidOut = { package: android, fingerprints: saved, state: 'missing', detail: '', google: null };
+  try {
+    const served = await getJson(`${web}/.well-known/assetlinks.json`);
+    const target = (Array.isArray(served) ? served : []).map((s) => s.target ?? {}).find((t) => t.package_name === android);
+    const fps = (target?.sha256_cert_fingerprints ?? []).map((f) => String(f).toUpperCase());
+    if (!saved.length) { androidOut.state = 'no-fingerprint'; androidOut.detail = 'no certificate fingerprint saved yet — paste the App signing key certificate SHA-256 from Play Console'; }
+    else if (saved.every((f) => fps.includes(f))) { androidOut.state = 'ok'; androidOut.detail = `served for ${android} ✓`; }
+    else { androidOut.state = 'stale'; androidOut.detail = target ? 'the served file carries other fingerprints — Deploy again publishes the saved one' : `the served file does not name ${android} yet — Deploy again publishes it`; }
+  } catch (e) { androidOut.detail = `assetlinks.json not served (${e.message})`; }
+  try {
+    const dal = await getJson(`https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=${encodeURIComponent(web)}&relation=delegate_permission/common.handle_all_urls`);
+    androidOut.google = (dal.statements ?? []).some((s) => s.target?.androidApp?.packageName === android);
+  } catch { androidOut.google = null; }
+  const iosOut = { bundle: ios, appId: team ? `${team}.${ios}` : null, state: 'missing', detail: '' };
+  try {
+    const served = await getJson(`${web}/.well-known/apple-app-site-association`);
+    const ids = (served?.applinks?.details ?? []).flatMap((d) => d.appIDs ?? []);
+    if (!team) { iosOut.state = 'no-team-id'; iosOut.detail = 'no Apple team id saved — the App Store Connect tile carries it'; }
+    else if (ids.includes(iosOut.appId)) { iosOut.state = 'ok'; iosOut.detail = `served for ${iosOut.appId} ✓`; }
+    else { iosOut.state = 'stale'; iosOut.detail = ids.length ? `the served file names ${ids.join(', ')} — Deploy again publishes ${iosOut.appId}` : `the served file names no app yet — Deploy again publishes ${iosOut.appId}`; }
+  } catch (e) { iosOut.detail = `apple-app-site-association not served (${e.message})`; }
+  return json(res, 200, { stack: stack.stack, env: stack.env, web, verifiable: true, android: androidOut, ios: iosOut });
+}
+
+async function appLinksSaveEndpoint(req, res) {
+  const body = await readBody(req);
+  const platform = String(body.platform ?? '');
+  const env = String(body.env ?? '');
+  let current;
+  try { current = loadEnv(platform, env); } catch (e) { return json(res, 400, { error: e.message }); }
+  const fps = normalizeFingerprints(body.androidCertSha256);
+  const bad = fps.find((f) => !FINGERPRINT_RE.test(f));
+  if (bad) return json(res, 400, { error: `not a SHA-256 certificate fingerprint: ${bad} — expected 32 hex pairs separated by colons, as Play Console → App signing → App signing key certificate shows it` });
+  saveEnv(platform, { ...current, store: { ...current.store, androidCertSha256: fps.length ? fps.join(',') : null } });
+  streamHead(res);
+  res.write(fps.length ? `▶ app signing certificate fingerprint${fps.length > 1 ? 's' : ''} saved for ${env}: ${fps.join(', ')}\n` : `▶ certificate fingerprint cleared for ${env}\n`);
+  res.write(platform === LCL
+    ? 'Re-run setup renders and restarts the web container with it (the LAN address stays unverifiable for Google and Apple anyway)\n'
+    : 'commit the platform config, then Deploy again — the web container serves the new assetlinks.json from then on\n');
+  res.write('\nthe phone verifies app links when the app is installed or updated: install the next build (or reinstall) once the file is live\n');
+  return res.end('[exit 0]\n');
+}
+
 /* ── OPT-IN store retirement: the DISTRIBUTION is withdrawn (Play internal releases, TestFlight builds); records stay ── */
 async function storeRetireEndpoint(req, res, netFetchImpl) {
   const body = await readBody(req);
@@ -1145,7 +1208,7 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
     res.write('  GoogleService-Info.plist ready — the next iOS build bakes it in\n');
     // the api's SENDER credential: the same service account, stored once in the wizard's family values
     if (!values.FCM_SERVICE_ACCOUNT_JSON) {
-      setWizardValues({ FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON });
+      setWizardValues({ FCM_SERVICE_ACCOUNT_JSON: values.PLAY_SERVICE_ACCOUNT_JSON }, stack.platform);
       res.write('sender credential: the api sends push with the SAME service account — stored ✓\n');
     } else {
       res.write('sender credential: already stored ✓\n');
@@ -1165,9 +1228,12 @@ async function firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl) {
 
 /* ── the machine owns the upload keystore (Play pins the first upload key per package) ── */
 async function mintKeystoreEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
+  if (!platform) return json(res, 400, { error: 'platform required — each platform holds its own upload keystore' });
   streamHead(res);
-  if (wizardValues().ANDROID_KEYSTORE_BASE64) {
-    res.write('the machine already holds the upload keystore — every environment signs with the same key ✓\n');
+  if (wizardValues(platform).ANDROID_KEYSTORE_BASE64) {
+    res.write(`the ${platform} platform already holds its upload keystore — every environment of it signs with the same key ✓\n`);
     return res.end('[exit 0]\n');
   }
   const pass = randomBytes(24).toString('hex');
@@ -1179,14 +1245,14 @@ async function mintKeystoreEndpoint(req, res, spawnImpl) {
   const b64 = /KEYSTORE_B64:(\S+)/.exec(mint.out)?.[1];
   const cert = /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/.exec(mint.out)?.[0];
   if (!b64) { res.write('could not read the keystore back from the container\n'); return res.end('[exit 1]\n'); }
-  setWizardValues({ ANDROID_KEYSTORE_BASE64: b64, ANDROID_KEYSTORE_PASSWORD: pass, ANDROID_KEY_ALIAS: 'munni-upload', ANDROID_KEY_PASSWORD: pass });
+  setWizardValues({ ANDROID_KEYSTORE_BASE64: b64, ANDROID_KEYSTORE_PASSWORD: pass, ANDROID_KEY_ALIAS: 'munni-upload', ANDROID_KEY_PASSWORD: pass }, platform);
   if (cert) {
-    const certFile = join(dirname(LAN_FILE()), 'wizard', 'upload-cert.pem');
+    const certFile = join(dirname(LAN_FILE()), 'wizard', `upload-cert-${platform}.pem`);
     mkdirSync(dirname(certFile), { recursive: true });
     writeFileSync(certFile, `${cert}\n`);
     res.write(`upload certificate → ${certFile} (only needed for a Play UPLOAD-KEY RESET)\n`);
   }
-  res.write('upload keystore minted into the wizard\'s store ✓ — every environment signs with the SAME key\n');
+  res.write(`upload keystore minted into the wizard's store for ${platform} ✓ — every environment of it signs with the SAME key\n`);
   return res.end('[exit 0]\n');
 }
 
@@ -1312,7 +1378,9 @@ async function nativeConfigEndpoint(res, url, fetchImpl) {
       if (iApp) { const cfg = await fb(`/projects/${projectId}/iosApps/${iApp.appId}/config`); if (cfg.ok) variables.NATIVE_IOS_FIREBASE_PLIST_B64 = (await cfg.json()).configFileContents; }
     } catch { /* push stays stubbed — firebase-setup names the reason */ }
   }
-  return json(res, 200, { stack: stack.stack, environment: stack.githubEnvironment, env: stack.env, platform: stack.platform, appId: stack.native.appId, iosAppId: stack.native.iosAppId, scheme: stack.native.scheme, lanHost: lan, ready: missing.length === 0, missing, variables });
+  // GitHub refuses an empty variable; a value this helper does not hold (the NAS write-backs live in the GitHub environment) is simply not sent, so what the Bootstrap wrote back stays
+  const known = Object.fromEntries(Object.entries(variables).filter(([, v]) => v));
+  return json(res, 200, { stack: stack.stack, environment: stack.githubEnvironment, env: stack.env, platform: stack.platform, appId: stack.native.appId, iosAppId: stack.native.iosAppId, scheme: stack.native.scheme, lanHost: lan, ready: missing.length === 0, missing, variables: known });
 }
 
 /* ── lcl environments: delete, wipe, leftovers ────────────────────── */
@@ -1340,7 +1408,7 @@ async function envDeleteEndpoint(req, res, spawnImpl, netFetchImpl) {
   }
   try {
     const shared = loadStack(LCL_SHARED);
-    const token = familyValues(shared).GLITCHTIP_API_TOKEN;
+    const token = stackValues(shared).GLITCHTIP_API_TOKEN;
     if (token) { const r = await removeProjects(shared, loadStack(name), token, { fetchImpl: netFetchImpl }); res.write(`GlitchTip projects removed: ${r.removed.join(', ') || 'none'}\n`); }
   } catch (e) {
     res.write(`GlitchTip project purge failed (${e.message}) — remove them in the console if they linger\n`);
@@ -1418,7 +1486,9 @@ async function ghPatEndpoint(req, res) {
   const body = await readBody(req);
   const pat = String(body.pat ?? '').trim();
   if (!pat) return json(res, 400, { error: 'no token given' });
-  setWizardValues({ GH_PAT: pat });
+  const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
+  if (!platform) return json(res, 400, { error: 'platform required — each platform connects on its own' });
+  setWizardValues({ GH_PAT: pat }, platform);
   return json(res, 200, { ok: true });
 }
 
@@ -1504,7 +1574,7 @@ function stackVaultItems(name) {
 function buildVaultItems() {
   const items = [];
   const store = loadWizardStore();
-  for (const [n, value] of Object.entries({ ...store.family, ...(store.platforms[LCL] ?? {}) })) {
+  for (const [n, value] of Object.entries({ ...store.machine, ...(store.platforms[LCL] ?? {}) })) {
     if (VAULT_SKIP_NAMES.has(n) || !value) continue;
     items.push({ folder: 'wizard', name: n, password: String(value), notes: vaultNote(n) });
   }
@@ -1632,7 +1702,7 @@ async function appleCertAtApple(values, fetchImpl) {
 }
 
 async function appleCertStatusEndpoint(res, fetchImpl) {
-  const v = wizardValues();
+  const v = machineValues();
   const out = { present: Boolean(v.APPLE_DEV_CERT_P12 && v.APPLE_DEV_CERT_PASSWORD), password: Boolean(v.APPLE_DEV_CERT_PASSWORD) };
   if (v.APPLE_DEV_CERT_SERIAL) out.serial = v.APPLE_DEV_CERT_SERIAL;
   if (out.present) out.apple = await appleCertAtApple(v, fetchImpl);
@@ -1645,7 +1715,7 @@ function appleCertForgetEndpoint(res) {
 }
 
 function appleCertPasswordEndpoint(res) {
-  if (!wizardValues().APPLE_DEV_CERT_PASSWORD) setWizardValues({ APPLE_DEV_CERT_PASSWORD: randomBytes(24).toString('hex') });
+  if (!machineValues().APPLE_DEV_CERT_PASSWORD) setWizardValues({ APPLE_DEV_CERT_PASSWORD: randomBytes(24).toString('hex') });
   return json(res, 200, { ok: true });
 }
 
@@ -1655,8 +1725,9 @@ async function appleCertImportEndpoint(req, res, netFetchImpl) {
   const runId = Number(body.runId);
   streamHead(res);
   if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !Number.isInteger(runId) || runId <= 0) { res.write('need the repo slug and the mint run id\n'); return res.end('[exit 1]\n'); }
-  const values = wizardValues();
-  if (!values.GH_PAT) { res.write('no GitHub token in the wizard\'s store — connect GitHub first\n'); return res.end('[exit 1]\n'); }
+  const platform = typeof body.platform === 'string' && /^[a-z]{2,5}$/.test(body.platform) ? body.platform : null;
+  const values = platform ? wizardValues(platform) : machineValues();
+  if (!values.GH_PAT) { res.write('no GitHub token for this platform in the wizard\'s store — connect GitHub on this platform first\n'); return res.end('[exit 1]\n'); }
   const api = (path, init = {}) => netFetchImpl(`https://api.github.com${path}`, { ...init, headers: { authorization: `Bearer ${values.GH_PAT}`, accept: 'application/vnd.github+json', 'x-github-api-version': '2022-11-28', ...init.headers }, signal: AbortSignal.timeout(30000) });
   try {
     const list = await api(`/repos/${slug}/actions/runs/${runId}/artifacts`);
@@ -1824,6 +1895,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/envs/update': (req, res) => envUpdateEndpoint(req, res, spawnImpl),
     'POST /api/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
     'POST /api/envs/store-id': (req, res) => storeIdEndpoint(req, res, spawnImpl),
+    'POST /api/envs/app-links': (req, res) => appLinksSaveEndpoint(req, res),
     'GET /api/access/users': (req, res) => accessUsersEndpoint(res, url(req), netFetchImpl),
     'POST /api/access/toggle': (req, res) => accessToggleEndpoint(req, res, netFetchImpl),
     'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),
@@ -1835,6 +1907,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'GET /api/local/cleanup-check': (req, res) => cleanupCheckEndpoint(res, spawnImpl),
     'POST /api/local/store-retire': (req, res) => storeRetireEndpoint(req, res, netFetchImpl),
     'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, url(req), netFetchImpl),
+    'GET /api/local/app-links': (req, res) => appLinksEndpoint(res, url(req), netFetchImpl),
     'POST /api/local/firebase-setup': (req, res) => firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),

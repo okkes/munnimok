@@ -73,7 +73,8 @@ test('entriesFor: the shared stack owns the platform-scoped values (+ its own po
   const mirrored = mirroredEntries(loadStack('munni-nas-prod'));
   assert.ok(mirrored.length > 0);
   assert.ok(mirrored.every((e) => e.scope === 'platform'));
-  assert.deepEqual(names(mirrored), names(platformEntries('nas').filter((e) => e.scope === 'platform')));
+  assert.deepEqual(names(mirrored), names(platformEntries('nas').filter((e) => e.scope === 'platform' && !e.sharedOnly)));
+  assert.ok(!names(mirrored).includes('GLITCHTIP_SECRET_KEY') && !names(mirrored).includes('PGADMIN_PASSWORD') && names(mirrored).includes('GLITCHTIP_API_TOKEN'), 'the shared stack keeps its own keys; the token every environment needs is mirrored');
   assert.deepEqual(mirroredEntries(loadStack('munni-nas-shared')), []);
 });
 
@@ -113,7 +114,10 @@ test('ensureSecrets (shared stack): mints the platform secrets into <platform>-s
   assert.match(shared.GLITCHTIP_API_TOKEN, /^[0-9a-f]{40}$/);
   const platformNames = names(entriesFor(sharedStack()).filter((e) => e.owner === 'generated' && e.scope === 'platform'));
   for (const env of ['nas-prod', 'nas-staging']) {
-    for (const n of platformNames) assert.equal(gh.secrets(env)[n], shared[n], `${n} mirrored into ${env} with the same value`);
+    for (const n of platformNames) {
+      if (entry(n).sharedOnly) assert.equal(gh.secrets(env)[n], undefined, `${n} stays the shared stack's`);
+      else assert.equal(gh.secrets(env)[n], shared[n], `${n} mirrored into ${env} with the same value`);
+    }
     assert.notEqual(gh.secrets(env).POSTGRES_PASSWORD, shared.POSTGRES_PASSWORD, 'the shared postgres password stays the shared stack\'s');
   }
   assert.ok(Object.keys(shared).every((n) => n === 'POSTGRES_PASSWORD' || platformNames.includes(n)), 'the shared environment holds platform values + its own postgres');
@@ -132,15 +136,27 @@ test('ensureSecrets (shared stack): mints the platform secrets into <platform>-s
   assert.ok(gh.calls().every((c) => c[0] === 'api' && c[2] !== 'DELETE'), 'reads and environment PUTs only');
 });
 
-test('ensureSecrets: an environment that lost a platform value gets it back through a fresh mint reaching every environment; --rotate re-mints on demand', () => {
+test('ensureSecrets: an environment that lacks a mirrored platform value gets the SAME value the shared stack runs with when the job carries it (never a re-mint); an unknown value is minted afresh for every environment; --rotate re-mints on demand', () => {
   const before = gh.secrets('nas-shared');
-  gh.forget('nas-staging', 'PGADMIN_PASSWORD');
-  const healed = ensureSecrets(sharedStack());
-  assert.deepEqual(healed.minted, ['PGADMIN_PASSWORD']);
+  gh.forget('nas-staging', 'GLITCHTIP_API_TOKEN');
+  process.env.GLITCHTIP_API_TOKEN = before.GLITCHTIP_API_TOKEN;
+  try {
+    const healed = ensureSecrets(sharedStack());
+    assert.deepEqual(healed.minted, [], 'nothing re-minted — the running GlitchTip keeps its token');
+    assert.deepEqual(healed.mirrored, ['GLITCHTIP_API_TOKEN']);
+    assert.equal(gh.secrets('nas-staging').GLITCHTIP_API_TOKEN, before.GLITCHTIP_API_TOKEN, 'the environment added later gets the value in use');
+    assert.deepEqual(gh.secrets('nas-shared'), before, 'the shared environment is untouched');
+  } finally {
+    delete process.env.GLITCHTIP_API_TOKEN;
+  }
+  gh.forget('nas-staging', 'GLITCHTIP_API_TOKEN');
+  const reminted = ensureSecrets(sharedStack());
+  assert.deepEqual(reminted.minted, ['GLITCHTIP_API_TOKEN'], 'without the value at hand a fresh mint is the only way — it reaches every environment');
   const after = gh.secrets('nas-shared');
-  assert.notEqual(after.PGADMIN_PASSWORD, before.PGADMIN_PASSWORD);
-  for (const env of ['nas-shared', 'nas-prod', 'nas-staging']) assert.equal(gh.secrets(env).PGADMIN_PASSWORD, after.PGADMIN_PASSWORD);
-  assert.equal(after.GLITCHTIP_API_TOKEN, before.GLITCHTIP_API_TOKEN, 'the others stay');
+  assert.notEqual(after.GLITCHTIP_API_TOKEN, before.GLITCHTIP_API_TOKEN);
+  for (const env of ['nas-shared', 'nas-prod', 'nas-staging']) assert.equal(gh.secrets(env).GLITCHTIP_API_TOKEN, after.GLITCHTIP_API_TOKEN);
+  assert.equal(after.PGADMIN_PASSWORD, before.PGADMIN_PASSWORD, 'the others stay');
+  assert.equal(gh.secrets('nas-prod').PGADMIN_PASSWORD, undefined, 'a sharedOnly value never reaches an environment');
 
   const rotated = ensureSecrets(sharedStack(), { rotate: ['GLITCHTIP_API_TOKEN'] });
   assert.deepEqual(rotated.minted, ['GLITCHTIP_API_TOKEN']);

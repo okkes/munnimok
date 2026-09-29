@@ -8,9 +8,11 @@ import type { StorageBackend } from './backend';
  * a space switch never shows another space's rows. */
 const LAST_VALUES = new Map<string, unknown>();
 
-/** test seam: specs re-seed fresh databases under the same space id —
- *  the harness clears the cache so no rows bleed between tests */
-export function __clearQueryCache(): void {
+/** #363: the cache belongs to ONE identity — the data provider clears it
+ *  on every sign-in/out and wipe, so a new account never renders the last
+ *  user's rows; the test harness clears it between specs (fresh databases
+ *  under the same space id) */
+export function clearQueryCache(): void {
   LAST_VALUES.clear();
 }
 

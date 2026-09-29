@@ -67,6 +67,35 @@ describe('budget periods', () => {
     expect(currentBudgetPeriod(b, '2026-03-15')).toEqual({ start: '2026-02-28', end: '2026-03-30' });
     expect(currentBudgetPeriod(b, '2026-03-31')).toEqual({ start: '2026-03-31', end: '2026-04-29' });
   });
+
+  it('#371: a monthly budget started mid-month resets on its own day — the first period is the short one', () => {
+    const b = budget({ every: 'month', anchor: '2026-06-15', resetDay: 1 });
+    expect(budgetPeriodAt(b, 0)).toEqual({ start: '2026-06-15', end: '2026-06-30' });
+    expect(budgetPeriodAt(b, 1)).toEqual({ start: '2026-07-01', end: '2026-07-31' });
+    expect(currentBudgetPeriod(b, '2026-08-20')).toEqual({ start: '2026-08-01', end: '2026-08-31' });
+    // before the start date, the first period
+    expect(currentBudgetPeriod(b, '2026-06-10')).toEqual({ start: '2026-06-15', end: '2026-06-30' });
+  });
+
+  it('#370: weekly budgets start their full weeks on the space\'s first weekday — the start date opens a partial week', () => {
+    const wednesday = budget({ every: 'week', anchor: '2026-06-03' });
+    expect(budgetPeriodAt(wednesday, 0)).toEqual({ start: '2026-06-03', end: '2026-06-07' });
+    expect(budgetPeriodAt(wednesday, 1)).toEqual({ start: '2026-06-08', end: '2026-06-14' });
+    expect(budgetPeriodAt(wednesday, 1, { weekStart: 'sunday' })).toEqual({ start: '2026-06-07', end: '2026-06-13' });
+    expect(currentBudgetPeriod(wednesday, '2026-06-07', { weekStart: 'sunday' })).toEqual({ start: '2026-06-07', end: '2026-06-13' });
+    const biweekly = budget({ every: '2weeks', anchor: '2026-06-03' });
+    expect(budgetPeriodAt(biweekly, 1)).toEqual({ start: '2026-06-08', end: '2026-06-21' });
+  });
+
+  it('#369: the "period" cadence follows the space\'s own budget period', () => {
+    const b = budget({ every: 'period', anchor: '2026-06-10' });
+    const monthlyFrom25 = { spacePeriod: { periodType: 'month' as const, periodDay: 25 } };
+    expect(budgetPeriodAt(b, 0, monthlyFrom25)).toEqual({ start: '2026-06-10', end: '2026-06-24' });
+    expect(budgetPeriodAt(b, 1, monthlyFrom25)).toEqual({ start: '2026-06-25', end: '2026-07-24' });
+    const weeklyFromMonday = { spacePeriod: { periodType: 'week' as const, periodDay: 1 } };
+    expect(budgetPeriodAt(b, 1, weeklyFromMonday)).toEqual({ start: '2026-06-15', end: '2026-06-21' });
+    expect(currentBudgetPeriod(b, '2026-07-30', monthlyFrom25)).toEqual({ start: '2026-07-25', end: '2026-08-24' });
+  });
 });
 
 describe('spent + family', () => {

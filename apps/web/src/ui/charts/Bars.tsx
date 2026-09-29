@@ -1,7 +1,24 @@
+import type { KeyboardEvent } from 'react';
 /**
  * Minimal theme-aware SVG bar chart (trends design) — no library, the
  * bundle stays local-first-small. Bars are focusable for screen readers.
  */
+/** #375: a tap or Enter/Space on a bar reports its index — only when the chart takes selections */
+function barInteraction(onSelect: ((index: number) => void) | undefined, index: number) {
+  if (!onSelect) return {};
+  return {
+    role: 'button',
+    style: { cursor: 'pointer' },
+    onClick: () => onSelect(index),
+    onKeyDown: (e: KeyboardEvent<SVGGElement>) => {
+      if (e.key === 'Enter' || e.key === ' ') onSelect(index);
+    },
+  };
+}
+/** a hollow (forecast) bar is an outline in the series colour */
+const barPaint = (hollow: boolean, color: string) =>
+  hollow ? { fill: 'transparent', stroke: color, strokeWidth: 1.5 } : { fill: color, stroke: 'none', strokeWidth: 0 };
+
 export function Bars({
   values,
   labels,
@@ -13,6 +30,7 @@ export function Bars({
   negativeValues,
   negativeColor = 'var(--m-negative)',
   testId,
+  onSelect,
 }: Readonly<{
   values: number[];
   /** short x labels, same length as values (sparse: empty strings ok) */
@@ -29,6 +47,8 @@ export function Bars({
   negativeValues?: number[];
   negativeColor?: string;
   testId?: string;
+  /** a tap on a bar (index into values) — the bars become buttons */
+  onSelect?: (index: number) => void;
 }>) {
   const n = values.length;
   if (n === 0) return null;
@@ -54,16 +74,20 @@ export function Bars({
         const h = Math.max(value > 0 ? 2 : 0, value * upScale);
         const hollow = hollowLast && i === n - 1;
         return (
-          <g key={x} tabIndex={0} aria-label={ariaLabels?.[i]}>
+          <g
+            key={x}
+            tabIndex={0}
+            aria-label={ariaLabels?.[i]}
+            data-testid={testId ? `${testId}-bar-${i}` : undefined}
+            {...barInteraction(onSelect, i)}
+          >
             <rect
               x={x}
               y={zeroY - h}
               width={barW}
               height={h}
               rx={3}
-              fill={hollow ? 'transparent' : color}
-              stroke={hollow ? color : 'none'}
-              strokeWidth={hollow ? 1.5 : 0}
+              {...barPaint(hollow, color)}
             />
             {negativeValues && (
               <rect

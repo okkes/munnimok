@@ -403,8 +403,11 @@ describe('ReviewScreen (demo identity)', () => {
     await waitFor(() => expect(screen.getByTestId('review-category-chip').textContent).toContain('Uncategorized'), { timeout: 5000 });
     expect(screen.getByTestId('review-counter-row').textContent).toContain('No counter account');
     // and Confirm waits for a human decision — the old one-tap default
-    // link for bare transfers is gone (#228 r3)
-    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(true);
+    // link for bare transfers is gone (#228 r3); #410 (user): the button
+    // stays tappable and the tap names the missing category under its row
+    expect((screen.getByTestId('review-confirm-btn') as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId('review-confirm-btn'));
+    await screen.findByTestId('review-cat-required');
   }, 15_000);
 
   it('a picked category is staged and written on confirm', async () => {

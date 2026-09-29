@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -104,6 +105,35 @@ public class PushTests : IClassFixture<SyncApiFactory>
         Assert.True(await partial.SendAsync(fcmRow, "{}", CancellationToken.None));
         Assert.Single(fcm.Sent); // untouched
     }
+
+    [Fact]
+    public async Task Test_push_reaches_every_device_of_the_caller_and_reports_the_count()
+    {
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var sender = new FakeSender();
+        using var factory = _factory.WithWebHostBuilder(b =>
+            b.ConfigureServices(s => s.AddSingleton<IPushSender>(sender)));
+        var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-User-Sub", $"push-test-{suffix}");
+        client.DefaultRequestHeaders.Add("X-Munni-Device", "test-device");
+
+        // no device yet: nothing sent, and the row can say so
+        var none = await client.PostAsync("/me/push-subscriptions/test", null);
+        Assert.True(none.IsSuccessStatusCode);
+        Assert.Equal(0, (await none.Content.ReadFromJsonAsync<TestResult>())!.Sent);
+
+        await client.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"https://push.example/t-{suffix}", "p", "a", Lang: "nl"));
+        await client.PostAsJsonAsync("/me/push-subscriptions", new SubscribeRequest($"fcm-{suffix}", Kind: "fcm"));
+        var both = await client.PostAsync("/me/push-subscriptions/test", null);
+        Assert.Equal(2, (await both.Content.ReadFromJsonAsync<TestResult>())!.Sent);
+        Assert.Equal(2, sender.Sent.Count);
+        Assert.All(sender.Sent, s => Assert.Contains("\"type\":\"test\"", s.Payload));
+        // the native text exists in every language the app speaks
+        foreach (var lang in new[] { "en", "nl", "tr" })
+            Assert.NotNull(FcmTexts.Build(JsonDocument.Parse("{\"type\":\"test\"}").RootElement, lang));
+    }
+
+    private sealed record TestResult(int Sent);
 
     private sealed class FakeSender : IPushSender
     {

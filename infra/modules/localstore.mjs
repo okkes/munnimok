@@ -9,12 +9,16 @@ const OUT_DIR = () => process.env.MUNNI_RENDER_DIR ?? join(dirname(fileURLToPath
 
 /**
  * The wizard's own store (infra/rendered/wizard/.secrets.json,
- * gitignored): what the operator typed ONCE — `family` values used by
- * every platform (bank providers, logos, push, sign-in providers, store
- * accounts, the GitHub token) and per-platform values under `platforms`
- * (the NAS account, the domain, each platform's vault account). For the
- * lcl platform they are also what the stacks render with; for nas the
- * wizard copies them into the GitHub environments.
+ * gitignored): what the operator typed, ONE SET PER PLATFORM under
+ * `platforms` (bank providers, logos, push, sign-in providers, store
+ * accounts, the GitHub token, the NAS account, the domain, the platform's
+ * vault account and upload keystore) — platforms share nothing: each has
+ * its own values here and its own GitHub environments. The one exception
+ * lives under `machine`: the Apple Development certificate, because Apple
+ * caps those per developer account and it identifies this computer's build
+ * pipeline, not a platform; every platform's iOS environments ship it.
+ * For the lcl platform the values are also what the stacks render with;
+ * for nas the wizard copies them into the platform's GitHub environments.
  *
  * Stack stores (infra/rendered/<stack>/.secrets.local.json) hold what a
  * LOCAL stack minted or wrote back: the shared stack's platform-scoped
@@ -28,31 +32,41 @@ const writeJson = (file, value) => { mkdirSync(dirname(file), { recursive: true 
 
 const entryOf = (name) => MANIFEST.secrets.find((s) => s.name === name);
 
+/** this computer's, not a platform's: Apple caps Development certificates per account, and the certificate is this machine's build identity */
+export const MACHINE_OWNED = new Set(['APPLE_DEV_CERT_P12', 'APPLE_DEV_CERT_PASSWORD', 'APPLE_DEV_CERT_SERIAL']);
+
 export function loadWizardStore() {
   const raw = readJson(WIZARD_FILE()) ?? {};
-  return { family: raw.family ?? {}, platforms: raw.platforms ?? {} };
+  return { machine: raw.machine ?? {}, platforms: raw.platforms ?? {} };
 }
 
 export function saveWizardStore(store) {
-  return writeJson(WIZARD_FILE(), { family: store.family ?? {}, platforms: store.platforms ?? {} });
+  return writeJson(WIZARD_FILE(), { machine: store.machine ?? {}, platforms: store.platforms ?? {} });
 }
 
-/** the wizard's values as one platform sees them */
+const requirePlatform = (platform, what) => {
+  if (typeof platform !== 'string' || !platform) throw new TypeError(`${what}: a platform is required — every value belongs to one platform`);
+  return platform;
+};
+
+/** the machine-owned values alone (the Apple Development certificate) */
+export function machineValues() {
+  return { ...loadWizardStore().machine };
+}
+
+/** the wizard's values as ONE platform sees them: its own set plus the machine-owned ones — never another platform's */
 export function wizardValues(platform) {
   const store = loadWizardStore();
-  return { ...store.family, ...(platform ? store.platforms[platform] ?? {} : {}) };
+  return { ...store.machine, ...(store.platforms[requirePlatform(platform, 'wizardValues')] ?? {}) };
 }
 
-/** where an operator value belongs: per platform when the manifest scopes it to a platform, else the family */
+/** where an operator value belongs: the machine for the Apple certificate, the named platform for everything else */
 export function setWizardValues(values, platform = null) {
   const store = loadWizardStore();
   for (const [name, value] of Object.entries(values)) {
-    const entry = entryOf(name);
-    if (entry?.scope === 'platform' && platform) {
-      store.platforms[platform] = { ...(store.platforms[platform] ?? {}), [name]: value };
-    } else {
-      store.family[name] = value;
-    }
+    if (MACHINE_OWNED.has(name)) { store.machine[name] = value; continue; }
+    const p = requirePlatform(platform, `setWizardValues(${name})`);
+    store.platforms[p] = { ...(store.platforms[p] ?? {}), [name]: value };
   }
   return saveWizardStore(store);
 }
@@ -60,8 +74,9 @@ export function setWizardValues(values, platform = null) {
 export function forgetWizardValues(names, platform = null) {
   const store = loadWizardStore();
   for (const name of names) {
-    delete store.family[name];
-    if (platform && store.platforms[platform]) delete store.platforms[platform][name];
+    if (MACHINE_OWNED.has(name)) { delete store.machine[name]; continue; }
+    const p = requirePlatform(platform, `forgetWizardValues(${name})`);
+    if (store.platforms[p]) delete store.platforms[p][name];
   }
   return saveWizardStore(store);
 }
@@ -72,7 +87,7 @@ export function loadLocalValues(stack) {
 }
 
 /** the merged view a local stack renders with: the wizard's values, the shared stack's platform-scoped values, its own */
-export function familyValues(stack) {
+export function stackValues(stack) {
   const own = loadLocalValues(stack);
   const shared = stack.role === 'shared' ? {} : (readJson(storeFile(stack.sharedStack)) ?? {});
   // a stack-scoped value (every Postgres server has its own password) never leaks from the shared store into an environment
@@ -123,7 +138,7 @@ function ensureVapid(values, rotate, minted) {
  * required operator values still absent for the features it enables.
  */
 export function ensureLocalSecrets(stack, { rotate = [] } = {}) {
-  const values = familyValues(stack);
+  const values = stackValues(stack);
   const own = loadLocalValues(stack);
   const minted = [];
   const missingOperator = [];
@@ -146,7 +161,7 @@ export function ensureLocalSecrets(stack, { rotate = [] } = {}) {
   }
   if (Object.keys(offered).length) setWizardValues(offered, stack.platform);
   writeJson(storeFile(stack.stack), own);
-  return { values: familyValues(stack), minted, missingOperator };
+  return { values: stackValues(stack), minted, missingOperator };
 }
 
 /** re-export for callers that only need the stack loader alongside the stores */
