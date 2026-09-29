@@ -106,7 +106,20 @@ Generate new private key).
    exists a build archives and signs and says so in a notice, and the
    first build after the record uploads to TestFlight by itself. Accept
    any pending agreements under Business first, or uploads fail.
-5. **One enabled registered device**, once per Apple team: automatic
+5. **App links** (the App links card on the Phones tab, NAS platform):
+   the web container serves `/.well-known/apple-app-site-association`
+   and `/.well-known/assetlinks.json` for the environment's own app, so
+   the bank's return, a split invite and the sign-in return open the
+   app straight from the link. iOS is as code (the App Store Connect
+   tile's team id + the bundle id). Android verifies against the
+   certificate Play signs the installed app with: once per environment,
+   Play Console → the app → Test and release → Setup → App signing →
+   App signing key certificate → SHA-256 fingerprint, pasted on the card
+   (Save commits the config and runs Deploy). Check fetches both files
+   from the live host and asks Google whether it sees the statement; the
+   phone verifies on the next install or update. A LAN address (lcl) is
+   never verifiable — that platform keeps the scheme return.
+6. **One enabled registered device**, once per Apple team: automatic
    signing archives against a development profile, and Apple issues one
    only for a team that has an enabled device — developer.apple.com →
    Devices → enable a registered iPhone, or ＋ to register any iPhone you

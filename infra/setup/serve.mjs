@@ -923,6 +923,66 @@ async function storeStatusEndpoint(res, url, fetchImpl) {
   return json(res, 200, { stack: stack.stack, env: stack.env, appId: stack.native.appId, iosAppId: stack.native.iosAppId, play, ios, firebase });
 }
 
+/* ── app links per environment: the served /.well-known files against the config, and whether Google sees the statement ── */
+const FINGERPRINT_RE = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/;
+const normalizeFingerprints = (raw) => String(raw ?? '').split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+async function appLinksEndpoint(res, url, fetchImpl) {
+  let stack;
+  try { stack = envStackFrom(url?.searchParams.get('stack')); } catch (e) { return json(res, 400, { error: e.message }); }
+  const web = stack.urls.web;
+  if (stack.delivery === 'docker') return json(res, 200, { stack: stack.stack, env: stack.env, web, verifiable: false, detail: 'a LAN address — Google and Apple cannot fetch its files, so the phone returns through the app\'s scheme here' });
+  const team = String(valuesFor(stack).APPLE_TEAM_ID ?? '').trim();
+  const android = stack.store?.androidPackage ?? '';
+  const ios = stack.store?.iosBundleId ?? '';
+  const saved = normalizeFingerprints(stack.store?.androidCertSha256);
+  const getJson = async (target) => {
+    const r = await fetchImpl(target, { signal: AbortSignal.timeout(15000), redirect: 'manual' });
+    if (!r.ok) throw new Error(`answered ${r.status}`);
+    return r.json();
+  };
+  const androidOut = { package: android, fingerprints: saved, state: 'missing', detail: '', google: null };
+  try {
+    const served = await getJson(`${web}/.well-known/assetlinks.json`);
+    const target = (Array.isArray(served) ? served : []).map((s) => s.target ?? {}).find((t) => t.package_name === android);
+    const fps = (target?.sha256_cert_fingerprints ?? []).map((f) => String(f).toUpperCase());
+    if (!saved.length) { androidOut.state = 'no-fingerprint'; androidOut.detail = 'no certificate fingerprint saved yet — paste the App signing key certificate SHA-256 from Play Console'; }
+    else if (saved.every((f) => fps.includes(f))) { androidOut.state = 'ok'; androidOut.detail = `served for ${android} ✓`; }
+    else { androidOut.state = 'stale'; androidOut.detail = target ? 'the served file carries other fingerprints — Deploy again publishes the saved one' : `the served file does not name ${android} yet — Deploy again publishes it`; }
+  } catch (e) { androidOut.detail = `assetlinks.json not served (${e.message})`; }
+  try {
+    const dal = await getJson(`https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=${encodeURIComponent(web)}&relation=delegate_permission/common.handle_all_urls`);
+    androidOut.google = (dal.statements ?? []).some((s) => s.target?.androidApp?.packageName === android);
+  } catch { androidOut.google = null; }
+  const iosOut = { bundle: ios, appId: team ? `${team}.${ios}` : null, state: 'missing', detail: '' };
+  try {
+    const served = await getJson(`${web}/.well-known/apple-app-site-association`);
+    const ids = (served?.applinks?.details ?? []).flatMap((d) => d.appIDs ?? []);
+    if (!team) { iosOut.state = 'no-team-id'; iosOut.detail = 'no Apple team id saved — the App Store Connect tile carries it'; }
+    else if (ids.includes(iosOut.appId)) { iosOut.state = 'ok'; iosOut.detail = `served for ${iosOut.appId} ✓`; }
+    else { iosOut.state = 'stale'; iosOut.detail = ids.length ? `the served file names ${ids.join(', ')} — Deploy again publishes ${iosOut.appId}` : `the served file names no app yet — Deploy again publishes ${iosOut.appId}`; }
+  } catch (e) { iosOut.detail = `apple-app-site-association not served (${e.message})`; }
+  return json(res, 200, { stack: stack.stack, env: stack.env, web, verifiable: true, android: androidOut, ios: iosOut });
+}
+
+async function appLinksSaveEndpoint(req, res) {
+  const body = await readBody(req);
+  const platform = String(body.platform ?? '');
+  const env = String(body.env ?? '');
+  let current;
+  try { current = loadEnv(platform, env); } catch (e) { return json(res, 400, { error: e.message }); }
+  const fps = normalizeFingerprints(body.androidCertSha256);
+  const bad = fps.find((f) => !FINGERPRINT_RE.test(f));
+  if (bad) return json(res, 400, { error: `not a SHA-256 certificate fingerprint: ${bad} — expected 32 hex pairs separated by colons, as Play Console → App signing → App signing key certificate shows it` });
+  saveEnv(platform, { ...current, store: { ...current.store, androidCertSha256: fps.length ? fps.join(',') : null } });
+  streamHead(res);
+  res.write(fps.length ? `▶ app signing certificate fingerprint${fps.length > 1 ? 's' : ''} saved for ${env}: ${fps.join(', ')}\n` : `▶ certificate fingerprint cleared for ${env}\n`);
+  res.write(platform === LCL
+    ? 'Re-run setup renders and restarts the web container with it (the LAN address stays unverifiable for Google and Apple anyway)\n'
+    : 'commit the platform config, then Deploy again — the web container serves the new assetlinks.json from then on\n');
+  res.write('\nthe phone verifies app links when the app is installed or updated: install the next build (or reinstall) once the file is live\n');
+  return res.end('[exit 0]\n');
+}
+
 /* ── OPT-IN store retirement: the DISTRIBUTION is withdrawn (Play internal releases, TestFlight builds); records stay ── */
 async function storeRetireEndpoint(req, res, netFetchImpl) {
   const body = await readBody(req);
@@ -1835,6 +1895,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/envs/update': (req, res) => envUpdateEndpoint(req, res, spawnImpl),
     'POST /api/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
     'POST /api/envs/store-id': (req, res) => storeIdEndpoint(req, res, spawnImpl),
+    'POST /api/envs/app-links': (req, res) => appLinksSaveEndpoint(req, res),
     'GET /api/access/users': (req, res) => accessUsersEndpoint(res, url(req), netFetchImpl),
     'POST /api/access/toggle': (req, res) => accessToggleEndpoint(req, res, netFetchImpl),
     'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),
@@ -1846,6 +1907,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'GET /api/local/cleanup-check': (req, res) => cleanupCheckEndpoint(res, spawnImpl),
     'POST /api/local/store-retire': (req, res) => storeRetireEndpoint(req, res, netFetchImpl),
     'GET /api/local/store-status': (req, res) => storeStatusEndpoint(res, url(req), netFetchImpl),
+    'GET /api/local/app-links': (req, res) => appLinksEndpoint(res, url(req), netFetchImpl),
     'POST /api/local/firebase-setup': (req, res) => firebaseSetupEndpoint(req, res, netFetchImpl, spawnImpl),
     'POST /api/local/ios-appid': (req, res) => iosAppIdEndpoint(req, res, netFetchImpl),
     'POST /api/local/mint-keystore': (req, res) => mintKeystoreEndpoint(req, res, spawnImpl),

@@ -105,6 +105,9 @@ function normalizeEnv(platform, raw, fromFile) {
     store: {
       androidPackage: raw.store?.androidPackage ?? `app.munni.${platform}.${env}`,
       iosBundleId: raw.store?.iosBundleId ?? raw.store?.androidPackage ?? `app.munni.${platform}.${env}`,
+      // the SHA-256 of the certificate Play signs the installed app with (App signing key certificate, Play Console) —
+      // Android App Links verify against it; one or more, comma-separated; null until the operator pastes it
+      androidCertSha256: raw.store?.androidCertSha256 ?? null,
     },
   };
 }

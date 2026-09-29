@@ -1135,6 +1135,7 @@ const S = {
   defaultBranch: null,
   pollTimer: null,
   accessUsers: {},         // env name -> the Access tab's last listing
+  appLinksByEnv: {},       // env name -> the served /.well-known files vs the config (the Phones tab's App links card)
   busyEnvs: new Set(),
 };
 
@@ -2289,6 +2290,7 @@ function pickPlatform(id) {
   S.skipped = new Set(LS.get('skipped.' + id, []));
   S.regVerdicts = LS.get('reg-verdicts.' + id, {});
   S.accessUsers = {};
+  S.appLinksByEnv = {};
   S.autoVerified = new Set();
   S.recentlyStored.clear();
   S.verdicts = {};
@@ -3091,6 +3093,7 @@ function renderWorkspaces() {
     for (const env of list) renderRegistrations(env);
     setTimeout(() => autoVerifyRegistrations().catch(() => {}), 800);
     setTimeout(() => autoLoadAccess().catch(() => {}), 1200);
+    setTimeout(() => autoCheckAppLinks().catch(() => {}), 1600);
   }
   setPill('envs-pill', list.length ? `${list.length} environment${list.length > 1 ? 's' : ''}` : 'none yet', list.length > 0);
   renderEnvStatus();
@@ -3257,6 +3260,58 @@ async function loadAccess(env, { quiet = false } = {}) {
     msg(`msg-access-${s}`, `✗ ${e.message}`, false);
   }
 }
+/* ── app links: the served /.well-known files of an environment against its config ── */
+async function checkAppLinks(env, { quiet = false } = {}) {
+  const s = env.env;
+  const epoch = platformEpoch;
+  if (!quiet) msg(`msg-applinks-${s}`, '', true);
+  setPill(`applinks-pill-${s}`, 'checking…', false);
+  let r;
+  try { r = await hjson(`/api/local/app-links?stack=${encodeURIComponent(env.stack)}`); }
+  catch (e) {
+    if (epoch !== platformEpoch) return;
+    setPill(`applinks-pill-${s}`, 'check failed', false);
+    if (!quiet) msg(`msg-applinks-${s}`, `✗ ${e.message}`, false);
+    return;
+  }
+  if (epoch !== platformEpoch) return;
+  S.appLinksByEnv[s] = r;
+  renderAppLinks(env);
+  renderTodo();
+}
+function renderAppLinks(env) {
+  const s = env.env;
+  const r = S.appLinksByEnv[s];
+  const list = document.getElementById(`applinks-list-${s}`);
+  if (!r || !list) return;
+  if (!r.verifiable) { setPill(`applinks-pill-${s}`, 'not verifiable here', false); return; }
+  const f = env.features ?? {};
+  const cls = (st) => (st === 'ok' ? 'ok' : (st === 'missing' ? 'bad' : 'warn'));
+  const rows = [];
+  if (f.android) rows.push({ name: `Android — ${r.android.package}`, cls: cls(r.android.state), label: r.android.detail, title: r.android.google === null ? '' : (r.android.google ? 'Google sees the statement ✓' : 'Google does not see the statement yet — it re-reads within minutes of a change') });
+  if (f.ios) rows.push({ name: `iOS — ${r.ios.appId ?? r.ios.bundle}`, cls: cls(r.ios.state), label: r.ios.detail, title: 'Apple\'s CDN re-reads the file within a day; a phone in developer mode reads it directly' });
+  list.innerHTML = rows.map((x) => `<li title="${escAttr(x.title)}"><span class="hn">${esc(x.name)}</span><span class="hs ${x.cls}"><i class="dot ${dotCls(x.cls)}"></i>${esc(x.label)}</span></li>`).join('');
+  const allOk = rows.length > 0 && rows.every((x) => x.cls === 'ok');
+  setPill(`applinks-pill-${s}`, allOk ? 'both served ✓' : (rows.some((x) => x.cls === 'bad') ? 'not served' : 'to do'), allOk);
+}
+async function applyAppLinks(env) {
+  const s = env.env;
+  const value = (document.getElementById(`applinks-fp-${s}`)?.value ?? '').trim();
+  const first = value.split(',')[0].trim();
+  if (value && !/^([0-9a-f]{2}:){31}[0-9a-f]{2}$/i.test(first)) { msg(`msg-applinks-${s}`, 'that is not a SHA-256 certificate fingerprint — 32 hex pairs separated by colons, as Play Console shows it', false); return; }
+  if (!(await streamLocal('/api/envs/app-links', { platform: S.platform, env: s, androidCertSha256: value }, `save ${env.label}'s app signing fingerprint`, { refresh: false }))) return;
+  delete S.appLinksByEnv[s];
+  if (isLcl()) { msg(`msg-applinks-${s}`, 'saved — Re-run setup restarts the web container with it', true); await refreshLocal(); return; }
+  await streamLocal('/api/config/commit', { message: `chore(platforms): ${S.platform} environment ${s} app signing fingerprint` }, 'commit + push the platform config', { refresh: false });
+  try { await envAction('deploy', env, null); msg(`msg-applinks-${s}`, 'saved, committed, Deploy dispatched — Check again once the run is through', true); }
+  catch (e) { msg(`msg-applinks-${s}`, `saved and committed — press Deploy again to publish it (${e.message})`, false); }
+  await refreshLocal();
+}
+/** the check runs itself once per page load per environment — the todo says whether the files are served */
+async function autoCheckAppLinks() {
+  if (!HELPER || isLcl()) return;
+  for (const env of S.envList) if (!S.appLinksByEnv[env.env] && (env.features?.android || env.features?.ios)) await checkAppLinks(env, { quiet: true }).catch(() => {});
+}
 /** the listing loads itself once per page load — the environment's todo then says whether anyone holds admin */
 async function autoLoadAccess() {
   if (!HELPER) return;
@@ -3311,6 +3366,10 @@ document.getElementById('env-cards')?.addEventListener('click', async (e) => {
   if (build) { const env = envByName(build.dataset.env); if (env) (build.dataset.nativeBuild === 'android' ? buildAndroid(env) : buildIos(env)); return; }
   const pkg = e.target.closest('[data-apply-package]');
   if (pkg) { const env = envByName(pkg.dataset.env); if (env) applyStoreId(pkg.dataset.applyPackage, env); return; }
+  const alc = e.target.closest('[data-applinks-check]');
+  if (alc) { const env = envByName(alc.dataset.env); if (env) checkAppLinks(env); return; }
+  const ala = e.target.closest('[data-applinks-apply]');
+  if (ala) { const env = envByName(ala.dataset.env); if (env) applyAppLinks(env); return; }
   const ver = e.target.closest('[data-verify]');
   if (ver) {
     const env = envByName(ver.dataset.env);
@@ -3489,6 +3548,31 @@ function phonesHtml(env) {
         </ol>
       </details>
     </div>`;
+  // app links: the phone opens the app straight from links — the bank's return, an invite, the sign-in return
+  const webUrl = stackUrls(env.stack)?.web ?? '';
+  const linksCard = !(f.android || f.ios) ? '' : (isLcl() ? `
+    <div class="card" data-applinks data-env="${s}">
+      <h3>App links — opening the app from links <span class="pill">LAN — not verifiable</span></h3>
+      <p class="why">Google and Apple verify a domain's <code>/.well-known</code> files from the internet; a LAN address has nothing they can reach, so on this computer's platform the phone returns through the app's scheme (one "open in munni?" question). The NAS platform gets the popup-less links.</p>
+    </div>` : `
+    <div class="card" data-applinks data-env="${s}">
+      <h3>App links — the phone opens the app straight from links <span class="pill" id="applinks-pill-${s}">not checked yet</span></h3>
+      <p class="why">The web container serves <code>/.well-known/assetlinks.json</code> (Android) and <code>/.well-known/apple-app-site-association</code> (iOS) for this environment's own app — the bank's return, a split invite and the sign-in return then open the app directly instead of asking "open in munni?". iOS is as code (the App Store Connect tile's team id + the bundle id). Android verifies against the certificate <b>Play</b> signs the installed app with — the one value no API hands out.</p>
+      ${f.android ? `<div class="runrow" style="align-items:center">
+        <label class="f" for="applinks-fp-${s}" style="margin:0">App signing SHA-256</label>
+        <input id="applinks-fp-${s}" type="text" style="max-width:520px;font-family:ui-monospace,monospace;font-size:12px" placeholder="AA:BB:CC:… (32 pairs)" value="${escAttr(env.store?.androidCertSha256 ?? '')}" autocomplete="off"/>
+        <button class="ghost" data-applinks-apply data-env="${s}">Save</button>
+      </div>
+      <details class="how"><summary>Where the fingerprint is (once per environment, by hand)</summary>
+        <ol>
+          <li><a href="https://play.google.com/console/" target="_blank" rel="noreferrer">Play Console</a> → the app <code>${esc(ids.android)}</code> → <b>Test and release → Setup → App signing</b> → <b>App signing key certificate</b> → copy the <b>SHA-256 certificate fingerprint</b> (not the upload key's — Play re-signs what the phone installs).</li>
+          <li>Paste it above and Save: the config is committed and Deploy runs, the web container serves the new file. Google reads it within minutes; the phone verifies it on the next install or update of the app.</li>
+        </ol>
+      </details>` : ''}
+      <ul class="health-list" id="applinks-list-${s}"></ul>
+      <div class="runrow"><button class="ghost" data-applinks-check data-env="${s}">Check</button><span class="envtag">fetches both files from ${esc(webUrl || 'the web host')} and asks Google whether it sees the statement — nothing changes</span></div>
+      <div class="msg" id="msg-applinks-${s}"></div>
+    </div>`);
   const apnsDone = Boolean(todoDone()[`${S.platform}:apns`]);
   const firebaseConsole = S.googleProject ? `https://console.firebase.google.com/project/${encodeURIComponent(S.googleProject)}/settings/cloudmessaging` : 'https://console.firebase.google.com/';
   const pushCard = !f.push ? '' : `
@@ -3505,7 +3589,7 @@ function phonesHtml(env) {
       </details>` : ''}
       <div class="msg" id="msg-push-${s}"></div>
     </div>`;
-  return android + ios + pushCard;
+  return android + ios + linksCard + pushCard;
 }
 function updateNativeIdLabels(env, androidId, iosId) {
   const s = env.env;
@@ -3800,6 +3884,11 @@ function envTodoItems(env) {
   items.push({ id: `admin-${s}`, title: 'Someone holds admin (admin portal + control cockpit)', detail: 'sign in to the app once with your own account, then Access → switch admin on for it', state: admins ? admins.some((x) => x.admin) : null, tab: 'access', env: s, sel: `#access-list-${s}` });
   if (f.android) items.push({ id: `play-record-${s}`, title: `Create the Play app record${ss?.appId ? ` ${ss.appId}` : ''}`, detail: 'Play Console → Create app; this page notices and turns publishing on', state: ss?.play ? ss.play.state === 'ready' : null, tab: 'phones', env: s, sel: '[data-phone="android"] details.how' });
   if (f.ios) items.push({ id: `asc-record-${s}`, title: `Create the App Store Connect record${ss?.iosAppId ? ` ${ss.iosAppId}` : ''}`, detail: 'New App with the pre-registered bundle id', state: ss?.ios ? ss.ios.state === 'ready' : null, tab: 'phones', env: s, sel: '[data-phone="ios"] details.how:last-of-type' });
+  if ((f.android || f.ios) && !isLcl()) {
+    const al = S.appLinksByEnv[s];
+    const wanted = [f.android ? al?.android?.state : null, f.ios ? al?.ios?.state : null].filter(Boolean);
+    items.push({ id: `applinks-${s}`, title: 'App links served — the phone opens the app from links', detail: f.android ? 'Android needs the Play app signing fingerprint once (the App links card); iOS is as code' : 'as code — the web container serves the file', state: al?.verifiable ? wanted.length > 0 && wanted.every((st) => st === 'ok') : null, tab: 'phones', env: s, sel: '[data-applinks]' });
+  }
   if ((f.android || f.ios) && f.push) items.push({ id: `push-${s}`, title: 'Push wired (Firebase apps registered)', detail: 'Build or Wire Firebase push does it once the roles are granted', state: ss?.firebase ? ss.firebase.state === 'ready' : null, soft: true, tab: 'phones', env: s, sel: `#fcm-status-pill-${s}` });
   const done = todoDone();
   return items.map((it) => ({ ...it, done: it.manual ? Boolean(done[`${S.platform}:${it.id}`]) : it.state === true }));
@@ -3825,7 +3914,7 @@ function renderTodo() {
     const box = document.getElementById(`env-todo-${env.env}`);
     if (box) box.innerHTML = items.length ? items.map((it, i) => todoLi(it, i)).join('') : '<li><div class="body"><div class="d">nothing — this environment needs no manual step with its features</div></div></li>';
     const regs = items.filter((it) => it.id.startsWith('reg-'));
-    const phones = items.filter((it) => /^(play-record|asc-record|push)-/.test(it.id));
+    const phones = items.filter((it) => /^(play-record|asc-record|push|applinks)-/.test(it.id));
     setPill(`tabpill-registrations-${env.env}`, regs.length ? `${regs.filter((it) => it.done).length}/${regs.length}` : '', regs.length > 0 && regs.every((it) => it.done));
     setPill(`tabpill-phones-${env.env}`, phones.length ? `${phones.filter((it) => it.done).length}/${phones.length}` : '', phones.length > 0 && phones.every((it) => it.done));
     const adm = items.find((it) => it.id === `admin-${env.env}`);

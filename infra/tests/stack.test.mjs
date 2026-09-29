@@ -148,7 +148,7 @@ test('nas stack: https hosts under the platform domain, GitHub environment per s
 test('native identity: store ids default to app.munni.<platform>.<env>, overrides stick, the scheme is always munni-<env>-<platform>', () => {
   const prod = loadStack('munni-nas-prod');
   assert.deepEqual(prod.native, { appId: 'app.munni.nas.prod', iosAppId: 'app.munni.nas.prod', label: 'munni prod-nas', scheme: 'munni-prod-nas' });
-  assert.deepEqual(prod.store, { androidPackage: 'app.munni.nas.prod', iosBundleId: 'app.munni.nas.prod' });
+  assert.deepEqual(prod.store, { androidPackage: 'app.munni.nas.prod', iosBundleId: 'app.munni.nas.prod', androidCertSha256: null });
   assert.equal(loadStack('munni-lcl-dev').native.scheme, 'munni-dev-lcl');
   fx.writeEnv('nas', { env: 'qa', slot: 2, label: 'munni QA', appChannel: 'production', store: { androidPackage: 'com.example.qa' } });
   try {
@@ -183,7 +183,7 @@ test('environments as files: nextSlot fills the lowest gap, saveEnv normalizes, 
   assert.deepEqual(qa, {
     env: 'qa', slot: 2, channel: 'dev', appChannel: 'staging', label: 'munni qa-nas',
     features: { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, banking: [], signin: [] },
-    store: { androidPackage: 'app.munni.nas.qa', iosBundleId: 'app.munni.nas.qa' },
+    store: { androidPackage: 'app.munni.nas.qa', iosBundleId: 'app.munni.nas.qa', androidCertSha256: null },
   });
   assert.deepEqual(loadEnv('nas', 'qa'), qa, 'what saveEnv returns is what the file loads');
   assert.equal(loadStack('munni-nas-qa').urls.web, `https://munni-qa-nas.${DOMAIN}`);

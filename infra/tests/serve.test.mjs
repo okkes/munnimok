@@ -717,3 +717,47 @@ test('cleanup check: roots of earlier https families still trusted on this PC ar
   const none = createApp({ token: 'tok', spawnImpl: scriptedSpawn([]) });
   assert.deepEqual((await call(none, { url: '/api/local/cleanup-check' })).json().byHand, []);
 });
+
+test('app links: the Play app-signing fingerprint is validated and saved into the environment config (cleared on empty); the check compares the served files with the config and asks Google', async () => {
+  const { loadEnv } = await import('../modules/stack.mjs');
+  await post(app, '/api/wizard/values', { values: { PLATFORM_DOMAIN: 'nas.example', APPLE_TEAM_ID: 'TEAM123456' }, platform: 'nas' });
+  const bad = await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: 'not-a-fingerprint' });
+  assert.equal(bad.statusCode, 400);
+  assert.match(bad.json().error, /32 hex pairs/);
+  const fp = '10:11:12:13:14:15:16:17:18:19:1A:1B:1C:1D:1E:1F:20:21:22:23:24:25:26:27:28:29:2A:2B:2C:2D:2E:2F';
+  const saved = await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: fp.toLowerCase() });
+  assert.equal(saved.statusCode, 200, saved.text());
+  assert.match(saved.text(), /fingerprint saved for prod/);
+  assert.equal(loadEnv('nas', 'prod').store.androidCertSha256, fp, 'upper-cased, as the file is served');
+  // the live host serves both files (for whatever package and bundle the config names by now) and Google lists the statement
+  const { androidPackage: pkg, iosBundleId: bundle } = loadEnv('nas', 'prod').store;
+  const files = {
+    assetlinks: [{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app', package_name: pkg, sha256_cert_fingerprints: [fp] } }],
+    aasa: { applinks: { details: [{ appIDs: [`TEAM123456.${bundle}`], components: [] }] } },
+    dal: { statements: [{ target: { androidApp: { packageName: pkg } } }] },
+  };
+  const seen = [];
+  const serving = async (target) => { seen.push(String(target)); return { ok: true, status: 200, json: async () => (String(target).includes('/.well-known/assetlinks.json') ? files.assetlinks : String(target).includes('apple-app-site') ? files.aasa : files.dal) }; };
+  const live = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: serving });
+  const r = await call(live, { url: '/api/local/app-links?stack=munni-nas-prod' });
+  assert.equal(r.statusCode, 200, r.text());
+  const body = r.json();
+  assert.equal(body.verifiable, true);
+  assert.equal(body.android.state, 'ok', JSON.stringify(body.android));
+  assert.equal(body.android.google, true, 'Google lists the statement');
+  assert.equal(body.ios.state, 'ok');
+  assert.equal(body.ios.appId, `TEAM123456.${bundle}`, 'the team id comes from the App Store Connect tile, the bundle id from the config');
+  assert.ok(seen.some((u) => u.startsWith('https://munni-prod-nas.nas.example/.well-known/assetlinks.json')), 'fetched from the environment\'s own web host');
+  // nothing served yet: both missing, Google unknown
+  const dark = createApp({ token: 'tok', probeImpl: async () => false, netFetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }) });
+  const miss = (await call(dark, { url: '/api/local/app-links?stack=munni-nas-prod' })).json();
+  assert.equal(miss.android.state, 'missing');
+  assert.equal(miss.ios.state, 'missing');
+  assert.equal(miss.android.google, null);
+  // an empty value clears the fingerprint; the check then says so instead of comparing
+  await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: '' });
+  assert.equal(loadEnv('nas', 'prod').store.androidCertSha256, null);
+  const none = (await call(live, { url: '/api/local/app-links?stack=munni-nas-prod' })).json();
+  assert.equal(none.android.state, 'no-fingerprint');
+  await post(app, '/api/wizard/values', { values: { APPLE_TEAM_ID: '' }, platform: 'nas' });
+});
