@@ -37,6 +37,11 @@ services:
       Ocr__BaseUrl: http://ocr:8884
       ImportWatch__Path: /import-watch
       ImportWatch__OwnerSub: ${IMPORT_WATCH_OWNER_SUB:-}
+      # the connector relay (#367) against the local control plane below:
+      # the development key instead of a machine token, a fixed salt
+      Connectors__BaseUrl: http://connector:8080/
+      Connectors__DevKey: localtest-connector-key
+      Connectors__SubjectSalt: localtest-subject-salt
     ports:
       - "8180:8080"
     volumes:
@@ -46,6 +51,25 @@ services:
         condition: service_healthy
       logto:
         condition: service_started
+      connector:
+        condition: service_started
+
+  # the connector control plane (#367, docs/connectors/deploy.md) in
+  # Development mode: Sqlite inside the container, the shared dev key,
+  # every pack with its mock providers — so the Connections hub has a
+  # catalogue to show and a mock store to sign in to. Real parties need
+  # a browser agent, which the local stack does not run.
+  connector:
+    restart: unless-stopped
+    build:
+      context: ../server
+      dockerfile: src/connectors/Connector.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      Connector__Auth__SharedSecret: localtest-connector-key
+    ports:
+      - "8187:8080"
 
   # receipt-photo OCR sidecar (receipts design): internal-only, stateless
   ocr:
