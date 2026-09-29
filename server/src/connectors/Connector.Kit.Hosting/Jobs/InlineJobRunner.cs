@@ -78,18 +78,25 @@ public sealed class InlineJobRunner(
         {
             var run = await ExecuteAsync(adapter, context, job, budget.Token);
 
+            // Every step the adapter reported reaches the row BEFORE the
+            // outcome does. Progress is drained by a pump of its own, and the
+            // queue discards a report that arrives after the job has gone
+            // terminal, so an outcome recorded first erased the tail of any
+            // run that finished faster than its own reports - which a mock
+            // does on every call and a real T1 adapter does on a good day.
+            await context.FlushProgressAsync();
+
             // Attached here rather than in each branch of ExecuteAsync, so a
             // job kind added later carries them without anybody remembering to.
             await ReportSuccessAsync(job, run with { Notes = context.Notes }, ct);
         }
         catch (ConnectorException ex)
         {
-            await ReportFailureAsync(job, ex.Code, ex.Detail, context.Notes, ct);
+            await FailAsync(context, job, ex.Code, ex.Detail, ct);
         }
         catch (OperationCanceledException) when (budget.IsCancellationRequested && !ct.IsCancellationRequested)
         {
-            await ReportFailureAsync(
-                job, ErrorCode.ProviderUnavailable, "inline job exceeded its time budget", context.Notes, ct);
+            await FailAsync(context, job, ErrorCode.ProviderUnavailable, "inline job exceeded its time budget", ct);
         }
         catch (Exception ex)
         {
@@ -97,8 +104,19 @@ public sealed class InlineJobRunner(
             // gets `internal` and a correlation id, never a stack trace.
             logger.LogError(ex, "adapter for {Provider} threw an unhandled exception on job {JobId}",
                 job.Provider, job.JobId);
-            await ReportFailureAsync(job, ErrorCode.Internal, ex.GetType().Name, context.Notes, ct);
+            await FailAsync(context, job, ErrorCode.Internal, ex.GetType().Name, ct);
         }
+    }
+
+    /// <summary>
+    /// The failure path flushes for the same reason the success path does: the
+    /// steps a run got through before it broke are the first thing anyone
+    /// reads about it.
+    /// </summary>
+    private async Task FailAsync(InlineJobContext context, LeasedJob job, ErrorCode code, string? detail, CancellationToken ct)
+    {
+        await context.FlushProgressAsync();
+        await ReportFailureAsync(job, code, detail, context.Notes, ct);
     }
 
     private static async Task<JobResultRequest> ExecuteAsync(

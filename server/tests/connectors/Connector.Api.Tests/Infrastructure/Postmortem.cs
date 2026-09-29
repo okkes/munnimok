@@ -23,6 +23,17 @@ namespace Connector.Api.Tests.Infrastructure;
 /// nothing else, so each occurrence teaches nothing and the next guess is as
 /// blind as the last. This makes the occurrence itself the evidence.
 ///
+/// The refresh-loop failure was run down on 2026-09-29 - three times in
+/// eleven runs, every one while another build or suite ran beside it - and
+/// its cause read from the code rather than from a captured message: the
+/// inline runner recorded a job's outcome before its progress pump had
+/// drained, and the guarded update discarded, correctly, the report that
+/// arrived after the job was terminal. A run that finished faster than its
+/// own reports - every run of a mock - lost its last steps, and a poll for
+/// them could only wait out its budget. The runner now flushes before it
+/// reports, as the agent runtime always had. The wrapper stays: the next
+/// flake deserves the same evidence.
+///
 /// Deliberately not a retry. A retry would make the suite green and the
 /// question permanently unanswerable.
 /// </summary>

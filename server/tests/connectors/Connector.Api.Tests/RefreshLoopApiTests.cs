@@ -45,61 +45,33 @@ public sealed class RefreshLoopApiTests(ShopApiFactory factory)
     private const string FixtureWindow = "2026-06-01";
 
     /// <summary>
-    /// How long a straggling progress report gets to land. Generous on
-    /// purpose: the point is to stop measuring the scheduler, not to measure
-    /// it more precisely.
-    /// </summary>
-    /// <remarks>
-    /// Ten seconds, until this test failed twice on 2026-08-12 on a machine
-    /// that was building containers alongside it. Thirty now, and the number
-    /// costs nothing: the loop below returns the instant it sees the step, so
-    /// a bigger budget is only ever spent on a run that was going to fail
-    /// anyway. A poll that exits early has no reason to be stingy.
-    /// <para>
-    /// NOT a proven diagnosis. The failure was never reproduced afterwards -
-    /// twelve consecutive full-suite runs, three of them under deliberate
-    /// load - and no message from either original failure was captured. This
-    /// is the budget being made load-tolerant, not a fix being claimed.
-    /// </para>
-    /// </remarks>
-    private static readonly TimeSpan ProgressBudget = TimeSpan.FromSeconds(30);
-
-    /// <summary>
-    /// Waits for an asynchronous progress report to reach ANY of this
-    /// connection's jobs.
+    /// Every fetch job of this connection carries the step, read once, the
+    /// moment the caller has seen the fetch finish.
     ///
-    /// Deliberately not "the latest job". <c>Db.LatestJob</c> orders by
-    /// <c>CreatedAt</c> and breaks ties on <c>Id</c>, and an id is random hex -
-    /// so when this connection's login and its two fetches land inside one
-    /// timestamp tick, which row is "latest" is decided by a coin toss, and on
-    /// the tosses that named the LOGIN job this assertion read an empty
-    /// steps_done and failed. The claim being made was never about one
-    /// particular row anyway: it is that typed progress survives the guarded
-    /// update at all.
+    /// No poll, and that is the assertion. Progress is drained by a pump of
+    /// its own, and the queue discards a report that arrives after the job
+    /// has gone terminal; until 2026-09-29 the inline runner recorded the
+    /// outcome without waiting for that pump, so a run that finished faster
+    /// than its own reports - every run of a mock - lost its last steps. That
+    /// was the intermittent failure of 2026-08-12, which a thirty-second poll
+    /// here could only wait out and never see: the report was not late, it
+    /// was gone. The runner now flushes before it reports, so a job the
+    /// caller has seen finish is a job whose steps are on the row.
     ///
-    /// Fails with every row it saw, so a real regression - the guarded update
-    /// discarding every report - still reads as a failure and not as a timeout
-    /// of unknown cause.
+    /// Every fetch job rather than "the latest": <c>Db.LatestJob</c> breaks
+    /// <c>CreatedAt</c> ties on a random id, and with the login and two
+    /// fetches inside one tick that once named the login job. Fails with
+    /// every row it saw, so a regression reads as a cause and not as a timeout.
     /// </summary>
-    private async Task AssertProgressRecordedAsync(string sessionId, string step)
+    private void AssertFetchesRecorded(string sessionId, string step)
     {
-        var clock = System.Diagnostics.Stopwatch.StartNew();
-        List<string> seen = [];
+        var seen = Db.Read(factory, db => db.Jobs
+            .Where(j => j.SessionId == sessionId && j.Kind == JobKind.Fetch)
+            .Select(j => j.StepsDoneJson)
+            .ToList());
 
-        while (clock.Elapsed < ProgressBudget)
-        {
-            seen = Db.Read(factory, db => db.Jobs
-                .Where(j => j.SessionId == sessionId)
-                .Select(j => j.StepsDoneJson)
-                .ToList());
-
-            if (seen.Exists(s => s.Contains(step, StringComparison.OrdinalIgnoreCase))) return;
-            await Task.Delay(100);
-        }
-
-        Assert.Fail(
-            $"no '{step}' in any steps_done for {sessionId} after {ProgressBudget.TotalSeconds:0}s; " +
-            $"saw [{string.Join(", ", seen)}]. All empty means ProgressAsync is discarding every report.");
+        Assert.Equal(2, seen.Count);
+        Assert.All(seen, steps => Assert.Contains(step, steps, StringComparison.OrdinalIgnoreCase));
     }
 
     // ── the owner's sentence, on the wire ────────────────────────────────
@@ -149,16 +121,9 @@ public sealed class RefreshLoopApiTests(ShopApiFactory factory)
             // Typed progress survived. It is only a courtesy field, but it is
             // written by the same guarded statement that stops a straggling report
             // resurrecting a finished job, so an empty one here would mean that
-            // guard was throwing every report away.
-            //
-            // Polled rather than read once. Progress is reported ASYNCHRONOUSLY -
-            // the inline runner drains a channel - which is the whole reason
-            // ProgressAsync had to become a guarded conditional update in the first
-            // place. So a report is routinely still in flight when the fetch that
-            // produced it has already returned, and reading the column the instant
-            // the response lands is a race this test would lose only on a busy
-            // machine. It did.
-            await AssertProgressRecordedAsync(connection.SessionId, "downloading");
+            // guard was throwing every report away - or, as it turned out, that
+            // the runner was reporting the outcome ahead of its own pump.
+            AssertFetchesRecorded(connection.SessionId, "downloading");
 
             // Not one of those fetches went near a human. One login job for the
             // life of this connection, and the session never left `active`.

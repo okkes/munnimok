@@ -176,7 +176,16 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
 
     public IReadOnlyList<JobStep> StepsDone => Snapshot();
 
-    public async ValueTask DisposeAsync()
+    /// <summary>
+    /// Closes the progress channel and waits for every report already in it
+    /// to reach the row. The runner calls this before it records the outcome:
+    /// the queue discards a report that arrives after the job has gone
+    /// terminal - rightly, a straggler must not resurrect a finished job - so
+    /// an outcome recorded first erased the last steps of any run that
+    /// finished faster than its own reports. Safe to call more than once; the
+    /// agent runtime flushes the same way before it posts a result.
+    /// </summary>
+    public async Task FlushProgressAsync()
     {
         _progress.Writer.TryComplete();
 
@@ -188,6 +197,11 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
         {
             // The run was cancelled; unreported progress is not worth a fuss.
         }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await FlushProgressAsync();
 
         try
         {

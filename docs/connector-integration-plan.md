@@ -614,3 +614,6 @@ departs from §7, and why:
 - **CI** is munni's: the images join `release-images.yml`, the per-assembly union coverage gate
   runs after the tests, Chromium is installed for the agent's browser tests.
 - Documentation is under `docs/connectors/` (README, architecture, contract, adapters, deploy).
+- **Found on the way**: the inline runner reported a job's outcome before its own progress pump had
+  drained, so a fast run lost its last steps — the intermittent `RefreshLoopApiTests` failure of
+  2026-08-12. It flushes first now, as the agent runtime always did.

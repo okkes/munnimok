@@ -487,8 +487,9 @@ public sealed class EfLeasedJobQueue(
         if (JobStateMachine.IsTerminal(job.State)) return job;
 
         // A job that produced a result was running, whether or not it ever got
-        // round to saying so: progress is reported asynchronously and a fast
-        // adapter can finish before its first report lands.
+        // round to saying so: both runtimes flush their progress before they
+        // report an outcome, but an agent's report can still be lost on the
+        // wire.
         if (job.State is JobState.Leased or JobState.AwaitingInput) job.State = JobState.Running;
 
         JobStateMachine.EnsureTransition(job.State, JobState.Succeeded);
