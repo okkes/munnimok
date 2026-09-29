@@ -19,9 +19,17 @@ export interface TopSplit {
  * "no open splits" all resolve to null and the block falls back to
  * its teaser. undefined = still loading (render nothing yet).
  */
+/** #361: the last answer per identity — a tab return shows the block at once, the fetch refreshes it */
+let lastTop: { key: string; value: TopSplit | null } | null = null;
+
 export function useTopSplit(): TopSplit | null | undefined {
   const { identity } = useSession();
-  const [top, setTop] = useState<TopSplit | null | undefined>(undefined);
+  const identityKey = identity ? `${identity.kind}:${'sub' in identity ? identity.sub : ''}` : '';
+  const [top, setState] = useState<TopSplit | null | undefined>(() => (lastTop?.key === identityKey ? lastTop.value : undefined));
+  const setTop = (value: TopSplit | null) => {
+    lastTop = { key: identityKey, value };
+    setState(value);
+  };
 
   useEffect(() => {
     if (identity?.kind !== 'user') {

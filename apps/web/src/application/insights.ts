@@ -17,7 +17,7 @@ const PERIOD_WINDOW = 6;
 /** the space's live insights, dismissed ones filtered out */
 export function useInsights(): Insight[] | undefined {
   const { store, spaceId } = useData();
-  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId], undefined, `space:${spaceId}`);
   const txs = useSpaceTransactions();
   const accounts = useSpaceAccounts();
   const recurrings = useRecurrings();
@@ -27,6 +27,8 @@ export function useInsights(): Insight[] | undefined {
     store,
     async () => (await store.bySpace('insightDismiss', spaceId)).filter((d) => d.deleted === 0),
     [spaceId],
+    undefined,
+    `insightDismiss:${spaceId}`, // #361: remount cache
   );
 
   return useMemo(() => {

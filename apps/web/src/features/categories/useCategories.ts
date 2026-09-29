@@ -34,7 +34,7 @@ export function useCategories(): Catalog {
     const cats = (await store.allRows('category')).filter((c) => c.deleted === 0);
     const doc = ((await store.metaGet('catalog'))?.value as CatalogDoc | undefined) ?? CATALOG_BASELINE;
     return { ...visibleCategoryRows(spaces, cats, spaceId), doc };
-  }, [spaceId]);
+  }, [spaceId], undefined, `cats:${spaceId}`); // #361: remount cache
 
   return useMemo(
     () => buildCatalog(visible?.rows ?? [], visible?.sharedScope ?? false, visible?.hiddenMains ?? [], visible?.doc),

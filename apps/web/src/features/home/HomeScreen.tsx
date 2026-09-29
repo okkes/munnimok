@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { useSpaceAccounts, useSpaceTransactions } from '@/application/transactions';
-import { localToday } from '@/application/recurring';
+import { localToday, useRecurrings } from '@/application/recurring';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
@@ -228,7 +228,7 @@ export function HomeScreen() {
   const { newTxs } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
-  const needsOnboarding = useQuery(store, async () => store.metaGet('needsOnboarding'), []);
+  const needsOnboarding = useQuery(store, async () => store.metaGet('needsOnboarding'), [], undefined, 'meta:needsOnboarding');
   useEffect(() => {
     if (needsOnboarding?.value === true) void navigate({ to: '/onboarding' });
   }, [needsOnboarding, navigate]);
@@ -271,11 +271,9 @@ export function HomeScreen() {
 
   // landing-zone block: recurring costs due within a week (user decision:
   // the home block shows only the upcoming ones; the tab has the rest)
-  const recurrings = useQuery(
-    store,
-    async () => (await store.bySpace('recurring', spaceId)).filter((r) => r.deleted === 0 && r.active === 1),
-    [spaceId],
-  );
+  // #361: the cached hook — a tab return renders the last rows instantly
+  const allRecurrings = useRecurrings();
+  const recurrings = useMemo(() => allRecurrings?.filter((r) => r.active === 1), [allRecurrings]);
   // landing-zone block: the 3 most urgent budgets (approved: 3)
   const budgetStatuses = useBudgetStatuses();
   const budgets = useBudgets();
@@ -931,11 +929,11 @@ export function HomeScreen() {
     );
   }
 
+  function renderUpcomingBlock() {
+    if (upcoming.length === 0 && upcomingDebts.length === 0) return null;
     // #347: the date alone made the reader do the math — say the days too
     const today = localToday();
     const dueLabel = (iso: string) => `${fmtShort(iso)} · ${dueInWords(daysUntil(iso, today), t)}`;
-  function renderUpcomingBlock() {
-    if (upcoming.length === 0 && upcomingDebts.length === 0) return null;
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">

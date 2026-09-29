@@ -19,6 +19,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Leave a space; history start date moves with honest consequences
 
 ## Home
+- [ ] Tab returns render instantly, 2026-09-29 (#361): every home hook renders its last rows the moment the tab mounts (categories, new-transaction markers, the onboarding flag, budgets and their space, events, goals, allocations, insights and their dismissals, the open split) — the cache the transactions, accounts and recurrings already used; nothing blanks and re-fills on the way back from another tab
 - [ ] Balance band modes and per-account picks (safe-to-spend converts through the display lens); blocks render, reorder, hide; a sparse desktop home centers one wider column; tab returns render instantly (remount cache, one-shot fade); the debts block has no see-all (the card is the door); a new-transaction row arrives with the New lens on
 - [ ] Quick-add FAB reaches all six doors
 - [ ] Review nudge, new transactions, upcoming costs and notifications reflect reality; see-all lands on the Upcoming page (recurring + loan dues together)

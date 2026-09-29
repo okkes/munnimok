@@ -20,6 +20,8 @@ export function useBudgets(): BudgetRow[] | undefined {
       return rows;
     },
     [spaceId],
+    undefined,
+    `budgets:${spaceId}`, // #361: remount cache
   );
 }
 
@@ -30,7 +32,7 @@ export function useBudgetStatuses(): BudgetStatus[] | undefined {
   const txs = useSpaceTransactions();
   const cats = useCategories();
   // the space's first weekday and period shape steer the cycles (#369, #370)
-  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId], undefined, `space:${spaceId}`);
   return useMemo(() => {
     if (!budgets || !txs) return undefined;
     const today = localToday();

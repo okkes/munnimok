@@ -14,6 +14,8 @@ export function useEvents(): EventRow[] | undefined {
       return rows;
     },
     [spaceId],
+    undefined,
+    `events:${spaceId}`, // #361: remount cache
   );
 }
 
