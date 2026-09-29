@@ -154,10 +154,7 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         var (_, view) = await LoginAsync(client, MockStore, "conn-receipts");
         var bundle = view["bundle"]!.GetValue<string>();
 
-        using var sync = await client.PostAsJsonAsync($"/connectors/{MockStore}/sync", new { connectionId = "conn-receipts", bundle, since = "2026-06-01" });
-        var body = await sync.Content.ReadFromJsonAsync<JsonObject>();
-        Assert.Equal(HttpStatusCode.OK, sync.StatusCode);
-        Assert.Equal("active", body!["state"]!.GetValue<string>());
+        var body = await SyncToTheEndAsync(client, MockStore, "conn-receipts", bundle, "2026-06-01");
         var ingested = body["ingested"]!;
         Assert.True(ingested["receipts"]!.GetValue<int>() > 0, body.ToJsonString());
         Assert.Equal(ingested["receipts"]!.GetValue<int>(), ingested["records"]!.GetValue<int>());
@@ -184,10 +181,8 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         AssertNothingStoredResembles(bundle);
 
         // the same sync again is a no-op: every op id is deterministic
-        using var again = await client.PostAsJsonAsync($"/connectors/{MockStore}/sync", new { connectionId = "conn-receipts", bundle, since = "2026-06-01" });
-        var repeat = await again.Content.ReadFromJsonAsync<JsonObject>();
-        Assert.Equal(HttpStatusCode.OK, again.StatusCode);
-        Assert.Equal(0, repeat!["ingested"]!["receipts"]!.GetValue<int>());
+        var repeat = await SyncToTheEndAsync(client, MockStore, "conn-receipts", bundle, "2026-06-01");
+        Assert.Equal(0, repeat["ingested"]!["receipts"]!.GetValue<int>());
         Assert.Equal(receipts.Count, factory.Read(db => db.EntityRows.Count(r => r.SpaceId == feedId && r.Entity == "receipt")));
     }
 
@@ -200,10 +195,8 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.Equal(HttpStatusCode.OK, status);
         var bundle = view["bundle"]!.GetValue<string>();
 
-        using var sync = await client.PostAsJsonAsync($"/connectors/{MockBank}/sync", new { connectionId = "conn-bank", bundle });
-        var body = await sync.Content.ReadFromJsonAsync<JsonObject>();
-        Assert.Equal(HttpStatusCode.OK, sync.StatusCode);
-        var ingested = body!["ingested"]!;
+        var body = await SyncToTheEndAsync(client, MockBank, "conn-bank", bundle);
+        var ingested = body["ingested"]!;
         Assert.True(ingested["accounts"]!.GetValue<int>() > 0, body.ToJsonString());
         Assert.True(ingested["transactions"]!.GetValue<int>() > 0, body.ToJsonString());
         Assert.Equal(0, ingested["dropped"]!.GetValue<int>());
@@ -245,10 +238,8 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.Equal(HttpStatusCode.OK, status);
         var bundle = view["bundle"]!.GetValue<string>();
 
-        using var sync = await client.PostAsJsonAsync($"/connectors/{MockRegistry}/sync", new { connectionId = "conn-registry", bundle });
-        var body = await sync.Content.ReadFromJsonAsync<JsonObject>();
-        Assert.Equal(HttpStatusCode.OK, sync.StatusCode);
-        Assert.True(body!["ingested"]!["positions"]!.GetValue<int>() > 0, body.ToJsonString());
+        var body = await SyncToTheEndAsync(client, MockRegistry, "conn-registry", bundle);
+        Assert.True(body["ingested"]!["positions"]!.GetValue<int>() > 0, body.ToJsonString());
 
         var feedId = ImportIds.PersonalFeedSpaceId(ConnectorIngest.RegistryFeedRef, sub);
         var positions = factory.Read(db => db.EntityRows.Where(r => r.SpaceId == feedId && r.Entity == "account").ToList());
@@ -361,6 +352,53 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
     }
 
     // ── helpers ──────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A sync, followed to its data whichever way the relay chose to answer.
+    /// A fetch that finishes inside the control plane's window comes back
+    /// 200 with the counts; one that does not comes back 202 with a job the
+    /// app polls and then collects with its bundle. BOTH are correct, and
+    /// which one arrives depends on how loaded the machine is — the test
+    /// host's one-second window makes the second routine on a CI runner. The
+    /// answer is the sum: what landed inline plus what the job landed.
+    /// </summary>
+    private static async Task<JsonObject> SyncToTheEndAsync(HttpClient client, string provider, string connectionId, string bundle, string? since = null)
+    {
+        using var sync = await client.PostAsJsonAsync($"/connectors/{provider}/sync", new { connectionId, bundle, since });
+        var first = await sync.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.True(sync.StatusCode is HttpStatusCode.OK or HttpStatusCode.Accepted, first!.ToJsonString());
+        if (sync.StatusCode == HttpStatusCode.OK) return first;
+
+        var jobId = first["jobId"]!.GetValue<string>();
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.Elapsed < TimeSpan.FromSeconds(30))
+        {
+            var job = await client.GetFromJsonAsync<JsonObject>($"/connectors/{provider}/jobs/{jobId}");
+            var state = job!["state"]!.GetValue<string>();
+            if (state == "succeeded") break;
+            Assert.False(state is "failed" or "expired", job.ToJsonString());
+            await Task.Delay(150);
+        }
+
+        using var collect = await client.PostAsJsonAsync($"/connectors/{provider}/jobs/{jobId}/collect", new { bundle });
+        var collected = await collect.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.True(collect.StatusCode == HttpStatusCode.OK, collected!.ToJsonString());
+
+        var ingested = new JsonObject();
+        foreach (var key in new[] { "records", "receipts", "accounts", "transactions", "positions", "dropped" })
+        {
+            ingested[key] = (first["ingested"]?[key]?.GetValue<int>() ?? 0) + (collected["ingested"]?[key]?.GetValue<int>() ?? 0);
+        }
+        var body = new JsonObject
+        {
+            ["sessionId"] = first["sessionId"]?.GetValue<string>(),
+            ["state"] = "active",
+            ["ingested"] = ingested,
+        };
+        var session = collected["session"] ?? first["session"];
+        if (session is not null) body["session"] = session.DeepClone();
+        return body;
+    }
 
     private static async Task<(HttpStatusCode Status, JsonObject View)> LoginAsync(HttpClient client, string provider, string connectionId)
     {
