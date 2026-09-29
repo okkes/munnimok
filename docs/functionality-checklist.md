@@ -14,6 +14,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] App lock: set up, unlock with PIN and passkey, disable; a refresh honors the configured auto-lock delay
 
 ## Spaces & sharing
+- [ ] Invitations, 2026-09-29 (#391): the members page carries the invitation switch (owner only; closed = no invite door; opening on a PIN-locked device asks the PIN first) — the setting left the space settings; an event that already has payments offers a quiet "Find more (n)" beside its payments header instead of the loud attach card, which stays for the first attach only (#379); the second leg of a same-day linked pair gets its own row edge (#352)
 - [ ] Create a space (period, currency, start date); edit its identity; switch spaces
 - [ ] Invite-lock toggle gates all sharing; invite an existing friend with a role; invite a new person from the members screen (accept joins the space)
 - [ ] Members: view, change role, remove; the removed member is told once and lands in another space; a read-only member keeps pulling quietly (no eviction popup, writes park)

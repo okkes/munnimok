@@ -17,7 +17,7 @@ describe('SpaceSharing (user identity, scripted server)', () => {
     indexedDB.deleteDatabase(USER_TEST_DB);
   });
 
-  it('a locked space disables inviting with an explainer; its quick link jumps to Settings (arc 4, #302)', async () => {
+  it('#391: a locked space shows the invitation switch off and no invite door; the owner opens invitations right there', async () => {
     renderAppAsUser('/spaces/s-user/members', {
       spaces: [{ id: 's-user', name: 'Personal', inviteLock: 1 }],
       api: {
@@ -29,15 +29,17 @@ describe('SpaceSharing (user identity, scripted server)', () => {
       },
     });
 
-    // the explainer replaces every invite tool — no invite door (#304:
-    // the one members-add button included); the lock lifts in Settings
-    expect(await screen.findByTestId('space-invite-locked')).toBeTruthy();
+    // the switch replaces every invite tool — no invite door (#304:
+    // the one members-add button included)
+    const toggle = await screen.findByTestId('space-invite-toggle');
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
     expect(screen.queryByTestId('space-members-add')).toBeNull();
     expect(screen.queryByTestId('space-addfriend-input')).toBeNull();
 
-    // #302: the note carries a quick link straight to the setting
-    fireEvent.click(screen.getByTestId('space-invite-locked-go'));
-    expect(await screen.findByTestId('screen-settings', {}, { timeout: 5000 })).toBeTruthy();
+    // opening invitations writes the space and the invite door appears
+    fireEvent.click(toggle);
+    expect(await screen.findByTestId('space-members-add', {}, { timeout: 5000 })).toBeTruthy();
+    expect(screen.getByTestId('space-invite-toggle').getAttribute('aria-checked')).toBe('true');
   }, 15_000);
 
   it('owner invites via the ONE sheet: search narrows, role travels, cancel confirms (#170/#171/#304/#303)', async () => {

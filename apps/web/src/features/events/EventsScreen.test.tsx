@@ -125,10 +125,15 @@ describe('Events (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach'));
     await waitFor(() => expect(screen.getByTestId('eventdetail-total').textContent).toMatch(/€[1-9]/), { timeout: 15_000 });
-    // the excluded transaction keeps the banner alive with exactly one left
-    await waitFor(() => expect(screen.getByTestId('eventdetail-suggest').textContent).toMatch(/1 /), { timeout: 8000 });
+    // #379: with payments attached the loud card yields to the quiet
+    // "find more" — the excluded transaction keeps it alive with exactly one
+    await waitFor(() => expect(screen.getByTestId('eventdetail-find-more').textContent).toMatch(/1/), { timeout: 8000 });
+    expect(screen.queryByTestId('eventdetail-suggest')).toBeNull();
     expect(screen.getByTestId('eventdetail-cats')).toBeTruthy();
     expect(screen.getByTestId('eventdetail-txs')).toBeTruthy();
+    // the quiet door opens the same picker
+    fireEvent.click(screen.getByTestId('eventdetail-find-more'));
+    await screen.findByTestId('eventpick-list');
   }, 45_000);
 
   it('#143: a split offers its parts one by one — the container itself is never a pick', async () => {
@@ -184,12 +189,12 @@ describe('Events (demo identity)', () => {
     expect(screen.getByTestId('eventpick-all').dataset.state).toBe('all');
     fireEvent.click(screen.getByTestId('eventpick-all'));
     expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByTestId('eventpick-all').dataset.state).toBe('none');
     fireEvent.click(screen.getByTestId('eventpick-all'));
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false));
   }, 20_000);
 
   it('tapping a breakdown category unfolds subs and filters the payments (user request)', async () => {
-    expect(screen.getByTestId('eventpick-all').dataset.state).toBe('none');
     renderApp('/events');
     await screen.findByTestId('screen-events');
     const card = await createEvent('Rome trip', isoDaysAgo(180), isoDaysAgo(160));

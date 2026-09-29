@@ -554,7 +554,7 @@ export function TransactionsScreen() {
                       </div>
                       <div className="rounded-card bg-bg px-2">
                         {renderRow(tx, listIndex)}
-                        {renderRow(list[listIndex + 1], listIndex)}
+                        {renderRow(list[listIndex + 1], listIndex + 1)}
                       </div>
                     </div>
                   );
