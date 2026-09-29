@@ -1,5 +1,6 @@
 import UIKit
 import Capacitor
+import AuthenticationServices
 import FirebaseCore
 import FirebaseMessaging
 
@@ -90,4 +91,72 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         return ApplicationDelegateProxy.shared.application(application, continue: userActivity, restorationHandler: restorationHandler)
     }
 
+}
+
+// MARK: - the platform auth session (docs/native-auth-popupless.md, NA1)
+//
+// Sign-in runs in ASWebAuthenticationSession: the system sheet shares
+// Safari's cookies, and the callback scheme is handed straight back to
+// JS — no "Open in munni?" question at the end of the flow, which every
+// Safari-redirect login is structurally bound to. One consent alert at
+// the start is the sanctioned price (prefersEphemeralWebBrowserSession
+// stays false so the Logto cookie survives and later logins are instant).
+@objc(AuthSessionPlugin)
+public class AuthSessionPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "AuthSessionPlugin"
+    public let jsName = "AuthSession"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "start", returnType: CAPPluginReturnPromise)
+    ]
+    private var session: ASWebAuthenticationSession?
+    private var presenter: AuthSessionPresenter?
+
+    @objc func start(_ call: CAPPluginCall) {
+        guard let urlString = call.getString("url"), let url = URL(string: urlString) else {
+            call.reject("url is required")
+            return
+        }
+        let scheme = call.getString("callbackScheme")
+        DispatchQueue.main.async {
+            let session = ASWebAuthenticationSession(url: url, callbackURLScheme: scheme) { callbackURL, error in
+                self.session = nil
+                if let error = error {
+                    let nsError = error as NSError
+                    if nsError.domain == ASWebAuthenticationSessionErrorDomain,
+                       nsError.code == ASWebAuthenticationSessionError.canceledLogin.rawValue {
+                        call.resolve(["url": NSNull(), "cancelled": true])
+                        return
+                    }
+                    call.reject(error.localizedDescription)
+                    return
+                }
+                call.resolve(["url": callbackURL?.absoluteString ?? NSNull()])
+            }
+            session.prefersEphemeralWebBrowserSession = false
+            let presenter = AuthSessionPresenter(window: self.bridge?.viewController?.view.window)
+            self.presenter = presenter
+            session.presentationContextProvider = presenter
+            self.session = session
+            if !session.start() {
+                self.session = nil
+                call.reject("the auth session could not start")
+            }
+        }
+    }
+}
+
+private class AuthSessionPresenter: NSObject, ASWebAuthenticationPresentationContextProviding {
+    private let window: UIWindow?
+    init(window: UIWindow?) { self.window = window }
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        return window ?? ASPresentationAnchor()
+    }
+}
+
+// Main.storyboard names this controller so the plugin is registered on the
+// bridge (the pattern Capacitor documents for a plugin that lives in the app)
+class MunniViewController: CAPBridgeViewController {
+    override open func capacitorDidLoad() {
+        bridge?.registerPluginInstance(AuthSessionPlugin())
+    }
 }
