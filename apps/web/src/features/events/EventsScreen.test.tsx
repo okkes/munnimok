@@ -52,6 +52,23 @@ describe('Events (demo identity)', () => {
     expect(document.querySelector('[data-testid^="event-card-"]')).toBeNull();
   }, 15_000);
 
+  it('#366: an ask whose edits settle underneath it still answers — Discard closes, nothing is left hidden', async () => {
+    renderApp('/events');
+    await screen.findByTestId('screen-events');
+    fireEvent.click(await screen.findByTestId('events-add'));
+    fireEvent.change(await screen.findByTestId('eventform-name'), { target: { value: 'Ski trip' } });
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await screen.findByTestId('sheet-discard');
+    // the draft goes back to its baseline while the ask is up
+    fireEvent.change(screen.getByTestId('eventform-name'), { target: { value: '' } });
+    expect(screen.getByTestId('sheet-discard')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('sheet-discard'));
+    await waitFor(() => expect(screen.queryByTestId('sheet-discard')).toBeNull());
+    // the form is closed for real — the add door opens a fresh one
+    fireEvent.click(await screen.findByTestId('events-add'));
+    expect((await screen.findByTestId('eventform-name') as HTMLInputElement).value).toBe('');
+  }, 15_000);
+
   it('creates an event; the card shows range and a zero total', async () => {
     renderApp('/events');
     await screen.findByTestId('screen-events');

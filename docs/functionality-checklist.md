@@ -26,6 +26,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 - [ ] Review nudge, new transactions, upcoming costs and notifications reflect reality; see-all lands on the Upcoming page (recurring + loan dues together)
 
 ## Transactions
+- [ ] Sheets, 2026-09-29: a pull-down that starts on a text field (the amount input) closes the sheet like anywhere else — only sliders, native pickers and the color wheel keep their own gesture (#364); Discard never resurrects the sheet it is closing (the library’s isOpen flipped back for one render and its state machine froze with an invisible backdrop eating every tap), the ask survives a draft that settles underneath it, and a body ghosted for a close animation answers taps again on the next open (#366)
 - [ ] List: search (title + amount, highlighted), quick filters, filter sheet; filters survive a detail detour; with linked shown separately, same-day pairs sit together as one visual unit
 - [ ] Transfer pairs collapse to one row; per-account view keeps both legs
 - [ ] Add/edit a manual transaction end to end (amount math, account, category, counterparty — required for movement categories, date guard)
