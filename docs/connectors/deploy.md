@@ -101,3 +101,13 @@ token the munni API presents; the bundle key ring, the enrollment HMAC key
 and the fleet enrollment code as generated secrets in the platform's secrets
 manifest; a per-environment kill switch. None of it exists yet — this page
 will say what it renders when it does.
+
+What the munni API expects from it is settled by the relay (slice M1,
+[relay.md](relay.md)): `Connectors:BaseUrl` (the control plane on the
+environment's network), `Connectors:SubjectSalt` (generated per
+environment), the machine application `Connectors:M2mAppId` /
+`Connectors:M2mAppSecret` with `Connectors:Audience` (the control plane's
+`Connector:Auth:Audience`, its token granted the `connector:admin` scope for
+the operator routes), and `Connectors:AgentPublicUrl` when household agents
+are published. The development transport (`Connectors:DevKey` against
+`Connector:Auth:SharedSecret`) is for the local loop only.

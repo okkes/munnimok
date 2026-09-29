@@ -617,3 +617,45 @@ departs from §7, and why:
 - **Found on the way**: the inline runner reported a job's outcome before its own progress pump had
   drained, so a fast run lost its last steps — the intermittent `RefreshLoopApiTests` failure of
   2026-08-12. It flushes first now, as the agent runtime always did.
+
+**2026-09-29 — M1 delivered** (`feat(api): the connector relay`; docs/connectors/relay.md). Where it
+departs from §5, and why:
+
+- **No `{service}` segment.** Phase A unified the three control planes into one host per environment,
+  so the relay has one upstream (`Connectors:BaseUrl`), one audience, one subject salt, and the routes
+  are `/connectors/{provider}/…`; a provider's kind comes from the catalogue.
+- **The app's casing.** Every connector document — sessions, jobs, challenges, the catalogue, the
+  error envelope — is rendered in camelCase like the rest of this API; `config`, `inputs`, `params`
+  and `raw` keep their keys. The plan's "JSON pass-through" would have left the app with two
+  conventions for the same field.
+- **Events: the bridge only.** A login or job in flight is republished on `/sync/events` as
+  `{ kind: "connector", … }` (§5.4); there is no per-session SSE route on the relay. The bridge
+  starts when the relay answers with a run still in flight, not when a client subscribes.
+- **`connectionId` on login.** The client's stable id for a connection rides every login, so a
+  receipt is keyed by the connection (`rcpt:{provider}:{connectionId}:{external id}`) rather than by the
+  session that happened to fetch it — a re-login would otherwise have duplicated every receipt.
+- **Jobs are collected, not polled into existence.** `GET …/jobs/{id}` is read-only (the page of
+  records never reaches the app); `POST …/jobs/{id}/collect { bundle }` ingests, acknowledges and
+  returns the rotated bundle — the acknowledgement needs a ticket, the ticket needs the bundle, and
+  only the app holds it.
+- **Ingest files per record, not per resource**: a bank's transactions pass carries its accounts;
+  the connector's id prefix says what a record is.
+- **Documents as a list.** A receipt carries `documents[]` (`mime`, `dataUrl`, `filename`,
+  `sizeBytes`) rather than one `document`, for the reason the connector made it a list: Amazon
+  issues one invoice per shipment.
+- **No overlay at ingest.** A connector bank feed has no target space when it is created (attach is
+  the user's explicit step), so no `txMeta` is written; the GoCardless ingest writes one because a
+  consent starts from a space.
+- **No `demo_identity` code.** Demo and offline identities carry no token, so they never reach the
+  relay; there is nothing server-side to refuse.
+- **The kill switch's states are the control plane's own** — `healthy`, `degraded`, `paused`,
+  `retired`; contract.md said `active` and was wrong.
+- **Audit**: munni has no server-side activity table (the activity log is the members' own, per
+  space); an operator's pause, resume or revoke is written to the server log with the operator's
+  subject.
+- **Deferred**: the demo seed's connections (client-side shapes, M3); `ConnectorScheduleService`
+  for household-agent custody (M5, with the first T4 provider in the app); a `provider` narrowing of
+  the client's `AccountSource`/`ReceiptSource` unions (M3, where the rows are read).
+- **Tests** boot the control plane in-process (`Connector.Kit.Hosting` + the packs' mocks, Sqlite)
+  behind the relay's HttpClient instead of pulling the images as test containers: the same code
+  path, no Docker in the unit-test lane.
