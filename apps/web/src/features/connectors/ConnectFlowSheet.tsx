@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import { en } from '@/i18n/en';
@@ -12,9 +13,9 @@ import { Sheet } from '@/ui/Sheet';
 import { ConnectorError, connectorApi, deviceClass } from './api';
 import { ChallengeCard } from './ChallengeCard';
 import { subscribeConnectorFrames } from './events';
-import { copyKey, errorKey, formSteps, progressKey, splitValues, validateValues } from './manifestForm';
+import { copyKey, errorKey, formSteps, needsOwnComputer, progressKey, splitValues, validateValues } from './manifestForm';
 import type { FieldProblem, FormField } from './manifestForm';
-import type { ErrorEnvelope, ProviderManifest, SessionView } from './types';
+import type { AgentView, ErrorEnvelope, ProviderManifest, SessionView } from './types';
 
 /**
  * The connect flow (§10.2): the manifest's steps as a form, then the run
@@ -73,14 +74,19 @@ export function ConnectFlowSheet({
   onDone: (result: AdoptResult, reconnect: boolean) => void;
 }>) {
   const { t } = useLang();
+  const navigate = useNavigate();
   const { store } = useData();
   const ops = useConnectionOps();
   const steps = useMemo(() => (manifest ? formSteps(manifest) : []), [manifest]);
+  const ownComputer = !!manifest && needsOwnComputer(manifest);
   const [phase, setPhase] = useState<Phase>({ kind: 'form' });
   const [stepIndex, setStepIndex] = useState(0);
   const [values, setValues] = useState<Record<string, string>>({});
   const [attempted, setAttempted] = useState(false);
   const [busy, setBusy] = useState(false);
+  // a party that only talks to a browser on the person's own machine: the agent that will hold the sign-in
+  const [agents, setAgents] = useState<AgentView[] | null>(null);
+  const [agentId, setAgentId] = useState<string | null>(null);
   const connectionId = useRef('');
   const attempt = useRef(0);
   const stopFollowing = useRef<() => void>(() => {});
@@ -93,10 +99,29 @@ export function ConnectFlowSheet({
     setValues({});
     setAttempted(false);
     setBusy(false);
+    setAgents(null);
+    setAgentId(null);
     connectionId.current = reconnectId ?? crypto.randomUUID();
     attempt.current += 1;
     return () => stopFollowing.current();
   }, [open, reconnectId]);
+
+  useEffect(() => {
+    if (!open || !ownComputer) return;
+    let alive = true;
+    connectorApi
+      .agents()
+      .then((list) => {
+        if (!alive) return;
+        const usable = list.filter((a) => !a.revoked);
+        setAgents(usable);
+        setAgentId(usable.find((a) => a.online)?.id ?? null);
+      })
+      .catch(() => alive && setAgents([]));
+    return () => {
+      alive = false;
+    };
+  }, [open, ownComputer]);
 
   if (!manifest) return null;
   const provider = manifest.id;
@@ -173,13 +198,19 @@ export function ConnectFlowSheet({
         inputs: Object.keys(inputs).length ? inputs : undefined,
         config: Object.keys(config).length ? config : undefined,
         credentialBundle: device?.credentialBundle,
+        preferAgent: ownComputer ? (agentId ?? undefined) : undefined,
         idempotencyKey: `${connectionId.current}:${attempt.current}`,
       });
       await handleView(view);
     });
 
+  const toAgents = () => {
+    onOpenChange(false);
+    void navigate({ to: '/connections/agents' });
+  };
+
   const next = () => {
-    if (Object.keys(problems).length > 0) {
+    if (Object.keys(problems).length > 0 || (ownComputer && !agentId)) {
       setAttempted(true);
       return;
     }
@@ -267,6 +298,39 @@ export function ConnectFlowSheet({
               <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] leading-relaxed text-ink-3" data-testid="connect-web-note">
                 {t('connect.webNote')}
               </p>
+            )}
+            {ownComputer && stepIndex === 0 && (
+              <div className="flex flex-col gap-2" data-testid="connect-agent-step">
+                <p className="text-[12px] leading-relaxed text-ink-3">{t('connect.agentNote')}</p>
+                {agents !== null && agents.length === 0 && (
+                  <>
+                    <p className="text-[12px] text-warning" data-testid="connect-agent-none">
+                      {t('connect.agentNone')}
+                    </p>
+                    <Button variant="outline" data-testid="connect-agent-setup" onClick={toAgents}>
+                      {t('connect.agentSetup')}
+                    </Button>
+                  </>
+                )}
+                {agents !== null && agents.length > 0 && (
+                  <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="connect-agents">
+                    {agents.map((agent) => (
+                      <button
+                        key={agent.id}
+                        data-testid={`connect-agent-${agent.id}`}
+                        disabled={!agent.online}
+                        onClick={() => setAgentId(agent.id)}
+                        className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0 disabled:opacity-60"
+                      >
+                        <Icon name={agentId === agent.id ? 'radiobox-marked' : 'radiobox-blank'} size={18} color={agentId === agent.id ? 'var(--m-accent)' : 'var(--m-ink-4)'} />
+                        <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{agent.name}</span>
+                        {!agent.online && <span className="text-[11px] text-ink-4">{t('connect.agentOffline')}</span>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <FormBlockerNote show={attempted && !agentId} text={t('connect.agentNone')} testId="connect-agent-blocker" />
+              </div>
             )}
             {step && (
               <>

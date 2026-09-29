@@ -2,8 +2,10 @@ import { apiFetch } from '@/lib/api';
 import { isNativeApp } from '@/lib/platform';
 import type { DeviceClass } from './manifestForm';
 import type {
+  AgentView,
   BindingView,
   Catalogue,
+  EnrollmentView,
   ErrorEnvelope,
   JobView,
   LiveFrame,
@@ -179,5 +181,20 @@ export const connectorApi = {
         body: JSON.stringify(bundle ? { bundle } : {}),
       })
     ).body;
+  },
+
+  // ── the household agents (§10.4) ──────────────────────────────────────
+
+  async agents(): Promise<AgentView[]> {
+    return (await call<{ agents: AgentView[] }>('/agents')).body.agents;
+  },
+
+  /** a one-time code and the compose line that starts the agent; the address is null where agents are not offered */
+  async enrol(name: string): Promise<EnrollmentView> {
+    return (await call<EnrollmentView>('/agents/enrollment', json({ name }))).body;
+  },
+
+  async revokeAgent(agentId: string): Promise<void> {
+    await call<unknown>(`/agents/${agentId}`, { method: 'DELETE' });
   },
 };

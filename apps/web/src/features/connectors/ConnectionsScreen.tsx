@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useLang } from '@/i18n';
-import type { TranslationKey } from '@/i18n';
+import type { Lang, TranslationKey } from '@/i18n';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
 import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts } from '@/application/connections';
@@ -22,8 +22,8 @@ import { ConnectionSyncCard } from './ConnectionSyncCard';
 import type { SyncReport } from './connectorSync';
 import { kindIcon, partyLogo } from './logos';
 import { errorKey } from './manifestForm';
-import type { JobView, ProviderKind, ProviderManifest } from './types';
-import { useCatalogue } from './useCatalogue';
+import type { BindingView, JobView, ProviderKind, ProviderManifest } from './types';
+import { useCatalogue, useRelayBindings } from './useCatalogue';
 
 /** the hub's sections, in the order they read */
 const SECTIONS: { kind: ProviderKind; captionKey: 'conn.banks' | 'conn.shops' | 'conn.registries' }[] = [
@@ -74,6 +74,36 @@ function SyncResultLine({ id, state }: Readonly<{ id: string; state: 'busy' | Sy
   );
 }
 
+interface StateLine {
+  text: string;
+  warn: boolean;
+}
+
+/** what the relay heard last, where it knows more than this device; null where it does not */
+function relayLine(binding: BindingView | undefined, t: Translate, lang: Lang): StateLine | null {
+  if (!binding) return null;
+  if (binding.state === 'awaiting_input') return { text: t('conn.state.asking'), warn: true };
+  if (binding.state === 'needs_reauth') return { text: t('conn.state.reconnect'), warn: true };
+  if (binding.state === 'blocked') return { text: t('conn.state.blocked'), warn: true };
+  if (!binding.scheduled) return null;
+  if (binding.lastScheduleError) return { text: t('conn.state.scheduledError', { what: t(errorKey(binding.lastScheduleError)) }), warn: true };
+  const text = binding.lastScheduledSyncAt ? t('conn.state.scheduled', { when: fmtTimeAgo(binding.lastScheduledSyncAt, lang) }) : t('conn.state.scheduledSoon');
+  return { text, warn: false };
+}
+
+/** what this device knows about the connection */
+function deviceLine(view: ConnectionView, t: Translate, lang: Lang): StateLine {
+  const { device, meta, hasBundle } = view;
+  if (!device) return meta.status === 'expired' ? { text: t('conn.state.reconnect'), warn: true } : { text: t('conn.state.elsewhere'), warn: false };
+  if (device.state === 'blocked') return { text: t('conn.state.blocked'), warn: true };
+  if (device.state === 'awaiting_input') return { text: t('conn.state.asking'), warn: true };
+  if (device.state !== 'active' || meta.status === 'expired') return { text: t('conn.state.reconnect'), warn: true };
+  if (!hasBundle) return { text: t('conn.state.signIn'), warn: true };
+  if (device.lastError?.code === 'rate_limited') return { text: t('conn.state.wait'), warn: false };
+  const text = device.lastSyncAt ? t('conn.state.synced', { when: fmtTimeAgo(device.lastSyncAt, lang) }) : t('conn.state.neverSynced');
+  return { text, warn: false };
+}
+
 /** a job's question while a sync runs from the hub */
 interface JobAsk {
   job: JobView;
@@ -99,6 +129,7 @@ export function ConnectionsScreen() {
   const bankAccounts = useConnectorAccounts();
   const ops = useConnectionOps();
   const catalogue = useCatalogue();
+  const bindings = useRelayBindings();
   const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const links = useQuery(store, async () => (await store.allRows('storeConnLink')).filter((l) => l.deleted === 0), []);
 
@@ -156,24 +187,14 @@ export function ConnectionsScreen() {
   const stateLine = (view: ConnectionView) => {
     const syncState = syncStates[view.meta.id];
     if (syncState) return <SyncResultLine id={view.meta.id} state={syncState} />;
-    const testId = `conn-state-${view.meta.id}`;
-    const warn = (text: string) => (
-      <span className="block text-[11px] text-warning" data-testid={testId}>
-        {text}
+    // what the relay heard last wins where it knows more than this device: a
+    // question the scheduler left, a session it found dead, a sync it ran itself
+    const line = relayLine(bindings.get(view.meta.id), t, lang) ?? deviceLine(view, t, lang);
+    return (
+      <span className={`block text-[11px] ${line.warn ? 'text-warning' : 'text-ink-4'}`} data-testid={`conn-state-${view.meta.id}`}>
+        {line.text}
       </span>
     );
-    const calm = (text: string) => (
-      <span className="block text-[11px] text-ink-4" data-testid={testId}>
-        {text}
-      </span>
-    );
-    if (!view.device) return view.meta.status === 'expired' ? warn(t('conn.state.reconnect')) : calm(t('conn.state.elsewhere'));
-    if (view.device.state === 'blocked') return warn(t('conn.state.blocked'));
-    if (view.device.state === 'awaiting_input') return warn(t('conn.state.asking'));
-    if (view.device.state !== 'active' || view.meta.status === 'expired') return warn(t('conn.state.reconnect'));
-    if (!view.hasBundle) return warn(t('conn.state.signIn'));
-    if (view.device.lastError?.code === 'rate_limited') return calm(t('conn.state.wait'));
-    return calm(view.device.lastSyncAt ? t('conn.state.synced', { when: fmtTimeAgo(view.device.lastSyncAt, lang) }) : t('conn.state.neverSynced'));
   };
 
   /** the one action a state asks for */
@@ -296,7 +317,7 @@ export function ConnectionsScreen() {
             <Icon name="dots-horizontal" size={18} />
           </button>
         </div>
-        {kind === 'bank' ? accountsOf(view) : usedIn(view)}
+        {kind === 'store' ? usedIn(view) : accountsOf(view)}
       </div>
     );
   };
@@ -354,6 +375,22 @@ export function ConnectionsScreen() {
             )}
           </div>
         </div>
+
+        {/* the household agents (§10.4): the parties that only talk to a browser on the person's own connection */}
+        {signedIn && (
+          <button
+            data-testid="conn-agents"
+            onClick={() => void navigate({ to: '/connections/agents' })}
+            className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
+          >
+            <Icon name="desktop-classic" size={20} color="var(--m-ink-2)" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] text-ink">{t('conn.agents')}</span>
+              <span className="block text-[12px] text-ink-4">{t('conn.agentsSub')}</span>
+            </span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+        )}
 
         {/* the browsing door: every receipt, photos included */}
         <button

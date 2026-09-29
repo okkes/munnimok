@@ -32,6 +32,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
         tr: 'Bağlantılar’da bankalar da var: ING ya da ASN’yi munni’nin kendi platformu üzerinden bağla — ING uygulama onayıyla, ASN sana aktarılan kendi sayfasında — ve bankanın verdiği hesaplar kartın altında belirir; her birinin, alanın hesaplar ekranına hesap seçili olarak inen bir bağla düğmesi vardır. Hiçbir şey kendiliğinden bir alana katılmaz.',
       },
       {
+        en: 'Your own computer: some parties only talk to a browser on your own connection (DigiD, a bank that keeps a signed-in profile). Enrol your computer once with a pasted line and those parties sign in there and sync by themselves — munni tells you on the card when one has a question. Registries (BKR, DUO) join Connections too.',
+        nl: 'Je eigen computer: sommige partijen praten alleen met een browser op je eigen verbinding (DigiD, een bank die een ingelogd profiel bijhoudt). Meld je computer één keer aan met een geplakte regel en die partijen loggen daar in en synchroniseren vanzelf — munni zegt het op de kaart als er een vraag is. Ook registers (BKR, DUO) zitten nu in Koppelingen.',
+        tr: 'Kendi bilgisayarın: bazı taraflar yalnızca kendi bağlantındaki bir tarayıcıyla konuşur (DigiD, giriş yapılmış profil tutan bir banka). Bilgisayarını yapıştırılan bir satırla bir kez kaydet; o taraflar orada giriş yapar ve kendiliğinden eşitlenir — birinin sorusu olduğunda munni bunu kartta söyler. Kayıt kurumları (BKR, DUO) da Bağlantılar’a katıldı.',
+      },
+      {
         en: 'Fetched receipts bring their invoices along — open the PDF right from the receipt.',
         nl: 'Opgehaalde bonnen nemen hun facturen mee — open de pdf direct vanuit de bon.',
         tr: 'Getirilen fişler faturalarını da getirir — PDF’i doğrudan fişten aç.',

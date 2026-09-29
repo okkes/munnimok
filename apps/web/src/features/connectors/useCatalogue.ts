@@ -2,7 +2,45 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useData } from '@/app/data';
 import { connectorsAvailable } from '@/application/connections';
 import { ConnectorError, connectorApi } from './api';
-import type { Catalogue, ErrorEnvelope, ProviderManifest } from './types';
+import type { BindingView, Catalogue, ErrorEnvelope, ProviderManifest, RelayInfo } from './types';
+
+/** what this environment runs: null when the relay is absent or the identity never calls out; undefined while asking */
+export function useRelayInfo(): RelayInfo | null | undefined {
+  const [info, setInfo] = useState<RelayInfo | null | undefined>(connectorsAvailable() ? undefined : null);
+  useEffect(() => {
+    if (!connectorsAvailable()) return;
+    let alive = true;
+    connectorApi
+      .info()
+      .then((value) => alive && setInfo(value))
+      .catch(() => alive && setInfo(null));
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return info;
+}
+
+/**
+ * The relay's own bindings, by connection id — what it last heard from a
+ * session and whether it syncs the connection by itself (§5.5). Read once
+ * per hub open; the device rows stay the truth for custody.
+ */
+export function useRelayBindings(): ReadonlyMap<string, BindingView> {
+  const [bindings, setBindings] = useState<ReadonlyMap<string, BindingView>>(new Map());
+  useEffect(() => {
+    if (!connectorsAvailable()) return;
+    let alive = true;
+    connectorApi
+      .sessions()
+      .then((rows) => alive && setBindings(new Map(rows.map((row) => [row.connectionId, row]))))
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return bindings;
+}
 
 /**
  * The catalogue as the relay serves it, kept in the identity's meta store

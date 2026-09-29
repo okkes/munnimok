@@ -330,4 +330,69 @@ describe('Connections hub (signed-in user)', () => {
     await screen.findByTestId('screen-space-accounts', {}, { timeout: 5000 });
     expect((await screen.findByTestId('space-attach-focus', {}, { timeout: 5000 })).textContent).toContain('Betaalrekening');
   }, 25_000);
+
+  it('a party that only talks to a browser on the person’s own computer asks which agent holds the sign-in (M5)', async () => {
+    const persistent = manifestOf({
+      id: 'mock-store-persistent',
+      name: 'Mock Store (own machine)',
+      agent: { required: true, class: 'byo', desktopBrowser: true },
+      secretCustody: 'agent',
+      auth: { ...manifestOf().auth, flow: 'device_persistent', steps: [] },
+    });
+    let preferred: string | undefined;
+    renderAppAsUser('/connections', {
+      api: {
+        'GET /connectors/providers': () => catalogueOf(persistent),
+        ...feeds,
+        'POST /connectors/mock-store-persistent/sync': () => ({ sessionId: 'ses_p', state: 'active', ingested: NO_INGEST }),
+        'GET /connectors/agents': () => ({
+          agents: [
+            { id: 'agt_off', name: 'the old desktop', class: 'byo', revoked: false, online: false, stale: false, profiles: [] },
+            { id: 'agt_on', name: 'the kitchen laptop', class: 'byo', revoked: false, online: true, stale: false, profiles: [] },
+          ],
+        }),
+        'POST /connectors/mock-store-persistent/login': (body) => {
+          preferred = (body as { preferAgent?: string }).preferAgent;
+          return { sessionId: 'ses_p', state: 'active', bundle: 'sb_v1.pointer', notes: [] };
+        },
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-add-open'));
+    const party = await screen.findByTestId('conn-party-mock-store-persistent', {}, { timeout: 5000 });
+    expect(screen.getByTestId('conn-party-mock-store-persistent-agent')).toBeTruthy();
+    fireEvent.click(party);
+    // no form: the party signs in on the agent; the online agent is picked, the offline one cannot be
+    await screen.findByTestId('connect-agent-step', {}, { timeout: 5000 });
+    await screen.findByTestId('connect-agent-agt_on');
+    expect((screen.getByTestId('connect-agent-agt_off') as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByTestId('connect-field-username')).toBeNull();
+    fireEvent.click(screen.getByTestId('connect-next'));
+    await screen.findByTestId('conn-name-input', {}, { timeout: 5000 });
+    expect(preferred).toBe('agt_on');
+  }, 20_000);
+
+  it('the relay’s own word wins on the card: a connection it syncs by itself reads so, a question it left is asked', async () => {
+    await seedConnection('c-agent', { lastSyncAt: new Date(Date.now() - 60_000).toISOString() });
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        'GET /connectors/sessions': () => [
+          {
+            sessionId: 'ses_1',
+            provider: PROVIDER,
+            connectionId: 'c-agent',
+            state: 'active',
+            createdAt: '2026-09-01T00:00:00Z',
+            lastSeenAt: '2026-09-30T06:00:00Z',
+            scheduled: true,
+            lastScheduledSyncAt: new Date(Date.now() - 3_600_000).toISOString(),
+            lastScheduleError: null,
+          },
+        ],
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    await waitFor(() => expect(screen.getByTestId('conn-state-c-agent').textContent).toMatch(/Syncs by itself/), { timeout: 5000 });
+  }, 15_000);
 });

@@ -46,6 +46,7 @@ import { DebtDetailScreen } from '@/features/debts/DebtDetailScreen';
 import { AllocateScreen } from '@/features/allocation/AllocateScreen';
 import { HelpIndexScreen } from '@/features/help/HelpIndexScreen';
 import { ConnectionsScreen } from '@/features/connectors/ConnectionsScreen';
+import { AgentsScreen } from '@/features/connectors/AgentsScreen';
 import { ReceiptsScreen } from '@/features/shopping/ReceiptsScreen';
 import { PortfolioScreen } from '@/features/portfolio/PortfolioScreen';
 import { HoldingDetailScreen } from '@/features/portfolio/HoldingDetailScreen';
@@ -225,6 +226,7 @@ const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/de
 const allocateRoute = createRoute({ getParentRoute: () => appRoute, path: '/allocate', component: AllocateScreen });
 const helpRoute = createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpIndexScreen });
 const connectionsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections', component: ConnectionsScreen });
+const agentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/agents', component: AgentsScreen });
 const receiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/receipts', component: ReceiptsScreen });
 const portfolioRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -305,6 +307,7 @@ export const routeTree = rootRoute.addChildren([
     allocateRoute,
     helpRoute,
     connectionsRoute,
+    agentsRoute,
     receiptsRoute,
     portfolioRoute.addChildren([holdingDetailRoute]),
     insightsRoute,

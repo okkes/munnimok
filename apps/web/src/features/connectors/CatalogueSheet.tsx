@@ -37,7 +37,7 @@ export function CatalogueSheet({
   const [query, setQuery] = useState('');
   const device = deviceClass();
 
-  // banks first, then shops; registries join with their slice
+  // banks first, then shops, then the registries
   const groups = useMemo(() => {
     const q = query.trim().toLowerCase();
     const matching = providers
@@ -47,6 +47,7 @@ export function CatalogueSheet({
     return [
       { kind: 'bank' as const, captionKey: 'conn.banks' as const, rows: matching.filter((p) => p.kind === 'bank') },
       { kind: 'store' as const, captionKey: 'conn.shops' as const, rows: matching.filter((p) => p.kind === 'store') },
+      { kind: 'registry' as const, captionKey: 'conn.registries' as const, rows: matching.filter((p) => p.kind === 'registry') },
     ].filter((g) => g.rows.length > 0);
   }, [providers, query]);
   const shown = groups.reduce((n, g) => n + g.rows.length, 0);

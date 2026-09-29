@@ -238,6 +238,30 @@ export interface BindingView {
   label?: string;
   createdAt: string;
   lastSeenAt: string;
+  /** the relay keeps a household-agent bundle for it and syncs it by itself (§5.5) */
+  scheduled: boolean;
+  lastScheduledSyncAt?: string | null;
+  lastScheduleError?: string | null;
+}
+
+/** a household agent the caller enrolled, as the relay lists it */
+export interface AgentView {
+  id: string;
+  name: string;
+  class: string;
+  revoked: boolean;
+  lastHeartbeatAt?: string | null;
+  online: boolean;
+  stale: boolean;
+  profiles: { id: string; provider: string; healthy: boolean; lastOkAt?: string | null }[];
+}
+
+/** `POST /connectors/agents/enrollment` — the code and the line that starts the agent */
+export interface EnrollmentView {
+  code: string;
+  expiresAt: string;
+  controlPlaneUrl?: string | null;
+  composeCommand?: string | null;
 }
 
 /** a `{ kind: "connector" }` frame on `/sync/events`: the view without secrets or data */
