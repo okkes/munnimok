@@ -96,20 +96,61 @@ ConnectorAgent__ControlPlaneBaseUrl=http://localhost:5000/ ConnectorAgent__Enrol
 
 ## What munni's platform renders (slice M2 of the plan)
 
-Per environment: the control plane container on the environment's network
-(no published port), its own database in the environment's Postgres, and one
-pooled agent on an agents-only network; the Logto machine application whose
-token the munni API presents; the bundle key ring, the enrollment HMAC key
-and the fleet enrollment code as generated secrets in the platform's secrets
-manifest; a per-environment kill switch. None of it exists yet — this page
-will say what it renders when it does.
+`infra/modules/render.mjs`, from the committed config (`infra/platforms/`,
+see its README): an environment with `features.connectors` gets
 
-What the munni API expects from it is settled by the relay (slice M1,
-[relay.md](relay.md)): `Connectors:BaseUrl` (the control plane on the
-environment's network), `Connectors:SubjectSalt` (generated per
-environment), the machine application `Connectors:M2mAppId` /
-`Connectors:M2mAppSecret` with `Connectors:Audience` (the control plane's
-`Connector:Auth:Audience`, its token granted the `connector:admin` scope for
-the operator routes), and `Connectors:AgentPublicUrl` when household agents
-are published. The development transport (`Connectors:DevKey` against
-`Connector:Auth:SharedSecret`) is for the local loop only.
+- **the control plane** `connector-<env>` (image `munni-connector-api:<channel>`)
+  beside its api: `Connector:Mode=Production`, its own database `connector`
+  on the environment's Postgres (created by `initdb`), the environment's
+  Logto as issuer (`Connector:Auth:Authority`) and its own public address as
+  audience — on this computer the discovery document is fetched in-network
+  over http (`MetadataAddress`, `RequireHttpsMetadata=false`) while the
+  issuer stays the browser-facing url; the seal key ring (`k1`), the
+  enrollment HMAC key and the platform's fleet enrollment code from the
+  secrets manifest; a `wget` health check on `/v1/health`;
+- **a published host** `munni-<env>-<platform>-connector` on port
+  8387 + 100·slot (DSM reverse-proxy rule on the NAS, the family Caddy in
+  LAN mode) — the address household agents dial from outside. The control
+  plane is reachable, and answers nobody without the machine token or an
+  agent's own token; the health route alone is anonymous and carries no
+  data. This is the one departure from the plan's "publishes no port":
+  household agents have to reach it from home, and a token-protected host is
+  the honest way to do that;
+- **the api's relay settings** `Connectors:*` — the in-network base url,
+  the audience, the subject salt, the machine app the Logto module writes
+  back (until then the relay stays off and the api says why), and the
+  public address as `AgentPublicUrl`.
+
+The platform's shared stack gets **the pooled browser agent**
+`connector-agent` (image `munni-connector-agent:<channel>`) when the
+platform ticks `browserAgent`: every provider pack, headed under Xvfb,
+`Class=pooled`, the platform's `agentEgress` claim, one connection per
+environment that runs connectors (`http://connector-<env>:8080/` over the
+shared network) enrolled with `CONNECTOR_FLEET_CODE` — the standing code
+every control plane of the platform seeds under the subject `fleet`
+(`Connector:FleetEnrollmentCode`). It is rendered only when at least one
+environment runs connectors, because an agent with nowhere to call
+refuses to start. It publishes nothing and dials only out.
+
+**The Logto module** (`ensureConnectorAccess`) makes the control plane an
+API resource of the environment's Logto (indicator = its public address)
+carrying the scope `connector:admin`, a machine role granting it, and the
+api's machine application holding the role; the pair is written back as
+`CONNECTOR_M2M_APP_ID/SECRET`. The api mints client credentials for that
+resource and the scope comes along, so one token opens the consumer routes
+and the operator's. An environment's cleanup removes the three with the
+api's own app.
+
+**Secrets** (`infra/secrets.manifest.json`): per environment, generated —
+`CONNECTOR_SEAL_KEY_K1` (32 bytes, standard base64), `CONNECTOR_ENROLLMENT_HMAC`,
+`CONNECTOR_SUBJECT_SALT`; module-owned — `CONNECTOR_M2M_APP_ID/SECRET`;
+per platform, generated — `CONNECTOR_FLEET_CODE` (`AGNT-XXXX-XXXX`),
+mirrored into every environment. `deploy-nas.yml` passes each by name.
+
+**The wizard**: the environment form's *Connectors* tick, the platform's
+*pooled browser agent* tick with its line (residential / datacenter), and a
+*Connectors* tab in the environment workspace with the facts above, the
+household compose line and a liveness check of the control plane through
+the helper. Nothing here asks for an account: every credential is minted.
+The party states, the fleet and the canaries are the admin portal's
+(slice M6).

@@ -110,7 +110,7 @@ Three separate things, on purpose:
 
 | Layer | Mechanism |
 | --- | --- |
-| Reachability | the control plane publishes no port; munni's platform renders it onto the environment's network (API side) and the agents' network only. The health route is anonymous and unreachable from outside. |
+| Reachability | munni's platform renders the control plane onto the environment's network (the API side) and the platform's shared network (the pooled agent's side), and publishes ONE host for it — household agents dial it from home. Every route on that host wants the machine token or an agent's own token; the anonymous health route carries no data. |
 | Authentication, production | a bearer token from the environment's identity provider for the configured audience (`Connector:Auth:Authority`, `Audience`), minted for the munni API by client credentials; optionally a scope every consumer token must carry (`RequiredScope`). No token, wrong issuer, wrong audience, wrong key: 401, and the caller learns nothing else. |
 | Authorisation | `/v1/admin/*` (provider pause/retire, canaries, the whole fleet) needs the `AdminScope` (`connector:admin` by default) on top; a known caller without it is 403. Development has no tokens: one shared header (`X-Connector-Key`) is the whole gate. |
 | Subjects | every route that names a session, a job, a ticket or an agent requires `X-Connector-Subject` and answers only its owner. The connector never sees a user id, e-mail or name — the consumer hands it an opaque subject. |

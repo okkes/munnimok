@@ -659,3 +659,42 @@ departs from §5, and why:
 - **Tests** boot the control plane in-process (`Connector.Kit.Hosting` + the packs' mocks, Sqlite)
   behind the relay's HttpClient instead of pulling the images as test containers: the same code
   path, no Docker in the unit-test lane.
+
+**2026-09-29 — M2 delivered** (`feat(infra): the connector platform rendered`; docs/connectors/deploy.md
+"What munni's platform renders"). Where it departs from §8, and why:
+
+- **One control plane per environment, not three.** `features.connectors: true` (a boolean, not a
+  list of services) renders `connector-<env>` with every pack; the plan's per-service containers,
+  databases, keys and secrets collapse to one of each — the same unification M1 leaned on.
+- **The control plane has a published host.** §3 and §6 said "publishes no port"; household agents
+  dial it from home, and DSM's reverse proxy routes by host, not by path, so the honest shape is a
+  host of its own (`munni-<env>-<platform>-connector`, port 8387 + 100·slot) whose every route wants
+  a machine token or an agent's own token. architecture.md's reachability row says so now.
+- **No agents-only network.** The pooled agent dials each control plane over the platform's shared
+  network; the control plane carries an alias `connector-<env>` there. A second external network
+  that the shared stack must create before any environment can start bought isolation between the
+  operator's own agent and the operator's own services, and nothing else.
+- **The fleet enrolls with a standing code.** The plan's "tokens generated" for the pooled agent
+  became `Connector:FleetEnrollmentCode` (a control plane change): a platform secret
+  (`CONNECTOR_FLEET_CODE`), production-allowed, seeded under the subject `fleet` and re-armed on
+  every start so an agent with a wiped state file comes back — the development code stays
+  development-only because the code IT exists for is written in a checked-in file.
+- **One database, one password.** The control plane's database is `connector` on the environment's
+  Postgres, under the environment's own `munni` user (one `POSTGRES_PASSWORD` per server, as Logto's
+  database already is), not a role and password of its own.
+- **No operator adapter options.** Every adapter option (AH client id, selectors, URLs) is a provider
+  fact with a default in the pack; nothing is a secret the operator holds, so the manifest carries no
+  `SHOP_*` entries and the wizard no Connectors tile — only the environment's tick, the platform's
+  agent tick and a Connectors tab that shows the rendered facts and checks the control plane's
+  liveness through the helper. Provider states, pause / resume, the pool and the canaries are the
+  admin portal's (M6): the wizard holds no operator token for an environment's API.
+- **The relay waits for its credential** instead of refusing to start: the machine pair is written
+  back by the Logto module after the environment's first bootstrap, and an api that refused to boot
+  before it existed could never reach that bootstrap. A base URL that is not one, a missing salt or
+  half a pair still refuse with the setting's name.
+- **The control plane learned two settings** for the local platform: `Connector:Auth:MetadataAddress`
+  and `RequireHttpsMetadata`, so it fetches its Logto's discovery document in-network over http while
+  the issuer stays the browser-facing url — the same pair munni's api carries.
+- **Deferred**: the smoke tool (§7.3) — the relay's in-process control plane tests drive every mock
+  through the real routes, which is what the tool was for; a CLI against a deployed image can follow
+  when a deployed environment exists to point it at.
