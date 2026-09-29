@@ -592,3 +592,25 @@ them is enough to start C0.
 | The subject salt of an environment leaks | rotate it — every connection of that service is severed, nothing else is exposed |
 | Scope creep in the hub | the hub ships with shop only (M3); bank and registry sections appear with their slices |
 | Two API replicas | not deployed; the constraint is documented in the platform README |
+
+---
+
+## 14 · Delivery log
+
+**2026-09-29 — C0 delivered** (`feat(connectors): port …` and the four commits after it). Where it
+departs from §7, and why:
+
+- **Auth transport**: no `network | mtls` switch. The owner chose network isolation plus the Logto
+  machine token; the SHA-1 thumbprint half is removed rather than kept as an option nobody deploys.
+  `RequiredScope` is honoured; `/v1/admin/*` wants `AdminScope`.
+- **Interval enforcement** applies to calls that declare `X-Connector-Trigger: schedule`; a person is
+  never held to it (the manifest's own note on the six Amazon fetches in three hours decided that).
+- **The adapter digest** is the catalogue digest both registries already compute, carried in the
+  agent's capabilities; a mismatch is leased nothing and listed as stale.
+- **The ASN discovery adapter stays in the bank pack**, unregistered, beside the options it
+  produced — it needs the agent runtime and is not a tool that runs on its own.
+- **The smoke tool (§7.3)** moves to M2, where there is a deployed image to point it at; the control
+  plane's own suite drives the public API end to end against the mock providers meanwhile.
+- **CI** is munni's: the images join `release-images.yml`, the per-assembly union coverage gate
+  runs after the tests, Chromium is installed for the agent's browser tests.
+- Documentation is under `docs/connectors/` (README, architecture, contract, adapters, deploy).
