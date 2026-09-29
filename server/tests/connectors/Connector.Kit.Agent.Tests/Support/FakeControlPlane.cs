@@ -81,6 +81,7 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     private int _stallInputPolls;
     private int _stallRenewals;
     private int _stallHeartbeats;
+    private int _answerBlips;
 
     /// <summary>One live frame as it arrived on the wire.</summary>
     internal readonly record struct PostedFrame(long Sequence, string? Size, int Bytes);
@@ -99,9 +100,9 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     internal readonly record struct Abandoned(string Path, TimeSpan Bound, TimeSpan Held);
 
     /// <summary>Answers the pending challenge, as a human eventually would.</summary>
-    public void Answer(string value = "solved")
+    public void Answer(string value = "solved", string challengeId = "chl_test")
     {
-        lock (_gate) _answer = new ChallengeAnswer { ChallengeId = "chl_test", Value = value };
+        lock (_gate) _answer = new ChallengeAnswer { ChallengeId = challengeId, Value = value };
     }
 
     /// <summary>
@@ -112,6 +113,23 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     {
         lock (_gate) _answer = null;
     }
+
+    /// <summary>Makes the next <paramref name="count"/> answer polls fail with a 503, as a home line blips.</summary>
+    public void AnswerBlips(int count)
+    {
+        lock (_gate) _answerBlips = count;
+    }
+
+    /// <summary>What a posted result is answered with; a 4xx is a verdict, a 5xx an outage.</summary>
+    public HttpStatusCode ResultStatus { get; set; } = HttpStatusCode.NoContent;
+
+    /// <summary>What a posted failure is answered with when it is not the recorded state.</summary>
+    public HttpStatusCode FailStatus { get; set; } = HttpStatusCode.OK;
+
+    /// <summary>True makes every renew answer 409: the control plane no longer holds the lease for this agent.</summary>
+    public bool RenewRefused { get; set; }
+
+    public int ResultCount { get { lock (_gate) return _results.Count; } }
 
     /// <summary>
     /// How long this agent's HTTP client waits before giving up on a request.
@@ -417,7 +435,7 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
             if (Stalling(ref _stallRenewals)) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
 
             lock (_gate) _renewedAt.Add(Time.GetUtcNow());
-            return Empty(HttpStatusCode.NoContent);
+            return Empty(RenewRefused ? HttpStatusCode.Conflict : HttpStatusCode.NoContent);
         }
 
         if (path.EndsWith("/progress", StringComparison.Ordinal)) return Empty(HttpStatusCode.NoContent);
@@ -436,6 +454,8 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
 
         if (path.EndsWith("/answer", StringComparison.Ordinal))
         {
+            if (Stalling(ref _answerBlips)) return Empty(HttpStatusCode.ServiceUnavailable);
+
             ChallengeAnswer? answer;
             lock (_gate) answer = _answer;
 
@@ -448,13 +468,15 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
         {
             var result = await ReadAsync<JobResultRequest>(request, ct);
             lock (_gate) _results.Add(result);
-            return Empty(HttpStatusCode.NoContent);
+            return Empty(ResultStatus);
         }
 
         if (path.EndsWith("/fail", StringComparison.Ordinal))
         {
             var failure = await ReadAsync<JobFailRequest>(request, ct);
             lock (_gate) _failures.Add(failure);
+
+            if (FailStatus != HttpStatusCode.OK) return Empty(FailStatus);
 
             // THE STATE THE CONTROL PLANE RECORDED, which this used to answer
             // with no content at all. A failure post does not always end a job:

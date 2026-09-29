@@ -69,11 +69,13 @@ internal sealed class TestRig : IDisposable
             EnrolledAt = DateTimeOffset.UtcNow,
         });
 
+        Profiles = new ProfileStore(Options.ProfileRootDirectory, NullLogger<ProfileStore>.Instance);
+
         Runner = new JobRunner(
             new SingleAdapterRegistry(adapter, manifest ?? Manifest),
             new ControlPlaneClient(Control, NullLogger<ControlPlaneClient>.Instance),
             new PolitenessGate(Time),
-            new ProfileStore(Options.ProfileRootDirectory, NullLogger<ProfileStore>.Instance),
+            Profiles,
             identity,
             Options,
             NullLoggerFactory.Instance,
@@ -102,6 +104,8 @@ internal sealed class TestRig : IDisposable
     public ConnectorAgentOptions Options { get; }
 
     public JobRunner Runner { get; }
+
+    public ProfileStore Profiles { get; }
 
     /// <summary>
     /// A login job with a budget expressed in whole seconds, as the wire has
