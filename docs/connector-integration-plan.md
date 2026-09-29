@@ -812,3 +812,32 @@ docs/connectors/relay.md "Scheduled syncs"). Where it departs from §5.5 and §1
 - **Deferred**: a DUO fetch on the owner's account and an agent enrolled from the app against a
   deployed control plane — both need an environment that runs connectors; the "needs you" card on the
   home screen (the hub's card carries the question for now); the admin's view of the fleet (M6).
+
+**2026-09-30 — M6 delivered** (`feat(admin,control): the connectors screens`). Where it departs from
+§9, and why:
+
+- **The portal's Connectors screen renders what the relay answers, nothing more.** §9 asked for
+  "sessions live / awaiting input per provider" and "last error class" — the control plane's status
+  document carries the queue fleet-wide (`queued`, `running`, `awaitingInput`) and a party's state,
+  since and reason, not per-party session counts; the screen shows the document as it is rather than
+  deriving numbers the platform does not keep. Adding them is a control-plane change, not a portal one.
+- **Two confirmation idioms, the portal's own.** Pausing and resuming are one tap (reversible);
+  retiring — which expires every live session — wants the party's id typed, like retiring a catalogue
+  category; revoking an agent — which destroys the profiles that keep a user's logins alive — asks
+  through the browser's confirm with that consequence named, like deleting a foreign consent.
+- **The reason key is a copy key.** The operator types the key the member app renders (the app shows
+  its copy when it carries one); the portal has no copy of its own to offer, and inventing prose the
+  app cannot show would be the portal pretending.
+- **The relay's envelope reaches the error strip as its code.** The portal's action runner read
+  `error` as a string; a relayed refusal is the connector's envelope (`{ code, … }`), so the strip
+  shows `provider_unavailable` rather than `[object Object]`.
+- **The cockpit is read-only, as everything on it is.** `/control/connectors/status` lands as a fourth
+  screen — the designated environment's parties and fleet liveness — with the writes left to that
+  environment's own portal. §9's "every environment's provider states on one page" would need the
+  cockpit to reach every environment's API, which it does not for anything else either; it shows the
+  one it is pointed at.
+- **The diagnosis carries the sessions.** The user diagnosis prints each connector binding (party,
+  state, connection id, last seen) — never a bundle — beside the feeds and the open-banking links.
+- **Not proven on dev**: the plan's "pause / resume proven on dev" waits for the first environment that
+  runs connectors; the relay tests prove the kill switch end to end against the in-process control
+  plane, the portal tests the screen against the relay's documents.

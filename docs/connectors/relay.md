@@ -157,6 +157,14 @@ In production the machine token the relay mints must carry the control
 plane's admin scope (`connector:admin`) for these routes; the platform (M2)
 grants it to the M2M application.
 
+The admin portal renders these routes on its **Connectors** screen (M6): the
+status tiles, every party with the kill switch (pause and resume in one tap,
+retire behind the party's id typed — it expires every live session), every
+user's agents with revoke, the canaries; the user diagnosis lists a user's
+bindings. The control cockpit renders `GET /control/connectors/status`
+read-only. Where an environment runs no connectors the routes are not mapped,
+the request lands on 404, and both consoles say so.
+
 ## Tests
 
 `server/tests/Munni.Api.Tests/Connectors/` boots the real control plane
