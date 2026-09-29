@@ -54,6 +54,7 @@ const SOURCE_ICONS: Record<AccountRow['source'], string> = {
   manual: 'pencil-outline',
   camt053: 'file-document-outline',
   gocardless: 'bank-transfer',
+  connector: 'link-variant',
 };
 
 interface AttachCandidate {

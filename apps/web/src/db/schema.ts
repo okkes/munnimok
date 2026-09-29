@@ -12,14 +12,13 @@ import type {
   InsightDismissRow,
   TopicRow,
   ActivityRow,
+  ConnectorConnRow,
   LotRow,
   QuoteCacheRow,
   ReceiptLinkRow,
   ReceiptRow,
-  StoreConnectionRow,
   StoreConnLinkRow,
   StoreConnRow,
-  StoreMarkerRow,
   GoalContributionRow,
   GoalRow,
   MetaRow,
@@ -54,10 +53,9 @@ export class MunniDB extends Dexie {
   allocations!: Table<AllocationRow, string>;
   receipts!: Table<ReceiptRow, string>;
   receiptLinks!: Table<ReceiptLinkRow, string>;
-  /** device-only — store tokens never sync in plaintext (privacy law);
-   *  keyed by connection-instance id */
-  storeInstances!: Table<StoreConnectionRow, string>;
-  storeMarkers!: Table<StoreMarkerRow, string>;
+  /** device-only — a connection's credential bundle never syncs in
+   *  plaintext (privacy law); keyed by connection id (#367) */
+  connectorConns!: Table<ConnectorConnRow, string>;
   storeConns!: Table<StoreConnRow, string>;
   storeConnLinks!: Table<StoreConnLinkRow, string>;
   holdings!: Table<HoldingRow, string>;
@@ -72,9 +70,9 @@ export class MunniDB extends Dexie {
 
   constructor(name: string) {
     super(name);
-    // ONE schema version: the product deployed from scratch on this
-    // model, so there is no older on-device layout to upgrade from. A
-    // future store change adds version(2) with its own upgrade.
+    // version 1 is the layout the product deployed from scratch on; a
+    // store change adds a version with its delta (never a rewrite of an
+    // earlier one — Dexie diffs the declarations to upgrade a device)
     this.version(1).stores({
       spaces: 'id',
       accounts: 'id, spaceId',
@@ -115,6 +113,13 @@ export class MunniDB extends Dexie {
       outbox: 'opId, spaceId, hlc',
       meta: 'key',
     });
+    // #367: store tokens gave way to connector bundles, and the marker
+    // table never had a reader — both go; the bundle row arrives
+    this.version(2).stores({
+      storeInstances: null,
+      storeMarkers: null,
+      connectorConns: 'id, provider',
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -151,8 +156,6 @@ export class MunniDB extends Dexie {
         return this.receipts;
       case 'receiptLink':
         return this.receiptLinks;
-      case 'storeMarker':
-        return this.storeMarkers;
       case 'storeConn':
         return this.storeConns;
       case 'storeConnLink':

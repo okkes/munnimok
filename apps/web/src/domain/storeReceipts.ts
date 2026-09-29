@@ -1,34 +1,36 @@
-import type { ReceiptItem, ReceiptPayment, ReceiptSource, TxView } from '@/db/types';
+import type { ReceiptItem, ReceiptPayment, TxView } from '@/db/types';
 
 /**
  * Store receipts domain (receipts design S2) — all pure: matching
- * fetched receipts to transactions, mapping the AH payload shapes, and
- * parsing OCR text from photo receipts into the same item shape.
+ * fetched receipts to transactions, and parsing OCR text from photo
+ * receipts into the same item shape.
  */
 
 // ── matching ────────────────────────────────────────────────────────────
 
-/** merchant fingerprints per store, tested against tx.merchant */
-const STORE_MERCHANT: Partial<Record<ReceiptSource, RegExp>> = {
+/** merchant fingerprints per party (keyed by connector provider id),
+ *  tested against tx.merchant */
+const STORE_MERCHANT: Partial<Record<string, RegExp>> = {
   ah: /albert\s*heijn|\bah\b/i,
   jumbo: /jumbo/i,
+  lidl: /lidl/i,
   bol: /bol\.com|\bbol\b/i,
   coolblue: /coolblue/i,
-  mediamarkt: /media\s*markt/i,
-  amazon: /amazon/i,
+  'mediamarkt-nl': /media\s*markt/i,
+  'amazon-nl': /amazon/i,
 };
 
 /** operator overrides from the catalog (R9): admin-curated patterns win
  *  over the bundled fingerprints so matching improves without releases */
-let catalogStorePatterns: Partial<Record<ReceiptSource, RegExp>> = {};
+let catalogStorePatterns: Partial<Record<string, RegExp>> = {};
 
 export function setCatalogStorePatterns(rules: readonly { id: string; patterns: string[] }[]): void {
-  const next: Partial<Record<ReceiptSource, RegExp>> = {};
+  const next: Partial<Record<string, RegExp>> = {};
   for (const rule of rules) {
     const parts = rule.patterns.map((p) => p.trim()).filter(Boolean);
     if (parts.length === 0) continue;
     try {
-      next[rule.id as ReceiptSource] = new RegExp(parts.join('|'), 'i');
+      next[rule.id] = new RegExp(parts.join('|'), 'i');
     } catch {
       // a broken operator pattern must never break matching
     }
@@ -38,7 +40,8 @@ export function setCatalogStorePatterns(rules: readonly { id: string; patterns: 
 
 export interface MatchableReceipt {
   id: string;
-  source: ReceiptSource;
+  /** 'photo', or the connector provider id that fetched it */
+  source: string;
   date: string;
   totalCents: number;
   /** how it was paid, when the store exposes it (R5) */
@@ -85,7 +88,7 @@ export function matchCandidates(
   return applyPaymentFilter(receipt, base, tailOf);
 }
 
-const merchantHit = (source: ReceiptSource, tx: TxView): boolean =>
+const merchantHit = (source: string, tx: TxView): boolean =>
   (catalogStorePatterns[source] ?? STORE_MERCHANT[source])?.test(tx.merchant ?? '') ?? false;
 
 function scoreOf(receipt: MatchableReceipt, tx: TxView): number {
@@ -133,71 +136,6 @@ export function candidateLadder(receipt: MatchableReceipt, txs: readonly TxView[
   const sameAmountIds = new Set(sameAmount.map((tx) => tx.id));
   const latest = expenses.filter((tx) => !sameAmountIds.has(tx.id));
   return { primary, more: [...sameAmount, ...latest].slice(0, 12) };
-}
-
-// ── AH payload mapping (mobile-services v2 shapes) ──────────────────────
-
-export interface AhReceiptSummary {
-  transactionId: string;
-  transactionMoment: string;
-  total?: { amount?: { amount?: number } };
-}
-
-export interface AhReceiptUiItem {
-  type: string;
-  quantity?: string | number;
-  description?: string;
-  amount?: string;
-}
-
-const euroToCents = (value: number | string | undefined): number => {
-  const n = typeof value === 'string' ? Number.parseFloat(value.replace(',', '.')) : value;
-  return Number.isFinite(n) ? Math.round((n as number) * 100) : 0;
-};
-
-export function mapAhSummary(row: AhReceiptSummary): MatchableReceipt & { storeId: string } {
-  return {
-    id: row.transactionId,
-    storeId: row.transactionId,
-    source: 'ah',
-    date: row.transactionMoment.slice(0, 10),
-    totalCents: euroToCents(row.total?.amount?.amount),
-  };
-}
-
-/**
- * Payment line → how the receipt was paid (R5, AH-only per ruling 3).
- * AH prints e.g. "PINNEN" plus a masked card/IBAN ending in a few
- * digits; the tail constrains transaction matching to that account.
- */
-const AH_PAYMENT_LINE = /pin|maestro|mastercard|visa|ideal|contactloos/i;
-// exactly two mask chars suffice: a longer run still matches at its end
-const MASKED_TAIL = /[*Xx•]{2}\s?(\d{3,4})\b/;
-const TRAILING_DIGITS = /(\d{4})$/;
-
-export function mapAhPayment(uiItems: readonly AhReceiptUiItem[]): ReceiptPayment | undefined {
-  for (const item of uiItems) {
-    const text = (item.description ?? '').trim();
-    if (!AH_PAYMENT_LINE.test(text)) continue;
-    const tail = MASKED_TAIL.exec(text)?.[1] ?? TRAILING_DIGITS.exec(text)?.[1];
-    return { method: text.slice(0, 40), accountTail: tail };
-  }
-  return undefined;
-}
-
-/** the detail's receiptUiItems: keep the products, drop dividers/totals */
-export function mapAhItems(uiItems: readonly AhReceiptUiItem[]): ReceiptItem[] {
-  const items: ReceiptItem[] = [];
-  for (const item of uiItems) {
-    if (item.type !== 'product' || !item.description) continue;
-    const qty = typeof item.quantity === 'string' ? Number.parseInt(item.quantity, 10) : item.quantity;
-    items.push({
-      name: item.description,
-      qty: qty !== undefined && Number.isFinite(qty) && qty > 1 ? qty : undefined,
-      totalCents: euroToCents(item.amount),
-    });
-  }
-  return items;
 }
 
 // ── OCR text → items (photo receipts) ───────────────────────────────────

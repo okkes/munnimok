@@ -11,15 +11,20 @@ import type { StorageBackend } from '@/db/backend';
  */
 const REGISTERED_KEY = 'storeFeedRegistered';
 
+/** the demo's store feed lives only on the device — the demo seed writes it */
+export const DEMO_STORE_FEED_ID = 'demo_store_feed';
+
 export function myStoreFeedId(): string | null {
   const identity = readSessionIdentity();
-  return identity?.kind === 'user' ? storeFeedId(identity.sub) : null;
+  if (identity?.kind === 'user') return storeFeedId(identity.sub);
+  return identity?.kind === 'demo' ? DEMO_STORE_FEED_ID : null;
 }
 
 /** register once per identity; safe to call before every store push */
 export async function ensureStoreFeed(store: StorageBackend): Promise<string | null> {
   const feedId = myStoreFeedId();
   if (!feedId) return null;
+  if (feedId === DEMO_STORE_FEED_ID) return feedId; // nothing to register: the demo never syncs
   if ((await store.metaGet(REGISTERED_KEY))?.value === feedId) return feedId;
   const res = await apiFetch('/feeds', {
     method: 'POST',

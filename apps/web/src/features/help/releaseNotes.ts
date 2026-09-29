@@ -18,6 +18,32 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '4.2.0',
+    date: '2026-09-29',
+    items: [
+      {
+        en: 'Connections: one place for every party. Connect a shop from the catalogue and sign in the way the party asks — a code, an approval, or its own page streamed to you — then name the connection and pick the spaces it feeds. Your login stays yours: munni keeps only a sealed session key, on your own devices.',
+        nl: 'Koppelingen: één plek voor elke partij. Koppel een winkel uit de catalogus en log in zoals de partij het vraagt — een code, een goedkeuring, of de eigen pagina naar je gestreamd — geef de koppeling daarna een naam en kies de spaces die ze vult. Je inloggegevens blijven van jou: munni bewaart alleen een verzegelde sessiesleutel, op je eigen apparaten.',
+        tr: 'Bağlantılar: her taraf için tek yer. Katalogdan bir mağaza bağla ve tarafın istediği gibi giriş yap — bir kod, bir onay ya da sana aktarılan kendi sayfası — sonra bağlantıya ad ver ve beslediği alanları seç. Giriş bilgilerin sende kalır: munni yalnızca kendi cihazlarında mühürlü bir oturum anahtarı tutar.',
+      },
+      {
+        en: 'Fetched receipts bring their invoices along — open the PDF right from the receipt.',
+        nl: 'Opgehaalde bonnen nemen hun facturen mee — open de pdf direct vanuit de bon.',
+        tr: 'Getirilen fişler faturalarını da getirir — PDF’i doğrudan fişten aç.',
+      },
+      {
+        en: 'Matches to check: a receipt that fits a transaction you already reviewed asks first instead of attaching behind your back — on the Receipts screen and on the transaction itself.',
+        nl: 'Te controleren matches: een bon die past bij een transactie die je al beoordeeld hebt, vraagt het eerst in plaats van zich stiekem vast te hangen — op het bonnenscherm en op de transactie zelf.',
+        tr: 'Kontrol edilecek eşleşmeler: zaten incelediğin bir işleme uyan fiş, arkandan bağlanmak yerine önce sorar — Fişler ekranında ve işlemin kendisinde.',
+      },
+      {
+        en: 'The old Shopping connections screen and its in-browser store logins are gone: every party now runs through munni’s connector platform, and the device sync ships the new session keys instead of store tokens.',
+        nl: 'Het oude scherm Winkelkoppelingen en de winkellogins in de browser zijn weg: elke partij loopt nu via munni’s connectorplatform, en de apparaatsync verstuurt de nieuwe sessiesleutels in plaats van winkeltokens.',
+        tr: 'Eski Alışveriş bağlantıları ekranı ve tarayıcı içi mağaza girişleri kalktı: her taraf artık munni’nin bağlayıcı platformu üzerinden çalışıyor ve cihaz eşitleme mağaza belirteçleri yerine yeni oturum anahtarlarını taşıyor.',
+      },
+    ],
+  },
+  {
     version: '4.1.0',
     date: '2026-09-29',
     items: [

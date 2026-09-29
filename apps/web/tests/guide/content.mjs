@@ -78,4 +78,11 @@ export const GUIDE = [
     tips: ['Push notifications tell you when new bank transactions arrive — tapping one opens that space\\u2019s review directly.', 'The row under the notifications switch sends a test notification — proof that push reaches this very device.', 'The sync card at the top of Settings shows the last successful sync.', 'Global settings → Devices lists every device signed in to your account — web devices name their browser and same-name twins number themselves (2), (3); rename them, and disconnect one remotely: it erases its munni data the next time it connects.'],
     shots: ['25-sync-devices', '58-sync-live', '38-offline'],
   },
+  {
+    id: 'connections',
+    title: 'Connections',
+    body: `Settings → Connections is the one place for every party that holds your data: shops first, banks and registries follow. Connect a party from the catalogue and sign in the way the party asks — a verification code, an approval in its app, a picture to read, or its own sign-in page streamed to you — then name the connection and pick the spaces its receipts flow into. Each card tells you where you stand: synced and when, sign in to sync on this device, reconnect needed, blocked by the party, or a question waiting. Sync now pulls the newest receipts; they attach to a clear match by themselves and land next to their transactions.`,
+    tips: ['Your login stays yours: the party hands munni a sealed session key that only your own devices hold — munni\\u2019s servers never see a password, and the app never stores one. In the browser the key lives in the tab; the app keeps it.', 'A receipt that fits a transaction you already reviewed asks first — under Matches to check on the Receipts screen and on the transaction itself. Yes attaches it, no makes sure that transaction is never proposed again.', 'Fetched receipts bring their invoices along — open the PDF right from the receipt.', 'Use on my other devices ships your connections to your other devices as ciphertext; a new device waits until you approve it after comparing the 6-digit codes.', 'A party that needs your own computer says so in the catalogue; a party without web support asks for the munni app.'],
+    shots: [],
+  },
 ];

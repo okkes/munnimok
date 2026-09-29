@@ -32,6 +32,7 @@ export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
   manual: 'acct.sourceManual',
   camt053: 'acct.sourceImport',
   gocardless: 'acct.sourceOpenBanking',
+  connector: 'acct.sourceConnector',
 };
 
 /** #176: the label honors WHICH open-banking provider fetches the row —

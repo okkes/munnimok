@@ -26,7 +26,8 @@ export type TourId =
   | 'portfolio'
   | 'insights'
   | 'trends'
-  | 'shopping'
+  | 'connections'
+  | 'receipts'
   | 'splits';
 
 export interface TourStep {
@@ -268,16 +269,27 @@ export const TOURS: Tour[] = [
     ],
   },
   {
-    id: 'shopping',
-    titleKey: 'shop.title',
-    icon: 'storefront-outline',
-    screen: '/shopping',
+    id: 'connections',
+    titleKey: 'conn.title',
+    icon: 'link-variant',
+    screen: '/connections',
     steps: [
-      { titleKey: 'tour.shop.1t', bodyKey: 'tour.shop.1b', illustration: '🧾' },
-      { titleKey: 'tour.shop.2t', bodyKey: 'tour.shop.2b', illustration: '🔒', anchor: 'shopping-store-ah' },
-      { titleKey: 'tour.shop.3t', bodyKey: 'tour.shop.3b', illustration: '🧲' },
-      { titleKey: 'tour.shop.4t', bodyKey: 'tour.shop.4b', illustration: '🔍' },
-      { titleKey: 'tour.shop.5t', bodyKey: 'tour.shop.5b', illustration: '🔁', anchor: 'store-sync-card' },
+      { titleKey: 'tour.conn.1t', bodyKey: 'tour.conn.1b', illustration: '🔗' },
+      { titleKey: 'tour.conn.2t', bodyKey: 'tour.conn.2b', illustration: '🏪', anchor: 'conn-add' },
+      { titleKey: 'tour.conn.3t', bodyKey: 'tour.conn.3b', illustration: '🔒' },
+      { titleKey: 'tour.conn.4t', bodyKey: 'tour.conn.4b', illustration: '🧲' },
+      { titleKey: 'tour.conn.5t', bodyKey: 'tour.conn.5b', illustration: '🔁', anchor: 'conn-sync-card' },
+    ],
+  },
+  {
+    id: 'receipts',
+    titleKey: 'receipts.title',
+    icon: 'receipt-text-outline',
+    screen: '/receipts',
+    steps: [
+      { titleKey: 'tour.receipts.1t', bodyKey: 'tour.receipts.1b', illustration: '🧾', anchor: 'receipts-search' },
+      { titleKey: 'tour.receipts.2t', bodyKey: 'tour.receipts.2b', illustration: '❓' },
+      { titleKey: 'tour.receipts.3t', bodyKey: 'tour.receipts.3b', illustration: '🔍' },
     ],
   },
   {

@@ -3,35 +3,21 @@ import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
-import { globalAsEntry, linkAsEntry, useSpaceReceipts } from '@/application/receiptLinks';
+import { globalAsEntry, linkAsEntry, useProposedMatches, useSpaceReceipts } from '@/application/receiptLinks';
 import type { ReceiptEntry } from '@/application/receiptLinks';
-import { useSpaceStoreConnLinks, useUnmatchedReceipts } from '@/application/stores';
+import { useSpaceStoreConnLinks, useUnmatchedReceipts } from '@/application/connections';
+import { useReceiptOps } from '@/application/receipts';
+import { useSpaceTransactions } from '@/application/transactions';
+import { partyName } from '@/features/connectors/logos';
 import { fmtCents } from '@/lib/money';
 import { AppBar, IconButton } from '@/ui/AppBar';
+import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/primitives';
 import { Icon } from '@/ui/Icon';
 import { SearchField } from '@/ui/SearchField';
 import { ReceiptViewSheet } from './ReceiptViewSheet';
 
-const SOURCE_ICON: Record<string, string> = {
-  photo: 'camera-outline',
-  ah: 'storefront-outline',
-  jumbo: 'storefront-outline',
-  bol: 'package-variant-closed',
-  coolblue: 'package-variant-closed',
-  mediamarkt: 'package-variant-closed',
-  amazon: 'package-variant-closed',
-};
-
-/** brand names stay brand names; only the photo bucket is translated */
-const SOURCE_NAMES: Record<string, string> = {
-  ah: 'Albert Heijn',
-  jumbo: 'Jumbo',
-  bol: 'bol.com',
-  coolblue: 'Coolblue',
-  mediamarkt: 'MediaMarkt',
-  amazon: 'Amazon',
-};
+const sourceIcon = (source: string): string => (source === 'photo' ? 'camera-outline' : 'storefront-outline');
 
 /** store, merchant, item names and the amount's digits are all searchable */
 function entryMatches(entry: ReceiptEntry, q: string, amountQ: string | null): boolean {
@@ -61,6 +47,9 @@ export function ReceiptsScreen() {
   const links = useSpaceReceipts();
   const unmatched = useUnmatchedReceipts();
   const connLinks = useSpaceStoreConnLinks();
+  const proposals = useProposedMatches();
+  const txs = useSpaceTransactions();
+  const receiptOps = useReceiptOps();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const currency = space?.currency ?? 'EUR';
 
@@ -110,14 +99,16 @@ export function ReceiptsScreen() {
         onClick={() => setSelected(receipt.id)}
         className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
       >
-        <Icon name={SOURCE_ICON[receipt.source] ?? 'receipt-text-outline'} size={18} color="var(--m-ink-3)" />
+        <Icon name={sourceIcon(receipt.source)} size={18} color="var(--m-ink-3)" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-medium text-ink">{receipt.merchant ?? t('receipt.sourcePhoto')}</span>
           <span className="block text-[11px] text-ink-4">
             {fmtDate(receipt.date)}
             {receipt.items?.length ? ` · ${receipt.items.length} ${t('receipt.items')}` : ''}
+            {receipt.documents?.length ? ` · ${t('receipts.invoice')}` : ''}
           </span>
         </span>
+        {!!receipt.documents?.length && <Icon name="file-pdf-box" size={16} color="var(--m-ink-4)" data-testid={`receipt-invoice-${receipt.id}`} />}
         {!entry.txId && (
           <span className="rounded-full bg-warning-soft px-2 py-0.5 text-[10px] font-semibold text-warning" data-testid={`receipt-unmatched-${receipt.id}`}>
             {t('receipts.unmatched')}
@@ -138,8 +129,8 @@ export function ReceiptsScreen() {
           </IconButton>
         }
         trailing={
-          <IconButton label={t('receipts.connectedStores')} testId="receipts-stores" onClick={() => void navigate({ to: '/shopping' })}>
-            <Icon name="storefront-outline" size={20} />
+          <IconButton label={t('receipts.connections')} testId="receipts-connections" onClick={() => void navigate({ to: '/connections' })}>
+            <Icon name="link-variant" size={20} />
           </IconButton>
         }
       />
@@ -172,12 +163,47 @@ export function ReceiptsScreen() {
           </div>
         )}
 
+        {/* #367 §5.7: receipts whose best match is a reviewed transaction ask first */}
+        {!!proposals?.length && (
+          <div className="mt-3" data-testid="receipts-to-check">
+            <div className="m-cap mb-1 px-1">{t('receipts.toCheckTitle')}</div>
+            <p className="mb-1 px-1 text-[11px] leading-snug text-ink-4">{t('receipts.toCheckSub')}</p>
+            <div className="overflow-hidden rounded-card border border-line bg-surface">
+              {proposals.map((link) => {
+                const proposed = txs?.find((tx) => tx.id === link.proposedTxId);
+                return (
+                  <div key={link.id} className="border-b border-line-2 px-4 py-3 last:border-0" data-testid={`receipt-proposal-${link.id}`}>
+                    <div className="flex items-center gap-3">
+                      <Icon name="storefront-outline" size={18} color="var(--m-ink-3)" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-[13px] font-medium text-ink">{link.merchant ?? partyName(link.source)}</span>
+                        <span className="block truncate text-[11px] text-ink-4">
+                          {t('receipts.proposedFor')} {proposed?.merchant ?? proposed?.description ?? '…'} · {fmtDate(link.date)}
+                        </span>
+                      </span>
+                      <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(link.totalCents, currency, lang)}</span>
+                    </div>
+                    <div className="mt-2 flex gap-2 pl-8">
+                      <Button size="sm" data-testid={`receipt-proposal-accept-${link.id}`} onClick={() => void receiptOps.acceptMatch(link)}>
+                        {t('receipts.accept')}
+                      </Button>
+                      <Button size="sm" variant="outline" data-testid={`receipt-proposal-reject-${link.id}`} onClick={() => void receiptOps.rejectMatch(link)}>
+                        {t('receipts.reject')}
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {groups.length > 0 ? (
           groups.map(([source, rows]) => (
             <div key={source}>
               <div className="m-cap mt-3 mb-1 flex items-center gap-1.5 px-1">
-                <Icon name={SOURCE_ICON[source] ?? 'receipt-text-outline'} size={13} />
-                {SOURCE_NAMES[source] ?? t('receipt.sourcePhoto')} · {rows.length}
+                <Icon name={sourceIcon(source)} size={13} />
+                {source === 'photo' ? t('receipt.sourcePhoto') : (rows.find((r) => r.data.merchant)?.data.merchant ?? partyName(source))} · {rows.length}
               </div>
               <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid={`receipts-group-${source}`}>
                 {rows.map(renderRow)}

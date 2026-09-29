@@ -2,15 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   adoptWrapIfApproved,
   approveDevice,
-  disableStoreSync,
-  enableStoreSync,
+  disableConnectionSync,
+  enableConnectionSync,
   listSyncDevices,
   localDevice,
   requestEnrollment,
   revokeDevice,
   syncEnabled,
-} from '@/application/storeSync';
-import type { SyncDeviceInfo } from '@/application/storeSync';
+} from '@/application/connectionSync';
+import type { SyncDeviceInfo } from '@/application/connectionSync';
 import { fingerprintOf } from '@/lib/connCrypto';
 import { useData } from '@/app/data';
 import { useLang } from '@/i18n';
@@ -19,12 +19,12 @@ import { Icon } from '@/ui/Icon';
 import { Pill } from '@/ui/primitives';
 
 /**
- * SC2: the opt-in "use my store logins on my other devices" card.
+ * SC2: the opt-in "use my connections on my other devices" card.
  * Enabling publishes only ciphertext; a NEW device asks to join and any
  * enrolled device approves it after comparing the 6-digit fingerprint
  * both screens display — the human check against a server-swapped key.
  */
-export function StoreSyncCard() {
+export function ConnectionSyncCard() {
   const { t } = useLang();
   const { store } = useData();
   const [enabled, setEnabled] = useState<boolean | null>(null);
@@ -77,17 +77,17 @@ export function StoreSyncCard() {
   const headerAction = () => {
     if (enabled) {
       return (
-        <Button size="sm" variant="outline" data-testid="store-sync-off" disabled={busy} onClick={() => act(() => disableStoreSync(store))}>
-          {t('shopsync.turnOff')}
+        <Button size="sm" variant="outline" data-testid="conn-sync-off" disabled={busy} onClick={() => act(() => disableConnectionSync(store))}>
+          {t('connsync.turnOff')}
         </Button>
       );
     }
     if (pendingHere) {
-      return <Pill tone="warning" testId="store-sync-pending">{t('shopsync.waiting')}</Pill>;
+      return <Pill tone="warning" testId="conn-sync-pending">{t('connsync.waiting')}</Pill>;
     }
     return (
-      <Button size="sm" data-testid="store-sync-on" disabled={busy} onClick={() => act(() => (devices.length > 0 ? requestEnrollment(store) : enableStoreSync(store)))}>
-        {t('shopsync.turnOn')}
+      <Button size="sm" data-testid="conn-sync-on" disabled={busy} onClick={() => act(() => (devices.length > 0 ? requestEnrollment(store) : enableConnectionSync(store)))}>
+        {t('connsync.turnOn')}
       </Button>
     );
   };
@@ -97,67 +97,67 @@ export function StoreSyncCard() {
   const pendingOthers = others.filter((d) => !d.hasWrap);
 
   return (
-    <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="store-sync-card">
+    <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface" data-testid="conn-sync-card">
       <div className="flex items-center gap-3 px-4 py-3.5">
         <Icon name={enabled ? 'sync-circle' : 'sync-off'} size={20} color={enabled ? 'var(--m-accent)' : 'var(--m-ink-3)'} />
         <span className="min-w-0 flex-1">
-          <span className="block text-[15px] text-ink">{t('shopsync.title')}</span>
-          <span className="block text-[12px] text-ink-4">{t('shopsync.sub')}</span>
+          <span className="block text-[15px] text-ink">{t('connsync.title')}</span>
+          <span className="block text-[12px] text-ink-4">{t('connsync.sub')}</span>
         </span>
         {headerAction()}
       </div>
 
       {/* the mechanics in three sentences (user: "a bit confusing") —
           foldable so the card stays calm once understood */}
-      <details className="border-t border-line-2 px-4 py-2.5" data-testid="store-sync-how">
+      <details className="border-t border-line-2 px-4 py-2.5" data-testid="conn-sync-how">
         <summary className="cursor-pointer list-none text-[12px] font-medium text-accent-deep">
-          {t('shopsync.howTitle')}
+          {t('connsync.howTitle')}
         </summary>
         <ol className="mt-1.5 flex list-decimal flex-col gap-1 pl-4 text-[12px] leading-relaxed text-ink-3">
-          <li>{t('shopsync.how1')}</li>
-          <li>{t('shopsync.how2')}</li>
-          <li>{t('shopsync.how3')}</li>
+          <li>{t('connsync.how1')}</li>
+          <li>{t('connsync.how2')}</li>
+          <li>{t('connsync.how3')}</li>
         </ol>
       </details>
 
       {(pendingHere || enabled) && (
-        <p className="border-t border-line-2 px-4 py-2.5 text-[12px] text-ink-3" data-testid="store-sync-fingerprint">
-          {t('shopsync.thisDevice')} · <span className="font-mono font-semibold text-ink">{myFingerprint}</span>
+        <p className="border-t border-line-2 px-4 py-2.5 text-[12px] text-ink-3" data-testid="conn-sync-fingerprint">
+          {t('connsync.thisDevice')} · <span className="font-mono font-semibold text-ink">{myFingerprint}</span>
         </p>
       )}
 
       {enabled && pendingOthers.length > 0 && (
         <div className="border-t border-line-2">
           {pendingOthers.map((device) => (
-            <div key={device.deviceId} className="flex items-center gap-3 px-4 py-3" data-testid={`store-sync-approve-${device.deviceId}`}>
+            <div key={device.deviceId} className="flex items-center gap-3 px-4 py-3" data-testid={`conn-sync-approve-${device.deviceId}`}>
               <Icon name="cellphone-link" size={18} color="var(--m-warning)" />
               <span className="min-w-0 flex-1">
-                <span className="block text-[13px] text-ink">{t('shopsync.wantsAccess', { name: device.name })}</span>
+                <span className="block text-[13px] text-ink">{t('connsync.wantsAccess', { name: device.name })}</span>
                 <span className="block font-mono text-[12px] text-ink-3">{prints[device.deviceId]}</span>
               </span>
-              <Button size="sm" disabled={busy} data-testid={`store-sync-grant-${device.deviceId}`} onClick={() => act(() => approveDevice(store, device))}>
-                {t('shopsync.approve')}
+              <Button size="sm" disabled={busy} data-testid={`conn-sync-grant-${device.deviceId}`} onClick={() => act(() => approveDevice(store, device))}>
+                {t('connsync.approve')}
               </Button>
             </div>
           ))}
-          <p className="px-4 pb-2.5 text-[11px] text-ink-4">{t('shopsync.compareHint')}</p>
+          <p className="px-4 pb-2.5 text-[11px] text-ink-4">{t('connsync.compareHint')}</p>
         </div>
       )}
 
       {enabled && others.some((d) => d.hasWrap) && (
         <div className="border-t border-line-2">
           {others.filter((d) => d.hasWrap).map((device) => (
-            <div key={device.deviceId} className="flex items-center gap-3 px-4 py-2.5" data-testid={`store-sync-device-${device.deviceId}`}>
+            <div key={device.deviceId} className="flex items-center gap-3 px-4 py-2.5" data-testid={`conn-sync-device-${device.deviceId}`}>
               <Icon name="cellphone-check" size={17} color="var(--m-ink-3)" />
               <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{device.name}</span>
               <span className="font-mono text-[11px] text-ink-4">{prints[device.deviceId]}</span>
               <button
-                data-testid={`store-sync-revoke-${device.deviceId}`}
+                data-testid={`conn-sync-revoke-${device.deviceId}`}
                 disabled={busy}
                 onClick={() => act(() => revokeDevice(device.deviceId))}
                 className="m-tap border-none bg-transparent text-[12px] font-medium text-negative"
               >
-                {t('shopsync.revoke')}
+                {t('connsync.revoke')}
               </button>
             </div>
           ))}

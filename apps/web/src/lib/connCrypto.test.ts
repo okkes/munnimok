@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import { decryptJson, encryptJson, fingerprintOf, generateDeviceKeys, mintCsk, unwrapCsk, wrapCsk } from './connCrypto';
 
-describe('store-sync crypto (SC1)', () => {
+describe('connection-sync crypto (SC1)', () => {
   it('the CSK round-trips a wrap to the target device only', async () => {
     const target = await generateDeviceKeys();
     const intruder = await generateDeviceKeys();

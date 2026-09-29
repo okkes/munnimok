@@ -3,16 +3,17 @@ import 'fake-indexeddb/auto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DexieBackend } from '@/db/backend';
 import { MunniDB } from '@/db/schema';
+import { readBundle } from '@/features/connectors/bundles';
 import {
   adoptWrapIfApproved,
   approveDevice,
-  disableStoreSync,
-  enableStoreSync,
+  disableConnectionSync,
+  enableConnectionSync,
   listSyncDevices,
   pullConnections,
   pushConnection,
   requestEnrollment,
-} from './storeSync';
+} from './connectionSync';
 
 /** the server as SC1 defines it: dumb storage it cannot read */
 function fakeServer() {
@@ -25,10 +26,10 @@ function fakeServer() {
       const method = (init?.method ?? 'GET').toUpperCase();
       const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, string>) : {};
       const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), { status });
-      const wrapMatch = /\/me\/store-sync\/devices\/([^/]+)\/wrap$/.exec(url.pathname);
-      const connMatch = /\/me\/store-sync\/connections\/([^/]+)$/.exec(url.pathname);
+      const wrapMatch = /\/me\/connection-sync\/devices\/([^/]+)\/wrap$/.exec(url.pathname);
+      const connMatch = /\/me\/connection-sync\/connections\/([^/]+)$/.exec(url.pathname);
 
-      if (url.pathname === '/me/store-sync/devices' && method === 'POST') {
+      if (url.pathname === '/me/connection-sync/devices' && method === 'POST') {
         const existing = devices.get(body.deviceId);
         devices.set(body.deviceId, {
           publicJwk: body.publicJwk,
@@ -37,7 +38,7 @@ function fakeServer() {
         });
         return json({});
       }
-      if (url.pathname === '/me/store-sync/devices' && method === 'GET') {
+      if (url.pathname === '/me/connection-sync/devices' && method === 'GET') {
         return json([...devices.entries()].map(([deviceId, d]) => ({ deviceId, publicJwk: d.publicJwk, name: d.name, hasWrap: !!d.wrappedCsk, createdAt: '2026-07-17' })));
       }
       if (wrapMatch && method === 'POST') {
@@ -54,10 +55,10 @@ function fakeServer() {
         ciphers.set(decodeURIComponent(connMatch[1]), body.cipher);
         return json({});
       }
-      if (url.pathname === '/me/store-sync/connections' && method === 'GET') {
-        return json([...ciphers.entries()].map(([store, cipher]) => ({ store, cipher, updatedAt: '2026-07-17' })));
+      if (url.pathname === '/me/connection-sync/connections' && method === 'GET') {
+        return json([...ciphers.entries()].map(([connectionId, cipher]) => ({ connectionId, cipher, updatedAt: '2026-07-17' })));
       }
-      if (url.pathname === '/me/store-sync' && method === 'DELETE') {
+      if (url.pathname === '/me/connection-sync' && method === 'DELETE') {
         devices.clear();
         ciphers.clear();
         return json({});
@@ -68,32 +69,34 @@ function fakeServer() {
   return { devices, ciphers };
 }
 
-describe('E2EE store-connection sync (two devices, real crypto)', () => {
+describe('E2EE connection sync (two devices, real crypto)', () => {
   const stores: DexieBackend[] = [];
   afterEach(async () => {
     vi.unstubAllGlobals();
+    sessionStorage.clear();
     for (const s of stores.splice(0)) await s.destroy();
   });
 
   const backend = () => {
-    const b = new DexieBackend(new MunniDB(`munni_ss_${Math.random().toString(36).slice(2)}`));
+    const b = new DexieBackend(new MunniDB(`munni_cs_${Math.random().toString(36).slice(2)}`));
     stores.push(b);
     return b;
   };
 
-  it('phone enables, desktop enrolls, approval hands the tokens over — all ciphertext', async () => {
+  it('phone enables, desktop enrolls, approval hands the bundle over — all ciphertext', async () => {
     const server = fakeServer();
     const phone = backend();
     const desktop = backend();
 
-    // phone: connect AH locally, turn sync on
-    await phone.storeConnPut({ id: 'ah', store: 'ah', tokens: { access: 'tok-access', refresh: 'tok-refresh' }, refreshedAt: '2026-07-17T10:00:00Z', status: 'ok' });
-    await enableStoreSync(phone);
-    await pushConnection(phone, (await phone.storeConnGet('ah'))!);
+    // phone: a connection with its bundle in device custody, sync turned on
+    await phone.connectorConnPut({ id: 'c-ah', provider: 'ah', bundle: 'sb_v1.secret-bundle', state: 'active', refreshedAt: '2026-07-17T10:00:00Z' });
+    await enableConnectionSync(phone);
+    await pushConnection(phone, 'c-ah');
     // the server never sees plaintext
-    expect([...server.ciphers.values()].join()).not.toContain('tok-access');
+    expect([...server.ciphers.values()].join()).not.toContain('secret-bundle');
+    expect([...server.ciphers.keys()]).toEqual(['c-ah']);
 
-    // desktop: fresh device asks to join — no tokens yet, wrap pending
+    // desktop: fresh device asks to join — no bundle yet, wrap pending
     await requestEnrollment(desktop);
     expect(await adoptWrapIfApproved(desktop)).toBe(false);
 
@@ -101,25 +104,34 @@ describe('E2EE store-connection sync (two devices, real crypto)', () => {
     const pending = (await listSyncDevices()).find((d) => !d.hasWrap)!;
     await approveDevice(phone, pending);
 
-    // desktop adopts the wrap and decrypts the connection
+    // desktop adopts the wrap and decrypts the connection into its own custody
     expect(await adoptWrapIfApproved(desktop)).toBe(true);
-    const adopted = await desktop.storeConnGet('ah');
-    expect(adopted?.tokens.access).toBe('tok-access');
+    expect((await desktop.connectorConnGet('c-ah'))?.state).toBe('active');
+    expect(await readBundle(desktop, 'c-ah')).toBe('sb_v1.secret-bundle');
   });
 
-  it('pull adopts only fresher tokens; global off wipes the server', async () => {
+  it('pull adopts only a fresher bundle; global off wipes the server', async () => {
     fakeServer();
     const phone = backend();
-    await phone.storeConnPut({ id: 'ah', store: 'ah', tokens: { access: 'old' }, refreshedAt: '2026-07-17T10:00:00Z', status: 'ok' });
-    await enableStoreSync(phone);
-    await pushConnection(phone, (await phone.storeConnGet('ah'))!);
+    await phone.connectorConnPut({ id: 'c-ah', provider: 'ah', bundle: 'sb_v1.old', state: 'active', refreshedAt: '2026-07-17T10:00:00Z' });
+    await enableConnectionSync(phone);
+    await pushConnection(phone, 'c-ah');
 
-    // local copy got newer meanwhile — the pull must not clobber it
-    await phone.storeConnPut({ id: 'ah', store: 'ah', tokens: { access: 'newer' }, refreshedAt: '2026-07-17T12:00:00Z', status: 'ok' });
+    // local copy rotated meanwhile — the pull must not clobber it
+    await phone.connectorConnPut({ id: 'c-ah', provider: 'ah', bundle: 'sb_v1.newer', state: 'active', refreshedAt: '2026-07-17T12:00:00Z' });
     expect(await pullConnections(phone)).toBe(0);
-    expect((await phone.storeConnGet('ah'))?.tokens.access).toBe('newer');
+    expect(await readBundle(phone, 'c-ah')).toBe('sb_v1.newer');
 
-    await disableStoreSync(phone);
+    await disableConnectionSync(phone);
     expect(await listSyncDevices()).toEqual([]);
+  });
+
+  it('a device without a bundle for a connection pushes nothing for it', async () => {
+    const server = fakeServer();
+    const web = backend();
+    await web.connectorConnPut({ id: 'c-ah', provider: 'ah', state: 'active', refreshedAt: '2026-07-17T10:00:00Z' });
+    await enableConnectionSync(web);
+    await pushConnection(web, 'c-ah');
+    expect(server.ciphers.size).toBe(0);
   });
 });

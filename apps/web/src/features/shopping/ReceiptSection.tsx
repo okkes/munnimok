@@ -3,8 +3,9 @@ import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useLgViewport } from '@/lib/viewport';
 import { useReceiptOps } from '@/application/receipts';
-import { useTxReceiptEntry } from '@/application/receiptLinks';
-import { useStoreOps, useUnmatchedReceipts } from '@/application/stores';
+import { useProposedMatches, useTxReceiptEntry } from '@/application/receiptLinks';
+import { useUnmatchedReceipts } from '@/application/connections';
+import { partyName } from '@/features/connectors/logos';
 import type { ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 import { fmtCents } from '@/lib/money';
@@ -39,8 +40,8 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const navigate = useNavigate();
   const entry = useTxReceiptEntry(tx.id);
   const unmatched = useUnmatchedReceipts();
+  const proposals = useProposedMatches();
   const receiptOps = useReceiptOps();
-  const storeOps = useStoreOps();
   const fileRef = useRef<HTMLInputElement>(null);
   const [viewOpen, setViewOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
@@ -73,10 +74,34 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
 
   if (entry === undefined) return null;
   const receipt = entry?.data ?? null;
+  // #367 §5.7: a fetched receipt that fits this reviewed transaction asks first
+  const proposal = receipt === null ? (proposals ?? []).find((l) => l.proposedTxId === tx.id) : undefined;
 
   return (
     <>
       <div className="m-cap mt-5 mb-1 px-1">{t('receipt.title')}</div>
+      {proposal && (
+        <div className="mb-2 rounded-card border border-line bg-surface px-4 py-3" data-testid="receipt-proposal">
+          <div className="flex items-center gap-3">
+            <Icon name="storefront-outline" size={18} color="var(--m-accent-deep)" />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[13px] font-medium text-ink">{proposal.merchant ?? partyName(proposal.source)}</span>
+              <span className="block text-[11px] text-ink-4">
+                {t('receipts.proposedBadge')} · {fmtDate(proposal.date)}
+              </span>
+            </span>
+            <span className="m-num text-[13px] font-semibold text-ink">{fmtCents(proposal.totalCents, tx.currency, lang)}</span>
+          </div>
+          <div className="mt-2 flex gap-2 pl-8">
+            <Button size="sm" data-testid="receipt-proposal-accept" onClick={() => void receiptOps.acceptMatch(proposal)}>
+              {t('receipts.accept')}
+            </Button>
+            <Button size="sm" variant="outline" data-testid="receipt-proposal-reject" onClick={() => void receiptOps.rejectMatch(proposal)}>
+              {t('receipts.reject')}
+            </Button>
+          </div>
+        </div>
+      )}
       <input
         ref={fileRef}
         data-testid="receipt-file"
@@ -130,7 +155,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
                     key={row.id}
                     data-testid={`receipt-pick-${row.id}`}
                     onClick={() => {
-                      void storeOps.linkReceipt(row, tx.id);
+                      void receiptOps.linkReceipt(row, tx.id);
                       setAttachOpen(false);
                     }}
                     className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
@@ -159,10 +184,10 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
           )}
           <button
             data-testid="receipt-connections"
-            onClick={() => void navigate({ to: '/shopping' })}
+            onClick={() => void navigate({ to: '/connections' })}
             className="m-tap border-none bg-transparent py-1 text-center text-[12px] font-medium text-accent-deep"
           >
-            {t('shop.title')}
+            {t('conn.title')}
           </button>
         </div>
       </Sheet>

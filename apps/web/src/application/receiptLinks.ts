@@ -3,7 +3,7 @@ import { useQuery } from '@/db/useQuery';
 import { receiptLinkId } from '@/domain/feedIds';
 import type { Repo } from '@/db/repo';
 import type { StorageBackend } from '@/db/backend';
-import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
+import type { ReceiptDocument, ReceiptLinkRow, ReceiptRow } from '@/db/types';
 
 /**
  * Receipts v3 (approved redesign, rulings 1+2): the per-space presence
@@ -24,6 +24,7 @@ export interface ReceiptSnapshot {
   items?: ReceiptRow['items'];
   image?: string;
   payment?: ReceiptRow['payment'];
+  documents?: ReceiptDocument[];
 }
 
 /** the snapshot a link carries, built from a global receipt row */
@@ -38,6 +39,7 @@ export function receiptSnapshot(receipt: ReceiptRow): ReceiptSnapshot {
     items: receipt.items,
     image: receipt.image,
     payment: receipt.payment,
+    documents: receipt.documents,
   };
 }
 
@@ -54,8 +56,44 @@ export async function writeReceiptLink(
     ...receiptSnapshot(receipt),
     txId: txId ?? (null as never), // explicit null clears a stale link
     auto: auto ? 1 : 0,
+    proposedTxId: null as never, // an attachment settles any open proposal
   });
   return id;
+}
+
+/**
+ * #367 (§5.7): the matcher's best candidate was already reviewed, so the
+ * receipt asks instead of attaching — a link with `proposedTxId`, no
+ * `txId`, listed under "Matches to check" until a human decides.
+ */
+export async function writeProposedLink(repo: Repo, spaceId: string, receipt: ReceiptRow, proposedTxId: string): Promise<string> {
+  const id = receiptLinkId(spaceId, receipt.id);
+  await repo.upsert('receiptLink', spaceId, id, {
+    ...receiptSnapshot(receipt),
+    txId: null as never,
+    auto: 0,
+    proposedTxId,
+  });
+  return id;
+}
+
+/** the human agrees: the proposal becomes the attachment */
+export async function acceptProposal(repo: Repo, spaceId: string, link: ReceiptLinkRow): Promise<void> {
+  if (!link.proposedTxId) return;
+  await repo.upsert('receiptLink', spaceId, link.id, { txId: link.proposedTxId, proposedTxId: null as never, auto: 0 });
+}
+
+/** the human disagrees: that transaction is never proposed for this receipt again */
+export async function rejectProposal(repo: Repo, spaceId: string, link: ReceiptLinkRow): Promise<void> {
+  if (!link.proposedTxId) return;
+  const rejectedTxIds = [...new Set([...(link.rejectedTxIds ?? []), link.proposedTxId])];
+  await repo.upsert('receiptLink', spaceId, link.id, { proposedTxId: null as never, rejectedTxIds });
+}
+
+/** the space's open proposals, newest receipt first */
+export function useProposedMatches(): ReceiptLinkRow[] | undefined {
+  const { store, spaceId } = useData();
+  return useQuery(store, async () => (await spaceReceipts(store, spaceId)).filter((l) => !!l.proposedTxId && !l.txId), [spaceId]);
 }
 
 /** every receipt visible in a space: its snapshot links (store receipts
@@ -97,6 +135,7 @@ const linkAsReceipt = (link: ReceiptLinkRow): ReceiptRow => ({
   image: link.image,
   instanceId: link.instanceId,
   payment: link.payment,
+  documents: link.documents,
   fieldVersions: link.fieldVersions,
   deleted: link.deleted,
 });

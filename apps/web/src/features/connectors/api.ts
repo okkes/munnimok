@@ -1,0 +1,183 @@
+import { apiFetch } from '@/lib/api';
+import { isNativeApp } from '@/lib/platform';
+import type { DeviceClass } from './manifestForm';
+import type {
+  BindingView,
+  Catalogue,
+  ErrorEnvelope,
+  JobView,
+  LiveFrame,
+  LiveInputEvent,
+  RelayInfo,
+  SessionView,
+  SyncOutcome,
+} from './types';
+
+/**
+ * The relay's client (docs/connectors/relay.md): every call the app makes
+ * about a party goes through the munni API's `/connectors/*`, which mints
+ * the subject, binds sessions to the user and files what a sync fetched.
+ * Demo and offline identities never reach here — apiFetch refuses them.
+ */
+
+/** the connector's envelope, or the relay's own refusal in the same shape */
+export class ConnectorError extends Error {
+  constructor(
+    readonly status: number,
+    readonly envelope: ErrorEnvelope,
+  ) {
+    super(`connector ${envelope.code} (${status})`);
+    this.name = 'ConnectorError';
+  }
+}
+
+export const deviceClass = (): DeviceClass => (isNativeApp() ? 'native' : 'web');
+
+const BASE = '/connectors';
+
+/** a failed answer that is not the envelope (a validation problem, a bare 404) still speaks it */
+function envelopeOf(status: number, body: unknown): ErrorEnvelope {
+  const error = (body as { error?: unknown } | null)?.error;
+  if (error && typeof error === 'object' && 'code' in error) return error as ErrorEnvelope;
+  if (status >= 500) return { code: 'provider_unavailable', retriable: true, userAction: 'retry', messageKey: 'connect.error.provider_unavailable' };
+  const code = status === 404 ? 'unsupported_resource' : 'invalid_request';
+  return { code, retriable: false, userAction: 'none', messageKey: `connect.error.${code}` };
+}
+
+async function call<T>(path: string, init: RequestInit = {}): Promise<{ status: number; body: T }> {
+  const headers = new Headers(init.headers);
+  headers.set('X-Device-Class', deviceClass());
+  // a party that cannot be reached answers 503 by design — the choke
+  // point must not file it as an unexpected server answer
+  const response = await apiFetch(`${BASE}${path}`, { ...init, headers }, { expectStatuses: [503] });
+  const body = (await response.json().catch(() => null)) as T;
+  if (!response.ok) throw new ConnectorError(response.status, envelopeOf(response.status, body));
+  return { status: response.status, body };
+}
+
+const json = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
+
+export interface LoginBody {
+  connectionId: string;
+  inputs?: Record<string, string>;
+  config?: Record<string, string>;
+  credentialBundle?: string;
+  label?: string;
+  preferAgent?: string;
+  idempotencyKey?: string;
+}
+
+export interface SyncBody {
+  connectionId: string;
+  bundle: string;
+  /** yyyy-mm-dd; absent = the party's full history window */
+  since?: string;
+}
+
+export type SyncAnswer = { accepted: false; outcome: SyncOutcome } | { accepted: true; job: JobView };
+
+export const connectorApi = {
+  /** what this environment runs; null when the relay is not mapped at all */
+  async info(): Promise<RelayInfo | null> {
+    try {
+      return (await call<RelayInfo>('')).body;
+    } catch (err) {
+      if (err instanceof ConnectorError && err.status === 404) return null;
+      throw err;
+    }
+  },
+
+  /** the catalogue, or null when the ETag still holds */
+  async catalogue(etag: string | null): Promise<{ catalogue: Catalogue; etag: string | null } | null> {
+    const headers = new Headers({ 'X-Device-Class': deviceClass() });
+    if (etag) headers.set('If-None-Match', etag);
+    const response = await apiFetch(`${BASE}/providers`, { headers }, { expectStatuses: [503] });
+    if (response.status === 304) return null;
+    const body = (await response.json().catch(() => null)) as Catalogue | null;
+    if (!response.ok || !body) throw new ConnectorError(response.status, envelopeOf(response.status, body));
+    return { catalogue: body, etag: response.headers.get('ETag') };
+  },
+
+  async sessions(): Promise<BindingView[]> {
+    return (await call<BindingView[]>('/sessions')).body;
+  },
+
+  /** 200 = settled with the bundle attached, 202 = a run to follow */
+  async startLogin(provider: string, body: LoginBody): Promise<{ settled: boolean; view: SessionView }> {
+    const { status, body: view } = await call<SessionView>(`/${provider}/login`, json(body));
+    return { settled: status === 200, view };
+  },
+
+  async login(provider: string, sessionId: string): Promise<SessionView> {
+    return (await call<SessionView>(`/${provider}/login/${sessionId}`)).body;
+  },
+
+  async answer(provider: string, sessionId: string, challengeId: string, value: string): Promise<SessionView> {
+    return (await call<SessionView>(`/${provider}/login/${sessionId}/answer`, json({ challengeId, value }))).body;
+  },
+
+  async cancel(provider: string, sessionId: string): Promise<SessionView> {
+    return (await call<SessionView>(`/${provider}/login/${sessionId}/cancel`, { method: 'POST' })).body;
+  },
+
+  /** the challenge's picture, fetched with the caller's own credentials */
+  async challengeImage(provider: string, sessionId: string, challengeId: string): Promise<Blob | null> {
+    const response = await apiFetch(`${BASE}/${provider}/login/${sessionId}/challenges/${challengeId}/image`, {
+      headers: { 'X-Device-Class': deviceClass() },
+    });
+    return response.ok ? response.blob() : null;
+  },
+
+  /** the newest live frame past `after`; null when there is none yet */
+  async liveFrame(provider: string, sessionId: string, challengeId: string, after: number): Promise<LiveFrame | null> {
+    const response = await apiFetch(
+      `${BASE}/${provider}/login/${sessionId}/challenges/${challengeId}/live/frame?after=${after}`,
+      { headers: { 'X-Device-Class': deviceClass() } },
+      { expectStatuses: [503] },
+    );
+    if (response.status === 204) return null;
+    if (!response.ok) throw new ConnectorError(response.status, envelopeOf(response.status, await response.json().catch(() => null)));
+    const [width, height] = (response.headers.get('X-Live-Size') ?? '390x844').split('x').map(Number);
+    return {
+      sequence: Number(response.headers.get('X-Live-Sequence') ?? after),
+      width: width || 390,
+      height: height || 844,
+      origin: response.headers.get('X-Live-Origin') ?? undefined,
+      blob: await response.blob(),
+    };
+  },
+
+  async liveInput(provider: string, sessionId: string, challengeId: string, events: LiveInputEvent[]): Promise<void> {
+    await call<unknown>(`/${provider}/login/${sessionId}/challenges/${challengeId}/live/input`, json({ events }));
+  },
+
+  /** resume, fetch, ingest, acknowledge — or a job when the fetch outran its window */
+  async sync(provider: string, body: SyncBody): Promise<SyncAnswer> {
+    const { status, body: answer } = await call<SyncOutcome & JobView>(`/${provider}/sync`, json(body));
+    return status === 202 ? { accepted: true, job: answer } : { accepted: false, outcome: answer };
+  },
+
+  async job(provider: string, jobId: string): Promise<JobView> {
+    return (await call<JobView>(`/${provider}/jobs/${jobId}`)).body;
+  },
+
+  async answerJob(provider: string, jobId: string, challengeId: string, value: string): Promise<JobView> {
+    return (await call<JobView>(`/${provider}/jobs/${jobId}/answer`, json({ challengeId, value }))).body;
+  },
+
+  /** ingests the job's page once it succeeded; `running` while it has not */
+  async collect(provider: string, jobId: string, bundle: string): Promise<{ running: boolean; job: JobView }> {
+    const { status, body: job } = await call<JobView>(`/${provider}/jobs/${jobId}/collect`, json({ bundle }));
+    return { running: status === 202, job };
+  },
+
+  /** always removes the binding; signs out at the party when a bundle rides along */
+  async disconnect(provider: string, sessionId: string, bundle?: string): Promise<{ loggedOut: boolean; jobId?: string; reason?: string }> {
+    return (
+      await call<{ loggedOut: boolean; jobId?: string; reason?: string }>(`/${provider}/sessions/${sessionId}`, {
+        method: 'DELETE',
+        body: JSON.stringify(bundle ? { bundle } : {}),
+      })
+    ).body;
+  },
+};

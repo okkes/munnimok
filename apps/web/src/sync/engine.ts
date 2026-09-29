@@ -6,6 +6,7 @@ import type { OutboxRow } from '@/db/types';
 import type { Repo } from '@/db/repo';
 import type { SyncBackend } from './backend';
 import { SyncHttpError } from './backend';
+import { publishConnectorFrame } from '@/features/connectors/events';
 
 const cursorKey = (spaceId: string) => `syncCursor_${spaceId}`;
 const parkedKey = (spaceId: string) => `parkedOps_${spaceId}`;
@@ -90,7 +91,12 @@ export class SyncEngine {
     let retryMs = 1_000;
     while (!signal.aborted) {
       try {
-        await this.backend.events(signal, () => {
+        await this.backend.events(signal, (frame) => {
+          // a connector run in flight is the hub's business, not a sync
+          if (frame.kind === 'connector') {
+            publishConnectorFrame(frame);
+            return;
+          }
           // coalesce event bursts into one sync pass
           if (this.eventDebounce) clearTimeout(this.eventDebounce);
           this.eventDebounce = setTimeout(() => void this.syncAll(), 300);
@@ -374,7 +380,7 @@ export class SyncEngine {
     const scoped = [
       'account', 'category', 'transaction', 'txMeta', 'accountLink',
       'recurring', 'recurringDismiss', 'budget', 'event', 'goal', 'goalContribution',
-      'allocation', 'receipt', 'receiptLink', 'storeMarker', 'storeConn', 'storeConnLink',
+      'allocation', 'receipt', 'receiptLink', 'storeConn', 'storeConnLink',
       'holding', 'lot', 'insightDismiss', 'topic', 'activity',
     ] as const;
     await this.store.transact(['space', ...scoped, 'outbox', 'meta'], async () => {

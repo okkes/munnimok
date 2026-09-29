@@ -2,7 +2,7 @@
 import 'fake-indexeddb/auto';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { USER_TEST_DB, renderApp, renderAppAsUser } from '@/test/harness';
+import { USER_TEST_DB, renderApp } from '@/test/harness';
 
 // happy-dom has no canvas — the downscaler is covered by lib/image.test.ts
 const FAKE_PHOTO = 'data:image/jpeg;base64,ZmFrZQ==';
@@ -11,7 +11,7 @@ vi.mock('@/lib/image', async (importOriginal) => ({
   downscaleImage: vi.fn(async () => FAKE_PHOTO),
 }));
 
-async function openFirstTx() {
+async function openFirstTx(): Promise<string> {
   renderApp('/transactions');
   const row = await waitFor(() => {
     const el = document.querySelector('[data-testid^="tx-row-"]');
@@ -20,9 +20,20 @@ async function openFirstTx() {
   });
   fireEvent.click(row);
   await screen.findByTestId('receipt-empty');
+  return row.getAttribute('data-testid')!.slice('tx-row-'.length);
 }
 
-describe('Receipts S1 (demo identity)', () => {
+/** a second handle on the demo database, the way the app's own writes look to a screen */
+async function demoRepo() {
+  const { MunniDB } = await import('@/db/schema');
+  const { Repo } = await import('@/db/repo');
+  const { DexieBackend } = await import('@/db/backend');
+  const { HlcClock } = await import('@/sync/hlc');
+  const db = new MunniDB('munni_demo');
+  return { db, repo: new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false }) };
+}
+
+describe('Receipts (demo identity)', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
@@ -45,86 +56,34 @@ describe('Receipts S1 (demo identity)', () => {
     await screen.findByTestId('receipt-empty');
   }, 15_000);
 
-  it('the connections door lists the six stores; demo cannot connect', async () => {
+  it('the connections door reaches the hub; the demo shows its connections and cannot connect', async () => {
     await openFirstTx();
-    // R8: the attach sheet is the one door — stores link at its bottom
+    // the rich demo seed stays off under vitest (demo-rich.test.ts covers
+    // it): the two connections it would write are written here
+    const { db, repo } = await demoRepo();
+    const { storeConnLinkId } = await import('@/domain/feedIds');
+    await repo.upsert('storeConn', 'demo_store_feed', 'demo_conn_ah', { store: 'ah', displayName: 'Albert Heijn', connectedAt: '2026-08-01', status: 'ok' });
+    await repo.upsert('storeConn', 'demo_store_feed', 'demo_conn_jumbo', { store: 'jumbo', displayName: 'Jumbo', connectedAt: '2026-09-01', status: 'expired' });
+    await repo.upsert('storeConnLink', 'demo_space', storeConnLinkId('demo_space', 'demo_conn_ah'), { instanceId: 'demo_conn_ah', store: 'ah', displayName: 'Albert Heijn' });
+    await repo.store.connectorConnPut({ id: 'demo_conn_ah', provider: 'ah', bundle: 'sb_v1.demo', state: 'active', refreshedAt: '2026-09-29T08:00:00Z', lastSyncAt: '2026-09-29T08:00:00Z' });
+    await repo.store.connectorConnPut({ id: 'demo_conn_jumbo', provider: 'jumbo', state: 'needs_reauth', refreshedAt: '2026-09-27T08:00:00Z' });
+    db.close();
+    // R8: the attach sheet is the one door — the hub links at its bottom
     fireEvent.click(screen.getByTestId('receipt-empty'));
     fireEvent.click(await screen.findByTestId('receipt-connections'));
-    await screen.findByTestId('screen-shopping');
-    expect(screen.getByTestId('shopping-privacy')).toBeTruthy();
-    for (const store of ['ah', 'jumbo', 'bol', 'coolblue', 'mediamarkt', 'amazon']) {
-      expect(screen.getByTestId(`shopping-store-${store}`)).toBeTruthy();
-    }
-    expect(screen.getByTestId('shopping-photo-note')).toBeTruthy();
-    // demo identity: zero network — no connect affordance, just the note
-    expect(screen.getByTestId('shopping-signin-note')).toBeTruthy();
-    expect(screen.queryByTestId('shop-ah-connect')).toBeNull();
-  }, 15_000);
-
-  it('a signed-in user connects AH, names the instance, includes a second space', async () => {
-    renderAppAsUser('/shopping', {
-      spaces: [
-        { id: 's-user', name: 'Personal' },
-        { id: 's-two', name: 'Second', kind: 'shared' },
-      ],
-      api: {
-        'POST /feeds': () => ({ feedSpaceId: 'feed', owned: true }),
-        'POST /shop/proxy/ah-api': (body) => {
-          const request = body as { path: string };
-          if (request.path === '/mobile-auth/v1/auth/token') return { access_token: 'acc-1', refresh_token: 'ref-1' };
-          if (request.path === '/mobile-services/member/v1/member') return { memberId: 777 };
-          if (request.path === '/mobile-services/v2/receipts') return [];
-          return {};
-        },
-      },
-    });
-    await screen.findByTestId('screen-shopping');
-    expect(screen.queryByTestId('shopping-signin-note')).toBeNull();
-
-    fireEvent.click(await screen.findByTestId('shop-ah-connect'));
-    fireEvent.change(await screen.findByTestId('shop-ah-paste'), {
-      target: { value: 'appie://login-exit?code=abc-12345' },
-    });
-    fireEvent.click(screen.getByTestId('shop-ah-submit'));
-
-    // v3: a fresh instance asks for its display name right away
-    const nameInput = (await screen.findByTestId('shop-name-input', {}, { timeout: 5000 })) as HTMLInputElement;
-    expect(nameInput.value).toBe('Albert Heijn');
-    fireEvent.change(nameInput, { target: { value: 'AH thuis' } });
-    fireEvent.click(screen.getByTestId('shop-name-save'));
-
-    // the named instance card renders with its connected state
-    const card = await waitFor(() => {
-      const el = document.querySelector('[data-testid^="shop-inst-"][data-testid*="-"]');
-      expect(el).toBeTruthy();
-      return el!;
-    });
-    await waitFor(() => expect(card.closest('[data-testid^="shop-inst-"]')!.textContent).toContain('AH thuis'));
-
-    // include the OTHER space via the manage sheet — the connect already
-    // included the active one; afterwards both spaces see the connection
-    fireEvent.click(document.querySelector('[data-testid^="shop-inst-manage-"]')!);
-    const rows = [await screen.findByTestId('shop-inst-space-s-user'), await screen.findByTestId('shop-inst-space-s-two')];
-    await waitFor(() => expect(rows.filter((row) => row.querySelector('.mdi-checkbox-marked'))).toHaveLength(1));
-    const unchecked = rows.find((row) => !row.querySelector('.mdi-checkbox-marked'))!;
-    fireEvent.click(unchecked);
-    await waitFor(() => expect(rows.filter((row) => row.querySelector('.mdi-checkbox-marked'))).toHaveLength(2));
-
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB(USER_TEST_DB);
-    await waitFor(async () => {
-      const instances = await db.storeInstances.toArray();
-      expect(instances).toHaveLength(1);
-      expect(instances[0].tokens).toEqual({ access: 'acc-1', refresh: 'ref-1' });
-      const links = await db.storeConnLinks.toArray();
-      const live = links.filter((l) => l.deleted === 0);
-      expect(live.map((l) => l.spaceId).sort((a, b) => a.localeCompare(b))).toEqual(['s-two', 's-user']);
-      // the synced metadata carries the chosen name + identity hash
-      const meta = (await db.storeConns.toArray()).find((c) => c.deleted === 0);
-      expect(meta?.displayName).toBe('AH thuis');
-      expect(meta?.providerAccountHash).toBeTruthy();
-    });
-    db.close();
+    await screen.findByTestId('screen-connections');
+    expect(screen.getByTestId('conn-privacy')).toBeTruthy();
+    // the seed: Albert Heijn synced on this device, Jumbo asking for a sign-in
+    const ah = await screen.findByTestId('conn-card-demo_conn_ah');
+    expect(ah.textContent).toContain('Albert Heijn');
+    expect((await screen.findByTestId('conn-state-demo_conn_ah')).textContent).toMatch(/Synced/);
+    expect((await screen.findByTestId('conn-state-demo_conn_jumbo')).textContent).toMatch(/Reconnect needed/);
+    expect(screen.getByTestId('conn-usedin-demo_conn_ah').textContent).toContain('Demo');
+    // demo identity: zero network — no catalogue door, no sync, just the note
+    expect(screen.getByTestId('conn-signin-note')).toBeTruthy();
+    expect(screen.queryByTestId('conn-add-open')).toBeNull();
+    expect(screen.queryByTestId('conn-sync-demo_conn_ah')).toBeNull();
+    expect(screen.getByTestId('conn-photo-note')).toBeTruthy();
   }, 15_000);
 
   it('opened from its own transaction, the sheet hides the linked-tx block', async () => {
@@ -153,154 +112,39 @@ describe('Receipts S1 (demo identity)', () => {
     await screen.findByTestId('screen-receipts');
     const row = await waitFor(
       () => {
-        const el = document.querySelector('[data-testid^="receipt-row-"]');
+        const el = document.querySelector('[data-testid^="receipt-row-"][data-testid*="-"]');
         expect(el).toBeTruthy();
         return el!;
       },
       { timeout: 5000 },
     );
     expect(row.textContent).toMatch(/€[0-9]/);
-
-    fireEvent.click(row);
-    // photo receipts attach on capture → the linked transaction shows
-    await screen.findByTestId('receipt-view-total');
-    await screen.findByTestId('receipt-linked-tx');
   }, 15_000);
 
-  it('managing an instance renames it everywhere and remove cascades (ruling 2)', async () => {
-    renderAppAsUser('/shopping', {
-      spaces: [{ id: 's-user', name: 'Personal' }],
-      api: {
-        'POST /feeds': () => ({ feedSpaceId: 'feed', owned: true }),
-        'POST /shop/proxy/ah-api': (body) => {
-          const request = body as { path: string };
-          if (request.path === '/mobile-auth/v1/auth/token') return { access_token: 'acc-1', refresh_token: 'ref-1' };
-          if (request.path === '/mobile-services/v2/receipts') return [];
-          return {};
-        },
-      },
-    });
-    await screen.findByTestId('screen-shopping');
-    fireEvent.click(await screen.findByTestId('shop-ah-connect'));
-    fireEvent.change(await screen.findByTestId('shop-ah-paste'), { target: { value: 'appie://login-exit?code=abc-12345' } });
-    fireEvent.click(screen.getByTestId('shop-ah-submit'));
-    fireEvent.click(await screen.findByTestId('shop-name-save', {}, { timeout: 5000 }));
-
-    // manage: rename on blur reaches the synced metadata AND the links
-    fireEvent.click(await waitFor(() => document.querySelector('[data-testid^="shop-inst-manage-"]')!));
-    const nameInput = (await screen.findByTestId('shop-manage-name')) as HTMLInputElement;
-    fireEvent.change(nameInput, { target: { value: 'AH werk' } });
-    fireEvent.blur(nameInput);
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB(USER_TEST_DB);
-    await waitFor(async () => {
-      expect((await db.storeConns.toArray()).find((c) => c.deleted === 0)?.displayName).toBe('AH werk');
-      expect((await db.storeConnLinks.toArray()).find((l) => l.deleted === 0)?.displayName).toBe('AH werk');
-    });
-
-    // remove opens the shared danger sheet, then the instance + links
-    // tombstone and the device tokens disappear (unlinked receipts too)
-    fireEvent.click(screen.getByTestId('shop-inst-remove'));
-    await screen.findByTestId('shop-inst-remove-body');
-    fireEvent.click(screen.getByTestId('shop-inst-remove-confirm'));
-    await waitFor(async () => {
-      expect(await db.storeInstances.toArray()).toHaveLength(0);
-      expect((await db.storeConns.toArray()).every((c) => c.deleted === 1)).toBe(true);
-      expect((await db.storeConnLinks.toArray()).every((l) => l.deleted === 1)).toBe(true);
-    });
-    db.close();
-  }, 15_000);
-
-  it('a signed-in user connects Jumbo with username/password (never stored)', async () => {
-    renderAppAsUser('/shopping', {
-      api: {
-        'POST /feeds': () => ({ feedSpaceId: 'feed', owned: true }),
-        'POST /shop/proxy/jumbo': (body) => {
-          const request = body as { path: string };
-          if (request.path === '/v17/users/login') {
-            return new Response(JSON.stringify({}), { status: 200, headers: { 'x-jumbo-token': 'jt-1' } });
-          }
-          if (request.path === '/v17/users/me/receipts') return { receipts: [] };
-          return {};
-        },
-      },
-    });
-    await screen.findByTestId('screen-shopping');
-
-    fireEvent.click(await screen.findByTestId('shop-jumbo-connect'));
-    fireEvent.change(await screen.findByTestId('shop-jumbo-user'), { target: { value: 'okkes@example.com' } });
-    fireEvent.change(screen.getByTestId('shop-jumbo-pass'), { target: { value: 'geheim' } });
-    fireEvent.click(screen.getByTestId('shop-jumbo-submit'));
-
-    // v3: the naming step confirms the connect worked
-    const nameInput = (await screen.findByTestId('shop-name-input', {}, { timeout: 5000 })) as HTMLInputElement;
-    expect(nameInput.value).toBe('Jumbo');
-    fireEvent.click(screen.getByTestId('shop-name-save'));
-
-    // only the session token is kept — never the credentials
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB(USER_TEST_DB);
-    await waitFor(async () => {
-      const instances = await db.storeInstances.toArray();
-      expect(instances).toHaveLength(1);
-      expect(instances[0].tokens).toEqual({ token: 'jt-1' });
-      expect(JSON.stringify(instances[0])).not.toContain('geheim');
-    });
-    db.close();
-  }, 15_000);
-
-  it('a tarpitted Jumbo login explains the bot-protection block honestly', async () => {
-    renderAppAsUser('/shopping', {
-      api: {
-        // the api surfaces Akamai hangs as 504 (never a raw 500)
-        'POST /shop/proxy/jumbo': () => new Response('', { status: 504 }),
-      },
-    });
-    await screen.findByTestId('screen-shopping');
-
-    fireEvent.click(await screen.findByTestId('shop-jumbo-connect'));
-    fireEvent.change(await screen.findByTestId('shop-jumbo-user'), { target: { value: 'okkes@example.com' } });
-    fireEvent.change(screen.getByTestId('shop-jumbo-pass'), { target: { value: 'geheim' } });
-    fireEvent.click(screen.getByTestId('shop-jumbo-submit'));
-
-    const failed = await screen.findByTestId('shop-jumbo-failed');
-    expect(failed.textContent).toContain('block connections');
-    // nothing was stored
-    const { MunniDB } = await import('@/db/schema');
-    const db = new MunniDB(USER_TEST_DB);
-    expect(await db.storeInstances.toArray()).toHaveLength(0);
-    db.close();
-  }, 15_000);
-
-  it('settings reaches receipts; the stores door reaches connections', async () => {
+  it('settings reaches receipts; the connections door reaches the hub', async () => {
     renderApp('/settings');
     await screen.findByTestId('screen-settings');
-    // v3: receipts live in the SPACE section; stores stay a global door
+    // v3: receipts live in the SPACE section; connections stay a global door
     fireEvent.click(await screen.findByTestId('settings-receipts-row'));
     await screen.findByTestId('screen-receipts');
-    fireEvent.click(screen.getByTestId('receipts-stores'));
-    expect(await screen.findByTestId('screen-shopping')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('receipts-connections'));
+    expect(await screen.findByTestId('screen-connections')).toBeTruthy();
   }, 15_000);
 
-  it('the receipts browser groups by store and searches names and amounts', async () => {
+  it('the receipts browser groups by party and searches names and amounts', async () => {
     await openFirstTx();
     const file = new File(['x'], 'bon.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByTestId('receipt-file'), { target: { files: [file] } });
     await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
 
-    // seed a store receipt's snapshot (present, not attached) beside the photo one
-    const { MunniDB } = await import('@/db/schema');
-    const { Repo } = await import('@/db/repo');
-    const { DexieBackend } = await import('@/db/backend');
-    const { HlcClock } = await import('@/sync/hlc');
-    const db = new MunniDB('munni_demo');
-    const repo = new Repo(new DexieBackend(db), new HlcClock('t'), { trackOutbox: false });
-    await repo.upsert('receiptLink', 'demo_space', 'rlink-ah-x1', {
-      receiptId: 'rcpt:ah:x1',
-      source: 'ah',
+    // seed a Jumbo receipt's snapshot (present, not attached) beside the photo one
+    const { db, repo } = await demoRepo();
+    await repo.upsert('receiptLink', 'demo_space', 'rlink-jumbo-x1', {
+      receiptId: 'rcpt:jumbo:demo_conn_jumbo:x1',
+      source: 'jumbo',
       date: '2026-07-01',
       totalCents: 2199,
-      merchant: 'Albert Heijn',
+      merchant: 'Jumbo',
       items: [{ name: 'HALFVOLLE MELK', totalCents: 258 }],
     });
     db.close();
@@ -308,23 +152,73 @@ describe('Receipts S1 (demo identity)', () => {
 
     renderApp('/receipts');
     await screen.findByTestId('screen-receipts');
-    // grouped by source: the AH section and the photo section
-    await screen.findByTestId('receipts-group-ah');
+    // grouped by source: the Jumbo section and the photo section
+    await screen.findByTestId('receipts-group-jumbo');
     await screen.findByTestId('receipts-group-photo');
 
     // item-name search narrows to the store receipt…
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: 'melk' } });
     await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
-    expect(screen.getByTestId('receipts-group-ah')).toBeTruthy();
+    expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy();
     // …and so does an amount query
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '21,99' } });
-    await waitFor(() => expect(screen.getByTestId('receipts-group-ah')).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy());
     expect(screen.queryByTestId('receipts-group-photo')).toBeNull();
 
     // the unlinked filter keeps only the store receipt (the photo is linked)
     fireEvent.change(screen.getByTestId('receipts-search'), { target: { value: '' } });
     fireEvent.click(await screen.findByTestId('receipts-filter-unlinked'));
     await waitFor(() => expect(screen.queryByTestId('receipts-group-photo')).toBeNull());
-    expect(screen.getByTestId('receipts-group-ah')).toBeTruthy();
+    expect(screen.getByTestId('receipts-group-jumbo')).toBeTruthy();
+  }, 20_000);
+
+  it('a fetched receipt carries its invoice, opened in place (#367)', async () => {
+    renderApp('/receipts');
+    await screen.findByTestId('screen-receipts');
+    const { db, repo } = await demoRepo();
+    await repo.upsert('receiptLink', 'demo_space', 'rlink-bol-inv', {
+      receiptId: 'rcpt:bol:c1:o-1',
+      source: 'bol',
+      date: '2026-07-02',
+      totalCents: 4999,
+      merchant: 'bol',
+      documents: [{ kind: 'invoice', mime: 'application/pdf', filename: 'factuur-1.pdf', dataUrl: 'data:application/pdf;base64,JVBERi0=' }],
+    });
+    db.close();
+    const row = await screen.findByTestId('receipt-row-rcpt:bol:c1:o-1', {}, { timeout: 5000 });
+    expect(row.textContent).toContain('Invoice');
+    fireEvent.click(row);
+    await screen.findByTestId('receipt-documents');
+    fireEvent.click(screen.getByTestId('receipt-document-0'));
+    await screen.findByTestId('receipt-invoice-view');
+    expect((screen.getByTestId('receipt-invoice-download') as HTMLAnchorElement).getAttribute('download')).toBe('factuur-1.pdf');
+  }, 15_000);
+
+  it('a proposed match asks on the transaction; yes attaches it (§5.7)', async () => {
+    const txId = await openFirstTx();
+    const { db, repo } = await demoRepo();
+    await repo.upsert('receiptLink', 'demo_space', 'rlink-proposed', {
+      receiptId: 'rcpt:ah:demo_conn_ah:p1',
+      source: 'ah',
+      instanceId: 'demo_conn_ah',
+      date: '2026-07-03',
+      totalCents: 1250,
+      merchant: 'Albert Heijn',
+      auto: 0,
+      proposedTxId: txId,
+    });
+    db.close();
+    const proposal = await screen.findByTestId('receipt-proposal', {}, { timeout: 5000 });
+    expect(proposal.textContent).toContain('Receipt to check');
+    fireEvent.click(screen.getByTestId('receipt-proposal-accept'));
+    await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
+    expect(screen.queryByTestId('receipt-proposal')).toBeNull();
+
+    // the receipts screen lists what is left to check — nothing now
+    cleanup();
+    renderApp('/receipts');
+    await screen.findByTestId('screen-receipts');
+    await waitFor(() => expect(document.querySelector('[data-testid^="receipt-row-"]')).toBeTruthy());
+    expect(screen.queryByTestId('receipts-to-check')).toBeNull();
   }, 20_000);
 });

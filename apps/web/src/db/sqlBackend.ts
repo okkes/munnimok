@@ -5,7 +5,7 @@ import type {
   MetaRow,
   OutboxRow,
   QuoteCacheRow,
-  StoreConnectionRow,
+  ConnectorConnRow,
 } from './types';
 
 /**
@@ -50,7 +50,6 @@ export const ENTITIES: readonly EntityName[] = [
   'allocation',
   'receipt',
   'receiptLink',
-  'storeMarker',
   'storeConn',
   'storeConnLink',
   'holding',
@@ -81,8 +80,9 @@ export async function initSqlSchema(sql: SqlExecutor): Promise<void> {
   await sql.run('CREATE TABLE IF NOT EXISTS outbox (opId TEXT PRIMARY KEY, spaceId TEXT, hlc TEXT, json TEXT NOT NULL)');
   await sql.run('CREATE INDEX IF NOT EXISTS idx_outbox_space ON outbox (spaceId)');
   await sql.run('CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, json TEXT NOT NULL)');
-  // receipts v3: device-only store connections, keyed by instance id
-  await sql.run('CREATE TABLE IF NOT EXISTS store_inst (id TEXT PRIMARY KEY, json TEXT NOT NULL)');
+  // #367: device-only connector connections (the bundle lives here), keyed by connection id
+  await sql.run('CREATE TABLE IF NOT EXISTS connector_conn (id TEXT PRIMARY KEY, json TEXT NOT NULL)');
+  await sql.run('DROP TABLE IF EXISTS store_inst');
   await sql.run('CREATE TABLE IF NOT EXISTS quote_cache (key TEXT PRIMARY KEY, json TEXT NOT NULL)');
 }
 
@@ -194,23 +194,23 @@ export class SqlStorageBackend implements StorageBackend {
     this.emit();
   }
 
-  async storeConnAll() {
-    const rows = await this.sql.query('SELECT json FROM store_inst');
-    return rows.map((r) => JSON.parse(r.json as string) as StoreConnectionRow);
+  async connectorConnAll() {
+    const rows = await this.sql.query('SELECT json FROM connector_conn');
+    return rows.map((r) => JSON.parse(r.json as string) as ConnectorConnRow);
   }
 
-  async storeConnGet(id: string) {
-    const rows = await this.sql.query('SELECT json FROM store_inst WHERE id = ?', [id]);
-    return rows[0] ? (JSON.parse(rows[0].json as string) as StoreConnectionRow) : undefined;
+  async connectorConnGet(id: string) {
+    const rows = await this.sql.query('SELECT json FROM connector_conn WHERE id = ?', [id]);
+    return rows[0] ? (JSON.parse(rows[0].json as string) as ConnectorConnRow) : undefined;
   }
 
-  async storeConnPut(row: StoreConnectionRow) {
-    await this.sql.run('INSERT OR REPLACE INTO store_inst (id, json) VALUES (?, ?)', [row.id, JSON.stringify(row)]);
+  async connectorConnPut(row: ConnectorConnRow) {
+    await this.sql.run('INSERT OR REPLACE INTO connector_conn (id, json) VALUES (?, ?)', [row.id, JSON.stringify(row)]);
     this.emit();
   }
 
-  async storeConnDelete(id: string) {
-    await this.sql.run('DELETE FROM store_inst WHERE id = ?', [id]);
+  async connectorConnDelete(id: string) {
+    await this.sql.run('DELETE FROM connector_conn WHERE id = ?', [id]);
     this.emit();
   }
 

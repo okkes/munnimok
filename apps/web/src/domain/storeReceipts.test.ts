@@ -1,14 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import {
-  bestMatch,
-  candidateLadder,
-  mapAhItems,
-  mapAhPayment,
-  mapAhSummary,
-  matchCandidates,
-  parseReceiptText,
-  setCatalogStorePatterns,
-} from './storeReceipts';
+import { bestMatch, candidateLadder, matchCandidates, parseReceiptText, setCatalogStorePatterns } from './storeReceipts';
 import type { MatchableReceipt } from './storeReceipts';
 import type { TxView } from '@/db/types';
 
@@ -99,39 +90,6 @@ describe('receipt ↔ transaction matching', () => {
     expect(ladder.primary.map((t) => t.id)).toEqual(['near']);
     // rung 3 (same amount, any date) before rung 4 (latest expenses)
     expect(ladder.more.map((t) => t.id)).toEqual(['same-price-far', 'other-latest']);
-  });
-});
-
-describe('AH payload mapping', () => {
-  it('payment lines yield method + masked tail; product lines never do', () => {
-    const items = [
-      { type: 'product', description: 'MELK', amount: '2,58' },
-      { type: 'payment', description: 'PINNEN Maestro ****1234', amount: '23,50' },
-    ];
-    expect(mapAhPayment(items)).toEqual({ method: 'PINNEN Maestro ****1234', accountTail: '1234' });
-    expect(mapAhPayment([{ type: 'product', description: 'MELK', amount: '2,58' }])).toBeUndefined();
-  });
-
-  it('summary rows become matchable receipts (euros → cents)', () => {
-    const mapped = mapAhSummary({
-      transactionId: 'tid-1',
-      transactionMoment: '2026-07-05T17:31:00Z',
-      total: { amount: { amount: 23.5 } },
-    });
-    expect(mapped).toMatchObject({ id: 'tid-1', source: 'ah', date: '2026-07-05', totalCents: 2350 });
-  });
-
-  it('receiptUiItems keep products and drop chrome', () => {
-    const items = mapAhItems([
-      { type: 'product', quantity: '2', description: 'HALFVOLLE MELK', amount: '2,58' },
-      { type: 'product', description: 'BROOD', amount: '1.99' },
-      { type: 'divider' },
-      { type: 'total', amount: '4,57' },
-    ]);
-    expect(items).toEqual([
-      { name: 'HALFVOLLE MELK', qty: 2, totalCents: 258 },
-      { name: 'BROOD', qty: undefined, totalCents: 199 },
-    ]);
   });
 });
 

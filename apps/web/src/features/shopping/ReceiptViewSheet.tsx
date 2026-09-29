@@ -2,25 +2,45 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import { useReceiptOps } from '@/application/receipts';
-import { storesAvailable, useStoreOps } from '@/application/stores';
+import { connectorsAvailable } from '@/application/connections';
 import type { ReceiptEntry } from '@/application/receiptLinks';
 import { useSpaceTransactions } from '@/application/transactions';
 import { candidateLadder, parseReceiptText } from '@/domain/storeReceipts';
+import { partyName } from '@/features/connectors/logos';
 import { apiFetch } from '@/lib/api';
 import { fmtCents } from '@/lib/money';
 import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { TxRow } from '@/ui/TxRow';
+import type { ReceiptDocument } from '@/db/types';
 
-const STORE_NAMES: Record<string, string> = {
-  ah: 'Albert Heijn',
-  jumbo: 'Jumbo',
-  bol: 'bol.com',
-  coolblue: 'Coolblue',
-  mediamarkt: 'MediaMarkt',
-  amazon: 'Amazon',
-};
+/** an invoice the party issued, shown in place — a PDF or a picture, from its data URL */
+function InvoiceSheet({ document, onClose }: Readonly<{ document: ReceiptDocument | null; onClose: () => void }>) {
+  const { t } = useLang();
+  return (
+    <Sheet open={document !== null} onOpenChange={(open) => !open && onClose()} title={t('receipts.invoice')} size="tall">
+      {document && (
+        <div className="flex flex-col gap-2" data-testid="receipt-invoice-view">
+          {document.mime.startsWith('image/') ? (
+            <img src={document.dataUrl} alt={t('receipts.invoice')} className="w-full rounded-card object-contain" />
+          ) : (
+            <iframe title={document.filename ?? t('receipts.invoice')} src={document.dataUrl} className="w-full rounded-card border border-line bg-white" style={{ height: 460 }} />
+          )}
+          <a
+            data-testid="receipt-invoice-download"
+            href={document.dataUrl}
+            download={document.filename ?? 'invoice'}
+            className="m-tap flex items-center justify-center gap-2 rounded-input border border-line bg-surface px-4 py-3 text-[14px] font-medium text-accent-deep no-underline"
+          >
+            <Icon name="download-outline" size={16} />
+            {document.filename ?? t('receipts.invoice')}
+          </a>
+        </div>
+      )}
+    </Sheet>
+  );
+}
 
 /**
  * One receipt in full — shared by the tx detail, the receipts browser
@@ -44,11 +64,11 @@ export function ReceiptViewSheet({
   const navigate = useNavigate();
   const txs = useSpaceTransactions();
   const receiptOps = useReceiptOps();
-  const storeOps = useStoreOps();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [picking, setPicking] = useState(false);
   const [showMore, setShowMore] = useState(false);
   const [ocrState, setOcrState] = useState<'idle' | 'busy' | 'failed'>('idle');
+  const [invoice, setInvoice] = useState<ReceiptDocument | null>(null);
 
   const receipt = entry?.data ?? null;
 
@@ -57,6 +77,7 @@ export function ReceiptViewSheet({
     setPicking(false);
     setShowMore(false);
     setOcrState('idle');
+    setInvoice(null);
   }, [receipt?.id]);
 
   const linkedTxId = entry?.txId;
@@ -108,8 +129,8 @@ export function ReceiptViewSheet({
     }
     // each kind deletes in its own store: drop the photo, unlink the
     // store snapshot, or drop the unmatched global receipt
-    if (entry.kind === 'global') await storeOps.removeGlobalReceipt(entry.data.id);
-    else if (entry.linkId) await (photoBorn ? receiptOps.remove(entry.linkId) : storeOps.unlinkReceipt(entry.linkId));
+    if (entry.kind === 'global') await receiptOps.removeGlobalReceipt(entry.data.id);
+    else if (entry.linkId) await (photoBorn ? receiptOps.remove(entry.linkId) : receiptOps.unlinkReceipt(entry.linkId));
     onClose();
   };
 
@@ -119,7 +140,7 @@ export function ReceiptViewSheet({
         <div className="flex flex-col gap-3">
           <div className="flex items-baseline justify-between px-1 text-[12px] text-ink-3">
             <span>
-              {STORE_NAMES[receipt.source] ?? t('receipt.sourcePhoto')} · {fmtDate(receipt.date)}
+              {receipt.source === 'photo' ? t('receipt.sourcePhoto') : (receipt.merchant ?? partyName(receipt.source))} · {fmtDate(receipt.date)}
             </span>
             <span className="m-num text-[14px] font-semibold text-ink" data-testid="receipt-view-total">
               {money(receipt.totalCents)}
@@ -146,6 +167,24 @@ export function ReceiptViewSheet({
             </p>
           )}
 
+          {/* #367: the invoices the party issued for this purchase */}
+          {!!receipt.documents?.length && (
+            <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="receipt-documents">
+              {receipt.documents.map((document, index) => (
+                <button
+                  key={`${document.filename ?? document.kind}-${index}`}
+                  data-testid={`receipt-document-${index}`}
+                  onClick={() => setInvoice(document)}
+                  className="m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent px-4 py-3 text-left last:border-0"
+                >
+                  <Icon name="file-pdf-box" size={18} color="var(--m-ink-3)" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] text-ink">{document.filename ?? t('receipts.invoice')}</span>
+                  <span className="text-[12px] font-medium text-accent-deep">{t('receipts.openInvoice')}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* the transaction this receipt proves — hidden when the sheet
               was opened from that very transaction (self-reference) */}
           {linkedTx && linkedTx.id !== contextTxId && (
@@ -166,7 +205,7 @@ export function ReceiptViewSheet({
                       tx={tx}
                       showDate
                       onClick={() => {
-                        void storeOps.linkReceipt(receipt, tx.id);
+                        void receiptOps.linkReceipt(receipt, tx.id);
                         setPicking(false);
                       }}
                     />
@@ -186,7 +225,7 @@ export function ReceiptViewSheet({
             </>
           )}
 
-          {photoBorn && !receipt.items?.length && storesAvailable() && (
+          {photoBorn && !receipt.items?.length && connectorsAvailable() && (
             <>
               <Button variant="outline" className="w-full" data-testid="receipt-read-items" disabled={ocrState === 'busy'} onClick={() => void readItems()}>
                 {t('receipt.readItems')}
@@ -204,6 +243,7 @@ export function ReceiptViewSheet({
           </Button>
         </div>
       )}
+      <InvoiceSheet document={invoice} onClose={() => setInvoice(null)} />
     </Sheet>
   );
 }

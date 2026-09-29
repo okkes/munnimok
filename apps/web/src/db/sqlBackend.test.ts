@@ -165,11 +165,11 @@ describe('SqlStorageBackend parity with DexieBackend', () => {
 
   it('device-only stores round-trip', async () => {
     for (const { name, store } of await bothBackends()) {
-      await store.storeConnPut({ id: 'ah', store: 'ah', tokens: { access: 'x' }, refreshedAt: '2026-01-01', status: 'ok' });
-      expect((await store.storeConnGet('ah'))?.status, name).toBe('ok');
-      expect((await store.storeConnAll()).length, name).toBe(1);
-      await store.storeConnDelete('ah');
-      expect(await store.storeConnGet('ah'), name).toBeUndefined();
+      await store.connectorConnPut({ id: 'c1', provider: 'ah', bundle: 'sb_v1.x', state: 'active', refreshedAt: '2026-01-01' });
+      expect((await store.connectorConnGet('c1'))?.state, name).toBe('active');
+      expect((await store.connectorConnAll()).length, name).toBe(1);
+      await store.connectorConnDelete('c1');
+      expect(await store.connectorConnGet('c1'), name).toBeUndefined();
 
       await store.quoteCachePutAll([{ key: 'yahoo:ASML', price: 700, currency: 'EUR', at: '2026-01-01' }]);
       await store.quoteCachePutAll([{ key: 'yahoo:ASML', price: 710, currency: 'EUR', at: '2026-01-02' }]);

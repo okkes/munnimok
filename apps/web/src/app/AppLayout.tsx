@@ -8,7 +8,7 @@ import { OfflineBanner } from './OfflineBanner';
 import { useSession } from './session';
 import { HelpProvider } from '@/features/help/HelpContext';
 import { useRecurringReminders } from '@/application/recurring';
-import { useStoreKeepAlive } from '@/application/stores';
+import { useConnectionKeepAlive } from '@/application/connections';
 import { collectBudgetAlerts } from '@/sync/swBudgets';
 import { hapticNotify } from '@/lib/platform';
 import { EdgeSwipeBack } from '@/ui/EdgeSwipeBack';
@@ -189,9 +189,9 @@ function RecurringReminders() {
   return null;
 }
 
-/** headless: store-connection keep-alive + receipt pull (signed-in only) */
+/** headless: connection keep-alive + receipt pull (signed-in only) */
 function StoreKeepAlive() {
-  useStoreKeepAlive();
+  useConnectionKeepAlive();
   return null;
 }
 

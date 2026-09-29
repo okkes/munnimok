@@ -42,6 +42,67 @@ export async function seedRichDemo(repo: Repo): Promise<void> {
   await seedEvents(repo);
   await seedAllocation(repo);
   await seedPortfolio(repo);
+  await seedConnections(repo);
+}
+
+// ── connections (#367): two shops in the hub, one synced and one asking
+//    for a sign-in, with a few fetched receipts in the demo's store feed ──
+async function seedConnections(repo: Repo): Promise<void> {
+  const { DEMO_STORE_FEED_ID } = await import('@/application/storeFeed');
+  const { storeConnLinkId } = await import('@/domain/feedIds');
+  const feed = DEMO_STORE_FEED_ID;
+  const ah = 'demo_conn_ah';
+  const jumbo = 'demo_conn_jumbo';
+
+  await repo.upsert('storeConn', feed, ah, { store: 'ah', displayName: 'Albert Heijn', connectedAt: daysAgo(40), status: 'ok' });
+  await repo.upsert('storeConn', feed, jumbo, { store: 'jumbo', displayName: 'Jumbo', connectedAt: daysAgo(12), status: 'expired' });
+  await repo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, ah), { instanceId: ah, store: 'ah', displayName: 'Albert Heijn' });
+  await repo.upsert('storeConnLink', DEMO_SPACE_ID, storeConnLinkId(DEMO_SPACE_ID, jumbo), { instanceId: jumbo, store: 'jumbo', displayName: 'Jumbo' });
+
+  // this device holds the AH session (synced this morning); Jumbo wants a fresh sign-in
+  await repo.store.connectorConnPut({
+    id: ah,
+    provider: 'ah',
+    bundle: 'sb_v1.demo',
+    state: 'active',
+    refreshedAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+    lastSyncAt: new Date(Date.now() - 3 * 3_600_000).toISOString(),
+  });
+  await repo.store.connectorConnPut({ id: jumbo, provider: 'jumbo', state: 'needs_reauth', refreshedAt: daysAgo(2) });
+
+  const receipt = (id: string, fields: Record<string, unknown>) => repo.upsert('receipt', feed, `rcpt:ah:${ah}:${id}`, fields as never);
+  await receipt('r1', {
+    source: 'ah',
+    date: daysAgo(2),
+    totalCents: 2_347,
+    currency: 'EUR',
+    merchant: 'Albert Heijn',
+    storeRef: 'ah:r1',
+    instanceId: ah,
+    items: [
+      { name: 'Halfvolle melk', qty: 2, totalCents: 258 },
+      { name: 'Bananen', totalCents: 189 },
+      { name: 'Kipfilet', totalCents: 649 },
+      { name: 'Volkoren brood', totalCents: 251 },
+      { name: 'Griekse yoghurt', totalCents: 1_000 },
+    ],
+    payment: { method: 'PINNEN', accountTail: '1234' },
+  });
+  await receipt('r2', {
+    source: 'ah',
+    date: daysAgo(9),
+    totalCents: 4_120,
+    currency: 'EUR',
+    merchant: 'Albert Heijn',
+    storeRef: 'ah:r2',
+    instanceId: ah,
+    items: [
+      { name: 'Wasmiddel', totalCents: 899 },
+      { name: 'Koffiebonen', totalCents: 1_299 },
+      { name: 'Statiegeld', totalCents: -75, kind: 'deposit' },
+      { name: 'Boodschappen', totalCents: 1_997 },
+    ],
+  });
 }
 
 // ── recent income: keeps the salary pattern current so this-period
