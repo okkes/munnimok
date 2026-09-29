@@ -21,8 +21,12 @@ where it departs).
 | `LoginsPerHour`, `SyncsPerHour` | Per-user budgets on the two calls that reach a party (defaults 10 and 12), on top of the connector's own per-provider interval. |
 | `TimeoutSeconds` | One call's ceiling (default 60; a fetch waits at most 25 s at the control plane before it answers 202). |
 
-A configured relay that is missing a required setting refuses to start with
-the setting's name. An unconfigured one is simply absent — never a stand-in.
+A configured relay with a setting that cannot be right (a base URL that is
+not one, no salt, half a machine pair) refuses to start with the setting's
+name. One whose machine pair has not been written back yet — the platform's
+Logto module does that after the environment's first bootstrap — starts
+with the relay off and says so in its log; the next start finds the pair.
+An unconfigured one is simply absent — never a stand-in.
 
 ## What the relay guarantees
 

@@ -30,17 +30,49 @@ public class ConnectorUnitTests
     }
 
     [Fact]
-    public void Options_refuse_a_reachable_but_half_configured_relay()
+    public void Options_refuse_a_relay_that_cannot_be_right_and_wait_for_a_credential_not_written_back_yet()
     {
+        // a setting that cannot be right refuses to start with its name
         Assert.Throws<InvalidOperationException>(() => new ConnectorOptions { BaseUrl = "http://c/" }.Require());
-        Assert.Throws<InvalidOperationException>(() => new ConnectorOptions { BaseUrl = "http://c/", SubjectSalt = "s" }.Require());
         Assert.Throws<InvalidOperationException>(() => new ConnectorOptions { BaseUrl = "not a url", SubjectSalt = "s", DevKey = "k" }.Require());
+        Assert.Throws<InvalidOperationException>(() => new ConnectorOptions { BaseUrl = "http://c/", SubjectSalt = "s", M2mAppId = "a" }.Require());
+        Assert.Throws<InvalidOperationException>(() => new ConnectorOptions { BaseUrl = "http://c/", SubjectSalt = "s", M2mAppId = "a", M2mAppSecret = "b" }.Require());
+
+        // the machine pair arrives with the platform's write-back: a stage, not a fault
+        var waiting = new ConnectorOptions { BaseUrl = "http://c/", SubjectSalt = "s", Audience = "https://connector" };
+        waiting.Require();
+        Assert.False(waiting.HasCredential);
 
         new ConnectorOptions { BaseUrl = "http://c", SubjectSalt = "s", DevKey = "k" }.Require();
-        new ConnectorOptions { BaseUrl = "http://c", SubjectSalt = "s", M2mAppId = "a", M2mAppSecret = "b", Audience = "https://connector" }.Require();
+        var machine = new ConnectorOptions { BaseUrl = "http://c", SubjectSalt = "s", M2mAppId = "a", M2mAppSecret = "b", Audience = "https://connector" };
+        machine.Require();
+        Assert.True(machine.HasCredential);
         // unconfigured is simply absent, never an error
         new ConnectorOptions().Require();
         Assert.Equal("http://c/", new ConnectorOptions { BaseUrl = "http://c" }.BaseAddress().AbsoluteUri);
+    }
+
+    [Fact]
+    public void Registration_reports_absent_waiting_or_enabled()
+    {
+        var absent = new ConfigurationBuilder().Build();
+        Assert.Equal(ConnectorPresence.Absent, ConnectorSetup.Register(new Microsoft.Extensions.DependencyInjection.ServiceCollection(), absent));
+
+        var waiting = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Connectors:BaseUrl"] = "http://connector:8080/",
+            ["Connectors:SubjectSalt"] = "salt",
+            ["Connectors:Audience"] = "https://connector",
+        }).Build();
+        Assert.Equal(ConnectorPresence.WaitingForCredential, ConnectorSetup.Register(new Microsoft.Extensions.DependencyInjection.ServiceCollection(), waiting));
+
+        var enabled = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Connectors:BaseUrl"] = "http://connector:8080/",
+            ["Connectors:SubjectSalt"] = "salt",
+            ["Connectors:DevKey"] = "k",
+        }).Build();
+        Assert.Equal(ConnectorPresence.Enabled, ConnectorSetup.Register(new Microsoft.Extensions.DependencyInjection.ServiceCollection(), enabled));
     }
 
     [Fact]

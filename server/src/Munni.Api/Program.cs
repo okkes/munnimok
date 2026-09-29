@@ -67,8 +67,10 @@ var pushCaps = PushSetup.Register(builder.Services, builder.Configuration);
 var (gcConfigured, bankingEnabled) = BankingSetup.Register(builder.Services, builder.Configuration);
 
 // the connector relay (#367): present only when this environment names
-// its control plane; every setting it then needs is checked at start-up
-var connectorsEnabled = ConnectorSetup.Register(builder.Services, builder.Configuration);
+// its control plane and holds a credential for it; a setting that cannot
+// be right refuses to start, a credential not written back yet is a stage
+var connectors = ConnectorSetup.Register(builder.Services, builder.Configuration);
+var connectorsEnabled = connectors == ConnectorPresence.Enabled;
 
 // watch-folder importer (user request): CAMT exports dropped into the
 // mounted folder ingest as raw feed rows for the configured owner —
@@ -281,6 +283,6 @@ app.MapControl(gcConfigured, bankingEnabled);
 app.MapCatalog();
 app.MapStoreSync();
 if (bankingEnabled) app.MapGoCardless();
-ConnectorSetup.Map(app, connectorsEnabled);
+ConnectorSetup.Map(app, connectors);
 
 await app.RunAsync();

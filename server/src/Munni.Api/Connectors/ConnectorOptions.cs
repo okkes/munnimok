@@ -63,7 +63,18 @@ public sealed class ConnectorOptions
     /// <summary>Development transport: the shared key instead of a machine token.</summary>
     public bool UsesDevKey => !string.IsNullOrWhiteSpace(DevKey);
 
-    /// <summary>Throws with the setting's name when a configured relay cannot work.</summary>
+    /// <summary>
+    /// Whether the relay holds a credential the control plane accepts: the
+    /// development key, or the machine application with its audience. The
+    /// machine pair is written back by the platform's Logto module after the
+    /// environment's first bootstrap, so its absence is a stage, not a fault
+    /// — <see cref="ConnectorSetup"/> keeps the relay off and says why.
+    /// </summary>
+    public bool HasCredential =>
+        UsesDevKey
+        || (!string.IsNullOrWhiteSpace(M2mAppId) && !string.IsNullOrWhiteSpace(M2mAppSecret) && !string.IsNullOrWhiteSpace(Audience));
+
+    /// <summary>Throws with the setting's name when a configured relay cannot work with what it was given.</summary>
     public void Require()
     {
         if (!Configured) return;
@@ -71,11 +82,12 @@ public sealed class ConnectorOptions
             throw new InvalidOperationException("Connectors:BaseUrl must be an absolute URL");
         if (string.IsNullOrWhiteSpace(SubjectSalt))
             throw new InvalidOperationException("Connectors:SubjectSalt is required when Connectors:BaseUrl is set");
-        if (UsesDevKey) return;
+        if (UsesDevKey || string.IsNullOrWhiteSpace(M2mAppId) && string.IsNullOrWhiteSpace(M2mAppSecret)) return;
+        // half a machine pair, or a pair without the audience it is minted for, is a misconfiguration and not a stage
         if (string.IsNullOrWhiteSpace(M2mAppId) || string.IsNullOrWhiteSpace(M2mAppSecret) || string.IsNullOrWhiteSpace(Audience))
         {
             throw new InvalidOperationException(
-                "Connectors:M2mAppId, Connectors:M2mAppSecret and Connectors:Audience are required when Connectors:DevKey is not set");
+                "Connectors:M2mAppId, Connectors:M2mAppSecret and Connectors:Audience belong together");
         }
     }
 
