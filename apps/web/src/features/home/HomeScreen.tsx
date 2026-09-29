@@ -8,12 +8,14 @@ import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
 import { addDays } from '@/domain/recurring';
 import {
+  daysUntil,
   upcomingHorizon,
   upcomingLoanAmountCents,
   upcomingLoanPayments,
   upcomingRecAmountCents,
   upcomingRecurrings,
 } from '@/domain/upcoming';
+import { dueInWords } from './upcomingWords';
 import { RecurringVisual } from '@/features/recurring/RecurringVisual';
 import { LoanFace } from './UpcomingScreen';
 import { LOCALES, useLang } from '@/i18n';
@@ -929,6 +931,9 @@ export function HomeScreen() {
     );
   }
 
+    // #347: the date alone made the reader do the math — say the days too
+    const today = localToday();
+    const dueLabel = (iso: string) => `${fmtShort(iso)} · ${dueInWords(daysUntil(iso, today), t)}`;
   function renderUpcomingBlock() {
     if (upcoming.length === 0 && upcomingDebts.length === 0) return null;
     return (
@@ -959,8 +964,8 @@ export function HomeScreen() {
               <RecurringVisual rec={rec} size={16} active={false} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
-                <span className="block text-[11px] text-ink-4">
-                  {fmtShort(nextDue)} · {t('home.upcomingRecurring')}
+                <span className="block truncate text-[11px] text-ink-4">
+                  {dueLabel(nextDue)} · {t('home.upcomingRecurring')}
                 </span>
               </span>
               {/* #334 r2 (user): unsigned — one sign story for both kinds */}
@@ -981,8 +986,8 @@ export function HomeScreen() {
               <LoanFace loan={loan} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] font-medium text-ink">{loan.name}</span>
-                <span className="block text-[11px] text-ink-4">
-                  {fmtShort(nextDue)} · {t('home.upcomingLoan')}
+                <span className="block truncate text-[11px] text-ink-4">
+                  {dueLabel(nextDue)} · {t('home.upcomingLoan')}
                 </span>
               </span>
               <span className="m-num text-[13px] font-semibold text-ink">

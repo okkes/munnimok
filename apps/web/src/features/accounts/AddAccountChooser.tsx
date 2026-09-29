@@ -445,22 +445,8 @@ export function AddAccountChooser({
                         className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                       />
                     </label>
-                    {/* #190: the plan's due day, like recurring */}
-                    <label className="min-w-0 flex-1 text-[12px] text-ink-3">
-                      {t('debts.dueDay')}
-                      <input
-                        data-testid="chooser-acctform-payday"
-                        type="number"
-                        inputMode="numeric"
-                        min="1"
-                        max="31"
-                        value={payDay}
-                        onChange={(e) => setPayDay(e.target.value)}
-                        placeholder="—"
-                        className="mt-1 h-11 w-full rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-                      />
-                    </label>
                   </div>
+                  {/* #377: the due day is asked after the rhythm (inside the control), like recurring */}
                   <LoanCadenceControl
                     value={{ every: payEvery, everyN: payEveryN }}
                     custom={payCustom}
@@ -469,6 +455,8 @@ export function AddAccountChooser({
                       setPayEveryN(next.everyN);
                       setPayCustom(isCustom);
                     }}
+                    dueDay={payDay}
+                    onDueDay={setPayDay}
                     testIdPrefix="chooser-acctform"
                   />
                   <textarea

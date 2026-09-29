@@ -29,11 +29,16 @@ export function LoanCadenceControl({
   value,
   custom,
   onChange,
+  dueDay,
+  onDueDay,
   testIdPrefix,
 }: Readonly<{
   value: LoanCadence;
   custom: boolean;
   onChange: (next: LoanCadence, custom: boolean) => void;
+  /** #377: the due day is asked AFTER the rhythm, like the recurring form — weekly plans have none */
+  dueDay: string;
+  onDueDay: (raw: string) => void;
   testIdPrefix: string;
 }>) {
   const { t } = useLang();
@@ -87,6 +92,23 @@ export function LoanCadenceControl({
             <option value="month">{t('recurring.unitMonths')}</option>
             <option value="year">{t('recurring.unitYears')}</option>
           </select>
+        </label>
+      )}
+      {/* #377 (user): the day comes once the rhythm is known — a weekly plan carries no day of the month */}
+      {value.every !== 'week' && (
+        <label className="flex items-center gap-3 text-[13px] text-ink-2">
+          {t('recurring.dueDay')}
+          <input
+            data-testid={`${testIdPrefix}-payday`}
+            type="number"
+            inputMode="numeric"
+            min={1}
+            max={31}
+            value={dueDay}
+            onChange={(e) => onDueDay(e.target.value)}
+            placeholder="—"
+            className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+          />
         </label>
       )}
     </div>

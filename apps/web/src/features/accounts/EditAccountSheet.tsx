@@ -333,22 +333,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                     className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
                 </label>
-                {/* #190: the plan's due day, like recurring */}
-                <label className="min-w-0 flex-1 text-[12px] text-ink-3">
-                  {t('debts.dueDay')}
-                  <input
-                    data-testid="acctedit-payday"
-                    type="number"
-                    inputMode="numeric"
-                    min="1"
-                    max="31"
-                    value={payDay}
-                    onChange={(e) => setPayDay(e.target.value)}
-                    placeholder="—"
-                    className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
-                  />
-                </label>
               </div>
+              {/* #377: the due day is asked after the rhythm (inside the control), like recurring */}
               <LoanCadenceControl
                 value={{ every: payEvery, everyN: payEveryN }}
                 custom={payCustom}
@@ -357,6 +343,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                   setPayEveryN(next.everyN);
                   setPayCustom(isCustom);
                 }}
+                dueDay={payDay}
+                onDueDay={setPayDay}
                 testIdPrefix="acctedit"
               />
               <textarea

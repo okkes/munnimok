@@ -64,25 +64,46 @@ const amountBand = (cents: number): number => Math.max(100, Math.abs(cents) * 0.
 
 interface Cadence {
   every: RecurringEvery;
+  /** the cycle length in days the gaps agree on */
+  base: number;
   regular: boolean;
 }
 
-/** monthly ≈ 30-day gaps, yearly ≈ 365-day gaps; anything else is noise */
+/** the rhythms we read, with the days a charge may drift around them */
+const RHYTHMS: readonly { every: RecurringEvery; lo: number; hi: number; tolerance: number }[] = [
+  { every: 'month', lo: 25, hi: 35, tolerance: 7 },
+  { every: 'year', lo: 330, hi: 400, tolerance: 20 },
+];
+
+/**
+ * monthly ≈ 30-day gaps, yearly ≈ 365-day gaps; anything else is noise.
+ * #346: a charge may land a few days off (weekends, a late bank) and a
+ * cycle may be skipped altogether (a paused month) — a gap that is a
+ * whole number of cycles still fits; only every-cycle drift within the
+ * tolerance counts as regular. The base is the median gap, or the
+ * smallest gap when the median is a doubled one (three charges, one skip).
+ */
 function cadenceOf(gaps: number[]): Cadence | null {
-  const mid = median(gaps);
-  if (mid >= 25 && mid <= 35) {
-    return { every: 'month', regular: gaps.every((g) => Math.abs(g - mid) <= 5) };
-  }
-  if (mid >= 330 && mid <= 400) {
-    return { every: 'year', regular: gaps.every((g) => Math.abs(g - mid) <= 20) };
+  for (const base of [median(gaps), Math.min(...gaps)]) {
+    const rhythm = RHYTHMS.find((r) => base >= r.lo && base <= r.hi);
+    if (!rhythm) continue;
+    const fits = gaps.every((g) => {
+      const cycles = Math.round(g / base);
+      return cycles >= 1 && cycles <= 3 && Math.abs(g - cycles * base) <= rhythm.tolerance;
+    });
+    if (!fits) continue;
+    return { every: rhythm.every, base, regular: gaps.every((g) => Math.abs(g - base) <= rhythm.tolerance) };
   }
   return null;
 }
 
-/** #346: split one merchant-account series into steady-amount clusters
- *  (greedy over the sorted absolute amounts, band-joined) */
-function amountClusters(group: DetectInput[]): DetectInput[][] {
-  const sorted = [...group].sort((a, b) => Math.abs(a.amountCents) - Math.abs(b.amountCents));
+/** the tight band: a cent of rounding, a changed tax rate — not a different plan */
+const tightBand = (cents: number): number => Math.max(50, Math.abs(cents) * 0.02);
+
+/** greedy over the sorted absolute amounts, band-joined — a varying bill
+ *  (energy, a phone with usage) stays ONE series */
+function bandClusters(rows: DetectInput[]): DetectInput[][] {
+  const sorted = [...rows].sort((a, b) => Math.abs(a.amountCents) - Math.abs(b.amountCents));
   const clusters: DetectInput[][] = [];
   for (const tx of sorted) {
     const current = clusters.at(-1);
@@ -93,6 +114,34 @@ function amountClusters(group: DetectInput[]): DetectInput[][] {
     }
   }
   return clusters;
+}
+
+/**
+ * #346: split one merchant-account series into steady-amount clusters.
+ * Two or more amounts that each repeat exactly (63.24 / 441.97 / 55.20
+ * under one provider) are separate plans even when they sit inside each
+ * other's 20% band — every exact tier becomes a cluster, near-identical
+ * amounts ride the closest tier, and whatever is left is band-clustered
+ * on its own. A merchant without such tiers keeps the plain band split.
+ */
+function amountClusters(group: DetectInput[]): DetectInput[][] {
+  const byCents = new Map<number, DetectInput[]>();
+  for (const tx of group) {
+    const cents = Math.abs(tx.amountCents);
+    byCents.set(cents, [...(byCents.get(cents) ?? []), tx]);
+  }
+  const tiers = [...byCents.entries()]
+    .filter(([, rows]) => rows.length >= 3)
+    .map(([cents, rows]) => ({ cents, rows: [...rows] }));
+  if (tiers.length < 2) return bandClusters(group);
+  const rest: DetectInput[] = [];
+  for (const [cents, rows] of byCents) {
+    if (rows.length >= 3) continue;
+    const tier = tiers.find((candidate) => Math.abs(candidate.cents - cents) <= tightBand(candidate.cents));
+    if (tier) tier.rows.push(...rows);
+    else rest.push(...rows);
+  }
+  return [...tiers.map((tier) => tier.rows), ...bandClusters(rest)];
 }
 
 function suggestionFor(key: string, accountId: string | undefined, group: DetectInput[], today: string): RecurringSuggestion | null {
@@ -107,7 +156,7 @@ function suggestionFor(key: string, accountId: string | undefined, group: Detect
 
   // a dead subscription (no charge for ~1.5 cycles) is not a suggestion
   const gapToToday = dayNumber(today) - days.at(-1)!;
-  if (gapToToday > median(gaps) * 1.5) return null;
+  if (gapToToday > cadence.base * 1.5) return null;
 
   const amounts = byDate.map((t) => Math.abs(t.amountCents));
   const amountMedian = median(amounts);
