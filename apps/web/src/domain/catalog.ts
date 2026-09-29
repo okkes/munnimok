@@ -102,8 +102,12 @@ export function buildCatalog(customRows: readonly CategoryRow[], sharedScope: bo
     if (LOCKED_MAIN_IDS.has(c.id)) return 2;
     return c.id === 'income' ? 1 : 0;
   };
+  // #388: a built-in main's "Other" (`<main>Other` in the catalog) closes
+  // the list exactly like a custom main's — the gallery caught a new custom
+  // sub landing BELOW Consumption's Other
+  const isOtherSub = (c: Cat): boolean => !!c.isOther || (!c.custom && !!c.parentId && c.id.endsWith('Other'));
   const childRank = (c: Cat): number => {
-    if (c.isOther) return 2;
+    if (isOtherSub(c)) return 2;
     return c.custom ? 1 : 0;
   };
   const allParents = all

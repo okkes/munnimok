@@ -75,6 +75,10 @@ describe('useCategories', () => {
       // type derives from the builtin parent, not the stored field
       expect(cat.txTypes).toEqual(['expense']);
     });
+    // #388: under a BUILT-IN main too, the custom sub precedes "Other", which closes the list
+    const ids = latest!.childrenOf('sport').map((c) => c.id);
+    expect(ids.at(-1)).toBe('sportOther');
+    expect(ids.indexOf('cat_custom1')).toBeLessThan(ids.length - 1);
   });
 
   it('custom mains carry their type; subs inherit it and default to both directions', async () => {
