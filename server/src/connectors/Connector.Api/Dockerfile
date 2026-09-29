@@ -37,7 +37,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 # tzdata: a purchase near midnight lands on the wrong day without a real
 # Europe/Amsterdam offset, and a receipt on the wrong day matches the wrong
 # bank transaction.
-RUN apk add --no-cache icu-libs tzdata
+# krb5-libs: Npgsql loads libgssapi_krb5 for the authentication handshake and
+# the alpine base does not ship it — without it every database command fails
+# and the container never turns healthy (found by bringing the rendered
+# environment up locally, #367 M2)
+RUN apk add --no-cache icu-libs tzdata krb5-libs
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
 ARG BUILD_NUMBER=0

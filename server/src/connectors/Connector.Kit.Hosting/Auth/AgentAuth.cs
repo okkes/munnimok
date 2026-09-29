@@ -100,9 +100,20 @@ public sealed class AgentAuth(ConnectorDbContext db, IOptions<ConnectorOptions> 
     /// Callers must have checked the mode; this method does not, so that the
     /// refusal lives at start-up where it is loud.
     /// </summary>
-    public async Task SeedDevEnrollmentAsync(string code, CancellationToken ct)
+    public Task SeedDevEnrollmentAsync(string code, CancellationToken ct) =>
+        SeedStandingEnrollmentAsync(code, ConnectorOptions.DevFleetSubject, "development", ct);
+
+    /// <summary>
+    /// A standing enrollment: a code that is redeemable now and again after
+    /// every start, for the subject given. The development code and the
+    /// platform's fleet code (<see cref="ConnectorOptions.FleetEnrollmentCode"/>)
+    /// are the two callers; which of them is allowed where is decided at
+    /// start-up, not here.
+    /// </summary>
+    public async Task SeedStandingEnrollmentAsync(string code, string subject, string name, CancellationToken ct)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(code);
+        ArgumentException.ThrowIfNullOrWhiteSpace(subject);
 
         var hash = Sign(code);
         var expiresAt = time.GetUtcNow().AddYears(10);
@@ -113,13 +124,14 @@ public sealed class AgentAuth(ConnectorDbContext db, IOptions<ConnectorOptions> 
             db.Enrollments.Add(new EnrollmentRow
             {
                 CodeHash = hash,
-                Subject = ConnectorOptions.DevFleetSubject,
-                Name = "development",
+                Subject = subject,
+                Name = name,
                 ExpiresAt = expiresAt,
             });
         }
         else
         {
+            row.Subject = subject;
             row.RedeemedAt = null;
             row.ExpiresAt = expiresAt;
         }

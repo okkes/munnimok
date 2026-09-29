@@ -260,8 +260,7 @@ internal static class AgentApiEndpoints
         // the operator's own fleet, named in configuration - never decided
         // from anything the agent sends, because Class arrives on the
         // agent's own heartbeat and it would simply claim to be pooled.
-        var ownerScope = agent.OwnerSubject is { } owner
-                         && !options.Value.FleetSubjects.Contains(owner, StringComparer.Ordinal)
+        var ownerScope = agent.OwnerSubject is { } owner && !options.Value.IsFleet(owner)
             ? owner
             : null;
 

@@ -23,12 +23,14 @@ environment as `Connector__<Section>__<Key>`:
 | `Connector:Mode` | `Production` (default in the image) or `Development` |
 | `Connector:Database:Provider`, `ConnectionString` | `Postgres` in production (Sqlite is refused) |
 | `Connector:Auth:Authority`, `Audience` | the identity provider that mints the consumer's machine token and the audience it must carry; both required in production |
+| `Connector:Auth:MetadataAddress`, `RequireHttpsMetadata` | where the issuer's discovery document is fetched when that is not the authority itself — a control plane on a private compose network reaches its Logto by service name over plain http while the issuer stays the browser-facing url; default: the authority, over https |
 | `Connector:Auth:RequiredScope` | a scope every consumer token must carry; optional |
 | `Connector:Auth:AdminScope` | the scope that opens `/v1/admin/*`; `connector:admin` by default |
 | `Connector:Auth:SharedSecret` | development only: the value expected in `X-Connector-Key` |
 | `Connector:Bundle:CurrentKid`, `Connector:Bundle:Keys:<kid>` | the bundle seal key ring (32 bytes, base64); rotate by adding a key and moving `CurrentKid` |
 | `Connector:EnrollmentHmacKey` | signs enrollment codes |
 | `Connector:FleetSubjects` | the subjects whose enrollment codes enroll pooled (fleet) agents |
+| `Connector:FleetEnrollmentCode` | the operator's own fleet enrolls with this code, in production too: a generated per-platform secret the platform renders into the pooled agent and into every control plane of the platform, seeded under the subject `fleet` and re-armed on every start so an agent with a wiped state file comes back |
 | `Connector:DevEnrollmentCode` | development only: a fixed reusable code for a local agent |
 | `Connector:MaxQueuedJobs` | back-pressure: a login is refused when the queue is this deep |
 | `Connector:Timeouts:*` | ticket 900 s, lease 120 s, heartbeat 30 s, agent poll 30 s, login wait 3 s, fetch wait 25 s, job 300 s, abandoned job 1800 s, credential bundle 30 days, politeness 800 ms, challenge grace 300 s, live frame poll 5 s, result retention 1 day, enrollment code 900 s, sweeps 15 s / 60 s |

@@ -836,7 +836,7 @@ internal static class LoginEndpoints
         // learn.
         if (agent.OwnerSubject is { } owner
             && !string.Equals(owner, subject, StringComparison.Ordinal)
-            && !options.FleetSubjects.Contains(owner, StringComparer.Ordinal))
+            && !options.IsFleet(owner))
         {
             throw new ConnectorException(ErrorCode.AgentUnavailable, $"unknown agent '{preferAgent}'");
         }
@@ -932,7 +932,7 @@ internal static class LoginEndpoints
         if (inline.CanRun(manifest)) return;
 
         var live = AgentLiveness.OnlineSince(time.GetUtcNow());
-        var fleet = options.FleetSubjects;
+        var fleet = options.EffectiveFleetSubjects;
 
         var blobs = await db.Agents
             .Where(a => !a.Revoked
@@ -1000,7 +1000,7 @@ internal static class LoginEndpoints
         if (manifest.Agent.Egress is not { } needed) return;
 
         var live = AgentLiveness.OnlineSince(time.GetUtcNow());
-        var fleet = options.FleetSubjects;
+        var fleet = options.EffectiveFleetSubjects;
 
         // The same liveness window the picker offers machines by and the queue
         // stands back for, because a refusal on a definition of its own would

@@ -135,7 +135,8 @@ public static class ConnectorPlatform
                 {
                     jwt.Authority = options.Auth.Authority;
                     jwt.Audience = options.Auth.Audience;
-                    jwt.RequireHttpsMetadata = true;
+                    jwt.RequireHttpsMetadata = options.Auth.RequireHttpsMetadata;
+                    if (options.Auth.MetadataAddress is { Length: > 0 } metadata) jwt.MetadataAddress = metadata;
                     // The claims as the token carries them: the scope check
                     // reads "scope", and the legacy inbound map would rename
                     // others for nobody's benefit.
@@ -275,6 +276,15 @@ public static class ConnectorPlatform
         {
             scope.ServiceProvider.GetRequiredService<AgentAuth>()
                 .SeedDevEnrollmentAsync(devCode, CancellationToken.None).GetAwaiter().GetResult();
+        }
+
+        // The operator's fleet, anywhere: the platform's own secret, re-armed
+        // on every start so a pooled agent with a wiped state file comes back.
+        if (options.FleetEnrollmentCode is { Length: > 0 } fleetCode)
+        {
+            scope.ServiceProvider.GetRequiredService<AgentAuth>()
+                .SeedStandingEnrollmentAsync(fleetCode, ConnectorOptions.FleetSubject, "fleet", CancellationToken.None)
+                .GetAwaiter().GetResult();
         }
 
         // Touching the registry here rather than lazily means a manifest that

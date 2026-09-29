@@ -102,6 +102,40 @@ public sealed class ConnectorOptions
     /// </summary>
     public const string DevFleetSubject = "dev-fleet";
 
+    /// <summary>
+    /// The operator's own fleet enrolls with this code — in production too.
+    /// </summary>
+    /// <remarks>
+    /// A generated per-platform secret that munni's platform renders into
+    /// the pooled agent's compose and into every control plane of the
+    /// platform (#367, slice M2), so the agent enrolls with nobody present
+    /// and comes back after a wiped state file. Seeded at start-up under
+    /// <see cref="FleetSubject"/> and re-armed on every start, by the same
+    /// rule as <see cref="DevEnrollmentCode"/> — which stays development-only
+    /// because the code IT exists for is written in a checked-in file, while
+    /// this one lives where the platform keeps every other secret and rotates
+    /// like them. A subject enrolled through it is a fleet subject without
+    /// being listed in <see cref="FleetSubjects"/>.
+    /// </remarks>
+    public string? FleetEnrollmentCode { get; set; }
+
+    /// <summary>The subject a <see cref="FleetEnrollmentCode"/> enrollment belongs to; no user's HMAC can collide with it.</summary>
+    public const string FleetSubject = "fleet";
+
+    /// <summary>
+    /// Every subject whose agents serve everybody: the configured list, plus
+    /// the fleet code's subject when a code is set. The one list every rule
+    /// about "the operator's fleet" reads, so a subject cannot be the fleet in
+    /// one route and a stranger in another.
+    /// </summary>
+    public IReadOnlyList<string> EffectiveFleetSubjects =>
+        string.IsNullOrWhiteSpace(FleetEnrollmentCode) || FleetSubjects.Contains(FleetSubject, StringComparer.Ordinal)
+            ? [.. FleetSubjects]
+            : [.. FleetSubjects, FleetSubject];
+
+    public bool IsFleet(string? subject) =>
+        subject is not null && EffectiveFleetSubjects.Contains(subject, StringComparer.Ordinal);
+
     public bool IsProduction => Mode == ConnectorMode.Production;
 }
 
@@ -141,6 +175,18 @@ public sealed class ConnectorAuthOptions
     public string? Authority { get; set; }
 
     public string? Audience { get; set; }
+
+    /// <summary>
+    /// Where the issuer's discovery document is fetched from when that is not
+    /// the authority itself: a control plane on a private compose network
+    /// reaches its Logto by service name over plain http while the issuer
+    /// stays the browser-facing url (the same override munni's API carries as
+    /// <c>Auth:MetadataAddress</c>). Absent, the authority is fetched.
+    /// </summary>
+    public string? MetadataAddress { get; set; }
+
+    /// <summary>False only for a discovery document fetched over a private network; the issuer in the token is still the https one.</summary>
+    public bool RequireHttpsMetadata { get; set; } = true;
 
     /// <summary>
     /// Production: a scope every consumer token must carry, on top of the
