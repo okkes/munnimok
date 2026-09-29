@@ -398,6 +398,7 @@ public sealed class FleetRoutingTests(ShopApiFactory factory)
 
         using var http = factory.CreateAuthorizedClient();
         var subject = Flows.NewSubject("fleet_logout");
+        http.ActAs(subject);
 
         using var request = Wire.Post($"/v1/{inline}/login", new
         {

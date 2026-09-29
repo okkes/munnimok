@@ -35,7 +35,6 @@ public sealed class ProductionRefusalTests
 
         options.Bundle.CurrentKid = "k1";
         options.Bundle.Keys["k1"] = Convert.ToBase64String(new byte[32]);
-        options.Auth.ClientCertificateThumbprints.Add("AA11");
         options.Auth.Authority = "https://issuer.example";
         options.Auth.Audience = "connector";
         options.EnrollmentHmacKey = Convert.ToBase64String(new byte[32]);
@@ -114,7 +113,6 @@ public sealed class ProductionRefusalTests
     /// </remarks>
     [Theory]
     [InlineData("bundle", "Connector:Bundle:CurrentKid and Connector:Bundle:Keys are required in production")]
-    [InlineData("certs", "Connector:Auth:ClientCertificateThumbprints must list at least one certificate in production")]
     [InlineData("authority", "Connector:Auth:Authority is required in production")]
     [InlineData("audience", "Connector:Auth:Audience is required in production")]
     [InlineData("hmac", "Connector:EnrollmentHmacKey is required in production")]
@@ -126,7 +124,6 @@ public sealed class ProductionRefusalTests
         switch (what)
         {
             case "bundle": options.Bundle.Keys.Clear(); options.Bundle.CurrentKid = null; break;
-            case "certs": options.Auth.ClientCertificateThumbprints.Clear(); break;
             case "authority": options.Auth.Authority = null; break;
             case "audience": options.Auth.Audience = null; break;
             case "hmac": options.EnrollmentHmacKey = null; break;

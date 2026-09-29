@@ -47,6 +47,7 @@ internal static class LoginEndpoints
             ViewBuilder views,
             ConnectorSignals signals,
             IIdempotencyStore idempotency,
+            SyncInterval interval,
             IOptions<ConnectorOptions> options,
             TimeProvider time,
             CancellationToken ct) =>
@@ -57,6 +58,9 @@ internal static class LoginEndpoints
             await RequireWorkAcceptedAsync(statuses, manifest, ct);
             var deviceClass = RequestContext.DeviceClassOf(http);
             RequireConsent(platform, request.Consent);
+            RequestContext.RequireSubjectAgreement(http, request.Subject);
+            await interval.RequireElapsedAsync(
+                RequestContext.TriggerOf(http), manifest, request.Subject, JobKind.Login, resourceId: null, ct);
 
             // What the human typed, or what their device kept from the last
             // time they typed it. Redeemed before validation, never after: the
@@ -188,7 +192,7 @@ internal static class LoginEndpoints
             var manifest = registry.RequireManifest(provider);
             RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
 
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, subject: null, ct);
+            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
             return ConnectorResults.Json(await views.SessionAsync(session, deliverBundle: true, ct));
         });
 
@@ -204,7 +208,7 @@ internal static class LoginEndpoints
             CancellationToken ct) =>
         {
             var manifest = registry.RequireManifest(provider);
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, subject: null, ct);
+            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
 
             await EventStream.WriteAsync(
                 http,
@@ -232,6 +236,7 @@ internal static class LoginEndpoints
         .Produces<SessionResponse>(StatusCodes.Status200OK, "text/event-stream");
 
         api.MapGet("/{provider}/login/{sessionId}/challenges/{challengeId}/image", async (
+            HttpContext http,
             string provider,
             string sessionId,
             string challengeId,
@@ -242,7 +247,7 @@ internal static class LoginEndpoints
             CancellationToken ct) =>
         {
             var manifest = registry.RequireManifest(provider);
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, subject: null, ct);
+            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
 
             var job = await views.LatestJobAsync(session.Id, ct)
                       ?? throw ConnectorException.Unsupported("this session has no run in flight");
@@ -255,6 +260,7 @@ internal static class LoginEndpoints
         .Produces<byte[]>(StatusCodes.Status200OK, "image/png");
 
         api.MapPost("/{provider}/login/{sessionId}/answer", async (
+            HttpContext http,
             string provider,
             string sessionId,
             AnswerRequest request,
@@ -265,7 +271,7 @@ internal static class LoginEndpoints
             CancellationToken ct) =>
         {
             var manifest = registry.RequireManifest(provider);
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, subject: null, ct);
+            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
 
             var job = await views.LatestJobAsync(session.Id, ct)
                       ?? throw ConnectorException.Unsupported("this session has no run in flight");
@@ -275,6 +281,7 @@ internal static class LoginEndpoints
         });
 
         api.MapPost("/{provider}/login/{sessionId}/cancel", async (
+            HttpContext http,
             string provider,
             string sessionId,
             IProviderRegistry registry,
@@ -284,7 +291,8 @@ internal static class LoginEndpoints
             CancellationToken ct) =>
         {
             var manifest = registry.RequireManifest(provider);
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, subject: null, ct);
+            var subject = RequestContext.RequireSubject(http);
+            var session = await sessions.RequireAsync(manifest.Id, sessionId, subject, ct);
 
             if (await views.LatestJobAsync(session.Id, ct) is { } job && !JobStateMachine.IsTerminal(job.State))
             {
@@ -297,7 +305,7 @@ internal static class LoginEndpoints
                 }, ct);
             }
 
-            var cancelled = await sessions.RequireAsync(manifest.Id, sessionId, subject: null, ct);
+            var cancelled = await sessions.RequireAsync(manifest.Id, sessionId, subject, ct);
             return ConnectorResults.Json(await views.SessionAsync(cancelled, deliverBundle: false, ct));
         });
 
@@ -317,6 +325,7 @@ internal static class LoginEndpoints
             RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
             await RequireWorkAcceptedAsync(statuses, manifest, ct);
 
+            RequestContext.RequireSubjectAgreement(http, request.Subject);
             var opened = await sessions.OpenAsync(manifest.Id, request.Subject, request.Bundle, ct);
             var ttl = options.Value.Timeouts.TicketSeconds;
 
@@ -357,7 +366,7 @@ internal static class LoginEndpoints
             var manifest = registry.RequireManifest(provider);
             RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
 
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, subject: null, ct);
+            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
 
             // Best-effort upstream logout, then purge regardless. A user
             // disconnecting must always succeed locally, whatever the provider

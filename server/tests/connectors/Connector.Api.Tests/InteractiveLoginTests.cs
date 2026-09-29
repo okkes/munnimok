@@ -57,7 +57,9 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
 
             // 1. The run stopped to ask something, and says so with a 202 rather
             //    than holding a socket open for as long as a human takes.
-            using var request = Wire.Post($"/v1/{Provider}/login", new { Subject = subject, Inputs = Credentials });
+            http.ActAs(subject);
+            http.ActAs(subject);
+        using var request = Wire.Post($"/v1/{Provider}/login", new { Subject = subject, Inputs = Credentials });
             using var login = await http.SendAsync(request);
             var accepted = await login.JsonAsync();
 
@@ -184,6 +186,7 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
         using var http = factory.CreateAuthorizedClient();
         var subject = Flows.NewSubject("captcha-wrong");
 
+        http.ActAs(subject);
         using var request = Wire.Post($"/v1/{Provider}/login", new { Subject = subject, Inputs = Credentials });
         using var login = await http.SendAsync(request);
         var accepted = await login.JsonAsync();
@@ -238,6 +241,7 @@ public sealed class InteractiveLoginTests(ShopApiFactory factory)
         using var http = factory.CreateAuthorizedClient();
         var subject = Flows.NewSubject("captcha-race");
 
+        http.ActAs(subject);
         using var request = Wire.Post($"/v1/{Provider}/login", new { Subject = subject, Inputs = Credentials });
         using var login = await http.SendAsync(request);
 

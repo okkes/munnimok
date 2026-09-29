@@ -13,7 +13,8 @@ namespace Connector.Kit.Hosting.Endpoints;
 
 /// <summary>
 /// Following a fetch that did not finish inside its window. Identical
-/// contract to a login: poll, subscribe, answer.
+/// contract to a login: poll, subscribe, answer - and, like a login, only
+/// for the subject whose session the job belongs to.
 /// </summary>
 internal static class JobEndpoints
 {
@@ -31,7 +32,7 @@ internal static class JobEndpoints
             var manifest = registry.RequireManifest(provider);
             RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
 
-            var job = await RequireAsync(db, manifest.Id, jobId, ct);
+            var job = await RequireAsync(db, manifest.Id, jobId, RequestContext.RequireSubject(http), ct);
             return ConnectorResults.Json(await views.JobAsync(job, deliverBundle: true, ct));
         });
 
@@ -46,7 +47,7 @@ internal static class JobEndpoints
             CancellationToken ct) =>
         {
             var manifest = registry.RequireManifest(provider);
-            var job = await RequireAsync(db, manifest.Id, jobId, ct);
+            var job = await RequireAsync(db, manifest.Id, jobId, RequestContext.RequireSubject(http), ct);
 
             await EventStream.WriteAsync(
                 http,
@@ -72,6 +73,7 @@ internal static class JobEndpoints
         .Produces<JobResponse>(StatusCodes.Status200OK, "text/event-stream");
 
         api.MapPost("/{provider}/jobs/{jobId}/answer", async (
+            HttpContext http,
             string provider,
             string jobId,
             AnswerRequest request,
@@ -82,14 +84,23 @@ internal static class JobEndpoints
             CancellationToken ct) =>
         {
             var manifest = registry.RequireManifest(provider);
-            var job = await RequireAsync(db, manifest.Id, jobId, ct);
+            var job = await RequireAsync(db, manifest.Id, jobId, RequestContext.RequireSubject(http), ct);
 
             await challenges.AnswerAsync(request.ChallengeId, job.Id, request.Value, ct);
             return ConnectorResults.Json(await views.JobAsync(job, deliverBundle: false, ct));
         });
     }
 
-    private static async Task<JobRow> RequireAsync(ConnectorDbContext db, string providerId, string jobId, CancellationToken ct) =>
-        await db.Jobs.FirstOrDefaultAsync(j => j.Id == jobId && j.ProviderId == providerId, ct)
+    /// <summary>
+    /// The job, if it exists AND its session belongs to the caller. One
+    /// answer for both misses, so a job id learned from somewhere else tells
+    /// its holder nothing.
+    /// </summary>
+    private static async Task<JobRow> RequireAsync(
+        ConnectorDbContext db, string providerId, string jobId, string subject, CancellationToken ct) =>
+        await db.Jobs
+            .Where(j => j.Id == jobId && j.ProviderId == providerId)
+            .Join(db.Sessions.Where(s => s.Subject == subject), j => j.SessionId, s => s.Id, (j, _) => j)
+            .FirstOrDefaultAsync(ct)
         ?? throw ConnectorException.Unsupported($"unknown job '{jobId}'");
 }

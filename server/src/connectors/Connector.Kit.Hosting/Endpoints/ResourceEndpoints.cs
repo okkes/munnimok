@@ -42,8 +42,12 @@ internal static class ResourceEndpoints
             FetchRunner runner,
             CancellationToken ct) =>
         {
+            // A ticket is a bearer secret minted for one subject; presented
+            // by anybody else it is as good as unknown, and said to be so.
+            var subject = RequestContext.RequireSubject(http);
             var ticket = RequestContext.RequireTicket(http);
-            if (!tickets.TryRedeem(ticket, provider, out var grant))
+            if (!tickets.TryRedeem(ticket, provider, out var grant)
+                || !string.Equals(grant.Subject, subject, StringComparison.Ordinal))
             {
                 throw ConnectorException.SessionExpired("ticket is unknown or expired");
             }
@@ -69,6 +73,7 @@ internal static class ResourceEndpoints
             CancellationToken ct) =>
         {
             var manifest = registry.RequireManifest(provider);
+            RequestContext.RequireSubjectAgreement(http, request.Subject);
             var opened = await sessions.OpenAsync(manifest.Id, request.Subject, request.Bundle, ct);
 
             var grant = new TicketGrant
@@ -102,8 +107,12 @@ internal static class ResourceEndpoints
             var manifest = registry.RequireManifest(provider);
             RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
 
+            // A ticket is a bearer secret minted for one subject; presented
+            // by anybody else it is as good as unknown, and said to be so.
+            var subject = RequestContext.RequireSubject(http);
             var ticket = RequestContext.RequireTicket(http);
-            if (!tickets.TryRedeem(ticket, provider, out var grant))
+            if (!tickets.TryRedeem(ticket, provider, out var grant)
+                || !string.Equals(grant.Subject, subject, StringComparison.Ordinal))
             {
                 throw ConnectorException.SessionExpired("ticket is unknown or expired");
             }
@@ -164,6 +173,7 @@ public sealed class FetchRunner(
     ViewBuilder views,
     ResultService results,
     ConnectorSignals signals,
+    SyncInterval interval,
     IOptions<ConnectorOptions> options,
     TimeProvider time)
 {
@@ -195,6 +205,8 @@ public sealed class FetchRunner(
         var session = await db.Sessions.FirstOrDefaultAsync(s => s.Id == grant.SessionId, ct)
                       ?? throw ConnectorException.SessionExpired("session no longer exists");
 
+        await interval.RequireElapsedAsync(
+            RequestContext.TriggerOf(http), manifest, session.Subject, JobKind.Fetch, resource.Id, ct);
         await RequireProfileHolderOnlineAsync(session, ct);
 
         var job = await queue.EnqueueAsync(new NewJob

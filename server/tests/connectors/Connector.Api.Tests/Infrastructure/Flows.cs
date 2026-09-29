@@ -52,6 +52,7 @@ internal static class Flows
     {
         ArgumentNullException.ThrowIfNull(http);
 
+        http.ActAs(subject);
         using var request = Wire.Post($"/v1/{provider}/login", new { subject, inputs });
         if (deviceClass is not null) request.AddHeader(RequestContext.DeviceClassHeader, deviceClass);
 
@@ -137,6 +138,7 @@ internal static class Flows
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(connection);
 
+        http.ActAs(connection.Subject);
         using var request = Wire.Post($"/v1/{provider}/sessions/resume",
             new { subject = connection.Subject, bundle = connection.Bundle });
 

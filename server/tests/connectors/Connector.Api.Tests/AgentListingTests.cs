@@ -86,8 +86,8 @@ public sealed class AgentListingTests(ShopApiFactory factory)
         var recent = Enroll(owner, lastBeat: DateTimeOffset.UtcNow.AddSeconds(-80));
         var silent = Enroll(owner, lastBeat: DateTimeOffset.UtcNow.AddSeconds(-100));
 
-        using var http = factory.CreateAuthorizedClient();
-        using var response = await http.GetAsync($"/v1/agents?subject={Uri.EscapeDataString(owner)}");
+        using var http = factory.CreateAuthorizedClient().ActAs(owner);
+        using var response = await http.GetAsync("/v1/agents");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var listed = (await response.JsonAsync()).GetProperty("agents");

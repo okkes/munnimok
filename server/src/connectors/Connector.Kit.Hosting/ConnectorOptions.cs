@@ -143,17 +143,20 @@ public sealed class ConnectorAuthOptions
     public string? Audience { get; set; }
 
     /// <summary>
-    /// Production: SHA-1 thumbprints of the client certificates allowed to
-    /// reach this service. Empty in production is a refusal to start - mTLS is
-    /// the layer that survives a compromised container on the same network.
+    /// Production: a scope every consumer token must carry, on top of the
+    /// audience. OAuth hands the granted scopes of a client-credentials token
+    /// in its <c>scope</c> claim, space separated; Logto does the same. Null
+    /// accepts any token minted for <see cref="Audience"/>.
     /// </summary>
-    public IList<string> ClientCertificateThumbprints { get; set; } = [];
+    public string? RequiredScope { get; set; }
 
     /// <summary>
-    /// Where TLS terminates upstream, the proxy forwards the verified
-    /// thumbprint in this header instead of the connection carrying a cert.
+    /// Production: the scope that opens <c>/v1/admin/*</c> - pausing and
+    /// retiring providers, canaries, the whole fleet. A consumer token
+    /// without it is a valid caller that is answered 403 there. Development
+    /// mode has no tokens, so the shared secret is the whole gate.
     /// </summary>
-    public string ClientCertificateHeader { get; set; } = "X-Client-Cert-Thumbprint";
+    public string AdminScope { get; set; } = "connector:admin";
 }
 
 public sealed class BundleKeyOptions

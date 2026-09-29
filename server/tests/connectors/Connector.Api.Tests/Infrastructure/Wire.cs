@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Connector.Kit.Hosting.Endpoints;
 
 namespace Connector.Api.Tests.Infrastructure;
 
@@ -80,6 +81,22 @@ internal static class Wire
     {
         ArgumentNullException.ThrowIfNull(request);
         request.Headers.TryAddWithoutValidation(name, value);
+    }
+
+    /// <summary>
+    /// Binds the client to one user: from here on every call carries the
+    /// subject header the connector answers session, job, ticket and agent
+    /// routes for - exactly what the relay does for the user it acts for.
+    /// <see cref="Flows"/> stamps it from the subject it is handed, so a test
+    /// that logs in through Flows never sets it by hand.
+    /// </summary>
+    public static HttpClient ActAs(this HttpClient http, string subject)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+
+        http.DefaultRequestHeaders.Remove(RequestContext.SubjectHeader);
+        http.DefaultRequestHeaders.TryAddWithoutValidation(RequestContext.SubjectHeader, subject);
+        return http;
     }
 
     public static MediaTypeHeaderValue? ContentType(this HttpResponseMessage response)

@@ -51,10 +51,13 @@ public sealed class SessionResumeTests(ShopApiFactory factory)
         using var http = factory.CreateAuthorizedClient();
         var connection = await Flows.ConnectAsync(http, Provider, Flows.NewSubject("replay-owner"), Credentials);
 
+        var thief = Flows.NewSubject("replay-thief");
         using var request = Wire.Post($"/v1/{Provider}/sessions/resume",
-            new { Subject = Flows.NewSubject("replay-thief"), Bundle = connection.Bundle });
+            new { Subject = thief, Bundle = connection.Bundle });
 
-        using var response = await http.SendAsync(request);
+        // A relay acting for the thief names the thief, in the header as in
+        // the body; the bundle it holds is still the owner's.
+        using var response = await http.ActAs(thief).SendAsync(request);
 
         // The subject is authenticated data on the ciphertext, so the bundle
         // does not decrypt at all. Every rejection reason - wrong subject, wrong

@@ -409,6 +409,18 @@ public sealed class ConnectorAgentOptions
     }
 
     /// <summary>
+    /// The capabilities plus the catalogue digest of the registry the agent
+    /// really runs - what the host advertises, so that the control plane can
+    /// tell an agent on the same adapter code from one that is not.
+    /// </summary>
+    public AgentCapabilities BuildCapabilities(IProviderRegistry registry)
+    {
+        ArgumentNullException.ThrowIfNull(registry);
+
+        return BuildCapabilities(registry.Manifests) with { CatalogDigest = registry.CatalogDigest };
+    }
+
+    /// <summary>
     /// The tiers somebody's own machine serves: every one its providers run
     /// on, and a configuration that says otherwise is wrong.
     /// </summary>

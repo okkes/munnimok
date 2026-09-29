@@ -155,13 +155,15 @@ public sealed class CredentialStoreTests(ShopApiFactory factory)
         var mine = await LoginAsync(http, Flows.NewSubject("cred-owner"), Credentials);
         var bundle = mine.GetProperty("credential_bundle").GetString()!;
 
+        var thief = Flows.NewSubject("cred-thief");
         using var request = Wire.Post($"/v1/{Provider}/login", new
         {
-            subject = Flows.NewSubject("cred-thief"),
+            subject = thief,
             credential_bundle = bundle,
         });
 
-        using var response = await http.SendAsync(request);
+        // The relay names the thief consistently; the bundle is the owner's.
+        using var response = await http.ActAs(thief).SendAsync(request);
 
         await ErrorEnvelope.AssertAsync(response, HttpStatusCode.Unauthorized, "session_expired");
     }
@@ -253,6 +255,7 @@ public sealed class CredentialStoreTests(ShopApiFactory factory)
         string? credentialBundle = null,
         string? provider = null)
     {
+        http.ActAs(subject);
         using var request = Wire.Post($"/v1/{provider ?? Provider}/login", new
         {
             subject,

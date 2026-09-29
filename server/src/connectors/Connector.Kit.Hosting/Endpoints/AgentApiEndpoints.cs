@@ -1,6 +1,8 @@
+using Connector.Kit.Adapters;
 using Connector.Kit.AgentProtocol;
 using Connector.Kit.Challenges;
 using Connector.Kit.Errors;
+using Connector.Kit.Hosting.Agents;
 using Connector.Kit.Hosting.Auth;
 using Connector.Kit.Hosting.Challenges;
 using Connector.Kit.Hosting.Data;
@@ -76,6 +78,7 @@ internal static class AgentApiEndpoints
             HttpContext http,
             HeartbeatRequest request,
             ConnectorDbContext db,
+            IProviderRegistry registry,
             IOptions<ConnectorOptions> options,
             TimeProvider time,
             ILoggerFactory loggers,
@@ -140,6 +143,7 @@ internal static class AgentApiEndpoints
             {
                 LeaseTtlSeconds = options.Value.Timeouts.LeaseSeconds,
                 Revoked = agent.Revoked,
+                CatalogDigest = registry.CatalogDigest,
             });
         });
 
@@ -148,6 +152,7 @@ internal static class AgentApiEndpoints
             LeaseRequest request,
             ILeasedJobQueue queue,
             ConnectorSignals signals,
+            IProviderRegistry registry,
             IOptions<ConnectorOptions> options,
             TimeProvider time,
             ConnectorDbContext db,
@@ -155,6 +160,12 @@ internal static class AgentApiEndpoints
         {
             var agent = http.RequireAgent();
             var capabilities = ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities());
+
+            // An agent on another adapter catalogue is not offered work: its
+            // forms, selectors and record shapes are not the ones this control
+            // plane documented, and a job it ran would fail in ways nobody can
+            // read. It keeps its poll - the heartbeat has already told it why.
+            var stale = AgentCatalogue.IsStale(capabilities, registry);
 
             // Which subject's work this agent is allowed to see. Null only for
             // the operator's own fleet, named in configuration - never decided
@@ -173,7 +184,9 @@ internal static class AgentApiEndpoints
             // noisier, and the connection is already open either way.
             while (!ct.IsCancellationRequested)
             {
-                var job = await queue.TryLeaseAsync(agent.Id, ownerScope, capabilities, request.Accept, ttl, ct);
+                var job = stale
+                    ? null
+                    : await queue.TryLeaseAsync(agent.Id, ownerScope, capabilities, request.Accept, ttl, ct);
                 if (job is not null) return ConnectorResults.Json(job);
 
                 var remaining = deadline - time.GetUtcNow();

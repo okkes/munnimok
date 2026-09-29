@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using Connector.Kit.Errors;
@@ -15,19 +16,25 @@ namespace Connector.Kit.Hosting.Auth;
 ///
 /// Nobody but the consuming server, and the design says why: clients never
 /// hold a connector hostname, never a connector credential, never a CORS
-/// grant. Production stacks two independent layers - a client certificate
-/// pinned by thumbprint, and an audience-checked M2M token - because either
-/// one alone is a weak answer. The certificate is what survives a compromised
-/// container on the same network; the token is what survives a stolen
-/// certificate.
+/// grant. In production the control plane publishes no port - it is reachable
+/// only on the networks the platform renders it into - and every call on top
+/// of that carries an audience-checked machine token from the environment's
+/// identity provider, minted for the consuming API by client credentials. The
+/// network is what keeps strangers out; the token is what tells the consumer
+/// apart from anything else that shares a network with it, and its scopes are
+/// what separate a consumer from an operator.
 ///
 /// Development mode collapses that to one shared header so a local run needs
-/// no PKI. It is unreachable in a deployed configuration: the platform
-/// refuses to start in production without the real thing.
+/// no identity provider. It is unreachable in a deployed configuration: the
+/// platform refuses to start in production without an authority and an
+/// audience.
 /// </summary>
 public sealed class ConnectorAuth(IOptions<ConnectorOptions> options, ILogger<ConnectorAuth> logger)
 {
     public const string DevelopmentHeader = "X-Connector-Key";
+
+    /// <summary>The claim OAuth hands granted scopes in: one string, space separated.</summary>
+    public const string ScopeClaim = "scope";
 
     private readonly ConnectorOptions _options = options.Value;
 
@@ -45,6 +52,39 @@ public sealed class ConnectorAuth(IOptions<ConnectorOptions> options, ILogger<Co
             : Development(http);
     }
 
+    /// <summary>
+    /// Whether an authenticated caller may use the operator routes: in
+    /// production its token must carry <see cref="ConnectorAuthOptions.AdminScope"/>;
+    /// in development there are no tokens and the shared secret already
+    /// admitted it.
+    /// </summary>
+    public bool IsOperator(HttpContext http)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+
+        return !_options.IsProduction || HasScope(http.User, _options.Auth.AdminScope);
+    }
+
+    /// <summary>
+    /// Whether a principal was granted a scope. Scopes arrive as one
+    /// space-separated <c>scope</c> claim, or as several claims of that name
+    /// when a token handler split them; both are read.
+    /// </summary>
+    public static bool HasScope(ClaimsPrincipal? principal, string scope)
+    {
+        if (principal is null || string.IsNullOrWhiteSpace(scope)) return false;
+
+        foreach (var claim in principal.FindAll(ScopeClaim))
+        {
+            foreach (var granted in claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (string.Equals(granted, scope, StringComparison.Ordinal)) return true;
+            }
+        }
+
+        return false;
+    }
+
     private bool Development(HttpContext http)
     {
         var expected = _options.Auth.SharedSecret;
@@ -56,12 +96,6 @@ public sealed class ConnectorAuth(IOptions<ConnectorOptions> options, ILogger<Co
 
     private async ValueTask<bool> ProductionAsync(HttpContext http)
     {
-        if (!ClientCertificateAllowed(http))
-        {
-            logger.LogWarning("rejected a call with no allowlisted client certificate");
-            return false;
-        }
-
         var result = await http.AuthenticateAsync(JwtBearerDefaults.AuthenticationScheme);
         if (!result.Succeeded || result.Principal is null)
         {
@@ -69,37 +103,14 @@ public sealed class ConnectorAuth(IOptions<ConnectorOptions> options, ILogger<Co
             return false;
         }
 
-        http.User = result.Principal;
-        return true;
-    }
-
-    /// <summary>
-    /// Accepts either a certificate on the connection or a thumbprint the
-    /// terminating proxy verified and forwarded. The forwarded form exists
-    /// because TLS frequently ends at the reverse proxy; it is only trusted
-    /// because nothing but that proxy can reach the port.
-    /// </summary>
-    private bool ClientCertificateAllowed(HttpContext http)
-    {
-        var allowed = _options.Auth.ClientCertificateThumbprints;
-        if (allowed.Count == 0) return false;
-
-        var presented = http.Connection.ClientCertificate?.Thumbprint
-                        ?? http.Request.Headers[_options.Auth.ClientCertificateHeader].ToString();
-
-        if (string.IsNullOrWhiteSpace(presented)) return false;
-
-        foreach (var candidate in allowed)
+        if (_options.Auth.RequiredScope is { Length: > 0 } scope && !HasScope(result.Principal, scope))
         {
-            if (string.Equals(candidate.Replace(":", string.Empty, StringComparison.Ordinal),
-                    presented.Replace(":", string.Empty, StringComparison.Ordinal),
-                    StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
+            logger.LogWarning("rejected a call whose token was not granted the {Scope} scope", scope);
+            return false;
         }
 
-        return false;
+        http.User = result.Principal;
+        return true;
     }
 
     /// <summary>Constant time, because a shared secret compared with <c>==</c> leaks itself one byte at a time.</summary>
@@ -125,6 +136,30 @@ public sealed class ConnectorAuthFilter(ConnectorAuth auth) : IEndpointFilter
             return ConnectorResults.Error(new ConnectorHttpException(
                 StatusCodes.Status401Unauthorized,
                 ConnectorException.InvalidRequest("unauthorized")));
+        }
+
+        return await next(context);
+    }
+}
+
+/// <summary>
+/// Applied to the <c>/v1/admin</c> group, inside the filter above: a caller
+/// that authenticated but was not granted the admin scope is answered 403.
+/// The status differs from the 401 on purpose - this caller is known, and
+/// what it lacks is a grant, which is the operator's to give.
+/// </summary>
+public sealed class AdminScopeFilter(ConnectorAuth auth) : IEndpointFilter
+{
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(next);
+
+        if (!auth.IsOperator(context.HttpContext))
+        {
+            return ConnectorResults.Error(new ConnectorHttpException(
+                StatusCodes.Status403Forbidden,
+                ConnectorException.InvalidRequest("this route needs the admin scope")));
         }
 
         return await next(context);

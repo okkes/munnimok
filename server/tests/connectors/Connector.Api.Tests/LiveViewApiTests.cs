@@ -60,7 +60,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     {
         var run = await ArrangeAsync();
         using var agent = AgentClient(run);
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         using (var posted = await PostFrameAsync(agent, run.JobId, sequence: 1, Frame(0x11)))
         {
@@ -97,7 +97,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     {
         var run = await ArrangeAsync();
         using var agent = AgentClient(run);
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         foreach (var sequence in new long[] { 1, 2, 3 })
         {
@@ -130,7 +130,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     {
         var run = await ArrangeAsync();
         using var agent = AgentClient(run);
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         using (var newest = await PostFrameAsync(agent, run.JobId, sequence: 5, Frame(0x55)))
         {
@@ -161,7 +161,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     {
         var run = await ArrangeAsync();
         using var agent = AgentClient(run);
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         var waiting = http.GetAsync(FrameUrl(run, after: 0));
         await Task.Delay(150);
@@ -217,7 +217,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     {
         var run = await ArrangeAsync();
         using var agent = AgentClient(run);
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         using (var accepted = await PostInputAsync(http, run, MoveEvent(1, 0.25, 0.5), DownEvent(2, 0.25, 0.5)))
         {
@@ -271,7 +271,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     public async Task A_batch_that_is_not_answerable_is_refused_whole_and_queues_nothing()
     {
         var run = await ArrangeAsync();
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         // Off the picture. Refused rather than clamped: a clamped tap is a
         // click somewhere the human did not choose.
@@ -316,7 +316,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     {
         var run = await ArrangeAsync();
         using var agent = AgentClient(run);
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         // The click is the OLDEST event in the queue, so "drop the oldest"
         // would take it and this test would be the one to notice.
@@ -352,7 +352,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     public async Task A_challenge_that_is_not_a_live_view_is_refused_on_both_legs()
     {
         var run = await ArrangeAsync(ChallengeType.Image);
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         using (var frame = await http.GetAsync(FrameUrl(run, after: 0)))
         {
@@ -379,7 +379,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
     public async Task The_answer_route_refuses_a_live_view_so_no_typed_value_can_be_stored()
     {
         var run = await ArrangeAsync();
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         using var request = Wire.Post(
             $"/v1/{Provider}/login/{run.SessionId}/answer",
@@ -411,7 +411,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         var expired = await ArrangeAsync();
         await ExpireAsync(expired.ChallengeId);
 
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(expired.Subject);
 
         using (var frame = await http.GetAsync(FrameUrl(expired, after: 0)))
         {
@@ -431,6 +431,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         }
 
         await SettleAsync(settled);
+        http.ActAs(settled.Subject);
 
         using (var frame = await http.GetAsync(FrameUrl(settled, after: 0)))
         {
@@ -453,7 +454,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         var theirs = await ArrangeAsync();
 
         using var agent = AgentClient(theirs);
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(mine.Subject);
 
         using (var posted = await PostFrameAsync(agent, theirs.JobId, sequence: 1, Frame(0x77)))
         {
@@ -525,7 +526,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
 
         var run = await ArrangeAsync();
         using var agent = AgentClient(run);
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(run.Subject);
 
         using (var posted = await PostFrameAsync(agent, run.JobId, sequence: 1, Frame(0xAB)))
         {
@@ -764,7 +765,7 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
             Payload = new ChallengePayload { PromptKey = "connect.challenge.live_login" },
         }, CancellationToken.None);
 
-        return new LiveRun(session.Id, job.Id, challenge.Id, token);
+        return new LiveRun(subject, session.Id, job.Id, challenge.Id, token);
     }
 
     /// <summary>Winds a live view past its deadline. RaiseAsync refuses to create one already expired, and should.</summary>
@@ -787,5 +788,5 @@ public sealed class LiveViewApiTests(ShopApiFactory factory)
         await challenges.AnswerAsync(run.ChallengeId, run.JobId, string.Empty, CancellationToken.None);
     }
 
-    private sealed record LiveRun(string SessionId, string JobId, string ChallengeId, string AgentToken);
+    private sealed record LiveRun(string Subject, string SessionId, string JobId, string ChallengeId, string AgentToken);
 }

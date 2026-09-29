@@ -21,6 +21,14 @@ public sealed class ConnectorException : Exception
     /// <summary>Operator-facing. Never shown to an end user, never localised.</summary>
     public string? Detail { get; }
 
+    /// <summary>
+    /// For <see cref="ErrorCode.RateLimited"/>: how long the caller should
+    /// wait before asking again. Carried on the exception so the place that
+    /// knows the number - the interval check - and the place that writes the
+    /// envelope - the exception filter - need no third party between them.
+    /// </summary>
+    public int? RetryAfterSeconds { get; init; }
+
     public int HttpStatus => ErrorCatalog.HttpStatus(Code);
 
     public bool Retriable => ErrorCatalog.IsRetriable(Code);

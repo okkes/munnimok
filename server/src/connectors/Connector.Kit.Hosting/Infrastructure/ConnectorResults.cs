@@ -68,7 +68,7 @@ public static class ConnectorResults
     public static IResult Error(ConnectorException exception, string? detailId = null, int? retryAfterSeconds = null)
     {
         ArgumentNullException.ThrowIfNull(exception);
-        return Envelope(exception, exception.HttpStatus, detailId, retryAfterSeconds);
+        return Envelope(exception, exception.HttpStatus, detailId, retryAfterSeconds ?? exception.RetryAfterSeconds);
     }
 
     public static IResult Error(ConnectorHttpException exception, string? detailId = null)

@@ -91,7 +91,6 @@ public sealed class ApiReferenceTests(ShopApiFactory factory)
             ["Connector:EnrollmentHmacKey"] = "test-enrollment-hmac",
             ["Connector:Auth:Authority"] = "https://issuer.invalid",
             ["Connector:Auth:Audience"] = "connector.shop",
-            ["Connector:Auth:ClientCertificateThumbprints:0"] = new string('a', 40),
         });
 
         builder.Services.AddConnectorPlatform(builder.Configuration, platform =>

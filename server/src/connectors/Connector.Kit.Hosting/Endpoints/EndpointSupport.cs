@@ -79,6 +79,62 @@ public static class RequestContext
             : ticket;
     }
 
+    public const string SubjectHeader = "X-Connector-Subject";
+    public const string TriggerHeader = "X-Connector-Trigger";
+
+    /// <summary>
+    /// The user this call is made for. Every route that names a session, a
+    /// job, a ticket or an agent answers only its owner, and "not yours" is
+    /// indistinguishable from "does not exist". The header is required rather
+    /// than optional on purpose: a relay that forgot it would otherwise read
+    /// everything, which is the failure that goes unnoticed - a relay that
+    /// reads nothing is noticed on the first call.
+    /// </summary>
+    public static string RequireSubject(HttpContext http)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+
+        var subject = http.Request.Headers[SubjectHeader].ToString().Trim();
+        return subject.Length == 0
+            ? throw ConnectorException.InvalidRequest($"{SubjectHeader} is required")
+            : subject;
+    }
+
+    /// <summary>
+    /// A route whose body names the subject may also carry the header; the
+    /// two must agree, or the call is refused before it does anything.
+    /// </summary>
+    public static void RequireSubjectAgreement(HttpContext http, string bodySubject)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+
+        var header = http.Request.Headers[SubjectHeader].ToString().Trim();
+        if (header.Length > 0 && !string.Equals(header, bodySubject, StringComparison.Ordinal))
+        {
+            throw ConnectorException.InvalidRequest($"{SubjectHeader} does not name the subject in the body");
+        }
+    }
+
+    /// <summary>
+    /// Who asked for this run: a person who pressed a button, or a schedule.
+    /// Absent means a person - the historical default, and the one that is
+    /// never throttled by a provider's sync interval.
+    /// </summary>
+    public static FetchTrigger TriggerOf(HttpContext http)
+    {
+        ArgumentNullException.ThrowIfNull(http);
+
+        var raw = http.Request.Headers[TriggerHeader].ToString();
+        if (string.IsNullOrWhiteSpace(raw)) return FetchTrigger.User;
+
+        return raw.Trim().ToLowerInvariant() switch
+        {
+            "user" => FetchTrigger.User,
+            "schedule" => FetchTrigger.Schedule,
+            _ => throw ConnectorException.InvalidRequest($"{TriggerHeader} must be 'user' or 'schedule'"),
+        };
+    }
+
     /// <summary>Every response that touched a provider says which contract version answered.</summary>
     public static void StampManifestVersion(HttpContext http, int manifestVersion)
     {
@@ -116,6 +172,16 @@ public static class RequestContext
 /// that could go stale, so a consumer that reconnects sees the current truth
 /// immediately instead of waiting for the next transition.
 /// </summary>
+/// <summary>What started a login or a fetch, as declared in <see cref="RequestContext.TriggerHeader"/>.</summary>
+public enum FetchTrigger
+{
+    /// <summary>A person, just now. Held to the provider's request pacing only.</summary>
+    User,
+
+    /// <summary>A schedule. Held to the provider's <c>min_interval_seconds</c> as well.</summary>
+    Schedule,
+}
+
 public static class EventStream
 {
     public static async Task WriteAsync<TState>(

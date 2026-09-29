@@ -27,7 +27,11 @@ namespace Connector.Kit.Hosting.Endpoints;
 /// </summary>
 internal static class CatalogEndpoints
 {
-    public static void Map(IEndpointRouteBuilder api, IEndpointRouteBuilder root, ConnectorPlatformOptions platform)
+    public static void Map(
+        IEndpointRouteBuilder api,
+        IEndpointRouteBuilder admin,
+        IEndpointRouteBuilder root,
+        ConnectorPlatformOptions platform)
     {
         api.MapGet("/providers", async (
             HttpContext http,
@@ -130,7 +134,7 @@ internal static class CatalogEndpoints
         // The kill switch. Pausing a provider stops new work for every user of
         // it within one lease poll, and lets the consumer say something true
         // instead of showing a spinner.
-        api.MapPost("/admin/providers/{id}/status", async (
+        admin.MapPost("/providers/{id}/status", async (
             string id,
             ProviderStatusUpdate update,
             ProviderStatusService statuses,
@@ -158,7 +162,7 @@ internal static class CatalogEndpoints
             return ConnectorResults.Json(status);
         });
 
-        MapCanaries(api);
+        MapCanaries(admin);
     }
 
     /// <summary>
@@ -172,9 +176,9 @@ internal static class CatalogEndpoints
     /// at rest - see <see cref="Data.CanaryRow"/> - so the routes that write it
     /// sit where the other operator powers do.
     /// </remarks>
-    private static void MapCanaries(IEndpointRouteBuilder api)
+    private static void MapCanaries(IEndpointRouteBuilder admin)
     {
-        api.MapGet("/admin/canaries", async (CanaryService canaries, CancellationToken ct) =>
+        admin.MapGet("/canaries", async (CanaryService canaries, CancellationToken ct) =>
         {
             var rows = await canaries.AllAsync(ct);
 
@@ -196,7 +200,7 @@ internal static class CatalogEndpoints
             });
         });
 
-        api.MapPut("/admin/providers/{id}/canary", async (
+        admin.MapPut("/providers/{id}/canary", async (
             string id,
             CanaryEnrolmentRequest request,
             CanaryService canaries,
@@ -222,7 +226,7 @@ internal static class CatalogEndpoints
             });
         });
 
-        api.MapDelete("/admin/providers/{id}/canary", async (
+        admin.MapDelete("/providers/{id}/canary", async (
             string id,
             CanaryService canaries,
             CancellationToken ct) =>

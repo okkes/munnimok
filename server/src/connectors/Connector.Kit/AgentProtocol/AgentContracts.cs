@@ -36,6 +36,18 @@ public sealed record AgentCapabilities
     public AgentClass Class { get; init; } = AgentClass.Pooled;
 
     /// <summary>
+    /// The digest of the adapter catalogue this agent runs - the same
+    /// computation the control plane makes over its own manifests. An agent
+    /// whose digest differs is running other adapter code, or the same code
+    /// configured differently, and the control plane leases it nothing: a
+    /// login driven by a form the control plane never documented fails in
+    /// ways nobody can read. Null means the agent made no claim, which no
+    /// agent built from this repository does.
+    /// </summary>
+    [JsonPropertyName("catalog_digest")]
+    public string? CatalogDigest { get; init; }
+
+    /// <summary>
     /// Whether this agent's browser is one a human could actually reach.
     ///
     /// False by default, exactly as headless is the default everywhere: an
@@ -137,6 +149,15 @@ public sealed record HeartbeatResponse
 
     /// <summary>An agent that learns it is revoked stops and wipes its profiles.</summary>
     public bool Revoked { get; init; }
+
+    /// <summary>
+    /// The control plane's own catalogue digest, so an agent whose
+    /// <see cref="AgentCapabilities.CatalogDigest"/> differs can say so in
+    /// its log - the only place its operator will look when it stops
+    /// picking up work.
+    /// </summary>
+    [JsonPropertyName("catalog_digest")]
+    public string? CatalogDigest { get; init; }
 }
 
 public sealed record LeaseRequest

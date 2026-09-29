@@ -65,7 +65,8 @@ internal static class LiveEndpoints
             CancellationToken ct) =>
         {
             var job = await RequireLiveJobAsync(
-                provider, sessionId, challengeId, registry, sessions, challenges, views, time, ct);
+                provider, sessionId, challengeId, RequestContext.RequireSubject(http),
+                registry, sessions, challenges, views, time, ct);
 
             var after = LiveHeaders.After(http.Request);
             var deadline = time.GetUtcNow().AddSeconds(options.Value.Timeouts.LiveFramePollSeconds);
@@ -110,6 +111,7 @@ internal static class LiveEndpoints
         .Produces(StatusCodes.Status204NoContent);
 
         live.MapPost("/input", async (
+            HttpContext http,
             string provider,
             string sessionId,
             string challengeId,
@@ -124,7 +126,8 @@ internal static class LiveEndpoints
             CancellationToken ct) =>
         {
             var job = await RequireLiveJobAsync(
-                provider, sessionId, challengeId, registry, sessions, challenges, views, time, ct);
+                provider, sessionId, challengeId, RequestContext.RequireSubject(http),
+                registry, sessions, challenges, views, time, ct);
 
             // Once, here, at the edge. Everything downstream - the queue, the
             // poll, the agent's dispatcher - is entitled to assume a batch it
@@ -252,6 +255,7 @@ internal static class LiveEndpoints
         string provider,
         string sessionId,
         string challengeId,
+        string subject,
         IProviderRegistry registry,
         SessionService sessions,
         ChallengeService challenges,
@@ -260,7 +264,7 @@ internal static class LiveEndpoints
         CancellationToken ct)
     {
         var manifest = registry.RequireManifest(provider);
-        var session = await sessions.RequireAsync(manifest.Id, sessionId, subject: null, ct);
+        var session = await sessions.RequireAsync(manifest.Id, sessionId, subject, ct);
 
         // A session that is no longer signing in has no live view, whatever
         // rows outlive it. Checked before the job lookup rather than after,

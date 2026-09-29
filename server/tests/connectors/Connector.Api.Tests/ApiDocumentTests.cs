@@ -433,9 +433,9 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         Assert.Equal(BodylessOnPurpose, empty.ToHashSet(StringComparer.Ordinal));
 
         // The count is asserted so a route that vanishes from the document is
-        // as loud as one that arrives undocumented. 39 since the three canary
-        // routes: list, enrol, forget.
-        Assert.Equal(39, operations);
+        // as loud as one that arrives undocumented. 41 since the operator's
+        // two fleet routes: list every agent, revoke any.
+        Assert.Equal(41, operations);
     }
 
     [Theory]

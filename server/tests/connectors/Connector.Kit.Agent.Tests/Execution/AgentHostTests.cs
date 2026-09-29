@@ -159,6 +159,54 @@ public sealed class AgentHostTests
         Assert.True(box.Control.FailedWith(ErrorCode.AgentUnavailable), box.Control.FailureCode);
     }
 
+    [Fact]
+    public async Task The_enrollment_claims_the_adapter_catalogue_this_agent_runs()
+    {
+        using var box = new Box();
+        var host = box.Build(code: "AGNT-NEW-0001");
+
+        await host.StartAsync(CancellationToken.None);
+        await box.WaitUntil(() => box.Control.Enrollments.Count == 1);
+        await host.StopAsync(CancellationToken.None);
+
+        var claimed = box.Control.Enrollments[0].Capabilities.CatalogDigest;
+        Assert.Equal(new ProviderRegistry([new DecidedAdapter()]).CatalogDigest, claimed);
+        Assert.StartsWith("sha256:", claimed, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_control_plane_on_another_catalogue_is_said_so_once_not_on_every_beat()
+    {
+        using var box = new Box();
+        box.Control.CatalogDigest = "sha256:somebody-elses-adapters";
+        box.Control.HeartbeatSeconds = 5;
+        var host = box.Build(code: "AGNT-NEW-0001");
+
+        await host.StartAsync(CancellationToken.None);
+        await box.WaitUntil(() => box.Control.BeatsAt.Count >= 2);
+        await host.StopAsync(CancellationToken.None);
+
+        var mismatch = box.Log.Lines.Where(line => line.Contains("runs adapter catalogue", StringComparison.Ordinal)).ToList();
+        Assert.Single(mismatch);
+        Assert.Contains("sha256:somebody-elses-adapters", mismatch[0], StringComparison.Ordinal);
+        Assert.Contains("same image and configuration", mismatch[0], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_control_plane_on_the_same_catalogue_is_noted_as_a_match()
+    {
+        using var box = new Box();
+        box.Control.CatalogDigest = new ProviderRegistry([new DecidedAdapter()]).CatalogDigest;
+        var host = box.Build(code: "AGNT-NEW-0001");
+
+        await host.StartAsync(CancellationToken.None);
+        await box.WaitUntil(() => box.Control.BeatsAt.Count >= 1);
+        await host.StopAsync(CancellationToken.None);
+
+        Assert.Contains(box.Log.Lines, line => line.Contains("matches the control plane", StringComparison.Ordinal));
+        Assert.DoesNotContain(box.Log.Lines, line => line.Contains("runs adapter catalogue", StringComparison.Ordinal));
+    }
+
     private static bool Ends(HttpRequestMessage request, string suffix) =>
         request.RequestUri!.AbsolutePath.EndsWith(suffix, StringComparison.Ordinal);
 

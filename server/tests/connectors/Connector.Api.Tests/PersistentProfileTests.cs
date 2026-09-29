@@ -134,7 +134,7 @@ public sealed class PersistentProfileTests(ShopApiFactory factory)
 
         var before = await ConnectAsync(subject, agent);
 
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(subject);
         using var request = new HttpRequestMessage(
             HttpMethod.Delete, $"/v1/{Provider}/sessions/{before.Session}")
         {
@@ -382,7 +382,7 @@ public sealed class PersistentProfileTests(ShopApiFactory factory)
         // revocation actually leaves behind - dead token, orphaned profile -
         // rather than a hand-set flag. The heartbeat is untouched and seconds
         // old, which is the case the old wording got wrong.
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(subject);
         using (var revoked = await http.DeleteAsync($"/v1/agents/{agent}"))
         {
             Assert.Equal(HttpStatusCode.NoContent, revoked.StatusCode);
@@ -688,7 +688,7 @@ public sealed class PersistentProfileTests(ShopApiFactory factory)
 
         if (pin is not null) inputs[PersistentStoreAdapter.PinField] = pin;
 
-        using var http = factory.CreateAuthorizedClient();
+        using var http = factory.CreateAuthorizedClient().ActAs(subject);
         using var request = Wire.Post($"/v1/{Provider}/login", new
         {
             subject,

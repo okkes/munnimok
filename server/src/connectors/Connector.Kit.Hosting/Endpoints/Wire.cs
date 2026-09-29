@@ -509,6 +509,13 @@ public sealed record AgentView
 
     public required bool Online { get; init; }
 
+    /// <summary>
+    /// True when the agent declared an adapter catalogue other than this
+    /// control plane's: alive, enrolled, and leased nothing until it runs the
+    /// same image and configuration.
+    /// </summary>
+    public required bool Stale { get; init; }
+
     public required IReadOnlyList<ProfileView> Profiles { get; init; }
 }
 

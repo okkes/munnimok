@@ -79,6 +79,8 @@ public sealed class AgentHost : BackgroundService
     private readonly ConcurrentDictionary<string, Task> _inflight = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _abort = new();
 
+    private string? _noted;
+
     /// <summary>
     /// Ends THIS connector's two loops without ending anybody else's.
     /// </summary>
@@ -147,7 +149,7 @@ public sealed class AgentHost : BackgroundService
         // depend on nothing yielding before the first call, and deferred to
         // the first lease it is the healthy-looking agent that never picks up
         // work - which is the failure this replaces.
-        _capabilities = options.BuildCapabilities(registry.Manifests);
+        _capabilities = options.BuildCapabilities(registry);
     }
 
     /// <summary>The connector this host serves, as every line about it says.</summary>
@@ -339,6 +341,31 @@ public sealed class AgentHost : BackgroundService
     /// </summary>
     private void ReleaseSlot() => _slots.Release();
 
+    /// <summary>
+    /// Says, once per value, whether the control plane runs the adapter
+    /// catalogue this agent runs. A mismatch is not fatal here - the control
+    /// plane simply leases this agent nothing - so the log line is the whole
+    /// of what an operator gets, and it has to name the cure.
+    /// </summary>
+    private void NoteCatalogue(string? theirs)
+    {
+        if (theirs is null || string.Equals(theirs, _noted, StringComparison.Ordinal)) return;
+        _noted = theirs;
+
+        if (string.Equals(theirs, _capabilities.CatalogDigest, StringComparison.Ordinal))
+        {
+            _logger.LogInformation("{Connection}: adapter catalogue {Digest} matches the control plane", Name, theirs);
+            return;
+        }
+
+        _logger.LogError(
+            "{Connection}: this agent runs adapter catalogue {Ours} and the control plane runs {Theirs}; " +
+            "it will be leased no work until it runs the same image and configuration as the connector",
+            Name,
+            _capabilities.CatalogDigest,
+            theirs);
+    }
+
     private async Task HeartbeatLoopAsync(CancellationToken stoppingToken)
     {
         while (!stoppingToken.IsCancellationRequested)
@@ -364,6 +391,8 @@ public sealed class AgentHost : BackgroundService
                     await RevokeAsync("the control plane revoked this agent").ConfigureAwait(false);
                     return;
                 }
+
+                NoteCatalogue(response.CatalogDigest);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {

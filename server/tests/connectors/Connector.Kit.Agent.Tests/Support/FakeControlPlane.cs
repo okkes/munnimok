@@ -173,6 +173,12 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     /// </summary>
     public bool Revokes { get; set; }
 
+    /// <summary>The catalogue digest this control plane claims in every heartbeat; null says nothing.</summary>
+    public string? CatalogDigest { get; set; }
+
+    /// <summary>The cadence the enrollment asks for; the agent clamps it to five seconds at least.</summary>
+    public int HeartbeatSeconds { get; set; } = 30;
+
     /// <summary>
     /// The clock those two bounds are measured on, and the one this control
     /// plane stamps arrivals with.
@@ -357,7 +363,7 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
                 {
                     AgentId = AgentId,
                     Token = "tok_fake",
-                    HeartbeatSeconds = 30,
+                    HeartbeatSeconds = HeartbeatSeconds,
 
                 },
                 AgentJson.Options));
@@ -373,7 +379,7 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
             // number copied beside them, so an agent tested here is tested
             // against the lease a control plane really hands out.
             return Json(System.Text.Json.JsonSerializer.Serialize(
-                new HeartbeatResponse { Revoked = Revokes }, AgentJson.Options));
+                new HeartbeatResponse { Revoked = Revokes, CatalogDigest = CatalogDigest }, AgentJson.Options));
         }
 
         if (path.EndsWith("agent/v1/jobs/lease", StringComparison.Ordinal))

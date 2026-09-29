@@ -94,9 +94,11 @@ public sealed class JobNotesTests(ShopApiFactory factory)
 
         using var http = factory.CreateAuthorizedClient();
 
+        var notesSubject = Flows.NewSubject("login-notes");
+        http.ActAs(notesSubject);
         using var request = Wire.Post(
             $"/v1/{provider}/login",
-            new { Subject = Flows.NewSubject("login-notes"), Inputs = Credentials });
+            new { Subject = notesSubject, Inputs = Credentials });
 
         using var login = await http.SendAsync(request);
         var accepted = await login.JsonAsync();

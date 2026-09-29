@@ -97,6 +97,7 @@ public static class ConnectorPlatform
         services.AddScoped<ChallengeService>();
         services.AddScoped<ResultService>();
         services.AddScoped<ProviderStatusService>();
+        services.AddScoped<SyncInterval>();
         services.AddScoped<CanaryService>();
         services.AddScoped<JobOutcomeService>();
         services.AddScoped<ViewBuilder>();
@@ -105,6 +106,7 @@ public static class ConnectorPlatform
         services.AddSingleton<ConnectorAuth>();
         services.AddScoped<AgentAuth>();
         services.AddSingleton<ConnectorAuthFilter>();
+        services.AddSingleton<AdminScopeFilter>();
         services.AddSingleton<AgentAuthFilter>();
         services.AddSingleton<ConnectorExceptionFilter>();
 
@@ -134,6 +136,10 @@ public static class ConnectorPlatform
                     jwt.Authority = options.Auth.Authority;
                     jwt.Audience = options.Auth.Audience;
                     jwt.RequireHttpsMetadata = true;
+                    // The claims as the token carries them: the scope check
+                    // reads "scope", and the legacy inbound map would rename
+                    // others for nobody's benefit.
+                    jwt.MapInboundClaims = false;
                 });
         }
 
@@ -183,12 +189,20 @@ public static class ConnectorPlatform
             Envelope(StatusCodes.Status401Unauthorized),
             Envelope(StatusCodes.Status500InternalServerError));
 
-        CatalogEndpoints.Map(api, app, platform);
+        // The operator's routes: the kill switch, canaries, the whole fleet.
+        // A second filter on a nested group, so that adding an admin route
+        // means adding it here and nothing else.
+        var admin = api.MapGroup("/admin")
+            .AddEndpointFilter<AdminScopeFilter>();
+
+        admin.WithMetadata(Envelope(StatusCodes.Status403Forbidden));
+
+        CatalogEndpoints.Map(api, admin, app, platform);
         LoginEndpoints.Map(api, platform);
         LiveEndpoints.MapConsumer(api);
         ResourceEndpoints.Map(api);
         JobEndpoints.Map(api);
-        AgentAdminEndpoints.Map(api);
+        AgentAdminEndpoints.Map(api, admin);
 
         return app;
     }
@@ -335,11 +349,6 @@ public static class ConnectorPlatform
         if (!options.Bundle.HasKeys)
         {
             problems.Add("Connector:Bundle:CurrentKid and Connector:Bundle:Keys are required in production");
-        }
-
-        if (options.Auth.ClientCertificateThumbprints.Count == 0)
-        {
-            problems.Add("Connector:Auth:ClientCertificateThumbprints must list at least one certificate in production");
         }
 
         if (string.IsNullOrWhiteSpace(options.Auth.Authority))
