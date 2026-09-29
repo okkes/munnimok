@@ -228,7 +228,9 @@ export function HomeScreen() {
   const { newTxs } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
-  const needsOnboarding = useQuery(store, async () => store.metaGet('needsOnboarding'), [], undefined, 'meta:needsOnboarding');
+  // no remount cache here (#361): a stale "true" would bounce a returning
+  // Home straight back to onboarding before the fresh flag arrives
+  const needsOnboarding = useQuery(store, async () => store.metaGet('needsOnboarding'), []);
   useEffect(() => {
     if (needsOnboarding?.value === true) void navigate({ to: '/onboarding' });
   }, [needsOnboarding, navigate]);
