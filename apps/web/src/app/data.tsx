@@ -16,7 +16,8 @@ import { requestOutboxSync } from './pwa';
 import { clearSwSession, jwtExpiryMs, mirrorSessionForSw } from '@/lib/swBridge';
 import { ensurePersistentStorage } from '@/lib/platform';
 import { getAccessToken, oidcSignIn, waitForAuthReady } from './authToken';
-import { LOGTO_WIPE_KEY } from '@/lib/authState';
+import { LOGTO_WIPE_KEY, clearStaleLogtoState } from '@/lib/authState';
+import { clearQueryCache } from '@/db/useQuery';
 import { identityKey, useSession } from './session';
 import type { Identity } from './session';
 import { useEvicted } from './evicted';
@@ -179,6 +180,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
     let engine: SyncEngine | null = null;
     let openedStore: StorageBackend | null = null;
+    // #363: the remount cache is per identity — a sign-in after a wipe
+    // must never seed a screen with the last user's rows
+    clearQueryCache();
 
     void (async () => {
       // E2: the backend is chosen here — Dexie, or SQLCipher when the
@@ -189,6 +193,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
         return;
       }
       openedStore = store;
+      liveStore = store;
       const syncing = identity.kind === 'user';
       const repo = new Repo(store, getClock(), {
         trackOutbox: syncing, // demo/offline never sync — no outbox
@@ -307,6 +312,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
       cancelled = true;
       engine?.stop();
       openedStore?.close();
+      if (liveStore === openedStore) liveStore = null;
     };
   }, [identity]);
 
@@ -540,8 +546,21 @@ async function enforceAccountBinding(store: StorageBackend, identity: Identity):
   });
 }
 
+/** the store the provider currently holds open — the wipe closes it first */
+let liveStore: StorageBackend | null = null;
+
 export async function destroyIdentityData(identity: Identity): Promise<void> {
+  // #363: an open connection blocks the database delete — the "wiped"
+  // identity's accounts and imported rows then greeted the next sign-up
+  // (a reconcile offer on an account with nothing attached). Close the
+  // live handle first, forget the cached rows, and let the delete be
+  // verified (destroyStorage throws when the database survived).
+  liveStore?.close();
+  liveStore = null;
+  clearQueryCache();
   await destroyStorage(identityDbName(identityKey(identity)));
+  // the Logto client state of a dead account is dead too
+  clearStaleLogtoState('identity wiped');
   // #298: the identity's lock config dies with it — a later signup on
   // this device must never inherit a dead user's PIN
   try {

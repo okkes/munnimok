@@ -7,6 +7,7 @@ fixes and internals never become items. The rule lives in the
 assistant's memory alongside the guide/tour maintenance rules.
 
 ## Identity & onboarding
+- [ ] Account deletion wipes for real, 2026-09-29 (#363): the device copy is closed before it is deleted (an open connection blocked the delete and the dead account’s accounts and imported rows greeted the next sign-up with a reconcile offer), the delete is verified (a surviving database fails the step and says so instead of a clean login), the cached rows and the Logto client state die with the identity, and the remount cache is cleared on every sign-in so no screen ever seeds from another account
 - [ ] Sign in (web + native return), demo mode, offline profile
 - [ ] Fresh signup walks onboarding (name, avatar, country) and an interrupted one resumes
 - [ ] Session survives restarts; an expired session recovers or says so honestly

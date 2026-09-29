@@ -202,7 +202,17 @@ export function ProfileScreen() {
     }
     setDeletePhase('local');
     logout();
-    await destroyIdentityData(current);
+    try {
+      await destroyIdentityData(current);
+    } catch (err) {
+      // #363: the server side is gone; the device copy is not — say so
+      // (the next sign-in's binding check wipes it, but the user should know)
+      console.error('local wipe failed', err);
+      setDeleteBusy(false);
+      setDeletePhase(null);
+      setDeleteError(true);
+      return;
+    }
     await navigate({ to: '/login' });
   };
 
