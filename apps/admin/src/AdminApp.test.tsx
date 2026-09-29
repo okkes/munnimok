@@ -93,6 +93,9 @@ describe('AdminApp (test-auth mode)', () => {
     await screen.findByText(/no admin access/);
     fireEvent.click(screen.getByTestId('admin-signout'));
     expect(signOut).toHaveBeenCalledTimes(1);
+    // the denied note carries its own Sign out — the fix it names is one tap away
+    fireEvent.click(screen.getByTestId('admin-denied-signout'));
+    expect(signOut).toHaveBeenCalledTimes(2);
   });
 
   it('an unanswered ping (network/CORS/5xx) shows the reachability note, NOT the denied one', async () => {

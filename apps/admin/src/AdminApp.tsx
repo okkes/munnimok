@@ -329,6 +329,11 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
           <p className="denied">
             This account has no admin access yet — its sign-in carries no admin scope. An operator switches admin on for it in the setup wizard
             (the environment&apos;s Access tab); then sign out and in again — the role rides on the next token.
+            {signOut && (
+              <button className="btn" data-testid="admin-denied-signout" style={{ marginLeft: 12 }} onClick={signOut}>
+                Sign out
+              </button>
+            )}
           </p>
         )}
         {unreachable && <p className="denied">The admin API did not answer — is the environment running (and this origin allowed)?</p>}
