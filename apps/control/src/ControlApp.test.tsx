@@ -178,6 +178,41 @@ describe('ControlApp (test-auth mode)', () => {
     expect((await screen.findByTestId('control-quota')).textContent).toContain('No snapshots yet');
   });
 
+  it('connectors: the designated environment’s parties and fleet, read-only (#367 M6)', async () => {
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /control/connectors/status': () => ({
+        body: {
+          service: { kinds: ['store'], version: '1.0.0', manifestDigest: 'sha256-abcdef1234567890' },
+          providers: [
+            { providerId: 'ah', state: 'paused', since: '2026-09-29T10:00:00Z', reasonKey: 'connect.paused.maintenance', acceptsWork: false },
+            { providerId: 'mock-store-simple', state: 'healthy', since: '2026-09-29T09:00:00Z', reasonKey: null, acceptsWork: true },
+          ],
+          agents: { total: 2, online: 1, revoked: 0 },
+          queue: { queued: 0, running: 1, awaitingInput: 0 },
+          relay: { openStreams: 0 },
+        },
+      }),
+    });
+    renderControl();
+    fireEvent.click(await screen.findByTestId('nav-connectors'));
+    const tiles = await screen.findByTestId('control-connectors-tiles');
+    expect(tiles.textContent).toContain('1 / 2');
+    const table = screen.getByTestId('control-connectors');
+    expect(table.textContent).toContain('ah');
+    expect(table.textContent).toContain('paused');
+    expect(table.textContent).toContain('connect.paused.maintenance');
+    // read-only: no kill switch here
+    expect(table.querySelector('button')).toBeNull();
+  });
+
+  it('connectors: an environment without connectors says so', async () => {
+    scriptFetch({ ...HAPPY_ROUTES(), 'GET /control/connectors/status': () => ({ status: 404 }) });
+    renderControl();
+    fireEvent.click(await screen.findByTestId('nav-connectors'));
+    expect((await screen.findByTestId('control-connectors-note')).textContent).toContain('runs no connectors');
+  });
+
   it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {
     const seenHeaders: (string | null)[] = [];
     const seenDevices: (string | null)[] = [];

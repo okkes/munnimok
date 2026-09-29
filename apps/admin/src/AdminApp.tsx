@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import type { AdminConfig } from './config';
+import { ConnectorsScreen } from './ConnectorsScreen';
 import bundledCatalog from './generated/bundledCatalog.json';
 
 interface UserDiagnosis {
@@ -8,6 +9,8 @@ interface UserDiagnosis {
   ownedFeeds: { feedSpaceId: string; maxSeq: number }[];
   attachments: { spaceId: string; feedSpaceId: string; accountId: string }[];
   gcLinks: { gcAccountId: string; spaceId: string; accountEntityId: string; iban: string; provider: string; lastFetchAt: string | null; requisitionId: string }[];
+  /** #367: the user's connector sessions as the relay binds them — absent where the environment runs no connectors */
+  connectorSessions?: { sessionId: string; provider: string; connectionId: string; state: string; lastSeenAt: string }[] | null;
 }
 
 interface AdminUser {
@@ -71,7 +74,17 @@ const STATUS_LABEL: Record<string, string> = {
   GA: 'authorizing', UA: 'authorizing', GC: 'consenting', SA: 'selecting',
 };
 
-type Screen = 'overview' | 'users' | 'connections' | 'catalog';
+/** #367: what the connector relay binds for this user — the session ids, never a bundle */
+function connectorSessionsLine(sessions: UserDiagnosis['connectorSessions']): string {
+  if (!sessions) return 'not offered here';
+  if (sessions.length === 0) return 'NONE';
+  return sessions
+    .map((s) => `${s.provider} ${s.state} · ${s.connectionId.slice(0, 12)}… (seen ${new Date(s.lastSeenAt).toLocaleString()})`)
+    .join(' | ');
+}
+
+type Screen = 'overview' | 'users' | 'connections' | 'connectors' | 'catalog';
+const SCREENS: Screen[] = ['overview', 'users', 'connections', 'connectors', 'catalog'];
 
 /** the operator-published catalog document (admin-catalog design AC2) */
 interface CatalogCategory {
@@ -166,7 +179,7 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
   // hiccup dumps the operator back on Overview mid-task)
   const [screen, setScreen] = useState<Screen>(() => {
     const saved = sessionStorage.getItem('munni_admin_screen');
-    return saved === 'users' || saved === 'connections' || saved === 'catalog' ? saved : 'overview';
+    return saved && (SCREENS as readonly string[]).includes(saved) ? (saved as Screen) : 'overview';
   });
   const openScreen = (next: Screen) => {
     sessionStorage.setItem('munni_admin_screen', next);
@@ -249,8 +262,10 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
     setError(null);
     const res = await fn().catch(() => null);
     if (!res?.ok) {
-      const body = (await res?.json().catch(() => null)) as { error?: string } | null;
-      setError(body?.error ?? 'request failed');
+      // a plain string from this api, the connector's envelope ({ code, … }) from the relay
+      const body = (await res?.json().catch(() => null)) as { error?: string | { code?: string } } | null;
+      const reason = typeof body?.error === 'string' ? body.error : body?.error?.code;
+      setError(reason ?? 'request failed');
     }
     await reload();
     setBusy(false);
@@ -291,6 +306,7 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
               ['overview', 'Overview'],
               ['users', 'Users'],
               ['connections', 'Bank connections'],
+              ['connectors', 'Connectors'],
               ['catalog', 'Catalog'],
             ] as [Screen, string][]
           ).map(([id, label]) => (
@@ -350,6 +366,7 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
         {!blocked && screen === 'catalog' && catalog && (
           <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
         )}
+        {!blocked && screen === 'connectors' && <ConnectorsScreen call={call} busy={busy} act={act} />}
         {!blocked && screen === 'users' && (
           <UsersScreen
             users={users}
@@ -574,6 +591,10 @@ function UsersScreen({
                           : diag.data.gcLinks
                               .map((g) => `${g.provider}:${g.iban.slice(-4)} → space ${g.spaceId.slice(0, 12)}… · consent ${g.requisitionId.slice(0, 8)}… (fetched ${g.lastFetchAt ? new Date(g.lastFetchAt).toLocaleString() : 'never'})`)
                               .join(' | ')}
+                      </div>
+                      {/* #367: what the connector relay binds for this user — the session ids, never a bundle */}
+                      <div data-testid="user-diagnosis-connectors">
+                        <strong>connector sessions</strong> · {connectorSessionsLine(diag.data.connectorSessions)}
                       </div>
                     </div>
                   )}

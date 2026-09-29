@@ -30,11 +30,21 @@ const STATUS_LABEL: Record<string, string> = {
   GA: 'authorizing', UA: 'authorizing', GC: 'consenting', SA: 'selecting',
 };
 
-type Screen = 'overview' | 'connections' | 'quota';
+/** the connector control plane's status as /control/connectors/status relays it (#367 M6) */
+interface ConnectorStatus {
+  service: { kinds: string[]; version: string; manifestDigest: string };
+  providers: { providerId: string; state: string; since: string; reasonKey?: string | null; acceptsWork: boolean }[];
+  agents: { total: number; online: number; revoked: number };
+  queue: { queued: number; running: number; awaitingInput: number };
+  relay?: { openStreams: number };
+}
+
+type Screen = 'overview' | 'connections' | 'connectors' | 'quota';
 
 const NAV: [Screen, string][] = [
   ['overview', 'Overview'],
   ['connections', 'Bank connections'],
+  ['connectors', 'Connectors'],
   ['quota', 'Quota'],
 ];
 
@@ -111,6 +121,8 @@ export function ControlApp({ config, getToken, signOut }: Readonly<ControlAppPro
   const [consents, setConsents] = useState<ControlConsent[] | null>(null);
   const [quota, setQuota] = useState<ProviderQuota[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
+  // null = not asked yet; 'absent' = the designated environment runs no connectors (404); 'unreachable' = its control plane did not answer
+  const [connectors, setConnectors] = useState<ConnectorStatus | 'absent' | 'unreachable' | null>(null);
   // 'denied' = the api really said 403; 'unreachable' = the ping never
   // got an answer (network/CORS/5xx) — the two used to share one message
   // and a blocked request read as "not an admin" (found live 2026-08-28)
@@ -148,14 +160,18 @@ export function ControlApp({ config, getToken, signOut }: Readonly<ControlAppPro
     setDenied(ping?.status === 403);
     setUnreachable(!ping || (!ping.ok && ping.status !== 403));
     if (!ping?.ok) return;
-    const [consentsRes, quotaRes, healthRes] = await Promise.all([
+    const [consentsRes, quotaRes, healthRes, connectorsRes] = await Promise.all([
       call('/control/consents'),
       call('/control/quota'),
       fetch(`${config.apiUrl}/health`).catch(() => null),
+      call('/control/connectors/status').catch(() => null),
     ]);
     if (consentsRes.ok) setConsents((await consentsRes.json()) as ControlConsent[]);
     if (quotaRes.ok) setQuota((await quotaRes.json()) as ProviderQuota[]);
     if (healthRes?.ok) setHealth((await healthRes.json()) as HealthInfo);
+    if (!connectorsRes || connectorsRes.status === 404) setConnectors('absent');
+    else if (!connectorsRes.ok) setConnectors('unreachable');
+    else setConnectors((await connectorsRes.json()) as ConnectorStatus);
   }, [call, config.apiUrl]);
 
   useEffect(() => {
@@ -216,6 +232,7 @@ export function ControlApp({ config, getToken, signOut }: Readonly<ControlAppPro
         {disconnected && <p className="denied">This browser was disconnected from the account — reload to register it again.</p>}
         {!blocked && screen === 'overview' && <OverviewScreen consents={consents} health={health} />}
         {!blocked && screen === 'connections' && <ConsentsScreen consents={consents} />}
+        {!blocked && screen === 'connectors' && <ConnectorsScreen status={connectors} />}
         {!blocked && screen === 'quota' && <QuotaScreen quota={quota} />}
       </main>
     </div>
@@ -377,6 +394,74 @@ function ConsentsScreen({ consents }: Readonly<{ consents: ControlConsent[] | nu
           <p className="hint">No consents on the shared account yet.</p>
         </section>
       )}
+    </>
+  );
+}
+
+const STATE_CHIP: Record<string, string> = { healthy: 'ok-chip', degraded: 'warn-chip', paused: 'warn-chip', retired: 'danger-chip' };
+
+/** the designated environment's connector control plane, read-only: the
+ * parties' states and the fleet's liveness. Pausing, resuming and revoking
+ * stay in the environment's own admin portal, like every other write. */
+function ConnectorsScreen({ status }: Readonly<{ status: ConnectorStatus | 'absent' | 'unreachable' | null }>) {
+  if (status === null || status === 'absent' || status === 'unreachable') {
+    const note = {
+      absent: 'The designated environment runs no connectors.',
+      unreachable: 'The designated environment’s control plane did not answer.',
+    };
+    return (
+      <>
+        <h1>Connectors</h1>
+        <section className="card" data-testid="control-connectors-note">
+          <p className="hint">{status === null ? 'loading…' : note[status]}</p>
+        </section>
+      </>
+    );
+  }
+  return (
+    <>
+      <h1>Connectors</h1>
+      <p className="muted">
+        The designated environment&apos;s control plane, read-only. Pause, resume, retire and revoke from that environment&apos;s own admin portal.
+      </p>
+      <div className="tiles" data-testid="control-connectors-tiles">
+        <Tile label="Parties accepting work" value={`${status.providers.filter((p) => p.acceptsWork).length} / ${status.providers.length}`} />
+        <Tile label="Agents online" value={`${status.agents.online} / ${status.agents.total}`} warn={status.agents.online === 0 && status.agents.total > 0} />
+        <Tile label="Jobs in flight · awaiting input" value={`${status.queue.queued + status.queue.running} · ${status.queue.awaitingInput}`} warn={status.queue.awaitingInput > 0} />
+      </div>
+      <section className="card">
+        <h2>Parties</h2>
+        <p className="hint">
+          control plane {status.service.version} · catalogue {status.service.manifestDigest.slice(0, 12)} · {status.service.kinds.join(', ')}
+        </p>
+        <table data-testid="control-connectors">
+          <thead>
+            <tr>
+              <th>Party</th>
+              <th>State</th>
+              <th>Since</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {status.providers.map((p) => (
+              <tr key={p.providerId} className={p.acceptsWork ? '' : 'stale'}>
+                <td>{p.providerId}</td>
+                <td>
+                  <span className={`chip ${STATE_CHIP[p.state] ?? ''}`}>{p.state}</span>
+                </td>
+                <td>{new Date(p.since).toLocaleString()}</td>
+                <td>{p.reasonKey ?? '—'}</td>
+              </tr>
+            ))}
+            {status.providers.length === 0 && (
+              <tr>
+                <td colSpan={4}>—</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
     </>
   );
 }

@@ -52,6 +52,26 @@ const CATALOG = {
   keywords: [{ catId: 'hobby', keywords: ['padel'] }],
 };
 
+// the connector control plane as /admin/connectors/* relays it (#367 M6)
+const CONNECTOR_STATUS = {
+  service: { kinds: ['bank', 'registry', 'store'], version: '1.0.0', manifestDigest: 'sha256-abcdef1234567890' },
+  providers: [
+    { providerId: 'ah', state: 'paused', since: '2026-09-29T10:00:00Z', reasonKey: 'connect.paused.maintenance', acceptsWork: false },
+    { providerId: 'mock-store-simple', state: 'healthy', since: '2026-09-29T09:00:00Z', reasonKey: null, acceptsWork: true },
+  ],
+  agents: { total: 2, online: 1, revoked: 0 },
+  queue: { queued: 1, running: 0, awaitingInput: 2 },
+  relay: { openStreams: 3 },
+};
+const CONNECTOR_AGENTS = {
+  agents: [
+    { id: 'agt_kitchen', name: 'the kitchen laptop', class: 'byo', revoked: false, lastHeartbeatAt: '2026-09-30T06:00:00Z', online: true, stale: false, profiles: [{ id: 'prof_1', provider: 'asn-persistent', healthy: true, lastOkAt: null }] },
+  ],
+};
+const CONNECTOR_CANARIES = {
+  canaries: [{ providerId: 'ah', resource: 'receipts', intervalMinutes: 60, lastRunAt: '2026-09-30T05:00:00Z', lastJobId: 'job_1', intact: false, verdict: 'login page changed' }],
+};
+
 const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /catalog': () => ({ body: CATALOG }),
   'GET /admin/ping': () => ({}),
@@ -265,6 +285,114 @@ describe('AdminApp (test-auth mode)', () => {
     await waitFor(() => expect(seen).toContain('delete?foreign=true'));
     expect(confirmMock).toHaveBeenCalledTimes(1);
     expect(calls).toContain('DELETE /admin/gocardless/requisitions/req-foreign-0009');
+  });
+
+  it('connectors: the parties with the kill switch, the fleet with revoke, the canaries (#367 M6)', async () => {
+    const posted: unknown[] = [];
+    let revoked = false;
+    const calls = scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/connectors/status': () => ({ body: CONNECTOR_STATUS }),
+      'GET /admin/connectors/agents': () => ({ body: revoked ? { agents: [] } : CONNECTOR_AGENTS }),
+      'GET /admin/connectors/canaries': () => ({ body: CONNECTOR_CANARIES }),
+      'POST /admin/connectors/providers/ah/status': (init) => {
+        posted.push(JSON.parse(String(init?.body)));
+        return { body: { providerId: 'ah', state: 'healthy', since: '2026-09-30T06:00:00Z', reasonKey: null, acceptsWork: true } };
+      },
+      'POST /admin/connectors/providers/mock-store-simple/status': (init) => {
+        posted.push(JSON.parse(String(init?.body)));
+        return { body: { providerId: 'mock-store-simple', state: 'paused', since: '2026-09-30T06:00:00Z', reasonKey: null, acceptsWork: false } };
+      },
+      'DELETE /admin/connectors/agents/agt_kitchen': () => {
+        revoked = true;
+        return { status: 204 };
+      },
+    });
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-connectors'));
+    const tiles = await screen.findByTestId('connectors-tiles');
+    expect(tiles.textContent).toContain('1 / 2'); // one of two parties accepts work; one of two agents is online
+    expect(tiles.textContent).toContain('1 · 2'); // one job in flight, two awaiting input
+    const providers = screen.getByTestId('connectors-providers');
+    expect(screen.getByTestId('connector-state-ah').textContent).toBe('paused');
+    expect(providers.textContent).toContain('connect.paused.maintenance');
+
+    // resume the paused party; pause the healthy one with a reason key
+    fireEvent.click(screen.getByTestId('connector-resume-ah'));
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(posted[0]).toEqual({ state: 'healthy', reasonKey: null });
+    fireEvent.change(screen.getByTestId('connector-reason-mock-store-simple'), { target: { value: 'connect.paused.maintenance' } });
+    fireEvent.click(screen.getByTestId('connector-pause-mock-store-simple'));
+    await waitFor(() => expect(posted).toHaveLength(2));
+    expect(posted[1]).toEqual({ state: 'paused', reasonKey: 'connect.paused.maintenance' });
+
+    // retiring expires every live session, so it wants the id typed
+    fireEvent.click(await screen.findByTestId('connector-retire-mock-store-simple'));
+    const typed = await screen.findByTestId('connector-retire-typed');
+    expect((screen.getByTestId('connector-retire-confirm') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(typed, { target: { value: 'mock-store-simple' } });
+    fireEvent.click(screen.getByTestId('connector-retire-confirm'));
+    await waitFor(() => expect(posted).toHaveLength(3));
+    expect(posted[2]).toMatchObject({ state: 'retired' });
+
+    // the fleet: health and the logins each keeps; revoking asks first
+    const agents = screen.getByTestId('connectors-agents');
+    expect(agents.textContent).toContain('the kitchen laptop');
+    expect(agents.textContent).toContain('online');
+    expect(agents.textContent).toContain('asn-persistent');
+    fireEvent.click(screen.getByTestId('agent-revoke-agt_kitchen'));
+    await waitFor(() => expect(revoked).toBe(true));
+    expect(calls).toContain('DELETE /admin/connectors/agents/agt_kitchen');
+    await waitFor(() => expect(screen.getByTestId('connectors-agents').textContent).toContain('No household agents'));
+
+    // a broken canary wears its verdict
+    expect(screen.getByTestId('connectors-canaries').textContent).toContain('login page changed');
+  });
+
+  it('connectors: an environment without connectors says so, and a relay refusal reaches the error strip as its code', async () => {
+    scriptFetch({ ...HAPPY_ROUTES(), 'GET /admin/connectors/status': () => ({ status: 404 }) });
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-connectors'));
+    expect((await screen.findByTestId('connectors-absent')).textContent).toContain('runs no connectors');
+    cleanup();
+
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/connectors/status': () => ({ body: { ...CONNECTOR_STATUS, providers: [CONNECTOR_STATUS.providers[1]] } }),
+      'GET /admin/connectors/agents': () => ({ body: { agents: [] } }),
+      'GET /admin/connectors/canaries': () => ({ body: { canaries: [] } }),
+      'POST /admin/connectors/providers/mock-store-simple/status': () => ({
+        status: 503,
+        body: { error: { code: 'provider_unavailable', retriable: true, userAction: 'retry', messageKey: 'connect.error.provider_unavailable', detailId: null, retryAfterSeconds: null } },
+      }),
+    });
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-connectors'));
+    fireEvent.click(await screen.findByTestId('connector-pause-mock-store-simple'));
+    expect((await screen.findByTestId('admin-error')).textContent).toContain('provider_unavailable');
+  });
+
+  it('a user diagnosis lists the connector sessions the relay binds (#367 M6)', async () => {
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/users/sub-alice/diagnosis': () => ({
+        body: {
+          userId: 'u1',
+          memberSpaces: ['space-1'],
+          ownedFeeds: [],
+          attachments: [],
+          gcLinks: [],
+          connectorSessions: [{ sessionId: 'ses_1', provider: 'mock-store-simple', connectionId: 'conn-1234567890abcdef', state: 'awaiting_input', lastSeenAt: '2026-09-30T06:00:00Z' }],
+        },
+      }),
+    });
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-users'));
+    fireEvent.click(await screen.findByTestId('diagnose-sub-alice'));
+    const line = await screen.findByTestId('user-diagnosis-connectors');
+    expect(line.textContent).toContain('mock-store-simple awaiting_input');
+    expect(line.textContent).toContain('conn-1234567…');
   });
 
   it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {
