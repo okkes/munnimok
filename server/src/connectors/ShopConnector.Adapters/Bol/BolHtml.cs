@@ -43,8 +43,14 @@ internal static partial class BolHtml
         "link", "meta", "param", "source", "track", "wbr",
     };
 
-    [GeneratedRegex(@"<(script|style)\b[^>]*>.*?</\1\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex ScriptOrStyle { get; }
+    // One pattern per element rather than one with a backreference: the source
+    // generator cannot generate a case-insensitive backreference and would fall
+    // back to the interpreter for the whole expression.
+    [GeneratedRegex(@"<script\b[^>]*>.*?</script\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex ScriptBlock { get; }
+
+    [GeneratedRegex(@"<style\b[^>]*>.*?</style\s*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex StyleBlock { get; }
 
     [GeneratedRegex(@"<!--.*?-->", RegexOptions.Singleline)]
     private static partial Regex CommentBlock { get; }
@@ -101,52 +107,16 @@ internal static partial class BolHtml
         return [];
     }
 
-    public static HtmlElement? First(string html, IReadOnlyList<string> selectors)
-    {
-        foreach (var selector in selectors)
-        {
-            var found = All(html, selector);
-            if (found.Count > 0) return found[0];
-        }
-
-        return null;
-    }
-
-    /// <summary>
-    /// The text of the first matching element, or null when none matched.
-    /// Null and empty are kept apart: an element that exists and is blank is
-    /// a different finding from an element that is not there at all.
-    /// </summary>
-    public static string? TextOf(string html, IReadOnlyList<string> selectors) =>
-        First(html, selectors) is { } element ? Text(element.Inner) : null;
-
+    /// <summary>Every element one selector matches, in document order.</summary>
     public static IReadOnlyList<HtmlElement> All(string html, string selector)
     {
         var simple = Parse(selector);
         var results = new List<HtmlElement>();
         var cursor = 0;
 
-        while (cursor < html.Length)
+        while (NextTag(html, cursor) is { } tag)
         {
-            var open = html.IndexOf('<', cursor);
-            if (open < 0 || open + 1 >= html.Length) break;
-
-            if (html.AsSpan(open).StartsWith("<!--", StringComparison.Ordinal))
-            {
-                var closed = html.IndexOf("-->", open, StringComparison.Ordinal);
-                cursor = closed < 0 ? html.Length : closed + 3;
-                continue;
-            }
-
-            if (!char.IsAsciiLetter(html[open + 1]))
-            {
-                cursor = open + 1;
-                continue;
-            }
-
-            var end = TagEnd(html, open);
-            if (end < 0) break;
-
+            var (open, end) = tag;
             var openTag = html[open..(end + 1)];
             var name = TagName(openTag);
 
@@ -170,18 +140,33 @@ internal static partial class BolHtml
         return results;
     }
 
+    public static HtmlElement? First(string html, IReadOnlyList<string> selectors)
+    {
+        foreach (var selector in selectors)
+        {
+            var found = All(html, selector);
+            if (found.Count > 0) return found[0];
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The text of the first matching element, or null when none matched.
+    /// Null and empty are kept apart: an element that exists and is blank is
+    /// a different finding from an element that is not there at all.
+    /// </summary>
+    public static string? TextOf(string html, IReadOnlyList<string> selectors) =>
+        First(html, selectors) is { } element ? Text(element.Inner) : null;
+
     /// <summary>An attribute's value, or null. Case-insensitive on the name, as HTML is.</summary>
     public static string? Attribute(string openTag, string name)
     {
-        foreach (var pair in AttributePair.Matches(openTag).Cast<Match>())
+        foreach (var groups in AttributePair.Matches(openTag).Select(pair => pair.Groups))
         {
-            if (!string.Equals(pair.Groups[1].Value, name, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!string.Equals(groups[1].Value, name, StringComparison.OrdinalIgnoreCase)) continue;
 
-            var raw = pair.Groups[3].Success ? pair.Groups[3].Value
-                : pair.Groups[4].Success ? pair.Groups[4].Value
-                : pair.Groups[5].Value;
-
-            return WebUtility.HtmlDecode(raw);
+            return WebUtility.HtmlDecode(Unquoted(groups));
         }
 
         return null;
@@ -196,6 +181,14 @@ internal static partial class BolHtml
         }
 
         return null;
+    }
+
+    /// <summary>The value out of whichever alternative matched: double-quoted, single-quoted or bare.</summary>
+    private static string Unquoted(GroupCollection groups)
+    {
+        if (groups[3].Success) return groups[3].Value;
+
+        return groups[4].Success ? groups[4].Value : groups[5].Value;
     }
 
     /// <summary>
@@ -213,26 +206,9 @@ internal static partial class BolHtml
     {
         var cursor = 0;
 
-        while (cursor < html.Length)
+        while (NextTag(html, cursor) is { } tag)
         {
-            var open = html.IndexOf('<', cursor);
-            if (open < 0 || open + 1 >= html.Length) break;
-
-            if (html.AsSpan(open).StartsWith("<!--", StringComparison.Ordinal))
-            {
-                var closed = html.IndexOf("-->", open, StringComparison.Ordinal);
-                cursor = closed < 0 ? html.Length : closed + 3;
-                continue;
-            }
-
-            if (!char.IsAsciiLetter(html[open + 1]))
-            {
-                cursor = open + 1;
-                continue;
-            }
-
-            var end = TagEnd(html, open);
-            if (end < 0) break;
+            var (open, end) = tag;
 
             if (Attribute(html[open..(end + 1)], names) is { Length: > 0 } value) return value;
             cursor = end + 1;
@@ -252,7 +228,7 @@ internal static partial class BolHtml
     public static string Text(string fragment)
     {
         var stripped = AnyTag.Replace(
-            CommentBlock.Replace(ScriptOrStyle.Replace(fragment, " "), " "), " ");
+            CommentBlock.Replace(StyleBlock.Replace(ScriptBlock.Replace(fragment, " "), " "), " "), " ");
 
         var decoded = WebUtility.HtmlDecode(stripped)
             .Replace('\u00A0', ' ')     // non-breaking space
@@ -381,6 +357,87 @@ internal static partial class BolHtml
 
     // ---- scanning -----------------------------------------------------------
 
+    /// <summary>
+    /// The next opening tag at or after <paramref name="from"/>: where its
+    /// '&lt;' is and where its '&gt;' is, or null when the document holds no
+    /// more. A comment is stepped over whole, and a '&lt;' that starts no tag
+    /// is stepped past.
+    /// </summary>
+    private static (int Open, int End)? NextTag(string html, int from)
+    {
+        var cursor = from;
+
+        while (cursor < html.Length)
+        {
+            var open = html.IndexOf('<', cursor);
+            if (open < 0 || open + 1 >= html.Length) return null;
+
+            if (html.AsSpan(open).StartsWith("<!--", StringComparison.Ordinal))
+            {
+                cursor = PastComment(html, open);
+                continue;
+            }
+
+            if (!char.IsAsciiLetter(html[open + 1]))
+            {
+                cursor = open + 1;
+                continue;
+            }
+
+            var end = TagEnd(html, open);
+            return end < 0 ? null : (open, end);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The next tag carrying the element's own name at or after
+    /// <paramref name="from"/>, opening or closing: where it starts, where it
+    /// ends and which of the two it is - or null when there is none before the
+    /// document ends. Comments are stepped over whole.
+    /// </summary>
+    private static (int At, int End, bool Closing)? NextNamed(string html, string name, int from)
+    {
+        var cursor = from;
+
+        while (cursor < html.Length)
+        {
+            var next = html.IndexOf('<', cursor);
+            if (next < 0) return null;
+
+            if (html.AsSpan(next).StartsWith("<!--", StringComparison.Ordinal))
+            {
+                cursor = PastComment(html, next);
+                continue;
+            }
+
+            var closing = next + 1 < html.Length && html[next + 1] == '/';
+            var nameAt = closing ? next + 2 : next + 1;
+
+            if (!Named(html, nameAt, name))
+            {
+                cursor = next + 1;
+                continue;
+            }
+
+            var tagEnd = TagEnd(html, next);
+            return tagEnd < 0 ? null : (next, tagEnd, closing);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The index just past the comment opening at <paramref name="at"/>. One
+    /// that never closes takes the rest of the document with it.
+    /// </summary>
+    private static int PastComment(string html, int at)
+    {
+        var closed = html.IndexOf("-->", at, StringComparison.Ordinal);
+        return closed < 0 ? html.Length : closed + 3;
+    }
+
     /// <summary>The index of the '>' that closes an opening tag, ignoring quoted values.</summary>
     private static int TagEnd(string html, int open)
     {
@@ -426,29 +483,9 @@ internal static partial class BolHtml
         var depth = 1;
         var cursor = end + 1;
 
-        while (cursor < html.Length)
+        while (NextNamed(html, name, cursor) is { } tag)
         {
-            var next = html.IndexOf('<', cursor);
-            if (next < 0) break;
-
-            if (html.AsSpan(next).StartsWith("<!--", StringComparison.Ordinal))
-            {
-                var closed = html.IndexOf("-->", next, StringComparison.Ordinal);
-                cursor = closed < 0 ? html.Length : closed + 3;
-                continue;
-            }
-
-            var closing = next + 1 < html.Length && html[next + 1] == '/';
-            var nameAt = closing ? next + 2 : next + 1;
-
-            if (!Named(html, nameAt, name))
-            {
-                cursor = next + 1;
-                continue;
-            }
-
-            var tagEnd = TagEnd(html, next);
-            if (tagEnd < 0) break;
+            var (next, tagEnd, closing) = tag;
 
             if (closing)
             {
@@ -477,7 +514,8 @@ internal static partial class BolHtml
 
     // ---- selectors ----------------------------------------------------------
 
-    private readonly record struct Simple(string? Tag, string? Class, string? Attribute, string? Value, bool Contains);
+    private readonly record struct Simple(
+        string? Tag, string? Class, string? AttributeName, string? Value, bool Contains);
 
     private static Simple Parse(string selector)
     {
@@ -526,7 +564,7 @@ internal static partial class BolHtml
             if (!present) return false;
         }
 
-        if (simple.Attribute is not { } attribute) return true;
+        if (simple.AttributeName is not { } attribute) return true;
 
         var actual = Attribute(openTag, attribute);
         if (actual is null) return false;

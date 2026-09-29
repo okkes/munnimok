@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using Connector.Kit.Errors;
 using Connector.Kit.Jobs;
 using Connector.Kit.Security;
@@ -24,7 +25,7 @@ namespace ShopConnector.Adapters.Tests;
 /// other invoices live solely inside a script payload. The order captured had
 /// THREE invoices and showed one.
 /// </summary>
-public sealed class BolInvoiceDocumentTests
+public sealed partial class BolInvoiceDocumentTests
 {
     private const string OrderReference = "A000TEST001";
 
@@ -33,6 +34,14 @@ public sealed class BolInvoiceDocumentTests
 
     private static string Pdf(string invoiceId) =>
         $"https://www.bol.com/nl/rnwy/invoice/pdf?i={invoiceId}";
+
+    /// <summary>An anchor into an invoice's own page: the one bol renders.</summary>
+    [GeneratedRegex("<a[^>]+facturen/details/")]
+    private static partial Regex InvoiceAnchor();
+
+    /// <summary>An invoice path with an id behind it, wherever the page carries one.</summary>
+    [GeneratedRegex("facturen/details/[0-9]")]
+    private static partial Regex InvoicePath();
 
     // ---- the harvest -------------------------------------------------------
 
@@ -51,7 +60,7 @@ public sealed class BolInvoiceDocumentTests
         var page = FixtureCatalog.Read("bol/order-details.html");
 
         // The premise, asserted rather than assumed: one anchor, three ids.
-        Assert.Single(System.Text.RegularExpressions.Regex.Matches(page, "<a[^>]+facturen/details/"));
+        Assert.Single(InvoiceAnchor().Matches(page));
 
         var links = BolDocuments.Parse(page, new BolOptions());
 
@@ -140,9 +149,7 @@ public sealed class BolInvoiceDocumentTests
     {
         var page = FixtureCatalog.Read("bol/order-details.html");
 
-        Assert.Equal(
-            4,
-            System.Text.RegularExpressions.Regex.Matches(page, "facturen/details/[0-9]").Count);
+        Assert.Equal(4, InvoicePath().Count(page));
 
         Assert.Equal(3, BolDocuments.Parse(page, new BolOptions()).Count);
     }

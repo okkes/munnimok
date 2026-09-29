@@ -239,7 +239,11 @@ internal sealed class CaptchaGate
     /// </summary>
     private const int MaxRelayIterations = 24;
 
-    /// <summary>What one relayed grid came to.</summary>
+    /// <summary>
+    /// What one relayed grid came to - or, for the one tick this gate makes
+    /// itself, whether it landed (<see cref="Done"/>) or could not be made
+    /// (<see cref="Lost"/>).
+    /// </summary>
     private enum GridRound
     {
         /// <summary>Nothing could be relayed, or nothing readable came back.</summary>
@@ -359,15 +363,29 @@ internal sealed class CaptchaGate
         // A widget whose parts we can name, and a page to click into: the
         // human answers this one wherever they are, which is the whole reason
         // any of this exists.
-        if (wall.Kind is (CaptchaKind.Grid or CaptchaKind.Checkbox) && taps is not null)
+        if (IsRelayable(wall.Kind) && taps is not null)
         {
             return await RelayWidgetAsync(ctx, page, watcher, taps, wall, ct).ConfigureAwait(false);
         }
 
-        // Nobody can reach a headless browser in a pool, so there is no one to
-        // ask and nothing to wait for. Saying so immediately is worth far more
-        // than a hang: it is what lets a consumer tell the user to connect
-        // this one from a machine they are sitting at.
+        return await LeaveToTheKeyboardAsync(ctx, watcher, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The two walls a relay carries: a grid of pictures, or the box that precedes one.</summary>
+    private static bool IsRelayable(CaptchaKind kind) => kind is CaptchaKind.Grid or CaptchaKind.Checkbox;
+
+    /// <summary>
+    /// Leaves the wall to whoever is sitting at the browser - or says at once
+    /// that nobody is.
+    ///
+    /// Nobody can reach a headless browser in a pool, so there is no one to
+    /// ask and nothing to wait for. Saying so immediately is worth far more
+    /// than a hang: it is what lets a consumer tell the user to connect
+    /// this one from a machine they are sitting at.
+    /// </summary>
+    private async Task<CaptchaOutcome> LeaveToTheKeyboardAsync(
+        IJobContext ctx, IRedirectWaiter watcher, CancellationToken ct)
+    {
         if (!ctx.Attended) throw Unrelayable();
 
         return await AwaitSolvedAsync(ctx, watcher, ct).ConfigureAwait(false);
@@ -454,16 +472,50 @@ internal sealed class CaptchaGate
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, ITapSurface taps, CaptchaWall wall,
         CancellationToken ct)
     {
-        var poll = TimeSpan.FromSeconds(_spec.PollSeconds);
-        var current = wall;
-        var ticked = false;
+        var relay = new WidgetRelay(wall);
+
+        while (relay.Escalations < _spec.RelayRounds && relay.Iterations < MaxRelayIterations)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (await RoundAsync(ctx, page, watcher, taps, relay, ct).ConfigureAwait(false) is { } outcome)
+            {
+                return outcome;
+            }
+        }
+
+        // The rounds ran out with the widget still standing. Whoever is at the
+        // browser is the only one who can pass it now - and if nobody is,
+        // saying so beats waiting for a redirect that is not coming.
+        return await LeaveToTheKeyboardAsync(ctx, watcher, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The relay's bookkeeping, carried from one round to the next.
+    /// </summary>
+    private sealed class WidgetRelay
+    {
+        public WidgetRelay(CaptchaWall wall)
+        {
+            Current = wall;
+        }
+
+        /// <summary>The wall as it stood when it was last measured.</summary>
+        public CaptchaWall Current { get; set; }
+
+        /// <summary>
+        /// Whether the one tick this gate makes itself has been made. Once,
+        /// ever: the box stays on the page after it is ticked, so a second
+        /// pass would find it again and undo what the first one achieved.
+        /// </summary>
+        public bool Ticked { get; set; }
 
         // Two counters, because two different things need bounding and only
         // one of them is the provider's fault.
         //
-        // `escalations` is another wall going up that our last gesture did not
-        // get past - the budget this always meant to be. `iterations` is a
-        // backstop on the loop itself.
+        // `Escalations` is another wall going up that our last gesture did
+        // not get past - the budget this always meant to be. `Iterations` is
+        // a backstop on the loop itself.
         //
         // A round the human answered with taps is neither, and counting it as
         // one did real damage. Once the client could send taps WITHOUT ending
@@ -476,109 +528,116 @@ internal sealed class CaptchaGate
         //
         // Somebody working through a widget is progress. Only being made to
         // start again is not.
-        var escalations = 0;
-        var iterations = 0;
+        public int Escalations { get; set; }
 
-        while (escalations < _spec.RelayRounds && iterations < MaxRelayIterations)
+        public int Iterations { get; set; }
+    }
+
+    /// <summary>
+    /// One round of the relay: what stands now, one gesture on it, and a look
+    /// for the redirect. Null while the widget keeps asking.
+    /// </summary>
+    private async Task<CaptchaOutcome?> RoundAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, ITapSurface taps, WidgetRelay relay,
+        CancellationToken ct)
+    {
+        if (relay.Iterations++ > 0)
         {
-            ct.ThrowIfCancellationRequested();
+            // What the last gesture left standing, measured rather than
+            // assumed: a tick becomes a grid, a grid becomes another grid,
+            // and either can simply be gone.
+            relay.Current = await DetectAsync(page, ct).ConfigureAwait(false);
 
-            if (iterations++ > 0)
-            {
-                // What the last gesture left standing, measured rather than
-                // assumed: a tick becomes a grid, a grid becomes another grid,
-                // and either can simply be gone.
-                current = await DetectAsync(page, ct).ConfigureAwait(false);
-
-                // The wall came down. The redirect has not arrived yet, so the
-                // caller's own watch is where this belongs - not another
-                // photograph of a page with nothing on it.
-                if (current.Kind is CaptchaKind.None)
-                {
-                    ctx.Progress(JobStep.Authenticating);
-                    return CaptchaOutcome.Asked;
-                }
-
-                // It turned into something no relay carries.
-                if (current.Kind is not (CaptchaKind.Grid or CaptchaKind.Checkbox)) break;
-            }
-
-            // Whether the provider gets a moment to move on before we look
-            // again. A human who is halfway through a grid has not given it
-            // anything to move on from, so that round skips the wait.
-            var settle = true;
-
-            if (current.Kind is CaptchaKind.Grid)
-            {
-                var relayed = await RelayGridAsync(
-                    ctx, page, taps, _spec.Grid, current.Crop, ct).ConfigureAwait(false);
-
-                if (relayed is GridRound.Lost) return CaptchaOutcome.Stuck;
-                settle = relayed is GridRound.Done;
-
-                // More means the human is mid-answer and wants the next
-                // picture, which is the relay working rather than the provider
-                // resisting.
-                if (relayed is not GridRound.More) escalations++;
-            }
-            else if (!ticked)
-            {
-                // One real click on one real control - the gesture the widget
-                // exists to receive, and frequently the whole of what it asks.
-                // Once, ever: the box stays on the page after it is ticked, so
-                // a second pass would find it again and undo what the first
-                // one achieved.
-                if (!await page.ClickAsync(_spec.Checkbox, _spec.ProbeMs, ct).ConfigureAwait(false))
-                {
-                    return CaptchaOutcome.Stuck;
-                }
-
-                ticked = true;
-
-                // Our gesture, not theirs. If the widget is still standing
-                // next time round, this one did not get past it.
-                escalations++;
-            }
-            else
-            {
-                // The tick did not take. A click on an element lands in the
-                // middle of it, and the middle of hCaptcha's checkbox frame is
-                // the words beside the box rather than the box - so this is a
-                // miss we should expect rather than a surprise.
-                //
-                // The answer is not to guess how far left the box is: an
-                // offset measured off one screenshot of one version of
-                // somebody else's widget is wrong the week they restyle it,
-                // and it is wrong invisibly. The frame is a picture like any
-                // other, so it is relayed like any other and the human taps
-                // their own box.
-                var relayed = await RelayGridAsync(
-                    ctx, page, taps, _spec.Checkbox, current.Crop, ct).ConfigureAwait(false);
-
-                if (relayed is GridRound.Lost) return CaptchaOutcome.Stuck;
-                settle = relayed is GridRound.Done;
-
-                // More means the human is mid-answer and wants the next
-                // picture, which is the relay working rather than the provider
-                // resisting.
-                if (relayed is not GridRound.More) escalations++;
-            }
-
-            // Every gesture may have been the last one the provider needed,
-            // and the redirect is the only proof of that.
-            if (settle && await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is { } captured)
+            // The wall came down. The redirect has not arrived yet, so the
+            // caller's own watch is where this belongs - not another
+            // photograph of a page with nothing on it.
+            if (relay.Current.Kind is CaptchaKind.None)
             {
                 ctx.Progress(JobStep.Authenticating);
-                return CaptchaOutcome.Solved(captured);
+                return CaptchaOutcome.Asked;
+            }
+
+            // It turned into something no relay carries.
+            if (!IsRelayable(relay.Current.Kind))
+            {
+                return await LeaveToTheKeyboardAsync(ctx, watcher, ct).ConfigureAwait(false);
             }
         }
 
-        // The rounds ran out with the widget still standing. Whoever is at the
-        // browser is the only one who can pass it now - and if nobody is,
-        // saying so beats waiting for a redirect that is not coming.
-        if (!ctx.Attended) throw Unrelayable();
+        var relayed = await GestureAsync(ctx, page, taps, relay, ct).ConfigureAwait(false);
+        if (relayed is GridRound.Lost) return CaptchaOutcome.Stuck;
 
-        return await AwaitSolvedAsync(ctx, watcher, ct).ConfigureAwait(false);
+        // More means the human is mid-answer and wants the next picture,
+        // which is the relay working rather than the provider resisting.
+        if (relayed is not GridRound.More) relay.Escalations++;
+
+        // Whether the provider gets a moment to move on before we look
+        // again. A human who is halfway through a grid has not given it
+        // anything to move on from, so that round skips the wait.
+        //
+        // Every gesture may have been the last one the provider needed,
+        // and the redirect is the only proof of that.
+        if (relayed is GridRound.Done
+            && await watcher.WaitAsync(TimeSpan.FromSeconds(_spec.PollSeconds), ct).ConfigureAwait(false)
+                is { } captured)
+        {
+            ctx.Progress(JobStep.Authenticating);
+            return CaptchaOutcome.Solved(captured);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// One gesture on the wall as it stands: a relayed grid, the one tick
+    /// this gate makes itself, or the checkbox frame relayed when that tick
+    /// did not take.
+    ///
+    /// A tick that landed is <see cref="GridRound.Done"/>: it is our gesture
+    /// and not theirs, so if the widget is still standing next time round,
+    /// this one did not get past it - and it counts against the rounds the
+    /// same way a finished grid does.
+    /// </summary>
+    private async Task<GridRound> GestureAsync(
+        IJobContext ctx, ILoginPage page, ITapSurface taps, WidgetRelay relay, CancellationToken ct)
+    {
+        if (relay.Current.Kind is CaptchaKind.Grid)
+        {
+            return await RelayGridAsync(ctx, page, taps, _spec.Grid, relay.Current.Crop, ct).ConfigureAwait(false);
+        }
+
+        if (relay.Ticked)
+        {
+            // The tick did not take. A click on an element lands in the
+            // middle of it, and the middle of hCaptcha's checkbox frame is
+            // the words beside the box rather than the box - so this is a
+            // miss we should expect rather than a surprise.
+            //
+            // The answer is not to guess how far left the box is: an
+            // offset measured off one screenshot of one version of
+            // somebody else's widget is wrong the week they restyle it,
+            // and it is wrong invisibly. The frame is a picture like any
+            // other, so it is relayed like any other and the human taps
+            // their own box.
+            return await RelayGridAsync(ctx, page, taps, _spec.Checkbox, relay.Current.Crop, ct)
+                .ConfigureAwait(false);
+        }
+
+        // One real click on one real control - the gesture the widget
+        // exists to receive, and frequently the whole of what it asks.
+        // Once, ever: the box stays on the page after it is ticked, so
+        // a second pass would find it again and undo what the first
+        // one achieved.
+        if (!await page.ClickAsync(_spec.Checkbox, _spec.ProbeMs, ct).ConfigureAwait(false))
+        {
+            return GridRound.Lost;
+        }
+
+        relay.Ticked = true;
+
+        // Our gesture, not theirs. If the widget is still standing
+        // next time round, this one did not get past it.
+        return GridRound.Done;
     }
 
     /// <summary>

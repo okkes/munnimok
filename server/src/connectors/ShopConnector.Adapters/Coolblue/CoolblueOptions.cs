@@ -479,6 +479,12 @@ public sealed record CoolblueOptions
     public const string OwnFormOnly = ":not([form])";
 
     /// <summary>
+    /// A button of this form and no other, which every candidate below that
+    /// picks one by its text starts from.
+    /// </summary>
+    private const string OwnButton = "button" + OwnFormOnly;
+
+    /// <summary>
     /// The control that advances the sign-in from the e-mail screen to the
     /// password screen. CONFIRMED live 2026-08-07: one
     /// <c>&lt;button type="submit"&gt;Doorgaan&lt;/button&gt;</c>, inside the
@@ -499,9 +505,9 @@ public sealed record CoolblueOptions
     public IReadOnlyList<string> ContinueSelectors { get; init; } =
     [
         "button[type='submit']" + OwnFormOnly,
-        "button" + OwnFormOnly + ":has-text('Doorgaan')",
-        "button" + OwnFormOnly + ":has-text('Verder')",
-        "button" + OwnFormOnly + ":has-text('Volgende')",
+        OwnButton + ":has-text('Doorgaan')",
+        OwnButton + ":has-text('Verder')",
+        OwnButton + ":has-text('Volgende')",
         "input[type='submit']" + OwnFormOnly,
     ];
 
@@ -521,8 +527,8 @@ public sealed record CoolblueOptions
     [
         "button[type='submit']" + OwnFormOnly,
         "input[type='submit']" + OwnFormOnly,
-        "button" + OwnFormOnly + ":text-is('Inloggen')",
-        "button" + OwnFormOnly + ":text-is('Log in')",
+        OwnButton + ":text-is('Inloggen')",
+        OwnButton + ":text-is('Log in')",
     ];
 
     /// <summary>

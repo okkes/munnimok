@@ -235,7 +235,7 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
             catch (ConnectorException ex)
             {
                 // Progress is a courtesy. Losing one must never fail a run.
-                _logger.LogDebug("progress for job {JobId} dropped: {Detail}", JobId, ex.Detail);
+                _logger.LogDebug(ex, "progress for job {JobId} dropped: {Detail}", JobId, ex.Detail);
             }
         }
     }

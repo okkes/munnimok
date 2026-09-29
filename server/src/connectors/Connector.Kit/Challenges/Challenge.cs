@@ -338,27 +338,34 @@ public sealed record TapAnswer
         {
             foreach (var part in payload.Split(Separator))
             {
-                // Terminal means terminal: a tap after the marker is one the
-                // page can no longer receive, so the producer is wrong about
-                // the format rather than merely untidy.
-                if (submit) return false;
-
-                var token = part.Trim();
-                if (string.Equals(token, SubmitMarker, StringComparison.Ordinal))
-                {
-                    submit = true;
-                    continue;
-                }
-
-                var point = token.Split(',');
-                if (point.Length != 2) return false;
-                if (!TryCoordinate(point[0], out var x) || !TryCoordinate(point[1], out var y)) return false;
-
-                taps.Add(new Tap(x, y));
+                if (!TryTakePart(part, taps, ref submit)) return false;
             }
         }
 
         answer = new TapAnswer { Taps = taps, Submit = submit };
+        return true;
+    }
+
+    /// <summary>One token of the payload: the submit marker, or a tap. False is a malformed answer.</summary>
+    private static bool TryTakePart(string part, List<Tap> taps, ref bool submit)
+    {
+        // Terminal means terminal: a tap after the marker is one the page can
+        // no longer receive, so the producer is wrong about the format rather
+        // than merely untidy.
+        if (submit) return false;
+
+        var token = part.Trim();
+        if (string.Equals(token, SubmitMarker, StringComparison.Ordinal))
+        {
+            submit = true;
+            return true;
+        }
+
+        var point = token.Split(',');
+        if (point.Length != 2) return false;
+        if (!TryCoordinate(point[0], out var x) || !TryCoordinate(point[1], out var y)) return false;
+
+        taps.Add(new Tap(x, y));
         return true;
     }
 

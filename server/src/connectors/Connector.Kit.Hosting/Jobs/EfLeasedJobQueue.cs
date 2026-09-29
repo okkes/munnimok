@@ -204,12 +204,7 @@ public sealed class EfLeasedJobQueue(
         var ownMachine = ownerSubject is not null
                          && await db.Agents.AnyAsync(a => a.Id == agentId && a.Class == AgentClass.Byo, ct);
 
-        var serveable = registry.Manifests
-            .Where(m => !paused.Contains(m.Id)
-                        && capabilities.CanServe(m)
-                        && (ownMachine || !m.Agent.NeedsOwnMachine))
-            .Select(m => m.Id)
-            .ToHashSet(StringComparer.Ordinal);
+        var serveable = ServeableProviders(paused, capabilities, ownMachine);
 
         if (serveable.Count == 0) return null;
 
@@ -220,11 +215,40 @@ public sealed class EfLeasedJobQueue(
             .Select(p => p.Id)
             .ToListAsync(ct);
 
-        var wantsLogin = accept.Contains(JobKind.Login);
-        var wantsFetch = accept.Contains(JobKind.Fetch);
-        var wantsRefresh = accept.Contains(JobKind.Refresh);
-        var wantsLogout = accept.Contains(JobKind.Logout);
+        var headedOnlyLogins = HeadedOnlyLogins(capabilities);
 
+        for (var round = 0; round < RaceRetries; round++)
+        {
+            var candidates = await CandidatesAsync(
+                ownerSubject, serveable, accept, ownedProfiles, headedOnlyLogins, ct);
+
+            if (candidates.Count == 0) return null;
+
+            foreach (var candidate in candidates)
+            {
+                if (await TryClaimAsync(candidate, agentId, leaseTtl, ct) is { } leased) return leased;
+            }
+        }
+
+        logger.LogDebug("agent {AgentId} lost every lease race in this pass", agentId);
+        return null;
+    }
+
+    /// <summary>
+    /// The providers this agent may be offered work for: not paused, within
+    /// its capabilities, and - for a provider that runs only on the account
+    /// holder's own machine - only when this is one.
+    /// </summary>
+    private HashSet<string> ServeableProviders(HashSet<string> paused, AgentCapabilities capabilities, bool ownMachine) =>
+        registry.Manifests
+            .Where(m => !paused.Contains(m.Id)
+                        && capabilities.CanServe(m)
+                        && (ownMachine || !m.Agent.NeedsOwnMachine))
+            .Select(m => m.Id)
+            .ToHashSet(StringComparer.Ordinal);
+
+    private HashSet<string> HeadedOnlyLogins(AgentCapabilities capabilities)
+    {
         // Logins this agent could lease and could not finish. A provider whose
         // sign-in can meet an interactive wall needs somebody at the browser,
         // and a headless agent taking one drives it for two minutes before
@@ -232,171 +256,213 @@ public sealed class EfLeasedJobQueue(
         // run against the provider, and an error that reads like the account is
         // broken. Only the LOGIN is withheld: the same agent still serves every
         // fetch for the same provider, which is most of the work.
-        var headedOnlyLogins = capabilities.Headed
+        return capabilities.Headed
             ? []
             : registry.Manifests
                 .Where(m => m.LoginNeedsHeadedAgent)
                 .Select(m => m.Id)
                 .ToHashSet(StringComparer.Ordinal);
+    }
 
-        for (var round = 0; round < RaceRetries; round++)
-        {
-            var queued = db.Jobs
-                .Where(j => j.State == JobState.Queued
-                            && serveable.Contains(j.ProviderId)
-                            // An OR chain over constants rather than a
-                            // Contains over a collection of value-converted
-                            // enums: that one shape is not reliably
-                            // translatable on every provider, and this queue
-                            // must behave identically on both.
-                            && ((wantsLogin && j.Kind == JobKind.Login
-                                 && !headedOnlyLogins.Contains(j.ProviderId))
-                                || (wantsFetch && j.Kind == JobKind.Fetch)
-                                || (wantsRefresh && j.Kind == JobKind.Refresh)
-                                || (wantsLogout && j.Kind == JobKind.Logout))
-                            && (j.ProfileId == null || ownedProfiles.Contains(j.ProfileId))
-                            // Per-session concurrency is 1, always. Two runs
-                            // against one account at once is the fastest way
-                            // to look like a bot.
-                            && !db.Jobs.Any(other => other.SessionId == j.SessionId
-                                                     && other.Id != j.Id
-                                                     && (other.State == JobState.Leased
-                                                         || other.State == JobState.Running
-                                                         || other.State == JobState.AwaitingInput)));
+    /// <summary>
+    /// One race round's page of candidates: the oldest queued jobs this agent
+    /// may take, read untracked because the claim is a conditional UPDATE.
+    /// </summary>
+    private Task<List<JobRow>> CandidatesAsync(
+        string? ownerSubject,
+        HashSet<string> serveable,
+        IReadOnlyList<JobKind> accept,
+        List<string> ownedProfiles,
+        HashSet<string> headedOnlyLogins,
+        CancellationToken ct)
+    {
+        var queued = QueuedFor(serveable, accept, ownedProfiles, headedOnlyLogins);
 
-            // Ownership. An agent may only ever serve the subject that
-            // enrolled it, which is what the enrollment endpoint means when it
-            // takes the subject off the one-time code rather than the request.
-            // Until this clause existed that was a comment and an index and
-            // nothing else: any enrolled machine could lease any user's login
-            // job, and Materialize would hand it that user's password in
-            // plaintext.
-            //
-            // Added as a separate Where rather than a term in the big
-            // predicate so the fleet and in-process cases emit no clause at
-            // all, and so this reads as the rule it is.
-            if (ownerSubject is not null)
-            {
-                queued = queued.Where(j => db.Sessions.Any(
-                    s => s.Id == j.SessionId && s.Subject == ownerSubject));
+        queued = ownerSubject is not null
+            ? OwnedBy(queued, ownerSubject)
+            : AfterOwnersHeadStart(queued);
 
-                // AND THE WORK THEY ASKED THE FLEET FOR IS NOT THEIRS TO TAKE.
-                //
-                // The mirror image of the profile clause above: that one says
-                // a pinned job goes to the agent holding the browser and to
-                // nobody else, and this one says a job whose caller asked for
-                // the operator's fleet goes to anybody BUT the caller's own
-                // machines. Both are an answer somebody gave about one
-                // connection, and both have to outrank what the queue would
-                // otherwise infer.
-                //
-                // Without it the head start below settles every such request
-                // the wrong way round. On 2026-09-21 the account holder chose
-                // "the operator's fleet" for DUO, their NAS polled first,
-                // nothing stopped it, and it ran the sign-in - job
-                // job_98ef049e691d586ed949be7f819500ad on
-                // connector-byo-registry-1, while the fleet agent that was
-                // online throughout logged nothing at all. An explicit choice
-                // that usually loses is worse than no choice: it is a control
-                // that reports a decision it did not make.
-                //
-                // A separate Where, like the ownership clause, so the fleet
-                // and in-process cases emit no clause at all - they are the
-                // pollers this job is FOR, and asking them to prove they are
-                // not the caller's machine would be asking the question
-                // backwards. `ownerSubject is null` is exactly "serves
-                // everybody": the lease route derives it from FleetSubjects
-                // and never from anything an agent sends.
-                queued = queued.Where(j => !j.FleetOnly);
-            }
-            else
-            {
-                // THE OWNER'S OWN MACHINE GETS FIRST REFUSAL.
-                //
-                // A user who has brought an agent has said where they want
-                // their work to run, and until this clause the fleet and their
-                // laptop simply raced for it - so the same connection ran in a
-                // datacenter one day and at home the next, with a different
-                // browser, a different address and a different profile each
-                // time. That is not a preference anybody expressed.
-                //
-                // Expressed as the FLEET STANDING BACK rather than as a
-                // priority queue, because standing back is self-healing: the
-                // moment their machine stops beating it stops being live here,
-                // and the fleet picks the work up on the next poll with no
-                // state to unwind and nobody to tell.
-                //
-                // AND IT IS A HEAD START, NOT AN EXCLUSION, which is the part
-                // that took a second try. An exclusion strands work: an agent
-                // that is online but cannot serve THIS provider - a bank agent
-                // for a shop job, an older build, a machine already busy -
-                // would hold a job nobody else was allowed to take, forever,
-                // with the user watching a queue that never moves. Capability
-                // lives in a json blob this query cannot read, so the answer
-                // is not to ask: wait a few seconds, then let anyone have it.
-                //
-                // "Live" is the platform's one definition of online, which
-                // used to be restated here as a constant of its own. Now that
-                // a persistent login is REFUSED by that definition, this
-                // clause must agree with it: an agent the queue stands back
-                // for is an agent a login may be pinned to.
-                //
-                // AND IT STANDS BACK FOR A PREFERENCE, NEVER FOR A CHOICE,
-                // which is what `j.FleetOnly ||` says. The head start exists
-                // because a user who brought an agent has SAID something by
-                // bringing it; a user who picked the operator's fleet out of a
-                // dropdown has said something louder, about this one
-                // connection, and waiting twenty seconds to honour it would
-                // make the fleet the slow answer to the question it just won.
-                // Nothing else can take that job either - the owner-scoped
-                // clause above refuses it to their own machines - so the wait
-                // would be twenty seconds of nobody, every time.
-                var now = time.GetUtcNow();
-                var live = AgentLiveness.OnlineSince(now);
-                var young = now.AddSeconds(-OwnAgentHeadStartSeconds);
+        return queued
+            .OrderBy(j => j.CreatedAt)
+            .ThenBy(j => j.Id)
+            .Take(CandidateBatch)
+            .AsNoTracking()
+            .ToListAsync(ct);
+    }
 
-                queued = queued.Where(j => j.FleetOnly || j.CreatedAt < young || !db.Sessions.Any(
-                    s => s.Id == j.SessionId
-                         && db.Agents.Any(a => a.OwnerSubject == s.Subject
-                                               && a.Class == AgentClass.Byo
-                                               && !a.Revoked
-                                               && a.LastHeartbeatAt > live)));
-            }
+    /// <summary>
+    /// Every queued job this agent could take on its own account: a provider
+    /// it serves, a kind it asked for, a profile it holds or none, and a
+    /// session nothing else is running against.
+    /// </summary>
+    private IQueryable<JobRow> QueuedFor(
+        HashSet<string> serveable,
+        IReadOnlyList<JobKind> accept,
+        List<string> ownedProfiles,
+        HashSet<string> headedOnlyLogins)
+    {
+        var wantsLogin = accept.Contains(JobKind.Login);
+        var wantsFetch = accept.Contains(JobKind.Fetch);
+        var wantsRefresh = accept.Contains(JobKind.Refresh);
+        var wantsLogout = accept.Contains(JobKind.Logout);
 
-            var candidates = await queued
-                .OrderBy(j => j.CreatedAt)
-                .ThenBy(j => j.Id)
-                .Take(CandidateBatch)
-                .AsNoTracking()
-                .ToListAsync(ct);
+        return db.Jobs
+            .Where(j => j.State == JobState.Queued
+                        && serveable.Contains(j.ProviderId)
+                        // An OR chain over constants rather than a
+                        // Contains over a collection of value-converted
+                        // enums: that one shape is not reliably
+                        // translatable on every provider, and this queue
+                        // must behave identically on both.
+                        && ((wantsLogin && j.Kind == JobKind.Login
+                             && !headedOnlyLogins.Contains(j.ProviderId))
+                            || (wantsFetch && j.Kind == JobKind.Fetch)
+                            || (wantsRefresh && j.Kind == JobKind.Refresh)
+                            || (wantsLogout && j.Kind == JobKind.Logout))
+                        && (j.ProfileId == null || ownedProfiles.Contains(j.ProfileId))
+                        // Per-session concurrency is 1, always. Two runs
+                        // against one account at once is the fastest way
+                        // to look like a bot.
+                        && !db.Jobs.Any(other => other.SessionId == j.SessionId
+                                                 && other.Id != j.Id
+                                                 && (other.State == JobState.Leased
+                                                     || other.State == JobState.Running
+                                                     || other.State == JobState.AwaitingInput)));
+    }
 
-            if (candidates.Count == 0) return null;
+    /// <summary>
+    /// The clauses an agent that serves one person carries: only that
+    /// person's work, and none of it that they asked the fleet for.
+    /// </summary>
+    private IQueryable<JobRow> OwnedBy(IQueryable<JobRow> queued, string ownerSubject)
+    {
+        // Ownership. An agent may only ever serve the subject that
+        // enrolled it, which is what the enrollment endpoint means when it
+        // takes the subject off the one-time code rather than the request.
+        // Until this clause existed that was a comment and an index and
+        // nothing else: any enrolled machine could lease any user's login
+        // job, and Materialize would hand it that user's password in
+        // plaintext.
+        //
+        // Added as a separate Where rather than a term in the big
+        // predicate so the fleet and in-process cases emit no clause at
+        // all, and so this reads as the rule it is.
+        queued = queued.Where(j => db.Sessions.Any(
+            s => s.Id == j.SessionId && s.Subject == ownerSubject));
 
-            foreach (var candidate in candidates)
-            {
-                var now = time.GetUtcNow();
-                var leaseExpiresAt = now + leaseTtl;
+        // AND THE WORK THEY ASKED THE FLEET FOR IS NOT THEIRS TO TAKE.
+        //
+        // The mirror image of the profile clause above: that one says
+        // a pinned job goes to the agent holding the browser and to
+        // nobody else, and this one says a job whose caller asked for
+        // the operator's fleet goes to anybody BUT the caller's own
+        // machines. Both are an answer somebody gave about one
+        // connection, and both have to outrank what the queue would
+        // otherwise infer.
+        //
+        // Without it the head start below settles every such request
+        // the wrong way round. On 2026-09-21 the account holder chose
+        // "the operator's fleet" for DUO, their NAS polled first,
+        // nothing stopped it, and it ran the sign-in - job
+        // job_98ef049e691d586ed949be7f819500ad on
+        // connector-byo-registry-1, while the fleet agent that was
+        // online throughout logged nothing at all. An explicit choice
+        // that usually loses is worse than no choice: it is a control
+        // that reports a decision it did not make.
+        //
+        // A separate Where, like the ownership clause, so the fleet
+        // and in-process cases emit no clause at all - they are the
+        // pollers this job is FOR, and asking them to prove they are
+        // not the caller's machine would be asking the question
+        // backwards. `ownerSubject is null` is exactly "serves
+        // everybody": the lease route derives it from FleetSubjects
+        // and never from anything an agent sends.
+        return queued.Where(j => !j.FleetOnly);
+    }
 
-                var claimed = await db.Jobs
-                    .Where(j => j.Id == candidate.Id && j.State == JobState.Queued && j.LeaseOwner == null)
-                    .ExecuteUpdateAsync(s => s
-                        .SetProperty(j => j.State, JobState.Leased)
-                        .SetProperty(j => j.LeaseOwner, agentId)
-                        .SetProperty(j => j.LeaseExpiresAt, leaseExpiresAt)
-                        .SetProperty(j => j.Attempts, j => j.Attempts + 1)
-                        .SetProperty(j => j.Step, JobStep.AgentAssigned)
-                        .SetProperty(j => j.UpdatedAt, now), ct);
+    /// <summary>
+    /// The clause the fleet and the in-process runner carry: a job whose
+    /// owner has a machine of their own online is left to it for a while.
+    /// </summary>
+    private IQueryable<JobRow> AfterOwnersHeadStart(IQueryable<JobRow> queued)
+    {
+        // THE OWNER'S OWN MACHINE GETS FIRST REFUSAL.
+        //
+        // A user who has brought an agent has said where they want
+        // their work to run, and until this clause the fleet and their
+        // laptop simply raced for it - so the same connection ran in a
+        // datacenter one day and at home the next, with a different
+        // browser, a different address and a different profile each
+        // time. That is not a preference anybody expressed.
+        //
+        // Expressed as the FLEET STANDING BACK rather than as a
+        // priority queue, because standing back is self-healing: the
+        // moment their machine stops beating it stops being live here,
+        // and the fleet picks the work up on the next poll with no
+        // state to unwind and nobody to tell.
+        //
+        // AND IT IS A HEAD START, NOT AN EXCLUSION, which is the part
+        // that took a second try. An exclusion strands work: an agent
+        // that is online but cannot serve THIS provider - a bank agent
+        // for a shop job, an older build, a machine already busy -
+        // would hold a job nobody else was allowed to take, forever,
+        // with the user watching a queue that never moves. Capability
+        // lives in a json blob this query cannot read, so the answer
+        // is not to ask: wait a few seconds, then let anyone have it.
+        //
+        // "Live" is the platform's one definition of online, which
+        // used to be restated here as a constant of its own. Now that
+        // a persistent login is REFUSED by that definition, this
+        // clause must agree with it: an agent the queue stands back
+        // for is an agent a login may be pinned to.
+        //
+        // AND IT STANDS BACK FOR A PREFERENCE, NEVER FOR A CHOICE,
+        // which is what `j.FleetOnly ||` says. The head start exists
+        // because a user who brought an agent has SAID something by
+        // bringing it; a user who picked the operator's fleet out of a
+        // dropdown has said something louder, about this one
+        // connection, and waiting twenty seconds to honour it would
+        // make the fleet the slow answer to the question it just won.
+        // Nothing else can take that job either - the owner-scoped
+        // clause above refuses it to their own machines - so the wait
+        // would be twenty seconds of nobody, every time.
+        var now = time.GetUtcNow();
+        var live = AgentLiveness.OnlineSince(now);
+        var young = now.AddSeconds(-OwnAgentHeadStartSeconds);
 
-                if (claimed != 1) continue;   // another agent won; try the next candidate
+        return queued.Where(j => j.FleetOnly || j.CreatedAt < young || !db.Sessions.Any(
+            s => s.Id == j.SessionId
+                 && db.Agents.Any(a => a.OwnerSubject == s.Subject
+                                       && a.Class == AgentClass.Byo
+                                       && !a.Revoked
+                                       && a.LastHeartbeatAt > live)));
+    }
 
-                signals.Signal(ConnectorSignals.Job(candidate.Id));
-                signals.Signal(ConnectorSignals.Session(candidate.SessionId));
-                return Materialize(candidate, leaseExpiresAt);
-            }
-        }
+    /// <summary>
+    /// The lease itself: a conditional UPDATE that lands only while the job
+    /// is still queued and unowned, so two agents racing for it cannot both
+    /// win. Null when another agent got there first.
+    /// </summary>
+    private async Task<LeasedJob?> TryClaimAsync(JobRow candidate, string agentId, TimeSpan leaseTtl, CancellationToken ct)
+    {
+        var now = time.GetUtcNow();
+        var leaseExpiresAt = now + leaseTtl;
 
-        logger.LogDebug("agent {AgentId} lost every lease race in this pass", agentId);
-        return null;
+        var claimed = await db.Jobs
+            .Where(j => j.Id == candidate.Id && j.State == JobState.Queued && j.LeaseOwner == null)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(j => j.State, JobState.Leased)
+                .SetProperty(j => j.LeaseOwner, agentId)
+                .SetProperty(j => j.LeaseExpiresAt, leaseExpiresAt)
+                .SetProperty(j => j.Attempts, j => j.Attempts + 1)
+                .SetProperty(j => j.Step, JobStep.AgentAssigned)
+                .SetProperty(j => j.UpdatedAt, now), ct);
+
+        if (claimed != 1) return null;   // another agent won; try the next candidate
+
+        signals.Signal(ConnectorSignals.Job(candidate.Id));
+        signals.Signal(ConnectorSignals.Session(candidate.SessionId));
+        return Materialize(candidate, leaseExpiresAt);
     }
 
     public async Task<DateTimeOffset?> RenewLeaseAsync(string jobId, string agentId, TimeSpan leaseTtl, CancellationToken ct)

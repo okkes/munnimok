@@ -20,6 +20,8 @@ public sealed class DesignTimeDbContextFactory : IDesignTimeDbContextFactory<Con
         new(new DbContextOptionsBuilder<ConnectorDbContext>()
             // A shape, not a destination. Scaffolding reads the model and the
             // provider; it never connects.
+#pragma warning disable S2068 // a design-time connection string for scaffolding; it never connects
             .UseNpgsql("Host=localhost;Database=connector_design;Username=design;Password=design")
+#pragma warning restore S2068
             .Options);
 }

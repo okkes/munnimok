@@ -426,41 +426,54 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
 
             if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is { } captured) return captured;
 
-            // The page states a credential failure itself. This is the only
-            // path that may report invalid_credentials, and nothing retries
-            // it - by construction rather than by discipline here.
-            var stated = await page.FindAsync(_options.LoginErrorSelectors, PageProbeMs, ct).ConfigureAwait(false);
-            if (stated is not null)
+            await ThrowIfCredentialErrorStatedAsync(page, ct).ConfigureAwait(false);
+
+            if (!captchaSeen
+                && await MeetWallAsync(ctx, page, watcher, taps, ct).ConfigureAwait(false) is { } outcome)
             {
-                throw ConnectorException.InvalidCredentials("ah: the login page stated a credential error");
-            }
+                captchaSeen = true;
 
-            if (!captchaSeen)
-            {
-                var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
+                if (outcome.Redirect is { } finished) return finished;
+                if (!outcome.Handled) break;
 
-                if (wall.Kind is not CaptchaKind.None)
-                {
-                    captchaSeen = true;
-
-                    var outcome = await _captcha
-                        .FaceAsync(ctx, page, watcher, wall, taps, ct).ConfigureAwait(false);
-                    if (outcome.Redirect is { } finished) return finished;
-                    if (!outcome.Handled) break;
-
-                    // The settle budget measures how long AH takes to answer,
-                    // so it restarts once a wait on a human is over: the
-                    // minutes they spent are not the provider being slow, and
-                    // charging them to it fails a login that is about to work.
-                    deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
-                    continue;
-                }
+                // The settle budget measures how long AH takes to answer,
+                // so it restarts once a wait on a human is over: the
+                // minutes they spent are not the provider being slow, and
+                // charging them to it fails a login that is about to work.
+                deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
+                continue;
             }
 
             if (_time.GetUtcNow() >= deadline) break;
         }
 
         return await AskTheHumanAsync(ctx, captchaSeen, page.Url, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The page states a credential failure itself. This is the only path
+    /// that may report invalid_credentials, and nothing retries it - by
+    /// construction rather than by discipline here.
+    /// </summary>
+    private async Task ThrowIfCredentialErrorStatedAsync(ILoginPage page, CancellationToken ct)
+    {
+        var stated = await page.FindAsync(_options.LoginErrorSelectors, PageProbeMs, ct).ConfigureAwait(false);
+        if (stated is not null)
+        {
+            throw ConnectorException.InvalidCredentials("ah: the login page stated a credential error");
+        }
+    }
+
+    /// <summary>
+    /// The wall, met, when one stands. Null when the page shows none.
+    /// </summary>
+    private async Task<CaptchaOutcome?> MeetWallAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, ITapSurface? taps, CancellationToken ct)
+    {
+        var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
+        if (wall.Kind is CaptchaKind.None) return null;
+
+        return await _captcha.FaceAsync(ctx, page, watcher, wall, taps, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -557,8 +570,11 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         var collected = new List<AhReceiptSummary>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var complete = true;
+        var offset = 0;
 
-        for (var offset = 0; ; offset += pageSize)
+        // Page after page, until the page itself says the next one is not
+        // worth asking for.
+        while (true)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -569,43 +585,9 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
             }, "receipt list", ct).ConfigureAwait(false);
 
             var rows = AlbertHeijnReceiptParser.ParseList(document.RootElement, _options, request.WantsRaw);
-            if (rows.Count == 0) break;
+            if (!CollectPage(rows, request, seen, collected, pageSize, cap)) break;
 
-            var fresh = 0;
-            var older = 0;
-
-            foreach (var row in rows)
-            {
-                if (!seen.Add(row.Id)) continue;
-                fresh++;
-
-                if (request.Since is { } since && DateOnly.FromDateTime(row.PurchasedAt.Date) < since) older++;
-                if (ReceiptFactory.InWindow(row.PurchasedAt, request)) collected.Add(row);
-            }
-
-            // A page that repeats the previous one means the offset is not
-            // advancing anything upstream; carrying on would be the same
-            // request twenty times against a defended endpoint.
-            if (fresh == 0) break;
-
-            // The list runs newest first, so a page entirely older than the
-            // window means every later page is too. Stopping here is what
-            // keeps two years of history from being walked on every sync.
-            if (older == rows.Count) break;
-
-            // A short page is the end of the history.
-            //
-            // Sound only because the parser maps AH's rows one for one: it now
-            // refuses a row it cannot key rather than dropping it, so this
-            // counts what AH SENT rather than what could be read. While it
-            // skipped, one unkeyable receipt shortened the page, stopped the
-            // walk here, and left everything older missing from a pass that
-            // called itself complete.
-            if (rows.Count < pageSize) break;
-
-            // One page past the cap is enough to know the pass is partial;
-            // more would be work the caller is about to discard.
-            if (collected.Count > cap) break;
+            offset += pageSize;
         }
 
         var ordered = collected.OrderByDescending(r => r.PurchasedAt).ToList();
@@ -619,6 +601,53 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         }
 
         return (ordered, complete);
+    }
+
+    /// <summary>
+    /// One page of the list, folded into the walk. False when the walk is
+    /// over: the next page is not worth asking for.
+    /// </summary>
+    private static bool CollectPage(
+        IReadOnlyList<AhReceiptSummary> rows, ResourceRequest request, HashSet<string> seen,
+        List<AhReceiptSummary> collected, int pageSize, int cap)
+    {
+        if (rows.Count == 0) return false;
+
+        var fresh = 0;
+        var older = 0;
+
+        foreach (var row in rows)
+        {
+            if (!seen.Add(row.Id)) continue;
+            fresh++;
+
+            if (request.Since is { } since && DateOnly.FromDateTime(row.PurchasedAt.Date) < since) older++;
+            if (ReceiptFactory.InWindow(row.PurchasedAt, request)) collected.Add(row);
+        }
+
+        // A page that repeats the previous one means the offset is not
+        // advancing anything upstream; carrying on would be the same
+        // request twenty times against a defended endpoint.
+        if (fresh == 0) return false;
+
+        // The list runs newest first, so a page entirely older than the
+        // window means every later page is too. Stopping here is what
+        // keeps two years of history from being walked on every sync.
+        if (older == rows.Count) return false;
+
+        // A short page is the end of the history.
+        //
+        // Sound only because the parser maps AH's rows one for one: it now
+        // refuses a row it cannot key rather than dropping it, so this
+        // counts what AH SENT rather than what could be read. While it
+        // skipped, one unkeyable receipt shortened the page, stopped the
+        // walk here, and left everything older missing from a pass that
+        // called itself complete.
+        if (rows.Count < pageSize) return false;
+
+        // One page past the cap is enough to know the pass is partial;
+        // more would be work the caller is about to discard.
+        return collected.Count <= cap;
     }
 
     private Task<JsonDocument> DetailAsync(

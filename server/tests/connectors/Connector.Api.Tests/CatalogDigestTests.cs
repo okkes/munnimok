@@ -30,6 +30,9 @@ public sealed class CatalogDigestTests(ShopApiFactory factory)
 
     private static readonly TimeSpan Ttl = TimeSpan.FromMinutes(2);
 
+    /// <summary>The only kind of job the agents here offer to take.</summary>
+    private static readonly string[] LoginJobsOnly = ["login"];
+
     private string Ours => factory.Services.GetRequiredService<IProviderRegistry>().CatalogDigest;
 
     [Fact]
@@ -166,7 +169,7 @@ public sealed class CatalogDigestTests(ShopApiFactory factory)
     {
         using var client = factory.CreateClient();
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        using var request = Wire.Post("/agent/v1/jobs/lease", new { accept = new[] { "login" } });
+        using var request = Wire.Post("/agent/v1/jobs/lease", new { accept = LoginJobsOnly });
         using var giveUp = new CancellationTokenSource(patience);
 
         try

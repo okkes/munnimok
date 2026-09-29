@@ -1,3 +1,4 @@
+#pragma warning disable S107 // the session is composed from its collaborators; the count is the number of them
 using System.Security.Cryptography;
 using Connector.Kit.Agent.Transport;
 using Connector.Kit.Challenges;
@@ -334,11 +335,32 @@ internal sealed class LiveViewSession : IAsyncDisposable
         _nudge.Dispose();
     }
 
+    /// <summary>What the capture loop carries from one frame to the next.</summary>
+    private sealed class Shutter
+    {
+        public byte[] LastHash { get; set; } = [];
+
+        public DateTimeOffset LastPostedAt { get; set; }
+
+        public int Failures { get; set; }
+    }
+
+    /// <summary>What became of one frame the loop tried to post.</summary>
+    private enum Posting
+    {
+        /// <summary>The control plane took it.</summary>
+        Accepted,
+
+        /// <summary>A transport blip; the loop waits and tries the next one.</summary>
+        Blipped,
+
+        /// <summary>The stream is over, and <see cref="Stop"/> has been told why.</summary>
+        Ended,
+    }
+
     private async Task CaptureLoopAsync(CancellationToken ct)
     {
-        var lastHash = Array.Empty<byte>();
-        var lastPostedAt = _time.GetUtcNow();
-        var failures = 0;
+        var shutter = new Shutter { LastPostedAt = _time.GetUtcNow() };
 
         try
         {
@@ -361,97 +383,22 @@ internal sealed class LiveViewSession : IAsyncDisposable
                 var shutterAt = _time.GetTimestamp();
                 var capture = await _redactor
                     .CaptureLiveFrameAsync(_page, _options.JpegQuality, ct).ConfigureAwait(false);
-                var shutter = _time.GetElapsedTime(shutterAt);
+                var elapsed = _time.GetElapsedTime(shutterAt);
 
                 if (!capture.Captured)
                 {
-                    _meter.Missed(shutter);
-                    ReportIfDue();
-                    await WaitAsync(ct).ConfigureAwait(false);
-                    continue;
+                    _meter.Missed(elapsed);
                 }
-
-                // Hashing the ENCODED bytes, which the design measured to be
-                // byte-identical across a gap on a page that did not change.
-                // The hash and not the frame: 32 bytes of nothing, rather than
-                // a picture of a login page kept alive to compare against.
-                var hash = SHA256.HashData(capture.Jpeg);
-                var unchanged = lastHash.Length > 0 && hash.AsSpan().SequenceEqual(lastHash);
-
-                if (unchanged && _time.GetUtcNow() - lastPostedAt < _options.MaxSilence)
+                else if (IsQuiet(capture.Jpeg, shutter, out var hash))
                 {
-                    _meter.Suppressed(shutter);
-                    ReportIfDue();
-                    await WaitAsync(ct).ConfigureAwait(false);
-                    continue;
+                    _meter.Suppressed(elapsed);
                 }
-
-                // The JOB's counter and never this session's. Taken here, after
-                // suppression has decided the bytes are worth sending, so a
-                // static form does not burn numbers - and kept whether or not
-                // the POST below lands, because a retried frame is a different
-                // picture and re-using a number is the one thing the connector
-                // refuses.
-                var sequence = _sequence.Next();
-                var frame = new LiveFrame
+                else if (await PostAsync(capture, url, hash, elapsed, shutter, ct).ConfigureAwait(false) == Posting.Ended)
                 {
-                    Sequence = sequence,
-                    Width = capture.Width,
-                    Height = capture.Height,
-                    Bytes = capture.Jpeg,
-                    // Whose page this is, from the URL checked above. The
-                    // human is looking at a photograph with no address bar and
-                    // no padlock, so without this the only claim about whose
-                    // password box they are filling in is a provider name the
-                    // consumer wrote, which is evidence of nothing.
-                    Origin = LiveOrigin.Normalize(url),
-                };
-
-                var postAt = _time.GetTimestamp();
-                bool accepted;
-                try
-                {
-                    accepted = await _control.PostLiveFrameAsync(_jobId, frame, ct).ConfigureAwait(false);
-                }
-                catch (Exception ex) when (IsTransportBlip(ex, ct))
-                {
-                    _meter.Failed(shutter);
-                    ReportIfDue();
-
-                    if (++failures >= _options.MaxConsecutiveFailures)
-                    {
-                        _logger.LogWarning(
-                            ex, "job {JobId}: {Count} live frames in a row did not land", _jobId, failures);
-                        Stop("frames stopped reaching the control plane");
-                        return;
-                    }
-
-                    _logger.LogDebug(ex, "job {JobId}: live frame {Sequence} did not land", _jobId, sequence);
-                    await WaitAsync(ct).ConfigureAwait(false);
-                    continue;
-                }
-
-                var post = _time.GetElapsedTime(postAt);
-
-                if (!accepted)
-                {
-                    Stop("the control plane no longer has a live channel for this job");
                     return;
                 }
 
-                failures = 0;
-                lastHash = hash;
-                lastPostedAt = _time.GetUtcNow();
-
-                // Published only after the bytes are accepted, so an event that
-                // arrives before any picture has one meaning - refuse - rather
-                // than being mapped against a frame nobody received.
-                Volatile.Write(ref _frameSize, ((long)capture.Width << 32) | (uint)capture.Height);
-                FramesPosted++;
-
-                _meter.Posted(shutter, post, frame.Bytes.Length);
                 ReportIfDue();
-
                 await WaitAsync(ct).ConfigureAwait(false);
             }
         }
@@ -473,10 +420,102 @@ internal sealed class LiveViewSession : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Whether this picture is the last one again, recently enough to skip.
+    ///
+    /// Hashing the ENCODED bytes, which the design measured to be
+    /// byte-identical across a gap on a page that did not change. The hash
+    /// and not the frame: 32 bytes of nothing, rather than a picture of a
+    /// login page kept alive to compare against.
+    /// </summary>
+    private bool IsQuiet(byte[] jpeg, Shutter shutter, out byte[] hash)
+    {
+        hash = SHA256.HashData(jpeg);
+        var unchanged = shutter.LastHash.Length > 0 && hash.AsSpan().SequenceEqual(shutter.LastHash);
+
+        return unchanged && _time.GetUtcNow() - shutter.LastPostedAt < _options.MaxSilence;
+    }
+
+    /// <summary>Numbers, posts and books one frame the loop decided to send.</summary>
+    private async Task<Posting> PostAsync(
+        LiveCapture capture, string url, byte[] hash, TimeSpan elapsed, Shutter shutter, CancellationToken ct)
+    {
+        // The JOB's counter and never this session's. Taken here, after
+        // suppression has decided the bytes are worth sending, so a
+        // static form does not burn numbers - and kept whether or not
+        // the POST below lands, because a retried frame is a different
+        // picture and re-using a number is the one thing the connector
+        // refuses.
+        var sequence = _sequence.Next();
+        var frame = new LiveFrame
+        {
+            Sequence = sequence,
+            Width = capture.Width,
+            Height = capture.Height,
+            Bytes = capture.Jpeg,
+            // Whose page this is, from the URL checked above. The
+            // human is looking at a photograph with no address bar and
+            // no padlock, so without this the only claim about whose
+            // password box they are filling in is a provider name the
+            // consumer wrote, which is evidence of nothing.
+            Origin = LiveOrigin.Normalize(url),
+        };
+
+        var postAt = _time.GetTimestamp();
+        bool accepted;
+        try
+        {
+            accepted = await _control.PostLiveFrameAsync(_jobId, frame, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsTransportBlip(ex, ct))
+        {
+            _meter.Failed(elapsed);
+
+            if (++shutter.Failures >= _options.MaxConsecutiveFailures)
+            {
+                _logger.LogWarning(
+                    ex, "job {JobId}: {Count} live frames in a row did not land", _jobId, shutter.Failures);
+                Stop("frames stopped reaching the control plane");
+                return Posting.Ended;
+            }
+
+            _logger.LogDebug(ex, "job {JobId}: live frame {Sequence} did not land", _jobId, sequence);
+            return Posting.Blipped;
+        }
+
+        var post = _time.GetElapsedTime(postAt);
+
+        if (!accepted)
+        {
+            Stop("the control plane no longer has a live channel for this job");
+            return Posting.Ended;
+        }
+
+        shutter.Failures = 0;
+        shutter.LastHash = hash;
+        shutter.LastPostedAt = _time.GetUtcNow();
+
+        // Published only after the bytes are accepted, so an event that
+        // arrives before any picture has one meaning - refuse - rather
+        // than being mapped against a frame nobody received.
+        Volatile.Write(ref _frameSize, ((long)capture.Width << 32) | (uint)capture.Height);
+        FramesPosted++;
+
+        _meter.Posted(elapsed, post, frame.Bytes.Length);
+        return Posting.Accepted;
+    }
+
+    /// <summary>What the input loop carries from one poll to the next.</summary>
+    private sealed class Inbox
+    {
+        public long Cursor { get; set; }
+
+        public int Failures { get; set; }
+    }
+
     private async Task InputLoopAsync(CancellationToken ct)
     {
-        var cursor = 0L;
-        var failures = 0;
+        var inbox = new Inbox();
 
         try
         {
@@ -484,26 +523,8 @@ internal sealed class LiveViewSession : IAsyncDisposable
             {
                 var polledAt = _time.GetTimestamp();
 
-                LiveInputBatch? batch;
-                try
-                {
-                    batch = await _control.PollLiveInputAsync(_jobId, cursor, ct).ConfigureAwait(false);
-                    failures = 0;
-                }
-                catch (Exception ex) when (IsTransportBlip(ex, ct))
-                {
-                    if (++failures >= _options.MaxConsecutiveFailures)
-                    {
-                        _logger.LogWarning(
-                            ex, "job {JobId}: {Count} live input polls in a row failed", _jobId, failures);
-                        Stop("the input channel stopped answering");
-                        return;
-                    }
-
-                    _logger.LogDebug(ex, "job {JobId}: a live input poll blipped", _jobId);
-                    await Task.Delay(_options.InputRetryDelay, _time, ct).ConfigureAwait(false);
-                    continue;
-                }
+                var (batch, ended) = await PollAsync(inbox, ct).ConfigureAwait(false);
+                if (ended) return;
 
                 // 204: the window closed with nobody touching anything, which
                 // is the normal state of a login form. Ask again - but never
@@ -511,44 +532,11 @@ internal sealed class LiveViewSession : IAsyncDisposable
                 // immediately would otherwise turn this into a spin.
                 if (batch is null || batch.Events.Count == 0)
                 {
-                    var spent = _time.GetElapsedTime(polledAt);
-                    if (spent < _options.EmptyPollFloor)
-                    {
-                        await Task.Delay(_options.EmptyPollFloor - spent, _time, ct).ConfigureAwait(false);
-                    }
-
+                    await HoldToTheFloorAsync(polledAt, ct).ConfigureAwait(false);
                     continue;
                 }
 
-                var newest = batch.Events.Max(e => e.Sequence);
-
-                // The cursor moves on EVERY batch received, delivered or not.
-                // A batch that is refused but does not move the cursor is a
-                // batch the control plane hands over again, forever, at the
-                // speed of a long poll - and the events inside it were already
-                // counted against the human once.
-                var stale = newest <= cursor;
-                cursor = Math.Max(cursor, newest);
-
-                if (stale)
-                {
-                    // Loud, because the alternative to noticing this is a live
-                    // view that looks broken from the outside: the human taps,
-                    // nothing happens, and no line anywhere says why.
-                    _logger.LogWarning(
-                        "job {JobId}: dropping {Count} live input event(s) with nothing newer than {Cursor}; " +
-                        "a re-delivered Enter is a second credential submission",
-                        _jobId, batch.Events.Count, cursor);
-                    continue;
-                }
-
-                if (!batch.IsWellFormed())
-                {
-                    _logger.LogWarning(
-                        "job {JobId}: refusing a live input batch of {Count} event(s); it is not well formed",
-                        _jobId, batch.Events.Count);
-                    continue;
-                }
+                if (!Accepts(batch, inbox)) continue;
 
                 var size = Volatile.Read(ref _frameSize);
                 var frame = ((int)(size >> 32), (int)(size & 0xFFFFFFFF));
@@ -574,6 +562,82 @@ internal sealed class LiveViewSession : IAsyncDisposable
             _logger.LogError(ex, "job {JobId}: the live view's input channel failed", _jobId);
             Stop("the input channel failed");
         }
+    }
+
+    /// <summary>
+    /// One long poll for input. A transport blip is absorbed up to the
+    /// configured run of them; past that the channel is declared dead and
+    /// <c>ended</c> is true.
+    /// </summary>
+    private async Task<(LiveInputBatch? Batch, bool Ended)> PollAsync(Inbox inbox, CancellationToken ct)
+    {
+        try
+        {
+            var batch = await _control.PollLiveInputAsync(_jobId, inbox.Cursor, ct).ConfigureAwait(false);
+            inbox.Failures = 0;
+            return (batch, false);
+        }
+        catch (Exception ex) when (IsTransportBlip(ex, ct))
+        {
+            if (++inbox.Failures >= _options.MaxConsecutiveFailures)
+            {
+                _logger.LogWarning(
+                    ex, "job {JobId}: {Count} live input polls in a row failed", _jobId, inbox.Failures);
+                Stop("the input channel stopped answering");
+                return (null, true);
+            }
+
+            _logger.LogDebug(ex, "job {JobId}: a live input poll blipped", _jobId);
+            await Task.Delay(_options.InputRetryDelay, _time, ct).ConfigureAwait(false);
+            return (null, false);
+        }
+    }
+
+    /// <summary>Never faster than the floor: an empty answer that came back at once must not become a spin.</summary>
+    private async Task HoldToTheFloorAsync(long polledAt, CancellationToken ct)
+    {
+        var spent = _time.GetElapsedTime(polledAt);
+        if (spent < _options.EmptyPollFloor)
+        {
+            await Task.Delay(_options.EmptyPollFloor - spent, _time, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Moves the cursor past the batch and says whether it is worth replaying.
+    ///
+    /// The cursor moves on EVERY batch received, delivered or not. A batch
+    /// that is refused but does not move the cursor is a batch the control
+    /// plane hands over again, forever, at the speed of a long poll - and the
+    /// events inside it were already counted against the human once.
+    /// </summary>
+    private bool Accepts(LiveInputBatch batch, Inbox inbox)
+    {
+        var newest = batch.Events.Max(e => e.Sequence);
+        var stale = newest <= inbox.Cursor;
+        inbox.Cursor = Math.Max(inbox.Cursor, newest);
+
+        if (stale)
+        {
+            // Loud, because the alternative to noticing this is a live
+            // view that looks broken from the outside: the human taps,
+            // nothing happens, and no line anywhere says why.
+            _logger.LogWarning(
+                "job {JobId}: dropping {Count} live input event(s) with nothing newer than {Cursor}; " +
+                "a re-delivered Enter is a second credential submission",
+                _jobId, batch.Events.Count, inbox.Cursor);
+            return false;
+        }
+
+        if (!batch.IsWellFormed())
+        {
+            _logger.LogWarning(
+                "job {JobId}: refusing a live input batch of {Count} event(s); it is not well formed",
+                _jobId, batch.Events.Count);
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
@@ -614,6 +678,7 @@ internal sealed class LiveViewSession : IAsyncDisposable
         }
         catch (ObjectDisposedException)
         {
+            // The session is gone, and so is anyone to wake.
         }
     }
 

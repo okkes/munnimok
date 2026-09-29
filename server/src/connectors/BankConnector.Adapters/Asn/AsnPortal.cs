@@ -267,11 +267,11 @@ internal sealed class AsnPortal(IPage page) : IAsnPortal
     }
 
     public Task<bool> ClickAsync(IReadOnlyList<string> selectors, CancellationToken ct) =>
-        FirstAsync(selectors, ct, async locator =>
+        FirstAsync(selectors, async locator =>
         {
             await locator.ClickAsync(new LocatorClickOptions { Timeout = 10_000 }).ConfigureAwait(false);
             return true;
-        });
+        }, ct);
 
     public async Task<int> CountAsync(IReadOnlyList<string> selectors, CancellationToken ct)
     {
@@ -286,6 +286,9 @@ internal sealed class AsnPortal(IPage page) : IAsnPortal
             }
             catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
             {
+                // The next candidate. A selector nothing matches is the
+                // ordinary case on a list of them, and zero is the honest
+                // count when none of them does.
             }
         }
 
@@ -293,28 +296,28 @@ internal sealed class AsnPortal(IPage page) : IAsnPortal
     }
 
     public Task<bool> ClickForceAsync(IReadOnlyList<string> selectors, CancellationToken ct) =>
-        FirstAsync(selectors, ct, async locator =>
+        FirstAsync(selectors, async locator =>
         {
             await locator.ClickAsync(new LocatorClickOptions { Timeout = 10_000, Force = true })
                 .ConfigureAwait(false);
 
             return true;
-        });
+        }, ct);
 
     public Task<bool> ClickNthAsync(IReadOnlyList<string> selectors, int index, CancellationToken ct) =>
-        NthAsync(selectors, index, ct, async locator =>
+        NthAsync(selectors, index, async locator =>
         {
             await locator.ClickAsync(new LocatorClickOptions { Timeout = 10_000 }).ConfigureAwait(false);
             return true;
-        });
+        }, ct);
 
     public Task<bool> FillNthAsync(
         IReadOnlyList<string> selectors, int index, string value, CancellationToken ct) =>
-        NthAsync(selectors, index, ct, async locator =>
+        NthAsync(selectors, index, async locator =>
         {
             await locator.FillAsync(value, new LocatorFillOptions { Timeout = 10_000 }).ConfigureAwait(false);
             return true;
-        });
+        }, ct);
 
     public async Task<string?> SetCheckedNthAsync(
         IReadOnlyList<string> selectors, int index, bool value, CancellationToken ct)
@@ -553,7 +556,7 @@ internal sealed class AsnPortal(IPage page) : IAsnPortal
     }
 
     private async Task<bool> FirstAsync(
-        IReadOnlyList<string> selectors, CancellationToken ct, Func<ILocator, Task<bool>> act)
+        IReadOnlyList<string> selectors, Func<ILocator, Task<bool>> act, CancellationToken ct)
     {
         foreach (var selector in selectors)
         {
@@ -574,7 +577,7 @@ internal sealed class AsnPortal(IPage page) : IAsnPortal
     }
 
     private async Task<bool> NthAsync(
-        IReadOnlyList<string> selectors, int index, CancellationToken ct, Func<ILocator, Task<bool>> act)
+        IReadOnlyList<string> selectors, int index, Func<ILocator, Task<bool>> act, CancellationToken ct)
     {
         foreach (var selector in selectors)
         {
@@ -586,6 +589,9 @@ internal sealed class AsnPortal(IPage page) : IAsnPortal
             }
             catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
             {
+                // The next candidate, exactly as FirstAsync moves on: a
+                // provider renames an id between releases and the list is
+                // what survives it.
             }
         }
 

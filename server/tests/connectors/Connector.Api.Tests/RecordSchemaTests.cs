@@ -130,7 +130,7 @@ public sealed class RecordSchemaTests
     /// <c>ManifestValidator</c> on the way in - a stub that skipped it could
     /// declare a resource no service could ever serve.
     /// </summary>
-    private static IProviderRegistry Registry(params ResourceShape[] shapes) =>
+    private static ProviderRegistry Registry(params ResourceShape[] shapes) =>
         new ProviderRegistry(shapes.Select((shape, index) => (IProviderAdapter)new ShapedAdapter(shape, index)));
 
     /// <summary>

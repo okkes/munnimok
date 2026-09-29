@@ -196,74 +196,11 @@ public sealed class LidlPlusAdapter : IProviderAdapter
             ct.ThrowIfCancellationRequested();
             if (!seen.Add(summary.Id)) continue;
 
-            IReadOnlyList<ReceiptItem> items = [];
-            var payment = ReceiptFactory.Payment();
-            var total = summary.Total;
-            var storeName = summary.StoreName;
-            var purchasedAt = summary.PurchasedAt;
+            var (receipt, document) = await ReceiptAsync(ctx, session, settings, zone, summary, request, ct)
+                .ConfigureAwait(false);
 
-            // EITHER, not just items. `raw` IS this document, and it was only
-            // ever captured on the way past to the line items - so a caller
-            // that asked for `include=raw` alone got an empty map and a
-            // success, on a resource whose manifest declares raw. The one
-            // request that says "show me exactly what Lidl said" was the one
-            // request that could not be answered.
-            if (request.WantsItems || request.WantsRaw)
-            {
-                using var detail = await DetailAsync(ctx, session, settings, summary.Id, ct).ConfigureAwait(false);
-                var root = detail.RootElement;
-
-                // The detail document, whole, when asked for. Handing it back
-                // is how the line items below stopped being a guess.
-                if (request.WantsRaw) raw[summary.Id] = root.GetRawText();
-
-                // AND NOTHING ELSE CHANGES FOR A RAW-ONLY REQUEST. Everything
-                // below rewrites the receipt from the detail, so running it for
-                // `include=raw` would give the same purchase a different total
-                // and a different content hash depending on which include a
-                // caller happened to ask for. Raw is additive: it hands back
-                // what Lidl said without altering what was read from it.
-                if (request.WantsItems)
-                {
-                    // CONFIRMED 2026-08-04: a v3 detail is
-                    // "ticketType": "HTML" and carries NO line-item collection.
-                    // The lines are in htmlPrintedReceipt - the paper receipt,
-                    // marked up, with every article's facts on data attributes.
-                    var printed = JsonAccess.StrOf(root, "htmlPrintedReceipt");
-
-                    items = LidlPrintedReceipt.Items(printed, _options, total.Currency);
-                    payment = LidlPrintedReceipt.Payment(printed, _options);
-
-                    total = MoneyReader.Optional(root, _options.AmountUnit, total.Currency,
-                        "ticket.detail.total", "totalAmount", "total") ?? total;
-
-                    // CONFIRMED: the detail states a store OBJECT - id
-                    // "NL0263", name "Delft" - and the old read asked for a
-                    // string, so every receipt was named after the branch code.
-                    // "Lidl Delft" is what the receipt itself prints at the top.
-                    storeName = StoreName(root) ?? storeName;
-
-                    // The detail's own timestamp, and it is the one to trust:
-                    // it agrees with the card-terminal line the till printed
-                    // ("04-10-2025 12:50" against a stated 12:51:18), whereas
-                    // the list's put every receipt two hours later. It states a
-                    // wall clock with no offset, so it is read in the store's
-                    // country zone rather than the agent's.
-                    if (JsonAccess.StrOf(root, "date") is { Length: > 0 } stamped)
-                    {
-                        purchasedAt = ReceiptTime.Parse(stamped, zone, ProviderId, "ticket.detail.date");
-                    }
-                }
-            }
-
-            receipts.Add(ReceiptFactory.Build(
-                ctx.SessionId,
-                summary.Id,
-                LidlPlusTicketParser.Merchant(storeName),
-                purchasedAt,
-                total,
-                payment,
-                items));
+            receipts.Add(receipt);
+            if (document is not null) raw[summary.Id] = document;
         }
 
         ctx.Progress(JobStep.Normalizing);
@@ -276,6 +213,85 @@ public sealed class LidlPlusAdapter : IProviderAdapter
             Via = "tickets-v2",
             Raw = raw,
         };
+    }
+
+    /// <summary>
+    /// One receipt, and the detail document it was read from when one was
+    /// fetched at all.
+    /// </summary>
+    private async Task<(Receipt Receipt, string? Raw)> ReceiptAsync(
+        IJobContext ctx, BearerSession session, LidlSettings settings, TimeZoneInfo zone,
+        LidlTicketSummary summary, ResourceRequest request, CancellationToken ct)
+    {
+        IReadOnlyList<ReceiptItem> items = [];
+        var payment = ReceiptFactory.Payment();
+        var total = summary.Total;
+        var storeName = summary.StoreName;
+        var purchasedAt = summary.PurchasedAt;
+        string? raw = null;
+
+        // EITHER, not just items. `raw` IS this document, and it was only
+        // ever captured on the way past to the line items - so a caller
+        // that asked for `include=raw` alone got an empty map and a
+        // success, on a resource whose manifest declares raw. The one
+        // request that says "show me exactly what Lidl said" was the one
+        // request that could not be answered.
+        if (request.WantsItems || request.WantsRaw)
+        {
+            using var detail = await DetailAsync(ctx, session, settings, summary.Id, ct).ConfigureAwait(false);
+            var root = detail.RootElement;
+
+            // The detail document, whole, when asked for. Handing it back
+            // is how the line items below stopped being a guess.
+            if (request.WantsRaw) raw = root.GetRawText();
+
+            // AND NOTHING ELSE CHANGES FOR A RAW-ONLY REQUEST. Everything
+            // below rewrites the receipt from the detail, so running it for
+            // `include=raw` would give the same purchase a different total
+            // and a different content hash depending on which include a
+            // caller happened to ask for. Raw is additive: it hands back
+            // what Lidl said without altering what was read from it.
+            if (request.WantsItems)
+            {
+                // CONFIRMED 2026-08-04: a v3 detail is
+                // "ticketType": "HTML" and carries NO line-item collection.
+                // The lines are in htmlPrintedReceipt - the paper receipt,
+                // marked up, with every article's facts on data attributes.
+                var printed = JsonAccess.StrOf(root, "htmlPrintedReceipt");
+
+                items = LidlPrintedReceipt.Items(printed, _options, total.Currency);
+                payment = LidlPrintedReceipt.Payment(printed, _options);
+
+                total = MoneyReader.Optional(root, _options.AmountUnit, total.Currency,
+                    "ticket.detail.total", "totalAmount", "total") ?? total;
+
+                // CONFIRMED: the detail states a store OBJECT - id
+                // "NL0263", name "Delft" - and the old read asked for a
+                // string, so every receipt was named after the branch code.
+                // "Lidl Delft" is what the receipt itself prints at the top.
+                storeName = StoreName(root) ?? storeName;
+
+                // The detail's own timestamp, and it is the one to trust:
+                // it agrees with the card-terminal line the till printed
+                // ("04-10-2025 12:50" against a stated 12:51:18), whereas
+                // the list's put every receipt two hours later. It states a
+                // wall clock with no offset, so it is read in the store's
+                // country zone rather than the agent's.
+                if (JsonAccess.StrOf(root, "date") is { Length: > 0 } stamped)
+                {
+                    purchasedAt = ReceiptTime.Parse(stamped, zone, ProviderId, "ticket.detail.date");
+                }
+            }
+        }
+
+        return (ReceiptFactory.Build(
+            ctx.SessionId,
+            summary.Id,
+            LidlPlusTicketParser.Merchant(storeName),
+            purchasedAt,
+            total,
+            payment,
+            items), raw);
     }
 
     /// <summary>
@@ -346,11 +362,6 @@ public sealed class LidlPlusAdapter : IProviderAdapter
     /// </summary>
     private static string? OptionalInput(IJobContext ctx, string key) =>
         ctx.Inputs.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value : null;
-
-    private static string RequiredInput(IJobContext ctx, string key) =>
-        ctx.Inputs.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value
-            : throw ConnectorException.InvalidRequest($"lidl: '{key}' is required");
 
     private static ConnectorException Missing(string what, IReadOnlyList<string> selectors) =>
         ConnectorException.ProviderChanged(
@@ -884,9 +895,11 @@ public sealed class LidlPlusAdapter : IProviderAdapter
     /// </summary>
     private static string? StoreName(JsonElement detail)
     {
-        if (JsonAccess.TryProp(detail, out var store, "store") && store.ValueKind == JsonValueKind.Object)
+        if (JsonAccess.TryProp(detail, out var store, "store")
+            && store.ValueKind == JsonValueKind.Object
+            && JsonAccess.StrOf(store, "name") is { Length: > 0 } named)
         {
-            if (JsonAccess.StrOf(store, "name") is { Length: > 0 } named) return named;
+            return named;
         }
 
         return JsonAccess.StrOf(detail, "storeName", "storeCode");

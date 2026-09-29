@@ -41,9 +41,9 @@ public sealed class ProviderStatusService(
         // healthy beats reporting it as missing: the registry is the source of
         // truth for existence, this table only for health.
         var now = time.GetUtcNow();
-        foreach (var manifest in registry.Manifests)
+        foreach (var providerId in registry.Manifests.Select(m => m.Id).Where(id => !byId.ContainsKey(id)))
         {
-            if (!byId.ContainsKey(manifest.Id)) byId[manifest.Id] = ProviderStatus.Healthy(manifest.Id, now);
+            byId[providerId] = ProviderStatus.Healthy(providerId, now);
         }
 
         return byId;

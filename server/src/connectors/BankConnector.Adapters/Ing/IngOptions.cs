@@ -339,7 +339,7 @@ public sealed record IngOptions
         WithheldHeaders.Contains(name, StringComparer.OrdinalIgnoreCase)
         || name.StartsWith("sec-", StringComparison.OrdinalIgnoreCase)
         || name.StartsWith("proxy-", StringComparison.OrdinalIgnoreCase)
-        || name.StartsWith(":", StringComparison.Ordinal);
+        || name.StartsWith(':');
 
     // ---- paging ------------------------------------------------------------
 

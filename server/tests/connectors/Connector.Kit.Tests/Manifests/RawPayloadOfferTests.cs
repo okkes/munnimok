@@ -44,7 +44,7 @@ public sealed class RawPayloadOfferTests
         ],
     };
 
-    private static IReadOnlyList<string> IncludeValues(IProviderRegistry registry) =>
+    private static IReadOnlyList<string> IncludeValues(ProviderRegistry registry) =>
         registry.RequireManifest("mock-provider").Resource("receipts")!
             .Param(ResourceRequest.IncludeParam)!.Values!;
 

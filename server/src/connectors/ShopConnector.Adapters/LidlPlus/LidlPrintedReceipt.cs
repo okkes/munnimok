@@ -292,15 +292,15 @@ internal static partial class LidlPrintedReceipt
         var order = new List<string>();
         var byId = new Dictionary<string, Line>(StringComparer.Ordinal);
 
-        foreach (Match span in Span.Matches(printed))
+        foreach (var groups in Span.Matches(printed).Select(span => span.Groups))
         {
-            var attrs = Attributes(span.Groups["attrs"].Value);
+            var attrs = Attributes(groups["attrs"].Value);
             if (!attrs.TryGetValue("id", out var id) || id.Length == 0) continue;
 
             // Nested spans are matched too and would double-count the text.
             // The inner ones carry no tags of their own after decoding, so
             // stripping any residual markup is enough.
-            var text = WebUtility.HtmlDecode(Tags.Replace(span.Groups["text"].Value, string.Empty));
+            var text = WebUtility.HtmlDecode(Tags.Replace(groups["text"].Value, string.Empty));
 
             if (byId.TryGetValue(id, out var existing))
             {
@@ -342,9 +342,9 @@ internal static partial class LidlPrintedReceipt
     {
         var found = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (Match match in Attribute.Matches(raw))
+        foreach (var groups in Attribute.Matches(raw).Select(match => match.Groups))
         {
-            found[match.Groups["name"].Value] = match.Groups["value"].Value;
+            found[groups["name"].Value] = groups["value"].Value;
         }
 
         return found;

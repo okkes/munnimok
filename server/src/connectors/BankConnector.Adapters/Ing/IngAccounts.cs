@@ -187,14 +187,15 @@ internal static class IngAccounts
             }
 
             accounts.Add(new IngAccount(
-                BankRecords.NewAccount(
-                    sessionId,
-                    externalId,
-                    type,
-                    Name(entry, type, iban) ?? externalId,
-                    currency,
-                    iban,
-                    balance: figure),
+                BankRecords.NewAccount(sessionId, new AccountDraft
+                {
+                    ExternalId = externalId,
+                    Type = type,
+                    DisplayName = Name(entry, type, iban) ?? externalId,
+                    Currency = currency,
+                    Iban = iban,
+                    Balance = figure,
+                }),
                 Agreement(entry),
                 Link(entry, "self"),
                 Link(entry, "transactions")));
@@ -248,18 +249,11 @@ internal static class IngAccounts
     /// tries to tell them apart, because for the one use this has - reaching an
     /// account's own screen - either would do.
     /// </remarks>
-    private static string? Link(JsonElement entry, string relation)
-    {
-        foreach (var link in entry.Items("_links"))
-        {
-            if (string.Equals(link.Text("rel"), relation, StringComparison.OrdinalIgnoreCase))
-            {
-                return link.Text("href");
-            }
-        }
-
-        return null;
-    }
+    private static string? Link(JsonElement entry, string relation) =>
+        entry.Items("_links")
+            .Where(link => string.Equals(link.Text("rel"), relation, StringComparison.OrdinalIgnoreCase))
+            .Select(link => link.Text("href"))
+            .FirstOrDefault();
 
     /// <summary>
     /// The balance on an account's OWN resource, for the one type whose list
@@ -370,10 +364,10 @@ internal static class IngAccounts
                                $"{IngAdapter.ProviderId}: a current account states no accountNumber");
 
                 accounts.Add(new IngAccount(
-                    BankRecords.NewAccount(
-                        sessionId,
-                        iban,
-                        AccountType.Current,
+                    BankRecords.NewAccount(sessionId, new AccountDraft
+                    {
+                        ExternalId = iban,
+                        Type = AccountType.Current,
                         // THE IBAN, as the name.
                         //
                         // ING offers two alternatives and neither can be used:
@@ -382,13 +376,14 @@ internal static class IngAccounts
                         // `type.description` is a label ING is free to
                         // translate. The IBAN is the account, is already on the
                         // record, and cannot change under anybody.
-                        iban,
-                        entry.Currency("dynamicBalanceCurrency"),
-                        iban,
-                        balance: Balance(
+                        DisplayName = iban,
+                        Currency = entry.Currency("dynamicBalanceCurrency"),
+                        Iban = iban,
+                        Balance = Balance(
                             entry.Text("dynamicBalance"),
                             entry.Currency("dynamicBalanceCurrency"),
-                            asOf)),
+                            asOf),
+                    }),
                     entry.Text("uuid")));
             }
         }
@@ -436,23 +431,24 @@ internal static class IngAccounts
             var stated = entry.Child("dynamicBalance");
 
             accounts.Add(new IngAccount(
-                BankRecords.NewAccount(
-                    sessionId,
-                    iban,
-                    AccountType.Savings,
+                BankRecords.NewAccount(sessionId, new AccountDraft
+                {
+                    ExternalId = iban,
+                    Type = AccountType.Savings,
                     // The product's own name, which the two captures proved is
                     // the same string in both languages. The user's nickname for
                     // the account sits beside it in `target.nickName` and is
                     // deliberately not used: it is theirs to change, and an
                     // account that renames itself when they retitle a savings
                     // goal is an account that republishes for nothing.
-                    entry.Text("productName") ?? iban,
-                    currency,
-                    iban,
-                    balance: Balance(
+                    DisplayName = entry.Text("productName") ?? iban,
+                    Currency = currency,
+                    Iban = iban,
+                    Balance = Balance(
                         stated.Decimal("amount"),
                         stated.Text("currency")?.ToUpperInvariant() ?? currency,
-                        asOf)),
+                        asOf),
+                }),
                 id.Text("commercialId")));
         }
 
@@ -496,13 +492,14 @@ internal static class IngAccounts
             var masked = entry.Text("maskedCardNumber");
 
             accounts.Add(new IngAccount(
-                BankRecords.NewAccount(
-                    sessionId,
-                    id,
-                    AccountType.CreditCard,
-                    masked ?? id,
-                    currency,
-                    maskedNumber: masked),
+                BankRecords.NewAccount(sessionId, new AccountDraft
+                {
+                    ExternalId = id,
+                    Type = AccountType.CreditCard,
+                    DisplayName = masked ?? id,
+                    Currency = currency,
+                    MaskedNumber = masked,
+                }),
                 null));
         }
 

@@ -53,6 +53,9 @@ public sealed class AmazonAdapter : IProviderAdapter
 
     private static readonly ProviderManifest Manifest = AmazonManifest.Build();
 
+    /// <summary>Where a path ends and its query or fragment begins.</summary>
+    private static readonly char[] PathEnd = ['?', '#'];
+
     private readonly AmazonOptions _options;
     private readonly TimeProvider _time;
     private readonly CaptchaGate _captcha;
@@ -244,6 +247,37 @@ public sealed class AmazonAdapter : IProviderAdapter
         };
     }
 
+    /// <summary>What one pass of the settle loop found.</summary>
+    private enum SettleOutcome
+    {
+        /// <summary>Nothing recognisable yet: poll again, on the same budget.</summary>
+        Waiting,
+
+        /// <summary>
+        /// A human was waited on and answered. The budget restarts, because
+        /// it measures how long Amazon takes to answer and none of that wait
+        /// was Amazon's.
+        /// </summary>
+        Restart,
+
+        /// <summary>The order list, or the redirect: the sign-in is done.</summary>
+        Landed,
+
+        /// <summary>A wall stood and was not passed. Stop, and say so.</summary>
+        Unpassed,
+    }
+
+    /// <summary>
+    /// What the settle loop has already dealt with, so a code is relayed once
+    /// and a wall is faced once.
+    /// </summary>
+    private sealed class SettleState
+    {
+        public bool ChallengeSeen { get; set; }
+
+        public bool CodeAnswered { get; set; }
+    }
+
     /// <summary>
     /// Waits for the sign-in to resolve into one of five outcomes: the order
     /// list, a one-time code, a stated credential error, a wall, or nothing
@@ -259,129 +293,21 @@ public sealed class AmazonAdapter : IProviderAdapter
     {
         var deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
         var poll = TimeSpan.FromSeconds(_options.RedirectPollSeconds);
-        var challengeSeen = false;
-        var codeAnswered = false;
+        var settle = new SettleState();
 
         while (true)
         {
             ct.ThrowIfCancellationRequested();
 
-            // The passkey nudge, first of all.
-            //
-            // The password has already been accepted by the time this appears -
-            // it is the last thing between a working sign-in and the order
-            // list - so it is neither a failure nor a challenge, and treating
-            // it as either would report a login that WORKED as broken.
-            if (await DeclinePasskeyAsync(page, ct).ConfigureAwait(false))
+            var outcome = await SettleOnceAsync(ctx, page, watcher, poll, settle, ct).ConfigureAwait(false);
+
+            if (outcome is SettleOutcome.Landed) return;
+            if (outcome is SettleOutcome.Unpassed) break;
+
+            if (outcome is SettleOutcome.Restart)
             {
-                // Amazon has to build the next page. The budget restarts
-                // because none of the time before this was the provider being
-                // slow: it was us not knowing what we were looking at.
                 deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
                 continue;
-            }
-
-            // The wall, before anything else in the loop.
-            //
-            // It reads one string and costs nothing, while every check below it
-            // probes a list of selectors at half a second each - so a pass that
-            // starts with those spends fifteen seconds looking for the things
-            // that are not there before it ever asks the question that can be
-            // answered instantly. Amazon's verification page can come and go
-            // between two polls, and a wall seen late is a wall not seen.
-            if (!challengeSeen && OnChallengePage(page))
-            {
-                challengeSeen = true;
-                await LiveAsync(ctx, page, watcher, ct).ConfigureAwait(false);
-                return;
-            }
-
-            // The wait is the poll interval. A waiter that answers is a
-            // provider whose sign-in ends somewhere the browser cannot follow;
-            // Amazon's ends on an ordinary page, so on this provider it is the
-            // page itself that says whether we are in.
-            if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null) return;
-
-            // NOT through SessionProbe's gate, and deliberately: this is the
-            // settle loop after credentials have gone upstream, so it is
-            // asking whether the sign-in it just drove has LANDED. The gate
-            // answers "was this browser handed anything?", which is the right
-            // question before a sign-in and the wrong one after it - shutting
-            // this off on a first connect would leave the login waiting for a
-            // landing it had already reached.
-            if (await PresenceAsync(page, ct).ConfigureAwait(false) is SessionPresence.SignedIn) return;
-
-            // A refusal before a credential verdict, always. Amazon locking or
-            // suspending an account is the provider refusing us; reporting it
-            // as a bad password would send the user to change a password that
-            // will not help and is not the problem.
-            if (await page.FindAsync(_options.RefusalSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
-                is not null)
-            {
-                throw ConnectorException.Blocked(
-                    $"{ProviderId}: the sign-in page states the account is locked or suspended; " +
-                    "this is a refusal by Amazon, not a credential problem");
-            }
-
-            // The page states a credential failure itself. This is the ONLY
-            // path that may report invalid_credentials.
-            if (await page.FindAsync(_options.LoginErrorSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
-                is not null)
-            {
-                throw ConnectorException.InvalidCredentials(
-                    $"{ProviderId}: the sign-in page stated a credential error");
-            }
-
-            if (!codeAnswered
-                && await page.FindAsync(_options.OtpSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
-                is not null)
-            {
-                await SubmitCodeAsync(ctx, page, ct).ConfigureAwait(false);
-                codeAnswered = true;
-
-                // The budget measures how long AMAZON takes to answer, so it
-                // restarts once a wait on a human is over: the minutes they
-                // spent reading a text message are not the provider being
-                // slow, and charging them to it fails a login that is about to
-                // work.
-                deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
-                continue;
-            }
-
-            if (!challengeSeen)
-            {
-                var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
-
-                // The URL, beside the markup. Amazon's verification flow lives
-                // on its own path, and a page still drawing its iframe is
-                // already unmistakably a wall by where the browser is standing.
-                if (wall.Kind is CaptchaKind.None && OnChallengePage(page))
-                {
-                    wall = new CaptchaWall(CaptchaKind.Interactive, null);
-                }
-
-                if (wall.Kind is not CaptchaKind.None)
-                {
-                    challengeSeen = true;
-
-                    // An AAmation puzzle in an iframe cannot be photographed
-                    // and typed back - there is no string to send, and the
-                    // token it mints goes to Amazon rather than to us. The only
-                    // person who can pass it is one with hands on that browser,
-                    // so the browser goes to them.
-                    if (wall.Kind is CaptchaKind.Interactive)
-                    {
-                        await LiveAsync(ctx, page, watcher, ct).ConfigureAwait(false);
-                        return;
-                    }
-
-                    var outcome = await _captcha.FaceAsync(ctx, page, watcher, wall, ct).ConfigureAwait(false);
-                    if (outcome.Redirect is not null) return;
-                    if (!outcome.Handled) break;
-
-                    deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
-                    continue;
-                }
             }
 
             if (_time.GetUtcNow() >= deadline) break;
@@ -397,12 +323,161 @@ public sealed class AmazonAdapter : IProviderAdapter
         // one artifact that would say what the browser was actually looking at.
         await page.ClearSecretsAsync(ct).ConfigureAwait(false);
 
-        throw challengeSeen
+        throw settle.ChallengeSeen
             ? ConnectorException.Blocked(
                 $"{ProviderId}: a challenge stood between the sign-in and the order list and was not passed")
             : ConnectorException.ProviderChanged(
                 $"{ProviderId}: the sign-in neither reached the order list nor stated an error; " +
                 $"last url was '{page.Url}'");
+    }
+
+    /// <summary>
+    /// One pass of the settle loop: every way the page can have resolved, in
+    /// the order that keeps the cheap and decisive checks ahead of the slow
+    /// ones.
+    /// </summary>
+    private async Task<SettleOutcome> SettleOnceAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, TimeSpan poll, SettleState settle,
+        CancellationToken ct)
+    {
+        // The passkey nudge, first of all.
+        //
+        // The password has already been accepted by the time this appears -
+        // it is the last thing between a working sign-in and the order
+        // list - so it is neither a failure nor a challenge, and treating
+        // it as either would report a login that WORKED as broken.
+        if (await DeclinePasskeyAsync(page, ct).ConfigureAwait(false))
+        {
+            // Amazon has to build the next page. The budget restarts
+            // because none of the time before this was the provider being
+            // slow: it was us not knowing what we were looking at.
+            return SettleOutcome.Restart;
+        }
+
+        // The wall, before anything else in the loop.
+        //
+        // It reads one string and costs nothing, while every check below it
+        // probes a list of selectors at half a second each - so a pass that
+        // starts with those spends fifteen seconds looking for the things
+        // that are not there before it ever asks the question that can be
+        // answered instantly. Amazon's verification page can come and go
+        // between two polls, and a wall seen late is a wall not seen.
+        if (!settle.ChallengeSeen && OnChallengePage(page))
+        {
+            await LiveAsync(ctx, page, watcher, ct).ConfigureAwait(false);
+            return SettleOutcome.Landed;
+        }
+
+        // The wait is the poll interval. A waiter that answers is a
+        // provider whose sign-in ends somewhere the browser cannot follow.
+        // Amazon's ends on an ordinary page, so on this provider it is the
+        // page itself that says whether we are in.
+        if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null) return SettleOutcome.Landed;
+
+        // NOT through SessionProbe's gate, and deliberately: this is the
+        // settle loop after credentials have gone upstream, so it is
+        // asking whether the sign-in it just drove has LANDED. The gate
+        // answers "was this browser handed anything?", which is the right
+        // question before a sign-in and the wrong one after it - shutting
+        // this off on a first connect would leave the login waiting for a
+        // landing it had already reached.
+        if (await PresenceAsync(page, ct).ConfigureAwait(false) is SessionPresence.SignedIn)
+        {
+            return SettleOutcome.Landed;
+        }
+
+        await ThrowIfStatedFailureAsync(page, ct).ConfigureAwait(false);
+
+        if (!settle.CodeAnswered
+            && await page.FindAsync(_options.OtpSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
+            is not null)
+        {
+            await SubmitCodeAsync(ctx, page, ct).ConfigureAwait(false);
+            settle.CodeAnswered = true;
+
+            // The budget measures how long AMAZON takes to answer, so it
+            // restarts once a wait on a human is over: the minutes they
+            // spent reading a text message are not the provider being
+            // slow, and charging them to it fails a login that is about to
+            // work.
+            return SettleOutcome.Restart;
+        }
+
+        if (settle.ChallengeSeen) return SettleOutcome.Waiting;
+
+        var wall = await DetectWallAsync(page, ct).ConfigureAwait(false);
+        if (wall.Kind is CaptchaKind.None) return SettleOutcome.Waiting;
+
+        settle.ChallengeSeen = true;
+        return await FaceWallAsync(ctx, page, watcher, wall, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The two failures the sign-in page states in as many words, thrown as
+    /// what they are.
+    /// </summary>
+    private async Task ThrowIfStatedFailureAsync(ILoginPage page, CancellationToken ct)
+    {
+        // A refusal before a credential verdict, always. Amazon locking or
+        // suspending an account is the provider refusing us; reporting it
+        // as a bad password would send the user to change a password that
+        // will not help and is not the problem.
+        if (await page.FindAsync(_options.RefusalSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
+            is not null)
+        {
+            throw ConnectorException.Blocked(
+                $"{ProviderId}: the sign-in page states the account is locked or suspended; " +
+                "this is a refusal by Amazon, not a credential problem");
+        }
+
+        // The page states a credential failure itself. This is the ONLY
+        // path that may report invalid_credentials.
+        if (await page.FindAsync(_options.LoginErrorSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
+            is not null)
+        {
+            throw ConnectorException.InvalidCredentials(
+                $"{ProviderId}: the sign-in page stated a credential error");
+        }
+    }
+
+    /// <summary>
+    /// The wall this page is showing, if any: read from the markup, and then
+    /// from where the browser is standing.
+    /// </summary>
+    private async Task<CaptchaWall> DetectWallAsync(ILoginPage page, CancellationToken ct)
+    {
+        var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
+
+        // The URL, beside the markup. Amazon's verification flow lives
+        // on its own path, and a page still drawing its iframe is
+        // already unmistakably a wall by where the browser is standing.
+        return wall.Kind is CaptchaKind.None && OnChallengePage(page)
+            ? new CaptchaWall(CaptchaKind.Interactive, null)
+            : wall;
+    }
+
+    /// <summary>
+    /// Faces a wall the settle loop has met: a widget goes to whoever owns the
+    /// account, a picture goes through the kit's relay.
+    /// </summary>
+    private async Task<SettleOutcome> FaceWallAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CaptchaWall wall, CancellationToken ct)
+    {
+        // An AAmation puzzle in an iframe cannot be photographed
+        // and typed back - there is no string to send, and the
+        // token it mints goes to Amazon rather than to us. The only
+        // person who can pass it is one with hands on that browser,
+        // so the browser goes to them.
+        if (wall.Kind is CaptchaKind.Interactive)
+        {
+            await LiveAsync(ctx, page, watcher, ct).ConfigureAwait(false);
+            return SettleOutcome.Landed;
+        }
+
+        var outcome = await _captcha.FaceAsync(ctx, page, watcher, wall, ct).ConfigureAwait(false);
+        if (outcome.Redirect is not null) return SettleOutcome.Landed;
+
+        return outcome.Handled ? SettleOutcome.Restart : SettleOutcome.Unpassed;
     }
 
     /// <summary>
@@ -685,6 +760,41 @@ public sealed class AmazonAdapter : IProviderAdapter
     }
 
     /// <summary>
+    /// The order-list walk: the window it covers, and what it has gathered on
+    /// the way, carried from page to page.
+    /// </summary>
+    private sealed class OrderWalk
+    {
+        public required ResourceRequest Request { get; init; }
+
+        public required TimeZoneInfo Zone { get; init; }
+
+        public required int Cap { get; init; }
+
+        public required DateOnly Since { get; init; }
+
+        public required DateOnly Until { get; init; }
+
+        /// <summary>Every row inside the window, in the order the pages gave them.</summary>
+        public List<AmazonOrderSummary> Collected { get; } = [];
+
+        /// <summary>Every order id read so far, to notice a page that repeats.</summary>
+        public HashSet<string> Seen { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>At least one order card was read, so the card selectors still work.</summary>
+        public bool SawCard { get; set; }
+
+        /// <summary>The list said in as many words that there is no history.</summary>
+        public bool SawEmptyMarker { get; set; }
+
+        /// <summary>False once a page past the cap has been read.</summary>
+        public bool Complete { get; set; } = true;
+
+        /// <summary>The window, or the cap, is behind the walk: no page is worth opening.</summary>
+        public bool Stop { get; set; }
+    }
+
+    /// <summary>
     /// The order walk, behind the seam. Everything above
     /// <see cref="IAmazonPages"/> is drivable from a recorded page, which is
     /// the only way any of this is testable: there is no API to stub.
@@ -709,76 +819,31 @@ public sealed class AmazonAdapter : IProviderAdapter
         var until = request.Until ?? today;
         var since = request.Since ?? until.AddYears(-1);
 
-        var collected = new List<AmazonOrderSummary>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var sawCard = false;
-        var sawEmptyMarker = false;
-        var complete = true;
-
-        var stop = false;
-
-        for (var year = until.Year; year >= since.Year && until.Year - year < _options.MaxYears && !stop; year--)
+        var walk = new OrderWalk
         {
-            for (var index = 0; index < _options.MaxPagesPerYear && !stop; index++)
-            {
-                ct.ThrowIfCancellationRequested();
+            Request = request,
+            Zone = zone,
+            Cap = cap,
+            Since = since,
+            Until = until,
+        };
 
-                var (fetched, dom) = await OpenAsync(
-                    ctx, pages, OrdersUrl(year, index * _options.PageSize),
-                    $"the {year} order list", wall, redirects, ct).ConfigureAwait(false);
-
-                ctx.Progress(JobStep.Parsing);
-
-                var rows = AmazonOrderParser.ParseList(dom, _options, zone);
-                if (rows.Count == 0)
-                {
-                    if (Any(fetched.Html, _options.EmptyHistoryMarkers)) sawEmptyMarker = true;
-                    break;
-                }
-
-                sawCard = true;
-
-                // A page that repeats the previous one means startIndex is not
-                // advancing anything upstream. Carrying on would be the same
-                // request twenty times against a site that challenges when it
-                // is bored - which is how a working session gets escalated
-                // into a block.
-                var fresh = rows.Where(row => seen.Add(row.Id)).ToList();
-                if (fresh.Count == 0) break;
-
-                collected.AddRange(fresh.Where(row => ReceiptFactory.InWindow(row.PurchasedAt, request)));
-
-                // The list runs newest first, so a page entirely older than the
-                // window means every later page - and every earlier year - is
-                // too. Stopping here is what keeps three years of history from
-                // being walked on every sync.
-                if (rows.All(row => DateOnly.FromDateTime(row.PurchasedAt.Date) < since)) stop = true;
-
-                // One page past the cap is enough to know the pass is partial;
-                // more would be work the caller is about to discard.
-                if (collected.Count > cap)
-                {
-                    complete = false;
-                    stop = true;
-                }
-
-                if (!AmazonOrderParser.HasNextPage(dom, _options)) break;
-            }
-        }
+        await WalkListAsync(ctx, pages, wall, redirects, walk, ct).ConfigureAwait(false);
 
         // An empty result has two very different causes and they must not look
         // alike: a customer with no orders in the window, and a card selector
         // that has expired. The second one silently reports "you have bought
         // nothing", which is the most believable wrong answer this adapter
         // could give.
-        if (!sawCard && !sawEmptyMarker)
+        if (!walk.SawCard && !walk.SawEmptyMarker)
         {
             throw ConnectorException.ProviderChanged(
                 $"{ProviderId}: the order list showed neither an order nor an empty-history notice; " +
                 $"tried cards [{string.Join(", ", _options.OrderCardSelectors)}]");
         }
 
-        var ordered = collected.OrderByDescending(row => row.PurchasedAt).ToList();
+        var complete = walk.Complete;
+        var ordered = walk.Collected.OrderByDescending(row => row.PurchasedAt).ToList();
         if (ordered.Count > cap)
         {
             ordered = [.. ordered.Take(cap)];
@@ -791,64 +856,11 @@ public sealed class AmazonAdapter : IProviderAdapter
         {
             ct.ThrowIfCancellationRequested();
 
-            IReadOnlyList<ReceiptItem> items = [];
-            IReadOnlyList<ReceiptDocument> documents = [];
-            var payment = ReceiptFactory.Payment();
-            Money? stated = null;
-
-            // The invoice is opened when the card states no total even if the
-            // caller asked for no items, because without it there is no total
-            // at all and the receipt cannot be built. One extra page for one
-            // odd order beats failing the whole fetch.
-            var needsInvoice = request.WantsItems || summary.Total is null;
-
-            if (needsInvoice && summary.InvoiceUrl is { } invoiceUrl)
+            if (await ReceiptAsync(ctx, pages, request, summary, wall, redirects, ct).ConfigureAwait(false)
+                is { } receipt)
             {
-                var (_, dom) = await OpenAsync(
-                    ctx, pages, invoiceUrl, $"the invoice for '{summary.Id}'", wall, redirects, ct)
-                    .ConfigureAwait(false);
-
-                // A cancelled order is not a receipt, and its invoice says so
-                // in as many words. Skipped rather than parsed: nothing was
-                // bought and nothing was paid, so there is no purchase to
-                // report - and the empty page it serves would otherwise read as
-                // a shape change and fail the whole fetch.
-                if (AmazonOrderParser.IsCancelled(dom, _options)) continue;
-
-                var invoice = AmazonOrderParser.ParseInvoice(dom, _options);
-                items = request.WantsItems ? invoice.Items : [];
-                payment = invoice.Payment;
-                stated = invoice.StatedTotal;
+                receipts.Add(receipt);
             }
-
-            if (request.WantsInvoice)
-            {
-                documents = await DocumentsAsync(ctx, pages, summary, ct).ConfigureAwait(false);
-            }
-
-            // The card's figure first, because the card and the invoice are two
-            // independent statements of the same number and that redundancy is
-            // the only integrity check this provider offers. Falling back to
-            // the invoice's own total keeps the order rather than dropping it -
-            // and reconciliation then compares the invoice against itself,
-            // which is weaker but not nothing: it still catches a line the
-            // parser missed.
-            var total = summary.Total ?? stated
-                ?? throw ConnectorException.ProviderChanged(
-                    $"{ProviderId}: order '{summary.Id}' states no total on the list card and its " +
-                    "invoice states none either, so there is no figure to report");
-
-            receipts.Add(ReceiptFactory.Build(
-                ctx.SessionId,
-                summary.Id,
-                MerchantOf(),
-                summary.PurchasedAt,
-                total,
-                payment,
-                items) with
-            {
-                Documents = documents,
-            });
         }
 
         ctx.Progress(JobStep.Normalizing);
@@ -860,6 +872,144 @@ public sealed class AmazonAdapter : IProviderAdapter
 
             // No raw on this provider, deliberately - see the class summary.
             Via = Via(request),
+        };
+    }
+
+    /// <summary>
+    /// The order list, newest year first and page by page, folded into
+    /// <paramref name="walk"/> until the window is behind it, the cap is
+    /// passed, or the pages run out.
+    /// </summary>
+    private async Task WalkListAsync(
+        IJobContext ctx, IAmazonPages pages, ILoginPage? wall, IRedirectWaiter? redirects,
+        OrderWalk walk, CancellationToken ct)
+    {
+        for (var year = walk.Until.Year;
+             year >= walk.Since.Year && walk.Until.Year - year < _options.MaxYears && !walk.Stop;
+             year--)
+        {
+            for (var index = 0; index < _options.MaxPagesPerYear && !walk.Stop; index++)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                var (fetched, dom) = await OpenAsync(
+                    ctx, pages, OrdersUrl(year, index * _options.PageSize),
+                    $"the {year} order list", wall, redirects, ct).ConfigureAwait(false);
+
+                ctx.Progress(JobStep.Parsing);
+
+                if (!ReadListPage(walk, fetched, dom)) break;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Folds one page of the order list into the walk. False when this year's
+    /// list has been read to its end, true when the next page is worth opening.
+    /// </summary>
+    private bool ReadListPage(OrderWalk walk, AmazonPage fetched, HtmlNode dom)
+    {
+        var rows = AmazonOrderParser.ParseList(dom, _options, walk.Zone);
+        if (rows.Count == 0)
+        {
+            if (Any(fetched.Html, _options.EmptyHistoryMarkers)) walk.SawEmptyMarker = true;
+            return false;
+        }
+
+        walk.SawCard = true;
+
+        // A page that repeats the previous one means startIndex is not
+        // advancing anything upstream. Carrying on would be the same
+        // request twenty times against a site that challenges when it
+        // is bored - which is how a working session gets escalated
+        // into a block.
+        var fresh = rows.Where(row => walk.Seen.Add(row.Id)).ToList();
+        if (fresh.Count == 0) return false;
+
+        walk.Collected.AddRange(fresh.Where(row => ReceiptFactory.InWindow(row.PurchasedAt, walk.Request)));
+
+        // The list runs newest first, so a page entirely older than the
+        // window means every later page - and every earlier year - is
+        // too. Stopping here is what keeps three years of history from
+        // being walked on every sync.
+        if (rows.All(row => DateOnly.FromDateTime(row.PurchasedAt.Date) < walk.Since)) walk.Stop = true;
+
+        // One page past the cap is enough to know the pass is partial;
+        // more would be work the caller is about to discard.
+        if (walk.Collected.Count > walk.Cap)
+        {
+            walk.Complete = false;
+            walk.Stop = true;
+        }
+
+        return AmazonOrderParser.HasNextPage(dom, _options);
+    }
+
+    /// <summary>
+    /// One receipt out of one list row, or null for an order whose invoice
+    /// says it was cancelled.
+    /// </summary>
+    private async Task<Receipt?> ReceiptAsync(
+        IJobContext ctx, IAmazonPages pages, ResourceRequest request, AmazonOrderSummary summary,
+        ILoginPage? wall, IRedirectWaiter? redirects, CancellationToken ct)
+    {
+        IReadOnlyList<ReceiptItem> items = [];
+        IReadOnlyList<ReceiptDocument> documents = [];
+        var payment = ReceiptFactory.Payment();
+        Money? stated = null;
+
+        // The invoice is opened when the card states no total even if the
+        // caller asked for no items, because without it there is no total
+        // at all and the receipt cannot be built. One extra page for one
+        // odd order beats failing the whole fetch.
+        var needsInvoice = request.WantsItems || summary.Total is null;
+
+        if (needsInvoice && summary.InvoiceUrl is { } invoiceUrl)
+        {
+            var (_, dom) = await OpenAsync(
+                ctx, pages, invoiceUrl, $"the invoice for '{summary.Id}'", wall, redirects, ct)
+                .ConfigureAwait(false);
+
+            // A cancelled order is not a receipt, and its invoice says so
+            // in as many words. Skipped rather than parsed: nothing was
+            // bought and nothing was paid, so there is no purchase to
+            // report - and the empty page it serves would otherwise read as
+            // a shape change and fail the whole fetch.
+            if (AmazonOrderParser.IsCancelled(dom, _options)) return null;
+
+            var invoice = AmazonOrderParser.ParseInvoice(dom, _options);
+            items = request.WantsItems ? invoice.Items : [];
+            payment = invoice.Payment;
+            stated = invoice.StatedTotal;
+        }
+
+        if (request.WantsInvoice)
+        {
+            documents = await DocumentsAsync(ctx, pages, summary, ct).ConfigureAwait(false);
+        }
+
+        // The card's figure first, because the card and the invoice are two
+        // independent statements of the same number and that redundancy is
+        // the only integrity check this provider offers. Falling back to
+        // the invoice's own total keeps the order rather than dropping it -
+        // and reconciliation then compares the invoice against itself,
+        // which is weaker but not nothing: it still catches a line the
+        // parser missed.
+        var total = summary.Total ?? stated
+            ?? throw ConnectorException.ProviderChanged(
+                $"{ProviderId}: order '{summary.Id}' states no total on the list card and its " +
+                "invoice states none either, so there is no figure to report");
+
+        return ReceiptFactory.Build(
+            ctx.SessionId,
+            summary.Id,
+            MerchantOf(),
+            summary.PurchasedAt,
+            total,
+            payment,
+            items) with
+        {
+            Documents = documents,
         };
     }
 
@@ -979,7 +1129,7 @@ public sealed class AmazonAdapter : IProviderAdapter
     {
         var extension = Path.GetExtension(new Uri(href, UriKind.RelativeOrAbsolute).IsAbsoluteUri
             ? new Uri(href).AbsolutePath
-            : href.Split('?', '#')[0]);
+            : href.Split(PathEnd)[0]);
 
         if (string.IsNullOrEmpty(extension)) extension = ".pdf";
 
@@ -1033,30 +1183,40 @@ public sealed class AmazonAdapter : IProviderAdapter
         IJobContext ctx, IAmazonPages pages, string url, string what,
         ILoginPage? wall, IRedirectWaiter? redirects, CancellationToken ct)
     {
-        for (var attempt = 0; ; attempt++)
+        var first = await JudgedAsync(ctx, pages, url, ct).ConfigureAwait(false);
+        if (first.Verdict.Kind == AmazonPageKind.Ok) return (first.Page, first.Dom);
+
+        var facable = first.Verdict.Kind is AmazonPageKind.Interactive or AmazonPageKind.Image;
+        if (!facable || !ctx.Attended || wall is null || redirects is null)
         {
-            var fetched = await PacedAsync(ctx, pages, url, ct).ConfigureAwait(false);
-            var dom = HtmlParser.Parse(fetched.Html);
-            var verdict = AmazonGuard.Inspect(fetched, dom, _options);
-
-            if (verdict.Kind == AmazonPageKind.Ok) return (fetched, dom);
-
-            var facable = verdict.Kind is AmazonPageKind.Interactive or AmazonPageKind.Image;
-            if (attempt > 0 || !facable || !ctx.Attended || wall is null || redirects is null)
-            {
-                throw AmazonGuard.Failure(verdict, fetched, what, _options);
-            }
-
-            var kind = verdict.Kind == AmazonPageKind.Image ? CaptchaKind.Image : CaptchaKind.Interactive;
-            var crop = await wall.FindAsync(
-                kind == CaptchaKind.Image ? _options.ImageCaptchaSelectors : _options.InteractiveCaptchaSelectors,
-                _options.ProbeMs, ct).ConfigureAwait(false);
-
-            var outcome = await _captcha
-                .FaceAsync(ctx, wall, redirects, new CaptchaWall(kind, crop?.Crop), ct).ConfigureAwait(false);
-
-            if (!outcome.Handled) throw AmazonGuard.Failure(verdict, fetched, what, _options);
+            throw AmazonGuard.Failure(first.Verdict, first.Page, what, _options);
         }
+
+        var kind = first.Verdict.Kind == AmazonPageKind.Image ? CaptchaKind.Image : CaptchaKind.Interactive;
+        var crop = await wall.FindAsync(
+            kind == CaptchaKind.Image ? _options.ImageCaptchaSelectors : _options.InteractiveCaptchaSelectors,
+            _options.ProbeMs, ct).ConfigureAwait(false);
+
+        var outcome = await _captcha
+            .FaceAsync(ctx, wall, redirects, new CaptchaWall(kind, crop?.Crop), ct).ConfigureAwait(false);
+
+        if (!outcome.Handled) throw AmazonGuard.Failure(first.Verdict, first.Page, what, _options);
+
+        // The second attempt, and the last. The same URL either reads as data
+        // now or the wall is still standing - and it is not faced again.
+        var second = await JudgedAsync(ctx, pages, url, ct).ConfigureAwait(false);
+        if (second.Verdict.Kind == AmazonPageKind.Ok) return (second.Page, second.Dom);
+
+        throw AmazonGuard.Failure(second.Verdict, second.Page, what, _options);
+    }
+
+    /// <summary>One paced fetch of <paramref name="url"/>, parsed and judged.</summary>
+    private async Task<(AmazonPage Page, HtmlNode Dom, AmazonVerdict Verdict)> JudgedAsync(
+        IJobContext ctx, IAmazonPages pages, string url, CancellationToken ct)
+    {
+        var fetched = await PacedAsync(ctx, pages, url, ct).ConfigureAwait(false);
+        var dom = HtmlParser.Parse(fetched.Html);
+        return (fetched, dom, AmazonGuard.Inspect(fetched, dom, _options));
     }
 
     /// <summary>

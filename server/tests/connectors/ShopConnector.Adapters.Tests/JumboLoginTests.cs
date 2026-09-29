@@ -26,6 +26,9 @@ public sealed class JumboLoginTests
 
     private const string Signed = "https://www.jumbo.com/mijn-jumbo/bestellingen";
 
+    /// <summary>The form's three controls, as Auth0 lays them out.</summary>
+    private static readonly string[] FormControls = ["input#username", "input#password", "button[type='submit']"];
+
     private static JumboAdapter Adapter(JumboOptions? options = null) =>
         new(options ?? new JumboOptions(), new FakeJumboGraphQl(), new FixedTimeProvider(Now));
 
@@ -45,7 +48,7 @@ public sealed class JumboLoginTests
         };
 
     private static StubLoginPage FormPage(params string[] extra) =>
-        StubLoginPage.Showing([.. new[] { "input#username", "input#password", "button[type='submit']" }, .. extra]);
+        StubLoginPage.Showing([.. FormControls, .. extra]);
 
     // ---- the login chain, corrected ---------------------------------------
 

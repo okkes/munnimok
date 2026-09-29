@@ -91,7 +91,7 @@ public sealed class SelectorMissRuleTests
         var trimmed = line.TrimStart();
 
         return trimmed.StartsWith("//", StringComparison.Ordinal)
-               || trimmed.StartsWith("*", StringComparison.Ordinal);
+               || trimmed.StartsWith('*');
     }
 
     /// <summary>

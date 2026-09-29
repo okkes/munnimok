@@ -51,7 +51,7 @@ public sealed class OneAgentManyConnectorsTests
             await machine.StartAsync();
 
             Assert.True(
-                await machine.UntilAsync(() => machine.Log.Lines.Count(Online) == 2),
+                await Machine.UntilAsync(() => machine.Log.Lines.Count(Online) == 2),
                 "both connectors should have come online: " + string.Join(" | ", machine.Log.Lines));
 
             Assert.Contains(
@@ -113,7 +113,7 @@ public sealed class OneAgentManyConnectorsTests
             await machine.StartAsync();
 
             Assert.True(
-                await machine.UntilAsync(() => Volatile.Read(ref adapter.Started) >= 1),
+                await Machine.UntilAsync(() => Volatile.Read(ref adapter.Started) >= 1),
                 "neither connector ever started its job");
 
             // Long enough for the other connector's lease loop to have leased
@@ -127,7 +127,7 @@ public sealed class OneAgentManyConnectorsTests
             adapter.Release();
 
             Assert.True(
-                await machine.UntilAsync(() => Volatile.Read(ref adapter.Started) == 2),
+                await Machine.UntilAsync(() => Volatile.Read(ref adapter.Started) == 2),
                 "the second connector's job never ran at all, so the slot was not released to it");
         }
         finally
@@ -162,7 +162,7 @@ public sealed class OneAgentManyConnectorsTests
             await machine.StartAsync();
 
             Assert.True(
-                await machine.UntilAsync(() => Volatile.Read(ref adapter.Peak) >= 2),
+                await Machine.UntilAsync(() => Volatile.Read(ref adapter.Peak) >= 2),
                 "only one job ever ran, so this harness cannot observe two connectors at once and the case "
                 + "above proves nothing");
         }
@@ -208,7 +208,7 @@ public sealed class OneAgentManyConnectorsTests
             await machine.StartAsync();
 
             Assert.True(
-                await machine.UntilAsync(() => machine.Log.Lines.Count(Online) == 2),
+                await Machine.UntilAsync(() => machine.Log.Lines.Count(Online) == 2),
                 "both connectors should have come online first");
 
             // And then one connector - and only one - says it has never heard
@@ -384,7 +384,7 @@ public sealed class OneAgentManyConnectorsTests
         /// Waits on the wall clock until <paramref name="done"/> holds, for the
         /// cases that run on real time rather than a <see cref="TestClock"/>.
         /// </summary>
-        public async Task<bool> UntilAsync(Func<bool> done, int seconds = 10)
+        public static async Task<bool> UntilAsync(Func<bool> done, int seconds = 10)
         {
             var deadline = DateTimeOffset.UtcNow.AddSeconds(seconds);
 

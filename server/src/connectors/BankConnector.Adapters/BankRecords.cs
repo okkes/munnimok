@@ -4,6 +4,61 @@ using Connector.Kit.Normalization;
 namespace BankConnector.Adapters;
 
 /// <summary>
+/// An account as an adapter states it, before its id and content hash exist.
+/// </summary>
+/// <remarks>
+/// Everything here is the provider's own fact about the account; nothing is
+/// derived. <see cref="BankRecords.NewAccount"/> mints the rest, which is
+/// what keeps an adapter from improvising an id or a hash - see
+/// <see cref="BankRecords"/>.
+/// </remarks>
+public sealed record AccountDraft
+{
+    public required string ExternalId { get; init; }
+
+    public required AccountType Type { get; init; }
+
+    public required string DisplayName { get; init; }
+
+    /// <summary>An ISO code. Upper-cased by the factory, so any case will do here.</summary>
+    public required string Currency { get; init; }
+
+    public string? Iban { get; init; }
+
+    public string? MaskedNumber { get; init; }
+
+    public Balance? Balance { get; init; }
+}
+
+/// <summary>
+/// A transaction as an adapter states it, before its id and content hash
+/// exist.
+/// </summary>
+/// <remarks>
+/// The account it belongs to is named to
+/// <see cref="BankRecords.NewTransaction"/> rather than here, because that id
+/// is the factory's own product - see <see cref="BankRecords.AccountId"/>.
+/// </remarks>
+public sealed record TransactionDraft
+{
+    public required string ExternalId { get; init; }
+
+    public required DateOnly BookedAt { get; init; }
+
+    public required Money Amount { get; init; }
+
+    public DateOnly? ValueAt { get; init; }
+
+    public Counterparty? Counterparty { get; init; }
+
+    public string? Description { get; init; }
+
+    public TransactionKind Kind { get; init; } = TransactionKind.Other;
+
+    public Money? ResultingBalance { get; init; }
+}
+
+/// <summary>
 /// Builds normalised records for bank adapters.
 ///
 /// Ids and content hashes are minted here rather than in each adapter
@@ -24,64 +79,48 @@ public static class BankRecords
     public static string AccountId(string sessionId, string externalId) =>
         Ids.ForRecord(Ids.Account, sessionId, externalId);
 
-    public static Account NewAccount(
-        string sessionId,
-        string externalId,
-        AccountType type,
-        string displayName,
-        string currency,
-        string? iban = null,
-        string? maskedNumber = null,
-        Balance? balance = null)
+    public static Account NewAccount(string sessionId, AccountDraft stated)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(externalId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(displayName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(currency);
+        ArgumentNullException.ThrowIfNull(stated);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stated.ExternalId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stated.DisplayName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stated.Currency);
 
         var account = new Account
         {
-            Id = AccountId(sessionId, externalId),
-            ExternalId = externalId,
-            Type = type,
-            DisplayName = displayName,
-            Currency = currency.ToUpperInvariant(),
-            Iban = iban,
-            MaskedNumber = maskedNumber,
-            Balance = balance,
+            Id = AccountId(sessionId, stated.ExternalId),
+            ExternalId = stated.ExternalId,
+            Type = stated.Type,
+            DisplayName = stated.DisplayName,
+            Currency = stated.Currency.ToUpperInvariant(),
+            Iban = stated.Iban,
+            MaskedNumber = stated.MaskedNumber,
+            Balance = stated.Balance,
         };
 
         return account with { ContentHash = ContentHash.Of(account) };
     }
 
-    public static Transaction NewTransaction(
-        string sessionId,
-        string accountId,
-        string externalId,
-        DateOnly bookedAt,
-        Money amount,
-        DateOnly? valueAt = null,
-        Counterparty? counterparty = null,
-        string? description = null,
-        TransactionKind kind = TransactionKind.Other,
-        Money? resultingBalance = null)
+    public static Transaction NewTransaction(string sessionId, string accountId, TransactionDraft stated)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(accountId);
-        ArgumentException.ThrowIfNullOrWhiteSpace(externalId);
+        ArgumentNullException.ThrowIfNull(stated);
+        ArgumentException.ThrowIfNullOrWhiteSpace(stated.ExternalId);
 
         var transaction = new Transaction
         {
-            Id = Ids.ForRecord(Ids.Transaction, sessionId, externalId),
-            ExternalId = externalId,
+            Id = Ids.ForRecord(Ids.Transaction, sessionId, stated.ExternalId),
+            ExternalId = stated.ExternalId,
             AccountId = accountId,
-            BookedAt = bookedAt,
-            ValueAt = valueAt,
-            Amount = amount,
-            Counterparty = counterparty,
-            Description = description,
-            Kind = kind,
-            ResultingBalance = resultingBalance,
+            BookedAt = stated.BookedAt,
+            ValueAt = stated.ValueAt,
+            Amount = stated.Amount,
+            Counterparty = stated.Counterparty,
+            Description = stated.Description,
+            Kind = stated.Kind,
+            ResultingBalance = stated.ResultingBalance,
         };
 
         return transaction with { ContentHash = ContentHash.Of(transaction) };

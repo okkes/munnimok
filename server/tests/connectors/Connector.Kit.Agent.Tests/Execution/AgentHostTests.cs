@@ -37,7 +37,7 @@ public sealed class AgentHostTests
         var host = box.Build(code: null);
 
         await host.StartAsync(CancellationToken.None);
-        await box.WaitUntil(() => box.Control.BeatsAt.Count > 0);
+        await Box.WaitUntil(() => box.Control.BeatsAt.Count > 0);
         await host.StopAsync(CancellationToken.None);
 
         Assert.Empty(box.Control.Enrollments);
@@ -89,7 +89,7 @@ public sealed class AgentHostTests
         var host = box.Build(code: "AGNT-NEW-0001");
 
         await host.StartAsync(CancellationToken.None);
-        await box.WaitUntil(() => box.Control.Enrollments.Count == 1);
+        await Box.WaitUntil(() => box.Control.Enrollments.Count == 1);
         await host.StopAsync(CancellationToken.None);
 
         Assert.Equal(2, attempts);
@@ -166,7 +166,7 @@ public sealed class AgentHostTests
         var host = box.Build(code: "AGNT-NEW-0001");
 
         await host.StartAsync(CancellationToken.None);
-        await box.WaitUntil(() => box.Control.Enrollments.Count == 1);
+        await Box.WaitUntil(() => box.Control.Enrollments.Count == 1);
         await host.StopAsync(CancellationToken.None);
 
         var claimed = box.Control.Enrollments[0].Capabilities.CatalogDigest;
@@ -183,7 +183,7 @@ public sealed class AgentHostTests
         var host = box.Build(code: "AGNT-NEW-0001");
 
         await host.StartAsync(CancellationToken.None);
-        await box.WaitUntil(() => box.Control.BeatsAt.Count >= 2);
+        await Box.WaitUntil(() => box.Control.BeatsAt.Count >= 2);
         await host.StopAsync(CancellationToken.None);
 
         var mismatch = box.Log.Lines.Where(line => line.Contains("runs adapter catalogue", StringComparison.Ordinal)).ToList();
@@ -200,7 +200,7 @@ public sealed class AgentHostTests
         var host = box.Build(code: "AGNT-NEW-0001");
 
         await host.StartAsync(CancellationToken.None);
-        await box.WaitUntil(() => box.Control.BeatsAt.Count >= 1);
+        await Box.WaitUntil(() => box.Control.BeatsAt.Count >= 1);
         await host.StopAsync(CancellationToken.None);
 
         Assert.Contains(box.Log.Lines, line => line.Contains("matches the control plane", StringComparison.Ordinal));
@@ -258,7 +258,7 @@ public sealed class AgentHostTests
             return _provider.GetServices<IHostedService>().Cast<AgentHost>().Single();
         }
 
-        public async Task WaitUntil(Func<bool> condition)
+        public static async Task WaitUntil(Func<bool> condition)
         {
             var deadline = DateTime.UtcNow + Patience;
             while (!condition())

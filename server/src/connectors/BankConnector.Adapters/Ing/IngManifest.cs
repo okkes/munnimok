@@ -149,8 +149,8 @@ internal static class IngManifest
             ],
             // AppApproval is the whole second factor and it is passive - there
             // is nothing to type, the human taps their phone. ING offers a QR
-            // code and a TAN/PAC device as alternatives on the same screen;
-            // neither is declared, because neither was carried through to a
+            // code and a TAN/PAC device as alternatives on the same screen.
+            // Neither is declared, because neither was carried through to a
             // finished session in the capture and a manifest is not the place
             // to advertise a path nobody has walked.
             Challenges = [ChallengeType.AppApproval],

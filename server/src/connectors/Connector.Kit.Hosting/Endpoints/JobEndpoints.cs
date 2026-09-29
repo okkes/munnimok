@@ -1,3 +1,4 @@
+#pragma warning disable S107 // minimal-API handlers and DI constructors take their collaborators as parameters
 using Connector.Kit.Adapters;
 using Connector.Kit.Errors;
 using Connector.Kit.Hosting.Challenges;
@@ -59,7 +60,6 @@ internal static class JobEndpoints
                     // over once, and a stream cannot acknowledge receipt.
                     return row is null ? null : await views.JobAsync(row, deliverBundle: false, token);
                 },
-                ConnectorJson.Serialize,
                 view => JobStateMachine.IsTerminal(view.State),
                 signals,
                 ConnectorSignals.Job(job.Id),

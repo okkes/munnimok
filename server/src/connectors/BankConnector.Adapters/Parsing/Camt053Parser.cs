@@ -147,14 +147,15 @@ public static class Camt053Parser
 
         VerifyAgainstBalances(provider, statementId, opening, closing, transactions);
 
-        var account = BankRecords.NewAccount(
-            options.SessionId,
-            accountExternalId,
-            options.AccountType,
-            options.DisplayName ?? stmt.Path("Acct", "Nm").Text() ?? accountExternalId,
-            currency,
-            iban,
-            balance: closing ?? opening);
+        var account = BankRecords.NewAccount(options.SessionId, new AccountDraft
+        {
+            ExternalId = accountExternalId,
+            Type = options.AccountType,
+            DisplayName = options.DisplayName ?? stmt.Path("Acct", "Nm").Text() ?? accountExternalId,
+            Currency = currency,
+            Iban = iban,
+            Balance = closing ?? opening,
+        });
 
         return new Camt053Statement
         {
@@ -220,21 +221,21 @@ public static class Camt053Parser
 
         var externalId = ExternalId(entry, details, accountId, bookedAt, amount, description, synthesized);
 
-        return BankRecords.NewTransaction(
-            options.SessionId,
-            accountId,
-            externalId,
-            bookedAt,
-            amount,
-            value,
-            counterparty,
-            description,
-            Kind(entry),
+        return BankRecords.NewTransaction(options.SessionId, accountId, new TransactionDraft
+        {
+            ExternalId = externalId,
+            BookedAt = bookedAt,
+            Amount = amount,
+            ValueAt = value,
+            Counterparty = counterparty,
+            Description = description,
+            Kind = Kind(entry),
             // CAMT.053 states no per-entry balance. Deriving one from the
             // opening figure and then "verifying" it would check our own
             // arithmetic against itself; the real redundancy the format
             // offers is OPBD + entries = CLBD, checked once per statement.
-            resultingBalance: null);
+            ResultingBalance = null,
+        });
     }
 
     /// <summary>
@@ -418,16 +419,16 @@ public static class Camt053Parser
         if (!string.Equals(opening.Amount.Currency, closing.Amount.Currency, StringComparison.OrdinalIgnoreCase)) return;
 
         var expected = opening.Amount.Value;
-        foreach (var tx in transactions)
+        foreach (var amount in transactions.Select(tx => tx.Amount))
         {
-            if (!string.Equals(tx.Amount.Currency, opening.Amount.Currency, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(amount.Currency, opening.Amount.Currency, StringComparison.OrdinalIgnoreCase))
             {
                 // A foreign-currency entry on a statement makes the sum
                 // meaningless; we decline to check rather than to claim.
                 return;
             }
 
-            expected += tx.Amount.Value;
+            expected += amount.Value;
         }
 
         if (Math.Abs(expected - closing.Amount.Value) > Reconciliation.ToleranceMinorUnits)

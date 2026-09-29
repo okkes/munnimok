@@ -67,6 +67,20 @@ public sealed class AlbertHeijnCaptchaTests
     /// </summary>
     private const string OpaqueWidget = "[data-hcaptcha-widget-id]";
 
+    // ---- what the page saw, in order ---------------------------------------
+
+    /// <summary>A grid alone: the password leaves the DOM, then the widget is settled, photographed and tapped.</summary>
+    private static readonly string[] GridRelayed = ["clear-secrets", "settle", "screenshot", "tap"];
+
+    /// <summary>A checkbox alone: one click, nothing to relay.</summary>
+    private static readonly string[] CheckboxTicked = ["clear-secrets", "click"];
+
+    /// <summary>A checkbox that escalated: the tick, then the relay, and never a second tick.</summary>
+    private static readonly string[] CheckboxTickedThenGridRelayed = ["clear-secrets", "click", "settle", "screenshot", "tap"];
+
+    /// <summary>A widget with nothing to relay: only the password ever left the DOM.</summary>
+    private static readonly string[] SecretsClearedOnly = ["clear-secrets"];
+
     private static AlbertHeijnAdapter Adapter() => new(Options, new FixedTimeProvider(Now));
 
     // ---- the probe order, which is why any of this reaches a human --------
@@ -228,7 +242,7 @@ public sealed class AlbertHeijnCaptchaTests
         // page while a secret field holds content, so a capture attempted
         // first comes back empty, nobody is ever asked anything, and nothing
         // is ever clicked.
-        Assert.Equal(new[] { "clear-secrets", "settle", "screenshot", "tap" }, page.Calls);
+        Assert.Equal(GridRelayed, page.Calls);
         Assert.False(page.HoldsSecret);
 
         // Bytes, therefore: the picture the human tapped exists.
@@ -408,7 +422,7 @@ public sealed class AlbertHeijnCaptchaTests
         // Clicking it is the gesture the control exists to receive, and
         // frequently the whole of what the widget asks. There is nothing to
         // relay yet: no picture has been drawn.
-        Assert.Equal(new[] { "clear-secrets", "click" }, page.Calls);
+        Assert.Equal(CheckboxTicked, page.Calls);
         Assert.Equal(Checkbox, Assert.Single(page.Clicked));
 
         Assert.Empty(ctx.Asked);
@@ -440,7 +454,7 @@ public sealed class AlbertHeijnCaptchaTests
 
         // Tick, then picture, then taps - and the box, still on the page and
         // still matching its selector, is left alone.
-        Assert.Equal(new[] { "clear-secrets", "click", "settle", "screenshot", "tap" }, page.Calls);
+        Assert.Equal(CheckboxTickedThenGridRelayed, page.Calls);
         Assert.Equal(Checkbox, Assert.Single(page.Clicked));
 
         var challenge = Assert.Single(ctx.Asked);
@@ -471,7 +485,7 @@ public sealed class AlbertHeijnCaptchaTests
             ctx, page, new StubRedirectWaiter(Redirect, afterWaits: 2), taps, CancellationToken.None);
 
         Assert.Equal(Redirect, captured);
-        Assert.Equal(new[] { "clear-secrets", "click", "settle", "screenshot", "tap" }, page.Calls);
+        Assert.Equal(CheckboxTickedThenGridRelayed, page.Calls);
 
         // Ticked once and then asked - not ticked again, which would undo it.
         Assert.Equal(Checkbox, Assert.Single(page.Clicked));
@@ -591,7 +605,7 @@ public sealed class AlbertHeijnCaptchaTests
         // Nothing is relayed for it, so nothing is captured either - but the
         // job may still fail later, and the artifact the runner takes on the
         // way out must not be refused over a password nobody needs any more.
-        Assert.Equal(new[] { "clear-secrets" }, page.Calls);
+        Assert.Equal(SecretsClearedOnly, page.Calls);
         Assert.Equal(0, lease.Captures);
     }
 

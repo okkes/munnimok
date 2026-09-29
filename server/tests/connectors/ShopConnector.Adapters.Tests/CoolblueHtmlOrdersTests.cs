@@ -21,13 +21,17 @@ namespace ShopConnector.Adapters.Tests;
 /// The fixtures are built from a live capture of 2026-08-07 with this account's
 /// products, ids and dates replaced.
 /// </summary>
-public sealed class CoolblueHtmlOrdersTests
+public sealed partial class CoolblueHtmlOrdersTests
 {
     private static string Overview => FixtureCatalog.Read("coolblue/orders-overview.html");
 
     private static string Details => FixtureCatalog.Read("coolblue/order-details.html");
 
     private static CoolblueOptions Options => new() { TotalUnit = MoneyUnit.MajorString };
+
+    /// <summary>A CSS-in-JS class name, as emotion writes them.</summary>
+    [GeneratedRegex(@"css-([a-z0-9]+)")]
+    private static partial Regex EmotionClass();
 
     private static IReadOnlyList<CoolblueListing> Listings(string? body = null) =>
         CoolblueHtmlOrders.ParseList(body ?? Overview, Options, RetailZones.Dutch);
@@ -52,7 +56,7 @@ public sealed class CoolblueHtmlOrdersTests
         var before = Listings();
 
         // css-807ot0 -> css-zz807ot0, and so on for all 34 references.
-        var redeployed = Regex.Replace(Overview, @"css-([a-z0-9]+)", "css-zz$1");
+        var redeployed = EmotionClass().Replace(Overview, "css-zz$1");
         Assert.NotEqual(Overview, redeployed);
 
         var after = Listings(redeployed);

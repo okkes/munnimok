@@ -43,6 +43,14 @@ namespace Connector.Kit.Browsing;
 /// </summary>
 public static class PageShape
 {
+    private const string SelectorKey = "selector";
+
+    /// <summary>
+    /// The counts the script's <c>cut</c> block carries: how many of each kind
+    /// the caps left out of the report.
+    /// </summary>
+    private static readonly string[] CutCounts = ["buttons", "headings"];
+
     /// <summary>
     /// The script, extracted rather than described.
     /// </summary>
@@ -214,24 +222,24 @@ public static class PageShape
         Add(text, "says", Join(shape.Items("said").Select(s => s.Text())));
 
         Add(text, "inputs", Join(shape.Items("inputs").Objects().Select(i =>
-            $"{i.Text("kind")} {i.Text("selector")}"
+            $"{i.Text("kind")} {i.Text(SelectorKey)}"
             + (i.Text("autocomplete") is { } a ? $" autocomplete={a}" : string.Empty)
             + (i.Text("maxlength") is { } m ? $" maxlength={m}" : string.Empty))));
 
         Add(text, "buttons", Join(shape.Items("buttons").Objects().Select(b =>
-            $"{b.Text("selector")} \"{b.Text("label")}\"")));
+            $"{b.Text(SelectorKey)} \"{b.Text("label")}\"")));
 
         // The QR candidates, by shape rather than by content. A square canvas
         // a couple of hundred pixels across is what a scannable code looks
         // like, and its bytes ARE the code.
         Add(text, "images", Join(shape.Items("codes").Objects().Select(c =>
-            $"{c.Text("selector")} {c.Int32("w")}x{c.Int32("h")}"
+            $"{c.Text(SelectorKey)} {c.Int32("w")}x{c.Int32("h")}"
             + (c.Flag("square") ? " SQUARE" : string.Empty))));
 
         // Digits shown as text - the shape of a number a device is keyed with.
         // The count of them, never the digits.
         Add(text, "digit-runs", Join(shape.Items("shown").Objects().Select(s =>
-            $"{s.Text("selector")} ({s.Int32("digits")} digits)")));
+            $"{s.Text(SelectorKey)} ({s.Int32("digits")} digits)")));
 
         Add(text, "links", Join(shape.Items("links").Select(l => l.Text())));
 
@@ -241,7 +249,7 @@ public static class PageShape
         // controls were cut and the report still read as the whole page. It was
         // then reasoned from twice, as evidence that a control did not exist.
         var cut = shape.Child("cut");
-        var lost = new[] { "buttons", "headings" }
+        var lost = CutCounts
             .Select(what => (What: what, Count: cut.Int32(what) ?? 0))
             .Where(l => l.Count > 0)
             .Select(l => $"{l.Count} more {l.What}")

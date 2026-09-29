@@ -449,6 +449,25 @@ public sealed class JumboAdapter : IProviderAdapter
 
     // ---- login helpers -----------------------------------------------------
 
+    /// <summary>What one pass of the settle loop found.</summary>
+    private enum SettleStep
+    {
+        /// <summary>Nothing recognisable yet.</summary>
+        Nothing,
+
+        /// <summary>Back on jumbo.com and off every login marker: the session exists.</summary>
+        SignedIn,
+
+        /// <summary>A one-time code was relayed to the human and typed in.</summary>
+        CodeAnswered,
+
+        /// <summary>A wall stood and was carried to the human; the page is still worth watching.</summary>
+        WallRelayed,
+
+        /// <summary>A wall stood and nothing here could carry it.</summary>
+        WallStanding,
+    }
+
     /// <summary>
     /// Waits for the login to resolve into one of four outcomes: a session, a
     /// stated credential error, a challenge to meet, or nothing recognisable.
@@ -463,7 +482,6 @@ public sealed class JumboAdapter : IProviderAdapter
         IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
     {
         var deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
-        var poll = TimeSpan.FromSeconds(_options.SettlePollSeconds);
         var captchaSeen = false;
         var mfaAnswered = false;
 
@@ -471,48 +489,32 @@ public sealed class JumboAdapter : IProviderAdapter
         {
             ct.ThrowIfCancellationRequested();
 
-            // Back on jumbo.com and off every login marker: the session exists.
-            if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null) return;
+            var step = await SettleOnceAsync(ctx, page, watcher, mfaAnswered, captchaSeen, ct)
+                .ConfigureAwait(false);
 
-            // The page states a credential failure itself. This is the only
-            // path that may report invalid_credentials, and nothing retries it.
-            if (await page.FindAsync(_options.LoginErrorSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
-                is not null)
+            if (step is SettleStep.SignedIn) return;
+
+            if (step is SettleStep.WallStanding)
             {
-                throw ConnectorException.InvalidCredentials("jumbo: the login page stated a credential error");
+                captchaSeen = true;
+                break;
             }
 
-            if (!mfaAnswered &&
-                await page.FindAsync(_options.MfaCodeSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
-                is not null)
+            // The settle budget measures how long Jumbo takes to answer,
+            // so it restarts once a wait on a human is over: the minutes
+            // they spent are not the provider being slow.
+            if (step is SettleStep.CodeAnswered)
             {
                 mfaAnswered = true;
-                await AnswerCodeAsync(ctx, page, ct).ConfigureAwait(false);
-
-                // The settle budget measures how long Jumbo takes to answer,
-                // so it restarts once a wait on a human is over: the minutes
-                // they spent are not the provider being slow.
                 deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
                 continue;
             }
 
-            if (!captchaSeen)
+            if (step is SettleStep.WallRelayed)
             {
-                var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
-                if (wall.Kind is not CaptchaKind.None)
-                {
-                    captchaSeen = true;
-
-                    // The gate relays a picture to whoever owns the account and
-                    // refuses an interactive widget outright when nobody is
-                    // sitting at this browser. It never solves one.
-                    var outcome = await _captcha.FaceAsync(ctx, page, watcher, wall, ct).ConfigureAwait(false);
-                    if (outcome.Redirect is not null) return;
-                    if (!outcome.Handled) break;
-
-                    deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
-                    continue;
-                }
+                captchaSeen = true;
+                deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
+                continue;
             }
 
             if (_time.GetUtcNow() >= deadline) break;
@@ -523,6 +525,49 @@ public sealed class JumboAdapter : IProviderAdapter
             : ConnectorException.ProviderChanged(
                 $"jumbo: the login neither produced a session nor stated an error within " +
                 $"{_options.LoginSettleSeconds}s; last url was '{page.Url}'");
+    }
+
+    /// <summary>
+    /// One pass of the settle loop: a look for the session, for a stated
+    /// credential error, for a code box and for a wall, in that order.
+    /// </summary>
+    private async Task<SettleStep> SettleOnceAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, bool mfaAnswered, bool captchaSeen,
+        CancellationToken ct)
+    {
+        var poll = TimeSpan.FromSeconds(_options.SettlePollSeconds);
+
+        // Back on jumbo.com and off every login marker: the session exists.
+        if (await watcher.WaitAsync(poll, ct).ConfigureAwait(false) is not null) return SettleStep.SignedIn;
+
+        // The page states a credential failure itself. This is the only
+        // path that may report invalid_credentials, and nothing retries it.
+        if (await page.FindAsync(_options.LoginErrorSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
+            is not null)
+        {
+            throw ConnectorException.InvalidCredentials("jumbo: the login page stated a credential error");
+        }
+
+        if (!mfaAnswered &&
+            await page.FindAsync(_options.MfaCodeSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
+            is not null)
+        {
+            await AnswerCodeAsync(ctx, page, ct).ConfigureAwait(false);
+            return SettleStep.CodeAnswered;
+        }
+
+        if (captchaSeen) return SettleStep.Nothing;
+
+        var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
+        if (wall.Kind is CaptchaKind.None) return SettleStep.Nothing;
+
+        // The gate relays a picture to whoever owns the account and
+        // refuses an interactive widget outright when nobody is
+        // sitting at this browser. It never solves one.
+        var outcome = await _captcha.FaceAsync(ctx, page, watcher, wall, ct).ConfigureAwait(false);
+        if (outcome.Redirect is not null) return SettleStep.SignedIn;
+
+        return outcome.Handled ? SettleStep.WallRelayed : SettleStep.WallStanding;
     }
 
     /// <summary>
@@ -566,9 +611,9 @@ public sealed class JumboAdapter : IProviderAdapter
     /// </summary>
     private sealed record Walk
     {
-        public required IReadOnlyList<JumboOrderSummary> Orders { get; init; }
+        public required List<JumboOrderSummary> Orders { get; init; }
 
-        public required IReadOnlyList<JumboStoreReceiptSummary> StoreReceipts { get; init; }
+        public required List<JumboStoreReceiptSummary> StoreReceipts { get; init; }
 
         public required bool Complete { get; init; }
     }
@@ -611,69 +656,14 @@ public sealed class JumboAdapter : IProviderAdapter
 
             if (!ordersDone)
             {
-                var rows = JumboOrders.Rows(root, _options);
-                var fresh = 0;
-                var older = 0;
-
-                foreach (var row in rows)
-                {
-                    var summary = JumboOrders.ParseSummary(row, _options, zone, request.WantsRaw);
-                    if (summary is null) continue;              // unkeyable rows cannot be deduped
-                    if (!seenOrders.Add(summary.OrderId)) continue;
-
-                    fresh++;
-                    if (request.Since is { } since && DateOnly.FromDateTime(summary.PurchasedAt.Date) < since) older++;
-                    if (ReceiptFactory.InWindow(summary.PurchasedAt, request)) orders.Add(summary);
-                }
-
+                ordersDone = CollectOrdersPage(root, request, zone, cap, orders, seenOrders);
                 ordersOffset += _options.OrdersPageSize;
-
-                var stated = JumboOrders.TotalCount(root, _options);
-
-                ordersDone =
-                    rows.Count == 0
-                    // The offset is not advancing anything upstream; carrying
-                    // on would be the same request twenty times against a
-                    // defended endpoint.
-                    || fresh == 0
-                    // Newest first, so a page entirely below the window means
-                    // every later page is too.
-                    || older == rows.Count
-                    || rows.Count < _options.OrdersPageSize
-                    || (stated is { } total && seenOrders.Count >= total)
-                    || orders.Count > cap;
             }
 
             if (!receiptsDone)
             {
-                var rows = JumboStoreReceipts.Rows(root, _options);
-                var fresh = 0;
-                var older = 0;
-
-                foreach (var row in rows)
-                {
-                    var summary = JumboStoreReceipts.ParseSummary(row, _options, zone);
-                    if (summary is null) continue;
-                    if (!seenReceipts.Add(summary.TransactionId)) continue;
-
-                    fresh++;
-                    if (request.Since is { } since && DateOnly.FromDateTime(summary.PurchasedAt.Date) < since) older++;
-                    if (ReceiptFactory.InWindow(summary.PurchasedAt, request)) receipts.Add(summary);
-                }
-
+                receiptsDone = CollectReceiptsPage(root, request, zone, cap, receipts, seenReceipts);
                 receiptsPage++;
-
-                // receiptOverview states totalResults, so this walk ends on a
-                // number rather than on a heuristic.
-                var stated = JumboStoreReceipts.TotalResults(root, _options);
-
-                receiptsDone =
-                    rows.Count == 0
-                    || fresh == 0
-                    || older == rows.Count
-                    || rows.Count < _options.ReceiptsPageSize
-                    || (stated is { } total && seenReceipts.Count >= total)
-                    || receipts.Count > cap;
             }
         }
 
@@ -706,6 +696,79 @@ public sealed class JumboAdapter : IProviderAdapter
             StoreReceipts = selectedReceipts,
             Complete = complete,
         };
+    }
+
+    /// <summary>
+    /// One page of online orders, folded into the walk. True when that side
+    /// has nothing more to give.
+    /// </summary>
+    private bool CollectOrdersPage(
+        JsonElement root, ResourceRequest request, TimeZoneInfo zone, int cap,
+        List<JumboOrderSummary> orders, HashSet<string> seen)
+    {
+        var rows = JumboOrders.Rows(root, _options);
+        var fresh = 0;
+        var older = 0;
+
+        foreach (var row in rows)
+        {
+            var summary = JumboOrders.ParseSummary(row, _options, zone, request.WantsRaw);
+            if (summary is null) continue;              // unkeyable rows cannot be deduped
+            if (!seen.Add(summary.OrderId)) continue;
+
+            fresh++;
+            if (request.Since is { } since && DateOnly.FromDateTime(summary.PurchasedAt.Date) < since) older++;
+            if (ReceiptFactory.InWindow(summary.PurchasedAt, request)) orders.Add(summary);
+        }
+
+        var stated = JumboOrders.TotalCount(root, _options);
+
+        return rows.Count == 0
+               // The offset is not advancing anything upstream; carrying
+               // on would be the same request twenty times against a
+               // defended endpoint.
+               || fresh == 0
+               // Newest first, so a page entirely below the window means
+               // every later page is too.
+               || older == rows.Count
+               || rows.Count < _options.OrdersPageSize
+               || (stated is { } total && seen.Count >= total)
+               || orders.Count > cap;
+    }
+
+    /// <summary>
+    /// One page of in-store receipts, folded into the walk. True when that
+    /// side has nothing more to give.
+    /// </summary>
+    private bool CollectReceiptsPage(
+        JsonElement root, ResourceRequest request, TimeZoneInfo zone, int cap,
+        List<JumboStoreReceiptSummary> receipts, HashSet<string> seen)
+    {
+        var rows = JumboStoreReceipts.Rows(root, _options);
+        var fresh = 0;
+        var older = 0;
+
+        foreach (var row in rows)
+        {
+            var summary = JumboStoreReceipts.ParseSummary(row, _options, zone);
+            if (summary is null) continue;
+            if (!seen.Add(summary.TransactionId)) continue;
+
+            fresh++;
+            if (request.Since is { } since && DateOnly.FromDateTime(summary.PurchasedAt.Date) < since) older++;
+            if (ReceiptFactory.InWindow(summary.PurchasedAt, request)) receipts.Add(summary);
+        }
+
+        // receiptOverview states totalResults, so this walk ends on a
+        // number rather than on a heuristic.
+        var stated = JumboStoreReceipts.TotalResults(root, _options);
+
+        return rows.Count == 0
+               || fresh == 0
+               || older == rows.Count
+               || rows.Count < _options.ReceiptsPageSize
+               || (stated is { } total && seen.Count >= total)
+               || receipts.Count > cap;
     }
 
     // ---- building one receipt ---------------------------------------------
@@ -883,11 +946,6 @@ public sealed class JumboAdapter : IProviderAdapter
     internal static string OrderExternalId(string orderId) => $"order-{orderId}";
 
     internal static string ReceiptExternalId(string transactionId) => $"receipt-{transactionId}";
-
-    private static string RequiredInput(IJobContext ctx, string key) =>
-        ctx.Inputs.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)
-            ? value
-            : throw ConnectorException.InvalidRequest($"jumbo: '{key}' is required");
 
     private static ConnectorException Missing(string what, IReadOnlyList<string> selectors) =>
         ConnectorException.ProviderChanged(

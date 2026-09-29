@@ -130,7 +130,7 @@ internal sealed class BolHtmlShape : IBolOrdersShape
                ?? BolHtml.Text(element.Inner);
     }
 
-    private static IReadOnlyList<ReceiptItem> ParseItems(HtmlElement block, BolOptions options, string orderId)
+    private static List<ReceiptItem> ParseItems(HtmlElement block, BolOptions options, string orderId)
     {
         var lines = BolHtml.All(block.Inner, options.ItemBlockSelectors);
         if (lines.Count == 0) return [];

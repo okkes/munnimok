@@ -61,12 +61,9 @@ public static class AuthInputValidator
     {
         var byKey = declared.ToDictionary(f => f.Key, StringComparer.Ordinal);
 
-        foreach (var key in supplied.Keys)
+        if (supplied.Keys.FirstOrDefault(key => !byKey.ContainsKey(key)) is { } unknown)
         {
-            if (!byKey.ContainsKey(key))
-            {
-                throw ConnectorException.InvalidRequest($"unknown {what} '{key}'");
-            }
+            throw ConnectorException.InvalidRequest($"unknown {what} '{unknown}'");
         }
 
         foreach (var field in declared)

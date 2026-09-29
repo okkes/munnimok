@@ -219,6 +219,16 @@ public sealed class ScreenshotRedactor
   return parts.join('\n');
 }";
 
+    /// <summary>
+    /// Masked on every page, whatever the manifest declares: the inputs a form
+    /// itself marks as holding a password, by type or by autofill hint.
+    /// </summary>
+    private static readonly string[] PasswordInputSelectors =
+    [
+        "input[type=password]",
+        "input[autocomplete*=password i]",
+    ];
+
     private readonly ILogger _logger;
 
     /// <summary>
@@ -244,9 +254,7 @@ public sealed class ScreenshotRedactor
                 .Select(f => new[] { f.Key, SelectorFor(f) }),
         ];
 
-        _maskSelector = string.Join(", ",
-            new[] { "input[type=password]", "input[autocomplete*=password i]" }
-                .Concat(_probes.Select(p => p[1])));
+        _maskSelector = string.Join(", ", PasswordInputSelectors.Concat(_probes.Select(p => p[1])));
     }
 
     /// <summary>
@@ -626,7 +634,7 @@ public sealed class ScreenshotRedactor
         }
     }
 
-    private IReadOnlyList<ILocator> MaskLocators(IPage page)
+    private List<ILocator> MaskLocators(IPage page)
     {
         var masks = new List<ILocator>(page.Frames.Count);
         foreach (var frame in page.Frames)

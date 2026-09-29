@@ -389,9 +389,11 @@ public sealed class BkrAdapter : IProviderAdapter
             Registrations = credits,
             Complete = true,
             Via = "portal",
-            Raw = request.WantsRaw
-                ? new Dictionary<string, string>(StringComparer.Ordinal)
-                : new Dictionary<string, string>(StringComparer.Ordinal),
+
+            // Nothing to hand back, asked for or not. The record is scraped
+            // out of a page, and the kit's own rule for that is an empty raw
+            // rather than an invented shape.
+            Raw = new Dictionary<string, string>(StringComparer.Ordinal),
         };
     }
 

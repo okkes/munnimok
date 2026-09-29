@@ -74,11 +74,13 @@ public sealed class AgentRoster
             last = _retired.Count >= _total;
         }
 
-        _logger.LogWarning("{Connection}: no longer served: {Why}", connection, why);
+        if (!last)
+        {
+            _logger.LogWarning("{Connection}: no longer served: {Why}", connection, why);
+            return;
+        }
 
-        if (!last) return;
-
-        _logger.LogWarning("no connector is left to serve; stopping");
+        _logger.LogWarning("{Connection}: no longer served: {Why}; no connector is left to serve, stopping", connection, why);
         _lifetime.StopApplication();
     }
 }

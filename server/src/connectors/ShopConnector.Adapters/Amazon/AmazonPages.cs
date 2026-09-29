@@ -347,7 +347,7 @@ internal static class AmazonGuard
             return new AmazonVerdict(AmazonPageKind.Interactive, challenge);
         }
 
-        if (Contains(page.Url, options.SignInUrlMarkers) is { } signIn)
+        if (Marker(page.Url, options.SignInUrlMarkers) is { } signIn)
         {
             return new AmazonVerdict(AmazonPageKind.SignIn, signIn);
         }
@@ -387,25 +387,12 @@ internal static class AmazonGuard
         };
     }
 
-    private static string? Marker(string html, IReadOnlyList<string> markers)
-    {
-        foreach (var marker in markers)
-        {
-            if (html.Contains(marker, StringComparison.OrdinalIgnoreCase)) return marker;
-        }
-
-        return null;
-    }
-
-    private static string? Contains(string url, IReadOnlyList<string> markers)
-    {
-        foreach (var marker in markers)
-        {
-            if (url.Contains(marker, StringComparison.OrdinalIgnoreCase)) return marker;
-        }
-
-        return null;
-    }
+    /// <summary>
+    /// The first of <paramref name="markers"/> that <paramref name="text"/> -
+    /// a page's markup or its address - carries, or null.
+    /// </summary>
+    private static string? Marker(string text, IReadOnlyList<string> markers) =>
+        markers.FirstOrDefault(marker => text.Contains(marker, StringComparison.OrdinalIgnoreCase));
 }
 
 // AmazonRawInvoice lived here: the print page, wrapped with its URL and

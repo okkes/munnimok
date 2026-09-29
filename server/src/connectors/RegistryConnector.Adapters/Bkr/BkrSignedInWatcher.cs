@@ -34,9 +34,9 @@ internal sealed class BkrSignedInWatcher(ILoginPage page, BkrOptions options, Ti
                && !url.Contains(options.LoginHost, StringComparison.OrdinalIgnoreCase);
     }
 
-    public async Task<string?> WaitAsync(TimeSpan patience, CancellationToken ct)
+    public async Task<string?> WaitAsync(TimeSpan timeout, CancellationToken ct)
     {
-        var deadline = time.GetUtcNow() + patience;
+        var deadline = time.GetUtcNow() + timeout;
 
         while (true)
         {

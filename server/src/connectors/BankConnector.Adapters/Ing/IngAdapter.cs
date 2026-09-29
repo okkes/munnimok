@@ -98,18 +98,18 @@ public sealed class IngAdapter : IProviderAdapter
         if (!await page.FillAsync(_options.UsernameSelectors, username, _options.StepProbeMs, ct)
                 .ConfigureAwait(false))
         {
-            throw await UnusableAsync(ctx, page, portal, "the username box", _options.UsernameSelectors, ct).ConfigureAwait(false);
+            throw await UnusableAsync(page, portal, "the username box", _options.UsernameSelectors, ct).ConfigureAwait(false);
         }
 
         if (!await page.FillAsync(_options.PasswordSelectors, password, _options.StepProbeMs, ct)
                 .ConfigureAwait(false))
         {
-            throw await UnusableAsync(ctx, page, portal, "the password box", _options.PasswordSelectors, ct).ConfigureAwait(false);
+            throw await UnusableAsync(page, portal, "the password box", _options.PasswordSelectors, ct).ConfigureAwait(false);
         }
 
         if (!await page.ClickAsync(_options.SubmitSelectors, _options.StepProbeMs, ct).ConfigureAwait(false))
         {
-            throw await UnusableAsync(ctx, page, portal, "the sign-in button", _options.SubmitSelectors, ct).ConfigureAwait(false);
+            throw await UnusableAsync(page, portal, "the sign-in button", _options.SubmitSelectors, ct).ConfigureAwait(false);
         }
 
         // From here a retry could count against the account. Said before the
@@ -207,7 +207,7 @@ public sealed class IngAdapter : IProviderAdapter
         // approval landed. Left to say what it actually is.
         _ = IngCalls.Body(observed[0], "the overview's transactions call", ctx.Note);
 
-        var accounts = (await AccountsAsync(ctx, portal, Today(), ct).ConfigureAwait(false)).Accounts;
+        var accounts = (await AccountsAsync(ctx, portal, Today(), ct).ConfigureAwait(false)).Found;
 
         return new LoginResult
         {
@@ -297,14 +297,14 @@ public sealed class IngAdapter : IProviderAdapter
 
         var today = Today();
         var read = await AccountsAsync(ctx, portal, today, ct).ConfigureAwait(false);
-        var accounts = read.Accounts;
+        var accounts = read.Found;
         var selected = BankAccountFilter.Select([.. accounts.Select(a => a.Record)], request);
 
         return request.ResourceId switch
         {
             BankResources.Accounts => Accounts(ctx, selected, read),
             BankResources.Transactions =>
-                await TransactionsAsync(ctx, request, portal, read, selected, observed, today, ct)
+                await TransactionsAsync(ctx, portal, read, selected, observed, Limits(request, today), ct)
                     .ConfigureAwait(false),
             _ => throw ConnectorException.Unsupported($"{ProviderId}: no resource '{request.ResourceId}'"),
         };
@@ -336,7 +336,26 @@ public sealed class IngAdapter : IProviderAdapter
     /// somewhere no program will ever read.
     /// </para>
     /// </remarks>
-    private sealed record IngAccountList(IReadOnlyList<IngAccount> Accounts, bool Everything, string Via);
+    private sealed record IngAccountList(IReadOnlyList<IngAccount> Found, bool Everything, string Via);
+
+    /// <summary>
+    /// How far one walk goes: the window it has to cover, and the most rows it
+    /// may bring back.
+    /// </summary>
+    /// <remarks>
+    /// For the whole page, <see cref="Cap"/> is the page's budget; for one
+    /// account's walk it is that account's share of it - see
+    /// <see cref="TransactionsAsync"/>.
+    /// </remarks>
+    private readonly record struct WalkLimits(FetchWindow Window, int Cap);
+
+    /// <summary>The window a transactions request covers, and the page's row cap.</summary>
+    private WalkLimits Limits(ResourceRequest request, DateOnly today) =>
+        new(
+            BankWindow.Resolve(request, Manifest, today),
+            _options.RecordCap
+            ?? Manifest.Resource(BankResources.Transactions)?.MaxRecordsPerFetch
+            ?? 200);
 
     /// <summary>
     /// The transaction history: the observed call per account, then ING's own
@@ -361,22 +380,17 @@ public sealed class IngAdapter : IProviderAdapter
     /// </remarks>
     private async Task<FetchResult> TransactionsAsync(
         IJobContext ctx,
-        ResourceRequest request,
         IIngPortal portal,
         IngAccountList read,
         IReadOnlyList<Account> selected,
         IReadOnlyList<IngCall> observed,
-        DateOnly today,
+        WalkLimits limits,
         CancellationToken ct)
     {
-        var accounts = read.Accounts;
-        var window = BankWindow.Resolve(request, Manifest, today);
-        var cap = _options.RecordCap
-                  ?? Manifest.Resource(BankResources.Transactions)?.MaxRecordsPerFetch
-                  ?? 200;
+        var accounts = read.Found;
+        var cap = limits.Cap;
 
         var rows = new List<Transaction>();
-        var complete = true;
         var served = new HashSet<string>(StringComparer.Ordinal);
 
         // WHO WILL BE WALKED, DECIDED BEFORE ANYTHING IS.
@@ -393,59 +407,8 @@ public sealed class IngAdapter : IProviderAdapter
         // history that reads exactly like an account nothing has happened on.
         var plan = new List<(IngAccount Account, IngCall? Opening)>();
 
-        // How many observed pages have had to be attributed by inference rather
-        // than by what they state. A second one is a contradiction - see
-        // Attribute.
-        var unnamed = 0;
-
-        foreach (var call in observed)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            using var opening = JsonDocument.Parse(IngCalls.Body(call, "a page of transactions", ctx.Note));
-
-            if (Attribute(ctx, opening, accounts, ref unnamed) is not { } account) continue;
-
-            if (!selected.Any(a => string.Equals(a.Id, account.Record.Id, StringComparison.Ordinal))) continue;
-
-            // ONE WALK PER ACCOUNT, however many calls ING's client made for
-            // it. The latch keys on the request url, so a page fetched twice
-            // with different query - a retry, a widget asking for its own
-            // slice - arrives as two entries naming the same account, and
-            // walking both would emit every row of it twice.
-            if (!served.Add(account.Record.Id)) continue;
-
-            plan.Add((account, call));
-        }
-
-        // EVERY OTHER SELECTED ACCOUNT, BY ITS OWN LINK.
-        //
-        // ING's overview fetches transactions per current account and for
-        // nothing else, so anything else selected would have come back empty -
-        // and did, for several releases, reported as "ING offers that history
-        // as a download only". It does not: every agreement states the address
-        // of its own feed, and the walk below is the same one.
-        foreach (var account in accounts)
-        {
-            if (served.Contains(account.Record.Id)) continue;
-            if (!selected.Any(a => string.Equals(a.Id, account.Record.Id, StringComparison.Ordinal))) continue;
-
-            if (account.TransactionsPath is null)
-            {
-                // Incomplete, not empty. A caller asked for this account's
-                // history and is getting none; saying "complete" about that
-                // would be telling them there is nothing there.
-                complete = false;
-                ctx.Note(
-                    $"{ProviderId}: ING states no transactions link for {AccountTypes.Wire(account.Record.Type)} " +
-                    $"account {account.Record.ExternalId}, so no history could be read for it");
-
-                continue;
-            }
-
-            served.Add(account.Record.Id);
-            plan.Add((account, null));
-        }
+        PlanObserved(ctx, observed, accounts, selected, served, plan, ct);
+        var complete = PlanOwnFeeds(ctx, accounts, selected, served, plan);
 
         for (var i = 0; i < plan.Count; i++)
         {
@@ -458,11 +421,11 @@ public sealed class IngAdapter : IProviderAdapter
             // savings account with twelve rows leaves the rest to the current
             // account rather than costing it a share of the page.
             var budget = Math.Max(1, (cap - rows.Count) / (plan.Count - i));
+            var share = limits with { Cap = budget };
 
             var walked = opening is { } call
-                ? await ObservedAsync(ctx, portal, call, account.Record, window, budget, ct).ConfigureAwait(false)
-                : await OwnFeedAsync(
-                        ctx, portal, account, account.TransactionsPath!, observed, window, budget, ct)
+                ? await ObservedAsync(ctx, portal, call, account.Record, share, ct).ConfigureAwait(false)
+                : await OwnFeedAsync(ctx, portal, account, account.TransactionsPath!, observed, share, ct)
                     .ConfigureAwait(false);
 
             complete &= walked.Complete;
@@ -549,6 +512,98 @@ public sealed class IngAdapter : IProviderAdapter
     }
 
     /// <summary>
+    /// The first half of the plan: the accounts ING's own overview already
+    /// fetched a page for, each walked from that page.
+    /// </summary>
+    private static void PlanObserved(
+        IJobContext ctx,
+        IReadOnlyList<IngCall> observed,
+        IReadOnlyList<IngAccount> accounts,
+        IReadOnlyList<Account> selected,
+        HashSet<string> served,
+        List<(IngAccount Account, IngCall? Opening)> plan,
+        CancellationToken ct)
+    {
+        // How many observed pages have had to be attributed by inference rather
+        // than by what they state. A second one is a contradiction - see
+        // Attribute.
+        var unnamed = 0;
+
+        foreach (var call in observed)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            using var opening = JsonDocument.Parse(IngCalls.Body(call, "a page of transactions", ctx.Note));
+
+            if (Attribute(ctx, opening, accounts, ref unnamed) is not { } account) continue;
+
+            if (!IsSelected(selected, account)) continue;
+
+            // ONE WALK PER ACCOUNT, however many calls ING's client made for
+            // it. The latch keys on the request url, so a page fetched twice
+            // with different query - a retry, a widget asking for its own
+            // slice - arrives as two entries naming the same account, and
+            // walking both would emit every row of it twice.
+            if (!served.Add(account.Record.Id)) continue;
+
+            plan.Add((account, call));
+        }
+    }
+
+    /// <summary>
+    /// The second half of the plan: every other selected account, by the link
+    /// its own agreement states.
+    /// </summary>
+    /// <returns>
+    /// False when a selected account states no link, because a caller asked
+    /// for its history and is getting none.
+    /// </returns>
+    private static bool PlanOwnFeeds(
+        IJobContext ctx,
+        IReadOnlyList<IngAccount> accounts,
+        IReadOnlyList<Account> selected,
+        HashSet<string> served,
+        List<(IngAccount Account, IngCall? Opening)> plan)
+    {
+        var complete = true;
+
+        // EVERY OTHER SELECTED ACCOUNT, BY ITS OWN LINK.
+        //
+        // ING's overview fetches transactions per current account and for
+        // nothing else, so anything else selected would have come back empty -
+        // and did, for several releases, reported as "ING offers that history
+        // as a download only". It does not: every agreement states the address
+        // of its own feed, and the walk below is the same one.
+        foreach (var account in accounts)
+        {
+            if (served.Contains(account.Record.Id)) continue;
+            if (!IsSelected(selected, account)) continue;
+
+            if (account.TransactionsPath is null)
+            {
+                // Incomplete, not empty. A caller asked for this account's
+                // history and is getting none; saying "complete" about that
+                // would be telling them there is nothing there.
+                complete = false;
+                ctx.Note(
+                    $"{ProviderId}: ING states no transactions link for {AccountTypes.Wire(account.Record.Type)} " +
+                    $"account {account.Record.ExternalId}, so no history could be read for it");
+
+                continue;
+            }
+
+            served.Add(account.Record.Id);
+            plan.Add((account, null));
+        }
+
+        return complete;
+    }
+
+    /// <summary>Did the caller ask for this account?</summary>
+    private static bool IsSelected(IReadOnlyList<Account> selected, IngAccount account) =>
+        selected.Any(a => string.Equals(a.Id, account.Record.Id, StringComparison.Ordinal));
+
+    /// <summary>
     /// One account's history from the call ING'S OWN CLIENT made for it.
     /// </summary>
     /// <remarks>
@@ -568,15 +623,14 @@ public sealed class IngAdapter : IProviderAdapter
         IIngPortal portal,
         IngCall call,
         Account account,
-        FetchWindow window,
-        int budget,
+        WalkLimits limits,
         CancellationToken ct)
     {
         try
         {
             using var opening = JsonDocument.Parse(IngCalls.Body(call, "a page of transactions", ctx.Note));
 
-            return await WalkAsync(ctx, portal, call, opening, account, window, budget, ct).ConfigureAwait(false);
+            return await WalkAsync(ctx, portal, call, opening, account, limits, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is ConnectorException or JsonException)
         {
@@ -618,15 +672,11 @@ public sealed class IngAdapter : IProviderAdapter
         IngAccount account,
         string path,
         IReadOnlyList<IngCall> observed,
-        FetchWindow window,
-        int cap,
+        WalkLimits limits,
         CancellationToken ct)
     {
         var what = $"the {AccountTypes.Wire(account.Record.Type)} account's own transactions";
-
-        var headers = observed.Count > 0
-            ? observed[0].Headers
-            : portal.Seen(_options.AgreementsPath) is [var agreements, ..] ? agreements.Headers : null;
+        var headers = BorrowedHeaders(portal, observed);
 
         IngCall call;
 
@@ -643,7 +693,7 @@ public sealed class IngAdapter : IProviderAdapter
             try
             {
                 return await WalkAsync(
-                        ctx, portal, call with { Headers = headers }, opening, account.Record, window, cap, ct)
+                        ctx, portal, call with { Headers = headers }, opening, account.Record, limits, ct)
                     .ConfigureAwait(false);
             }
             catch (ConnectorException ex) when (ex.Code is ErrorCode.ProviderChanged)
@@ -674,6 +724,18 @@ public sealed class IngAdapter : IProviderAdapter
     }
 
     /// <summary>
+    /// The headers a composed request borrows: an observed transactions
+    /// call's, or the agreement list's when no transactions call was seen.
+    /// See <see cref="OwnFeedAsync"/> for why that order.
+    /// </summary>
+    private IReadOnlyDictionary<string, string>? BorrowedHeaders(IIngPortal portal, IReadOnlyList<IngCall> observed)
+    {
+        if (observed.Count > 0) return observed[0].Headers;
+
+        return portal.Seen(_options.AgreementsPath) is [var agreements, ..] ? agreements.Headers : null;
+    }
+
+    /// <summary>
     /// One account's pages, from the observed call to ING's last cursor.
     /// </summary>
     /// <remarks>
@@ -691,19 +753,10 @@ public sealed class IngAdapter : IProviderAdapter
         IngCall opening,
         JsonDocument document,
         Account account,
-        FetchWindow window,
-        int cap,
+        WalkLimits limits,
         CancellationToken ct)
     {
-        var rows = new List<Transaction>();
-        var complete = true;
-        var pages = 0;
-        var reservations = 0;
-        var derived = 0;
-        var chained = false;
-        var unclassified = new List<string>();
-        var details = new List<string>();
-
+        var walk = new Walk();
         var owned = false;
 
         try
@@ -713,95 +766,22 @@ public sealed class IngAdapter : IProviderAdapter
                 ct.ThrowIfCancellationRequested();
 
                 var page = IngTransactions.Read(document, ctx.SessionId, account.Id);
-                pages++;
-                reservations += page.Reservations;
-
-                foreach (var message in page.Messages)
-                {
-                    ctx.Note($"{ProviderId}: ING said '{message}' about a page of transactions");
-                }
-
-                rows.AddRange(page.Transactions.Where(t => window.Contains(t.BookedAt)));
-
-                // COUNTED ON WHAT SURVIVES THE WINDOW, not on what was read.
-                // The two differ on every page that straddles the edge of the
-                // window, and counting the wrong one produced "10 of 3
-                // transaction(s) carry a derived id" on a live run.
-                derived = rows.Count(IngTransactions.IsDerived);
-                chained = rows.Exists(t => t.ResultingBalance is not null);
-
-                unclassified.AddRange(page.Unclassified.Except(unclassified, StringComparer.Ordinal));
-
-                // ACROSS THE WHOLE WALK, and kept in page order, because the two
-                // things that give a position away only show up that way: the
-                // same tail arriving twice, and a run that restarts when the
-                // next page begins.
-                details.AddRange(page.DetailIds);
+                Absorb(ctx, walk, page, limits.Window);
 
                 // The oldest row on this page is already before the window, so
                 // every page after it is too. Checked before the cursor is
                 // followed rather than after the whole walk, because an account
                 // with ten years on it is fifty pages a caller asked nothing
                 // about.
-                if (page.Transactions.Count > 0 && page.Transactions[^1].BookedAt < window.From) break;
+                if (page.Transactions.Count > 0 && page.Transactions[^1].BookedAt < limits.Window.From) break;
 
                 if (page.NextPath is not { } next) break;
 
-                if (pages >= _options.MaxPages || rows.Count >= cap)
-                {
-                    complete = false;
+                if (Exhausted(ctx, walk, account, limits)) break;
 
-                    // WHERE IT STOPPED, not just that it did. ING serves newest
-                    // first, so the oldest row read is the boundary - and the
-                    // caller continues by asking again with `until` set to it,
-                    // which is a parameter this resource already takes. A note
-                    // that says only "partial" leaves them to binary-search
-                    // their own history.
-                    var oldest = rows.Count > 0 ? rows[^1].BookedAt : window.From;
+                var body = await NextPageAsync(ctx, portal, opening, next, account, walk, ct).ConfigureAwait(false);
 
-                    ctx.Note(
-                        $"{ProviderId}: stopped after {pages} page(s) with {rows.Count} transaction(s) for " +
-                        $"{account.ExternalId}, at {oldest:yyyy-MM-dd}. There is more before that date: ask " +
-                        $"again with until={oldest:yyyy-MM-dd} to continue from here");
-
-                    break;
-                }
-
-                string body;
-
-                using (await ctx.Pacer.EnterAsync(ct).ConfigureAwait(false))
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(_options.PageGapMs), _time, ct).ConfigureAwait(false);
-
-                    // THE HEADERS OF THE CALL THIS CONTINUES, not of whatever
-                    // ING's client asked for most recently. A cursor page is
-                    // the same request one step further on, and the live run
-                    // that went out with two headers on it was refused by ING's
-                    // webserver.
-                    var call = await portal.ReadAsync(next, opening.Headers, ct).ConfigureAwait(false);
-
-                    try
-                    {
-                        body = IngCalls.Body(call, $"page {pages + 1} of transactions", ctx.Note);
-                    }
-                    catch (ConnectorException ex)
-                    {
-                        // A COMPOSED REQUEST REFUSED, not a dead session. ING's
-                        // own client served page one on this very session
-                        // moments ago; what failed is the page this connector
-                        // built, and ING's edge is known to answer one of those
-                        // with a 401 while the session is perfectly alive.
-                        // Reporting that as session_expired would send somebody
-                        // to re-authenticate over a page they already have.
-                        complete = false;
-                        ctx.Note(
-                            $"{ProviderId}: page {pages + 1} for {account.ExternalId} was refused " +
-                            $"({ex.Code}), so this pass stops at {rows.Count} transaction(s) and is " +
-                            $"partial. The headers repeated from ING's own call were: " +
-                            $"[{string.Join(", ", (opening.Headers?.Keys ?? []).Order(StringComparer.Ordinal))}]");
-                        break;
-                    }
-                }
+                if (body is null) break;
 
                 if (owned) document.Dispose();
 
@@ -814,7 +794,148 @@ public sealed class IngAdapter : IProviderAdapter
             if (owned) document.Dispose();
         }
 
-        if (reservations > 0)
+        Report(ctx, walk, account);
+
+        return (walk.Rows, walk.Complete);
+    }
+
+    /// <summary>
+    /// What one account's cursor walk has gathered so far.
+    /// </summary>
+    /// <remarks>
+    /// The tallies in one place rather than a row of locals, so each step of
+    /// the walk - absorbing a page, deciding whether to go on, asking for the
+    /// next page, reporting - can be read on its own.
+    /// </remarks>
+    private sealed class Walk
+    {
+        /// <summary>The rows inside the window, in ING's order: newest first.</summary>
+        public List<Transaction> Rows { get; } = [];
+
+        public int Pages { get; set; }
+
+        /// <summary>How many unsettled reservations the pages carried and this walk left out.</summary>
+        public int Reservations { get; set; }
+
+        public bool Complete { get; set; } = true;
+
+        /// <summary>ING's own codes on the rows this reader could not classify, distinct, in page order.</summary>
+        public List<string> Unclassified { get; } = [];
+
+        /// <summary>The tail of every derived row's detail link, in page order across the whole walk.</summary>
+        public List<string> Details { get; } = [];
+    }
+
+    /// <summary>
+    /// Folds one page into the walk: the rows inside the window, and
+    /// everything the report at the end is built from.
+    /// </summary>
+    private static void Absorb(IJobContext ctx, Walk walk, IngTransactionPage page, FetchWindow window)
+    {
+        walk.Pages++;
+        walk.Reservations += page.Reservations;
+
+        foreach (var message in page.Messages)
+        {
+            ctx.Note($"{ProviderId}: ING said '{message}' about a page of transactions");
+        }
+
+        walk.Rows.AddRange(page.Transactions.Where(t => window.Contains(t.BookedAt)));
+
+        walk.Unclassified.AddRange(page.Unclassified.Except(walk.Unclassified, StringComparer.Ordinal));
+
+        // ACROSS THE WHOLE WALK, and kept in page order, because the two
+        // things that give a position away only show up that way: the
+        // same tail arriving twice, and a run that restarts when the
+        // next page begins.
+        walk.Details.AddRange(page.DetailIds);
+    }
+
+    /// <summary>
+    /// Has the walk spent its pages or its rows? Said out loud when it has,
+    /// with where it stopped.
+    /// </summary>
+    private bool Exhausted(IJobContext ctx, Walk walk, Account account, WalkLimits limits)
+    {
+        if (walk.Pages < _options.MaxPages && walk.Rows.Count < limits.Cap) return false;
+
+        walk.Complete = false;
+
+        // WHERE IT STOPPED, not just that it did. ING serves newest
+        // first, so the oldest row read is the boundary - and the
+        // caller continues by asking again with `until` set to it,
+        // which is a parameter this resource already takes. A note
+        // that says only "partial" leaves them to binary-search
+        // their own history.
+        var oldest = walk.Rows.Count > 0 ? walk.Rows[^1].BookedAt : limits.Window.From;
+
+        ctx.Note(
+            $"{ProviderId}: stopped after {walk.Pages} page(s) with {walk.Rows.Count} transaction(s) for " +
+            $"{account.ExternalId}, at {oldest:yyyy-MM-dd}. There is more before that date: ask " +
+            $"again with until={oldest:yyyy-MM-dd} to continue from here");
+
+        return true;
+    }
+
+    /// <summary>
+    /// The next page's body, asked for with the headers of the call it
+    /// continues - or null when ING refused the request this connector
+    /// composed, which ends the walk as partial rather than as failed.
+    /// </summary>
+    private async Task<string?> NextPageAsync(
+        IJobContext ctx,
+        IIngPortal portal,
+        IngCall opening,
+        string next,
+        Account account,
+        Walk walk,
+        CancellationToken ct)
+    {
+        using (await ctx.Pacer.EnterAsync(ct).ConfigureAwait(false))
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(_options.PageGapMs), _time, ct).ConfigureAwait(false);
+
+            // THE HEADERS OF THE CALL THIS CONTINUES, not of whatever
+            // ING's client asked for most recently. A cursor page is
+            // the same request one step further on, and the live run
+            // that went out with two headers on it was refused by ING's
+            // webserver.
+            var call = await portal.ReadAsync(next, opening.Headers, ct).ConfigureAwait(false);
+
+            try
+            {
+                return IngCalls.Body(call, $"page {walk.Pages + 1} of transactions", ctx.Note);
+            }
+            catch (ConnectorException ex)
+            {
+                // A COMPOSED REQUEST REFUSED, not a dead session. ING's
+                // own client served page one on this very session
+                // moments ago; what failed is the page this connector
+                // built, and ING's edge is known to answer one of those
+                // with a 401 while the session is perfectly alive.
+                // Reporting that as session_expired would send somebody
+                // to re-authenticate over a page they already have.
+                walk.Complete = false;
+                ctx.Note(
+                    $"{ProviderId}: page {walk.Pages + 1} for {account.ExternalId} was refused " +
+                    $"({ex.Code}), so this pass stops at {walk.Rows.Count} transaction(s) and is " +
+                    $"partial. The headers repeated from ING's own call were: " +
+                    $"[{string.Join(", ", (opening.Headers?.Keys ?? []).Order(StringComparer.Ordinal))}]");
+
+                return null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// What the walk can say about how far to trust its own rows, once the
+    /// last page is in.
+    /// </summary>
+    private static void Report(IJobContext ctx, Walk walk, Account account)
+    {
+        var rows = walk.Rows;
+
+        if (walk.Reservations > 0)
         {
             // Said out loud rather than dropped quietly. A reservation is a card
             // authorisation that has not settled: ING states no running balance
@@ -822,9 +943,16 @@ public sealed class IngAdapter : IProviderAdapter
             // publishing it as a booked transaction would be publishing a figure
             // that changes itself later.
             ctx.Note(
-                $"{ProviderId}: skipped {reservations} unsettled reservation(s) on {account.ExternalId}; " +
+                $"{ProviderId}: skipped {walk.Reservations} unsettled reservation(s) on {account.ExternalId}; " +
                 "they are not booked yet and will arrive with their final amounts");
         }
+
+        // COUNTED ON WHAT SURVIVES THE WINDOW, not on what was read.
+        // The two differ on every page that straddles the edge of the
+        // window, and counting the wrong one produced "10 of 3
+        // transaction(s) carry a derived id" on a live run.
+        var derived = rows.Count(IngTransactions.IsDerived);
+        var chained = rows.Exists(t => t.ResultingBalance is not null);
 
         // BOTH OF THESE ARE ABOUT HOW FAR TO TRUST WHAT CAME BACK, and neither
         // is visible in the rows themselves.
@@ -845,7 +973,7 @@ public sealed class IngAdapter : IProviderAdapter
             // payload - see IngTransactions.DescribeDetails - and adopting a
             // position by mistake would hand the consumer this account's entire
             // history again on every single sync.
-            ctx.Note($"{ProviderId}: {IngTransactions.DescribeDetails(details)}");
+            ctx.Note($"{ProviderId}: {IngTransactions.DescribeDetails(walk.Details)}");
         }
 
         // And the running balance is what catches an inverted sign or a dropped
@@ -874,7 +1002,7 @@ public sealed class IngAdapter : IProviderAdapter
         // which is the same nonsense as the "10 of 3" this file already fixed
         // once, in a sentence that then listed seven codes belonging to rows
         // nobody was given.
-        if (unclassified.Count > 0)
+        if (walk.Unclassified.Count > 0)
         {
             var other = rows.Count(t => t.Kind == TransactionKind.Other);
 
@@ -893,8 +1021,8 @@ public sealed class IngAdapter : IProviderAdapter
 
             // AND WHAT THE LIST LEFT OUT. Twenty-four codes was a silent cut in
             // the one sentence whose entire purpose is to be reasoned from.
-            var shown = unclassified.Take(24).ToList();
-            var cut = unclassified.Count - shown.Count;
+            var shown = walk.Unclassified.Take(24).ToList();
+            var cut = walk.Unclassified.Count - shown.Count;
 
             ctx.Note(
                 $"{ProviderId}: on {account.ExternalId}, {counted}. Separately, across EVERY row read for this "
@@ -902,8 +1030,6 @@ public sealed class IngAdapter : IProviderAdapter
                 + $"connector could not classify were: {string.Join(", ", shown)}"
                 + (cut > 0 ? $", and {cut} more" : string.Empty));
         }
-
-        return (rows, complete);
     }
 
     /// <summary>
@@ -1140,7 +1266,7 @@ public sealed class IngAdapter : IProviderAdapter
     /// beats a zero that would read as a settled card.
     /// </para>
     /// </remarks>
-    private async Task<IReadOnlyList<IngAccount>> DetailedAsync(
+    private static async Task<IReadOnlyList<IngAccount>> DetailedAsync(
         IJobContext ctx,
         IIngPortal portal,
         IReadOnlyList<IngAccount> accounts,
@@ -1178,7 +1304,7 @@ public sealed class IngAdapter : IProviderAdapter
         return filled;
     }
 
-    private async Task<IngAccount> DetailedAsync(
+    private static async Task<IngAccount> DetailedAsync(
         IJobContext ctx,
         IIngPortal portal,
         IngAccount account,
@@ -1208,15 +1334,16 @@ public sealed class IngAdapter : IProviderAdapter
                 // without one.
                 return account with
                 {
-                    Record = BankRecords.NewAccount(
-                        ctx.SessionId,
-                        account.Record.ExternalId,
-                        account.Record.Type,
-                        account.Record.DisplayName,
-                        account.Record.Currency,
-                        account.Record.Iban,
-                        account.Record.MaskedNumber,
-                        balance),
+                    Record = BankRecords.NewAccount(ctx.SessionId, new AccountDraft
+                    {
+                        ExternalId = account.Record.ExternalId,
+                        Type = account.Record.Type,
+                        DisplayName = account.Record.DisplayName,
+                        Currency = account.Record.Currency,
+                        Iban = account.Record.Iban,
+                        MaskedNumber = account.Record.MaskedNumber,
+                        Balance = balance,
+                    }),
                 };
             }
 
@@ -1329,7 +1456,7 @@ public sealed class IngAdapter : IProviderAdapter
     /// EUR. Falls back to EUR only when there is nothing at all to borrow from,
     /// which cannot happen while a current account is required above.
     /// </remarks>
-    private static string Currency(IReadOnlyList<IngAccount> accounts) =>
+    private static string Currency(List<IngAccount> accounts) =>
         accounts.Count > 0 ? accounts[0].Record.Currency : "EUR";
 
     /// <summary>
@@ -1469,8 +1596,7 @@ public sealed class IngAdapter : IProviderAdapter
     /// </para>
     /// </remarks>
     private async Task<ConnectorException> UnusableAsync(
-        IJobContext ctx, ILoginPage page, IIngPortal portal, string what,
-        IReadOnlyList<string> selectors, CancellationToken ct)
+        ILoginPage page, IIngPortal portal, string what, IReadOnlyList<string> selectors, CancellationToken ct)
     {
         var showing = await Showing(portal, ct).ConfigureAwait(false);
 

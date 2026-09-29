@@ -110,7 +110,11 @@ public sealed partial class ConnectorConnection
         var url = ControlPlaneBaseUrl
                   ?? throw new InvalidOperationException($"connection '{Name}' has no ControlPlaneBaseUrl");
 
-        return url.AbsoluteUri.EndsWith('/') ? url : new Uri(url.AbsoluteUri + "/");
+        // A trailing separator, so a relative path resolves UNDER the address
+        // instead of replacing its last segment.
+        return url.AbsoluteUri.EndsWith(Path.AltDirectorySeparatorChar)
+            ? url
+            : new Uri(url.AbsoluteUri + Path.AltDirectorySeparatorChar);
     }
 
     /// <summary>

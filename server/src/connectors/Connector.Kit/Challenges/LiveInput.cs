@@ -164,15 +164,7 @@ public sealed record LiveInput
     /// sequence that means something to a terminal further down a log pipeline.
     /// Enter is available as a key and says so.
     /// </summary>
-    private static bool HasControlCharacters(string text)
-    {
-        foreach (var ch in text)
-        {
-            if (char.IsControl(ch)) return true;
-        }
-
-        return false;
-    }
+    private static bool HasControlCharacters(string text) => text.Any(char.IsControl);
 }
 
 /// <summary>

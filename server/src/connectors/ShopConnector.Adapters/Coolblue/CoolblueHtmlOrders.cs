@@ -268,7 +268,7 @@ internal static partial class CoolblueHtmlOrders
 
         for (var i = 0; i < starts.Count; i++)
         {
-            var (id, at) = starts[i];
+            var id = starts[i].Id;
             if (!seen.Add(id)) continue;
 
             // The card runs back to the previous order's start and forward to
@@ -605,7 +605,7 @@ internal static partial class CoolblueHtmlOrders
         return text.Length == 0 ? null : text;
     }
 
-    private static IReadOnlyList<CoolblueInvoiceLink> Invoices(
+    private static List<CoolblueInvoiceLink> Invoices(
         string card, string orderId, CoolblueOptions options)
     {
         var found = new List<CoolblueInvoiceLink>();
@@ -649,8 +649,14 @@ internal static partial class CoolblueHtmlOrders
         return new DateTimeOffset(parsed, zone.GetUtcOffset(parsed));
     }
 
+    /// <summary>Any tag, for <see cref="HtmlText"/> to blank out before the entities are decoded.</summary>
+    [GeneratedRegex("<[^>]+>", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex AnyTag { get; }
+
+    /// <summary>A run of whitespace, for <see cref="HtmlText"/> to collapse to one space.</summary>
+    [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]
+    private static partial Regex WhitespaceRun { get; }
+
     private static string HtmlText(string raw) =>
-        Regex.Replace(
-            System.Net.WebUtility.HtmlDecode(Regex.Replace(raw, "<[^>]+>", " ")),
-            @"\s+", " ").Trim();
+        WhitespaceRun.Replace(System.Net.WebUtility.HtmlDecode(AnyTag.Replace(raw, " ")), " ").Trim();
 }

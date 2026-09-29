@@ -453,6 +453,28 @@ internal static class DuoSession
     }
 }
 
+/// <summary>One call to DUO's JSON API, as this connector understands it.</summary>
+/// <param name="Path">The endpoint, relative to <see cref="DuoOptions.ServicesRoot"/>.</param>
+/// <param name="Required">
+/// Whether the fetch is lost without it. Enrichment is allowed to be missing:
+/// the amounts are the point of the fetch, and losing an interest rate should
+/// never cost somebody their balance.
+/// </param>
+/// <param name="Dossier">
+/// Whether this is the one call allowed to read the customer dossier. See
+/// <see cref="DuoCalls.ReadAsync"/> for the refusal that stands for every
+/// other read.
+/// </param>
+/// <param name="SessionConfirmed">
+/// Whether DUO's own session endpoint has already answered in THIS run and
+/// named a profile.
+/// </param>
+internal readonly record struct DuoCall(
+    string Path,
+    bool Required,
+    bool Dossier = false,
+    bool SessionConfirmed = false);
+
 /// <summary>
 /// What this connector is allowed to ask DUO for, and what an answer means.
 /// </summary>
@@ -472,43 +494,27 @@ internal static class DuoCalls
     /// precisely so that it cannot be forgotten by whoever adds the fourth
     /// endpoint.
     /// </exception>
-    /// <param name="sessionConfirmed">
-    /// Whether DUO's own session endpoint has already answered in THIS run and
-    /// named a profile.
+    /// <param name="call">
+    /// Which endpoint, and what this run already knows about it - see
+    /// <see cref="DuoCall"/>.
     /// </param>
     public static async Task<string?> ReadAsync(
         IDuoPortal portal,
         DuoOptions options,
-        string path,
-        bool required,
+        DuoCall call,
         CancellationToken ct,
-        Action<string>? note = null,
-        bool dossier = false,
-        bool sessionConfirmed = false)
+        Action<string>? note = null)
     {
         ArgumentNullException.ThrowIfNull(portal);
         ArgumentNullException.ThrowIfNull(options);
 
-        var url = options.ServicesRoot + path;
+        var url = options.ServicesRoot + call.Path;
 
-        // The refusal still stands for every ordinary read, and `dossier` is
-        // the only way past it. Not a flag somebody can pass casually: the one
-        // call site that sets it is guarded by the caller having asked for the
-        // ledger, which nothing does by default, and the reader it feeds takes
-        // the movements and one instalment out of the payload and touches
-        // nothing else in it.
-        if (!dossier && url.Contains(options.ForbiddenPath, StringComparison.OrdinalIgnoreCase))
-        {
-            throw new InvalidOperationException(
-                $"{DuoAdapter.ProviderId}: '{options.ForbiddenPath}' is the customer dossier and this connector " +
-                "must never call it. It answers with a BSN, both parents, a partner, twenty years of tax income, " +
-                "IBANs and every address the account holder has lived at. Whatever field was wanted from it, the " +
-                "answer is to do without - see the note on StudentDebt for the one this connector already forgoes.");
-        }
+        RefuseDossier(url, options, call.Dossier);
 
         var reading = await portal.ReadAsync(url, ct).ConfigureAwait(false);
 
-        Report(reading, options, path, note);
+        Report(reading, options, call.Path, note);
 
         // A CALL A NAVIGATION KILLED DID NOT FAIL - IT WAS INTERRUPTED.
         //
@@ -539,10 +545,8 @@ internal static class DuoCalls
         {
             reading = await portal.ReadAsync(url, ct).ConfigureAwait(false);
 
-            Report(reading, options, path, note, again: true);
+            Report(reading, options, call.Path, note, again: true);
         }
-
-        var bounced = Bounced(reading, options);
 
         // Checked before the body, because a dead session and a rebuilt
         // endpoint BOTH arrive as "this is not the JSON I expected" and they
@@ -566,23 +570,7 @@ internal static class DuoCalls
         // beside it. An error that asserts something the log contradicts is
         // worse than a vague one: it sends the next reader looking in the
         // wrong place.
-        if (bounced)
-        {
-            // TWO WAYS TO ARRIVE HERE AND ONLY ONE OF THEM IS AN ANSWER. The
-            // old one is a 200 served BY the sign-in chain. The new one is a
-            // call that never landed because the page navigated out to DigiD
-            // mid-fetch, where the url is the page's rather than a response's
-            // - and saying that call "was answered" would put words in DUO's
-            // mouth for a request DUO never saw.
-            throw ConnectorException.SessionExpired(
-                reading.Status is 0
-                    ? $"{DuoAdapter.ProviderId}: {path} never landed, because the page left for the sign-in " +
-                      "chain while the call was in flight - so the stored session is over. DUO sets ForceAuthn, " +
-                      "so this needs a new DigiD sign-in and there is nothing to refresh."
-                    : $"{DuoAdapter.ProviderId}: {path} was answered from the sign-in chain rather than the " +
-                      "portal, so the stored session is over. DUO sets ForceAuthn, so this needs a new DigiD " +
-                      "sign-in and there is nothing to refresh.");
-        }
+        if (Bounced(reading, options)) throw SessionOver(reading, call.Path);
 
         // A REFUSAL AFTER DUO HAS NAMED THE PROFILE IS NOT A DEAD SESSION, and
         // reporting it as one is what cost the account holder four DigiD
@@ -606,33 +594,9 @@ internal static class DuoCalls
         // tells it to wait and pages an operator, which is the truth - this
         // call is missing something DUO's own page sends, and no amount of
         // signing in again supplies it.
-        if (reading.Status is 401 or 403 && sessionConfirmed)
+        if (reading.Status is 401 or 403 && call.SessionConfirmed)
         {
-            // And an enrichment call that is refused costs the enrichment and
-            // nothing else, which is the rule this file already keeps for
-            // every other bad status and which a special case for 401 was
-            // routing around. Both of the failed runs died on an OPTIONAL call
-            // - the payment holiday in run A, the balance history in run B -
-            // with the required amounts already in hand at 200. Under this
-            // rule those runs end with the account holder's debt on their
-            // screen and one line missing from it.
-            if (!required)
-            {
-                note?.Invoke(
-                    $"{DuoAdapter.ProviderId}: {path} answered {reading.Status}, but {options.SessionPath} named " +
-                    "a profile in this same run, so the session is alive and this is enrichment going missing " +
-                    "rather than a sign-in going stale - the amounts stand and the fetch carries on");
-
-                return null;
-            }
-
-            throw ConnectorException.ProviderChanged(
-                $"{DuoAdapter.ProviderId}: {path} answered {reading.Status} from the portal's own services, in a " +
-                $"run where {options.SessionPath} had already answered 200 and named a profile - so by DUO's own " +
-                "account this session is alive and this call is missing something DUO's own page sends. Reported " +
-                "as a changed provider rather than an expired session on purpose: DUO sets ForceAuthn, another " +
-                "sign-in is a full DigiD authentication that Logius counts against the account holder, and it " +
-                "would not fix this. The log line above says which headers the request carried.");
+            return RefusedAfterConfirmation(reading, options, call, note);
         }
 
         if (reading.Status is 401 or 403)
@@ -642,7 +606,7 @@ internal static class DuoCalls
             // refused exactly like this. Kept honest rather than kept quiet -
             // this is the path the session call itself takes.
             throw ConnectorException.SessionExpired(
-                $"{DuoAdapter.ProviderId}: {path} answered {reading.Status} from the portal's own services, and " +
+                $"{DuoAdapter.ProviderId}: {call.Path} answered {reading.Status} from the portal's own services, and " +
                 "nothing has confirmed a session in this run. Whether that means the session is over or that " +
                 "this call is missing something DUO's own page sends, the log line above quotes DUO's answer " +
                 "verbatim.");
@@ -653,17 +617,100 @@ internal static class DuoCalls
             // Enrichment is allowed to be missing. The amounts are the point
             // of the fetch, and losing an interest rate should never cost
             // somebody their balance.
-            if (!required) return null;
+            if (!call.Required) return null;
 
-            throw ConnectorException.ProviderChanged(
-                reading.Status is 0
-                    ? $"{DuoAdapter.ProviderId}: {path} never reached DUO, twice: {Quoted(reading.NotReached)}"
-                    : $"{DuoAdapter.ProviderId}: {path} answered {reading.Status} with " +
-                      $"{reading.Body?.Length ?? 0} characters");
+            throw Unanswered(reading, call.Path);
         }
 
         return reading.Body;
     }
+
+    /// <summary>
+    /// The refusal that stands for every ordinary read.
+    /// </summary>
+    private static void RefuseDossier(string url, DuoOptions options, bool dossier)
+    {
+        // The refusal still stands for every ordinary read, and `dossier` is
+        // the only way past it. Not a flag somebody can pass casually: the one
+        // call site that sets it is guarded by the caller having asked for the
+        // ledger, which nothing does by default, and the reader it feeds takes
+        // the movements and one instalment out of the payload and touches
+        // nothing else in it.
+        if (!dossier && url.Contains(options.ForbiddenPath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"{DuoAdapter.ProviderId}: '{options.ForbiddenPath}' is the customer dossier and this connector " +
+                "must never call it. It answers with a BSN, both parents, a partner, twenty years of tax income, " +
+                "IBANs and every address the account holder has lived at. Whatever field was wanted from it, the " +
+                "answer is to do without - see the note on StudentDebt for the one this connector already forgoes.");
+        }
+    }
+
+    /// <summary>
+    /// The session that is over, worded for how this call met it.
+    /// </summary>
+    private static ConnectorException SessionOver(DuoReading reading, string path)
+    {
+        // TWO WAYS TO ARRIVE HERE AND ONLY ONE OF THEM IS AN ANSWER. The
+        // old one is a 200 served BY the sign-in chain. The new one is a
+        // call that never landed because the page navigated out to DigiD
+        // mid-fetch, where the url is the page's rather than a response's
+        // - and saying that call "was answered" would put words in DUO's
+        // mouth for a request DUO never saw.
+        return ConnectorException.SessionExpired(
+            reading.Status is 0
+                ? $"{DuoAdapter.ProviderId}: {path} never landed, because the page left for the sign-in " +
+                  "chain while the call was in flight - so the stored session is over. DUO sets ForceAuthn, " +
+                  "so this needs a new DigiD sign-in and there is nothing to refresh."
+                : $"{DuoAdapter.ProviderId}: {path} was answered from the sign-in chain rather than the " +
+                  "portal, so the stored session is over. DUO sets ForceAuthn, so this needs a new DigiD " +
+                  "sign-in and there is nothing to refresh.");
+    }
+
+    /// <summary>
+    /// A refusal from the portal's own services in a run where DUO has already
+    /// named the profile: nothing, for enrichment; a changed provider, for a
+    /// call the fetch cannot do without.
+    /// </summary>
+    private static string? RefusedAfterConfirmation(
+        DuoReading reading, DuoOptions options, DuoCall call, Action<string>? note)
+    {
+        // And an enrichment call that is refused costs the enrichment and
+        // nothing else, which is the rule this file already keeps for
+        // every other bad status and which a special case for 401 was
+        // routing around. Both of the failed runs died on an OPTIONAL call
+        // - the payment holiday in run A, the balance history in run B -
+        // with the required amounts already in hand at 200. Under this
+        // rule those runs end with the account holder's debt on their
+        // screen and one line missing from it.
+        if (!call.Required)
+        {
+            note?.Invoke(
+                $"{DuoAdapter.ProviderId}: {call.Path} answered {reading.Status}, but {options.SessionPath} " +
+                "named a profile in this same run, so the session is alive and this is enrichment going " +
+                "missing rather than a sign-in going stale - the amounts stand and the fetch carries on");
+
+            return null;
+        }
+
+        throw ConnectorException.ProviderChanged(
+            $"{DuoAdapter.ProviderId}: {call.Path} answered {reading.Status} from the portal's own services, " +
+            $"in a run where {options.SessionPath} had already answered 200 and named a profile - so by DUO's " +
+            "own account this session is alive and this call is missing something DUO's own page sends. " +
+            "Reported as a changed provider rather than an expired session on purpose: DUO sets ForceAuthn, " +
+            "another sign-in is a full DigiD authentication that Logius counts against the account holder, " +
+            "and it would not fix this. The log line above says which headers the request carried.");
+    }
+
+    /// <summary>
+    /// A call the fetch cannot do without, which DUO did not answer.
+    /// </summary>
+    private static ConnectorException Unanswered(DuoReading reading, string path) =>
+        ConnectorException.ProviderChanged(
+            reading.Status is 0
+                ? $"{DuoAdapter.ProviderId}: {path} never reached DUO, twice: {Quoted(reading.NotReached)}"
+                : $"{DuoAdapter.ProviderId}: {path} answered {reading.Status} with " +
+                  $"{reading.Body?.Length ?? 0} characters");
 
     /// <summary>
     /// Whether this answer came from the sign-in chain rather than the portal.

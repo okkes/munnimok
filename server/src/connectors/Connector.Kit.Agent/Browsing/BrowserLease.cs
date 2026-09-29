@@ -389,7 +389,7 @@ public sealed class BrowserLease : IChallengeSurface
             //
             // THE PREDICATE RATHER THAN THE TYPE, because Playwright for .NET
             // raises a TimeoutException and not a PlaywrightException when a
-            // call of its own expires - so `catch (PlaywrightException)` here
+            // call of its own expires - so catching the Playwright type alone
             // would let exactly the likeliest failure through, and a job whose
             // browser could not be handed its old cookies would die as
             // `internal` instead of starting signed out. SelectorMissRuleTests
@@ -442,7 +442,8 @@ public sealed class BrowserLease : IChallengeSurface
     /// Not applied to a BYO agent: that browser runs on somebody's own machine,
     /// where the authenticator is real and using it is their business.
     /// </summary>
-    private static Task RefuseWebAuthnAsync(IBrowserContext context) => context.AddInitScriptAsync(@"
+    private static Task<IAsyncDisposable> RefuseWebAuthnAsync(IBrowserContext context) =>
+        context.AddInitScriptAsync(@"
 () => {
   try {
     delete window.PublicKeyCredential;

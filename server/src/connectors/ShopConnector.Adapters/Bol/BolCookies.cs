@@ -41,15 +41,11 @@ internal static class BolCookies
     /// to be echoed in a header - so one cookie genuinely needs reading on its
     /// own rather than only as part of the jar.
     /// </remarks>
-    public static string? Value(string? storageState, string host, string name)
-    {
-        foreach (var pair in For(storageState, host))
-        {
-            if (string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase)) return pair.Value;
-        }
-
-        return null;
-    }
+    public static string? Value(string? storageState, string host, string name) =>
+        For(storageState, host)
+            .Where(pair => string.Equals(pair.Key, name, StringComparison.OrdinalIgnoreCase))
+            .Select(pair => pair.Value)
+            .FirstOrDefault();
 
     /// <summary>Every cookie a browser would send to <paramref name="host"/>.</summary>
     public static IReadOnlyList<KeyValuePair<string, string>> For(string? storageState, string host)
@@ -100,7 +96,7 @@ internal static class BolCookies
         return domain.StartsWith('.') && host.EndsWith("." + bare, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static IReadOnlyList<(string Name, string Value, string Domain)> Read(string? storageState)
+    private static List<(string Name, string Value, string Domain)> Read(string? storageState)
     {
         if (string.IsNullOrWhiteSpace(storageState)) return [];
 

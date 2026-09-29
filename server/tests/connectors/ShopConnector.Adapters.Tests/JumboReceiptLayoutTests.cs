@@ -22,6 +22,11 @@ public sealed class JumboReceiptLayoutTests
 
     private static readonly JumboPrintLayoutParser Parser = new();
 
+    /// <summary>The recorded till receipt's four lines, as printed.</summary>
+    private static readonly string[] PrintedItemNames = ["MELK HALFVOL", "BANANEN", "KIPFILET", "STATIEGELD"];
+
+    private static readonly long[] PrintedItemTotals = [188L, 189L, 699L, 30L];
+
     private static string Layout(string fixture)
     {
         using var document = Fixture.Doc(fixture);
@@ -56,13 +61,11 @@ public sealed class JumboReceiptLayoutTests
         Assert.Equal("card", contents.PaymentMethod);
 
         Assert.Equal(4, contents.Items.Count);
-        Assert.Equal(
-            new[] { "MELK HALFVOL", "BANANEN", "KIPFILET", "STATIEGELD" },
-            contents.Items.Select(i => i.Name));
+        Assert.Equal(PrintedItemNames, contents.Items.Select(i => i.Name));
 
         // Dutch comma decimals, read as euros - the printed amounts are what a
         // human read at the till, so they are major units by construction.
-        Assert.Equal(new[] { 188L, 189L, 699L, 30L }, contents.Items.Select(i => i.Total.Value));
+        Assert.Equal(PrintedItemTotals, contents.Items.Select(i => i.Total.Value));
     }
 
     /// <summary>

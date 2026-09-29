@@ -94,64 +94,75 @@ public sealed class CanaryScheduler(
 
         foreach (var canary in running)
         {
-            var job = await db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == canary.LastJobId, ct);
-
-            if (job is null)
-            {
-                // Purged before it was read. Not a provider fault, and not a
-                // verdict either - the canary simply runs again.
-                await canaries.RecordAsync(
-                    canary.ProviderId, canary.LastJobId, intact: false,
-                    "the run disappeared before its outcome could be read", rotatedBundle: null, ct);
-
-                continue;
-            }
-
-            if (job.State is JobState.Queued or JobState.Leased or JobState.Running or JobState.AwaitingInput)
-            {
-                continue;
-            }
-
-            var intact = job.State == JobState.Succeeded;
-
-            // The bundle the run handed back. A session issues it once, so
-            // reading it here also takes it - which is right: this is the
-            // device it was issued to.
-            string? rotated = null;
-
-            if (intact)
-            {
-                var session = await db.Sessions.FirstOrDefaultAsync(s => s.Id == job.SessionId, ct);
-
-                if (session?.PendingBundle is { Length: > 0 } issued)
-                {
-                    rotated = issued;
-                    session.PendingBundle = null;
-                    session.UpdatedAt = time.GetUtcNow();
-                    await db.SaveChangesAsync(ct);
-                }
-            }
-
-            var verdict = intact
-                ? Describe(job)
-                : $"{ErrorCatalog.Wire(job.ErrorCode ?? ErrorCode.Internal)}: {job.ErrorDetail ?? "no detail"}";
-
-            await canaries.RecordAsync(canary.ProviderId, job.Id, intact, verdict, rotated, ct);
-
-            if (intact)
-            {
-                logger.LogInformation("canary for {Provider} is intact: {Verdict}", canary.ProviderId, verdict);
-            }
-            else
-            {
-                // Warning, not error: the provider's own health has already
-                // been set by the job outcome, and this line is the operator's
-                // pointer at which run to read.
-                logger.LogWarning(
-                    "canary for {Provider} did NOT come back: {Verdict} (job {JobId})",
-                    canary.ProviderId, verdict, job.Id);
-            }
+            await HarvestOneAsync(db, canaries, canary, ct);
         }
+    }
+
+    /// <summary>
+    /// One canary's verdict, once its run has finished: recorded, logged, and
+    /// the bundle the run handed back taken with it.
+    /// </summary>
+    private async Task HarvestOneAsync(ConnectorDbContext db, CanaryService canaries, CanaryRow canary, CancellationToken ct)
+    {
+        var job = await db.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == canary.LastJobId, ct);
+
+        if (job is null)
+        {
+            // Purged before it was read. Not a provider fault, and not a
+            // verdict either - the canary simply runs again.
+            await canaries.RecordAsync(
+                canary.ProviderId, canary.LastJobId, intact: false,
+                "the run disappeared before its outcome could be read", rotatedBundle: null, ct);
+
+            return;
+        }
+
+        if (job.State is JobState.Queued or JobState.Leased or JobState.Running or JobState.AwaitingInput)
+        {
+            return;
+        }
+
+        var intact = job.State == JobState.Succeeded;
+
+        // The bundle the run handed back. A session issues it once, so
+        // reading it here also takes it - which is right: this is the
+        // device it was issued to.
+        var rotated = intact ? await TakeRotatedBundleAsync(db, job.SessionId, ct) : null;
+
+        var verdict = intact
+            ? Describe(job)
+            : $"{ErrorCatalog.Wire(job.ErrorCode ?? ErrorCode.Internal)}: {job.ErrorDetail ?? "no detail"}";
+
+        await canaries.RecordAsync(canary.ProviderId, job.Id, intact, verdict, rotated, ct);
+
+        if (intact)
+        {
+            logger.LogInformation("canary for {Provider} is intact: {Verdict}", canary.ProviderId, verdict);
+        }
+        else
+        {
+            // Warning, not error: the provider's own health has already
+            // been set by the job outcome, and this line is the operator's
+            // pointer at which run to read.
+            logger.LogWarning(
+                "canary for {Provider} did NOT come back: {Verdict} (job {JobId})",
+                canary.ProviderId, verdict, job.Id);
+        }
+    }
+
+    private async Task<string?> TakeRotatedBundleAsync(ConnectorDbContext db, string sessionId, CancellationToken ct)
+    {
+        var session = await db.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId, ct);
+
+        if (session?.PendingBundle is { Length: > 0 } issued)
+        {
+            session.PendingBundle = null;
+            session.UpdatedAt = time.GetUtcNow();
+            await db.SaveChangesAsync(ct);
+            return issued;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -288,6 +299,7 @@ public sealed class CanaryScheduler(
                 $"could not start: {ErrorCatalog.Wire(ex.Code)}: {ex.Message}", rotatedBundle: null, ct);
 
             logger.LogWarning(
+                ex,
                 "canary for {Provider} could not start ({Code}); re-enrol it with a fresh bundle",
                 canary.ProviderId, ErrorCatalog.Wire(ex.Code));
         }

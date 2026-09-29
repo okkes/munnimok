@@ -1,0 +1,11 @@
+# Analyzer severities that differ from the SDK defaults, scoped to the connector
+# platform so munni's own API keeps the defaults.
+root = true
+
+[{src,tests}/connectors/**.cs]
+# CA1873 (evaluate a log call's arguments only when its level is enabled): the
+# control plane and the agent log at Information with cheap arguments - a joined
+# list of provider ids, a count, an elapsed time - and guarding every call with
+# IsEnabled would double the logging code to save microseconds. Turned off here,
+# once, with the reason, rather than fifty times inline.
+dotnet_diagnostic.CA1873.severity = none

@@ -1,3 +1,4 @@
+#pragma warning disable S107 // minimal-API handlers and DI constructors take their collaborators as parameters
 using Connector.Kit.Adapters;
 using Connector.Kit.AgentProtocol;
 using Connector.Kit.Challenges;
@@ -32,49 +33,20 @@ internal static class AgentApiEndpoints
     {
         // Enrollment authenticates with the one-time code itself, so it sits
         // outside the token filter. Everything else is behind it.
-        root.MapPost("/agent/v1/enroll", async (
+        root.MapPost("/agent/v1/enroll", (
             EnrollRequest request,
             AgentAuth auth,
             ConnectorDbContext db,
             IOptions<ConnectorOptions> options,
             TimeProvider time,
-            CancellationToken ct) =>
-        {
-            var enrollment = await auth.RedeemEnrollmentAsync(request.Code, ct);
-            var token = AgentAuth.NewToken();
-            var now = time.GetUtcNow();
-
-            var agent = new AgentRow
-            {
-                Id = Ids.New(Ids.Agent),
-                Name = string.IsNullOrWhiteSpace(request.Name) ? enrollment.Name : request.Name,
-                Class = request.Capabilities.Class,
-                // The subject rides on the code, never on the request: an
-                // agent may only ever serve the user who enrolled it, and
-                // letting it name its own owner would undo that in one line.
-                OwnerSubject = enrollment.Subject,
-                CapabilitiesJson = ConnectorJson.Serialize(request.Capabilities),
-                TokenHash = AgentAuth.Hash(token),
-                LastHeartbeatAt = now,
-                CreatedAt = now,
-            };
-
-            db.Agents.Add(agent);
-            await db.SaveChangesAsync(ct);
-
-            return ConnectorResults.Json(new EnrollResponse
-            {
-                AgentId = agent.Id,
-                Token = token,
-                HeartbeatSeconds = options.Value.Timeouts.HeartbeatSeconds,
-            });
-        }).AddEndpointFilter<ConnectorExceptionFilter>();
+            CancellationToken ct) => EnrollAsync(request, auth, db, options, time, ct))
+        .AddEndpointFilter<ConnectorExceptionFilter>();
 
         var agents = root.MapGroup("/agent/v1")
             .AddEndpointFilter<ConnectorExceptionFilter>()
             .AddEndpointFilter<AgentAuthFilter>();
 
-        agents.MapPost("/heartbeat", async (
+        agents.MapPost("/heartbeat", (
             HttpContext http,
             HeartbeatRequest request,
             ConnectorDbContext db,
@@ -82,72 +54,9 @@ internal static class AgentApiEndpoints
             IOptions<ConnectorOptions> options,
             TimeProvider time,
             ILoggerFactory loggers,
-            CancellationToken ct) =>
-        {
-            var agent = http.RequireAgent();
-            var now = time.GetUtcNow();
+            CancellationToken ct) => HeartbeatAsync(http, request, db, registry, options, time, loggers, ct));
 
-            agent.LastHeartbeatAt = now;
-            agent.CapabilitiesJson = ConnectorJson.Serialize(request.Capabilities);
-            agent.Class = request.Capabilities.Class;
-
-            // LIVENESS FIRST, AND ON ITS OWN, because it used to share a
-            // transaction with the profile bookkeeping below and that cost an
-            // agent its existence.
-            //
-            // A BYO agent derived a profile id that turned out not to be unique
-            // between machines, so the second household's reconcile hit a
-            // duplicate key - and rolled the heartbeat back with it. Their agent
-            // ran perfectly for weeks while the control plane recorded it as
-            // offline: no fleet head-start, offline in every consumer, and the
-            // only trace a Debug line on a machine nobody reads.
-            //
-            // The id is fixed. This is the half that made it invisible, and it
-            // is the half worth keeping fixed: whether an agent is ALIVE is not
-            // a fact that profile bookkeeping gets a vote on.
-            await db.SaveChangesAsync(ct);
-
-            try
-            {
-                await ReconcileProfilesAsync(db, agent.Id, request.Profiles, ct);
-                await db.SaveChangesAsync(ct);
-            }
-            catch (DbUpdateException ex)
-            {
-                // LOUD, AND NOT FATAL. The agent is alive - that is already
-                // committed and is the answer this endpoint owes. What it
-                // cannot do is write down which browser profiles that agent
-                // holds, which is worth an operator's attention and is worth
-                // nobody's outage.
-                loggers.CreateLogger("Connector.Kit.Hosting.Agents").LogError(
-                    ex,
-                    "agent {AgentId}: its profiles could not be recorded. The agent is alive and this "
-                    + "heartbeat stands; what is stale is which profiles it is holding",
-                    agent.Id);
-
-                // NOTHING IS CLEARED HERE, and the reason is worth stating
-                // because the obvious instinct is wrong. A failed insert stays
-                // in the change tracker, so it looks like every later heartbeat
-                // would re-attempt it - but the context is registered with
-                // AddDbContext, which is scoped, so it dies with this request
-                // and the next heartbeat starts from the database anyway.
-                //
-                // A ChangeTracker.Clear() here was written, and then removed
-                // when a mutation showed it changed nothing: the collision test
-                // passed with and without it. Insurance that cannot be
-                // distinguished from its absence is a comment claiming a
-                // mechanism that is not there.
-            }
-
-            return ConnectorResults.Json(new HeartbeatResponse
-            {
-                LeaseTtlSeconds = options.Value.Timeouts.LeaseSeconds,
-                Revoked = agent.Revoked,
-                CatalogDigest = registry.CatalogDigest,
-            });
-        });
-
-        agents.MapPost("/jobs/lease", async (
+        agents.MapPost("/jobs/lease", (
             HttpContext http,
             LeaseRequest request,
             ILeasedJobQueue queue,
@@ -156,145 +65,41 @@ internal static class AgentApiEndpoints
             IOptions<ConnectorOptions> options,
             TimeProvider time,
             ConnectorDbContext db,
-            CancellationToken ct) =>
-        {
-            var agent = http.RequireAgent();
-            var capabilities = ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities());
-
-            // An agent on another adapter catalogue is not offered work: its
-            // forms, selectors and record shapes are not the ones this control
-            // plane documented, and a job it ran would fail in ways nobody can
-            // read. It keeps its poll - the heartbeat has already told it why.
-            var stale = AgentCatalogue.IsStale(capabilities, registry);
-
-            // Which subject's work this agent is allowed to see. Null only for
-            // the operator's own fleet, named in configuration - never decided
-            // from anything the agent sends, because Class arrives on the
-            // agent's own heartbeat and it would simply claim to be pooled.
-            var ownerScope = agent.OwnerSubject is { } owner
-                             && !options.Value.FleetSubjects.Contains(owner, StringComparer.Ordinal)
-                ? owner
-                : null;
-
-            var ttl = TimeSpan.FromSeconds(options.Value.Timeouts.LeaseSeconds);
-            var deadline = time.GetUtcNow().AddSeconds(options.Value.Timeouts.AgentPollSeconds);
-
-            // A long poll rather than a fixed-interval pull: an agent that
-            // polls every few seconds is both slower to start a job and
-            // noisier, and the connection is already open either way.
-            while (!ct.IsCancellationRequested)
-            {
-                var job = stale
-                    ? null
-                    : await queue.TryLeaseAsync(agent.Id, ownerScope, capabilities, request.Accept, ttl, ct);
-                if (job is not null) return ConnectorResults.Json(job);
-
-                var remaining = deadline - time.GetUtcNow();
-                if (remaining <= TimeSpan.Zero) break;
-
-                db.ChangeTracker.Clear();
-                await signals.WaitAsync(ConnectorSignals.Queue,
-                    remaining < TimeSpan.FromSeconds(2) ? remaining : TimeSpan.FromSeconds(2), ct);
-            }
-
-            return Results.NoContent();
-        })
+            CancellationToken ct) => LeaseAsync(http, request, queue, signals, registry, options, time, db, ct))
         // 204 is the long poll expiring with no work, which is most of them.
         .Produces<LeasedJob>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status204NoContent);
 
-        agents.MapPost("/jobs/{jobId}/renew", async (
+        agents.MapPost("/jobs/{jobId}/renew", (
             HttpContext http,
             string jobId,
             ILeasedJobQueue queue,
             IOptions<ConnectorOptions> options,
-            CancellationToken ct) =>
-        {
-            var agent = http.RequireAgent();
-            var ttl = TimeSpan.FromSeconds(options.Value.Timeouts.LeaseSeconds);
+            CancellationToken ct) => RenewAsync(http, jobId, queue, options, ct));
 
-            var renewed = await queue.RenewLeaseAsync(jobId, agent.Id, ttl, ct);
-            return renewed is null
-                ? throw ConnectorException.Unsupported($"job '{jobId}' is no longer leased to this agent")
-                : ConnectorResults.Json(new RenewResponse { LeaseExpiresAt = renewed.Value });
-        });
-
-        agents.MapPost("/jobs/{jobId}/progress", async (
+        agents.MapPost("/jobs/{jobId}/progress", (
             HttpContext http,
             string jobId,
             ProgressReport report,
             ILeasedJobQueue queue,
-            CancellationToken ct) =>
-        {
-            var agent = http.RequireAgent();
-            await queue.ProgressAsync(jobId, agent.Id, report, ct);
-            return Results.NoContent();
-        })
+            CancellationToken ct) => ProgressAsync(http, jobId, report, queue, ct))
         .Produces(StatusCodes.Status204NoContent);
 
-        agents.MapPost("/jobs/{jobId}/challenge", async (
+        agents.MapPost("/jobs/{jobId}/challenge", (
             HttpContext http,
             string jobId,
             AgentChallengeRequest request,
             ChallengeService challenges,
             ConnectorDbContext db,
-            CancellationToken ct) =>
-        {
-            var agent = http.RequireAgent();
-            await RequireLeasedAsync(db, jobId, agent.Id, ct);
+            CancellationToken ct) => RaiseChallengeAsync(http, jobId, request, challenges, db, ct));
 
-            var row = await challenges.RaiseAsync(jobId, new PendingChallenge
-            {
-                Type = request.Type,
-                ExpiresAt = request.ExpiresAt,
-                Payload = new ChallengePayload
-                {
-                    AnswerKind = request.AnswerKind,
-                    PromptKey = request.PromptKey,
-                    Code = request.Code,
-                    Delivery = request.Delivery,
-                    Length = request.Length,
-                    Options = request.Options,
-                    Url = request.Url,
-                    ReturnPattern = request.ReturnPattern,
-                },
-                Image = DecodeImage(request.ImageBase64),
-            }, ct);
-
-            return ConnectorResults.Json(new RaiseChallengeResponse { ChallengeId = row.Id });
-        });
-
-        agents.MapGet("/jobs/{jobId}/answer", async (
+        agents.MapGet("/jobs/{jobId}/answer", (
             HttpContext http,
             string jobId,
             ChallengeService challenges,
             ConnectorDbContext db,
             IOptions<ConnectorOptions> options,
-            CancellationToken ct) =>
-        {
-            var agent = http.RequireAgent();
-            await RequireLeasedAsync(db, jobId, agent.Id, ct);
-
-            // The agent names the challenge it is waiting on. Optional so an
-            // older agent keeps working, but without it a job with two open
-            // questions hands back the answer to the wrong one.
-            var waitingFor = http.Request.Query["challenge_id"].ToString();
-
-            var window = TimeSpan.FromSeconds(options.Value.Timeouts.AgentPollSeconds);
-            var answer = await challenges.AwaitAnswerAsync(
-                jobId, window, ct, string.IsNullOrWhiteSpace(waitingFor) ? null : waitingFor);
-
-            if (answer is not null) return ConnectorResults.Json(answer);
-
-            // Nothing yet is not the same as expired. Only a challenge that
-            // ran out of time is a 408; an open one just means poll again,
-            // and telling the agent to fail the job would throw away a login
-            // the human is still working on.
-            var pending = await challenges.PendingAsync(jobId, ct);
-            return pending is null
-                ? ConnectorResults.Error(new ConnectorException(ErrorCode.MfaTimeout, "challenge expired unanswered"))
-                : Results.NoContent();
-        })
+            CancellationToken ct) => AwaitAnswerAsync(http, jobId, challenges, db, options, ct))
         // 204 means "still open, poll again" and is the difference between a
         // human who is mid-login and one who never came back.
         .Produces<ChallengeAnswer>(StatusCodes.Status200OK)
@@ -305,29 +110,299 @@ internal static class AgentApiEndpoints
         // not be reachable by anything that could not already lease it.
         LiveEndpoints.MapAgent(agents);
 
-        agents.MapPost("/jobs/{jobId}/result", async (
+        agents.MapPost("/jobs/{jobId}/result", (
             HttpContext http,
             string jobId,
             JobResultRequest result,
             JobOutcomeService outcomes,
-            CancellationToken ct) =>
-        {
-            var agent = http.RequireAgent();
-            var outcome = await outcomes.SucceedAsync(jobId, agent.Id, result, ct);
-            return ConnectorResults.Json(new AgentAckResponse { Cursor = outcome.Cursor });
-        });
+            CancellationToken ct) => ResultAsync(http, jobId, result, outcomes, ct));
 
-        agents.MapPost("/jobs/{jobId}/fail", async (
+        agents.MapPost("/jobs/{jobId}/fail", (
             HttpContext http,
             string jobId,
             JobFailRequest failure,
             JobOutcomeService outcomes,
-            CancellationToken ct) =>
+            CancellationToken ct) => FailAsync(http, jobId, failure, outcomes, ct));
+    }
+
+    private static async Task<ConnectorJsonResult<EnrollResponse>> EnrollAsync(
+        EnrollRequest request,
+        AgentAuth auth,
+        ConnectorDbContext db,
+        IOptions<ConnectorOptions> options,
+        TimeProvider time,
+        CancellationToken ct)
+    {
+        var enrollment = await auth.RedeemEnrollmentAsync(request.Code, ct);
+        var token = AgentAuth.NewToken();
+        var now = time.GetUtcNow();
+
+        var agent = new AgentRow
         {
-            var agent = http.RequireAgent();
-            var job = await outcomes.FailAsync(jobId, agent.Id, failure, ct);
-            return ConnectorResults.Json(new AgentFailResponse { State = job.State });
+            Id = Ids.New(Ids.Agent),
+            Name = string.IsNullOrWhiteSpace(request.Name) ? enrollment.Name : request.Name,
+            Class = request.Capabilities.Class,
+            // The subject rides on the code, never on the request: an
+            // agent may only ever serve the user who enrolled it, and
+            // letting it name its own owner would undo that in one line.
+            OwnerSubject = enrollment.Subject,
+            CapabilitiesJson = ConnectorJson.Serialize(request.Capabilities),
+            TokenHash = AgentAuth.Hash(token),
+            LastHeartbeatAt = now,
+            CreatedAt = now,
+        };
+
+        db.Agents.Add(agent);
+        await db.SaveChangesAsync(ct);
+
+        return ConnectorResults.Json(new EnrollResponse
+        {
+            AgentId = agent.Id,
+            Token = token,
+            HeartbeatSeconds = options.Value.Timeouts.HeartbeatSeconds,
         });
+    }
+
+    private static async Task<ConnectorJsonResult<HeartbeatResponse>> HeartbeatAsync(
+        HttpContext http,
+        HeartbeatRequest request,
+        ConnectorDbContext db,
+        IProviderRegistry registry,
+        IOptions<ConnectorOptions> options,
+        TimeProvider time,
+        ILoggerFactory loggers,
+        CancellationToken ct)
+    {
+        var agent = http.RequireAgent();
+        var now = time.GetUtcNow();
+
+        agent.LastHeartbeatAt = now;
+        agent.CapabilitiesJson = ConnectorJson.Serialize(request.Capabilities);
+        agent.Class = request.Capabilities.Class;
+
+        // LIVENESS FIRST, AND ON ITS OWN, because it used to share a
+        // transaction with the profile bookkeeping below and that cost an
+        // agent its existence.
+        //
+        // A BYO agent derived a profile id that turned out not to be unique
+        // between machines, so the second household's reconcile hit a
+        // duplicate key - and rolled the heartbeat back with it. Their agent
+        // ran perfectly for weeks while the control plane recorded it as
+        // offline: no fleet head-start, offline in every consumer, and the
+        // only trace a Debug line on a machine nobody reads.
+        //
+        // The id is fixed. This is the half that made it invisible, and it
+        // is the half worth keeping fixed: whether an agent is ALIVE is not
+        // a fact that profile bookkeeping gets a vote on.
+        await db.SaveChangesAsync(ct);
+
+        try
+        {
+            await ReconcileProfilesAsync(db, agent.Id, request.Profiles, ct);
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            // LOUD, AND NOT FATAL. The agent is alive - that is already
+            // committed and is the answer this endpoint owes. What it
+            // cannot do is write down which browser profiles that agent
+            // holds, which is worth an operator's attention and is worth
+            // nobody's outage.
+            loggers.CreateLogger("Connector.Kit.Hosting.Agents").LogError(
+                ex,
+                "agent {AgentId}: its profiles could not be recorded. The agent is alive and this "
+                + "heartbeat stands; what is stale is which profiles it is holding",
+                agent.Id);
+
+            // NOTHING IS CLEARED HERE, and the reason is worth stating
+            // because the obvious instinct is wrong. A failed insert stays
+            // in the change tracker, so it looks like every later heartbeat
+            // would re-attempt it - but the context is registered with
+            // AddDbContext, which is scoped, so it dies with this request
+            // and the next heartbeat starts from the database anyway.
+            //
+            // A ChangeTracker.Clear() here was written, and then removed
+            // when a mutation showed it changed nothing: the collision test
+            // passed with and without it. Insurance that cannot be
+            // distinguished from its absence is a comment claiming a
+            // mechanism that is not there.
+        }
+
+        return ConnectorResults.Json(new HeartbeatResponse
+        {
+            LeaseTtlSeconds = options.Value.Timeouts.LeaseSeconds,
+            Revoked = agent.Revoked,
+            CatalogDigest = registry.CatalogDigest,
+        });
+    }
+
+    private static async Task<IResult> LeaseAsync(
+        HttpContext http,
+        LeaseRequest request,
+        ILeasedJobQueue queue,
+        ConnectorSignals signals,
+        IProviderRegistry registry,
+        IOptions<ConnectorOptions> options,
+        TimeProvider time,
+        ConnectorDbContext db,
+        CancellationToken ct)
+    {
+        var agent = http.RequireAgent();
+        var capabilities = ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities());
+
+        // An agent on another adapter catalogue is not offered work: its
+        // forms, selectors and record shapes are not the ones this control
+        // plane documented, and a job it ran would fail in ways nobody can
+        // read. It keeps its poll - the heartbeat has already told it why.
+        var stale = AgentCatalogue.IsStale(capabilities, registry);
+
+        // Which subject's work this agent is allowed to see. Null only for
+        // the operator's own fleet, named in configuration - never decided
+        // from anything the agent sends, because Class arrives on the
+        // agent's own heartbeat and it would simply claim to be pooled.
+        var ownerScope = agent.OwnerSubject is { } owner
+                         && !options.Value.FleetSubjects.Contains(owner, StringComparer.Ordinal)
+            ? owner
+            : null;
+
+        var ttl = TimeSpan.FromSeconds(options.Value.Timeouts.LeaseSeconds);
+        var deadline = time.GetUtcNow().AddSeconds(options.Value.Timeouts.AgentPollSeconds);
+
+        // A long poll rather than a fixed-interval pull: an agent that
+        // polls every few seconds is both slower to start a job and
+        // noisier, and the connection is already open either way.
+        while (!ct.IsCancellationRequested)
+        {
+            var job = stale
+                ? null
+                : await queue.TryLeaseAsync(agent.Id, ownerScope, capabilities, request.Accept, ttl, ct);
+            if (job is not null) return ConnectorResults.Json(job);
+
+            var remaining = deadline - time.GetUtcNow();
+            if (remaining <= TimeSpan.Zero) break;
+
+            db.ChangeTracker.Clear();
+            await signals.WaitAsync(ConnectorSignals.Queue,
+                remaining < TimeSpan.FromSeconds(2) ? remaining : TimeSpan.FromSeconds(2), ct);
+        }
+
+        return Results.NoContent();
+    }
+
+    private static async Task<ConnectorJsonResult<RenewResponse>> RenewAsync(
+        HttpContext http,
+        string jobId,
+        ILeasedJobQueue queue,
+        IOptions<ConnectorOptions> options,
+        CancellationToken ct)
+    {
+        var agent = http.RequireAgent();
+        var ttl = TimeSpan.FromSeconds(options.Value.Timeouts.LeaseSeconds);
+
+        var renewed = await queue.RenewLeaseAsync(jobId, agent.Id, ttl, ct);
+        return renewed is null
+            ? throw ConnectorException.Unsupported($"job '{jobId}' is no longer leased to this agent")
+            : ConnectorResults.Json(new RenewResponse { LeaseExpiresAt = renewed.Value });
+    }
+
+    private static async Task<IResult> ProgressAsync(
+        HttpContext http,
+        string jobId,
+        ProgressReport report,
+        ILeasedJobQueue queue,
+        CancellationToken ct)
+    {
+        var agent = http.RequireAgent();
+        await queue.ProgressAsync(jobId, agent.Id, report, ct);
+        return Results.NoContent();
+    }
+
+    private static async Task<ConnectorJsonResult<RaiseChallengeResponse>> RaiseChallengeAsync(
+        HttpContext http,
+        string jobId,
+        AgentChallengeRequest request,
+        ChallengeService challenges,
+        ConnectorDbContext db,
+        CancellationToken ct)
+    {
+        var agent = http.RequireAgent();
+        await RequireLeasedAsync(db, jobId, agent.Id, ct);
+
+        var row = await challenges.RaiseAsync(jobId, new PendingChallenge
+        {
+            Type = request.Type,
+            ExpiresAt = request.ExpiresAt,
+            Payload = new ChallengePayload
+            {
+                AnswerKind = request.AnswerKind,
+                PromptKey = request.PromptKey,
+                Code = request.Code,
+                Delivery = request.Delivery,
+                Length = request.Length,
+                Options = request.Options,
+                Url = request.Url,
+                ReturnPattern = request.ReturnPattern,
+            },
+            Image = DecodeImage(request.ImageBase64),
+        }, ct);
+
+        return ConnectorResults.Json(new RaiseChallengeResponse { ChallengeId = row.Id });
+    }
+
+    private static async Task<IResult> AwaitAnswerAsync(
+        HttpContext http,
+        string jobId,
+        ChallengeService challenges,
+        ConnectorDbContext db,
+        IOptions<ConnectorOptions> options,
+        CancellationToken ct)
+    {
+        var agent = http.RequireAgent();
+        await RequireLeasedAsync(db, jobId, agent.Id, ct);
+
+        // The agent names the challenge it is waiting on. Optional so an
+        // older agent keeps working, but without it a job with two open
+        // questions hands back the answer to the wrong one.
+        var waitingFor = http.Request.Query["challenge_id"].ToString();
+
+        var window = TimeSpan.FromSeconds(options.Value.Timeouts.AgentPollSeconds);
+        var answer = await challenges.AwaitAnswerAsync(
+            jobId, window, ct, string.IsNullOrWhiteSpace(waitingFor) ? null : waitingFor);
+
+        if (answer is not null) return ConnectorResults.Json(answer);
+
+        // Nothing yet is not the same as expired. Only a challenge that
+        // ran out of time is a 408; an open one just means poll again,
+        // and telling the agent to fail the job would throw away a login
+        // the human is still working on.
+        var pending = await challenges.PendingAsync(jobId, ct);
+        return pending is null
+            ? ConnectorResults.Error(new ConnectorException(ErrorCode.MfaTimeout, "challenge expired unanswered"))
+            : Results.NoContent();
+    }
+
+    private static async Task<ConnectorJsonResult<AgentAckResponse>> ResultAsync(
+        HttpContext http,
+        string jobId,
+        JobResultRequest result,
+        JobOutcomeService outcomes,
+        CancellationToken ct)
+    {
+        var agent = http.RequireAgent();
+        var outcome = await outcomes.SucceedAsync(jobId, agent.Id, result, ct);
+        return ConnectorResults.Json(new AgentAckResponse { Cursor = outcome.Cursor });
+    }
+
+    private static async Task<ConnectorJsonResult<AgentFailResponse>> FailAsync(
+        HttpContext http,
+        string jobId,
+        JobFailRequest failure,
+        JobOutcomeService outcomes,
+        CancellationToken ct)
+    {
+        var agent = http.RequireAgent();
+        var job = await outcomes.FailAsync(jobId, agent.Id, failure, ct);
+        return ConnectorResults.Json(new AgentFailResponse { State = job.State });
     }
 
     /// <summary>

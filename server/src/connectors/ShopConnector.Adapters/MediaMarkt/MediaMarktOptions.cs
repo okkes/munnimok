@@ -202,6 +202,12 @@ public sealed record MediaMarktOptions
     public string LoginPathMarker { get; init; } = "/myaccount/auth";
 
     /// <summary>
+    /// The vocabulary's word for a method that was seen and could not be
+    /// placed - which is also what an unrecognised code becomes.
+    /// </summary>
+    private const string Other = "other";
+
+    /// <summary>
     /// MediaMarkt's payment codes, mapped to the platform's closed vocabulary.
     /// </summary>
     /// <remarks>
@@ -217,16 +223,18 @@ public sealed record MediaMarktOptions
             ["IDEAL"] = "ideal",
             ["CRECA"] = "card",
             ["DEBCA"] = "card",
-            ["GICA"] = "other",
-            ["PAYPAL"] = "other",
-            ["INVOICE"] = "other",
+            ["GICA"] = Other,
+            ["PAYPAL"] = Other,
+            ["INVOICE"] = Other,
         };
 
     /// <summary>Null in, null out: an unpaid order states no method at all.</summary>
-    public string? PaymentMethod(string? code) =>
-        string.IsNullOrWhiteSpace(code) ? null
-        : PaymentMethods.TryGetValue(code, out var mapped) ? mapped
-        : "other";
+    public string? PaymentMethod(string? code)
+    {
+        if (string.IsNullOrWhiteSpace(code)) return null;
+
+        return PaymentMethods.TryGetValue(code, out var mapped) ? mapped : Other;
+    }
 
     /// <summary>
     /// Branches cut out of an order before its payload is kept as <c>raw</c>.

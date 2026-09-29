@@ -1492,7 +1492,7 @@ public sealed class CoolblueAdapterTests
     /// <summary>A login that never resolves - the browser never arrives.</summary>
     private static ArrivalWaiter Never() => new(url: null);
 
-    private static IReadOnlyDictionary<string, string> Credentials() =>
+    private static Dictionary<string, string> Credentials() =>
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["username"] = Username,
@@ -1558,10 +1558,10 @@ public sealed class CoolblueAdapterTests
             },
         };
 
-    private static IReadOnlyDictionary<string, string> Query(string url) =>
+    private static Dictionary<string, string> Query(string url) =>
         Pairs(new Uri(url).Query.TrimStart('?'));
 
-    private static IReadOnlyDictionary<string, string> Form(RecordedRequest request)
+    private static Dictionary<string, string> Form(RecordedRequest request)
     {
         Assert.NotNull(request.Body);
         return Pairs(request.Body);

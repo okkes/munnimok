@@ -74,15 +74,9 @@ public sealed class ConnectorAuth(IOptions<ConnectorOptions> options, ILogger<Co
     {
         if (principal is null || string.IsNullOrWhiteSpace(scope)) return false;
 
-        foreach (var claim in principal.FindAll(ScopeClaim))
-        {
-            foreach (var granted in claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            {
-                if (string.Equals(granted, scope, StringComparison.Ordinal)) return true;
-            }
-        }
-
-        return false;
+        return principal.FindAll(ScopeClaim)
+            .SelectMany(claim => claim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Any(granted => string.Equals(granted, scope, StringComparison.Ordinal));
     }
 
     private bool Development(HttpContext http)

@@ -253,12 +253,9 @@ internal static partial class BkrCreditParser
             if (!fields.TryGetValue(label, out var value)) continue;
             if (string.IsNullOrWhiteSpace(value)) continue;
 
-            foreach (var nothing in options.NoArrearsMarkers)
-            {
-                if (value.Contains(nothing, StringComparison.OrdinalIgnoreCase)) return null;
-            }
-
-            return value;
+            return options.NoArrearsMarkers.Any(nothing => value.Contains(nothing, StringComparison.OrdinalIgnoreCase))
+                ? null
+                : value;
         }
 
         return null;
@@ -273,14 +270,14 @@ internal static partial class BkrCreditParser
     {
         var found = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (Match pair in Pair.Matches(page))
+        foreach (var groups in Pair.Matches(page).Select(pair => pair.Groups))
         {
-            var label = Text(pair.Groups["label"].Value);
+            var label = Text(groups["label"].Value);
             if (label.Length == 0) continue;
 
             // First wins. A print page states each label once; a repeat would
             // be a layout artefact rather than a second value.
-            found.TryAdd(label, Text(pair.Groups["value"].Value));
+            found.TryAdd(label, Text(groups["value"].Value));
         }
 
         return found;

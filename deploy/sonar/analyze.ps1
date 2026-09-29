@@ -96,7 +96,11 @@ if ($LASTEXITCODE -ne 0) { Write-Error 'failed to build the dotnet scanner image
 # EF migrations are generated code — excluded from analysis
 # the host test run leaves Windows-built obj/bin behind — the Linux
 # build inside the container chokes on them (MSB3491), so start clean
-$inner = "find . -type d -name obj -prune -exec rm -rf {} + ; find . -type d -name bin -prune -exec rm -rf {} + ; dotnet sonarscanner begin /k:munni-api /n:munni-api /d:sonar.host.url=http://host.docker.internal:9000 /d:sonar.token=$token /d:sonar.exclusions=**/Migrations/** /d:sonar.cs.opencover.reportsPaths=/src/coverage/opencover-*.xml && dotnet build Munni.slnx --no-incremental && dotnet sonarscanner end /d:sonar.token=$token"
+# bin/obj hold the build's copies of every fixture and Playwright's own
+# JavaScript (the .NET scanner walks each project folder for non-.NET files,
+# eight times over); the fixtures are recorded third-party pages, not code
+$exclusions = '**/Migrations/**,**/bin/**,**/obj/**,**/Fixtures/**'
+$inner = "find . -type d -name obj -prune -exec rm -rf {} + ; find . -type d -name bin -prune -exec rm -rf {} + ; dotnet sonarscanner begin /k:munni-api /n:munni-api /d:sonar.host.url=http://host.docker.internal:9000 /d:sonar.token=$token /d:sonar.exclusions=$exclusions /d:sonar.test.exclusions=$exclusions /d:sonar.cs.opencover.reportsPaths=/src/coverage/opencover-*.xml && dotnet build Munni.slnx --no-incremental && dotnet sonarscanner end /d:sonar.token=$token"
 cmd /c "docker run --rm -v `"$repo\server`:/src`" munni-sonar-dotnet sh -c `"$inner`" 2>&1"
 if ($LASTEXITCODE -ne 0) { Write-Error 'api analysis failed' }
 

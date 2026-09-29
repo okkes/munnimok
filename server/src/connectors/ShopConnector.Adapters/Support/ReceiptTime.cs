@@ -58,6 +58,11 @@ internal static class RetailZones
 {
     private const string Netherlands = "Europe/Amsterdam";
 
+    /// <summary>Windows' names for the two zones every listed country falls under.</summary>
+    private const string WestEurope = "W. Europe Standard Time";
+
+    private const string Romance = "Romance Standard Time";
+
     private static readonly Dictionary<string, string> ByCountry = new(StringComparer.OrdinalIgnoreCase)
     {
         ["NL"] = Netherlands,
@@ -77,13 +82,13 @@ internal static class RetailZones
     /// </summary>
     private static readonly Dictionary<string, string> WindowsFallback = new(StringComparer.Ordinal)
     {
-        [Netherlands] = "W. Europe Standard Time",
-        ["Europe/Brussels"] = "Romance Standard Time",
-        ["Europe/Berlin"] = "W. Europe Standard Time",
-        ["Europe/Vienna"] = "W. Europe Standard Time",
-        ["Europe/Paris"] = "Romance Standard Time",
-        ["Europe/Rome"] = "W. Europe Standard Time",
-        ["Europe/Madrid"] = "Romance Standard Time",
+        [Netherlands] = WestEurope,
+        ["Europe/Brussels"] = Romance,
+        ["Europe/Berlin"] = WestEurope,
+        ["Europe/Vienna"] = WestEurope,
+        ["Europe/Paris"] = Romance,
+        ["Europe/Rome"] = WestEurope,
+        ["Europe/Madrid"] = Romance,
     };
 
     private static readonly ConcurrentDictionary<string, TimeZoneInfo> Cache = new(StringComparer.Ordinal);

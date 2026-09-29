@@ -249,44 +249,7 @@ internal static class LiveInputReplay
 
         for (var i = 0; i < events.Count; i++)
         {
-            var input = events[i];
-
-            if (!input.IsWellFormed())
-            {
-                // Kind and index, never the value: a malformed text event is
-                // still someone's typing.
-                logger.LogWarning(
-                    "no live input replayed: event {Index} of {Count} is a malformed {Kind}", i, events.Count, input.Kind);
-                return 0;
-            }
-
-            if (input.Kind is LiveInputKind.Key && LiveKeys.LiteralFor(input.Key!.Value) is null)
-            {
-                logger.LogWarning(
-                    "no live input replayed: event {Index} names a key this agent does not press", i);
-                return 0;
-            }
-
-            if (input.Kind is LiveInputKind.Text or LiveInputKind.Key) continue;
-
-            var point = new Tap(input.X, input.Y).ToPagePixels(region);
-            if (!Inside(point, region))
-            {
-                // Unreachable while IsWellFormed bounds a fraction to [0,1],
-                // and kept for the reason the tap relay keeps its twin: this is
-                // the one place where a future change on either side of the
-                // wire would otherwise become an event somewhere nobody chose.
-                logger.LogWarning(
-                    "no live input replayed: event {Index} maps outside the {W}x{H} frame it was measured against",
-                    i, frame.Width, frame.Height);
-                return 0;
-            }
-
-            points[i] = point;
-            if (input.Kind is LiveInputKind.Scroll)
-            {
-                scrolls[i] = Math.Clamp(input.DeltaY, -MaxScrollScreens, MaxScrollScreens) * frame.Height;
-            }
+            if (!TryResolve(events, i, region, logger, out points[i], out scrolls[i])) return 0;
         }
 
         var dispatched = 0;
@@ -434,6 +397,62 @@ internal static class LiveInputReplay
             default:
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Checks one event and, for a pointer event, maps it onto the frame.
+    /// False refuses the whole batch; the reason is logged by kind and index,
+    /// never by value.
+    /// </summary>
+    private static bool TryResolve(
+        IReadOnlyList<LiveInput> events,
+        int i,
+        CropRegion region,
+        ILogger logger,
+        out (double X, double Y) point,
+        out double scroll)
+    {
+        point = default;
+        scroll = 0;
+        var input = events[i];
+
+        if (!input.IsWellFormed())
+        {
+            // Kind and index, never the value: a malformed text event is
+            // still someone's typing.
+            logger.LogWarning(
+                "no live input replayed: event {Index} of {Count} is a malformed {Kind}", i, events.Count, input.Kind);
+            return false;
+        }
+
+        if (input.Kind is LiveInputKind.Key && LiveKeys.LiteralFor(input.Key!.Value) is null)
+        {
+            logger.LogWarning(
+                "no live input replayed: event {Index} names a key this agent does not press", i);
+            return false;
+        }
+
+        if (input.Kind is LiveInputKind.Text or LiveInputKind.Key) return true;
+
+        point = new Tap(input.X, input.Y).ToPagePixels(region);
+        if (!Inside(point, region))
+        {
+            // Unreachable while IsWellFormed bounds a fraction to [0,1],
+            // and kept for the reason the tap relay keeps its twin: this is
+            // the one place where a future change on either side of the
+            // wire would otherwise become an event somewhere nobody chose.
+            logger.LogWarning(
+                "no live input replayed: event {Index} maps outside the {W}x{H} frame it was measured against",
+                i, region.Width, region.Height);
+            return false;
+        }
+
+        if (input.Kind is LiveInputKind.Scroll)
+        {
+            scroll = Math.Clamp(input.DeltaY, -MaxScrollScreens, MaxScrollScreens) * region.Height;
+        }
+
+        return true;
     }
 
     private static bool Inside((double X, double Y) point, CropRegion region) =>

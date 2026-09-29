@@ -139,7 +139,7 @@ public sealed partial class ProfileStore
         _logger.LogWarning("all persistent browser profiles have been wiped");
     }
 
-    private IEnumerable<string> SafeEnumerate()
+    private string[] SafeEnumerate()
     {
         try
         {
@@ -160,9 +160,9 @@ public sealed partial class ProfileStore
         try
         {
             var stored = JsonSerializer.Deserialize<ProfileHealth[]>(File.ReadAllText(file), Transport.AgentJson.Options);
-            foreach (var profile in stored ?? [])
+            foreach (var profile in (stored ?? []).Where(p => SafeIdPattern.IsMatch(p.Id)))
             {
-                if (SafeIdPattern.IsMatch(profile.Id)) _health[profile.Id] = profile;
+                _health[profile.Id] = profile;
             }
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)

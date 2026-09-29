@@ -235,23 +235,23 @@ public static class BankStatementCsv
 
             var accountId = BankRecords.AccountId(options.SessionId, accountExternalId);
 
-            transactions.Add(BankRecords.NewTransaction(
-                options.SessionId,
-                accountId,
+            transactions.Add(BankRecords.NewTransaction(options.SessionId, accountId, new TransactionDraft
+            {
                 // CSV exports carry no transaction reference at all, so the
                 // id is synthesized from the row's own content plus an
                 // occurrence counter - two identical purchases on one day
                 // are common and must not collapse into one record.
-                ExternalId(accountExternalId, bookedAt, amount, name, description, seen),
-                bookedAt,
-                amount,
-                row.DateOrNull(ColumnValueDate),
-                name is null && iban is null ? null : new Counterparty { Name = name, Iban = iban },
-                description,
-                Kind(row.Text(ColumnCode)),
-                hasBalance
+                ExternalId = ExternalId(accountExternalId, bookedAt, amount, name, description, seen),
+                BookedAt = bookedAt,
+                Amount = amount,
+                ValueAt = row.DateOrNull(ColumnValueDate),
+                Counterparty = name is null && iban is null ? null : new Counterparty { Name = name, Iban = iban },
+                Description = description,
+                Kind = Kind(row.Text(ColumnCode)),
+                ResultingBalance = hasBalance
                     ? new Money(row.MinorUnits(ColumnBalanceAfter), currency)
-                    : null));
+                    : null,
+            }));
         }
 
         return transactions;

@@ -72,7 +72,7 @@ public sealed class ProductionAuthTests
         var consumer = Call(services, Token("connector:consume"));
         Assert.True(await auth.AuthenticateAsync(consumer));
         var refused = await filter.InvokeAsync(new DefaultEndpointFilterInvocationContext(consumer), Reached);
-        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsAssignableFrom<IStatusCodeHttpResult>(refused).StatusCode);
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<IStatusCodeHttpResult>(refused, exactMatch: false).StatusCode);
 
         var operatorCall = Call(services, Token("connector:consume connector:admin"));
         Assert.True(await auth.AuthenticateAsync(operatorCall));

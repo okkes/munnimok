@@ -43,12 +43,14 @@ public static class ParamBinder
             }
         }
 
-        foreach (var spec in resource.Params.Where(p => p is { Required: true, Internal: false }))
+        var missing = resource.Params
+            .Where(p => p is { Required: true, Internal: false })
+            .Select(spec => spec.Key)
+            .FirstOrDefault(key => !query.ContainsKey(key) || query[key].Count == 0);
+
+        if (missing is not null)
         {
-            if (!query.ContainsKey(spec.Key) || query[spec.Key].Count == 0)
-            {
-                throw ConnectorException.InvalidRequest($"parameter '{spec.Key}' is required");
-            }
+            throw ConnectorException.InvalidRequest($"parameter '{missing}' is required");
         }
 
         DateOnly? since = null;
@@ -118,7 +120,7 @@ public static class ParamBinder
     /// comma-separated value; both are the user's requested shape
     /// (<c>accounts=savings,credit_card</c>) and both mean the same thing.
     /// </summary>
-    private static IReadOnlyList<string> Expand(ParamSpec spec, IReadOnlyList<string> raw)
+    private static List<string> Expand(ParamSpec spec, IReadOnlyList<string> raw)
     {
         var values = new List<string>();
         foreach (var value in raw)

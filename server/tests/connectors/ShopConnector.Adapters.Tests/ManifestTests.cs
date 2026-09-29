@@ -23,7 +23,15 @@ namespace ShopConnector.Adapters.Tests;
 /// </summary>
 public sealed class ManifestTests
 {
-    private static readonly IProviderRegistry Registry = new ProviderRegistry(ShopAdapters.All());
+    private static readonly ProviderRegistry Registry = new(ShopAdapters.All());
+
+    /// <summary>The closed vocabulary every receipts resource draws its includes from.</summary>
+    private static readonly string[] IncludeVocabulary = ["items", "raw", "invoice"];
+
+    /// <summary>Lidl Plus's countries and languages, as its config offers them.</summary>
+    private static readonly string[] LidlCountries = ["NL", "DE", "AT", "BE", "FR", "IT", "ES"];
+
+    private static readonly string[] LidlLanguages = ["nl", "de", "en", "fr", "it", "es"];
 
     public static TheoryData<string> ProviderIds
     {
@@ -93,7 +101,7 @@ public sealed class ManifestTests
         // scraped a page has nothing honest to put in. "invoice" is a file the
         // provider ISSUED to the user, which it may have whether or not it
         // publishes an API.
-        Assert.All(include.Values!, value => Assert.Contains(value, new[] { "items", "raw", "invoice" }));
+        Assert.All(include.Values!, value => Assert.Contains(value, IncludeVocabulary));
 
         // Every receipts resource offers items, and coolblue is back in that
         // set after being wrongly taken out of it: its order page does itemise,
@@ -267,12 +275,12 @@ public sealed class ManifestTests
         Assert.Equal(FieldType.Select, country.Type);
         Assert.True(country.Required);
         Assert.False(country.Secret);
-        Assert.Equal(new[] { "NL", "DE", "AT", "BE", "FR", "IT", "ES" }, country.Options);
+        Assert.Equal(LidlCountries, country.Options);
 
         var language = Assert.Single(config, f => f.Key == "language");
         Assert.Equal(FieldType.Select, language.Type);
         Assert.True(language.Required);
-        Assert.Equal(new[] { "nl", "de", "en", "fr", "it", "es" }, language.Options);
+        Assert.Equal(LidlLanguages, language.Options);
     }
 
     /// <summary>

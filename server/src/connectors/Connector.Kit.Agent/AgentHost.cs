@@ -1,3 +1,4 @@
+#pragma warning disable S107 // the host is composed from its collaborators; the count is the number of them
 using System.Collections.Concurrent;
 using System.Globalization;
 using Connector.Kit.Adapters;
@@ -155,16 +156,16 @@ public sealed class AgentHost : BackgroundService
     /// <summary>The connector this host serves, as every line about it says.</summary>
     private string Name => _connection.Name;
 
-    protected override async Task ExecuteAsync(CancellationToken applicationStopping)
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // Either the process is going or this connector is: a retired
         // connection ends its own loops and leaves the others polling.
-        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(applicationStopping, _retire.Token);
-        var stoppingToken = stopping.Token;
+        using var stopping = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _retire.Token);
+        var token = stopping.Token;
 
         _work.SweepOnce();
 
-        if (!await EnsureEnrolledAsync(stoppingToken).ConfigureAwait(false))
+        if (!await EnsureEnrolledAsync(token).ConfigureAwait(false))
         {
             // A connector this agent cannot enroll with has nothing for it to
             // do. The roster decides what that means for the process: with one
@@ -194,8 +195,8 @@ public sealed class AgentHost : BackgroundService
             string.Join(", ", _capabilities.Runtimes.Select(ConnectorAgentOptions.WireName)),
             _slots.Limit);
 
-        var heartbeat = HeartbeatLoopAsync(stoppingToken);
-        await LeaseLoopAsync(stoppingToken).ConfigureAwait(false);
+        var heartbeat = HeartbeatLoopAsync(token);
+        await LeaseLoopAsync(token).ConfigureAwait(false);
         await heartbeat.ConfigureAwait(false);
     }
 
@@ -230,10 +231,10 @@ public sealed class AgentHost : BackgroundService
             {
                 await all.WaitAsync(_options.ShutdownAbortGrace, _time, CancellationToken.None).ConfigureAwait(false);
             }
-            catch (TimeoutException)
+            catch (TimeoutException ex)
             {
                 _logger.LogError(
-                    "{Connection}: {Count} job(s) did not stop within the abort grace period", Name, _inflight.Count);
+                    ex, "{Connection}: {Count} job(s) did not stop within the abort grace period", Name, _inflight.Count);
             }
         }
     }

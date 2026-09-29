@@ -395,9 +395,7 @@ public sealed class ConnectorAgentOptions
             Providers = Providers.Count > 0
                 ? [.. Providers]
                 : [.. manifests.Select(m => m.Id).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)],
-            Runtimes = Class == AgentClass.Byo
-                ? OwnMachineRuntimes(served, needed)
-                : Runtimes.Count > 0 ? [.. Runtimes] : needed,
+            Runtimes = AdvertisedRuntimes(served, needed),
             Egress = Egress,
             MaxConcurrency = MaxConcurrency,
             Class = Class,
@@ -418,6 +416,19 @@ public sealed class ConnectorAgentOptions
         ArgumentNullException.ThrowIfNull(registry);
 
         return BuildCapabilities(registry.Manifests) with { CatalogDigest = registry.CatalogDigest };
+    }
+
+    /// <summary>
+    /// The tiers to advertise: a household agent serves every tier its
+    /// providers run on; a pooled one what it was configured with, or the
+    /// tiers its providers need when nothing was.
+    /// </summary>
+    private IReadOnlyList<ProviderRuntime> AdvertisedRuntimes(
+        IReadOnlyList<ProviderManifest> served, IReadOnlyList<ProviderRuntime> needed)
+    {
+        if (Class == AgentClass.Byo) return OwnMachineRuntimes(served, needed);
+
+        return Runtimes.Count > 0 ? [.. Runtimes] : needed;
     }
 
     /// <summary>
@@ -498,12 +509,9 @@ public sealed class ConnectorAgentOptions
         if (string.IsNullOrWhiteSpace(WorkRootDirectory)) errors.Add("WorkRootDirectory is required");
         if (_adapters.Count == 0) errors.Add("register at least one adapter with AddAdapter");
 
-        if (Egress is { } egress)
+        if (Egress is { } egress && egress.Kind is not ("residential" or "any"))
         {
-            if (egress.Kind is not ("residential" or "any"))
-            {
-                errors.Add($"Egress.Kind '{egress.Kind}' must be 'residential' or 'any'");
-            }
+            errors.Add($"Egress.Kind '{egress.Kind}' must be 'residential' or 'any'");
         }
 
         if (errors.Count > 0)
@@ -537,6 +545,25 @@ public sealed class ConnectorAgentOptions
     /// and neither the operator nor this class can say which was meant.</item>
     /// </list>
     /// </remarks>
+    /// <summary>
+    /// The single-connection shorthand set beside a Connections list, named,
+    /// or null when the two shapes are not mixed.
+    /// </summary>
+    private string? ShorthandBesideTheList()
+    {
+        var shorthand = new List<string>();
+        if (ControlPlaneBaseUrl is not null) shorthand.Add("ControlPlaneBaseUrl");
+        if (!string.IsNullOrWhiteSpace(EnrollmentCode)) shorthand.Add("EnrollmentCode");
+        if (!string.IsNullOrWhiteSpace(ControlPlaneCaPath)) shorthand.Add("ControlPlaneCaPath");
+
+        if (shorthand.Count == 0) return null;
+
+        return $"{string.Join(" and ", shorthand)} " +
+               $"{(shorthand.Count == 1 ? "is" : "are")} set beside a Connections list; the top-level " +
+               "settings are the shorthand for a single connection, so move them into the list or " +
+               "drop the list";
+    }
+
     private IEnumerable<string> ConnectionProblems()
     {
         if (Connections.Count == 0 && ControlPlaneBaseUrl is null)
@@ -552,20 +579,9 @@ public sealed class ConnectorAgentOptions
 
         var resolved = ResolvedConnections();
 
-        if (Connections.Count > 0)
+        if (Connections.Count > 0 && ShorthandBesideTheList() is { } shorthand)
         {
-            var shorthand = new List<string>();
-            if (ControlPlaneBaseUrl is not null) shorthand.Add("ControlPlaneBaseUrl");
-            if (!string.IsNullOrWhiteSpace(EnrollmentCode)) shorthand.Add("EnrollmentCode");
-            if (!string.IsNullOrWhiteSpace(ControlPlaneCaPath)) shorthand.Add("ControlPlaneCaPath");
-
-            if (shorthand.Count > 0)
-            {
-                yield return $"{string.Join(" and ", shorthand)} " +
-                             $"{(shorthand.Count == 1 ? "is" : "are")} set beside a Connections list; the top-level " +
-                             "settings are the shorthand for a single connection, so move them into the list or " +
-                             "drop the list";
-            }
+            yield return shorthand;
         }
 
         foreach (var problem in resolved.SelectMany(connection => connection.Problems()))

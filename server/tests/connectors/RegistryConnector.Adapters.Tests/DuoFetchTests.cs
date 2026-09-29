@@ -173,7 +173,8 @@ public sealed class DuoFetchTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => DuoCalls.ReadAsync(
-                portal, Options, "pfd/json/raadplegen/klantbeeld", required: false, CancellationToken.None));
+                portal, Options, new DuoCall("pfd/json/raadplegen/klantbeeld", Required: false),
+                CancellationToken.None));
 
         Assert.Empty(portal.Requested);
     }
@@ -194,7 +195,8 @@ public sealed class DuoFetchTests
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(
             () => DuoCalls.ReadAsync(
-                portal, Options, "pfd/json/raadplegen/klantbeeld", required: true, CancellationToken.None));
+                portal, Options, new DuoCall("pfd/json/raadplegen/klantbeeld", Required: true),
+                CancellationToken.None));
 
         Assert.Contains("klantbeeld", error.Message, StringComparison.Ordinal);
 
@@ -317,7 +319,7 @@ public sealed class DuoFetchTests
 
         var error = await Assert.ThrowsAsync<ConnectorException>(
             () => DuoCalls.ReadAsync(
-                portal, Options, Options.DebtPath, required: true, CancellationToken.None));
+                portal, Options, new DuoCall(Options.DebtPath, Required: true), CancellationToken.None));
 
         Assert.Equal(ErrorCode.SessionExpired, error.Code);
         Assert.Equal(UserAction.Reauth, ErrorCatalog.ActionFor(error.Code));

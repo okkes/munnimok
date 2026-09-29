@@ -316,11 +316,7 @@ internal static partial class IngTransactions
         var shortest = ids.Min(id => id.Length);
         var longest = ids.Max(id => id.Length);
 
-        var alphabet = ids.All(id => id.All(char.IsAsciiDigit))
-            ? "digits"
-            : ids.All(id => id.All(char.IsAsciiHexDigit))
-                ? "hex"
-                : "mixed characters";
+        var alphabet = Alphabet(ids);
 
         var length = shortest == longest
             ? $"{shortest} character(s)"
@@ -330,6 +326,15 @@ internal static partial class IngTransactions
                $"{distinct} distinct, {length} of {alphabet}{(Consecutive(ids) ? ", counting up one by one" : "")}. " +
                "Not adopted: a link that renumbers per page or per session would re-import this account's " +
                "whole history on every sync. Compare this line across two separate logins to settle it";
+    }
+
+    /// <summary>Which characters the ids are drawn from, narrowest set first.</summary>
+    private static string Alphabet(IReadOnlyList<string> ids)
+    {
+        if (ids.All(id => id.All(char.IsAsciiDigit))) return "digits";
+        if (ids.All(id => id.All(char.IsAsciiHexDigit))) return "hex";
+
+        return "mixed characters";
     }
 
     /// <summary>
@@ -390,12 +395,11 @@ internal static partial class IngTransactions
 
         var ending = row.Child("endingBalance");
 
-        return BankRecords.NewTransaction(
-            sessionId,
-            accountId,
-            id,
-            bookedAt,
-            money,
+        return BankRecords.NewTransaction(sessionId, accountId, new TransactionDraft
+        {
+            ExternalId = id,
+            BookedAt = bookedAt,
+            Amount = money,
             // NO VALUE DATE, and this is a decision rather than an omission.
             //
             // ING states one only inside the remittance lines, as
@@ -403,15 +407,16 @@ internal static partial class IngTransactions
             // English. A reader that matched the Dutch label would work
             // perfectly for most of this country and silently return nothing
             // for the rest, which is worse than stating nothing for everybody.
-            valueAt: null,
-            counterparty: Counterparty(row),
-            description: Description(row),
-            kind: Kind(row, money),
-            resultingBalance: ending.Text("value") is { } balance
+            ValueAt = null,
+            Counterparty = Counterparty(row),
+            Description = Description(row),
+            Kind = Kind(row, money),
+            ResultingBalance = ending.Text("value") is { } balance
                 ? new Money(
                     MoneyParser.ToMinor(balance, Unit, "balance"),
                     ending.Text("currency")?.ToUpperInvariant() ?? currency)
-                : null);
+                : null,
+        });
     }
 
     /// <summary>
@@ -617,18 +622,11 @@ internal static partial class IngTransactions
     }
 
     /// <summary>ING's own cursor link, or null when this was the last page.</summary>
-    private static string? NextPath(JsonDocument payload)
-    {
-        foreach (var link in payload.RootElement.Items("_links"))
-        {
-            if (string.Equals(link.Text("rel"), "next", StringComparison.OrdinalIgnoreCase))
-            {
-                return link.Text("href");
-            }
-        }
-
-        return null;
-    }
+    private static string? NextPath(JsonDocument payload) =>
+        payload.RootElement.Items("_links")
+            .Where(link => string.Equals(link.Text("rel"), "next", StringComparison.OrdinalIgnoreCase))
+            .Select(link => link.Text("href"))
+            .FirstOrDefault();
 
     /// <summary>
     /// Anything ING said about this answer. Empty on every captured page, read

@@ -44,6 +44,9 @@ public sealed class AgentHeartbeatTests(ShopApiFactory factory)
     /// </summary>
     private const string Shared = "own-ah";
 
+    /// <summary>The one provider every agent in this file claims to serve.</summary>
+    private static readonly string[] ClaimedProviders = ["ah"];
+
     [Fact]
     public async Task A_profile_the_database_refuses_does_not_cost_an_agent_its_liveness()
     {
@@ -162,7 +165,7 @@ public sealed class AgentHeartbeatTests(ShopApiFactory factory)
 
         using var request = Wire.Post("/agent/v1/heartbeat", new
         {
-            capabilities = new { providers = new[] { "ah" }, @class = "byo" },
+            capabilities = new { providers = ClaimedProviders, @class = "byo" },
             profiles = new[] { new { id = profileId, provider = "ah", healthy = true } },
         });
 

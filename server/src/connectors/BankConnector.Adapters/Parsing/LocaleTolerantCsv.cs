@@ -169,45 +169,68 @@ public static class LocaleTolerantCsv
 
         foreach (var column in schema.Columns)
         {
-            foreach (var alias in column.Aliases)
-            {
-                var target = Normalize(alias);
-                var index = normalized.FindIndex(h => h.Length > 0 && string.Equals(h, target, StringComparison.Ordinal));
-                if (index < 0 || claimed[index]) continue;
-
-                resolved[column.Key] = index;
-                claimed[index] = true;
-                break;
-            }
+            Claim(resolved, claimed, column.Key, ExactMatch(normalized, claimed, column));
         }
 
         foreach (var column in schema.Columns)
         {
             if (resolved.ContainsKey(column.Key)) continue;
 
-            foreach (var alias in column.Aliases)
-            {
-                var target = Normalize(alias);
-
-                // A three-character fragment matches half a header row by
-                // accident; below that, containment is not evidence.
-                if (target.Length < 4) continue;
-
-                var candidates = new List<int>();
-                for (var i = 0; i < normalized.Count; i++)
-                {
-                    if (!claimed[i] && normalized[i].Contains(target, StringComparison.Ordinal)) candidates.Add(i);
-                }
-
-                if (candidates.Count != 1) continue;
-
-                resolved[column.Key] = candidates[0];
-                claimed[candidates[0]] = true;
-                break;
-            }
+            Claim(resolved, claimed, column.Key, ContainedMatch(normalized, claimed, column));
         }
 
         return resolved;
+    }
+
+    /// <summary>Records a header as a column's, unless the search came back empty-handed.</summary>
+    private static void Claim(Dictionary<string, int> resolved, bool[] claimed, string key, int index)
+    {
+        if (index < 0) return;
+
+        resolved[key] = index;
+        claimed[index] = true;
+    }
+
+    /// <summary>
+    /// The first unclaimed header equal to one of the column's aliases, tried
+    /// in the column's order, or -1.
+    /// </summary>
+    private static int ExactMatch(List<string> normalized, bool[] claimed, CsvColumnSpec column)
+    {
+        foreach (var alias in column.Aliases)
+        {
+            var target = Normalize(alias);
+            var index = normalized.FindIndex(h => h.Length > 0 && string.Equals(h, target, StringComparison.Ordinal));
+            if (index >= 0 && !claimed[index]) return index;
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// The one unclaimed header containing one of the column's aliases, or -1
+    /// where no alias is contained by exactly one header.
+    /// </summary>
+    private static int ContainedMatch(List<string> normalized, bool[] claimed, CsvColumnSpec column)
+    {
+        foreach (var alias in column.Aliases)
+        {
+            var target = Normalize(alias);
+
+            // A three-character fragment matches half a header row by
+            // accident; below that, containment is not evidence.
+            if (target.Length < 4) continue;
+
+            var candidates = new List<int>();
+            for (var i = 0; i < normalized.Count; i++)
+            {
+                if (!claimed[i] && normalized[i].Contains(target, StringComparison.Ordinal)) candidates.Add(i);
+            }
+
+            if (candidates.Count == 1) return candidates[0];
+        }
+
+        return -1;
     }
 
     /// <summary>
@@ -240,38 +263,47 @@ public static class LocaleTolerantCsv
         var lines = new List<string>();
         var record = new StringBuilder();
         var inQuotes = false;
+        var i = 0;
 
-        for (var i = 0; i < text.Length; i++)
+        while (i < text.Length)
         {
             var ch = text[i];
 
             if (ch == '"')
             {
-                if (inQuotes && i + 1 < text.Length && text[i + 1] == '"')
+                if (inQuotes && NextIs(text, i, '"'))
                 {
                     record.Append('"').Append('"');
-                    i++;
+                    i += 2;
                     continue;
                 }
 
                 inQuotes = !inQuotes;
                 record.Append(ch);
+                i++;
                 continue;
             }
 
             if (!inQuotes && (ch == '\n' || ch == '\r'))
             {
-                if (ch == '\r' && i + 1 < text.Length && text[i + 1] == '\n') i++;
                 AddLine(lines, record);
+                i += LineBreakLength(text, i);
                 continue;
             }
 
             record.Append(ch);
+            i++;
         }
 
         AddLine(lines, record);
         return lines;
     }
+
+    /// <summary>Whether the character after <paramref name="at"/> is this one.</summary>
+    private static bool NextIs(string text, int at, char ch) => at + 1 < text.Length && text[at + 1] == ch;
+
+    /// <summary>How many characters the line break at <paramref name="at"/> takes: two for CRLF, one otherwise.</summary>
+    private static int LineBreakLength(string text, int at) => text[at] == '\r' && NextIs(text, at, '\n') ? 2 : 1;
 
     private static void AddLine(List<string> lines, StringBuilder record)
     {
@@ -291,37 +323,15 @@ public static class LocaleTolerantCsv
     {
         var fields = new List<string>();
         var current = new StringBuilder();
-        var inQuotes = false;
+        var i = 0;
 
-        for (var i = 0; i < line.Length; i++)
+        while (i < line.Length)
         {
             var ch = line[i];
 
-            if (inQuotes)
-            {
-                if (ch == '"')
-                {
-                    if (i + 1 < line.Length && line[i + 1] == '"')
-                    {
-                        current.Append('"');
-                        i++;
-                    }
-                    else
-                    {
-                        inQuotes = false;
-                    }
-                }
-                else
-                {
-                    current.Append(ch);
-                }
-
-                continue;
-            }
-
             if (ch == '"' && current.Length == 0)
             {
-                inQuotes = true;
+                i = Quoted(line, i + 1, current);
                 continue;
             }
 
@@ -329,14 +339,46 @@ public static class LocaleTolerantCsv
             {
                 fields.Add(current.ToString().Trim());
                 current.Clear();
-                continue;
+            }
+            else
+            {
+                current.Append(ch);
             }
 
-            current.Append(ch);
+            i++;
         }
 
         fields.Add(current.ToString().Trim());
         return fields;
+    }
+
+    /// <summary>
+    /// Appends a quoted run, starting just after its opening quote, with a
+    /// doubled quote read as one - and answers where the line goes on: just
+    /// past the closing quote, or the end of the line when it never closed.
+    /// </summary>
+    private static int Quoted(string line, int from, StringBuilder current)
+    {
+        var i = from;
+
+        while (i < line.Length)
+        {
+            var ch = line[i];
+
+            if (ch != '"')
+            {
+                current.Append(ch);
+                i++;
+                continue;
+            }
+
+            if (!NextIs(line, i, '"')) return i + 1;
+
+            current.Append('"');
+            i += 2;
+        }
+
+        return i;
     }
 }
 

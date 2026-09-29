@@ -12,6 +12,11 @@ namespace Connector.Kit.Tests;
 /// </summary>
 public sealed class RequestAndStatusTests
 {
+    /// <summary>What the caller selected, read back by name.</summary>
+    private static readonly string[] SelectedAccounts = ["savings", "credit_card"];
+
+    private static readonly string[] ItemsOnly = ["items"];
+
     [Fact]
     public void An_absent_selection_reads_as_empty_and_never_as_null()
     {
@@ -39,8 +44,8 @@ public sealed class RequestAndStatusTests
             },
         };
 
-        Assert.Equal(new[] { "savings", "credit_card" }, request.Accounts);
-        Assert.Equal(new[] { "items" }, request.Include);
+        Assert.Equal(SelectedAccounts, request.Accounts);
+        Assert.Equal(ItemsOnly, request.Include);
         Assert.True(request.WantsItems);
         Assert.Equal(new DateOnly(2026, 1, 1), request.Since);
         Assert.Null(request.Until);

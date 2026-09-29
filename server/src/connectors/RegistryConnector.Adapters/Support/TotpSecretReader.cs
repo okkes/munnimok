@@ -220,23 +220,8 @@ internal static class TotpSecretReader
                     break;
 
                 case 2:
-                    if (!TryVarint(buffer, ref index, out var length)) yield break;
-
-                    // THE RANGE IS CHECKED BEFORE THE CAST, not after. A varint
-                    // is 64 bits; casting one above int.MaxValue to int gives a
-                    // NEGATIVE length, which sails through an `index + length >
-                    // buffer.Length` guard and then throws
-                    // ArgumentOutOfRangeException on the slice. What that means
-                    // in practice is a pasted string that is not a migration
-                    // payload crashing the parse instead of being refused, and
-                    // the refusal is the entire contract of this reader.
-                    if (length > int.MaxValue) yield break;
-
-                    var size = (int)length;
-                    if (index + size > buffer.Length) yield break;
-
-                    yield return (field, buffer[index..(index + size)]);
-                    index += size;
+                    if (!TryBytes(buffer, ref index, out var bytes)) yield break;
+                    yield return (field, bytes);
                     break;
 
                 case 5: index += 4; break;
@@ -244,6 +229,35 @@ internal static class TotpSecretReader
                 default: yield break;
             }
         }
+    }
+
+    /// <summary>
+    /// A length-delimited field: its length as a varint, then that many bytes.
+    /// False when the buffer does not hold what the length promises.
+    /// </summary>
+    private static bool TryBytes(byte[] buffer, ref int index, out byte[] value)
+    {
+        value = [];
+
+        if (!TryVarint(buffer, ref index, out var length)) return false;
+
+        // THE RANGE IS CHECKED BEFORE THE CAST, not after. A varint
+        // is 64 bits; casting one above int.MaxValue to int gives a
+        // NEGATIVE length, which sails through an `index + length >
+        // buffer.Length` guard and then throws
+        // ArgumentOutOfRangeException on the slice. What that means
+        // in practice is a pasted string that is not a migration
+        // payload crashing the parse instead of being refused, and
+        // the refusal is the entire contract of this reader.
+        if (length > int.MaxValue) return false;
+
+        var size = (int)length;
+        if (index + size > buffer.Length) return false;
+
+        value = buffer[index..(index + size)];
+        index += size;
+
+        return true;
     }
 
     private static bool TryVarint(byte[] buffer, ref int index, out ulong value)

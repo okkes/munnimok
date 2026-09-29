@@ -33,6 +33,9 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
     /// </summary>
     private const string Since = "2026-06-01";
 
+    /// <summary>The one include the one-shot form asks for.</summary>
+    private static readonly string[] ItemsOnly = ["items"];
+
     [Fact]
     public async Task A_ticketed_fetch_returns_normalised_receipts_and_an_ack_purges_them()
     {
@@ -161,7 +164,7 @@ public sealed class ReceiptsTests(ShopApiFactory factory)
             Params = new Dictionary<string, object>(StringComparer.Ordinal)
             {
                 ["since"] = Since,
-                ["include"] = new[] { "items" },
+                ["include"] = ItemsOnly,
             },
         });
 

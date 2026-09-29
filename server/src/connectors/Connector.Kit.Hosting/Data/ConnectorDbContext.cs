@@ -111,7 +111,9 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
 
             try
             {
+#pragma warning disable S2077 // built from the model's own quoted identifiers, never from a request
                 await Database.ExecuteSqlRawAsync(probe, ct);
+#pragma warning restore S2077
             }
             catch (Exception ex)
             {

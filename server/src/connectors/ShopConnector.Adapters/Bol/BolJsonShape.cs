@@ -152,13 +152,18 @@ internal sealed class BolJsonShape : IBolOrdersShape
             : JsonAccess.Str(seller);
     }
 
+    private static string? PaymentMethod(JsonElement row, BolOptions options)
+    {
+        if (!JsonAccess.TryProp(row, out var payment, [.. options.JsonPaymentMethodNames])) return null;
+
+        return payment.ValueKind == JsonValueKind.Object
+            ? JsonAccess.StrOf(payment, "type", "method", "name", "description")
+            : JsonAccess.Str(payment);
+    }
+
     private static ReceiptPayment Payment(JsonElement row, BolOptions options)
     {
-        var method = JsonAccess.TryProp(row, out var payment, [.. options.JsonPaymentMethodNames])
-            ? payment.ValueKind == JsonValueKind.Object
-                ? JsonAccess.StrOf(payment, "type", "method", "name", "description")
-                : JsonAccess.Str(payment)
-            : null;
+        var method = PaymentMethod(row, options);
 
         var masked = JsonAccess.StrOf(row, [.. options.JsonPaymentMaskNames]);
         if (masked is null && JsonAccess.TryProp(row, out var block, [.. options.JsonPaymentMethodNames]) &&
@@ -173,7 +178,7 @@ internal sealed class BolJsonShape : IBolOrdersShape
         return ReceiptFactory.Payment(BolNormalize.Method(method), JsonAccess.Tail(masked));
     }
 
-    private static IReadOnlyList<ReceiptItem> ParseItems(
+    private static List<ReceiptItem> ParseItems(
         JsonElement row, BolOptions options, string orderId, string currency)
     {
         var lines = JsonAccess.Array(row, [.. options.JsonItemArrayNames]);

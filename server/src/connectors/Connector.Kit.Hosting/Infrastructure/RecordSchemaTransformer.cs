@@ -132,7 +132,7 @@ internal sealed class RecordSchemaTransformer(IProviderRegistry registry) : IOpe
         if (document.Components?.Schemas is not { } schemas) return;
         if (!schemas.TryGetValue(schemaName, out var envelope)) return;
         if (envelope is not OpenApiSchema { Properties: { } properties }) return;
-        if (!properties.ContainsKey(propertyName)) return;
+        if (!properties.TryGetValue(propertyName, out var replaced)) return;
 
         // Nullable on JobResponse and not on DataResponse, and that difference
         // is real: a job that has not finished has no rows yet. Carried over
@@ -140,7 +140,7 @@ internal sealed class RecordSchemaTransformer(IProviderRegistry registry) : IOpe
         // the rows cannot quietly change what the envelope promises about
         // whether there are any.
         var type = JsonSchemaType.Array;
-        if (Nullable(properties[propertyName])) type |= JsonSchemaType.Null;
+        if (Nullable(replaced)) type |= JsonSchemaType.Null;
 
         properties[propertyName] = new OpenApiSchema
         {

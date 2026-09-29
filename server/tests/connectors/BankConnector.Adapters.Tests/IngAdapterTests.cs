@@ -1327,15 +1327,16 @@ public sealed class IngAdapterTests
         // hash of the version of itself that had no balance is a record that
         // will not change when the balance does - which is invisible, and
         // exactly the sort of thing a `with` expression makes easy to write.
-        var rebuilt = BankRecords.NewAccount(
-            ctx.SessionId,
-            card.ExternalId,
-            card.Type,
-            card.DisplayName,
-            card.Currency,
-            card.Iban,
-            card.MaskedNumber,
-            card.Balance);
+        var rebuilt = BankRecords.NewAccount(ctx.SessionId, new AccountDraft
+        {
+            ExternalId = card.ExternalId,
+            Type = card.Type,
+            DisplayName = card.DisplayName,
+            Currency = card.Currency,
+            Iban = card.Iban,
+            MaskedNumber = card.MaskedNumber,
+            Balance = card.Balance,
+        });
 
         Assert.Equal(rebuilt.ContentHash, card.ContentHash);
 

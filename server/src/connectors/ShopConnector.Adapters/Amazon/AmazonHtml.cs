@@ -196,68 +196,88 @@ internal static class HtmlParser
 
             if (lt > index) AddText(open[^1], html[index..lt]);
 
-            // <!-- comment -->, <!doctype>, <?pi?> - all skipped whole.
-            if (Starts(html, lt, "<!--"))
-            {
-                var end = html.IndexOf("-->", lt + 4, StringComparison.Ordinal);
-                index = end < 0 ? html.Length : end + 3;
-                continue;
-            }
-
-            if (lt + 1 < html.Length && (html[lt + 1] == '!' || html[lt + 1] == '?'))
-            {
-                var end = html.IndexOf('>', lt);
-                index = end < 0 ? html.Length : end + 1;
-                continue;
-            }
-
-            if (lt + 1 < html.Length && html[lt + 1] == '/')
-            {
-                var end = html.IndexOf('>', lt);
-                if (end < 0) break;
-
-                Close(open, html[(lt + 2)..end].Trim().ToLowerInvariant());
-                index = end + 1;
-                continue;
-            }
-
-            var tag = ReadTag(html, lt);
-            index = tag.Next;
-
-            if (tag.Name.Length == 0) continue;
-
-            AutoClose(open, tag.Name);
-
-            var element = new HtmlNode { Kind = HtmlNodeKind.Element, Name = tag.Name };
-            foreach (var (key, value) in tag.Attributes) element.Attributes[key] = value;
-            Attach(open[^1], element);
-
-            if (tag.SelfClosing || VoidElements.Contains(tag.Name)) continue;
-
-            if (RawTextElements.Contains(tag.Name))
-            {
-                var close = IndexOfClose(html, tag.Name, index);
-                var text = close < 0 ? html[index..] : html[index..close];
-                AddText(element, text);
-
-                if (close < 0)
-                {
-                    index = html.Length;
-                }
-                else
-                {
-                    var end = html.IndexOf('>', close);
-                    index = end < 0 ? html.Length : end + 1;
-                }
-
-                continue;
-            }
-
-            open.Add(element);
+            index = ReadMarkup(html, lt, open);
         }
 
         return document;
     }
+
+    /// <summary>
+    /// Reads whatever the <c>&lt;</c> at <paramref name="lt"/> begins - a
+    /// comment, a doctype, a close tag or an element - into the tree, and
+    /// says where the next read starts.
+    /// </summary>
+    private static int ReadMarkup(string html, int lt, List<HtmlNode> open)
+    {
+        // <!-- comment -->, <!doctype>, <?pi?> - all skipped whole.
+        if (Starts(html, lt, "<!--"))
+        {
+            return AfterOrEnd(html, html.IndexOf("-->", lt + 4, StringComparison.Ordinal), 3);
+        }
+
+        if (lt + 1 < html.Length && (html[lt + 1] == '!' || html[lt + 1] == '?'))
+        {
+            return AfterOrEnd(html, html.IndexOf('>', lt), 1);
+        }
+
+        if (lt + 1 < html.Length && html[lt + 1] == '/')
+        {
+            var end = html.IndexOf('>', lt);
+
+            // A close tag that never closes is the end of anything readable.
+            if (end < 0) return html.Length;
+
+            Close(open, html[(lt + 2)..end].Trim().ToLowerInvariant());
+            return end + 1;
+        }
+
+        return ReadElement(html, lt, open);
+    }
+
+    /// <summary>
+    /// Reads the element whose open tag starts at <paramref name="lt"/>:
+    /// attached under the innermost open element, and left open itself unless
+    /// it is void, self-closed or raw text. Says where the next read starts.
+    /// </summary>
+    private static int ReadElement(string html, int lt, List<HtmlNode> open)
+    {
+        var tag = ReadTag(html, lt);
+        if (tag.Name.Length == 0) return tag.Next;
+
+        AutoClose(open, tag.Name);
+
+        var element = new HtmlNode { Kind = HtmlNodeKind.Element, Name = tag.Name };
+        foreach (var (key, value) in tag.Attributes) element.Attributes[key] = value;
+        Attach(open[^1], element);
+
+        if (tag.SelfClosing || VoidElements.Contains(tag.Name)) return tag.Next;
+        if (RawTextElements.Contains(tag.Name)) return ReadRawText(html, element, tag.Next);
+
+        open.Add(element);
+        return tag.Next;
+    }
+
+    /// <summary>
+    /// The body of a raw-text element - a script, a style, a textarea, a
+    /// title - taken as one text node up to its own close tag, however much
+    /// markup it looks like it contains. Says where the next read starts.
+    /// </summary>
+    private static int ReadRawText(string html, HtmlNode element, int from)
+    {
+        var close = IndexOfClose(html, element.Name, from);
+        AddText(element, close < 0 ? html[from..] : html[from..close]);
+
+        if (close < 0) return html.Length;
+
+        return AfterOrEnd(html, html.IndexOf('>', close), 1);
+    }
+
+    /// <summary>
+    /// The index just past a delimiter found at <paramref name="at"/>, or the
+    /// end of the page when it was not found: an unterminated construct runs
+    /// to the end rather than failing the parse.
+    /// </summary>
+    private static int AfterOrEnd(string html, int at, int length) => at < 0 ? html.Length : at + length;
 
     private static bool Starts(string html, int at, string token) =>
         at + token.Length <= html.Length && html.AsSpan(at, token.Length).SequenceEqual(token);
@@ -320,10 +340,8 @@ internal static class HtmlParser
 
     private static TagRead ReadTag(string html, int lt)
     {
-        var i = lt + 1;
-        var start = i;
-
-        while (i < html.Length && !char.IsWhiteSpace(html[i]) && html[i] != '>' && html[i] != '/') i++;
+        var start = lt + 1;
+        var i = EndOfTagName(html, start);
 
         var name = html[start..i].ToLowerInvariant();
         var attributes = new List<KeyValuePair<string, string>>();
@@ -331,7 +349,7 @@ internal static class HtmlParser
 
         while (i < html.Length)
         {
-            while (i < html.Length && char.IsWhiteSpace(html[i])) i++;
+            i = SkipWhitespace(html, i);
             if (i >= html.Length) break;
 
             if (html[i] == '>')
@@ -347,44 +365,74 @@ internal static class HtmlParser
                 continue;
             }
 
-            var nameStart = i;
-            while (i < html.Length && !char.IsWhiteSpace(html[i]) && html[i] != '=' && html[i] != '>' && html[i] != '/') i++;
-
-            var attributeName = html[nameStart..i];
-            if (attributeName.Length == 0)
-            {
-                i++;
-                continue;
-            }
-
-            while (i < html.Length && char.IsWhiteSpace(html[i])) i++;
-
-            var value = string.Empty;
-            if (i < html.Length && html[i] == '=')
-            {
-                i++;
-                while (i < html.Length && char.IsWhiteSpace(html[i])) i++;
-
-                if (i < html.Length && (html[i] == '"' || html[i] == '\''))
-                {
-                    var quote = html[i++];
-                    var valueStart = i;
-                    while (i < html.Length && html[i] != quote) i++;
-                    value = html[valueStart..Math.Min(i, html.Length)];
-                    if (i < html.Length) i++;
-                }
-                else
-                {
-                    var valueStart = i;
-                    while (i < html.Length && !char.IsWhiteSpace(html[i]) && html[i] != '>') i++;
-                    value = html[valueStart..i];
-                }
-            }
-
-            attributes.Add(new KeyValuePair<string, string>(attributeName, WebUtility.HtmlDecode(value)));
+            i = ReadAttribute(html, i, attributes);
         }
 
         return new TagRead(name, attributes, selfClosing, i);
+    }
+
+    /// <summary>The index just past the tag name that starts at <paramref name="i"/>.</summary>
+    private static int EndOfTagName(string html, int i)
+    {
+        while (i < html.Length && !char.IsWhiteSpace(html[i]) && html[i] != '>' && html[i] != '/') i++;
+        return i;
+    }
+
+    private static int SkipWhitespace(string html, int i)
+    {
+        while (i < html.Length && char.IsWhiteSpace(html[i])) i++;
+        return i;
+    }
+
+    /// <summary>
+    /// One attribute - bare, or with a quoted or unquoted value - read into
+    /// <paramref name="attributes"/> with its value decoded. Says where the
+    /// next read starts.
+    /// </summary>
+    private static int ReadAttribute(string html, int i, List<KeyValuePair<string, string>> attributes)
+    {
+        var nameStart = i;
+        while (i < html.Length && !char.IsWhiteSpace(html[i]) && html[i] != '=' && html[i] != '>' && html[i] != '/') i++;
+
+        var attributeName = html[nameStart..i];
+
+        // A character that starts no name - a stray equals sign - is stepped
+        // over rather than read as one.
+        if (attributeName.Length == 0) return i + 1;
+
+        i = SkipWhitespace(html, i);
+
+        var value = string.Empty;
+        if (i < html.Length && html[i] == '=')
+        {
+            (value, i) = ReadAttributeValue(html, SkipWhitespace(html, i + 1));
+        }
+
+        attributes.Add(new KeyValuePair<string, string>(attributeName, WebUtility.HtmlDecode(value)));
+        return i;
+    }
+
+    /// <summary>
+    /// An attribute's value starting at <paramref name="i"/>: up to the
+    /// matching quote, or for a bare one up to the next space or <c>&gt;</c>.
+    /// Says where the next read starts.
+    /// </summary>
+    private static (string Value, int Next) ReadAttributeValue(string html, int i)
+    {
+        if (i < html.Length && (html[i] == '"' || html[i] == '\''))
+        {
+            var quote = html[i++];
+            var valueStart = i;
+            while (i < html.Length && html[i] != quote) i++;
+
+            var quoted = html[valueStart..Math.Min(i, html.Length)];
+            if (i < html.Length) i++;
+            return (quoted, i);
+        }
+
+        var bareStart = i;
+        while (i < html.Length && !char.IsWhiteSpace(html[i]) && html[i] != '>') i++;
+        return (html[bareStart..i], i);
     }
 }
 
@@ -409,22 +457,28 @@ internal static class HtmlQuery
         var parsed = Cache.GetOrAdd(selector, Compile);
         if (parsed.Length == 0) return [];
 
-        var matches = new List<HtmlNode>();
-        foreach (var element in root.Elements())
-        {
-            foreach (var alternative in parsed)
-            {
-                if (!Matches(element, alternative.Steps, alternative.Steps.Length - 1)) continue;
-
-                matches.Add(element);
-                break;
-            }
-        }
-
-        return matches;
+        return root.Elements()
+            .Where(element => parsed.Any(
+                alternative => Matches(element, alternative.Steps, alternative.Steps.Length - 1)))
+            .ToList();
     }
 
-    public static HtmlNode? First(HtmlNode root, string selector) => All(root, selector).FirstOrDefault();
+    public static IReadOnlyList<HtmlNode> All(HtmlNode root, IReadOnlyList<string> selectors)
+    {
+        foreach (var selector in selectors)
+        {
+            var hits = All(root, selector);
+            if (hits.Count > 0) return hits;
+        }
+
+        return [];
+    }
+
+    public static HtmlNode? First(HtmlNode root, string selector)
+    {
+        var hits = All(root, selector);
+        return hits.Count > 0 ? hits[0] : null;
+    }
 
     /// <summary>
     /// The first candidate that matches anything, mirroring
@@ -440,17 +494,6 @@ internal static class HtmlQuery
         }
 
         return null;
-    }
-
-    public static IReadOnlyList<HtmlNode> All(HtmlNode root, IReadOnlyList<string> selectors)
-    {
-        foreach (var selector in selectors)
-        {
-            var hits = All(root, selector);
-            if (hits.Count > 0) return hits;
-        }
-
-        return [];
     }
 
     public static string? TextOf(HtmlNode root, IReadOnlyList<string> selectors)
@@ -489,39 +532,41 @@ internal static class HtmlQuery
 
         if (step.Id is { } id && !string.Equals(node.Attribute("id"), id, StringComparison.Ordinal)) return false;
 
-        if (step.Classes.Length > 0)
+        if (step.Classes.Length > 0 && !HasClasses(node, step.Classes)) return false;
+
+        return step.Attributes.All(test => MatchesAttribute(node, test));
+    }
+
+    /// <summary>Whether the element carries every class the step names.</summary>
+    private static bool HasClasses(HtmlNode node, string[] wanted)
+    {
+        var classAttribute = node.Attribute("class");
+        if (classAttribute is null) return false;
+
+        var classes = classAttribute.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+        return wanted.All(name => classes.Contains(name, StringComparer.Ordinal));
+    }
+
+    /// <summary>
+    /// Whether the element passes one attribute test: present, and where the
+    /// test states a value, related to it the way its operator says.
+    /// </summary>
+    private static bool MatchesAttribute(HtmlNode node, AttributeTest test)
+    {
+        if (node.Attribute(test.Name) is not { } actual) return false;
+        if (test.Value is null) return true;
+
+        var comparison = test.CaseInsensitive ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return test.Operator switch
         {
-            var classAttribute = node.Attribute("class");
-            if (classAttribute is null) return false;
-
-            var classes = classAttribute.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-            foreach (var wanted in step.Classes)
-            {
-                if (!classes.Contains(wanted, StringComparer.Ordinal)) return false;
-            }
-        }
-
-        foreach (var test in step.Attributes)
-        {
-            if (node.Attribute(test.Name) is not { } actual) return false;
-            if (test.Value is null) continue;
-
-            var comparison = test.CaseInsensitive ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
-            var ok = test.Operator switch
-            {
-                '=' => actual.Equals(test.Value, comparison),
-                '*' => actual.Contains(test.Value, comparison),
-                '^' => actual.StartsWith(test.Value, comparison),
-                '$' => actual.EndsWith(test.Value, comparison),
-                '~' => actual.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
-                    .Any(part => part.Equals(test.Value, comparison)),
-                _ => false,
-            };
-
-            if (!ok) return false;
-        }
-
-        return true;
+            '=' => actual.Equals(test.Value, comparison),
+            '*' => actual.Contains(test.Value, comparison),
+            '^' => actual.StartsWith(test.Value, comparison),
+            '$' => actual.EndsWith(test.Value, comparison),
+            '~' => actual.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                .Any(part => part.Equals(test.Value, comparison)),
+            _ => false,
+        };
     }
 
     private static Alternative[] Compile(string selector)
@@ -559,30 +604,7 @@ internal static class HtmlQuery
             }
 
             var start = i;
-            while (i < selector.Length && !char.IsWhiteSpace(selector[i]) && selector[i] != '>')
-            {
-                if (selector[i] == '[')
-                {
-                    var depth = 1;
-                    i++;
-                    while (i < selector.Length && depth > 0)
-                    {
-                        if (selector[i] == '[') depth++;
-                        else if (selector[i] == ']') depth--;
-                        else if (selector[i] is '"' or '\'')
-                        {
-                            var quote = selector[i++];
-                            while (i < selector.Length && selector[i] != quote) i++;
-                        }
-
-                        i++;
-                    }
-
-                    continue;
-                }
-
-                i++;
-            }
+            i = EndOfCompound(selector, i);
 
             var compound = selector[start..i];
             if (compound.Length > 0)
@@ -595,6 +617,65 @@ internal static class HtmlQuery
         return [.. steps];
     }
 
+    /// <summary>
+    /// The index just past the compound selector starting at
+    /// <paramref name="i"/>: up to the next whitespace or child combinator,
+    /// with every bracketed attribute test skipped whole so a combinator
+    /// quoted inside one does not end it early.
+    /// </summary>
+    private static int EndOfCompound(string selector, int i)
+    {
+        while (i < selector.Length && !char.IsWhiteSpace(selector[i]) && selector[i] != '>')
+        {
+            if (selector[i] == '[')
+            {
+                i = EndOfBracket(selector, i);
+                continue;
+            }
+
+            i++;
+        }
+
+        return i;
+    }
+
+    /// <summary>
+    /// The index just past the attribute test whose <c>[</c> is at
+    /// <paramref name="i"/>. Brackets nest and a quoted value is skipped
+    /// whole, so a <c>]</c> inside one does not close the test.
+    /// </summary>
+    private static int EndOfBracket(string selector, int i)
+    {
+        var depth = 1;
+        i++;
+
+        while (i < selector.Length && depth > 0)
+        {
+            if (selector[i] == '[') depth++;
+            else if (selector[i] == ']') depth--;
+            else if (selector[i] is '"' or '\'')
+            {
+                i = AfterQuoted(selector, i);
+                continue;
+            }
+
+            i++;
+        }
+
+        return i;
+    }
+
+    /// <summary>
+    /// The index just past the quoted run whose opening quote is at
+    /// <paramref name="i"/> - or one past the end when it never closes.
+    /// </summary>
+    private static int AfterQuoted(string selector, int i)
+    {
+        var quote = selector[i++];
+        while (i < selector.Length && selector[i] != quote) i++;
+        return i + 1;
+    }
+
     private static Step CompileCompound(string compound, bool child)
     {
         string? tag = null;
@@ -603,9 +684,9 @@ internal static class HtmlQuery
         var attributes = new List<AttributeTest>();
 
         var i = 0;
-        if (compound[0] != '#' && compound[0] != '.' && compound[0] != '[')
+        if (!IsMarker(compound[0]))
         {
-            while (i < compound.Length && compound[i] != '#' && compound[i] != '.' && compound[i] != '[') i++;
+            i = EndOfToken(compound, 0);
 
             var name = compound[..i];
             if (!string.Equals(name, "*", StringComparison.Ordinal)) tag = name.ToLowerInvariant();
@@ -617,16 +698,12 @@ internal static class HtmlQuery
 
             if (marker == '[')
             {
-                var close = compound.IndexOf(']', i);
-                if (close < 0) close = compound.Length;
-
-                attributes.Add(CompileAttribute(compound[i..close]));
-                i = Math.Min(close + 1, compound.Length);
+                i = ReadAttributeTest(compound, i, attributes);
                 continue;
             }
 
             var start = i;
-            while (i < compound.Length && compound[i] != '#' && compound[i] != '.' && compound[i] != '[') i++;
+            i = EndOfToken(compound, i);
 
             var token = compound[start..i];
             if (token.Length == 0) continue;
@@ -636,6 +713,30 @@ internal static class HtmlQuery
         }
 
         return new Step(tag, id, [.. classes], [.. attributes], child);
+    }
+
+    /// <summary>Whether <paramref name="c"/> begins an id, a class or an attribute test.</summary>
+    private static bool IsMarker(char c) => c is '#' or '.' or '[';
+
+    /// <summary>The index of the next marker at or after <paramref name="i"/>, or the end.</summary>
+    private static int EndOfToken(string compound, int i)
+    {
+        while (i < compound.Length && !IsMarker(compound[i])) i++;
+        return i;
+    }
+
+    /// <summary>
+    /// Compiles the attribute test whose <c>[</c> sits just before
+    /// <paramref name="i"/> into <paramref name="attributes"/>, and says where
+    /// the next read starts. A test that never closes runs to the end.
+    /// </summary>
+    private static int ReadAttributeTest(string compound, int i, List<AttributeTest> attributes)
+    {
+        var close = compound.IndexOf(']', i);
+        if (close < 0) close = compound.Length;
+
+        attributes.Add(CompileAttribute(compound[i..close]));
+        return Math.Min(close + 1, compound.Length);
     }
 
     private static AttributeTest CompileAttribute(string body)
@@ -673,23 +774,26 @@ internal static class HtmlQuery
     {
         var depth = 0;
         var start = 0;
+        var i = 0;
 
-        for (var i = 0; i < selector.Length; i++)
+        while (i < selector.Length)
         {
             var c = selector[i];
             if (c == '[') depth++;
             else if (c == ']') depth--;
             else if (c is '"' or '\'')
             {
-                var quote = c;
-                i++;
-                while (i < selector.Length && selector[i] != quote) i++;
+                // A quoted run is one unit: a separator inside it splits nothing.
+                i = AfterQuoted(selector, i);
+                continue;
             }
             else if (c == separator && depth <= 0)
             {
                 yield return selector[start..i];
                 start = i + 1;
             }
+
+            i++;
         }
 
         yield return selector[start..];

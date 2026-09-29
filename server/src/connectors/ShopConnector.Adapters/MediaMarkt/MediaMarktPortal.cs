@@ -157,6 +157,10 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
             }
             catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
             {
+                // The body went with the page - navigated away or torn down
+                // before it could be read. Nothing to recover: the reading
+                // below is latched without one, and the status and url still
+                // say plenty.
             }
 
             _seen[operation] = new MediaMarktCall(
@@ -310,12 +314,10 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
     {
         var carried = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var header in request.Headers)
+        foreach (var header in request.Headers
+                     .Where(header => _options.CarriedHeaders.Contains(header.Key, StringComparer.OrdinalIgnoreCase)))
         {
-            if (_options.CarriedHeaders.Contains(header.Key, StringComparer.OrdinalIgnoreCase))
-            {
-                carried[header.Key] = header.Value;
-            }
+            carried[header.Key] = header.Value;
         }
 
         return carried;

@@ -243,60 +243,7 @@ public sealed class MediaMarktAdapter : IProviderAdapter
         }
 
         var cap = Manifest.Resource(ReceiptsResource)!.MaxRecordsPerFetch;
-        var orders = new List<MediaMarktOrder>();
-
-        var complete = true;
-        var page = 0;
-        var call = opening;
-
-        while (true)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var body = MediaMarktCalls.Body(
-                call, _options, $"{_options.OrdersOperation} page {page + 1}", ctx.Note);
-
-            using var document = JsonDocument.Parse(body);
-            var read = MediaMarktOrders.Read(document, _options, request.WantsRaw);
-
-            orders.AddRange(read);
-            page++;
-
-            // A SHORT PAGE IS THE END, and it is the only end MediaMarkt states.
-            // The payload carries no total count anywhere - confirmed across
-            // every captured response - so a walk either stops on a page that
-            // came back smaller than it asked for, or it never stops.
-            //
-            // MEASURED ON WHAT MEDIAMARKT SENT, not on what could be read.
-            // Read() drops an order it cannot make a receipt of, so counting
-            // its output made one odd order look like the end of history: the
-            // walk stopped there and reported itself complete, cutting the rest
-            // of somebody's purchases off with nothing to say so.
-            if (MediaMarktOrders.Stated(document, _options) < _options.PageSize) break;
-
-            // The oldest order on this page is already before the window, so
-            // every page after it is too. Checked here rather than after the
-            // whole walk, because a ten-year-old account is twenty pages a
-            // caller asked nothing about.
-            if (read.Count > 0 && read.All(order => Older(order, request))) break;
-
-            if (page >= _options.MaxPages || orders.Count >= cap)
-            {
-                complete = false;
-                ctx.Note(
-                    $"{ProviderId}: stopped after {page} page(s) with {orders.Count} order(s); " +
-                    "there may be more, so this pass is partial");
-                break;
-            }
-
-            await Task.Delay(TimeSpan.FromMilliseconds(_options.PageGapMs), _time, ct).ConfigureAwait(false);
-
-            var next = MediaMarktCalls.AtOffset(opening.Url, _options.PageSize, page * _options.PageSize, _options);
-
-            call = await portal
-                .ReadAsync(next, opening.Headers ?? new Dictionary<string, string>(StringComparer.Ordinal), ct)
-                .ConfigureAwait(false);
-        }
+        var (orders, complete) = await WalkAsync(ctx, request, portal, opening, cap, ct).ConfigureAwait(false);
 
         ctx.Progress(JobStep.Normalizing);
 
@@ -345,6 +292,69 @@ public sealed class MediaMarktAdapter : IProviderAdapter
             Raw = raw,
             Via = _options.OrdersOperation,
         };
+    }
+
+    /// <summary>
+    /// The observed first page, then as many more as the window needs. Not
+    /// complete when the walk stopped short of the history's end.
+    /// </summary>
+    private async Task<(List<MediaMarktOrder> Orders, bool Complete)> WalkAsync(
+        IJobContext ctx, ResourceRequest request, IMediaMarktPortal portal, MediaMarktCall opening, int cap,
+        CancellationToken ct)
+    {
+        var orders = new List<MediaMarktOrder>();
+        var page = 0;
+        var call = opening;
+
+        while (true)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var body = MediaMarktCalls.Body(
+                call, _options, $"{_options.OrdersOperation} page {page + 1}", ctx.Note);
+
+            using var document = JsonDocument.Parse(body);
+            var read = MediaMarktOrders.Read(document, _options, request.WantsRaw);
+
+            orders.AddRange(read);
+            page++;
+
+            // A SHORT PAGE IS THE END, and it is the only end MediaMarkt states.
+            // The payload carries no total count anywhere - confirmed across
+            // every captured response - so a walk either stops on a page that
+            // came back smaller than it asked for, or it never stops.
+            //
+            // MEASURED ON WHAT MEDIAMARKT SENT, not on what could be read.
+            // Read() drops an order it cannot make a receipt of, so counting
+            // its output made one odd order look like the end of history: the
+            // walk stopped there and reported itself complete, cutting the rest
+            // of somebody's purchases off with nothing to say so.
+            if (MediaMarktOrders.Stated(document, _options) < _options.PageSize) break;
+
+            // The oldest order on this page is already before the window, so
+            // every page after it is too. Checked here rather than after the
+            // whole walk, because a ten-year-old account is twenty pages a
+            // caller asked nothing about.
+            if (read.Count > 0 && read.All(order => Older(order, request))) break;
+
+            if (page >= _options.MaxPages || orders.Count >= cap)
+            {
+                ctx.Note(
+                    $"{ProviderId}: stopped after {page} page(s) with {orders.Count} order(s); " +
+                    "there may be more, so this pass is partial");
+                return (orders, false);
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(_options.PageGapMs), _time, ct).ConfigureAwait(false);
+
+            var next = MediaMarktCalls.AtOffset(opening.Url, _options.PageSize, page * _options.PageSize, _options);
+
+            call = await portal
+                .ReadAsync(next, opening.Headers ?? new Dictionary<string, string>(StringComparer.Ordinal), ct)
+                .ConfigureAwait(false);
+        }
+
+        return (orders, true);
     }
 
     /// <summary>

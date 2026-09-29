@@ -8,6 +8,45 @@ using Connector.Kit.Normalization;
 namespace RegistryConnector.Adapters.Duo;
 
 /// <summary>
+/// What DUO answered, one endpoint per field: the three the record is built
+/// from, and the three that enrich it.
+/// </summary>
+/// <param name="Debt">
+/// The eight amounts, from <see cref="DuoOptions.DebtPath"/>. The one payload
+/// that has to be there.
+/// </param>
+/// <param name="Positions">
+/// Where each debt is and its interest periods, from
+/// <see cref="DuoOptions.PositionsPath"/>.
+/// </param>
+/// <param name="Holiday">
+/// How many payment-holiday months remain, from
+/// <see cref="DuoOptions.PaymentHolidayPath"/>.
+/// </param>
+/// <param name="History">
+/// The balances DUO has stated at named moments, from
+/// <see cref="DuoOptions.HistoryPath"/>.
+/// </param>
+/// <param name="Grondslag">
+/// The months-remaining figure, from <see cref="DuoOptions.GrondslagPath"/>.
+/// </param>
+/// <param name="Dossier">
+/// The customer dossier, from <see cref="DuoOptions.DossierPath"/> - and only
+/// when the ledger was asked for.
+/// </param>
+/// <remarks>
+/// Everything but <paramref name="Debt"/> may be null: the fetch treats a call
+/// it could not make as a reason to say less, not a reason to fail.
+/// </remarks>
+internal sealed record DuoPayloads(
+    string? Debt,
+    string? Positions = null,
+    string? Holiday = null,
+    string? History = null,
+    string? Grondslag = null,
+    string? Dossier = null);
+
+/// <summary>
 /// What DUO says you owe, from a handful of small JSON calls and nothing else.
 ///
 /// The opposite of BKR: there is no markup here at all. <c>mijn.duo.nl</c> is a
@@ -79,29 +118,26 @@ internal static class DuoDebtReader
     /// <summary>
     /// The one record, built from the three payloads.
     /// </summary>
+    /// <param name="payloads">What DUO answered, endpoint by endpoint.</param>
     /// <param name="today">
     /// Which day to resolve the interest rate for. Passed in rather than read
     /// from the clock so the answer is a function of its inputs - a rate that
     /// changes on 1 January must be testable in July.
     /// </param>
     public static StudentDebt Read(
-        string? debtJson,
-        string? positionsJson,
-        string? holidayJson,
+        DuoPayloads payloads,
         DateOnly today,
         DuoOptions options,
         string sessionId,
-        string? historyJson = null,
-        string? grondslagJson = null,
-        string? dossierJson = null,
         Action<string>? note = null)
     {
+        ArgumentNullException.ThrowIfNull(payloads);
         ArgumentNullException.ThrowIfNull(options);
 
-        var (components, total) = Components(debtJson, options, note);
-        var positions = Positions(positionsJson);
-        var history = History(historyJson, options);
-        var (ledger, monthly, due) = Dossier(dossierJson, today, options);
+        var (components, total) = Components(payloads.Debt, options, note);
+        var positions = Positions(payloads.Positions);
+        var history = History(payloads.History, options);
+        var (ledger, monthly, due) = Dossier(payloads.Dossier, today, options);
 
         var externalId = DuoAdapter.DebtResource;
 
@@ -122,8 +158,8 @@ internal static class DuoDebtReader
             Components = components,
             Phase = Phase(positions, out var phaseLabel),
             PhaseLabel = phaseLabel,
-            InterestPeriods = [.. positions.SelectMany(p => p.Periods)],
-            PaymentHolidayMonthsRemaining = Holiday(holidayJson),
+            InterestPeriods = [.. positions.SelectMany(p => p.InterestPeriods)],
+            PaymentHolidayMonthsRemaining = Holiday(payloads.Holiday),
 
             // The date DUO calculated interest to, off the CURRENT balance and
             // nowhere else. A year-end entry carries no such date - it is dated
@@ -132,7 +168,7 @@ internal static class DuoDebtReader
             AsOf = history.FirstOrDefault(h => h.Kind == StudentDebtBalanceKind.Current)?.On,
 
             History = history,
-            RepaymentMonthsRemaining = MonthsRemaining(grondslagJson, options),
+            RepaymentMonthsRemaining = MonthsRemaining(payloads.Grondslag, options),
 
             Ledger = ledger,
             MonthlyAmount = monthly,
@@ -261,9 +297,9 @@ internal static class DuoDebtReader
     }
 
     /// <summary>One entry of <c>pfd/json/schulden</c>, reduced to what is used.</summary>
-    private readonly record struct Position(string? Status, IReadOnlyList<InterestPeriod> Periods);
+    private readonly record struct Position(string? Status, IReadOnlyList<InterestPeriod> InterestPeriods);
 
-    private static IReadOnlyList<Position> Positions(string? json)
+    private static List<Position> Positions(string? json)
     {
         // Absent rather than empty. The fetch treats a call it could not make
         // as a reason to say less, not a reason to fail: the amounts are the
@@ -284,7 +320,7 @@ internal static class DuoDebtReader
         return positions;
     }
 
-    private static IReadOnlyList<InterestPeriod> Periods(JsonElement entry)
+    private static List<InterestPeriod> Periods(JsonElement entry)
     {
         var periods = new List<InterestPeriod>();
 
@@ -358,7 +394,7 @@ internal static class DuoDebtReader
     private static InterestPeriod? CurrentRate(IReadOnlyList<Position> positions, DateOnly today)
     {
         var live = positions
-            .SelectMany(p => p.Periods)
+            .SelectMany(p => p.InterestPeriods)
             .Where(p => p.StartsOn <= today && today <= p.EndsOn)
             .ToList();
 
@@ -530,12 +566,25 @@ internal static class DuoDebtReader
 
         if (document.RootElement.ValueKind != JsonValueKind.Object) return ([], null, null);
 
-        // What each movement was booked against, by id. DUO names these in its
-        // own words - "Lening HO", "Collegegeldkrediet" - and those words are
-        // the account holder's own history.
+        var ledger = Ledger(document.RootElement, Debts(document.RootElement), options);
+        var (monthly, due) = Instalment(document.RootElement, today, options);
+
+        // Newest first. DUO's own order here is the order its database
+        // happened to return, which on a live payload interleaved 2016 and
+        // 2018 in the first four rows.
+        return ([.. ledger.OrderByDescending(e => e.BookedOn)], monthly, due);
+    }
+
+    /// <summary>
+    /// What each movement was booked against, by id. DUO names these in its
+    /// own words - "Lening HO", "Collegegeldkrediet" - and those words are
+    /// the account holder's own history.
+    /// </summary>
+    private static Dictionary<long, string> Debts(JsonElement dossier)
+    {
         var debts = new Dictionary<long, string>();
 
-        foreach (var claim in document.RootElement.Items("vorderings").Objects())
+        foreach (var claim in dossier.Items("vorderings").Objects())
         {
             if (claim.Int64("id") is not { } key) continue;
             if (claim.Child("vorderingsoort").Text("omschrijving") is not { } what) continue;
@@ -543,9 +592,19 @@ internal static class DuoDebtReader
             debts[key] = what;
         }
 
+        return debts;
+    }
+
+    /// <summary>
+    /// Every movement DUO has booked, in DUO's own order, each labelled with
+    /// the debt it was booked against.
+    /// </summary>
+    private static List<StudentDebtEntry> Ledger(
+        JsonElement dossier, Dictionary<long, string> debts, DuoOptions options)
+    {
         var ledger = new List<StudentDebtEntry>();
 
-        foreach (var movement in document.RootElement.Items("vorderingmutaties").Objects())
+        foreach (var movement in dossier.Items("vorderingmutaties").Objects())
         {
             if (Date(movement, "boekdatum") is not { } booked) continue;
             if (Amount(movement, "bedrag", options) is not { } amount) continue;
@@ -568,12 +627,7 @@ internal static class DuoDebtReader
             });
         }
 
-        var (monthly, due) = Instalment(document.RootElement, today, options);
-
-        // Newest first. DUO's own order here is the order its database
-        // happened to return, which on a live payload interleaved 2016 and
-        // 2018 in the first four rows.
-        return ([.. ledger.OrderByDescending(e => e.BookedOn)], monthly, due);
+        return ledger;
     }
 
     /// <summary>

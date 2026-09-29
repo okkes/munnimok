@@ -15,6 +15,12 @@ namespace Connector.Api.Tests;
 [Collection(ShopApiCollection.Name)]
 public sealed class CatalogueTests(ShopApiFactory factory)
 {
+    /// <summary>The captcha mock's login form, in the order the consumer renders it.</summary>
+    private static readonly string[] PasswordFormFields = ["username", "password"];
+
+    /// <summary>The one challenge that provider declares.</summary>
+    private static readonly string[] ImageChallengeOnly = ["image"];
+
     [Fact]
     public async Task Providers_answers_with_the_manifests_and_an_etag_that_is_the_digest()
     {
@@ -63,13 +69,13 @@ public sealed class CatalogueTests(ShopApiFactory factory)
 
         // The consumer renders the login form from this and nothing else.
         var fields = captcha.GetProperty("auth").GetProperty("steps")[0].GetProperty("fields");
-        Assert.Equal(new[] { "username", "password" }, fields.EnumerateArray().Select(f => f.Text("key")).ToArray());
+        Assert.Equal(PasswordFormFields, fields.EnumerateArray().Select(f => f.Text("key")).ToArray());
         Assert.True(fields[1].GetProperty("secret").GetBoolean(), "a password field must be marked secret");
 
         // What may interrupt the happy path, so the consumer knows to build for it.
         var challenges = captcha.GetProperty("auth").GetProperty("challenges")
             .EnumerateArray().Select(c => c.GetString()!).ToArray();
-        Assert.Equal(new[] { "image" }, challenges);
+        Assert.Equal(ImageChallengeOnly, challenges);
 
         // Health is grafted on to the manifest: this is what lets a consumer say
         // "paused, we're fixing it" instead of showing a spinner.

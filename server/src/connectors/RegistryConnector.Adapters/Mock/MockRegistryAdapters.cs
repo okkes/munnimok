@@ -135,36 +135,57 @@ public sealed class MockRegistryAdapter : IProviderAdapter
     /// </summary>
     private static IEnumerable<CreditRegistration> Credits(string sessionId)
     {
-        yield return Credit(sessionId, "MOCK-0001", "Mock Bank N.V.", CreditKind.Revolving,
-            200_000, CreditStatus.Running, "Doorlopend krediet", null, null);
+        yield return Credit(sessionId, new MockCredit(
+            "MOCK-0001", "Mock Bank N.V.", CreditKind.Revolving, 200_000, CreditStatus.Running, "Doorlopend krediet"));
 
-        yield return Credit(sessionId, "MOCK-0002", "Mock Telecom B.V.", CreditKind.DeferredPayment,
-            99_600, CreditStatus.Running, "Verzendhuiskrediet",
-            new DateOnly(2026, 1, 15), new DateOnly(2028, 1, 15));
+        yield return Credit(sessionId, new MockCredit(
+            "MOCK-0002", "Mock Telecom B.V.", CreditKind.DeferredPayment, 99_600, CreditStatus.Running,
+            "Verzendhuiskrediet")
+        {
+            From = new DateOnly(2026, 1, 15),
+            To = new DateOnly(2028, 1, 15),
+        });
 
         // The one that matters most to whoever reads it. Carried verbatim and
         // never interpreted: what an A2 means for somebody's mortgage
         // application is not a connector's judgement to make.
-        yield return Credit(sessionId, "MOCK-0003", "Mock Finance B.V.", CreditKind.Instalment,
-            530_400, CreditStatus.Ended, "Aflopend krediet",
-            new DateOnly(2023, 3, 1), new DateOnly(2025, 9, 1), arrears: "A2");
+        yield return Credit(sessionId, new MockCredit(
+            "MOCK-0003", "Mock Finance B.V.", CreditKind.Instalment, 530_400, CreditStatus.Ended, "Aflopend krediet")
+        {
+            From = new DateOnly(2023, 3, 1),
+            To = new DateOnly(2025, 9, 1),
+            Arrears = "A2",
+        });
     }
 
-    private static CreditRegistration Credit(
-        string sessionId, string externalId, string creditor, CreditKind kind, long minor,
-        CreditStatus status, string label, DateOnly? from, DateOnly? to, string? arrears = null) =>
+    /// <summary>
+    /// One fixture row: the credit as the register would state it, minus the
+    /// session it is read in. The term and the arrears code are the parts most
+    /// rows do without.
+    /// </summary>
+    private sealed record MockCredit(
+        string ExternalId, string Creditor, CreditKind Kind, long Minor, CreditStatus Status, string Label)
+    {
+        public DateOnly? From { get; init; }
+
+        public DateOnly? To { get; init; }
+
+        public string? Arrears { get; init; }
+    }
+
+    private static CreditRegistration Credit(string sessionId, MockCredit credit) =>
         new()
         {
-            Id = Ids.ForRecord(Ids.CreditRegistration, sessionId, externalId),
-            ExternalId = externalId,
-            Creditor = creditor,
-            Kind = kind,
-            KindLabel = label,
-            Amount = new Money(minor, "EUR"),
-            Status = status,
-            StartedOn = from,
-            EndsOn = to,
-            ArrearsCode = arrears,
+            Id = Ids.ForRecord(Ids.CreditRegistration, sessionId, credit.ExternalId),
+            ExternalId = credit.ExternalId,
+            Creditor = credit.Creditor,
+            Kind = credit.Kind,
+            KindLabel = credit.Label,
+            Amount = new Money(credit.Minor, "EUR"),
+            Status = credit.Status,
+            StartedOn = credit.From,
+            EndsOn = credit.To,
+            ArrearsCode = credit.Arrears,
         };
 
     private static string Required(IJobContext ctx, string key) =>

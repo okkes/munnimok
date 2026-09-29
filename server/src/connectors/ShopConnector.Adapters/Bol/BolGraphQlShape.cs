@@ -164,7 +164,7 @@ internal sealed class BolGraphQlShape : IBolOrdersShape
 
         foreach (var line in order.Items("items"))
         {
-            if (Read(line, options, out var item, out var lineSeller) is not true) continue;
+            if (!Read(line, options, out var item, out var lineSeller)) continue;
 
             items.Add(item);
             total += item.Total.Value;

@@ -191,70 +191,103 @@ internal static partial class IngSchema
 
         text.Append(" x ");
 
-        var merged = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
-        var codes = new Dictionary<string, List<string>>(StringComparer.Ordinal);
-        var plain = new List<string>();
-        var scalar = default(JsonElement);
-        var anyObject = false;
+        var merged = Merge(element, key);
 
-        foreach (var entry in element.EnumerateArray())
+        if (!merged.AnyObject)
         {
-            if (entry.ValueKind != JsonValueKind.Object)
-            {
-                scalar = entry;
-
-                // A bare list of codes states all of them: which values a
-                // taxonomy field can take is exactly what a reader needs, and
-                // "[3 x string(10)]" says nothing at all.
-                if (entry.ValueKind == JsonValueKind.String && Quotable(key, entry.GetString()))
-                {
-                    Add(plain, entry.GetString()!);
-                }
-
-                continue;
-            }
-
-            anyObject = true;
-
-            foreach (var property in entry.EnumerateObject())
-            {
-                // EVERY value a taxonomy field takes, ACROSS EVERY ENTRY. This
-                // is the whole reason the probe was widened: an account list of
-                // seven agreements has several types between them, and taking
-                // the first would report one and hide the ones that answer the
-                // question.
-                if (property.Value.ValueKind == JsonValueKind.String
-                    && Quotable(property.Name, property.Value.GetString()))
-                {
-                    if (!codes.TryGetValue(property.Name, out var seen)) codes[property.Name] = seen = [];
-
-                    Add(seen, property.Value.GetString()!);
-                    continue;
-                }
-
-                // First non-null wins, so a field that is null on one entry and
-                // an object on another is described by the useful one.
-                if (!merged.TryGetValue(property.Name, out var held) || held.ValueKind == JsonValueKind.Null)
-                {
-                    merged[property.Name] = property.Value;
-                }
-            }
-        }
-
-        if (!anyObject)
-        {
-            if (plain.Count > 0) text.Append(Quote(plain));
-            else Write(scalar, text, depth + 1, maxChars, key);
+            if (merged.Plain.Count > 0) text.Append(Quote(merged.Plain));
+            else Write(merged.Scalar, text, depth + 1, maxChars, key);
 
             text.Append(']');
             return;
         }
 
         text.Append('{');
+        WriteMerged(merged, text, depth, maxChars);
+        text.Append("}]");
+    }
 
+    /// <summary>
+    /// Every entry of one array, folded into one shape.
+    /// </summary>
+    private sealed class MergedShape
+    {
+        /// <summary>Each object field by name, described by its first non-null value.</summary>
+        public Dictionary<string, JsonElement> Fields { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Every value a taxonomy field took, across every entry.</summary>
+        public Dictionary<string, List<string>> Codes { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The codes of a bare list of them.</summary>
+        public List<string> Plain { get; } = [];
+
+        /// <summary>The last scalar entry, for a bare list of anything else.</summary>
+        public JsonElement Scalar { get; set; }
+
+        public bool AnyObject { get; set; }
+    }
+
+    private static MergedShape Merge(JsonElement element, string? key)
+    {
+        var merged = new MergedShape();
+
+        foreach (var entry in element.EnumerateArray())
+        {
+            if (entry.ValueKind != JsonValueKind.Object)
+            {
+                merged.Scalar = entry;
+
+                // A bare list of codes states all of them: which values a
+                // taxonomy field can take is exactly what a reader needs, and
+                // "[3 x string(10)]" says nothing at all.
+                if (entry.ValueKind == JsonValueKind.String && Quotable(key, entry.GetString()))
+                {
+                    Add(merged.Plain, entry.GetString()!);
+                }
+
+                continue;
+            }
+
+            merged.AnyObject = true;
+            MergeObject(entry, merged);
+        }
+
+        return merged;
+    }
+
+    private static void MergeObject(JsonElement entry, MergedShape merged)
+    {
+        foreach (var property in entry.EnumerateObject())
+        {
+            // EVERY value a taxonomy field takes, ACROSS EVERY ENTRY. This
+            // is the whole reason the probe was widened: an account list of
+            // seven agreements has several types between them, and taking
+            // the first would report one and hide the ones that answer the
+            // question.
+            if (property.Value.ValueKind == JsonValueKind.String
+                && Quotable(property.Name, property.Value.GetString()))
+            {
+                if (!merged.Codes.TryGetValue(property.Name, out var seen)) merged.Codes[property.Name] = seen = [];
+
+                Add(seen, property.Value.GetString()!);
+                continue;
+            }
+
+            // First non-null wins, so a field that is null on one entry and
+            // an object on another is described by the useful one.
+            if (!merged.Fields.TryGetValue(property.Name, out var held) || held.ValueKind == JsonValueKind.Null)
+            {
+                merged.Fields[property.Name] = property.Value;
+            }
+        }
+    }
+
+    /// <summary>The merged shape's fields: the taxonomy codes first, then everything else.</summary>
+    private static void WriteMerged(MergedShape merged, StringBuilder text, int depth, int maxChars)
+    {
         var first = true;
 
-        foreach (var (name, values) in codes)
+        foreach (var (name, values) in merged.Codes)
         {
             if (text.Length >= maxChars) break;
             if (!first) text.Append(',');
@@ -263,7 +296,7 @@ internal static partial class IngSchema
             text.Append(name).Append(':').Append(Quote(values));
         }
 
-        foreach (var (name, value) in merged)
+        foreach (var (name, value) in merged.Fields)
         {
             if (text.Length >= maxChars) break;
             if (!first) text.Append(',');
@@ -272,8 +305,6 @@ internal static partial class IngSchema
             text.Append(name).Append(':');
             Write(value, text, depth + 1, maxChars, name);
         }
-
-        text.Append("}]");
     }
 
     /// <summary>Distinct, and in the order ING listed them.</summary>

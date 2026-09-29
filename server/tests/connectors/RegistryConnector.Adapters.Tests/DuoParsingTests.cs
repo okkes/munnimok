@@ -38,9 +38,7 @@ public sealed class DuoParsingTests
     private static StudentDebt Read(
         string? amounts = null, string? positions = null, string? holiday = null, DateOnly? today = null) =>
         DuoDebtReader.Read(
-            amounts ?? Amounts,
-            positions ?? Positions,
-            holiday ?? Holiday,
+            new DuoPayloads(amounts ?? Amounts, positions ?? Positions, holiday ?? Holiday),
             today ?? Today,
             Options,
             Session);
@@ -184,9 +182,10 @@ public sealed class DuoParsingTests
         var notes = new List<string>();
 
         var debt = DuoDebtReader.Read(
-            """{"schuldbedragLening":50.00000000,"peildatum":"2026-08-10"}""",
-            Positions,
-            Holiday,
+            new DuoPayloads(
+                """{"schuldbedragLening":50.00000000,"peildatum":"2026-08-10"}""",
+                Positions,
+                Holiday),
             Today,
             Options,
             Session,
@@ -209,7 +208,7 @@ public sealed class DuoParsingTests
     {
         var notes = new List<string>();
 
-        DuoDebtReader.Read(Amounts, Positions, Holiday, Today, Options, Session, note: notes.Add);
+        DuoDebtReader.Read(new DuoPayloads(Amounts, Positions, Holiday), Today, Options, Session, note: notes.Add);
 
         Assert.Empty(notes);
     }
@@ -345,7 +344,7 @@ public sealed class DuoParsingTests
     {
         // Straight to the reader, because the helper above reads a null as
         // "use the fixture" - which is exactly the absence being tested here.
-        var debt = DuoDebtReader.Read(Amounts, null, null, Today, Options, Session);
+        var debt = DuoDebtReader.Read(new DuoPayloads(Amounts, null, null), Today, Options, Session);
 
         Assert.Equal(1_243_477, debt.Total.Value);
         Assert.Equal(2, debt.Components.Count);
@@ -428,9 +427,11 @@ public sealed class DuoParsingTests
 
     private static StudentDebt WithHistory(string? history = null, string? grondslag = null) =>
         DuoDebtReader.Read(
-            Amounts, Positions, Holiday, Today, Options, Session,
-            history ?? History,
-            grondslag ?? Fixture.Read("duo/grondslaggegevens.json"));
+            new DuoPayloads(
+                Amounts, Positions, Holiday,
+                history ?? History,
+                grondslag ?? Fixture.Read("duo/grondslaggegevens.json")),
+            Today, Options, Session);
 
     /// <summary>
     /// THE CORRECTION, and the test that used to assert the opposite.
@@ -551,7 +552,7 @@ public sealed class DuoParsingTests
         // Which is what every build before this one did, on every account.
         // Null still means exactly what the missing field meant: nothing here
         // is dated, so do not show it as current.
-        var debt = DuoDebtReader.Read(Amounts, Positions, Holiday, Today, Options, Session);
+        var debt = DuoDebtReader.Read(new DuoPayloads(Amounts, Positions, Holiday), Today, Options, Session);
 
         Assert.Null(debt.AsOf);
         Assert.Empty(debt.History);
@@ -699,10 +700,12 @@ public sealed class DuoParsingTests
 
     private static StudentDebt WithLedger() =>
         DuoDebtReader.Read(
-            Amounts, Positions, Holiday, Today, Options, Session,
-            Fixture.Read("duo/schuldhistorie.json"),
-            Fixture.Read("duo/grondslaggegevens.json"),
-            Fixture.Read("duo/klantbeeld-reduced.json"));
+            new DuoPayloads(
+                Amounts, Positions, Holiday,
+                Fixture.Read("duo/schuldhistorie.json"),
+                Fixture.Read("duo/grondslaggegevens.json"),
+                Fixture.Read("duo/klantbeeld-reduced.json")),
+            Today, Options, Session);
 
     /// <summary>
     /// The sign is DUO's own, not this connector's reading of a reason code.
@@ -805,7 +808,7 @@ public sealed class DuoParsingTests
             .Replace("""{"bedrag":25.00,"boekdatum":"2026-08-01","boekreden":"RENTE","id":9000000103,"mutatieType":"RENTE","vorderingid":9000000200},""", string.Empty, StringComparison.Ordinal);
 
         var debt = DuoDebtReader.Read(
-            Amounts, Positions, Holiday, Today, Options, Session, History, null, short_);
+            new DuoPayloads(Amounts, Positions, Holiday, History, null, short_), Today, Options, Session);
 
         Assert.False(debt.LedgerReconciled);
         Assert.NotEmpty(debt.Ledger);

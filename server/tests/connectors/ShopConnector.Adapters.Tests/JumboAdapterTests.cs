@@ -29,6 +29,16 @@ public sealed class JumboAdapterTests
 
     private static ResourceRequest SinceJuly => Requests.Receipts(since: Requests.Day(2026, 7, 1));
 
+    /// <summary>The recorded pass's three purchases, newest first.</summary>
+    private static readonly string[] NewestFirstIds = ["order-90211", "receipt-TX-2026-07-19-778812", "order-90118"];
+
+    private static readonly long[] NewestFirstTotals = [3113L, 1106L, 1240L];
+
+    /// <summary>One cursor each: orders advance by their limit, receipts by one page.</summary>
+    private static readonly int[] OrderOffsets = [0, 2, 4];
+
+    private static readonly int[] ReceiptPages = [0, 1, 2];
+
     [Fact]
     public void The_manifest_validates_and_is_honest_about_a_daily_login()
     {
@@ -62,12 +72,10 @@ public sealed class JumboAdapterTests
         // is the till record of one of the orders - so three purchases, not
         // four.
         Assert.Equal(3, result.Receipts.Count);
-        Assert.Equal(
-            new[] { "order-90211", "receipt-TX-2026-07-19-778812", "order-90118" },
-            result.Receipts.Select(r => r.ExternalId));
+        Assert.Equal(NewestFirstIds, result.Receipts.Select(r => r.ExternalId));
 
         // Newest first.
-        Assert.Equal(new[] { 3113L, 1106L, 1240L }, result.Receipts.Select(r => r.Total.Value));
+        Assert.Equal(NewestFirstTotals, result.Receipts.Select(r => r.Total.Value));
         Assert.All(result.Receipts, r => Assert.Equal("EUR", r.Total.Currency));
         Assert.All(result.Receipts, r => Assert.True(r.Reconciled));
         Assert.All(result.Receipts, r => Assert.Equal(TimeSpan.FromHours(2), r.PurchasedAt.Offset));
@@ -150,8 +158,8 @@ public sealed class JumboAdapterTests
 
         // offset advances by the order limit; page advances by one. Nothing
         // about either derives from the other.
-        Assert.Equal(new[] { 0, 2, 4 }, list.Select(c => c.Variables["ordersInput"]!["offset"]!.GetValue<int>()));
-        Assert.Equal(new[] { 0, 1, 2 }, list.Select(c => c.Variables["page"]!.GetValue<int>()));
+        Assert.Equal(OrderOffsets, list.Select(c => c.Variables["ordersInput"]!["offset"]!.GetValue<int>()));
+        Assert.Equal(ReceiptPages, list.Select(c => c.Variables["page"]!.GetValue<int>()));
 
         // Three orders across two pages, plus two till receipts.
         Assert.Equal(5, result.Receipts.Count);

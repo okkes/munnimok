@@ -77,6 +77,19 @@ public sealed class BolAdapterTests
     private const string CodeSubmit = "[data-test='verify-code-submit']";
     private const string Recaptcha = "iframe[src*='recaptcha']";
 
+    /// <summary>The one code that sends a consumer back through the login.</summary>
+    private static readonly string[] SessionExpiredOnly = ["session_expired"];
+
+    /// <summary>What the receipts resource lets a caller ask for beside the records.</summary>
+    private static readonly string[] ReceiptIncludes = ["items", "raw", "invoice"];
+
+    /// <summary>The account page's redirect chain first, then the form's own address.</summary>
+    private static readonly string[] AccountPageThenLoginForm =
+    [
+        "https://www.bol.com/nl/nl/account/bestellingen/overzicht/",
+        "https://login.bol.com/wsp/login",
+    ];
+
     private static BolAdapter Adapter(BolOptions? options = null) =>
         new(options ?? Options, new FixedTimeProvider(Now));
 
@@ -139,7 +152,7 @@ public sealed class BolAdapterTests
         Assert.False(
             manifest.Auth.Session.RotatesOnUse,
             "no fetch returns RefreshedMaterial, so nothing is ever re-issued");
-        Assert.Equal(new[] { "session_expired" }, manifest.Auth.Reauth.TriggerCodes);
+        Assert.Equal(SessionExpiredOnly, manifest.Auth.Reauth.TriggerCodes);
 
         // A day, and honestly a guess: nobody outside bol knows the session's
         // real life. Short beats long - being wrong short costs a sign-in,
@@ -201,7 +214,7 @@ public sealed class BolAdapterTests
         // "invoice" alongside them, which is a different thing again: raw is
         // the payload a record was DERIVED from, an invoice is a file bol
         // ISSUED to the user.
-        Assert.Equal(new[] { "items", "raw", "invoice" }, receipts.Param("include")!.Values);
+        Assert.Equal(ReceiptIncludes, receipts.Param("include")!.Values);
 
         // A marketplace order surfaces when the seller ships it, so a row can
         // appear days after the date it will carry. Fetching strictly since
@@ -356,9 +369,7 @@ public sealed class BolAdapterTests
             () => Adapter().LoginAsync(second, blank, Arrives(), CancellationToken.None));
 
         Assert.Equal(ErrorCode.ProviderChanged, error.Code);
-        Assert.Equal(
-            new[] { "https://www.bol.com/nl/nl/account/bestellingen/overzicht/", "https://login.bol.com/wsp/login" },
-            blank.Visited);
+        Assert.Equal(AccountPageThenLoginForm, blank.Visited);
 
         Assert.Contains("either the account page's redirect or the login form", error.Detail,
             StringComparison.Ordinal);
@@ -1063,7 +1074,7 @@ public sealed class BolAdapterTests
 
     private static StubRedirectWaiter Never() => new(redirect: null, afterWaits: 0);
 
-    private static IReadOnlyDictionary<string, string> Credentials() =>
+    private static Dictionary<string, string> Credentials() =>
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["username"] = Email,

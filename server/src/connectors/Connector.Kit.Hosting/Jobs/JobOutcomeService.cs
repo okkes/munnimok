@@ -1,3 +1,4 @@
+#pragma warning disable S107 // minimal-API handlers and DI constructors take their collaborators as parameters
 using Connector.Kit.Adapters;
 using Connector.Kit.AgentProtocol;
 using Connector.Kit.Errors;
@@ -297,12 +298,9 @@ public sealed class JobOutcomeService(
     {
         if (string.IsNullOrWhiteSpace(wire)) return ErrorCode.Internal;
 
-        foreach (var candidate in Enum.GetValues<ErrorCode>())
-        {
-            if (string.Equals(ErrorCatalog.Wire(candidate), wire, StringComparison.OrdinalIgnoreCase)) return candidate;
-        }
-
-        return ErrorCode.Internal;
+        return Enum.GetValues<ErrorCode>().FirstOrDefault(
+            candidate => string.Equals(ErrorCatalog.Wire(candidate), wire, StringComparison.OrdinalIgnoreCase),
+            ErrorCode.Internal);
     }
 }
 

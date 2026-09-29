@@ -13,17 +13,8 @@ namespace BankConnector.Adapters.Parsing;
 /// </summary>
 internal static class Xml
 {
-    public static XElement? Child(this XElement? parent, string localName)
-    {
-        if (parent is null) return null;
-
-        foreach (var element in parent.Elements())
-        {
-            if (string.Equals(element.Name.LocalName, localName, StringComparison.Ordinal)) return element;
-        }
-
-        return null;
-    }
+    public static XElement? Child(this XElement? parent, string localName) =>
+        parent.Children(localName).FirstOrDefault();
 
     public static IEnumerable<XElement> Children(this XElement? parent, string localName) =>
         parent is null
@@ -61,17 +52,10 @@ internal static class Xml
     /// </summary>
     public static string? Attr(this XElement? element, string localName)
     {
-        if (element is null) return null;
+        var attribute = element?.Attributes()
+            .FirstOrDefault(a => string.Equals(a.Name.LocalName, localName, StringComparison.Ordinal));
 
-        foreach (var attribute in element.Attributes())
-        {
-            if (string.Equals(attribute.Name.LocalName, localName, StringComparison.Ordinal))
-            {
-                var value = attribute.Value.Trim();
-                return string.IsNullOrEmpty(value) ? null : value;
-            }
-        }
-
-        return null;
+        var value = attribute?.Value.Trim();
+        return string.IsNullOrEmpty(value) ? null : value;
     }
 }

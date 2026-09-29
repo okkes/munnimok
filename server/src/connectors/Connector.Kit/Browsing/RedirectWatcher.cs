@@ -106,12 +106,9 @@ public sealed class RedirectWatcher : IRedirectWaiter, IDisposable
     {
         try
         {
-            foreach (var header in response.Headers)
+            foreach (var header in response.Headers.Where(h => string.Equals(h.Key, "location", StringComparison.OrdinalIgnoreCase)))
             {
-                if (string.Equals(header.Key, "location", StringComparison.OrdinalIgnoreCase))
-                {
-                    Offer(header.Value);
-                }
+                Offer(header.Value);
             }
         }
         catch (Exception ex) when (PageOps.IsSelectorMiss(ex))

@@ -1,3 +1,4 @@
+#pragma warning disable S107 // minimal-API handlers and DI constructors take their collaborators as parameters
 using Connector.Kit.Adapters;
 using Connector.Kit.AgentProtocol;
 using Connector.Kit.Errors;
@@ -34,7 +35,7 @@ internal static class LoginEndpoints
 {
     public static void Map(IEndpointRouteBuilder api, ConnectorPlatformOptions platform)
     {
-        api.MapPost("/{provider}/login", async (
+        api.MapPost("/{provider}/login", (
             HttpContext http,
             string provider,
             LoginRequest request,
@@ -50,153 +51,25 @@ internal static class LoginEndpoints
             SyncInterval interval,
             IOptions<ConnectorOptions> options,
             TimeProvider time,
-            CancellationToken ct) =>
-        {
-            var manifest = registry.RequireManifest(provider);
-            RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
-
-            await RequireWorkAcceptedAsync(statuses, manifest, ct);
-            var deviceClass = RequestContext.DeviceClassOf(http);
-            RequireConsent(platform, request.Consent);
-            RequestContext.RequireSubjectAgreement(http, request.Subject);
-            await interval.RequireElapsedAsync(
-                RequestContext.TriggerOf(http), manifest, request.Subject, JobKind.Login, resourceId: null, ct);
-
-            // What the human typed, or what their device kept from the last
-            // time they typed it. Redeemed before validation, never after: the
-            // manifest's own rules then apply to a stored bundle exactly as
-            // they apply to a posted form, so one cannot smuggle a field the
-            // provider never declared.
-            var inputs = request.Inputs.Count == 0 && request.CredentialBundle is { Length: > 0 } stored
-                ? sessions.OpenCredentials(manifest.Id, request.Subject, stored)
-                : request.Inputs;
-
-            AuthInputValidator.ValidateConfig(manifest, request.Config);
-            AuthInputValidator.ValidateInputs(manifest, inputs);
-
-            // A caller that timed out and retried gets the run it already
-            // started, not a second one. Starting a second login would submit
-            // the same credential again and spend one of the provider's
-            // attempts on a request the user only made once.
-            var idempotencyScope = $"login:{manifest.Id}:{request.Subject}";
-            var idempotencyKey = RequestContext.IdempotencyKey(http);
-            if (idempotencyKey is not null && idempotency.TryGet(idempotencyScope, idempotencyKey, out var replayed))
-            {
-                var already = await sessions.RequireAsync(manifest.Id, replayed, request.Subject, ct);
-                var replay = await views.SessionAsync(already, deliverBundle: true, ct);
-                return ConnectorResults.Json(replay, already.State == SessionState.Active
-                    ? StatusCodes.Status200OK
-                    : StatusCodes.Status202Accepted);
-            }
-
-            // WHICH OF THE THREE ANSWERS ARRIVED, read once and in one place.
-            // `prefer_agent` carries an agent id, the reserved word for the
-            // operator's fleet, or nothing; everything below turns on which,
-            // and a second reading of the same string is how two paths come to
-            // disagree about it.
-            var fleetRequested = RunOn.IsFleet(request.PreferAgent);
-            var namedAgent = RunOn.IsAgentId(request.PreferAgent) ? request.PreferAgent : null;
-
-            // BEFORE THE PROFILE IS RESOLVED, so a refused login leaves
-            // nothing behind: pinning one writes a ProfileRow, and a pin for a
-            // connection that was then turned away is a row naming a browser
-            // directory nobody ever opened.
-            await RequireFleetCanServeAsync(db, manifest, fleetRequested, inline, options.Value, time, ct);
-            await RequireReachableEgressAsync(db, manifest, request.Subject, options.Value, time, ct);
-
-            var profileId = await ResolveProfileAsync(
-                db, manifest, namedAgent, request.Subject, options.Value, time, ct);
-
-            var session = await sessions.CreateAsync(new NewSession
-            {
-                ProviderId = manifest.Id,
-                Subject = request.Subject,
-                DeviceClass = deviceClass,
-                Config = request.Config,
-                Label = request.Label,
-                ConsentAcceptedAt = request.Consent?.AcceptedAt,
-                ConsentTermsVersion = request.Consent?.TermsVersion,
-                PreferAgent = namedAgent,
-                FleetOnly = fleetRequested,
-                ProfileId = profileId,
-            }, ct);
-
-            if (idempotencyKey is not null) idempotency.Remember(idempotencyScope, idempotencyKey, session.Id);
-
-            // RUNNING BEFORE THE JOB EXISTS, and the order is the whole point.
-            //
-            // This used to enqueue first and mark the session running after, so
-            // a job that started immediately could raise its challenge - moving
-            // the session to awaiting_input - before that write landed. Since
-            // awaiting_input to running is a legal edge, the write then went
-            // through and put the session BACK, leaving it reporting `running`
-            // while holding an unanswered challenge and a progress step reading
-            // `awaiting_human`. Nobody polling for state ever learns they have
-            // to ask the human anything, and the login sits there until it
-            // expires.
-            //
-            // Caught by an intermittent test failure that only reproduces under
-            // load, which is the only way a race like this surfaces at all.
-            await sessions.StartAsync(session, ct);
-
-            var job = await queue.EnqueueAsync(new NewJob
-            {
-                SessionId = session.Id,
-                ProviderId = manifest.Id,
-                Kind = JobKind.Login,
-                Inputs = inputs,
-                Config = request.Config,
-                ProfileId = profileId,
-                FleetOnly = fleetRequested,
-            }, ct);
-
-            if (inline.CanRun(manifest)) inline.Dispatch();
-
-            // A short wait, not a long one. An HTTP-tier provider usually
-            // finishes inside it and the caller gets its bundle in one round
-            // trip; anything slower has SSE and a poll URL, and holding a
-            // socket open for a two-minute bank login helps nobody.
-            await WaitForSettleAsync(db, session.Id, signals,
-                TimeSpan.FromSeconds(options.Value.Timeouts.LoginWaitSeconds), time, ct);
-
-            db.ChangeTracker.Clear();
-            var settled = await db.Sessions.FirstAsync(s => s.Id == session.Id, ct);
-            var view = await views.SessionAsync(settled, deliverBundle: true, ct);
-
-            if (settled.State == SessionState.Active) return ConnectorResults.Json(view);
-
-            if (SessionStateMachine.IsTerminal(settled.State) || settled.State == SessionState.Blocked)
-            {
-                var failed = await views.LatestJobAsync(settled.Id, ct);
-                return ConnectorResults.Error(new ConnectorException(
-                    failed?.ErrorCode ?? ErrorCode.Internal, failed?.ErrorDetail));
-            }
-
-            return ConnectorResults.Json(view, StatusCodes.Status202Accepted);
-        })
+            CancellationToken ct) => LoginAsync(
+                http, provider, request, platform, registry, statuses, sessions, queue, inline, db, views,
+                signals, idempotency, interval, options, time, ct))
         // The same body under two statuses, which is the contract: 200 means
         // the bundle is in your hands, 202 means poll or subscribe. A consumer
         // that only reads the 200 shape never learns the second exists.
         .Produces<SessionResponse>(StatusCodes.Status200OK)
         .Produces<SessionResponse>(StatusCodes.Status202Accepted);
 
-        api.MapGet("/{provider}/login/{sessionId}", async (
+        api.MapGet("/{provider}/login/{sessionId}", (
             HttpContext http,
             string provider,
             string sessionId,
             IProviderRegistry registry,
             SessionService sessions,
             ViewBuilder views,
-            CancellationToken ct) =>
-        {
-            var manifest = registry.RequireManifest(provider);
-            RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
+            CancellationToken ct) => GetSessionAsync(http, provider, sessionId, registry, sessions, views, ct));
 
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
-            return ConnectorResults.Json(await views.SessionAsync(session, deliverBundle: true, ct));
-        });
-
-        api.MapGet("/{provider}/login/{sessionId}/events", async (
+        api.MapGet("/{provider}/login/{sessionId}/events", (
             HttpContext http,
             string provider,
             string sessionId,
@@ -205,37 +78,14 @@ internal static class LoginEndpoints
             ViewBuilder views,
             ConnectorSignals signals,
             ConnectorDbContext db,
-            CancellationToken ct) =>
-        {
-            var manifest = registry.RequireManifest(provider);
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
-
-            await EventStream.WriteAsync(
-                http,
-                async token =>
-                {
-                    db.ChangeTracker.Clear();
-                    var row = await db.Sessions.FirstOrDefaultAsync(s => s.Id == session.Id, token);
-                    // The stream never hands over the bundle: a stream cannot
-                    // be acknowledged, and a bundle delivered into one that
-                    // nobody read would be lost silently.
-                    return row is null ? null : await views.SessionAsync(row, deliverBundle: false, token);
-                },
-                ConnectorJson.Serialize,
-                view => SessionStateMachine.IsTerminal(view.State) || view.State == SessionState.Active,
-                signals,
-                ConnectorSignals.Session(session.Id),
-                TimeSpan.FromMinutes(10),
-                ct);
-
-            return Results.Empty;
-        })
+            CancellationToken ct) => StreamSessionAsync(
+                http, provider, sessionId, registry, sessions, views, signals, db, ct))
         // A stream of the same view the poll returns, one per event. Naming the
         // frame type is the only thing that makes the stream readable: the
         // status alone would say a session subscription returns nothing.
         .Produces<SessionResponse>(StatusCodes.Status200OK, "text/event-stream");
 
-        api.MapGet("/{provider}/login/{sessionId}/challenges/{challengeId}/image", async (
+        api.MapGet("/{provider}/login/{sessionId}/challenges/{challengeId}/image", (
             HttpContext http,
             string provider,
             string sessionId,
@@ -244,22 +94,11 @@ internal static class LoginEndpoints
             SessionService sessions,
             ChallengeService challenges,
             ViewBuilder views,
-            CancellationToken ct) =>
-        {
-            var manifest = registry.RequireManifest(provider);
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
-
-            var job = await views.LatestJobAsync(session.Id, ct)
-                      ?? throw ConnectorException.Unsupported("this session has no run in flight");
-
-            var bytes = await challenges.ImageAsync(challengeId, job.Id, ct);
-            return bytes is null
-                ? ConnectorResults.Error(new ConnectorException(ErrorCode.ChallengeExpired, "no image for this challenge"))
-                : Results.File(bytes, "image/png");
-        })
+            CancellationToken ct) => ChallengeImageAsync(
+                http, provider, sessionId, challengeId, registry, sessions, challenges, views, ct))
         .Produces<byte[]>(StatusCodes.Status200OK, "image/png");
 
-        api.MapPost("/{provider}/login/{sessionId}/answer", async (
+        api.MapPost("/{provider}/login/{sessionId}/answer", (
             HttpContext http,
             string provider,
             string sessionId,
@@ -268,19 +107,10 @@ internal static class LoginEndpoints
             SessionService sessions,
             ChallengeService challenges,
             ViewBuilder views,
-            CancellationToken ct) =>
-        {
-            var manifest = registry.RequireManifest(provider);
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
+            CancellationToken ct) => AnswerAsync(
+                http, provider, sessionId, request, registry, sessions, challenges, views, ct));
 
-            var job = await views.LatestJobAsync(session.Id, ct)
-                      ?? throw ConnectorException.Unsupported("this session has no run in flight");
-
-            await challenges.AnswerAsync(request.ChallengeId, job.Id, request.Value, ct);
-            return ConnectorResults.Json(await views.SessionAsync(session, deliverBundle: false, ct));
-        });
-
-        api.MapPost("/{provider}/login/{sessionId}/cancel", async (
+        api.MapPost("/{provider}/login/{sessionId}/cancel", (
             HttpContext http,
             string provider,
             string sessionId,
@@ -288,28 +118,9 @@ internal static class LoginEndpoints
             SessionService sessions,
             JobOutcomeService outcomes,
             ViewBuilder views,
-            CancellationToken ct) =>
-        {
-            var manifest = registry.RequireManifest(provider);
-            var subject = RequestContext.RequireSubject(http);
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, subject, ct);
+            CancellationToken ct) => CancelAsync(http, provider, sessionId, registry, sessions, outcomes, views, ct));
 
-            if (await views.LatestJobAsync(session.Id, ct) is { } job && !JobStateMachine.IsTerminal(job.State))
-            {
-                await outcomes.FailAsync(job.Id, leaseOwner: null, new JobFailRequest
-                {
-                    // Not retriable by construction: a cancel that came back
-                    // as a retry would be the opposite of what was asked.
-                    Code = ErrorCatalog.Wire(ErrorCode.InvalidRequest),
-                    Detail = "cancelled by the caller",
-                }, ct);
-            }
-
-            var cancelled = await sessions.RequireAsync(manifest.Id, sessionId, subject, ct);
-            return ConnectorResults.Json(await views.SessionAsync(cancelled, deliverBundle: false, ct));
-        });
-
-        api.MapPost("/{provider}/sessions/resume", async (
+        api.MapPost("/{provider}/sessions/resume", (
             HttpContext http,
             string provider,
             ResumeRequest request,
@@ -319,36 +130,10 @@ internal static class LoginEndpoints
             ITicketStore tickets,
             IOptions<ConnectorOptions> options,
             TimeProvider time,
-            CancellationToken ct) =>
-        {
-            var manifest = registry.RequireManifest(provider);
-            RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
-            await RequireWorkAcceptedAsync(statuses, manifest, ct);
+            CancellationToken ct) => ResumeAsync(
+                http, provider, request, registry, statuses, sessions, tickets, options, time, ct));
 
-            RequestContext.RequireSubjectAgreement(http, request.Subject);
-            var opened = await sessions.OpenAsync(manifest.Id, request.Subject, request.Bundle, ct);
-            var ttl = options.Value.Timeouts.TicketSeconds;
-
-            var ticket = tickets.Mint(new TicketGrant
-            {
-                Subject = request.Subject,
-                SessionId = opened.Session.Id,
-                ProviderId = manifest.Id,
-                Material = opened.Payload.Material,
-                Config = opened.Payload.Config,
-                ExpiresAt = time.GetUtcNow().AddSeconds(ttl),
-            });
-
-            return ConnectorResults.Json(new ResumeResponse
-            {
-                Ticket = ticket,
-                SessionId = opened.Session.Id,
-                ExpiresIn = ttl,
-                State = opened.Session.State,
-            });
-        });
-
-        api.MapDelete("/{provider}/sessions/{sessionId}", async (
+        api.MapDelete("/{provider}/sessions/{sessionId}", (
             HttpContext http,
             string provider,
             string sessionId,
@@ -361,118 +146,498 @@ internal static class LoginEndpoints
             IInlineJobRunner inline,
             ConnectorDbContext db,
             ILoggerFactory loggers,
-            CancellationToken ct) =>
-        {
-            var manifest = registry.RequireManifest(provider);
-            RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
-
-            var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
-
-            // Best-effort upstream logout, then purge regardless. A user
-            // disconnecting must always succeed locally, whatever the provider
-            // does or does not do about it.
-            //
-            // Gated on the manifest: most adapters inherit the interface's
-            // do-nothing default, and each of those Disconnects was minting a
-            // job row, taking a lease and spending a whole agent round trip to
-            // reach a method that returns a completed task.
-            //
-            // Opened BEFORE the purge, because the purge disables the session
-            // and a disabled session's bundle no longer opens. Enqueued AFTER
-            // it, because the purge blanks the material on every job this
-            // session has - including, until this was reordered, the logout job
-            // that had just been created to use it.
-            // Read before the purge, which sets it to Disabled - so that the
-            // diagnostic below can say what the session actually was.
-            var state = session.State;
-
-            var material = state == SessionState.Active && manifest.Logout != LogoutSupport.None
-                ? await LogoutMaterialAsync(sessions, manifest, session, request?.Bundle, ct)
-                : null;
-
-            var config = ConnectorJson.DeserializeOr<IReadOnlyDictionary<string, string>>(
-                session.ConfigJson, new Dictionary<string, string>(StringComparer.Ordinal));
-            var profileId = session.ProfileId;
-
-            // Read before the purge for the same reason the profile is: the
-            // logout job below is built after it, and this row is about to be
-            // rewritten.
-            var fleetOnly = session.FleetOnly;
-
-            await sessions.PurgeAsync(session, ct);
-
-            // SAID EITHER WAY. Every branch above can decide not to log out -
-            // the manifest declines it, the session was not active, the caller
-            // sent no bundle, or the bundle would not open - and until this
-            // line the disconnect returned 204 and looked identical in all
-            // five cases. A provider that promises LogoutSupport.Session and
-            // then quietly sends nothing is the exact failure this whole path
-            // exists to prevent, and it hid here for as long as it hid in the
-            // adapter.
-            var logout = loggers.CreateLogger($"Connector.Kit.Hosting.Disconnect.{manifest.Id}");
-
-            // WHICH OF THE FIVE, once, so the log and the caller cannot drift
-            // apart. This sentence was computed for the log alone and the
-            // caller got a bare false - true, and useless to anybody deciding
-            // whether to try again with the bundle they forgot to send.
-            var reason =
-                manifest.Logout == LogoutSupport.None ? "the manifest declares no logout"
-                : state != SessionState.Active ? $"the session was {state}, not active"
-                : string.IsNullOrWhiteSpace(request?.Bundle) ? "the caller sent no bundle to log out with"
-                : "the bundle the caller sent would not open";
-
-            string? logoutJobId = null;
-
-            if (material is not null)
-            {
-                var queued = await queue.EnqueueAsync(new NewJob
-                {
-                    SessionId = sessionId,
-                    ProviderId = manifest.Id,
-                    Kind = JobKind.Logout,
-                    Config = config,
-                    Material = material,
-                    ProfileId = profileId,
-                    // Carried for the reason the profile is: the session said
-                    // where its work runs, and the last job of a connection is
-                    // still that connection's work.
-                    FleetOnly = fleetOnly,
-                }, ct);
-
-                if (inline.CanRun(manifest)) inline.Dispatch();
-
-                logout.LogInformation(
-                    "session {SessionId}: an upstream logout was queued for {Provider}", sessionId, manifest.Id);
-
-                logoutJobId = queued.Id;
-            }
-            else
-            {
-                logout.LogInformation(
-                    "session {SessionId}: {Provider} was NOT told about this disconnect ({Reason}); its session "
-                    + "will expire on its own",
-                    sessionId,
-                    manifest.Id,
-                    reason);
-            }
-
-            db.ChangeTracker.Clear();
-
-            // THE OUTCOME, NOT THE PROMISE. This returned 204 whichever of the
-            // five branches above ran, so a consumer had nothing to tell the
-            // user but the manifest's own claim - and the demo client duly said
-            // "the connector logged out upstream" over a disconnect that had
-            // sent nothing at all. A caller cannot report what it is not told.
-            return Results.Json(
-                new DisconnectResponse
-                {
-                    LoggedOut = material is not null,
-                    JobId = logoutJobId,
-                    Reason = material is not null ? null : reason,
-                },
-                ConnectorJson.Options);
-        })
+            CancellationToken ct) => DisconnectAsync(
+                http, provider, sessionId, request, registry, sessions, queue, inline, db, loggers, ct))
         .Produces<DisconnectResponse>(StatusCodes.Status200OK);
+    }
+
+    private static async Task<IResult> LoginAsync(
+        HttpContext http,
+        string provider,
+        LoginRequest request,
+        ConnectorPlatformOptions platform,
+        IProviderRegistry registry,
+        ProviderStatusService statuses,
+        SessionService sessions,
+        ILeasedJobQueue queue,
+        IInlineJobRunner inline,
+        ConnectorDbContext db,
+        ViewBuilder views,
+        ConnectorSignals signals,
+        IIdempotencyStore idempotency,
+        SyncInterval interval,
+        IOptions<ConnectorOptions> options,
+        TimeProvider time,
+        CancellationToken ct)
+    {
+        var manifest = registry.RequireManifest(provider);
+        RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
+
+        await RequireWorkAcceptedAsync(statuses, manifest, ct);
+        var deviceClass = RequestContext.DeviceClassOf(http);
+        RequireConsent(platform, request.Consent);
+        RequestContext.RequireSubjectAgreement(http, request.Subject);
+        await interval.RequireElapsedAsync(
+            RequestContext.TriggerOf(http), manifest, request.Subject, JobKind.Login, resourceId: null, ct);
+
+        var inputs = ValidatedInputs(sessions, manifest, request);
+
+        // A caller that timed out and retried gets the run it already
+        // started, not a second one. Starting a second login would submit
+        // the same credential again and spend one of the provider's
+        // attempts on a request the user only made once.
+        var idempotencyScope = $"login:{manifest.Id}:{request.Subject}";
+        var idempotencyKey = RequestContext.IdempotencyKey(http);
+        if (idempotencyKey is not null && idempotency.TryGet(idempotencyScope, idempotencyKey, out var replayed))
+        {
+            return await ReplayAsync(sessions, views, manifest, replayed, request.Subject, ct);
+        }
+
+        // WHICH OF THE THREE ANSWERS ARRIVED, read once and in one place.
+        // `prefer_agent` carries an agent id, the reserved word for the
+        // operator's fleet, or nothing; everything below turns on which,
+        // and a second reading of the same string is how two paths come to
+        // disagree about it.
+        var fleetRequested = RunOn.IsFleet(request.PreferAgent);
+        var namedAgent = RunOn.IsAgentId(request.PreferAgent) ? request.PreferAgent : null;
+
+        // BEFORE THE PROFILE IS RESOLVED, so a refused login leaves
+        // nothing behind: pinning one writes a ProfileRow, and a pin for a
+        // connection that was then turned away is a row naming a browser
+        // directory nobody ever opened.
+        await RequireFleetCanServeAsync(db, manifest, fleetRequested, inline, options.Value, time, ct);
+        await RequireReachableEgressAsync(db, manifest, request.Subject, options.Value, time, ct);
+
+        var profileId = await ResolveProfileAsync(
+            db, manifest, namedAgent, request.Subject, options.Value, time, ct);
+
+        var session = await sessions.CreateAsync(new NewSession
+        {
+            ProviderId = manifest.Id,
+            Subject = request.Subject,
+            DeviceClass = deviceClass,
+            Config = request.Config,
+            Label = request.Label,
+            ConsentAcceptedAt = request.Consent?.AcceptedAt,
+            ConsentTermsVersion = request.Consent?.TermsVersion,
+            PreferAgent = namedAgent,
+            FleetOnly = fleetRequested,
+            ProfileId = profileId,
+        }, ct);
+
+        if (idempotencyKey is not null) idempotency.Remember(idempotencyScope, idempotencyKey, session.Id);
+
+        await StartLoginJobAsync(
+            sessions, queue, inline, session, manifest, inputs, request.Config, profileId, fleetRequested, ct);
+
+        // A short wait, not a long one. An HTTP-tier provider usually
+        // finishes inside it and the caller gets its bundle in one round
+        // trip; anything slower has SSE and a poll URL, and holding a
+        // socket open for a two-minute bank login helps nobody.
+        await WaitForSettleAsync(db, session.Id, signals,
+            TimeSpan.FromSeconds(options.Value.Timeouts.LoginWaitSeconds), time, ct);
+
+        return await SettledResponseAsync(db, views, session.Id, ct);
+    }
+
+    /// <summary>
+    /// The login's inputs, resolved and held to the manifest.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> ValidatedInputs(
+        SessionService sessions, ProviderManifest manifest, LoginRequest request)
+    {
+        // What the human typed, or what their device kept from the last
+        // time they typed it. Redeemed before validation, never after: the
+        // manifest's own rules then apply to a stored bundle exactly as
+        // they apply to a posted form, so one cannot smuggle a field the
+        // provider never declared.
+        var inputs = request.Inputs.Count == 0 && request.CredentialBundle is { Length: > 0 } stored
+            ? sessions.OpenCredentials(manifest.Id, request.Subject, stored)
+            : request.Inputs;
+
+        AuthInputValidator.ValidateConfig(manifest, request.Config);
+        AuthInputValidator.ValidateInputs(manifest, inputs);
+        return inputs;
+    }
+
+    /// <summary>
+    /// The run a retried caller already started, under the status its state
+    /// has earned: 200 once the bundle is in their hands, 202 until then.
+    /// </summary>
+    private static async Task<IResult> ReplayAsync(
+        SessionService sessions,
+        ViewBuilder views,
+        ProviderManifest manifest,
+        string sessionId,
+        string subject,
+        CancellationToken ct)
+    {
+        var already = await sessions.RequireAsync(manifest.Id, sessionId, subject, ct);
+        var replay = await views.SessionAsync(already, deliverBundle: true, ct);
+        return ConnectorResults.Json(replay, already.State == SessionState.Active
+            ? StatusCodes.Status200OK
+            : StatusCodes.Status202Accepted);
+    }
+
+    /// <summary>
+    /// Marks the session running, then queues the login job that will run it.
+    /// </summary>
+    private static async Task StartLoginJobAsync(
+        SessionService sessions,
+        ILeasedJobQueue queue,
+        IInlineJobRunner inline,
+        SessionRow session,
+        ProviderManifest manifest,
+        IReadOnlyDictionary<string, string> inputs,
+        IReadOnlyDictionary<string, string> config,
+        string? profileId,
+        bool fleetRequested,
+        CancellationToken ct)
+    {
+        // RUNNING BEFORE THE JOB EXISTS, and the order is the whole point.
+        //
+        // This used to enqueue first and mark the session running after, so
+        // a job that started immediately could raise its challenge - moving
+        // the session to awaiting_input - before that write landed. Since
+        // awaiting_input to running is a legal edge, the write then went
+        // through and put the session BACK, leaving it reporting `running`
+        // while holding an unanswered challenge and a progress step reading
+        // `awaiting_human`. Nobody polling for state ever learns they have
+        // to ask the human anything, and the login sits there until it
+        // expires.
+        //
+        // Caught by an intermittent test failure that only reproduces under
+        // load, which is the only way a race like this surfaces at all.
+        await sessions.StartAsync(session, ct);
+
+        await queue.EnqueueAsync(new NewJob
+        {
+            SessionId = session.Id,
+            ProviderId = manifest.Id,
+            Kind = JobKind.Login,
+            Inputs = inputs,
+            Config = config,
+            ProfileId = profileId,
+            FleetOnly = fleetRequested,
+        }, ct);
+
+        if (inline.CanRun(manifest)) inline.Dispatch();
+    }
+
+    /// <summary>
+    /// Whatever is true once the wait is over: the bundle, the failure that
+    /// ended the run, or a handle to keep following it.
+    /// </summary>
+    private static async Task<IResult> SettledResponseAsync(
+        ConnectorDbContext db, ViewBuilder views, string sessionId, CancellationToken ct)
+    {
+        db.ChangeTracker.Clear();
+        var settled = await db.Sessions.FirstAsync(s => s.Id == sessionId, ct);
+        var view = await views.SessionAsync(settled, deliverBundle: true, ct);
+
+        if (settled.State == SessionState.Active) return ConnectorResults.Json(view);
+
+        if (SessionStateMachine.IsTerminal(settled.State) || settled.State == SessionState.Blocked)
+        {
+            var failed = await views.LatestJobAsync(settled.Id, ct);
+            return ConnectorResults.Error(new ConnectorException(
+                failed?.ErrorCode ?? ErrorCode.Internal, failed?.ErrorDetail));
+        }
+
+        return ConnectorResults.Json(view, StatusCodes.Status202Accepted);
+    }
+
+    private static async Task<ConnectorJsonResult<SessionResponse>> GetSessionAsync(
+        HttpContext http,
+        string provider,
+        string sessionId,
+        IProviderRegistry registry,
+        SessionService sessions,
+        ViewBuilder views,
+        CancellationToken ct)
+    {
+        var manifest = registry.RequireManifest(provider);
+        RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
+
+        var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
+        return ConnectorResults.Json(await views.SessionAsync(session, deliverBundle: true, ct));
+    }
+
+    private static async Task<IResult> StreamSessionAsync(
+        HttpContext http,
+        string provider,
+        string sessionId,
+        IProviderRegistry registry,
+        SessionService sessions,
+        ViewBuilder views,
+        ConnectorSignals signals,
+        ConnectorDbContext db,
+        CancellationToken ct)
+    {
+        var manifest = registry.RequireManifest(provider);
+        var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
+
+        await EventStream.WriteAsync(
+            http,
+            async token =>
+            {
+                db.ChangeTracker.Clear();
+                var row = await db.Sessions.FirstOrDefaultAsync(s => s.Id == session.Id, token);
+                // The stream never hands over the bundle: a stream cannot
+                // be acknowledged, and a bundle delivered into one that
+                // nobody read would be lost silently.
+                return row is null ? null : await views.SessionAsync(row, deliverBundle: false, token);
+            },
+            view => SessionStateMachine.IsTerminal(view.State) || view.State == SessionState.Active,
+            signals,
+            ConnectorSignals.Session(session.Id),
+            TimeSpan.FromMinutes(10),
+            ct);
+
+        return Results.Empty;
+    }
+
+    private static async Task<IResult> ChallengeImageAsync(
+        HttpContext http,
+        string provider,
+        string sessionId,
+        string challengeId,
+        IProviderRegistry registry,
+        SessionService sessions,
+        ChallengeService challenges,
+        ViewBuilder views,
+        CancellationToken ct)
+    {
+        var manifest = registry.RequireManifest(provider);
+        var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
+
+        var job = await views.LatestJobAsync(session.Id, ct)
+                  ?? throw ConnectorException.Unsupported("this session has no run in flight");
+
+        var bytes = await challenges.ImageAsync(challengeId, job.Id, ct);
+        return bytes is null
+            ? ConnectorResults.Error(new ConnectorException(ErrorCode.ChallengeExpired, "no image for this challenge"))
+            : Results.File(bytes, "image/png");
+    }
+
+    private static async Task<ConnectorJsonResult<SessionResponse>> AnswerAsync(
+        HttpContext http,
+        string provider,
+        string sessionId,
+        AnswerRequest request,
+        IProviderRegistry registry,
+        SessionService sessions,
+        ChallengeService challenges,
+        ViewBuilder views,
+        CancellationToken ct)
+    {
+        var manifest = registry.RequireManifest(provider);
+        var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
+
+        var job = await views.LatestJobAsync(session.Id, ct)
+                  ?? throw ConnectorException.Unsupported("this session has no run in flight");
+
+        await challenges.AnswerAsync(request.ChallengeId, job.Id, request.Value, ct);
+        return ConnectorResults.Json(await views.SessionAsync(session, deliverBundle: false, ct));
+    }
+
+    private static async Task<ConnectorJsonResult<SessionResponse>> CancelAsync(
+        HttpContext http,
+        string provider,
+        string sessionId,
+        IProviderRegistry registry,
+        SessionService sessions,
+        JobOutcomeService outcomes,
+        ViewBuilder views,
+        CancellationToken ct)
+    {
+        var manifest = registry.RequireManifest(provider);
+        var subject = RequestContext.RequireSubject(http);
+        var session = await sessions.RequireAsync(manifest.Id, sessionId, subject, ct);
+
+        if (await views.LatestJobAsync(session.Id, ct) is { } job && !JobStateMachine.IsTerminal(job.State))
+        {
+            await outcomes.FailAsync(job.Id, leaseOwner: null, new JobFailRequest
+            {
+                // Not retriable by construction: a cancel that came back
+                // as a retry would be the opposite of what was asked.
+                Code = ErrorCatalog.Wire(ErrorCode.InvalidRequest),
+                Detail = "cancelled by the caller",
+            }, ct);
+        }
+
+        var cancelled = await sessions.RequireAsync(manifest.Id, sessionId, subject, ct);
+        return ConnectorResults.Json(await views.SessionAsync(cancelled, deliverBundle: false, ct));
+    }
+
+    private static async Task<ConnectorJsonResult<ResumeResponse>> ResumeAsync(
+        HttpContext http,
+        string provider,
+        ResumeRequest request,
+        IProviderRegistry registry,
+        ProviderStatusService statuses,
+        SessionService sessions,
+        ITicketStore tickets,
+        IOptions<ConnectorOptions> options,
+        TimeProvider time,
+        CancellationToken ct)
+    {
+        var manifest = registry.RequireManifest(provider);
+        RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
+        await RequireWorkAcceptedAsync(statuses, manifest, ct);
+
+        RequestContext.RequireSubjectAgreement(http, request.Subject);
+        var opened = await sessions.OpenAsync(manifest.Id, request.Subject, request.Bundle, ct);
+        var ttl = options.Value.Timeouts.TicketSeconds;
+
+        var ticket = tickets.Mint(new TicketGrant
+        {
+            Subject = request.Subject,
+            SessionId = opened.Session.Id,
+            ProviderId = manifest.Id,
+            Material = opened.Payload.Material,
+            Config = opened.Payload.Config,
+            ExpiresAt = time.GetUtcNow().AddSeconds(ttl),
+        });
+
+        return ConnectorResults.Json(new ResumeResponse
+        {
+            Ticket = ticket,
+            SessionId = opened.Session.Id,
+            ExpiresIn = ttl,
+            State = opened.Session.State,
+        });
+    }
+
+    private static async Task<IResult> DisconnectAsync(
+        HttpContext http,
+        string provider,
+        string sessionId,
+        DisconnectRequest? request,
+        IProviderRegistry registry,
+        SessionService sessions,
+        ILeasedJobQueue queue,
+        IInlineJobRunner inline,
+        ConnectorDbContext db,
+        ILoggerFactory loggers,
+        CancellationToken ct)
+    {
+        var manifest = registry.RequireManifest(provider);
+        RequestContext.StampManifestVersion(http, manifest.ManifestVersion);
+
+        var session = await sessions.RequireAsync(manifest.Id, sessionId, RequestContext.RequireSubject(http), ct);
+
+        // Best-effort upstream logout, then purge regardless. A user
+        // disconnecting must always succeed locally, whatever the provider
+        // does or does not do about it.
+        //
+        // Gated on the manifest: most adapters inherit the interface's
+        // do-nothing default, and each of those Disconnects was minting a
+        // job row, taking a lease and spending a whole agent round trip to
+        // reach a method that returns a completed task.
+        //
+        // Opened BEFORE the purge, because the purge disables the session
+        // and a disabled session's bundle no longer opens. Enqueued AFTER
+        // it, because the purge blanks the material on every job this
+        // session has - including, until this was reordered, the logout job
+        // that had just been created to use it.
+        // Read before the purge, which sets it to Disabled - so that the
+        // diagnostic below can say what the session actually was.
+        var state = session.State;
+
+        var material = state == SessionState.Active && manifest.Logout != LogoutSupport.None
+            ? await LogoutMaterialAsync(sessions, manifest, session, request?.Bundle, ct)
+            : null;
+
+        var config = ConnectorJson.DeserializeOr<IReadOnlyDictionary<string, string>>(
+            session.ConfigJson, new Dictionary<string, string>(StringComparer.Ordinal));
+        var profileId = session.ProfileId;
+
+        // Read before the purge for the same reason the profile is: the
+        // logout job below is built after it, and this row is about to be
+        // rewritten.
+        var fleetOnly = session.FleetOnly;
+
+        await sessions.PurgeAsync(session, ct);
+
+        // SAID EITHER WAY. Every branch above can decide not to log out -
+        // the manifest declines it, the session was not active, the caller
+        // sent no bundle, or the bundle would not open - and until this
+        // line the disconnect returned 204 and looked identical in all
+        // five cases. A provider that promises LogoutSupport.Session and
+        // then quietly sends nothing is the exact failure this whole path
+        // exists to prevent, and it hid here for as long as it hid in the
+        // adapter.
+        var logout = loggers.CreateLogger($"Connector.Kit.Hosting.Disconnect.{manifest.Id}");
+
+        // WHICH OF THE FIVE, once, so the log and the caller cannot drift
+        // apart. This sentence was computed for the log alone and the
+        // caller got a bare false - true, and useless to anybody deciding
+        // whether to try again with the bundle they forgot to send.
+        var reason = SkippedLogoutReason(manifest, state, request?.Bundle);
+
+        string? logoutJobId = null;
+
+        if (material is not null)
+        {
+            var queued = await queue.EnqueueAsync(new NewJob
+            {
+                SessionId = sessionId,
+                ProviderId = manifest.Id,
+                Kind = JobKind.Logout,
+                Config = config,
+                Material = material,
+                ProfileId = profileId,
+                // Carried for the reason the profile is: the session said
+                // where its work runs, and the last job of a connection is
+                // still that connection's work.
+                FleetOnly = fleetOnly,
+            }, ct);
+
+            if (inline.CanRun(manifest)) inline.Dispatch();
+
+            logout.LogInformation(
+                "session {SessionId}: an upstream logout was queued for {Provider}", sessionId, manifest.Id);
+
+            logoutJobId = queued.Id;
+        }
+        else
+        {
+            logout.LogInformation(
+                "session {SessionId}: {Provider} was NOT told about this disconnect ({Reason}); its session "
+                + "will expire on its own",
+                sessionId,
+                manifest.Id,
+                reason);
+        }
+
+        db.ChangeTracker.Clear();
+
+        // THE OUTCOME, NOT THE PROMISE. This returned 204 whichever of the
+        // five branches above ran, so a consumer had nothing to tell the
+        // user but the manifest's own claim - and the demo client duly said
+        // "the connector logged out upstream" over a disconnect that had
+        // sent nothing at all. A caller cannot report what it is not told.
+        return Results.Json(
+            new DisconnectResponse
+            {
+                LoggedOut = material is not null,
+                JobId = logoutJobId,
+                Reason = material is not null ? null : reason,
+            },
+            ConnectorJson.Options);
+    }
+
+    /// <summary>
+    /// Why no upstream logout went out - the first of the reasons that
+    /// applies, in the order the disconnect decides them.
+    /// </summary>
+    private static string SkippedLogoutReason(ProviderManifest manifest, SessionState state, string? bundle)
+    {
+        if (manifest.Logout == LogoutSupport.None) return "the manifest declares no logout";
+        if (state != SessionState.Active) return $"the session was {state}, not active";
+        if (string.IsNullOrWhiteSpace(bundle)) return "the caller sent no bundle to log out with";
+        return "the bundle the caller sent would not open";
     }
 
     /// <summary>
@@ -777,10 +942,7 @@ internal static class LoginEndpoints
             .Select(a => a.CapabilitiesJson)
             .ToListAsync(ct);
 
-        foreach (var blob in blobs)
-        {
-            if (ConnectorJson.DeserializeOr(blob, new AgentCapabilities()).CanServe(manifest)) return;
-        }
+        if (blobs.Exists(blob => ConnectorJson.DeserializeOr(blob, new AgentCapabilities()).CanServe(manifest))) return;
 
         throw new ConnectorException(
             ErrorCode.AgentUnavailable,
@@ -859,10 +1021,7 @@ internal static class LoginEndpoints
 
         var blobs = await candidates.Select(a => a.CapabilitiesJson).ToListAsync(ct);
 
-        foreach (var blob in blobs)
-        {
-            if (ConnectorJson.DeserializeOr(blob, new AgentCapabilities()).CanServe(manifest)) return;
-        }
+        if (blobs.Exists(blob => ConnectorJson.DeserializeOr(blob, new AgentCapabilities()).CanServe(manifest))) return;
 
         throw new ConnectorException(
             ErrorCode.AgentUnavailable,

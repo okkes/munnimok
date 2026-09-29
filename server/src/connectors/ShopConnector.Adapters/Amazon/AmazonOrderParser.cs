@@ -102,6 +102,16 @@ internal static partial class AmazonOrderParser
     [GeneratedRegex(@"[?&]orderID=([^&#\s]+)", RegexOptions.IgnoreCase)]
     private static partial Regex OrderIdInUrl { get; }
 
+    /// <summary>
+    /// iDEAL: the word the page uses for it, and the normalised record's name
+    /// for the method. The same word in both places, so one constant.
+    /// </summary>
+    private const string Ideal = "ideal";
+
+    /// <summary>The card schemes an instrument's name may carry; every one of them is <c>card</c>.</summary>
+    private static readonly string[] CardSchemes =
+        ["mastercard", "visa", "maestro", "american express", "amex", "card"];
+
     // ---- order list --------------------------------------------------------
 
     public static IReadOnlyList<AmazonOrderSummary> ParseList(
@@ -633,9 +643,9 @@ internal static partial class AmazonOrderParser
             return ReceiptFactory.Payment(method: "card", cardLast4: tail);
         }
 
-        if (text.Contains("ideal", StringComparison.OrdinalIgnoreCase))
+        if (text.Contains(Ideal, StringComparison.OrdinalIgnoreCase))
         {
-            return ReceiptFactory.Payment(method: "ideal");
+            return ReceiptFactory.Payment(method: Ideal);
         }
 
         // Stated as unknown rather than guessed. The consumer matches receipts
@@ -657,28 +667,15 @@ internal static partial class AmazonOrderParser
     {
         if (name is null) return null;
 
-        if (name.Contains("ideal", StringComparison.OrdinalIgnoreCase)) return "ideal";
+        if (name.Contains(Ideal, StringComparison.OrdinalIgnoreCase)) return Ideal;
 
-        foreach (var scheme in new[] { "mastercard", "visa", "maestro", "american express", "amex", "card" })
-        {
-            if (name.Contains(scheme, StringComparison.OrdinalIgnoreCase)) return "card";
-        }
-
-        return null;
+        return Any(name, CardSchemes) ? "card" : null;
     }
 
-    private static HtmlNode? FirstOtherThan(HtmlNode row, IReadOnlyList<string> selectors, HtmlNode exclude)
-    {
-        foreach (var selector in selectors)
-        {
-            foreach (var hit in HtmlQuery.All(row, selector))
-            {
-                if (!ReferenceEquals(hit, exclude)) return hit;
-            }
-        }
-
-        return null;
-    }
+    private static HtmlNode? FirstOtherThan(HtmlNode row, IReadOnlyList<string> selectors, HtmlNode exclude) =>
+        selectors
+            .SelectMany(selector => HtmlQuery.All(row, selector))
+            .FirstOrDefault(hit => !ReferenceEquals(hit, exclude));
 
     /// <summary>
     /// Cuts an item cell where the product's name stops and Amazon's

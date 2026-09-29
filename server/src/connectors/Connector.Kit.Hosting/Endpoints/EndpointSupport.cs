@@ -187,7 +187,6 @@ public static class EventStream
     public static async Task WriteAsync<TState>(
         HttpContext http,
         Func<CancellationToken, Task<TState?>> read,
-        Func<TState, string> render,
         Func<TState, bool> isFinal,
         ConnectorSignals signals,
         string signalKey,
@@ -197,7 +196,6 @@ public static class EventStream
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(read);
-        ArgumentNullException.ThrowIfNull(render);
         ArgumentNullException.ThrowIfNull(isFinal);
         ArgumentNullException.ThrowIfNull(signals);
 
@@ -231,7 +229,7 @@ public static class EventStream
                 var state = await read(ct);
                 if (state is null) break;
 
-                var rendered = render(state);
+                var rendered = ConnectorJson.Serialize(state);
                 if (!string.Equals(rendered, last, StringComparison.Ordinal))
                 {
                     await Emit(http, "state", rendered, ct);

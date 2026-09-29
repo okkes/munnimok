@@ -209,14 +209,41 @@ public sealed class BolAdapter : IProviderAdapter
         var xsrf = BolCookies.Value(ctx.Material?.StorageState, _options.OrdersHost, _options.XsrfCookieName);
 
         var shape = BolShapes.For(_options.OrdersShape);
-        var zone = RetailZones.Dutch;
         var cap = Manifest.Resource(ReceiptsResource)!.MaxRecordsPerFetch;
 
         ctx.Progress(JobStep.Downloading);
 
+        var (collected, walkWasComplete) = await WalkAsync(ctx, shape, cookies, xsrf, request, cap, ct)
+            .ConfigureAwait(false);
+
+        var ordered = collected.OrderByDescending(o => o.PlacedAt).ToList();
+        var complete = walkWasComplete;
+
+        if (ordered.Count > cap)
+        {
+            // More remains than one pass may return. The caller gets a partial
+            // pass and comes back for the rest.
+            ordered = [.. ordered.Take(cap)];
+            complete = false;
+        }
+
+        return await NormalizeAsync(ctx, request, shape, cookies, ordered, complete, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The overview, page by page, until the window or the history runs out.
+    ///
+    /// Returns the orders inside the window and whether the walk ended
+    /// because it had seen everything rather than because its page budget
+    /// ran out.
+    /// </summary>
+    private async Task<(List<BolOrder> Orders, bool Complete)> WalkAsync(
+        IJobContext ctx, IBolOrdersShape shape, string cookies, string? xsrf, ResourceRequest request, int cap,
+        CancellationToken ct)
+    {
+        var zone = RetailZones.Dutch;
         var collected = new List<BolOrder>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var complete = true;
 
         // True while the walk is still ending because the page budget ran out
         // rather than because the history did. The difference is what the
@@ -239,17 +266,7 @@ public sealed class BolAdapter : IProviderAdapter
                 break;
             }
 
-            var fresh = 0;
-            var older = 0;
-
-            foreach (var order in orders)
-            {
-                if (!seen.Add(order.Id)) continue;
-                fresh++;
-
-                if (request.Since is { } since && DateOnly.FromDateTime(order.PlacedAt.Date) < since) older++;
-                if (ReceiptFactory.InWindow(order.PlacedAt, request)) collected.Add(order);
-            }
+            var (fresh, older) = Tally(orders, seen, request, collected);
 
             // A page that repeats the previous one means the pagination
             // parameter is not the one bol takes - which is entirely possible,
@@ -279,19 +296,40 @@ public sealed class BolAdapter : IProviderAdapter
             }
         }
 
-        var ordered = collected.OrderByDescending(o => o.PlacedAt).ToList();
-        if (ordered.Count > cap)
+        return (collected, !budgetRanOut);
+    }
+
+    /// <summary>
+    /// One page's orders against the walk so far: how many were new to it,
+    /// and how many of those were placed before the window opened. The ones
+    /// inside the window go into <paramref name="collected"/>.
+    /// </summary>
+    private static (int Fresh, int Older) Tally(
+        IReadOnlyList<BolOrder> orders, HashSet<string> seen, ResourceRequest request, List<BolOrder> collected)
+    {
+        var fresh = 0;
+        var older = 0;
+
+        foreach (var order in orders)
         {
-            // More remains than one pass may return. The caller gets a partial
-            // pass and comes back for the rest.
-            ordered = [.. ordered.Take(cap)];
-            complete = false;
-        }
-        else if (budgetRanOut)
-        {
-            complete = false;
+            if (!seen.Add(order.Id)) continue;
+            fresh++;
+
+            if (request.Since is { } since && DateOnly.FromDateTime(order.PlacedAt.Date) < since) older++;
+            if (ReceiptFactory.InWindow(order.PlacedAt, request)) collected.Add(order);
         }
 
+        return (fresh, older);
+    }
+
+    /// <summary>
+    /// One pass's orders as receipts, with their documents where the caller
+    /// asked for them and the document ceiling allows.
+    /// </summary>
+    private async Task<FetchResult> NormalizeAsync(
+        IJobContext ctx, ResourceRequest request, IBolOrdersShape shape, string cookies,
+        List<BolOrder> ordered, bool complete, CancellationToken ct)
+    {
         ctx.Progress(JobStep.Normalizing);
 
         var receipts = new List<Receipt>(ordered.Count);
@@ -327,24 +365,7 @@ public sealed class BolAdapter : IProviderAdapter
                 }
             }
 
-            receipts.Add(ReceiptFactory.Build(
-                ctx.SessionId,
-                order.Id,
-                Merchant(order.SellerName),
-                order.PlacedAt,
-                order.Total,
-                order.Payment,
-                // A caller that did not ask for items gets none, and a receipt
-                // with no items reconciles trivially rather than falsely: there
-                // is nothing to check a total against.
-                request.WantsItems ? order.Items : [],
-                // The GraphQL payload states no order total anywhere, so this
-                // one is our own sum of its lines. Saying so is what stops the
-                // reconciliation flag meaning two different things on two
-                // providers: everywhere else it means a stated total was
-                // checked and agreed, and here there was never a stated total
-                // to check.
-                shape.TotalIsDerived) with
+            receipts.Add(ToReceipt(ctx, request, shape, order) with
             {
                 Documents = documents,
             });
@@ -366,6 +387,30 @@ public sealed class BolAdapter : IProviderAdapter
             Raw = raw,
         };
     }
+
+    /// <summary>
+    /// One order through the factory, so it leaves with a reconciliation
+    /// verdict and a content hash on it.
+    /// </summary>
+    private static Receipt ToReceipt(
+        IJobContext ctx, ResourceRequest request, IBolOrdersShape shape, BolOrder order) =>
+        ReceiptFactory.Build(
+            ctx.SessionId,
+            order.Id,
+            Merchant(order.SellerName),
+            order.PlacedAt,
+            // The GraphQL payload states no order total anywhere, so this
+            // one is our own sum of its lines. Saying so is what stops the
+            // reconciliation flag meaning two different things on two
+            // providers: everywhere else it means a stated total was
+            // checked and agreed, and here there was never a stated total
+            // to check.
+            new ReceiptTotal(order.Total, shape.TotalIsDerived),
+            order.Payment,
+            // A caller that did not ask for items gets none, and a receipt
+            // with no items reconciles trivially rather than falsely: there
+            // is nothing to check a total against.
+            request.WantsItems ? order.Items : []);
 
     internal static Merchant Merchant(string? sellerName) => new()
     {
@@ -541,12 +586,12 @@ public sealed class BolAdapter : IProviderAdapter
 
         var documents = new List<ReceiptDocument>(links.Count);
 
-        foreach (var link in links.Take(_options.MaxDocumentsPerOrder))
+        foreach (var invoiceId in links.Take(_options.MaxDocumentsPerOrder).Select(link => link.InvoiceId))
         {
             ct.ThrowIfCancellationRequested();
 
             var pdfUrl = _options.InvoicePdfUrlTemplate.Replace(
-                "{invoiceId}", Uri.EscapeDataString(link.InvoiceId), StringComparison.Ordinal);
+                "{invoiceId}", Uri.EscapeDataString(invoiceId), StringComparison.Ordinal);
 
             BolDownload fetched;
             try
@@ -555,14 +600,14 @@ public sealed class BolAdapter : IProviderAdapter
             }
             catch (ConnectorException ex)
             {
-                ctx.Note($"order '{order.Id}': invoice '{link.InvoiceId}' could not be downloaded " +
+                ctx.Note($"order '{order.Id}': invoice '{invoiceId}' could not be downloaded " +
                          $"({ex.Code}: {ex.Detail})");
                 continue;
             }
 
             if (!IsDocument(fetched))
             {
-                ctx.Note($"order '{order.Id}': invoice '{link.InvoiceId}' answered {fetched.Status} " +
+                ctx.Note($"order '{order.Id}': invoice '{invoiceId}' answered {fetched.Status} " +
                          $"'{fetched.MediaType}' with {fetched.Bytes.Length} byte(s); not attached");
                 continue;
             }
@@ -576,7 +621,7 @@ public sealed class BolAdapter : IProviderAdapter
                 // ReceiptDocument.Name is what the provider CALLED it, so the
                 // honest answer here is nothing at all.
                 Name = null,
-                Filename = $"bol-{order.Id}-invoice-{link.InvoiceId}.pdf",
+                Filename = $"bol-{order.Id}-invoice-{invoiceId}.pdf",
                 SizeBytes = fetched.Bytes.Length,
                 ContentBase64 = Convert.ToBase64String(fetched.Bytes),
             });
@@ -744,30 +789,7 @@ public sealed class BolAdapter : IProviderAdapter
             // that has already moved on.
             if (await signedIn.WaitAsync(poll, ct).ConfigureAwait(false) is not null) return;
 
-            // A generic notice is not a credential verdict. Lidl's login
-            // answers an automated browser with exactly such a notice and
-            // reading it as a bad password was a real bug, so anything
-            // non-specific belongs here and reports what it is.
-            if (await page.FindAsync(_options.BlockedNoticeSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
-                is not null)
-            {
-                await page.ClearSecretsAsync(ct).ConfigureAwait(false);
-
-                throw ConnectorException.Blocked(
-                    $"{ProviderId}: the login was refused with a notice that names no cause. The page carries a " +
-                    "reCAPTCHA site key, so the likeliest reading is a risk-based verdict on an automated " +
-                    "browser rather than anything about the account - an agent on a real residential line is " +
-                    "the route that passes it");
-            }
-
-            // The one path that may report invalid_credentials, and only
-            // because the page said so itself.
-            if (await page.FindAsync(_options.LoginErrorSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
-                is not null)
-            {
-                await page.ClearSecretsAsync(ct).ConfigureAwait(false);
-                throw ConnectorException.InvalidCredentials($"{ProviderId}: the login page stated a credential error");
-            }
+            await RefuseStatedAsync(page, ct).ConfigureAwait(false);
 
             if (!codeAnswered &&
                 await page.FindAsync(_options.VerificationCodeSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
@@ -784,28 +806,83 @@ public sealed class BolAdapter : IProviderAdapter
                 continue;
             }
 
-            if (!captchaSeen)
+            if (!captchaSeen && await FaceCaptchaAsync(ctx, page, signedIn, ct).ConfigureAwait(false) is { } faced)
             {
-                var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
-                if (wall.Kind is not CaptchaKind.None)
-                {
-                    captchaSeen = true;
+                captchaSeen = true;
+                if (faced.Redirect is not null) return;
 
-                    var outcome = await _captcha.FaceAsync(ctx, page, signedIn, wall, ct).ConfigureAwait(false);
-                    if (outcome.Redirect is not null) return;
-                    if (!outcome.Handled) break;
-
-                    deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
-                    continue;
-                }
+                deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
+                continue;
             }
 
             if (_time.GetUtcNow() >= deadline) break;
         }
 
+        throw await UnsettledAsync(page, captchaSeen, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The two verdicts the login page can state for itself, each ending the
+    /// login with the secrets cleared off the page: a notice that names no
+    /// cause, and a credential error.
+    /// </summary>
+    private async Task RefuseStatedAsync(ILoginPage page, CancellationToken ct)
+    {
+        // A generic notice is not a credential verdict. Lidl's login
+        // answers an automated browser with exactly such a notice and
+        // reading it as a bad password was a real bug, so anything
+        // non-specific belongs here and reports what it is.
+        if (await page.FindAsync(_options.BlockedNoticeSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
+            is not null)
+        {
+            await page.ClearSecretsAsync(ct).ConfigureAwait(false);
+
+            throw ConnectorException.Blocked(
+                $"{ProviderId}: the login was refused with a notice that names no cause. The page carries a " +
+                "reCAPTCHA site key, so the likeliest reading is a risk-based verdict on an automated " +
+                "browser rather than anything about the account - an agent on a real residential line is " +
+                "the route that passes it");
+        }
+
+        // The one path that may report invalid_credentials, and only
+        // because the page said so itself.
+        if (await page.FindAsync(_options.LoginErrorSelectors, _options.ProbeMs, ct).ConfigureAwait(false)
+            is not null)
+        {
+            await page.ClearSecretsAsync(ct).ConfigureAwait(false);
+            throw ConnectorException.InvalidCredentials($"{ProviderId}: the login page stated a credential error");
+        }
+    }
+
+    /// <summary>
+    /// The captcha standing on the page, faced through the shared gate, or
+    /// null when none stands there. A redirect on the outcome means the wall
+    /// came down and the login is in; a wall the gate could hand to nobody
+    /// ends the login here, with the verdict the settle budget would have
+    /// reached.
+    /// </summary>
+    private async Task<CaptchaOutcome?> FaceCaptchaAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter signedIn, CancellationToken ct)
+    {
+        var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
+        if (wall.Kind is CaptchaKind.None) return null;
+
+        var outcome = await _captcha.FaceAsync(ctx, page, signedIn, wall, ct).ConfigureAwait(false);
+        if (outcome.Redirect is not null || outcome.Handled) return outcome;
+
+        throw await UnsettledAsync(page, captchaSeen: true, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// The verdict on a login that never resolved, with the secrets cleared
+    /// off the page first. A captcha that was ever seen is the reason it did
+    /// not; without one, nothing recognisable happened at all.
+    /// </summary>
+    private async Task<ConnectorException> UnsettledAsync(ILoginPage page, bool captchaSeen, CancellationToken ct)
+    {
         await page.ClearSecretsAsync(ct).ConfigureAwait(false);
 
-        throw captchaSeen
+        return captchaSeen
             ? ConnectorException.Blocked($"{ProviderId}: a captcha stood between the login and the account page")
             : ConnectorException.ProviderChanged(
                 $"{ProviderId}: the login neither completed nor stated anything recognisable within " +

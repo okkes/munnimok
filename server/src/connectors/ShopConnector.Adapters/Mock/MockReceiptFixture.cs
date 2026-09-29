@@ -65,7 +65,7 @@ internal static class MockReceiptFixture
         return receipts;
     }
 
-    private static IReadOnlyList<ReceiptItem> Items(JsonElement row, string currency)
+    private static List<ReceiptItem> Items(JsonElement row, string currency)
     {
         var lines = JsonAccess.Array(row, "items");
         var items = new List<ReceiptItem>(lines.Count);

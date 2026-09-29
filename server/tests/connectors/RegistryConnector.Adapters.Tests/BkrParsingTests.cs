@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Connector.Kit.Errors;
 using Connector.Kit.Normalization;
 using RegistryConnector.Adapters.Bkr;
@@ -19,9 +20,13 @@ namespace RegistryConnector.Adapters.Tests;
 ///   * "Geen bijzonderheden gemeld", which is the absence of an arrears code
 ///     rather than one
 /// </summary>
-public sealed class BkrParsingTests
+public sealed partial class BkrParsingTests
 {
     private static readonly BkrOptions Options = new();
+
+    /// <summary>The class the portal puts on every visible credit row.</summary>
+    [GeneratedRegex("list-group-item contract")]
+    private static partial Regex ContractRow { get; }
 
     private static string Overview() => Fixture.Read("bkr/overview.html");
 
@@ -43,7 +48,7 @@ public sealed class BkrParsingTests
 
         // The hazard is really in the fixture: the same credit IS in there
         // twice, so a parser reading rows would see it twice.
-        Assert.Equal(2, System.Text.RegularExpressions.Regex.Matches(html, "list-group-item contract").Count);
+        Assert.Equal(2, ContractRow.Count(html));
 
         var credits = Credits();
 

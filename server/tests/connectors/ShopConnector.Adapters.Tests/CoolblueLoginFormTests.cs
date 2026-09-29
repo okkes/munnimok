@@ -24,12 +24,34 @@ namespace ShopConnector.Adapters.Tests;
 ///
 /// The fixture is a signed-out capture, so it carries no personal data.
 /// </summary>
-public sealed class CoolblueLoginFormTests
+public sealed partial class CoolblueLoginFormTests
 {
     private static string Page => FixtureCatalog.Read("coolblue/login-page.html");
 
     /// <summary>The screen behind "Doorgaan", where the password is typed.</summary>
     private static string PasswordScreen => FixtureCatalog.Read("coolblue/login-password-screen.html");
+
+    // ---- the markup, as the captures write it -------------------------------
+
+    [GeneratedRegex("<input[^>]*type=\"password\"[^>]*>")]
+    private static partial Regex PasswordInput();
+
+    /// <summary>The opening of a password input, up to the attribute that makes it one.</summary>
+    [GeneratedRegex("<input[^>]*type=\"password\"")]
+    private static partial Regex PasswordInputOpening();
+
+    [GeneratedRegex("<input type=\"hidden\" name=\"username\"")]
+    private static partial Regex HiddenUsernameInput();
+
+    [GeneratedRegex("<input[^>]*type=\"email\"")]
+    private static partial Regex EmailInput();
+
+    /// <summary>An input taken out of the tab order, which is how the decoy is marked.</summary>
+    [GeneratedRegex("<input[^>]*tabindex=\"-1\"[^>]*>")]
+    private static partial Regex UnfocusableInput();
+
+    [GeneratedRegex("<button[^>]*type=\"submit\"[^>]*>")]
+    private static partial Regex SubmitButton();
 
     /// <summary>
     /// The premise, asserted rather than trusted: one password input on that
@@ -38,7 +60,7 @@ public sealed class CoolblueLoginFormTests
     [Fact]
     public void The_sign_in_screen_has_exactly_one_password_input_and_it_is_a_decoy()
     {
-        var inputs = Regex.Matches(Page, "<input[^>]*type=\"password\"[^>]*>");
+        var inputs = PasswordInput().Matches(Page);
 
         var only = Assert.Single(inputs).Value;
         Assert.Contains("tabindex=\"-1\"", only, StringComparison.Ordinal);
@@ -80,8 +102,8 @@ public sealed class CoolblueLoginFormTests
     [Fact]
     public void The_username_candidates_are_ordered_around_two_hidden_decoys()
     {
-        Assert.Equal(2, Regex.Matches(Page, "<input type=\"hidden\" name=\"username\"").Count);
-        Assert.Single(Regex.Matches(Page, "<input[^>]*type=\"email\""));
+        Assert.Equal(2, HiddenUsernameInput().Count(Page));
+        Assert.Single(EmailInput().Matches(Page));
 
         var selectors = new CoolblueOptions().UsernameSelectors;
         Assert.Contains("input[type='email']", selectors);
@@ -100,7 +122,7 @@ public sealed class CoolblueLoginFormTests
     [Fact]
     public void The_password_screen_puts_a_reset_button_in_front_of_the_login_button()
     {
-        var submits = Regex.Matches(PasswordScreen, "<button[^>]*type=\"submit\"[^>]*>");
+        var submits = SubmitButton().Matches(PasswordScreen);
 
         Assert.Equal(3, submits.Count);
 
@@ -174,7 +196,7 @@ public sealed class CoolblueLoginFormTests
     [Fact]
     public void The_second_screens_password_box_is_the_real_one()
     {
-        var inputs = Regex.Matches(PasswordScreen, "<input[^>]*type=\"password\"[^>]*>");
+        var inputs = PasswordInput().Matches(PasswordScreen);
 
         var only = Assert.Single(inputs).Value;
         Assert.DoesNotContain("tabindex=\"-1\"", only, StringComparison.Ordinal);
@@ -213,9 +235,9 @@ public sealed class CoolblueLoginFormTests
     [Fact]
     public void Stripping_the_decoy_leaves_the_first_screen_with_no_password_box()
     {
-        var withoutDecoy = Regex.Replace(Page, "<input[^>]*tabindex=\"-1\"[^>]*>", string.Empty);
+        var withoutDecoy = UnfocusableInput().Replace(Page, string.Empty);
 
-        Assert.Empty(Regex.Matches(withoutDecoy, "<input[^>]*type=\"password\""));
+        Assert.Empty(PasswordInputOpening().Matches(withoutDecoy));
 
         // And the adapter has somewhere to go when that happens.
         Assert.NotEmpty(new CoolblueOptions().ContinueSelectors);

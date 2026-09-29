@@ -388,7 +388,7 @@ public static class ConnectorPlatform
     /// can finish: after the mode-independent checks when this is not a
     /// production host, and after all of them when it is.
     /// </summary>
-    private static void Refuse(IReadOnlyCollection<string> problems)
+    private static void Refuse(List<string> problems)
     {
         if (problems.Count == 0) return;
 
@@ -397,7 +397,7 @@ public static class ConnectorPlatform
             string.Join(Environment.NewLine + "- ", problems));
     }
 
-    private static IBundleKeyRing BuildKeyRing(ConnectorOptions options)
+    private static BundleKeyRing BuildKeyRing(ConnectorOptions options)
     {
         if (options.Bundle.HasKeys)
         {

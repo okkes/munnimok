@@ -43,7 +43,7 @@ public sealed class SchemaDriftTests : IDisposable
 
         // And again, because start-up runs against an EXISTING database far
         // more often than a fresh one.
-        await db.EnsureCreatedOrMigrateAsync();
+        Assert.Null(await Record.ExceptionAsync(() => db.EnsureCreatedOrMigrateAsync()));
     }
 
     [Fact]
@@ -130,7 +130,7 @@ public sealed class SchemaDriftTests : IDisposable
 
         await db.Database.ExecuteSqlRawAsync(db.Database.GenerateCreateScript());
 
-        await db.EnsureCreatedOrMigrateAsync();
+        Assert.Null(await Record.ExceptionAsync(() => db.EnsureCreatedOrMigrateAsync()));
     }
 
     /// <summary>

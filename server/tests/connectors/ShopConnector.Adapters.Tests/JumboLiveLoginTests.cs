@@ -33,6 +33,9 @@ public sealed class JumboLiveLoginTests
     /// <summary>Back on jumbo.com and off every login marker: the session exists.</summary>
     private const string Signed = "https://www.jumbo.com/mijn-jumbo/bestellingen";
 
+    /// <summary>The form's three controls, as Auth0 lays them out.</summary>
+    private static readonly string[] FormControls = ["input#username", "input#password", "button[type='submit']"];
+
     /// <summary>Turnstile, as it appears in the markup Auth0 renders.</summary>
     private static string Wall => new JumboOptions().InteractiveCaptchaSelectors
         .First(s => s.Contains("cloudflare", StringComparison.Ordinal));
@@ -42,7 +45,7 @@ public sealed class JumboLiveLoginTests
 
     /// <summary>The form, as it stands on a quiet day.</summary>
     private static StubLoginPage FormPage(params string[] extra) =>
-        StubLoginPage.Showing([.. new[] { "input#username", "input#password", "button[type='submit']" }, .. extra]);
+        StubLoginPage.Showing([.. FormControls, .. extra]);
 
     /// <summary>Nothing on it: what a page looks like to a login that types nothing.</summary>
     private static StubLoginPage BarePage() => StubLoginPage.Showing();

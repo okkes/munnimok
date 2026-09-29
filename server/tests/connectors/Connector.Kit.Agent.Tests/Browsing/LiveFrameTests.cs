@@ -250,7 +250,7 @@ public sealed class LiveFrameTests(ITestOutputHelper output) : IAsyncLifetime
             $"JPEG q60 ({busyJpeg.Jpeg.Length} B) must beat PNG ({busyPng.Length} B) comfortably on real content");
     }
 
-    private ScreenshotRedactor Redactor() => new(TestRig.Manifest, NullLogger.Instance);
+    private static ScreenshotRedactor Redactor() => new(TestRig.Manifest, NullLogger.Instance);
 
     private async Task<IPage> NewPageAsync(string html, float deviceScaleFactor = 1)
     {

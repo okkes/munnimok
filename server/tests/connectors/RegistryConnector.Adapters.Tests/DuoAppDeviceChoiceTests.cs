@@ -35,6 +35,9 @@ public sealed partial class DuoAppDeviceChoiceTests
     [GeneratedRegex(@"href='(?<href>[^']*)'", RegexOptions.IgnoreCase)]
     private static partial Regex Href { get; }
 
+    [GeneratedRegex(@"data-pattern=""(?<p>[^""]*)""")]
+    private static partial Regex DataPattern { get; }
+
     private static List<string> TileHrefs() =>
         [.. Tile.Matches(Choice)
             .Select(m => Href.Match(m.Value))
@@ -162,7 +165,7 @@ public sealed partial class DuoAppDeviceChoiceTests
     [Fact]
     public void The_code_is_consonants_and_holds_no_digits()
     {
-        var pattern = Regex.Match(Koppelcode, @"data-pattern=""(?<p>[^""]*)""").Groups["p"].Value;
+        var pattern = DataPattern.Match(Koppelcode).Groups["p"].Value;
 
         Assert.Equal("^[BbCcDdFfGgHhJjKkLlMmNnPpQqRrSsTtVvWwXxZz]{4}", pattern);
         Assert.DoesNotContain("0-9", pattern, StringComparison.Ordinal);

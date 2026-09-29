@@ -473,17 +473,7 @@ public sealed class CoolblueAdapter : IProviderAdapter
                 break;
             }
 
-            var fresh = 0;
-            var older = 0;
-
-            foreach (var listing in listings)
-            {
-                if (!seen.Add(listing.Id)) continue;
-                fresh++;
-
-                if (request.Since is { } since && DateOnly.FromDateTime(listing.PlacedAt.Date) < since) older++;
-                if (ReceiptFactory.InWindow(listing.PlacedAt, request)) collected.Add(listing);
-            }
+            var (fresh, older) = Tally(listings, seen, request, collected);
 
             // A page that repeats the last one means Coolblue is not honouring
             // the paging parameter. Without this guard that presents as the
@@ -514,6 +504,30 @@ public sealed class CoolblueAdapter : IProviderAdapter
         }
 
         return (collected, !budgetRanOut);
+    }
+
+    /// <summary>
+    /// One page's listings against the walk so far: how many were new to it,
+    /// and how many of those were placed before the window opened. The ones
+    /// inside the window go into <paramref name="collected"/>.
+    /// </summary>
+    private static (int Fresh, int Older) Tally(
+        IReadOnlyList<CoolblueListing> listings, HashSet<string> seen, ResourceRequest request,
+        List<CoolblueListing> collected)
+    {
+        var fresh = 0;
+        var older = 0;
+
+        foreach (var listing in listings)
+        {
+            if (!seen.Add(listing.Id)) continue;
+            fresh++;
+
+            if (request.Since is { } since && DateOnly.FromDateTime(listing.PlacedAt.Date) < since) older++;
+            if (ReceiptFactory.InWindow(listing.PlacedAt, request)) collected.Add(listing);
+        }
+
+        return (fresh, older);
     }
 
     /// <summary>
@@ -763,37 +777,56 @@ public sealed class CoolblueAdapter : IProviderAdapter
                     $"{ProviderId}: the login page stated a credential error");
             }
 
-            if (!captchaSeen)
+            if (!captchaSeen && await FaceCaptchaAsync(ctx, page, watcher, ct).ConfigureAwait(false) is { } faced)
             {
-                var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
+                captchaSeen = true;
+                if (faced.Redirect is { } finished) return finished;
 
-                if (wall.Kind is not CaptchaKind.None)
-                {
-                    captchaSeen = true;
-
-                    var outcome = await _captcha.FaceAsync(ctx, page, watcher, wall, ct).ConfigureAwait(false);
-                    if (outcome.Redirect is { } finished) return finished;
-                    if (!outcome.Handled) break;
-
-                    // The settle budget measures how long Coolblue takes to
-                    // answer, so it restarts once a wait on a human is over:
-                    // the minutes they spent are not the provider being slow.
-                    deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
-                    continue;
-                }
+                // The settle budget measures how long Coolblue takes to
+                // answer, so it restarts once a wait on a human is over:
+                // the minutes they spent are not the provider being slow.
+                deadline = _time.GetUtcNow().AddSeconds(_options.LoginSettleSeconds);
+                continue;
             }
 
             if (_time.GetUtcNow() >= deadline) break;
         }
 
-        throw captchaSeen
+        throw Unsettled(page, captchaSeen);
+    }
+
+    /// <summary>
+    /// The captcha standing on the page, faced through the shared gate, or
+    /// null when none stands there. A redirect on the outcome means the wall
+    /// came down and the login is in; a wall the gate could hand to nobody
+    /// ends the login here, with the verdict the settle budget would have
+    /// reached.
+    /// </summary>
+    private async Task<CaptchaOutcome?> FaceCaptchaAsync(
+        IJobContext ctx, ILoginPage page, IRedirectWaiter watcher, CancellationToken ct)
+    {
+        var wall = await _captcha.DetectAsync(page, ct).ConfigureAwait(false);
+        if (wall.Kind is CaptchaKind.None) return null;
+
+        var outcome = await _captcha.FaceAsync(ctx, page, watcher, wall, ct).ConfigureAwait(false);
+        if (outcome.Redirect is not null || outcome.Handled) return outcome;
+
+        throw Unsettled(page, captchaSeen: true);
+    }
+
+    /// <summary>
+    /// The verdict on a login that never resolved. A captcha that was ever
+    /// seen is the reason it did not; without one, nothing recognisable
+    /// happened at all.
+    /// </summary>
+    private ConnectorException Unsettled(ILoginPage page, bool captchaSeen) =>
+        captchaSeen
             ? ConnectorException.Blocked(
                 $"{ProviderId}: a captcha stood between the login and the account page. None has ever been observed " +
                 "on this form, so this is new and worth capturing")
             : ConnectorException.ProviderChanged(
                 $"{ProviderId}: the login neither reached '{_options.SignedInUrlMarker}' nor stated an error; " +
                 $"last url was '{page.Url}'");
-    }
 
     /// <summary>
     /// One account page, carrying the session cookie, guarded for what a 200

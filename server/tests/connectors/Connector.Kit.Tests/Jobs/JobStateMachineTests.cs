@@ -150,7 +150,11 @@ public sealed class JobStateMachineTests
             JobState.AwaitingInput, JobState.Running, JobState.Succeeded,
         ];
 
-        for (var i = 1; i < walk.Length; i++) JobStateMachine.EnsureTransition(walk[i - 1], walk[i]);
+        for (var i = 1; i < walk.Length; i++)
+        {
+            Assert.True(JobStateMachine.CanTransition(walk[i - 1], walk[i]), $"{walk[i - 1]} -> {walk[i]}");
+            JobStateMachine.EnsureTransition(walk[i - 1], walk[i]);
+        }
     }
 
     [Fact]

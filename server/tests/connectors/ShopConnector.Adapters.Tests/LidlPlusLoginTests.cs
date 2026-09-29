@@ -575,7 +575,7 @@ public sealed class LidlPlusLoginTests
 
     private static StubRedirectWaiter Arrives(int afterWaits = 0) => new(Redirect, afterWaits);
 
-    private static IReadOnlyDictionary<string, string> Credentials(string username) =>
+    private static Dictionary<string, string> Credentials(string username) =>
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["username"] = username,
@@ -596,10 +596,10 @@ public sealed class LidlPlusLoginTests
             Answer = answer ?? (_ => Code),
         };
 
-    private static IReadOnlyDictionary<string, string> Query(string url) =>
+    private static Dictionary<string, string> Query(string url) =>
         Pairs(new Uri(url).Query.TrimStart('?'));
 
-    private static IReadOnlyDictionary<string, string> Form(RecordedRequest request)
+    private static Dictionary<string, string> Form(RecordedRequest request)
     {
         Assert.NotNull(request.Body);
         return Pairs(request.Body);
@@ -611,7 +611,7 @@ public sealed class LidlPlusLoginTests
     /// characters went onto the wire, so the reader wants to see the decoding
     /// rather than trust a helper's opinion of it.
     /// </summary>
-    private static IReadOnlyDictionary<string, string> Pairs(string encoded)
+    private static Dictionary<string, string> Pairs(string encoded)
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
 

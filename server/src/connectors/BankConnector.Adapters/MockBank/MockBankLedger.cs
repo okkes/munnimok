@@ -149,17 +149,18 @@ public sealed class MockBankLedger
         {
             var last = Entries.LastOrDefault(e => string.Equals(e.AccountExternalId, definition.ExternalId, StringComparison.Ordinal));
 
-            accounts.Add(BankRecords.NewAccount(
-                sessionId,
-                definition.ExternalId,
-                definition.Type,
-                definition.DisplayName,
-                definition.Currency,
-                definition.Iban,
-                definition.MaskedNumber,
-                BankRecords.BalanceOn(
+            accounts.Add(BankRecords.NewAccount(sessionId, new AccountDraft
+            {
+                ExternalId = definition.ExternalId,
+                Type = definition.Type,
+                DisplayName = definition.DisplayName,
+                Currency = definition.Currency,
+                Iban = definition.Iban,
+                MaskedNumber = definition.MaskedNumber,
+                Balance = BankRecords.BalanceOn(
                     new Money(last?.BalanceAfter ?? definition.OpeningBalance, definition.Currency),
-                    last?.BookedAt ?? Anchor.AddDays(-HistoryDays))));
+                    last?.BookedAt ?? Anchor.AddDays(-HistoryDays)),
+            }));
         }
 
         return accounts;
@@ -186,17 +187,17 @@ public sealed class MockBankLedger
 
             var currency = Accounts.First(a => string.Equals(a.ExternalId, entry.AccountExternalId, StringComparison.Ordinal)).Currency;
 
-            transactions.Add(BankRecords.NewTransaction(
-                sessionId,
-                accountId,
-                entry.ExternalId,
-                entry.BookedAt,
-                new Money(entry.Amount, currency),
-                entry.BookedAt,
-                entry.Counterparty,
-                entry.Description,
-                entry.Kind,
-                new Money(entry.BalanceAfter, currency)));
+            transactions.Add(BankRecords.NewTransaction(sessionId, accountId, new TransactionDraft
+            {
+                ExternalId = entry.ExternalId,
+                BookedAt = entry.BookedAt,
+                Amount = new Money(entry.Amount, currency),
+                ValueAt = entry.BookedAt,
+                Counterparty = entry.Counterparty,
+                Description = entry.Description,
+                Kind = entry.Kind,
+                ResultingBalance = new Money(entry.BalanceAfter, currency),
+            }));
         }
 
         return transactions;
@@ -249,77 +250,80 @@ public sealed class MockBankLedger
         // day always produces the same amount without a random source.
         var jitter = (day.DayOfYear * 137) % 4_800;
 
-        switch (account.Type)
+        return account.Type switch
         {
-            case AccountType.Current:
-                if (day.Day == 1)
-                {
-                    yield return (-142_500, "Huur", new Counterparty { Name = "WONINGSTICHTING DE KLEINE", Iban = LandlordIban }, TransactionKind.DirectDebit);
-                }
+            AccountType.Current => CurrentEvents(day, jitter),
+            AccountType.Savings => SavingsEvents(day, balance),
+            AccountType.CreditCard => CreditCardEvents(day, balance, jitter),
+            _ => [],
+        };
+    }
 
-                if (day.Day == 12)
-                {
-                    yield return (-8_950, "Energie maandtermijn", new Counterparty { Name = "MOCK ENERGIE NV" }, TransactionKind.DirectDebit);
-                }
+    private static IEnumerable<(long Amount, string Description, Counterparty? Counterparty, TransactionKind Kind)> CurrentEvents(
+        DateOnly day, int jitter)
+    {
+        if (day.Day == 1)
+        {
+            yield return (-142_500, "Huur", new Counterparty { Name = "WONINGSTICHTING DE KLEINE", Iban = LandlordIban }, TransactionKind.DirectDebit);
+        }
 
-                if (day.Day == 24)
-                {
-                    yield return (285_000, "Salaris", new Counterparty { Name = "MOCK EMPLOYER BV", Iban = SalaryIban }, TransactionKind.Transfer);
-                }
+        if (day.Day == 12)
+        {
+            yield return (-8_950, "Energie maandtermijn", new Counterparty { Name = "MOCK ENERGIE NV" }, TransactionKind.DirectDebit);
+        }
 
-                if (day.Day == 25)
-                {
-                    yield return (-50_000, "Naar Oranje Spaarrekening", new Counterparty { Name = "O DOKER", Iban = SavingsIban }, TransactionKind.Transfer);
-                }
+        if (day.Day == 24)
+        {
+            yield return (285_000, "Salaris", new Counterparty { Name = "MOCK EMPLOYER BV", Iban = SalaryIban }, TransactionKind.Transfer);
+        }
 
-                if (day.DayOfWeek == DayOfWeek.Saturday)
-                {
-                    yield return (-(3_200 + jitter), "Betaalautomaat", Merchant(day), TransactionKind.CardPayment);
-                }
+        if (day.Day == 25)
+        {
+            yield return (-50_000, "Naar Oranje Spaarrekening", new Counterparty { Name = "O DOKER", Iban = SavingsIban }, TransactionKind.Transfer);
+        }
 
-                if (day.DayOfWeek == DayOfWeek.Wednesday)
-                {
-                    yield return (-(850 + (jitter % 1_400)), "Betaalautomaat", Merchant(day), TransactionKind.CardPayment);
-                }
+        if (day.DayOfWeek == DayOfWeek.Saturday)
+        {
+            yield return (-(3_200 + jitter), "Betaalautomaat", Merchant(day), TransactionKind.CardPayment);
+        }
 
-                break;
+        if (day.DayOfWeek == DayOfWeek.Wednesday)
+        {
+            yield return (-(850 + (jitter % 1_400)), "Betaalautomaat", Merchant(day), TransactionKind.CardPayment);
+        }
+    }
 
-            case AccountType.Savings:
-                if (day.Day == 25)
-                {
-                    yield return (50_000, "Van Betaalrekening", new Counterparty { Name = "O DOKER", Iban = CurrentIban }, TransactionKind.Transfer);
-                }
+    private static IEnumerable<(long Amount, string Description, Counterparty? Counterparty, TransactionKind Kind)> SavingsEvents(
+        DateOnly day, long balance)
+    {
+        if (day.Day == 25)
+        {
+            yield return (50_000, "Van Betaalrekening", new Counterparty { Name = "O DOKER", Iban = CurrentIban }, TransactionKind.Transfer);
+        }
 
-                // Quarterly interest on the last day of the quarter, at
-                // 1.5% annual. Integer arithmetic throughout: a fixture that
-                // rounds is a fixture whose chain drifts.
-                if (day.Month % 3 == 0 && day.Day == DateTime.DaysInMonth(day.Year, day.Month))
-                {
-                    yield return (balance * 15 / 4_000, "Rente", null, TransactionKind.Interest);
-                }
+        // Quarterly interest on the last day of the quarter, at
+        // 1.5% annual. Integer arithmetic throughout: a fixture that
+        // rounds is a fixture whose chain drifts.
+        if (day.Month % 3 == 0 && day.Day == DateTime.DaysInMonth(day.Year, day.Month))
+        {
+            yield return (balance * 15 / 4_000, "Rente", null, TransactionKind.Interest);
+        }
+    }
 
-                break;
+    private static IEnumerable<(long Amount, string Description, Counterparty? Counterparty, TransactionKind Kind)> CreditCardEvents(
+        DateOnly day, long balance, int jitter)
+    {
+        if (day.DayOfWeek is DayOfWeek.Monday or DayOfWeek.Thursday)
+        {
+            yield return (-(1_100 + (jitter % 3_900)), "Card purchase", Merchant(day), TransactionKind.CardPayment);
+        }
 
-            case AccountType.CreditCard:
-                if (day.DayOfWeek is DayOfWeek.Monday or DayOfWeek.Thursday)
-                {
-                    yield return (-(1_100 + (jitter % 3_900)), "Card purchase", Merchant(day), TransactionKind.CardPayment);
-                }
-
-                // The monthly settlement clears whatever is outstanding, so
-                // the balance genuinely returns to zero the way a real card
-                // does after a direct debit.
-                if (day.Day == 5 && balance < 0)
-                {
-                    yield return (-balance, "Automatische incasso creditcard", new Counterparty { Name = "O DOKER", Iban = CurrentIban }, TransactionKind.DirectDebit);
-                }
-
-                break;
-
-            case AccountType.Loan:
-            case AccountType.Unknown:
-            default:
-                break;
+        // The monthly settlement clears whatever is outstanding, so
+        // the balance genuinely returns to zero the way a real card
+        // does after a direct debit.
+        if (day.Day == 5 && balance < 0)
+        {
+            yield return (-balance, "Automatische incasso creditcard", new Counterparty { Name = "O DOKER", Iban = CurrentIban }, TransactionKind.DirectDebit);
         }
     }
 

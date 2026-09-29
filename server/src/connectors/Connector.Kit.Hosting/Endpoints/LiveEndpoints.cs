@@ -1,3 +1,4 @@
+#pragma warning disable S107 // minimal-API handlers and DI constructors take their collaborators as parameters
 using Connector.Kit.Adapters;
 using Connector.Kit.Challenges;
 using Connector.Kit.Errors;

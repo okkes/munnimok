@@ -22,8 +22,8 @@ namespace RegistryConnector.Adapters.Tests;
 /// </summary>
 public sealed class MockRegistryTests
 {
-    private static readonly IProviderRegistry Registry =
-        new ProviderRegistry(RegistryAdapters.All());
+    private static readonly ProviderRegistry Registry =
+        new(RegistryAdapters.All());
 
     [Fact]
     public void Every_registry_manifest_validates_and_is_a_registry()

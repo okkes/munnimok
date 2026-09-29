@@ -5,12 +5,19 @@ using Connector.Kit.Normalization;
 namespace ShopConnector.Adapters.Support;
 
 /// <summary>
+/// A receipt's total, and whether it is the provider's own figure or our
+/// sum of the lines - a sum can never be reconciled against itself.
+/// </summary>
+internal readonly record struct ReceiptTotal(Money Amount, bool IsDerived = false);
+
+/// <summary>
 /// The single construction point for an emitted receipt, so that no adapter
 /// can forget the two things every receipt owes the consumer: a
 /// reconciliation verdict and a content hash.
 /// </summary>
 internal static class ReceiptFactory
 {
+    /// <summary>A total the provider stated.</summary>
     public static Receipt Build(
         string sessionId,
         string externalId,
@@ -18,17 +25,27 @@ internal static class ReceiptFactory
         DateTimeOffset purchasedAt,
         Money total,
         ReceiptPayment payment,
-        IReadOnlyList<ReceiptItem> items,
-        bool totalIsDerived = false)
+        IReadOnlyList<ReceiptItem> items) =>
+        Build(sessionId, externalId, merchant, purchasedAt, new ReceiptTotal(total), payment, items);
+
+    public static Receipt Build(
+        string sessionId,
+        string externalId,
+        Merchant merchant,
+        DateTimeOffset purchasedAt,
+        ReceiptTotal total,
+        ReceiptPayment payment,
+        IReadOnlyList<ReceiptItem> items)
     {
         // Reconcile first, hash second. The hash covers the facts, not the
         // verdict, so the order is not load-bearing today - fixing it here
         // keeps it from becoming load-bearing by accident later.
         //
-        // totalIsDerived is a parameter rather than something an adapter
-        // stamps on afterwards, because the verdict is computed FROM it: a
-        // receipt whose total is our own sum of its lines cannot be reconciled,
-        // and `receipt with { TotalIsDerived = true }` on a finished receipt
+        // Whether the total is derived travels WITH the total rather than
+        // being something an adapter stamps on afterwards, because the
+        // verdict is computed FROM it: a receipt whose total is our own sum
+        // of its lines cannot be reconciled, and
+        // `receipt with { TotalIsDerived = true }` on a finished receipt
         // would leave Reconciled saying it had been.
         var receipt = new Receipt
         {
@@ -36,10 +53,10 @@ internal static class ReceiptFactory
             ExternalId = externalId,
             Merchant = merchant,
             PurchasedAt = purchasedAt,
-            Total = total,
+            Total = total.Amount,
             Payment = payment,
             Items = items,
-            TotalIsDerived = totalIsDerived,
+            TotalIsDerived = total.IsDerived,
         }.WithReconciliation();
 
         return receipt with { ContentHash = ContentHash.Of(receipt) };

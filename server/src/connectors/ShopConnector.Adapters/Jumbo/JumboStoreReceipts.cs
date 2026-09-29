@@ -279,19 +279,27 @@ internal sealed partial class JumboPrintLayoutParser : IJumboReceiptLayoutParser
             {
                 foreach (var textLine in JsonAccess.Array(textObject, "textLines"))
                 {
-                    var fields = new List<string>();
-                    foreach (var text in JsonAccess.Array(textLine, "texts"))
-                    {
-                        var value = JsonAccess.StrOf(text, "text");
-                        if (value is not null) fields.Add(value.Trim());
-                    }
-
+                    var fields = Fields(textLine);
                     if (fields.Count > 0) lines.Add(new PrintLine(fields));
                 }
             }
         }
 
         return lines;
+    }
+
+    /// <summary>The text fields of one printed line, trimmed, still in their columns.</summary>
+    private static List<string> Fields(JsonElement textLine)
+    {
+        var fields = new List<string>();
+
+        foreach (var text in JsonAccess.Array(textLine, "texts"))
+        {
+            var value = JsonAccess.StrOf(text, "text");
+            if (value is not null) fields.Add(value.Trim());
+        }
+
+        return fields;
     }
 
     /// <summary>

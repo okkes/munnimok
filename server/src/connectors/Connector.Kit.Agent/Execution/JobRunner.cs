@@ -1,3 +1,4 @@
+#pragma warning disable S107 // the runner is composed from its collaborators; the count is the number of them
 using Connector.Kit.Adapters;
 using Connector.Kit.Agent.Browsing;
 using Connector.Kit.Agent.Networking;
@@ -203,11 +204,11 @@ public sealed class JobRunner
             await FailAsync(job, context, ex.Code, ex.Detail ?? ErrorCatalog.Wire(ex.Code), adapter, manifest)
                 .ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (leaseLost)
+        catch (OperationCanceledException ex) when (leaseLost)
         {
             // The control plane already took this job back and has decided what
             // happens to it. Posting anything now would race its own bookkeeping.
-            _logger.LogWarning("job {JobId}: the lease was lost mid-run; stopping without a terminal post", job.JobId);
+            _logger.LogWarning(ex, "job {JobId}: the lease was lost mid-run; stopping without a terminal post", job.JobId);
         }
         catch (OperationCanceledException) when (abort.IsCancellationRequested)
         {
@@ -251,8 +252,10 @@ public sealed class JobRunner
             // provider library that echoes its request body into a message is
             // ordinary, and a password in an operator's log aggregator is just
             // as leaked as one on the wire.
+#pragma warning disable S6667 // the exception is logged as scrubbed text on purpose
             _logger.LogError("job {JobId}: the adapter threw{NewLine}{Error}",
                 job.JobId, Environment.NewLine, SecretScrubber.Scrub(ex.ToString(), context.SecretValues));
+#pragma warning restore S6667
 
             await FailAsync(job, context, ErrorCode.Internal, $"{ex.GetType().Name}: {ex.Message}",
                     adapter, manifest)
@@ -340,8 +343,10 @@ public sealed class JobRunner
                 {
                     // A user disconnecting must always succeed locally, so an
                     // upstream logout that fails is logged and nothing more.
+#pragma warning disable S6667 // the exception is logged as scrubbed text on purpose
                     _logger.LogWarning("job {JobId}: upstream logout failed; disconnecting anyway{NewLine}{Error}",
                         job.JobId, Environment.NewLine, SecretScrubber.Scrub(ex.ToString(), context.SecretValues));
+#pragma warning restore S6667
                 }
 
                 return new JobResultRequest { Complete = true };
@@ -656,8 +661,10 @@ public sealed class JobRunner
         }
         catch (Exception ex)
         {
+#pragma warning disable S6667 // the exception is logged as scrubbed text on purpose
             _logger.LogWarning("job {JobId}: the session could not be signed out ({Error})",
                 job.JobId, SecretScrubber.Scrub(ex.Message, context.SecretValues));
+#pragma warning restore S6667
         }
     }
 

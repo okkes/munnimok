@@ -139,7 +139,9 @@ public static class MockBankCredentials
     /// <see cref="ErrorCode.InvalidCredentials"/> - the code that must never
     /// be retried by anything, anywhere.
     /// </summary>
+#pragma warning disable S2068 // the mock bank's rejected password, not a credential
     public const string RejectedPassword = "invalid";
+#pragma warning restore S2068
 
     /// <summary>The number a digipass-style provider displays for the human to key in.</summary>
     public const string DisplayedCode = "84213906";

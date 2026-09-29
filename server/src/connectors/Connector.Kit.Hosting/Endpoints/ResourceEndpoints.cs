@@ -1,3 +1,4 @@
+#pragma warning disable S107 // minimal-API handlers and DI constructors take their collaborators as parameters
 using System.Text.Json.Nodes;
 using Connector.Kit.Adapters;
 using Connector.Kit.Errors;
@@ -132,7 +133,7 @@ internal static class ResourceEndpoints
     /// rather than a comma-joined string. Flattening to the query-string shape
     /// means one validator sees both forms and they cannot diverge.
     /// </summary>
-    private static IReadOnlyDictionary<string, IReadOnlyList<string>> Flatten(IReadOnlyDictionary<string, JsonNode?> body)
+    private static Dictionary<string, IReadOnlyList<string>> Flatten(IReadOnlyDictionary<string, JsonNode?> body)
     {
         var result = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
@@ -362,7 +363,7 @@ public sealed class FetchRunner(
     /// The bundle's config wins where the two disagree: it is what the user
     /// actually connected with, and the session row is a convenience copy.
     /// </summary>
-    private static IReadOnlyDictionary<string, string> MergeConfig(SessionRow session, TicketGrant grant)
+    private static Dictionary<string, string> MergeConfig(SessionRow session, TicketGrant grant)
     {
         var merged = new Dictionary<string, string>(
             ConnectorJson.DeserializeOr<IReadOnlyDictionary<string, string>>(

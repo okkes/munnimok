@@ -209,6 +209,9 @@ internal sealed partial class PageIngPortal : IIngPortal
             }
             catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
             {
+                // The response is gone - the page moved on, or the driver
+                // dropped it - so this call is latched without a body, as
+                // promised above: the status and url still say plenty.
             }
 
             _seen[response.Request.Url] = new IngCall(
@@ -584,9 +587,9 @@ internal sealed partial class PageIngPortal : IIngPortal
 
         var carried = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var header in headers)
+        foreach (var header in headers.Where(header => !options.Withheld(header.Key)))
         {
-            if (!options.Withheld(header.Key)) carried[header.Key] = header.Value;
+            carried[header.Key] = header.Value;
         }
 
         return carried;

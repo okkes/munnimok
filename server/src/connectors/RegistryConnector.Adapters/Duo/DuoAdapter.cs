@@ -774,7 +774,7 @@ public sealed class DuoAdapter : IProviderAdapter
         // signed in" is diagnosable; "the debt endpoint refused us" leaves a
         // reader guessing whether the session died or the endpoint moved.
         var session = await DuoCalls
-            .ReadAsync(portal, _options, _options.SessionPath, required: false, ct, ctx.Note)
+            .ReadAsync(portal, _options, new DuoCall(_options.SessionPath, Required: false), ct, ctx.Note)
             .ConfigureAwait(false);
 
         if (!DuoSession.Confirmed(session, _options))
@@ -807,8 +807,9 @@ public sealed class DuoAdapter : IProviderAdapter
         // Required. This is the fetch: eight amounts, one per debt kind.
         var amounts = await DuoCalls
             .ReadAsync(
-                portal, _options, _options.DebtPath, required: true, ct, ctx.Note,
-                sessionConfirmed: SessionConfirmed)
+                portal, _options,
+                new DuoCall(_options.DebtPath, Required: true, SessionConfirmed: SessionConfirmed),
+                ct, ctx.Note)
             .ConfigureAwait(false);
 
         // Enrichment, and allowed to be absent. A missing interest rate is a
@@ -816,8 +817,9 @@ public sealed class DuoAdapter : IProviderAdapter
         // and it costs a human another DigiD sign-in to try again.
         var positions = await DuoCalls
             .ReadAsync(
-                portal, _options, _options.PositionsPath, required: false, ct, ctx.Note,
-                sessionConfirmed: SessionConfirmed)
+                portal, _options,
+                new DuoCall(_options.PositionsPath, Required: false, SessionConfirmed: SessionConfirmed),
+                ct, ctx.Note)
             .ConfigureAwait(false);
 
         // With the peildatum it refuses: "Required parameter 'peildatum' is
@@ -826,11 +828,12 @@ public sealed class DuoAdapter : IProviderAdapter
             .ReadAsync(
                 portal,
                 _options,
-                $"{_options.PaymentHolidayPath}?{_options.AsOfParam}={today:yyyy-MM-dd}",
-                required: false,
+                new DuoCall(
+                    $"{_options.PaymentHolidayPath}?{_options.AsOfParam}={today:yyyy-MM-dd}",
+                    Required: false,
+                    SessionConfirmed: SessionConfirmed),
                 ct,
-                ctx.Note,
-                sessionConfirmed: SessionConfirmed)
+                ctx.Note)
             .ConfigureAwait(false);
 
         // The balances DUO has stated at named moments - and the date it
@@ -838,14 +841,16 @@ public sealed class DuoAdapter : IProviderAdapter
         // believing was unreachable without the customer dossier.
         var history = await DuoCalls
             .ReadAsync(
-                portal, _options, _options.HistoryPath, required: false, ct, ctx.Note,
-                sessionConfirmed: SessionConfirmed)
+                portal, _options,
+                new DuoCall(_options.HistoryPath, Required: false, SessionConfirmed: SessionConfirmed),
+                ct, ctx.Note)
             .ConfigureAwait(false);
 
         var grondslag = await DuoCalls
             .ReadAsync(
-                portal, _options, MonthsRemainingPath(today), required: false, ct, ctx.Note,
-                sessionConfirmed: SessionConfirmed)
+                portal, _options,
+                new DuoCall(MonthsRemainingPath(today), Required: false, SessionConfirmed: SessionConfirmed),
+                ct, ctx.Note)
             .ConfigureAwait(false);
 
         // THE DOSSIER, and only because the caller asked for the ledger.
@@ -865,8 +870,10 @@ public sealed class DuoAdapter : IProviderAdapter
 
             dossier = await DuoCalls
                 .ReadAsync(
-                    portal, _options, _options.DossierPath, required: false, ct, ctx.Note, dossier: true,
-                    sessionConfirmed: SessionConfirmed)
+                    portal, _options,
+                    new DuoCall(
+                        _options.DossierPath, Required: false, Dossier: true, SessionConfirmed: SessionConfirmed),
+                    ct, ctx.Note)
                 .ConfigureAwait(false);
         }
 
@@ -877,8 +884,8 @@ public sealed class DuoAdapter : IProviderAdapter
         ctx.Progress(JobStep.Parsing);
 
         var debt = DuoDebtReader.Read(
-            amounts, positions, holiday, today, _options, ctx.SessionId, history, grondslag, dossier,
-            note: ctx.Note);
+            new DuoPayloads(amounts, positions, holiday, history, grondslag, dossier),
+            today, _options, ctx.SessionId, note: ctx.Note);
 
         ctx.Progress(JobStep.Normalizing);
 

@@ -217,15 +217,28 @@ public static class AgentServiceCollectionExtensions
         if (section["ControlPlaneCaPath"] is { Length: > 0 } ca) options.ControlPlaneCaPath = ca;
         if (section["ProfileRootDirectory"] is { Length: > 0 } profiles) options.ProfileRootDirectory = profiles;
         if (section["WorkRootDirectory"] is { Length: > 0 } work) options.WorkRootDirectory = work;
-        if (section["BrowserDevice"] is { Length: > 0 } device) options.BrowserDevice = device;
-        if (section["BrowserChannel"] is { Length: > 0 } channel) options.BrowserChannel = channel;
-        if (section["BrowserLocale"] is { Length: > 0 } locale) options.BrowserLocale = locale;
-        if (section["BrowserTimezoneId"] is { Length: > 0 } timezone) options.BrowserTimezoneId = timezone;
 
         if (int.TryParse(section["MaxConcurrency"], out var concurrency)) options.MaxConcurrency = concurrency;
         if (bool.TryParse(section["Headless"], out var headless)) options.Headless = headless;
         if (TryParseEnum<AgentClass>(section["Class"], out var agentClass)) options.Class = agentClass;
 
+        BindBrowser(options, section);
+        BindServed(options, section);
+        BindConnections(options, section.GetSection("Connections"));
+    }
+
+    /// <summary>The browser the agent presents.</summary>
+    private static void BindBrowser(ConnectorAgentOptions options, IConfigurationSection section)
+    {
+        if (section["BrowserDevice"] is { Length: > 0 } device) options.BrowserDevice = device;
+        if (section["BrowserChannel"] is { Length: > 0 } channel) options.BrowserChannel = channel;
+        if (section["BrowserLocale"] is { Length: > 0 } locale) options.BrowserLocale = locale;
+        if (section["BrowserTimezoneId"] is { Length: > 0 } timezone) options.BrowserTimezoneId = timezone;
+    }
+
+    /// <summary>What the agent serves and from where: providers, tiers, egress.</summary>
+    private static void BindServed(ConnectorAgentOptions options, IConfigurationSection section)
+    {
         foreach (var provider in section.GetSection("Providers").GetChildren())
         {
             if (provider.Value is { Length: > 0 } id) options.Providers.Add(id);
@@ -241,8 +254,6 @@ public static class AgentServiceCollectionExtensions
         {
             options.Egress = new EgressRequirement { Country = country, Kind = kind };
         }
-
-        BindConnections(options, section.GetSection("Connections"));
     }
 
     /// <summary>

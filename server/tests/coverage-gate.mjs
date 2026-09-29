@@ -19,7 +19,7 @@ const FLOOR = floorAt >= 0 ? Number(args[floorAt + 1]) : 85;
 const root = resolve(args.find((a, i) => !a.startsWith('--') && (i === 0 || args[i - 1] !== '--floor')) ?? 'coverage');
 
 // the assemblies this gate owns — an assembly missing from every report fails too (nothing measured is not "covered")
-const GATED = [
+const GATED = new Set([
   'Connector.Kit',
   'Connector.Kit.Hosting',
   'Connector.Kit.Agent',
@@ -27,7 +27,7 @@ const GATED = [
   'BankConnector.Adapters',
   'ShopConnector.Adapters',
   'RegistryConnector.Adapters',
-];
+]);
 
 function walk(dir, out = []) {
   for (const entry of readdirSync(dir)) {
@@ -66,9 +66,14 @@ for (const file of reports) {
 // reported for the summary, gated elsewhere (Munni.Api: the MSBuild gate)
 const REPORTED = ['Munni.Api'];
 
+function verdictFor(gated, pct) {
+  if (!gated) return '(gated by MSBuild)';
+  return pct >= FLOOR ? 'ok' : 'UNDER THE FLOOR';
+}
+
 let failed = false;
 for (const name of [...GATED, ...REPORTED]) {
-  const gated = GATED.includes(name);
+  const gated = GATED.has(name);
   const map = lines.get(name);
   if (!map || map.size === 0) {
     if (!gated) continue;
@@ -79,8 +84,7 @@ for (const name of [...GATED, ...REPORTED]) {
   let hit = 0;
   for (const h of map.values()) if (h > 0) hit += 1;
   const pct = (hit / map.size) * 100;
-  const verdict = !gated ? '(gated by MSBuild)' : pct >= FLOOR ? 'ok' : 'UNDER THE FLOOR';
-  console.log(`coverage gate: ${name} ${pct.toFixed(2)} % (${hit}/${map.size} lines, floor ${FLOOR} %) ${verdict}`);
+  console.log(`coverage gate: ${name} ${pct.toFixed(2)} % (${hit}/${map.size} lines, floor ${FLOOR} %) ${verdictFor(gated, pct)}`);
   if (gated && pct < FLOOR) failed = true;
 }
 process.exit(failed ? 1 : 0);

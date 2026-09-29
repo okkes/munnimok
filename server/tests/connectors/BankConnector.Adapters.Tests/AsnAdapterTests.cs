@@ -892,7 +892,7 @@ public sealed class AsnAdapterTests
         // AND THE BANK'S LABEL CARRIES A COUNT THE ADAPTER CANNOT KNOW, so the
         // match is a prefix - the same trap as the select-all beside it.
         Assert.NotEqual(RenderedConfirm, Options.AccountConfirmLabels[0]);
-        Assert.StartsWith(Options.AccountConfirmLabels[0], RenderedConfirm, StringComparison.Ordinal);
+        Assert.Equal(RenderedConfirm, Options.AccountConfirmLabels[0] + " (3)");
     }
 
     /// <summary>

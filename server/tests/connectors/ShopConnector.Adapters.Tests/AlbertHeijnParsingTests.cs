@@ -123,7 +123,9 @@ public sealed class AlbertHeijnParsingTests
     {
         using var document = Fixture.Doc(ListFixture);
 
-        AlbertHeijnReceiptParser.ThrowOnErrors(document.RootElement);
+        var raised = Record.Exception(() => AlbertHeijnReceiptParser.ThrowOnErrors(document.RootElement));
+
+        Assert.Null(raised);
     }
 
     // ---- the detail --------------------------------------------------------

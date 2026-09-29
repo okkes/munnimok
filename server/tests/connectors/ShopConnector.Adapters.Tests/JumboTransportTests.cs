@@ -239,7 +239,9 @@ public sealed class JumboTransportTests
     {
         using var document = Fixture.Doc("jumbo/orders-and-receipts.json");
 
-        JumboGraphQlErrors.Throw(document.RootElement);
+        var raised = Record.Exception(() => JumboGraphQlErrors.Throw(document.RootElement));
+
+        Assert.Null(raised);
     }
 
     [Theory]

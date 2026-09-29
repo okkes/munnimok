@@ -121,9 +121,9 @@ public sealed class MockBankSlowAdapter : MockBankAdapter
     /// the step it is currently waiting on rather than the one that just
     /// finished.
     /// </summary>
-    private async Task PaceAsync(IJobContext ctx, IReadOnlyList<JobStep> steps, TimeSpan total, CancellationToken ct)
+    private async Task PaceAsync(IJobContext ctx, JobStep[] steps, TimeSpan total, CancellationToken ct)
     {
-        var slice = total / steps.Count;
+        var slice = total / steps.Length;
 
         foreach (var step in steps)
         {

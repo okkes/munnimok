@@ -134,39 +134,7 @@ public static partial class ManifestValidator
 
         if (auth.Session.TtlSeconds <= 0) errors.Add("auth.session.ttl_seconds must be positive");
 
-        // device_persistent has no credential step - the human authenticated
-        // once, directly into a profile on their own machine.
-        if (auth.Flow == AuthFlow.DevicePersistent)
-        {
-            if (m.Runtime != ProviderRuntime.BrowserPersistent)
-            {
-                errors.Add("flow 'device_persistent' requires runtime 'browser_persistent'");
-            }
-        }
-        else if (auth.Flow == AuthFlow.RemoteBrowser)
-        {
-            // The inverse rule, and the reason this flow is worth having as a
-            // flow rather than a convention: a streamed login must be INCAPABLE
-            // of asking for a credential. A field here would mean a form
-            // somewhere, and a form means a password crossing the wire and
-            // resting in a job's inputs - the whole thing this exists to stop.
-            // Refusing it at boot makes that structural instead of a promise.
-            if (auth.AllFields().Any())
-            {
-                errors.Add("flow 'remote_browser' must declare no fields: the human types into the " +
-                           "provider's own page, so a field here would be a credential this platform " +
-                           "collects and then claims not to hold");
-            }
-
-            if (m.Runtime == ProviderRuntime.Http)
-            {
-                errors.Add("flow 'remote_browser' needs a browser to stream, so runtime 'http' cannot serve it");
-            }
-        }
-        else if (auth.Steps.Count == 0)
-        {
-            errors.Add($"flow '{auth.Flow}' requires at least one auth step");
-        }
+        ValidateFlow(m, auth, errors);
 
         if (m.UnattendedFetch && !auth.Session.Refreshable && auth.Flow != AuthFlow.DevicePersistent)
         {
@@ -174,21 +142,7 @@ public static partial class ManifestValidator
                        "without one a human is needed every time by definition");
         }
 
-        var keys = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var field in auth.AllFields())
-        {
-            if (!keys.Add(field.Key)) errors.Add($"duplicate field key '{field.Key}'");
-
-            if (field.Type == FieldType.Select && (field.Options is null || field.Options.Count == 0))
-            {
-                errors.Add($"field '{field.Key}' is a select but has no options");
-            }
-
-            if (field.Pattern is not null && !IsValidRegex(field.Pattern))
-            {
-                errors.Add($"field '{field.Key}' has an invalid pattern");
-            }
-        }
+        ValidateFields(auth, errors);
 
         // A password that is not marked secret would be logged and
         // screenshotted, because redaction keys off exactly this flag.
@@ -259,6 +213,67 @@ public static partial class ManifestValidator
         }
     }
 
+    /// <summary>What each flow demands of the runtime and the steps.</summary>
+    private static void ValidateFlow(ProviderManifest m, AuthSpec auth, List<string> errors)
+    {
+        switch (auth.Flow)
+        {
+            // device_persistent has no credential step - the human authenticated
+            // once, directly into a profile on their own machine.
+            case AuthFlow.DevicePersistent when m.Runtime != ProviderRuntime.BrowserPersistent:
+                errors.Add("flow 'device_persistent' requires runtime 'browser_persistent'");
+                break;
+
+            case AuthFlow.RemoteBrowser:
+                // The inverse rule, and the reason this flow is worth having as a
+                // flow rather than a convention: a streamed login must be INCAPABLE
+                // of asking for a credential. A field here would mean a form
+                // somewhere, and a form means a password crossing the wire and
+                // resting in a job's inputs - the whole thing this exists to stop.
+                // Refusing it at boot makes that structural instead of a promise.
+                if (auth.AllFields().Any())
+                {
+                    errors.Add("flow 'remote_browser' must declare no fields: the human types into the " +
+                               "provider's own page, so a field here would be a credential this platform " +
+                               "collects and then claims not to hold");
+                }
+
+                if (m.Runtime == ProviderRuntime.Http)
+                {
+                    errors.Add("flow 'remote_browser' needs a browser to stream, so runtime 'http' cannot serve it");
+                }
+
+                break;
+
+            case AuthFlow.DevicePersistent:
+                break;
+
+            default:
+                if (auth.Steps.Count == 0) errors.Add($"flow '{auth.Flow}' requires at least one auth step");
+                break;
+        }
+    }
+
+    /// <summary>Every declared field: unique, a select with options, a pattern that compiles.</summary>
+    private static void ValidateFields(AuthSpec auth, List<string> errors)
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var field in auth.AllFields())
+        {
+            if (!keys.Add(field.Key)) errors.Add($"duplicate field key '{field.Key}'");
+
+            if (field.Type == FieldType.Select && (field.Options is null || field.Options.Count == 0))
+            {
+                errors.Add($"field '{field.Key}' is a select but has no options");
+            }
+
+            if (field.Pattern is not null && !IsValidRegex(field.Pattern))
+            {
+                errors.Add($"field '{field.Key}' has an invalid pattern");
+            }
+        }
+    }
+
     private static void ValidateResources(ProviderManifest m, List<string> errors)
     {
         var ids = new HashSet<string>(StringComparer.Ordinal);
@@ -270,16 +285,21 @@ public static partial class ManifestValidator
 
             foreach (var p in resource.Params)
             {
-                if (p.Type == ParamType.Enum && (p.Values is null || p.Values.Count == 0))
-                {
-                    errors.Add($"param '{resource.Id}.{p.Key}' is an enum but lists no values");
-                }
-
-                if (p is { Required: true, Internal: true })
-                {
-                    errors.Add($"param '{resource.Id}.{p.Key}' cannot be both required and internal");
-                }
+                ValidateParam(resource, p, errors);
             }
+        }
+    }
+
+    private static void ValidateParam(ResourceSpec resource, ParamSpec p, List<string> errors)
+    {
+        if (p.Type == ParamType.Enum && (p.Values is null || p.Values.Count == 0))
+        {
+            errors.Add($"param '{resource.Id}.{p.Key}' is an enum but lists no values");
+        }
+
+        if (p is { Required: true, Internal: true })
+        {
+            errors.Add($"param '{resource.Id}.{p.Key}' cannot be both required and internal");
         }
     }
 
