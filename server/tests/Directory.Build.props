@@ -11,11 +11,21 @@
     threshold itself, so after a run that collected coverage the target reads
     the report it wrote and fails the build when the line rate sits under the
     bar. A plain `dotnet test` (no collector) is not gated.
+
+    The gate reads ONE assembly out of the report — MunniCoverageAssembly,
+    the project's own name without ".Tests" — because a solution-wide run
+    with a shared results directory (CI, the Sonar script) puts every
+    project's report in the same folder, and a report's overall line-rate
+    also counts the assemblies that project merely references. The connector
+    test projects (server/tests/connectors) opt out of this gate: their
+    assemblies are covered by several suites each, and coverage-gate.mjs
+    holds them to the same floor on the union of the run's reports.
   -->
   <PropertyGroup>
     <RunSettingsFilePath>$(MSBuildThisFileDirectory)coverlet.runsettings</RunSettingsFilePath>
     <!-- percent of lines; the same bar as web/admin/control (vitest thresholds) -->
     <MunniCoverageLineFloor>85</MunniCoverageLineFloor>
+    <MunniCoverageAssembly Condition="'$(MunniCoverageAssembly)' == ''">$(MSBuildProjectName.Replace('.Tests', ''))</MunniCoverageAssembly>
     <_MunniCollectsCoverage>false</_MunniCollectsCoverage>
     <_MunniCollectsCoverage Condition="'$(VSTestCollect)' != '' and $(VSTestCollect.Contains('Code Coverage'))">true</_MunniCollectsCoverage>
   </PropertyGroup>
@@ -28,8 +38,13 @@
     </PropertyGroup>
   </Target>
 
-  <!-- vstest writes each run under a fresh guid folder: clear yesterday's reports so the gate only ever reads this run's -->
-  <Target Name="_MunniDropStaleCoverage" BeforeTargets="VSTest" DependsOnTargets="_MunniResolveCoverageDir" Condition="'$(_MunniCollectsCoverage)' == 'true'">
+  <!--
+    vstest writes each run under a fresh guid folder: clear yesterday's
+    reports so the gate only ever reads this run's. Only for the project's
+    own TestResults — a shared results directory holds the other projects'
+    reports of the same run, and whoever named it owns clearing it.
+  -->
+  <Target Name="_MunniDropStaleCoverage" BeforeTargets="VSTest" DependsOnTargets="_MunniResolveCoverageDir" Condition="'$(_MunniCollectsCoverage)' == 'true' and '$(VSTestResultsDirectory)' == ''">
     <ItemGroup>
       <_MunniStaleReport Include="$(_MunniResultsDir)/**/coverage.cobertura.xml;$(_MunniResultsDir)/**/coverage.opencover.xml" />
     </ItemGroup>
@@ -44,19 +59,21 @@
     <Error Condition="'@(_MunniCobertura)' == '' and '@(_MunniOpenCover)' == ''"
            Text="coverage gate: the run collected coverage but no report was found under $(_MunniResultsDir)" />
 
-    <!-- cobertura carries a 0..1 line-rate; opencover (the Sonar script's format) a percentage -->
-    <XmlPeek Condition="'@(_MunniCobertura)' != ''" XmlInputPath="%(_MunniCobertura.FullPath)" Query="/coverage/@line-rate">
+    <!-- cobertura carries a 0..1 line-rate; opencover (the Sonar script's format) a percentage; reports without this assembly yield nothing -->
+    <XmlPeek Condition="'@(_MunniCobertura)' != ''" XmlInputPath="%(_MunniCobertura.FullPath)" Query="/coverage/packages/package[@name='$(MunniCoverageAssembly)']/@line-rate">
       <Output TaskParameter="Result" ItemName="_MunniLineRate" />
     </XmlPeek>
-    <XmlPeek Condition="'@(_MunniCobertura)' == '' and '@(_MunniOpenCover)' != ''" XmlInputPath="%(_MunniOpenCover.FullPath)" Query="/CoverageSession/Summary/@sequenceCoverage">
+    <XmlPeek Condition="'@(_MunniCobertura)' == '' and '@(_MunniOpenCover)' != ''" XmlInputPath="%(_MunniOpenCover.FullPath)" Query="/CoverageSession/Modules/Module[ModuleName='$(MunniCoverageAssembly)']/Summary/@sequenceCoverage">
       <Output TaskParameter="Result" ItemName="_MunniLinePercent" />
     </XmlPeek>
     <ItemGroup>
       <_MunniLinePercent Condition="'@(_MunniLineRate)' != ''" Include="$([System.Math]::Round($([MSBuild]::Multiply('%(_MunniLineRate.Identity)', 100)), 2))" />
     </ItemGroup>
+    <Error Condition="'@(_MunniLinePercent)' == ''"
+           Text="coverage gate: no report under $(_MunniResultsDir) covers $(MunniCoverageAssembly) — set MunniCoverageAssembly if the project tests another assembly" />
 
-    <Message Importance="high" Text="coverage gate: API line coverage %(_MunniLinePercent.Identity) %25 (floor $(MunniCoverageLineFloor) %25)" />
+    <Message Importance="high" Text="coverage gate: $(MunniCoverageAssembly) line coverage %(_MunniLinePercent.Identity) %25 (floor $(MunniCoverageLineFloor) %25)" />
     <Error Condition="'%(_MunniLinePercent.Identity)' &lt; '$(MunniCoverageLineFloor)'"
-           Text="coverage gate: API line coverage %(_MunniLinePercent.Identity) %25 is under the $(MunniCoverageLineFloor) %25 floor — add behavior tests before merging" />
+           Text="coverage gate: $(MunniCoverageAssembly) line coverage %(_MunniLinePercent.Identity) %25 is under the $(MunniCoverageLineFloor) %25 floor — add behavior tests before merging" />
   </Target>
 </Project>

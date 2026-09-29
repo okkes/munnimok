@@ -30,14 +30,22 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
-      - run: dotnet test server/Munni.slnx --collect:"XPlat Code Coverage" --results-directory coverage
-      - name: Coverage summary
+      - run: dotnet build server/Munni.slnx
+      # the connector agent's live-view and redaction tests drive a real
+      # headless Chromium; the Playwright package ships the installer
+      - name: Chromium for the agent's browser tests
+        run: pwsh server/tests/connectors/Connector.Kit.Agent.Tests/bin/Debug/net10.0/playwright.ps1 install chromium --with-deps
+      - run: dotnet test server/Munni.slnx --no-build --collect:"XPlat Code Coverage" --results-directory coverage
+      # Munni.Api is gated by MSBuild (server/tests/Directory.Build.props);
+      # the connector assemblies are covered by several suites each, so
+      # their 85 % floor is the union over every report of this run
+      - name: Coverage gate
         run: |
-          FILE=$(find coverage -name 'coverage.cobertura.xml' | head -1)
-          if [ -n "$FILE" ]; then
-            RATE=$(grep -o 'line-rate="[0-9.]*"' "$FILE" | head -1 | grep -o '[0-9.]*')
-            echo "### API line coverage: $(awk "BEGIN{printf \"%.1f%%\", $RATE*100}")" >> $GITHUB_STEP_SUMMARY
-          fi
+          status=0
+          node server/tests/coverage-gate.mjs coverage > gate.txt || status=$?
+          cat gate.txt
+          { echo '### Server line coverage (floor 85 % per assembly)'; echo; sed 's/^coverage gate: /- /' gate.txt; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status
 
   # PI1: one native build per architecture (no QEMU — full-speed .NET
   # and Vite builds), merged into one multi-arch tag by the manifest
@@ -139,6 +147,34 @@ jobs:
           cache-from: type=gha,scope=control-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=control-${{ matrix.arch }}
 
+      # the connector control plane of an environment (#367): every provider
+      # pack, no browser — arch-agnostic like the api
+      - name: Build & push connector-api
+        uses: docker/build-push-action@v7
+        with:
+          context: server
+          file: server/src/connectors/Connector.Api/Dockerfile
+          push: true
+          build-args: BUILD_NUMBER=${{ steps.meta.outputs.build }}
+          tags: ${{ env.REGISTRY }}/munni-connector-api:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=connector-api-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=connector-api-${{ matrix.arch }}
+
+      # the agent carries Chromium (Playwright's image) — amd64 only until
+      # Chromium under Playwright on arm64 is verified; the manifest job
+      # tags it from the one architecture
+      - name: Build & push connector-agent
+        if: matrix.arch == 'amd64'
+        uses: docker/build-push-action@v7
+        with:
+          context: server
+          file: server/src/connectors/Connector.Agent/Dockerfile
+          push: true
+          build-args: BUILD_NUMBER=${{ steps.meta.outputs.build }}
+          tags: ${{ env.REGISTRY }}/munni-connector-agent:${{ steps.meta.outputs.channel }}-${{ steps.meta.outputs.build }}-${{ matrix.arch }}
+          cache-from: type=gha,scope=connector-agent-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=connector-agent-${{ matrix.arch }}
+
   # merge the per-arch pushes into the channel tags the hosts pull
   manifest:
     # first-boot latch: fresh repo copies skip every run until the
@@ -157,7 +193,7 @@ jobs:
         run: |
           CHANNEL='${{ needs.images.outputs.channel }}'
           BUILD='${{ needs.images.outputs.build }}'
-          for image in munni-api munni-web munni-admin munni-control; do
+          for image in munni-api munni-web munni-admin munni-control munni-connector-api; do
             docker buildx imagetools create \
               -t "$REGISTRY/$image:$CHANNEL" \
               -t "$REGISTRY/$image:$CHANNEL-$BUILD" \
@@ -166,3 +202,10 @@ jobs:
             echo "### $image:$CHANNEL" >> $GITHUB_STEP_SUMMARY
             docker buildx imagetools inspect "$REGISTRY/$image:$CHANNEL" | grep -E 'Platform|Digest' | head -6 >> $GITHUB_STEP_SUMMARY
           done
+          # the agent exists for amd64 only (#367): its channel tags point at that one build
+          docker buildx imagetools create \
+            -t "$REGISTRY/munni-connector-agent:$CHANNEL" \
+            -t "$REGISTRY/munni-connector-agent:$CHANNEL-$BUILD" \
+            "$REGISTRY/munni-connector-agent:$CHANNEL-$BUILD-amd64"
+          echo "### munni-connector-agent:$CHANNEL (amd64)" >> $GITHUB_STEP_SUMMARY
+          docker buildx imagetools inspect "$REGISTRY/munni-connector-agent:$CHANNEL" | grep -E 'Platform|Digest' | head -4 >> $GITHUB_STEP_SUMMARY
