@@ -6,7 +6,8 @@ import { useData } from '@/app/data';
 import { logActivity } from '@/application/activity';
 import { useSession } from '@/app/session';
 import { useMyRole } from './SpaceSharing';
-import type { SpacePeriodType } from '@/db/types';
+import type { SpacePeriodType, WeekStart } from '@/db/types';
+import { weekStartOf } from '@/lib/weekStart';
 import { AppBar, IconButton } from '@/ui/AppBar';
 import { HelpButton } from '@/features/help/HelpButton';
 import { Icon } from '@/ui/Icon';
@@ -134,6 +135,11 @@ export function PeriodSettingsScreen() {
     await repo.upsert('space', space.id, space.id, changes);
     void logActivity(store, repo, space.id, 'spaceEdit', space.name);
   };
+  const applyWeekStart = async (weekStart: WeekStart) => {
+    if (!space || readOnly) return;
+    await repo.upsert('space', space.id, space.id, { weekStart });
+    void logActivity(store, repo, space.id, 'spaceEdit', space.name);
+  };
 
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-period-settings">
@@ -164,6 +170,24 @@ export function PeriodSettingsScreen() {
             <InfoHint text={t('period.explain')} testId="period-explain" />
           </div>
           <PeriodControls periodType={periodType} periodDay={periodDay} readOnly={readOnly} onChange={(c) => void apply(c)} />
+
+          {/* #370: the space's first weekday — weekly budgets and week views follow it; new spaces copy the device preference */}
+          <div className="m-cap px-1">{t('space.weekStart')}</div>
+          <div className="flex flex-wrap gap-2">
+            {(['monday', 'sunday'] as const).map((day) => (
+              <Chip
+                key={day}
+                className="min-w-[40%] flex-1"
+                testId={`space-weekstart-${day}`}
+                disabled={readOnly}
+                selected={weekStartOf(space) === day}
+                onClick={() => void applyWeekStart(day)}
+              >
+                {t(day === 'monday' ? 'weekday.monday' : 'weekday.sunday')}
+              </Chip>
+            ))}
+          </div>
+          <p className="px-1 text-[11px] text-ink-4">{t('space.weekStartSub')}</p>
 
           <p className="px-1 text-[11px] text-ink-4" data-testid="period-instant-note">
             {t('period.instantNote')}

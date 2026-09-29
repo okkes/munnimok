@@ -18,6 +18,8 @@ import { useQuery } from '@/db/useQuery';
 import { Avatar } from '@/features/profile/ProfileScreen';
 import { Sheet } from '@/ui/Sheet';
 import { disablePush, enablePush, pushEnabled, pushSupported, sendTestPush } from '@/lib/push';
+import { globalWeekStart, setGlobalWeekStart } from '@/lib/weekStart';
+import type { WeekStart } from '@/db/types';
 import { ExportSheet } from './ExportSheet';
 import {
   biometricAvailable,
@@ -146,6 +148,7 @@ export function GlobalSettingsScreen() {
   >(null);
   const [vapidKey, setVapidKey] = useState('');
   const [pushOn, setPushOn] = useState(false);
+  const [weekStart, setWeekStart] = useState<WeekStart>(globalWeekStart());
   const [pushBusy, setPushBusy] = useState(false);
   // the test push row: what the last attempt said (sent to n devices / no device / failed)
   const [testNote, setTestNote] = useState<string | null>(null);
@@ -314,6 +317,24 @@ export function GlobalSettingsScreen() {
               </span>
             }
             onClick={() => setLangSheetOpen(true)}
+          />
+          {/* #370: the calendar's first weekday — every new space copies it, a space may override it */}
+          <Row
+            testId="settings-weekstart-row"
+            icon="calendar-week-begin"
+            title={t('settings.weekStart')}
+            sub={t('settings.weekStartSub')}
+            chevron={false}
+            trailing={
+              <Pill tone="neutral" testId="settings-weekstart-state">
+                {t(weekStart === 'sunday' ? 'weekday.sunday' : 'weekday.monday')}
+              </Pill>
+            }
+            onClick={() => {
+              const next = weekStart === 'monday' ? 'sunday' : 'monday';
+              setGlobalWeekStart(next);
+              setWeekStart(next);
+            }}
           />
           {/* receipts moved to the space section (v3: they are a space
               view); the global door keeps the store CONNECTIONS */}

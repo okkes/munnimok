@@ -3,7 +3,7 @@ import { DexieBackend } from '@/db/backend';
 import type { StorageBackend } from '@/db/backend';
 import { visibleTransactions } from '@/db/joined';
 import { readSwSession } from './swSync';
-import { budgetStatus } from '@/domain/budgets';
+import { budgetOptsFor, budgetStatus } from '@/domain/budgets';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import { fmtCents } from '@/lib/money';
 import type { Lang } from '@/i18n';
@@ -96,7 +96,7 @@ export async function collectBudgetAlerts(
 
   const alerts: BudgetAlert[] = [];
   for (const budget of budgets) {
-    const status = budgetStatus(budget, txs, catalog, today);
+    const status = budgetStatus(budget, txs, catalog, today, budgetOptsFor(space));
     if (status.ratio * 100 < (budget.notifyAtPct ?? 0)) continue;
     const key = markerKey(budget.id, status.period.start);
     if (await store.metaGet(key)) continue; // one alert per budget per period

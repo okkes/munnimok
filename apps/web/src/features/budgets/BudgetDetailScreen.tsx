@@ -6,7 +6,7 @@ import { useData } from '@/app/data';
 import { useBudgets } from '@/application/budgets';
 import { useSpaceTransactions } from '@/application/transactions';
 import { localToday } from '@/application/recurring';
-import { budgetFamily, budgetPeriodAt, budgetSpentCents, budgetStatus, cycleIndex } from '@/domain/budgets';
+import { budgetFamily, budgetOptsFor, budgetPeriodAt, budgetSpentCents, budgetStatus, cycleIndex } from '@/domain/budgets';
 import { catName, useCategories } from '@/features/categories/useCategories';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { AppBar, IconButton } from '@/ui/AppBar';
@@ -42,10 +42,11 @@ export function BudgetDetailScreen() {
   const view = useMemo(() => {
     if (!budget || !txs) return undefined;
     const family = budgetFamily(budget.catIds, cats);
-    const status = budgetStatus(budget, txs, cats, today);
-    const currentIndex = cycleIndex(budget, today);
+    const opts = budgetOptsFor(space);
+    const status = budgetStatus(budget, txs, cats, today, opts);
+    const currentIndex = cycleIndex(budget, today, opts);
     const shownIndex = Math.max(0, currentIndex + offset);
-    const period = budgetPeriodAt(budget, shownIndex);
+    const period = budgetPeriodAt(budget, shownIndex, opts);
     const spent = offset === 0 ? status.spentCents : budgetSpentCents(txs, family, period);
     const limit = offset === 0 ? status.limitCents : budget.amountCents;
     const listFamily = catFilter ? budgetFamily([catFilter], cats) : family;
@@ -62,17 +63,17 @@ export function BudgetDetailScreen() {
     const historyStart = Math.max(0, currentIndex - 7);
     const history = [];
     for (let i = historyStart; i <= currentIndex; i += 1) {
-      const p = budgetPeriodAt(budget, i);
+      const p = budgetPeriodAt(budget, i, opts);
       history.push({ start: p.start, spentCents: budgetSpentCents(txs, family, p) });
     }
-    return { status, period, spent, limit, list, perCat, history, atStart: shownIndex === 0 };
-  }, [budget, txs, cats, today, offset, catFilter]);
+    return { status, period, spent, limit, list, perCat, history, historyStart, currentIndex, atStart: shownIndex === 0 };
+  }, [budget, txs, cats, today, offset, catFilter, space]);
 
   const { fmt } = useDisplayMoney();
   if (!budget || !view)
     return <div className="h-full" data-testid="screen-budget-detail" />;
 
-  const { period, spent, limit, list, perCat, history, status, atStart } = view;
+  const { period, spent, limit, list, perCat, history, historyStart, currentIndex, status, atStart } = view;
   // whole days until the next cycle starts (user request, current cycle only)
   const daysLeft = Math.max(0, Math.round((Date.parse(period.end) - Date.parse(today)) / 86_400_000)) + 1;
   const ratio = limit > 0 ? spent / limit : 0;
@@ -182,6 +183,8 @@ export function BudgetDetailScreen() {
                 hollowLast
                 average={budget.amountCents}
                 height={100}
+                // #375 (user): a tap on a bar walks the period nav to that cycle
+                onSelect={(i) => setOffset(historyStart + i - currentIndex)}
               />
             </div>
           </>

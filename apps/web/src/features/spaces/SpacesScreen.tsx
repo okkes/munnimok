@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { globalWeekStart } from '@/lib/weekStart';
 import { useQuery } from '@/db/useQuery';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
@@ -95,6 +96,7 @@ export function SpacesScreen() {
         currency,
         periodType,
         periodDay,
+        weekStart: globalWeekStart(), // #370: the device preference, overridable per space
         // persisted, not just displayed — attaching an account must see
         // the same default the settings screen shows (user bug report)
         historyStartDate: historyStart,

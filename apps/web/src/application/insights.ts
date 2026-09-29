@@ -43,8 +43,9 @@ export function useInsights(): Insight[] | undefined {
       catalog,
       periods,
       today: new Date().toISOString().slice(0, 10),
+      space,
     }).filter((insight) => !dismissed.has(insight.id));
-  }, [txs, accounts, recurrings, budgets, dismissals, catalog, space?.periodType, space?.periodDay]);
+  }, [txs, accounts, recurrings, budgets, dismissals, catalog, space]);
 }
 
 export interface InsightOps {

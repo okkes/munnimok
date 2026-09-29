@@ -18,6 +18,8 @@ import { Icon } from '@/ui/Icon';
 import { Chip } from '@/ui/primitives';
 import { SearchField } from '@/ui/SearchField';
 import { BUDGET_ICONS } from './budgetUi';
+import { MDI_NAMES } from '@/generated/mdiNames';
+import { SpacePhotoStrip } from '@/features/spaces/SpaceSettingsScreen';
 
 /**
  * Create/edit a budget — a full screen, not a sheet: icon, name, amount,
@@ -37,9 +39,14 @@ export function BudgetFormScreen() {
   const editing = budgets?.find((b) => b.id === budgetId);
   const [name, setName] = useState('');
   const [icon, setIcon] = useState<string>(BUDGET_ICONS[0]);
+  // #373: the whole icon font by search, or an own picture
+  const [iconQuery, setIconQuery] = useState('');
+  const [picture, setPicture] = useState('');
   const [amount, setAmount] = useState('');
   const [every, setEvery] = useState<BudgetEvery>('month');
   const [anchor, setAnchor] = useState(localToday());
+  // #371: monthly budgets may reset on a day other than the start date's
+  const [resetDayText, setResetDayText] = useState('');
   const [catIds, setCatIds] = useState<string[]>([]);
   // long list tamed (user request): search + fold, mains start collapsed
   const [catQuery, setCatQuery] = useState('');
@@ -58,9 +65,11 @@ export function BudgetFormScreen() {
     if (!editing || loaded) return;
     setName(editing.name);
     setIcon(editing.icon ?? BUDGET_ICONS[0]);
+    setPicture(editing.picture ?? '');
     setAmount((editing.amountCents / 100).toFixed(2));
     setEvery(editing.every);
     setAnchor(editing.anchor);
+    setResetDayText(editing.resetDay ? String(editing.resetDay) : '');
     setCatIds(editing.catIds);
     setCarryOver(editing.carryOver === 1);
     setCarryMode(editing.carryMode ?? 'periods');
@@ -92,9 +101,26 @@ export function BudgetFormScreen() {
   );
   // a checked main claims its subs — the family covers them
   const ownFamily = useMemo(() => budgetFamily(catIds, cats), [catIds, cats]);
+  // #374: a main whose subs are partly claimed elsewhere is still pickable — it takes the free subs
+  const wholeMainOwner = (parentId: string) => otherBudgets.find((b) => b.catIds.includes(parentId))?.name;
+  const freeSubsOf = (parentId: string) => cats.childrenOf(parentId).filter((sub) => !conflicts.get(sub.id)).map((sub) => sub.id);
+  const claimedSubsOf = (parentId: string) => cats.childrenOf(parentId).filter((sub) => !!conflicts.get(sub.id)).length;
 
   const toggleCat = (id: string) =>
     setCatIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const toggleMain = (parentId: string) => {
+    if (catIds.includes(parentId)) {
+      setCatIds((prev) => prev.filter((x) => x !== parentId));
+      return;
+    }
+    if (claimedSubsOf(parentId) === 0) {
+      setCatIds((prev) => [...prev.filter((x) => !cats.childrenOf(parentId).some((sub) => sub.id === x)), parentId]);
+      return;
+    }
+    const free = freeSubsOf(parentId);
+    const allFree = free.length > 0 && free.every((id) => catIds.includes(id));
+    setCatIds((prev) => (allFree ? prev.filter((x) => !free.includes(x)) : [...new Set([...prev, ...free])]));
+  };
 
   const amountCents = Math.round(Number.parseFloat(amount.replace(',', '.')) * 100);
   const valid = name.trim().length > 0 && Number.isFinite(amountCents) && amountCents > 0 && catIds.length > 0 && !!anchor;
@@ -111,7 +137,7 @@ export function BudgetFormScreen() {
   })();
   // #164: edits guard the back arrow — the draft is dirty once any field
   // moved away from the seeded state (creation counts from blank)
-  const draftPrint = JSON.stringify([name, icon, amount, every, anchor, catIds, carryOver, carryMode, carryPeriods, carryCap, notifyAtPct]);
+  const draftPrint = JSON.stringify([name, icon, picture, amount, every, anchor, resetDayText, catIds, carryOver, carryMode, carryPeriods, carryCap, notifyAtPct]);
   const baselineRef = useRef<string | null>(null);
   if (baselineRef.current === null && (!budgetId || loaded)) baselineRef.current = draftPrint;
   const formDirty = baselineRef.current !== null && draftPrint !== baselineRef.current;
@@ -120,12 +146,15 @@ export function BudgetFormScreen() {
   const save = async () => {
     if (!valid) return;
     const capCents = Math.round(Number.parseFloat(carryCap.replace(',', '.')) * 100);
+    const resetDay = Math.min(28, Math.max(1, Number(resetDayText) || 0));
     await ops.save(editing?.id ?? null, {
       name: name.trim(),
       icon,
+      picture: picture || undefined,
       amountCents,
       every,
       anchor,
+      resetDay: every === 'month' && resetDayText.trim() ? resetDay : undefined,
       catIds,
       carryOver: carryOver ? 1 : 0,
       carryMode: carryOver ? carryMode : undefined,
@@ -152,22 +181,28 @@ export function BudgetFormScreen() {
 
   const renderCatRow = (id: string, indent: boolean) => {
     const cat = cats.byId(id);
-    const conflictOwner = conflicts.get(id);
+    const isMain = !indent;
+    // #374: a main is blocked only when another budget holds the WHOLE main; claimed subs just stay out of the tick
+    const conflictOwner = isMain ? wholeMainOwner(id) : conflicts.get(id);
     const coveredByMain = !catIds.includes(id) && ownFamily.has(id);
     const disabled = !!conflictOwner || coveredByMain;
-    const checked = catIds.includes(id) || coveredByMain;
+    const free = isMain ? freeSubsOf(id) : [];
+    const half = isMain && !catIds.includes(id) && free.some((sub) => catIds.includes(sub));
+    const checked = catIds.includes(id) || coveredByMain || (isMain && free.length > 0 && free.every((sub) => catIds.includes(sub)) && claimedSubsOf(id) > 0);
     return (
       <button
         key={id}
         data-testid={`budget-cat-${id}`}
+        data-state={checked ? 'checked' : half ? 'half' : 'off'}
         disabled={disabled}
-        onClick={() => toggleCat(id)}
+        onClick={() => (isMain ? toggleMain(id) : toggleCat(id))}
         className={`m-tap flex w-full items-center gap-3 border-b border-line-2 bg-transparent py-2.5 text-left last:border-0 ${indent ? 'pl-8' : 'pl-1'} ${disabled ? 'opacity-45' : ''}`}
       >
         <span
-          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${checked ? 'border-accent bg-accent' : 'border-line bg-transparent'}`}
+          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border ${checked ? 'border-accent bg-accent' : half ? 'border-accent bg-accent-soft' : 'border-line bg-transparent'}`}
         >
           {checked && <Icon name="check" size={12} color="#fff" />}
+          {!checked && half && <Icon name="minus" size={12} color="var(--m-accent-deep)" />}
         </span>
         <Icon name={cat.icon} size={16} color={cat.color ?? cats.byId(cat.parentId)?.color ?? 'var(--m-ink-3)'} />
         <span className="min-w-0 flex-1 truncate text-[14px] text-ink">{catName(cat, t)}</span>
@@ -193,20 +228,26 @@ export function BudgetFormScreen() {
       {discardSheet}
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-6">
         <div className="flex flex-col gap-3 pt-1">
-          {/* icon row */}
-          <div className="flex gap-2 overflow-x-auto pb-1">
-            {BUDGET_ICONS.map((candidate) => (
+          {/* #373: an own picture wins over the icon; the curated icons by default, the whole font by search */}
+          <SpacePhotoStrip picture={picture} onPicture={setPicture} onWebcam={null} testIdPrefix="budgetform-photo" />
+          <SearchField testId="budgetform-icon-search" value={iconQuery} onChange={setIconQuery} placeholder={t('cats.iconSearch')} height="h-10" textSize="text-[13px]" />
+          <div className="grid max-h-40 grid-cols-6 gap-2 overflow-y-auto">
+            {(iconQuery.trim() ? MDI_NAMES.filter((n) => n.includes(iconQuery.trim().toLowerCase())).slice(0, 48) : BUDGET_ICONS).map((candidate) => (
               <button
                 key={candidate}
                 data-testid={`budgetform-icon-${candidate}`}
+                title={candidate}
                 onClick={() => setIcon(candidate)}
-                className={`m-tap flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border ${
-                  icon === candidate ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
+                className={`m-tap flex h-11 items-center justify-center rounded-xl border ${
+                  icon === candidate && !picture ? 'border-accent bg-accent-soft text-accent-deep' : 'border-line bg-surface text-ink-2'
                 }`}
               >
                 <Icon name={candidate} size={19} />
               </button>
             ))}
+            {iconQuery.trim() && MDI_NAMES.every((n) => !n.includes(iconQuery.trim().toLowerCase())) && (
+              <p className="col-span-6 py-2 text-center text-[12px] text-ink-4">{t('cats.iconNone')}</p>
+            )}
           </div>
 
           <input
@@ -240,6 +281,7 @@ export function BudgetFormScreen() {
                 ['week', 'budgets.everyWeek'],
                 ['2weeks', 'budgets.every2Weeks'],
                 ['month', 'budgets.everyMonth'],
+                ['period', 'budgets.everyPeriod'],
               ] as const
             ).map(([value, labelKey]) => (
               <Chip key={value} testId={`budgetform-every-${value}`} selected={every === value} onClick={() => setEvery(value)}>
@@ -258,6 +300,32 @@ export function BudgetFormScreen() {
             />
           </label>
           <FormBlockerNote show={blockerField === 'anchor'} text={blockerText} testId="budgetform-blocker" />
+          {every === 'month' && (
+            <label className="flex flex-wrap items-center gap-3 text-[13px] text-ink-2">
+              {t('budgets.resetDay')}
+              <input
+                data-testid="budgetform-resetday"
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={28}
+                value={resetDayText}
+                onChange={(e) => setResetDayText(e.target.value)}
+                onBlur={() => {
+                  if (!resetDayText.trim()) return;
+                  setResetDayText(String(Math.min(28, Math.max(1, Number(resetDayText) || 1))));
+                }}
+                placeholder={String(Number(anchor.slice(8, 10)) || 1)}
+                className="h-10 w-20 rounded-input border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink-4"
+              />
+              <span className="text-[11px] text-ink-4">{t('budgets.resetDayHint')}</span>
+            </label>
+          )}
+          {every === 'period' && (
+            <p className="px-1 text-[11px] text-ink-4" data-testid="budgetform-period-note">
+              {t('budgets.everyPeriodNote')}
+            </p>
+          )}
 
           <div className="m-cap px-1">
             {t('screen.categories')} · {catIds.length}
@@ -358,6 +426,10 @@ export function BudgetFormScreen() {
                   className="h-10 w-28 rounded-input border border-line bg-surface px-3 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                 />
               )}
+              {/* #372 (user): the number needed a sentence, not a technical label */}
+              <p className="w-full text-[11px] text-ink-4" data-testid="budgetform-carry-explain">
+                {carryMode === 'periods' ? t('budgets.carryPeriodsExplain', { n: Math.max(1, Number(carryPeriodsText) || 1) }) : t('budgets.carryCapExplain')}
+              </p>
             </div>
           )}
 

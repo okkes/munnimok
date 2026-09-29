@@ -53,6 +53,7 @@ assistant's memory alongside the guide/tour maintenance rules.
 
 ## Plans (budgets, goals, allocation, events)
 - [ ] Budget lifecycle: create with categories, thresholds warn, carry-over works
+- [ ] Budget cycles, 2026-09-29 (#369–#375): a budget has a start date and its FIRST period may be partial — a monthly budget resets on its own reset day (1–28, empty = the start date’s day; #371 fixed the "counting from" arithmetic), weekly/biweekly ones on the space’s first weekday, and the new "With the space period" cadence follows the space’s own budget period (#369); the calendar’s first weekday is a device setting (Global settings → Week starts on) every new space copies and each space may override under Period settings (#370); the rollover options read as sentences ("Keep for a number of periods" / "Pile up to a maximum" with an explanation under the number, #372); the form searches the whole icon font and takes an own picture (#373); a main whose subs are partly claimed by another budget stays pickable — it takes the free subs and shows half-ticked (#374); a tap on a history bar in the detail walks the period nav to that cycle (#375)
 - [ ] Goals fund and progress; allocation envelopes fill per period
 - [ ] Events: create, attach transactions (select-all screen), per-day costs and drill
 

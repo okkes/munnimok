@@ -4,7 +4,7 @@ import { logActivity, logRowActivity } from './activity';
 import { useQuery } from '@/db/useQuery';
 import { useSpaceTransactions } from './transactions';
 import { localToday } from './recurring';
-import { budgetStatus, sortByUrgency } from '@/domain/budgets';
+import { budgetOptsFor, budgetStatus, sortByUrgency } from '@/domain/budgets';
 import type { BudgetStatus } from '@/domain/budgets';
 import { useCategories } from '@/features/categories/useCategories';
 import type { BudgetRow } from '@/db/types';
@@ -25,14 +25,18 @@ export function useBudgets(): BudgetRow[] | undefined {
 
 /** live per-budget numbers for the current cycle, most urgent first */
 export function useBudgetStatuses(): BudgetStatus[] | undefined {
+  const { store, spaceId } = useData();
   const budgets = useBudgets();
   const txs = useSpaceTransactions();
   const cats = useCategories();
+  // the space's first weekday and period shape steer the cycles (#369, #370)
+  const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   return useMemo(() => {
     if (!budgets || !txs) return undefined;
     const today = localToday();
-    return sortByUrgency(budgets.filter((b) => b.active === 1).map((b) => budgetStatus(b, txs, cats, today)));
-  }, [budgets, txs, cats]);
+    const opts = budgetOptsFor(space);
+    return sortByUrgency(budgets.filter((b) => b.active === 1).map((b) => budgetStatus(b, txs, cats, today, opts)));
+  }, [budgets, txs, cats, space]);
 }
 
 export interface BudgetOps {

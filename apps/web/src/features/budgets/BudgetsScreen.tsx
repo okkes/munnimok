@@ -3,8 +3,8 @@ import { attachScrollMemory } from '@/lib/scrollMemory';
 import { useLang } from '@/i18n';
 import { useBudgetStatuses } from '@/application/budgets';
 import { localToday } from '@/application/recurring';
-import { budgetDaysLeft } from '@/domain/budgets';
-import type { BudgetStatus } from '@/domain/budgets';
+import { budgetDaysLeft, budgetOptsFor } from '@/domain/budgets';
+import type { BudgetStatus, BudgetPeriodOpts } from '@/domain/budgets';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
 import { useQuery } from '@/db/useQuery';
 import { useData } from '@/app/data';
@@ -16,7 +16,12 @@ import { ProgressBar, Tile } from '@/ui/primitives';
 import { CADENCE_KEYS, budgetColor, budgetSoft, ratioPct } from './budgetUi';
 
 /** One budget card: urgency-colored state, progress, carry-over note. */
-export function BudgetCard({ status, currency, onClick }: Readonly<{ status: BudgetStatus; currency: string; onClick: () => void }>) {
+export function BudgetCard({
+  status,
+  currency,
+  onClick,
+  opts = {},
+}: Readonly<{ status: BudgetStatus; currency: string; onClick: () => void; opts?: BudgetPeriodOpts }>) {
   const { t } = useLang();
   const { fmt } = useDisplayMoney();
   const { budget, leftCents, carriedCents, ratio, spentCents, limitCents } = status;
@@ -30,7 +35,11 @@ export function BudgetCard({ status, currency, onClick }: Readonly<{ status: Bud
       className="m-tap w-full rounded-card border border-line bg-surface p-4 text-left"
     >
       <div className="flex items-center gap-3">
-        <Tile icon={budget.icon ?? 'wallet-outline'} bg={budgetSoft(ratio)} color={color} />
+        {budget.picture ? (
+          <img src={budget.picture} alt="" className="h-11 w-11 shrink-0 rounded-xl object-cover" data-testid={`budget-picture-${budget.id}`} />
+        ) : (
+          <Tile icon={budget.icon ?? 'wallet-outline'} bg={budgetSoft(ratio)} color={color} />
+        )}
         <span className="min-w-0 flex-1">
           <span className="flex items-baseline justify-between gap-2">
             <span className="truncate text-[15px] font-semibold text-ink">{budget.name}</span>
@@ -41,7 +50,7 @@ export function BudgetCard({ status, currency, onClick }: Readonly<{ status: Bud
           <span className="block text-[11px] text-ink-4" data-testid={`budget-cadence-${budget.id}`}>
             {t(CADENCE_KEYS[budget.every])}
             {/* days until reset next to the cadence (user request) */}
-            {` · ${t('budgets.daysLeft', { n: budgetDaysLeft(budget, localToday()) })}`}
+            {` · ${t('budgets.daysLeft', { n: budgetDaysLeft(budget, localToday(), opts) })}`}
             {carriedCents > 0 && ` · ${t('budgets.carryLine', { amount: fmt(carriedCents, currency) })}`}
           </span>
         </span>
@@ -103,6 +112,7 @@ export function BudgetsScreen() {
             <BudgetCard
               key={status.budget.id}
               status={status}
+              opts={budgetOptsFor(space)}
               currency={currency}
               onClick={() => void navigate({ to: '/budgets/$budgetId', params: { budgetId: status.budget.id } })}
             />

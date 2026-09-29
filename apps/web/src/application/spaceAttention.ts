@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useData } from '@/app/data';
 import { visibleTransactions } from '@/db/joined';
 import type { StorageBackend } from '@/db/backend';
-import { budgetStatus } from '@/domain/budgets';
+import { budgetOptsFor, budgetStatus } from '@/domain/budgets';
 import { buildCatalog, visibleCategoryRows } from '@/domain/catalog';
 import { cachedCatalog } from '@/sync/catalogSync';
 import { localToday } from './recurring';
@@ -29,7 +29,8 @@ export async function spaceAttention(store: StorageBackend, spaceId: string): Pr
     const vis = visibleCategoryRows(allSpaces, allCats, spaceId);
     const catalog = buildCatalog(vis.rows, vis.sharedScope, vis.hiddenMains, await cachedCatalog(store));
     const today = localToday();
-    budgetOver = budgets.some((b) => budgetStatus(b, txs, catalog, today).leftCents < 0);
+    const space = await store.get('space', spaceId);
+    budgetOver = budgets.some((b) => budgetStatus(b, txs, catalog, today, budgetOptsFor(space)).leftCents < 0);
   }
   return { reviewCount, budgetOver };
 }

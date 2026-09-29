@@ -13,6 +13,7 @@ export function Bars({
   negativeValues,
   negativeColor = 'var(--m-negative)',
   testId,
+  onSelect,
 }: Readonly<{
   values: number[];
   /** short x labels, same length as values (sparse: empty strings ok) */
@@ -29,6 +30,8 @@ export function Bars({
   negativeValues?: number[];
   negativeColor?: string;
   testId?: string;
+  /** a tap on a bar (index into values) — the bars become buttons */
+  onSelect?: (index: number) => void;
 }>) {
   const n = values.length;
   if (n === 0) return null;
@@ -54,7 +57,16 @@ export function Bars({
         const h = Math.max(value > 0 ? 2 : 0, value * upScale);
         const hollow = hollowLast && i === n - 1;
         return (
-          <g key={x} tabIndex={0} aria-label={ariaLabels?.[i]}>
+          <g
+            key={x}
+            tabIndex={0}
+            aria-label={ariaLabels?.[i]}
+            role={onSelect ? 'button' : undefined}
+            data-testid={testId ? `${testId}-bar-${i}` : undefined}
+            style={onSelect ? { cursor: 'pointer' } : undefined}
+            onClick={onSelect ? () => onSelect(i) : undefined}
+            onKeyDown={onSelect ? (e) => { if (e.key === 'Enter' || e.key === ' ') onSelect(i); } : undefined}
+          >
             <rect
               x={x}
               y={zeroY - h}

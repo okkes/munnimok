@@ -49,7 +49,7 @@ import { goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
 import { toAllocateCents } from '@/domain/allocation';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
-import { budgetDaysLeft } from '@/domain/budgets';
+import { budgetDaysLeft, budgetOptsFor } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
 import { convertCents, sumCents } from '@/lib/rates';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
@@ -899,14 +899,18 @@ export function HomeScreen() {
                 onClick={() => void navigate({ to: '/budgets/$budgetId', params: { budgetId: status.budget.id } })}
                 className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
               >
-                <Icon name={status.budget.icon ?? 'wallet-outline'} size={17} color={color} />
+                {status.budget.picture ? (
+                  <img src={status.budget.picture} alt="" className="h-5 w-5 shrink-0 rounded-md object-cover" />
+                ) : (
+                  <Icon name={status.budget.icon ?? 'wallet-outline'} size={17} color={color} />
+                )}
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline justify-between gap-2">
                     <span className="truncate text-[13px] font-medium text-ink">{status.budget.name}</span>
                     <span className="flex shrink-0 items-baseline gap-1.5">
                       {/* days-to-reset on the landing zone too (user request) */}
                       <span className="text-[10px] text-ink-4" data-testid={`home-budget-days-${status.budget.id}`}>
-                        {t('budgets.daysLeft', { n: budgetDaysLeft(status.budget, localToday()) })}
+                        {t('budgets.daysLeft', { n: budgetDaysLeft(status.budget, localToday(), budgetOptsFor(space)) })}
                       </span>
                       <span className="m-num text-[12px] font-semibold" style={{ color }}>
                         {t(over ? 'budgets.over' : 'budgets.left', {

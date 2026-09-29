@@ -57,7 +57,43 @@ describe('Budgets (demo identity)', () => {
     const conflict = await screen.findByTestId('budget-cat-conflict-groceries');
     expect(conflict.textContent).toContain('Food');
     expect((screen.getByTestId('budget-cat-groceries') as HTMLButtonElement).disabled).toBe(true);
+    // #374: the main stays pickable — it takes every sub that is still free and shows as half-ticked
+    const main = screen.getByTestId('budget-cat-consumption') as HTMLButtonElement;
+    expect(main.disabled).toBe(false);
+    fireEvent.click(main);
+    expect(main.dataset.state).toBe('checked');
+    expect((screen.getByTestId('budget-cat-groceries') as HTMLButtonElement).disabled).toBe(true);
+    const coffee = screen.getByTestId('budget-cat-coffee') as HTMLButtonElement;
+    expect(coffee.dataset.state).toBe('checked');
+    fireEvent.click(coffee);
+    expect(main.dataset.state).toBe('half');
   }, 15_000);
+
+  it('#375: a tap on a history bar walks the period nav to that cycle; #371/#372: the form names the start date, a reset day and plain rollover words', async () => {
+    renderApp('/budgets');
+    await screen.findByTestId('screen-budgets');
+    await createBudget('Food', '500');
+    const card = await waitFor(() => {
+      const el = document.querySelector('[data-testid^="budget-card-"]');
+      expect(el).toBeTruthy();
+      return el!;
+    });
+    fireEvent.click(card);
+    await screen.findByTestId('budgetdetail-hero');
+    const label = screen.getByTestId('budgetdetail-period').textContent;
+    fireEvent.click(await screen.findByTestId('budgetdetail-bars-bar-0'));
+    await waitFor(() => expect(screen.getByTestId('budgetdetail-period').textContent).not.toBe(label));
+    fireEvent.click(screen.getByTestId('budgetdetail-edit'));
+    await screen.findByTestId('screen-budget-form');
+    // the row loads async — type only once the form holds it, or the load overwrites the draft
+    await waitFor(() => expect((screen.getByTestId('budgetform-name') as HTMLInputElement).value).toBe('Food'));
+    expect(screen.getByText('Start date')).toBeTruthy();
+    fireEvent.change(screen.getByTestId('budgetform-resetday'), { target: { value: '31' } });
+    fireEvent.blur(screen.getByTestId('budgetform-resetday'));
+    expect((screen.getByTestId('budgetform-resetday') as HTMLInputElement).value).toBe('28');
+    fireEvent.click(screen.getByTestId('budgetform-carry'));
+    expect((await screen.findByTestId('budgetform-carry-explain')).textContent).toContain('1 period');
+  }, 20_000);
 
   it('detail shows the cycle numbers, per-category rows, and past periods', async () => {
     renderApp('/budgets');
