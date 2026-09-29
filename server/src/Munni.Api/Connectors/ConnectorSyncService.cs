@@ -47,8 +47,9 @@ public sealed class ConnectorSyncService(
 
     private static readonly HashSet<string> SettledJobStates = new(StringComparer.Ordinal) { "succeeded", "failed", "expired" };
 
+    /// <param name="trigger"><c>user</c> for a person's call, <c>schedule</c> for the relay's own scheduler — the connector holds the latter to the provider's interval.</param>
     public async Task<ConnectorOutcome> SyncAsync(
-        Guid userId, string subject, string provider, ConnectorSyncRequest request, string deviceClass, CancellationToken ct)
+        Guid userId, string subject, string provider, ConnectorSyncRequest request, string deviceClass, CancellationToken ct, string trigger = "user")
     {
         var manifest = await catalogue.ProviderAsync(relay.Client, provider, ct);
         if (manifest is null) return UnknownProvider();
@@ -58,6 +59,7 @@ public sealed class ConnectorSyncService(
         {
             SessionId = resumed.Text(ConnectorRelayEndpoints.SessionIdField) ?? throw new InvalidOperationException("resume answered without a session id"),
             Ticket = resumed.Text("ticket") ?? throw new InvalidOperationException("resume answered without a ticket"),
+            Trigger = trigger,
         };
         var row = await ConnectorRelayEndpoints.BindAsync(relay.Db, userId, provider, request.ConnectionId, resumed, relay.Time, ct);
 
@@ -69,6 +71,9 @@ public sealed class ConnectorSyncService(
 
         row.State = "active";
         row.LastSeenAt = relay.Time.GetUtcNow();
+        // a kept (household-agent) bundle follows the rotation, so the next
+        // scheduled sync resumes from the material the provider issued last
+        if (row.KeptBundle is not null) row.KeptBundle = run.Bundle;
         await relay.Db.SaveChangesAsync(ct);
         Wake(run.Touched);
 
@@ -99,7 +104,7 @@ public sealed class ConnectorSyncService(
             {
                 Subject = run.Subject,
                 Ticket = run.Ticket,
-                Trigger = "user",
+                Trigger = run.Trigger,
                 DeviceClass = run.DeviceClass,
             }, ct);
 
@@ -218,6 +223,7 @@ public sealed class ConnectorSyncService(
         {
             row.State = "active";
             row.LastSeenAt = relay.Time.GetUtcNow();
+            if (row.KeptBundle is not null) row.KeptBundle = bundle;
             await relay.Db.SaveChangesAsync(ct);
         }
 
@@ -372,6 +378,9 @@ public sealed class ConnectorSyncService(
         public required string SessionId { get; init; }
 
         public required string Ticket { get; set; }
+
+        /// <summary>What the fetches declare themselves as: a person's call, or the scheduler's.</summary>
+        public string Trigger { get; init; } = "user";
 
         public string Bundle { get; set; } = request.Bundle;
 

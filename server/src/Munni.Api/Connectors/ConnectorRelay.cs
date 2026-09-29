@@ -16,11 +16,14 @@ public sealed class ConnectorRelay(
     SubjectMinter minter,
     ConnectorEventBridge bridge,
     ConnectorBudget budget,
+    ConnectorCatalogue catalogue,
     TimeProvider time)
 {
     public AppDbContext Db { get; } = db;
 
     public ConnectorClient Client { get; } = client;
+
+    public ConnectorCatalogue Catalogue { get; } = catalogue;
 
     public SubjectMinter Minter { get; } = minter;
 

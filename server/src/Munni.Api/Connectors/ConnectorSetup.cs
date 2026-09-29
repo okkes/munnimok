@@ -44,6 +44,10 @@ public static class ConnectorSetup
         services.AddScoped<ConnectorRelay>();
         services.AddScoped<ConnectorIngest>();
         services.AddScoped<ConnectorSyncService>();
+        // the scheduler for household-agent custody (§5.5): the one place a
+        // sync starts without a device holding the bundle
+        services.AddSingleton<ConnectorScheduleService>();
+        services.AddHostedService(sp => sp.GetRequiredService<ConnectorScheduleService>());
         services.AddHttpClient<ConnectorClient>(client =>
         {
             client.BaseAddress = options.BaseAddress();

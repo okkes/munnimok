@@ -286,18 +286,20 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
     public async Task The_binding_tables_hold_ids_and_state_only()
     {
         // the write-path scan: nothing the relay persists has a field a bundle,
-        // an input or a credential could ride in
+        // an input or a credential could ride in — with the one documented
+        // exception: the household-agent pointer §5.5 lets the relay keep,
+        // which the client-custody flows above prove stays empty
         var entities = factory.Read(db => db.Model.GetEntityTypes()
             .Where(e => e.ClrType.Namespace == typeof(ConnectorSession).Namespace)
             .Select(e => e.ClrType)
             .ToList());
         Assert.Equal(2, entities.Count);
-        foreach (var property in entities.SelectMany(e => e.GetProperties()))
+        foreach (var property in entities.SelectMany(e => e.GetProperties()).Where(p => p.Name != nameof(ConnectorSession.KeptBundle)))
         {
             Assert.DoesNotMatch("(?i)bundle|input|credential|secret|token|password", property.Name);
         }
         Assert.Equal(
-            ["ConnectionId", "CreatedAt", "Id", "Label", "LastSeenAt", "Provider", "State", "UserId"],
+            ["ConnectionId", "CreatedAt", "Id", "KeptBundle", "Label", "LastScheduledSyncAt", "LastScheduleError", "LastSeenAt", "Provider", "State", "UserId"],
             typeof(ConnectorSession).GetProperties().Select(p => p.Name).Order().ToArray());
         Assert.Equal(
             ["AccountEntityId", "AccountRef", "Currency", "ExternalId", "FeedSpaceId", "Id", "Provider", "SeenAt", "UserId"],
@@ -417,7 +419,10 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
     {
         var fingerprint = bundle[..Math.Min(40, bundle.Length)];
         var hits = factory.Read(db =>
-            db.ConnectorSessions.AsEnumerable().Count(s => (s.Label ?? string.Empty).Contains(fingerprint, StringComparison.Ordinal))
+            db.ConnectorSessions.AsEnumerable().Count(s =>
+                (s.Label ?? string.Empty).Contains(fingerprint, StringComparison.Ordinal)
+                // client custody: the relay never keeps the bundle (§5.5 keeps only a household agent's pointer)
+                || (s.KeptBundle ?? string.Empty).Contains(fingerprint, StringComparison.Ordinal))
             + db.EntityRows.AsEnumerable().Count(r => r.DataJson.Contains(fingerprint, StringComparison.Ordinal))
             + db.SyncOps.AsEnumerable().Count(o => o.PayloadJson.Contains(fingerprint, StringComparison.Ordinal)));
         Assert.Equal(0, hits);

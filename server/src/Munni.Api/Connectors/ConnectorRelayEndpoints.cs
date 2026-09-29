@@ -37,7 +37,11 @@ public sealed record ConnectorDisconnectRequest(string? Bundle = null);
 
 public sealed record ConnectorEnrollmentRequest(string Name);
 
-/// <summary>One of the caller's connector sessions as the relay records it — ids and state, nothing a bundle rides in.</summary>
+/// <summary>
+/// One of the caller's connector sessions as the relay records it — ids and
+/// state, nothing a bundle rides in. <c>Scheduled</c> says the relay keeps a
+/// household-agent bundle for it and syncs it by itself (§5.5).
+/// </summary>
 public sealed record ConnectorSessionDto(
     string SessionId,
     string Provider,
@@ -45,7 +49,10 @@ public sealed record ConnectorSessionDto(
     string State,
     string? Label,
     DateTimeOffset CreatedAt,
-    DateTimeOffset LastSeenAt);
+    DateTimeOffset LastSeenAt,
+    bool Scheduled,
+    DateTimeOffset? LastScheduledSyncAt,
+    string? LastScheduleError);
 
 /// <summary>What an enrollment hands the user: the code, and the line that starts their agent.</summary>
 public sealed record ConnectorEnrollmentDto(string Code, DateTimeOffset ExpiresAt, string? ControlPlaneUrl, string? ComposeCommand);
@@ -151,7 +158,9 @@ public static partial class ConnectorRelayEndpoints
         var rows = await relay.Db.ConnectorSessions
             .Where(s => s.UserId == userId)
             .OrderBy(s => s.CreatedAt)
-            .Select(s => new ConnectorSessionDto(s.Id, s.Provider, s.ConnectionId, s.State, s.Label, s.CreatedAt, s.LastSeenAt))
+            .Select(s => new ConnectorSessionDto(
+                s.Id, s.Provider, s.ConnectionId, s.State, s.Label, s.CreatedAt, s.LastSeenAt,
+                s.KeptBundle != null, s.LastScheduledSyncAt, s.LastScheduleError))
             .ToListAsync();
         return Results.Ok(rows);
     }
@@ -182,7 +191,8 @@ public static partial class ConnectorRelayEndpoints
 
         var view = reply.Object;
         var sessionId = view.Text(SessionIdField) ?? throw new InvalidOperationException("the connector answered a login without a session id");
-        await BindAsync(relay.Db, userId, provider, request.ConnectionId, view, relay.Time, ct);
+        var row = await BindAsync(relay.Db, userId, provider, request.ConnectionId, view, relay.Time, ct);
+        await KeepAsync(relay, provider, row, view, ct);
         FollowWhileRunning(relay.Bridge, userId, subject, provider, sessionId, view);
         return Results.Json(ConnectorJson.ToCamel(view), statusCode: (int)reply.Status);
     }
@@ -198,6 +208,7 @@ public static partial class ConnectorRelayEndpoints
         if (!reply.IsSuccess) return await RelayOrForgetAsync(http, relay.Db, row, reply, ct);
 
         await TouchAsync(relay.Db, row, reply.Object, relay.Time, ct);
+        await KeepAsync(relay, provider, row, reply.Object, ct);
         FollowWhileRunning(relay.Bridge, userId, subject, provider, sessionId, reply.Object);
         return Results.Json(ConnectorJson.ToCamel(reply.Object));
     }
@@ -417,6 +428,24 @@ public static partial class ConnectorRelayEndpoints
 
         await db.SaveChangesAsync(ct);
         return row;
+    }
+
+    /// <summary>
+    /// A household-agent bundle names an agent and a profile and holds no
+    /// secret (§5.5): the relay keeps it, so the scheduler can sync without
+    /// a device. Every other custody's bundle passes through memory only.
+    /// </summary>
+    internal static bool KeepsBundle(JsonObject? manifest) =>
+        string.Equals(manifest?.Text("secret_custody"), "agent", StringComparison.Ordinal);
+
+    /// <summary>The single delivery of a bundle, kept when — and only when — the provider's custody says the agent holds the secret.</summary>
+    private static async Task KeepAsync(ConnectorRelay relay, string provider, ConnectorSession row, JsonObject view, CancellationToken ct)
+    {
+        if (view.Text("bundle") is not { Length: > 0 } bundle) return;
+        if (!KeepsBundle(await relay.Catalogue.ProviderAsync(relay.Client, provider, ct))) return;
+        row.KeptBundle = bundle;
+        row.LastScheduleError = null;
+        await relay.Db.SaveChangesAsync(ct);
     }
 
     /// <summary>Records the state the connector reported; a session the connector no longer keeps is forgotten here too.</summary>

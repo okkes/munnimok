@@ -34,4 +34,18 @@ public class ConnectorSession
     public DateTimeOffset CreatedAt { get; set; }
 
     public DateTimeOffset LastSeenAt { get; set; }
+
+    /// <summary>
+    /// The bundle of a household-agent-custody session (§5.5): it names an
+    /// agent and a profile and holds no secret, so the relay may keep it and
+    /// sync unattended. Null for every other custody — the write-path scan
+    /// proves a client-custody bundle never lands here.
+    /// </summary>
+    public string? KeptBundle { get; set; }
+
+    /// <summary>When the scheduler last ran a sync for this session; null until it has.</summary>
+    public DateTimeOffset? LastScheduledSyncAt { get; set; }
+
+    /// <summary>The connector's error code the last scheduled sync ended on; null after a clean one.</summary>
+    public string? LastScheduleError { get; set; }
 }
