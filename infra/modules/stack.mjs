@@ -21,8 +21,8 @@ export const RESERVED_ENV_NAMES = new Set(['shared', 'platform', 'all']);
 /** 2-12 lowercase letters/digits, starting with a letter (hostnames, compose project names, GitHub environments) */
 export const ENV_NAME_RE = /^[a-z][a-z0-9]{1,11}$/;
 
-/** environment ports come from the SLOT — stable across deletions */
-export const PORT_SLOT = { web: 8380, admin: 8381, api: 8382, logto: 3201, logtoAdmin: 3202 };
+/** environment ports come from the SLOT — stable across deletions; the connector control plane (#367) sits past the shared stack's fixed 8383-8386 */
+export const PORT_SLOT = { web: 8380, admin: 8381, api: 8382, connector: 8387, logto: 3201, logtoAdmin: 3202 };
 export const SHARED_PORTS = { glitchtip: 8383, vault: 8384, control: 8385, pgadmin: 8386 };
 export const envPorts = (slot) => Object.fromEntries(Object.entries(PORT_SLOT).map(([k, base]) => [k, base + 100 * slot]));
 
@@ -67,7 +67,11 @@ export function loadPlatform(id) {
     label: PLATFORM_LABELS[id] ?? id,
     registry: 'ghcr.io/okkes',
     sharedChannel: 'latest',
+    // the pooled browser agent of the shared stack (#367): off until the operator ticks it;
+    // its egress is a CLAIM the control planes believe — a home line is residential, a rack is not
+    browserAgent: false,
     ...cfg,
+    agentEgress: { country: 'NL', kind: 'residential', ...(cfg.agentEgress ?? {}) },
     delivery: cfg.delivery ?? (id === 'lcl' ? 'docker' : id === 'nas' ? 'synology' : 'ssh'),
     file,
   };
@@ -94,7 +98,7 @@ function normalizeEnv(platform, raw, fromFile) {
   const env = raw.env ?? fromFile;
   if (!ENV_NAME_RE.test(env) || RESERVED_ENV_NAMES.has(env)) throw new Error(`environment name "${env}" is invalid (2-12 lowercase letters/digits, not ${[...RESERVED_ENV_NAMES].join('/')})`);
   if (!Number.isInteger(raw.slot) || raw.slot < 0) throw new Error(`environment "${env}" on ${platform} has no integer slot`);
-  const features = { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, banking: [], signin: [], ...(raw.features ?? {}) };
+  const features = { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, connectors: false, banking: [], signin: [], ...(raw.features ?? {}) };
   return {
     env,
     slot: raw.slot,
@@ -144,8 +148,16 @@ export function listStacks() {
   return listPlatforms().flatMap((p) => [stackName(p.platform), ...platformEnvs(p.platform).map((e) => stackName(p.platform, e.env))]);
 }
 
-export const hostsFor = (platform, env = null) => (env
-  ? { web: `munni-${env}-${platform}`, admin: `munni-${env}-${platform}-admin`, api: `munni-${env}-${platform}-api`, logto: `munni-${env}-${platform}-logto`, logtoAdmin: `munni-${env}-${platform}-logto-admin` }
+/** an environment's hosts; the connector control plane's only when the environment runs connectors (household agents dial it from outside) */
+export const hostsFor = (platform, env = null, { connectors = false } = {}) => (env
+  ? {
+    web: `munni-${env}-${platform}`,
+    admin: `munni-${env}-${platform}-admin`,
+    api: `munni-${env}-${platform}-api`,
+    ...(connectors ? { connector: `munni-${env}-${platform}-connector` } : {}),
+    logto: `munni-${env}-${platform}-logto`,
+    logtoAdmin: `munni-${env}-${platform}-logto-admin`,
+  }
   : { glitchtip: `glitchtip-${platform}`, vault: `vault-${platform}`, control: `control-${platform}`, pgadmin: `pgadmin-${platform}` });
 
 /** a stand-in domain for callers that never address a host (the workflow matrices run outside any GitHub environment) */
@@ -176,7 +188,7 @@ export function loadStack(name, { lenient = false } = {}) {
   const lan = local ? lanHost() : null;
   const domain = local ? (lan ? `${lan.replaceAll('.', '-')}.sslip.io` : null) : platformDomain(p, { lenient });
   const ports = shared ? { ...SHARED_PORTS } : envPorts(envCfg.slot);
-  const hosts = hostsFor(p.platform, parsed.env);
+  const hosts = hostsFor(p.platform, parsed.env, { connectors: Boolean(envCfg?.features.connectors) });
   const host = (key) => {
     if (!hosts[key]) throw new Error(`stack ${name} has no service "${key}"`);
     return domain ? `${hosts[key]}.${domain}` : 'localhost';
@@ -210,6 +222,8 @@ export function loadStack(name, { lenient = false } = {}) {
     controlApi: controlEnvName ? stackName(p.platform, controlEnvName) : null,
     githubEnvironment: `${p.platform}-${parsed.env ?? 'shared'}`,
     features: shared ? { telemetry: true } : envCfg.features,
+    // the platform's pooled browser agent (#367): rendered into the shared stack, dialling every environment that runs connectors
+    agent: shared ? { pooled: Boolean(p.browserAgent), egress: p.agentEgress } : null,
     store: shared ? null : envCfg.store,
     label: shared ? `munni shared (${p.label})` : envCfg.label,
     native: shared ? null : {

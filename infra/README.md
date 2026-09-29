@@ -124,7 +124,13 @@ environment; lcl: into the stack's store); `operator` ones are typed once
 per platform in the wizard and copied wherever the manifest says (platform scope →
 `<platform>-shared` and every `<platform>-<env>`; env scope → the
 environments whose features need it); `module` ones are written back by
-Logto/GlitchTip after they ran. `--verify` fails loudly on drift.
+Logto/GlitchTip after they ran. `--verify` fails loudly on drift. The
+connector platform's entries (#367) follow the same rules: an environment
+with `features.connectors` mints `CONNECTOR_SEAL_KEY_K1`,
+`CONNECTOR_ENROLLMENT_HMAC` and `CONNECTOR_SUBJECT_SALT` and gets
+`CONNECTOR_M2M_APP_ID/SECRET` written back by the Logto module; the
+platform mints `CONNECTOR_FLEET_CODE` once, for its pooled browser agent
+and every control plane.
 Repository-level secrets and variables are not used, except the first-boot
 latch `MUNNI_INITIALIZED` the wizard sets at Connect.
 

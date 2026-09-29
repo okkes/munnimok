@@ -152,6 +152,13 @@ jobs:
           FCM_SERVICE_ACCOUNT_JSON: ${{ secrets.FCM_SERVICE_ACCOUNT_JSON }}
           LOGODEV_SECRET_KEY: ${{ secrets.LOGODEV_SECRET_KEY }}
           LOGODEV_PUBLIC_TOKEN: ${{ secrets.LOGODEV_PUBLIC_TOKEN }}
+          # the connector control plane and the relay (#367)
+          CONNECTOR_SEAL_KEY_K1: ${{ secrets.CONNECTOR_SEAL_KEY_K1 }}
+          CONNECTOR_ENROLLMENT_HMAC: ${{ secrets.CONNECTOR_ENROLLMENT_HMAC }}
+          CONNECTOR_SUBJECT_SALT: ${{ secrets.CONNECTOR_SUBJECT_SALT }}
+          CONNECTOR_M2M_APP_ID: ${{ secrets.CONNECTOR_M2M_APP_ID }}
+          CONNECTOR_M2M_APP_SECRET: ${{ secrets.CONNECTOR_M2M_APP_SECRET }}
+          CONNECTOR_FLEET_CODE: ${{ secrets.CONNECTOR_FLEET_CODE }}
           VITE_LOGTO_APP_ID: ${{ vars.VITE_LOGTO_APP_ID }}
           VITE_LOGTO_APP_ID_ADMIN: ${{ vars.VITE_LOGTO_APP_ID_ADMIN }}
           VITE_GLITCHTIP_DSN: ${{ vars.VITE_GLITCHTIP_DSN }}

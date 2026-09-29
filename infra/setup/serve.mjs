@@ -174,6 +174,8 @@ function platformsView() {
     registry: p.registry,
     publishedPath: p.publishedPath ?? null,
     controlEnv: p.controlEnv ?? null,
+    browserAgent: Boolean(p.browserAgent),
+    agentEgress: p.agentEgress,
     sharedStack: stackName(p.platform),
     sharedEnvironment: `${p.platform}-shared`,
     domainStored: Boolean(wizardValues(p.platform).PLATFORM_DOMAIN),
@@ -244,7 +246,7 @@ async function vaultAccountEndpoint(req, res) {
 }
 
 /* ── platform config as code (infra/platforms) ────────────────────── */
-const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin'];
+const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin', 'connectors'];
 const BANKING = ['gocardless', 'enablebanking'];
 const SIGNIN = ['google', 'apple'];
 function normalizeFeatures(raw = {}) {
@@ -322,8 +324,26 @@ async function platformSaveEndpoint(req, res) {
     if (body.controlEnv) p.controlEnv = body.controlEnv; else delete p.controlEnv;
   }
   if (body.sharedChannel === 'latest' || body.sharedChannel === 'dev') p.sharedChannel = body.sharedChannel;
+  // the pooled browser agent of the shared stack (#367): a tick, and where its traffic leaves from
+  if (typeof body.browserAgent === 'boolean') p.browserAgent = body.browserAgent;
+  if (body.agentEgressKind === 'residential' || body.agentEgressKind === 'datacenter') p.agentEgress = { ...p.agentEgress, kind: body.agentEgressKind };
   const saved = savePlatform(p);
   return json(res, 200, { ok: true, platform: { ...saved, file: undefined } });
+}
+
+/** the connector control plane's liveness, from the helper's side (anonymous: /v1/health carries no data) */
+async function connectorProbeEndpoint(res, url, fetchImpl) {
+  let stack;
+  try { stack = loadStack(String(url.searchParams.get('stack') ?? '')); } catch (e) { return json(res, 400, { error: e.message }); }
+  if (!stack.urls.connector) return json(res, 400, { error: `${stack.stack} runs no connectors` });
+  const target = `${stack.urls.connector}/v1/health`;
+  try {
+    const r = await fetchImpl(target, { signal: AbortSignal.timeout(5000) });
+    const body = r.ok ? await r.json().catch(() => ({})) : null;
+    return json(res, 200, { ok: r.ok, status: r.status, url: target, version: body?.version ?? null });
+  } catch (e) {
+    return json(res, 200, { ok: false, status: 0, url: target, error: e.message });
+  }
 }
 
 /** commit + push the platform config (the pipeline reads it from the branch) */
@@ -1890,6 +1910,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/wizard/values': (req, res) => wizardValuesSet(req, res),
     'POST /api/platforms/vault-account': (req, res) => vaultAccountEndpoint(req, res),
     'POST /api/platforms/save': (req, res) => platformSaveEndpoint(req, res),
+    'GET /api/connector-probe': (req, res) => connectorProbeEndpoint(res, url(req), netFetchImpl),
     'POST /api/config/commit': (req, res) => configCommitEndpoint(req, res, spawnImpl),
     'POST /api/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
     'POST /api/envs/update': (req, res) => envUpdateEndpoint(req, res, spawnImpl),

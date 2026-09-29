@@ -61,7 +61,7 @@ test('saveLocalValues routes by ownership: operator values to the wizard, platfo
 
 test('ensureLocalSecrets mints what the stack owns and lacks — the shared stack GlitchTip/pgAdmin + its postgres, an environment VAPID + its Logto credentials + its postgres — and names the operator values its features still need', () => {
   const s = ensureLocalSecrets(shared());
-  assert.deepEqual(s.minted.sort(), ['GLITCHTIP_ADMIN_PASSWORD', 'GLITCHTIP_SECRET_KEY', 'PGADMIN_PASSWORD'], 'GLITCHTIP_API_TOKEN and POSTGRES_PASSWORD were there already');
+  assert.deepEqual(s.minted.sort(), ['CONNECTOR_FLEET_CODE', 'GLITCHTIP_ADMIN_PASSWORD', 'GLITCHTIP_SECRET_KEY', 'PGADMIN_PASSWORD'], 'GLITCHTIP_API_TOKEN and POSTGRES_PASSWORD were there already; the platform\'s fleet code is minted with the rest');
   assert.deepEqual(s.missingOperator, ['VAULT_ADMIN_EMAIL', 'VAULT_MASTER_PASSWORD'], 'the platform\'s vault account is the wizard\'s to generate; nothing NAS-only is asked of lcl');
   assert.equal(s.values.GLITCHTIP_API_TOKEN, 'tok2');
   assert.match(loadLocalValues(shared()).GLITCHTIP_API_TOKEN, /^tok2$/);

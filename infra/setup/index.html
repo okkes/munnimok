@@ -482,6 +482,11 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
             <div><label class="f" for="in-published-path">published path</label><input type="text" id="in-published-path" placeholder="/docker/munni-nas/published" autocomplete="off"/></div>
             <div><label class="f" for="in-control-env">control environment</label><select id="in-control-env"><option value="">lowest slot</option></select></div>
           </div>
+          <p class="why">The <b>pooled browser agent</b> (#367) runs in the shared services: one container with every provider pack that dials out to each environment's connector control plane and drives the parties that need a real browser. Its egress is a claim the control planes believe — a NAS at home is on a residential line; a rack is not.</p>
+          <div class="grid2">
+            <div><label><input type="checkbox" id="in-browser-agent"/> run the pooled browser agent</label></div>
+            <div><label class="f" for="in-agent-egress">this platform's line</label><select id="in-agent-egress"><option value="residential">residential (home)</option><option value="datacenter">datacenter</option></select></div>
+          </div>
           <button class="ghost" id="btn-platform-save">Save platform config</button>
           <div class="msg" id="msg-platform-save"></div>
         </div>
@@ -1102,7 +1107,7 @@ const HELPER = globalThis.__SETUP_HELPER__ ?? null;
 const UPSTREAM = 'okkes/munnimok';
 
 /** the ticks a fresh platform starts with — kept per platform, like everything else the page holds */
-const FEATURE_DEFAULTS = { gocardless: true, enablebanking: false, logos: false, push: false, google: false, apple: false, email: false, android: false, ios: false };
+const FEATURE_DEFAULTS = { gocardless: true, enablebanking: false, connectors: false, logos: false, push: false, google: false, apple: false, email: false, android: false, ios: false };
 /** a platform's ticks: ITS stored set over the defaults — always a fresh object, so no platform can ever mutate another's */
 const featuresFor = (p) => ({ ...FEATURE_DEFAULTS, ...(LS.get('features.' + p, null) ?? {}) });
 const S = {
@@ -1168,6 +1173,7 @@ const isPlatformScoped = (name) => PLATFORM_SCOPED.has(name);
 const FEATURES = [
   { id: 'gocardless', label: 'Bank sync via GoCardless', tags: ['Recommended'], rec: true, hint: 'live transactions from 2500+ EU banks (read-only PSD2 AIS) — the heart of the product' },
   { id: 'enablebanking', label: 'Enable Banking as a second bank provider', tags: ['Optional'], hint: 'optional fallback aggregator; banks missing at GoCardless. https-only — on this computer the LAN mode gives every environment real https' },
+  { id: 'connectors', label: 'Connector control plane (shops, banks without open banking, the credit and student-debt registries)', tags: ['Optional'], hint: 'one extra container per environment with its own database on the environment\'s Postgres; no account to create — every credential is minted here. Parties that need a browser on a home line use the platform\'s pooled agent (shared services) or the person\'s own household agent' },
   { id: 'logos', label: 'Merchant logos (logo.dev)', tags: ['Recommended'], rec: true, hint: 'brand logos on transactions and recurring costs' },
   { id: 'google', label: 'Sign in with Google', tags: ['Popular'], rec: true, hint: 'social login button on the sign-in screen' },
   { id: 'apple', label: 'Sign in with Apple', tags: ['Optional'], hint: 'required by Apple if you ship the iOS app with any social login; https return URLs only' },
@@ -2480,6 +2486,7 @@ function setMasterBusy(busy) {
 /** the features a NEW environment gets from the tiles */
 const featuresFromToggles = () => ({
   android: Boolean(S.features.android), ios: Boolean(S.features.ios), push: Boolean(S.features.push), logos: Boolean(S.features.logos), telemetry: true, pgadmin: true,
+  connectors: Boolean(S.features.connectors),
   banking: ['gocardless', 'enablebanking'].filter((b) => S.features[b]),
   signin: ['google', 'apple'].filter((s) => S.features[s]),
 });
@@ -2664,6 +2671,10 @@ function renderNasPlatformFields() {
     const cur = p?.controlEnv ?? '';
     sel.innerHTML = `<option value="">lowest slot${S.envList[0] ? ` (${esc(S.envList[0].env)})` : ''}</option>` + S.envList.map((e) => `<option value="${escAttr(e.env)}" ${e.env === cur ? 'selected' : ''}>${esc(e.env)}</option>`).join('');
   }
+  const agent = document.getElementById('in-browser-agent');
+  if (agent && document.activeElement !== agent) agent.checked = Boolean(p?.browserAgent);
+  const egress = document.getElementById('in-agent-egress');
+  if (egress && document.activeElement !== egress) egress.value = p?.agentEgress?.kind === 'datacenter' ? 'datacenter' : 'residential';
   const vaultDone = S.localStore.has('VAULT_ADMIN_EMAIL') && S.localStore.has('VAULT_MASTER_PASSWORD');
   setPill('vault-account-pill', vaultDone ? 'generated ✓' : 'not generated yet', vaultDone);
   const ghShared = S.envs[sharedEnvOf('nas')];
@@ -2671,19 +2682,23 @@ function renderNasPlatformFields() {
   const up = Boolean(lg?.dsm?.ok && lg?.wildcard && lg?.task?.enabled);
   setPill('shared-pill', up ? 'set up ✓' : (ghShared ? 'in progress' : 'not set up yet'), up);
 }
-async function savePlatformConfig({ publishedPath, controlEnv, quiet = false } = {}) {
+async function savePlatformConfig({ publishedPath, controlEnv, browserAgent, agentEgressKind, quiet = false } = {}) {
   const body = { platform: 'nas' };
   if (typeof publishedPath === 'string' && publishedPath) body.publishedPath = publishedPath;
   if (typeof controlEnv === 'string') body.controlEnv = controlEnv;
+  if (typeof browserAgent === 'boolean') body.browserAgent = browserAgent;
+  if (typeof agentEgressKind === 'string') body.agentEgressKind = agentEgressKind;
   const r = await hjson('/api/platforms/save', { method: 'POST', body: JSON.stringify(body) });
-  if (!quiet) msg('msg-platform-save', `Saved ✓ — infra/platforms/nas/platform.json (published path ${r.platform?.publishedPath ?? '?'}, control environment ${r.platform?.controlEnv ?? 'lowest slot'}). Set up shared services / an environment's bootstrap commits it.`, true);
+  if (!quiet) msg('msg-platform-save', `Saved ✓ — infra/platforms/nas/platform.json (published path ${r.platform?.publishedPath ?? '?'}, control environment ${r.platform?.controlEnv ?? 'lowest slot'}, pooled browser agent ${r.platform?.browserAgent ? 'on' : 'off'}). Set up shared services / an environment's bootstrap commits it.`, true);
   return r;
 }
 document.getElementById('btn-platform-save')?.addEventListener('click', async () => {
   const publishedPath = document.getElementById('in-published-path').value.trim();
   const controlEnv = document.getElementById('in-control-env').value;
+  const browserAgent = document.getElementById('in-browser-agent').checked;
+  const agentEgressKind = document.getElementById('in-agent-egress').value;
   try {
-    await savePlatformConfig({ publishedPath, controlEnv });
+    await savePlatformConfig({ publishedPath, controlEnv, browserAgent, agentEgressKind });
     if (publishedPath) await storeValues({ SYNOLOGY_PATH: publishedPath });
     await refreshLocal();
   } catch (e) { msg('msg-platform-save', `✗ ${e.message}`, false); }
@@ -2858,9 +2873,10 @@ const ENV_FEATURES = [
   ['Apps', [['android', 'Android app'], ['ios', 'iOS app'], ['push', 'native push (Firebase)']]],
   ['Extras', [['logos', 'merchant logos'], ['telemetry', 'crash reports'], ['pgadmin', 'pgAdmin entry']]],
   ['Banking', [['gocardless', 'GoCardless'], ['enablebanking', 'Enable Banking']]],
+  ['Connectors', [['connectors', 'connector control plane (shops, banks, registries)']]],
   ['Sign-in', [['google', 'Google'], ['apple', 'Apple']]],
 ];
-const FEATURE_FLAGS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin'];
+const FEATURE_FLAGS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin', 'connectors'];
 /** the form's checkboxes follow the feature tiles (defaults); a typed form is never reset */
 function renderEnvAddFeatures() {
   const box = document.getElementById('env-add-features');
@@ -3046,6 +3062,31 @@ function cleanupHtml(env) {
     <div class="runrow" style="align-items:center"><input type="text" id="cleanup-confirm-${s}" placeholder="type ${escAttr(s)} to confirm" style="max-width:220px" autocomplete="off"/><button class="ghost danger" data-act="cleanup" data-stack="${env.stack}">Clean up ${esc(env.label)}</button></div>
     <div class="msg" id="msg-cleanup-${s}"></div>`;
 }
+/** the Connectors tab (#367, slice M2): the facts the setup rendered, a liveness check, the line a household pastes */
+function connectorsHtml(env) {
+  const s = env.env;
+  const connector = stackUrls(env.stack)?.connector ?? (S.domain ? `https://munni-${s}-${S.platform}-connector.${S.domain}` : '');
+  const platform = S.platforms.find((p) => p.platform === S.platform);
+  const pooled = Boolean(platform?.browserAgent);
+  return `
+    <p class="why">This environment runs the <b>connector control plane</b> — shops, banks without open banking, the credit and student-debt registries — as one container beside its API, with its own database on the environment's Postgres. Every credential it needs was minted by the setup: the bundle seal key, the enrollment key, the API's subject salt, the API's machine app in this environment's Logto (scope <code>connector:admin</code>) and the platform's fleet enrollment code. The app reaches it only through the API; nothing here needs an account anywhere.</p>
+    <div class="kv">
+      <div><b>control plane</b><span>${connector ? `<code>${esc(connector)}</code> — the address household agents dial; its API answers nobody without a machine token or an agent's own token` : 'not resolved yet'}</span></div>
+      <div><b>pooled browser agent</b><span>${pooled ? `on — the shared services run one container with every provider pack, dialling this control plane over the shared network (egress: ${esc(platform?.agentEgress?.kind ?? 'residential')})` : 'off — parties that need a browser on a home line wait for a person\'s own household agent (tick it under the platform settings to run one here)'}</span></div>
+      <div><b>household agent</b><span>a person runs <code>deploy/connectors/household-agent.yml</code> at home with the code the app mints for them: <code>CONNECTOR_URL=${esc(connector)}/ ENROLLMENT_CODE=&lt;from the app&gt; docker compose -f household-agent.yml up -d</code></span></div>
+      <div><b>operator</b><span>the party states (kill switch), the fleet, the canaries: the admin portal's connectors screen (slice M6) over <code>/admin/connectors/*</code> of this API</span></div>
+    </div>
+    <div class="runrow"><button class="ghost" data-act="connector-check" data-stack="${env.stack}" data-env="${s}">Check the control plane</button><span class="msg" id="msg-connector-${s}"></span></div>`;
+}
+async function checkConnector(stack, s) {
+  const box = document.getElementById(`msg-connector-${s}`);
+  if (box) box.textContent = 'asking…';
+  try {
+    const r = await hjson(`/api/connector-probe?stack=${encodeURIComponent(stack)}`);
+    if (box) box.textContent = r.ok ? `✓ answering (${r.version ? `build ${r.version}` : 'healthy'}) at ${r.url}` : `✗ ${r.error ?? `status ${r.status}`} at ${r.url}`;
+    setPill(`tabpill-connectors-${s}`, r.ok ? 'up' : 'down', r.ok);
+  } catch (e) { if (box) box.textContent = `✗ ${e.message}`; }
+}
 function envWorkspaceHtml(env) {
   const s = env.env;
   const open = WS_OPEN()[`${S.platform}:${s}`] ?? (env.slot === 0);
@@ -3071,12 +3112,14 @@ function envWorkspaceHtml(env) {
         <button class="tab" data-tab="registrations" data-env="${s}">Registrations <span class="pill" id="tabpill-registrations-${s}"></span></button>
         <button class="tab" data-tab="phones" data-env="${s}">Phones <span class="pill" id="tabpill-phones-${s}"></span></button>
         <button class="tab" data-tab="access" data-env="${s}">Access <span class="pill" id="tabpill-access-${s}"></span></button>
+        ${env.features?.connectors ? `<button class="tab" data-tab="connectors" data-env="${s}">Connectors <span class="pill" id="tabpill-connectors-${s}"></span></button>` : ''}
         <button class="tab" data-tab="cleanup" data-env="${s}">Clean up</button>
       </div>
       <div class="tab-body" data-tab="overview" data-env="${s}">${overviewHtml(env)}</div>
       <div class="tab-body hide" data-tab="registrations" data-env="${s}"><div id="reg-${s}"></div></div>
       <div class="tab-body hide" data-tab="phones" data-env="${s}">${phonesHtml(env)}</div>
       <div class="tab-body hide" data-tab="access" data-env="${s}">${accessHtml(env)}</div>
+      ${env.features?.connectors ? `<div class="tab-body hide" data-tab="connectors" data-env="${s}">${connectorsHtml(env)}</div>` : ''}
       <div class="tab-body hide" data-tab="cleanup" data-env="${s}">${cleanupHtml(env)}</div>
     </div>
   </div>`;
@@ -3408,6 +3451,7 @@ async function envAction(act, env, btn) {
   const label = env.label;
   if (act === 'start') return streamLocal('/api/local/tool', { tool: `${stack}:up` }, `start ${label}`);
   if (act === 'stop') return streamLocal('/api/local/tool', { tool: `${stack}:down` }, `stop ${label}`);
+  if (act === 'connector-check') return checkConnector(stack, s);
   if (act === 'setup') { btn.disabled = true; try { await setupEnv(env); } finally { btn.disabled = false; await refreshLocal(); } return; }
   if (act === 'bootstrap') {
     if (isLcl()) {

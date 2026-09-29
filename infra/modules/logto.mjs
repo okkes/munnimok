@@ -193,6 +193,64 @@ async function brandingImages(stack, fetchImpl) {
   return { logoUrl: logo, favicon: logo };
 }
 
+export const CONNECTOR_SCOPE = 'connector:admin';
+
+/** the connector's API resource, machine role and the api's machine app, named per environment */
+export function connectorDefinitions(stack) {
+  return {
+    resource: { name: `${stack.stack} connector`, indicator: stack.urls.connector },
+    role: { name: `${stack.stack} connector admin`, description: 'the api reaches the connector control plane as its operator', type: 'MachineToMachine' },
+    app: { name: `${stack.stack} api connector m2m`, type: 'MachineToMachine' },
+  };
+}
+
+/**
+ * The relay's credential as code (#367, slice M2): the connector control
+ * plane is an API resource of the environment's Logto (its public address
+ * as the indicator, which is the audience the control plane validates),
+ * carrying the `connector:admin` scope; a machine role grants that scope;
+ * the api's own machine app holds the role. The api mints client
+ * credentials for the resource and every scope its roles carry comes along
+ * — so the same token opens the consumer routes and the operator's. Upsert
+ * by name, like the apps. Returns {appId, secret, resourceId, scopeId, roleId}.
+ */
+export async function ensureConnectorAccess(stack, creds, { fetchImpl = localAwareFetch } = {}) {
+  if (!stack.urls.connector) throw new Error(`${stack.stack} runs no connectors — nothing to grant`);
+  const call = await client(stack, creds, fetchImpl);
+  const defs = connectorDefinitions(stack);
+
+  const resources = await call('/resources?page_size=100');
+  const resource = resources.find((r) => r.indicator === defs.resource.indicator)
+    ?? (await call('/resources', { method: 'POST', body: JSON.stringify(defs.resource) }));
+  const scopes = await call(`/resources/${resource.id}/scopes?page_size=100`);
+  const scope = scopes.find((s) => s.name === CONNECTOR_SCOPE)
+    ?? (await call(`/resources/${resource.id}/scopes`, { method: 'POST', body: JSON.stringify({ name: CONNECTOR_SCOPE, description: 'the control plane\'s operator routes (kill switch, fleet, canaries)' }) }));
+
+  const roles = await call('/roles?page_size=100');
+  let role = roles.find((r) => r.name === defs.role.name);
+  if (!role) {
+    role = await call('/roles', { method: 'POST', body: JSON.stringify({ ...defs.role, scopeIds: [scope.id] }) });
+  } else {
+    const has = await call(`/roles/${role.id}/scopes?page_size=100`);
+    if (!has.some((s) => s.id === scope.id)) await call(`/roles/${role.id}/scopes`, { method: 'POST', body: JSON.stringify({ scopeIds: [scope.id] }) });
+  }
+
+  const apps = await call('/applications?page_size=100');
+  const app = apps.find((a) => a.name === defs.app.name)
+    ?? (await call('/applications', { method: 'POST', body: JSON.stringify(defs.app) }));
+  const held = await call(`/roles/${role.id}/applications?page_size=100`);
+  if (!held.some((a) => a.id === app.id)) await call(`/roles/${role.id}/applications`, { method: 'POST', body: JSON.stringify({ applicationIds: [app.id] }) });
+
+  return { appId: app.id, secret: app.secret, resourceId: resource.id, scopeId: scope.id, roleId: role.id };
+}
+
+/** GitHub write-back (nas) of the relay's machine credential */
+export function writeBackConnector(stack, access) {
+  const env = stack.githubEnvironment;
+  execFileSync('gh', ['secret', 'set', 'CONNECTOR_M2M_APP_ID', '--env', env, '--body', access.appId]);
+  execFileSync('gh', ['secret', 'set', 'CONNECTOR_M2M_APP_SECRET', '--env', env, '--body', access.secret]);
+}
+
 /** GitHub write-back (nas): app ids as variables, the api's m2m credential as secrets */
 export function writeBack(stack, apps) {
   const env = stack.githubEnvironment;
@@ -293,8 +351,17 @@ export async function removeApps(stack, creds, { fetchImpl = localAwareFetch } =
     await call(`/applications/${match.id}`, { method: 'DELETE' });
     removed.push(def.name);
   }
+  // the connector's pieces go with the environment too, whether or not it still runs connectors
+  const connector = connectorDefinitions({ ...stack, urls: { ...stack.urls, connector: stack.urls.connector ?? `${stack.urls.api}/connector` } });
+  const connectorApp = existing.find((a) => a.name === connector.app.name);
+  if (connectorApp) { await call(`/applications/${connectorApp.id}`, { method: 'DELETE' }); removed.push(connector.app.name); }
+  const roles = await call('/roles?page_size=100');
+  const connectorRole = roles.find((r) => r.name === connector.role.name);
+  if (connectorRole) { await call(`/roles/${connectorRole.id}`, { method: 'DELETE' }); removed.push(connector.role.name); }
   const resources = await call('/resources?page_size=100');
-  const res = resources.find((r) => r.indicator === stack.urls.api);
-  if (res) { await call(`/resources/${res.id}`, { method: 'DELETE' }); removed.push(`resource ${stack.urls.api}`); }
+  for (const indicator of [stack.urls.api, stack.urls.connector].filter(Boolean)) {
+    const res = resources.find((r) => r.indicator === indicator);
+    if (res) { await call(`/resources/${res.id}`, { method: 'DELETE' }); removed.push(`resource ${indicator}`); }
+  }
   return { removed, absent };
 }

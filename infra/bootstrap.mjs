@@ -20,7 +20,7 @@ import { appendFileSync, readFileSync } from 'node:fs';
 import { listStacks, loadStack, platformEnvStacks, removeEnv, sharedOf } from './modules/stack.mjs';
 import { deleteEnvironment, ensureSecrets, setEnvSecret, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
 import { ensureLocalSecrets, stackValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
-import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAdminRole, logtoAnswers, removeApps, writeBack } from './modules/logto.mjs';
+import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAdminRole, ensureConnectorAccess, logtoAnswers, removeApps, writeBack, writeBackConnector } from './modules/logto.mjs';
 import { vaultPlatformValues, vaultReplaceFolder } from './modules/vault.mjs';
 import { applyGlitchTip, glitchtipAnswers, removeProjects, writeBackDsns } from './modules/glitchtip.mjs';
 import { renderStack } from './modules/render.mjs';
@@ -187,6 +187,18 @@ async function applyLogto(values, write, fresh) {
   } catch (e) {
     console.log(`  logto: admin role not ensured (${e.message}) — retried next run`);
   }
+  // the connector relay's credential (#367): the control plane as an API resource with its operator scope, the api's machine app holding it
+  if (stack.features.connectors) {
+    try {
+      const access = await ensureConnectorAccess(stack, creds);
+      write.connector(access);
+      state.connector = true;
+      console.log(`  logto: connector resource ${stack.urls.connector} carries \`connector:admin\`, the api's machine app ${access.appId} holds it — written back`);
+    } catch (e) {
+      state.connector = false;
+      console.log(`  logto: connector access not ensured (${e.message}) — the relay stays off until the next run writes the credential back`);
+    }
+  }
   for (const name of ['LOGTO_GOOGLE_CLIENT_ID', 'LOGTO_GOOGLE_CLIENT_SECRET', 'LOGTO_APPLE_CLIENT_ID', 'LOGTO_APPLE_TEAM_ID', 'LOGTO_APPLE_KEY_ID', 'LOGTO_APPLE_PRIVATE_KEY']) {
     if (!process.env[name] && values[name]) process.env[name] = values[name];
   }
@@ -263,6 +275,7 @@ async function localApply() {
       logto: (apps) => { Object.assign(values, { LOGTO_M2M_APP_ID: apps.m2m.id, LOGTO_M2M_APP_SECRET: apps.m2m.secret, VITE_LOGTO_APP_ID: apps.web.id, VITE_LOGTO_APP_ID_ADMIN: apps.admin.id, NATIVE_LOGTO_APP_ID: apps.native.id, ...(apps.control ? { VITE_LOGTO_APP_ID_CONTROL: apps.control.id, CONTROL_LOGTO_APP_ID: apps.control.id } : {}) }); saveLocalValues(stack, values); },
       console: (c) => { values.LOGTO_CONSOLE_USERNAME = c.username; values.LOGTO_CONSOLE_PASSWORD = c.password; saveLocalValues(stack, values); },
       glitchtip: (dsns) => { Object.assign(values, { API_SENTRY_DSN: dsns.api.replace(shared.urls.glitchtip, 'http://glitchtip:8000'), VITE_GLITCHTIP_DSN: dsns.web, VITE_GLITCHTIP_DSN_ADMIN: dsns.admin, NATIVE_GLITCHTIP_DSN_ANDROID: dsns.android, NATIVE_GLITCHTIP_DSN_IOS: dsns.ios }); saveLocalValues(stack, values); }, // NOSONAR S5332 — container-to-container on the private docker network
+      connector: (access) => { Object.assign(values, { CONNECTOR_M2M_APP_ID: access.appId, CONNECTOR_M2M_APP_SECRET: access.secret }); saveLocalValues(stack, values); },
     };
     await applyLogto(values, write, fresh);
     await applyGlitchtipFor(values, write);
@@ -393,6 +406,7 @@ async function ciApply() {
       logto: (apps) => writeBack(stack, apps),
       console: (c) => { execFileSync('gh', ['secret', 'set', 'LOGTO_CONSOLE_USERNAME', '--env', stack.githubEnvironment, '--body', c.username]); execFileSync('gh', ['secret', 'set', 'LOGTO_CONSOLE_PASSWORD', '--env', stack.githubEnvironment, '--body', c.password]); },
       glitchtip: (dsns) => writeBackDsns(stack, dsns),
+      connector: (access) => writeBackConnector(stack, access),
     };
     logtoState = await applyLogto(values, write, fresh);
     glitchtipState = await applyGlitchtipFor(values, write);
