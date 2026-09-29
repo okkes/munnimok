@@ -5,7 +5,8 @@ import { LOCALES, useLang } from '@/i18n';
 import { useData } from '@/app/data';
 import { useGoalOps, useGoals } from '@/application/goals';
 import { localToday } from '@/application/recurring';
-import { goalProgress, paceCentsPerMonth } from '@/domain/goals';
+import { goalOverview, goalProgress, paceCentsPerMonth } from '@/domain/goals';
+import { useSpaceAccounts } from '@/application/transactions';
 import type { GoalRow } from '@/db/types';
 import { parseCents } from '@/lib/money';
 import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
@@ -24,6 +25,7 @@ export function GoalDetailScreen() {
   const { store, spaceId } = useData();
   const { goalId } = useParams({ strict: false }) as { goalId: string };
   const goals = useGoals();
+  const accounts = useSpaceAccounts();
   const ops = useGoalOps();
   const space = useQuery(store, async () => store.get('space', spaceId), [spaceId]);
   const contributions = useQuery(store, 
@@ -57,6 +59,11 @@ export function GoalDetailScreen() {
 
   const fundCents = parseCents(amount);
   const fundBad = fundCents === null || fundCents <= 0;
+  // #368 (user): funding draws from the savings pool — never more than is
+  // still unallocated; a pool already negative funds nothing until it is
+  // back at zero (withdraw from a goal first)
+  const available = goalOverview(goals ?? [], accounts ?? [], space).unallocatedCents;
+  const fundOverPool = fundOpen === 'fund' && fundCents !== null && fundCents > available;
 
   const submitFunding = async () => {
     const cents = parseCents(amount);
@@ -174,6 +181,16 @@ export function GoalDetailScreen() {
           />
           {/* #195 r2 (user): the blocker sits AT the field */}
           <FormBlockerNote show={attempted && fundBad} text={t('form.needAmount')} testId="goalfund-save-blocker" />
+          {fundOpen === 'fund' && (
+            <p className="px-1 text-[12px] text-ink-3" data-testid="goalfund-pool">
+              {t('goals.poolAvailable', { amount: money(Math.max(0, available)) })}
+            </p>
+          )}
+          <FormBlockerNote
+            show={attempted && !fundBad && fundOverPool}
+            text={t('goals.poolExceeded', { amount: money(Math.max(0, available)) })}
+            testId="goalfund-pool-blocker"
+          />
           <input
             data-testid="goalfund-note"
             value={note}
@@ -184,7 +201,7 @@ export function GoalDetailScreen() {
           <Button
             data-testid="goalfund-save"
             onClick={() => {
-              if (fundBad) {
+              if (fundBad || fundOverPool) {
                 setAttempted(true);
                 return;
               }

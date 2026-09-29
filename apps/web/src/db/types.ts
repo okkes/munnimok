@@ -49,6 +49,8 @@ export interface SpaceRow extends SyncEnvelope {
   balanceBandMode?: 'networth' | 'cash' | 'spendable' | 'custom';
   /** the custom mode's explicit include list */
   balanceBandAccounts?: string[];
+  /** #368: the savings accounts that feed the goals; absent = every savings account */
+  goalPoolAccountIds?: string[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
