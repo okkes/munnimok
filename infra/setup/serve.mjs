@@ -261,6 +261,14 @@ function normalizeFeatures(raw = {}) {
   if (Array.isArray(raw.signin)) f.signin = raw.signin.filter((x) => SIGNIN.includes(x));
   return f;
 }
+/** why a feature set cannot be saved as it stands, or null — the open-banking parties are served by the control plane (#414) */
+function featureRefusal(features = {}) {
+  const banking = features.banking ?? [];
+  if (banking.length && !features.connectors) {
+    return `${banking.join(' and ')} ${banking.length === 1 ? 'is a party' : 'are parties'} of the connector platform — tick Connectors as well: the control plane serves the banks, the api no longer does`;
+  }
+  return null;
+}
 const STORE_ID_RE = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*){2,5}$/;
 
 async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
@@ -278,6 +286,8 @@ async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
     ...(typeof body.label === 'string' && body.label.trim() ? { label: body.label.trim().slice(0, 40) } : {}),
     features: normalizeFeatures(body.features),
   };
+  const refusal = featureRefusal(cfg.features);
+  if (refusal) return json(res, 400, { error: refusal });
   const store = {};
   if (typeof body.androidPackage === 'string' && STORE_ID_RE.test(body.androidPackage)) store.androidPackage = body.androidPackage;
   if (typeof body.iosBundleId === 'string' && STORE_ID_RE.test(body.iosBundleId)) store.iosBundleId = body.iosBundleId;
@@ -306,6 +316,8 @@ async function envUpdateEndpoint(req, res, spawnImpl) {
   if (body.appChannel === 'production' || body.appChannel === 'staging') next.appChannel = body.appChannel;
   if (typeof body.label === 'string' && body.label.trim()) next.label = body.label.trim().slice(0, 40);
   if (body.features) next.features = { ...current.features, ...normalizeFeatures(body.features) };
+  const refusal = featureRefusal(next.features);
+  if (refusal) return json(res, 400, { error: refusal });
   if (typeof body.androidPackage === 'string' && STORE_ID_RE.test(body.androidPackage)) next.store = { ...next.store, androidPackage: body.androidPackage };
   if (typeof body.iosBundleId === 'string' && STORE_ID_RE.test(body.iosBundleId)) next.store = { ...next.store, iosBundleId: body.iosBundleId };
   const saved = saveEnv(platform, next);

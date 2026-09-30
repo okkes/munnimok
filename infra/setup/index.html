@@ -1118,7 +1118,7 @@ const HELPER = globalThis.__SETUP_HELPER__ ?? null;
 const UPSTREAM = 'okkes/munnimok';
 
 /** the ticks a fresh platform starts with — kept per platform, like everything else the page holds */
-const FEATURE_DEFAULTS = { gocardless: true, enablebanking: false, connectors: false, logos: false, push: false, google: false, apple: false, email: false, android: false, ios: false };
+const FEATURE_DEFAULTS = { gocardless: true, enablebanking: false, connectors: true, logos: false, push: false, google: false, apple: false, email: false, android: false, ios: false };
 /** a platform's ticks: ITS stored set over the defaults — always a fresh object, so no platform can ever mutate another's */
 const featuresFor = (p) => ({ ...FEATURE_DEFAULTS, ...(LS.get('features.' + p, null) ?? {}) });
 const S = {
@@ -1183,9 +1183,9 @@ const isPlatformScoped = (name) => PLATFORM_SCOPED.has(name);
 
 /* ── features (the page's defaults for every new environment; the tiles filter the accounts) ── */
 const FEATURES = [
-  { id: 'gocardless', label: 'Bank sync via GoCardless', tags: ['Recommended'], rec: true, hint: 'live transactions from 2500+ EU banks (read-only PSD2 AIS) — the heart of the product' },
-  { id: 'enablebanking', label: 'Enable Banking as a second bank provider', tags: ['Optional'], hint: 'optional fallback aggregator; banks missing at GoCardless. https-only — on this computer the LAN mode gives every environment real https' },
-  { id: 'connectors', label: 'Connector control plane (shops, banks without open banking, the credit and student-debt registries)', tags: ['Optional'], hint: 'one extra container per environment with its own database on the environment\'s Postgres; no account to create — every credential is minted here. Parties that need a browser on a home line use the platform\'s pooled agent (shared services) or the person\'s own household agent' },
+  { id: 'gocardless', label: 'Bank sync via GoCardless', tags: ['Recommended'], rec: true, hint: 'live transactions from 2500+ EU banks (read-only PSD2 AIS) — the heart of the product. A party of the connector platform: needs the control plane ticked too' },
+  { id: 'enablebanking', label: 'Enable Banking as a second bank provider', tags: ['Optional'], hint: 'optional fallback aggregator; banks missing at GoCardless. https-only — on this computer the LAN mode gives every environment real https. A party of the connector platform: needs the control plane ticked too' },
+  { id: 'connectors', label: 'Connector control plane (the open-banking parties GoCardless and Enable Banking, shops, banks without open banking, the credit and student-debt registries)', tags: ['Recommended'], rec: true, hint: 'one extra container per environment with its own database on the environment\'s Postgres; no account to create — every credential is minted here. Parties that need a browser on a home line use the platform\'s pooled agent (shared services) or the person\'s own household agent' },
   { id: 'logos', label: 'Merchant logos (logo.dev)', tags: ['Recommended'], rec: true, hint: 'brand logos on transactions and recurring costs' },
   { id: 'google', label: 'Sign in with Google', tags: ['Popular'], rec: true, hint: 'social login button on the sign-in screen' },
   { id: 'apple', label: 'Sign in with Apple', tags: ['Optional'], hint: 'required by Apple if you ship the iOS app with any social login; https return URLs only' },

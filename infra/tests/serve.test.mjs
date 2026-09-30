@@ -176,7 +176,7 @@ test('envs: an unknown platform, a bad or reserved name and a duplicate are refu
 
 test('envs: an lcl environment takes the next slot, normalized features, and is rendered right away (bootstrap --stack)', async () => {
   runs.length = 0;
-  const res = await post(app, '/api/envs', { platform: 'lcl', env: 'test', channel: 'latest', appChannel: 'staging', label: ' Test ', features: { android: true, telemetry: false, banking: ['gocardless', 'bogus'], signin: ['apple'], nope: true }, androidPackage: 'app.munni.lcl.testing' });
+  const res = await post(app, '/api/envs', { platform: 'lcl', env: 'test', channel: 'latest', appChannel: 'staging', label: ' Test ', features: { android: true, telemetry: false, connectors: true, banking: ['gocardless', 'bogus'], signin: ['apple'], nope: true }, androidPackage: 'app.munni.lcl.testing' });
   assert.equal(res.statusCode, 200);
   assert.equal(runs.length, 1, 'the render runs at once');
   assert.equal(runs[0].cmd, process.execPath);
@@ -198,7 +198,7 @@ test('envs: an lcl environment takes the next slot, normalized features, and is 
 
 test('envs: a nas environment answers with its stack + GitHub environment names — the pipeline renders it, not the helper', async () => {
   runs.length = 0;
-  const res = await post(app, '/api/envs', { platform: 'nas', env: 'prod', channel: 'latest', features: { android: true, ios: true, banking: ['gocardless'], signin: ['google'] } });
+  const res = await post(app, '/api/envs', { platform: 'nas', env: 'prod', channel: 'latest', features: { android: true, ios: true, connectors: true, banking: ['gocardless'], signin: ['google'] } });
   assert.equal(res.statusCode, 200);
   const body = res.json();
   assert.equal(body.ok, true);
@@ -398,7 +398,8 @@ test('nas-probe: refuses a bad domain and a docker platform; every host names th
   assert.equal(shared.pgadmin.state, 'no-rule', 'DSM\'s /webman/ path is its portal');
   assert.equal(shared.vault.state, 'no-dns');
   assert.equal(shared.control.state, 'up');
-  assert.equal(body.summary.hosts, 9);
+  assert.equal(prod.connector.state, 'up', 'the control plane host joins the probe when the environment runs connectors (#414: a bank party needs it)');
+  assert.equal(body.summary.hosts, 10);
   assert.equal(body.summary.dns, false);
   assert.equal(body.summary.certificate, false);
   assert.ok(body.summary.rulesMissing >= 3);
@@ -861,4 +862,22 @@ test('envs/pending (lcl): the config a stack was last started with is stamped wh
   assert.equal(typeof edited[stack].applied.at, 'string');
   removeEnv('lcl', 'pend');
   rmSync(stamped, { force: true });
+});
+test('envs: a bank party without the control plane is refused — on creation and on a settings change — and the refusal says why (#414)', async () => {
+  const created = await post(app, '/api/envs', { platform: 'nas', env: 'acc', channel: 'latest', features: { banking: ['gocardless'], connectors: false } });
+  assert.equal(created.statusCode, 400);
+  assert.match(created.json().error, /gocardless is a party of the connector platform/);
+  assert.equal(platformEnvs('nas').some((e) => e.env === 'acc'), false, 'nothing written');
+  // with the control plane ticked the same environment is fine
+  const ok = await post(app, '/api/envs', { platform: 'nas', env: 'acc', channel: 'latest', features: { banking: ['gocardless', 'enablebanking'], connectors: true } });
+  assert.equal(ok.statusCode, 200);
+  // a settings change that would untick the control plane while a bank stays is refused the same way, and changes nothing
+  const changed = await post(app, '/api/envs/update', { platform: 'nas', env: 'acc', features: { connectors: false } });
+  assert.equal(changed.statusCode, 400);
+  assert.match(changed.json().error, /gocardless and enablebanking are parties/);
+  assert.equal(loadEnv('nas', 'acc').features.connectors, true);
+  // dropping the banks first is the way out
+  const dropped = await post(app, '/api/envs/update', { platform: 'nas', env: 'acc', features: { banking: [], connectors: false } });
+  assert.equal(dropped.statusCode, 200);
+  removeEnv('nas', 'acc');
 });

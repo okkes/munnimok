@@ -406,10 +406,6 @@ services:
       Auth__RequireHttps: "false"` : ''}
       Auth__Audience: ${s.urls.api}
 ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
-      GoCardless__SecretId: \${GOCARDLESS_SECRET_ID:-}
-      GoCardless__SecretKey: \${GOCARDLESS_SECRET_KEY:-}
-      EnableBanking__ApplicationId: \${ENABLEBANKING_APPLICATION_ID:-}
-      EnableBanking__PrivateKeyPem: \${ENABLEBANKING_PRIVATE_KEY_PEM:-}
       Push__VapidPublicKey: \${PUSH_VAPID_PUBLIC_KEY:-}
       Push__VapidPrivateKey: \${PUSH_VAPID_PRIVATE_KEY:-}
       Push__Subject: \${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
