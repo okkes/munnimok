@@ -2513,4 +2513,13 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'agents.done': 'Bitti',
   'tour.conn.6t': 'Kendi bilgisayarın',
   'tour.conn.6b': 'Yalnızca kendi bağlantındaki bir tarayıcıyla konuşan bir taraf, ev ajanı üzerinden çalışır — makinende munni’ye dışarıdan bağlanan küçük bir kapsayıcı. Onu yapıştırılan bir satırla bir kez kaydet; o taraflar sonra kendiliğinden eşitlenir.',
+  'connect.field.country': 'Ülke',
+  'connect.field.institution': 'Banka',
+  'connect.config.return_url': 'Bankanın seni geri getirdiği yer',
+  'connect.open_banking.step.bank': 'Bankan',
+  'connect.open_banking.prompt.consent': 'Bankana hesaplarını paylaşması için izin ver, sonra buraya geri dön.',
+  'connect.gocardless.notes': 'Bankan bakiyeleri ve işlemleri GoCardless üzerinden 90 gün boyunca paylaşır; sonra yeniden izin verirsin. İznin kendisi dışında hiçbir şey saklanmaz.',
+  'fetch.gocardless.notes': 'Bankan izin verdiği ölçüde iki yıla kadar geçmiş, her gece bir kez alınır.',
+  'connect.enablebanking.notes': 'Bankan bakiyeleri ve işlemleri Enable Banking üzerinden 90 gün boyunca paylaşır; sonra yeniden izin verirsin. İznin kendisi dışında hiçbir şey saklanmaz.',
+  'fetch.enablebanking.notes': 'Bankanın sunduğu kadar geçmiş, her gece bir kez alınır.',
 };

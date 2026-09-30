@@ -119,6 +119,10 @@ public static class ConnectorPlatform
             .AddHttpMessageHandler<PolitenessHandler>();
 
         services.AddSingleton<IInlineJobRunner, InlineJobRunner>();
+        // what each party last said about its budget, and the logos a lookup vendors (#414)
+        services.AddSingleton<ProviderQuotaService>();
+        services.AddMemoryCache();
+        services.AddSingleton<LookupService>();
         if (platform.RunInlineJobs) services.AddHostedService<InlineJobPump>();
         if (platform.RunExpiryService) services.AddHostedService<ExpiryService>();
 
@@ -199,6 +203,7 @@ public static class ConnectorPlatform
         admin.WithMetadata(Envelope(StatusCodes.Status403Forbidden));
 
         CatalogEndpoints.Map(api, admin, app, platform);
+        LookupEndpoints.Map(api, admin);
         LoginEndpoints.Map(api, platform);
         LiveEndpoints.MapConsumer(api);
         ResourceEndpoints.Map(api);

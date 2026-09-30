@@ -2,6 +2,7 @@ using System.Net;
 using Connector.Kit.Errors;
 using Microsoft.Playwright;
 using ShopConnector.Adapters.Support;
+using Connector.Kit.Adapters;
 
 namespace ShopConnector.Adapters.Amazon;
 

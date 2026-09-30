@@ -71,10 +71,14 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
 
     private const int MaximumNotes = 40;
 
+    private readonly Providers.ProviderQuotaService _quotas;
+    private readonly string _provider;
+
     public InlineJobContext(
         LeasedJob job,
         IServiceScopeFactory scopes,
         HttpClient http,
+        Providers.ProviderQuotaService quotas,
         ILogger logger,
         CancellationToken ct)
     {
@@ -82,6 +86,8 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
 
         _scopes = scopes;
         _logger = logger;
+        _quotas = quotas;
+        _provider = job.Provider;
 
         SessionId = job.SessionId;
         JobId = job.JobId;
@@ -108,6 +114,9 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
     public SessionMaterial? Material { get; }
 
     public HttpClient Http { get; }
+
+    /// <summary>A fact about the provider, kept by the platform for the operator — never part of the job's outcome.</summary>
+    public void ReportQuota(Connector.Kit.Adapters.ProviderQuota quota) => _quotas.Report(_provider, quota);
 
     public IBrowserLease Browser { get; }
 

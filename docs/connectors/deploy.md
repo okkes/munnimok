@@ -35,6 +35,7 @@ environment as `Connector__<Section>__<Key>`:
 | `Connector:MaxQueuedJobs` | back-pressure: a login is refused when the queue is this deep |
 | `Connector:Timeouts:*` | ticket 900 s, lease 120 s, heartbeat 30 s, agent poll 30 s, login wait 3 s, fetch wait 25 s, job 300 s, abandoned job 1800 s, credential bundle 30 days, politeness 800 ms, challenge grace 300 s, live frame poll 5 s, result retention 1 day, enrollment code 900 s, sweeps 15 s / 60 s |
 | `BankAdapters`, `ShopAdapters`, `RegistryAdapters` | the packs' provider facts (see adapters.md) — keep in step with the agents |
+| `BankAdapters:GoCardless:SecretId`, `BankAdapters:GoCardless:SecretKey`, `BankAdapters:EnableBanking:ApplicationId`, `BankAdapters:EnableBanking:PrivateKeyPem` | the operator's aggregator accounts (#414): the party exists when its keys do; the platform renders them from the same four secrets the api once took (`GOCARDLESS_*`, `ENABLEBANKING_*`) and never hands them to an agent — a manifest does not depend on them, so the catalogue digest stays equal on both sides |
 
 The host runs the background work (expiry sweep, canaries, inline T1 jobs)
 by default; a second replica would run them twice, and the ticket store is

@@ -1,6 +1,7 @@
 using BankConnector.Adapters.Asn;
 using BankConnector.Adapters.Ing;
 using BankConnector.Adapters.MockBank;
+using BankConnector.Adapters.OpenBanking;
 using Connector.Kit.Adapters;
 
 namespace BankConnector.Adapters;
@@ -73,6 +74,14 @@ public static class BankAdapters
             // assumed anywhere.
             new AsnPersistentAdapter(settings.Asn, time),
 
+            // THE AGGREGATORS, ONLY WHEN THE OPERATOR HOLDS AN ACCOUNT THERE.
+            //
+            // A party whose operator keys are absent is absent from the
+            // catalogue - never a stand-in that lists institutions and fails
+            // at the consent. The api registered its open-banking providers on
+            // the same rule before they moved here (#414).
+            .. settings.GoCardless.Configured ? [new GoCardlessAdapter(settings.GoCardless, time)] : Array.Empty<IProviderAdapter>(),
+            .. settings.EnableBanking.Configured ? [new EnableBankingAdapter(settings.EnableBanking, time)] : Array.Empty<IProviderAdapter>(),
         ];
     }
 
@@ -89,6 +98,8 @@ public static class BankAdapters
         new MockBankSlowAdapter(time),
         new MockBankBrokenAdapter(time),
         new MockBankPersistentAdapter(time),
+        // the aggregator shape with nothing behind it (#414): lookup, redirect, server custody, quota, inventory
+        new MockBankConsentAdapter(time),
     ];
 
     /// <summary>
@@ -120,4 +131,9 @@ public sealed record BankAdapterOptions
     /// are what a session fills in.
     /// </summary>
     public AsnOptions Asn { get; init; } = new();
+
+    /// <summary>The operator's aggregator accounts (#414): a party exists when its keys do.</summary>
+    public GoCardlessOptions GoCardless { get; init; } = new();
+
+    public EnableBankingOptions EnableBanking { get; init; } = new();
 }

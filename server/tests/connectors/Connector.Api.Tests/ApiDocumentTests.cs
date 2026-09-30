@@ -434,8 +434,9 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
 
         // The count is asserted so a route that vanishes from the document is
         // as loud as one that arrives undocumented. 41 since the operator's
-        // two fleet routes: list every agent, revoke any.
-        Assert.Equal(41, operations);
+        // two fleet routes: list every agent, revoke any. 45 since the lookup
+        // field's options and logo and the operator's remote inventory (#414).
+        Assert.Equal(45, operations);
     }
 
     [Theory]

@@ -49,7 +49,7 @@ server/src/connectors/
                                 sealed bundles, normalisation records, the agent protocol
   Connector.Kit.Hosting/        the control plane library: /v1, /agent/v1, EF Core, sweeps
   Connector.Kit.Agent/          the agent library: enrollment, leasing, Playwright, live view
-  BankConnector.Adapters/       ing-nl, asn, asn-persistent + the mock banks
+  BankConnector.Adapters/       ing-nl, asn, asn-persistent, gocardless, enablebanking + the mock banks
   ShopConnector.Adapters/       ah, lidl, jumbo, bol, coolblue, amazon-nl, mediamarkt-nl + mocks
   RegistryConnector.Adapters/   bkr, duo + mocks
   Connector.Api/                the control plane host: every pack, one image (munni-connector-api)

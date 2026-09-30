@@ -842,6 +842,34 @@ docs/connectors/relay.md "Scheduled syncs"). Where it departs from §5.5 and §1
   runs connectors; the relay tests prove the kill switch end to end against the in-process control
   plane, the portal tests the screen against the relay's documents.
 
+**2026-09-30 — O1 delivered** (`feat(connectors): the open-banking parties`, `feat(infra): the aggregator
+keys reach the control plane`; #414). Where it departs from §15, and why:
+
+- **One base, two wires.** The aggregators differ only in their HTTP, so `OpenBankingAdapter` carries
+  everything a person or the platform sees (the lookup, the redirect, the consent-shaped session,
+  the fetch with its identities, the revoke) and each aggregator overrides eight wire calls. A third
+  aggregator is a client, not an adapter.
+- **`ProviderHttp` moved to the Kit.** The shop pack's status-to-error mapping is exactly what an
+  aggregator needs; one place, one reading of a 429 — the retail-specific block statuses stayed in the
+  shop pack as `RetailHttp`.
+- **The quota is a fact, not a row.** What a party last said about its budget lives in memory on the
+  control plane (`ProviderQuotaService`) and rides the status document's provider entry as `quota`; a
+  restart forgets it until the next fetch says it again. Persisting it would have meant a control-plane
+  migration for a number that is stale within a day.
+- **The logos are cached, not stored.** The old api vendored institution logos into a table; the control
+  plane keeps them in memory for a month behind an immutable cache header. A restart refetches on the
+  first request — a cost of one call a month per institution shown.
+- **A consent mock joined the fleet.** `mock-bank-consent` is the aggregator shape with nothing behind it
+  (lookup, redirect, server custody, quota, inventory), so the relay (O2), the app (O3) and the local
+  stack walk the whole flow with no aggregator account; the fleet's inline set is three parties now.
+- **Details are learned once per consent.** A fetch reads an account's details only until it has them,
+  and hands them back as refreshed material — the session rotates on use for that reason alone (the
+  consent itself never rotates). An aggregator's daily budget per account is small.
+- **Deferred to O2/O3**: the relay keeping the bundle for server custody, the scheduler's preferred hour
+  and not-before, the ingest's pending mirror and prediction overlay, the relay's lookup/logo/inventory
+  routes, the return page — the platform side is complete and proven against scripted wires; nothing
+  reaches a person until the relay and the app carry it.
+
 ---
 
 ## 15 · Open banking as parties (ruling 15)

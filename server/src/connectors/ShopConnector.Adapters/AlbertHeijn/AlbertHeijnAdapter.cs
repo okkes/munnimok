@@ -672,7 +672,7 @@ public sealed class AlbertHeijnAdapter : IProviderAdapter
         // password. The body is kept on failure because a GraphQL 400 names
         // the field it rejected, which is the whole diagnosis.
         await ProviderHttp.EnsureSuccessAsync(
-            response, ProviderId, what, ProviderHttp.RetailBlockStatuses, ct).ConfigureAwait(false);
+            response, ProviderId, what, RetailHttp.RetailBlockStatuses, ct).ConfigureAwait(false);
 
         var document = await ProviderHttp.ReadJsonAsync(response, ProviderId, what, ct).ConfigureAwait(false);
 

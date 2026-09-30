@@ -444,4 +444,15 @@ public sealed record ProviderLimits
     /// permanently and invisibly.
     /// </summary>
     public int SettlementLagDays { get; init; }
+
+    /// <summary>
+    /// The hour of the day, in the account's own zone (the consumer derives
+    /// it from the IBAN's country), at which an unattended fetch is worth
+    /// running — banks book overnight, so a fetch at 03:00 local gets whole
+    /// days. Null means any hour once <see cref="MinIntervalSeconds"/> has
+    /// passed. Advisory, like the interval: the consumer's scheduler reads
+    /// it; the platform does not.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("preferred_fetch_hour_local")]
+    public int? PreferredFetchHourLocal { get; init; }
 }

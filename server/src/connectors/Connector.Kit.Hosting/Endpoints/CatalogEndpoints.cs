@@ -105,6 +105,7 @@ internal static class CatalogEndpoints
         api.MapGet("/status", async (
             IProviderRegistry registry,
             ProviderStatusService statuses,
+            ProviderQuotaService quotas,
             ConnectorDbContext db,
             TimeProvider time,
             CancellationToken ct) =>
@@ -120,7 +121,9 @@ internal static class CatalogEndpoints
             return ConnectorResults.Json(new StatusResponse
             {
                 Service = Descriptor(platform, registry),
-                Providers = [.. health.Values.OrderBy(p => p.ProviderId, StringComparer.Ordinal)],
+                Providers = [.. health.Values
+                    .OrderBy(p => p.ProviderId, StringComparer.Ordinal)
+                    .Select(p => p with { Quota = quotas.Get(p.ProviderId) })],
                 Agents = new AgentPoolView
                 {
                     Total = agents.Count,

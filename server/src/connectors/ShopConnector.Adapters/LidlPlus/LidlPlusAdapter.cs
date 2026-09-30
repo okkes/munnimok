@@ -837,7 +837,7 @@ public sealed class LidlPlusAdapter : IProviderAdapter
                 token => Request(HttpMethod.Get, url, token, settings),
                 (refresh, token) => RefreshAsync(ctx, refresh, token), "ticket list", ct).ConfigureAwait(false);
 
-            ProviderHttp.EnsureSuccess(response, ProviderId, "ticket list", ProviderHttp.RetailBlockStatuses);
+            ProviderHttp.EnsureSuccess(response, ProviderId, "ticket list", RetailHttp.RetailBlockStatuses);
 
             using var document = await ProviderHttp
                 .ReadJsonAsync(response, ProviderId, "ticket list", ct).ConfigureAwait(false);
@@ -916,7 +916,7 @@ public sealed class LidlPlusAdapter : IProviderAdapter
             token => Request(HttpMethod.Get, url, token, settings),
             (refresh, token) => RefreshAsync(ctx, refresh, token), "ticket detail", ct).ConfigureAwait(false);
 
-        ProviderHttp.EnsureSuccess(response, ProviderId, "ticket detail", ProviderHttp.RetailBlockStatuses);
+        ProviderHttp.EnsureSuccess(response, ProviderId, "ticket detail", RetailHttp.RetailBlockStatuses);
 
         return await ProviderHttp.ReadJsonAsync(response, ProviderId, "ticket detail", ct).ConfigureAwait(false);
     }

@@ -29,7 +29,9 @@ omitted.
 | Route | What it does |
 | --- | --- |
 | `GET /providers`, `GET /providers/{id}` | the catalogue: every manifest with its health grafted on |
-| `GET /status` | providers, agents online/revoked, queue depth |
+| `GET /status` | providers (each with `quota` — `limit`, `remaining`, `reset_at`, `seen_at` — when the party last said something about its budget), agents online/revoked, queue depth |
+| `GET /{provider}/options/{field}?q=…` | the values of a `lookup` field, listed by the party at connect time (an aggregator's institutions); every other query parameter is context (the step's country); `{ options: [{ value, label, has_logo }] }` |
+| `GET /{provider}/options/{field}/{value}/logo` | the option's logo, vendored by the control plane once and cached for a month; 404 when the party has none |
 | `GET /health` (anonymous, outside the group) | liveness |
 | `POST /{provider}/login` | start a session: `subject`, `inputs` or a `credential_bundle`, `config`, `consent`, `prefer_agent`, `label` → 200 with the session (active, bundle attached) or 202 to follow |
 | `GET /{provider}/login/{sessionId}` | the session view; hands over the bundle once |
@@ -51,6 +53,7 @@ omitted.
 | Route | What it does |
 | --- | --- |
 | `POST /providers/{id}/status` | the kill switch: `state` (`healthy`, `degraded`, `paused`, `retired`), `reason_key`; retiring expires every session |
+| `GET /providers/{id}/remote-consents`, `DELETE /providers/{id}/remote-consents/{consentId}` | what the operator's account at the party holds (an aggregator's every consent, with `origin` — the environment that made it — `status`, `reference`, `account_count`) and a revoke for each; `unsupported_resource` for a party that keeps no inventory |
 | `GET /canaries`, `PUT /providers/{id}/canary`, `DELETE /providers/{id}/canary` | the operator's own connections that prove a provider still works |
 | `GET /agents`, `DELETE /agents/{agentId}` | every agent, whoever owns it; revoke any |
 

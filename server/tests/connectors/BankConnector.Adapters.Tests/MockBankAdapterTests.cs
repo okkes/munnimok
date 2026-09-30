@@ -76,14 +76,15 @@ public sealed class MockBankAdapterTests
     {
         var registry = BankAdapters.MockRegistry();
 
-        Assert.Equal(5, registry.Manifests.Count);
+        Assert.Equal(6, registry.Manifests.Count);
         Assert.All(registry.Manifests, ManifestValidator.Validate);
 
-        // Only the two providers whose manifest says agent.required: false
-        // may run in a browserless control plane; registering more would mean
-        // leasing a job no local process can serve.
+        // Only the providers whose manifest says agent.required: false may
+        // run in a browserless control plane; registering more would mean
+        // leasing a job no local process can serve. The consent mock is the
+        // aggregator shape (#414): http, inline, a redirect for a login.
         Assert.Equal(
-            ["mock-bank-broken", "mock-bank-simple"],
+            ["mock-bank-broken", "mock-bank-consent", "mock-bank-simple"],
             BankAdapters.InlineOnly().Select(a => a.Describe().Id).Order(StringComparer.Ordinal));
     }
 

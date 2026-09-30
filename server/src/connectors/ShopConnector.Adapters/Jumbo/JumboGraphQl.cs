@@ -102,7 +102,7 @@ public sealed class HttpJumboGraphQlClient : IJumboGraphQlClient
         // is kept because a GraphQL 400 names the field it rejected, which is
         // the whole diagnosis.
         await ProviderHttp.EnsureSuccessAsync(
-            response, JumboAdapter.ProviderId, "graphql", ProviderHttp.RetailBlockStatuses, ct).ConfigureAwait(false);
+            response, JumboAdapter.ProviderId, "graphql", RetailHttp.RetailBlockStatuses, ct).ConfigureAwait(false);
 
         return await ProviderHttp
             .ReadJsonAsync(response, JumboAdapter.ProviderId, "graphql", ct).ConfigureAwait(false);

@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.Json;
 using Connector.Kit.Errors;
 using Connector.Kit.Security;
+using Connector.Kit.Adapters;
 
 namespace ShopConnector.Adapters.Support;
 

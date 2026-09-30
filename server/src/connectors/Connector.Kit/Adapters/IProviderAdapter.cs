@@ -174,6 +174,17 @@ public interface IJobContext
     Task<ChallengeAnswer> AskAsync(Challenge challenge, CancellationToken ct);
 
     /// <summary>
+    /// What the party just said about its budget (an aggregator's per-account
+    /// daily allowance from its response headers). A context with nowhere to
+    /// keep it ignores it, as with <see cref="Note"/>.
+    /// </summary>
+    void ReportQuota(ProviderQuota quota)
+    {
+        // Kept by the platform as a fact about the provider; nothing for a
+        // test double or an agent to do with it.
+    }
+
+    /// <summary>
     /// Report a credential as submitted upstream. After this point a lost
     /// lease fails the job permanently instead of requeuing it, because
     /// retrying a login that may already have counted is how accounts get

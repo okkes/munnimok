@@ -225,6 +225,16 @@ public enum FieldType
     Select,
     Iban,
     Phone,
+
+    /// <summary>
+    /// A value the party lists at connect time — an aggregator's institutions,
+    /// a registry's municipalities: too many, or too changeable, for
+    /// <see cref="FieldSpec.Options"/>. The consumer asks
+    /// <c>GET /v1/{provider}/options/{field}?q=…</c> (with the step's other
+    /// values as context) and the adapter answers through
+    /// <see cref="Adapters.ILookupProvider"/>.
+    /// </summary>
+    Lookup,
 }
 
 public sealed record SessionSpec

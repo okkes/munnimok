@@ -20,6 +20,7 @@ public sealed class InlineJobRunner(
     IServiceScopeFactory scopes,
     IProviderRegistry registry,
     IHttpClientFactory httpClients,
+    Providers.ProviderQuotaService quotas,
     ConnectorSignals signals,
     IOptions<ConnectorOptions> options,
     ILogger<InlineJobRunner> logger) : IInlineJobRunner
@@ -70,7 +71,7 @@ public sealed class InlineJobRunner(
         budget.CancelAfter(TimeSpan.FromSeconds(job.Limits.TimeoutSeconds));
 
         await using var context = new InlineJobContext(
-            job, scopes, httpClients.CreateClient(HttpClientName), logger, budget.Token);
+            job, scopes, httpClients.CreateClient(HttpClientName), quotas, logger, budget.Token);
 
         using var renewal = StartLeaseRenewal(job.JobId, budget.Token);
 

@@ -43,7 +43,27 @@ settled until a live capture says so.
 | ING | `ing-nl` | `browser_interactive` | no | no | client | accounts, transactions |
 | ASN Bank | `asn` | `browser_interactive` | no | no | client | accounts, transactions |
 | ASN Bank, own machine | `asn-persistent` | `browser_persistent` | yes | — | agent | accounts, transactions |
+| GoCardless | `gocardless` | `http` (inline) | yes | — | server | accounts, transactions |
+| Enable Banking | `enablebanking` | `http` (inline) | yes | — | server | accounts, transactions |
 | Mock ×5 | `mock-bank-*` | `http` … `browser_persistent` | — | — | client / agent | accounts, transactions |
+
+The two aggregators (#414) are the open-banking door: the person picks the
+bank from the party's own list (a `lookup` field the control plane serves
+from the aggregator, logos vendored), consents at the bank through a
+`redirect` challenge the consumer's return page answers with the landing URL,
+and the aggregator hands the accounts over on HTTPS ever after — no browser,
+no agent. The session is the consent: its id at the aggregator and the
+accounts it reaches (their details learned once), never a credential; the
+operator's key is `BankAdapters:GoCardless:*` / `BankAdapters:EnableBanking:*`
+configuration, and a party without it is absent from the catalogue. Server
+custody lets the consumer's scheduler fetch nightly at
+`preferred_fetch_hour_local` in the bank's zone. Transaction identities are
+the ones the api's own integration keyed on (`transactionId ??
+internalTransactionId`, `pending:` for a pending row, `eb:` + a digest where
+Enable Banking gives no reference), so a reconnected bank continues its
+history. GoCardless also answers the operator's inventory (every consent on
+the aggregator account, with the environment that made it) and reports its
+per-account daily budget as the party's quota.
 
 `asn-persistent` is the household-agent form of ASN: the sign-in the user
 does once stays in a browser profile on their own machine, and scheduled

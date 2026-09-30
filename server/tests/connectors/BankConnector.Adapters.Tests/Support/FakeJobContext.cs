@@ -103,6 +103,10 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
 
     public void Note(string message) => _notes.Add(message);
 
+    public List<ProviderQuota> Quotas { get; } = [];
+
+    public void ReportQuota(ProviderQuota quota) => Quotas.Add(quota);
+
     /// <summary>
     /// Nobody ever comes back to the browser tab.
     /// </summary>

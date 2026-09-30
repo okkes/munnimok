@@ -2511,6 +2511,15 @@ export const en = {
   'agents.done': 'Done',
   'tour.conn.6t': 'Your own computer',
   'tour.conn.6b': 'A party that only talks to a browser on your own connection runs through a household agent — a small container on your machine that dials out to munni. Enrol it once with a pasted line; those parties then sync by themselves.',
+  'connect.field.country': 'Country',
+  'connect.field.institution': 'Bank',
+  'connect.config.return_url': 'Where the bank brings you back',
+  'connect.open_banking.step.bank': 'Your bank',
+  'connect.open_banking.prompt.consent': 'Give your bank permission to share your accounts, then come back here.',
+  'connect.gocardless.notes': 'Your bank shares balances and transactions through GoCardless for 90 days; then you give permission again. Nothing is kept but the permission itself.',
+  'fetch.gocardless.notes': 'Up to two years of history where your bank allows it, fetched once a night.',
+  'connect.enablebanking.notes': 'Your bank shares balances and transactions through Enable Banking for 90 days; then you give permission again. Nothing is kept but the permission itself.',
+  'fetch.enablebanking.notes': 'As much history as your bank offers, fetched once a night.',
 } as const;
 
 export type TranslationKey = keyof typeof en;

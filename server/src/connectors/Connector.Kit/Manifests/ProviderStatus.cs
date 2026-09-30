@@ -18,6 +18,10 @@ public sealed record ProviderStatus
     /// <summary>Consumer-owned copy key. Never prose.</summary>
     public string? ReasonKey { get; init; }
 
+    /// <summary>What the party last said about its budget, when it says anything (an aggregator's daily allowance); on the status document only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Adapters.ProviderQuota? Quota { get; init; }
+
     public static ProviderStatus Healthy(string providerId, DateTimeOffset at) =>
         new() { ProviderId = providerId, State = ProviderState.Healthy, Since = at };
 

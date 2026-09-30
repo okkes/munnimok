@@ -2513,4 +2513,13 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'agents.done': 'Klaar',
   'tour.conn.6t': 'Je eigen computer',
   'tour.conn.6b': 'Een partij die alleen met een browser op je eigen verbinding praat, loopt via een thuis-agent — een kleine container op je machine die naar munni uitbelt. Meld hem één keer aan met een geplakte regel; die partijen synchroniseren daarna vanzelf.',
+  'connect.field.country': 'Land',
+  'connect.field.institution': 'Bank',
+  'connect.config.return_url': 'Waar de bank je terugbrengt',
+  'connect.open_banking.step.bank': 'Je bank',
+  'connect.open_banking.prompt.consent': 'Geef je bank toestemming om je rekeningen te delen en kom daarna hier terug.',
+  'connect.gocardless.notes': 'Je bank deelt saldi en transacties via GoCardless voor 90 dagen; daarna geef je opnieuw toestemming. Er wordt niets bewaard behalve de toestemming zelf.',
+  'fetch.gocardless.notes': 'Tot twee jaar geschiedenis waar je bank dat toestaat, elke nacht één keer opgehaald.',
+  'connect.enablebanking.notes': 'Je bank deelt saldi en transacties via Enable Banking voor 90 dagen; daarna geef je opnieuw toestemming. Er wordt niets bewaard behalve de toestemming zelf.',
+  'fetch.enablebanking.notes': 'Zoveel geschiedenis als je bank aanbiedt, elke nacht één keer opgehaald.',
 };
