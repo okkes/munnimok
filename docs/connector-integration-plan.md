@@ -922,6 +922,31 @@ departs from §15, and why:
   source sniff) reads `connector`. Rows the old path wrote keep reading as they are until the new ingest
   rewrites them (§15.8: no migration).
 
+**2026-09-30 — O4 delivered** (`refactor(api)!: the api's own open-banking path retired`; #414). Where it
+departs from §15, and why:
+
+- **`FeedOwner` lost its consent columns.** #240's hand-over of a fetch binding to a surviving co-owner's
+  consent was a GoCardless mechanism (one requisition per user, the linked-account row re-bound); a
+  connector consent fetches the feed as long as it lives, so a co-owner's own session simply keeps
+  fetching — the row keeps `FeedSpaceId`/`UserId` only, and the migration drops the rest.
+- **The cockpit reads the inventory through the relay** (`GET /control/connectors/providers/{id}/remote-consents`,
+  read-only) rather than a `/control/consents` of its own: one account serves every environment, so the
+  designated environment's control plane already sees every consent with its origin; the cockpit
+  groups them per environment as before and revokes nothing, as before.
+- **The quota moved from a captured table to the party's word**: `ProviderQuotas` and the capture handler
+  are gone; the status document's `quota` (what the adapter reported from the aggregator's headers on
+  its last call) is what both consoles show, per party, with a warning at a fifth left.
+- **`AccountDeletion` took the disconnector by injection** (§14 O2's parameter list became a class);
+  the GoCardless revocation left with the tables.
+- **The wizard's defaults changed with the rule**: a new platform starts with Connectors ticked (banks are
+  parties), the two bank tiles say they need it, and the server refuses an environment whose banking
+  list is not empty while `connectors` is off — on creation and on a settings change — naming the way
+  out.
+- **Kept on purpose:** `/gc-callback` as the return path (the banks' registrations), the wizard's
+  purge of a deleted lcl environment's consents by redirect prefix (it holds the secret), the
+  `ImportIds` helper (now `Accounts/ImportIds.cs`) and `BankZones`; the ingest still takes over a row
+  the old path wrote (`source: gocardless`) so a reconnected account continues its history.
+
 ---
 
 ## 15 · Open banking as parties (ruling 15)

@@ -94,7 +94,7 @@ the person's own machine, an open-banking party's (§15) a consent id and
 the accounts it reaches — so the relay keeps those bundles
 (`ConnectorSession.KeptBundle`, written at the single delivery and
 followed through every rotation) and `ConnectorScheduleService` drives
-them the way `GcFetchService` drove open banking:
+them the way the api's own open-banking service once did:
 
 - an hourly tick over every kept and active session; a session runs when
   the provider fetches unattended, its own `min_interval_seconds` has
