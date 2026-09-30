@@ -41,11 +41,14 @@ An unconfigured one is simply absent — never a stand-in.
 - **Bundles pass through memory only** — with one documented exception. The
   two tables the relay owns hold ids, state and references; a test walks
   their properties and the rows after every flow and finds no bundle.
-  The exception is a household agent's bundle (`secret_custody: agent`): it
-  names an agent and a profile and holds no secret, so the relay keeps it
-  on the session row to sync unattended ("Scheduled syncs" below); the
-  same scan proves a client-custody bundle never lands there. Nothing the
-  relay logs carries a body.
+  The exception is a bundle that holds no secret of the person's: a
+  household agent's (`secret_custody: agent`) names an agent and a profile,
+  an open-banking consent's (`secret_custody: server`, §15) a consent id
+  and the accounts it reaches while the operator's key stays in the
+  platform's configuration. The relay keeps those on the session row to
+  sync unattended ("Scheduled syncs" below); the same scan proves a
+  client-custody bundle never lands there. Nothing the relay logs carries
+  a body.
 - **One connection, one row.** The client names a stable `connectionId` on
   every login; a re-login replaces the connection's row, and what the
   connection pulled stays keyed by it (`rcpt:{provider}:{connectionId}:{external id}`).
@@ -66,6 +69,8 @@ An unconfigured one is simply absent — never a stand-in.
 | --- | --- |
 | `GET /connectors` | what this environment runs: the service descriptor, the provider count, whether household agents are offered |
 | `GET /connectors/providers` | the catalogue, with the connector's ETag (send `If-None-Match`, get 304) |
+| `GET /connectors/{provider}/options/{field}?q=…` | a `lookup` field's values, listed by the party at connect time (an aggregator's institutions; every other query parameter is context, the step's country) — `{ options: [{ value, label, hasLogo }] }` |
+| `GET …/options/{field}/{token}/logo` | the option's logo, vendored by the control plane and kept by the browser for a month; `token` is the value as base64url; anonymous — a public brand image an `<img>` fetches, nothing of anyone's in it |
 | `GET /connectors/sessions` | the caller's bindings: session, provider, connection, state, label, times, and whether the relay syncs it by itself (`scheduled`, `lastScheduledSyncAt`, `lastScheduleError`) |
 | `POST /connectors/{provider}/login` | `{ connectionId, inputs?, credentialBundle?, config?, label?, preferAgent?, idempotencyKey? }` → the session view; 200 with the bundle attached, or 202 to follow. `X-Device-Class: native\|web` is honoured; absent, the platform header decides (web bundles live shorter) |
 | `GET …/login/{sessionId}` | the view; the bundle is handed over exactly once |
@@ -83,18 +88,26 @@ An unconfigured one is simply absent — never a stand-in.
 ## Scheduled syncs
 
 Client custody syncs only when a device holds the bundle: the app on open,
-*Sync now*, after a bank sync. A household-agent party is different —
-its bundle is a pointer to an agent and a profile on the person's own
-machine, and the agent does the fetching — so the relay keeps that bundle
+*Sync now*, after a bank sync. Two custodies are different — a
+household-agent party's bundle is a pointer to an agent and a profile on
+the person's own machine, an open-banking party's (§15) a consent id and
+the accounts it reaches — so the relay keeps those bundles
 (`ConnectorSession.KeptBundle`, written at the single delivery and
-followed through every rotation) and `ConnectorScheduleService` drives it
-the way `GcFetchService` drives open banking:
+followed through every rotation) and `ConnectorScheduleService` drives
+them the way `GcFetchService` drove open banking:
 
 - an hourly tick over every kept and active session; a session runs when
-  the provider fetches unattended and its own `min_interval_seconds` has
-  passed since the last scheduled run — and the fetches declare
-  `X-Connector-Trigger: schedule`, so the control plane holds them to the
-  interval as well (a refusal is remembered, not fought);
+  the provider fetches unattended, its own `min_interval_seconds` has
+  passed since the last scheduled run, no `retryAfterSeconds` a
+  `rate_limited` refusal set stands (`ScheduleNotBefore`; a refusal without
+  one stands down for twelve hours), and — when the party names a
+  `preferred_fetch_hour_local` — it is that hour in the bank's zone, from
+  the first IBAN the connection reaches (`BankZones`; the party's home
+  country otherwise). The fetches declare `X-Connector-Trigger: schedule`,
+  so the control plane holds them to the interval as well (a refusal is
+  remembered, not fought); transactions a scheduled fetch lands wake the
+  phones of the spaces the accounts are attached to (push), a person's own
+  sync needs no push;
 - a fetch that became a job is followed for ten minutes and collected
   with the kept bundle; a job that asks a question leaves the session
   `awaiting_input` — the app's card says so and *Sync now* answers it;
@@ -105,6 +118,33 @@ the way `GcFetchService` drives open banking:
   every other refusal is kept as `lastScheduleError` and retried next tick;
 - `GET /connectors/sessions` reports `scheduled`, `lastScheduledSyncAt` and
   `lastScheduleError` per binding.
+
+## Bank rows (§15)
+
+Every bank party's rows land through the same ingest, which keeps two
+things the api's own bank ingest kept:
+
+- **Pending rows are mirrored, then settled.** A transaction whose
+  `external_id` the party prefixed `pending:` lands with `pending: 1`, is
+  remembered per account (`ConnectorPendingTxs`), and — once a fetch of
+  the transactions resource is complete — every remembered row the party
+  no longer reports is tombstoned: booked under a new reference, or
+  withdrawn. An incomplete pass settles nothing.
+- **The prediction overlay follows the attachment.** A booked row gets a
+  `txMeta` (category, type, `needsReview`) from `KeywordPredictor` in every
+  space the account is attached to, written once per row and space (the
+  op id is the pair), so a person's later choice is never clobbered.
+- **The account row names its institution.** An account record's
+  `institution` — the value of the party's lookup, an aggregator's
+  institution id — lands as the row's `bankId`, so the app shows the
+  option's vendored logo on the account row (the anonymous logo route
+  above) rather than asking the api's own institutions route.
+
+A feed's deletion reaches the party (`ConnectorDisconnector`): the feed's
+account leaves its consent — the consent ends at the party when that was
+its last account, and lives on for the others otherwise, the account left
+where the party lists it (`ConnectorAccountRef.Excluded`) until the person
+connects it again. Deleting the munni account ends every consent.
 
 ## Events
 
@@ -151,6 +191,7 @@ link and never an overlay.
 | `POST /admin/connectors/providers/{id}/status` | the kill switch: `{ state: healthy\|degraded\|paused\|retired, reasonKey? }`; the operator and the reason go to the server log |
 | `GET /admin/connectors/agents`, `DELETE /admin/connectors/agents/{id}` | every household agent, whoever owns it; revoke any |
 | `GET /admin/connectors/canaries` | the operator's own connections that prove a party still works |
+| `GET /admin/connectors/providers/{id}/remote-consents`, `DELETE …/remote-consents/{consentId}` | what the operator's account at the party holds (§15): every consent with `origin`, `status`, `reference`, `accountCount` — foreign environments' and legacy ones included — and a revoke, logged with the operator |
 | `GET /admin/connectors/users/{sub}/sessions` | one user's bindings — the same rows `GET /admin/users/{sub}/diagnosis` now carries as `connectorSessions` |
 
 In production the machine token the relay mints must carry the control

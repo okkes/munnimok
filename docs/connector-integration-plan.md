@@ -870,6 +870,31 @@ keys reach the control plane`; #414). Where it departs from §15, and why:
   routes, the return page — the platform side is complete and proven against scripted wires; nothing
   reaches a person until the relay and the app carry it.
 
+**2026-09-30 — O2 delivered** (`feat(api): the relay carries the open-banking parties`; #414). Where it
+departs from §15, and why:
+
+- **A consent survives the deletion of one of its feeds.** §15.5 said consent-aware feed deletion
+  "keeps its behaviour"; the api's behaviour was per account — a requisition was revoked only when its
+  last account left. A connector consent reaches several accounts as one session, so the relay keeps
+  the session and marks the dropped account `Excluded` (the party still lists it; the ingest leaves it
+  alone) and ends the consent at the party when its last account leaves. Deleting the munni account ends
+  every consent.
+- **The pending mirror settles on a complete pass.** The api fetched per account and settled at once;
+  a connector page does not say which accounts it covers, so the relay settles the connection's
+  accounts against the pending rows the whole transactions resource reported — after a complete pass
+  (or a collected job without a cursor), never after a partial one.
+- **The bank's zone comes from the first IBAN the connection reaches** — the material with the
+  institution's country is sealed and the relay does not open bundles; a card-only connection reads the
+  party's home country.
+- **The overlay goes where the account is attached.** The api wrote predictions into the space the
+  consent was made from; a connector account is attached per space after the fact, so the overlay is
+  written for every attached space at ingest time, once per row and space.
+- **A logo's route token.** A party may name an option `ASN Bank|NL`, which the relay's route-parameter
+  shape refuses, so the logo route takes the value as base64url on the control plane and the relay alike.
+- **`KeywordPredictor` moved beside the accounts code** (`Accounts/`), no longer a GoCardless thing.
+- **Not touched, by design:** the api's own `/gocardless/*` path is alive until O4 — both paths write the
+  same ids, so a user who reconnects through the hub in O3 continues the same rows.
+
 ---
 
 ## 15 · Open banking as parties (ruling 15)
