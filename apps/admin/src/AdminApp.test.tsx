@@ -11,18 +11,7 @@ const USERS = [
   { id: 'u2', sub: 'sub-bob', displayName: null, email: null, createdAt: '2026-02-01T00:00:00Z', spaceCount: 1 },
   { id: 'u3', sub: 'sub-carol', displayName: 'Carol', email: null, createdAt: '2026-03-01T00:00:00Z', spaceCount: 3 },
 ];
-const REQUISITIONS = [
-  { requisitionId: 'req-live-0001', status: 'LN', institutionId: 'ING_NL', created: new Date(Date.now() - 80 * 86_400_000).toISOString(), accountCount: 2, stale: false, ownerSub: 'sub-alice' },
-  { requisitionId: 'req-stale-0002', status: 'EX', institutionId: 'ASN_NL', created: null, accountCount: 0, stale: true, ownerSub: null },
-  { requisitionId: 'req-fresh-0003', status: 'LN', institutionId: 'RABO_NL', created: new Date(Date.now() - 5 * 86_400_000).toISOString(), accountCount: 1, stale: false, ownerSub: 'sub-bob' },
-];
-// the endpoint returns THIS environment's consents + a count of foreign
-// ones on the shared GoCardless account
-const requisitionList = (requisitions: typeof REQUISITIONS, foreignCount = 2) => ({ requisitions, foreignCount });
-const QUOTA = [
-  { provider: 'gocardless', scope: 'accounts:transactions', limit: 4, remaining: 1, resetAtUtc: '2026-07-17T06:00:00Z', capturedAtUtc: '2026-07-16T06:00:00Z' },
-];
-const HEALTH = { status: 'ok', build: '640', capabilities: { gocardless: true, fcm: true, push: false } };
+const HEALTH = { status: 'ok', build: '640', capabilities: { fcm: true, push: false } };
 
 type Handler = (init?: RequestInit, url?: URL) => { status?: number; body?: unknown };
 
@@ -76,8 +65,6 @@ const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /catalog': () => ({ body: CATALOG }),
   'GET /admin/ping': () => ({}),
   'GET /admin/users': () => ({ body: USERS }),
-  'GET /admin/gocardless/requisitions': () => ({ body: requisitionList(REQUISITIONS) }),
-  'GET /admin/quota': () => ({ body: QUOTA }),
   'GET /health': () => ({ body: HEALTH }),
 });
 
@@ -138,19 +125,17 @@ describe('AdminApp (test-auth mode)', () => {
     expect(localStorage.getItem('munni_admin_device')).toBeNull();
   });
 
-  it('overview shows tiles, the quota table with reset time, and capability chips', async () => {
+  it('overview shows tiles and capability chips — the parties live under Connectors (#414)', async () => {
     scriptFetch(HAPPY_ROUTES());
     renderAdmin();
     const tiles = await screen.findByTestId('overview-tiles');
     expect(tiles.textContent).toContain('Users');
     expect(tiles.textContent).toContain('3'); // 3 users
     expect(tiles.textContent).toContain('6'); // 2+1+3 space memberships
-    expect(tiles.textContent).toContain('Linked banks');
-    expect(tiles.textContent).toContain('Expiring ≤14d');
-
-    const quota = screen.getByTestId('overview-quota');
-    expect(quota.textContent).toContain('accounts:transactions');
-    expect(quota.textContent).toContain('1 / 4');
+    expect(tiles.textContent).toContain('Bank feeds');
+    expect(tiles.textContent).not.toContain('Linked banks');
+    expect(screen.queryByTestId('overview-quota')).toBeNull();
+    expect(screen.queryByTestId('nav-connections')).toBeNull();
 
     const caps = screen.getByTestId('overview-capabilities');
     expect(caps.textContent).toContain('build 640');
@@ -180,7 +165,6 @@ describe('AdminApp (test-auth mode)', () => {
           memberSpaces: ['space-main'],
           ownedFeeds: [{ feedSpaceId: 'feed12345678', maxSeq: 42 }],
           attachments: [],
-          gcLinks: [{ gcAccountId: 'gc-1', spaceId: 'space-dead-1', accountEntityId: 'a1', iban: 'NL69INGB0123456789', provider: 'gocardless', lastFetchAt: null, requisitionId: 'req-abcd1234' }],
         },
       }),
       'GET /admin/users/sub-carol/diagnosis': () => ({ status: 500 }),
@@ -194,8 +178,6 @@ describe('AdminApp (test-auth mode)', () => {
     await waitFor(() => expect(panel.textContent).toContain('space-main'));
     expect(panel.textContent).toContain('ops 42');
     expect(panel.textContent).toContain('NONE — feeds never attached');
-    expect(panel.textContent).toContain('fetched never');
-    expect(panel.textContent).toContain('consent req-abcd'); // names the consent carrying the account
 
     // a dead call must not spin forever — it says what went wrong
     fireEvent.click(screen.getByTestId('diagnose-sub-carol'));
@@ -220,71 +202,6 @@ describe('AdminApp (test-auth mode)', () => {
     fireEvent.change(screen.getByTestId('catalog-store-ah'), { target: { value: 'albert heijn' } });
     fireEvent.click(screen.getByTestId('catalog-publish'));
     await waitFor(() => expect(screen.getByTestId('admin-error').textContent).toContain('must be arrays'));
-  });
-
-  it('connections: expiring filter narrows the list; delete removes selected and reloads', async () => {
-    let requisitions = [...REQUISITIONS];
-    const calls = scriptFetch({
-      ...HAPPY_ROUTES(),
-      'GET /admin/gocardless/requisitions': () => ({ body: requisitionList(requisitions) }),
-      'DELETE /admin/gocardless/requisitions/req-stale-0002': () => {
-        requisitions = requisitions.filter((r) => r.requisitionId !== 'req-stale-0002');
-        return {};
-      },
-    });
-    renderAdmin();
-    fireEvent.click(await screen.findByTestId('nav-connections'));
-    const table = await screen.findByTestId('admin-requisitions');
-    expect(table.textContent).toContain('ASN_NL');
-    expect(table.textContent).toContain('expiring'); // the 80-day-old linked one
-    expect(table.textContent).toContain('stale');
-
-    // expiring-only filter narrows to the ING requisition
-    fireEvent.click(screen.getByTestId('connections-expiring-filter'));
-    expect(screen.getByTestId('admin-requisitions').textContent).not.toContain('RABO_NL');
-    expect(screen.getByTestId('admin-requisitions').textContent).toContain('ING_NL');
-    fireEvent.click(screen.getByTestId('connections-expiring-filter'));
-
-    // select + bulk delete
-    expect(screen.queryByText(/Delete selected/)).toBeNull();
-    const staleRow = screen.getAllByRole('checkbox').find((box) => box.closest('tr')?.textContent?.includes('ASN_NL'))!;
-    fireEvent.click(staleRow);
-    fireEvent.click(screen.getByText('Delete selected (1)'));
-    await waitFor(() => expect(screen.getByTestId('admin-requisitions').textContent).not.toContain('ASN_NL'));
-    expect(calls).toContain('DELETE /admin/gocardless/requisitions/req-stale-0002');
-    expect(screen.queryByText(/Delete selected/)).toBeNull(); // selection cleared
-  });
-
-  it('connections: "other environments too" lists the shared account\'s foreign consents with their origin; deleting one asks first and sends foreign=true', async () => {
-    const seen: string[] = [];
-    const foreign = { requisitionId: 'req-foreign-0009', status: 'LN', institutionId: 'ABN_NL', created: new Date(Date.now() - 3 * 86_400_000).toISOString(), accountCount: 1, stale: false, ownerSub: null, foreign: true, environmentOrigin: 'https://munni-old.example' };
-    const calls = scriptFetch({
-      ...HAPPY_ROUTES(),
-      'GET /admin/gocardless/requisitions': (_init, url) => {
-        seen.push(url?.search ?? '');
-        return { body: url?.search === '?all=true' ? { requisitions: [...REQUISITIONS, foreign], foreignCount: 1 } : requisitionList(REQUISITIONS, 1) };
-      },
-      'DELETE /admin/gocardless/requisitions/req-foreign-0009': (_init, url) => {
-        seen.push(`delete${url?.search ?? ''}`);
-        return {};
-      },
-    });
-    const confirmMock = vi.fn(() => true);
-    vi.stubGlobal('confirm', confirmMock); // happy-dom has no confirm — the component asks before touching another environment's consent
-    renderAdmin();
-    fireEvent.click(await screen.findByTestId('nav-connections'));
-    const table = await screen.findByTestId('admin-requisitions');
-    expect(table.textContent).not.toContain('ABN_NL'); // the default view keeps the foreign consent out
-    fireEvent.click(screen.getByTestId('connections-all-filter'));
-    await waitFor(() => expect(screen.getByTestId('admin-requisitions').textContent).toContain('ABN_NL'));
-    expect(seen).toContain('?all=true');
-    expect(screen.getByTestId('admin-requisitions').textContent).toContain('munni-old.example');
-    const row = screen.getAllByRole('checkbox').find((box) => box.closest('tr')?.textContent?.includes('ABN_NL'))!;
-    fireEvent.click(row);
-    fireEvent.click(screen.getByText('Delete selected (1)'));
-    await waitFor(() => expect(seen).toContain('delete?foreign=true'));
-    expect(confirmMock).toHaveBeenCalledTimes(1);
-    expect(calls).toContain('DELETE /admin/gocardless/requisitions/req-foreign-0009');
   });
 
   it('connectors: the parties with the kill switch, the fleet with revoke, the canaries (#367 M6)', async () => {
@@ -382,7 +299,6 @@ describe('AdminApp (test-auth mode)', () => {
           memberSpaces: ['space-1'],
           ownedFeeds: [],
           attachments: [],
-          gcLinks: [],
           connectorSessions: [{ sessionId: 'ses_1', provider: 'mock-store-simple', connectionId: 'conn-1234567890abcdef', state: 'awaiting_input', lastSeenAt: '2026-09-30T06:00:00Z' }],
         },
       }),
@@ -393,6 +309,58 @@ describe('AdminApp (test-auth mode)', () => {
     const line = await screen.findByTestId('user-diagnosis-connectors');
     expect(line.textContent).toContain('mock-store-simple awaiting_input');
     expect(line.textContent).toContain('conn-1234567…');
+  });
+
+  it('connectors: a bank party shows its budget, and its inventory lists every environment’s consents with a revoke that asks first (#414)', async () => {
+    const revoked: string[] = [];
+    scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /admin/connectors/status': () => ({
+        body: {
+          ...CONNECTOR_STATUS,
+          providers: [
+            { providerId: 'gocardless', state: 'healthy', since: '2026-09-30T03:00:00Z', reasonKey: null, acceptsWork: true, quota: { limit: 10, remaining: 2, resetAt: '2026-10-01T00:00:00Z', seenAt: '2026-09-30T03:05:00Z' } },
+            CONNECTOR_STATUS.providers[1],
+          ],
+        },
+      }),
+      'GET /admin/connectors/agents': () => ({ body: { agents: [] } }),
+      'GET /admin/connectors/canaries': () => ({ body: { canaries: [] } }),
+      'GET /admin/connectors/providers/gocardless/remote-consents': () => ({
+        body: {
+          consents: [
+            { id: 'req-here-0001', status: 'LN', createdAt: '2026-09-01T00:00:00Z', reference: 'ref-1', institutionId: 'ING_INGBNL2A', origin: 'https://app.munni.example', accountCount: 2 },
+            { id: 'req-gone-0002', status: 'EX', createdAt: null, reference: null, institutionId: 'ASN_BANK_ASNBNL21', origin: null, accountCount: 0 },
+          ].filter((c) => !revoked.includes(c.id)),
+        },
+      }),
+      'DELETE /admin/connectors/providers/gocardless/remote-consents/req-gone-0002': () => {
+        revoked.push('req-gone-0002');
+        return { status: 204 };
+      },
+    });
+    vi.stubGlobal('confirm', vi.fn(() => true));
+    renderAdmin();
+    fireEvent.click(await screen.findByTestId('nav-connectors'));
+    // the budget: two of ten calls left, nearly spent (a fifth or less)
+    const quota = await screen.findByTestId('connector-quota-gocardless');
+    expect(quota.textContent).toContain('2 / 10');
+    expect(quota.className).toContain('warn');
+    // a party that said nothing about its budget shows none
+    expect(screen.getByTestId('connector-quota-mock-store-simple').textContent).toBe('—');
+
+    fireEvent.click(screen.getByTestId('connector-inventory-gocardless'));
+    const table = await screen.findByTestId('connector-inventory');
+    expect(table.textContent).toContain('ING_INGBNL2A');
+    expect(table.textContent).toContain('https://app.munni.example');
+    expect(table.textContent).toContain('unattributed');
+    fireEvent.click(screen.getByTestId('remote-consent-revoke-req-gone-0002'));
+    await waitFor(() => expect(revoked).toEqual(['req-gone-0002']));
+    await waitFor(() => expect(screen.getByTestId('connector-inventory').textContent).not.toContain('ASN_BANK_ASNBNL21'));
+
+    // a party without an inventory says so
+    fireEvent.click(screen.getByTestId('connector-inventory-mock-store-simple'));
+    await screen.findByTestId('connector-inventory-none');
   });
 
   it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {

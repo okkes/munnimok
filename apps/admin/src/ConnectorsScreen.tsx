@@ -13,6 +13,18 @@ export interface ConnectorProviderStatus {
   since: string;
   reasonKey?: string | null;
   acceptsWork: boolean;
+  /** what the party last said about its budget (§15: an aggregator's daily call allowance) */
+  quota?: { limit?: number | null; remaining?: number | null; resetAt?: string | null; seenAt?: string | null } | null;
+}
+/** one consent on an aggregator's account as the party lists it (§15.6): every environment's, attributed by its return origin */
+export interface ConnectorRemoteConsent {
+  id: string;
+  status: string;
+  createdAt?: string | null;
+  reference?: string | null;
+  institutionId?: string | null;
+  origin?: string | null;
+  accountCount: number;
 }
 export interface ConnectorStatus {
   service: { kinds: string[]; version: string; manifestDigest: string };
@@ -48,6 +60,17 @@ const STATE_CHIP: Record<string, string> = { healthy: 'ok-chip', degraded: 'warn
 
 const when = (iso: string | null | undefined): string => (iso ? new Date(iso).toLocaleString() : '—');
 
+/** the party's budget as one line: remaining of limit, when it resets — or nothing said yet */
+export function quotaLine(quota: ConnectorProviderStatus['quota']): string {
+  if (!quota || (quota.limit == null && quota.remaining == null)) return '—';
+  const left = `${quota.remaining ?? '?'} / ${quota.limit ?? '?'}`;
+  return quota.resetAt ? `${left} · resets ${when(quota.resetAt)}` : left;
+}
+
+/** a budget nearly spent wears a warning: a fifth left, or less */
+const quotaLow = (quota: ConnectorProviderStatus['quota']): boolean =>
+  quota?.remaining != null && quota.limit != null && quota.limit > 0 && quota.remaining <= quota.limit / 5;
+
 function agentHealth(agent: ConnectorAgent): { label: string; chip: string } {
   if (agent.revoked) return { label: 'revoked', chip: 'danger-chip' };
   if (agent.stale) return { label: 'stale catalogue', chip: 'warn-chip' };
@@ -71,6 +94,8 @@ export function ConnectorsScreen({
   const [canaries, setCanaries] = useState<ConnectorCanary[]>([]);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [retire, setRetire] = useState<{ id: string; typed: string } | null>(null);
+  // the inventory of one aggregator (§15.6): null = closed; 'loading'; 'none' = the party keeps no inventory; else the consents
+  const [inventory, setInventory] = useState<{ id: string; consents: ConnectorRemoteConsent[] | 'loading' | 'none' } | null>(null);
 
   const load = useCallback(async () => {
     const res = await call('/admin/connectors/status').catch(() => null);
@@ -113,6 +138,25 @@ export function ConnectorsScreen({
     if (!window.confirm(`Revoke ${agent.name}? Its ${agent.profiles.length} kept login(s) are destroyed; the user signs in again through a fresh agent.`)) return;
     await act(() => call(`/admin/connectors/agents/${encodeURIComponent(agent.id)}`, { method: 'DELETE' }));
     await load();
+  };
+
+  /** the aggregator's own list of consents — every environment's, so leftovers of removed environments can go */
+  const openInventory = async (providerId: string) => {
+    setInventory({ id: providerId, consents: 'loading' });
+    const res = await call(`/admin/connectors/providers/${encodeURIComponent(providerId)}/remote-consents`).catch(() => null);
+    if (!res?.ok) {
+      setInventory({ id: providerId, consents: 'none' });
+      return;
+    }
+    setInventory({ id: providerId, consents: ((await res.json()) as { consents: ConnectorRemoteConsent[] }).consents });
+  };
+
+  const revokeConsent = async (providerId: string, consent: ConnectorRemoteConsent) => {
+    // revoking a consent ends someone's bank access — possibly another environment's; the origin says whose
+    const whose = consent.origin ? `started from ${consent.origin}` : 'of unknown origin';
+    if (!window.confirm(`Revoke consent ${consent.id.slice(0, 13)}… (${whose}) at ${providerId}? Its accounts stop fetching wherever it is used.`)) return;
+    await act(() => call(`/admin/connectors/providers/${encodeURIComponent(providerId)}/remote-consents/${encodeURIComponent(consent.id)}`, { method: 'DELETE' }));
+    await openInventory(providerId);
   };
 
   if (status === null) {
@@ -170,7 +214,8 @@ export function ConnectorsScreen({
         <p className="hint">
           The kill switch: pause a party the moment it misbehaves (users see it paused, nothing is fetched), resume it when it is fine
           again, retire it for good — retiring expires every live session. A reason key is optional; the app shows its copy to users
-          when it carries one (for example connect.paused.maintenance).
+          when it carries one (for example connect.paused.maintenance). The budget is what a party last said about its own allowance
+          (an aggregator&apos;s daily calls); an aggregator also lists every consent on its account under Inventory.
         </p>
         <table data-testid="connectors-providers">
           <thead>
@@ -178,6 +223,7 @@ export function ConnectorsScreen({
               <th>Party</th>
               <th>State</th>
               <th>Since</th>
+              <th>Budget</th>
               <th>Reason</th>
               <th />
             </tr>
@@ -194,6 +240,9 @@ export function ConnectorsScreen({
                   </span>
                 </td>
                 <td>{when(p.since)}</td>
+                <td className={quotaLow(p.quota) ? 'warn' : ''} data-testid={`connector-quota-${p.providerId}`}>
+                  {quotaLine(p.quota)}
+                </td>
                 <td>
                   <div className="sub">{p.reasonKey ?? '—'}</div>
                   {p.state !== 'retired' && (
@@ -207,6 +256,9 @@ export function ConnectorsScreen({
                   )}
                 </td>
                 <td className="cell-actions">
+                  <button data-testid={`connector-inventory-${p.providerId}`} className="btn" disabled={busy} onClick={() => void openInventory(p.providerId)}>
+                    inventory
+                  </button>
                   {p.state !== 'retired' && p.state !== 'paused' && (
                     <button data-testid={`connector-pause-${p.providerId}`} className="btn" disabled={busy} onClick={() => void setState(p.providerId, 'paused')}>
                       pause
@@ -245,12 +297,71 @@ export function ConnectorsScreen({
             ))}
             {status.providers.length === 0 && (
               <tr>
-                <td colSpan={5}>—</td>
+                <td colSpan={6}>—</td>
               </tr>
             )}
           </tbody>
         </table>
       </section>
+
+      {inventory && (
+        <section className="card" data-testid={`connector-inventory-panel-${inventory.id}`}>
+          <div className="card-head">
+            <h2>Inventory · {inventory.id}</h2>
+            <button className="btn" data-testid="connector-inventory-close" onClick={() => setInventory(null)}>
+              close
+            </button>
+          </div>
+          <p className="hint">
+            Every consent on the party&apos;s account, attributed by the environment it was started from (its return origin). Revoking one
+            ends that consent&apos;s bank access wherever it is used — meant for leftovers of removed environments.
+          </p>
+          {inventory.consents === 'loading' && <p className="hint">loading…</p>}
+          {inventory.consents === 'none' && (
+            <p className="hint" data-testid="connector-inventory-none">
+              This party keeps no inventory (or the control plane did not answer).
+            </p>
+          )}
+          {Array.isArray(inventory.consents) && (
+            <table data-testid="connector-inventory">
+              <thead>
+                <tr>
+                  <th>Consent</th>
+                  <th>Institution</th>
+                  <th>Status</th>
+                  <th>Accounts</th>
+                  <th>Environment</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {inventory.consents.map((c) => (
+                  <tr key={c.id} data-testid={`remote-consent-${c.id}`}>
+                    <td>
+                      <div className="cell-title">{c.id.slice(0, 13)}…</div>
+                      <div className="cell-sub">{c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '—'}</div>
+                    </td>
+                    <td>{c.institutionId ?? '—'}</td>
+                    <td>{c.status}</td>
+                    <td>{c.accountCount} acct</td>
+                    <td>{c.origin ?? 'unattributed'}</td>
+                    <td className="cell-actions">
+                      <button data-testid={`remote-consent-revoke-${c.id}`} className="btn danger" disabled={busy} onClick={() => void revokeConsent(inventory.id, c)}>
+                        revoke
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {inventory.consents.length === 0 && (
+                  <tr>
+                    <td colSpan={6}>No consents on the party&apos;s account.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
 
       <section className="card">
         <h2>Household agents</h2>

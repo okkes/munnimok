@@ -8,7 +8,6 @@ interface UserDiagnosis {
   memberSpaces: string[];
   ownedFeeds: { feedSpaceId: string; maxSeq: number }[];
   attachments: { spaceId: string; feedSpaceId: string; accountId: string }[];
-  gcLinks: { gcAccountId: string; spaceId: string; accountEntityId: string; iban: string; provider: string; lastFetchAt: string | null; requisitionId: string }[];
   /** #367: the user's connector sessions as the relay binds them — absent where the environment runs no connectors */
   connectorSessions?: { sessionId: string; provider: string; connectionId: string; state: string; lastSeenAt: string }[] | null;
 }
@@ -23,34 +22,6 @@ interface AdminUser {
   spaceCount: number;
   feedCount?: number;
 }
-interface AdminRequisition {
-  requisitionId: string;
-  status: string;
-  institutionId: string;
-  created: string | null;
-  accountCount: number;
-  stale: boolean;
-  ownerSub: string | null;
-  /** another environment's consent on the shared account (the all-environments view) */
-  foreign?: boolean;
-  /** the environment it was started from — its redirect origin */
-  environmentOrigin?: string | null;
-}
-/** THIS environment's connections + a count of foreign ones (the GC
- * account is shared across environments; foreign consents are neither
- * listed nor deletable here) */
-interface AdminRequisitionList {
-  requisitions: AdminRequisition[];
-  foreignCount: number;
-}
-interface ProviderQuota {
-  provider: string;
-  scope: string;
-  limit: number | null;
-  remaining: number | null;
-  resetAtUtc: string | null;
-  capturedAtUtc: string;
-}
 interface HealthInfo {
   build?: string;
   capabilities?: Record<string, unknown>;
@@ -63,17 +34,6 @@ function membershipLabel(u: AdminUser): string {
   return `${spaces} · ${u.feedCount} bank feed${u.feedCount === 1 ? '' : 's'}`;
 }
 
-/** the row's attribution: a foreign consent shows the environment it was started from, an own one its owner */
-function requisitionAttribution(r: AdminRequisition): string {
-  if (r.foreign) return ` · ${r.environmentOrigin ?? 'unknown origin'}`;
-  return r.ownerSub ? ` · ${r.ownerSub.slice(0, 12)}` : '';
-}
-
-const STATUS_LABEL: Record<string, string> = {
-  CR: 'created', LN: 'linked', EX: 'expired', RJ: 'rejected', SU: 'suspended',
-  GA: 'authorizing', UA: 'authorizing', GC: 'consenting', SA: 'selecting',
-};
-
 /** #367: what the connector relay binds for this user — the session ids, never a bundle */
 function connectorSessionsLine(sessions: UserDiagnosis['connectorSessions']): string {
   if (!sessions) return 'not offered here';
@@ -83,8 +43,8 @@ function connectorSessionsLine(sessions: UserDiagnosis['connectorSessions']): st
     .join(' | ');
 }
 
-type Screen = 'overview' | 'users' | 'connections' | 'connectors' | 'catalog';
-const SCREENS: Screen[] = ['overview', 'users', 'connections', 'connectors', 'catalog'];
+type Screen = 'overview' | 'users' | 'connectors' | 'catalog';
+const SCREENS: Screen[] = ['overview', 'users', 'connectors', 'catalog'];
 
 /** the operator-published catalog document (admin-catalog design AC2) */
 interface CatalogCategory {
@@ -130,10 +90,6 @@ interface BundledKeywordRule {
   catId: string;
   keywords: string[];
 }
-
-/** GC consents run ~90 days; flag the ones inside the final 14 */
-const expiresSoon = (r: AdminRequisition): boolean =>
-  r.status === 'LN' && !!r.created && Date.now() - new Date(r.created).getTime() > 76 * 86_400_000;
 
 /**
  * This browser's stable device id: the API stamps every authenticated
@@ -187,14 +143,8 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
   };
   const [sub, setSub] = useState(() => localStorage.getItem('munni_admin_sub') ?? '');
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [requisitions, setRequisitions] = useState<AdminRequisition[] | null>(null);
-  const [foreignCount, setForeignCount] = useState(0);
-  // the shared GoCardless account's OTHER environments — on request only, so leftovers of removed environments can go
-  const [showAll, setShowAll] = useState(false);
-  const [quota, setQuota] = useState<ProviderQuota[]>([]);
   const [health, setHealth] = useState<HealthInfo | null>(null);
   const [catalog, setCatalog] = useState<CatalogDoc | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   // 'denied' = the api really said 403; 'unreachable' = the ping never
   // got an answer (network/CORS/5xx) — one shared message made a blocked
   // request read as "not an admin" (found live 2026-08-28, control twin)
@@ -234,24 +184,16 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
     setDenied(ping?.status === 403);
     setUnreachable(!ping || (!ping.ok && ping.status !== 403));
     if (!ping?.ok) return;
-    const [usersRes, reqRes, quotaRes, healthRes] = await Promise.all([
+    const [usersRes, healthRes] = await Promise.all([
       call('/admin/users'),
-      call(`/admin/gocardless/requisitions${showAll ? '?all=true' : ''}`),
-      call('/admin/quota'),
       fetch(`${config.apiUrl}/health`).catch(() => null),
     ]);
     if (usersRes.ok) setUsers((await usersRes.json()) as AdminUser[]);
-    if (reqRes.ok) {
-      const list = (await reqRes.json()) as AdminRequisitionList;
-      setRequisitions(list.requisitions);
-      setForeignCount(list.foreignCount);
-    }
-    if (quotaRes.ok) setQuota((await quotaRes.json()) as ProviderQuota[]);
     if (healthRes?.ok) setHealth((await healthRes.json()) as HealthInfo);
     const catalogRes = await call('/catalog').catch(() => null);
     if (catalogRes?.status === 204) setCatalog(EMPTY_CATALOG);
     else if (catalogRes?.ok) setCatalog((await catalogRes.json()) as CatalogDoc);
-  }, [call, config.apiUrl, showAll]);
+  }, [call, config.apiUrl]);
 
   useEffect(() => {
     if (getToken || sub) void reload();
@@ -276,24 +218,6 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
   const publishCatalog = (categories: CatalogCategory[], keywords: CatalogKeywordRule[], stores: CatalogStoreRule[]) =>
     act(() => call('/admin/catalog', { method: 'PUT', body: JSON.stringify({ categories, keywords, stores }) }));
 
-  const deleteSelected = async () => {
-    const byId = (id: string) => requisitions?.find((r) => r.requisitionId === id);
-    const foreignIds = [...selected].filter((id) => byId(id)?.foreign);
-    if (foreignIds.length > 0) {
-      // revoking another environment's bank access is deliberate here, never a slip
-      const origins = [...new Set(foreignIds.map((id) => byId(id)?.environmentOrigin ?? 'unknown origin'))].join(', ');
-      const plural = foreignIds.length === 1 ? '' : 's';
-      if (!window.confirm(`Delete ${foreignIds.length} connection${plural} of OTHER environments (${origins})? This revokes their bank access — meant for leftovers of removed environments.`)) return;
-    }
-    setBusy(true);
-    for (const id of selected) {
-      await call(`/admin/gocardless/requisitions/${id}${foreignIds.includes(id) ? '?foreign=true' : ''}`, { method: 'DELETE' }).catch(() => undefined);
-    }
-    setSelected(new Set());
-    await reload();
-    setBusy(false);
-  };
-
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -305,7 +229,6 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
             [
               ['overview', 'Overview'],
               ['users', 'Users'],
-              ['connections', 'Bank connections'],
               ['connectors', 'Connectors'],
               ['catalog', 'Catalog'],
             ] as [Screen, string][]
@@ -361,7 +284,7 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
           </p>
         )}
         {!blocked && screen === 'overview' && (
-          <OverviewScreen users={users} requisitions={requisitions} quota={quota} health={health} />
+          <OverviewScreen users={users} health={health} />
         )}
         {!blocked && screen === 'catalog' && catalog && (
           <CatalogScreen key={catalog.version} doc={catalog} busy={busy} onPublish={publishCatalog} />
@@ -380,46 +303,12 @@ export function AdminApp({ config, getToken, signOut }: Readonly<AdminAppProps>)
             }}
           />
         )}
-        {!blocked && screen === 'connections' && (
-          <ConnectionsScreen
-            requisitions={requisitions}
-            foreignCount={foreignCount}
-            showAll={showAll}
-            onShowAll={setShowAll}
-            selected={selected}
-            busy={busy}
-            onToggle={(id) =>
-              setSelected((prev) => {
-                const next = new Set(prev);
-                if (next.has(id)) next.delete(id);
-                else next.add(id);
-                return next;
-              })
-            }
-            onDeleteSelected={() => void deleteSelected()}
-          />
-        )}
       </main>
     </div>
   );
 }
 
-function OverviewScreen({
-  users,
-  requisitions,
-  quota,
-  health,
-}: Readonly<{
-  users: AdminUser[];
-  requisitions: AdminRequisition[] | null;
-  quota: ProviderQuota[];
-  health: HealthInfo | null;
-}>) {
-  const linked = (requisitions ?? []).filter((r) => r.status === 'LN');
-  const expiring = (requisitions ?? []).filter(expiresSoon);
-  const createdLast30d = (requisitions ?? []).filter(
-    (r) => r.created && Date.now() - new Date(r.created).getTime() < 30 * 86_400_000,
-  ).length;
+function OverviewScreen({ users, health }: Readonly<{ users: AdminUser[]; health: HealthInfo | null }>) {
   const caps = Object.entries(health?.capabilities ?? {}).filter(([, v]) => typeof v === 'boolean');
 
   return (
@@ -428,47 +317,10 @@ function OverviewScreen({
       <div className="tiles" data-testid="overview-tiles">
         <Tile label="Users" value={String(users.length)} />
         <Tile label="Space memberships" value={String(users.reduce((sum, u) => sum + u.spaceCount, 0))} />
-        <Tile label="Linked banks" value={String(linked.length)} />
-        <Tile label="Expiring ≤14d" value={String(expiring.length)} warn={expiring.length > 0} />
+        <Tile label="Bank feeds" value={String(users.reduce((sum, u) => sum + (u.feedCount ?? 0), 0))} />
       </div>
 
-      <section className="card">
-        <h2>GoCardless quota</h2>
-        <p className="hint">
-          Captured from the nightly sync traffic — no extra calls. {createdLast30d} connection
-          {createdLast30d === 1 ? '' : 's'} created in the last 30 days.
-        </p>
-        <table data-testid="overview-quota">
-          <thead>
-            <tr>
-              <th>Scope</th>
-              <th>Remaining</th>
-              <th>Resets</th>
-              <th>Seen</th>
-            </tr>
-          </thead>
-          <tbody>
-            {quota.map((q) => (
-              <tr key={`${q.provider}:${q.scope}`}>
-                <td>{q.scope}</td>
-                <td className={q.remaining !== null && q.limit !== null && q.remaining <= q.limit / 5 ? 'warn' : ''}>
-                  {q.remaining ?? '—'} / {q.limit ?? '—'}
-                </td>
-                <td>{q.resetAtUtc ? new Date(q.resetAtUtc).toLocaleString() : '—'}</td>
-                <td>{new Date(q.capturedAtUtc).toLocaleString()}</td>
-              </tr>
-            ))}
-            {quota.length === 0 && (
-              <tr>
-                <td colSpan={4}>No snapshots yet — they appear after the next bank sync.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </section>
-
-      {/* the Bank-data provider toggle retired (#175): the END USER
-          picks the provider at connect time now — both are first-class */}
+      {/* the parties — banks included since #414 — live under Connectors: their state, their budget, their inventory */}
       {health && (
         <section className="card">
           <h2>Server</h2>
@@ -485,7 +337,6 @@ function OverviewScreen({
     </>
   );
 }
-
 function Tile({ label, value, warn = false }: Readonly<{ label: string; value: string; warn?: boolean }>) {
   return (
     <div className={`tile ${warn ? 'tile-warn' : ''}`}>
@@ -584,14 +435,6 @@ function UsersScreen({
                           ? 'NONE — feeds never attached to a space the user sees'
                           : diag.data.attachments.map((l) => `${l.feedSpaceId.slice(0, 8)}… → ${l.spaceId.slice(0, 12)}…`).join(', ')}
                       </div>
-                      <div>
-                        <strong>gc links</strong> ·{' '}
-                        {diag.data.gcLinks.length === 0
-                          ? 'NONE'
-                          : diag.data.gcLinks
-                              .map((g) => `${g.provider}:${g.iban.slice(-4)} → space ${g.spaceId.slice(0, 12)}… · consent ${g.requisitionId.slice(0, 8)}… (fetched ${g.lastFetchAt ? new Date(g.lastFetchAt).toLocaleString() : 'never'})`)
-                              .join(' | ')}
-                      </div>
                       {/* #367: what the connector relay binds for this user — the session ids, never a bundle */}
                       <div data-testid="user-diagnosis-connectors">
                         <strong>connector sessions</strong> · {connectorSessionsLine(diag.data.connectorSessions)}
@@ -604,106 +447,6 @@ function UsersScreen({
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={5}>—</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </section>
-    </>
-  );
-}
-
-function ConnectionsScreen({
-  requisitions,
-  foreignCount,
-  showAll,
-  onShowAll,
-  selected,
-  busy,
-  onToggle,
-  onDeleteSelected,
-}: Readonly<{
-  requisitions: AdminRequisition[] | null;
-  foreignCount: number;
-  showAll: boolean;
-  onShowAll: (on: boolean) => void;
-  selected: Set<string>;
-  busy: boolean;
-  onToggle: (id: string) => void;
-  onDeleteSelected: () => void;
-}>) {
-  const [onlyExpiring, setOnlyExpiring] = useState(false);
-  const rows = (requisitions ?? []).filter((r) => !onlyExpiring || expiresSoon(r));
-
-  return (
-    <>
-      <h1>Bank connections</h1>
-      <p className="muted">
-        {showAll ? 'Every connection on the shared GoCardless account.' : "This environment's consents only."}
-        {foreignCount > 0 && (
-          <span data-testid="connections-foreign-note">
-            {' '}
-            {foreignCount} other connection{foreignCount === 1 ? '' : 's'} on the shared GoCardless account belong
-            {foreignCount === 1 ? 's' : ''} to other environments —{' '}
-            {showAll
-              ? "listed with the environment each was started from; deleting one revokes that environment's bank access, so only leftovers of removed environments should go."
-              : 'manage those from their own admin, or show them here.'}
-          </span>
-        )}
-      </p>
-      <div className="toolbar">
-        <label className="radio">
-          <input
-            type="checkbox"
-            data-testid="connections-expiring-filter"
-            checked={onlyExpiring}
-            onChange={(e) => setOnlyExpiring(e.target.checked)}
-          />{' '}
-          expiring soon only
-        </label>
-        <label className="radio">
-          <input type="checkbox" data-testid="connections-all-filter" checked={showAll} onChange={(e) => onShowAll(e.target.checked)} />{' '}
-          other environments too
-        </label>
-        {selected.size > 0 && (
-          <button className="btn danger" disabled={busy} onClick={onDeleteSelected}>
-            Delete selected ({selected.size})
-          </button>
-        )}
-      </div>
-      <section className="card">
-        <table data-testid="admin-requisitions">
-          <thead>
-            <tr>
-              <th />
-              <th>Institution</th>
-              <th>Status</th>
-              <th>Accounts</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.requisitionId} className={r.stale ? 'stale' : ''}>
-                <td>
-                  <input type="checkbox" checked={selected.has(r.requisitionId)} onChange={() => onToggle(r.requisitionId)} />
-                </td>
-                <td>
-                  <div className="cell-title">
-                    {r.institutionId} {r.stale && <em>stale</em>} {r.foreign && <em>other environment</em>}{' '}
-                    {expiresSoon(r) && <span className="chip warn-chip">expiring</span>}
-                  </div>
-                  <div className="cell-sub">
-                    {r.requisitionId.slice(0, 13)}… · {r.created ? new Date(r.created).toLocaleDateString() : '—'}
-                    {requisitionAttribution(r)}
-                  </div>
-                </td>
-                <td>{STATUS_LABEL[r.status] ?? r.status}</td>
-                <td>{r.accountCount} acct</td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={4}>—</td>
               </tr>
             )}
           </tbody>
