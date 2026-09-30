@@ -841,3 +841,113 @@ docs/connectors/relay.md "Scheduled syncs"). Where it departs from §5.5 and §1
 - **Not proven on dev**: the plan's "pause / resume proven on dev" waits for the first environment that
   runs connectors; the relay tests prove the kill switch end to end against the in-process control
   plane, the portal tests the screen against the relay's documents.
+
+---
+
+## 15 · Open banking as parties (ruling 15)
+
+**The ruling.** The ticket's answer to §12 Q15 went further than the question: "we can move the
+GoCardless and Enable Banking to the adapter service for consistency reason", restated on
+2026-09-30 as "you can pick it up and do the migration". So GoCardless and Enable Banking become
+two bank parties of the connector platform, and Munni.Api's `Banking/` and `GoCardless/` — with
+everything that hangs off them — go. §10.1's "keeps its own connect sheet" and §14 M3's "open
+banking stays on its own door" are superseded by this section.
+
+### 15.1 What exists
+
+- **Server** (`server/src/Munni.Api`): `Banking/IBankDataApi` over two clients (`GoCardless/GoCardlessApi`,
+  `Banking/EnableBankingApi`), `BankingSetup.Register` (a provider exists iff its secret is configured),
+  the `GcRequisition` / `GcLinkedAccount` / `GcPendingTx` / `GcInstitutionLogo` tables, the `/gocardless/*`
+  routes (providers, institutions with a 24 h cache and vendored logos, requisitions, the anonymous
+  `complete`, connections), `GcFetchService` + `GcSchedule` (hourly tick, 03:00 bank-local from the IBAN's
+  country, the per-account daily budget, consent healing, idle cleanup and rebinding), `GcIngest` (feed
+  ops keyed by `ImportIds.TransactionId(iban, reference)`, a `txMeta` prediction overlay from
+  `KeywordPredictor`, pending rows mirrored and tombstoned, feed co-ownership), the admin and cockpit
+  consent and quota endpoints, `FeedDeletion` / `AccountDeletion` revoking consents.
+- **Web** (`apps/web`): `BankConnect.tsx` (provider pick, institution list, the redirect) and the `/gc-callback`
+  screen (completes the requisition; the native return bounces through the app scheme), the Settings
+  consents sheet, `AccountSource 'gocardless'` + `provider`, `fetchesItself()` and a handful of raw
+  `=== 'gocardless'` checks, `useInstitutionLogos`, `capabilities.gocardless`, the `gc.*` copy, a tour step and
+  guide tips; the native shells register `/gc-callback` as an App Link.
+- **Infra**: four operator secrets (`GOCARDLESS_SECRET_ID/KEY`, `ENABLEBANKING_APPLICATION_ID/PRIVATE_KEY_PEM`,
+  scope env), the two account tiles with their validators, `features.banking`, `render.mjs` handing the
+  four to the api container, the Enable Banking redirect registration (`{web}/gc-callback`, a manual done
+  tick), the consent purge by redirect prefix on environment deletion.
+- **Platform** (`server/src/connectors`): the `http` runtime runs inline on the control plane
+  (`InlineJobRunner`: `agent.class = inline`, no browser, full challenge support); `AuthFlow.OauthRedirect` and
+  `ChallengeType.Redirect` (`url`, `return_pattern`, `code`) are declared by no adapter yet; the answer to a
+  redirect is the landing URL, posted through the answer route; `SecretCustody.Server` is permitted by the
+  validator and implemented by nothing; there is no field whose options a party lists at connect time;
+  no `BankAdapters__*` option is rendered anywhere; `ConnectorIngest` derives the same
+  `ImportIds.TransactionId(iban, external_id)` the old ingest did, holds feed co-ownership, but writes no
+  prediction overlay and mirrors no pending rows.
+
+### 15.2 The design
+
+1. **Two parties.** `gocardless` and `enablebanking`, `kind: bank`, `runtime: http`, `agent: inline`,
+   `unattended_fetch: true`, `secret_custody: server`, `auth.flow: oauth_redirect`, one step with the
+   country (a select, NL first) and the **institution as a lookup field**, `challenges: [redirect]`, a
+   90-day session (`refreshable: true` — the consent is reused unattended for its lifetime;
+   `rotates_on_use: false`), `reauth.cheap: false` with `consent_expired` as the trigger, resources
+   `accounts` and `transactions` from `BankResources`, `max_history_days` 730 (GoCardless) / 90 (Enable
+   Banking), `preferred_fetch_hour_local: 3`. A party exists only when its operator keys are configured —
+   `BankAdapters.Real` registers it like `BankingSetup` did, never a stand-in.
+2. **The lookup field.** `FieldType.Lookup`: the party serves `GET /v1/{provider}/options/{field}?q=&…`
+   (`IProviderAdapter.LookupAsync`, the other fields of the step as context — the country), answering
+   `{ options: [{ value, label, logo? }] }` with an operator-side cache; logos are vendored by the control
+   plane (`GET /v1/{provider}/options/{field}/{value}/logo`, once, immutable) so no user's browser hits
+   an aggregator's CDN. The relay proxies both. The form renders a searchable picker with logos.
+3. **The consent is the redirect challenge.** The adapter creates the requisition (GoCardless: with an
+   end-user agreement for 730 days; Enable Banking: `POST auth`, 90 days) with the return URL the client
+   sent as `config.return_url` (its own origin + `/gc-callback`, as today) and raises `redirect` with
+   `url`, `return_pattern` (that origin + `/gc-callback*`) and `code` = the reference it will look for.
+   The client stores `code → { provider, session }` before opening the party page **in the system
+   browser** (an own-origin return pattern means "not an AuthSession": the bank returns to our page, on
+   the phone through the App Link exactly as today) and the return page answers the challenge with the
+   landing URL. Where the return lands in a browser that is not the app (a phone whose App Link is not
+   verified) the page bounces through the app scheme with the query, and the app answers. The adapter
+   completes: GoCardless reads the requisition (`LN`), Enable Banking exchanges the single-use `code` for
+   a session (`ALREADY_AUTHORIZED` falls through to the session read); `LoginResult.Account` names the
+   institution; the material is the consent id and the reachable accounts, never a credential.
+4. **Custody and schedule.** The relay keeps the bundle for `secret_custody: server` parties exactly as it
+   does for agent custody (`KeepsBundle`), so `ConnectorScheduleService` syncs them unattended. Two
+   additions any bank party may use: `limits.preferred_fetch_hour_local` (the scheduler waits for that
+   hour in the bank's zone, from the IBAN's country as `GcSchedule` did, once a day) and a
+   `rate_limited` refusal's `retry_after_seconds` becoming a not-before on the session. The first fetch
+   follows the connect, user-triggered, as for every party.
+5. **Ingest parity.** The adapters emit `external_id` = the reference the old ingest keyed on
+   (`transactionId ?? internalTransactionId`; `pending:` + it for a pending row) and the account's IBAN, so
+   `ImportIds.TransactionId(iban, external_id)` and the feed space are the ids users already hold — a
+   reconnected bank continues its history without a duplicate. The relay's ingest gains, for every bank
+   party, the pending mirror with tombstones and the keyword prediction overlay (`KeywordPredictor` moves
+   beside it); feed co-ownership, wallet hand-over and consent-aware feed deletion keep their behaviour,
+   the revocation going through the party's `logout` (`LogoutSupport.Account`).
+6. **Operators.** `IRemoteInventory` on an adapter lists what the aggregator account holds — every
+   consent with its environment of origin (the redirect's origin, as the cockpit derived it) and whether a
+   session here holds it — and revokes one; `GET/DELETE /v1/admin/providers/{id}/remote-consents`, relayed,
+   on the admin portal's party row together with **quota facts** (`limit`, `remaining`, `reset_at`, reported
+   by the adapter from the aggregator's headers into the party's status). The cockpit shows the designated
+   environment's inventory and quota read-only. Environment deletion keeps purging consents by redirect
+   prefix from the wizard (it holds the secret).
+7. **Secrets.** The four manifest names stay; `render.mjs` hands them to the control plane as
+   `BankAdapters__GoCardless__SecretId/SecretKey` and `BankAdapters__EnableBanking__ApplicationId/PrivateKeyPem`
+   — never to an agent (a manifest must not depend on them, so the catalogue digest is the same on both
+   sides). `gocardless` / `enablebanking` require `connectors`; the environment's Settings form refuses to
+   save one without the other and says why.
+8. **Removal.** `Banking/`, `GoCardless/`, `/gocardless/*`, the four `Gc*` tables (a migration drops them),
+   `/admin/gocardless/*`, `/admin/quota`, `/control/consents`, `/control/quota`, `capabilities.gocardless`,
+   `BankConnect.tsx`, the Settings consents sheet, the `gc.*` copy, the admin's Bank connections screen and
+   quota tile, the cockpit's consents and quota screens. Existing consents are **not migrated**: users
+   reconnect once through the hub; the legacy consents show in the aggregator inventory for the operator to
+   revoke. `AccountSource` loses `gocardless`; a row the new ingest has rewritten reads `connector`.
+
+### 15.3 Slices
+
+| Slice | Contents | Gate |
+| --- | --- | --- |
+| **O1** platform + infra | `FieldType.Lookup` + the options and logo routes, `preferred_fetch_hour_local`, `IRemoteInventory`, quota facts, the two adapters with their options and clients (ported from the api), `render.mjs` + the local compose handing the secrets to the control plane as well, docs (adapters, contract, deploy) | adapter and control-plane tests; infra tests |
+| **O2** relay + ingest | `KeepsBundle` for server custody, the scheduler's preferred hour and not-before, the ingest's pending mirror and prediction overlay, the lookup/logo/inventory/quota relay routes, `FeedDeletion` / `AccountDeletion` through the party, docs (relay) — the old path still alive | api tests, Sonar |
+| **O3** web | the hub's aggregator parties, the lookup picker, the own-origin return page on `/gc-callback`, `AccountSource`, the predicates, the Add-account door, onboarding, copy, tours, guide, What's New | web tests, Sonar |
+| **O4** removal + operators | the server removal + migration, the admin party row (inventory, quota) and the cockpit, the wizard's feature rule and the api's secret lines gone, architecture §5, the checklist | api / admin / control / infra tests, Sonar |
+
+Each slice is one push; its departures from this section land in §14.
