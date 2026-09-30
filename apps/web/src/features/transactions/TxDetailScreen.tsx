@@ -271,7 +271,7 @@ async function deleteManualTxRow(
   account: AccountRow | undefined,
 ): Promise<void> {
   await removeMirrorForDeletedSource(store, repo, tx, tx.linkedAccountId).catch(() => undefined);
-  if (account && account.source !== 'gocardless') {
+  if (account && account.source !== 'connector') {
     const fresh = await store.get('account', account.id);
     if (fresh?.deleted === 0) {
       await repo.upsert('account', tx.spaceId, fresh.id, { balanceCents: fresh.balanceCents - tx.amountCents });

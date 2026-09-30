@@ -107,7 +107,7 @@ describe('applyReconcile (linked is the truth)', () => {
     const repo = new Repo(store, new HlcClock('rec3'), { trackOutbox: false });
     await repo.upsert('space', SPACE, SPACE, { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
     await repo.upsert('space', FEED, FEED, { name: 'feed', kind: 'personal', currency: 'EUR', periodType: 'month' });
-    await repo.upsert('account', FEED, 'BA', { name: 'Bank', type: 'checking', source: 'gocardless', currency: 'EUR', balanceCents: 0, iban: 'NL01' });
+    await repo.upsert('account', FEED, 'BA', { name: 'Bank', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0, iban: 'NL01' });
     await repo.upsert('account', FEED, 'IA', { name: 'Import', type: 'checking', source: 'camt053', currency: 'EUR', balanceCents: 0, iban: 'NL01' });
     const bank = { accountId: 'BA', currency: 'EUR', needsReview: 0 as const };
     const imp = { ...bank, accountId: 'IA' };

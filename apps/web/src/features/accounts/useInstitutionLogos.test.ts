@@ -8,21 +8,24 @@ vi.mock('@/app/config', () => ({
   publicOrigin: () => window.location.origin,
 }));
 
-describe('institutionLogoUrl (#176)', () => {
+describe('institutionLogoUrl (#176, #414)', () => {
   beforeEach(() => localStorage.clear());
 
-  it('builds the vendored URL on the API origin for user identities — provider-independent, pipe ids escaped', () => {
+  it('asks the party for the logo its lookup showed — the relay route on the API origin, the value as a base64url token', () => {
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'u1' }));
-    // a GoCardless-style id and an Enable Banking "name|country" id both
-    // resolve against the ONE server-side logo store
-    expect(institutionLogoUrl('ING_NL')).toBe('http://api.example/gocardless/institutions/ING_NL/logo');
-    expect(institutionLogoUrl('ASN Bank|NL')).toBe('http://api.example/gocardless/institutions/ASN%20Bank%7CNL/logo');
+    expect(institutionLogoUrl({ provider: 'gocardless', bankId: 'ING_NL' })).toBe('http://api.example/connectors/gocardless/options/institution/SU5HX05M/logo');
+    // an Enable Banking "name|country" value carries a pipe and a space: the token keeps the route parameter plain
+    expect(institutionLogoUrl({ provider: 'enablebanking', bankId: 'ASN Bank|NL' })).toBe(
+      'http://api.example/connectors/enablebanking/options/institution/QVNOIEJhbmt8Tkw/logo',
+    );
   });
 
-  it('local-only identities and missing ids keep the generic icon (no URL, no network)', () => {
+  it('local-only identities, rows without a party and rows without an institution keep the generic icon (no URL, no network)', () => {
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'demo' }));
-    expect(institutionLogoUrl('ING_NL')).toBeUndefined();
+    expect(institutionLogoUrl({ provider: 'gocardless', bankId: 'ING_NL' })).toBeUndefined();
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'user', sub: 'u1' }));
+    expect(institutionLogoUrl({ provider: undefined, bankId: 'ING_NL' })).toBeUndefined();
+    expect(institutionLogoUrl({ provider: 'gocardless', bankId: undefined })).toBeUndefined();
     expect(institutionLogoUrl(undefined)).toBeUndefined();
   });
 });

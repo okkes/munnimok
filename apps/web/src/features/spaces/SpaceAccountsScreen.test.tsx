@@ -20,7 +20,7 @@ const seedRows = async () => {
   await repo.upsert('account', 'feed-1', 'feedacct-1', {
     name: 'ING Betaal',
     type: 'checking',
-    source: 'gocardless',
+    source: 'connector',
     currency: 'EUR',
     balanceCents: 5000,
     iban: 'NL69INGB0123456789',
@@ -47,7 +47,7 @@ const seedCandidate = async () => {
   await repo.upsert('account', 'feed-2', 'feedacct-2', {
     name: 'Bunq Main',
     type: 'checking',
-    source: 'gocardless',
+    source: 'connector',
     currency: 'EUR',
     balanceCents: 100,
     iban: 'NL13BUNQ2025000001',
@@ -59,7 +59,7 @@ const seedCandidate = async () => {
  *  member list must agree with the kind: healSharedKind flips a space
  *  to shared the moment a fetch reports 2+ members */
 const apiWithCandidate = (kind: 'personal' | 'shared') => ({
-  'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+  'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
   'GET /me': () => ({ userId: ME, displayName: 'Me' }),
   'GET /me/spaces': () => ['s-user', 'feed-1', 'feed-2'],
   'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }, { feedSpaceId: 'feed-2' }],
@@ -80,7 +80,7 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal', kind: 'shared' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
@@ -116,7 +116,7 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal', kind: 'shared' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
@@ -180,7 +180,7 @@ describe('SpaceAccountsScreen (#284 reader gating · #308/#310 attach flow)', ()
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal', kind: 'shared' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me': () => ({ userId: ME, displayName: 'Me' }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         // feed-1 is NOT mine — I reach it through Bob's attachment

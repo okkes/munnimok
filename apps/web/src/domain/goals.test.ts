@@ -19,7 +19,7 @@ const account = (partial: Partial<AccountRow>): AccountRow =>
 describe('#368: the savings pool behind the goals', () => {
   const accounts = [
     account({ id: 'manual', balanceCents: 50_000 }),
-    account({ id: 'linked', source: 'gocardless', balanceCents: 20_000 }),
+    account({ id: 'linked', source: 'connector', balanceCents: 20_000 }),
     account({ id: 'imported', source: 'camt053', balanceCents: 10_000 }),
     account({ id: 'gone', balanceCents: 99_999, archived: 1 }),
     account({ id: 'checking', type: 'checking', balanceCents: 99_999 }),

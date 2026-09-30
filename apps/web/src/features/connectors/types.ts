@@ -31,7 +31,15 @@ export type ChallengeType =
   | 'select_option'
   | 'redirect'
   | 'live_view';
-export type FieldType = 'text' | 'password' | 'number' | 'date' | 'select' | 'iban' | 'phone';
+/** `lookup`: a value the party lists at connect time (an aggregator's institutions) — the app asks the relay's options route */
+export type FieldType = 'text' | 'password' | 'number' | 'date' | 'select' | 'iban' | 'phone' | 'lookup';
+
+/** one value a `lookup` field offers, as the relay lists it */
+export interface LookupOption {
+  value: string;
+  label: string;
+  hasLogo: boolean;
+}
 export type JobStep =
   | 'queued'
   | 'agent_assigned'

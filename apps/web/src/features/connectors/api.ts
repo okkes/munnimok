@@ -1,3 +1,4 @@
+import { config } from '@/app/config';
 import { apiFetch } from '@/lib/api';
 import { isNativeApp } from '@/lib/platform';
 import type { DeviceClass } from './manifestForm';
@@ -10,6 +11,7 @@ import type {
   JobView,
   LiveFrame,
   LiveInputEvent,
+  LookupOption,
   RelayInfo,
   SessionView,
   SyncOutcome,
@@ -59,6 +61,14 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<{ status: 
 
 const json = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
 
+/** an option's value as the logo route takes it: base64url of the UTF-8 bytes, unpadded (a value may carry `|` or spaces) */
+export const lookupToken = (value: string): string => {
+  const padded = btoa(String.fromCodePoint(...new TextEncoder().encode(value))).replaceAll('+', '-').replaceAll('/', '_');
+  let end = padded.length;
+  while (end > 0 && padded[end - 1] === '=') end -= 1;
+  return padded.slice(0, end);
+};
+
 export interface LoginBody {
   connectionId: string;
   inputs?: Record<string, string>;
@@ -102,6 +112,19 @@ export const connectorApi = {
 
   async sessions(): Promise<BindingView[]> {
     return (await call<BindingView[]>('/sessions')).body;
+  },
+
+  /** what a party lists for a lookup field (§15), searched as the person types; the step's other values ride along as the party's context */
+  async options(provider: string, field: string, query: string, context: Readonly<Record<string, string>>): Promise<LookupOption[]> {
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(context)) if (value) params.set(key, value);
+    params.set('q', query);
+    return (await call<{ options: LookupOption[] }>(`/${provider}/options/${field}?${params.toString()}`)).body.options;
+  },
+
+  /** an option's logo, vendored by the platform: an image tag fetches it, so the address is absolute and the route asks no credentials */
+  optionLogoUrl(provider: string, field: string, value: string): string {
+    return `${config.apiUrl}${BASE}/${provider}/options/${field}/${lookupToken(value)}/logo`;
   },
 
   /** 200 = settled with the bundle attached, 202 = a run to follow */

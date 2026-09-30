@@ -21,7 +21,7 @@ async function seedFeed() {
   await repo.upsert('account', FEED, 'acct1', {
     name: 'Bank · 6789',
     type: 'checking',
-    source: 'gocardless',
+    source: 'connector',
     currency: 'EUR',
     balanceCents: 10_000,
     iban: 'NL69INGB0123456789',

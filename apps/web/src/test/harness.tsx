@@ -114,7 +114,14 @@ const bootstrapSpaceOp = (space: NonNullable<UserAppOptions['spaces']>[number]) 
   hlc: '000000100-0000-server',
 });
 
-export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 'Personal' }], api = {} }: UserAppOptions = {}) {
+/**
+ * The signed-in test user against the scripted server, without a render:
+ * the session is logged in and global fetch answers the sync protocol plus
+ * the given REST handlers. renderAppAsUser builds on it; a screen that
+ * lives outside the route tree (the party return page) mounts its own
+ * providers on top.
+ */
+export function mockUserServer({ spaces = [{ id: 's-user', name: 'Personal' }], api = {} }: UserAppOptions = {}) {
   localStorage.setItem('munni_lang', 'en');
   clearQueryCache(); // #361: no cross-test row bleed (fresh dbs, same ids)
   useSession.getState().login({ kind: 'user', sub: USER_TEST_SUB, testAuth: true });
@@ -143,11 +150,15 @@ export function renderAppAsUser(path: string, { spaces = [{ id: 's-user', name: 
     if (url.pathname === '/sync/events') return new Response('', { status: 200 });
     // the handshake must agree with THIS build's protocol, or every
     // user-identity spec sits behind a false "server outdated" (#148 r3)
-    if (url.pathname === '/health') return json({ capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 });
+    if (url.pathname === '/health') return json({ capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 });
     return json({}, 404);
   });
   vi.stubGlobal('fetch', fetchMock);
+  return fetchMock;
+}
 
+export function renderAppAsUser(path: string, options: UserAppOptions = {}) {
+  const fetchMock = mockUserServer(options);
   const router = createRouter({ routeTree, history: createMemoryHistory({ initialEntries: [path] }) });
   const result = render(
     <LogtoAppProvider>

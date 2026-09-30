@@ -4,7 +4,8 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { connectorApi } from './api';
 import { LiveView } from './LiveView';
-import { challengeKey, encodeTaps } from './manifestForm';
+import { publicOrigin } from '@/app/config';
+import { challengeKey, encodeTaps, ownReturn } from './manifestForm';
 import { openPartyPage } from './redirect';
 import type { ChallengeView } from './types';
 
@@ -124,6 +125,8 @@ function TapsAnswer({ url, busy, onAnswer }: Readonly<{ url: string | null; busy
 function RedirectAnswer({ challenge, busy, onAnswer }: Readonly<{ challenge: ChallengeView; busy: boolean; onAnswer: (v: string) => void }>) {
   const { t } = useLang();
   const [pasted, setPasted] = useState('');
+  // the party comes back to the app's own return page (§15): it answers, nothing to paste
+  const own = ownReturn(challenge.returnPattern, publicOrigin());
   const open = async () => {
     if (!challenge.url) return;
     const captured = await openPartyPage(challenge.url, challenge.returnPattern).catch(() => null);
@@ -135,19 +138,27 @@ function RedirectAnswer({ challenge, busy, onAnswer }: Readonly<{ challenge: Cha
         <Icon name="open-in-new" size={16} />
         {t('connect.redirect.open')}
       </Button>
-      <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] leading-relaxed text-ink-3" data-testid="connect-redirect-note">
-        {t('connect.redirect.appNote')}
-      </p>
-      <input
-        data-testid="connect-redirect-paste"
-        value={pasted}
-        onChange={(e) => setPasted(e.target.value)}
-        placeholder={t('connect.redirect.paste')}
-        className={`${INPUT} font-mono text-[13px]`}
-      />
-      <Button data-testid="connect-redirect-submit" disabled={busy || !pasted.trim()} onClick={() => onAnswer(pasted.trim())}>
-        {t('connect.redirect.submit')}
-      </Button>
+      {own ? (
+        <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] leading-relaxed text-ink-3" data-testid="connect-redirect-own-note">
+          {t('connect.redirect.ownNote')}
+        </p>
+      ) : (
+        <>
+          <p className="rounded-card bg-bg-2 px-3 py-2 text-[12px] leading-relaxed text-ink-3" data-testid="connect-redirect-note">
+            {t('connect.redirect.appNote')}
+          </p>
+          <input
+            data-testid="connect-redirect-paste"
+            value={pasted}
+            onChange={(e) => setPasted(e.target.value)}
+            placeholder={t('connect.redirect.paste')}
+            className={`${INPUT} font-mono text-[13px]`}
+          />
+          <Button data-testid="connect-redirect-submit" disabled={busy || !pasted.trim()} onClick={() => onAnswer(pasted.trim())}>
+            {t('connect.redirect.submit')}
+          </Button>
+        </>
+      )}
     </>
   );
 }

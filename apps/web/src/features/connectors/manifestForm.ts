@@ -1,6 +1,6 @@
 import { en } from '@/i18n/en';
 import type { TranslationKey } from '@/i18n';
-import type { ChallengeType, FieldSpec, ProviderManifest } from './types';
+import type { ChallengeType, ErrorEnvelope, FieldSpec, ProviderManifest } from './types';
 
 /**
  * A manifest becomes a form (docs/connector-integration-plan.md §10.2):
@@ -46,7 +46,26 @@ const FIELD_FALLBACK: Record<FieldSpec['type'], TranslationKey> = {
   select: 'connect.field.select',
   iban: 'connect.field.iban',
   phone: 'connect.field.phone',
+  lookup: 'connect.field.lookup',
 };
+
+/**
+ * Config the app answers itself (§15): a party that sends the person to a
+ * page and wants to know where to bring them back declares `return_url`,
+ * and the app's own return page is the only right answer — never a field
+ * the person types. The keys here are hidden from the form and merged
+ * into the login's `config`.
+ */
+export type ProvidedConfig = Readonly<Record<string, string>>;
+
+/** the return page every own-origin redirect lands on (kept at the path the banks were registered with) */
+export const RETURN_PATH = '/gc-callback';
+
+export const appProvidedConfig = (origin: string): ProvidedConfig => ({ return_url: `${origin}${RETURN_PATH}` });
+
+/** a redirect that comes back to the app's own page, rather than to a party's scheme */
+export const ownReturn = (returnPattern: string | undefined, origin: string): boolean =>
+  !!returnPattern && returnPattern.startsWith(`${origin}${RETURN_PATH}`);
 
 function toField(spec: FieldSpec): FormField {
   let pattern: RegExp | undefined;
@@ -76,10 +95,11 @@ function toField(spec: FieldSpec): FormField {
  * step of their own when there are any. A remote-browser login has no
  * steps at all — the human signs in on the party's page.
  */
-export function formSteps(manifest: ProviderManifest): FormStep[] {
+export function formSteps(manifest: ProviderManifest, provided: ProvidedConfig = {}): FormStep[] {
   const steps: FormStep[] = [];
-  if (manifest.auth.config.length > 0) {
-    steps.push({ id: 'config', labelKey: 'connect.step.settings', fields: manifest.auth.config.map(toField) });
+  const asked = manifest.auth.config.filter((spec) => !(spec.key in provided));
+  if (asked.length > 0) {
+    steps.push({ id: 'config', labelKey: 'connect.step.settings', fields: asked.map(toField) });
   }
   for (const step of manifest.auth.steps) {
     steps.push({ id: step.id, labelKey: copyKey(step.labelKey, 'connect.step.credentials'), fields: step.fields.map(toField) });
@@ -108,11 +128,12 @@ export function validateValues(fields: readonly FormField[], values: Readonly<Re
 export function splitValues(
   manifest: ProviderManifest,
   values: Readonly<Record<string, string>>,
+  provided: ProvidedConfig = {},
 ): { inputs: Record<string, string>; config: Record<string, string> } {
   const inputs: Record<string, string> = {};
   const config: Record<string, string> = {};
   for (const spec of manifest.auth.config) {
-    const value = values[spec.key]?.trim();
+    const value = spec.key in provided ? provided[spec.key] : values[spec.key]?.trim();
     if (value) config[spec.key] = value;
   }
   for (const step of manifest.auth.steps) {
@@ -166,5 +187,21 @@ export function callbackSchemeOf(returnPattern: string | undefined): string | nu
 }
 
 /** the party's sync interval in ms, as the catalogue states it */
+/** the session states a login can end in without an active session */
+export const TERMINAL_STATES: ReadonlySet<string> = new Set(['failed', 'expired', 'disabled', 'blocked', 'needs_reauth']);
+
+/** a terminal view without an envelope still gets one, in the connector's own words */
+const FAILED_CODE: Record<string, string> = { blocked: 'blocked_by_provider', expired: 'session_expired' };
+
+export const failedWith = (state: string): ErrorEnvelope => {
+  const code = FAILED_CODE[state] ?? 'internal';
+  return {
+    code,
+    retriable: state !== 'blocked',
+    userAction: state === 'blocked' ? 'wait' : 'retry',
+    messageKey: `connect.error.${code}`,
+  };
+};
+
 export const minIntervalMs = (manifest: ProviderManifest | undefined): number =>
   (manifest?.limits.minIntervalSeconds ?? 0) * 1000;

@@ -84,7 +84,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -186,7 +186,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -221,7 +221,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -231,7 +231,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
       },
@@ -253,7 +253,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -263,7 +263,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
       },
@@ -297,7 +297,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -308,7 +308,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         // production /me/spaces includes reachable feeds — without feed-1
         // here the engine treats it as lost access and purges the account
         'GET /me/spaces': () => ['s-user', 'feed-1'],
@@ -344,7 +344,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -356,7 +356,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -387,7 +387,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -404,7 +404,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -435,7 +435,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -446,7 +446,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -480,7 +480,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -501,7 +501,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/spaces/s-user/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -527,7 +527,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -539,7 +539,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -572,7 +572,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -583,7 +583,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'DELETE /me/feeds/feed-1': () => {
@@ -613,7 +613,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -624,7 +624,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         // a hanging server: the delete resolves only when the test says so
@@ -659,7 +659,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -669,7 +669,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
       },
@@ -703,7 +703,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-marie', 'sh-live', {
       name: 'Marie ING',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 12_000,
       iban: 'NL11INGB0000000011',
@@ -720,7 +720,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-ghost', 'sh-ghost', {
       name: 'Ghost bank',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 700,
     });
@@ -734,7 +734,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-dead', 'sh-dead', {
       name: 'Dead bank',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 300,
     });
@@ -745,7 +745,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         // all three feeds stay reachable so the engine's orphan sweep
         // never races the assert — the FILTER must do the dropping
         'GET /me/spaces': () => ['s-user', 'feed-marie', 'feed-ghost', 'feed-dead'],
@@ -808,7 +808,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -973,7 +973,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'demo_space', 'eb-acc', {
       name: 'ASN via EB',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       provider: 'enablebanking',
       currency: 'EUR',
       balanceCents: 0,
@@ -1265,7 +1265,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -1323,7 +1323,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         // the fixture's feed must stay reachable or the engine purges it
         'GET /me/spaces': () => ['s-user', feedSpaceId('NL69INGB0123456789')],
         'GET /me/feeds': () => [],
@@ -1354,7 +1354,7 @@ describe('AccountsScreen (demo identity)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -1385,7 +1385,7 @@ describe('AccountsScreen (demo identity)', () => {
     renderAppAsUser('/accounts', {
       spaces: [{ id: 's-user', name: 'Personal' }],
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'GET /me/spaces': () => ['s-user', 'feed-1'],
         'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
         'GET /spaces/s-user/accounts': () => [{ id: 'srv-1', feedSpaceId: 'feed-1', accountId: 'feedacct-1' }],
@@ -1540,4 +1540,24 @@ describe('#300 etaSecondsLeft (unit)', () => {
     // 800 rows left at 100/s = honest 8s, pad fully decayed
     expect(etaSecondsLeft(state, 1200, 2000, 12_000)).toBe(8);
   });
+});
+describe('AccountsScreen — the Connect door (#414)', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.deleteDatabase(USER_TEST_DB);
+  });
+
+  it('the chooser’s Connect row leads to the Connections hub with the catalogue already open', async () => {
+    const { catalogueOf, manifestOf } = await import('@/test/connectorFixtures');
+    renderAppAsUser('/accounts', {
+      api: { 'GET /connectors/providers': () => catalogueOf(manifestOf({ id: 'gocardless', name: 'GoCardless', kind: 'bank' })) },
+    });
+    await screen.findByTestId('screen-accounts');
+    fireEvent.click(screen.getByTestId('accounts-add'));
+    fireEvent.click(await screen.findByTestId('chooser-connect'));
+    await screen.findByTestId('screen-connections', {}, { timeout: 5000 });
+    // the catalogue is open on arrival — the choice was already made on the accounts screen
+    expect(await screen.findByTestId('conn-party-gocardless', {}, { timeout: 5000 })).toBeTruthy();
+  }, 15_000);
 });

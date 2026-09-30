@@ -42,7 +42,7 @@ function toggled<T>(set: ReadonlySet<T>, value: T): Set<T> {
  *  where one exists (the AccountsScreen row recipe), else the type icon
  *  in the account's color; a dead logo URL swaps to the icon */
 function AccountChipFace({ account }: Readonly<{ account: SpaceAccount }>) {
-  const logo = account.logo ?? institutionLogoUrl(account.bankId);
+  const logo = account.logo ?? institutionLogoUrl(account);
   const icon = <Icon name={typeDef(account.type).icon} size={13} color={account.color ?? 'var(--m-ink-3)'} />;
   if (!logo) return icon;
   return (

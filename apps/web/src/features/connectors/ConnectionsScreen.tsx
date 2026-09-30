@@ -15,6 +15,7 @@ import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { CatalogueSheet } from './CatalogueSheet';
+import { takeCatalogueIntent } from './catalogueIntent';
 import { ChallengeCard } from './ChallengeCard';
 import { ConnectFlowSheet } from './ConnectFlowSheet';
 import { ConnectionSheet } from './ConnectionSheet';
@@ -133,7 +134,8 @@ export function ConnectionsScreen() {
   const allSpaces = useQuery(store, async () => (await store.allRows('space')).filter((s) => s.deleted === 0), []);
   const links = useQuery(store, async () => (await store.allRows('storeConnLink')).filter((l) => l.deleted === 0), []);
 
-  const [catalogueOpen, setCatalogueOpen] = useState(false);
+  // an accounts screen's Connect door arrives with the catalogue already open (#414)
+  const [catalogueOpen, setCatalogueOpen] = useState(() => takeCatalogueIntent());
   const [flow, setFlow] = useState<{ manifest: ProviderManifest; reconnectId: string | null } | null>(null);
   const [naming, setNaming] = useState<{ connectionId: string; duplicateOf?: string } | null>(null);
   const [nameDraft, setNameDraft] = useState('');

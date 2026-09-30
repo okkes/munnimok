@@ -32,25 +32,19 @@ interface ImportBatchView {
 export const SOURCE_KEYS: Record<AccountSource, TranslationKey> = {
   manual: 'acct.sourceManual',
   camt053: 'acct.sourceImport',
-  gocardless: 'acct.sourceOpenBanking',
   connector: 'acct.sourceConnector',
 };
 
-/** #176: the label honors WHICH open-banking provider fetches the row —
- *  Enable Banking rows read "Enable Banking", not "GoCardless" */
-export const sourceKeyFor = (account: Pick<AccountRow, 'source' | 'provider'>): TranslationKey =>
-  account.source === 'gocardless' && account.provider === 'enablebanking'
-    ? 'acct.sourceOpenBankingEb'
-    : SOURCE_KEYS[account.source];
+/** the label of a row's source; a connector-fed row names its party through {@link sourceParamsFor} */
+export const sourceKeyFor = (account: Pick<AccountRow, 'source' | 'provider'>): TranslationKey => SOURCE_KEYS[account.source];
 
-/** #367: a connector-fed row names its party in the label */
+/** #367: a connector-fed row names its party in the label (GoCardless, Enable Banking, ASN …) */
 export const sourceParamsFor = (account: Pick<AccountRow, 'source' | 'provider'>): Record<string, string> =>
   account.source === 'connector' ? { party: partyName(account.provider ?? '') } : {};
 
-/** rows a party keeps current by itself (open banking, the connector platform) — as
+/** rows a party keeps current by itself (the connector platform, open banking included) — as
  *  opposed to statements a human uploads */
-export const fetchesItself = (account: Pick<AccountRow, 'source'>): boolean =>
-  account.source === 'gocardless' || account.source === 'connector';
+export const fetchesItself = (account: Pick<AccountRow, 'source'>): boolean => account.source === 'connector';
 
 /**
  * The global view of one of YOUR feed accounts: name/icon, source, the

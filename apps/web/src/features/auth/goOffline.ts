@@ -52,9 +52,9 @@ export async function convertToOffline(ctx: GoOfflineContext, opts: GoOfflineOpt
   // the /me binding check and wipe themselves.
   await apiFetch('/me?keepIdentity=true', { method: 'DELETE' }).catch(() => undefined);
 
-  // bank-linked accounts → manual tier: the feed is gone, hand-typed
+  // party-fed accounts → manual tier: the feed is gone, hand-typed
   // rows take over; balances and history stay untouched
-  const accounts = (await ctx.store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'gocardless');
+  const accounts = (await ctx.store.allRows('account')).filter((a) => a.deleted === 0 && a.source === 'connector');
   for (const account of accounts) {
     await ctx.repo.upsert('account', account.spaceId, account.id, { source: 'manual' });
   }

@@ -24,12 +24,14 @@ import { initPressFeedback } from '@/app/pressFeedback';
 import { ThemeProvider } from '@/app/theme';
 import { router } from '@/app/router';
 import { CallbackScreen, LogtoAppProvider, isCallbackPath } from '@/features/auth/logto';
-import { GcCallbackScreen } from '@/features/accounts/BankConnect';
+import { ConnectorReturnScreen } from '@/features/connectors/ConnectorReturnScreen';
+import { RETURN_PATH } from '@/features/connectors/manifestForm';
 import { LockScreen } from '@/features/lock/LockScreen';
 import { initLockWatcher, useLock } from '@/features/lock/lock';
 import { UpdateToast } from '@/ui/UpdateToast';
 
-const isGcCallbackPath = window.location.pathname.includes('/gc-callback');
+// a party that brings the person back to the app's own page (a bank's consent, §15)
+const isConnectorReturnPath = window.location.pathname.includes(RETURN_PATH);
 // split invites are REAL paths now (OS link matching never sees a #
 // fragment) — bounce into the hash router before anything renders
 if (window.location.pathname.startsWith('/splits/join/')) {
@@ -98,7 +100,7 @@ installKeyboardReveal(); // iOS: fields the keyboard swallowed scroll back into 
 // zero-network gate in beforeSend keeps demo/offline identities silent)
 installMemWatch((message, extra) => reportWarning('memwatch', message, extra));
 
-// OIDC / bank-consent redirects land outside the hash router
+// OIDC / party-return redirects land outside the hash router
 function AppEntry() {
   // the lock gates a signed-in session (and its callbacks); signed out
   // there is nothing to protect and login must stay reachable
@@ -106,7 +108,7 @@ function AppEntry() {
   const identity = useSession((s) => s.identity);
   if (identity && locked) return <LockScreen />;
   if (isCallbackPath()) return <CallbackScreen />;
-  if (isGcCallbackPath) return <GcCallbackScreen />;
+  if (isConnectorReturnPath) return <ConnectorReturnScreen />;
   return <RouterProvider router={router} />;
 }
 

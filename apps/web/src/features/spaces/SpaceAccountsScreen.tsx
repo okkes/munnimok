@@ -53,7 +53,6 @@ interface AttachedAccountEntry {
 const SOURCE_ICONS: Record<AccountRow['source'], string> = {
   manual: 'pencil-outline',
   camt053: 'file-document-outline',
-  gocardless: 'bank-transfer',
   connector: 'link-variant',
 };
 
@@ -298,7 +297,7 @@ export function SpaceAccountsScreen() {
           {!!entries?.length && (
             <div className="flex flex-col gap-2.5" data-testid="space-accounts-list">
               {entries.map((entry) => {
-                const logo = entry.account?.logo ?? institutionLogoUrl(entry.account?.bankId);
+                const logo = entry.account?.logo ?? institutionLogoUrl(entry.account);
                 return (
                   <button
                     key={entry.key}
@@ -393,7 +392,7 @@ export function SpaceAccountsScreen() {
       {/* the manual type grid directly — this button SAYS manual now
           (user redesign ss13/ss14); connect/import live behind Attach
           and the global overview */}
-      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} gcAvailable={syncing} initialStep="manual" />
+      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} initialStep="manual" />
 
       {/* tap-through info: the full story per account, with the actions
           (edit / detach) moved off the row (user redesign ss13) */}

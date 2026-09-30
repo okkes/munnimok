@@ -395,4 +395,113 @@ describe('Connections hub (signed-in user)', () => {
     await screen.findByTestId('screen-connections');
     await waitFor(() => expect(screen.getByTestId('conn-state-c-agent').textContent).toMatch(/Syncs by itself/), { timeout: 5000 });
   }, 15_000);
+
+  it('connects an open-banking party: the bank searched from the party’s list, the return address answered by the app, the consent page opened in this tab (§15)', async () => {
+    const origin = window.location.origin;
+    const aggregator = manifestOf({
+      id: 'gocardless',
+      name: 'GoCardless',
+      kind: 'bank',
+      secretCustody: 'server',
+      logoRef: 'gocardless',
+      notesKey: 'connect.gocardless.notes',
+      auth: {
+        flow: 'oauth_redirect',
+        config: [{ key: 'return_url', type: 'text', secret: false, required: true, labelKey: 'connect.config.return_url' }],
+        steps: [
+          {
+            id: 'bank',
+            labelKey: 'connect.open_banking.step.bank',
+            fields: [
+              { key: 'country', type: 'select', secret: false, required: true, labelKey: 'connect.field.country', options: ['NL', 'DE'] },
+              { key: 'institution', type: 'lookup', secret: false, required: true, labelKey: 'connect.field.institution' },
+            ],
+          },
+        ],
+        challenges: ['redirect'],
+        session: { ttlSeconds: 7_776_000, refreshable: true, rotatesOnUse: false },
+        reauth: { cheap: false, triggerCodes: ['consent_expired'] },
+      },
+      resources: [
+        { id: 'accounts', returns: 'account', typicalDurationSeconds: 5, maxRecordsPerFetch: 50 },
+        { id: 'transactions', returns: 'transaction', typicalDurationSeconds: 5, maxRecordsPerFetch: 500 },
+      ],
+    });
+    const opened: string[] = [];
+    (globalThis as { Capacitor?: unknown }).Capacitor = {
+      Plugins: {
+        Browser: {
+          open: async ({ url }: { url: string }) => {
+            opened.push(url);
+          },
+        },
+      },
+    };
+    const lookups: string[] = [];
+    renderAppAsUser('/connections', {
+      api: {
+        'GET /connectors/providers': () => catalogueOf(aggregator),
+        ...feeds,
+        'GET /connectors/gocardless/options/institution': (_body, url) => {
+          lookups.push(url.search);
+          const q = (url.searchParams.get('q') ?? '').toLowerCase();
+          const all = [
+            { value: 'ING_NL', label: 'ING', hasLogo: true },
+            { value: 'ASN_NL', label: 'ASN Bank', hasLogo: false },
+          ];
+          return { options: all.filter((option) => option.label.toLowerCase().includes(q)) };
+        },
+        'POST /connectors/gocardless/login': (body) => {
+          const request = body as { config: Record<string, string>; inputs: Record<string, string> };
+          // the country and the bank as picked (the step's fields); the return address is the app's own answer, never typed
+          expect(request.inputs).toEqual({ country: 'NL', institution: 'ING_NL' });
+          expect(request.config).toEqual({ return_url: `${origin}/gc-callback` });
+          return json(
+            {
+              sessionId: 'ses_gc',
+              state: 'awaiting_input',
+              challenge: {
+                id: 'ch_gc',
+                type: 'redirect',
+                answerKind: 'text',
+                url: 'https://bank.example/consent/1',
+                returnPattern: `${origin}/gc-callback*`,
+                code: 'REF-1',
+                expiresAt: new Date(Date.now() + 600_000).toISOString(),
+              },
+              notes: [],
+            },
+            202,
+          );
+        },
+      },
+    });
+    try {
+      await screen.findByTestId('screen-connections');
+      fireEvent.click(await screen.findByTestId('conn-add-open'));
+      fireEvent.click(await screen.findByTestId('conn-party-gocardless', {}, { timeout: 5000 }));
+      await screen.findByTestId('connect-field-country');
+      expect(screen.queryByTestId('connect-field-return_url')).toBeNull();
+      fireEvent.change(screen.getByTestId('connect-field-country'), { target: { value: 'NL' } });
+      // the bank comes from the party's own list, searched as typed, the country riding along as context
+      fireEvent.change(screen.getByTestId('connect-field-institution'), { target: { value: 'in' } });
+      fireEvent.click(await screen.findByTestId('connect-lookup-institution-ING_NL', {}, { timeout: 5000 }));
+      expect(lookups.at(-1)).toContain('country=NL');
+      expect(lookups.at(-1)).toContain('q=in');
+      expect((await screen.findByTestId('connect-lookup-institution-picked')).textContent).toContain('ING');
+      fireEvent.click(screen.getByTestId('connect-next'));
+
+      // the consent is a redirect that comes back to the app's own page: nothing to paste,
+      // and what the return page needs is written down before the bank opens
+      await screen.findByTestId('connect-redirect-own-note', {}, { timeout: 5000 });
+      expect(screen.queryByTestId('connect-redirect-paste')).toBeNull();
+      const pending = JSON.parse(localStorage.getItem('munni_connector_return') ?? '{}') as Record<string, unknown>;
+      expect(pending).toMatchObject({ provider: 'gocardless', sessionId: 'ses_gc', challengeId: 'ch_gc', code: 'REF-1', reconnect: false });
+      expect(typeof pending.connectionId).toBe('string');
+      fireEvent.click(screen.getByTestId('connect-redirect-open'));
+      await waitFor(() => expect(opened).toEqual(['https://bank.example/consent/1']));
+    } finally {
+      delete (globalThis as { Capacitor?: unknown }).Capacitor;
+    }
+  }, 20_000);
 });

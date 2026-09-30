@@ -236,18 +236,17 @@ describe('Settings screens (user identity, scripted server)', () => {
   it('shows the sync card on the settings tab', async () => {
     renderAppAsUser('/settings', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
       },
     });
     await screen.findByTestId('settings-sync-row');
     expect(screen.getByTestId('settings-global-row')).toBeTruthy();
   }, 15_000);
 
-  it('shows user rows; the connections sheet lists bank links', async () => {
+  it('shows user rows; the Connections door leads to the hub — the one list of every party (#414)', async () => {
     renderAppAsUser('/settings/global', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: true, push: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
-        'GET /gocardless/connections': () => [{ gcAccountId: 'g1', iban: 'NL69INGB0123456789', lastFetchAt: null }],
+        'GET /health': () => ({ status: 'ok', capabilities: { push: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
       },
     });
 
@@ -255,8 +254,8 @@ describe('Settings screens (user identity, scripted server)', () => {
     expect(await screen.findByTestId('settings-friends-row')).toBeTruthy();
     // #159: the devices door moved here from the profile
     expect(screen.getByTestId('settings-devices-row')).toBeTruthy();
-    fireEvent.click(await screen.findByTestId('settings-connections-row'));
-    await waitFor(() => expect(screen.getByText('NL69INGB0123456789')).toBeTruthy());
+    fireEvent.click(screen.getByTestId('settings-hub-row'));
+    await screen.findByTestId('screen-connections', {}, { timeout: 5000 });
   }, 15_000);
 
   it('push toggle subscribes with the server VAPID key and registers the endpoint', async () => {
@@ -266,7 +265,7 @@ describe('Settings screens (user identity, scripted server)', () => {
       api: {
         'GET /health': () => ({
           status: 'ok',
-          capabilities: { gocardless: false, push: true, vapidPublicKey: 'BPtest-key_123' },
+          capabilities: { push: true, vapidPublicKey: 'BPtest-key_123' },
           protocol: CLIENT_PROTOCOL,
           minClientProtocol: 1,
         }),
@@ -291,7 +290,7 @@ describe('Settings screens (user identity, scripted server)', () => {
       api: {
         'GET /health': () => ({
           status: 'ok',
-          capabilities: { gocardless: false, push: true, vapidPublicKey: 'BPtest-key_123' },
+          capabilities: { push: true, vapidPublicKey: 'BPtest-key_123' },
           protocol: CLIENT_PROTOCOL,
           minClientProtocol: 1,
         }),
@@ -310,7 +309,7 @@ describe('Settings screens (user identity, scripted server)', () => {
 
   it('user sign-out keeps the local database (sync is the source of truth)', async () => {
     renderAppAsUser('/settings', {
-      api: { 'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }) },
+      api: { 'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }) },
     });
     await screen.findByTestId('screen-settings');
     fireEvent.click(screen.getByTestId('settings-signout'));
@@ -325,7 +324,7 @@ describe('Settings screens (user identity, scripted server)', () => {
     // lives on the PROFILE screen now (user request: identity-level danger)
     renderAppAsUser('/profile', {
       api: {
-        'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+        'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
         'DELETE /me': () => {
           deleted = true;
           return { deleted: true };

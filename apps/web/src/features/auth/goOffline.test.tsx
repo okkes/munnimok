@@ -28,7 +28,7 @@ describe('Go offline (user identity, scripted server)', () => {
     await repo.upsert('account', 'feed-1', 'feedacct-1', {
       name: 'ING Betaal',
       type: 'checking',
-      source: 'gocardless',
+      source: 'connector',
       currency: 'EUR',
       balanceCents: 5000,
       iban: 'NL69INGB0123456789',
@@ -37,7 +37,7 @@ describe('Go offline (user identity, scripted server)', () => {
   };
 
   const api = (calls: string[]) => ({
-    'GET /health': () => ({ status: 'ok', capabilities: { gocardless: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+    'GET /health': () => ({ status: 'ok', capabilities: {}, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
     'GET /me/spaces': () => ['s-user', 'sh-1', 'feed-1'],
     'GET /me/feeds': () => [{ feedSpaceId: 'feed-1' }],
     'GET /me': () => ({ userId: '00000000-0000-0000-0000-000000000001', displayName: 'Okkes', picture: null }),

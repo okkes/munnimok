@@ -10,10 +10,25 @@ import { Button } from '@/ui/Button';
 import { FormBlockerNote, blockerRing } from '@/ui/FormBlockerNote';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
+import { publicOrigin } from '@/app/config';
 import { ConnectorError, connectorApi, deviceClass } from './api';
 import { ChallengeCard } from './ChallengeCard';
+import { rememberReturn } from './connectorReturn';
 import { subscribeConnectorFrames } from './events';
-import { copyKey, errorKey, formSteps, needsOwnComputer, progressKey, splitValues, validateValues } from './manifestForm';
+import { LookupField } from './LookupField';
+import {
+  TERMINAL_STATES,
+  appProvidedConfig,
+  copyKey,
+  errorKey,
+  failedWith,
+  formSteps,
+  needsOwnComputer,
+  ownReturn,
+  progressKey,
+  splitValues,
+  validateValues,
+} from './manifestForm';
 import type { FieldProblem, FormField } from './manifestForm';
 import type { AgentView, ErrorEnvelope, ProviderManifest, SessionView } from './types';
 
@@ -33,21 +48,6 @@ type Phase =
 
 const POLL_MS = 2_500;
 const INPUT = 'h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4';
-
-const TERMINAL = new Set(['failed', 'expired', 'disabled', 'blocked', 'needs_reauth']);
-
-/** a terminal view without an envelope still gets one, in the connector's own words */
-const FAILED_CODE: Record<string, string> = { blocked: 'blocked_by_provider', expired: 'session_expired' };
-
-const failedWith = (state: string): ErrorEnvelope => {
-  const code = FAILED_CODE[state] ?? 'internal';
-  return {
-    code,
-    retriable: state !== 'blocked',
-    userAction: state === 'blocked' ? 'wait' : 'retry',
-    messageKey: `connect.error.${code}`,
-  };
-};
 
 const inputModeFor = (field: FormField): React.HTMLAttributes<HTMLInputElement>['inputMode'] => {
   if (field.type === 'number') return 'numeric';
@@ -77,7 +77,9 @@ export function ConnectFlowSheet({
   const navigate = useNavigate();
   const { store } = useData();
   const ops = useConnectionOps();
-  const steps = useMemo(() => (manifest ? formSteps(manifest) : []), [manifest]);
+  // config the app answers itself (where a party brings the person back) is never a field
+  const provided = useMemo(() => appProvidedConfig(publicOrigin()), []);
+  const steps = useMemo(() => (manifest ? formSteps(manifest, provided) : []), [manifest, provided]);
   const ownComputer = !!manifest && needsOwnComputer(manifest);
   const [phase, setPhase] = useState<Phase>({ kind: 'form' });
   const [stepIndex, setStepIndex] = useState(0);
@@ -145,10 +147,21 @@ export function ConnectFlowSheet({
       return;
     }
     if (view.state === 'awaiting_input' && view.challenge) {
+      // a party that comes back to the app's own return page (§15): what that page needs to answer, written down first
+      if (view.challenge.type === 'redirect' && view.challenge.code && ownReturn(view.challenge.returnPattern, publicOrigin())) {
+        rememberReturn({
+          provider,
+          sessionId: view.sessionId,
+          challengeId: view.challenge.id,
+          code: view.challenge.code,
+          connectionId: connectionId.current,
+          reconnect: !!reconnectId,
+        });
+      }
       setPhase({ kind: 'challenge', view });
       return;
     }
-    if (TERMINAL.has(view.state)) {
+    if (TERMINAL_STATES.has(view.state)) {
       fail(view.error ?? failedWith(view.state));
       return;
     }
@@ -191,7 +204,7 @@ export function ConnectFlowSheet({
 
   const start = () =>
     guarded(async () => {
-      const { inputs, config } = splitValues(manifest, values);
+      const { inputs, config } = splitValues(manifest, values, provided);
       const device = reconnectId ? await store.connectorConnGet(reconnectId) : undefined;
       const { view } = await connectorApi.startLogin(provider, {
         connectionId: connectionId.current,
@@ -243,6 +256,39 @@ export function ConnectFlowSheet({
     setAttempted(false);
   };
 
+  /** the control a field is edited with: a party's own list, a fixed list, or a text box */
+  const controlFor = (field: FormField, value: string, invalid: boolean, set: (v: string) => void) => {
+    if (field.type === 'lookup') {
+      // the step's other values ride along as context (the country picks the list)
+      const context = Object.fromEntries((step?.fields ?? []).filter((f) => f.key !== field.key).map((f) => [f.key, values[f.key] ?? '']));
+      return <LookupField provider={provider} field={field.key} value={value} context={context} invalid={invalid} onChange={(v) => set(v)} />;
+    }
+    if (field.type === 'select') {
+      return (
+        <select data-testid={`connect-field-${field.key}`} value={value} onChange={(e) => set(e.target.value)} className={`${INPUT}${blockerRing(invalid)}`}>
+          <option value="">—</option>
+          {(field.options ?? []).map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    return (
+      <input
+        data-testid={`connect-field-${field.key}`}
+        type={inputTypeFor(field)}
+        inputMode={inputModeFor(field)}
+        autoComplete={field.autofill ?? 'off'}
+        value={value}
+        onChange={(e) => set(e.target.value)}
+        aria-invalid={invalid}
+        className={`${INPUT}${blockerRing(invalid)}`}
+      />
+    );
+  };
+
   const renderField = (field: FormField) => {
     const problem = attempted ? problems[field.key] : undefined;
     const value = values[field.key] ?? '';
@@ -250,27 +296,7 @@ export function ConnectFlowSheet({
     return (
       <label key={field.key} className="flex flex-col gap-1 text-[12px] text-ink-3">
         {t(field.labelKey)}
-        {field.type === 'select' ? (
-          <select data-testid={`connect-field-${field.key}`} value={value} onChange={(e) => set(e.target.value)} className={`${INPUT}${blockerRing(!!problem)}`}>
-            <option value="">—</option>
-            {(field.options ?? []).map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <input
-            data-testid={`connect-field-${field.key}`}
-            type={inputTypeFor(field)}
-            inputMode={inputModeFor(field)}
-            autoComplete={field.autofill ?? 'off'}
-            value={value}
-            onChange={(e) => set(e.target.value)}
-            aria-invalid={!!problem}
-            className={`${INPUT}${blockerRing(!!problem)}`}
-          />
-        )}
+        {controlFor(field, value, !!problem, set)}
         <FormBlockerNote show={!!problem} text={t(problem === 'pattern' ? 'connect.field.pattern' : 'connect.field.required')} testId={`connect-field-${field.key}-blocker`} />
       </label>
     );

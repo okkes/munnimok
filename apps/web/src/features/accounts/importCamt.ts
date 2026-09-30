@@ -370,7 +370,7 @@ async function refreshExistingAttachment(
 async function importTargetAccountId(store: StorageBackend, feedId: string, iban: string): Promise<string> {
   const canonicalId = canonicalAccountId(iban);
   const canonical = await store.get('account', canonicalId);
-  const bankOwnsCanonical = canonical?.spaceId === feedId && canonical.deleted === 0 && canonical.source === 'gocardless';
+  const bankOwnsCanonical = canonical?.spaceId === feedId && canonical.deleted === 0 && canonical.source === 'connector';
   return bankOwnsCanonical ? importAccountId(iban) : canonicalId;
 }
 

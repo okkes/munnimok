@@ -54,11 +54,9 @@ export interface SpaceRow extends SyncEnvelope {
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
-/** 'connector' = fetched through the connector platform (#367); the
- *  `provider` field then names the party */
-export type AccountSource = 'manual' | 'camt053' | 'gocardless' | 'connector';
-/** which open-banking provider fetches a 'gocardless'-sourced account (#176) */
-export type BankProvider = 'gocardless' | 'enablebanking';
+/** 'connector' = fetched through the connector platform (#367, #414 —
+ *  open banking included); the `provider` field then names the party */
+export type AccountSource = 'manual' | 'camt053' | 'connector';
 
 export interface AccountRow extends SyncEnvelope {
   id: string;
@@ -73,11 +71,10 @@ export interface AccountRow extends SyncEnvelope {
   balanceAsOf?: string;
   /** when this account last heard from its source (ISO; bank fetch or statement import) */
   lastSyncedAt?: string;
-  /** #176: the open-banking provider behind a 'gocardless' source (a
-   *  BankProvider), or the connector party behind a 'connector' one (the
-   *  provider id as the catalogue names it) — stamped by the server
-   *  ingest on EVERY fetched row; manual and statement-import rows carry
-   *  none */
+  /** #367: the connector party behind a 'connector' source (the provider
+   *  id as the catalogue names it — `gocardless`, `enablebanking`, `asn`
+   *  …) — stamped by the server ingest on EVERY fetched row; manual and
+   *  statement-import rows carry none */
   provider?: string;
   /** #133/#221: this account is the space's DEFAULT for a counterparty
    *  family — minted at space creation (undeletable, ledger system-

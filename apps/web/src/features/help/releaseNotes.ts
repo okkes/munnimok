@@ -22,6 +22,11 @@ export const WHATS_NEW: WhatsNewEntry[] = [
     date: '2026-09-29',
     items: [
       {
+        en: 'Open banking joins Connections: GoCardless and Enable Banking are parties in the catalogue now. Pick the country and your bank from the list (logos included), give permission on the bank’s own page and land back in munni with the connection made and named. The Connect door on the accounts screen leads there, and the old bank connections sheet in Settings is gone.',
+        nl: 'Open banking zit nu in Koppelingen: GoCardless en Enable Banking zijn partijen in de catalogus. Kies het land en je bank uit de lijst (met logo), geef toestemming op de pagina van de bank en land terug in munni met de koppeling gemaakt en benoemd. De Verbinden-deur op het rekeningenscherm leidt erheen, en het oude venster met bankkoppelingen in Instellingen is weg.',
+        tr: 'Açık bankacılık artık Bağlantılar’da: GoCardless ve Enable Banking katalogdaki taraflar. Ülkeyi ve bankanı listeden seç (logolarıyla), bankanın kendi sayfasında izin ver ve bağlantı kurulmuş ve adlandırılmış olarak munni’ye geri dön. Hesaplar ekranındaki Bağla kapısı oraya götürür; Ayarlar’daki eski banka bağlantıları penceresi kalktı.',
+      },
+      {
         en: 'Connections: one place for every party. Connect a shop from the catalogue and sign in the way the party asks — a code, an approval, or its own page streamed to you — then name the connection and pick the spaces it feeds. Your login stays yours: munni keeps only a sealed session key, on your own devices.',
         nl: 'Koppelingen: één plek voor elke partij. Koppel een winkel uit de catalogus en log in zoals de partij het vraagt — een code, een goedkeuring, of de eigen pagina naar je gestreamd — geef de koppeling daarna een naam en kies de spaces die ze vult. Je inloggegevens blijven van jou: munni bewaart alleen een verzegelde sessiesleutel, op je eigen apparaten.',
         tr: 'Bağlantılar: her taraf için tek yer. Katalogdan bir mağaza bağla ve tarafın istediği gibi giriş yap — bir kod, bir onay ya da sana aktarılan kendi sayfası — sonra bağlantıya ad ver ve beslediği alanları seç. Giriş bilgilerin sende kalır: munni yalnızca kendi cihazlarında mühürlü bir oturum anahtarı tutar.',
