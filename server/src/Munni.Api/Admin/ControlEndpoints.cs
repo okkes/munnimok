@@ -1,67 +1,24 @@
-using Microsoft.EntityFrameworkCore;
 using Munni.Api.Auth;
-using Munni.Api.Data;
-using Munni.Api.GoCardless;
 using Munni.Api.Validation;
 
 namespace Munni.Api.Admin;
 
-public sealed record ControlConsentDto(
-    string RequisitionId,
-    string Status,
-    string InstitutionId,
-    DateTimeOffset? Created,
-    int AccountCount,
-    /// <summary>origin of the requisition's redirect url — the environment
-    /// that created the consent (null when no usable redirect survives)</summary>
-    string? EnvironmentOrigin,
-    /// <summary>true when THIS environment's database records the consent</summary>
-    bool OwnedHere);
-
 /// <summary>
 /// Control area (admin split LS5/LS6): the shared-services cockpit behind
-/// the same `admin` scope as /admin (AdminScope). Where the portal shows
-/// one environment's slice, /control shows the whole shared GoCardless
-/// account — every consent attributed to its environment by redirect
-/// origin, plus the account-wide quota. Deliberately NO delete endpoint:
-/// deletion stays per-environment (each portal deletes only its own
-/// consents), so the cockpit can never revoke another environment's live
-/// bank connection.
+/// the same `admin` scope as /admin (AdminScope). The cockpit is read-only
+/// by design: it probes this environment here and reads the connector
+/// control plane through <c>/control/connectors/*</c> (the parties with
+/// their quota, an aggregator's inventory of consents) — every write, the
+/// kill switch and a consent's revocation included, stays in the
+/// environment's own admin portal.
 /// </summary>
 public static class ControlEndpoints
 {
-    public static void MapControl(this IEndpointRouteBuilder app, bool goCardlessEnabled, bool bankingEnabled)
+    public static void MapControl(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/control").RequireAuthorization(AdminScope.Policy).WithSafeRouteParams();
 
         // the cockpit probes this first: 200 = admin, 403 = signed in without the scope
-        group.MapGet("/ping", () => Results.Ok(new { admin = true, gocardless = goCardlessEnabled, banking = bankingEnabled }));
-
-        group.MapGet("/quota", AdminEndpoints.GetQuota);
-
-        if (!goCardlessEnabled) return;
-        group.MapGet("/consents", ListConsents);
-    }
-
-    /// <summary>EVERY requisition on the shared GoCardless account — the
-    /// cross-environment view the per-env portal deliberately hides</summary>
-    private static async Task<IResult> ListConsents(AppDbContext db, IGoCardlessApi gc)
-    {
-        var remote = await gc.ListRequisitionsAsync();
-        var localIds = (await db.GcRequisitions.Select(r => r.RequisitionId).ToListAsync()).ToHashSet();
-        var consents = remote
-            .Select(r => new ControlConsentDto(
-                r.Id,
-                r.Status,
-                r.InstitutionId,
-                r.Created,
-                r.Accounts.Count,
-                EnvironmentOrigin: Uri.TryCreate(r.Redirect, UriKind.Absolute, out var redirect)
-                    ? redirect.GetLeftPart(UriPartial.Authority)
-                    : null,
-                OwnedHere: localIds.Contains(r.Id)))
-            .OrderByDescending(c => c.Created)
-            .ToList();
-        return Results.Ok(consents);
+        group.MapGet("/ping", () => Results.Ok(new { admin = true }));
     }
 }

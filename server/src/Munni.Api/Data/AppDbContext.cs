@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Accounts;
 using Munni.Api.Connectors;
-using Munni.Api.GoCardless;
 using Munni.Api.Push;
 using Munni.Api.Social;
 
@@ -14,21 +13,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SpaceMember> SpaceMembers => Set<SpaceMember>();
     public DbSet<SyncOpRow> SyncOps => Set<SyncOpRow>();
     public DbSet<EntityRow> EntityRows => Set<EntityRow>();
-    public DbSet<GcRequisition> GcRequisitions => Set<GcRequisition>();
-    public DbSet<GcLinkedAccount> GcLinkedAccounts => Set<GcLinkedAccount>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
     public DbSet<PushSubscriptionRow> PushSubscriptions => Set<PushSubscriptionRow>();
     public DbSet<FeedSpace> FeedSpaces => Set<FeedSpace>();
     public DbSet<FeedOwner> FeedOwners => Set<FeedOwner>();
     public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
-    public DbSet<GcPendingTx> GcPendingTxs => Set<GcPendingTx>();
-    public DbSet<GcInstitutionLogo> GcInstitutionLogos => Set<GcInstitutionLogo>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<ConnectionSyncDevice> ConnectionSyncDevices => Set<ConnectionSyncDevice>();
     public DbSet<UserDevice> UserDevices => Set<UserDevice>();
     public DbSet<ConnectionCipher> ConnectionCiphers => Set<ConnectionCipher>();
-    public DbSet<ProviderQuota> ProviderQuotas => Set<ProviderQuota>();
     public DbSet<Split> Splits => Set<Split>();
     public DbSet<SplitMember> SplitMembers => Set<SplitMember>();
     public DbSet<SplitEntry> SplitEntries => Set<SplitEntry>();
@@ -75,13 +69,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             // the same physical device can serve several accounts
             e.HasKey(x => new { x.UserId, x.Id });
         });
-        modelBuilder.Entity<GcRequisition>(e => e.HasKey(x => x.Id));
-        modelBuilder.Entity<GcInstitutionLogo>(e => e.HasKey(x => x.InstitutionId));
-        modelBuilder.Entity<GcLinkedAccount>(e =>
-        {
-            e.HasKey(x => x.GcAccountId);
-            e.HasIndex(x => x.SpaceId);
-        });
         modelBuilder.Entity<Friendship>(e =>
         {
             e.HasKey(x => x.Id);
@@ -114,7 +101,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.SpaceId, x.FeedSpaceId, x.AccountId }).IsUnique();
             e.HasIndex(x => x.FeedSpaceId);
         });
-        modelBuilder.Entity<GcPendingTx>(e => e.HasKey(x => new { x.GcAccountId, x.EntityId }));
         modelBuilder.Entity<AppSetting>(e => e.HasKey(x => x.Key));
         modelBuilder.Entity<ConnectionSyncDevice>(e =>
         {
@@ -125,11 +111,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.UserId, x.ConnectionId }).IsUnique();
-        });
-        modelBuilder.Entity<ProviderQuota>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => new { x.Provider, x.Scope }).IsUnique();
         });
         modelBuilder.Entity<Split>(e => e.HasKey(x => x.Id));
         modelBuilder.Entity<SplitMember>(e =>
@@ -216,23 +197,6 @@ public class SplitInvite
     public Guid CreatedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset ExpiresAt { get; set; }
-}
-
-/// <summary>
-/// Latest rate-limit headers seen per provider endpoint scope
-/// (admin-redesign AD3) — captured by piggybacking on normal sync
-/// traffic, never by extra calls. One row per (provider, scope).
-/// </summary>
-public class ProviderQuota
-{
-    public Guid Id { get; set; }
-    public required string Provider { get; set; }
-    /// <summary>endpoint family, e.g. "accounts:transactions" or "requisitions"</summary>
-    public required string Scope { get; set; }
-    public int? Limit { get; set; }
-    public int? Remaining { get; set; }
-    public DateTimeOffset? ResetAtUtc { get; set; }
-    public DateTimeOffset CapturedAtUtc { get; set; } = DateTimeOffset.UtcNow;
 }
 
 /// <summary>operator-editable server-wide settings (the catalog document, …)</summary>

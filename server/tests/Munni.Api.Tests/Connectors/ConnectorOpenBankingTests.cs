@@ -10,7 +10,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Munni.Api.Accounts;
 using Munni.Api.Connectors;
 using Munni.Api.Data;
-using Munni.Api.GoCardless;
 using Munni.Api.Sync;
 
 namespace Munni.Api.Tests.Connectors;

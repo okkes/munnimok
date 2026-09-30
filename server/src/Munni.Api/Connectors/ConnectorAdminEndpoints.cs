@@ -41,12 +41,16 @@ public static class ConnectorAdminEndpoints
         admin.MapDelete("/providers/{providerId}/remote-consents/{consentId}", RevokeRemote);
         admin.MapGet("/users/{sub}/sessions", UserSessions);
 
+        // the cockpit's read-only view of the designated environment (§15.6): the
+        // parties with their quota, and an aggregator's inventory of consents —
+        // never a revocation, which stays in the environment's own portal
         var control = app.MapGroup("/control/connectors")
             .RequireAuthorization(AdminScope.Policy)
             .WithSafeRouteParams()
             .AddEndpointFilter<ConnectorReplyFilter>();
 
         control.MapGet("/status", Status);
+        control.MapGet("/providers/{providerId}/remote-consents", RemoteConsents);
     }
 
     /// <summary>Providers with their health, agents online, the queue — the control plane's own status line.</summary>

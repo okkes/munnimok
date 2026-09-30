@@ -6,7 +6,6 @@ using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Accounts;
 using Munni.Api.Data;
-using Munni.Api.GoCardless;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 
@@ -43,8 +42,9 @@ public sealed record ConnectorIngestResult(
 
 /// <summary>
 /// Turns the connector's normalised records into sync ops — the server
-/// acting as one more device, exactly as <see cref="GcIngest"/> does for
-/// open banking (docs/connector-integration-plan.md §5.6). Receipts land in
+/// acting as one more device, as the api's own open-banking ingest did
+/// before the banks became parties (docs/connector-integration-plan.md
+/// §5.6, §15). Receipts land in
 /// the owner's store feed, bank accounts and their transactions in the
 /// account's IBAN feed (a card or wallet without one in a personal feed),
 /// registry positions as liability accounts in a personal registry feed.

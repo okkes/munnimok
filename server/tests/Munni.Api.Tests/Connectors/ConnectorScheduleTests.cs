@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Munni.Api.Connectors;
 using Munni.Api.Data;
-using Munni.Api.GoCardless;
+using Munni.Api.Accounts;
 
 namespace Munni.Api.Tests.Connectors;
 

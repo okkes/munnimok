@@ -1,7 +1,6 @@
 using System.Text.RegularExpressions;
 using FluentValidation;
 using Munni.Api.Accounts;
-using Munni.Api.GoCardless;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 
@@ -150,26 +149,6 @@ public sealed class SubscribeRequestValidator : AbstractValidator<Munni.Api.Push
             RuleFor(r => r.P256dh).NotEmpty().MaximumLength(256);
             RuleFor(r => r.Auth).NotEmpty().MaximumLength(128);
         });
-    }
-}
-
-public sealed class CreateRequisitionRequestValidator : AbstractValidator<CreateRequisitionRequest>
-{
-    public CreateRequisitionRequestValidator()
-    {
-        RuleFor(r => r.SpaceId).NotEmpty().MaximumLength(64);
-        RuleFor(r => r.InstitutionId).NotEmpty().MaximumLength(128);
-        RuleFor(r => r.RedirectUrl)
-            .NotEmpty()
-            .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri)
-                         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            .WithMessage("redirectUrl must be an absolute http(s) URL");
-        // #175: the user's provider pick — always named (the connect sheet
-        // sends it); the endpoint still checks it is CONFIGURED on this install
-        RuleFor(r => r.Provider)
-            .NotEmpty()
-            .Must(p => p is Banking.GoCardlessBankApi.Id or Banking.EnableBankingApi.Id)
-            .WithMessage("provider must be gocardless or enablebanking");
     }
 }
 

@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Munni.Api.Accounts;
 using Munni.Api.Data;
-using Munni.Api.GoCardless;
 using Munni.Api.Sync;
 using Xunit;
 
@@ -13,8 +12,9 @@ namespace Munni.Api.Tests;
 
 /// <summary>
 /// Deleting one financial account (its feed), ruling revoke-mine-only:
-/// consent always goes; raw feed + per-space overlays are erased only
-/// when no other user still covers the account.
+/// my consent always goes (its end at the party is ConnectorOpenBankingTests'
+/// walk); raw feed + per-space overlays are erased only when no other user
+/// still covers the account.
 /// </summary>
 public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
 {
@@ -59,33 +59,6 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
             [Op(spaceId, "space", spaceId), Op(spaceId, "txMeta", ImportIds.TxMetaId(spaceId, txId), "catId")]));
         await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, accountId, "2026-01-01"));
 
-        // my consent rows exist and must go with the account
-        var aliceId = await UserIdAsync(sub);
-        using (var scope = _factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var requisitionId = Guid.NewGuid();
-            db.GcRequisitions.Add(new GcRequisition
-            {
-                Id = requisitionId,
-                UserId = aliceId,
-                SpaceId = spaceId,
-                InstitutionId = "ING",
-                RequisitionId = "gc-req-del-1",
-                Status = "linked",
-            });
-            db.GcLinkedAccounts.Add(new GcLinkedAccount
-            {
-                GcAccountId = $"gc-{Guid.NewGuid():N}",
-                SpaceId = spaceId,
-                AccountEntityId = accountId,
-                Iban = iban,
-                Currency = "EUR",
-                RequisitionId = requisitionId,
-            });
-            await db.SaveChangesAsync();
-        }
-
         var response = await alice.DeleteAsync($"/me/feeds/{feed}");
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         var result = await response.Content.ReadFromJsonAsync<FeedDeletionResult>();
@@ -103,8 +76,6 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
         Assert.False(await verifyDb.EntityRows.AnyAsync(r => r.SpaceId == feed));
         Assert.False(await verifyDb.SyncOps.AnyAsync(o => o.SpaceId == feed));
         Assert.False(await verifyDb.SpaceAccountLinks.AnyAsync(l => l.FeedSpaceId == feed));
-        Assert.False(await verifyDb.GcLinkedAccounts.AnyAsync(a => a.AccountEntityId == accountId));
-        Assert.False(await verifyDb.GcRequisitions.AnyAsync(r => r.RequisitionId == "gc-req-del-1"));
     }
 
     [Fact]
@@ -123,32 +94,15 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
         await alice.PostAsJsonAsync($"/sync/{feed}/push", new PushRequest("dev1", [Op(feed, "account", accountId)]));
         await alice.PostAsJsonAsync($"/sync/{spaceId}/push", new PushRequest("dev1", [Op(spaceId, "space", spaceId)]));
         await alice.PostAsJsonAsync($"/spaces/{spaceId}/accounts", new AttachAccountRequest(feed, accountId, "2026-01-01"));
-        // bob's own consent covers the same IBAN (family shared account)
+        // bob's own consent covered the same IBAN (family shared account): the
+        // relay's ingest made him a co-owner of the feed (#240)
         await bob.GetAsync("/me/spaces"); // ensures bob's user row exists
         var aliceId = await UserIdAsync(aliceSub);
         var bobId = await UserIdAsync(bobSub);
         using (var scope = _factory.Services.CreateScope())
         {
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var bobReq = Guid.NewGuid();
-            db.GcRequisitions.Add(new GcRequisition
-            {
-                Id = bobReq,
-                UserId = bobId,
-                SpaceId = spaceId,
-                InstitutionId = "ING",
-                RequisitionId = "gc-req-bob-1",
-                Status = "linked",
-            });
-            db.GcLinkedAccounts.Add(new GcLinkedAccount
-            {
-                GcAccountId = $"gc-{Guid.NewGuid():N}",
-                SpaceId = spaceId,
-                AccountEntityId = accountId,
-                Iban = iban,
-                Currency = "EUR",
-                RequisitionId = bobReq,
-            });
+            db.FeedOwners.Add(new FeedOwner { FeedSpaceId = feed, UserId = bobId });
             await db.SaveChangesAsync();
         }
 
@@ -158,13 +112,13 @@ public class FeedDeletionTests : IClassFixture<FeedsApiFactory>
 
         using var verify = _factory.Services.CreateScope();
         var verifyDb = verify.ServiceProvider.GetRequiredService<AppDbContext>();
-        // the feed survives for bob, who also inherits ownership
+        // the feed survives for bob, who also inherits ownership — his co-owner row collapses into the primary slot
         var feedRow = await verifyDb.FeedSpaces.FirstAsync(f => f.Id == feed);
         Assert.Equal(bobId, feedRow.OwnerUserId);
+        Assert.False(await verifyDb.FeedOwners.AnyAsync(o => o.FeedSpaceId == feed));
         Assert.True(await verifyDb.EntityRows.AnyAsync(r => r.SpaceId == feed));
-        // alice's attachment is gone; bob's consent is untouched
+        // alice's attachment is gone
         Assert.False(await verifyDb.SpaceAccountLinks.AnyAsync(l => l.FeedSpaceId == feed && l.AttachedBy == aliceId));
-        Assert.True(await verifyDb.GcRequisitions.AnyAsync(r => r.RequisitionId == "gc-req-bob-1"));
     }
 
     [Fact]

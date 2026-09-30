@@ -4,7 +4,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Munni.Api.Accounts;
 using Munni.Api.Data;
-using Munni.Api.GoCardless;
 using Munni.Api.ImportWatch;
 using Munni.Api.Sync;
 
