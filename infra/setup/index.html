@@ -3344,7 +3344,9 @@ async function applyAppLinks(env) {
   const s = env.env;
   const value = (document.getElementById(`applinks-fp-${s}`)?.value ?? '').trim();
   const first = value.split(',')[0].trim();
-  if (value && !/^([0-9a-f]{2}:){31}[0-9a-f]{2}$/i.test(first)) { msg(`msg-applinks-${s}`, 'that is not a SHA-256 certificate fingerprint — 32 hex pairs separated by colons, as Play Console shows it', false); return; }
+  // the fingerprint alone, or the Digital Asset Links snippet the App signing page offers (the helper reads the fingerprints out of it)
+  const looksJson = /^[[{]/.test(value);
+  if (value && !looksJson && !/^([0-9a-f]{2}:){31}[0-9a-f]{2}$/i.test(first)) { msg(`msg-applinks-${s}`, 'that is neither a SHA-256 certificate fingerprint (32 hex pairs separated by colons) nor the Digital Asset Links JSON snippet — both are on the App signing page', false); return; }
   if (!(await streamLocal('/api/envs/app-links', { platform: S.platform, env: s, androidCertSha256: value }, `save ${env.label}'s app signing fingerprint`, { refresh: false }))) return;
   delete S.appLinksByEnv[s];
   if (isLcl()) { msg(`msg-applinks-${s}`, 'saved — Re-run setup restarts the web container with it', true); await refreshLocal(); return; }
@@ -3607,12 +3609,13 @@ function phonesHtml(env) {
       <p class="why">The web container serves <code>/.well-known/assetlinks.json</code> (Android) and <code>/.well-known/apple-app-site-association</code> (iOS) for this environment's own app — the bank's return, a split invite and the sign-in return then open the app directly instead of asking "open in munni?". iOS is as code (the App Store Connect tile's team id + the bundle id). Android verifies against the certificate <b>Play</b> signs the installed app with — the one value no API hands out.</p>
       ${f.android ? `<div class="runrow" style="align-items:center">
         <label class="f" for="applinks-fp-${s}" style="margin:0">App signing SHA-256</label>
-        <input id="applinks-fp-${s}" type="text" style="max-width:520px;font-family:ui-monospace,monospace;font-size:12px" placeholder="AA:BB:CC:… (32 pairs)" value="${escAttr(env.store?.androidCertSha256 ?? '')}" autocomplete="off"/>
+        <input id="applinks-fp-${s}" type="text" style="max-width:520px;font-family:ui-monospace,monospace;font-size:12px" placeholder="AA:BB:CC:… (32 pairs) — or the Digital Asset Links JSON" value="${escAttr(env.store?.androidCertSha256 ?? '')}" autocomplete="off"/>
         <button class="ghost" data-applinks-apply data-env="${s}">Save</button>
       </div>
       <details class="how"><summary>Where the fingerprint is (once per environment, by hand)</summary>
         <ol>
-          <li><a href="https://play.google.com/console/" target="_blank" rel="noreferrer">Play Console</a> → the app <code>${esc(ids.android)}</code> → <b>Test and release → Setup → App signing</b> → <b>App signing key certificate</b> → copy the <b>SHA-256 certificate fingerprint</b> (not the upload key's — Play re-signs what the phone installs).</li>
+          <li><a href="https://play.google.com/console/" target="_blank" rel="noreferrer">Play Console</a> → the app <code>${esc(ids.android)}</code> → <b>Protected with Play</b> (left menu) → <b>Play Store protection</b> → <b>Manage Play app signing</b>. That opens the <b>App signing</b> page (Google moved it there from Test and release → Setup).</li>
+          <li>On that page, the <b>App signing key certificate</b> block at the top: copy its <b>SHA-256 certificate fingerprint</b>. The same value sits at the bottom in the <b>Digital Asset Links JSON</b> snippet (<code>sha256_cert_fingerprints</code>) — pasting that whole snippet here works too. <b>Not</b> the <b>Upload key certificate</b> in between: that is the key you sign uploads with; Play re-signs what the phone installs.</li>
           <li>Paste it above and Save: the config is committed and Deploy runs, the web container serves the new file. Google reads it within minutes; the phone verifies it on the next install or update of the app.</li>
         </ol>
       </details>` : ''}

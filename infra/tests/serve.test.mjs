@@ -28,7 +28,7 @@ writeFileSync(join(PLATFORMS, 'lcl', 'envs', 'prod.json'), JSON.stringify({ env:
 
 const { createApp, OPERATOR_NAMES, toolFor, LCL_STACKS, lanCandidates, caListingHasFingerprint, staleCaddyRoots } = await import('../setup/serve.mjs');
 const { loadLocalValues, saveLocalValues, loadWizardStore } = await import('../modules/localstore.mjs');
-const { loadStack, loadEnv, platformEnvs, saveEnv } = await import('../modules/stack.mjs');
+const { loadStack, loadEnv, platformEnvs, removeEnv, saveEnv } = await import('../modules/stack.mjs');
 
 test.after(() => { if (process.env.MUNNI_KEEP_SCRATCH) console.log(`scratch kept at ${SCRATCH}`); else rmSync(SCRATCH, { recursive: true, force: true }); });
 
@@ -760,4 +760,19 @@ test('app links: the Play app-signing fingerprint is validated and saved into th
   const none = (await call(live, { url: '/api/local/app-links?stack=munni-nas-prod' })).json();
   assert.equal(none.android.state, 'no-fingerprint');
   await post(app, '/api/wizard/values', { values: { APPLE_TEAM_ID: '' }, platform: 'nas' });
+});
+
+test('app links: the Digital Asset Links JSON snippet is accepted whole — its fingerprints are the app signing key\'s; JSON without them or broken JSON is refused with the reason', async () => {
+  const fp = 'D4:78:00:15:57:04:9A:98:65:B2:F2:BA:68:1D:AD:C6:D0:2E:26:1E:40:E5:A7:01:53:59:68:61:0A:66:6C:00';
+  const snippet = JSON.stringify([{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app', package_name: 'app.munni.nas.prod', sha256_cert_fingerprints: [fp.toLowerCase()] } }], null, 2);
+  const saved = await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: snippet });
+  assert.match(saved.text(), /fingerprint saved for prod/);
+  assert.equal(loadEnv('nas', 'prod').store.androidCertSha256, fp);
+  const noFp = await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: '[{"target":{"package_name":"x"}}]' });
+  assert.equal(noFp.statusCode, 400);
+  assert.match(noFp.json().error, /sha256_cert_fingerprints/);
+  const broken = await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: '[{"target": ' });
+  assert.equal(broken.statusCode, 400);
+  assert.match(broken.json().error, /not valid JSON/);
+  await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: '' });
 });

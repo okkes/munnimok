@@ -946,6 +946,28 @@ async function storeStatusEndpoint(res, url, fetchImpl) {
 /* ── app links per environment: the served /.well-known files against the config, and whether Google sees the statement ── */
 const FINGERPRINT_RE = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/;
 const normalizeFingerprints = (raw) => String(raw ?? '').split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+/**
+ * The fingerprints in what the operator pasted: the SHA-256 alone (one or
+ * more, comma-separated) or the Digital Asset Links JSON snippet the App
+ * signing page offers with a copy button — its sha256_cert_fingerprints ARE
+ * the app signing key's, so the snippet cannot be confused with the upload
+ * key certificate that sits above it on the same page.
+ */
+export function fingerprintsFrom(raw) {
+  const text = String(raw ?? '').trim();
+  if (!/^[[{]/.test(text)) return { fingerprints: normalizeFingerprints(text) };
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { return { error: 'that is not valid JSON — paste the Digital Asset Links snippet exactly as the App signing page shows it, or the SHA-256 fingerprint alone' }; }
+  const found = [];
+  const walk = (v) => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== 'object') return;
+    for (const [k, x] of Object.entries(v)) { if (k === 'sha256_cert_fingerprints' && Array.isArray(x)) found.push(...x.map(String)); else walk(x); }
+  };
+  walk(parsed);
+  if (!found.length) return { error: 'that JSON carries no sha256_cert_fingerprints — the Digital Asset Links snippet at the bottom of the App signing page does' };
+  return { fingerprints: normalizeFingerprints(found.join(',')) };
+}
 async function appLinksEndpoint(res, url, fetchImpl) {
   let stack;
   try { stack = envStackFrom(url?.searchParams.get('stack')); } catch (e) { return json(res, 400, { error: e.message }); }
@@ -990,9 +1012,11 @@ async function appLinksSaveEndpoint(req, res) {
   const env = String(body.env ?? '');
   let current;
   try { current = loadEnv(platform, env); } catch (e) { return json(res, 400, { error: e.message }); }
-  const fps = normalizeFingerprints(body.androidCertSha256);
+  const parsed = fingerprintsFrom(body.androidCertSha256);
+  if (parsed.error) return json(res, 400, { error: parsed.error });
+  const fps = parsed.fingerprints;
   const bad = fps.find((f) => !FINGERPRINT_RE.test(f));
-  if (bad) return json(res, 400, { error: `not a SHA-256 certificate fingerprint: ${bad} — expected 32 hex pairs separated by colons, as Play Console → App signing → App signing key certificate shows it` });
+  if (bad) return json(res, 400, { error: `not a SHA-256 certificate fingerprint: ${bad} — expected 32 hex pairs separated by colons, as the App signing page's App signing key certificate (or its Digital Asset Links snippet) shows it` });
   saveEnv(platform, { ...current, store: { ...current.store, androidCertSha256: fps.length ? fps.join(',') : null } });
   streamHead(res);
   res.write(fps.length ? `▶ app signing certificate fingerprint${fps.length > 1 ? 's' : ''} saved for ${env}: ${fps.join(', ')}\n` : `▶ certificate fingerprint cleared for ${env}\n`);
