@@ -895,6 +895,33 @@ departs from §15, and why:
 - **Not touched, by design:** the api's own `/gocardless/*` path is alive until O4 — both paths write the
   same ids, so a user who reconnects through the hub in O3 continues the same rows.
 
+**2026-09-30 — O3 delivered** (`feat(web): open banking through the Connections hub`; #414). Where it
+departs from §15, and why:
+
+- **The return page answers with the public-origin landing address**, not the document's own: inside
+  the native shell the webview's origin is localhost, which no return pattern names. The query is the
+  bank's; only the origin is normalised.
+- **No blind scheme bounce.** §15.3 said a return landing in a browser that is not the app "bounces
+  through the app scheme"; a desktop browser without the app would dead-end on that. The page offers
+  "Open the munni app" (the scheme link with the query) next to the way back, and only where the
+  document holds no pending return — the app that started the consent is the one that answers.
+- **The name is asked on the return page.** The hub's naming sheet lives in the router; a consent comes
+  back in a fresh document, so the return page carries the same ask (prefilled with the party's default
+  name) and continues to the hub.
+- **The account row learns its institution from the record.** The api's `/gocardless/institutions/{id}/logo`
+  had no connector-side twin, so the account record gained `institution` (the lookup's value, O1's
+  `AccountDraft`), the ingest stamps it as `bankId` (O2), and the row logo is the party's vendored
+  option logo through the relay's anonymous route.
+- **The Connect door leads to the hub with the catalogue open** (a one-shot intent, like the attach
+  handoff) — the chooser's "Connect a bank" row stays where people know it; the Settings consents row and
+  sheet are gone, the hub is the one list.
+- **`capabilities.gocardless` has no reader left** in the app (the chooser no longer asks the api whether
+  open banking exists — a party is in the catalogue or it is not); O4 drops the flag server-side.
+- **`AccountSource` lost `gocardless` and `BankProvider` went with it**: every predicate (self-fetching,
+  the reconnect hint, the go-offline demotion, the import's canonical-row rule, the detail screen's
+  source sniff) reads `connector`. Rows the old path wrote keep reading as they are until the new ingest
+  rewrites them (§15.8: no migration).
+
 ---
 
 ## 15 · Open banking as parties (ruling 15)

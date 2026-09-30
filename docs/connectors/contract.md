@@ -31,7 +31,7 @@ omitted.
 | `GET /providers`, `GET /providers/{id}` | the catalogue: every manifest with its health grafted on |
 | `GET /status` | providers (each with `quota` — `limit`, `remaining`, `reset_at`, `seen_at` — when the party last said something about its budget), agents online/revoked, queue depth |
 | `GET /{provider}/options/{field}?q=…` | the values of a `lookup` field, listed by the party at connect time (an aggregator's institutions); every other query parameter is context (the step's country); `{ options: [{ value, label, has_logo }] }` |
-| `GET /{provider}/options/{field}/{value}/logo` | the option's logo, vendored by the control plane once and cached for a month; 404 when the party has none |
+| `GET /{provider}/options/{field}/{token}/logo` | the option's logo, vendored by the control plane once and cached for a month; `token` is the option's value as base64url (a party may name an option `ASN Bank\|NL`); 404 when the party has none |
 | `GET /health` (anonymous, outside the group) | liveness |
 | `POST /{provider}/login` | start a session: `subject`, `inputs` or a `credential_bundle`, `config`, `consent`, `prefer_agent`, `label` → 200 with the session (active, bundle attached) or 202 to follow |
 | `GET /{provider}/login/{sessionId}` | the session view; hands over the bundle once |
