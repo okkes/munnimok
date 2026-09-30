@@ -66,6 +66,11 @@ test('an environment that runs connectors gets the control plane beside its api:
     assert.equal(e.Connector__Bundle__Keys__k1, '${CONNECTOR_SEAL_KEY_K1}');
     assert.equal(e.Connector__EnrollmentHmacKey, '${CONNECTOR_ENROLLMENT_HMAC}');
     assert.equal(e.Connector__FleetEnrollmentCode, '${CONNECTOR_FLEET_CODE}');
+    // the aggregators live on the control plane (#414): their keys reach it, with an empty default so an environment without them runs no such party
+    assert.equal(e.BankAdapters__GoCardless__SecretId, '${GOCARDLESS_SECRET_ID:-}');
+    assert.equal(e.BankAdapters__GoCardless__SecretKey, '${GOCARDLESS_SECRET_KEY:-}');
+    assert.equal(e.BankAdapters__EnableBanking__ApplicationId, '${ENABLEBANKING_APPLICATION_ID:-}');
+    assert.equal(e.BankAdapters__EnableBanking__PrivateKeyPem, '${ENABLEBANKING_PRIVATE_KEY_PEM:-}');
     assert.deepEqual(portsOf(cp), ['8487:8080'], 'household agents dial the published host; the reverse proxy fronts it');
     assert.match(cp, /wget -qO- http:\/\/127\.0\.0\.1:8080\/v1\/health/, 'the alpine image has no curl');
     assert.match(cp, /aliases: \[connector-staging\]/, 'the pooled agent reaches it by name over the shared network');

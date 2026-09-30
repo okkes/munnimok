@@ -77,6 +77,11 @@ services:
       Connector__Database__Provider: Sqlite
       Connector__Database__ConnectionString: Data Source=/tmp/connector.db
       Connector__Auth__SharedSecret: localtest-connector-key
+      # the operator's aggregator accounts (#414): the parties exist only when these are set
+      BankAdapters__GoCardless__SecretId: ${GOCARDLESS_SECRET_ID:-}
+      BankAdapters__GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY:-}
+      BankAdapters__EnableBanking__ApplicationId: ${ENABLEBANKING_APPLICATION_ID:-}
+      BankAdapters__EnableBanking__PrivateKeyPem: ${ENABLEBANKING_PRIVATE_KEY_PEM:-}
     ports:
       - "8187:8080"
 

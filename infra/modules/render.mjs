@@ -503,6 +503,11 @@ function connectorService(s) {
       Connector__EnrollmentHmacKey: \${CONNECTOR_ENROLLMENT_HMAC}
       # the platform's pooled browser agent enrolls with this standing code
       Connector__FleetEnrollmentCode: \${CONNECTOR_FLEET_CODE}
+      # the operator's aggregator accounts (#414): a party exists on the control plane when its keys do; never handed to an agent
+      BankAdapters__GoCardless__SecretId: \${GOCARDLESS_SECRET_ID:-}
+      BankAdapters__GoCardless__SecretKey: \${GOCARDLESS_SECRET_KEY:-}
+      BankAdapters__EnableBanking__ApplicationId: \${ENABLEBANKING_APPLICATION_ID:-}
+      BankAdapters__EnableBanking__PrivateKeyPem: \${ENABLEBANKING_PRIVATE_KEY_PEM:-}
       BUILD_NUMBER: \${TAG}
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/v1/health >/dev/null || exit 1"]
