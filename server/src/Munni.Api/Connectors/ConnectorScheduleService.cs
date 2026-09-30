@@ -6,31 +6,35 @@ using Munni.Api.Data;
 namespace Munni.Api.Connectors;
 
 /// <summary>
-/// Unattended syncs for the sessions whose bundle the relay may keep — the
-/// household-agent custody of docs/connector-integration-plan.md §5.5: the
-/// bundle names an agent and a profile and holds no secret, the agent on
-/// the person's own machine does the fetching, and the relay drives it the
-/// way <see cref="GoCardless.GcFetchService"/> drives open banking — an
-/// hourly tick, the provider's own interval respected, a run that stops for
-/// a question left for the person (the hub shows it). Everything else
-/// (client custody) syncs only when the person's device holds the bundle.
+/// The relay's own scheduler (docs/connector-integration-plan.md §5.5, §15):
+/// syncs every session whose bundle the relay keeps — a household agent's
+/// pointer, an open-banking consent — on the provider's own interval, the
+/// way <c>GcFetchService</c> drove open banking. Hourly; each session is
+/// due when <c>unattended_fetch</c> is on, its <c>min_interval_seconds</c>
+/// have passed, any <c>retry_after</c> a rate-limited refusal set has
+/// passed, and — when the party names a <c>preferred_fetch_hour_local</c>
+/// — it is that hour in the bank's zone (from the IBAN's country). A fetch
+/// that became a job is followed for ten minutes and collected; a question
+/// is left to the person; a refusal that needs a sign-in drops the kept
+/// bundle, every other one is remembered and retried next time.
 /// </summary>
 public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, TimeProvider time, ILogger<ConnectorScheduleService> logger) : BackgroundService
 {
-    /// <summary>How long a scheduled run follows a fetch that became a job before leaving it to the person.</summary>
     internal TimeSpan JobPatience { get; set; } = TimeSpan.FromMinutes(10);
 
-    /// <summary>The wait between two looks at a job in flight.</summary>
     internal TimeSpan JobPoll { get; set; } = TimeSpan.FromSeconds(5);
 
-    /// <summary>A refusal that says the session is gone: the person signs in again.</summary>
+    /// <summary>A rate-limited refusal without a retry-after: the party's day, as the api's fetch service stood down.</summary>
+    internal static readonly TimeSpan RateLimitStandDown = TimeSpan.FromHours(12);
+
     private static readonly HashSet<string> SignInCodes = new(StringComparer.Ordinal)
     {
         "session_expired", "invalid_credentials", "mfa_failed", "consent_expired", "unsupported_resource", "agent_revoked",
     };
 
-    /// <summary>The connector's code for a failure it did not name — ours too, for a run that threw.</summary>
     private const string InternalCode = "internal";
+    private const string RateLimitedCode = "rate_limited";
+    private const string ScheduleTrigger = "schedule";
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -49,35 +53,56 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         } while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    /// <summary>One cycle over every kept session; answers how many syncs it ran (tests drive this directly).</summary>
+    /// <summary>One cycle: every kept, active session that is due; returns how many ran.</summary>
     internal async Task<int> RunOnceAsync(CancellationToken ct)
     {
         using var scope = scopeFactory.CreateScope();
         var relay = scope.ServiceProvider.GetRequiredService<ConnectorRelay>();
         var sync = scope.ServiceProvider.GetRequiredService<ConnectorSyncService>();
-
         var due = await relay.Db.ConnectorSessions
             .Where(s => s.KeptBundle != null && s.State == "active")
             .OrderBy(s => s.LastScheduledSyncAt)
             .ToListAsync(ct);
-
         var ran = 0;
         foreach (var row in due)
         {
             var manifest = await relay.Catalogue.ProviderAsync(relay.Client, row.Provider, ct);
-            if (manifest is null || !IsDue(row, manifest)) continue;
+            if (manifest is null || !IsDue(row, manifest, await ZoneOfAsync(relay.Db, row, manifest, ct))) continue;
             ran++;
             await RunAsync(relay, sync, row, ct);
         }
         return ran;
     }
 
-    /// <summary>The provider fetches unattended, and its own interval has passed since the last scheduled run.</summary>
-    internal bool IsDue(ConnectorSession row, JsonObject manifest)
+    /// <summary>
+    /// Due when the party fetches unattended, no retry-after stands, the
+    /// party's interval has passed, and — when the party prefers an hour —
+    /// it is that hour in <paramref name="zone"/>. A session that never ran
+    /// is due at once: the connect's own fetch was the person's, not the
+    /// schedule's.
+    /// </summary>
+    internal bool IsDue(ConnectorSession row, JsonObject manifest, TimeZoneInfo? zone = null)
     {
         if (manifest["unattended_fetch"]?.GetValue<bool>() != true) return false;
-        var interval = (manifest["limits"] as JsonObject)?["min_interval_seconds"]?.GetValue<int>() ?? 0;
-        return row.LastScheduledSyncAt is null || time.GetUtcNow() - row.LastScheduledSyncAt.Value >= TimeSpan.FromSeconds(interval);
+        var now = time.GetUtcNow();
+        if (row.ScheduleNotBefore is { } notBefore && now < notBefore) return false;
+        if (row.LastScheduledSyncAt is null) return true;
+        var limits = manifest["limits"] as JsonObject;
+        var interval = limits?["min_interval_seconds"]?.GetValue<int>() ?? 0;
+        if (now - row.LastScheduledSyncAt.Value < TimeSpan.FromSeconds(interval)) return false;
+        var hour = limits?["preferred_fetch_hour_local"]?.GetValue<int>();
+        return hour is null || TimeZoneInfo.ConvertTime(now, zone ?? TimeZoneInfo.Utc).Hour == hour;
+    }
+
+    /// <summary>The bank's zone: the first IBAN the connection reaches, else the party's home country.</summary>
+    internal static async Task<TimeZoneInfo> ZoneOfAsync(AppDbContext db, ConnectorSession row, JsonObject manifest, CancellationToken ct)
+    {
+        var iban = await db.ConnectorAccountRefs
+            .Where(a => a.UserId == row.UserId && a.Provider == row.Provider && a.ConnectionId == row.ConnectionId && !a.AccountRef.StartsWith("CONN:"))
+            .OrderBy(a => a.AccountRef)
+            .Select(a => a.AccountRef)
+            .FirstOrDefaultAsync(ct);
+        return BankZones.ZoneFor(iban ?? manifest.Text("country"));
     }
 
     private async Task RunAsync(ConnectorRelay relay, ConnectorSyncService sync, ConnectorSession row, CancellationToken ct)
@@ -87,16 +112,17 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
             ? DateOnly.FromDateTime(last.UtcDateTime).AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
             : null;
         row.LastScheduledSyncAt = time.GetUtcNow();
+        row.ScheduleNotBefore = null;
         try
         {
-            var outcome = await sync.SyncAsync(row.UserId, subject, row.Provider, new ConnectorSyncRequest(row.ConnectionId, row.KeptBundle!, since), "native", ct, trigger: "schedule");
+            var outcome = await sync.SyncAsync(row.UserId, subject, row.Provider, new ConnectorSyncRequest(row.ConnectionId, row.KeptBundle!, since), "native", ct, trigger: ScheduleTrigger);
             if (outcome.Status == StatusCodes.Status202Accepted)
             {
                 await FollowJobAsync(sync, row, subject, outcome.Body, ct);
             }
             else if (outcome.Status >= 400)
             {
-                Refused(row, outcome.Body["error"]?["code"]?.GetValue<string>() ?? InternalCode);
+                Refused(row, CodeOf(outcome.Body) ?? InternalCode, RetryAfterOf(outcome.Body));
             }
             else
             {
@@ -105,7 +131,7 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         }
         catch (ConnectorReplyException ex)
         {
-            Refused(row, ex.Reply.Error?.Code ?? InternalCode);
+            Refused(row, ex.Reply.Error?.Code ?? InternalCode, ex.Reply.Error?.RetryAfterSeconds);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -115,11 +141,6 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         await relay.Db.SaveChangesAsync(ct);
     }
 
-    /// <summary>
-    /// A fetch that became a job: wait for it within patience, collect it
-    /// when it succeeded, leave it to the person when it asks — the session
-    /// reads <c>awaiting_input</c> in the hub until they answer.
-    /// </summary>
     private async Task FollowJobAsync(ConnectorSyncService sync, ConnectorSession row, string subject, JsonObject accepted, CancellationToken ct)
     {
         var jobId = accepted["jobId"]?.GetValue<string>();
@@ -133,17 +154,18 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
             {
                 case "succeeded":
                 {
-                    var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, new ConnectorCollectRequest(row.KeptBundle!), ct);
-                    if (collected.Status >= 400) Refused(row, collected.Body["error"]?["code"]?.GetValue<string>() ?? InternalCode);
+                    var collected = await sync.CollectAsync(row.UserId, subject, row.Provider, jobId, new ConnectorCollectRequest(row.KeptBundle!), ct, trigger: ScheduleTrigger);
+                    if (collected.Status >= 400) Refused(row, CodeOf(collected.Body) ?? InternalCode, RetryAfterOf(collected.Body));
                     else row.LastScheduleError = null;
                     return;
                 }
                 case "awaiting_input":
+                    // the person will find the question in the hub
                     row.State = "awaiting_input";
                     row.LastScheduleError = null;
                     return;
                 case "failed" or "expired":
-                    Refused(row, job.Body["error"]?["code"]?.GetValue<string>() ?? (state == "expired" ? "challenge_expired" : InternalCode));
+                    Refused(row, CodeOf(job.Body) ?? (state == "expired" ? "challenge_expired" : InternalCode), RetryAfterOf(job.Body));
                     return;
                 default:
                     await Task.Delay(JobPoll, ct);
@@ -154,8 +176,18 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         row.LastScheduleError = "mfa_timeout";
     }
 
-    /// <summary>A refusal the person has to act on drops the kept bundle; every other one is remembered and retried next tick.</summary>
-    private static void Refused(ConnectorSession row, string code)
+    private static string? CodeOf(JsonObject body) => body["error"]?["code"]?.GetValue<string>();
+
+    private static int? RetryAfterOf(JsonObject body) =>
+        body["error"]?["retryAfterSeconds"] is JsonValue value && value.TryGetValue<int>(out var seconds) ? seconds : null;
+
+    /// <summary>
+    /// A refusal that needs the person (a sign-in, an expired consent) drops
+    /// the kept bundle and asks for one; a block stops the session; the
+    /// party's budget (<c>rate_limited</c>) sets when to try again; every
+    /// other code is remembered and retried on the next cycle.
+    /// </summary>
+    internal void Refused(ConnectorSession row, string code, int? retryAfterSeconds)
     {
         row.LastScheduleError = code;
         if (SignInCodes.Contains(code))
@@ -166,6 +198,10 @@ public sealed class ConnectorScheduleService(IServiceScopeFactory scopeFactory, 
         else if (code == "blocked_by_provider")
         {
             row.State = "blocked";
+        }
+        else if (code == RateLimitedCode)
+        {
+            row.ScheduleNotBefore = time.GetUtcNow() + (retryAfterSeconds is { } seconds ? TimeSpan.FromSeconds(seconds) : RateLimitStandDown);
         }
     }
 }

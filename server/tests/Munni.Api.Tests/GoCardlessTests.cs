@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Munni.Api.Accounts;
 using Munni.Api.Data;
 using Munni.Api.GoCardless;
 using Munni.Api.Sync;

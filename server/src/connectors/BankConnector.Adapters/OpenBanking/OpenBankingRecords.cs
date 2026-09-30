@@ -80,9 +80,10 @@ internal static partial class OpenBankingRecords
         };
     }
 
-    public static AccountDraft ToAccount(ConsentAccount account, string institutionName, Balance? balance)
+    public static AccountDraft ToAccount(ConsentAccount account, ConsentMaterial consent, Balance? balance)
     {
         ArgumentNullException.ThrowIfNull(account);
+        ArgumentNullException.ThrowIfNull(consent);
         var iban = string.IsNullOrWhiteSpace(account.Iban) ? null : account.Iban.Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
         return new AccountDraft
         {
@@ -90,11 +91,13 @@ internal static partial class OpenBankingRecords
             // an aggregator says nothing about the type; an IBAN is a current
             // account until the person says otherwise, a wallet is unknown
             Type = iban is null ? AccountType.Unknown : AccountType.Current,
-            DisplayName = FirstNonBlank(account.Name, institutionName) ?? account.Id,
+            DisplayName = FirstNonBlank(account.Name, consent.InstitutionName) ?? account.Id,
             Currency = FirstNonBlank(account.Currency, "EUR")!,
             Iban = iban,
             MaskedNumber = iban is { Length: > 4 } ? iban[^4..] : null,
             Balance = balance,
+            // the institution as the lookup listed it: the app fetches the same logo for the account row
+            Institution = string.IsNullOrWhiteSpace(consent.InstitutionId) ? null : consent.InstitutionId,
         };
     }
 

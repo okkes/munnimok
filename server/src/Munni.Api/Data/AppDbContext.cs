@@ -35,6 +35,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SplitInvite> SplitInvites => Set<SplitInvite>();
     public DbSet<ConnectorSession> ConnectorSessions => Set<ConnectorSession>();
     public DbSet<ConnectorAccountRef> ConnectorAccountRefs => Set<ConnectorAccountRef>();
+    public DbSet<ConnectorPendingTx> ConnectorPendingTxs => Set<ConnectorPendingTx>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +51,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasKey(x => x.Id);
             e.HasIndex(x => x.UserId);
         });
+        modelBuilder.Entity<ConnectorPendingTx>(e => e.HasKey(x => new { x.AccountRefId, x.EntityId }));
         modelBuilder.Entity<User>(e =>
         {
             e.HasKey(x => x.Id);

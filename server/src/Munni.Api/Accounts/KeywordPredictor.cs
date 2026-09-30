@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace Munni.Api.GoCardless;
+namespace Munni.Api.Accounts;
 
 /// <summary>
 /// Server-side twin of apps/web/src/domain/predictCategory.ts, fed by the
@@ -23,7 +23,7 @@ public static class KeywordPredictor
     private static readonly Lazy<List<(string Keyword, Rule Rule)>> Candidates = new(() =>
     {
         using var stream = Assembly.GetExecutingAssembly()
-            .GetManifestResourceStream("Munni.Api.GoCardless.keyword-rules.json")
+            .GetManifestResourceStream("Munni.Api.Accounts.keyword-rules.json")
             ?? throw new InvalidOperationException("keyword-rules.json resource missing");
         var rules = JsonSerializer.Deserialize<List<Rule>>(stream)!;
         return rules

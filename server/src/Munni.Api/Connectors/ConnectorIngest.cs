@@ -28,7 +28,18 @@ public sealed record ConnectorIngestCounts(int Receipts, int Accounts, int Trans
 }
 
 /// <summary>What an ingest landed and where, so the caller can wake the devices reading those feeds.</summary>
-public sealed record ConnectorIngestResult(ConnectorIngestCounts Counts, IReadOnlySet<string> TouchedSpaces);
+public sealed record ConnectorIngestResult(
+    ConnectorIngestCounts Counts,
+    IReadOnlySet<string> TouchedSpaces,
+    /// <summary>The pending rows this ingest mirrored (§15): the sync settles the account's earlier ones against them once the fetch is complete.</summary>
+    IReadOnlyList<ConnectorPendingTx>? Pending = null,
+    /// <summary>The spaces the accounts are attached to, where the prediction overlays went: the ones a scheduled fetch wakes with a push.</summary>
+    IReadOnlySet<string>? AttachedSpaces = null)
+{
+    public IReadOnlyList<ConnectorPendingTx> PendingRows => Pending ?? [];
+
+    public IReadOnlySet<string> Attached => AttachedSpaces ?? new HashSet<string>(StringComparer.Ordinal);
+}
 
 /// <summary>
 /// Turns the connector's normalised records into sync ops — the server
@@ -54,6 +65,12 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     private const string TransactionEntity = "transaction";
     private const string ReceiptEntity = "receipt";
     private const string ExternalIdField = "external_id";
+    /// <summary>What a bank party prefixes the external id of a row the bank has not booked yet (§15).</summary>
+    public const string PendingPrefix = "pending:";
+    /// <summary>A row's money direction as the keyword predictor reads it (the other being <c>debit</c>).</summary>
+    private const string CreditDirection = "credit";
+    /// <summary>The app's account type for a card the party calls credit, revolving or deferred.</summary>
+    private const string CreditAccountType = "credit";
     private const string SourceField = "source";
     private const string CurrencyField = "currency";
     private const string ProviderField = "provider";
@@ -81,6 +98,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     {
         var user = await db.Users.FindAsync([userId], ct) ?? throw new InvalidOperationException($"user {userId} missing");
         var touched = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new List<ConnectorPendingTx>();
+        var attached = new HashSet<string>(StringComparer.Ordinal);
         var byShape = records.OfType<JsonObject>().GroupBy(r => ShapeOf(r, shape)).ToDictionary(g => g.Key, g => g.ToList());
 
         var counts = ConnectorIngestCounts.None;
@@ -89,8 +108,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             if (!byShape.Remove(kind, out var items)) continue;
             counts = counts.Plus(kind switch
             {
-                AccountEntity => await AccountsAsync(user, provider, items, touched, ct),
-                TransactionEntity => await TransactionsAsync(user, provider, items, touched, ct),
+                AccountEntity => await AccountsAsync(user, provider, connectionId, items, touched, ct),
+                TransactionEntity => await TransactionsAsync(user, provider, items, touched, pending, attached, ct),
                 ReceiptEntity => await ReceiptsAsync(user, provider, connectionId, items, touched, ct),
                 "credit_registration" => await RegistrationsAsync(user, provider, items, touched, ct),
                 _ => await StudentDebtsAsync(user, provider, providerName, items, touched, ct),
@@ -98,7 +117,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
         }
         foreach (var (unknown, items) in byShape) counts = counts.Plus(Unknown(unknown, items.Count));
 
-        return new ConnectorIngestResult(counts, touched);
+        return new ConnectorIngestResult(counts, touched, pending, attached);
     }
 
     /// <summary>The connector mints <c>acc_</c>, <c>txn_</c>, <c>rcp_</c>, <c>crd_</c> and <c>sdt_</c> ids; a record without one is what the resource says it returns.</summary>
@@ -219,7 +238,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     // ── bank accounts and their transactions → the account's feed ────────
 
     private async Task<ConnectorIngestCounts> AccountsAsync(
-        User user, string provider, List<JsonObject> records, HashSet<string> touched, CancellationToken ct)
+        User user, string provider, string connectionId, List<JsonObject> records, HashSet<string> touched, CancellationToken ct)
     {
         var written = 0;
         var dropped = 0;
@@ -227,7 +246,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
 
         foreach (var account in records)
         {
-            var accepted = await AccountAsync(user, provider, account, now, touched, ct);
+            var accepted = await AccountAsync(user, provider, connectionId, account, now, touched, ct);
             if (accepted is null) dropped++;
             else written += accepted.Value;
         }
@@ -241,11 +260,14 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     /// many ops landed — zero when this minute already wrote the same row,
     /// which is what a transactions pass carrying its accounts does.
     /// </summary>
-    private async Task<int?> AccountAsync(User user, string provider, JsonObject account, DateTimeOffset now, HashSet<string> touched, CancellationToken ct)
+    private async Task<int?> AccountAsync(
+        User user, string provider, string connectionId, JsonObject account, DateTimeOffset now, HashSet<string> touched, CancellationToken ct)
     {
         var id = account.Text("id");
         var externalId = account.Text(ExternalIdField);
         if (id is null || externalId is null) return null;
+        // an account the person dropped while its consent lives on: the party still lists it, the relay leaves it alone
+        if (await db.ConnectorAccountRefs.AnyAsync(a => a.Id == id && a.Excluded, ct)) return 0;
 
         var iban = account.Text("iban");
         var accountRef = string.IsNullOrWhiteSpace(iban) ? $"CONN:{provider}:{externalId}" : ImportIds.Normalize(iban);
@@ -261,6 +283,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             UserId = user.Id,
             Provider = provider,
             ExternalId = externalId,
+            ConnectionId = connectionId,
             AccountRef = accountRef,
             FeedSpaceId = feed.Id,
             AccountEntityId = accountEntityId,
@@ -291,6 +314,8 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
         };
         if (isIban) fields["iban"] = Json(reference.AccountRef);
         if (account.Text("masked_number") is { } masked) fields["maskedNumber"] = Json(masked);
+        // the institution as the party lists it (§15): the app fetches the same logo the lookup showed
+        if (account.Text("institution") is { Length: > 0 } institution) fields["bankId"] = Json(institution);
 
         // the party's display name and type seed the row once; after that
         // the fields belong to the user (GcIngest: re-asserting them every
@@ -312,60 +337,110 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     }
 
     private async Task<ConnectorIngestCounts> TransactionsAsync(
-        User user, string provider, List<JsonObject> records, HashSet<string> touched, CancellationToken ct)
+        User user, string provider, List<JsonObject> records, HashSet<string> touched,
+        List<ConnectorPendingTx> pending, HashSet<string> attached, CancellationToken ct)
     {
         var accountIds = records.Select(t => t.Text("account_id")).Where(a => a is not null).Distinct().ToList();
         var known = await db.ConnectorAccountRefs
             .Where(a => a.UserId == user.Id && accountIds.Contains(a.Id))
             .ToDictionaryAsync(a => a.Id, ct);
 
-        var byFeed = new Dictionary<string, List<SyncOpDto>>(StringComparer.Ordinal);
-        var dropped = 0;
-        var orphaned = 0;
-        string? orphanAccount = null;
+        var batch = new TransactionBatch();
+        foreach (var tx in records) await PlaceAsync(tx, known, batch, pending, ct);
 
-        foreach (var tx in records)
-        {
-            var accountId = tx.Text("account_id");
-            var account = accountId is null ? null : known.GetValueOrDefault(accountId);
-            if (accountId is not null && account is null)
-            {
-                // a transaction of an account the accounts pass never named:
-                // nothing to file it under, and the row is not invented
-                dropped++;
-                orphaned++;
-                orphanAccount ??= accountId;
-                continue;
-            }
-            var op = account is null ? null : TransactionOp(account, tx);
-            if (op is null)
-            {
-                dropped++;
-                continue;
-            }
-            if (!byFeed.TryGetValue(op.SpaceId, out var ops)) byFeed[op.SpaceId] = ops = [];
-            ops.Add(op);
-        }
-
-        if (dropped > 0 && logger.IsEnabled(LogLevel.Warning))
+        if (batch.Dropped > 0 && logger.IsEnabled(LogLevel.Warning))
         {
             logger.LogWarning(
                 "connector ingest {Provider}: {Dropped} of {Total} transactions dropped — {Orphaned} name an account this relay never saw (first: {Account}), the rest lack an id, a date or an amount",
-                provider, dropped, records.Count, orphaned, orphanAccount ?? "-");
+                provider, batch.Dropped, records.Count, batch.Orphaned, batch.OrphanAccount ?? "-");
         }
 
         var written = 0;
-        foreach (var (feedId, ops) in byFeed)
+        foreach (var (feedId, ops) in batch.ByFeed)
         {
             var feed = await db.Spaces.FindAsync([feedId], ct) ?? throw new InvalidOperationException($"feed {feedId} missing");
             written += await ApplyAsync(feed, ops, touched);
         }
+        foreach (var (spaceId, metas) in batch.Overlays)
+        {
+            var space = await db.Spaces.FindAsync([spaceId], ct);
+            if (space is null) continue;   // an attachment to a space that is gone: nothing to predict for
+            await ApplyAsync(space, metas, touched);
+            attached.Add(spaceId);
+        }
 
-        return new ConnectorIngestCounts(0, 0, written, 0, dropped);
+        return new ConnectorIngestCounts(0, 0, written, 0, batch.Dropped);
     }
 
-    /// <summary>One transaction as the feed's raw row — no opinion, just the party's facts — or null when it lacks an id, a date or an amount.</summary>
-    private SyncOpDto? TransactionOp(ConnectorAccountRef account, JsonObject tx)
+    /// <summary>One transactions pass sorted by where its rows go: the feed ops per feed, the overlays per attached space, and what was dropped.</summary>
+    private sealed class TransactionBatch
+    {
+        public Dictionary<string, List<SyncOpDto>> ByFeed { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The prediction overlay goes to every space the account is attached to, never to the feed (§15).</summary>
+        public Dictionary<string, List<SyncOpDto>> Overlays { get; } = new(StringComparer.Ordinal);
+
+        public Dictionary<string, List<string>> SpacesOf { get; } = new(StringComparer.Ordinal);
+
+        public int Dropped { get; set; }
+
+        public int Orphaned { get; set; }
+
+        public string? OrphanAccount { get; set; }
+    }
+
+    /// <summary>
+    /// One transaction into the batch: its feed row, then its pending mirror
+    /// or its overlays — or dropped, when it names an account the accounts
+    /// pass never did or one the person dropped (its rows are not invented
+    /// back), or lacks an id, a date or an amount.
+    /// </summary>
+    private async Task PlaceAsync(
+        JsonObject tx, Dictionary<string, ConnectorAccountRef> known, TransactionBatch batch, List<ConnectorPendingTx> pending, CancellationToken ct)
+    {
+        var accountId = tx.Text("account_id");
+        var account = accountId is null ? null : known.GetValueOrDefault(accountId);
+        if (account is null || account.Excluded)
+        {
+            batch.Dropped++;
+            if (accountId is not null && account is null)
+            {
+                batch.Orphaned++;
+                batch.OrphanAccount ??= accountId;
+            }
+            return;
+        }
+        var row = TransactionOp(account, tx);
+        if (row is null)
+        {
+            batch.Dropped++;
+            return;
+        }
+        if (!batch.ByFeed.TryGetValue(row.Op.SpaceId, out var ops)) batch.ByFeed[row.Op.SpaceId] = ops = [];
+        ops.Add(row.Op);
+        if (row.Pending)
+        {
+            pending.Add(new ConnectorPendingTx { AccountRefId = account.Id, EntityId = row.EntityId });
+            return;   // a pending row is a fact the bank may still withdraw: no opinion on it yet
+        }
+        if (!batch.SpacesOf.TryGetValue(account.Id, out var spaces)) batch.SpacesOf[account.Id] = spaces = await AttachedSpacesAsync(account, ct);
+        foreach (var spaceId in spaces)
+        {
+            if (!batch.Overlays.TryGetValue(spaceId, out var metas)) batch.Overlays[spaceId] = metas = [];
+            metas.Add(OverlayOp(spaceId, row));
+        }
+    }
+
+    /// <summary>A transaction as it lands: the feed's raw row, and what the overlay needs to know about it.</summary>
+    private sealed record TransactionRow(SyncOpDto Op, string EntityId, bool Pending, string Direction, string Text);
+
+    /// <summary>
+    /// One transaction as the feed's raw row — no opinion, just the party's
+    /// facts — or null when it lacks an id, a date or an amount. A row whose
+    /// external id the party prefixed <c>pending:</c> is mirrored as pending
+    /// (§15): the bank has not booked it, and may yet withdraw it.
+    /// </summary>
+    private TransactionRow? TransactionOp(ConnectorAccountRef account, JsonObject tx)
     {
         var externalId = tx.Text(ExternalIdField);
         var bookedAt = tx.Text("booked_at");
@@ -373,6 +448,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
         if (externalId is null || bookedAt is null || amount is null) return null;
 
         var entityId = ImportIds.TransactionId(account.AccountRef, externalId);
+        var pending = externalId.StartsWith(PendingPrefix, StringComparison.Ordinal);
         var counterparty = tx["counterparty"] as JsonObject;
         var description = tx.Text("description") ?? string.Empty;
         var merchant = counterparty?.Text(NameField);
@@ -387,8 +463,76 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             ["importRef"] = Json(externalId),
         };
         if (counterparty?.Text("iban") is { Length: > 0 } counterIban) fields["counterIban"] = Json(ImportIds.Normalize(counterIban));
+        if (pending) fields["pending"] = Json(1);
 
-        return Op(account.FeedSpaceId, TransactionEntity, entityId, fields, Seed(entityId, tx, fields));
+        var op = Op(account.FeedSpaceId, TransactionEntity, entityId, fields, Seed(entityId, tx, fields));
+        return new TransactionRow(op, entityId, pending, amount.Value.Value < 0 ? "debit" : CreditDirection, $"{merchant} {description}");
+    }
+
+    /// <summary>
+    /// The predicted category and type for one booked row in one space, as
+    /// the api's own bank ingest wrote it: written once per row and space
+    /// (the op id is the pair), so a person's later choice is never clobbered
+    /// by a re-fetch.
+    /// </summary>
+    private SyncOpDto OverlayOp(string spaceId, TransactionRow row)
+    {
+        var predicted = KeywordPredictor.Predict(row.Text, row.Direction);
+        var fields = new Dictionary<string, JsonElement>
+        {
+            ["txId"] = Json(row.EntityId),
+            ["catId"] = Json(predicted?.CatId ?? "uncategorized"),
+            ["txType"] = Json(predicted?.TxType ?? (row.Direction == CreditDirection ? "income" : "expense")),
+            ["needsReview"] = Json(predicted is null ? 1 : 0),
+        };
+        return Op(spaceId, "txMeta", ImportIds.TxMetaId(spaceId, row.EntityId), fields, $"connmeta:{spaceId}:{row.EntityId}");
+    }
+
+    private Task<List<string>> AttachedSpacesAsync(ConnectorAccountRef account, CancellationToken ct) =>
+        db.SpaceAccountLinks
+            .Where(l => l.FeedSpaceId == account.FeedSpaceId && l.AccountId == account.AccountEntityId)
+            .Select(l => l.SpaceId)
+            .Distinct()
+            .ToListAsync(ct);
+
+    /// <summary>
+    /// A complete fetch settles the pending mirror (§15): every pending row
+    /// the connection's accounts carried that the party no longer reports
+    /// is tombstoned — booked under a new reference, or withdrawn — and the
+    /// ones it reported now are remembered for the next time.
+    /// </summary>
+    public async Task<int> SettlePendingAsync(
+        Guid userId, string provider, string connectionId, IReadOnlyList<ConnectorPendingTx> seen, CancellationToken ct)
+    {
+        var accounts = await db.ConnectorAccountRefs
+            .Where(a => a.UserId == userId && a.Provider == provider && a.ConnectionId == connectionId)
+            .ToListAsync(ct);
+        if (accounts.Count == 0) return 0;
+        var accountIds = accounts.Select(a => a.Id).ToList();
+        var tracked = await db.ConnectorPendingTxs.Where(p => accountIds.Contains(p.AccountRefId)).ToListAsync(ct);
+        var current = seen.Where(p => accountIds.Contains(p.AccountRefId)).Select(p => p.EntityId).ToHashSet(StringComparer.Ordinal);
+        var stale = tracked.Where(p => !current.Contains(p.EntityId)).ToList();
+
+        var tombstoned = 0;
+        var touched = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var byAccount in stale.GroupBy(p => p.AccountRefId))
+        {
+            var account = accounts.First(a => a.Id == byAccount.Key);
+            var feed = await db.Spaces.FindAsync([account.FeedSpaceId], ct);
+            if (feed is null) continue;
+            var ops = byAccount.Select(p => new SyncOpDto(
+                ImportIds.OpId($"connpendrm:{p.EntityId}:{time.GetUtcNow().Ticks}"),
+                account.FeedSpaceId, TransactionEntity, p.EntityId, new Dictionary<string, JsonElement>(), ServerHlc.Now(_counter++), Deleted: true)).ToList();
+            tombstoned += await ApplyAsync(feed, ops, touched);
+        }
+        db.ConnectorPendingTxs.RemoveRange(stale);
+        var trackedIds = tracked.Select(p => p.EntityId).ToHashSet(StringComparer.Ordinal);
+        foreach (var fresh in seen.Where(p => accountIds.Contains(p.AccountRefId) && !trackedIds.Contains(p.EntityId)).DistinctBy(p => p.EntityId))
+        {
+            db.ConnectorPendingTxs.Add(new ConnectorPendingTx { AccountRefId = fresh.AccountRefId, EntityId = fresh.EntityId });
+        }
+        await db.SaveChangesAsync(ct);
+        return tombstoned;
     }
 
     private async Task RememberAccountAsync(ConnectorAccountRef fresh, CancellationToken ct)
@@ -405,6 +549,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
             known.AccountEntityId = fresh.AccountEntityId;
             known.Currency = fresh.Currency;
             known.SeenAt = fresh.SeenAt;
+            known.ConnectionId = fresh.ConnectionId ?? known.ConnectionId;
         }
         await db.SaveChangesAsync(ct);
     }
@@ -413,7 +558,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     internal static string AccountTypeOf(string? type) => type switch
     {
         "savings" => "savings",
-        "credit_card" => "credit",
+        "credit_card" => CreditAccountType,
         "loan" => "loan",
         _ => AccountTypes.Default,
     };
@@ -526,7 +671,7 @@ public sealed class ConnectorIngest(AppDbContext db, TimeProvider time, ILogger<
     internal static string LiabilityTypeOf(string? kind) => kind switch
     {
         "mortgage" => "mortgage",
-        "revolving" or "deferred_payment" => "credit",
+        "revolving" or "deferred_payment" => CreditAccountType,
         _ => "loan",
     };
 

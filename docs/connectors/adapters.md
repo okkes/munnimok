@@ -61,9 +61,11 @@ custody lets the consumer's scheduler fetch nightly at
 the ones the api's own integration keyed on (`transactionId ??
 internalTransactionId`, `pending:` for a pending row, `eb:` + a digest where
 Enable Banking gives no reference), so a reconnected bank continues its
-history. GoCardless also answers the operator's inventory (every consent on
-the aggregator account, with the environment that made it) and reports its
-per-account daily budget as the party's quota.
+history. The account record names its `institution` — the lookup's own
+value — so a consumer shows the same logo on the account row. GoCardless
+also answers the operator's inventory (every consent on the aggregator
+account, with the environment that made it) and reports its per-account
+daily budget as the party's quota.
 
 `asn-persistent` is the household-agent form of ASN: the sign-in the user
 does once stays in a browser profile on their own machine, and scheduled

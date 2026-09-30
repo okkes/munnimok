@@ -1,6 +1,7 @@
 using System.Net;
 using BankConnector.Adapters.MockBank;
 using Connector.Api.Tests.Infrastructure;
+using Connector.Kit.Hosting.Endpoints;
 
 namespace Connector.Api.Tests;
 
@@ -32,14 +33,18 @@ public sealed class LookupRouteTests(ShopApiFactory factory) : IClassFixture<Sho
         using var some = await http.GetAsync($"/v1/{Provider}/options/institution?q=plain");
         Assert.Single((await some.JsonAsync()).GetProperty("options").EnumerateArray());
 
-        using var logo = await http.GetAsync($"/v1/{Provider}/options/institution/{MockBankConsentAdapter.Institution}/logo");
+        // the value travels as a base64url token: a party may name an option in ways no route segment admits
+        using var logo = await http.GetAsync($"/v1/{Provider}/options/institution/{LookupToken.Encode(MockBankConsentAdapter.Institution)}/logo");
         Assert.Equal(HttpStatusCode.OK, logo.StatusCode);
         Assert.Equal("image/png", logo.ContentType()?.MediaType);
         Assert.Contains("immutable", logo.Headers.CacheControl?.ToString());
         Assert.Equal(8, (await logo.Content.ReadAsByteArrayAsync()).Length);
+        Assert.Equal("ASN Bank|NL", LookupToken.Decode(LookupToken.Encode("ASN Bank|NL")));
 
-        using var none = await http.GetAsync($"/v1/{Provider}/options/institution/mock-institution-plain/logo");
+        using var none = await http.GetAsync($"/v1/{Provider}/options/institution/{LookupToken.Encode("mock-institution-plain")}/logo");
         Assert.Equal(HttpStatusCode.NotFound, none.StatusCode);
+        using var garbage = await http.GetAsync($"/v1/{Provider}/options/institution/not-a-token!/logo");
+        Assert.Equal(HttpStatusCode.NotFound, garbage.StatusCode);
 
         // a party that lists nothing at connect time says so in the envelope
         using var unsupported = await http.GetAsync($"/v1/{MockBankSimpleAdapter.ProviderId}/options/institution");

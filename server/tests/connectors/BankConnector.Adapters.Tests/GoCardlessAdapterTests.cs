@@ -240,6 +240,7 @@ public sealed class GoCardlessAdapterTests
         Assert.Equal("4300", account.MaskedNumber);
         Assert.Equal(AccountType.Current, account.Type);
         Assert.Equal("Betaalrekening", account.DisplayName);
+        Assert.Equal("ING_INGBNL2A", account.Institution);    // the lookup's own id: the app fetches the same logo
         Assert.Equal(1000, account.Balance?.Amount.Value);   // closingBooked wins over interimBooked
         Assert.NotNull(accounts.RefreshedMaterial);            // the details were learned: the session keeps them
         Assert.Contains("\"detailed\":true", accounts.RefreshedMaterial.Extra["accounts"]);

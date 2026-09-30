@@ -121,20 +121,13 @@ public static class AdminEndpoints
             await Connectors.ConnectorAdminEndpoints.SessionsOfAsync(db, user.Id)));
     }
 
-    private static async Task<IResult> DeleteUser(
-        string sub,
-        HttpContext http,
-        AppDbContext db,
-        IConfiguration config,
-        IHttpClientFactory httpFactory,
-        ILoggerFactory loggerFactory)
+    private static async Task<IResult> DeleteUser(string sub, HttpContext http, AppDbContext db, Social.AccountDeletion deletion)
     {
         var target = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);
         if (target is null) return Results.NotFound();
         var self = await db.Users.FindAsync(http.GetUserId());
         if (self?.Sub == sub) return Results.BadRequest(new { error = "cannot delete yourself here" });
-        var gc = http.RequestServices.GetService<IGoCardlessApi>();
-        await Social.AccountDeletion.DeleteUserAsync(db, gc, httpFactory, config, loggerFactory.CreateLogger("AccountDeletion"), target);
+        await deletion.DeleteUserAsync(target);
         return Results.Ok(new { deleted = sub });
     }
 

@@ -50,6 +50,14 @@ public sealed record Account : NormalizedRecord
     public required string Currency { get; init; }
 
     public Balance? Balance { get; init; }
+
+    /// <summary>
+    /// The institution holding the account, as the party's own lookup lists
+    /// it (an aggregator's institution id) — so a client can ask the party
+    /// for the same logo the lookup showed. Absent where the party is the
+    /// institution.
+    /// </summary>
+    public string? Institution { get; init; }
 }
 
 public sealed record Balance

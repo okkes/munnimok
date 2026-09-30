@@ -35,15 +35,18 @@ internal static class LookupEndpoints
         })
         .Produces<LookupResponse>(StatusCodes.Status200OK);
 
-        api.MapGet("/{provider}/options/{field}/{value}/logo", async (
+        // the option's value as a base64url token: an aggregator names an institution "ASN Bank|NL",
+        // which no route parameter shape admits, and a consumer's relay is stricter still
+        api.MapGet("/{provider}/options/{field}/{token}/logo", async (
             HttpContext http,
             string provider,
             string field,
-            string value,
+            string token,
             LookupService lookups,
             CancellationToken ct) =>
         {
-            var logo = await lookups.LogoAsync(provider, field, value, ct);
+            var value = LookupToken.Decode(token);
+            var logo = value is null ? null : await lookups.LogoAsync(provider, field, value, ct);
             if (logo is null) return Results.NotFound();
             http.Response.Headers.CacheControl = "public, max-age=2592000, immutable";
             return Results.Bytes(logo.Bytes, logo.ContentType);
@@ -61,6 +64,29 @@ internal static class LookupEndpoints
             return Results.NoContent();
         })
         .Produces(StatusCodes.Status204NoContent);
+    }
+}
+
+/// <summary>An option's value on a route: base64url, so any value the party uses travels as one safe segment.</summary>
+public static class LookupToken
+{
+    public static string Encode(string value) =>
+        Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(value)).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+    public static string? Decode(string token)
+    {
+        if (string.IsNullOrEmpty(token) || token.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))) return null;
+        var padded = token.Replace('-', '+').Replace('_', '/');
+        padded += (padded.Length % 4) switch { 2 => "==", 3 => "=", 1 => null, _ => string.Empty };
+        if (padded is null) return null;
+        try
+        {
+            return System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(padded));
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 }
 

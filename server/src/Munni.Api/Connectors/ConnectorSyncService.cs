@@ -34,7 +34,8 @@ public sealed class ConnectorSyncService(
     ConnectorCatalogue catalogue,
     ConnectorIngest ingest,
     SpaceEventBroadcaster events,
-    ILogger<ConnectorSyncService> logger)
+    ILogger<ConnectorSyncService> logger,
+    Munni.Api.Push.PushNotifier? notifier = null)
 {
     /// <summary>The includes a sync asks for when a resource offers them; <c>raw</c> is never one of them.</summary>
     private static readonly string[] WantedIncludes = ["items", "invoice"];
@@ -76,6 +77,7 @@ public sealed class ConnectorSyncService(
         if (row.KeptBundle is not null) row.KeptBundle = run.Bundle;
         await relay.Db.SaveChangesAsync(ct);
         Wake(run.Touched);
+        await NotifyAsync(run.Trigger, run.Attached, run.Landed.Transactions, ct);
 
         var body = new JsonObject
         {
@@ -113,7 +115,13 @@ public sealed class ConnectorSyncService(
 
             var page = fetch.Object;
             await LandPageAsync(run, resourceId, shape, page, ct);
-            if (page["complete"]?.GetValue<bool>() != false) break;
+            if (page["complete"]?.GetValue<bool>() != false)
+            {
+                // a complete pass over the transactions settles the pending mirror (§15): what the
+                // party stopped reporting is tombstoned; an incomplete pass settles nothing
+                if (shape == "transaction") await ingest.SettlePendingAsync(run.UserId, run.Provider, run.Request.ConnectionId, run.Pending, ct);
+                break;
+            }
         }
 
         return null;
@@ -126,6 +134,8 @@ public sealed class ConnectorSyncService(
             run.UserId, run.Provider, run.ProviderName, run.Request.ConnectionId, shape, page["data"] as JsonArray ?? [], ct);
         run.Landed = run.Landed.Plus(landed.Counts);
         run.Touched.UnionWith(landed.TouchedSpaces);
+        run.Pending.AddRange(landed.PendingRows);
+        run.Attached.UnionWith(landed.Attached);
 
         if (page[SessionField] is JsonObject session && session.Text("bundle") is { Length: > 0 } fresh)
         {
@@ -187,7 +197,7 @@ public sealed class ConnectorSyncService(
     /// yet answers 202 with its view; a job that failed answers with its error.
     /// </summary>
     public async Task<ConnectorOutcome> CollectAsync(
-        Guid userId, string subject, string provider, string jobId, ConnectorCollectRequest request, CancellationToken ct)
+        Guid userId, string subject, string provider, string jobId, ConnectorCollectRequest request, CancellationToken ct, string trigger = "user")
     {
         var reply = await relay.Client.GetAsync($"v1/{provider}/jobs/{jobId}", new ConnectorCall { Subject = subject }, ct);
         if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
@@ -207,7 +217,13 @@ public sealed class ConnectorSyncService(
         var sessionId = job.Text(ConnectorRelayEndpoints.SessionIdField) ?? throw new InvalidOperationException("a job without a session");
         var row = await relay.Db.ConnectorSessions.FirstOrDefaultAsync(s => s.Id == sessionId && s.UserId == userId, ct);
         var manifest = await catalogue.ProviderAsync(relay.Client, provider, ct);
-        var counts = await LandJobPageAsync(userId, provider, manifest, row, job, sessionId, ct);
+        var landed = await LandJobPageAsync(userId, provider, manifest, row, job, sessionId, ct);
+        var counts = landed?.Counts ?? ConnectorIngestCounts.None;
+        if (landed is not null && job.Text("cursor") is null && ShapeOf(manifest, job) == "transaction")
+        {
+            await ingest.SettlePendingAsync(userId, provider, row?.ConnectionId ?? sessionId, landed.PendingRows, ct);
+        }
+        await NotifyAsync(trigger, landed?.Attached ?? Enumerable.Empty<string>(), counts.Transactions, ct);
 
         // the bundle the job itself rotated wins over the one the app sent
         var rotated = job[SessionField] is JsonObject;
@@ -232,19 +248,30 @@ public sealed class ConnectorSyncService(
         return new ConnectorOutcome(StatusCodes.Status200OK, view);
     }
 
-    private async Task<ConnectorIngestCounts> LandJobPageAsync(
+    private async Task<ConnectorIngestResult?> LandJobPageAsync(
         Guid userId, string provider, JsonObject? manifest, ConnectorSession? row, JsonObject job, string sessionId, CancellationToken ct)
     {
-        var resourceId = job.Text(ResourceField);
-        var shape = resourceId is null
-            ? null
-            : Resources(manifest).FirstOrDefault(r => r.Text("id") == resourceId)?.Text("returns");
-        if (shape is null || job["data"] is not JsonArray data || data.Count == 0) return ConnectorIngestCounts.None;
+        var shape = ShapeOf(manifest, job);
+        if (shape is null || job["data"] is not JsonArray data || data.Count == 0) return null;
 
         var landed = await ingest.IngestAsync(
             userId, provider, manifest?.Text("name") ?? provider, row?.ConnectionId ?? sessionId, shape, data, ct);
         Wake(landed.TouchedSpaces);
-        return landed.Counts;
+        return landed;
+    }
+
+    /// <summary>The shape of the resource a job fetched, from the manifest's resources.</summary>
+    private static string? ShapeOf(JsonObject? manifest, JsonObject job)
+    {
+        var resourceId = job.Text(ResourceField);
+        return resourceId is null ? null : Resources(manifest).FirstOrDefault(r => r.Text("id") == resourceId)?.Text("returns");
+    }
+
+    /// <summary>A scheduled fetch that landed transactions wakes the phones of the spaces they went to; a person's own sync needs no push.</summary>
+    private async Task NotifyAsync(string trigger, IEnumerable<string> spaces, int transactions, CancellationToken ct)
+    {
+        if (notifier is null || trigger != "schedule" || transactions == 0) return;
+        foreach (var spaceId in spaces) await notifier.NotifyNewTransactionsAsync(spaceId, transactions, ct);
     }
 
     // ── the connector's calls ────────────────────────────────────────────
@@ -374,6 +401,12 @@ public sealed class ConnectorSyncService(
         public JsonObject Manifest { get; } = manifest;
 
         public string ProviderName { get; } = manifest.Text("name") ?? provider;
+
+        /// <summary>The pending rows the pages mirrored (§15), settled once the transactions resource is complete.</summary>
+        public List<ConnectorPendingTx> Pending { get; } = [];
+
+        /// <summary>The spaces the prediction overlays went to: what a scheduled fetch wakes with a push.</summary>
+        public HashSet<string> Attached { get; } = new(StringComparer.Ordinal);
 
         public required string SessionId { get; init; }
 

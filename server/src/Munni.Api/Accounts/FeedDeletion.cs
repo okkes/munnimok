@@ -33,6 +33,11 @@ public static class FeedDeletion
         // are dead weight — drop them BEFORE judging "who else uses it",
         // or a mis-stamped AttachedBy keeps an orphan undeletable forever
         await FeedJanitor.RemoveDeadAttachmentsAsync(db, feedSpaceId);
+        // the connector platform's consents behind this feed end at the party as well (§15)
+        if (http.RequestServices.GetService<Connectors.ConnectorDisconnector>() is { } connectors)
+        {
+            await connectors.DisconnectFeedAsync(me, feedSpaceId, http.RequestAborted);
+        }
 
         // every provider link pointing at this feed, with its consent owner
         var allLinks = await (

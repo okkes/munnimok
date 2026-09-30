@@ -108,6 +108,9 @@ public static partial class ConnectorRelayEndpoints
         group.MapGet("", Overview);
         group.MapGet("/providers", Catalogue);
         group.MapGet("/sessions", MySessions);
+        group.MapGet("/{provider}/options/{field}", Options);
+        // a public brand image an <img> tag fetches: no session to bind, nothing of anyone's in it
+        group.MapGet("/{provider}/options/{field}/{token}/logo", OptionLogo).AllowAnonymous();
 
         group.MapPost("/{provider}/login", Login).WithValidation<ConnectorLoginRequest>();
         group.MapGet("/{provider}/login/{sessionId}", GetSession);
@@ -258,6 +261,26 @@ public static partial class ConnectorRelayEndpoints
         if (!reply.IsSuccess || reply.Bytes is null) return Relay(http, reply);
 
         http.Response.Headers.CacheControl = "no-store";
+        return Results.File(reply.Bytes, reply.ContentType ?? "image/png");
+    }
+
+    /// <summary>What a party lists for a lookup field at connect time (§15): the query passes through, the party answers from its own list.</summary>
+    private static async Task<IResult> Options(string provider, string field, HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.GetAsync(
+            $"v1/{provider}/options/{field}{http.Request.QueryString}",
+            new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);
+        return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Object)) : Relay(http, reply);
+    }
+
+    /// <summary>An option's logo, vendored by the control plane; the browser keeps it for a month. The token is the value, base64url; anonymous, as an image tag fetches it.</summary>
+    private static async Task<IResult> OptionLogo(
+        string provider, string field, string token, HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.GetAsync($"v1/{provider}/options/{field}/{token}/logo", new ConnectorCall(), ct);
+        if (!reply.IsSuccess || reply.Bytes is null) return Relay(http, reply);
+
+        http.Response.Headers.CacheControl = "public, max-age=2592000, immutable";
         return Results.File(reply.Bytes, reply.ContentType ?? "image/png");
     }
 
@@ -432,11 +455,14 @@ public static partial class ConnectorRelayEndpoints
 
     /// <summary>
     /// A household-agent bundle names an agent and a profile and holds no
-    /// secret (§5.5): the relay keeps it, so the scheduler can sync without
-    /// a device. Every other custody's bundle passes through memory only.
+    /// secret (§5.5); a server-custody bundle (an open-banking consent,
+    /// §15) holds a consent id and the accounts it reaches, the operator's
+    /// key staying in the platform's configuration. The relay keeps both,
+    /// so the scheduler can sync without a device. A client-custody bundle
+    /// carries the person's own secret and passes through memory only.
     /// </summary>
     internal static bool KeepsBundle(JsonObject? manifest) =>
-        string.Equals(manifest?.Text("secret_custody"), "agent", StringComparison.Ordinal);
+        manifest?.Text("secret_custody") is "agent" or "server";
 
     /// <summary>The single delivery of a bundle, kept when — and only when — the provider's custody says the agent holds the secret.</summary>
     private static async Task KeepAsync(ConnectorRelay relay, string provider, ConnectorSession row, JsonObject view, CancellationToken ct)

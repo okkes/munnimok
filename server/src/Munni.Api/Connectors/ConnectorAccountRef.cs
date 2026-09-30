@@ -31,4 +31,15 @@ public class ConnectorAccountRef
     public required string Currency { get; set; }
 
     public DateTimeOffset SeenAt { get; set; }
+
+    /// <summary>The connection that last listed this account (§15): the one whose complete fetch settles its pending rows.</summary>
+    public string? ConnectionId { get; set; }
+
+    /// <summary>
+    /// The person deleted this account's feed while the consent still reaches
+    /// other accounts (§15): the consent lives on for those, and this account
+    /// is left where the party lists it — no feed, no rows — until the person
+    /// connects it again.
+    /// </summary>
+    public bool Excluded { get; set; }
 }

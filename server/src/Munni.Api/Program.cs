@@ -56,6 +56,8 @@ builder.Services.AddMemoryCache();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Singleton);
 // SSE fan-out for near-real-time sync
 builder.Services.AddSingleton<SpaceEventBroadcaster>();
+// the account's full cleanup, party-side consents first (its optional services resolve to null where absent)
+builder.Services.AddScoped<Munni.Api.Social.AccountDeletion>();
 
 // OpenAPI document + Scalar reference UI at /scalar
 builder.Services.AddOpenApi();

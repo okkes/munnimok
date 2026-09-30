@@ -48,4 +48,7 @@ public class ConnectorSession
 
     /// <summary>The connector's error code the last scheduled sync ended on; null after a clean one.</summary>
     public string? LastScheduleError { get; set; }
+
+    /// <summary>A party's <c>retry_after</c> on a rate-limited refusal (§15): the scheduler waits it out before the next attempt.</summary>
+    public DateTimeOffset? ScheduleNotBefore { get; set; }
 }

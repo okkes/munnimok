@@ -23,11 +23,11 @@ public class ConnectorScheduleTests(ConnectorApiFactory factory) : IClassFixture
     private const string MockStore = "mock-store-simple";
 
     [Fact]
-    public void A_bundle_is_kept_only_for_household_agent_custody()
+    public void A_bundle_is_kept_for_household_agent_and_server_custody_never_for_a_persons_own_secret()
     {
         Assert.True(ConnectorRelayEndpoints.KeepsBundle(new JsonObject { ["secret_custody"] = "agent" }));
+        Assert.True(ConnectorRelayEndpoints.KeepsBundle(new JsonObject { ["secret_custody"] = "server" }));
         Assert.False(ConnectorRelayEndpoints.KeepsBundle(new JsonObject { ["secret_custody"] = "client" }));
-        Assert.False(ConnectorRelayEndpoints.KeepsBundle(new JsonObject { ["secret_custody"] = "server" }));
         Assert.False(ConnectorRelayEndpoints.KeepsBundle(null));
     }
 

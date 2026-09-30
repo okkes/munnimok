@@ -293,16 +293,16 @@ public class ConnectorRelayTests(ConnectorApiFactory factory) : IClassFixture<Co
             .Where(e => e.ClrType.Namespace == typeof(ConnectorSession).Namespace)
             .Select(e => e.ClrType)
             .ToList());
-        Assert.Equal(2, entities.Count);
+        Assert.Equal(3, entities.Count);   // sessions, account references, the pending mirror (§15)
         foreach (var property in entities.SelectMany(e => e.GetProperties()).Where(p => p.Name != nameof(ConnectorSession.KeptBundle)))
         {
             Assert.DoesNotMatch("(?i)bundle|input|credential|secret|token|password", property.Name);
         }
         Assert.Equal(
-            ["ConnectionId", "CreatedAt", "Id", "KeptBundle", "Label", "LastScheduledSyncAt", "LastScheduleError", "LastSeenAt", "Provider", "State", "UserId"],
+            ["ConnectionId", "CreatedAt", "Id", "KeptBundle", "Label", "LastScheduledSyncAt", "LastScheduleError", "LastSeenAt", "Provider", "ScheduleNotBefore", "State", "UserId"],
             typeof(ConnectorSession).GetProperties().Select(p => p.Name).Order().ToArray());
         Assert.Equal(
-            ["AccountEntityId", "AccountRef", "Currency", "ExternalId", "FeedSpaceId", "Id", "Provider", "SeenAt", "UserId"],
+            ["AccountEntityId", "AccountRef", "ConnectionId", "Currency", "Excluded", "ExternalId", "FeedSpaceId", "Id", "Provider", "SeenAt", "UserId"],
             typeof(ConnectorAccountRef).GetProperties().Select(p => p.Name).Order().ToArray());
     }
 

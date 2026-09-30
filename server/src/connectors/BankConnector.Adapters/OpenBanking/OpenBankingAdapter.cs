@@ -170,7 +170,7 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
             detailed.Add(account);
             var balances = await BalancesAsync(ctx.Http, account.Id, ct).ConfigureAwait(false);
             accounts.Add(BankRecords.NewAccount(ctx.SessionId,
-                OpenBankingRecords.ToAccount(account, consent.InstitutionName, OpenBankingRecords.PickBalance(balances, today))));
+                OpenBankingRecords.ToAccount(account, consent, OpenBankingRecords.PickBalance(balances, today))));
         }
         return (accounts, learned ? (consent with { Accounts = detailed }).ToMaterial() : null);
     }

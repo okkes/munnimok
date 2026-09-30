@@ -10,21 +10,25 @@ namespace Munni.Api.Social;
 /// Order matters: external bank access first (most sensitive), then
 /// server data, then the Logto identity, and the user row last.
 /// Bank/Logto failures are logged and never block the deletion.
+/// The two party-side services are optional: an environment without
+/// GoCardless keys or without the connector platform simply has nothing
+/// to revoke there.
 /// </summary>
-public static class AccountDeletion
+public sealed class AccountDeletion(
+    AppDbContext db,
+    IHttpClientFactory httpFactory,
+    IConfiguration config,
+    ILogger<AccountDeletion> logger,
+    IGoCardlessApi? gc = null,
+    Connectors.ConnectorDisconnector? connectors = null)
 {
-    public static async Task DeleteUserAsync(
-        AppDbContext db,
-        IGoCardlessApi? gc,
-        IHttpClientFactory httpFactory,
-        IConfiguration config,
-        ILogger logger,
-        User user,
-        bool deleteIdentity = true)
+    public async Task DeleteUserAsync(User user, bool deleteIdentity = true)
     {
+        // the connector platform's sessions end at the party as well (§15)
+        if (connectors is not null) await connectors.DisconnectAllAsync(user.Id);
         // 1 · revoke bank consents at the provider (GoCardless supports
         //     deletion; Enable Banking sessions expire on their own)
-        await RevokeBankConsentsAsync(db, gc, logger, user.Id);
+        await RevokeBankConsentsAsync(user.Id);
 
         // 2 · push subscriptions — no notification survives its user
         db.PushSubscriptions.RemoveRange(await db.PushSubscriptions.Where(s => s.UserId == user.Id).ToListAsync());
@@ -53,7 +57,7 @@ public static class AccountDeletion
         await db.SaveChangesAsync();
     }
 
-    private static async Task RevokeBankConsentsAsync(AppDbContext db, IGoCardlessApi? gc, ILogger logger, Guid userId)
+    private async Task RevokeBankConsentsAsync(Guid userId)
     {
         var requisitions = await db.GcRequisitions.Where(r => r.UserId == userId).ToListAsync();
         foreach (var requisitionId in requisitions.Where(r => r.Provider == "gocardless").Select(r => r.RequisitionId))

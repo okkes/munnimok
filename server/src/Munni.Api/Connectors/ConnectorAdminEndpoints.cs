@@ -37,6 +37,8 @@ public static class ConnectorAdminEndpoints
         admin.MapGet("/agents", Fleet);
         admin.MapDelete("/agents/{agentId}", RevokeAny);
         admin.MapGet("/canaries", Canaries);
+        admin.MapGet("/providers/{providerId}/remote-consents", RemoteConsents);
+        admin.MapDelete("/providers/{providerId}/remote-consents/{consentId}", RevokeRemote);
         admin.MapGet("/users/{sub}/sessions", UserSessions);
 
         var control = app.MapGroup("/control/connectors")
@@ -115,6 +117,26 @@ public static class ConnectorAdminEndpoints
     }
 
     /// <summary>One user's bindings — ids and state, the same rows the diagnosis carries.</summary>
+    /// <summary>What the operator's account at the party holds (§15): every consent, foreign and legacy ones included, with the environment that made it.</summary>
+    private static async Task<IResult> RemoteConsents(string providerId, ConnectorClient client, CancellationToken ct)
+    {
+        var reply = await client.GetAsync($"v1/admin/providers/{providerId}/remote-consents", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        return Results.Json(ConnectorJson.ToCamel(reply.Object));
+    }
+
+    private static async Task<IResult> RevokeRemote(
+        string providerId, string consentId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct)
+    {
+        var reply = await client.DeleteAsync($"v1/admin/providers/{providerId}/remote-consents/{consentId}", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("operator {Operator} revoked consent {Consent} at connector provider {Provider}", OperatorOf(http), consentId, providerId);
+        }
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> UserSessions(string sub, AppDbContext db)
     {
         var user = await db.Users.FirstOrDefaultAsync(u => u.Sub == sub);

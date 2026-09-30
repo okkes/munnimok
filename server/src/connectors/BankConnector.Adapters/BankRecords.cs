@@ -28,6 +28,9 @@ public sealed record AccountDraft
     public string? MaskedNumber { get; init; }
 
     public Balance? Balance { get; init; }
+
+    /// <summary>The institution as the party's lookup names it (an aggregator); null where the party is the bank.</summary>
+    public string? Institution { get; init; }
 }
 
 /// <summary>
@@ -97,6 +100,7 @@ public static class BankRecords
             Iban = stated.Iban,
             MaskedNumber = stated.MaskedNumber,
             Balance = stated.Balance,
+            Institution = stated.Institution,
         };
 
         return account with { ContentHash = ContentHash.Of(account) };
