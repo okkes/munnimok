@@ -33,6 +33,8 @@ import { ENV_NAME_RE, RESERVED_ENV_NAMES, lanHost, listPlatforms, loadAutonomy, 
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
 import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultReadFolder, vaultRegister } from '../modules/vault.mjs';
 import { zipEntry, zipNames } from '../modules/zip.mjs';
+import { pendingFrom } from '../modules/pending.mjs';
+import { normalizeEnv, normalizePlatform } from '../modules/stack.mjs';
 import { proxyRules } from '../modules/dsm.mjs';
 import { listUsers, setAdmin } from '../modules/logto.mjs';
 import { removeProjects } from '../modules/glitchtip.mjs';
@@ -112,14 +114,17 @@ async function probe(url) {
 }
 
 /** run a command, stream its output to the response */
+/** streams a process to the response; resolves with its exit code once it is over (null when it could not start) */
 function runToStream(res, cmd, args, opts = {}) {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
   res.write(`▶ ${cmd} ${args.join(' ')}\n\n`);
   const child = spawn(cmd, args, { ...opts, shell: false });
   child.stdout.on('data', (d) => res.write(d));
   child.stderr.on('data', (d) => res.write(d));
-  child.on('error', (e) => res.end(`\n[error: ${e.message}]\n`));
-  child.on('close', (code) => res.end(`\n[exit ${code}]\n`));
+  return new Promise((resolve) => {
+    child.on('error', (e) => { res.end(`\n[error: ${e.message}]\n`); resolve({ code: null }); });
+    child.on('close', (code) => { res.end(`\n[exit ${code}]\n`); resolve({ code }); });
+  });
 }
 
 const readBody = (req) =>
@@ -379,7 +384,66 @@ async function toolEndpoint(req, res, runImpl) {
   const body = await readBody(req);
   const tool = toolFor(body.tool);
   if (!tool) return json(res, 400, { error: 'unknown tool' });
-  return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
+  const result = await runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
+  // a stack that came up runs the config of this moment — the applied side of the pending verdict on this computer
+  if (result?.code === 0 && /:up$/.test(String(body.tool))) stampApplied(String(body.tool).replace(/:up$/, ''));
+  return result;
+}
+
+/* ── what runs vs what is configured: the strip that says "Bootstrap + Deploy applies this" ──
+   On the NAS the applied side is the commit the last successful Bootstrap / Deploy run checked
+   out (the page knows the runs and sends each stack's head sha); on this computer it is the
+   config the stack was last started with (applied.json beside its rendered files). Both sides
+   are normalized the way every reader normalizes them, so a difference is a real one. */
+const appliedFile = (stack) => join(renderedDir(stack), 'applied.json');
+const configPaths = (platform, env) => [`infra/platforms/${platform}/platform.json`, ...(env ? [`infra/platforms/${platform}/envs/${env}.json`] : [])];
+/** the config as it is now: the environment's own keys plus the platform's under `platform` (a shared stack has only the latter) */
+function currentConfig(platform, env) {
+  const { file, ...platformCfg } = loadPlatform(platform);
+  return env ? { ...loadEnv(platform, env), platform: platformCfg } : { platform: platformCfg };
+}
+function stampApplied(stack) {
+  const parsed = parseStackName(stack);
+  if (!parsed) return; // devsource has no config to apply
+  mkdirSync(renderedDir(stack), { recursive: true });
+  writeFileSync(appliedFile(stack), `${JSON.stringify({ at: new Date().toISOString(), config: currentConfig(parsed.platform, parsed.env) }, null, 2)}\n`);
+}
+function pendingLocal(stack, { platform, env }) {
+  const file = appliedFile(stack);
+  if (!existsSync(file)) return { stack, applied: null, never: true, needs: null, changes: [] };
+  const applied = JSON.parse(readFileSync(file, 'utf8'));
+  const verdict = pendingFrom(applied.config, currentConfig(platform, env));
+  return { stack, applied: { at: applied.at }, changes: verdict.changes, needs: verdict.needs ? 'setup' : null };
+}
+async function pendingDeployed(spawnImpl, stack, { platform, env }, sha) {
+  const paths = configPaths(platform, env);
+  const git = (args) => capture(spawnImpl, 'git', args, { cwd: ROOT });
+  const uncommitted = (await git(['status', '--porcelain', '--', ...paths])).out.trim().length > 0;
+  const head = (await git(['rev-parse', 'HEAD'])).out.trim() || null;
+  // nothing ran yet: the checklist's Bootstrap item covers it — only an edit that is not on the branch matters here
+  if (!sha) return { stack, head, applied: null, uncommitted, commits: [], changes: [], needs: uncommitted ? 'commit' : null, then: uncommitted ? 'bootstrap' : null };
+  const log = await git(['log', '--format=%H%x1f%cI%x1f%s', `${sha}..HEAD`, '--', ...paths]);
+  if (log.code !== 0) return { stack, head, applied: { sha }, unknown: true, uncommitted, commits: [], changes: [], needs: null };
+  const commits = log.out.split('\n').filter(Boolean).map((line) => { const [h, at, subject] = line.split('\x1f'); return { sha: h, at, subject }; });
+  const shown = await Promise.all(paths.map((p) => git(['show', `${sha}:${p}`])));
+  const rawAt = (i) => (shown[i]?.code === 0 && shown[i].out.trim() ? JSON.parse(shown[i].out) : null);
+  const platformThen = rawAt(0) ? (({ file, ...rest }) => rest)(normalizePlatform(platform, rawAt(0))) : null;
+  const envThen = env && rawAt(1) ? normalizeEnv(platform, rawAt(1), env) : null;
+  const verdict = pendingFrom(env ? { ...(envThen ?? {}), platform: platformThen } : { platform: platformThen }, currentConfig(platform, env));
+  return { stack, head, applied: { sha }, uncommitted, commits, changes: verdict.changes, needs: uncommitted ? 'commit' : verdict.needs, then: uncommitted ? (verdict.needs ?? 'bootstrap') : null };
+}
+async function pendingEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  const platform = String(body.platform ?? '');
+  try { loadPlatform(platform); } catch (e) { return json(res, 400, { error: e.message }); }
+  const out = {};
+  for (const [stack, want] of Object.entries(body.stacks ?? {})) {
+    const parsed = parseStackName(stack);
+    if (!parsed || parsed.platform !== platform) continue;
+    try { out[stack] = platform === LCL ? pendingLocal(stack, parsed) : await pendingDeployed(spawnImpl, stack, parsed, want?.sha ? String(want.sha) : null); }
+    catch (e) { out[stack] = { stack, error: e.message }; }
+  }
+  return json(res, 200, { stacks: out });
 }
 
 /* ── zero-input Logto per lcl environment: seed the minted machine
@@ -1941,6 +2005,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
     'POST /api/envs/store-id': (req, res) => storeIdEndpoint(req, res, spawnImpl),
     'POST /api/envs/app-links': (req, res) => appLinksSaveEndpoint(req, res),
+    'POST /api/envs/pending': (req, res) => pendingEndpoint(req, res, spawnImpl),
     'GET /api/access/users': (req, res) => accessUsersEndpoint(res, url(req), netFetchImpl),
     'POST /api/access/toggle': (req, res) => accessToggleEndpoint(req, res, netFetchImpl),
     'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),

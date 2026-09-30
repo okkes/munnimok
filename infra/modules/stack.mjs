@@ -61,8 +61,12 @@ export function listPlatforms() {
 export function loadPlatform(id) {
   const file = platformFile(id);
   if (!existsSync(file)) throw new Error(`unknown platform "${id}" — no ${file}`);
-  const cfg = readJson(file);
-  if (cfg.platform !== id) throw new Error(`${file} declares platform "${cfg.platform}" — must match its folder`);
+  return normalizePlatform(id, readJson(file), file);
+}
+
+/** the platform config as every reader sees it — exported so a copy read from git (the applied side of a pending verdict) compares like for like */
+export function normalizePlatform(id, cfg, file = null) {
+  if (cfg.platform !== id) throw new Error(`${file ?? `platform ${id}`} declares platform "${cfg.platform}" — must match its folder`);
   return {
     label: PLATFORM_LABELS[id] ?? id,
     registry: 'ghcr.io/okkes',
@@ -94,7 +98,7 @@ export function platformEnvs(id) {
     .sort((a, b) => a.slot - b.slot);
 }
 
-function normalizeEnv(platform, raw, fromFile) {
+export function normalizeEnv(platform, raw, fromFile) {
   const env = raw.env ?? fromFile;
   if (!ENV_NAME_RE.test(env) || RESERVED_ENV_NAMES.has(env)) throw new Error(`environment name "${env}" is invalid (2-12 lowercase letters/digits, not ${[...RESERVED_ENV_NAMES].join('/')})`);
   if (!Number.isInteger(raw.slot) || raw.slot < 0) throw new Error(`environment "${env}" on ${platform} has no integer slot`);

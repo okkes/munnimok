@@ -194,6 +194,12 @@ section,.card,.crow,.reg,details.how,.statline,#local-status{scroll-margin-top:7
 @keyframes munni-flash-tint{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand-ink) 50%,transparent);background-color:color-mix(in srgb,var(--brand-ink) 14%,transparent)}45%{box-shadow:0 0 0 10px color-mix(in srgb,var(--brand-ink) 0%,transparent);background-color:color-mix(in srgb,var(--brand-ink) 14%,transparent)}100%{box-shadow:0 0 0 0 transparent;background-color:transparent}}
 @keyframes munni-flash-ring{0%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand-ink) 75%,transparent)}35%{box-shadow:0 0 0 12px color-mix(in srgb,var(--brand-ink) 0%,transparent)}55%{box-shadow:0 0 0 0 color-mix(in srgb,var(--brand-ink) 60%,transparent)}100%{box-shadow:0 0 0 0 transparent}}
 .flash{animation:munni-flash-tint 2.4s ease-out 1;border-radius:12px;position:relative;z-index:1}
+/* what is configured but does not run yet, and the one action that applies it */
+.pending{margin:8px 0 0;padding:8px 12px;border-radius:10px;border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);background:color-mix(in srgb,var(--warn) 9%,transparent);font-size:13px;line-height:1.55}
+.pending.applying{border-color:color-mix(in srgb,var(--ok) 40%,transparent);background:color-mix(in srgb,var(--ok) 8%,transparent)}
+.pending code{font-size:12px}
+.pending .ghost{margin:0 2px;vertical-align:middle}
+.tile-envs{margin-top:6px;font-size:12px}
 button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation:munni-flash-ring 2.4s ease-out 1}
 @media(prefers-reduced-motion:reduce){.flash,button.flash,.pill.flash,a.chiplink.flash,.tab.flash,input.flash{animation-duration:.8s}}
 /* ── tiles pass 2026-09-10: one page width, feature tiles, integration health, integration tiles, skip ── */
@@ -393,6 +399,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
         <div>
           <h3>Set up &amp; start everything <span class="pill">one button</span> <span class="pill" id="lan-pill"></span></h3>
           <p class="why">One button does the whole platform: mints the secrets, starts the <b>shared services</b> (<code>munni-lcl-shared</code>), creates the <b>prod</b> environment when none exists yet, and brings every environment up — waiting for each piece and wiring sign-in, crash tracking, the vault and (when a feature needs the network) the https mode with its certificate automatically. When Windows asks to trust a root certificate mid-setup, that is the platform's own — approve it. Pressing it again is always safe, it only fills gaps.</p>
+          <div class="pending" id="pending-munni-lcl-shared" hidden></div>
           <div class="runrow">
             <button id="btn-local-setup">▶ Set up &amp; start munni</button>
             <button class="ghost" id="btn-local-stopall">Stop everything</button>
@@ -523,6 +530,7 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
             <button class="ghost" id="btn-nas-shared-deploy">Deploy again</button>
           </div>
           <div class="msg" id="msg-nas-shared"></div>
+          <div class="pending" id="pending-munni-nas-shared" hidden></div>
         </div>
       </div>
     </div>
@@ -1144,6 +1152,7 @@ const S = {
   pollTimer: null,
   accessUsers: {},         // env name -> the Access tab's last listing
   appLinksByEnv: {},       // env name -> the served /.well-known files vs the config (the Phones tab's App links card)
+  pending: {},             // stack -> what runs vs what is configured (the helper's verdict, plus the run in flight)
   busyEnvs: new Set(),
 };
 
@@ -1698,6 +1707,7 @@ function renderCards() {
       <div class="tile-h"><span class="bico" data-bico="${BRAND_OF[f?.id ?? g.id] ?? 'key'}"></span><span class="sp"></span>${managed ? `<span data-chip>${rowChip(g)}</span>` : ''}${f ? `<label class="switch" ${lock ? `title="${escAttr(lock)}"` : ''}><input type="checkbox" id="feat-${f.id}" ${on ? 'checked' : ''} ${lock ? 'disabled' : ''}/><span class="sw"></span></label>` : ''}</div>
       ${f ? `<label class="tile-t" for="feat-${f.id}">${f.label}</label>` : `<div class="tile-t">${g.title}</div>`}
       <div class="tile-d">${hint ?? ''}</div>
+      ${f ? tileEnvsHtml(f.id) : ''}
       <div class="tile-f">${tags.map((t) => `<span class="tag ${TAG_CLS[t] ?? ''}">${t}</span>`).join('')}${managed ? `<button class="ghost mini" data-manage="${g.id}">Manage</button>` : ''}</div>
       ${managed ? bodyHtml(g) : ''}
     </div>`;
@@ -2081,6 +2091,7 @@ async function refresh() {
   renderNasStatus();
   renderEnvStatus();
   renderStatus();
+  loadPending().catch(() => {});
   scheduleLivePoll();
 }
 function scheduleLivePoll() {
@@ -2388,6 +2399,7 @@ async function refreshLocal() {
     }
     fillDynamicCopy();
     renderStatus();
+    loadPending().catch(() => {});
   } catch (e) {
     if (box) box.textContent = `helper unreachable (${e.message}) — restart infra/setup/start.cmd and reload`;
   }
@@ -3109,6 +3121,7 @@ function envWorkspaceHtml(env) {
         </div>
       </div>
     </div>
+    <div class="pending" id="pending-${env.stack}" hidden></div>
     <div class="ws-body" id="ws-body-${s}" ${open ? '' : 'hidden'}>
       <div class="tabs" role="tablist">
         <button class="tab sel" data-tab="overview" data-env="${s}">Overview</button>
@@ -3143,6 +3156,7 @@ function renderWorkspaces() {
   }
   setPill('envs-pill', list.length ? `${list.length} environment${list.length > 1 ? 's' : ''}` : 'none yet', list.length > 0);
   renderEnvStatus();
+  renderPending();
 }
 function renderRegistrations(env) {
   const box = document.getElementById(`reg-${env.env}`);
@@ -3354,6 +3368,111 @@ async function applyAppLinks(env) {
   try { await envAction('deploy', env, null); msg(`msg-applinks-${s}`, 'saved, committed, Deploy dispatched — Check again once the run is through', true); }
   catch (e) { msg(`msg-applinks-${s}`, `saved and committed — press Deploy again to publish it (${e.message})`, false); }
   await refreshLocal();
+}
+
+/* ── changes waiting to be applied: what the last run deployed (its commit) vs what is configured now.
+   The helper answers from git on the NAS and from the config the stack was last started with on this
+   computer; the page adds the run in flight, so a strip says apply, applying, or nothing at all. ── */
+const PENDING_ACTION = {
+  bootstrap: ['Bootstrap + Deploy', 'mints or registers what the change needs, then deploys'],
+  deploy: ['Deploy again', 'republishes the rendered files'],
+  setup: ['Re-run setup', 'renders and restarts the stack (Stop → Start does it too)'],
+  commit: ['Commit + push', 'puts it on the branch the runs deploy from'],
+};
+/** the commit the last successful run of a stack checked out, and the run still going, if any */
+function appliedRunFor(stack) {
+  if (isLcl() || !S.runs) return { sha: null, busy: null };
+  const runs = [...runsFor(S.runs.iac ?? [], stack), ...runsFor(S.runs.nas ?? [], stack)].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  const busy = runs.find((r) => r.status !== 'completed');
+  const last = runs.find((r) => r.status === 'completed' && r.conclusion === 'success');
+  return { sha: last?.head_sha ?? null, busy: busy ? { sha: busy.head_sha, name: busy.name, at: busy.created_at } : null };
+}
+const pendingApplying = (p) => Boolean(p?.busy && p.head && p.busy.sha === p.head);
+const pendingOpen = (p) => Boolean(p?.needs) && !pendingApplying(p);
+const pendingDetail = (p) => `${(p.changes ?? []).join(', ') || 'the config differs from what runs'} — ${PENDING_ACTION[p.needs][0]}${p.then ? `, then ${PENDING_ACTION[p.then][0]}` : ''}`;
+async function loadPending() {
+  if (!HELPER) return;
+  const stacks = {};
+  for (const env of S.envList) stacks[env.stack] = appliedRunFor(env.stack);
+  const shared = sharedStackOf(S.platform);
+  stacks[shared] = appliedRunFor(shared);
+  let r;
+  try { r = await hjson('/api/envs/pending', { method: 'POST', body: JSON.stringify({ platform: S.platform, stacks: Object.fromEntries(Object.entries(stacks).map(([k, v]) => [k, { sha: v.sha }])) }) }); }
+  catch { return; }
+  for (const [stack, v] of Object.entries(r?.stacks ?? {})) S.pending[stack] = { ...v, busy: stacks[stack]?.busy ?? null };
+  renderPending();
+  renderTodo();
+}
+function pendingHtml(stack, p) {
+  if (!p || p.error) return '';
+  const env = envByStack(stack);
+  const attrs = `data-stack="${escAttr(stack)}"${env ? ` data-env="${escAttr(env.env)}"` : ''}`;
+  const list = (p.changes ?? []).map((c) => `<code>${esc(c)}</code>`).join(', ');
+  if (pendingApplying(p)) return `<div class="pending applying"><b>Applying…</b> ${esc(p.busy.name)} is running for ${esc(stackLabel(stack))} (started ${esc(ago(p.busy.at))})${list ? ` and carries ${list}` : ''} — follow it under the runs; this strip clears when it is through.</div>`;
+  if (p.unknown) return `<div class="pending"><b>Cannot tell what is applied:</b> the commit the last run checked out is not in this checkout — pull the branch (git pull), then reload.</div>`;
+  if (!p.needs) return '';
+  const [label, why] = PENDING_ACTION[p.needs];
+  const when = p.commits?.length ? `committed ${ago(p.commits[0].at)}` : (p.applied?.at ? `the stack last started ${ago(p.applied.at)}` : 'saved on this computer, not on the branch');
+  const then = p.then ? ` — then <b>${PENDING_ACTION[p.then][0]}</b> ${PENDING_ACTION[p.then][1]}` : '';
+  const stale = p.busy ? ' <span class="envtag">a run for an older commit is still going — it will not carry this</span>' : '';
+  const cta = p.needs === 'commit' && !connected()
+    ? `<a class="chiplink" href="#" ${jumpAttr({ href: '#connect-card', spot: '#btn-connect' })}>connect GitHub first</a>`
+    : `<button class="ghost" data-pending-act="${p.needs}" ${attrs}>${label}</button>`;
+  return `<div class="pending"><b>Not applied yet</b> (${esc(when)}): ${list || 'the config differs from what runs'} — <b>${label}</b> ${why}${then}. ${cta} <a class="chiplink" href="#" data-pending-show="${p.needs}" ${attrs}>where is it?</a>${stale}</div>`;
+}
+function renderPending() {
+  for (const el of document.querySelectorAll('[id^="pending-munni-"]')) {
+    const html = pendingHtml(el.id.slice('pending-'.length), S.pending[el.id.slice('pending-'.length)]);
+    el.innerHTML = html;
+    el.hidden = !html;
+  }
+}
+/** the button a strip points at: the environment's own, or the shared card's */
+function pendingButton(stack, needs) {
+  const env = envByStack(stack);
+  if (env) return document.querySelector(`[data-act="${needs === 'commit' ? (isLcl() ? 'setup' : 'bootstrap') : needs}"][data-stack="${stack}"]`);
+  if (isLcl()) return document.getElementById('btn-local-setup');
+  return document.getElementById(needs === 'deploy' ? 'btn-nas-shared-deploy' : 'btn-nas-shared-setup');
+}
+function showPendingButton(stack, needs) {
+  const btn = pendingButton(stack, needs);
+  if (!btn) return;
+  (btn.closest('.card') ?? btn).scrollIntoView({ behavior: 'smooth', block: 'start' });
+  afterScroll(() => flash(btn));
+}
+async function applyPending(stack, needs, btn) {
+  const env = envByStack(stack);
+  btn.disabled = true;
+  try {
+    let next = needs;
+    if (needs === 'commit') {
+      requireConnection();
+      if (!(await streamLocal('/api/config/commit', { message: `chore(platforms): ${S.platform} ${env ? `environment ${env.env}` : 'platform'} config` }, 'commit + push the platform config', { refresh: false }))) return;
+      next = S.pending[stack]?.then ?? (isLcl() ? 'setup' : 'bootstrap');
+    }
+    if (env) await envAction(next, env, btn);
+    else pendingButton(stack, next)?.click();
+  } catch (e) { localLog(`\n✗ ${e.message}\n`); }
+  finally {
+    btn.disabled = false;
+    setTimeout(() => { refresh().catch(() => {}); loadPending().catch(() => {}); }, 3000);
+  }
+}
+document.addEventListener('click', (e) => {
+  const show = e.target.closest('[data-pending-show]');
+  if (show) { e.preventDefault(); showPendingButton(show.dataset.stack, show.dataset.pendingShow); return; }
+  const btn = e.target.closest('[data-pending-act]');
+  if (!btn) return;
+  e.preventDefault();
+  applyPending(btn.dataset.stack, btn.dataset.pendingAct, btn).catch(() => {});
+});
+/** a tile is the default for the NEXT environment; the ones that exist say whether they run it */
+function tileEnvsHtml(id) {
+  if (!ENV_FEATURES.some(([, items]) => items.some(([k]) => k === id)) || !S.envList.length) return '';
+  const has = (e) => (['gocardless', 'enablebanking'].includes(id) ? (e.features?.banking ?? []).includes(id) : (['google', 'apple'].includes(id) ? (e.features?.signin ?? []).includes(id) : Boolean(e.features?.[id])));
+  const off = S.envList.filter((e) => !has(e));
+  if (!off.length) return `<div class="why tile-envs">runs in ${S.envList.map((e) => esc(e.env)).join(', ')}</div>`;
+  return `<div class="why tile-envs">a default for the next environment — ${off.map((e) => `<a class="chiplink" href="#" ${jumpAttr({ tab: 'overview', env: e.env, sel: `[data-envset="${id}"][data-env="${e.env}"]` })}>${esc(e.env)}: off</a>`).join(' · ')} — an environment switches it on under its Settings, then Save</div>`;
 }
 /** the check runs itself once per page load per environment — the todo says whether the files are served */
 async function autoCheckAppLinks() {
@@ -3912,6 +4031,8 @@ function platformTodoItems() {
   }
   if (f.google) items.push({ id: 'google', title: 'Google OAuth client saved', detail: 'the Google sign-in tile — each environment registers its redirect URI in its workspace', state: (has('LOGTO_GOOGLE_CLIENT_ID') && has('LOGTO_GOOGLE_CLIENT_SECRET')) || S.skipped.has('google'), href: '[data-group="google"]', spot: '#field-LOGTO_GOOGLE_CLIENT_ID' });
   if (f.apple) items.push({ id: 'apple', title: 'Apple Services ID + key saved', detail: appleLock() ?? 'the Apple sign-in tile lists every environment\'s domain + return URL for the Services ID', state: appleLock() ? null : (has('LOGTO_APPLE_CLIENT_ID') && has('LOGTO_APPLE_KEY_ID') && has('LOGTO_APPLE_PRIVATE_KEY')) || S.skipped.has('apple'), href: '[data-group="apple"]', spot: '#field-LOGTO_APPLE_CLIENT_ID' });
+  const sharedPending = S.pending[sharedStackOf(S.platform)];
+  if (pendingOpen(sharedPending)) items.push({ id: 'apply-shared', title: 'Apply the platform changes waiting', detail: pendingDetail(sharedPending), state: false, href: `#pending-${sharedStackOf(S.platform)}`, spot: `#pending-${sharedStackOf(S.platform)}` });
   const done = todoDone();
   return items.map((it) => ({ ...it, done: it.manual ? Boolean(done[`${S.platform}:${it.id}`]) : it.state === true }));
 }
@@ -3930,6 +4051,8 @@ function envTodoItems(env) {
   if ((f.signin ?? []).includes('google')) items.push({ id: `reg-google-${s}`, title: 'Register the Google redirect URI', detail: 'Registrations → Verify with Google tells', state: regState('google'), tab: 'registrations', env: s, sel: '.reg[data-reg="google"]' });
   if ((f.signin ?? []).includes('apple')) items.push({ id: `reg-apple-${s}`, title: 'Register the Apple domain + return URL', detail: https(urls.logto) ? 'Registrations → Verify with Apple tells' : 'needs an https address first', state: https(urls.logto) ? regState('apple') : false, tab: 'registrations', env: s, sel: '.reg[data-reg="apple"], .reg' });
   if ((f.banking ?? []).includes('enablebanking')) items.push({ id: `reg-eb-${s}`, title: 'Register the Enable Banking redirect URL', detail: 'Registrations lists it — no API to verify', manual: true, tab: 'registrations', env: s, sel: '.reg[data-reg="enablebanking"]' });
+  const pend = S.pending[env.stack];
+  if (pendingOpen(pend)) items.push({ id: `apply-${s}`, title: 'Apply the changes waiting on this environment', detail: pendingDetail(pend), state: false, tab: 'overview', env: s, sel: `#pending-${env.stack}` });
   const admins = S.accessUsers[s];
   items.push({ id: `admin-${s}`, title: 'Someone holds admin (admin portal + control cockpit)', detail: 'sign in to the app once with your own account, then Access → switch admin on for it', state: admins ? admins.some((x) => x.admin) : null, tab: 'access', env: s, sel: `#access-list-${s}` });
   if (f.android) items.push({ id: `play-record-${s}`, title: `Create the Play app record${ss?.appId ? ` ${ss.appId}` : ''}`, detail: 'Play Console → Create app; this page notices and turns publishing on', state: ss?.play ? ss.play.state === 'ready' : null, tab: 'phones', env: s, sel: '[data-phone="android"] details.how' });

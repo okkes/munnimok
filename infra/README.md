@@ -134,6 +134,25 @@ and every control plane.
 Repository-level secrets and variables are not used, except the first-boot
 latch `MUNNI_INITIALIZED` the wizard sets at Connect.
 
+## Applied vs configured
+
+A card that changes a platform or environment file shows a strip whenever what is
+configured is not what runs — computed from facts, never remembered by the page.
+On the NAS the applied config is the commit the last successful Bootstrap / Deploy
+run checked out (`git log <that sha>..HEAD -- infra/platforms/…`, both files read
+back normalized the way every reader normalizes them); on this computer it is the
+config the stack was last started with (`infra/rendered/<stack>/applied.json`,
+stamped when the stack comes up). The strip names the changed keys
+(`features.connectors: off → on`) and the one action that applies them — Bootstrap +
+Deploy for anything that mints or registers something, Deploy again for the app
+signing fingerprint alone, Commit + push first for an edit that is not on the branch,
+Re-run setup on this computer — with a button that runs it and a *where is it?* that
+scrolls to and flashes the card's own button. While a run for the current commit is in
+flight the strip says so and clears when the run is through; a run for an older commit
+does not count. The checklists carry the same item, and a feature tile (a default for
+the next environment) says which existing environments do not run it yet, linking to
+their Settings.
+
 ## Day-2
 
 - Every push to dev builds `dev` images and deploys the `dev`-channel
