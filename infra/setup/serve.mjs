@@ -364,7 +364,8 @@ async function platformSaveEndpoint(req, res) {
 /** the connector control plane's liveness, from the helper's side (anonymous: /v1/health carries no data) */
 async function connectorProbeEndpoint(res, url, fetchImpl) {
   let stack;
-  try { stack = loadStack(String(url.searchParams.get('stack') ?? '')); } catch (e) { return json(res, 400, { error: e.message }); }
+  // a nas stack's addresses need the platform's domain, which the wizard holds (loadAnyStack borrows it like the host probe does)
+  try { stack = loadAnyStack(String(url.searchParams.get('stack') ?? '')); } catch (e) { return json(res, 400, { error: e.message }); }
   if (!stack.urls.connector) return json(res, 400, { error: `${stack.stack} runs no connectors` });
   const target = `${stack.urls.connector}/v1/health`;
   try {

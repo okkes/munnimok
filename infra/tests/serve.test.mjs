@@ -871,6 +871,11 @@ test('envs: a bank party without the control plane is refused — on creation an
   // with the control plane ticked the same environment is fine
   const ok = await post(app, '/api/envs', { platform: 'nas', env: 'acc', channel: 'latest', features: { banking: ['gocardless', 'enablebanking'], connectors: true } });
   assert.equal(ok.statusCode, 200);
+  // the control plane check of a nas stack borrows the platform's domain from the wizard's store (it used to refuse with "PLATFORM_DOMAIN is not set")
+  const probe = await call(app, { url: '/api/connector-probe?stack=munni-nas-acc' });
+  assert.equal(probe.statusCode, 200, probe.body);
+  assert.match(probe.json().url, /^https:\/\/munni-acc-nas-connector\.[^/]+\/v1\/health$/);
+  assert.equal(probe.json().ok, false, 'no network in tests: the probe answers honestly instead of throwing');
   // a settings change that would untick the control plane while a bank stays is refused the same way, and changes nothing
   const changed = await post(app, '/api/envs/update', { platform: 'nas', env: 'acc', features: { connectors: false } });
   assert.equal(changed.statusCode, 400);
