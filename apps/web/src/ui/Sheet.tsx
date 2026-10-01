@@ -20,6 +20,14 @@ const SIZE_PX: Record<Exclude<SheetSize, 'full'>, number> = { compact: 320, form
 const FULL_HEIGHT = 'calc(100dvh - env(safe-area-inset-top, 0px) - 12px)';
 const FULL_DIALOG = 'min(92dvh, 1000px)';
 
+/** the desktop dialog's height and ceiling: the `full` size stands at the
+ *  ceiling so content can fill it; `steady` pins the requested height;
+ *  otherwise the content decides (#276) under the ceiling */
+function dialogHeights(full: boolean | undefined, steady: boolean | undefined, fixedHeight: number | undefined): { height: string | number; maxHeight: string } {
+  if (full) return { height: FULL_DIALOG, maxHeight: FULL_DIALOG };
+  return { height: steady && fixedHeight !== undefined ? fixedHeight : 'auto', maxHeight: 'min(85dvh, 900px)' };
+}
+
 // framer-motion animates in real wall-clock time even in jsdom (vaul's
 // CSS transitions never ran there) — under parallel test load those
 // ~300ms opens/closes eat waitFor budgets at random. Instant in tests.
@@ -445,9 +453,8 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
           // (The MOBILE sheet keeps its mount-locked height — hard rule.)
           // #344: `steady` opts out of the growth — content that toggles
           // per keystroke made the dialog pump between floor and ceiling
-          height: full ? FULL_DIALOG : steady && fixedHeight !== undefined ? fixedHeight : 'auto',
+          ...dialogHeights(full, steady, fixedHeight),
           minHeight: fixedHeight === undefined ? undefined : Math.round(fixedHeight * 0.6),
-          maxHeight: full ? FULL_DIALOG : 'min(85dvh, 900px)',
           // grow from the source, shrink back to it — the covered-parent
           // recede writes to the same properties, so hand them over only
           // while entering/exiting

@@ -22,7 +22,7 @@ export interface FitInput {
 
 /** the largest box with the frame's aspect inside the room, or null when there is no room to measure (tests, a hidden sheet) */
 export function fitFrame({ availW, availH, frameW, frameH }: FitInput): { width: number; height: number } | null {
-  if (!(frameW > 0) || !(frameH > 0)) return null;
+  if (!Number.isFinite(frameW) || frameW <= 0 || !Number.isFinite(frameH) || frameH <= 0) return null;
   const scale = Math.min(availW / frameW, availH / frameH);
   if (!Number.isFinite(scale) || scale <= 0) return null;
   return { width: Math.floor(frameW * scale), height: Math.floor(frameH * scale) };
