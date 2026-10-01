@@ -1,5 +1,18 @@
 # Changelog
 
+## [5.1.0](https://github.com/okkes/munnimok/compare/v5.0.0...v5.1.0) (2026-10-01)
+
+
+### ✨ Features
+
+* **infra:** the platform config is a GitHub variable the wizard publishes, and each stack's runs check out its own branch ([144742c](https://github.com/okkes/munnimok/commit/144742c8b517b239722ba0b478e6ffaf17ee680a))
+* **web:** the payoff planner — avalanche, snowball and tsunami, what a little extra buys, when each debt ends ([d7adfb2](https://github.com/okkes/munnimok/commit/d7adfb2f22cf5b847b17c41190bc07d20beff03d))
+
+
+### 🐞 Bug Fixes
+
+* **api:** the relay's machine token asks for the operator scope ([938b4b8](https://github.com/okkes/munnimok/commit/938b4b8c1793d33e2964ada862667b6e0fcd8134))
+
 ## [5.0.0](https://github.com/okkes/munnimok/compare/v4.1.0...v5.0.0) (2026-10-01)
 
 
