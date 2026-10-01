@@ -1,5 +1,19 @@
 # Changelog
 
+## [5.2.0](https://github.com/okkes/munnimok/compare/v5.1.0...v5.2.0) (2026-10-01)
+
+
+### ✨ Features
+
+* **connectors:** hosted private agents — a browser on munni's hardware for one person, asked for and handed out ([f2a37b6](https://github.com/okkes/munnimok/commit/f2a37b616b9948382c3397c3a201c3df23a00950))
+* **infra:** pooled browser agents per environment, sized by the wizard from the host's memory ([49f84d1](https://github.com/okkes/munnimok/commit/49f84d116111d05d971beb4328973d8d4f194222))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** judge an agent by the digest of the parties it can serve, not the whole catalogue ([210458a](https://github.com/okkes/munnimok/commit/210458a7cece7dab11b6aaad992b6f8b2622bbfd))
+* **wizard:** no console windows from the helper's children, one NAS bootstrap at a time, the applied record only after a green apply ([679f38d](https://github.com/okkes/munnimok/commit/679f38db02ca949bf6e9c0f3a34efcacbf393306))
+
 ## [5.1.0](https://github.com/okkes/munnimok/compare/v5.0.0...v5.1.0) (2026-10-01)
 
 
