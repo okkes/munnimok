@@ -170,7 +170,7 @@ public sealed class AgentHostTests
         await host.StopAsync(CancellationToken.None);
 
         var claimed = box.Control.Enrollments[0].Capabilities.CatalogDigest;
-        Assert.Equal(new ProviderRegistry([new DecidedAdapter()]).CatalogDigest, claimed);
+        Assert.Equal(new ProviderRegistry([new DecidedAdapter()]).AgentCatalogDigest, claimed);
         Assert.StartsWith("sha256:", claimed, StringComparison.Ordinal);
     }
 
@@ -196,7 +196,7 @@ public sealed class AgentHostTests
     public async Task A_control_plane_on_the_same_catalogue_is_noted_as_a_match()
     {
         using var box = new Box();
-        box.Control.CatalogDigest = new ProviderRegistry([new DecidedAdapter()]).CatalogDigest;
+        box.Control.CatalogDigest = new ProviderRegistry([new DecidedAdapter()]).AgentCatalogDigest;
         var host = box.Build(code: "AGNT-NEW-0001");
 
         await host.StartAsync(CancellationToken.None);

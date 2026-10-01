@@ -91,8 +91,10 @@ capture on a date) or not. The unconfirmed ones are the ones a deploy may
 have to correct: each is reachable from the pack's options section
 (`BankAdapters`, `ShopAdapters`, `RegistryAdapters` in both hosts'
 configuration), so a provider that moves is a configuration edit rather than
-a release. The two hosts must carry the same values; the catalogue digest
-(architecture: security) refuses an agent that does not.
+a release. The two hosts must carry the same values; the agent catalogue
+digest — over the parties an agent can be leased, raw payloads stripped, so
+the inline aggregators a control plane holds the keys for and production's
+withheld raw offer move nothing — refuses an agent that does not.
 
 Fixtures — recorded pages and payloads — live beside the adapters and are
 embedded in the pack; a parse test needs no network, and a fixture test

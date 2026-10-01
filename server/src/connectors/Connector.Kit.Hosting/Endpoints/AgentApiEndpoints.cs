@@ -232,7 +232,7 @@ internal static class AgentApiEndpoints
         {
             LeaseTtlSeconds = options.Value.Timeouts.LeaseSeconds,
             Revoked = agent.Revoked,
-            CatalogDigest = registry.CatalogDigest,
+            CatalogDigest = registry.AgentCatalogDigest,
         });
     }
 

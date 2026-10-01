@@ -38,6 +38,30 @@ public interface IProviderRegistry
     /// and revalidate with an ETag instead of refetching it.
     /// </summary>
     string CatalogDigest { get; }
+
+    /// <summary>
+    /// The digest an AGENT is judged by: over the manifests an agent can be
+    /// leased, each in the one shape every registry can produce.
+    /// </summary>
+    /// <remarks>
+    /// NOT <see cref="CatalogDigest"/>, and the first pooled agent on a NAS
+    /// is why (2026-10-01). The catalogue's own digest moves with two things
+    /// an agent has no part in: the inline parties a control plane runs
+    /// itself - the aggregators exist on it when the operator's keys do, and
+    /// the keys are never handed to an agent - and the raw-payload offer,
+    /// which production withholds from its catalogue and an agent's registry
+    /// never strips. So the agent beside a production control plane with
+    /// GoCardless configured ran the same image, enrolled, heartbeated,
+    /// was listed as stale and leased nothing; the only trace was one log
+    /// line on the agent.
+    /// <para>
+    /// This digest leaves the inline parties out (<see cref="ProviderRegistry.AgentServed"/>)
+    /// and strips raw from the rest on both sides, so two registries built
+    /// from the same adapter code agree whatever the control plane holds the
+    /// keys for and whatever it offers consumers.
+    /// </para>
+    /// </remarks>
+    string AgentCatalogDigest { get; }
 }
 
 public sealed class ProviderRegistry : IProviderRegistry
@@ -91,11 +115,33 @@ public sealed class ProviderRegistry : IProviderRegistry
 
         Manifests = [.. _manifests.Values.OrderBy(m => m.Id, StringComparer.Ordinal)];
         CatalogDigest = ComputeDigest(Manifests);
+        AgentCatalogDigest = ComputeDigest(AgentServed(Manifests));
     }
 
     public IReadOnlyList<ProviderManifest> Manifests { get; }
 
     public string CatalogDigest { get; }
+
+    public string AgentCatalogDigest { get; }
+
+    /// <summary>
+    /// The manifests an agent can be leased - everything but the parties the
+    /// control plane runs in-process (<c>agent.class: inline</c> and not
+    /// required) - with raw payloads stripped, in id order: the canonical
+    /// shape <see cref="AgentCatalogDigest"/> is computed over on both sides.
+    /// </summary>
+    public static IReadOnlyList<ProviderManifest> AgentServed(IEnumerable<ProviderManifest> manifests)
+    {
+        ArgumentNullException.ThrowIfNull(manifests);
+
+        return
+        [
+            .. manifests
+                .Where(m => m.Agent.Required || m.Agent.Class != AgentClass.Inline)
+                .Select(WithoutRawPayloads)
+                .OrderBy(m => m.Id, StringComparer.Ordinal),
+        ];
+    }
 
     public bool TryGetManifest(string providerId, out ProviderManifest manifest) =>
         _manifests.TryGetValue(providerId, out manifest!);

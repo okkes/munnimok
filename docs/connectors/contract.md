@@ -62,7 +62,7 @@ omitted.
 | Route | What it does |
 | --- | --- |
 | `POST /enroll` | `code`, `name`, `capabilities` → `agent_id`, `token`, `heartbeat_seconds`; the code authenticates this one call |
-| `POST /heartbeat` | capabilities, profile health, running count → lease TTL, `revoked`, the control plane's `catalog_digest` |
+| `POST /heartbeat` | capabilities, profile health, running count → lease TTL, `revoked`, the control plane's `catalog_digest` (the agent-served digest: the parties an agent can be leased, raw stripped — never the catalogue's own, which moves with the inline parties and the raw offer) |
 | `POST /jobs/lease` | long poll for a job matching the agent's capabilities, or 204 |
 | `POST /jobs/{jobId}/renew`, `/progress`, `/challenge`, `GET /jobs/{jobId}/answer`, `POST /jobs/{jobId}/result`, `/fail` | the job's life |
 | `POST /jobs/{jobId}/live/frame`, `GET /jobs/{jobId}/live/input?after=n` | the live view from the agent's side |

@@ -33,7 +33,7 @@ public sealed class CatalogDigestTests(ShopApiFactory factory)
     /// <summary>The only kind of job the agents here offer to take.</summary>
     private static readonly string[] LoginJobsOnly = ["login"];
 
-    private string Ours => factory.Services.GetRequiredService<IProviderRegistry>().CatalogDigest;
+    private string Ours => factory.Services.GetRequiredService<IProviderRegistry>().AgentCatalogDigest;
 
     [Fact]
     public void An_agent_that_claims_another_catalogue_is_stale_and_one_that_claims_none_is_not_judged()
@@ -41,8 +41,15 @@ public sealed class CatalogDigestTests(ShopApiFactory factory)
         var registry = factory.Services.GetRequiredService<IProviderRegistry>();
 
         Assert.False(AgentCatalogue.IsStale(new AgentCapabilities(), registry));
-        Assert.False(AgentCatalogue.IsStale(new AgentCapabilities { CatalogDigest = registry.CatalogDigest }, registry));
+        Assert.False(AgentCatalogue.IsStale(new AgentCapabilities { CatalogDigest = registry.AgentCatalogDigest }, registry));
         Assert.True(AgentCatalogue.IsStale(new AgentCapabilities { CatalogDigest = "sha256:elsewhere" }, registry));
+
+        // the catalogue's own digest is a consumer's ETag: it moves with the
+        // inline parties and the raw offer, neither of which an agent runs,
+        // so an agent claiming it is on another catalogue as far as the
+        // lease is concerned
+        Assert.NotEqual(registry.CatalogDigest, registry.AgentCatalogDigest);
+        Assert.True(AgentCatalogue.IsStale(new AgentCapabilities { CatalogDigest = registry.CatalogDigest }, registry));
     }
 
     [Fact]
