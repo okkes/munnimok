@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.3.0](https://github.com/okkes/munnimok/compare/v5.2.0...v5.3.0) (2026-10-01)
+
+
+### ✨ Features
+
+* **connectors:** the streamed login at full size, the real waiting state, and taps that survive the keyboard ([4528930](https://github.com/okkes/munnimok/commit/45289301f8e76a41e7c37a2312cf0c240dd54833))
+
 ## [5.2.0](https://github.com/okkes/munnimok/compare/v5.1.0...v5.2.0) (2026-10-01)
 
 
