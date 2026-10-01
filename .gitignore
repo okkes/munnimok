@@ -45,3 +45,7 @@ import-watch/
 # swallow src/features/mina)
 /temp/
 /mina/
+
+# the platform config lives on GitHub as MUNNI_PLATFORM_* variables (#416); these are this computer's copy
+infra/platforms/nas/
+infra/platforms/rpi/

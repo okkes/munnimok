@@ -4,9 +4,12 @@ munni runs on **platforms** (`lcl` = this computer with Docker Desktop,
 `nas` = a Synology NAS; `rpi` is reserved) and every platform runs the
 same shape: one **shared stack** (crash reports, the vault, pgAdmin, the
 control cockpit, OCR) plus any number of **environments** (web, admin,
-api, its own Logto, its own Postgres). The model lives in committed JSON
-under `infra/platforms/` (see its README for every field); secrets never
-do. The setup wizard writes that config, stores the credentials, and
+api, its own Logto, its own Postgres). The model is JSON under
+`infra/platforms/` (see its README for every field) — on this computer, and on
+GitHub as one repository variable per platform (`MUNNI_PLATFORM_<ID>`, #416): the
+wizard publishes it on every save, every workflow job materializes it first,
+nothing is committed; secrets never live in it. The setup wizard writes that
+config, stores the credentials, and
 hands everything to GitHub Actions — which builds the images and the
 phone apps for every platform and deploys the NAS.
 
@@ -54,7 +57,7 @@ infra/rendered/                      gitignored: rendered compose/env files, the
    2FA off — the wizard checks it from here), the published folder, the
    platform's vault account (generated). *Set up shared services* creates
    the GitHub environment `nas-shared`, stores the platform values there
-   (and in every environment's), commits the config and dispatches the
+   (and in every environment's), publishes the config and dispatches the
    **Bootstrap** workflow for `munni-nas-shared` with a chained Deploy.
 2. The Bootstrap (GitHub Actions, `iac.yml`) mints the shared stack's
    secrets, mirrors the platform-scoped ones into every `nas-<env>`
@@ -72,7 +75,7 @@ infra/rendered/                      gitignored: rendered compose/env files, the
 3. *Add environment*: name, channel (`dev` = the dev branch's images,
    `latest` = releases), features, store ids. The wizard writes
    `envs/<env>.json`, creates `nas-<env>`, stores what its features need,
-   commits, dispatches Bootstrap + Deploy. From then on every successful
+   publishes, dispatches Bootstrap + Deploy. From then on every successful
    image build deploys the environments on that channel by itself, and
    every push builds the phone apps of the environments that enable them.
    A stack whose GitHub environment does not exist yet is skipped by pushes
@@ -110,7 +113,7 @@ Clean up on an environment: lcl — GoCardless consents revoked, GlitchTip
 projects removed, containers + volumes + network destroyed, the config
 file removed; nas — the Bootstrap workflow with `cleanup=true` does the
 same through the API and the poller, deletes the GitHub environment and
-commits the removed config file. The shared stack goes last, once no
+publishes the platform's variable without it. The shared stack goes last, once no
 environment is left (rules, containers, poller task, live dir, its
 environment). Two things stay by hand — store records, and on a PC the
 trusted roots of earlier https families — the Clean up tab and the local
@@ -141,18 +144,19 @@ latch `MUNNI_INITIALIZED` the wizard sets at Connect.
 
 A card that changes a platform or environment file shows a strip whenever what is
 configured is not what runs — computed from facts, never remembered by the page.
-On the NAS the applied config is the commit the last successful Bootstrap / Deploy
-run checked out (`git log <that sha>..HEAD -- infra/platforms/…`, both files read
-back normalized the way every reader normalizes them); on this computer it is the
+On the NAS the applied config is what the last successful Bootstrap / Deploy run
+recorded on the stack's GitHub environment (`MUNNI_APPLIED`: the config it ran with,
+normalized the way every reader normalizes it), and the configured side has to be on
+GitHub too (the platform's variable) before a run can read it; on this computer it is the
 config the stack was last started with (`infra/rendered/<stack>/applied.json`,
 stamped when the stack comes up). The strip names the changed keys
 (`features.connectors: off → on`) and the one action that applies them — Bootstrap +
 Deploy for anything that mints or registers something, Deploy again for the app
-signing fingerprint alone, Commit + push first for an edit that is not on the branch,
+signing fingerprint alone, Publish first for a save GitHub does not hold yet,
 Re-run setup on this computer — with a button that runs it and a *where is it?* that
-scrolls to and flashes the card's own button. While a run for the current commit is in
-flight the strip says so and clears when the run is through; a run for an older commit
-does not count. The checklists carry the same item, and a feature tile (a default for
+scrolls to and flashes the card's own button. While a run that started after the last
+publish is in flight the strip says so and clears when the run is through; a run that
+started before it does not count. The checklists carry the same item, and a feature tile (a default for
 the next environment) says which existing environments do not run it yet, linking to
 their Settings.
 

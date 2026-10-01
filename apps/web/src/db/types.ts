@@ -122,6 +122,8 @@ export interface AccountRow extends SyncEnvelope {
   /** debts-screen membership: absent = by type (loan/mortgage in, credit
    *  out unless it carries a debt story) — the explicit toggle wins */
   trackAsDebt?: 0 | 1;
+  /** #413: how much this debt weighs on the person (1 light … 5 heavy) — the payoff planner's tsunami order pays the heaviest first */
+  debtStress?: 1 | 2 | 3 | 4 | 5;
 }
 
 export type TxType = 'income' | 'expense' | 'saving' | 'transfer' | 'debtPayment' | 'investment' | 'funding' | 'adjustment';

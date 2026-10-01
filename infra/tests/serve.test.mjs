@@ -19,16 +19,22 @@ const PLATFORMS = join(SCRATCH, 'platforms');
 process.env.MUNNI_RENDER_DIR = RENDER;
 process.env.MUNNI_PLATFORMS_DIR = PLATFORMS;
 delete process.env.PLATFORM_DOMAIN;
-// the repo's two platforms, one lcl environment (prod, slot 0)
-for (const p of ['lcl', 'nas']) {
+// the two platforms, inline — the repository holds no platform config (#416); one lcl environment (prod, slot 0)
+const PLATFORM_FILES = {
+  lcl: { platform: 'lcl', label: 'This computer', delivery: 'docker', registry: 'ghcr.io/okkes', sharedChannel: 'dev' },
+  nas: { platform: 'nas', label: 'Synology NAS', delivery: 'synology', domain: '${PLATFORM_DOMAIN}', registry: 'ghcr.io/okkes', publishedPath: '/docker/munni-nas/published', sharedChannel: 'latest' },
+};
+for (const [p, cfg] of Object.entries(PLATFORM_FILES)) {
   mkdirSync(join(PLATFORMS, p, 'envs'), { recursive: true });
-  writeFileSync(join(PLATFORMS, p, 'platform.json'), readFileSync(join(HERE, '..', 'platforms', p, 'platform.json')));
+  writeFileSync(join(PLATFORMS, p, 'platform.json'), `${JSON.stringify(cfg, null, 2)}\n`);
 }
 writeFileSync(join(PLATFORMS, 'lcl', 'envs', 'prod.json'), JSON.stringify({ env: 'prod', slot: 0, channel: 'dev', features: { android: true, banking: ['gocardless'], signin: ['google'] } }));
 
 const { createApp, OPERATOR_NAMES, toolFor, LCL_STACKS, lanCandidates, caListingHasFingerprint, staleCaddyRoots } = await import('../setup/serve.mjs');
-const { loadLocalValues, saveLocalValues, loadWizardStore } = await import('../modules/localstore.mjs');
-const { loadStack, loadEnv, platformEnvs, removeEnv, saveEnv } = await import('../modules/stack.mjs');
+const { loadLocalValues, saveLocalValues, loadWizardStore, forgetWizardValues } = await import('../modules/localstore.mjs');
+const { loadStack, loadEnv, platformEnvs, removeEnv, saveEnv, loadPlatform } = await import('../modules/stack.mjs');
+const { fakeGh } = await import('./fixture.mjs');
+const { writeApplied } = await import('../modules/config.mjs');
 
 test.after(() => { if (process.env.MUNNI_KEEP_SCRATCH) console.log(`scratch kept at ${SCRATCH}`); else rmSync(SCRATCH, { recursive: true, force: true }); });
 
@@ -430,29 +436,53 @@ test('validate: pasted values win over the wizard store (the platform picks its 
   assert.ok(OPERATOR_NAMES.has('SYNOLOGY_URL') && OPERATOR_NAMES.has('GH_PAT') && !OPERATOR_NAMES.has('POSTGRES_PASSWORD'));
 });
 
-/* ── the config on the branch ── */
-test('config/commit: nothing to commit exits 0 without a commit; changes are staged, committed with a sanitized message and pushed; a failed commit exits 1', async () => {
-  const spawned = [];
-  const clean = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned, () => '') });
-  const r1 = await post(clean, '/api/config/commit', {});
-  assert.match(r1.text(), /nothing to commit/);
-  assert.match(r1.text(), /\[exit 0\]/);
-  assert.deepEqual(spawned.map((s) => s.args[0]), ['status']);
-  const spawned2 = [];
-  const dirty = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned2, (n, args) => (args[0] === 'status' ? ' M infra/platforms/nas/envs/prod.json\n' : 'done\n')) });
-  const r2 = await post(dirty, '/api/config/commit', { message: 'chore(platforms): nas prod; `rm -rf` <x>' });
-  assert.match(r2.text(), /\[exit 0\]/);
-  assert.deepEqual(spawned2.map((s) => s.args[0]), ['status', 'add', 'commit', 'push']);
-  assert.ok(spawned2.every((s) => s.cmd === 'git'));
-  const commit = spawned2[2].args;
-  assert.equal(commit[commit.indexOf('-m') + 1], 'chore(platforms): nas prod rm -rf x', 'shell metacharacters never reach git');
-  assert.deepEqual(commit.slice(-2), ['--', 'infra/platforms']);
-  assert.deepEqual(spawned2[3].args, ['push', 'origin', 'HEAD']);
-  const spawned3 = [];
-  const failing = createApp({ token: 'tok', spawnImpl: scriptedSpawn(spawned3, (n, args) => (args[0] === 'status' ? ' M infra/platforms/x\n' : ''), (n, args) => (args[0] === 'commit' ? 1 : 0)) });
-  const r3 = await post(failing, '/api/config/commit', {});
-  assert.match(r3.text(), /\[exit 1\]/);
-  assert.deepEqual(spawned3.map((s) => s.args[0]), ['status', 'add', 'commit'], 'no push after a failed commit');
+/* ── the config on GitHub (#416) ── */
+test('config/publish: the platform\'s files become its repository variable through gh with the platform\'s own token; no token says so; an unknown platform is refused', async () => {
+  const gh = fakeGh();
+  try {
+    const noToken = await post(app, '/api/config/publish', { platform: 'nas', repo: 'okkes/munnimok' });
+    assert.match(noToken.text(), /no GitHub token for platform nas/);
+    assert.match(noToken.text(), /\[exit 1\]/);
+    assert.equal(gh.calls().length, 0);
+    await post(app, '/api/local/gh-pat', { pat: 'github_pat_nas', platform: 'nas' });
+    const r = await post(app, '/api/config/publish', { platform: 'nas', repo: 'okkes/munnimok' });
+    assert.match(r.text(), /published MUNNI_PLATFORM_NAS \(\d+ bytes, environments prod\)/);
+    assert.match(r.text(), /\[exit 0\]/);
+    const stored = JSON.parse(gh.state().repoVariables.MUNNI_PLATFORM_NAS);
+    assert.equal(stored.platform.platform, 'nas');
+    assert.deepEqual(Object.keys(stored.envs), ['prod']);
+    assert.equal(typeof stored.publishedAt, 'string');
+    assert.ok(gh.calls().at(-1).includes('okkes/munnimok'), 'the repository the page names');
+    const unknown = await post(app, '/api/config/publish', { platform: 'moon' });
+    assert.match(unknown.text(), /unknown platform/);
+    assert.match(unknown.text(), /\[exit 1\]/);
+    // a hostile repo string never reaches gh
+    await post(app, '/api/config/publish', { platform: 'nas', repo: 'x; rm -rf /' });
+    assert.ok(!gh.calls().at(-1).includes('--repo'));
+  } finally {
+    forgetWizardValues(['GH_PAT'], 'nas');
+    gh.cleanup();
+  }
+});
+
+test('config/pull: nothing published is 404; a published document writes the files back (a second computer, a cleanup that dropped an environment)', async () => {
+  const gh = fakeGh();
+  try {
+    await post(app, '/api/local/gh-pat', { pat: 'github_pat_nas', platform: 'nas' });
+    const none = await post(app, '/api/config/pull', { platform: 'nas' });
+    assert.equal(none.statusCode, 404);
+    assert.equal((await post(app, '/api/config/pull', { platform: 'lcl' })).statusCode, 400, 'this computer keeps its own');
+    await post(app, '/api/config/publish', { platform: 'nas' });
+    rmSync(join(PLATFORMS, 'nas', 'envs', 'prod.json'));
+    assert.deepEqual(platformEnvs('nas'), []);
+    const pulled = await post(app, '/api/config/pull', { platform: 'nas' });
+    assert.equal(pulled.statusCode, 200);
+    assert.deepEqual(pulled.json().envs, ['prod']);
+    assert.equal(loadEnv('nas', 'prod').env, 'prod', 'the environment is back');
+  } finally {
+    forgetWizardValues(['GH_PAT'], 'nas');
+    gh.cleanup();
+  }
 });
 
 test('gh-pat: a token lands in the named platform\'s store; an empty one or no platform is refused', async () => {
@@ -779,54 +809,72 @@ test('app links: the Digital Asset Links JSON snippet is accepted whole — its 
 });
 
 /* ── what runs vs what is configured ── */
-test('envs/pending (nas): read back through git against the commit the last run checked out — nothing, a feature switched on (Bootstrap), the fingerprint alone (Deploy), an unsaved edit (commit first), a commit this checkout lacks', async () => {
+test('envs/pending (nas): what the last run recorded on GitHub vs what is configured — nothing, a feature switched on (Bootstrap), the fingerprint alone (Deploy), a save GitHub does not hold yet (Publish first), no run yet, no token', async () => {
   const fp = 'D4:78:00:15:57:04:9A:98:65:B2:F2:BA:68:1D:AD:C6:D0:2E:26:1E:40:E5:A7:01:53:59:68:61:0A:66:6C:00';
-  const now = loadEnv('nas', 'prod');
-  const platformRaw = readFileSync(join(PLATFORMS, 'nas', 'platform.json'), 'utf8');
-  const gitApp = (script) => createApp({
-    token: 'tok',
-    spawnImpl: scriptedSpawn([], (n, args) => {
-      if (args[0] === 'status') return script.status ?? '';
-      if (args[0] === 'rev-parse') return 'headsha\n';
-      if (args[0] === 'log') return script.log ?? '';
-      if (args[0] === 'show') return args[1].endsWith('platform.json') ? platformRaw : JSON.stringify(script.envThen ?? now);
-      return '';
-    }, (n, args) => (args[0] === 'log' && script.unknown ? 128 : 0)),
-  });
-  const ask = async (a, sha = 'deployedsha') => (await post(a, '/api/envs/pending', { platform: 'nas', stacks: { 'munni-nas-prod': { sha }, 'munni-nas-shared': { sha }, 'munni-lcl-prod': { sha } } })).json().stacks;
-  const clean = await ask(gitApp({}));
-  assert.deepEqual(Object.keys(clean).sort(), ['munni-nas-prod', 'munni-nas-shared'], 'a stack of another platform is ignored');
-  assert.equal(clean['munni-nas-prod'].needs, null);
-  assert.deepEqual(clean['munni-nas-prod'].changes, []);
-  assert.equal(clean['munni-nas-prod'].head, 'headsha');
-  assert.equal(clean['munni-nas-shared'].needs, null);
-  // the run saw connectors off; the branch has it on (a settings commit after the run)
-  const log = 'abc123\x1f2026-09-30T08:00:00Z\x1fchore(platforms): nas environment prod settings\n';
-  saveEnv('nas', { ...now, features: { ...now.features, connectors: true } });
-  const on = (await ask(gitApp({ log, envThen: { ...now, features: { ...now.features, connectors: false } } })))['munni-nas-prod'];
-  assert.deepEqual(on.changes, ['features.connectors: off → on']);
-  assert.equal(on.needs, 'bootstrap');
-  assert.equal(on.then, null);
-  assert.deepEqual(on.commits, [{ sha: 'abc123', at: '2026-09-30T08:00:00Z', subject: 'chore(platforms): nas environment prod settings' }]);
-  // the fingerprint alone: Deploy republishes the rendered files
-  saveEnv('nas', { ...now, store: { ...now.store, androidCertSha256: fp } });
-  const fpOnly = (await ask(gitApp({ log, envThen: now })))['munni-nas-prod'];
-  assert.deepEqual(fpOnly.changes, ['store.androidCertSha256: none → D4:78:00:15…']);
-  assert.equal(fpOnly.needs, 'deploy');
-  // the same edit not yet on the branch: commit first, then what it needs
-  const unsaved = (await ask(gitApp({ status: ' M infra/platforms/nas/envs/prod.json\n', envThen: now })))['munni-nas-prod'];
-  assert.equal(unsaved.uncommitted, true);
-  assert.equal(unsaved.needs, 'commit');
-  assert.equal(unsaved.then, 'deploy');
-  // no run yet and nothing unsaved: nothing to say (the checklist's Bootstrap item covers it)
-  const fresh = (await ask(gitApp({ envThen: now }), null))['munni-nas-prod'];
-  assert.equal(fresh.needs, null);
-  assert.equal(fresh.applied, null);
-  // the run's commit is not in this checkout: say so rather than guess
-  const unknown = (await ask(gitApp({ unknown: true })))['munni-nas-prod'];
-  assert.equal(unknown.unknown, true);
-  assert.equal(unknown.needs, null);
+  const current = loadEnv('nas', 'prod');
+  const now = { ...current, features: { ...current.features, connectors: false }, store: { ...current.store, androidCertSha256: null } };
   saveEnv('nas', now);
+  const gh = fakeGh();
+  try {
+    const ask = async () => (await post(app, '/api/envs/pending', { platform: 'nas', repo: 'okkes/munnimok', stacks: { 'munni-nas-prod': {}, 'munni-nas-shared': {}, 'munni-lcl-prod': {} } })).json().stacks;
+    // no token for the platform: every stack says why
+    const noToken = await ask();
+    assert.deepEqual(Object.keys(noToken).sort(), ['munni-nas-prod', 'munni-nas-shared'], 'a stack of another platform is ignored');
+    assert.match(noToken['munni-nas-prod'].error, /no GitHub token for platform nas/);
+    await post(app, '/api/local/gh-pat', { pat: 'github_pat_nas', platform: 'nas' });
+    gh.seed('nas-prod');
+    gh.seed('nas-shared');
+    // nothing published, nothing ran: publish, then bootstrap
+    const fresh = await ask();
+    assert.equal(fresh['munni-nas-prod'].unpublished, true);
+    assert.equal(fresh['munni-nas-prod'].needs, 'publish');
+    assert.equal(fresh['munni-nas-prod'].then, 'bootstrap');
+    assert.equal(fresh['munni-nas-prod'].applied, null);
+    // published, no run yet: nothing to say (the checklist's Bootstrap item covers it)
+    await post(app, '/api/config/publish', { platform: 'nas', repo: 'okkes/munnimok' });
+    const published = await ask();
+    assert.equal(published['munni-nas-prod'].needs, null);
+    assert.equal(published['munni-nas-prod'].unpublished, false);
+    assert.equal(typeof published['munni-nas-prod'].publishedAt, 'string');
+    assert.equal(published['munni-nas-shared'].needs, null);
+    // the run saw connectors off; the config has it on and is published
+    writeApplied({ stack: 'munni-nas-prod', githubEnvironment: 'nas-prod' }, { by: 'bootstrap', run: '7', now: new Date('2026-10-01T08:00:00Z') });
+    writeApplied({ stack: 'munni-nas-shared', githubEnvironment: 'nas-shared' }, { by: 'deploy', now: new Date('2026-10-01T08:00:00Z') });
+    saveEnv('nas', { ...now, features: { ...now.features, connectors: true } });
+    await post(app, '/api/config/publish', { platform: 'nas', repo: 'okkes/munnimok' });
+    const on = (await ask())['munni-nas-prod'];
+    assert.deepEqual(on.changes, ['features.connectors: off → on']);
+    assert.equal(on.needs, 'bootstrap');
+    assert.equal(on.then, null);
+    assert.deepEqual(on.applied, { at: '2026-10-01T08:00:00.000Z', by: 'bootstrap', run: '7' });
+    assert.equal((await ask())['munni-nas-shared'].needs, null, 'the platform did not change');
+    // the fingerprint alone: Deploy republishes the rendered files
+    saveEnv('nas', { ...now, store: { ...now.store, androidCertSha256: fp } });
+    await post(app, '/api/config/publish', { platform: 'nas', repo: 'okkes/munnimok' });
+    const fpOnly = (await ask())['munni-nas-prod'];
+    assert.deepEqual(fpOnly.changes, ['store.androidCertSha256: none → D4:78:00:15…']);
+    assert.equal(fpOnly.needs, 'deploy');
+    // the same edit saved here but not on GitHub: publish first, then what it needs
+    saveEnv('nas', { ...now, features: { ...now.features, connectors: true }, store: { ...now.store, androidCertSha256: fp } });
+    const unsaved = (await ask())['munni-nas-prod'];
+    assert.equal(unsaved.unpublished, true);
+    assert.equal(unsaved.needs, 'publish');
+    assert.equal(unsaved.then, 'bootstrap');
+    // the platform file itself changed and was published: the shared stack needs its run
+    const p = loadPlatform('nas');
+    const { file: _f, ...rest } = p;
+    writeFileSync(join(PLATFORMS, 'nas', 'platform.json'), `${JSON.stringify({ ...rest, controlEnv: 'prod' }, null, 2)}\n`);
+    saveEnv('nas', now);
+    await post(app, '/api/config/publish', { platform: 'nas', repo: 'okkes/munnimok' });
+    const shared = (await ask())['munni-nas-shared'];
+    assert.deepEqual(shared.changes, ['platform.controlEnv: none → prod']);
+    assert.equal(shared.needs, 'bootstrap');
+    writeFileSync(join(PLATFORMS, 'nas', 'platform.json'), `${JSON.stringify(rest, null, 2)}\n`);
+  } finally {
+    saveEnv('nas', current);
+    forgetWizardValues(['GH_PAT'], 'nas');
+    gh.cleanup();
+  }
 });
 
 test('envs/pending (lcl): the config a stack was last started with is stamped when it comes up, and only then; a later edit says Re-run setup', async () => {

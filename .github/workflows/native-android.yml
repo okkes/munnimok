@@ -39,6 +39,11 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      - name: The platform config from GitHub (#416)
+        run: node infra/ci/materialize.mjs
+        env:
+          MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
+          MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
       - name: Which environments
         id: m
         run: |

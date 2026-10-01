@@ -11,6 +11,7 @@ import { BrandIconPicker } from '@/features/recurring/BrandIconPicker';
 import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
+import { Chip } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { sourceKeyFor, sourceParamsFor } from './AttachSheet';
 import { AccountTypeRow } from './AccountTypeRow';
@@ -40,6 +41,8 @@ const seedFrom = (account: AccountRow) => ({
   iban: account.iban ?? '',
   original: account.originalCents ? (account.originalCents / 100).toFixed(2) : '',
   apr: account.interestPctYear === undefined ? '' : String(account.interestPctYear),
+  // #413: the weight the payoff planner's tsunami order reads (0 = unranked)
+  stress: account.debtStress ?? 0,
   payment: account.paymentCents ? (account.paymentCents / 100).toFixed(2) : '',
   payDay: account.paymentDay ? String(account.paymentDay) : '',
   payEvery: account.paymentEvery ?? ('month' as RecurringEvery),
@@ -64,7 +67,7 @@ function editedVsSeed(
   seed: ReturnType<typeof seedFrom>,
   now: {
     name: string; balance: string; negative: boolean; iban: string; original: string; apr: string;
-    payment: string; payDay: string; payEvery: RecurringEvery; payEveryN: number; note: string; track: boolean;
+    payment: string; payDay: string; payEvery: RecurringEvery; payEveryN: number; note: string; track: boolean; stress: number;
   },
   manual: boolean,
   liability: boolean,
@@ -75,12 +78,19 @@ function editedVsSeed(
   return (
     now.iban !== seed.iban || now.original !== seed.original || now.apr !== seed.apr ||
     now.payment !== seed.payment || now.payDay !== seed.payDay || now.payEvery !== seed.payEvery ||
-    now.payEveryN !== seed.payEveryN || now.note !== seed.note || now.track !== seed.track
+    now.payEveryN !== seed.payEveryN || now.note !== seed.note || now.track !== seed.track || now.stress !== seed.stress
   );
 }
 
 /** #348: manual accounts delete — the cash wallet included; the other
  *  defaults are the space's fixtures. S3776. */
+/** #413: the weight chips read light … heavy at the ends and the number between */
+const stressLabel = (t: (key: 'debtplan.stress1' | 'debtplan.stress5') => string, level: number): string => {
+  if (level === 1) return t('debtplan.stress1');
+  if (level === 5) return t('debtplan.stress5');
+  return String(level);
+};
+
 const deletableAccount = (manual: boolean, defaultFor?: string): boolean =>
   manual && (!defaultFor || defaultFor === 'cash');
 
@@ -105,6 +115,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const [payCustom, setPayCustom] = useState(false);
   const [note, setNote] = useState('');
   const [track, setTrack] = useState(false);
+  const [stress, setStress] = useState(0);
 
   // seed during render, keyed on the account id (house rule: no effect —
   // a late flush could clobber typing that landed right after the open)
@@ -125,6 +136,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
     setPayCustom(seed.payCustom);
     setNote(seed.note);
     setTrack(seed.track);
+    setStress(seed.stress);
   }
   if (!account && seedId !== null) setSeedId(null); // reopening reseeds
 
@@ -142,7 +154,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
   const seedNow = account ? seedFrom(account) : null;
   const dirty =
     !!seedNow &&
-    editedVsSeed(seedNow, { name, balance, negative, iban, original, apr, payment, payDay, payEvery, payEveryN, note, track }, manual, liability);
+    editedVsSeed(seedNow, { name, balance, negative, iban, original, apr, payment, payDay, payEvery, payEveryN, note, track, stress }, manual, liability);
 
   /** what the liability form asks of the row — empties null-clear */
   const storyChanges = (): Partial<AccountRow> => {
@@ -162,6 +174,8 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
       paymentDay: orClear(hasPayment && payEvery !== 'week' ? parsedDueDay(payDay) : undefined) as never,
       note: orClear(note.trim() || undefined) as never,
       trackAsDebt: track ? 1 : 0,
+      // #413: the weight, 1..5; unranked clears it
+      debtStress: orClear(stress >= 1 && stress <= 5 ? (stress as 1 | 2 | 3 | 4 | 5) : undefined) as never,
     };
   };
 
@@ -333,6 +347,17 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                     className="mt-1 h-12 w-full rounded-input border border-line bg-surface px-4 font-mono text-[14px] text-ink outline-none placeholder:text-ink-4"
                   />
                 </label>
+              </div>
+              {/* #413: how much the debt weighs on the person — the planner's tsunami order pays the heaviest first */}
+              <div className="text-[12px] text-ink-3">
+                {t('debtplan.stress')}
+                <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                  {[1, 2, 3, 4, 5].map((level) => (
+                    <Chip key={level} selected={stress === level} onClick={() => setStress(stress === level ? 0 : level)} testId={`acctedit-stress-${level}`} className="px-2.5">
+                      {stressLabel(t, level)}
+                    </Chip>
+                  ))}
+                </div>
               </div>
               {/* #377: the due day is asked after the rhythm (inside the control), like recurring */}
               <LoanCadenceControl

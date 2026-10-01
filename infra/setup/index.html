@@ -9,7 +9,7 @@
   munni setup wizard — the operator's page over infra/platforms/README.md:
   every platform (lcl = this computer, nas = a Synology NAS) runs ONE
   shared stack plus any number of environments, all described by the
-  committed platform config this page writes through its helper
+  platform config this page writes through its helper (published to GitHub as the platform's variable, #416 — never committed)
   (infra/setup/serve.mjs — start.cmd). The helper is required: it holds
   the wizard's store, runs the lcl platform, writes the config and answers
   what a browser cannot ask (providers, the NAS, Logto). GitHub Actions
@@ -489,11 +489,16 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
         <span class="ico" data-ico="layers"></span>
         <div>
           <h3>Published path &amp; control environment</h3>
-          <p class="why">The File Station folder the deploy bundles land in (committed as <code>publishedPath</code>, stored as <code>SYNOLOGY_PATH</code>); the live dir with the poller is its parent. The control environment is the one whose API and Logto the control cockpit signs into — the lowest slot unless you pick another.</p>
+          <p class="why">The File Station folder the deploy bundles land in (published as <code>publishedPath</code> in the platform's variable, stored as <code>SYNOLOGY_PATH</code>); the live dir with the poller is its parent. The control environment is the one whose API and Logto the control cockpit signs into — the lowest slot unless you pick another.</p>
           <div class="grid2">
             <div><label class="f" for="in-published-path">published path</label><input type="text" id="in-published-path" placeholder="/docker/munni-nas/published" autocomplete="off"/></div>
             <div><label class="f" for="in-control-env">control environment</label><select id="in-control-env"><option value="">lowest slot</option></select></div>
           </div>
+          <div class="grid2">
+            <div><label class="f" for="in-branch">pipeline branch</label><input type="text" id="in-branch" placeholder="by channel: latest → master, dev → dev" autocomplete="off"/></div>
+            <div><label class="f">&nbsp;</label><button class="ghost" id="btn-platform-pull">Fetch config from GitHub</button></div>
+          </div>
+          <p class="why">The platform config (this card and every environment) lives on GitHub as the repository variable <code>MUNNI_PLATFORM_NAS</code>, written by every Save here — no commit, no branch (#416). The <b>pipeline branch</b> is what every run of this platform checks out for its templates and tools; empty means each stack follows its image channel (<code>latest</code> → master releases, <code>dev</code> → the dev branch). <b>Fetch</b> writes GitHub's copy onto this computer — a second computer, or after a cleanup removed an environment.</p>
           <p class="why">The <b>pooled browser agent</b> (#367) runs in the shared services: one container with every provider pack that dials out to each environment's connector control plane and drives the parties that need a real browser. Its egress is a claim the control planes believe — a NAS at home is on a residential line; a rack is not.</p>
           <div class="grid2">
             <div><label><input type="checkbox" id="in-browser-agent"/> run the pooled browser agent</label></div>
@@ -1132,7 +1137,7 @@ const S = {
   domain: LS.get('domain', ''),             // PLATFORM_DOMAIN mirror — personalizes the nas links (the value itself lives in the helper's store)
   user: null,
   status: null,            // the helper's /api/status answer
-  platforms: [],           // the committed platforms (from /api/status)
+  platforms: [],           // the platforms this computer holds (from /api/status; published to GitHub as variables, #416)
   envList: [],             // the picked platform's environments (config + stack + GitHub environment name)
   repoSecrets: new Set(),
   envs: {},                // GitHub environment name -> { secrets:Set, vars:Set }
@@ -1172,7 +1177,7 @@ const FEATURE_OF = {
   ASC_KEY_ID: 'ios', ASC_ISSUER_ID: 'ios', ASC_KEY_P8: 'ios', APPLE_TEAM_ID: 'ios', APPLE_DEV_CERT_P12: 'ios', APPLE_DEV_CERT_PASSWORD: 'ios',
   GLITCHTIP_EMAIL_URL: 'email',
 };
-/** does an environment (its committed features) need this operator value? */
+/** does an environment (its features) need this operator value? */
 function envNeeds(env, name) {
   const f = FEATURE_OF[name];
   if (!f || f === 'email') return true;
@@ -1203,7 +1208,7 @@ const FEATURES = [
 const GROUPS = [
   {
     id: 'domain', title: 'Your domain', placement: 'platform', platforms: ['nas'], check: 'browser:domain',
-    why: 'Every service becomes a subdomain of the platform\'s domain (munni-<env>-nas.…, glitchtip-nas.…). It is kept as the secret PLATFORM_DOMAIN because this repo is public — the committed platform.json only carries a placeholder.',
+    why: 'Every service becomes a subdomain of the platform\'s domain (munni-<env>-nas.…, glitchtip-nas.…). It is kept as the secret PLATFORM_DOMAIN because this repo is public — the published platform config only carries a placeholder.',
     how: [
       'DSM → Control Panel → External Access → DDNS — add or read your hostname (e.g. yourname.synology.me).',
       'Paste it below; it also personalizes every link on this page.',
@@ -1564,7 +1569,9 @@ async function ghUpsertEnvVar(environment, name, value) {
   try { await gh(`${base}/${encodeURIComponent(name)}`, { method: 'PATCH', body: JSON.stringify({ name, value }) }); }
   catch { await gh(base, { method: 'POST', body: JSON.stringify({ name, value }) }); }
 }
-const dispatch = (file, inputs) => gh(`/repos/${S.slug}/actions/workflows/${encodeURIComponent(file)}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: S.ref, inputs }) });
+/** the branch a run checks out (#416): the stack's, as the helper resolved it from the platform config; the wizard's own ref otherwise */
+const refFor = (inputs) => S.envList.find((e) => e.stack === inputs?.stack)?.branch ?? S.platforms.find((p) => p.sharedStack === inputs?.stack)?.sharedBranch ?? S.ref;
+const dispatch = (file, inputs) => gh(`/repos/${S.slug}/actions/workflows/${encodeURIComponent(file)}/dispatches`, { method: 'POST', body: JSON.stringify({ ref: refFor(inputs), inputs }) });
 const workflowRuns = (file, n = 6) => gh(`/repos/${S.slug}/actions/workflows/${encodeURIComponent(file)}/runs?per_page=${n}`, { allow404: true });
 /** which stacks a run worked on — its job names carry the matrix stack */
 async function mapRunStacks(runs) {
@@ -2271,7 +2278,7 @@ document.getElementById('btn-fork').addEventListener('click', async () => {
 document.getElementById('btn-refresh').addEventListener('click', () => refresh().then(checkManifest).catch((e) => msg('msg-connect', String(e.message || e), false)));
 document.getElementById('btn-sync-pipeline').addEventListener('click', () => syncPipeline({}).catch((e) => msg('msg-connect', `pipeline sync from ${UPSTREAM} failed: ${e.message}`, false)));
 
-/* ── step 1: the platforms — one card per committed platform, rpi reserved ── */
+/* ── step 1: the platforms — one card per platform this computer holds, rpi reserved ── */
 function renderPlatformCards() {
   const box = document.getElementById('platform-cards');
   if (!box) return;
@@ -2330,9 +2337,9 @@ const COPY = {
     add: 'Name it, pick the images it follows and the features it enables. The helper writes infra/platforms/lcl/envs/<name>.json, renders the stack, starts it and wires its sign-in and crash tracking — one button.',
   },
   nas: {
-    shared: 'The NAS runs the same design: munni-nas-shared (GlitchTip, the vault, the control cockpit, pgAdmin) plus any number of environments, each deployed by GitHub Actions from its own GitHub environment. Save the platform accounts, generate the vault account, then Set up shared services — it creates the GitHub environment, commits the config and dispatches the Bootstrap that does the NAS work through the DSM API.',
+    shared: 'The NAS runs the same design: munni-nas-shared (GlitchTip, the vault, the control cockpit, pgAdmin) plus any number of environments, each deployed by GitHub Actions from its own GitHub environment. Save the platform accounts, generate the vault account, then Set up shared services — it creates the GitHub environment, publishes the config to GitHub (the platform variable) and dispatches the Bootstrap that does the NAS work through the DSM API.',
     envs: 'Each environment is a full munni of its own on the NAS — its own hosts under the domain, its own Logto and Postgres, its own GitHub environment (nas-<name>) holding what its deploys need.',
-    add: 'Name it, pick the images it follows and the features it enables. This page writes infra/platforms/nas/envs/<name>.json, creates the GitHub environment nas-<name>, stores every value it needs there, commits the config and dispatches Bootstrap → Deploy for it.',
+    add: 'Name it, pick the images it follows and the features it enables. This page writes infra/platforms/nas/envs/<name>.json on this computer, creates the GitHub environment nas-<name>, stores every value it needs there, publishes the platform config as its GitHub variable and dispatches Bootstrap → Deploy for it.',
   },
 };
 async function applyPlatform() {
@@ -2554,7 +2561,7 @@ document.getElementById('btn-local-setup')?.addEventListener('click', async () =
     } catch { /* the button on the card redoes it */ }
     for (const env of S.envList) if (!(await setupEnv(env))) return;
     if (!(await streamLocal('/api/local/vault-setup', {}, 'set up the vault (account + every secret imported + signups closed)'))) return;
-    await streamLocal('/api/config/commit', { message: 'chore(platforms): lcl environments' }, 'commit the platform config (the pipeline builds the phones from it)', { refresh: false });
+    await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false });
     const urls = stackUrls(shared) ?? {};
     localLog(`\n══ munni is ready ══\n${S.envList.map((e) => `${e.label} → ${stackUrls(e.stack)?.web ?? '?'}`).join('\n')}\ncontrol cockpit → ${urls.control ?? 'http://localhost:8385'}\nvault → ${urls.vault ?? 'https://localhost:8384'} (login under Reveal secrets)\n`);
   } finally {
@@ -2599,7 +2606,7 @@ document.getElementById('btn-local-nuke-all')?.addEventListener('click', async (
         }
       } catch { /* offline — the local teardown already finished */ }
     }
-    await streamLocal('/api/config/commit', { message: 'chore(platforms): wipe the lcl environments' }, 'commit the platform config (the removal is recorded)', { refresh: false });
+    await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false });
     try {
       const chk = await hjson('/api/local/cleanup-check');
       const byHand = chk.byHand?.length ? `  by hand — no API can do these — Windows untrusts a root only through its own dialog (certmgr.msc → Trusted Root Certification Authorities → delete every "Caddy Local Authority" row):\n${chk.byHand.map((l) => `  · ${l}`).join('\n')}\n` : '';
@@ -2709,6 +2716,8 @@ function renderNasPlatformFields() {
   if (agent && document.activeElement !== agent) agent.checked = Boolean(p?.browserAgent);
   const egress = document.getElementById('in-agent-egress');
   if (egress && document.activeElement !== egress) egress.value = p?.agentEgress?.kind === 'datacenter' ? 'datacenter' : 'residential';
+  const branch = document.getElementById('in-branch');
+  if (branch && document.activeElement !== branch) branch.value = p?.branch ?? '';
   const vaultDone = S.localStore.has('VAULT_ADMIN_EMAIL') && S.localStore.has('VAULT_MASTER_PASSWORD');
   setPill('vault-account-pill', vaultDone ? 'generated ✓' : 'not generated yet', vaultDone);
   const ghShared = S.envs[sharedEnvOf('nas')];
@@ -2716,12 +2725,13 @@ function renderNasPlatformFields() {
   const up = Boolean(lg?.dsm?.ok && lg?.wildcard && lg?.task?.enabled);
   setPill('shared-pill', up ? 'set up ✓' : (ghShared ? 'in progress' : 'not set up yet'), up);
 }
-async function savePlatformConfig({ publishedPath, controlEnv, browserAgent, agentEgressKind, quiet = false } = {}) {
+async function savePlatformConfig({ publishedPath, controlEnv, browserAgent, agentEgressKind, branch, quiet = false } = {}) {
   const body = { platform: 'nas' };
   if (typeof publishedPath === 'string' && publishedPath) body.publishedPath = publishedPath;
   if (typeof controlEnv === 'string') body.controlEnv = controlEnv;
   if (typeof browserAgent === 'boolean') body.browserAgent = browserAgent;
   if (typeof agentEgressKind === 'string') body.agentEgressKind = agentEgressKind;
+  if (typeof branch === 'string') body.branch = branch;
   const r = await hjson('/api/platforms/save', { method: 'POST', body: JSON.stringify(body) });
   if (!quiet) msg('msg-platform-save', `Saved ✓ — infra/platforms/nas/platform.json (published path ${r.platform?.publishedPath ?? '?'}, control environment ${r.platform?.controlEnv ?? 'lowest slot'}, pooled browser agent ${r.platform?.browserAgent ? 'on' : 'off'}). Set up shared services / an environment's bootstrap commits it.`, true);
   return r;
@@ -2731,9 +2741,20 @@ document.getElementById('btn-platform-save')?.addEventListener('click', async ()
   const controlEnv = document.getElementById('in-control-env').value;
   const browserAgent = document.getElementById('in-browser-agent').checked;
   const agentEgressKind = document.getElementById('in-agent-egress').value;
+  const branch = document.getElementById('in-branch').value.trim();
   try {
-    await savePlatformConfig({ publishedPath, controlEnv, browserAgent, agentEgressKind });
+    await savePlatformConfig({ publishedPath, controlEnv, browserAgent, agentEgressKind, branch });
     if (publishedPath) await storeValues({ SYNOLOGY_PATH: publishedPath });
+    // every save publishes (#416): the runs read the config from GitHub, never from this computer
+    if (connected()) await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false });
+    await refreshLocal();
+  } catch (e) { msg('msg-platform-save', `✗ ${e.message}`, false); }
+});
+document.getElementById('btn-platform-pull')?.addEventListener('click', async () => {
+  try {
+    requireConnection();
+    const r = await hjson('/api/config/pull', { method: 'POST', body: JSON.stringify({ platform: 'nas', repo: S.slug }) });
+    msg('msg-platform-save', `Fetched from GitHub ✓ — environments ${r.envs?.length ? r.envs.join(', ') : 'none'}${r.publishedAt ? ` (published ${ago(r.publishedAt)})` : ''}`, true);
     await refreshLocal();
   } catch (e) { msg('msg-platform-save', `✗ ${e.message}`, false); }
 });
@@ -2792,7 +2813,7 @@ async function setupSharedServices() {
       for (const [name, value] of Object.entries(platformScoped)) await putSecretAt(envBase(environment), name, value);
     }
     say(`stored ${Object.keys(platformScoped).length} platform values into ${targets.join(', ')} — committing the platform config…`);
-    await streamLocal('/api/config/commit', { message: 'chore(platforms): nas platform config' }, 'commit + push the platform config', { refresh: false });
+    await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false });
     await dispatch('iac.yml', { stack: sharedStackOf('nas'), chain: 'deploy' });
     say(`Bootstrap dispatched for ${sharedStackOf('nas')} (chains Deploy) ✓ — the NAS status below follows the run; the poller applies the bundle within five minutes.`);
     setTimeout(() => refresh().catch(() => {}), 3000);
@@ -2939,7 +2960,7 @@ async function setupNasEnvironment(env) {
     await putSecretAt(envBase(env.environment), name, value); n++;
   }
   localLog(`\nGitHub environment ${env.environment}: ${n} secrets stored (the platform's + what ${env.env}'s features need)\n`);
-  await streamLocal('/api/config/commit', { message: `chore(platforms): nas environment ${env.env}` }, 'commit + push the platform config', { refresh: false });
+  await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false });
   await dispatch('iac.yml', { stack: env.stack, chain: 'deploy' });
   localLog(`Bootstrap dispatched for ${env.stack} (chains Deploy) — its workspace follows the run\n`);
   setTimeout(() => refresh().catch(() => {}), 3000);
@@ -2975,7 +2996,7 @@ document.getElementById('btn-env-add')?.addEventListener('click', async () => {
       await refreshLocal();
       const created = envByName(env);
       await setupNasEnvironment(created);
-      say(`${created.label}: config committed, ${created.environment} filled, Bootstrap → Deploy dispatched ✓ — its workspace follows the runs.`, true);
+      say(`${created.label}: config published, ${created.environment} filled, Bootstrap → Deploy dispatched ✓ — its workspace follows the runs.`, true);
     }
     document.getElementById('env-add-name').value = '';
     document.getElementById('env-add-label').value = '';
@@ -3010,7 +3031,7 @@ function settingsHtml(env) {
       </div>
       <div class="featrow">${ENV_FEATURES.map(([kind, items]) => `<span class="fk">${kind}</span>` + items.map(([id, label]) => `<label><input type="checkbox" data-envset="${id}" data-env="${s}" ${on(id) ? 'checked' : ''}/> ${label}</label>`).join('')).join('')}</div>
       <button class="ghost" data-act="settings" data-stack="${env.stack}">Save settings</button>
-      <span class="envtag">${isLcl() ? 're-renders the stack (Re-run setup applies it)' : 'commits the config and re-runs the bootstrap'}</span>
+      <span class="envtag">${isLcl() ? 're-renders the stack (Re-run setup applies it)' : 'publishes the config and re-runs the bootstrap'}</span>
     </details>`;
 }
 function overviewHtml(env) {
@@ -3383,20 +3404,21 @@ async function applyAppLinks(env) {
   if (!(await streamLocal('/api/envs/app-links', { platform: S.platform, env: s, androidCertSha256: value }, `save ${env.label}'s app signing fingerprint`, { refresh: false }))) return;
   delete S.appLinksByEnv[s];
   if (isLcl()) { msg(`msg-applinks-${s}`, 'saved — Re-run setup restarts the web container with it', true); await refreshLocal(); return; }
-  await streamLocal('/api/config/commit', { message: `chore(platforms): ${S.platform} environment ${s} app signing fingerprint` }, 'commit + push the platform config', { refresh: false });
-  try { await envAction('deploy', env, null); msg(`msg-applinks-${s}`, 'saved, committed, Deploy dispatched — Check again once the run is through', true); }
-  catch (e) { msg(`msg-applinks-${s}`, `saved and committed — press Deploy again to publish it (${e.message})`, false); }
+  await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false });
+  try { await envAction('deploy', env, null); msg(`msg-applinks-${s}`, 'saved, published, Deploy dispatched — Check again once the run is through', true); }
+  catch (e) { msg(`msg-applinks-${s}`, `saved and published — press Deploy again to apply it (${e.message})`, false); }
   await refreshLocal();
 }
 
-/* ── changes waiting to be applied: what the last run deployed (its commit) vs what is configured now.
-   The helper answers from git on the NAS and from the config the stack was last started with on this
-   computer; the page adds the run in flight, so a strip says apply, applying, or nothing at all. ── */
+/* ── changes waiting to be applied: what the last run recorded on GitHub (MUNNI_APPLIED, #416) vs what is
+   configured now — and whether GitHub holds the latter yet. The helper answers from GitHub for the NAS and
+   from the config the stack was last started with on this computer; the page adds the run in flight, so a
+   strip says publish, apply, applying, or nothing at all. ── */
 const PENDING_ACTION = {
   bootstrap: ['Bootstrap + Deploy', 'mints or registers what the change needs, then deploys'],
   deploy: ['Deploy again', 'republishes the rendered files'],
   setup: ['Re-run setup', 'renders and restarts the stack (Stop → Start does it too)'],
-  commit: ['Commit + push', 'puts it on the branch the runs deploy from'],
+  publish: ['Publish', 'puts it on GitHub, where the runs read it'],
 };
 /** the commit the last successful run of a stack checked out, and the run still going, if any */
 function appliedRunFor(stack) {
@@ -3406,7 +3428,8 @@ function appliedRunFor(stack) {
   const last = runs.find((r) => r.status === 'completed' && r.conclusion === 'success');
   return { sha: last?.head_sha ?? null, busy: busy ? { sha: busy.head_sha, name: busy.name, at: busy.created_at } : null };
 }
-const pendingApplying = (p) => Boolean(p?.busy && p.head && p.busy.sha === p.head);
+/** a run that started after the config was published carries it; an older one does not */
+const pendingApplying = (p) => Boolean(p?.busy && (!p.publishedAt || Date.parse(p.busy.at) >= Date.parse(p.publishedAt)));
 const pendingOpen = (p) => Boolean(p?.needs) && !pendingApplying(p);
 const pendingDetail = (p) => `${(p.changes ?? []).join(', ') || 'the config differs from what runs'} — ${PENDING_ACTION[p.needs][0]}${p.then ? `, then ${PENDING_ACTION[p.then][0]}` : ''}`;
 async function loadPending() {
@@ -3416,7 +3439,7 @@ async function loadPending() {
   const shared = sharedStackOf(S.platform);
   stacks[shared] = appliedRunFor(shared);
   let r;
-  try { r = await hjson('/api/envs/pending', { method: 'POST', body: JSON.stringify({ platform: S.platform, stacks: Object.fromEntries(Object.entries(stacks).map(([k, v]) => [k, { sha: v.sha }])) }) }); }
+  try { r = await hjson('/api/envs/pending', { method: 'POST', body: JSON.stringify({ platform: S.platform, repo: S.slug, stacks: Object.fromEntries(Object.keys(stacks).map((k) => [k, {}])) }) }); }
   catch { return; }
   for (const [stack, v] of Object.entries(r?.stacks ?? {})) S.pending[stack] = { ...v, busy: stacks[stack]?.busy ?? null };
   renderPending();
@@ -3428,13 +3451,12 @@ function pendingHtml(stack, p) {
   const attrs = `data-stack="${escAttr(stack)}"${env ? ` data-env="${escAttr(env.env)}"` : ''}`;
   const list = (p.changes ?? []).map((c) => `<code>${esc(c)}</code>`).join(', ');
   if (pendingApplying(p)) return `<div class="pending applying"><b>Applying…</b> ${esc(p.busy.name)} is running for ${esc(stackLabel(stack))} (started ${esc(ago(p.busy.at))})${list ? ` and carries ${list}` : ''} — follow it under the runs; this strip clears when it is through.</div>`;
-  if (p.unknown) return `<div class="pending"><b>Cannot tell what is applied:</b> the commit the last run checked out is not in this checkout — pull the branch (git pull), then reload.</div>`;
   if (!p.needs) return '';
   const [label, why] = PENDING_ACTION[p.needs];
-  const when = p.commits?.length ? `committed ${ago(p.commits[0].at)}` : (p.applied?.at ? `the stack last started ${ago(p.applied.at)}` : 'saved on this computer, not on the branch');
+  const when = p.unpublished ? 'saved on this computer, not on GitHub yet' : (p.publishedAt ? `published ${ago(p.publishedAt)}` : (p.applied?.at ? `the stack last started ${ago(p.applied.at)}` : 'saved on this computer'));
   const then = p.then ? ` — then <b>${PENDING_ACTION[p.then][0]}</b> ${PENDING_ACTION[p.then][1]}` : '';
-  const stale = p.busy ? ' <span class="envtag">a run for an older commit is still going — it will not carry this</span>' : '';
-  const cta = p.needs === 'commit' && !connected()
+  const stale = p.busy ? ' <span class="envtag">a run that started before this was published is still going — it will not carry this</span>' : '';
+  const cta = p.needs === 'publish' && !connected()
     ? `<a class="chiplink" href="#" ${jumpAttr({ href: '#connect-card', spot: '#btn-connect' })}>connect GitHub first</a>`
     : `<button class="ghost" data-pending-act="${p.needs}" ${attrs}>${label}</button>`;
   return `<div class="pending"><b>Not applied yet</b> (${esc(when)}): ${list || 'the config differs from what runs'} — <b>${label}</b> ${why}${then}. ${cta} <a class="chiplink" href="#" data-pending-show="${p.needs}" ${attrs}>where is it?</a>${stale}</div>`;
@@ -3449,7 +3471,7 @@ function renderPending() {
 /** the button a strip points at: the environment's own, or the shared card's */
 function pendingButton(stack, needs) {
   const env = envByStack(stack);
-  if (env) return document.querySelector(`[data-act="${needs === 'commit' ? (isLcl() ? 'setup' : 'bootstrap') : needs}"][data-stack="${stack}"]`);
+  if (env) return document.querySelector(`[data-act="${needs === 'publish' ? (isLcl() ? 'setup' : 'bootstrap') : needs}"][data-stack="${stack}"]`);
   if (isLcl()) return document.getElementById('btn-local-setup');
   return document.getElementById(needs === 'deploy' ? 'btn-nas-shared-deploy' : 'btn-nas-shared-setup');
 }
@@ -3464,9 +3486,9 @@ async function applyPending(stack, needs, btn) {
   btn.disabled = true;
   try {
     let next = needs;
-    if (needs === 'commit') {
+    if (needs === 'publish') {
       requireConnection();
-      if (!(await streamLocal('/api/config/commit', { message: `chore(platforms): ${S.platform} ${env ? `environment ${env.env}` : 'platform'} config` }, 'commit + push the platform config', { refresh: false }))) return;
+      if (!(await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false }))) return;
       next = S.pending[stack]?.then ?? (isLcl() ? 'setup' : 'bootstrap');
     }
     if (env) await envAction(next, env, btn);
@@ -3624,7 +3646,7 @@ async function envAction(act, env, btn) {
         await hjson('/api/envs/update', { method: 'POST', body: JSON.stringify(body) });
         await refreshLocal();
         localLog(`\n${label}: settings saved to infra/platforms/nas/envs/${s}.json\n`);
-        if (connected()) { const fresh = envByName(s); await mirrorFamilyFor(fresh); await streamLocal('/api/config/commit', { message: `chore(platforms): nas environment ${s} settings` }, 'commit + push the platform config', { refresh: false }); await dispatch('iac.yml', { stack, chain: 'deploy' }); localLog(`Bootstrap dispatched for ${stack} (chains Deploy)\n`); setTimeout(() => refresh().catch(() => {}), 3000); }
+        if (connected()) { const fresh = envByName(s); await mirrorFamilyFor(fresh); await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false }); await dispatch('iac.yml', { stack, chain: 'deploy' }); localLog(`Bootstrap dispatched for ${stack} (chains Deploy)\n`); setTimeout(() => refresh().catch(() => {}), 3000); }
         else localLog('connect GitHub to store the values the new features need and to re-run the bootstrap\n');
       }
     } catch (e) { localLog(`\n✗ ${e.message}\n`); }
@@ -3638,7 +3660,7 @@ async function envAction(act, env, btn) {
     }
     await streamLocal('/api/envs/delete', { platform: 'lcl', env: s }, `delete environment ${s}`);
     await streamLocal('/api/local/vault-setup', {}, 're-sync the vault (the deleted environment\'s folder disappears)');
-    await streamLocal('/api/config/commit', { message: `chore(platforms): remove lcl environment ${s}` }, 'commit the platform config (the removal is recorded)', { refresh: false });
+    await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false });
     if (connected()) {
       try {
         const lv = (await gh(`${envBase(env.environment)}/variables?per_page=100`, { allow404: true }))?.variables ?? [];
@@ -3754,7 +3776,7 @@ function phonesHtml(env) {
         <ol>
           <li><a href="https://play.google.com/console/" target="_blank" rel="noreferrer">Play Console</a> → the app <code>${esc(ids.android)}</code> → <b>Protected with Play</b> (left menu) → <b>Play Store protection</b> → <b>Manage Play app signing</b>. That opens the <b>App signing</b> page (Google moved it there from Test and release → Setup).</li>
           <li>On that page, the <b>App signing key certificate</b> block at the top: copy its <b>SHA-256 certificate fingerprint</b>. The same value sits at the bottom in the <b>Digital Asset Links JSON</b> snippet (<code>sha256_cert_fingerprints</code>) — pasting that whole snippet here works too. <b>Not</b> the <b>Upload key certificate</b> in between: that is the key you sign uploads with; Play re-signs what the phone installs.</li>
-          <li>Paste it above and Save: the config is committed and Deploy runs, the web container serves the new file. Google reads it within minutes; the phone verifies it on the next install or update of the app.</li>
+          <li>Paste it above and Save: the config is published and Deploy runs, the web container serves the new file. Google reads it within minutes; the phone verifies it on the next install or update of the app.</li>
         </ol>
       </details>` : ''}
       <ul class="health-list stack" id="applinks-list-${s}"></ul>
@@ -3793,7 +3815,7 @@ async function applyStoreId(kind, env) {
   if (!/^app\.munni(\.[a-z][a-z0-9]*){2,4}$/.test(id)) { msg(msgId, 'the id must look like app.munni.<platform>.<name> (lowercase letters/digits, dots)', false); return; }
   if (!confirm(`Set ${env.label}'s ${kind === 'ios' ? 'iOS bundle id' : 'store package'} to ${id}?\n\nThe environment, its data and sign-in stay untouched — only this store identity changes. A NEW name needs its store record created once; the previous record keeps existing at the store.`)) return;
   await streamLocal('/api/envs/store-id', { platform: S.platform, env: s, kind, id }, `set ${env.label}'s ${kind === 'ios' ? 'iOS bundle id' : 'store package'} to ${id}`);
-  if (!isLcl()) await streamLocal('/api/config/commit', { message: `chore(platforms): ${S.platform} environment ${s} store id` }, 'commit + push the platform config', { refresh: false });
+  if (!isLcl()) await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false });
   await refreshStoreStatus().catch(() => {});
 }
 

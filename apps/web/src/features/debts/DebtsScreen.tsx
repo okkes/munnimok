@@ -305,6 +305,21 @@ export function DebtsScreen() {
             </div>
           </div>
         )}
+        {/* #413: the payoff planner — which debt first, what a little extra does, when each one ends */}
+        {active.length > 0 && (
+          <button
+            data-testid="debts-plan"
+            onClick={() => void navigate({ to: '/debts/plan' })}
+            className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface p-4 text-left"
+          >
+            <Tile icon="chart-timeline-variant" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] font-semibold text-ink">{t('debtplan.card')}</span>
+              <span className="block text-[11px] text-ink-4">{t('debtplan.cardSub')}</span>
+            </span>
+            <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
+          </button>
+        )}
         <UnassignedPaymentsCard bare={bare} loans={(statuses ?? []).map((s) => s.account)} currency={currency} />
         <div className="flex flex-col gap-2.5 pt-3">{(statuses ?? []).map(renderCard)}</div>
         {statuses?.length === 0 && (

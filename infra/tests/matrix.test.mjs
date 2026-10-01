@@ -22,12 +22,12 @@ function matrix(args, { githubOutput = false } = {}) {
 }
 const stacks = (args) => matrix(args).rows.map((r) => r.stack);
 
-test('every stack of every platform, the shared one first; each row carries what a job needs (its GitHub environment, channels, store ids, scheme, label, web host)', () => {
+test('every stack of every platform, the shared one first; each row carries what a job needs (its GitHub environment, channels, the branch it checks out, store ids, scheme, label, web host)', () => {
   const { rows } = matrix([]);
   assert.deepEqual(rows.map((r) => r.stack), ['munni-lcl-shared', 'munni-lcl-prod', 'munni-lcl-dev', 'munni-nas-shared', 'munni-nas-prod', 'munni-nas-staging']);
-  assert.deepEqual(rows[3], { stack: 'munni-nas-shared', platform: 'nas', env: 'shared', role: 'shared', environment: 'nas-shared', channel: 'latest', appChannel: 'production', androidPackage: '', iosBundleId: '', scheme: '', label: 'munni shared (Synology NAS)', webHost: '' });
-  assert.deepEqual(rows[4], { stack: 'munni-nas-prod', platform: 'nas', env: 'prod', role: 'env', environment: 'nas-prod', channel: 'latest', appChannel: 'production', androidPackage: 'app.munni.nas.prod', iosBundleId: 'app.munni.nas.prod', scheme: 'munni-prod-nas', label: 'munni prod-nas', webHost: 'munni-prod-nas' });
-  assert.deepEqual(rows[5], { stack: 'munni-nas-staging', platform: 'nas', env: 'staging', role: 'env', environment: 'nas-staging', channel: 'dev', appChannel: 'staging', androidPackage: 'app.munni.nas.staging', iosBundleId: 'app.munni.nas.staging', scheme: 'munni-staging-nas', label: 'munni staging-nas', webHost: 'munni-staging-nas' });
+  assert.deepEqual(rows[3], { stack: 'munni-nas-shared', platform: 'nas', env: 'shared', role: 'shared', environment: 'nas-shared', channel: 'latest', ref: 'master', appChannel: 'production', androidPackage: '', iosBundleId: '', scheme: '', label: 'munni shared (Synology NAS)', webHost: '' });
+  assert.deepEqual(rows[4], { stack: 'munni-nas-prod', platform: 'nas', env: 'prod', role: 'env', environment: 'nas-prod', channel: 'latest', ref: 'master', appChannel: 'production', androidPackage: 'app.munni.nas.prod', iosBundleId: 'app.munni.nas.prod', scheme: 'munni-prod-nas', label: 'munni prod-nas', webHost: 'munni-prod-nas' });
+  assert.deepEqual(rows[5], { stack: 'munni-nas-staging', platform: 'nas', env: 'staging', role: 'env', environment: 'nas-staging', channel: 'dev', ref: 'dev', appChannel: 'staging', androidPackage: 'app.munni.nas.staging', iosBundleId: 'app.munni.nas.staging', scheme: 'munni-staging-nas', label: 'munni staging-nas', webHost: 'munni-staging-nas' });
   assert.equal(rows[0].environment, 'lcl-shared');
   assert.ok(rows.every((r) => !JSON.stringify(r).includes(DOMAIN)), 'a matrix is printed in the log — it carries no host name under the secret domain');
 });

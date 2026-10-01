@@ -1,7 +1,8 @@
 # Deploy stacks of the nas platform to the Synology NAS via the File
-# Station API (no SSH). One bundle per stack — rendered from the committed
-# platform config (infra/platforms/nas) with every placeholder filled from
-# the stack's GitHub environment, each secret NAMED explicitly below (no
+# Station API (no SSH). One bundle per stack — rendered from the platform
+# config GitHub holds (the MUNNI_PLATFORM_* variables the wizard publishes,
+# #416, materialized into infra/platforms first) with every placeholder
+# filled from the stack's GitHub environment, each secret NAMED explicitly below (no
 # toJSON(secrets): the pattern GitHub's scanner holds public-repo runs
 # for). The NAS-side poller (deploy/nas/apply.sh, a Task Scheduler entry
 # the shared stack's bootstrap ensures) picks the stamp up and composes the
@@ -45,10 +46,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: dev # the platform config and the templates live on dev; images come from the channel
+          # the tools of the branch that built the images (a dispatch: the wizard's ref); the config comes from GitHub's variables (#416)
+          ref: ${{ github.event.workflow_run.head_branch || github.ref_name }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      - name: The platform config from GitHub (#416)
+        run: node infra/ci/materialize.mjs
+        env:
+          MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
+          MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
       - name: Which stacks
         id: m
         # a stack rides in its GitHub environment; without one it was never bootstrapped — an image build skips it (a dispatch names its stack: the Bootstrap chain created the environment)
@@ -86,10 +93,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: dev
+          # the branch this stack's runs check out (#416): the platform's choice, else by its image channel
+          ref: ${{ matrix.ref }}
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      - name: The platform config from GitHub (#416)
+        run: node infra/ci/materialize.mjs
+        env:
+          MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
+          MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
       # the environment holds the platform's domain once its Bootstrap ran — before that there is nothing to deploy (the Bootstrap chains this Deploy when it is done)
       - name: Bootstrapped?
         id: ready
@@ -197,10 +210,16 @@ jobs:
           LOGTO_INFRA_M2M_ID: ${{ secrets.LOGTO_INFRA_M2M_ID }}
           LOGTO_INFRA_M2M_SECRET: ${{ secrets.LOGTO_INFRA_M2M_SECRET }}
           GLITCHTIP_API_TOKEN: ${{ secrets.GLITCHTIP_API_TOKEN }}
+      - name: Record what this deploy applied (the wizard's pending strip reads it, #416)
+        if: ${{ steps.ready.outputs.ok == 'true' && steps.applied.outputs.applied == 'true' }}
+        run: node infra/ci/applied.mjs --stack "${{ matrix.stack }}" --by deploy
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}
+          PLATFORM_DOMAIN: ${{ secrets.PLATFORM_DOMAIN }}
       - name: A seed landed and its write-back is missing — run the Bootstrap once more (it chains this Deploy)
         if: ${{ steps.ready.outputs.ok == 'true' && ((steps.applied.outputs.logto == 'answers' && vars.VITE_LOGTO_APP_ID == '') || (steps.applied.outputs.glitchtip == 'answers' && vars.VITE_GLITCHTIP_DSN == '' && matrix.role == 'env')) }}
         run: |
-          gh workflow run iac.yml --ref dev -f stack="${{ matrix.stack }}" -f chain=deploy
+          gh workflow run iac.yml --ref "${{ matrix.ref }}" -f stack="${{ matrix.stack }}" -f chain=deploy
           echo "chained: Bootstrap ${{ matrix.stack }} → Deploy" >> "$GITHUB_STEP_SUMMARY"
         env:
           GH_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_TOKEN }}

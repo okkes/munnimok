@@ -18,6 +18,7 @@
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { listStacks, loadStack, platformEnvStacks, removeEnv, sharedOf } from './modules/stack.mjs';
+import { publishPlatform, writeApplied } from './modules/config.mjs';
 import { deleteEnvironment, ensureSecrets, setEnvSecret, setPlatformSecret, setPlatformVariable, verifySecrets } from './modules/secrets.mjs';
 import { ensureLocalSecrets, stackValues, loadLocalValues, saveLocalValues, stackManifestEntries } from './modules/localstore.mjs';
 import { applyApps, applyBranding, applySocialConnectors, claimConsole, ensureAdminRole, ensureConnectorAccess, logtoAnswers, removeApps, writeBack, writeBackConnector } from './modules/logto.mjs';
@@ -479,6 +480,13 @@ async function ciApply() {
   githubOutput('logto', logtoState ? (logtoState.wired ? 'wired' : logtoState.credential ? 'waiting' : 'none') : 'n/a');
   githubOutput('glitchtip', glitchtipState ? (glitchtipState.wired || (isShared && glitchtipState.seeded) ? 'wired' : glitchtipState.credential ? 'waiting' : 'none') : 'n/a');
   console.log(`  runbook → ${renderRunbook(stack, { minted, missingOperator })}`);
+  // what this run applied, for the wizard's pending strip (#416): the config it ran with, on the stack's GitHub environment
+  try {
+    const record = writeApplied(stack, { by: 'bootstrap', run: process.env.GITHUB_RUN_ID ?? null });
+    console.log(`  applied: recorded on ${stack.githubEnvironment} (${record.at})`);
+  } catch (e) {
+    console.log(`  applied: not recorded (${e.message}) — the wizard's strip may keep showing this run's changes until the next run`);
+  }
   if (nasErrors) {
     console.log(`✗ ${nasErrors} NAS step${nasErrors === 1 ? '' : 's'} failed for a reason other than the deploy account's rights — see the dsm: lines above; the next run retries (every step is idempotent).`);
     return 1;
@@ -558,7 +566,17 @@ async function ciCleanup() {
   }
   await step('GitHub environment', async () => ({ detail: deleteEnvironment(stack.githubEnvironment) ? `${stack.githubEnvironment} deleted (its secrets and variables with it)` : `${stack.githubEnvironment} was already gone` }));
   removed.push('GitHub environment');
-  if (!isShared) { removeEnv(stack.platform, stack.env); console.log(`  ✓ platform file ${stack.file} removed — the workflow commits it`); }
+  if (!isShared) {
+    removeEnv(stack.platform, stack.env);
+    // the platform's variable without this environment (#416): the wizard pulls it, the next run reads it
+    try {
+      const published = publishPlatform(stack.platform);
+      console.log(`  ✓ environment ${stack.env} removed from ${published.name} (${published.envs.length ? `left: ${published.envs.join(', ')}` : 'no environment left'})`);
+    } catch (e) {
+      failed += 1;
+      console.log(`  ✗ ${stack.env} is still listed in the platform's variable (${e.message}) — publish from the wizard (Save platform config)`);
+    }
+  }
   try {
     execFileSync('gh', ['variable', 'set', 'NAS_STATE', '--body', JSON.stringify({ at: new Date().toISOString(), stack: stack.stack, platform: stack.platform, mode: 'cleanup', removed, failed })], { encoding: 'utf8', stdio: ['ignore', 'ignore', 'pipe'] });
   } catch { /* the wizard keeps the last state */ }

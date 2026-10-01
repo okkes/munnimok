@@ -135,6 +135,7 @@ export const TOURS: Tour[] = [
       { titleKey: 'tour.debts.1t', bodyKey: 'tour.debts.1b', illustration: '⛰️' },
       { titleKey: 'tour.debts.2t', bodyKey: 'tour.debts.2b', illustration: '➕', anchor: 'debts-add' },
       { titleKey: 'tour.debts.3t', bodyKey: 'tour.debts.3b', illustration: '📉' },
+      { titleKey: 'tour.debts.4t', bodyKey: 'tour.debts.4b', illustration: '🌊', anchor: 'debts-plan' },
     ],
   },
   {
