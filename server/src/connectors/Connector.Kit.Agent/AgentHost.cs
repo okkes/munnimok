@@ -101,6 +101,13 @@ public sealed class AgentHost : BackgroundService
     private TimeSpan _leaseTtl = TimeSpan.FromSeconds(120);
     private int _running;
 
+    /// <summary>
+    /// Every profile was wiped since the beat that asked for it, and the
+    /// control plane has not yet answered a beat carrying that. Cleared the
+    /// moment a beat comes back without the request.
+    /// </summary>
+    private volatile bool _resetDone;
+
     /// <param name="connection">
     /// The connector this host serves: its address, its identity, its client,
     /// its profiles and its runner. Everything after it is the machine's and is
@@ -371,10 +378,10 @@ public sealed class AgentHost : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            // The ordinary cadence unless the beat fails, in which case the
-            // next one is owed much sooner than the interval - see
+            // The ordinary cadence (Absorb) unless the beat fails, in which
+            // case the next one is owed much sooner than the interval - see
             // HeartbeatRetryDelay.
-            var next = _heartbeatInterval;
+            TimeSpan next;
 
             try
             {
@@ -383,9 +390,8 @@ public sealed class AgentHost : BackgroundService
                     Capabilities = _capabilities,
                     Profiles = _profiles.Snapshot(),
                     Running = Volatile.Read(ref _running),
+                    ResetDone = _resetDone,
                 }, stoppingToken).ConfigureAwait(false);
-
-                if (response.LeaseTtlSeconds > 0) _leaseTtl = TimeSpan.FromSeconds(response.LeaseTtlSeconds);
 
                 if (response.Revoked)
                 {
@@ -393,7 +399,7 @@ public sealed class AgentHost : BackgroundService
                     return;
                 }
 
-                NoteCatalogue(response.CatalogDigest);
+                next = Absorb(response);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -563,6 +569,61 @@ public sealed class AgentHost : BackgroundService
         await _abort.CancelAsync().ConfigureAwait(false);
         await _retire.CancelAsync().ConfigureAwait(false);
         _roster.Retire(Name, why);
+    }
+
+    /// <summary>
+    /// What an answered beat changes, and when the next one is due: the
+    /// lease the control plane hands out, a wipe it asked for, the catalogue
+    /// it runs.
+    /// </summary>
+    private TimeSpan Absorb(HeartbeatResponse response)
+    {
+        if (response.LeaseTtlSeconds > 0) _leaseTtl = TimeSpan.FromSeconds(response.LeaseTtlSeconds);
+
+        var next = _heartbeatInterval;
+
+        // A released hosted slot (#420 A2): wipe, then beat again soon so
+        // the slot is free to the next person in seconds, not a whole
+        // interval. A beat that no longer asks is the control plane having
+        // heard the answer.
+        if (response.ResetProfiles)
+        {
+            if (ResetProfiles()) next = HeartbeatRetryDelay;
+        }
+        else
+        {
+            _resetDone = false;
+        }
+
+        NoteCatalogue(response.CatalogDigest);
+        return next;
+    }
+
+    /// <summary>
+    /// What a released hosted slot does: every browser profile goes, as a
+    /// revoke takes them, but the connector stays enrolled and keeps
+    /// serving - the next person gets the same container, clean. Deferred
+    /// while a job still holds a browser in one of those directories; the
+    /// control plane keeps asking, and the beat after the last job ends
+    /// does it. True when the wipe happened on this call.
+    /// </summary>
+    private bool ResetProfiles()
+    {
+        if (Volatile.Read(ref _running) > 0)
+        {
+            _logger.LogInformation(
+                "{Connection}: the control plane asked for a profile wipe; waiting for {Count} running job(s) to finish",
+                Name,
+                _running);
+            return false;
+        }
+
+        _logger.LogWarning(
+            "{Connection}: wiping every browser profile: this hosted agent was released and goes to the next person clean",
+            Name);
+        _profiles.WipeAll();
+        _resetDone = true;
+        return true;
     }
 
     private TimeSpan Next(TimeSpan backoff)

@@ -499,9 +499,8 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
             <div><label class="f">&nbsp;</label><button class="ghost" id="btn-platform-pull">Fetch config from GitHub</button></div>
           </div>
           <p class="why">The platform config (this card and every environment) lives on GitHub as the repository variable <code>MUNNI_PLATFORM_NAS</code>, written by every Save here — no commit, no branch (#416). The <b>pipeline branch</b> is what every run of this platform checks out for its templates and tools; empty means each stack follows its image channel (<code>latest</code> → master releases, <code>dev</code> → the dev branch). <b>Fetch</b> writes GitHub's copy onto this computer — a second computer, or after a cleanup removed an environment.</p>
-          <p class="why">The <b>pooled browser agent</b> (#367) runs in the shared services: one container with every provider pack that dials out to each environment's connector control plane and drives the parties that need a real browser. Its egress is a claim the control planes believe — a NAS at home is on a residential line; a rack is not.</p>
+          <p class="why">Every environment runs its own <b>pooled browser agents</b> (#420) beside its connector control plane — how many, and how many jobs each takes at once, is set per environment under its Settings, with a recommendation from this host's memory. This platform's <b>line</b> is the claim every agent makes and the control planes believe: a NAS at home is on a residential line; a rack is not.</p>
           <div class="grid2">
-            <div><label><input type="checkbox" id="in-browser-agent"/> run the pooled browser agent</label></div>
             <div><label class="f" for="in-agent-egress">this platform's line</label><select id="in-agent-egress"><option value="residential">residential (home)</option><option value="datacenter">datacenter</option></select></div>
           </div>
           <button class="ghost" id="btn-platform-save">Save platform config</button>
@@ -569,6 +568,12 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
           <div><label class="f" for="env-add-appchannel">app channel (what the app calls itself)</label><select id="env-add-appchannel"><option value="production">production</option><option value="staging">staging</option></select></div>
         </div>
         <div class="featrow" id="env-add-features"></div>
+        <div class="grid2">
+          <div><label class="f" for="env-add-agents-pooled">pooled browser agents</label><input type="number" id="env-add-agents-pooled" min="0" max="8" value="1"/></div>
+          <div><label class="f" for="env-add-agents-concurrency">jobs at once per agent</label><input type="number" id="env-add-agents-concurrency" min="1" max="8" value="2"/></div>
+          <div><label class="f" for="env-add-agents-private">hosted private slots</label><input type="number" id="env-add-agents-private" min="0" max="16" value="0"/></div>
+        </div>
+        <p class="why">Pooled agents are headed browsers beside the environment's control plane — the parties that need a real browser on this platform's line run there (#420). A private slot is one such browser for ONE person, handed out by the admin portal when someone asks (the parties that only ever talk to the account holder's own machine run there); the first slot mints its code with a Bootstrap. <a class="chiplink" href="#" data-sizing="add">Recommend from the host's memory</a> <span id="env-sizing-add"></span></p>
         <details class="how"><summary>Store ids (optional — default app.munni.&lt;platform&gt;.&lt;name&gt;)</summary>
           <div class="grid2">
             <div><label class="f" for="env-add-android">Android package</label><input type="text" id="env-add-android" placeholder="app.munni.nas.prod" autocomplete="off"/></div>
@@ -2712,8 +2717,6 @@ function renderNasPlatformFields() {
     const cur = p?.controlEnv ?? '';
     sel.innerHTML = `<option value="">lowest slot${S.envList[0] ? ` (${esc(S.envList[0].env)})` : ''}</option>` + S.envList.map((e) => `<option value="${escAttr(e.env)}" ${e.env === cur ? 'selected' : ''}>${esc(e.env)}</option>`).join('');
   }
-  const agent = document.getElementById('in-browser-agent');
-  if (agent && document.activeElement !== agent) agent.checked = Boolean(p?.browserAgent);
   const egress = document.getElementById('in-agent-egress');
   if (egress && document.activeElement !== egress) egress.value = p?.agentEgress?.kind === 'datacenter' ? 'datacenter' : 'residential';
   const branch = document.getElementById('in-branch');
@@ -2725,25 +2728,23 @@ function renderNasPlatformFields() {
   const up = Boolean(lg?.dsm?.ok && lg?.wildcard && lg?.task?.enabled);
   setPill('shared-pill', up ? 'set up ✓' : (ghShared ? 'in progress' : 'not set up yet'), up);
 }
-async function savePlatformConfig({ publishedPath, controlEnv, browserAgent, agentEgressKind, branch, quiet = false } = {}) {
+async function savePlatformConfig({ publishedPath, controlEnv, agentEgressKind, branch, quiet = false } = {}) {
   const body = { platform: 'nas' };
   if (typeof publishedPath === 'string' && publishedPath) body.publishedPath = publishedPath;
   if (typeof controlEnv === 'string') body.controlEnv = controlEnv;
-  if (typeof browserAgent === 'boolean') body.browserAgent = browserAgent;
   if (typeof agentEgressKind === 'string') body.agentEgressKind = agentEgressKind;
   if (typeof branch === 'string') body.branch = branch;
   const r = await hjson('/api/platforms/save', { method: 'POST', body: JSON.stringify(body) });
-  if (!quiet) msg('msg-platform-save', `Saved ✓ — infra/platforms/nas/platform.json (published path ${r.platform?.publishedPath ?? '?'}, control environment ${r.platform?.controlEnv ?? 'lowest slot'}, pooled browser agent ${r.platform?.browserAgent ? 'on' : 'off'}). Set up shared services / an environment's bootstrap commits it.`, true);
+  if (!quiet) msg('msg-platform-save', `Saved ✓ — infra/platforms/nas/platform.json (published path ${r.platform?.publishedPath ?? '?'}, control environment ${r.platform?.controlEnv ?? 'lowest slot'}). Set up shared services / an environment's bootstrap applies it.`, true);
   return r;
 }
 document.getElementById('btn-platform-save')?.addEventListener('click', async () => {
   const publishedPath = document.getElementById('in-published-path').value.trim();
   const controlEnv = document.getElementById('in-control-env').value;
-  const browserAgent = document.getElementById('in-browser-agent').checked;
   const agentEgressKind = document.getElementById('in-agent-egress').value;
   const branch = document.getElementById('in-branch').value.trim();
   try {
-    await savePlatformConfig({ publishedPath, controlEnv, browserAgent, agentEgressKind, branch });
+    await savePlatformConfig({ publishedPath, controlEnv, agentEgressKind, branch });
     if (publishedPath) await storeValues({ SYNOLOGY_PATH: publishedPath });
     // every save publishes (#416): the runs read the config from GitHub, never from this computer
     if (connected()) await streamLocal('/api/config/publish', { platform: S.platform, repo: S.slug }, 'publish the platform config', { refresh: false });
@@ -2977,6 +2978,7 @@ document.getElementById('btn-env-add')?.addEventListener('click', async () => {
     appChannel: document.getElementById('env-add-appchannel').value,
     label: document.getElementById('env-add-label').value.trim(),
     features: envFeaturesFromForm(),
+    agents: { pooled: Number(document.getElementById('env-add-agents-pooled').value), concurrency: Number(document.getElementById('env-add-agents-concurrency').value), privateSlots: Number(document.getElementById('env-add-agents-private').value) },
   };
   const androidPackage = document.getElementById('env-add-android').value.trim().toLowerCase();
   const iosBundleId = document.getElementById('env-add-ios').value.trim().toLowerCase();
@@ -3030,6 +3032,12 @@ function settingsHtml(env) {
         <div><label class="f" for="env-label-${s}">label</label><input type="text" id="env-label-${s}" maxlength="40" value="${escAttr(env.label)}" autocomplete="off"/></div>
       </div>
       <div class="featrow">${ENV_FEATURES.map(([kind, items]) => `<span class="fk">${kind}</span>` + items.map(([id, label]) => `<label><input type="checkbox" data-envset="${id}" data-env="${s}" ${on(id) ? 'checked' : ''}/> ${label}</label>`).join('')).join('')}</div>
+      <div class="grid2">
+        <div><label class="f" for="env-agents-pooled-${s}">pooled browser agents</label><input type="number" id="env-agents-pooled-${s}" min="0" max="8" value="${env.agents?.pooled ?? 1}"/></div>
+        <div><label class="f" for="env-agents-concurrency-${s}">jobs at once per agent</label><input type="number" id="env-agents-concurrency-${s}" min="1" max="8" value="${env.agents?.concurrency ?? 2}"/></div>
+        <div><label class="f" for="env-agents-private-${s}">hosted private slots</label><input type="number" id="env-agents-private-${s}" min="0" max="16" value="${env.agents?.privateSlots ?? 0}"/></div>
+      </div>
+      <p class="why">Headed browsers beside this environment's control plane, dialling it over the environment's own network; their line is the platform's (#420). A private slot is one browser for one person, handed out from the admin portal's Connectors screen when someone asks. A changed count applies with a Deploy; the first private slot mints its code with a Bootstrap. <a class="chiplink" href="#" data-sizing="${s}">Recommend from the host's memory</a> <span id="env-sizing-${s}"></span></p>
       <button class="ghost" data-act="settings" data-stack="${env.stack}">Save settings</button>
       <span class="envtag">${isLcl() ? 're-renders the stack (Re-run setup applies it)' : 'publishes the config and re-runs the bootstrap'}</span>
     </details>`;
@@ -3122,12 +3130,12 @@ function connectorsHtml(env) {
   const s = env.env;
   const connector = stackUrls(env.stack)?.connector ?? (S.domain ? `https://munni-${s}-${S.platform}-connector.${S.domain}` : '');
   const platform = S.platforms.find((p) => p.platform === S.platform);
-  const pooled = Boolean(platform?.browserAgent);
+  const agents = env.agents ?? { pooled: 1, concurrency: 2 };
   return `
     <p class="why">This environment runs the <b>connector control plane</b> — shops, banks without open banking, the credit and student-debt registries — as one container beside its API, with its own database on the environment's Postgres. Every credential it needs was minted by the setup: the bundle seal key, the enrollment key, the API's subject salt, the API's machine app in this environment's Logto (scope <code>connector:admin</code>) and the platform's fleet enrollment code. The app reaches it only through the API; nothing here needs an account anywhere.</p>
     <div class="kv">
       <div><b>control plane</b><span>${connector ? `<code>${esc(connector)}</code> — the address household agents dial; its API answers nobody without a machine token or an agent's own token` : 'not resolved yet'}</span></div>
-      <div><b>pooled browser agent</b><span>${pooled ? `on — the shared services run one container with every provider pack, dialling this control plane over the shared network (egress: ${esc(platform?.agentEgress?.kind ?? 'residential')})` : 'off — parties that need a browser on a home line wait for a person\'s own household agent (tick it under the platform settings to run one here)'}</span></div>
+      <div><b>pooled browser agents</b><span>${agents.pooled ? `${agents.pooled} replica${agents.pooled === 1 ? '' : 's'} beside this control plane, ${agents.concurrency} job${agents.concurrency === 1 ? '' : 's'} at once each (egress: ${esc(platform?.agentEgress?.kind ?? 'residential')}) — set under Settings, applied by a Deploy; they enroll with the environment's own fleet code` : 'none — parties that need a browser on a home line wait for a person\'s own household agent (set a count under Settings)'}</span></div>
       <div><b>household agent</b><span>a person runs <code>deploy/connectors/household-agent.yml</code> at home with the code the app mints for them: <code>CONNECTOR_URL=${esc(connector)}/ ENROLLMENT_CODE=&lt;from the app&gt; docker compose -f household-agent.yml up -d</code></span></div>
       <div><b>operator</b><span>the party states (kill switch), the fleet, the canaries: the admin portal's connectors screen (slice M6) over <code>/admin/connectors/*</code> of this API</span></div>
     </div>
@@ -3507,6 +3515,40 @@ document.addEventListener('click', (e) => {
   e.preventDefault();
   applyPending(btn.dataset.stack, btn.dataset.pendingAct, btn).catch(() => {});
 });
+/* ── #420: how many pooled agents the host affords — the helper asks DSM (nas) or this computer (lcl) ── */
+const gb = (mb) => `${(mb / 1024).toFixed(1)} GB`;
+function sizingHtml(r, target) {
+  const verdict = r.fits
+    ? `<b>${r.pooled} agent${r.pooled === 1 ? '' : 's'} × ${r.concurrency} jobs</b> per environment`
+    : `<b>1 agent × ${r.concurrency} jobs</b> per environment — tight: ${gb(r.perEnvMb)} left per environment, one replica wants ${gb(r.perReplicaMb)}`;
+  const slots = r.privateSlots ? `, ${r.privateSlots} private slot${r.privateSlots === 1 ? '' : 's'} take${r.privateSlots === 1 ? 's' : ''} ${gb(r.slotsMb)} of this environment's share first` : '';
+  return `${verdict} — ${r.source}: ${gb(r.totalMb)}, a quarter kept free (${gb(r.headroomMb)}), the stacks take ${gb(r.reservedMb)} (${r.environments} environment${r.environments === 1 ? '' : 's'}), ${gb(r.freeMb)} left${slots}; a replica is ${gb(r.perReplicaMb)} at ${r.concurrency} jobs. <a class="chiplink" href="#" data-sizing-apply="${escAttr(target)}" data-pooled="${r.pooled}" data-concurrency="${r.concurrency}">Use it</a>`;
+}
+document.addEventListener('click', async (e) => {
+  const apply = e.target.closest('[data-sizing-apply]');
+  if (apply) {
+    e.preventDefault();
+    const t = apply.dataset.sizingApply;
+    const pooled = document.getElementById(t === 'add' ? 'env-add-agents-pooled' : `env-agents-pooled-${t}`);
+    const conc = document.getElementById(t === 'add' ? 'env-add-agents-concurrency' : `env-agents-concurrency-${t}`);
+    if (pooled) pooled.value = apply.dataset.pooled;
+    if (conc) conc.value = apply.dataset.concurrency;
+    return;
+  }
+  const ask = e.target.closest('[data-sizing]');
+  if (!ask) return;
+  e.preventDefault();
+  const t = ask.dataset.sizing;
+  const box = document.getElementById(`env-sizing-${t}`);
+  if (!box) return;
+  const conc = document.getElementById(t === 'add' ? 'env-add-agents-concurrency' : `env-agents-concurrency-${t}`)?.value ?? '2';
+  const slots = document.getElementById(t === 'add' ? 'env-add-agents-private' : `env-agents-private-${t}`)?.value ?? '0';
+  box.textContent = 'asking the host…';
+  try {
+    const r = await hjson(`/api/agents/sizing?platform=${encodeURIComponent(S.platform)}&adding=${t === 'add' ? 1 : 0}&concurrency=${encodeURIComponent(conc)}&privateSlots=${encodeURIComponent(slots)}`);
+    box.innerHTML = sizingHtml(r, t);
+  } catch (err) { box.textContent = `✗ ${err.message}`; }
+});
 /** a tile is the default for the NEXT environment; the ones that exist say whether they run it */
 function tileEnvsHtml(id) {
   if (!ENV_FEATURES.some(([, items]) => items.some(([k]) => k === id)) || !S.envList.length) return '';
@@ -3638,7 +3680,7 @@ async function envAction(act, env, btn) {
     const features = Object.fromEntries(FEATURE_FLAGS.map((k) => [k, on(k)]));
     features.banking = ['gocardless', 'enablebanking'].filter(on);
     features.signin = ['google', 'apple'].filter(on);
-    const body = { platform: S.platform, env: s, channel: document.getElementById(`env-channel-${s}`).value, appChannel: document.getElementById(`env-appchannel-${s}`).value, label: document.getElementById(`env-label-${s}`).value.trim(), features };
+    const body = { platform: S.platform, env: s, channel: document.getElementById(`env-channel-${s}`).value, appChannel: document.getElementById(`env-appchannel-${s}`).value, label: document.getElementById(`env-label-${s}`).value.trim(), features, agents: { pooled: Number(document.getElementById(`env-agents-pooled-${s}`).value), concurrency: Number(document.getElementById(`env-agents-concurrency-${s}`).value), privateSlots: Number(document.getElementById(`env-agents-private-${s}`).value) } };
     btn.disabled = true;
     try {
       if (isLcl()) { await streamLocal('/api/envs/update', body, `save ${label}'s settings (re-render)`); }

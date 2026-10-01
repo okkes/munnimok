@@ -415,7 +415,8 @@ public sealed class ConnectorAgentOptions
     {
         ArgumentNullException.ThrowIfNull(registry);
 
-        return BuildCapabilities(registry.Manifests) with { CatalogDigest = registry.CatalogDigest };
+        // The agent-served digest: the one the control plane compares (IProviderRegistry.AgentCatalogDigest)
+        return BuildCapabilities(registry.Manifests) with { CatalogDigest = registry.AgentCatalogDigest };
     }
 
     /// <summary>

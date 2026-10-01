@@ -209,6 +209,7 @@ public static class ConnectorPlatform
         ResourceEndpoints.Map(api);
         JobEndpoints.Map(api);
         AgentAdminEndpoints.Map(api, admin);
+        PrivateAgentEndpoints.Map(api, admin);
 
         return app;
     }
@@ -292,6 +293,15 @@ public static class ConnectorPlatform
                 .GetAwaiter().GetResult();
         }
 
+        // Hosted private slots (#420 A2): the same standing-code rule, under
+        // a subject that serves nobody until the operator binds it.
+        if (options.PrivateEnrollmentCode is { Length: > 0 } privateCode)
+        {
+            scope.ServiceProvider.GetRequiredService<AgentAuth>()
+                .SeedStandingEnrollmentAsync(privateCode, ConnectorOptions.PrivateSlotSubject, "private slot", CancellationToken.None)
+                .GetAwaiter().GetResult();
+        }
+
         // Touching the registry here rather than lazily means a manifest that
         // lies fails the deploy instead of the first user.
         _ = scope.ServiceProvider.GetRequiredService<IProviderRegistry>().CatalogDigest;
@@ -353,6 +363,17 @@ public static class ConnectorPlatform
                 + $"{options.Timeouts.HeartbeatSeconds * 3}s - longer than the "
                 + $"{AgentLiveness.OfflineAfterSeconds}s AgentLiveness.OfflineAfterSeconds allows an agent to be "
                 + "silent; every agent would be refused work for part of every cycle while running normally");
+        }
+
+        // A contradiction, so before the production gate for the same reason
+        // as the heartbeat: a private slot enrolled with the fleet's code IS
+        // the fleet, and serves everybody while claiming to serve one person.
+        if (!string.IsNullOrWhiteSpace(options.PrivateEnrollmentCode)
+            && string.Equals(options.PrivateEnrollmentCode, options.FleetEnrollmentCode, StringComparison.Ordinal))
+        {
+            problems.Add(
+                "Connector:PrivateEnrollmentCode equals Connector:FleetEnrollmentCode; a private slot must serve nobody "
+                + "until it is bound, and the fleet code enrolls a machine that serves everybody");
         }
 
         if (!options.IsProduction)

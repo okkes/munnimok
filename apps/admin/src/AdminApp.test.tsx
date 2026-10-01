@@ -60,6 +60,17 @@ const CONNECTOR_AGENTS = {
 const CONNECTOR_CANARIES = {
   canaries: [{ providerId: 'ah', resource: 'receipts', intervalMinutes: 60, lastRunAt: '2026-09-30T05:00:00Z', lastJobId: 'job_1', intact: false, verdict: 'login page changed' }],
 };
+// the hosted private agents (#420 A2): one free slot, one bound to Bob, Alice asking
+const slotAgent = (id: string, name: string, extra: Record<string, unknown>) => ({ id, name, class: 'byo', revoked: false, lastHeartbeatAt: '2026-09-30T06:00:00Z', online: true, stale: false, profiles: [], hosted: true, ...extra });
+const CONNECTOR_PRIVATE = {
+  total: 2,
+  free: 1,
+  slots: [
+    { agent: slotAgent('agt_slot1', 'munni dev private agent 1', { bound: false, resetting: false }), subject: null, who: null },
+    { agent: slotAgent('agt_slot2', 'munni dev private agent 2', { bound: true, boundAt: '2026-09-30T05:00:00Z', resetting: false, profiles: [{ id: 'prof_2', provider: 'duo', healthy: true, lastOkAt: null }] }), subject: 'u_bob', who: 'Bob' },
+  ],
+  requests: [{ id: 'par_1', subject: 'u_alice', who: 'Alice', state: 'pending', createdAt: '2026-09-30T06:30:00Z' }],
+};
 
 const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /catalog': () => ({ body: CATALOG }),
@@ -224,6 +235,9 @@ describe('AdminApp (test-auth mode)', () => {
         revoked = true;
         return { status: 204 };
       },
+      'GET /admin/connectors/private-agents': () => ({ body: CONNECTOR_PRIVATE }),
+      'POST /admin/connectors/private-agents/requests/par_1/approve': () => ({ body: { ...CONNECTOR_PRIVATE.requests[0], state: 'approved', agentId: 'agt_slot1' } }),
+      'POST /admin/connectors/private-agents/agt_slot2/release': () => ({ status: 204 }),
     });
     vi.stubGlobal('confirm', vi.fn(() => true));
     renderAdmin();
@@ -262,6 +276,17 @@ describe('AdminApp (test-auth mode)', () => {
     await waitFor(() => expect(revoked).toBe(true));
     expect(calls).toContain('DELETE /admin/connectors/agents/agt_kitchen');
     await waitFor(() => expect(screen.getByTestId('connectors-agents').textContent).toContain('No household agents'));
+
+    // the private agents (#420 A2): the request wears a name beside its pseudonym and is approved; a bound slot can be taken back
+    expect(screen.getByTestId('connectors-private-free').textContent).toBe('1 of 2 free');
+    expect(screen.getByTestId('private-request-par_1').textContent).toContain('Alice');
+    fireEvent.click(screen.getByTestId('private-approve-par_1'));
+    await waitFor(() => expect(calls).toContain('POST /admin/connectors/private-agents/requests/par_1/approve'));
+    expect(screen.getByTestId('private-slot-agt_slot2').textContent).toContain('Bob');
+    expect(screen.getByTestId('private-slot-agt_slot1').textContent).toContain('free');
+    expect(screen.queryByTestId('private-release-agt_slot1')).toBeNull();
+    fireEvent.click(screen.getByTestId('private-release-agt_slot2'));
+    await waitFor(() => expect(calls).toContain('POST /admin/connectors/private-agents/agt_slot2/release'));
 
     // a broken canary wears its verdict
     expect(screen.getByTestId('connectors-canaries').textContent).toContain('login page changed');

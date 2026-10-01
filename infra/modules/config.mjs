@@ -113,8 +113,9 @@ export function materializeFromEnv(env = process.env) {
 
 /* ── GitHub, through gh ─────────────────────────────────────────────── */
 
+// windowsHide: the wizard's helper may run without a console (restarted from the page) — gh must not open one
 const run = (args, { execImpl = execFileSync, env = process.env } = {}) =>
-  execImpl('gh', args, { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] });
+  execImpl('gh', args, { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
 const repoArgs = (repo) => (repo ? ['--repo', repo] : []);
 const errorText = (e) => `${e?.stderr ?? ''}${e?.message ?? e}`;
 const isMissing = (e) => /not found|HTTP 404|was not found/i.test(errorText(e));

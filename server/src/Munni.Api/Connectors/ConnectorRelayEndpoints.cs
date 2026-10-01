@@ -73,6 +73,9 @@ internal sealed record WireDisconnect(string? Bundle);
 
 internal sealed record WireEnrollment(string Subject, string Name);
 
+/// <summary>A request for a hosted private agent (#420 A2): the subject is the relay's, never the client's.</summary>
+internal sealed record WirePrivateAgentRequest(string Subject);
+
 /// <summary>
 /// The relay (#367): the app's door to the connector control plane. Every
 /// route acts as the signed-in user — the subject is minted here, never
@@ -190,7 +193,14 @@ public static partial class ConnectorRelayEndpoints
             IdempotencyKey = request.IdempotencyKey,
             Trigger = "user",
         }, ct);
-        if (!reply.IsSuccess) return Relay(http, reply);
+        if (!reply.IsSuccess)
+        {
+            // the connector says agent_unavailable whether the party wanted the person's own machine or
+            // munni's fleet; the app must not tell someone to start a household agent when it is the
+            // fleet that is missing (Albert Heijn on a platform without a pooled agent, 2026-10-01)
+            var manifest = await relay.Catalogue.ProviderAsync(relay.Client, provider, ct);
+            return Relay(http, reply.Error is { } err ? reply with { Error = ForParty(err, manifest) } : reply);
+        }
 
         var view = reply.Object;
         var sessionId = view.Text(SessionIdField) ?? throw new InvalidOperationException("the connector answered a login without a session id");
@@ -362,6 +372,43 @@ public static partial class ConnectorRelayEndpoints
         group.MapPost("/agents/enrollment", Enroll).WithValidation<ConnectorEnrollmentRequest>();
         group.MapDelete("/agents/{agentId}", RevokeAgent);
         group.MapGet("/agents/{agentId}/profiles", AgentProfiles);
+
+        // hosted private agents (#420 A2): the caller's standing, a request,
+        // withdrawing it, giving the slot back — the operator decides in the
+        // admin portal (ConnectorAdminEndpoints)
+        group.MapGet("/private-agents/mine", PrivateAgentMine);
+        group.MapPost("/private-agents/requests", PrivateAgentRequest);
+        group.MapDelete("/private-agents/requests/{requestId}", PrivateAgentWithdraw);
+        group.MapDelete("/private-agents/mine", PrivateAgentGiveBack);
+    }
+
+    private static async Task<IResult> PrivateAgentMine(HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.GetAsync("v1/private-agents/mine", new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);
+        return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Object)) : Relay(http, reply);
+    }
+
+    private static async Task<IResult> PrivateAgentRequest(HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var subject = relay.SubjectOf(http);
+        var reply = await relay.Client.PostAsync("v1/private-agents/requests", new ConnectorCall
+        {
+            Subject = subject,
+            Body = new WirePrivateAgentRequest(subject),
+        }, ct);
+        return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Object)) : Relay(http, reply);
+    }
+
+    private static async Task<IResult> PrivateAgentWithdraw(string requestId, HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.DeleteAsync($"v1/private-agents/requests/{requestId}", new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);
+        return reply.IsSuccess ? Results.NoContent() : Relay(http, reply);
+    }
+
+    private static async Task<IResult> PrivateAgentGiveBack(HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.DeleteAsync("v1/private-agents/mine", new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);
+        return reply.IsSuccess ? Results.NoContent() : Relay(http, reply);
     }
 
     private static async Task<IResult> ListAgents(HttpContext http, ConnectorRelay relay, CancellationToken ct)
@@ -520,6 +567,20 @@ public static partial class ConnectorRelayEndpoints
     }
 
     /// <summary>The connector's error envelope, in this API's casing, under the connector's own status.</summary>
+    /// <summary>
+    /// A pooled-class party's <c>agent_unavailable</c> carries the fleet's key: the pooled agents
+    /// are offline or busy, nothing the person can start. A party that needs the person's own
+    /// machine keeps the connector's key ("start your agent").
+    /// </summary>
+    internal static ConnectorError ForParty(ConnectorError error, JsonObject? manifest)
+    {
+        if (!string.Equals(error.Code, "agent_unavailable", StringComparison.Ordinal)) return error;
+        var cls = manifest?["agent"]?["class"]?.GetValue<string>();
+        return string.Equals(cls, "byo", StringComparison.Ordinal)
+            ? error
+            : error with { MessageKey = "connect.error.fleet_unavailable" };
+    }
+
     internal static IResult Relay(HttpContext http, ConnectorReply reply)
     {
         var error = reply.Error ?? new ConnectorError("internal", true, "retry", "connect.error.internal", null, null);

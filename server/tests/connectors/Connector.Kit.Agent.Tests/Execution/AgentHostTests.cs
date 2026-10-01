@@ -170,7 +170,7 @@ public sealed class AgentHostTests
         await host.StopAsync(CancellationToken.None);
 
         var claimed = box.Control.Enrollments[0].Capabilities.CatalogDigest;
-        Assert.Equal(new ProviderRegistry([new DecidedAdapter()]).CatalogDigest, claimed);
+        Assert.Equal(new ProviderRegistry([new DecidedAdapter()]).AgentCatalogDigest, claimed);
         Assert.StartsWith("sha256:", claimed, StringComparison.Ordinal);
     }
 
@@ -196,7 +196,7 @@ public sealed class AgentHostTests
     public async Task A_control_plane_on_the_same_catalogue_is_noted_as_a_match()
     {
         using var box = new Box();
-        box.Control.CatalogDigest = new ProviderRegistry([new DecidedAdapter()]).CatalogDigest;
+        box.Control.CatalogDigest = new ProviderRegistry([new DecidedAdapter()]).AgentCatalogDigest;
         var host = box.Build(code: "AGNT-NEW-0001");
 
         await host.StartAsync(CancellationToken.None);
@@ -205,6 +205,36 @@ public sealed class AgentHostTests
 
         Assert.Contains(box.Log.Lines, line => line.Contains("matches the control plane", StringComparison.Ordinal));
         Assert.DoesNotContain(box.Log.Lines, line => line.Contains("runs adapter catalogue", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// A released hosted slot (#420 A2): the control plane asks for a wipe
+    /// on the beat; the host wipes the previous person's profile, stays
+    /// enrolled and serving, says so on the next beat - and only once.
+    /// </summary>
+    [Fact]
+    public async Task A_released_hosted_slot_wipes_its_profiles_on_request_and_keeps_serving()
+    {
+        using var box = new Box();
+        var profile = Path.Combine(box.ProfileRoot, "prf_previous_person");
+        Directory.CreateDirectory(profile);
+        await File.WriteAllTextAsync(Path.Combine(profile, "Cookies"), "a bank, signed in");
+        box.Control.ResetsProfiles = true;
+        box.Control.HeartbeatSeconds = 5;
+        var host = box.Build(code: "AGNT-SLOT-0001");
+
+        await host.StartAsync(CancellationToken.None);
+        await Box.WaitUntil(() => box.Control.ResetDoneBeats >= 1);
+        // one more ordinary beat after the control plane stopped asking
+        var heard = box.Control.BeatsAt.Count;
+        await Box.WaitUntil(() => box.Control.BeatsAt.Count > heard);
+        await host.StopAsync(CancellationToken.None);
+
+        Assert.False(Directory.Exists(profile), "the previous person's profile survived the wipe");
+        Assert.False(box.Lifetime.Stopped, "a wipe is not a retirement");
+        Assert.True(File.Exists(box.StatePath), "the enrollment stays");
+        Assert.Contains(box.Log.Lines, line => line.Contains("wiping every browser profile", StringComparison.Ordinal));
+        Assert.Equal(1, box.Control.ResetDoneBeats);
     }
 
     private static bool Ends(HttpRequestMessage request, string suffix) =>
@@ -226,6 +256,8 @@ public sealed class AgentHostTests
         public StubLifetime Lifetime { get; } = new();
 
         public string StatePath => Path.Combine(_root, "agent-state.json");
+
+        public string ProfileRoot => Path.Combine(_root, "profiles");
 
         public Func<HttpRequestMessage, HttpResponseMessage?>? Intercept { get; set; }
 

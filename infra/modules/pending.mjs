@@ -6,7 +6,7 @@
 // (saveEnv / loadPlatform write and read it), so a difference is a real one.
 
 /** the keys the render alone carries — Deploy republishes them; anything else mints or registers something first (Bootstrap) */
-export const DEPLOY_ONLY = new Set(['store.androidCertSha256']);
+export const DEPLOY_ONLY = new Set(['store.androidCertSha256', 'agents.pooled', 'agents.concurrency', 'agents.privateSlots']);
 /** display names the wizard keeps for itself — no container reads them */
 export const WIZARD_ONLY = new Set(['label', 'platform.label', 'platform.file']);
 
@@ -27,14 +27,18 @@ export function configChanges(before, after) {
   const a = flattenConfig(before ?? {});
   const b = flattenConfig(after ?? {});
   const paths = [...new Set([...Object.keys(a), ...Object.keys(b)])].filter((p) => !WIZARD_ONLY.has(p)).sort();
-  return paths.filter((p) => !same(a[p], b[p])).map((p) => ({ path: p, from: a[p] ?? null, to: b[p] ?? null }));
+  // a leaf the applied side never had stays `undefined` (not null): the first appearance of a key is what needsFor looks for
+  return paths.filter((p) => !same(a[p], b[p])).map((p) => ({ path: p, from: Object.hasOwn(a, p) ? (a[p] ?? null) : undefined, to: Object.hasOwn(b, p) ? (b[p] ?? null) : undefined }));
 }
 
-/** which run applies a set of changes on a deployed platform */
+/** which run applies a set of changes on a deployed platform — a key the applied side never had (absent → a value) is new to the stack and may need something minted, so it takes the Bootstrap even when its path is deploy-only (#420: an environment's first `agents` brings its fleet code); a null that becomes a value (the fingerprint) is the plain deploy-only case */
 export function needsFor(changes) {
   if (!changes.length) return null;
-  return changes.every((c) => DEPLOY_ONLY.has(c.path)) ? 'deploy' : 'bootstrap';
+  return changes.every((c) => DEPLOY_ONLY.has(c.path) && c.from !== undefined && !firstPrivateSlot(c)) ? 'deploy' : 'bootstrap';
 }
+
+/** the first private slot of an environment mints its enrollment code (#420 A2): a Bootstrap, like the first agents block */
+const firstPrivateSlot = (c) => c.path === 'agents.privateSlots' && !(Number(c.from) > 0) && Number(c.to) > 0;
 
 const show = (path, v) => {
   if (v === null || v === undefined || v === '') return 'none';

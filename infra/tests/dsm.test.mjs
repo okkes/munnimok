@@ -6,7 +6,7 @@ import {
   applyReverseProxy, ensureWildcardCertificate, ensureLiveDir, ensurePollerTask, inspectNas, resolveLiveDir, publishedPathParts,
   dsmAdvice, dsmLogin, dsmSession, isPermissionError, isTransport, pollerScript, POLLER_TASK_NAME, tlsCovers, certValid, summarizeNas,
   probeLoginShapes, probeCallShapes, probeSessionFacts, describeLoginShapes, describeCallShapes, LOGIN_SHAPES, CALL_SHAPES, SESSION_SHAPES,
-  readPollerLog, proxyRules,
+  readPollerLog, proxyRules, systemInfo,
 } from '../modules/dsm.mjs';
 import { scratchPlatforms } from './fixture.mjs';
 
@@ -797,4 +797,12 @@ test('cleanup: the stack\'s rules go by uuid, the poller task by id (root API as
   const upload = up.calls.find((c) => c.key === 'SYNO.FileStation.Upload.upload');
   assert.equal(upload.params.path, '/docker/munni-iac/published');
   assert.equal(await upload.init.body.get('file').text(), 'remove\n');
+});
+
+test('systemInfo (#420): the host\'s memory and model from SYNO.Core.System, through a session that is closed again; a missing size reads as null', async () => {
+  const box = dsm({ 'SYNO.Core.System.info': { success: true, data: { ram_size: 8192, model: 'DS923+' } } });
+  assert.deepEqual(await systemInfo(CREDS, { fetchImpl: box.fetchImpl, sleepImpl: noWait }), { ramMb: 8192, model: 'DS923+' });
+  assert.ok(box.calls.some((c) => c.key === 'SYNO.API.Auth.logout'), 'the session is closed');
+  const bare = dsm({ 'SYNO.Core.System.info': { success: true, data: { model: 'DS223' } } });
+  assert.deepEqual(await systemInfo(CREDS, { fetchImpl: bare.fetchImpl, sleepImpl: noWait }), { ramMb: null, model: 'DS223' });
 });

@@ -12,6 +12,8 @@ import type {
   LiveFrame,
   LiveInputEvent,
   LookupOption,
+  PrivateAgentRequest,
+  PrivateAgentStatus,
   RelayInfo,
   SessionView,
   SyncOutcome,
@@ -219,5 +221,26 @@ export const connectorApi = {
 
   async revokeAgent(agentId: string): Promise<void> {
     await call<unknown>(`/agents/${agentId}`, { method: 'DELETE' });
+  },
+
+  // ── the hosted private agents (#420 A2) ───────────────────────────────
+
+  /** the caller’s standing: whether the environment hosts slots, how many are free, their request, the slot bound to them */
+  async privateAgents(): Promise<PrivateAgentStatus> {
+    return (await call<PrivateAgentStatus>('/private-agents/mine')).body;
+  },
+
+  /** asks the admin for a slot; asking twice is one request */
+  async requestPrivateAgent(): Promise<PrivateAgentRequest> {
+    return (await call<PrivateAgentRequest>('/private-agents/requests', { method: 'POST' })).body;
+  },
+
+  async withdrawPrivateRequest(requestId: string): Promise<void> {
+    await call<unknown>(`/private-agents/requests/${requestId}`, { method: 'DELETE' });
+  },
+
+  /** gives the slot back — it wipes the sign-ins it keeps before the next person gets it */
+  async giveBackPrivateAgent(): Promise<void> {
+    await call<unknown>('/private-agents/mine', { method: 'DELETE' });
   },
 };

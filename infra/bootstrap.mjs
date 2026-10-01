@@ -480,16 +480,17 @@ async function ciApply() {
   githubOutput('logto', logtoState ? (logtoState.wired ? 'wired' : logtoState.credential ? 'waiting' : 'none') : 'n/a');
   githubOutput('glitchtip', glitchtipState ? (glitchtipState.wired || (isShared && glitchtipState.seeded) ? 'wired' : glitchtipState.credential ? 'waiting' : 'none') : 'n/a');
   console.log(`  runbook → ${renderRunbook(stack, { minted, missingOperator })}`);
-  // what this run applied, for the wizard's pending strip (#416): the config it ran with, on the stack's GitHub environment
+  if (nasErrors) {
+    console.log(`✗ ${nasErrors} NAS step${nasErrors === 1 ? '' : 's'} failed for a reason other than the deploy account's rights — see the dsm: lines above; the next run retries (every step is idempotent).`);
+    return 1;
+  }
+  // what this run applied, for the wizard's pending strip (#416): the config it ran with, on the stack's GitHub
+  // environment — only after a green apply (a failed NAS step must keep the strip asking for the run)
   try {
     const record = writeApplied(stack, { by: 'bootstrap', run: process.env.GITHUB_RUN_ID ?? null });
     console.log(`  applied: recorded on ${stack.githubEnvironment} (${record.at})`);
   } catch (e) {
     console.log(`  applied: not recorded (${e.message}) — the wizard's strip may keep showing this run's changes until the next run`);
-  }
-  if (nasErrors) {
-    console.log(`✗ ${nasErrors} NAS step${nasErrors === 1 ? '' : 's'} failed for a reason other than the deploy account's rights — see the dsm: lines above; the next run retries (every step is idempotent).`);
-    return 1;
   }
   console.log('done.');
   return 0;

@@ -24,7 +24,7 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes, X509Certificate } from 'node:crypto';
-import { networkInterfaces } from 'node:os';
+import { networkInterfaces, totalmem } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { MANIFEST, entriesFor } from '../modules/secrets.mjs';
@@ -37,7 +37,8 @@ import { zipEntry, zipNames } from '../modules/zip.mjs';
 import { configChanges, pendingFrom } from '../modules/pending.mjs';
 import { BRANCH_RE, PLATFORM_IDS, branchFor } from '../modules/stack.mjs';
 import { documentStackConfig, fetchPlatformVariable, publishPlatform, pullPlatform, readApplied } from '../modules/config.mjs';
-import { proxyRules } from '../modules/dsm.mjs';
+import { proxyRules, systemInfo } from '../modules/dsm.mjs';
+import { normalizeAgents, recommendAgents } from '../modules/agents.mjs';
 import { listUsers, setAdmin } from '../modules/logto.mjs';
 import { removeProjects } from '../modules/glitchtip.mjs';
 
@@ -148,7 +149,9 @@ const json = (res, status, body) => { res.writeHead(status, { 'content-type': 'a
 const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
   new Promise((resolve) => {
     if (label) res.write(`▶ ${label}\n`);
-    const child = spawnImpl(cmd, args, { ...opts, shell: false });
+    // windowsHide: a helper restarted from the page runs without a console, and every gh/git/docker child
+    // would otherwise flash its own console window (seen 2026-10-01: a terminal popping up on every poll)
+    const child = spawnImpl(cmd, args, { ...opts, shell: false, windowsHide: true });
     let out = '';
     const mask = opts.mask ?? ((s) => s);
     child.stdout.on('data', (d) => { const s = String(d); out += s; res.write(mask(s)); });
@@ -189,7 +192,6 @@ function platformsView() {
     registry: p.registry,
     publishedPath: p.publishedPath ?? null,
     controlEnv: p.controlEnv ?? null,
-    browserAgent: Boolean(p.browserAgent),
     agentEgress: p.agentEgress,
     // the branch this platform's runs check out (#416): the platform's choice, else by each stack's image channel
     branch: p.branch ?? null,
@@ -311,6 +313,8 @@ async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
     ...(typeof body.appChannel === 'string' ? { appChannel: body.appChannel === 'production' ? 'production' : 'staging' } : {}),
     ...(typeof body.label === 'string' && body.label.trim() ? { label: body.label.trim().slice(0, 40) } : {}),
     features: normalizeFeatures(body.features),
+    // #420: the environment's pooled browser agents (replicas × jobs at once) and private slots
+    agents: normalizeAgents(body.agents),
   };
   const refusal = featureRefusal(cfg.features);
   if (refusal) return json(res, 400, { error: refusal });
@@ -341,6 +345,7 @@ async function envUpdateEndpoint(req, res, spawnImpl) {
   if (body.channel === 'latest' || body.channel === 'dev') next.channel = body.channel;
   if (body.appChannel === 'production' || body.appChannel === 'staging') next.appChannel = body.appChannel;
   if (typeof body.label === 'string' && body.label.trim()) next.label = body.label.trim().slice(0, 40);
+  if (body.agents && typeof body.agents === 'object') next.agents = normalizeAgents(body.agents);
   if (body.features) next.features = { ...current.features, ...normalizeFeatures(body.features) };
   const refusal = featureRefusal(next.features);
   if (refusal) return json(res, 400, { error: refusal });
@@ -373,11 +378,39 @@ async function platformSaveEndpoint(req, res) {
     if (branch && !BRANCH_RE.test(branch)) return json(res, 400, { error: 'the branch must be a git branch name (letters, digits, . _ / -)' });
     if (branch) p.branch = branch; else delete p.branch;
   }
-  // the pooled browser agent of the shared stack (#367): a tick, and where its traffic leaves from
-  if (typeof body.browserAgent === 'boolean') p.browserAgent = body.browserAgent;
+  // where the environments' pooled agents' traffic leaves from (#420): the platform's line
   if (body.agentEgressKind === 'residential' || body.agentEgressKind === 'datacenter') p.agentEgress = { ...p.agentEgress, kind: body.agentEgressKind };
   const saved = savePlatform(p);
   return json(res, 200, { ok: true, platform: { ...saved, file: undefined } });
+}
+
+/** the host's memory → how many pooled agents the environments can afford (#420): DSM for a NAS, this computer for lcl */
+async function agentSizingEndpoint(res, url, netFetchImpl) {
+  const platform = String(url.searchParams.get('platform') ?? '');
+  let p;
+  try { p = loadPlatform(platform); } catch (e) { return json(res, 400, { error: e.message }); }
+  const adding = url.searchParams.get('adding') === '1' ? 1 : 0;
+  const environments = platformEnvs(platform).length + adding;
+  const concurrency = Number(url.searchParams.get('concurrency') ?? 2);
+  const privateSlots = Number(url.searchParams.get('privateSlots') ?? 0);
+  let totalMb = null;
+  let source = null;
+  if (p.delivery === 'docker') {
+    totalMb = Math.round(totalmem() / 1048576);
+    source = 'this computer';
+  } else {
+    const v = wizardValues(platform);
+    if (!v.SYNOLOGY_URL || !v.SYNOLOGY_USER || !v.SYNOLOGY_PASS) return json(res, 400, { error: 'the DSM account is not stored yet — save the platform accounts first' });
+    try {
+      const info = await systemInfo({ url: v.SYNOLOGY_URL, user: v.SYNOLOGY_USER, pass: v.SYNOLOGY_PASS }, { fetchImpl: netFetchImpl });
+      totalMb = info.ramMb;
+      source = info.model ? `DSM (${info.model})` : 'DSM';
+    } catch (e) {
+      return json(res, 502, { error: `DSM did not answer: ${e.message}` });
+    }
+  }
+  if (!totalMb) return json(res, 502, { error: 'the host did not say how much memory it has' });
+  return json(res, 200, { ...recommendAgents({ totalMb, environments, concurrency, privateSlots }), source });
 }
 
 /** the connector control plane's liveness, from the helper's side (anonymous: /v1/health carries no data) */
@@ -2069,6 +2102,7 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/platforms/vault-account': (req, res) => vaultAccountEndpoint(req, res),
     'POST /api/platforms/save': (req, res) => platformSaveEndpoint(req, res),
     'GET /api/connector-probe': (req, res) => connectorProbeEndpoint(res, url(req), netFetchImpl),
+    'GET /api/agents/sizing': (req, res) => agentSizingEndpoint(res, url(req), netFetchImpl),
     'POST /api/config/publish': (req, res) => configPublishEndpoint(req, res),
     'POST /api/config/pull': (req, res) => configPullEndpoint(req, res),
     'POST /api/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
@@ -2153,7 +2187,7 @@ function restartHelper(server) {
   autonomyTimer = null;
   server.close();
   server.closeAllConnections?.();
-  spawn(process.execPath, [fileURLToPath(import.meta.url)], { detached: true, stdio: 'ignore', shell: false, env: { ...process.env, SETUP_NO_OPEN: '1', SETUP_RESTART_WAIT: '1500' } }).unref();
+  spawn(process.execPath, [fileURLToPath(import.meta.url)], { detached: true, stdio: 'ignore', shell: false, windowsHide: true, env: { ...process.env, SETUP_NO_OPEN: '1', SETUP_RESTART_WAIT: '1500' } }).unref();
   setTimeout(() => process.exit(0), 3000).unref();
 }
 

@@ -211,6 +211,20 @@ from (offline ones shown, not offered), the door to *Your own computer*
 when there is none, and the login names the pick as `preferAgent`. The
 catalogue marks such a party "needs your own computer".
 
+**A private agent hosted by munni** (#420 A2): the same screen offers a
+browser on munni's own hardware for this person alone, where the
+environment has private slots (`GET /connectors/private-agents/mine` →
+`offered`). The card asks for one (`POST /connectors/private-agents/requests`;
+asking twice is one request), shows the wait while the admin decides
+(polling every fifteen seconds; *Withdraw* takes the request back), says
+when the admin declined, and once approved the slot appears in the list
+above as *Hosted by munni* — the person's own machine to every party that
+needs one, picked in the connect flow like any household agent. *Give back*
+(`DELETE /connectors/private-agents/mine`, also what *Remove* does on a
+hosted agent) returns the slot after the warning that it is wiped for the
+next person. The admin portal hands slots out and takes them back
+(relay.md, "Operator").
+
 ## Scheduled syncs (§5.5)
 
 For a household-agent party the bundle names an agent and a profile and

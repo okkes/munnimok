@@ -42,6 +42,18 @@ export interface ConnectorAgent {
   online: boolean;
   stale: boolean;
   profiles: { id: string; provider: string; healthy: boolean; lastOkAt?: string | null }[];
+  /** a hosted private slot (#420 A2): munni’s own container for one person at a time */
+  hosted?: boolean;
+  bound?: boolean;
+  boundAt?: string | null;
+  resetting?: boolean;
+}
+/** the hosted private agents (#420 A2): the slots with who holds them, the requests to decide */
+export interface ConnectorPrivateAgents {
+  total: number;
+  free: number;
+  slots: { agent: ConnectorAgent; subject?: string | null; who?: string | null }[];
+  requests: { id: string; subject: string; who?: string | null; state: string; createdAt: string; decidedAt?: string | null; agentId?: string | null }[];
 }
 export interface ConnectorCanary {
   providerId: string;
@@ -78,6 +90,15 @@ function agentHealth(agent: ConnectorAgent): { label: string; chip: string } {
   return { label: 'offline', chip: 'warn-chip' };
 }
 
+const REQUEST_CHIP: Record<string, string> = { pending: 'warn-chip', approved: 'ok-chip', denied: 'danger-chip' };
+
+/** who holds a slot: the person, nobody, or nobody yet (the previous person’s sign-ins are still being wiped) */
+function slotHolder(slot: ConnectorPrivateAgents['slots'][number]): { label: string; chip: string | null } {
+  if (slot.agent.resetting) return { label: 'wiping…', chip: 'warn-chip' };
+  if (slot.agent.bound) return { label: slot.who ?? slot.subject ?? 'somebody', chip: null };
+  return { label: 'free', chip: null };
+}
+
 export function ConnectorsScreen({
   call,
   busy,
@@ -92,6 +113,8 @@ export function ConnectorsScreen({
   const [status, setStatus] = useState<ConnectorStatus | 'absent' | 'unreachable' | null>(null);
   const [agents, setAgents] = useState<ConnectorAgent[]>([]);
   const [canaries, setCanaries] = useState<ConnectorCanary[]>([]);
+  // null = the relay answers no private-agent routes (an older api); the section is for an environment that has them
+  const [privateAgents, setPrivateAgents] = useState<ConnectorPrivateAgents | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [retire, setRetire] = useState<{ id: string; typed: string } | null>(null);
   // the inventory of one aggregator (§15.6): null = closed; 'loading'; 'none' = the party keeps no inventory; else the consents
@@ -108,12 +131,14 @@ export function ConnectorsScreen({
       return;
     }
     setStatus((await res.json()) as ConnectorStatus);
-    const [agentsRes, canariesRes] = await Promise.all([
+    const [agentsRes, canariesRes, privateRes] = await Promise.all([
       call('/admin/connectors/agents').catch(() => null),
       call('/admin/connectors/canaries').catch(() => null),
+      call('/admin/connectors/private-agents').catch(() => null),
     ]);
     if (agentsRes?.ok) setAgents(((await agentsRes.json()) as { agents: ConnectorAgent[] }).agents);
     if (canariesRes?.ok) setCanaries(((await canariesRes.json()) as { canaries: ConnectorCanary[] }).canaries);
+    setPrivateAgents(privateRes?.ok ? ((await privateRes.json()) as ConnectorPrivateAgents) : null);
   }, [call]);
 
   useEffect(() => {
@@ -137,6 +162,19 @@ export function ConnectorsScreen({
     // a revocation destroys the profiles that keep the user's logins alive — say so before it happens
     if (!window.confirm(`Revoke ${agent.name}? Its ${agent.profiles.length} kept login(s) are destroyed; the user signs in again through a fresh agent.`)) return;
     await act(() => call(`/admin/connectors/agents/${encodeURIComponent(agent.id)}`, { method: 'DELETE' }));
+    await load();
+  };
+
+  /** the admin decides a request (#420 A2): approving binds the oldest free slot to the asker */
+  const decidePrivate = async (requestId: string, decision: 'approve' | 'deny') => {
+    await act(() => call(`/admin/connectors/private-agents/requests/${encodeURIComponent(requestId)}/${decision}`, { method: 'POST' }));
+    await load();
+  };
+
+  const takeBack = async (slot: ConnectorPrivateAgents['slots'][number]) => {
+    // the previous person's sign-ins are wiped before the next person gets the slot — say so before it happens
+    if (!window.confirm(`Take ${slot.agent.name} back from ${slot.who ?? slot.subject ?? 'its holder'}? Its ${slot.agent.profiles.length} kept login(s) are wiped before the next person gets it.`)) return;
+    await act(() => call(`/admin/connectors/private-agents/${encodeURIComponent(slot.agent.id)}/release`, { method: 'POST' }));
     await load();
   };
 
@@ -387,7 +425,7 @@ export function ConnectorsScreen({
                   <td>
                     <div className="cell-title">{a.name}</div>
                     <div className="cell-sub">
-                      {a.class} · {a.id.slice(0, 12)}…
+                      {a.class}{a.hosted ? ' · hosted' : ''} · {a.id.slice(0, 12)}…
                     </div>
                   </td>
                   <td>
@@ -422,6 +460,108 @@ export function ConnectorsScreen({
           </tbody>
         </table>
       </section>
+
+      {privateAgents && (
+        <section className="card" data-testid="connectors-private">
+          <div className="card-head">
+            <h2>Private agents</h2>
+            <span className="sub" data-testid="connectors-private-free">
+              {privateAgents.free} of {privateAgents.total} free
+            </span>
+          </div>
+          <p className="hint">
+            munni&apos;s own browsers for one person each (#420): a user asks under Your own computer, you approve and the oldest free slot is
+            theirs — a machine of their own for the parties that only talk to the account holder&apos;s computer. Taking one back wipes the
+            sign-ins it keeps before the next person gets it. How many slots exist is the environment&apos;s count in the setup wizard.
+          </p>
+          <table data-testid="connectors-private-requests">
+            <thead>
+              <tr>
+                <th>Request</th>
+                <th>Who</th>
+                <th>Since</th>
+                <th>State</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {privateAgents.requests.map((r) => (
+                <tr key={r.id} data-testid={`private-request-${r.id}`} className={r.state === 'pending' ? '' : 'stale'}>
+                  <td>
+                    <div className="cell-title">{r.id.slice(0, 12)}…</div>
+                  </td>
+                  <td>{r.who ?? r.subject}</td>
+                  <td>{when(r.createdAt)}</td>
+                  <td>
+                    <span className={`chip ${REQUEST_CHIP[r.state] ?? ''}`}>{r.state}</span>
+                  </td>
+                  <td className="cell-actions">
+                    {r.state === 'pending' && (
+                      <>
+                        <button data-testid={`private-approve-${r.id}`} className="btn" disabled={busy || privateAgents.free === 0} onClick={() => void decidePrivate(r.id, 'approve')}>
+                          approve
+                        </button>
+                        <button data-testid={`private-deny-${r.id}`} className="btn danger" disabled={busy} onClick={() => void decidePrivate(r.id, 'deny')}>
+                          deny
+                        </button>
+                      </>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {privateAgents.requests.length === 0 && (
+                <tr>
+                  <td colSpan={5}>No requests.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <table data-testid="connectors-private-slots">
+            <thead>
+              <tr>
+                <th>Slot</th>
+                <th>Health</th>
+                <th>Holder</th>
+                <th>Since</th>
+                <th>Logins kept</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {privateAgents.slots.map((s) => {
+                const health = agentHealth(s.agent);
+                const holder = slotHolder(s);
+                return (
+                  <tr key={s.agent.id} data-testid={`private-slot-${s.agent.id}`}>
+                    <td>
+                      <div className="cell-title">{s.agent.name}</div>
+                      <div className="cell-sub">{s.agent.id.slice(0, 12)}…</div>
+                    </td>
+                    <td>
+                      <span className={`chip ${health.chip}`}>{health.label}</span>
+                    </td>
+                    <td>{holder.chip ? <span className={`chip ${holder.chip}`}>{holder.label}</span> : holder.label}</td>
+                    <td>{when(s.agent.boundAt)}</td>
+                    <td>{s.agent.profiles.length}</td>
+                    <td className="cell-actions">
+                      {s.agent.bound && (
+                        <button data-testid={`private-release-${s.agent.id}`} className="btn danger" disabled={busy} onClick={() => void takeBack(s)}>
+                          take back
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+              {privateAgents.slots.length === 0 && (
+                <tr>
+                  <td colSpan={6}>No private slots — set a count on the environment in the setup wizard.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+      )}
 
       <section className="card">
         <h2>Canaries</h2>

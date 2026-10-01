@@ -220,6 +220,8 @@ internal sealed class TestRig : IDisposable
 
         public string CatalogDigest => "sha256:test";
 
+        public string AgentCatalogDigest => CatalogDigest;
+
         public bool TryGetManifest(string providerId, out ProviderManifest manifest)
         {
             manifest = served;

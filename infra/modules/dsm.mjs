@@ -591,6 +591,18 @@ export async function ensurePollerTask(creds, { publishedPath, fetchImpl = fetch
   }
 }
 
+/** the host as DSM describes it: its memory (MB) and model — for the wizard's agent sizing (#420) */
+export async function systemInfo(creds, { fetchImpl = fetch, sleepImpl = sleep } = {}) {
+  const s = await dsmSession(creds, fetchImpl, { sleepImpl });
+  try {
+    const info = await s.read('SYNO.Core.System', 1, 'info');
+    const ram = Number(info?.ram_size);
+    return { ramMb: Number.isFinite(ram) && ram > 0 ? Math.round(ram) : null, model: info?.model ?? null };
+  } finally {
+    await s.logout();
+  }
+}
+
 /** read-only: what the NAS holds (for --verify) */
 export async function inspectNas(creds, { domain, publishedPath, hosts = [], fetchImpl = fetch, name = POLLER_TASK_NAME, sleepImpl = sleep } = {}) {
   const s = await dsmSession(creds, fetchImpl, { sleepImpl });

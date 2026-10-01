@@ -27,6 +27,16 @@ Two kinds of agent exist, and the difference is configuration
   machine, enrolled with a code minted for that user. It serves only that
   user's jobs, keeps browser profiles between jobs, and is the only place a
   `browser_persistent` provider can run.
+- **a hosted private slot** (#420 A2) — a byo-class agent munni runs beside
+  the environment's control plane (`connector-private-<env>-<n>`), enrolled
+  with the environment's standing private-slot code under the subject
+  `slot`, which is nobody and is not the fleet: free, it is leased nothing
+  and counts for nobody's own machine. The operator binds it to the person
+  who asked (their subject becomes its owner; every own-machine rule then
+  finds it) and releases it again, which deletes its profile rows, expires
+  the sessions pinned to them and asks the agent on its heartbeat to wipe
+  the directories (`reset_profiles` → `reset_done`); the slot is free to the
+  next person only once the agent has said so.
 
 ## Tiers
 

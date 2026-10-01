@@ -128,6 +128,14 @@ public sealed record HeartbeatRequest
     public IReadOnlyList<ProfileHealth> Profiles { get; init; } = [];
 
     public int Running { get; init; }
+
+    /// <summary>
+    /// The agent wiped every browser profile since the beat that asked it to
+    /// (<see cref="HeartbeatResponse.ResetProfiles"/>). A released hosted
+    /// slot (#420 A2) is free to the next person only once this arrives.
+    /// </summary>
+    [JsonPropertyName("reset_done")]
+    public bool ResetDone { get; init; }
 }
 
 public sealed record ProfileHealth
@@ -149,6 +157,14 @@ public sealed record HeartbeatResponse
 
     /// <summary>An agent that learns it is revoked stops and wipes its profiles.</summary>
     public bool Revoked { get; init; }
+
+    /// <summary>
+    /// Wipe every browser profile and carry on serving (#420 A2): this hosted
+    /// slot was released, and the next person must find nothing of the last.
+    /// Asked on every beat until the agent answers <see cref="HeartbeatRequest.ResetDone"/>.
+    /// </summary>
+    [JsonPropertyName("reset_profiles")]
+    public bool ResetProfiles { get; init; }
 
     /// <summary>
     /// The control plane's own catalogue digest, so an agent whose

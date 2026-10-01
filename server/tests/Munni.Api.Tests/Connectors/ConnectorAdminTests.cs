@@ -70,6 +70,80 @@ public class ConnectorAdminTests(ConnectorApiFactory factory) : IClassFixture<Co
         Assert.Equal(HttpStatusCode.BadRequest, nonsense.StatusCode);
     }
 
+    /// <summary>
+    /// Hosted private agents (#420 A2) through the relay: a person asks, the
+    /// operator sees the request with a name beside the pseudonym, approves,
+    /// the slot is the person's own machine, the operator takes it back.
+    /// </summary>
+    [Fact]
+    public async Task A_hosted_private_agent_is_asked_for_approved_and_taken_back_through_the_relay()
+    {
+        using var operatorClient = factory.ClientFor("the-binder", scope: Admin);
+        using var person = factory.ClientFor("private-asker");
+
+        // nothing to ask for until a slot exists
+        var nothing = await person.GetFromJsonAsync<JsonObject>("/connectors/private-agents/mine");
+        Assert.False(nothing!["offered"]!.GetValue<bool>());
+        using var refused = await person.PostAsync("/connectors/private-agents/requests", null);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+
+        // a slot container dials in with the environment's private-slot code
+        var slotId = await factory.ControlPlane.EnrollPrivateSlotAsync("munni test private agent 1");
+
+        var offered = await person.GetFromJsonAsync<JsonObject>("/connectors/private-agents/mine");
+        Assert.True(offered!["offered"]!.GetValue<bool>());
+        Assert.True(offered["free"]!.GetValue<int>() >= 1);
+
+        using var asked = await person.PostAsync("/connectors/private-agents/requests", null);
+        Assert.Equal(HttpStatusCode.OK, asked.StatusCode);
+        var request = await asked.Content.ReadFromJsonAsync<JsonObject>();
+        Assert.Equal("pending", request!["state"]!.GetValue<string>());
+        var requestId = request["id"]!.GetValue<string>();
+
+        // the operator sees it, with who it is beside the subject
+        var overview = await operatorClient.GetFromJsonAsync<JsonObject>("/admin/connectors/private-agents");
+        var listed = overview!["requests"]!.AsArray().Single(r => r!["id"]!.GetValue<string>() == requestId)!.AsObject();
+        Assert.True(listed.ContainsKey("who"));
+        Assert.True(listed.ContainsKey("subject"));
+        Assert.DoesNotContain("created_at", overview.ToJsonString(), StringComparison.Ordinal);
+
+        using var approved = await operatorClient.PostAsync($"/admin/connectors/private-agents/requests/{requestId}/approve", null);
+        Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        Assert.Equal("approved", (await approved.Content.ReadFromJsonAsync<JsonObject>())!["state"]!.GetValue<string>());
+
+        // the person's own machine now: in their list and their standing, hosted
+        var mine = await person.GetFromJsonAsync<JsonObject>("/connectors/private-agents/mine");
+        Assert.Equal(slotId, mine!["agent"]!["id"]!.GetValue<string>());
+        Assert.True(mine["agent"]!["hosted"]!.GetValue<bool>());
+        var agents = await person.GetFromJsonAsync<JsonObject>("/connectors/agents");
+        Assert.Contains(agents!["agents"]!.AsArray(), a => a!["id"]!.GetValue<string>() == slotId);
+
+        // the operator takes it back; the slot is nobody's again
+        using var taken = await operatorClient.PostAsync($"/admin/connectors/private-agents/{slotId}/release", null);
+        Assert.Equal(HttpStatusCode.NoContent, taken.StatusCode);
+        var after = await person.GetFromJsonAsync<JsonObject>("/connectors/private-agents/mine");
+        Assert.Null(after!["agent"]);
+        Assert.Equal("released", after["request"]!["state"]!.GetValue<string>());
+        var slots = (await operatorClient.GetFromJsonAsync<JsonObject>("/admin/connectors/private-agents"))!["slots"]!.AsArray();
+        var slot = slots.Single(s => s!["agent"]!["id"]!.GetValue<string>() == slotId)!;
+        Assert.True(slot["agent"]!["resetting"]!.GetValue<bool>());
+        Assert.Null(slot["who"]);
+
+        // a second request is denied, and the person can withdraw a fresh one
+        using var again = await person.PostAsync("/connectors/private-agents/requests", null);
+        var second = (await again.Content.ReadFromJsonAsync<JsonObject>())!["id"]!.GetValue<string>();
+        using var denied = await operatorClient.PostAsync($"/admin/connectors/private-agents/requests/{second}/deny", null);
+        Assert.Equal("denied", (await denied.Content.ReadFromJsonAsync<JsonObject>())!["state"]!.GetValue<string>());
+        using var third = await person.PostAsync("/connectors/private-agents/requests", null);
+        var thirdId = (await third.Content.ReadFromJsonAsync<JsonObject>())!["id"]!.GetValue<string>();
+        using var withdrawn = await person.DeleteAsync($"/connectors/private-agents/requests/{thirdId}");
+        Assert.Equal(HttpStatusCode.NoContent, withdrawn.StatusCode);
+
+        // the operator's routes stay behind the scope
+        using var plain = factory.ClientFor("plain-asker");
+        Assert.Equal(HttpStatusCode.Forbidden, (await plain.GetAsync("/admin/connectors/private-agents")).StatusCode);
+    }
+
     [Fact]
     public async Task The_fleet_and_the_canaries_are_readable_and_a_users_sessions_are_listed()
     {

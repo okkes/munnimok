@@ -485,6 +485,39 @@ test('config/pull: nothing published is 404; a published document writes the fil
   }
 });
 
+const get = (a, url) => call(a, { method: 'GET', url });
+test('agents/sizing (#420): this computer answers from its own memory with the arithmetic; a NAS platform without its DSM account says so; an unknown platform is refused', async () => {
+  const lcl = await get(app, '/api/agents/sizing?platform=lcl');
+  assert.equal(lcl.statusCode, 200);
+  const r = lcl.json();
+  assert.equal(r.source, 'this computer');
+  assert.ok(r.totalMb > 0 && r.headroomMb === Math.round(r.totalMb * 0.25));
+  assert.ok(r.pooled >= 1 && r.concurrency === 2 && typeof r.fits === 'boolean');
+  assert.equal(r.environments, platformEnvs('lcl').length);
+  assert.equal((await get(app, '/api/agents/sizing?platform=lcl&adding=1&concurrency=3')).json().environments, platformEnvs('lcl').length + 1);
+  assert.equal((await get(app, '/api/agents/sizing?platform=lcl&concurrency=3')).json().concurrency, 3);
+  assert.equal((await get(app, '/api/agents/sizing?platform=lcl&privateSlots=2')).json().privateSlots, 2, 'the slots are part of the arithmetic (#420 A2)');
+  assert.equal((await get(app, '/api/agents/sizing?platform=nas')).statusCode, 400, 'no DSM account stored');
+  assert.equal((await get(app, '/api/agents/sizing?platform=moon')).statusCode, 400);
+});
+
+test('envs/update + envs/create carry the agents block (#420): counts inside their bounds stick, nonsense falls back, the file holds them', async () => {
+  const before = loadEnv('nas', 'prod');
+  try {
+    const r = await post(app, '/api/envs/update', { platform: 'nas', env: 'prod', agents: { pooled: 3, concurrency: 1 } });
+    assert.equal(r.statusCode, 200);
+    assert.deepEqual(loadEnv('nas', 'prod').agents, { pooled: 3, concurrency: 1, privateSlots: 0 });
+    await post(app, '/api/envs/update', { platform: 'nas', env: 'prod', agents: { pooled: 'lots' } });
+    assert.deepEqual(loadEnv('nas', 'prod').agents, { pooled: 1, concurrency: 2, privateSlots: 0 }, 'nonsense is the default, not an error');
+    const created = await post(app, '/api/envs', { platform: 'nas', env: 'agenty', channel: 'dev', features: { connectors: true }, agents: { pooled: 0 } });
+    assert.equal(created.statusCode, 200);
+    assert.deepEqual(loadEnv('nas', 'agenty').agents, { pooled: 0, concurrency: 2, privateSlots: 0 }, 'zero replicas is a choice');
+  } finally {
+    saveEnv('nas', before);
+    removeEnv('nas', 'agenty');
+  }
+});
+
 test('gh-pat: a token lands in the named platform\'s store; an empty one or no platform is refused', async () => {
   assert.equal((await post(app, '/api/local/gh-pat', { pat: '  ', platform: 'lcl' })).statusCode, 400);
   assert.equal((await post(app, '/api/local/gh-pat', { pat: 'github_pat_x' })).statusCode, 400, 'a platform is named or nothing is stored');

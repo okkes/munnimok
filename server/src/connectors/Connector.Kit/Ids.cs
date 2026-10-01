@@ -16,6 +16,7 @@ public static class Ids
     public const string Job = "job";
     public const string Challenge = "chl";
     public const string Agent = "agt";
+    public const string PrivateAgentRequest = "par";
     public const string Profile = "prf";
     public const string Ticket = "tkt";
     public const string Account = "acc";

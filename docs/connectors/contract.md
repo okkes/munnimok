@@ -46,7 +46,8 @@ omitted.
 | `POST /{provider}/{resource}:fetch` | one round trip: `subject`, `bundle`, `params` |
 | `POST /{provider}/{resource}/ack` | `cursor` → purges the staged rows up to it |
 | `GET /{provider}/jobs/{jobId}`, `…/events`, `POST …/answer` | following a fetch that did not finish inside its window; identical contract to a login |
-| `GET /agents`, `POST /agents/enrollment`, `DELETE /agents/{agentId}`, `GET /agents/{agentId}/profiles` | the caller's household agents: list, mint an enrollment code (`subject`, `name`), revoke, profile health |
+| `GET /agents`, `POST /agents/enrollment`, `DELETE /agents/{agentId}`, `GET /agents/{agentId}/profiles` | the caller's household agents: list, mint an enrollment code (`subject`, `name`), revoke, profile health — a hosted slot in the caller's list (`hosted`, `bound`) is given back by the delete, never revoked |
+| `GET /private-agents/mine`, `POST /private-agents/requests`, `DELETE /private-agents/requests/{requestId}`, `DELETE /private-agents/mine` | hosted private agents (#420 A2): the caller's standing (`offered`, `free`, `request`, `agent`), a request (`subject`; asking twice is one request; refused where no slot exists or one is already theirs), withdrawing a pending one, giving the slot back |
 
 ### Operator, `/v1/admin` (admin scope)
 
@@ -56,13 +57,14 @@ omitted.
 | `GET /providers/{id}/remote-consents`, `DELETE /providers/{id}/remote-consents/{consentId}` | what the operator's account at the party holds (an aggregator's every consent, with `origin` — the environment that made it — `status`, `reference`, `account_count`) and a revoke for each; `unsupported_resource` for a party that keeps no inventory |
 | `GET /canaries`, `PUT /providers/{id}/canary`, `DELETE /providers/{id}/canary` | the operator's own connections that prove a provider still works |
 | `GET /agents`, `DELETE /agents/{agentId}` | every agent, whoever owns it; revoke any |
+| `GET /private-agents`, `POST /private-agents/requests/{requestId}/approve`, `POST …/deny`, `POST /private-agents/{agentId}/release` | the hosted slots (`total`, `free`, `slots[{agent, subject}]`) and the requests (pending first, a month of decisions); approving binds the oldest free online wiped slot to the asker (`agent_unavailable` when none); taking a slot back expires the sessions pinned to it and asks the agent to wipe |
 
 ### Agent, `/agent/v1` (agent token)
 
 | Route | What it does |
 | --- | --- |
 | `POST /enroll` | `code`, `name`, `capabilities` → `agent_id`, `token`, `heartbeat_seconds`; the code authenticates this one call |
-| `POST /heartbeat` | capabilities, profile health, running count → lease TTL, `revoked`, the control plane's `catalog_digest` |
+| `POST /heartbeat` | capabilities, profile health, running count, `reset_done` → lease TTL, `revoked`, `reset_profiles` (a released hosted slot wipes every browser profile, keeps serving and answers `reset_done` on its next beat; asked until it does), the control plane's `catalog_digest` (the agent-served digest: the parties an agent can be leased, raw stripped — never the catalogue's own, which moves with the inline parties and the raw offer) |
 | `POST /jobs/lease` | long poll for a job matching the agent's capabilities, or 204 |
 | `POST /jobs/{jobId}/renew`, `/progress`, `/challenge`, `GET /jobs/{jobId}/answer`, `POST /jobs/{jobId}/result`, `/fail` | the job's life |
 | `POST /jobs/{jobId}/live/frame`, `GET /jobs/{jobId}/live/input?after=n` | the live view from the agent's side |

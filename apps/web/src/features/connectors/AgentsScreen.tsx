@@ -12,7 +12,7 @@ import { Pill } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { ConnectorError, connectorApi } from './api';
 import { errorKey } from './manifestForm';
-import type { AgentView, EnrollmentView, ErrorEnvelope } from './types';
+import type { AgentView, EnrollmentView, ErrorEnvelope, PrivateAgentStatus } from './types';
 
 const INPUT = 'h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4';
 
@@ -33,6 +33,11 @@ async function copyText(text: string): Promise<boolean> {
  * (a name, a one-time code, the compose line to paste), see each agent's
  * health and the logins it keeps, revoke one — with the warning that the
  * revocation destroys the profile that keeps the login alive.
+ *
+ * And the hosted private agent (#420 A2): the same thing on munni's own
+ * hardware, one browser for this person alone. Ask for one, wait for the
+ * admin, and the slot shows up in the list as hosted; giving it back wipes
+ * the sign-ins it keeps before the next person gets it.
  */
 export function AgentsScreen() {
   const { t, lang } = useLang();
@@ -46,18 +51,22 @@ export function AgentsScreen() {
   const [enrollment, setEnrollment] = useState<EnrollmentView | null>(null);
   const [copied, setCopied] = useState(false);
   const [revoking, setRevoking] = useState<AgentView | null>(null);
+  const [hosted, setHosted] = useState<PrivateAgentStatus | null>(null);
   const signedIn = connectorsAvailable();
 
   const reload = useCallback(async () => {
     if (!signedIn) {
       setAgents([]);
       setOffered(false);
+      setHosted(null);
       return;
     }
     try {
-      const [info, list] = await Promise.all([connectorApi.info(), connectorApi.agents()]);
+      // the hosted private agents (#420 A2) are a separate answer: a relay without the route hides the card, nothing else
+      const [info, list, standing] = await Promise.all([connectorApi.info(), connectorApi.agents(), connectorApi.privateAgents().catch(() => null)]);
       setOffered(info?.householdAgents ?? false);
       setAgents(list);
+      setHosted(standing);
       setError(null);
     } catch (err) {
       setError(err instanceof ConnectorError ? err.envelope : { code: 'provider_unavailable', retriable: true, userAction: 'retry', messageKey: 'connect.error.provider_unavailable' });
@@ -75,6 +84,14 @@ export function AgentsScreen() {
     const timer = setInterval(() => void reload(), 10_000);
     return () => clearInterval(timer);
   }, [enrollment, reload]);
+
+  // a request waits on the admin: keep asking while it is pending, so the slot shows up the moment it is handed over
+  const pendingRequest = hosted?.request?.state === 'pending';
+  useEffect(() => {
+    if (!pendingRequest) return;
+    const timer = setInterval(() => void reload(), 15_000);
+    return () => clearInterval(timer);
+  }, [pendingRequest, reload]);
 
   const enrol = async () => {
     if (!name.trim()) {
@@ -95,12 +112,72 @@ export function AgentsScreen() {
   const revoke = async (agent: AgentView) => {
     setBusy(true);
     try {
-      await connectorApi.revokeAgent(agent.id);
+      // a hosted slot is munni's container: it is given back, never revoked
+      if (agent.hosted) await connectorApi.giveBackPrivateAgent();
+      else await connectorApi.revokeAgent(agent.id);
       await reload();
     } finally {
       setBusy(false);
       setRevoking(null);
     }
+  };
+
+  const askPrivate = async () => {
+    setBusy(true);
+    try {
+      await connectorApi.requestPrivateAgent();
+      await reload();
+    } catch (err) {
+      setError(err instanceof ConnectorError ? err.envelope : null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const withdrawPrivate = async (requestId: string) => {
+    setBusy(true);
+    try {
+      await connectorApi.withdrawPrivateRequest(requestId);
+      await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** the private card's lower half: the slot held, the wait, or the ask */
+  const privateBody = (standing: PrivateAgentStatus) => {
+    if (standing.agent) {
+      return (
+        <p className="mt-2 text-[12px] leading-relaxed text-ink-2" data-testid="agents-private-held">
+          {t('agents.private.held', { name: standing.agent.name })}
+        </p>
+      );
+    }
+    const request = standing.request;
+    if (request?.state === 'pending') {
+      return (
+        <div className="mt-2 flex items-center gap-3">
+          <p className="min-w-0 flex-1 text-[12px] text-ink-2" data-testid="agents-private-pending">
+            {t('agents.private.pending')}
+          </p>
+          <Button size="sm" variant="outline" data-testid="agents-private-withdraw" disabled={busy} onClick={() => void withdrawPrivate(request.id)}>
+            {t('agents.private.withdraw')}
+          </Button>
+        </div>
+      );
+    }
+    const denied = request?.state === 'denied';
+    return (
+      <div className="mt-2 flex items-center gap-3">
+        <p className="min-w-0 flex-1 text-[12px] text-ink-4" data-testid="agents-private-free">
+          {denied ? `${t('agents.private.denied')} ` : ''}
+          {standing.free > 0 ? t('agents.private.free', { n: standing.free }) : t('agents.private.noneFree')}
+        </p>
+        <Button size="sm" data-testid="agents-private-request" disabled={busy} onClick={() => void askPrivate()}>
+          {denied ? t('agents.private.again') : t('agents.private.request')}
+        </Button>
+      </div>
+    );
   };
 
   const closeEnrol = () => {
@@ -162,6 +239,9 @@ export function AgentsScreen() {
                       <span className="flex items-center gap-1.5">
                         <span className="truncate text-[15px] text-ink">{agent.name}</span>
                         {health(agent)}
+                        {agent.hosted && (
+                          <Pill testId={`agent-hosted-${agent.id}`}>{t('agents.hosted')}</Pill>
+                        )}
                       </span>
                       <span className="block text-[11px] text-ink-4">
                         {agent.lastHeartbeatAt ? t('agents.lastSeen', { when: fmtTimeAgo(agent.lastHeartbeatAt, lang) }) : t('agents.neverSeen')}
@@ -169,7 +249,7 @@ export function AgentsScreen() {
                     </span>
                     {!agent.revoked && (
                       <Button size="sm" variant="outline" data-testid={`agent-revoke-${agent.id}`} disabled={busy} onClick={() => setRevoking(agent)}>
-                        {t('agents.revoke')}
+                        {agent.hosted ? t('agents.giveBack') : t('agents.revoke')}
                       </Button>
                     )}
                   </div>
@@ -200,6 +280,20 @@ export function AgentsScreen() {
                 {t('agents.enrol')}
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* a hosted private agent (#420 A2): munni's own browser for this person alone, handed out by the admin on request */}
+        {signedIn && hosted?.offered && (
+          <div className="mt-4 overflow-hidden rounded-card border border-line bg-surface px-4 py-3.5" data-testid="agents-private">
+            <div className="flex items-start gap-3">
+              <Icon name="desktop-classic" size={20} color="var(--m-accent-deep)" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] text-ink">{t('agents.private.title')}</span>
+                <span className="block text-[12px] leading-relaxed text-ink-4">{t('agents.private.what')}</span>
+              </span>
+            </div>
+            {privateBody(hosted)}
           </div>
         )}
       </div>
@@ -254,8 +348,8 @@ export function AgentsScreen() {
       <DangerConfirmSheet
         open={revoking !== null}
         onOpenChange={(open) => !open && setRevoking(null)}
-        title={t('agents.revoke')}
-        body={t('agents.revokeNote', { name: revoking?.name ?? '' })}
+        title={revoking?.hosted ? t('agents.giveBack') : t('agents.revoke')}
+        body={t(revoking?.hosted ? 'agents.giveBackNote' : 'agents.revokeNote', { name: revoking?.name ?? '' })}
         onConfirm={() => revoking && void revoke(revoking)}
         testId="agent-revoke"
       />

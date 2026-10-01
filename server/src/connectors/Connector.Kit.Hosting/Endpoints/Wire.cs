@@ -517,6 +517,74 @@ public sealed record AgentView
     public required bool Stale { get; init; }
 
     public required IReadOnlyList<ProfileView> Profiles { get; init; }
+
+    /// <summary>munni's own container that serves one person at a time (#420 A2).</summary>
+    public bool Hosted { get; init; }
+
+    /// <summary>A hosted slot somebody holds now (the caller, in their own listing).</summary>
+    public bool Bound { get; init; }
+
+    public DateTimeOffset? BoundAt { get; init; }
+
+    /// <summary>A hosted slot that was released and has not wiped its profiles yet: free to nobody.</summary>
+    public bool Resetting { get; init; }
+}
+
+/// <summary>The caller's standing with the hosted private agents (#420 A2).</summary>
+public sealed record PrivateAgentStatusResponse
+{
+    /// <summary>Whether this control plane has any hosted slot at all; false hides the whole offer.</summary>
+    public required bool Offered { get; init; }
+
+    /// <summary>Slots online, unbound and clean - what an approval can hand out right now.</summary>
+    public required int Free { get; init; }
+
+    /// <summary>The caller's latest request, whatever its state.</summary>
+    public PrivateAgentRequestView? Request { get; init; }
+
+    /// <summary>The slot bound to the caller, if one is.</summary>
+    public AgentView? Agent { get; init; }
+}
+
+public sealed record PrivateAgentRequestView
+{
+    public required string Id { get; init; }
+
+    public required string Subject { get; init; }
+
+    /// <summary>pending, approved, denied, withdrawn or released.</summary>
+    public required string State { get; init; }
+
+    public required DateTimeOffset CreatedAt { get; init; }
+
+    public DateTimeOffset? DecidedAt { get; init; }
+
+    public string? AgentId { get; init; }
+}
+
+public sealed record PrivateAgentRequestBody
+{
+    public required string Subject { get; init; }
+}
+
+/// <summary>The operator's view (#420 A2): every hosted slot with who holds it, and the requests.</summary>
+public sealed record PrivateAgentAdminResponse
+{
+    public required int Total { get; init; }
+
+    public required int Free { get; init; }
+
+    public required IReadOnlyList<PrivateAgentSlotView> Slots { get; init; }
+
+    public required IReadOnlyList<PrivateAgentRequestView> Requests { get; init; }
+}
+
+public sealed record PrivateAgentSlotView
+{
+    public required AgentView Agent { get; init; }
+
+    /// <summary>The pseudonymous subject holding the slot; null while it is free.</summary>
+    public string? Subject { get; init; }
 }
 
 public sealed record ProfileView

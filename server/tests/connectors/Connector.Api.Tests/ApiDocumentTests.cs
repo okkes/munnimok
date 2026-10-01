@@ -436,7 +436,9 @@ public sealed class ApiDocumentTests(ShopApiFactory factory)
         // as loud as one that arrives undocumented. 41 since the operator's
         // two fleet routes: list every agent, revoke any. 45 since the lookup
         // field's options and logo and the operator's remote inventory (#414).
-        Assert.Equal(45, operations);
+        // 53 since the hosted private agents (#420 A2): four routes for the
+        // person, four for the operator.
+        Assert.Equal(53, operations);
     }
 
     [Theory]

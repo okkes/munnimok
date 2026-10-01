@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.2.0',
+    date: '2026-10-01',
+    items: [
+      {
+        en: 'A private agent hosted by munni: the parties that only talk to a browser on your own computer can run on a browser munni keeps for you alone. Ask for one under Your own computer; the admin hands you a slot, and giving it back wipes it for the next person.',
+        nl: 'Een privé-agent gehost door munni: de partijen die alleen met een browser op je eigen computer praten, kunnen draaien op een browser die munni alleen voor jou bewaart. Vraag er een aan onder Je eigen computer; de beheerder geeft je een plek, en teruggeven wist hem voor de volgende.',
+        tr: 'munni’nin barındırdığı özel bir ajan: yalnızca kendi bilgisayarındaki bir tarayıcıyla konuşan taraflar, munni’nin yalnızca senin için tuttuğu bir tarayıcıda çalışabilir. Kendi bilgisayarın altında bir tane iste; yönetici sana bir yer verir, geri verince sıradaki için silinir.',
+      },
+      {
+        en: 'munni’s own browser agents run beside every environment now, so a shop that needs a real browser connects without your computer being on.',
+        nl: 'munni’s eigen browser-agents draaien nu naast elke omgeving, dus een winkel die een echte browser nodig heeft koppelt zonder dat je computer aan staat.',
+        tr: 'munni’nin kendi tarayıcı ajanları artık her ortamın yanında çalışıyor; gerçek bir tarayıcı isteyen bir mağaza, bilgisayarın açık olmadan bağlanıyor.',
+      },
+    ],
+  },
+  {
     version: '5.1.0',
     date: '2026-10-01',
     items: [

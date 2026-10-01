@@ -20,7 +20,8 @@ public static class AgentCatalogue
         ArgumentNullException.ThrowIfNull(capabilities);
         ArgumentNullException.ThrowIfNull(registry);
 
+        // The agent-served digest, not the catalogue's: see IProviderRegistry.AgentCatalogDigest
         return capabilities.CatalogDigest is { Length: > 0 } theirs
-               && !string.Equals(theirs, registry.CatalogDigest, StringComparison.Ordinal);
+               && !string.Equals(theirs, registry.AgentCatalogDigest, StringComparison.Ordinal);
     }
 }

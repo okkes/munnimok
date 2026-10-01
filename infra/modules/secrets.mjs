@@ -36,7 +36,7 @@ export function generateValue(name) {
   // the connector's seal key and enrollment HMAC are read with Convert.FromBase64String: standard base64, 32 bytes
   if (name === 'CONNECTOR_SEAL_KEY_K1' || name === 'CONNECTOR_ENROLLMENT_HMAC') return randomBytes(32).toString('base64');
   // an enrollment code in the control plane's own shape (AGNT-XXXX-XXXX, an alphabet without look-alikes)
-  if (name === 'CONNECTOR_FLEET_CODE') return `AGNT-${enrollmentChars(4)}-${enrollmentChars(4)}`;
+  if (name === 'CONNECTOR_FLEET_CODE' || name === 'CONNECTOR_PRIVATE_CODE') return `AGNT-${enrollmentChars(4)}-${enrollmentChars(4)}`;
   return b64url(randomBytes(32));
 }
 
