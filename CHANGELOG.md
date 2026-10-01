@@ -1,5 +1,45 @@
 # Changelog
 
+## [5.0.0](https://github.com/okkes/munnimok/compare/v4.1.0...v5.0.0) (2026-10-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* **connectors:** consumer calls on session, job, ticket and agent routes need X-Connector-Subject; GET /v1/agents reads the subject from the header instead of a query parameter; production configuration drops the client certificate settings and gains RequiredScope and AdminScope.
+
+### ✨ Features
+
+* **admin,control:** the connectors screens ([4952d01](https://github.com/okkes/munnimok/commit/4952d01fdb400d49a22ac24b9be7a82597016132)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **admin,control:** the parties' budget and inventory replace the bank connections and quota screens ([4d5d282](https://github.com/okkes/munnimok/commit/4d5d28270eb91ea9cf52d7b98b6537b1853ab6f4)), closes [#414](https://github.com/okkes/munnimok/issues/414)
+* **api:** connection sync replaces store sync; the store proxy goes ([d9ce25a](https://github.com/okkes/munnimok/commit/d9ce25a46e9c89f6bfada5c386e4c7783f0e8f57)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **api:** scheduled syncs for household-agent custody ([ee65f0b](https://github.com/okkes/munnimok/commit/ee65f0ba39fac551e4c56bb882a3114d0111695d)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **api:** the connector relay - subjects, bindings, the catalogue, login, sync and ingest ([2015f03](https://github.com/okkes/munnimok/commit/2015f03cdf6d600a4cf3e2ee419a7c30f26811a4)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **api:** the relay carries the open-banking parties ([7fe29a9](https://github.com/okkes/munnimok/commit/7fe29a9b868d08348a15e2c6542654ea18e30a54)), closes [#414](https://github.com/okkes/munnimok/issues/414)
+* **api:** the relay waits for its machine credential instead of refusing to start ([540ae9a](https://github.com/okkes/munnimok/commit/540ae9a6f80579c4571c10fbcbac761507833fcf)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **connectors:** a standing fleet enrollment code, an in-network discovery address, the Kerberos library ([e488fb4](https://github.com/okkes/munnimok/commit/e488fb44389be8dec1603dd5f0cbdb019291108e)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **connectors:** port the connector platform into the monorepo ([#367](https://github.com/okkes/munnimok/issues/367)) ([841a6f6](https://github.com/okkes/munnimok/commit/841a6f69ead79d0b0e7c2fba8e89f55905c0c210))
+* **connectors:** subject binding, token-only production auth with an admin scope, sync intervals for schedules, the adapter catalogue digest ([548c4d2](https://github.com/okkes/munnimok/commit/548c4d280c0008a24fb89f0da10fcb302e21cfe4)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **connectors:** the open-banking parties - GoCardless and Enable Banking on the http runtime ([9350721](https://github.com/okkes/munnimok/commit/935072189901912d9299643b9b6a012dff3f2a0c)), closes [#414](https://github.com/okkes/munnimok/issues/414)
+* **infra:** a bank party needs the control plane ([0e215c9](https://github.com/okkes/munnimok/commit/0e215c99b3d1616961c1873747fac2635c7abb11)), closes [#414](https://github.com/okkes/munnimok/issues/414)
+* **infra:** the aggregator keys reach the control plane ([06776c6](https://github.com/okkes/munnimok/commit/06776c6e51e5e627cca7db3ab41c530f88dd940d)), closes [#414](https://github.com/okkes/munnimok/issues/414)
+* **infra:** the connector control plane and the pooled browser agent, rendered per platform ([c70d23d](https://github.com/okkes/munnimok/commit/c70d23deba5a1b9f7b72f144e138e07c730ddc65)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **web:** banks in the Connections hub ([fd506d5](https://github.com/okkes/munnimok/commit/fd506d588c55a9c4c7d69cac4c60774f60c4fd03)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **web:** open banking through the Connections hub ([b15a399](https://github.com/okkes/munnimok/commit/b15a3992ee85bc51308583b4a59558fa0f6329d5)), closes [#414](https://github.com/okkes/munnimok/issues/414)
+* **web:** registries and your own computer in the hub ([101cf80](https://github.com/okkes/munnimok/commit/101cf8066e3dbfd719c243c5d0b1a0ff7abb9e77)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **web:** the Connections hub replaces Shopping connections ([548a8d0](https://github.com/okkes/munnimok/commit/548a8d0cd0a37e27023870b5694f914a44fc712b)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **wizard:** the fingerprint's current place in Play Console; the Digital Asset Links snippet pastes whole ([f9bf528](https://github.com/okkes/munnimok/commit/f9bf5284725520f6d6748d84b669a6342ccf1f62))
+* **wizard:** what applies a change - the strip, the checklist item, the tile's environments ([a323d6e](https://github.com/okkes/munnimok/commit/a323d6eaadadd8a48f4986f9e8a042442d95dc24))
+
+
+### 🐞 Bug Fixes
+
+* **ci:** the union coverage gate keys lines by absolute path ([8a32805](https://github.com/okkes/munnimok/commit/8a32805278f163e121062910ce89f6204427f84c))
+* **connectors:** the inline runner flushes its progress before it reports the outcome ([f8fc0cc](https://github.com/okkes/munnimok/commit/f8fc0cc209e39677883278dd22af9f6cd43cd16f)), closes [#367](https://github.com/okkes/munnimok/issues/367)
+* **infra:** the machine credential is the Logto module's own application secret ([7deffc5](https://github.com/okkes/munnimok/commit/7deffc512ef5483516897d7980e0244f625bd4ed))
+* **wizard:** a long status wraps under its row instead of running into the next column ([a863d4a](https://github.com/okkes/munnimok/commit/a863d4a7f76f01aa19c4aa874a701a484aff5e7f))
+* **wizard:** the control plane check borrows the platform's domain like the host probe does ([9d36ce6](https://github.com/okkes/munnimok/commit/9d36ce699467e69d18c2a0db9b97f582f7e70c3f))
+* **wizard:** the page says when its helper runs stale code and restarts it on a click ([1c8e17b](https://github.com/okkes/munnimok/commit/1c8e17b2a819f7e8c88a775ad89266a2d2f280ae))
+
 ## [4.1.0](https://github.com/okkes/munnimok/compare/v4.0.1...v4.1.0) (2026-09-29)
 
 
