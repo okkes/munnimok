@@ -17,7 +17,7 @@ const iso = (d: Date): string =>
   `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const daysAgo = (n: number): string => iso(new Date(Date.now() - n * 86_400_000));
 const daysAhead = (n: number): string => iso(new Date(Date.now() + n * 86_400_000));
-/** first day of the current local month — budget/allocation anchors */
+/** first day of the current local month — budget/plan anchors */
 const monthStartIso = (): string => iso(new Date(now().getFullYear(), now().getMonth(), 1));
 /** an ISO date on `day` of the month `offset` months from now */
 const monthDay = (offset: number, day: number): string => {
@@ -40,7 +40,7 @@ export async function seedRichDemo(repo: Repo): Promise<void> {
   await seedGoals(repo);
   await seedDebts(repo);
   await seedEvents(repo);
-  await seedAllocation(repo);
+  await seedPlan(repo);
   await seedPortfolio(repo);
   await seedConnections(repo);
 }
@@ -301,15 +301,22 @@ async function seedEvents(repo: Repo): Promise<void> {
   await event('demo_evt_wed', { name: "Lisa's wedding", icon: 'party-popper', color: '#E91E63', from: daysAgo(120), to: daysAgo(118), budgetCents: 30_000, archived: 1 });
 }
 
-// ── allocation: assign this period's money to a few mains ───────────────
-async function seedAllocation(repo: Repo): Promise<void> {
+// ── planning (#128): this period's plan — the rent and the card first,
+//    then the person's own expense subjects, a budget and a goal; funded
+//    so every status shows (one subject deliberately in the red) ───────
+async function seedPlan(repo: Repo): Promise<void> {
+  const { planId, mirroredSubjectId } = await import('@/domain/planning');
   const start = monthStartIso();
-  const cell = (id: string, catId: string, cents: number) =>
-    repo.upsert('allocation', DEMO_SPACE_ID, id, { periodStart: start, catId, assignedCents: cents } as never);
-  await cell('demo_alloc_house', 'housing', 118_000);
-  await cell('demo_alloc_food', 'consumption', 50_000);
-  await cell('demo_alloc_fun', 'entertainment', 12_000);
-  await cell('demo_alloc_save', 'saving', 40_000);
+  const plan = planId(DEMO_SPACE_ID, 'actual', start);
+  await repo.upsert('plan', DEMO_SPACE_ID, plan, { kind: 'actual', periodStart: start });
+  const subject = (id: string, fields: Record<string, unknown>) => repo.upsert('planSubject', DEMO_SPACE_ID, id, { planId: plan, ...fields } as never);
+  await subject(mirroredSubjectId(plan, 'recurring', 'demo_rec_rent'), { segment: 'recurring', order: 0, name: 'Rent', sourceId: 'demo_rec_rent', fundedCents: 118_000 });
+  await subject(mirroredSubjectId(plan, 'recurring', 'demo_rec_netflix'), { segment: 'recurring', order: 1, name: 'Netflix', sourceId: 'demo_rec_netflix', fundedCents: 0 });
+  await subject(mirroredSubjectId(plan, 'debts', 'demo_loan_card'), { segment: 'debts', order: 0, name: 'Credit card', sourceId: 'demo_loan_card', fundedCents: 15_000 });
+  await subject('demo_psub_groceries', { segment: 'expenses', order: 0, name: 'Groceries', icon: 'cart-outline', color: '#16A085', catIds: ['groceries'], targetCents: 45_000, fundedCents: 45_000 });
+  await subject('demo_psub_eatout', { segment: 'expenses', order: 1, name: 'Eating out', icon: 'silverware-fork-knife', color: '#E67E22', catIds: ['restaurants', 'takeout'], targetCents: 8_000, fundedCents: 6_000 });
+  await subject(mirroredSubjectId(plan, 'budgets', 'demo_bud_fun'), { segment: 'budgets', order: 0, name: 'Fun money', sourceId: 'demo_bud_fun', fundedCents: 12_000 });
+  await subject(mirroredSubjectId(plan, 'goals', 'demo_goal_trip'), { segment: 'goals', order: 0, name: 'Summer trip', sourceId: 'demo_goal_trip', fundedCents: 10_000 });
 }
 
 // ── portfolio: ETF, stock, crypto, cash + a dividend ────────────────────

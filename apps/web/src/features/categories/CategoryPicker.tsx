@@ -8,11 +8,14 @@ import { kindOf } from '@/domain/txKind';
 import { useLang } from '@/i18n';
 import { Highlight } from '@/ui/Highlight';
 import { Icon } from '@/ui/Icon';
-import { Chip } from '@/ui/primitives';
+import { Chip, toneColor } from '@/ui/primitives';
 import { Sheet } from '@/ui/Sheet';
 import { SearchField } from '@/ui/SearchField';
 import { CollapsingSearch, useSearchCollapse } from '@/ui/CollapsingSearch';
 import { catName, useCategories } from './useCategories';
+import { useCategoryAvailability } from '@/application/planning';
+import { useDisplayMoney } from '@/features/currency/useDisplayMoney';
+import { STATUS_TONE } from '@/features/planning/planningUi';
 import { SpecialCatMark } from './SpecialCatMark';
 
 import type { AccountType, TxType } from '@/db/types';
@@ -66,6 +69,9 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
   const { t } = useLang();
   const cats = useCategories();
   const navigate = useNavigate();
+  // #128: what the plan's subject answering for a category still holds
+  const availability = useCategoryAvailability(open);
+  const { fmt } = useDisplayMoney();
   const [query, setQuery] = useState('');
   // #246 (user): one tap to see only the ◆ special categories
   const [specialOnly, setSpecialOnly] = useState(false);
@@ -243,6 +249,16 @@ export function CategoryPicker({ open, onOpenChange, selectedId, onPick, directi
                   <Highlight text={catName(cat, t)} query={query} />
                 </span>
               </span>
+              {availability.get(cat.id) && (
+                <span
+                  className="m-num shrink-0 text-[11px]"
+                  style={{ color: toneColor(STATUS_TONE[availability.get(cat.id)!.status]) }}
+                  data-testid={`catpicker-avail-${cat.id}`}
+                  title={availability.get(cat.id)!.subjectName}
+                >
+                  {fmt(availability.get(cat.id)!.cents, availability.get(cat.id)!.currency)}
+                </span>
+              )}
               {selectedId === cat.id && <Icon name="check" size={18} color="var(--m-accent)" />}
             </button>
           ))}

@@ -380,8 +380,8 @@ export class SyncEngine {
     const scoped = [
       'account', 'category', 'transaction', 'txMeta', 'accountLink',
       'recurring', 'recurringDismiss', 'budget', 'event', 'goal', 'goalContribution',
-      'allocation', 'receipt', 'receiptLink', 'storeConn', 'storeConnLink',
-      'holding', 'lot', 'insightDismiss', 'topic', 'activity',
+      'receipt', 'receiptLink', 'storeConn', 'storeConnLink',
+      'holding', 'lot', 'insightDismiss', 'plan', 'planSubject', 'activity',
     ] as const;
     await this.store.transact(['space', ...scoped, 'outbox', 'meta'], async () => {
       await this.store.deleteRow('space', spaceId);

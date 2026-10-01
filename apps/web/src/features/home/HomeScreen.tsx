@@ -32,7 +32,6 @@ import { eventPicture } from '@/features/events/EventsScreen';
 import { resolveHomeBlocks } from './HomeCustomizeScreen';
 import type { HomeBlockId } from './HomeCustomizeScreen';
 import { SpaceSwitcher } from '@/features/spaces/SpaceSwitcher';
-import { useCategories } from '@/features/categories/useCategories';
 import { safeToSpend } from '@/domain/cashflow';
 import { BAND_MODES, bandEditable, bandEligible, bandIncludes, bandModeOf } from '@/domain/balanceBand';
 import { minIso, netWorthSeries } from '@/domain/trends';
@@ -43,13 +42,13 @@ import { useBudgetStatuses, useBudgets } from '@/application/budgets';
 import { useEvents } from '@/application/events';
 import { useGoals } from '@/application/goals';
 import { useLoanStatuses } from '@/application/debts';
-import { useAllocations } from '@/application/allocation';
+import { usePlanning } from '@/application/planning';
 import { useInsights } from '@/application/insights';
 import { useNewTransactions } from '@/application/newTxs';
 import { eventSpentCents } from '@/domain/events';
 import { goalProgress } from '@/domain/goals';
 import { debtsOverview } from '@/domain/debts';
-import { toAllocateCents } from '@/domain/allocation';
+import { AheadCircle } from '@/features/planning/AheadCircle';
 import { budgetColor, ratioPct } from '@/features/budgets/budgetUi';
 import { budgetDaysLeft, budgetOptsFor } from '@/domain/budgets';
 import { fmtCents } from '@/lib/money';
@@ -224,7 +223,6 @@ export function HomeScreen() {
 
   const accounts = useSpaceAccounts();
   const allTxs = useSpaceTransactions();
-  const cats = useCategories();
   const { newTxs } = useNewTransactions(allTxs);
   const reviewCount = useMemo(() => allTxs?.filter((tx) => tx.needsReview === 1).length, [allTxs]);
 
@@ -333,17 +331,8 @@ export function HomeScreen() {
   const debtTotals = useMemo(() => debtsOverview(activeDebts.map((s) => s.account)), [activeDebts]);
   // insights block: the top undismissed finding
   const insights = useInsights();
-  // allocation block: only once the space actually allocates
-  const allocations = useAllocations();
-  const allocLeft = useMemo(() => {
-    if (!allocations?.length) return null;
-    const history = periodHistory(space?.periodType ?? 'month', space?.periodDay ?? 1, 24);
-    const starts = new Set(allocations.map((a) => a.periodStart));
-    const first = history.findIndex((p) => starts.has(p.start));
-    const window = first === -1 ? history.slice(-1) : history.slice(first);
-    const accountsById = new Map((accounts ?? []).map((a) => [a.id, a]));
-    return toAllocateCents(window, allTxs ?? [], accountsById, allocations);
-  }, [allocations, space?.periodType, space?.periodDay, allTxs, accounts]);
+  // planning block (#128): only once the period has a plan
+  const planning = usePlanning();
 
   // cash-flow forecast (F1): shows nothing rather than a wrong number.
   // #349: mixed-currency accounts summed RAW made the liquid base lie —
@@ -361,12 +350,10 @@ export function HomeScreen() {
       accounts: converted,
       txs: allTxs,
       recurrings,
-      allocations,
-      catalog: cats,
-      period,
+      plannedCents: planning?.reservedCents ?? 0,
       today: localToday(),
     });
-  }, [accounts, allTxs, recurrings, allocations, cats, period, currency, display]);
+  }, [accounts, allTxs, recurrings, planning?.reservedCents, currency, display]);
   const [forecastOpen, setForecastOpen] = useState(false);
 
   // #142 (user): only "Picked accounts" takes toggles — its include list
@@ -403,7 +390,7 @@ export function HomeScreen() {
     transactions: renderTransactionsBlock,
     explore: () => renderExploreList(teaserOf, (to) => void navigate({ to }), t),
     budgets: renderBudgetsBlock,
-    allocation: renderAllocationBlock,
+    planning: renderPlanningBlock,
     upcoming: renderUpcomingBlock,
     goals: renderGoalsBlock,
     debts: renderDebtsBlock,
@@ -680,12 +667,12 @@ export function HomeScreen() {
 
             {(() => {
               const safe = Math.max(0, forecast.cents);
-              const total = Math.max(1, forecast.upcomingCents + forecast.allocationCents + safe);
+              const total = Math.max(1, forecast.upcomingCents + forecast.plannedCents + safe);
               const pct = (part: number) => `${(Math.max(0, part) / total) * 100}%`;
               return (
                 <div className="flex h-3 w-full gap-px overflow-hidden rounded-full bg-bg-2" data-testid="cashflow-bar" aria-hidden="true">
                   {forecast.upcomingCents > 0 && <span style={{ width: pct(forecast.upcomingCents), background: 'var(--m-warning)' }} />}
-                  {forecast.allocationCents > 0 && <span style={{ width: pct(forecast.allocationCents), background: 'var(--m-info)' }} />}
+                  {forecast.plannedCents > 0 && <span style={{ width: pct(forecast.plannedCents), background: 'var(--m-info)' }} />}
                   {safe > 0 && <span style={{ width: pct(safe), background: 'var(--m-accent)' }} />}
                 </div>
               );
@@ -717,13 +704,13 @@ export function HomeScreen() {
                 <span className="m-num text-ink-3">{fmt(-rec.amountCents, currency, { sign: true })}</span>
               </button>
             ))}
-            {forecast.allocationCents > 0 && (
-              <div className="flex items-baseline justify-between py-1.5 text-[14px]" data-testid="cashflow-allocation">
+            {forecast.plannedCents > 0 && (
+              <div className="flex items-baseline justify-between py-1.5 text-[14px]" data-testid="cashflow-planned">
                 <span className="flex items-center gap-2 text-ink-2">
                   <span className="h-2 w-2 rounded-full" style={{ background: 'var(--m-info)' }} />
-                  {t('cashflow.allocated')}
+                  {t('cashflow.planned')}
                 </span>
-                <span className="m-num text-ink-2">{fmt(-forecast.allocationCents, currency, { sign: true })}</span>
+                <span className="m-num text-ink-2">{fmt(-forecast.plannedCents, currency, { sign: true })}</span>
               </div>
             )}
             <div className="mt-1 flex items-baseline justify-between border-t border-line pt-3 text-[15px]">
@@ -932,14 +919,22 @@ export function HomeScreen() {
   }
 
   function renderUpcomingBlock() {
-    if (upcoming.length === 0 && upcomingDebts.length === 0) return null;
     // #347: the date alone made the reader do the math — say the days too
     const today = localToday();
     const dueLabel = (iso: string) => `${fmtShort(iso)} · ${dueInWords(daysUntil(iso, today), t)}`;
+    const quiet = upcoming.length === 0 && upcomingDebts.length === 0;
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
-          <span>{t('recurring.upcoming')}</span>
+          {/* #128 (user): the recurring manager left the tab bar — its door is this caption */}
+          <button
+            data-testid="home-recurring-door"
+            onClick={() => void navigate({ to: '/recurring' })}
+            className="m-tap m-cap flex items-center gap-1 border-none bg-transparent p-0 text-left"
+          >
+            {t('screen.recurring')}
+            <Icon name="chevron-right" size={13} />
+          </button>
           {/* #334 (user): the block mixes recurring + loans, so see-all
               lands on the combined list — not the recurring manager.
               r2: hidden when the landing has nothing more to show */}
@@ -954,6 +949,17 @@ export function HomeScreen() {
           )}
         </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-upcoming">
+          {quiet && (
+            <button
+              data-testid="home-recurring-quiet"
+              onClick={() => void navigate({ to: '/recurring' })}
+              className="m-tap flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] text-ink-3"
+            >
+              <Icon name="autorenew" size={16} color="var(--m-ink-4)" />
+              <span className="min-w-0 flex-1">{t('home.recurringQuiet', { n: recurrings?.length ?? 0 })}</span>
+              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+            </button>
+          )}
           {upcoming.map(({ rec, nextDue }) => (
             <button
               key={rec.id}
@@ -1000,41 +1006,46 @@ export function HomeScreen() {
     );
   }
 
-  function renderAllocationBlock() {
-    if (allocLeft === null) return null;
+  function renderPlanningBlock() {
+    // #128: the block appears once the period has a plan — the tab is the door before that
+    if (!planning?.plan) return null;
+    const left = planning.toAllocateOf(planning.plan);
+    const red = planning.attention.length;
     let color = 'var(--m-warning)';
-    if (allocLeft === 0) color = 'var(--m-accent-deep)';
-    else if (allocLeft < 0) color = 'var(--m-negative)';
+    if (left === 0) color = 'var(--m-accent-deep)';
+    else if (left < 0) color = 'var(--m-negative)';
+    let line = t('plan.toAllocate');
+    if (left === 0) line = t('plan.allGiven');
+    else if (left < 0) line = t('plan.overGiven');
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
-          <span>{t('alloc.title')}</span>
+          <span>{t('plan.title')}</span>
           <button
-            data-testid="home-seeall-alloc"
-            onClick={() => void navigate({ to: '/allocate' })}
+            data-testid="home-seeall-planning"
+            onClick={() => void navigate({ to: '/planning' })}
             className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
           >
             {t('action.seeAll')}
           </button>
         </div>
         <button
-          data-testid="home-allocation"
-          onClick={() => void navigate({ to: '/allocate' })}
+          data-testid="home-planning"
+          onClick={() => void navigate({ to: '/planning' })}
           className="m-tap flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left"
         >
-          <Tile
-            icon={allocLeft === 0 ? 'check-circle-outline' : 'cash-multiple'}
-            bg={`color-mix(in srgb, ${color} 14%, transparent)`}
-            color={color}
-          />
+          <AheadCircle count={planning.aheadCount} suggested={planning.aheadSuggested} size={44} testId="home-planning-ahead" />
           <span className="min-w-0 flex-1">
-            <span className="m-num block text-[15px] font-semibold" style={{ color }}>
-              {fmt(allocLeft, currency)}
+            <span className="m-num block text-[15px] font-semibold" style={{ color }} data-testid="home-planning-left">
+              {fmt(left, currency)}
             </span>
-            <span className="block text-[11px] text-ink-4">
-              {allocLeft === 0 ? t('alloc.allAssigned') : t('alloc.toAllocate')}
-            </span>
+            <span className="block text-[11px] text-ink-4">{line}</span>
           </span>
+          {red > 0 && (
+            <span className="rounded-full bg-negative-soft px-2 py-0.5 text-[10px] font-semibold text-negative" data-testid="home-planning-red">
+              {t('plan.home.red', { n: red })}
+            </span>
+          )}
           <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
         </button>
       </>

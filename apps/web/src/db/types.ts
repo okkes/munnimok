@@ -40,8 +40,6 @@ export interface SpaceRow extends SyncEnvelope {
   homeBlocks?: { id: string; hidden?: 0 | 1 }[];
   /** tx-detail layout: section order + visibility under the fixed details block */
   txDetailBlocks?: { id: string; hidden?: 0 | 1 }[];
-  /** allocation: roll category leftovers into the next period (default on) */
-  allocRollover?: 0 | 1;
   /** main categories switched off for this space (picker filtering only — data never blocks) */
   hiddenMains?: string[];
   /** Home balance band (user design 2026-08-01): what the big number IS.
@@ -51,6 +49,8 @@ export interface SpaceRow extends SyncEnvelope {
   balanceBandAccounts?: string[];
   /** #368: the savings accounts that feed the goals; absent = every savings account */
   goalPoolAccountIds?: string[];
+  /** #128: the accounts whose balances make the planning pool; absent = every checking and cash account */
+  planPoolAccountIds?: string[];
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
@@ -477,20 +477,6 @@ export interface GoalContributionRow extends SyncEnvelope {
   note?: string;
 }
 
-/**
- * One allocation cell: what this period assigned to this main category
- * (approved allocation design). Deterministic id — two devices editing
- * the same cell converge by LWW instead of duplicating rows.
- */
-export interface AllocationRow extends SyncEnvelope {
-  id: string;
-  spaceId: string;
-  /** yyyy-mm-dd start of the space period the cell belongs to */
-  periodStart: string;
-  /** main category (subs roll up) */
-  catId: string;
-  assignedCents: number;
-}
 
 export interface ReceiptItem {
   name: string;
@@ -725,13 +711,67 @@ export interface InsightDismissRow extends SyncEnvelope {
   insightId: string;
 }
 
-/** custom grouping of MAIN categories on the allocate screen ("Fun" =
- * entertainment + coffee + …) — synced, per space */
-export interface TopicRow extends SyncEnvelope {
+/** #128: the five kinds of plan subject — what must be paid first, then the person’s own expenses, the ceilings, the goals */
+export type PlanSegmentKind = 'recurring' | 'debts' | 'expenses' | 'budgets' | 'goals';
+
+export type PlanKind = 'actual' | 'sandbox' | 'blueprint';
+
+/** one segment’s place in a plan: its order in the list and whether it is shown */
+export interface PlanSegmentConfig {
+  kind: PlanSegmentKind;
+  hidden?: 0 | 1;
+}
+
+/**
+ * A plan (#128): the actual plan of one period, the sandbox beside it
+ * (same period, its own subjects and funding), or a blueprint (no period,
+ * no funding — a saved shape to apply later). The actual plan and the
+ * sandbox carry deterministic ids (`plan:{space}:{kind}:{periodStart}`)
+ * so two devices starting the same period converge on one row.
+ */
+export interface PlanRow extends SyncEnvelope {
   id: string;
   spaceId: string;
+  kind: PlanKind;
+  /** yyyy-mm-dd start of the space period the plan belongs to (actual, sandbox) */
+  periodStart?: string;
+  /** a blueprint’s name */
+  name?: string;
+  /** segment order and visibility; absent = the default order, every segment shown */
+  segments?: PlanSegmentConfig[];
+  /** ISO: when a blueprint was last saved or overridden */
+  savedAt?: string;
+}
+
+/**
+ * One subject of a plan (#128): an expense subject is the person’s own
+ * (a name, an icon, a colour, one or more categories — a main claims its
+ * subs, the ones made later too, minus the excluded ones — and a target);
+ * a subject of the other segments mirrors one source row (`sourceId`: a
+ * budget, a recurring cost, a loan account, a goal) and dies with it.
+ * `fundedCents` is the money this period gave it from the pool.
+ */
+export interface PlanSubjectRow extends SyncEnvelope {
+  id: string;
+  spaceId: string;
+  planId: string;
+  segment: PlanSegmentKind;
+  /** position inside its segment */
+  order: number;
   name: string;
-  catIds: string[];
+  icon?: string;
+  color?: string;
+  /** expenses: the chosen categories (mains and/or subs) */
+  catIds?: string[];
+  /** expenses: subs of a chosen main that are left out */
+  excludeCatIds?: string[];
+  /** expenses: what the person wants to set aside this period (0 = unknown yet) */
+  targetCents?: number;
+  /** the mirrored source row of a budget / recurring / debt / goal subject */
+  sourceId?: string;
+  fundedCents: number;
+  /** recurring, debts, goals: not due this period — green without funding */
+  snoozed?: 0 | 1;
 }
 
 /** DEVICE-ONLY delayed-quote cache — prices are never synced data. */
@@ -820,7 +860,6 @@ export type EntityName =
   | 'event'
   | 'goal'
   | 'goalContribution'
-  | 'allocation'
   | 'receipt'
   | 'receiptLink'
   | 'storeConn'
@@ -828,8 +867,38 @@ export type EntityName =
   | 'holding'
   | 'lot'
   | 'insightDismiss'
-  | 'topic'
+  | 'plan'
+  | 'planSubject'
   | 'activity';
+
+/** every entity this build knows, as data — the sync engine skips ops of
+ *  any other entity instead of dying on them (an older device may still
+ *  push rows this build retired, and a server log replays them) */
+export const ENTITY_NAMES: readonly EntityName[] = [
+  'space',
+  'account',
+  'category',
+  'transaction',
+  'txMeta',
+  'accountLink',
+  'recurring',
+  'recurringDismiss',
+  'txSeen',
+  'budget',
+  'event',
+  'goal',
+  'goalContribution',
+  'receipt',
+  'receiptLink',
+  'storeConn',
+  'storeConnLink',
+  'holding',
+  'lot',
+  'insightDismiss',
+  'plan',
+  'planSubject',
+  'activity',
+];
 
 export interface EntityRowMap {
   space: SpaceRow;
@@ -845,7 +914,6 @@ export interface EntityRowMap {
   event: EventRow;
   goal: GoalRow;
   goalContribution: GoalContributionRow;
-  allocation: AllocationRow;
   receipt: ReceiptRow;
   receiptLink: ReceiptLinkRow;
   storeConn: StoreConnRow;
@@ -853,6 +921,7 @@ export interface EntityRowMap {
   holding: HoldingRow;
   lot: LotRow;
   insightDismiss: InsightDismissRow;
-  topic: TopicRow;
+  plan: PlanRow;
+  planSubject: PlanSubjectRow;
   activity: ActivityRow;
 }

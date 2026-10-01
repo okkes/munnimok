@@ -252,7 +252,7 @@ export function GoalFormSheet({ initial, onClose }: Readonly<{ initial: GoalRow 
 }
 
 /** All goals + the honesty header: saved vs allocated vs unallocated. */
-/** #368: short-term money belongs in allocation — goals are the long game */
+/** #368: short-term money belongs in the plan — goals are the long game */
 function ShortTermNote({ targetDate }: Readonly<{ targetDate: string }>) {
   const { t } = useLang();
   const navigate = useNavigate();
@@ -263,7 +263,7 @@ function ShortTermNote({ targetDate }: Readonly<{ targetDate: string }>) {
       {t('goals.shortTermHint')}
       <button
         data-testid="goalform-shortterm-go"
-        onClick={() => void navigate({ to: '/allocate' })}
+        onClick={() => void navigate({ to: '/planning' })}
         className="m-tap border-none bg-transparent p-0 font-medium text-accent-deep"
       >
         {t('goals.shortTermGo')}

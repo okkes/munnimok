@@ -1,8 +1,6 @@
-import type { AccountRow, AllocationRow, RecurringRow, TxView } from '@/db/types';
-import { spentByMainCat } from './allocation';
+import type { AccountRow, RecurringRow, TxView } from '@/db/types';
 import { merchantKey } from './merchantKey';
 import { nextDueDate } from './recurring';
-import type { Period } from './periods';
 
 /**
  * Cash-flow forecast (design F1/F2): "how much can I spend before
@@ -14,10 +12,6 @@ export interface PaydayInfo {
   date: string;
   merchant: string;
   amountCents: number;
-}
-
-interface CatalogLookup {
-  byId: (id: string | undefined) => { id: string; parentId?: string };
 }
 
 const isoAddMonths = (iso: string, months: number): string => {
@@ -66,17 +60,15 @@ export interface SafeToSpend {
   /** recurring costs falling due before the money arrives */
   upcoming: { rec: RecurringRow; due: string }[];
   upcomingCents: number;
-  /** allocation promises not yet spent (0 for spaces that don't allocate) */
-  allocationCents: number;
+  /** money the plan holds for later (#128): funded and not yet spent, plus everything funded ahead (0 for spaces without a plan) */
+  plannedCents: number;
 }
 
 export function safeToSpend(input: {
   accounts: readonly Pick<AccountRow, 'id' | 'type' | 'balanceCents' | 'archived' | 'deleted'>[];
   txs: readonly TxView[];
   recurrings: readonly RecurringRow[];
-  allocations?: readonly AllocationRow[];
-  catalog?: CatalogLookup;
-  period?: Period;
+  plannedCents?: number;
   today: string;
 }): SafeToSpend | null {
   const payday = nextPayday(input.txs, input.today);
@@ -95,16 +87,9 @@ export function safeToSpend(input: {
   const upcomingCents = upcoming.reduce((sum, entry) => sum + entry.rec.amountCents, 0);
 
   // F2: money that already has a job is not safe to spend
-  let allocationCents = 0;
-  if (input.allocations?.length && input.catalog && input.period) {
-    const spent = spentByMainCat(input.txs, input.catalog, input.period);
-    for (const cell of input.allocations) {
-      if (cell.deleted !== 0 || cell.periodStart !== input.period.start) continue;
-      allocationCents += Math.max(0, cell.assignedCents - (spent.get(cell.catId) ?? 0));
-    }
-  }
+  const plannedCents = Math.max(0, input.plannedCents ?? 0);
 
-  const cents = liquidCents - upcomingCents - allocationCents;
+  const cents = liquidCents - upcomingCents - plannedCents;
   const days = Math.max(1, Math.round((Date.parse(payday.date) - Date.parse(input.today)) / 86_400_000));
   return {
     cents,
@@ -114,6 +99,6 @@ export function safeToSpend(input: {
     liquidCents,
     upcoming,
     upcomingCents,
-    allocationCents,
+    plannedCents,
   };
 }

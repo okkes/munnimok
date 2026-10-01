@@ -21,6 +21,7 @@ import { useEvicted } from './evicted';
 import { MinaTutorial } from '@/features/mina/MinaTutorial';
 import { Icon } from '@/ui/Icon';
 import { Logo } from '@/ui/Logo';
+import { PlanAttention, usePlanDot } from '@/features/planning/PlanAttention';
 
 interface TabDef {
   to: string;
@@ -28,12 +29,26 @@ interface TabDef {
   icon: string;
   iconActive: string;
   testId: string;
+  /** wears the planning dot (a subject in the red) */
+  dot?: boolean;
+}
+
+/** a tab icon, with the attention dot when the tab asks for one */
+function TabFace({ tab, active, size }: Readonly<{ tab: TabDef; active: boolean; size: number }>) {
+  const dot = usePlanDot((s) => s.dot);
+  return (
+    <span className="relative inline-flex">
+      <Icon name={active ? tab.iconActive : tab.icon} size={size} />
+      {tab.dot && dot && <span data-testid={`${tab.testId}-dot`} className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-negative" />}
+    </span>
+  );
 }
 
 const TABS: TabDef[] = [
   { to: '/home', labelKey: 'tab.home', icon: 'home-variant-outline', iconActive: 'home-variant', testId: 'tab-home' },
   { to: '/transactions', labelKey: 'tab.transactions', icon: 'format-list-bulleted', iconActive: 'format-list-bulleted', testId: 'tab-transactions' },
-  { to: '/recurring', labelKey: 'tab.recurring', icon: 'autorenew', iconActive: 'autorenew', testId: 'tab-recurring' },
+  // #128: planning took the recurring slot (user ruling); the recurring manager lives behind Home and Settings
+  { to: '/planning', labelKey: 'tab.planning', icon: 'clipboard-text-outline', iconActive: 'clipboard-text', testId: 'tab-planning', dot: true },
   // portfolio left the Home landing zone for its own tab (user ruling)
   { to: '/portfolio', labelKey: 'tab.portfolio', icon: 'chart-timeline-variant', iconActive: 'chart-timeline-variant', testId: 'tab-portfolio' },
   { to: '/settings', labelKey: 'tab.settings', icon: 'cog-outline', iconActive: 'cog', testId: 'tab-settings' },
@@ -315,7 +330,7 @@ export function AppLayout() {
                   active ? 'bg-accent-soft text-accent-deep' : 'text-ink-2 hover:bg-accent-soft/40'
                 }`}
               >
-                <Icon name={active ? tab.iconActive : tab.icon} size={20} />
+                <TabFace tab={tab} active={active} size={20} />
                 {t(tab.labelKey)}
               </Link>
             );
@@ -343,6 +358,7 @@ export function AppLayout() {
             <RecurringReminders />
             <StoreKeepAlive />
             <BudgetAlerts />
+            <PlanAttention />
             <EdgeSwipeBack />
             <MinaTutorial />
             </DisplayMoneyProvider>
@@ -369,7 +385,7 @@ export function AppLayout() {
                   active ? 'text-brand' : 'text-ink-4'
                 }`}
               >
-                <Icon name={active ? tab.iconActive : tab.icon} size={23} />
+                <TabFace tab={tab} active={active} size={23} />
                 {t(tab.labelKey)}
               </Link>
             );

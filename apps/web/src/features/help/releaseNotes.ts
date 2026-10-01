@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.4.0',
+    date: '2026-10-01',
+    items: [
+      {
+        en: 'Planning replaces allocation: the money on your accounts gets a job before it is spent — recurring costs and debts first, then your own expense subjects, budgets and goals. Fill with a tap, cover a subject in the red from one with room, fund the periods ahead and watch the circle fill, keep a plan’s shape as a blueprint and try changes in a sandbox.',
+        nl: 'Plannen vervangt allocatie: het geld op je rekeningen krijgt een taak voordat het wordt uitgegeven — eerst vaste lasten en schulden, dan je eigen uitgavenonderwerpen, budgetten en doelen. Vul met één tik, dek een onderwerp in het rood uit een met ruimte, vul de periodes vooruit en zie de cirkel vollopen, bewaar de vorm van een plan als blauwdruk en probeer wijzigingen in een zandbak.',
+        tr: 'Planlama, tahsisin yerini aldı: hesaplarındaki para harcanmadan önce bir görev alır — önce düzenli giderler ve borçlar, sonra kendi harcama konuların, bütçelerin ve hedeflerin. Tek dokunuşla doldur, eksiye düşen bir konuyu yeri olandan karşıla, ilerideki dönemleri doldurup çemberin dolmasını izle, bir planın biçimini şablon olarak sakla ve değişiklikleri denemede dene.',
+      },
+      {
+        en: 'Planning took the recurring tab’s place at the bottom; the recurring manager opens from the Recurring block on Home and from Settings → Track.',
+        nl: 'Plannen nam onderaan de plek van het tabblad Terugkerend; het beheer van vaste lasten opent via het blok Terugkerend op Thuis en via Instellingen → Volgen.',
+        tr: 'Planlama alttaki düzenli giderler sekmesinin yerini aldı; düzenli giderler yöneticisi Ana sayfadaki Düzenli bloğundan ve Ayarlar → Takip’ten açılır.',
+      },
+    ],
+  },
+  {
     version: '5.3.0',
     date: '2026-10-01',
     items: [

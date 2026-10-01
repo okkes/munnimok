@@ -23,7 +23,7 @@ for (const V of VARIANTS) {
     const cycle = async () => {
       await page.click('[data-testid="tab-transactions"]');
       await page.waitForSelector('[data-testid="tx-list"]');
-      await page.click('[data-testid="tab-recurring"]');
+      await page.click('[data-testid="tab-planning"]');
       await page.click('[data-testid="tab-portfolio"]');
       await page.click('[data-testid="tab-settings"]');
       await page.click('[data-testid="tab-home"]');

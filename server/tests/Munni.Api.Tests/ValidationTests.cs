@@ -92,17 +92,17 @@ public class ValidationTests
     }
 
     [Fact]
-    public void Push_accepts_topics_and_composite_allocation_ids()
+    public void Push_accepts_plans_and_composite_subject_ids()
     {
-        // 'topic' missing from the whitelist + a 64-char EntityId cap
-        // poisoned real outboxes: `alloc:{space-uuid}:{period}:{catId}`
-        // is 65+ chars and a recurring set-aside bucket adds `rec:{uuid}`
-        // (user outage 2026-07-20: a hundred store receipts stuck behind
-        // one rejected op, surfacing as "offline")
-        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "topic")])).IsValid);
-        var allocId = $"alloc:{Guid.NewGuid()}:2026-07-01:rec:{Guid.NewGuid()}";
-        Assert.True(allocId.Length > 64);
-        Assert.True(new SyncOpDtoValidator().Validate(Op(entity: "allocation") with { EntityId = allocId }).IsValid);
+        // an entity missing from the whitelist + a 64-char EntityId cap
+        // poisoned real outboxes (user outage 2026-07-20: a hundred store
+        // receipts stuck behind one rejected op, surfacing as "offline").
+        // #128: a mirrored plan subject is `psub:plan:{space-uuid}:{kind}:{period}:{segment}:{uuid}`
+        Assert.True(new PushRequestValidator().Validate(new PushRequest("device-1", [Op(entity: "plan")])).IsValid);
+        var subjectId = $"psub:plan:{Guid.NewGuid()}:actual:2026-07-01:recurring:{Guid.NewGuid()}";
+        Assert.True(subjectId.Length > 64);
+        Assert.True(new SyncOpDtoValidator().Validate(Op(entity: "planSubject") with { EntityId = subjectId }).IsValid);
+        Assert.False(new SyncOpDtoValidator().Validate(Op(entity: "allocation")).IsValid);
         Assert.False(new SyncOpDtoValidator().Validate(Op() with { EntityId = new string('x', 129) }).IsValid);
     }
 

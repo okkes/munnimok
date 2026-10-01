@@ -28,8 +28,8 @@ for (const V of VARIANTS) {
     await page.click('[data-testid="tab-transactions"]');
     await expect(page.locator('[data-testid="screen-transactions"]')).toBeVisible();
     await shot(page, k('02-shell-tabs') + '--s1');
-    await page.click('[data-testid="tab-recurring"]');
-    await expect(page.locator('[data-testid="screen-recurring"]')).toBeVisible();
+    await page.click('[data-testid="tab-planning"]');
+    await expect(page.locator('[data-testid="screen-planning"]')).toBeVisible();
     await shot(page, k('02-shell-tabs') + '--s2');
     await page.click('[data-testid="tab-settings"]');
     await expect(page.locator('[data-testid="screen-settings"]')).toBeVisible();

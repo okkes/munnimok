@@ -105,7 +105,7 @@ export async function seedDemoIfNeeded(repo: Repo): Promise<void> {
     });
   }
 
-  // every other feature (budgets, goals, debts, events, allocation,
+  // every other feature (budgets, goals, debts, events, the plan,
   // recurring + subscription price history, portfolio) so the demo shows
   // each surface working — date-relative, wiped on logout. Skipped under
   // the unit-test runner: feature specs assert against the lean demo and

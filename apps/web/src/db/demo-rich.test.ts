@@ -41,7 +41,8 @@ describe('rich demo seed', () => {
     expect(loans.length).toBeGreaterThanOrEqual(3);
     expect(live(await db.events.toArray()).length).toBeGreaterThanOrEqual(2);
     expect(live(await db.recurrings.toArray()).length).toBeGreaterThanOrEqual(5);
-    expect(live(await db.allocations.toArray()).length).toBeGreaterThanOrEqual(3);
+    expect(live(await db.plans.toArray())).toHaveLength(1);
+    expect(live(await db.planSubjects.toArray()).length).toBeGreaterThanOrEqual(6);
     expect(live(await db.holdings.toArray()).length).toBeGreaterThanOrEqual(4);
     expect(live(await db.lots.toArray()).length).toBeGreaterThanOrEqual(5);
     expect(live(await db.goalContributions.toArray()).length).toBeGreaterThanOrEqual(3);
