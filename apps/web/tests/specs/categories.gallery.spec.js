@@ -37,6 +37,9 @@ for (const V of VARIANTS) {
     await base(page, V, { demo: true });
     await goToManageCats(page);
     await page.click('[data-testid="cats-group-consumption"]');
+    // the fold animates (Collapse, 200 ms): a press inside it before it has
+    // settled lands on a row that is still moving and no click fires
+    await page.waitForTimeout(350);
     await page.click('[data-testid="cats-addsub-consumption"]');
     await page.waitForSelector('[data-testid="catform-name"]');
     await page.fill('[data-testid="catform-name"]', 'Bubble Tea');
