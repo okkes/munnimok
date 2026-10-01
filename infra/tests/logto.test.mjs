@@ -7,7 +7,7 @@ import { scratchPlatforms, fakeGh, DOMAIN } from './fixture.mjs';
 
 const fx = scratchPlatforms();
 const {
-  appDefinitions, applyApps, ensureAdminRole, listUsers, setAdmin, applySocialConnectors, applyBranding, claimConsole, logtoAnswers, removeApps, writeBack,
+  appDefinitions, applyApps, ensureAdminRole, listUsers, setAdmin, applySocialConnectors, applyBranding, claimConsole, logtoAnswers, removeApps, writeBack, writeBackConnector, MACHINE_SECRET_NAME,
   ADMIN_RESOURCE, ADMIN_SCOPE, ADMIN_ROLE,
 } = await import('../modules/logto.mjs');
 const { loadStack } = await import('../modules/stack.mjs');
@@ -19,7 +19,7 @@ const gone = () => ({ ok: true, status: 204, json: async () => null, text: async
 
 /** a Logto Management API in a box: applications, resources + scopes, roles + their scopes/users, users */
 function fakeLogto({ users = [], apps = [], roles = [], resources = [] } = {}) {
-  const state = { apps, resources, scopes: {}, roles, roleScopes: {}, roleUsers: {}, users, tokens: [] };
+  const state = { apps, resources, scopes: {}, roles, roleScopes: {}, roleUsers: {}, users, tokens: [], secrets: {} };
   let n = 0;
   const calls = [];
   const fetchImpl = async (url, init = {}) => {
@@ -29,7 +29,14 @@ function fakeLogto({ users = [], apps = [], roles = [], resources = [] } = {}) {
     calls.push({ url, method, body });
     if (pathname === '/oidc/token') { state.tokens.push({ auth: init.headers.authorization, form: Object.fromEntries(new URLSearchParams(String(init.body))) }); return ok({ access_token: 't' }); }
     let m;
-    if (pathname === '/api/applications') { if (method === 'GET') return ok(state.apps); const app = { id: `app${++n}`, secret: `secret${n}`, ...body }; state.apps.push(app); return ok(app); }
+    // Logto's application endpoints carry no secret; a new app gets its "Default secret" in the secrets table, the module adds its own
+    if (pathname === '/api/applications') { if (method === 'GET') return ok(state.apps); const app = { id: `app${++n}`, ...body }; state.apps.push(app); state.secrets[app.id] = [{ applicationId: app.id, name: 'Default secret', value: `default${n}`, createdAt: 1, expiresAt: null }]; return ok(app); }
+    if ((m = /^\/api\/applications\/([^/]+)\/secrets$/.exec(pathname))) {
+      state.secrets[m[1]] ??= [];
+      if (method === 'GET') return ok(state.secrets[m[1]]);
+      if (state.secrets[m[1]].some((s) => s.name === body.name)) return { ok: false, status: 422, json: async () => ({}), text: async () => '{"code":"application.secret_name_exists"}' };
+      const s = { applicationId: m[1], name: body.name, value: `value${++n}`, createdAt: 1, expiresAt: null }; state.secrets[m[1]].push(s); return { ...ok(s), status: 201 };
+    }
     if ((m = /^\/api\/applications\/([^/]+)$/.exec(pathname))) {
       const i = state.apps.findIndex((a) => a.id === m[1]);
       if (method === 'DELETE') { state.apps.splice(i, 1); return gone(); }
@@ -95,7 +102,8 @@ test('applyApps: upsert by name — the first run creates the five apps and the 
   const first = await applyApps(prod, creds, { fetchImpl: logto.fetchImpl });
   assert.deepEqual(Object.keys(first), ['web', 'admin', 'native', 'm2m', 'control', 'resource']);
   assert.deepEqual(logto.state.apps.map((a) => a.name), ['munni-nas-prod web', 'munni-nas-prod admin', 'munni-nas-prod native', 'munni-nas-prod api m2m', 'munni-nas-prod control']);
-  assert.equal(first.m2m.secret, logto.state.apps.find((a) => a.type === 'MachineToMachine').secret, 'the api\'s machine credential comes back for the write-back');
+  const m2m = logto.state.apps.find((a) => a.type === 'MachineToMachine');
+  assert.equal(first.m2m.secret, logto.state.secrets[m2m.id].find((s) => s.name === MACHINE_SECRET_NAME).value, "the api's machine credential is the module's own application secret — the app endpoints carry none");
   assert.deepEqual(logto.state.resources, [{ id: first.resource.id, name: 'munni-nas-prod api', indicator: `https://munni-prod-nas-api.${DOMAIN}` }]);
   assert.deepEqual(logto.state.tokens[0], { auth: `Basic ${Buffer.from('infra1:s').toString('base64')}`, form: { grant_type: 'client_credentials', resource: 'https://default.logto.app/api', scope: 'all' } });
   const writesAfterFirst = logto.writes();
@@ -104,6 +112,7 @@ test('applyApps: upsert by name — the first run creates the five apps and the 
   assert.equal(logto.state.apps.length, 5);
   assert.equal(logto.state.resources.length, 1);
   assert.equal(logto.writes(), writesAfterFirst + 5, 'one PATCH per app carries the current definition — nothing created twice');
+  assert.equal(logto.state.secrets[m2m.id].length, 2, "Default secret + the module's own — read back, not minted again");
   assert.ok(logto.calls.filter((c) => c.method === 'PATCH').every((c) => c.body.oidcClientMetadata || c.body.type === 'MachineToMachine'));
   await assert.rejects(applyApps(prod, creds, { fetchImpl: async () => ({ ok: false, status: 401, text: async () => 'bad credential' }) }), /401.*bad credential/);
 });
@@ -170,6 +179,22 @@ test('writeBack: the frontends\' app ids and endpoints become variables of the s
       NATIVE_LOGTO_APP_ID: 'n1', NATIVE_API_URL: `https://munni-prod-nas-api.${DOMAIN}`, NATIVE_PUBLIC_ORIGIN: `https://munni-prod-nas.${DOMAIN}`, NATIVE_LOGTO_ENDPOINT: `https://munni-prod-nas-logto.${DOMAIN}`, NATIVE_LOGTO_RESOURCE: `https://munni-prod-nas-api.${DOMAIN}`,
     });
     assert.deepEqual(gh.secrets('nas-prod'), { LOGTO_M2M_APP_ID: 'm1', LOGTO_M2M_APP_SECRET: 'ms' });
+  } finally {
+    gh.cleanup();
+  }
+});
+
+test('writeBack / writeBackConnector refuse a credential without a value — the string "undefined" reached GitHub once Logto stopped carrying the secret on its application endpoints (2026-10-01)', () => {
+  const gh = fakeGh();
+  try {
+    gh.seed('nas-prod');
+    const prod = loadStack('munni-nas-prod');
+    assert.throws(() => writeBack(prod, { web: { id: 'w1' }, admin: { id: 'a1' }, native: { id: 'n1' }, m2m: { id: 'm1', secret: undefined } }), /LOGTO_M2M_APP_SECRET: no value to write back/);
+    assert.throws(() => writeBackConnector(prod, { appId: 'c1', secret: '' }), /CONNECTOR_M2M_APP_SECRET: no value to write back/);
+    assert.deepEqual(gh.secrets('nas-prod'), {}, 'nothing stored');
+    assert.deepEqual(gh.variables('nas-prod'), {}, 'not even the ids — the write-back is all or nothing');
+    writeBackConnector(prod, { appId: 'c1', secret: 'cs' });
+    assert.deepEqual(gh.secrets('nas-prod'), { CONNECTOR_M2M_APP_ID: 'c1', CONNECTOR_M2M_APP_SECRET: 'cs' });
   } finally {
     gh.cleanup();
   }

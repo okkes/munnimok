@@ -12,7 +12,7 @@ const fx = scratchPlatforms();
 const { renderStack, templatePlaceholders } = await import('../modules/render.mjs');
 const { loadStack, loadPlatform, savePlatform, hostsFor } = await import('../modules/stack.mjs');
 const { MANIFEST, entriesFor, featureOn, generateValue, mirroredEntries } = await import('../modules/secrets.mjs');
-const { ensureConnectorAccess, connectorDefinitions, removeApps, CONNECTOR_SCOPE } = await import('../modules/logto.mjs');
+const { ensureConnectorAccess, connectorDefinitions, removeApps, CONNECTOR_SCOPE, MACHINE_SECRET_NAME } = await import('../modules/logto.mjs');
 test.after(() => fx.cleanup());
 
 const block = (compose, service) => new RegExp(`^  ${service}:\\n([\\s\\S]*?)(?=^  [a-z-]+:$|^volumes:$)`, 'm').exec(compose)?.[1] ?? null;
@@ -190,7 +190,7 @@ test('the manifest: an environment that runs connectors owns its seal key, enrol
 
 /** a Logto Management API in a box, with the machine-role routes the connector access needs */
 function fakeLogto() {
-  const state = { apps: [], resources: [], scopes: {}, roles: [], roleScopes: {}, roleApps: {} };
+  const state = { apps: [], resources: [], scopes: {}, roles: [], roleScopes: {}, roleApps: {}, secrets: {} };
   let n = 0;
   const ok = (body = {}) => ({ ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) });
   const gone = () => ({ ok: true, status: 204, json: async () => null, text: async () => '' });
@@ -202,7 +202,13 @@ function fakeLogto() {
     calls.push({ pathname, method, body });
     let m;
     if (pathname === '/oidc/token') return ok({ access_token: 't' });
-    if (pathname === '/api/applications') { if (method === 'GET') return ok(state.apps); const app = { id: `app${++n}`, secret: `secret${n}`, ...body }; state.apps.push(app); return ok(app); }
+    if (pathname === '/api/applications') { if (method === 'GET') return ok(state.apps); const app = { id: `app${++n}`, ...body }; state.apps.push(app); state.secrets[app.id] = [{ applicationId: app.id, name: 'Default secret', value: `default${n}`, createdAt: 1, expiresAt: null }]; return ok(app); }
+    if ((m = /^\/api\/applications\/([^/]+)\/secrets$/.exec(pathname))) {
+      state.secrets[m[1]] ??= [];
+      if (method === 'GET') return ok(state.secrets[m[1]]);
+      if (state.secrets[m[1]].some((s) => s.name === body.name)) return { ok: false, status: 422, json: async () => ({}), text: async () => '{"code":"application.secret_name_exists"}' };
+      const s = { applicationId: m[1], name: body.name, value: `value${++n}`, createdAt: 1, expiresAt: null }; state.secrets[m[1]].push(s); return { ...ok(s), status: 201 };
+    }
     if ((m = /^\/api\/applications\/([^/]+)$/.exec(pathname)) && method === 'DELETE') { state.apps = state.apps.filter((a) => a.id !== m[1]); return gone(); }
     if (pathname === '/api/resources') { if (method === 'GET') return ok(state.resources); const r = { id: `res${++n}`, ...body }; state.resources.push(r); return ok(r); }
     if ((m = /^\/api\/resources\/([^/]+)$/.exec(pathname)) && method === 'DELETE') { state.resources = state.resources.filter((r) => r.id !== m[1]); return gone(); }
@@ -231,7 +237,7 @@ test('ensureConnectorAccess: the control plane is an API resource with the conne
 
     const first = await ensureConnectorAccess(stack, creds, { fetchImpl: logto.fetchImpl });
     assert.equal(first.appId, logto.state.apps.find((a) => a.name === 'munni-nas-staging api connector m2m').id);
-    assert.equal(first.secret, 'secret4');
+    assert.equal(first.secret, logto.state.secrets[first.appId].find((s) => s.name === MACHINE_SECRET_NAME).value, "the credential is the module's own application secret on the app — Logto's application endpoints carry none");
     assert.equal(logto.state.resources.find((r) => r.id === first.resourceId).indicator, defs.resource.indicator);
     assert.equal(logto.state.scopes[first.resourceId][0].name, CONNECTOR_SCOPE);
     assert.equal(logto.state.roles.find((r) => r.id === first.roleId).type, 'MachineToMachine');
@@ -242,6 +248,7 @@ test('ensureConnectorAccess: the control plane is an API resource with the conne
     const second = await ensureConnectorAccess(stack, creds, { fetchImpl: logto.fetchImpl });
     assert.deepEqual(second, first, 'idempotent: the same ids');
     assert.equal(logto.writes(), writesAfterFirst, 'nothing written twice');
+    assert.equal(logto.state.secrets[first.appId].length, 2, "Default secret + the module's own — read back on the second run");
 
     // an environment's cleanup takes the connector app, role and resource with the api's own
     const removed = await removeApps(stack, creds, { fetchImpl: logto.fetchImpl });

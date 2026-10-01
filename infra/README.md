@@ -128,9 +128,12 @@ Logto/GlitchTip after they ran. `--verify` fails loudly on drift. The
 connector platform's entries (#367) follow the same rules: an environment
 with `features.connectors` mints `CONNECTOR_SEAL_KEY_K1`,
 `CONNECTOR_ENROLLMENT_HMAC` and `CONNECTOR_SUBJECT_SALT` and gets
-`CONNECTOR_M2M_APP_ID/SECRET` written back by the Logto module; the
-platform mints `CONNECTOR_FLEET_CODE` once, for its pooled browser agent
-and every control plane.
+`CONNECTOR_M2M_APP_ID/SECRET` written back by the Logto module (like
+`LOGTO_M2M_APP_ID/SECRET`, the secret is the module's own application
+secret `munni bootstrap` on the machine app, read back on every run —
+Logto's application endpoints carry none); the platform mints
+`CONNECTOR_FLEET_CODE` once, for its pooled browser agent and every
+control plane.
 Repository-level secrets and variables are not used, except the first-boot
 latch `MUNNI_INITIALIZED` the wizard sets at Connect.
 

@@ -81,6 +81,33 @@ export function appDefinitions(stack) {
   return defs;
 }
 
+/** the application secret this module owns on every machine app it creates — read back on every run, minted once */
+export const MACHINE_SECRET_NAME = 'munni bootstrap';
+
+/**
+ * The machine credential's secret. Logto keeps an application's secrets in
+ * their own table and its application endpoints carry none (svhd/logto
+ * 1.43; found live 2026-10-01 — the write-back had stored the string
+ * "undefined" and the api's token mint answered 401): the module's own
+ * named secret is read back when it is there and minted when it is not,
+ * so every bootstrap writes back the same value and a run without a
+ * deploy never desyncs the running api from Logto.
+ */
+async function machineSecret(call, appId) {
+  const secrets = await call(`/applications/${appId}/secrets`);
+  const mine = (Array.isArray(secrets) ? secrets : []).find((s) => s.name === MACHINE_SECRET_NAME);
+  if (typeof mine?.value === 'string' && mine.value) return mine.value;
+  const made = await call(`/applications/${appId}/secrets`, { method: 'POST', body: JSON.stringify({ name: MACHINE_SECRET_NAME }) });
+  if (typeof made?.value !== 'string' || !made.value) throw new Error(`Logto answered without a value for the application secret "${MACHINE_SECRET_NAME}" of ${appId}`);
+  return made.value;
+}
+
+/** a value the write-back may store — never missing, never empty (the string "undefined" once reached GitHub) */
+const credential = (name, value) => {
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`${name}: no value to write back`);
+  return value;
+};
+
 /** upsert-by-name; returns {web, admin, native, m2m, control?, resource} */
 export async function applyApps(stack, creds, { fetchImpl = localAwareFetch } = {}) {
   const call = await client(stack, creds, fetchImpl);
@@ -90,6 +117,8 @@ export async function applyApps(stack, creds, { fetchImpl = localAwareFetch } = 
     const match = existing.find((a) => a.name === def.name);
     out[key] = match ? await call(`/applications/${match.id}`, { method: 'PATCH', body: JSON.stringify(def) }) : await call('/applications', { method: 'POST', body: JSON.stringify(def) });
   }
+  // the api's machine credential: the module's own application secret on its m2m app
+  out.m2m.secret = await machineSecret(call, out.m2m.id);
   out.resource = await ensureResource(call, stack);
   return out;
 }
@@ -241,19 +270,23 @@ export async function ensureConnectorAccess(stack, creds, { fetchImpl = localAwa
   const held = await call(`/roles/${role.id}/applications?page_size=100`);
   if (!held.some((a) => a.id === app.id)) await call(`/roles/${role.id}/applications`, { method: 'POST', body: JSON.stringify({ applicationIds: [app.id] }) });
 
-  return { appId: app.id, secret: app.secret, resourceId: resource.id, scopeId: scope.id, roleId: role.id };
+  return { appId: app.id, secret: await machineSecret(call, app.id), resourceId: resource.id, scopeId: scope.id, roleId: role.id };
 }
 
 /** GitHub write-back (nas) of the relay's machine credential */
 export function writeBackConnector(stack, access) {
   const env = stack.githubEnvironment;
-  execFileSync('gh', ['secret', 'set', 'CONNECTOR_M2M_APP_ID', '--env', env, '--body', access.appId]);
-  execFileSync('gh', ['secret', 'set', 'CONNECTOR_M2M_APP_SECRET', '--env', env, '--body', access.secret]);
+  const appId = credential('CONNECTOR_M2M_APP_ID', access.appId);
+  const secret = credential('CONNECTOR_M2M_APP_SECRET', access.secret);
+  execFileSync('gh', ['secret', 'set', 'CONNECTOR_M2M_APP_ID', '--env', env, '--body', appId]);
+  execFileSync('gh', ['secret', 'set', 'CONNECTOR_M2M_APP_SECRET', '--env', env, '--body', secret]);
 }
 
 /** GitHub write-back (nas): app ids as variables, the api's m2m credential as secrets */
 export function writeBack(stack, apps) {
   const env = stack.githubEnvironment;
+  const m2mId = credential('LOGTO_M2M_APP_ID', apps.m2m.id);
+  const m2mSecret = credential('LOGTO_M2M_APP_SECRET', apps.m2m.secret);
   const setVar = (name, value) => execFileSync('gh', ['variable', 'set', name, '--env', env, '--body', value]);
   setVar('VITE_LOGTO_APP_ID', apps.web.id);
   setVar('VITE_LOGTO_APP_ID_ADMIN', apps.admin.id);
@@ -263,8 +296,8 @@ export function writeBack(stack, apps) {
   setVar('NATIVE_PUBLIC_ORIGIN', stack.urls.web);
   setVar('NATIVE_LOGTO_ENDPOINT', stack.urls.logto);
   setVar('NATIVE_LOGTO_RESOURCE', stack.urls.api);
-  execFileSync('gh', ['secret', 'set', 'LOGTO_M2M_APP_ID', '--env', env, '--body', apps.m2m.id]);
-  execFileSync('gh', ['secret', 'set', 'LOGTO_M2M_APP_SECRET', '--env', env, '--body', apps.m2m.secret]);
+  execFileSync('gh', ['secret', 'set', 'LOGTO_M2M_APP_ID', '--env', env, '--body', m2mId]);
+  execFileSync('gh', ['secret', 'set', 'LOGTO_M2M_APP_SECRET', '--env', env, '--body', m2mSecret]);
 }
 
 /**

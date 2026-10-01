@@ -137,9 +137,15 @@ refuses to start. It publishes nothing and dials only out.
 API resource of the environment's Logto (indicator = its public address)
 carrying the scope `connector:admin`, a machine role granting it, and the
 api's machine application holding the role; the pair is written back as
-`CONNECTOR_M2M_APP_ID/SECRET`. The api mints client credentials for that
-resource and the scope comes along, so one token opens the consumer routes
-and the operator's. An environment's cleanup removes the three with the
+`CONNECTOR_M2M_APP_ID/SECRET`. The secret is the module's own application
+secret on that app, named `munni bootstrap` — Logto's application endpoints
+carry none (found live 2026-10-01: the write-back had stored the string
+"undefined" and the api's token mint answered 401, which the relay reports
+as 503 `provider_unavailable`); it is read back on every bootstrap and
+minted once, so a run without a deploy never desyncs the running api from
+Logto, and a write-back refuses a credential without a value. The api
+mints client credentials for that resource and the scope comes along, so
+one token opens the consumer routes and the operator's. An environment's cleanup removes the three with the
 api's own app.
 
 **Secrets** (`infra/secrets.manifest.json`): per environment, generated —
