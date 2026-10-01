@@ -148,7 +148,9 @@ const json = (res, status, body) => { res.writeHead(status, { 'content-type': 'a
 const stepRunner = (spawnImpl) => (res, label, cmd, args, opts = {}) =>
   new Promise((resolve) => {
     if (label) res.write(`▶ ${label}\n`);
-    const child = spawnImpl(cmd, args, { ...opts, shell: false });
+    // windowsHide: a helper restarted from the page runs without a console, and every gh/git/docker child
+    // would otherwise flash its own console window (seen 2026-10-01: a terminal popping up on every poll)
+    const child = spawnImpl(cmd, args, { ...opts, shell: false, windowsHide: true });
     let out = '';
     const mask = opts.mask ?? ((s) => s);
     child.stdout.on('data', (d) => { const s = String(d); out += s; res.write(mask(s)); });
@@ -2153,7 +2155,7 @@ function restartHelper(server) {
   autonomyTimer = null;
   server.close();
   server.closeAllConnections?.();
-  spawn(process.execPath, [fileURLToPath(import.meta.url)], { detached: true, stdio: 'ignore', shell: false, env: { ...process.env, SETUP_NO_OPEN: '1', SETUP_RESTART_WAIT: '1500' } }).unref();
+  spawn(process.execPath, [fileURLToPath(import.meta.url)], { detached: true, stdio: 'ignore', shell: false, windowsHide: true, env: { ...process.env, SETUP_NO_OPEN: '1', SETUP_RESTART_WAIT: '1500' } }).unref();
   setTimeout(() => process.exit(0), 3000).unref();
 }
 

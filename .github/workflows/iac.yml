@@ -81,10 +81,11 @@ jobs:
       fail-fast: false
       matrix:
         include: ${{ fromJSON(needs.stacks.outputs.include) }}
-    # one APPLY per stack at a time; verifies get their own group so a
-    # queued verify can never cancel a pending apply
+    # one run per PLATFORM at a time (2026-10-01: two stacks' bootstraps logged into DSM with the same account
+    # at once and one lost its session — 119 "SID not found" on the reverse-proxy list); verifies get their own
+    # group so a queued verify can never cancel a pending apply
     concurrency:
-      group: iac-${{ matrix.stack }}-${{ (github.event_name == 'push' || inputs.verify_only == true) && 'verify' || 'apply' }}
+      group: iac-${{ matrix.platform }}-${{ (github.event_name == 'push' || inputs.verify_only == true) && 'verify' || 'apply' }}
       cancel-in-progress: ${{ github.event_name == 'push' || inputs.verify_only == true }}
     environment: ${{ matrix.environment }}
     steps:
