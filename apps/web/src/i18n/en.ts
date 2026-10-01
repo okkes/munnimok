@@ -2341,6 +2341,7 @@ export const en = {
   'connect.error.provider_unavailable': 'The party cannot be reached right now — try again later.',
   'connect.error.rate_limited': 'Too many attempts — wait a little and try again.',
   'connect.error.agent_unavailable': 'Your own computer is not online — start the household agent first.',
+  'connect.error.fleet_unavailable': 'munni’s browser agents are offline or busy for this party — try again in a moment.',
   'connect.error.agent_revoked': 'Your household agent was removed — reconnect to set it up again.',
   'connect.error.unsupported_resource': 'munni no longer knows this connection — remove it and connect again.',
   'connect.error.invalid_request': 'Something in the request was not right — try again.',

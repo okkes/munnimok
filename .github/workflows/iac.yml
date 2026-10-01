@@ -79,13 +79,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # the stacks of one run go one after another: two bootstraps logged into DSM with the same account at once
+      # and one lost its session (2026-10-01, 119 "SID not found" on the reverse-proxy list)
+      max-parallel: 1
       matrix:
         include: ${{ fromJSON(needs.stacks.outputs.include) }}
-    # one run per PLATFORM at a time (2026-10-01: two stacks' bootstraps logged into DSM with the same account
-    # at once and one lost its session — 119 "SID not found" on the reverse-proxy list); verifies get their own
-    # group so a queued verify can never cancel a pending apply
+    # applies of one platform queue behind each other (same DSM account, see above) and are never cancelled;
+    # verifies keep a group per stack and drop a stale one when the next push comes
     concurrency:
-      group: iac-${{ matrix.platform }}-${{ (github.event_name == 'push' || inputs.verify_only == true) && 'verify' || 'apply' }}
+      group: ${{ (github.event_name == 'push' || inputs.verify_only == true) && format('iac-{0}-verify', matrix.stack) || format('iac-{0}-apply', matrix.platform) }}
       cancel-in-progress: ${{ github.event_name == 'push' || inputs.verify_only == true }}
     environment: ${{ matrix.environment }}
     steps:

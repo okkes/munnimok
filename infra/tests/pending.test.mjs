@@ -37,6 +37,15 @@ test('pending: the app signing fingerprint alone needs only Deploy; together wit
   const both = configChanges(before, env({ channel: 'dev', store: { ...before.store, androidCertSha256: fp } }));
   assert.equal(needsFor(both), 'bootstrap');
   assert.deepEqual(both.map((c) => c.path), ['channel', 'store.androidCertSha256']);
+  // #420: the agent counts are rendered only — a Deploy applies them; with anything else a Bootstrap
+  const agentsOnly = configChanges(before, env({ agents: { ...before.agents, pooled: 3 } }));
+  assert.deepEqual(agentsOnly.map((c) => c.path), ['agents.pooled']);
+  assert.equal(needsFor(agentsOnly), 'bootstrap', 'the first agents block of an environment brings its fleet code');
+  assert.equal(needsFor(configChanges(before, env({ channel: 'dev', agents: { ...before.agents, pooled: 3 } }))), 'bootstrap');
+  // a key the applied side never had takes the Bootstrap even on a deploy-only path (the first agents of an environment bring its fleet code)
+  const withAgents = env({ agents: { pooled: 1, concurrency: 2, privateSlots: 0 } });
+  assert.equal(needsFor(configChanges(before, withAgents)), 'bootstrap');
+  assert.equal(needsFor(configChanges(withAgents, env({ agents: { pooled: 2, concurrency: 2, privateSlots: 0 } }))), 'deploy', 'a count that changes afterwards is a Deploy');
 });
 
 test('pending: arrays are compared whole and read as lists; the wizard-only label never counts', () => {

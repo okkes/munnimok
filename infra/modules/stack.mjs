@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { normalizeAgents } from './agents.mjs';
 
 /**
  * The platform/environment model (infra/platforms/README.md): every
@@ -75,9 +76,7 @@ export function normalizePlatform(id, cfg, file = null) {
     label: PLATFORM_LABELS[id] ?? id,
     registry: 'ghcr.io/okkes',
     sharedChannel: 'latest',
-    // the pooled browser agent of the shared stack (#367): off until the operator ticks it;
-    // its egress is a CLAIM the control planes believe — a home line is residential, a rack is not
-    browserAgent: false,
+    // the pooled agents' egress is a CLAIM the control planes believe — a home line is residential, a rack is not
     // the branch every run of this platform checks out (#416); empty = by each stack's image channel
     branch: null,
     ...cfg,
@@ -116,6 +115,8 @@ export function normalizeEnv(platform, raw, fromFile) {
   if (!ENV_NAME_RE.test(env) || RESERVED_ENV_NAMES.has(env)) throw new Error(`environment name "${env}" is invalid (2-12 lowercase letters/digits, not ${[...RESERVED_ENV_NAMES].join('/')})`);
   if (!Number.isInteger(raw.slot) || raw.slot < 0) throw new Error(`environment "${env}" on ${platform} has no integer slot`);
   const features = { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, connectors: false, banking: [], signin: [], ...(raw.features ?? {}) };
+  // #420: the environment's own browser agents — pooled replicas (jobs at once each) and private slots, rendered beside its control plane
+  const agents = normalizeAgents(raw.agents);
   return {
     env,
     slot: raw.slot,
@@ -123,6 +124,7 @@ export function normalizeEnv(platform, raw, fromFile) {
     appChannel: raw.appChannel ?? (env === 'prod' ? 'production' : 'staging'),
     label: raw.label ?? `munni ${env}-${platform}`,
     features,
+    agents,
     store: {
       androidPackage: raw.store?.androidPackage ?? `app.munni.${platform}.${env}`,
       iosBundleId: raw.store?.iosBundleId ?? raw.store?.androidPackage ?? `app.munni.${platform}.${env}`,
@@ -240,8 +242,8 @@ export function loadStack(name, { lenient = false } = {}) {
     controlApi: controlEnvName ? stackName(p.platform, controlEnvName) : null,
     githubEnvironment: `${p.platform}-${parsed.env ?? 'shared'}`,
     features: shared ? { telemetry: true } : envCfg.features,
-    // the platform's pooled browser agent (#367): rendered into the shared stack, dialling every environment that runs connectors
-    agent: shared ? { pooled: Boolean(p.browserAgent), egress: p.agentEgress } : null,
+    // #420: the environment's pooled browser agents (and private slots), rendered beside its control plane with the platform's egress claim
+    agents: shared ? null : { ...envCfg.agents, egress: p.agentEgress },
     store: shared ? null : envCfg.store,
     label: shared ? `munni shared (${p.label})` : envCfg.label,
     native: shared ? null : {

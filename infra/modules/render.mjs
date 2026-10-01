@@ -156,7 +156,7 @@ ${local ? `
     ports:
       - "${p.control}:80"
 
-${pooledAgent(s)}  # ONE console over every database of the platform (each environment's postgres + glitchtip-db)
+  # ONE console over every database of the platform (each environment's postgres + glitchtip-db)
   pgadmin:
     image: dpage/pgadmin4:latest
     restart: unless-stopped
@@ -177,33 +177,25 @@ ${pooledAgent(s)}  # ONE console over every database of the platform (each envir
 volumes:
   glitchtipdb:
   vaultdata:${local ? '\n  vaulttls:' : ''}
-  pgadmindata:${connectorEnvs(s).length && s.agent?.pooled ? '\n  agentstate:\n  agentprofiles:' : ''}
+  pgadmindata:
 `;
 }
 
-/** the platform's environments that run connectors — the ones a pooled agent dials */
-function connectorEnvs(shared) {
-  try { return platformEnvStacks(shared.platform).filter((env) => env.features.connectors); } catch { return []; }
-}
-
 /**
- * The platform's pooled browser agent (#367): every provider pack, headed
- * under Xvfb, one container for every environment's control plane over the
- * shared network — it only ever dials out. Its egress is what the platform
- * declares (a home line is residential); the control planes believe it.
- * Rendered only when the operator ticked it AND an environment runs
- * connectors: an agent with nowhere to call refuses to start.
+ * The environment's pooled browser agents (#420, A1): every provider pack,
+ * headed under Xvfb, one container per replica beside the environment's own
+ * control plane on its default network — nothing dials in. Each replica
+ * enrolls with the ENVIRONMENT's fleet code (a per-environment secret) and
+ * takes `concurrency` jobs at once; the egress is the platform's claim (a
+ * home line is residential) and the control plane believes it. Zero
+ * replicas is a choice (a platform that only runs household agents).
  */
-function pooledAgent(s) {
-  if (!s.agent?.pooled) return '';
-  const envs = connectorEnvs(s);
-  if (!envs.length) return '  # the pooled browser agent is ticked, but no environment runs connectors yet — nothing for it to dial\n\n';
-  const connections = envs.map((env, i) => `      ConnectorAgent__Connections__${i}__Name: ${env.env}
-      ConnectorAgent__Connections__${i}__ControlPlaneBaseUrl: http://connector-${env.env}:8080/
-      ConnectorAgent__Connections__${i}__EnrollmentCode: \${CONNECTOR_FLEET_CODE}`).join('\n');
-  return `  # the platform's pooled browser agent (#367): every provider pack, headed under Xvfb,
-  # dialling out to each environment's control plane over the shared network — nothing dials in
-  connector-agent:
+function pooledAgents(s) {
+  const n = s.agents?.pooled ?? 0;
+  if (!n) return '';
+  const e = s.env;
+  return Array.from({ length: n }, (_, i) => i + 1).map((i) => `  # pooled browser agent ${i} of ${n} (#420): every provider pack, headed under Xvfb, dialling the control plane beside it
+  connector-agent-${e}-${i}:
     image: \${REGISTRY}/munni-connector-agent:\${TAG}
     restart: unless-stopped
     shm_size: 1gb
@@ -212,23 +204,31 @@ function pooledAgent(s) {
     environment:
       DOTNET_ENVIRONMENT: Production
       ConnectorAgent__Class: pooled
-      ConnectorAgent__AgentName: munni ${s.platform} pooled agent
-      ConnectorAgent__Egress__Country: ${s.agent.egress.country}
-      ConnectorAgent__Egress__Kind: ${s.agent.egress.kind}
+      ConnectorAgent__AgentName: munni ${e} pooled agent ${i}
+      ConnectorAgent__Egress__Country: ${s.agents.egress.country}
+      ConnectorAgent__Egress__Kind: ${s.agents.egress.kind}
       ConnectorAgent__BrowserLocale: nl-NL
       ConnectorAgent__BrowserTimezoneId: Europe/Amsterdam
-      ConnectorAgent__MaxConcurrency: "2"
+      ConnectorAgent__MaxConcurrency: "${s.agents.concurrency}"
       ConnectorAgent__Headless: "false"
       ConnectorAgent__StateFilePath: /state/agent-state.json
       ConnectorAgent__ProfileRootDirectory: /profiles
-${connections}
+      ConnectorAgent__Connections__0__Name: ${e}
+      ConnectorAgent__Connections__0__ControlPlaneBaseUrl: http://connector:8080/
+      ConnectorAgent__Connections__0__EnrollmentCode: \${CONNECTOR_FLEET_CODE}
+    depends_on:
+      connector-${e}:
+        condition: service_healthy
     volumes:
-      - agentstate:/state
-      - agentprofiles:/profiles
-    networks: [shared]
+      - agentstate${i}:/state
+      - agentprofiles${i}:/profiles
+    networks: [default]
 
-`;
+`).join('');
 }
+
+/** the volumes the environment's pooled agents keep (their enrollment and their browser profiles) */
+const agentVolumes = (s) => Array.from({ length: s.agents?.pooled ?? 0 }, (_, i) => `\n  agentstate${i + 1}:\n  agentprofiles${i + 1}:`).join('');
 
 function sharedTemplate(s) {
   return `# ${s.stack} env${s.delivery === 'docker' ? ' (real values — never commit this file)' : ' TEMPLATE — CI fills the placeholders from the GitHub environment "' + s.githubEnvironment + '"'}
@@ -254,10 +254,7 @@ VAULT_SIGNUPS_ALLOWED=\${VAULT_SIGNUPS_ALLOWED}
 
 # the control cockpit's Logto app (registered in the control environment's Logto)
 CONTROL_LOGTO_APP_ID=\${CONTROL_LOGTO_APP_ID}
-${s.agent?.pooled ? `
-# the pooled browser agent enrolls at every environment's control plane with the platform's standing code (#367)
-CONNECTOR_FLEET_CODE=\${CONNECTOR_FLEET_CODE}
-` : ''}`;
+`;
 }
 
 /** the family Caddy (lcl): local-CA https for the vault always, and for every service as a real sslip.io hostname in LAN mode */
@@ -436,7 +433,7 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       default:
         aliases: [api]
       shared: {}
-${s.features.connectors ? connectorService(s) : ''}
+${s.features.connectors ? connectorService(s) : ''}${s.features.connectors ? pooledAgents(s) : ''}
   logto-${e}:
     image: svhd/logto:1.43
     restart: unless-stopped
@@ -465,7 +462,7 @@ ${s.features.connectors ? connectorService(s) : ''}
       shared: {}
 
 volumes:
-  pgdata:
+  pgdata:${s.features.connectors ? agentVolumes(s) : ''}
 `;
 }
 
@@ -570,7 +567,7 @@ LOGODEV_SECRET_KEY=\${LOGODEV_SECRET_KEY}
 LOGODEV_PUBLIC_TOKEN=\${LOGODEV_PUBLIC_TOKEN}
 ${s.features.connectors ? `
 # the connector control plane (#367): its bundle seal key and enrollment HMAC, the api's subject
-# salt and machine app (written back by the logto module), the platform's fleet enrollment code
+# salt and machine app (written back by the logto module), the environment's fleet enrollment code (its pooled agents enroll with it)
 CONNECTOR_SEAL_KEY_K1=\${CONNECTOR_SEAL_KEY_K1}
 CONNECTOR_ENROLLMENT_HMAC=\${CONNECTOR_ENROLLMENT_HMAC}
 CONNECTOR_SUBJECT_SALT=\${CONNECTOR_SUBJECT_SALT}

@@ -253,6 +253,20 @@ public class ConnectorUnitTests
     }
 
     [Fact]
+    public void A_pooled_party_s_missing_agent_is_the_fleet_s_absence_not_the_person_s_machine()
+    {
+        var unavailable = new ConnectorError("agent_unavailable", true, "start_your_agent", "connect.error.agent_unavailable", null, null);
+        var pooled = (JsonObject)JsonNode.Parse("""{"id":"ah","agent":{"required":true,"class":"pooled"}}""")!;
+        var byo = (JsonObject)JsonNode.Parse("""{"id":"asn-persistent","agent":{"required":true,"class":"byo"}}""")!;
+        Assert.Equal("connect.error.fleet_unavailable", ConnectorRelayEndpoints.ForParty(unavailable, pooled).MessageKey);
+        Assert.Equal("connect.error.agent_unavailable", ConnectorRelayEndpoints.ForParty(unavailable, byo).MessageKey);
+        // no manifest: nothing says the person's own machine was wanted
+        Assert.Equal("connect.error.fleet_unavailable", ConnectorRelayEndpoints.ForParty(unavailable, null).MessageKey);
+        var other = new ConnectorError("rate_limited", true, "wait", "connect.error.rate_limited", null, 60);
+        Assert.Same(other, ConnectorRelayEndpoints.ForParty(other, pooled));
+    }
+
+    [Fact]
     public void The_sync_query_asks_for_the_window_and_the_includes_a_resource_offers()
     {
         var manifest = (JsonObject)JsonNode.Parse("""{"limits":{"max_history_days":400}}""")!;

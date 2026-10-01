@@ -122,16 +122,23 @@ see its README): an environment with `features.connectors` gets
   back (until then the relay stays off and the api says why), and the
   public address as `AgentPublicUrl`.
 
-The platform's shared stack gets **the pooled browser agent**
-`connector-agent` (image `munni-connector-agent:<channel>`) when the
-platform ticks `browserAgent`: every provider pack, headed under Xvfb,
-`Class=pooled`, the platform's `agentEgress` claim, one connection per
-environment that runs connectors (`http://connector-<env>:8080/` over the
-shared network) enrolled with `CONNECTOR_FLEET_CODE` — the standing code
-every control plane of the platform seeds under the subject `fleet`
-(`Connector:FleetEnrollmentCode`). It is rendered only when at least one
-environment runs connectors, because an agent with nowhere to call
-refuses to start. It publishes nothing and dials only out.
+Every environment that runs connectors gets **its own pooled browser
+agents** (#420, 2026-10-01): `connector-agent-<env>-<n>` (image
+`munni-connector-agent:<channel>`), one container per replica the
+environment names (`agents.pooled`, default 1; zero is a choice), every
+provider pack, headed under Xvfb, `Class=pooled`, `MaxConcurrency` =
+`agents.concurrency` (default 2), the platform's `agentEgress` claim, one
+connection to the control plane beside it (`http://connector:8080/` on
+the environment's own network) enrolled with `CONNECTOR_FLEET_CODE` — now
+a per-environment secret the bootstrap mints, the standing code its
+control plane seeds under the subject `fleet`
+(`Connector:FleetEnrollmentCode`). A replica waits for its control plane
+to be healthy, publishes nothing and dials only out. The wizard sizes the
+count from the host's memory (DSM's `SYNO.Core.System` for a NAS, this
+computer for lcl): a quarter kept free, the stacks subtracted, about 1 GB
+per headed browser job plus 600 MB per replica — shown with its arithmetic
+and overridable. The shared stack runs no agent any more. Prod and dev
+never share browser capacity.
 
 **The Logto module** (`ensureConnectorAccess`) makes the control plane an
 API resource of the environment's Logto (indicator = its public address)
@@ -156,8 +163,9 @@ api's own app.
 per platform, generated — `CONNECTOR_FLEET_CODE` (`AGNT-XXXX-XXXX`),
 mirrored into every environment. `deploy-nas.yml` passes each by name.
 
-**The wizard**: the environment form's *Connectors* tick, the platform's
-*pooled browser agent* tick with its line (residential / datacenter), and a
+**The wizard**: the environment form's *Connectors* tick and its *pooled
+browser agents* count + jobs at once (with the sizing recommendation), the
+platform's line (residential / datacenter), and a
 *Connectors* tab in the environment workspace with the facts above, the
 household compose line and a liveness check of the control plane through
 the helper. Nothing here asks for an account: every credential is minted.

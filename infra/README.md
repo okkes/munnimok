@@ -135,8 +135,8 @@ with `features.connectors` mints `CONNECTOR_SEAL_KEY_K1`,
 `LOGTO_M2M_APP_ID/SECRET`, the secret is the module's own application
 secret `munni bootstrap` on the machine app, read back on every run —
 Logto's application endpoints carry none); the platform mints
-`CONNECTOR_FLEET_CODE` once, for its pooled browser agent and every
-control plane.
+`CONNECTOR_FLEET_CODE` is the environment's own too (#420): its pooled
+browser agents enroll with it at the control plane beside them.
 Repository-level secrets and variables are not used, except the first-boot
 latch `MUNNI_INITIALIZED` the wizard sets at Connect.
 

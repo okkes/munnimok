@@ -67,13 +67,11 @@ platform).
 platform secret `PLATFORM_DOMAIN`. `publishedPath` is where bundles land
 (File Station path); the live dir is its parent. `controlEnv` names the
 environment whose API and Logto the control cockpit signs into (default:
-the lowest slot). `browserAgent: true` runs the connector platform's
-pooled browser agent in the shared stack (#367): one container with every
-provider pack that dials out to each environment's control plane and
-drives the parties that need a real browser; `agentEgress` says where its
-traffic leaves from (`{ "country": "NL", "kind": "residential" }` by
-default — a home line; a rack says `"datacenter"`), and the control planes
-believe it. `branch` names the branch every run of this platform checks out
+the lowest slot). `agentEgress` says where the environments' pooled
+browser agents' traffic leaves from (`{ "country": "NL", "kind":
+"residential" }` by default — a home line; a rack says `"datacenter"`),
+and the control planes believe it; the agents themselves are the
+environments' (`agents`, below — #420). `branch` names the branch every run of this platform checks out
 for its templates and tools; empty means each stack follows its image channel
 (`latest` → master releases, `dev` → the dev branch), so a production
 environment is never rendered with the dev branch's templates (#416).
@@ -97,6 +95,13 @@ environment is never rendered with the dev branch's templates (#416).
 (`production` | `staging`; default: production for `prod`, staging
 otherwise). `store` ids default to `app.munni.<platform>.<env>`; the
 deep-link scheme is always `munni-<env>-<platform>`.
+
+`agents` (#420): `{ "pooled": 1, "concurrency": 2, "privateSlots": 0 }` —
+how many pooled browser agents run beside the environment's control plane
+(`connector-agent-<env>-<n>`, zero allowed), how many jobs each takes at
+once, and (slice A2) how many private slots the admin can hand to users.
+The wizard recommends the counts from the host's memory; a change applies
+with a Deploy. Every environment mints its own `CONNECTOR_FLEET_CODE`.
 
 `features.connectors: true` adds the connector control plane (#367) to the
 environment: one more container beside the api (`connector-<env>`, image

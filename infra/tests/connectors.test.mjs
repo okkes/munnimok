@@ -117,50 +117,65 @@ test('on this computer the control plane fetches its Logto in-network over http 
   }
 });
 
-test('the pooled browser agent is rendered into the shared stack only when the platform ticks it AND an environment runs connectors — one connection per such environment, the platform\'s fleet code, outbound only', () => {
-  const cfg = loadPlatform('nas');
-  const { compose: off } = render('munni-nas-shared');
-  assert.equal(block(off, 'connector-agent'), null, 'not ticked: no agent');
+test('the pooled browser agents are rendered beside the environment\'s control plane (#420): one replica per count, each enrolling with the environment\'s fleet code, the jobs at once the environment names, outbound only; the shared stack runs none', () => {
+  const { compose: shared, env: sharedEnv } = render('munni-nas-shared');
+  assert.equal(block(shared, 'connector-agent'), null, 'the shared stack has no agent any more');
+  assert.ok(!/CONNECTOR_FLEET_CODE/.test(sharedEnv), 'the fleet code is the environment\'s');
 
-  savePlatform({ ...cfg, browserAgent: true });
+  withConnectors('nas', 'staging', { slot: 1, channel: 'dev', features: { android: true }, agents: { pooled: 2, concurrency: 3 } });
   try {
-    const { compose: idle, env: idleEnv } = render('munni-nas-shared');
-    assert.equal(block(idle, 'connector-agent'), null, 'ticked, but nothing to dial: no agent');
-    assert.match(idle, /no environment runs connectors yet/);
-    assert.match(idleEnv, /^CONNECTOR_FLEET_CODE=\$\{CONNECTOR_FLEET_CODE\}$/m);
-
-    withConnectors('nas', 'staging', { slot: 1, channel: 'dev', features: { android: true } });
-    withConnectors('nas', 'prod', { slot: 0, channel: 'latest', features: { android: true, ios: true, push: true, logos: true, banking: ['gocardless'], signin: ['google', 'apple'] } });
-    const { compose, stack } = render('munni-nas-shared');
-    assert.deepEqual(stack.agent, { pooled: true, egress: { country: 'NL', kind: 'residential' } });
-    const agent = block(compose, 'connector-agent');
-    assert.ok(agent);
-    const e = envOf(agent);
+    const { compose, stack, env: envTemplate } = render('munni-nas-staging');
+    assert.deepEqual(stack.agents, { pooled: 2, concurrency: 3, privateSlots: 0, egress: { country: 'NL', kind: 'residential' } });
+    assert.match(envTemplate, /^CONNECTOR_FLEET_CODE=\$\{CONNECTOR_FLEET_CODE\}$/m);
+    const first = block(compose, 'connector-agent-staging-1');
+    const second = block(compose, 'connector-agent-staging-2');
+    assert.ok(first && second, 'two replicas');
+    assert.equal(block(compose, 'connector-agent-staging-3'), null);
+    const e = envOf(first);
     assert.equal(e.ConnectorAgent__Class, 'pooled');
+    assert.equal(e.ConnectorAgent__AgentName, 'munni staging pooled agent 1');
     assert.equal(e.ConnectorAgent__Egress__Kind, 'residential');
     assert.equal(e.ConnectorAgent__Headless, '"false"');
-    assert.equal(e.ConnectorAgent__Connections__0__Name, 'prod');
-    assert.equal(e.ConnectorAgent__Connections__0__ControlPlaneBaseUrl, 'http://connector-prod:8080/');
+    assert.equal(e.ConnectorAgent__MaxConcurrency, '"3"');
+    assert.equal(e.ConnectorAgent__Connections__0__Name, 'staging');
+    assert.equal(e.ConnectorAgent__Connections__0__ControlPlaneBaseUrl, 'http://connector:8080/', 'the control plane beside it, on the environment\'s own network');
     assert.equal(e.ConnectorAgent__Connections__0__EnrollmentCode, '${CONNECTOR_FLEET_CODE}');
-    assert.equal(e.ConnectorAgent__Connections__1__Name, 'staging');
-    assert.equal(e.ConnectorAgent__Connections__1__ControlPlaneBaseUrl, 'http://connector-staging:8080/');
-    assert.deepEqual(portsOf(agent), [], 'an agent publishes nothing');
-    assert.match(agent, /shm_size: 1gb/);
-    assert.match(agent, /stop_grace_period: 45s/);
-    assert.match(agent, /agentprofiles:\/profiles/);
-    assert.match(compose, /^  agentstate:\n  agentprofiles:$/m);
-    assert.match(compose, /image: \$\{REGISTRY\}\/munni-connector-agent:\$\{TAG\}/);
+    assert.equal(e.ConnectorAgent__Connections__1__Name, undefined, 'one environment, one connection');
+    assert.deepEqual(portsOf(first), [], 'an agent publishes nothing');
+    assert.match(first, /shm_size: 1gb/);
+    assert.match(first, /stop_grace_period: 45s/);
+    assert.match(first, /agentprofiles1:\/profiles/);
+    assert.match(second, /agentstate2:\/state/);
+    assert.match(compose, /^  agentstate1:\n  agentprofiles1:\n  agentstate2:\n  agentprofiles2:$/m);
+    assert.match(first, /image: \$\{REGISTRY\}\/munni-connector-agent:\$\{TAG\}/);
+    assert.match(first, /connector-staging:\n        condition: service_healthy/, 'a replica waits for its control plane');
 
-    savePlatform({ ...cfg, browserAgent: true, agentEgress: { kind: 'datacenter' } });
-    assert.equal(envOf(block(render('munni-nas-shared').compose, 'connector-agent')).ConnectorAgent__Egress__Kind, 'datacenter', 'a rack says so');
+    // the platform's line is the claim every replica makes
+    const cfg = loadPlatform('nas');
+    savePlatform({ ...cfg, agentEgress: { kind: 'datacenter' } });
+    try {
+      assert.equal(envOf(block(render('munni-nas-staging').compose, 'connector-agent-staging-1')).ConnectorAgent__Egress__Kind, 'datacenter', 'a rack says so');
+    } finally {
+      savePlatform(cfg);
+    }
+
+    // zero replicas is a choice: a control plane served by household agents only
+    withConnectors('nas', 'staging', { slot: 1, channel: 'dev', features: { android: true }, agents: { pooled: 0 } });
+    const { compose: none } = render('munni-nas-staging');
+    assert.equal(block(none, 'connector-agent-staging-1'), null);
+    assert.ok(!/agentstate/.test(none));
+    // the default: one replica, two jobs at once
+    withConnectors('nas', 'staging', { slot: 1, channel: 'dev', features: { android: true } });
+    const { compose: one, stack: dflt } = render('munni-nas-staging');
+    assert.deepEqual(dflt.agents, { pooled: 1, concurrency: 2, privateSlots: 0, egress: { country: 'NL', kind: 'residential' } });
+    assert.ok(block(one, 'connector-agent-staging-1'));
+    assert.equal(envOf(block(one, 'connector-agent-staging-1')).ConnectorAgent__MaxConcurrency, '"2"');
   } finally {
-    savePlatform(cfg);
     fx.writeEnv('nas', { env: 'staging', slot: 1, channel: 'dev', features: { android: true } });
-    fx.writeEnv('nas', { env: 'prod', slot: 0, channel: 'latest', features: { android: true, ios: true, push: true, logos: true, banking: ['gocardless'], signin: ['google', 'apple'] } });
   }
 });
 
-test('the manifest: an environment that runs connectors owns its seal key, enrollment HMAC, subject salt and machine app; the fleet code is the platform\'s and reaches every environment; the generated shapes are what the control plane reads', () => {
+test('the manifest: an environment that runs connectors owns its seal key, enrollment HMAC, subject salt and machine app; the fleet code is the environment\'s own; the generated shapes are what the control plane reads', () => {
   assert.equal(featureOn({ features: { connectors: true } }, 'connectors'), true);
   assert.equal(featureOn({ features: {} }, 'connectors'), false);
 
@@ -174,9 +189,10 @@ test('the manifest: an environment that runs connectors owns its seal key, enrol
       assert.equal(on.find((e) => e.name === name)?.owner, 'generated', name);
     }
     for (const name of ['CONNECTOR_M2M_APP_ID', 'CONNECTOR_M2M_APP_SECRET']) assert.equal(on.find((e) => e.name === name)?.owner, 'module', name);
-    assert.ok(mirroredEntries(loadStack('munni-nas-staging')).some((e) => e.name === 'CONNECTOR_FLEET_CODE'), 'the platform value every environment renders with');
-    assert.equal(MANIFEST.secrets.find((e) => e.name === 'CONNECTOR_FLEET_CODE').scope, 'platform');
-    assert.ok(entriesFor(loadStack('munni-nas-shared')).some((e) => e.name === 'CONNECTOR_FLEET_CODE'), 'the shared stack mints it');
+    assert.equal(on.find((e) => e.name === 'CONNECTOR_FLEET_CODE')?.owner, 'generated', 'the fleet code is the environment\'s own (#420)');
+    assert.equal(MANIFEST.secrets.find((e) => e.name === 'CONNECTOR_FLEET_CODE').scope, 'env');
+    assert.ok(!mirroredEntries(loadStack('munni-nas-staging')).some((e) => e.name === 'CONNECTOR_FLEET_CODE'), 'nothing to mirror from the platform');
+    assert.ok(!entriesFor(loadStack('munni-nas-shared')).some((e) => e.name === 'CONNECTOR_FLEET_CODE'), 'the shared stack mints none');
   } finally {
     fx.writeEnv('nas', { env: 'staging', slot: 1, channel: 'dev', features: { android: true } });
   }

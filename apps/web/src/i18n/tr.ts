@@ -2343,6 +2343,7 @@ export const tr: Partial<Record<TranslationKey, string>> = {
   'connect.error.provider_unavailable': 'Tarafa şu anda ulaşılamıyor — daha sonra yeniden dene.',
   'connect.error.rate_limited': 'Çok fazla deneme — biraz bekleyip yeniden dene.',
   'connect.error.agent_unavailable': 'Kendi bilgisayarın çevrimiçi değil — önce ev ajanını başlat.',
+  'connect.error.fleet_unavailable': 'munni’nin tarayıcı ajanları bu taraf için çevrimdışı ya da meşgul — birazdan tekrar dene.',
   'connect.error.agent_revoked': 'Ev ajanın kaldırıldı — yeniden kurmak için yeniden bağlan.',
   'connect.error.unsupported_resource': 'munni bu bağlantıyı artık tanımıyor — kaldırıp yeniden bağlan.',
   'connect.error.invalid_request': 'İstekte bir şey yolunda değildi — yeniden dene.',

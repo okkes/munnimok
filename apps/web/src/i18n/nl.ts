@@ -2343,6 +2343,7 @@ export const nl: Partial<Record<TranslationKey, string>> = {
   'connect.error.provider_unavailable': 'De partij is nu niet bereikbaar — probeer het later opnieuw.',
   'connect.error.rate_limited': 'Te veel pogingen — wacht even en probeer het opnieuw.',
   'connect.error.agent_unavailable': 'Je eigen computer is niet online — start eerst de thuis-agent.',
+  'connect.error.fleet_unavailable': 'De browser-agents van munni zijn offline of bezet voor deze partij — probeer het zo nog eens.',
   'connect.error.agent_revoked': 'Je thuis-agent is verwijderd — koppel opnieuw om hem weer in te stellen.',
   'connect.error.unsupported_resource': 'munni kent deze koppeling niet meer — verwijder hem en koppel opnieuw.',
   'connect.error.invalid_request': 'Er klopte iets niet aan het verzoek — probeer het opnieuw.',

@@ -190,7 +190,14 @@ public static partial class ConnectorRelayEndpoints
             IdempotencyKey = request.IdempotencyKey,
             Trigger = "user",
         }, ct);
-        if (!reply.IsSuccess) return Relay(http, reply);
+        if (!reply.IsSuccess)
+        {
+            // the connector says agent_unavailable whether the party wanted the person's own machine or
+            // munni's fleet; the app must not tell someone to start a household agent when it is the
+            // fleet that is missing (Albert Heijn on a platform without a pooled agent, 2026-10-01)
+            var manifest = await relay.Catalogue.ProviderAsync(relay.Client, provider, ct);
+            return Relay(http, reply.Error is { } err ? reply with { Error = ForParty(err, manifest) } : reply);
+        }
 
         var view = reply.Object;
         var sessionId = view.Text(SessionIdField) ?? throw new InvalidOperationException("the connector answered a login without a session id");
@@ -520,6 +527,20 @@ public static partial class ConnectorRelayEndpoints
     }
 
     /// <summary>The connector's error envelope, in this API's casing, under the connector's own status.</summary>
+    /// <summary>
+    /// A pooled-class party's <c>agent_unavailable</c> carries the fleet's key: the pooled agents
+    /// are offline or busy, nothing the person can start. A party that needs the person's own
+    /// machine keeps the connector's key ("start your agent").
+    /// </summary>
+    internal static ConnectorError ForParty(ConnectorError error, JsonObject? manifest)
+    {
+        if (!string.Equals(error.Code, "agent_unavailable", StringComparison.Ordinal)) return error;
+        var cls = manifest?["agent"]?["class"]?.GetValue<string>();
+        return string.Equals(cls, "byo", StringComparison.Ordinal)
+            ? error
+            : error with { MessageKey = "connect.error.fleet_unavailable" };
+    }
+
     internal static IResult Relay(HttpContext http, ConnectorReply reply)
     {
         var error = reply.Error ?? new ConnectorError("internal", true, "retry", "connect.error.internal", null, null);
