@@ -8,6 +8,7 @@
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 import { backgroundPull, flushOutbox } from '@/sync/swSync';
 import { evaluateBudgetAlertsFromWorker } from '@/sync/swBudgets';
+import { evaluatePlanAlertsFromWorker } from '@/sync/swPlanning';
 import { buildNotification, readWorkerLang } from '@/sync/swNotifications';
 import type { PushPayload } from '@/sync/swNotifications';
 
@@ -90,7 +91,12 @@ self.addEventListener('push', (event) => {
         // budgets stay client-side (the server never learns them) — this
         // wake-up is the moment to warn about limits the new bank
         // transactions just crossed (budgets design P4)
-        for (const alert of await evaluateBudgetAlertsFromWorker(notification.pullSpaceId, lang)) {
+        const alerts = [
+          ...(await evaluateBudgetAlertsFromWorker(notification.pullSpaceId, lang)),
+          // #128: a plan subject in the red, once a day
+          ...(await evaluatePlanAlertsFromWorker(notification.pullSpaceId, lang)),
+        ];
+        for (const alert of alerts) {
           await self.registration.showNotification(alert.title, {
             body: alert.body,
             icon: 'icon-192.png',

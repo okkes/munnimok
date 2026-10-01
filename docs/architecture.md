@@ -381,6 +381,17 @@ flowchart TB
 * **Telemetry discipline**: demo/offline identities have a hard
   zero-network gate (enforced at the single `apiFetch` choke point and a
   Sentry `beforeSend` gate). Only signed-in users emit crash reports.
+* **Planning (#128)**: a plan is two synced entities — `plan` (one per
+  space × period × kind: actual, sandbox, blueprint; deterministic ids so
+  two devices starting the same period converge) and `planSubject` (a
+  mirrored budget/recurring/loan/goal, or an own expense subject with
+  categories and a target; `fundedCents` is the only money field). The
+  arithmetic (`domain/planning.ts`) is pure; `application/planningModel.ts`
+  builds one model from the store without React so the screens, the home
+  block, the tab dot, the category picker and the service worker alert
+  (`sync/swPlanning.ts`) read the same numbers. The sync engine skips ops
+  of entities a build does not know, so retiring an entity (allocation,
+  topic) never stalls a pull.
 
 ### S1.2 Native shells (`apps/native`) — thin Capacitor wrappers
 

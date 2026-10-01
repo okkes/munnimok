@@ -5,7 +5,10 @@ import type { Op, SyncEnvelope } from '@/sync/merge';
 import { reportError } from '@/lib/report';
 import type { StorageBackend } from './backend';
 import { InvariantViolation, rowProblems } from './invariants';
+import { ENTITY_NAMES } from './types';
 import type { EntityName, EntityRowMap, OutboxRow } from './types';
+
+const KNOWN_ENTITIES: ReadonlySet<string> = new Set(ENTITY_NAMES);
 
 export interface RepoOptions {
   /**
@@ -92,7 +95,14 @@ export class Repo {
    * Apply ops that arrived from the server (pull). Stale ops are dropped by
    * the merge; the clock observes every stamp so local edits sort after.
    */
-  async applyRemoteOps(ops: Op[]): Promise<void> {
+  async applyRemoteOps(allOps: Op[]): Promise<void> {
+    // an entity this build does not know (retired here, still pushed by
+    // an older device or replayed from the server log) is skipped, not
+    // fatal — one unknown row must never stall the space's whole pull
+    const ops = allOps.filter((op) => KNOWN_ENTITIES.has(op.entity));
+    for (const entity of new Set(allOps.filter((op) => !KNOWN_ENTITIES.has(op.entity)).map((op) => op.entity))) {
+      reportError('sync', new Error(`skipped ops of unknown entity: ${entity}`));
+    }
     if (ops.length === 0) return;
     const entities = [...new Set(ops.map((op) => op.entity as EntityName))];
     await this.store.transact(entities, async () => {

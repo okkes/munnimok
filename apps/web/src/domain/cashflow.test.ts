@@ -80,19 +80,15 @@ describe('safeToSpend', () => {
     expect(result.perDayCents).toBe(Math.floor(65_000 / 15));
   });
 
-  it('allocation promises reduce the safe number (F2)', () => {
+  it('money the plan holds reduces the safe number (F2, #128)', () => {
     const result = safeToSpend({
       accounts,
       txs: salaryTxs,
       recurrings: [],
-      allocations: [
-        { id: 'al1', spaceId: 's1', periodStart: '2026-07-01', catId: 'consumption', assignedCents: 40_000, fieldVersions: {}, deleted: 0 },
-      ],
-      catalog: { byId: (id) => ({ id: id ?? 'uncategorized' }) },
-      period: { start: '2026-07-01', end: '2026-07-31' },
+      plannedCents: 40_000,
       today: '2026-07-10',
     })!;
-    expect(result.allocationCents).toBe(40_000);
+    expect(result.plannedCents).toBe(40_000);
     expect(result.cents).toBe(150_000 - 40_000);
   });
 

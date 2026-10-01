@@ -44,7 +44,7 @@ import { GoalDetailScreen } from '@/features/goals/GoalDetailScreen';
 import { DebtsScreen } from '@/features/debts/DebtsScreen';
 import { DebtDetailScreen } from '@/features/debts/DebtDetailScreen';
 import { DebtPlanScreen } from '@/features/debts/DebtPlanScreen';
-import { AllocateScreen } from '@/features/allocation/AllocateScreen';
+import { PlanningScreen } from '@/features/planning/PlanningScreen';
 import { HelpIndexScreen } from '@/features/help/HelpIndexScreen';
 import { ConnectionsScreen } from '@/features/connectors/ConnectionsScreen';
 import { AgentsScreen } from '@/features/connectors/AgentsScreen';
@@ -225,7 +225,7 @@ const goalDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/go
 const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts', component: DebtsScreen });
 const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/$debtId', component: DebtDetailScreen });
 const debtPlanRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/plan', component: DebtPlanScreen });
-const allocateRoute = createRoute({ getParentRoute: () => appRoute, path: '/allocate', component: AllocateScreen });
+const planningRoute = createRoute({ getParentRoute: () => appRoute, path: '/planning', component: PlanningScreen });
 const helpRoute = createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpIndexScreen });
 const connectionsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections', component: ConnectionsScreen });
 const agentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/agents', component: AgentsScreen });
@@ -307,7 +307,7 @@ export const routeTree = rootRoute.addChildren([
     debtsRoute,
     debtPlanRoute,
     debtDetailRoute,
-    allocateRoute,
+    planningRoute,
     helpRoute,
     connectionsRoute,
     agentsRoute,

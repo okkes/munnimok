@@ -3,14 +3,12 @@ import type { Table } from 'dexie';
 import type {
   AccountLinkRow,
   AccountRow,
-  AllocationRow,
   BudgetRow,
   CategoryRow,
   EntityName,
   EventRow,
   HoldingRow,
   InsightDismissRow,
-  TopicRow,
   ActivityRow,
   ConnectorConnRow,
   LotRow,
@@ -23,6 +21,8 @@ import type {
   GoalRow,
   MetaRow,
   OutboxRow,
+  PlanRow,
+  PlanSubjectRow,
   RecurringDismissRow,
   RecurringRow,
   SpaceRow,
@@ -50,7 +50,6 @@ export class MunniDB extends Dexie {
   events!: Table<EventRow, string>;
   goals!: Table<GoalRow, string>;
   goalContributions!: Table<GoalContributionRow, string>;
-  allocations!: Table<AllocationRow, string>;
   receipts!: Table<ReceiptRow, string>;
   receiptLinks!: Table<ReceiptLinkRow, string>;
   /** device-only — a connection's credential bundle never syncs in
@@ -61,7 +60,9 @@ export class MunniDB extends Dexie {
   holdings!: Table<HoldingRow, string>;
   lots!: Table<LotRow, string>;
   insightDismissals!: Table<InsightDismissRow, string>;
-  topics!: Table<TopicRow, string>;
+  /** #128: plans and their subjects (synced) */
+  plans!: Table<PlanRow, string>;
+  planSubjects!: Table<PlanSubjectRow, string>;
   activities!: Table<ActivityRow, string>;
   /** device-only — delayed quotes are a cache, not data */
   quoteCache!: Table<QuoteCacheRow, string>;
@@ -120,6 +121,14 @@ export class MunniDB extends Dexie {
       storeMarkers: null,
       connectorConns: 'id, provider',
     });
+    // #128: planning — a plan per period and kind, its subjects; the
+    // allocation cells and topics it replaces leave with it
+    this.version(3).stores({
+      plans: 'id, spaceId, [spaceId+kind]',
+      planSubjects: 'id, spaceId, planId',
+      allocations: null,
+      topics: null,
+    });
   }
 
   tableFor<E extends EntityName>(entity: E) {
@@ -150,8 +159,6 @@ export class MunniDB extends Dexie {
         return this.goals;
       case 'goalContribution':
         return this.goalContributions;
-      case 'allocation':
-        return this.allocations;
       case 'receipt':
         return this.receipts;
       case 'receiptLink':
@@ -166,8 +173,10 @@ export class MunniDB extends Dexie {
         return this.lots;
       case 'insightDismiss':
         return this.insightDismissals;
-      case 'topic':
-        return this.topics;
+      case 'plan':
+        return this.plans;
+      case 'planSubject':
+        return this.planSubjects;
       case 'activity':
         return this.activities;
       default:

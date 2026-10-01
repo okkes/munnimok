@@ -47,7 +47,6 @@ export const ENTITIES: readonly EntityName[] = [
   'event',
   'goal',
   'goalContribution',
-  'allocation',
   'receipt',
   'receiptLink',
   'storeConn',
@@ -55,7 +54,8 @@ export const ENTITIES: readonly EntityName[] = [
   'holding',
   'lot',
   'insightDismiss',
-  'topic',
+  'plan',
+  'planSubject',
   'activity',
   // #296: forgotten here while Dexie got it — on native, user login
   // crashed the home mount (`unknown entity: txSeen`) the moment the

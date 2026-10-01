@@ -6,7 +6,7 @@ import type { StorageBackend } from '@/db/backend';
  * notifications keep firing as before; this is the in-app record that
  * works identically offline and online.
  */
-export type InboxKind = 'whatsnew' | 'recurringDue' | 'debtRate' | 'digest';
+export type InboxKind = 'whatsnew' | 'recurringDue' | 'debtRate' | 'digest' | 'planOverspent';
 
 export interface InboxEntry {
   id: string;

@@ -227,7 +227,7 @@ export function SettingsScreen() {
               capKey: 'settings.groupPlan',
               rows: [
                 { testId: 'settings-budgets-row', icon: 'wallet-outline', labelKey: 'budgets.title', to: '/budgets' },
-                { testId: 'settings-allocation-row', icon: 'cash-multiple', labelKey: 'alloc.title', to: '/allocate' },
+                { testId: 'settings-planning-row', icon: 'clipboard-text-outline', labelKey: 'plan.title', to: '/planning' },
               ],
             },
             {
@@ -236,6 +236,8 @@ export function SettingsScreen() {
                 // receipts are a SPACE view (v3 ruling): what you see here
                 // depends on which connections this space includes
                 { testId: 'settings-receipts-row', icon: 'receipt-text-outline', labelKey: 'receipts.title', to: '/receipts' },
+                // #128: the recurring manager left the tab bar — Home and this row are its doors
+                { testId: 'settings-recurring-row', icon: 'autorenew', labelKey: 'screen.recurring', to: '/recurring' },
                 { testId: 'settings-events-row', icon: 'party-popper', labelKey: 'events.title', to: '/events' },
                 // splits live here, not in Global (user remark): the group
                 // itself is space-independent, but its attachment and the

@@ -267,6 +267,11 @@ export function RecurringScreen() {
       <AppBar
         large
         title={t('screen.recurring')}
+        leading={
+          <IconButton label={t('action.back')} testId="recurring-back" onClick={() => window.history.back()}>
+            <Icon name="arrow-left" size={22} />
+          </IconButton>
+        }
         trailing={
           <>
             <HelpButton tourId="recurring" />

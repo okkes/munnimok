@@ -14,7 +14,7 @@ export type TourId =
   | 'events'
   | 'goals'
   | 'debts'
-  | 'allocation'
+  | 'planning'
   | 'transactions'
   | 'recurring'
   | 'accounts'
@@ -139,16 +139,16 @@ export const TOURS: Tour[] = [
     ],
   },
   {
-    id: 'allocation',
-    titleKey: 'alloc.title',
-    icon: 'cash-multiple',
-    screen: '/allocate',
+    id: 'planning',
+    titleKey: 'plan.title',
+    icon: 'clipboard-text-outline',
+    screen: '/planning',
     steps: [
-      { titleKey: 'tour.alloc.1t', bodyKey: 'tour.alloc.1b', illustration: '✉️' },
-      { titleKey: 'tour.alloc.2t', bodyKey: 'tour.alloc.2b', illustration: '🧮', anchor: 'alloc-toallocate' },
-      { titleKey: 'tour.alloc.3t', bodyKey: 'tour.alloc.3b', illustration: '🤝' },
-      { titleKey: 'tour.alloc.4t', bodyKey: 'tour.alloc.4b', illustration: '♻️', anchor: 'alloc-rollover' },
-      { titleKey: 'tour.alloc.5t', bodyKey: 'tour.alloc.5b', illustration: '📌' },
+      { titleKey: 'tour.plan.1t', bodyKey: 'tour.plan.1b', illustration: '🗂️' },
+      { titleKey: 'tour.plan.2t', bodyKey: 'tour.plan.2b', illustration: '🧮', anchor: 'plan-toallocate' },
+      { titleKey: 'tour.plan.3t', bodyKey: 'tour.plan.3b', illustration: '🟢', anchor: 'plan-ahead' },
+      { titleKey: 'tour.plan.4t', bodyKey: 'tour.plan.4b', illustration: '🤝' },
+      { titleKey: 'tour.plan.5t', bodyKey: 'tour.plan.5b', illustration: '🧪', anchor: 'plan-menu' },
     ],
   },
   {
@@ -165,7 +165,7 @@ export const TOURS: Tour[] = [
   },
   {
     id: 'recurring',
-    titleKey: 'tab.recurring',
+    titleKey: 'screen.recurring',
     icon: 'autorenew',
     screen: '/recurring',
     steps: [

@@ -95,16 +95,16 @@ public sealed class ChangeRoleRequestValidator : AbstractValidator<ChangeRoleReq
 
 public sealed class SyncOpDtoValidator : AbstractValidator<SyncOpDto>
 {
-    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "allocation", "receipt", "receiptLink", "storeMarker", "storeConn", "storeConnLink", "holding", "lot", "insightDismiss", "topic", "activity", "txSeen"];
+    private static readonly string[] Entities = ["space", "account", "category", "transaction", "txMeta", "accountLink", "recurring", "recurringDismiss", "budget", "event", "goal", "goalContribution", "debt", "receipt", "receiptLink", "storeMarker", "storeConn", "storeConnLink", "holding", "lot", "insightDismiss", "plan", "planSubject", "activity", "txSeen"];
 
     public SyncOpDtoValidator()
     {
         RuleFor(o => o.OpId).NotEmpty().MaximumLength(64);
         RuleFor(o => o.SpaceId).NotEmpty().MaximumLength(64);
         RuleFor(o => o.Entity).NotEmpty().Must(Entities.Contains).WithMessage("unknown entity");
-        // 128, not 64: composite ids are legitimate — an allocation cell is
-        // `alloc:{space-uuid}:{period}:{catId}` (65+ for real spaces) and a
-        // recurring set-aside bucket adds `rec:{uuid}` on top. A too-tight
+        // 128, not 64: composite ids are legitimate — a plan is
+        // `plan:{space-uuid}:{kind}:{period}` (~60 for real spaces) and a
+        // mirrored plan subject adds `psub:…:{segment}:{uuid}` on top. A too-tight
         // limit 400s the push and POISONS the outbox: everything queued
         // after the op (a hundred store receipts, say) never syncs again
         RuleFor(o => o.EntityId).NotEmpty().MaximumLength(128);

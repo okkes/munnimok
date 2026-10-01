@@ -10,7 +10,7 @@ import { BlockListEditor } from '@/features/customize/BlockListEditor';
 /** every block the landing zone can show, in default order (user ruling:
  *  review → this period → transactions → budgets → coming up → goals →
  *  debts → events → insights; portfolio left Home for its own tab) */
-export const HOME_BLOCK_IDS = ['review', 'cashflow', 'overview', 'transactions', 'explore', 'budgets', 'allocation', 'upcoming', 'goals', 'debts', 'events', 'splits', 'insights', 'networth'] as const;
+export const HOME_BLOCK_IDS = ['review', 'cashflow', 'overview', 'transactions', 'explore', 'budgets', 'planning', 'upcoming', 'goals', 'debts', 'events', 'splits', 'insights', 'networth'] as const;
 export type HomeBlockId = (typeof HOME_BLOCK_IDS)[number];
 
 /** blocks that arrive switched OFF (opt-in via Customize Home) */
@@ -23,8 +23,8 @@ export const HOME_BLOCK_LABELS: Record<HomeBlockId, TranslationKey> = {
   transactions: 'tab.transactions',
   explore: 'home.exploreTitle',
   budgets: 'budgets.title',
-  allocation: 'alloc.title',
-  upcoming: 'recurring.upcoming',
+  planning: 'plan.title',
+  upcoming: 'screen.recurring',
   goals: 'goals.title',
   debts: 'debts.title',
   events: 'events.title',
@@ -42,7 +42,7 @@ export const HOME_BLOCK_ICONS: Record<HomeBlockId, string> = {
   transactions: 'format-list-bulleted',
   explore: 'compass-outline',
   budgets: 'wallet-outline',
-  allocation: 'view-grid-outline',
+  planning: 'clipboard-text-outline',
   upcoming: 'calendar-clock',
   goals: 'flag-outline',
   debts: 'scale-balance',
