@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.1.0',
+    date: '2026-10-01',
+    items: [
+      {
+        en: 'Payoff planner under Debts: compare Avalanche, Snowball and Tsunami — the last one pays the debt that weighs on you most first — see what an extra amount per month buys you, and when each debt ends.',
+        nl: 'Aflosplanner onder Schulden: vergelijk Lawine, Sneeuwbal en Tsunami — die laatste lost eerst de schuld af die het zwaarst op je drukt — zie wat extra per maand je oplevert en wanneer elke schuld eindigt.',
+        tr: 'Borçlar altında ödeme planı: Çığ, Kartopu ve Tsunami’yi karşılaştır — sonuncusu seni en çok yoran borcu önce öder — aylık fazlanın ne kazandırdığını ve her borcun ne zaman biteceğini gör.',
+      },
+      {
+        en: 'Connections load again in every environment, and the operator’s connector screens answer.',
+        nl: 'Koppelingen laden weer in elke omgeving, en de beheerschermen voor koppelingen antwoorden.',
+        tr: 'Bağlantılar her ortamda yeniden yükleniyor ve yöneticinin bağlayıcı ekranları yanıt veriyor.',
+      },
+    ],
+  },
+  {
     version: '5.0.0',
     date: '2026-10-01',
     items: [
