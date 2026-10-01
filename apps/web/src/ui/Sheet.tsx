@@ -11,9 +11,14 @@ import { useLgViewport as usePanelMode } from '@/lib/viewport';
 import { isIOS, isNativeApp } from '@/lib/platform';
 import { Button } from './Button';
 
-/** the three sheet heights; per-pixel values stay out of call sites */
-export type SheetSize = 'compact' | 'form' | 'tall';
-const SIZE_PX: Record<SheetSize, number> = { compact: 320, form: 440, tall: 600 };
+/** the sheet heights; per-pixel values stay out of call sites. `full` is
+ *  the whole screen bar the status bar (user request 2026-10-01: the
+ *  streamed login needs every pixel) — on the desktop the dialog's
+ *  ceiling, so content can fill it */
+export type SheetSize = 'compact' | 'form' | 'tall' | 'full';
+const SIZE_PX: Record<Exclude<SheetSize, 'full'>, number> = { compact: 320, form: 440, tall: 600 };
+const FULL_HEIGHT = 'calc(100dvh - env(safe-area-inset-top, 0px) - 12px)';
+const FULL_DIALOG = 'min(92dvh, 1000px)';
 
 // framer-motion animates in real wall-clock time even in jsdom (vaul's
 // CSS transitions never ran there) — under parallel test load those
@@ -314,6 +319,13 @@ interface SheetProps {
    *  `steady` pins the dialog to the requested size instead of growing
    *  with content. The mobile sheet is height-locked either way. */
   steady?: boolean;
+  /** the content owns every pointer (user request 2026-10-01): the
+   *  library's drag never arms, and the capture guard below stands down
+   *  — it stopped propagation at the sheet body, which never reached the
+   *  target's own handlers either: the streamed page's taps died the
+   *  moment the keyboard reveal had scrolled the sheet. The host offers
+   *  its own close; the backdrop and Escape still dismiss. */
+  dragLock?: boolean;
 }
 
 /**
@@ -355,6 +367,8 @@ interface DesktopDialogProps {
   wide?: boolean;
   /** #344: pin the dialog to the requested height (no content growth) */
   steady?: boolean;
+  /** the `full` size: the dialog stands at its ceiling so content can fill it */
+  full?: boolean;
   /** USER dismissal request (backdrop/ESC) — the owner decides whether
    *  it closes, asks about unsaved edits, or is tutorial-locked */
   onDismiss: () => void;
@@ -362,7 +376,7 @@ interface DesktopDialogProps {
 
 /** desktop (2026-07-18 fix): a plain centered dialog — vaul's drawer
  *  transforms fought the centered layout and pinned it to the top */
-function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, wide, steady, onDismiss }: Readonly<DesktopDialogProps>) {
+function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, footer, wide, steady, full, onDismiss }: Readonly<DesktopDialogProps>) {
   // enter/exit: grow from the click point, shrink back to it
   const [phase, setPhase] = useState<'closed' | 'hidden' | 'open'>('closed');
   const originRef = useRef({ x: 0, y: 0 });
@@ -420,6 +434,7 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
         open
         aria-modal="true"
         data-sheet-body=""
+        data-full={full ? '' : undefined}
         ref={(el) => registerCoveredEl(id, el)}
         className={`react-modal-sheet-container relative z-10 m-0 flex ${wide ? 'w-[760px] max-w-[94vw]' : 'w-[480px] max-w-[92vw]'} flex-col rounded-[20px] border-none bg-bg p-0 text-ink shadow-2xl outline-none`}
         style={{
@@ -430,9 +445,9 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
           // (The MOBILE sheet keeps its mount-locked height — hard rule.)
           // #344: `steady` opts out of the growth — content that toggles
           // per keystroke made the dialog pump between floor and ceiling
-          height: steady && fixedHeight !== undefined ? fixedHeight : 'auto',
+          height: full ? FULL_DIALOG : steady && fixedHeight !== undefined ? fixedHeight : 'auto',
           minHeight: fixedHeight === undefined ? undefined : Math.round(fixedHeight * 0.6),
-          maxHeight: 'min(85dvh, 900px)',
+          maxHeight: full ? FULL_DIALOG : 'min(85dvh, 900px)',
           // grow from the source, shrink back to it — the covered-parent
           // recede writes to the same properties, so hand them over only
           // while entering/exiting
@@ -468,9 +483,10 @@ function DesktopDialog({ id, open, isLocked, fixedHeight, title, children, foote
  * cancelling inputs mid-typing, user report); stacked sheets lock their
  * parents automatically. Never build inline overlays.
  */
-export function Sheet({ open, onOpenChange, title, children, size, height, footer, dirty, busyNote, wide, steady }: Readonly<SheetProps>) {
+export function Sheet({ open, onOpenChange, title, children, size, height, footer, dirty, busyNote, wide, steady, dragLock }: Readonly<SheetProps>) {
   const { t } = useLang();
-  const requested = height ?? (size ? SIZE_PX[size] : undefined);
+  const full = size === 'full';
+  const requested = height ?? (size && size !== 'full' ? SIZE_PX[size] : undefined);
   const { id, isLocked, depth } = useSheetStack(open);
   // USER-initiated dismissals route through here: the Mina tutorial owns
   // the flow while it runs, and unsaved edits get a conscious "discard?"
@@ -654,7 +670,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
   if (panel) {
     return (
       <>
-        <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} wide={wide} steady={steady} onDismiss={requestDismiss}>
+        <DesktopDialog id={id} open={open} isLocked={isLocked} fixedHeight={fixedHeight} title={title} footer={footer} wide={wide} steady={steady} full={full} onDismiss={requestDismiss}>
           {busyBanner}
           {children}
         </DesktopDialog>
@@ -717,6 +733,7 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
       // "discard?" ask decides whether it comes back. #203: in-flight
       // work refuses the drag (it springs back, the note flashes).
       disableDismiss={isLocked || (isMinaSheetGuarded() && depth === 0) || !!busyNote}
+      disableDrag={!!dragLock}
       prefersReducedMotion={IS_TEST}
       unstyled
       // z-50 like the old drawer: the Mina tutorial overlay must still be
@@ -749,8 +766,9 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
         <div
           ref={(el) => registerCoveredEl(id, el)}
           data-sheet-body=""
+          data-full={full ? '' : undefined}
           className="flex min-h-0 flex-initial flex-col"
-          style={{ transformOrigin: 'top center', height: fixedHeight }}
+          style={{ transformOrigin: 'top center', height: full ? FULL_HEIGHT : fixedHeight, transition: 'height 220ms ease-out' }}
           // a gesture landing on an editable, a self-handling element or
           // a mid-scroll list must NEVER become a sheet drag (inputs:
           // cancelled-while-typing report; lists: scroll moved list +
@@ -759,10 +777,10 @@ export function Sheet({ open, onOpenChange, title, children, size, height, foote
           // coordination touch events — a bubble-phase stop fires too
           // late for either.
           onPointerDownCapture={(e) => {
-            if (gestureBelongsToContent(e.target as HTMLElement, e.currentTarget)) e.stopPropagation();
+            if (!dragLock && gestureBelongsToContent(e.target as HTMLElement, e.currentTarget)) e.stopPropagation();
           }}
           onTouchStartCapture={(e) => {
-            if (gestureBelongsToContent(e.target as HTMLElement, e.currentTarget)) e.stopPropagation();
+            if (!dragLock && gestureBelongsToContent(e.target as HTMLElement, e.currentTarget)) e.stopPropagation();
           }}
         >
           {/* full-height drag zone across the title area */}

@@ -117,6 +117,53 @@ describe('Connections hub (signed-in user)', () => {
     db.close();
   }, 20_000);
 
+  it('the run says where it stands — the queue with the jobs ahead and the seconds passing — and the party’s page then takes the whole sheet (user request 2026-10-01)', async () => {
+    let polls = 0;
+    const waiting = { sessionId: 'ses_q', state: 'queued', progress: { step: 'queued', stepsDone: [], ahead: 2 }, notes: [] };
+    renderAppAsUser('/connections', {
+      api: {
+        ...catalogue,
+        ...feeds,
+        ...quietSync,
+        [`POST /connectors/${PROVIDER}/login`]: () => waiting,
+        [`GET /connectors/${PROVIDER}/login/ses_q`]: () => {
+          polls += 1;
+          if (polls < 2) return waiting;
+          return {
+            sessionId: 'ses_q',
+            state: 'awaiting_input',
+            challenge: { id: 'ch_live', type: 'live_view', answerKind: 'text', expiresAt: new Date(Date.now() + 900_000).toISOString() },
+            progress: { step: 'awaiting_human', stepsDone: [] },
+            notes: [],
+          };
+        },
+        [`GET /connectors/${PROVIDER}/login/ses_q/challenges/ch_live/live/frame`]: () => new Response(null, { status: 204 }),
+      },
+    });
+    await screen.findByTestId('screen-connections');
+    fireEvent.click(await screen.findByTestId('conn-add-open'));
+    fireEvent.click(await screen.findByTestId(`conn-party-${PROVIDER}`, {}, { timeout: 5000 }));
+    await screen.findByTestId('connect-field-username');
+    fireEvent.change(screen.getByTestId('connect-field-username'), { target: { value: 'a@b.nl' } });
+    fireEvent.change(screen.getByTestId('connect-field-password'), { target: { value: 'pw' } });
+    fireEvent.click(screen.getByTestId('connect-next'));
+
+    // queued: the step, the line ahead, the clock
+    await screen.findByTestId('connect-progress', {}, { timeout: 5000 });
+    expect(screen.getByTestId('connect-progress-step').textContent).toContain('turn');
+    expect(screen.getByTestId('connect-progress-ahead').textContent).toContain('2');
+    expect(screen.getByTestId('connect-progress-elapsed').textContent).toMatch(/\d+ s/);
+
+    // the poll brings the party's page: the sheet stands at the full height, the frame waits for its first picture, the close is the way out
+    await screen.findByTestId('connect-live', {}, { timeout: 8000 });
+    expect(screen.getByTestId('connect-live-waiting')).toBeTruthy();
+    expect(screen.getByTestId('connect-live-close')).toBeTruthy();
+    expect(screen.queryByTestId('connect-live-prompt')).toBeNull();
+    // the sheet that holds the page (the catalogue sheet stays mounted in tests and is the first body)
+    const body = screen.getByTestId('connect-live').closest('[data-sheet-body]') as HTMLElement;
+    expect(body.hasAttribute('data-full')).toBe(true);
+  }, 20_000);
+
   it('a party that asks a code mid-login gets it answered; the bundle is read once it settles', async () => {
     let answered = false;
     renderAppAsUser('/connections', {

@@ -18,6 +18,22 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '5.3.0',
+    date: '2026-10-01',
+    items: [
+      {
+        en: 'Signing in on a party’s own page is readable now: the page takes the whole screen on your phone and a tall window on the desktop, the keyboard no longer pushes it around, and your taps keep landing where you put them.',
+        nl: 'Inloggen op de pagina van een partij is nu leesbaar: de pagina neemt op je telefoon het hele scherm en op de desktop een hoog venster, het toetsenbord duwt hem niet meer weg en je tikken komen aan waar je ze zet.',
+        tr: 'Bir tarafın kendi sayfasında giriş yapmak artık okunaklı: sayfa telefonda tüm ekranı, masaüstünde yüksek bir pencereyi kaplıyor, klavye onu itmiyor ve dokunuşların koyduğun yere ulaşıyor.',
+      },
+      {
+        en: 'While a connection waits you see what it is waiting for: how many are ahead of you in the queue, that a browser is starting up, and the seconds passing.',
+        nl: 'Terwijl een koppeling wacht zie je waarop: hoeveel er voor je in de wachtrij staan, dat er een browser opstart, en de seconden die verstrijken.',
+        tr: 'Bir bağlantı beklerken neyi beklediğini görürsün: sırada önünde kaç kişi var, bir tarayıcının başladığını ve geçen saniyeleri.',
+      },
+    ],
+  },
+  {
     version: '5.2.0',
     date: '2026-10-01',
     items: [

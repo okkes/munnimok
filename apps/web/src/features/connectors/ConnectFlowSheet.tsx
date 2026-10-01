@@ -59,6 +59,25 @@ const inputModeFor = (field: FormField): React.HTMLAttributes<HTMLInputElement>[
 const INPUT_TYPE: Partial<Record<FormField['type'], string>> = { password: 'password', date: 'date' };
 const inputTypeFor = (field: FormField): string => INPUT_TYPE[field.type] ?? 'text';
 
+/** seconds since the run started waiting — so a spinner that is really a
+ *  queue, or a browser starting, visibly moves (user request 2026-10-01) */
+function useElapsedSeconds(active: boolean): number {
+  const [since, setSince] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) {
+      setSince(null);
+      return;
+    }
+    const started = Date.now();
+    setSince((s) => s ?? started);
+    setNow(started);
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return since === null ? 0 : Math.max(0, Math.round((now - since) / 1000));
+}
+
 export function ConnectFlowSheet({
   open,
   manifest,
@@ -82,6 +101,8 @@ export function ConnectFlowSheet({
   const steps = useMemo(() => (manifest ? formSteps(manifest, provided) : []), [manifest, provided]);
   const ownComputer = !!manifest && needsOwnComputer(manifest);
   const [phase, setPhase] = useState<Phase>({ kind: 'form' });
+  // the clock on a waiting run — a hook, so above every early return
+  const elapsed = useElapsedSeconds(phase.kind === 'running');
   const [stepIndex, setStepIndex] = useState(0);
   const [values, setValues] = useState<Record<string, string>>({});
   const [attempted, setAttempted] = useState(false);
@@ -241,6 +262,10 @@ export function ConnectFlowSheet({
       await handleView(await connectorApi.answer(provider, view.sessionId, view.challenge.id, value));
     });
 
+  // the party's own page needs every pixel: the sheet grows to the full
+  // height and the content owns every pointer (see Sheet.dragLock)
+  const live = phase.kind === 'challenge' && phase.view.challenge?.type === 'live_view';
+
   const close = () => {
     stopFollowing.current();
     if (phase.kind === 'running' || phase.kind === 'challenge') {
@@ -373,18 +398,43 @@ export function ConnectFlowSheet({
             </Button>
           </div>
         );
-      case 'running':
+      case 'running': {
+        const step = phase.view.progress?.step ?? 'queued';
+        const ahead = phase.view.progress?.ahead ?? null;
         return (
           <div className="flex flex-col items-center gap-3 px-4 py-10 text-center" data-testid="connect-progress">
             <Icon name="progress-clock" size={34} color="var(--m-accent-deep)" />
-            <p className="text-[14px] font-medium text-ink-2">{t(progressKey(phase.view.progress?.step ?? 'queued'))}</p>
+            <p className="text-[14px] font-medium text-ink-2" data-testid="connect-progress-step">
+              {t(progressKey(step))}
+            </p>
+            {step === 'queued' && ahead !== null && ahead > 0 && (
+              <p className="text-[12px] text-ink-3" data-testid="connect-progress-ahead">
+                {t('connect.progress.ahead', { n: ahead })}
+              </p>
+            )}
+            {step === 'opening_provider' && (
+              <p className="text-[12px] text-ink-4" data-testid="connect-progress-hint">
+                {t('connect.progress.openingHint')}
+              </p>
+            )}
+            <p className="text-[11px] text-ink-4" data-testid="connect-progress-elapsed">
+              {t('connect.progress.elapsed', { s: elapsed })}
+            </p>
             {phase.view.notes?.[0] && <p className="text-[12px] text-ink-4">{phase.view.notes[0]}</p>}
           </div>
         );
+      }
       case 'challenge':
         return (
-          <div className="pt-1">
-            <ChallengeCard provider={provider} sessionId={phase.view.sessionId} challenge={phase.view.challenge!} busy={busy} onAnswer={(value) => void answer(phase.view)(value)} />
+          <div className={live ? '' : 'pt-1'}>
+            <ChallengeCard
+              provider={provider}
+              sessionId={phase.view.sessionId}
+              challenge={phase.view.challenge!}
+              busy={busy}
+              onAnswer={(value) => void answer(phase.view)(value)}
+              onClose={close}
+            />
           </div>
         );
       case 'failed':
@@ -418,7 +468,7 @@ export function ConnectFlowSheet({
   };
 
   return (
-    <Sheet open={open} onOpenChange={(next) => !next && close()} title={title} size="tall">
+    <Sheet open={open} onOpenChange={(next) => !next && close()} title={title} size={live ? 'full' : 'tall'} dragLock={live}>
       {body()}
     </Sheet>
   );

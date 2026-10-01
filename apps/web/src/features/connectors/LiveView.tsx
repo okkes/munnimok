@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLang } from '@/i18n';
+import { useLgViewport } from '@/lib/viewport';
+import { IconButton } from '@/ui/AppBar';
 import { Button } from '@/ui/Button';
+import { Icon } from '@/ui/Icon';
 import { connectorApi } from './api';
+import { fitFrame, isTap, keyboardInset, nearestScroller } from './liveLayout';
 import type { LiveInputEvent } from './types';
 
 /**
@@ -9,12 +13,21 @@ import type { LiveInputEvent } from './types';
  * JPEG frames from the agent's browser, with the human's taps, keys and
  * text relayed back — the clipped page rectangle, never a full viewport.
  * Frames are long-polled past the last sequence; input is batched.
+ *
+ * The frame takes every pixel the sheet leaves it (user request
+ * 2026-10-01): the host opens the sheet at full height, the frame is
+ * sized to the room that is left after the lines above it and the bar
+ * below it, and an open keyboard takes its height off the frame instead
+ * of pushing the frame off the screen — so the bar stays reachable and a
+ * tap lands where the finger is. See liveLayout.ts.
  */
 const FRAME_IDLE_MS = 400;
 const FRAME_RETRY_MS = 1_500;
 const FLUSH_MS = 80;
 const MOVE_GAP_MS = 40;
 const BATCH_MAX = 64;
+/** the gaps between the head line, the frame and the bar, plus the sheet scroller's own bottom padding */
+const CHROME_PX = 8 + 8 + 24;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -22,21 +35,33 @@ export function LiveView({
   provider,
   sessionId,
   challengeId,
+  prompt,
+  onClose,
 }: Readonly<{
   provider: string;
   sessionId: string;
   challengeId: string;
+  /** the one-line explanation; shown where there is room (the desktop dialog), never on a phone */
+  prompt?: string;
+  /** the close affordance: a full-height sheet leaves no backdrop to tap and no handle to drag */
+  onClose?: () => void;
 }>) {
   const { t } = useLang();
+  const desktop = useLgViewport();
   const [frameUrl, setFrameUrl] = useState<string | null>(null);
   const [size, setSize] = useState({ width: 390, height: 844 });
   const [origin, setOrigin] = useState<string | undefined>(undefined);
   const [text, setText] = useState('');
+  const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+  const root = useRef<HTMLDivElement>(null);
+  const head = useRef<HTMLDivElement>(null);
+  const bar = useRef<HTMLDivElement>(null);
   const surface = useRef<HTMLDivElement>(null);
   const sequence = useRef(0);
   const inputSequence = useRef(0);
   const queue = useRef<LiveInputEvent[]>([]);
   const lastMove = useRef(0);
+  const downAt = useRef<{ x: number; y: number } | null>(null);
 
   // frames: one long-poll after another, each asking past the last sequence
   useEffect(() => {
@@ -79,6 +104,41 @@ export function LiveView({
     return () => clearInterval(timer);
   }, [provider, sessionId, challengeId]);
 
+  // the frame's box: the room the scroller has, minus the head, the bar,
+  // the gaps and the keyboard — remeasured whenever any of those move
+  const measure = useCallback(() => {
+    const el = root.current;
+    if (!el) return;
+    const scroller = nearestScroller(el);
+    const rootTop = el.getBoundingClientRect().top;
+    const roomTop = scroller ? rootTop - scroller.getBoundingClientRect().top + scroller.scrollTop : rootTop;
+    const roomH = scroller ? scroller.clientHeight : window.innerHeight;
+    const availH = roomH - roomTop - (head.current?.offsetHeight ?? 0) - (bar.current?.offsetHeight ?? 0) - CHROME_PX - keyboardInset(window);
+    const next = fitFrame({ availW: el.clientWidth, availH, frameW: size.width, frameH: size.height });
+    setBox((prev) => (prev?.width === next?.width && prev?.height === next?.height ? prev : next));
+  }, [size.width, size.height]);
+
+  useLayoutEffect(() => {
+    measure();
+    window.addEventListener('resize', measure);
+    const vv = window.visualViewport;
+    vv?.addEventListener('resize', measure);
+    vv?.addEventListener('scroll', measure);
+    let observer: ResizeObserver | undefined;
+    if (typeof ResizeObserver !== 'undefined' && root.current) {
+      observer = new ResizeObserver(measure);
+      observer.observe(root.current);
+      const scroller = nearestScroller(root.current);
+      if (scroller) observer.observe(scroller);
+    }
+    return () => {
+      window.removeEventListener('resize', measure);
+      vv?.removeEventListener('resize', measure);
+      vv?.removeEventListener('scroll', measure);
+      observer?.disconnect();
+    };
+  }, [measure, desktop]);
+
   const push = (event: Omit<LiveInputEvent, 'sequence'>) => {
     inputSequence.current += 1;
     queue.current.push({ ...event, sequence: inputSequence.current });
@@ -100,9 +160,15 @@ export function LiveView({
       if (now - lastMove.current < MOVE_GAP_MS) return;
       lastMove.current = now;
     }
-    const point = pointAt(e);
+    let point = pointAt(e);
     if (!point) return;
+    // the default would move focus off the text field and close the
+    // keyboard mid-tap, shifting the frame under the finger
     e.preventDefault();
+    if (kind === 'down') downAt.current = point;
+    // a tap is one down and one up at ONE point: the finger's wobble, or
+    // the frame moving under it, must not reach the party's page as a drag
+    if (kind === 'up' && downAt.current && isTap(downAt.current, point)) point = downAt.current;
     push({ kind, ...point });
   };
 
@@ -113,31 +179,47 @@ export function LiveView({
   };
 
   return (
-    <div className="flex flex-col gap-2" data-testid="connect-live">
-      {origin && (
-        <p className="truncate px-1 text-[11px] text-ink-4" data-testid="connect-live-origin">
-          {t('connect.live.origin', { origin })}
-        </p>
-      )}
-      <div
-        ref={surface}
-        data-testid="connect-live-surface"
-        className="relative w-full touch-none select-none overflow-hidden rounded-card border border-line bg-bg-2"
-        style={{ aspectRatio: `${size.width} / ${size.height}`, maxHeight: 420 }}
-        onPointerDown={onPointer('down')}
-        onPointerUp={onPointer('up')}
-        onPointerMove={onPointer('move')}
-        onWheel={(e) => push({ kind: 'scroll', deltaY: e.deltaY })}
-      >
-        {frameUrl ? (
-          <img src={frameUrl} alt="" className="h-full w-full object-contain" draggable={false} />
-        ) : (
-          <p className="absolute inset-0 flex items-center justify-center text-[12px] text-ink-4" data-testid="connect-live-waiting">
-            {t('connect.live.waiting')}
-          </p>
+    <div ref={root} className="flex flex-col gap-2" data-testid="connect-live">
+      <div ref={head} className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          {desktop && prompt && (
+            <p className="text-[12px] leading-relaxed text-ink-2" data-testid="connect-live-prompt">
+              {prompt}
+            </p>
+          )}
+          {origin && (
+            <p className="truncate text-[11px] text-ink-4" data-testid="connect-live-origin">
+              {t('connect.live.origin', { origin })}
+            </p>
+          )}
+        </div>
+        {onClose && (
+          <IconButton label={t('connect.live.close')} testId="connect-live-close" onClick={onClose}>
+            <Icon name="close" size={20} />
+          </IconButton>
         )}
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex justify-center">
+        <div
+          ref={surface}
+          data-testid="connect-live-surface"
+          className="relative touch-none select-none overflow-hidden rounded-card border border-line bg-bg-2"
+          style={box ? { width: box.width, height: box.height } : { width: '100%', aspectRatio: `${size.width} / ${size.height}` }}
+          onPointerDown={onPointer('down')}
+          onPointerUp={onPointer('up')}
+          onPointerMove={onPointer('move')}
+          onWheel={(e) => push({ kind: 'scroll', deltaY: e.deltaY })}
+        >
+          {frameUrl ? (
+            <img src={frameUrl} alt="" className="h-full w-full object-contain" draggable={false} />
+          ) : (
+            <p className="absolute inset-0 flex items-center justify-center text-[12px] text-ink-4" data-testid="connect-live-waiting">
+              {t('connect.live.waiting')}
+            </p>
+          )}
+        </div>
+      </div>
+      <div ref={bar} className="flex items-center gap-2">
         <input
           data-testid="connect-live-text"
           value={text}

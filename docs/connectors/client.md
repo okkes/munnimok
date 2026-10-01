@@ -84,7 +84,7 @@ Every question the party asks is rendered by its typed kind
 | `image`, taps | the picture; every tap marks a point | `tap.v1:x,y;…;submit`, or `tap.v1:` for "none match" |
 | `select_option` | the options | the option's value |
 | `redirect` | *Open the party's page* — iOS runs it in the auth session with the party's callback scheme and brings the return address back; Android and the web open it and take a paste | the return address |
-| `live_view` | the party's own page streamed as frames (`LiveView`): taps, moves and scrolls relayed as fractions, a text field, Enter and Backspace | — (the agent finishes when the page does) |
+| `live_view` | the party's own page streamed as frames (`LiveView`): the sheet grows to the full height and the frame takes every pixel left after the one-line head and the bar (measured, with the page's own aspect — the box is the image, so a tap's fraction is the page's); taps (a down and an up within three percent are one tap, whatever the finger wobbled), moves and scrolls relayed as fractions, a text field, Enter and Backspace; an open keyboard takes its height off the frame instead of pushing it away, and the sheet's drag is locked so every pointer reaches the page; a close button, since a full-height sheet leaves no backdrop; the prompt shows on the desktop only | — (the agent ends the stream) |
 
 A settled login is adopted (`useConnectionOps().adopt`): the device row
 and custody first, then the synced `storeConn` row (named after the
@@ -180,6 +180,15 @@ and the hub's registry card lists them with the same *Attach to {space}*
 door a bank's accounts have. BKR signs in with an authenticator code;
 DUO signs in with DigiD on the person's own computer — a household
 agent (below) — and the catalogue says so.
+
+## While it runs
+
+The run's progress is the job's typed step (`connect.progress.*`), and the
+waiting states say what they are (user request 2026-10-01): `queued` shows
+how many jobs are ahead in the queue (`progress.ahead`, any party’s — the
+fleet takes the oldest first), `opening_provider` says a fresh browser is
+starting and may take half a minute, and every waiting state shows the
+seconds passing, so a spinner is never a spinner.
 
 ## Your own computer (`AgentsScreen`, §10.4)
 

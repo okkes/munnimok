@@ -169,6 +169,8 @@ export interface ChallengeView {
 export interface ProgressView {
   step: JobStep;
   stepsDone: JobStep[];
+  /** while queued: how many jobs wait ahead of this one (any party’s — the fleet takes the oldest first) */
+  ahead?: number | null;
 }
 
 /** `{ error: { … } }` — the connector's envelope, kept by the relay */

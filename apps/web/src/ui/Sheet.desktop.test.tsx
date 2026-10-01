@@ -49,6 +49,22 @@ describe('desktop dialog', () => {
     }
   });
 
+  it('the full size stands the dialog at its ceiling so content can fill it (user request 2026-10-01)', () => {
+    localStorage.setItem('munni_lang', 'en');
+    const restore = stubDesktop();
+    try {
+      const dialog = dialogFor(
+        <Sheet open onOpenChange={() => undefined} title="t" size="full">
+          <div />
+        </Sheet>,
+      );
+      // the geometry itself is the WebKit spec's; happy-dom drops a min() value
+      expect(dialog.hasAttribute('data-full')).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
   it('the content area is the scroller, so a taller-than-ceiling body scrolls inside', () => {
     localStorage.setItem('munni_lang', 'en');
     const restore = stubDesktop();
