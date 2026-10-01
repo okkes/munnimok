@@ -31,6 +31,15 @@ public sealed class ConnectorOptions
     public string? Audience { get; set; }
 
     /// <summary>
+    /// The scope the machine token asks for. Logto grants a client-credentials
+    /// token only the scopes the request names — the roles decide what MAY be
+    /// granted, the request what IS — so a mint without it opened the consumer
+    /// routes and met 403 on <c>/v1/admin/*</c> (found live 2026-10-01). The
+    /// control plane's <c>Connector:Auth:AdminScope</c> by default.
+    /// </summary>
+    public string? Scope { get; set; } = "connector:admin";
+
+    /// <summary>
     /// Per-environment secret the user id is HMAC-ed with to mint the subject
     /// the connector sees (§6). Rotating it severs every connection of this
     /// environment and exposes nothing else.

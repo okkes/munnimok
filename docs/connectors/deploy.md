@@ -144,8 +144,10 @@ carry none (found live 2026-10-01: the write-back had stored the string
 as 503 `provider_unavailable`); it is read back on every bootstrap and
 minted once, so a run without a deploy never desyncs the running api from
 Logto, and a write-back refuses a credential without a value. The api
-mints client credentials for that resource and the scope comes along, so
-one token opens the consumer routes and the operator's. An environment's cleanup removes the three with the
+mints client credentials for that resource and asks for the scope — Logto
+grants a client-credentials token only the scopes the request names (a
+mint without it met 403 on `/v1/admin/*`, 2026-10-01) — so one token opens
+the consumer routes and the operator's. An environment's cleanup removes the three with the
 api's own app.
 
 **Secrets** (`infra/secrets.manifest.json`): per environment, generated —

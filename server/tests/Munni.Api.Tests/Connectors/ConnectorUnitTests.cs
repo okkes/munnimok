@@ -226,6 +226,7 @@ public class ConnectorUnitTests
             var form = request.Content!.ReadAsStringAsync().Result;
             Assert.Contains("grant_type=client_credentials", form, StringComparison.Ordinal);
             Assert.Contains("resource=https%3A%2F%2Fconnector.test", form, StringComparison.Ordinal);
+            Assert.Contains("scope=connector%3Aadmin", form, StringComparison.Ordinal); // asked for, or Logto leaves it out and /v1/admin/* answers 403
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent($$"""{"access_token":"tok-{{tokens}}","expires_in":600}""", Encoding.UTF8, "application/json"),

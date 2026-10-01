@@ -271,7 +271,7 @@ public sealed class ConnectorAuthSource(ConnectorOptions options, IHttpClientFac
         }
     }
 
-    /// <summary>Logto: <c>client_credentials</c> for the API resource, basic-authenticated with the app's id and secret.</summary>
+    /// <summary>Logto: <c>client_credentials</c> for the API resource and the operator scope, basic-authenticated with the app's id and secret.</summary>
     private async Task<(string Token, TimeSpan Lifetime)> MintAsync(CancellationToken ct)
     {
         var authority = config["Auth:Authority"]?.TrimEnd('/')
@@ -282,11 +282,14 @@ public sealed class ConnectorAuthSource(ConnectorOptions options, IHttpClientFac
         using var request = new HttpRequestMessage(HttpMethod.Post, endpoint);
         request.Headers.Authorization = new AuthenticationHeaderValue(
             "Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes($"{options.M2mAppId}:{options.M2mAppSecret}")));
-        request.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+        var form = new Dictionary<string, string>
         {
             ["grant_type"] = "client_credentials",
             ["resource"] = options.Audience!,
-        });
+        };
+        // the operator scope has to be asked for: Logto issues only the scopes a request names
+        if (!string.IsNullOrWhiteSpace(options.Scope)) form["scope"] = options.Scope;
+        request.Content = new FormUrlEncodedContent(form);
 
         using var response = await http.SendAsync(request, ct);
         response.EnsureSuccessStatusCode();
