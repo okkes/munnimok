@@ -393,28 +393,13 @@ public sealed class AgentHost : BackgroundService
                     ResetDone = _resetDone,
                 }, stoppingToken).ConfigureAwait(false);
 
-                if (response.LeaseTtlSeconds > 0) _leaseTtl = TimeSpan.FromSeconds(response.LeaseTtlSeconds);
-
                 if (response.Revoked)
                 {
                     await RevokeAsync("the control plane revoked this agent").ConfigureAwait(false);
                     return;
                 }
 
-                // A released hosted slot (#420 A2): wipe, then beat again soon
-                // so the slot is free to the next person in seconds, not a
-                // whole interval. A beat that no longer asks is the control
-                // plane having heard the answer.
-                if (response.ResetProfiles)
-                {
-                    if (ResetProfiles()) next = HeartbeatRetryDelay;
-                }
-                else
-                {
-                    _resetDone = false;
-                }
-
-                NoteCatalogue(response.CatalogDigest);
+                next = Absorb(response);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -584,6 +569,34 @@ public sealed class AgentHost : BackgroundService
         await _abort.CancelAsync().ConfigureAwait(false);
         await _retire.CancelAsync().ConfigureAwait(false);
         _roster.Retire(Name, why);
+    }
+
+    /// <summary>
+    /// What an answered beat changes, and when the next one is due: the
+    /// lease the control plane hands out, a wipe it asked for, the catalogue
+    /// it runs.
+    /// </summary>
+    private TimeSpan Absorb(HeartbeatResponse response)
+    {
+        if (response.LeaseTtlSeconds > 0) _leaseTtl = TimeSpan.FromSeconds(response.LeaseTtlSeconds);
+
+        var next = _heartbeatInterval;
+
+        // A released hosted slot (#420 A2): wipe, then beat again soon so
+        // the slot is free to the next person in seconds, not a whole
+        // interval. A beat that no longer asks is the control plane having
+        // heard the answer.
+        if (response.ResetProfiles)
+        {
+            if (ResetProfiles()) next = HeartbeatRetryDelay;
+        }
+        else
+        {
+            _resetDone = false;
+        }
+
+        NoteCatalogue(response.CatalogDigest);
+        return next;
     }
 
     /// <summary>
