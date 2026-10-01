@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.4.0](https://github.com/okkes/munnimok/compare/v5.3.0...v5.4.0) (2026-10-01)
+
+
+### ✨ Features
+
+* **planning:** money gets a job — the plan replaces allocation ([#128](https://github.com/okkes/munnimok/issues/128)) ([8327439](https://github.com/okkes/munnimok/commit/832743911aeed9927138fcd70a6b09450629f4eb))
+
 ## [5.3.0](https://github.com/okkes/munnimok/compare/v5.2.0...v5.3.0) (2026-10-01)
 
 
