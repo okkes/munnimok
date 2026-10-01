@@ -204,11 +204,21 @@ describe('Events (demo identity)', () => {
     await waitFor(() => expect((screen.getByTestId('eventpick-attach') as HTMLButtonElement).disabled).toBe(false), { timeout: 8000 });
     fireEvent.click(screen.getByTestId('eventpick-attach')); // everything pre-checked
     await screen.findByTestId('eventdetail-txs', {}, { timeout: 8000 });
-    // attach-all writes one tx at a time — sample the count only once the
-    // suggestion banner is gone (everything in range has been adopted)
+    // attach-all writes one tx at a time — the suggestion banner goes before
+    // the last row lands, so the count is sampled only once it has held
+    // still for a beat (a slow CI runner saw 9, then 10)
     await waitFor(() => expect(screen.queryByTestId('eventdetail-suggest')).toBeNull(), { timeout: 8000 });
-
-    const allCount = document.querySelectorAll('[data-testid="eventdetail-txs"] [data-testid^="tx-row-"]').length;
+    const rows = () => document.querySelectorAll('[data-testid="eventdetail-txs"] [data-testid^="tx-row-"]').length;
+    let allCount = -1;
+    await waitFor(
+      () => {
+        const now = rows();
+        const settled = now === allCount;
+        allCount = now;
+        expect(settled).toBe(true);
+      },
+      { timeout: 8000, interval: 250 },
+    );
     const mainRow = document.querySelector('[data-testid^="eventdetail-cat-"]')!;
     fireEvent.click(mainRow);
     // subs unfold under the tapped main…

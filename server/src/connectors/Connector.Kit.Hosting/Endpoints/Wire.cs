@@ -219,6 +219,15 @@ public sealed record ProgressView
 
     public required IReadOnlyList<JobStep> StepsDone { get; init; }
 
+    /// <summary>
+    /// While the job waits: how many queued jobs are older than it, any
+    /// party's, because the fleet drains the queue oldest first whatever
+    /// the party. Null once it runs - a number there would be a lie. A
+    /// consumer can say "3 ahead of you" instead of a spinner that is
+    /// really a waiting list (user request 2026-10-01).
+    /// </summary>
+    public int? Ahead { get; init; }
+
     public static ProgressView From(JobRow job)
     {
         ArgumentNullException.ThrowIfNull(job);

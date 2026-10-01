@@ -21,6 +21,8 @@ export interface ChallengeCardProps {
   challenge: ChallengeView;
   busy: boolean;
   onAnswer: (value: string) => void;
+  /** the streamed page offers its own close: a full-height sheet leaves no backdrop to tap */
+  onClose?: () => void;
 }
 
 const INPUT = 'h-12 w-full rounded-input border border-line bg-surface px-4 text-[15px] text-ink outline-none placeholder:text-ink-4';
@@ -163,10 +165,24 @@ function RedirectAnswer({ challenge, busy, onAnswer }: Readonly<{ challenge: Cha
   );
 }
 
-export function ChallengeCard({ provider, sessionId, challenge, busy, onAnswer }: Readonly<ChallengeCardProps>) {
+export function ChallengeCard({ provider, sessionId, challenge, busy, onAnswer, onClose }: Readonly<ChallengeCardProps>) {
   const { t } = useLang();
   const image = useChallengeImage(provider, sessionId, challenge);
   const left = useCountdown(challenge.expiresAt);
+
+  // the party's page takes the whole sheet (user request 2026-10-01): no
+  // card chrome around it, the prompt only where there is room for it
+  if (challenge.type === 'live_view') {
+    return (
+      <LiveView
+        provider={provider}
+        sessionId={sessionId}
+        challengeId={challenge.id}
+        prompt={t(challengeKey(challenge.type, challenge.promptKey))}
+        onClose={onClose}
+      />
+    );
+  }
   const delivery = challenge.delivery ? `connect.codeDelivery.${challenge.delivery}` : undefined;
 
   const body = () => {
@@ -233,8 +249,6 @@ export function ChallengeCard({ provider, sessionId, challenge, busy, onAnswer }
         );
       case 'redirect':
         return <RedirectAnswer challenge={challenge} busy={busy} onAnswer={onAnswer} />;
-      case 'live_view':
-        return <LiveView provider={provider} sessionId={sessionId} challengeId={challenge.id} />;
       default:
         return null;
     }

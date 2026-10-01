@@ -73,7 +73,7 @@ public sealed class ViewBuilder(
             ExpiresAt = session.ExpiresAt,
             ProviderAccount = ConnectorJson.DeserializeOr<ProviderAccount?>(session.ProviderAccountJson, null),
             Challenge = pending is null ? null : ChallengeView.From(pending, session.ProviderId, session.Id),
-            Progress = job is null ? null : ProgressView.From(job),
+            Progress = job is null ? null : await ProgressAsync(job, ct),
             Custody = session.DeviceClass == DeviceClass.Web ? "ephemeral" : null,
             Label = session.Label,
             Config = ConnectorJson.DeserializeOr<IReadOnlyDictionary<string, string>>(session.ConfigJson, Empty),
@@ -112,7 +112,7 @@ public sealed class ViewBuilder(
             SessionId = job.SessionId,
             State = job.State,
             Resource = job.ResourceId,
-            Progress = ProgressView.From(job),
+            Progress = await ProgressAsync(job, ct),
             Challenge = pending is null
                 ? null
                 : ChallengeView.From(pending, job.ProviderId, job.SessionId),
@@ -140,8 +140,22 @@ public sealed class ViewBuilder(
             Poll = $"/v1/{job.ProviderId}/jobs/{job.Id}",
             Events = $"/v1/{job.ProviderId}/jobs/{job.Id}/events",
             Challenge = pending is null ? null : ChallengeView.From(pending, job.ProviderId, job.SessionId),
-            Progress = ProgressView.From(job),
+            Progress = await ProgressAsync(job, ct),
         };
+    }
+
+    /// <summary>
+    /// The job's typed progress, with its place in the line while it waits:
+    /// the queued jobs older than it, whatever their party (the fleet takes
+    /// the oldest first). One count, only for a job that is still queued.
+    /// </summary>
+    private async Task<ProgressView> ProgressAsync(JobRow job, CancellationToken ct)
+    {
+        var view = ProgressView.From(job);
+        if (job.State != JobState.Queued) return view;
+
+        var ahead = await db.Jobs.CountAsync(j => j.State == JobState.Queued && j.CreatedAt < job.CreatedAt, ct);
+        return view with { Ahead = ahead };
     }
 
     private static readonly IReadOnlyDictionary<string, string> Empty =
