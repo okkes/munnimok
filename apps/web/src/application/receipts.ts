@@ -1,14 +1,17 @@
 import { useData } from '@/app/data';
 import { downscaleImage } from '@/lib/image';
 import { logActivity } from './activity';
-import type { ReceiptRow } from '@/db/types';
+import { acceptProposal, rejectProposal, writeReceiptLink } from './receiptLinks';
+import { myStoreFeedId } from './storeFeed';
+import type { ReceiptLinkRow, ReceiptRow } from '@/db/types';
 import type { SpaceTx } from '@/db/joined';
 
 /**
- * Photo receipts (receipts v3): a downscaled image attached straight to
- * the transaction as a photo-born `receiptLink` row — no global receipt
- * behind it (photos skip the store-feed layer), so removing the link IS
- * deleting the receipt.
+ * Receipt actions in a space (receipts v3): a photo is a downscaled
+ * image attached straight to the transaction as a photo-born
+ * `receiptLink` row — no global receipt behind it, so removing the link
+ * IS deleting the receipt; a fetched receipt lives in the owner's store
+ * feed and its link is a snapshot — unlinking leaves the global row.
  */
 export interface ReceiptOps {
   /** photo path: downscale on-device, attach to the transaction */
@@ -17,6 +20,14 @@ export interface ReceiptOps {
   remove: (linkId: string) => Promise<void>;
   /** OCR result: line items extracted from the photo (S2) */
   setItems: (linkId: string, items: ReceiptRow['items']) => Promise<void>;
+  /** manual attach from the picker: snapshot-link a global receipt into the space */
+  linkReceipt: (receipt: ReceiptRow, txId: string) => Promise<void>;
+  unlinkReceipt: (linkId: string) => Promise<void>;
+  /** delete an unmatched receipt from the owner's global store feed */
+  removeGlobalReceipt: (receiptId: string) => Promise<void>;
+  /** "Matches to check" (§5.7): the human's yes or no on a proposal */
+  acceptMatch: (link: ReceiptLinkRow) => Promise<void>;
+  rejectMatch: (link: ReceiptLinkRow) => Promise<void>;
 }
 
 export function useReceiptOps(): ReceiptOps {
@@ -43,6 +54,29 @@ export function useReceiptOps(): ReceiptOps {
     },
     setItems: async (linkId, items) => {
       await repo.upsert('receiptLink', spaceId, linkId, { items });
+    },
+    linkReceipt: async (receipt, txId) => {
+      await writeReceiptLink(repo, spaceId, receipt, txId, false);
+      void logActivity(store, repo, spaceId, 'receiptAdd', receipt.merchant);
+    },
+    unlinkReceipt: async (linkId) => {
+      await repo.remove('receiptLink', spaceId, linkId);
+      void logActivity(store, repo, spaceId, 'receiptRemove');
+    },
+    removeGlobalReceipt: async (receiptId) => {
+      const feedId = myStoreFeedId();
+      if (feedId) {
+        const row = await store.get('receipt', receiptId);
+        await repo.remove('receipt', feedId, receiptId);
+        void logActivity(store, repo, spaceId, 'receiptRemove', row?.merchant);
+      }
+    },
+    acceptMatch: async (link) => {
+      await acceptProposal(repo, spaceId, link);
+      void logActivity(store, repo, spaceId, 'receiptAdd', link.merchant);
+    },
+    rejectMatch: async (link) => {
+      await rejectProposal(repo, spaceId, link);
     },
   };
 }

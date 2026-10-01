@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useRouter } from '@tanstack/react-router';
-import { apiFetch, getApiCapabilities } from '@/lib/api';
-import { LOCALES, useLang } from '@/i18n';
+import { getApiCapabilities } from '@/lib/api';
+import { useLang } from '@/i18n';
 import type { Lang } from '@/i18n';
 import { useTheme } from '@/app/theme';
 import type { ThemeMode } from '@/app/theme';
@@ -167,11 +167,6 @@ export function GlobalSettingsScreen() {
   const identity = useSession((s) => s.identity);
   const navigate = useNavigate();
   const router = useRouter();
-  const [gcAvailable, setGcAvailable] = useState(false);
-  const [connectionsOpen, setConnectionsOpen] = useState(false);
-  const [connections, setConnections] = useState<
-    { gcAccountId: string; iban: string; lastFetchAt: string | null }[] | null
-  >(null);
   const [vapidKey, setVapidKey] = useState('');
   const [pushOn, setPushOn] = useState(false);
   const [pushBusy, setPushBusy] = useState(false);
@@ -190,7 +185,6 @@ export function GlobalSettingsScreen() {
   useEffect(() => {
     if (identity?.kind !== 'user') return;
     void getApiCapabilities().then((caps) => {
-      setGcAvailable(caps.gocardless);
       if (caps.push && caps.vapidPublicKey && pushSupported()) setVapidKey(caps.vapidPublicKey);
     });
     void pushEnabled().then(setPushOn);
@@ -291,13 +285,6 @@ export function GlobalSettingsScreen() {
     }
   };
 
-  const openConnections = () => {
-    setConnectionsOpen(true);
-    void apiFetch('/gocardless/connections')
-      .then(async (res) => (res.ok ? setConnections(await res.json()) : setConnections([])))
-      .catch(() => setConnections([]));
-  };
-
   return (
     <div className="m-fade flex h-full flex-col" data-testid="screen-settings-global">
       <AppBar
@@ -317,9 +304,6 @@ export function GlobalSettingsScreen() {
           <Row testId="settings-accounts-row" icon="bank-outline" title={t('acct.financialAccounts')} onClick={() => void navigate({ to: '/accounts' })} />
           {identity?.kind === 'user' && (
             <Row testId="settings-friends-row" icon="account-multiple-outline" title={t('settings.friends')} onClick={() => void navigate({ to: '/friends' })} />
-          )}
-          {gcAvailable && (
-            <Row testId="settings-connections-row" icon="bank-transfer" title={t('gc.connections')} onClick={openConnections} />
           )}
           {/* #159 (user): devices are an app-wide concern — moved here from
               the profile, which keeps only identity-level acts */}
@@ -344,9 +328,9 @@ export function GlobalSettingsScreen() {
             onClick={() => setLangSheetOpen(true)}
           />
           <WeekStartRow />
-          {/* receipts moved to the space section (v3: they are a space
-              view); the global door keeps the store CONNECTIONS */}
-          <Row testId="settings-shopping-row" icon="storefront-outline" title={t('shop.title')} onClick={() => void navigate({ to: '/shopping' })} />
+          {/* receipts are a space view; the global door is the hub of
+              every party the user connected (#367) */}
+          <Row testId="settings-hub-row" icon="link-variant" title={t('conn.title')} onClick={() => void navigate({ to: '/connections' })} />
           {/* trust feature: munni reads your banks, so it also lets you leave */}
           <Row testId="settings-export-row" icon="download-outline" title={t('settings.exportData')} onClick={() => setExportOpen(true)} />
           <Row testId="settings-help-row" icon="school-outline" title={t('help.title')} onClick={() => void navigate({ to: '/help' })} />
@@ -423,31 +407,6 @@ export function GlobalSettingsScreen() {
         {/* go-offline + account deletion moved to the PROFILE screen
             (user request): they are about the identity, not app settings */}
       </div>
-
-      {/* Bank connections status */}
-      <Sheet open={connectionsOpen} onOpenChange={setConnectionsOpen} title={t('gc.connections')} size="form">
-        <p className="pb-2 text-[12px] text-ink-3">{t('gc.connectSub')}</p>
-        {connections === null && <div className="py-6 text-center text-sm text-ink-3">…</div>}
-        {connections?.map((c) => (
-          <div key={c.gcAccountId} className="flex items-center gap-3 border-b border-line-2 px-1 py-3 last:border-0">
-            <Icon name="bank-check" size={22} color="var(--m-accent)" />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate font-mono text-[13px] text-ink">{c.iban}</span>
-              <span className="block text-[12px] text-ink-3">
-                {t('gc.lastSync')}:{' '}
-                {c.lastFetchAt
-                  ? new Date(c.lastFetchAt).toLocaleString(LOCALES[lang], {
-                      day: 'numeric',
-                      month: 'short',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })
-                  : t('gc.never')}
-              </span>
-            </span>
-          </div>
-        ))}
-      </Sheet>
 
       {/* App lock setup: backup PIN + re-lock timeout (+ biometrics when available) */}
       {/* #282: the disarm challenge — current PIN (auto-verifying like

@@ -1,0 +1,112 @@
+<!--
+  bol.com order details, REAL capture 2026-08-06, redacted.
+
+  Order reference and invoice ids substituted; every product title, price,
+  address and seller name removed. What is kept is the structure that the
+  parser has to survive, which is mostly the traps:
+
+    * ONE rendered invoice anchor, while the order really has THREE invoices -
+      the other two exist only inside the script payload. This is the whole
+      reason the harvester reads the raw body instead of the DOM.
+    * The account-nav and footer /facturen links, which are not invoices.
+    * passwordForgottenUrl, which contains "login.bol.com/wsp" on a page that
+      is working perfectly. Guarding this page with the ordinary login markers
+      reports session_expired every time.
+    * An empty-state i18n label, present on a page that is listing orders.
+    * A 16-digit help-article id and a 16-digit product id, both longer than
+      the 13-digit invoice id they must not be mistaken for.
+    * The ?paid filter's URL shape, which drops the rnwy segment.
+-->
+<!DOCTYPE html>
+<html lang="nl">
+<head><title>bol | Bestelling details</title></head>
+<body>
+<nav aria-label="Account">
+  <a href="/nl/nl/rnwy/account/bestellingen/overzicht/">Bestellingen</a>
+  <a href="/nl/nl/rnwy/account/facturen">Facturen</a>
+</nav>
+
+<main>
+  <section data-testid="order-details">
+    <h1>Bestelling A000TEST001</h1>
+
+    <div class="order-item">
+      <a href="/nl/nl/p/een-product/9200000123456789/">Product</a>
+      <div>
+        <a class="a-link" aria-disabled="false" tabindex="0"
+           href="/nl/nl/rnwy/account/facturen/details/3915700000001">Bekijk betaaloverzicht</a>
+      </div>
+    </div>
+
+    <div class="order-item">
+      <span>Nog niet verzonden</span>
+    </div>
+  </section>
+
+  <!-- A /facturen link immediately before a long id: a pattern anchored on the
+       word rather than the path swallows the help-article id as an invoice. -->
+  <a href="/nl/nl/rnwy/account/facturen">Al mijn facturen</a>
+  <a href="/nl/nl/klantenservice/a/5715110588841984/bedrijfsgegevens">Klantenservice</a>
+</main>
+
+<script>
+  window.__staticRouterHydrationData = JSON.parse({
+    "loaderData": {
+      "routes/account/orders/OrderDetailsRoute": {
+        "orderReference": "A000TEST001",
+        "shopOrderItems": [
+          {
+            "orderItemId": "40000000001000",
+            "invoices": [
+              {
+                "__typename": "Invoice",
+                "id": "3915700000001",
+                "invoiceDetailsUrl": "/nl/nl/rnwy/account/facturen/details/3915700000001",
+                "paymentStatus": "SUCCESS",
+                "subscription": false,
+                "taxInvoice": false,
+                "type": "REGULAR_NOTE"
+              }
+            ]
+          },
+          {
+            "orderItemId": "44289070272000",
+            "invoices": [
+              {
+                "__typename": "Invoice",
+                "id": "3915700000002",
+                "invoiceDetailsUrl": "/nl/nl/rnwy/account/facturen/details/3915700000002",
+                "paymentStatus": "SUCCESS",
+                "subscription": false,
+                "taxInvoice": true,
+                "type": "REGULAR_NOTE"
+              }
+            ]
+          },
+          {
+            "orderItemId": "44289070273000",
+            "invoices": [
+              {
+                "__typename": "Invoice",
+                "id": "3915700000003",
+                "invoiceDetailsUrl": "/nl/nl/account/facturen/details/3915700000003/?order_item_id=44289070273000",
+                "paymentStatus": "SUCCESS",
+                "subscription": false,
+                "taxInvoice": true,
+                "type": "REGULAR_NOTE"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "config": {
+      "passwordForgottenUrl": "https://login.bol.com/wsp/password_forgotten",
+      "emptyState": "Je hebt nog geen bestellingen"
+    }
+  })
+</script>
+
+<footer><a href="/nl/nl/rnwy/account/facturen">Al mijn facturen</a></footer>
+</body>
+</html>

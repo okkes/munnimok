@@ -592,3 +592,467 @@ them is enough to start C0.
 | The subject salt of an environment leaks | rotate it — every connection of that service is severed, nothing else is exposed |
 | Scope creep in the hub | the hub ships with shop only (M3); bank and registry sections appear with their slices |
 | Two API replicas | not deployed; the constraint is documented in the platform README |
+
+---
+
+## 14 · Delivery log
+
+**2026-09-29 — C0 delivered** (`feat(connectors): port …` and the four commits after it). Where it
+departs from §7, and why:
+
+- **Auth transport**: no `network | mtls` switch. The owner chose network isolation plus the Logto
+  machine token; the SHA-1 thumbprint half is removed rather than kept as an option nobody deploys.
+  `RequiredScope` is honoured; `/v1/admin/*` wants `AdminScope`.
+- **Interval enforcement** applies to calls that declare `X-Connector-Trigger: schedule`; a person is
+  never held to it (the manifest's own note on the six Amazon fetches in three hours decided that).
+- **The adapter digest** is the catalogue digest both registries already compute, carried in the
+  agent's capabilities; a mismatch is leased nothing and listed as stale.
+- **The ASN discovery adapter stays in the bank pack**, unregistered, beside the options it
+  produced — it needs the agent runtime and is not a tool that runs on its own.
+- **The smoke tool (§7.3)** moves to M2, where there is a deployed image to point it at; the control
+  plane's own suite drives the public API end to end against the mock providers meanwhile.
+- **CI** is munni's: the images join `release-images.yml`, the per-assembly union coverage gate
+  runs after the tests, Chromium is installed for the agent's browser tests.
+- Documentation is under `docs/connectors/` (README, architecture, contract, adapters, deploy).
+- **Found on the way**: the inline runner reported a job's outcome before its own progress pump had
+  drained, so a fast run lost its last steps — the intermittent `RefreshLoopApiTests` failure of
+  2026-08-12. It flushes first now, as the agent runtime always did.
+
+**2026-09-29 — M1 delivered** (`feat(api): the connector relay`; docs/connectors/relay.md). Where it
+departs from §5, and why:
+
+- **No `{service}` segment.** Phase A unified the three control planes into one host per environment,
+  so the relay has one upstream (`Connectors:BaseUrl`), one audience, one subject salt, and the routes
+  are `/connectors/{provider}/…`; a provider's kind comes from the catalogue.
+- **The app's casing.** Every connector document — sessions, jobs, challenges, the catalogue, the
+  error envelope — is rendered in camelCase like the rest of this API; `config`, `inputs`, `params`
+  and `raw` keep their keys. The plan's "JSON pass-through" would have left the app with two
+  conventions for the same field.
+- **Events: the bridge only.** A login or job in flight is republished on `/sync/events` as
+  `{ kind: "connector", … }` (§5.4); there is no per-session SSE route on the relay. The bridge
+  starts when the relay answers with a run still in flight, not when a client subscribes.
+- **`connectionId` on login.** The client's stable id for a connection rides every login, so a
+  receipt is keyed by the connection (`rcpt:{provider}:{connectionId}:{external id}`) rather than by the
+  session that happened to fetch it — a re-login would otherwise have duplicated every receipt.
+- **Jobs are collected, not polled into existence.** `GET …/jobs/{id}` is read-only (the page of
+  records never reaches the app); `POST …/jobs/{id}/collect { bundle }` ingests, acknowledges and
+  returns the rotated bundle — the acknowledgement needs a ticket, the ticket needs the bundle, and
+  only the app holds it.
+- **Ingest files per record, not per resource**: a bank's transactions pass carries its accounts;
+  the connector's id prefix says what a record is.
+- **Documents as a list.** A receipt carries `documents[]` (`mime`, `dataUrl`, `filename`,
+  `sizeBytes`) rather than one `document`, for the reason the connector made it a list: Amazon
+  issues one invoice per shipment.
+- **No overlay at ingest.** A connector bank feed has no target space when it is created (attach is
+  the user's explicit step), so no `txMeta` is written; the GoCardless ingest writes one because a
+  consent starts from a space.
+- **No `demo_identity` code.** Demo and offline identities carry no token, so they never reach the
+  relay; there is nothing server-side to refuse.
+- **The kill switch's states are the control plane's own** — `healthy`, `degraded`, `paused`,
+  `retired`; contract.md said `active` and was wrong.
+- **Audit**: munni has no server-side activity table (the activity log is the members' own, per
+  space); an operator's pause, resume or revoke is written to the server log with the operator's
+  subject.
+- **Deferred**: the demo seed's connections (client-side shapes, M3); `ConnectorScheduleService`
+  for household-agent custody (M5, with the first T4 provider in the app); a `provider` narrowing of
+  the client's `AccountSource`/`ReceiptSource` unions (M3, where the rows are read).
+- **Tests** boot the control plane in-process (`Connector.Kit.Hosting` + the packs' mocks, Sqlite)
+  behind the relay's HttpClient instead of pulling the images as test containers: the same code
+  path, no Docker in the unit-test lane.
+
+**2026-09-29 — M2 delivered** (`feat(infra): the connector platform rendered`; docs/connectors/deploy.md
+"What munni's platform renders"). Where it departs from §8, and why:
+
+- **One control plane per environment, not three.** `features.connectors: true` (a boolean, not a
+  list of services) renders `connector-<env>` with every pack; the plan's per-service containers,
+  databases, keys and secrets collapse to one of each — the same unification M1 leaned on.
+- **The control plane has a published host.** §3 and §6 said "publishes no port"; household agents
+  dial it from home, and DSM's reverse proxy routes by host, not by path, so the honest shape is a
+  host of its own (`munni-<env>-<platform>-connector`, port 8387 + 100·slot) whose every route wants
+  a machine token or an agent's own token. architecture.md's reachability row says so now.
+- **No agents-only network.** The pooled agent dials each control plane over the platform's shared
+  network; the control plane carries an alias `connector-<env>` there. A second external network
+  that the shared stack must create before any environment can start bought isolation between the
+  operator's own agent and the operator's own services, and nothing else.
+- **The fleet enrolls with a standing code.** The plan's "tokens generated" for the pooled agent
+  became `Connector:FleetEnrollmentCode` (a control plane change): a platform secret
+  (`CONNECTOR_FLEET_CODE`), production-allowed, seeded under the subject `fleet` and re-armed on
+  every start so an agent with a wiped state file comes back — the development code stays
+  development-only because the code IT exists for is written in a checked-in file.
+- **One database, one password.** The control plane's database is `connector` on the environment's
+  Postgres, under the environment's own `munni` user (one `POSTGRES_PASSWORD` per server, as Logto's
+  database already is), not a role and password of its own.
+- **No operator adapter options.** Every adapter option (AH client id, selectors, URLs) is a provider
+  fact with a default in the pack; nothing is a secret the operator holds, so the manifest carries no
+  `SHOP_*` entries and the wizard no Connectors tile — only the environment's tick, the platform's
+  agent tick and a Connectors tab that shows the rendered facts and checks the control plane's
+  liveness through the helper. Provider states, pause / resume, the pool and the canaries are the
+  admin portal's (M6): the wizard holds no operator token for an environment's API.
+- **The relay waits for its credential** instead of refusing to start: the machine pair is written
+  back by the Logto module after the environment's first bootstrap, and an api that refused to boot
+  before it existed could never reach that bootstrap. A base URL that is not one, a missing salt or
+  half a pair still refuse with the setting's name.
+- **The control plane learned two settings** for the local platform: `Connector:Auth:MetadataAddress`
+  and `RequireHttpsMetadata`, so it fetches its Logto's discovery document in-network over http while
+  the issuer stays the browser-facing url — the same pair munni's api carries.
+- **Deferred**: the smoke tool (§7.3) — the relay's in-process control plane tests drive every mock
+  through the real routes, which is what the tool was for; a CLI against a deployed image can follow
+  when a deployed environment exists to point it at.
+
+**2026-09-29 — M3 delivered** (`feat(api): connection sync replaces store sync`, `feat(web): the
+Connections hub`; docs/connectors/client.md). Where it departs from §10, and why:
+
+- **No `existing_refresh_token` adoption (§10.7).** No shipped manifest carries the input — Albert
+  Heijn signs in through the live view — and an input that exists for one migration would be carried by
+  the adapter forever. Every pre-existing store connection is a fresh sign-in through the hub. Since
+  the hub keeps the connection's id, the receipts already on a device keep their rows:
+  `rcpt:{provider}:{connectionId}:{external id}` is the shape both sides always used.
+- **Shops only in the hub (§10.1).** The Banks and Registries sections are not rendered until their
+  slices exist; a section listing the open-banking consents beside no connector would be the hub
+  pretending. The catalogue sheet filters to `kind: store` for the same reason.
+- **Custody is one function** (`features/connectors/bundles.ts`): a bundle in the device-only row
+  means device custody wherever the row was written; the web keeps the bundle in `sessionStorage` and
+  the row without it — so a ciphertext pulled from the E2EE sync lands in the right place on either
+  device class, and the row reads "sign in to sync" when the tab is gone.
+- **The synced rows stay `storeConn` / `storeConnLink`** (§10.1, "the same rows as today"); their
+  `store` field carries the connector provider id now, `ReceiptSource` is `'photo' | provider id`,
+  and the dead `storeMarker` entity and the `storeInstances` token table go — Dexie version 2, the
+  schema's first delta since the clean slate.
+- **The invoice rides the snapshot.** A `receiptLink` carries `documents[]` the way it carries a
+  photo's image: a member opens the invoice without reading the owner's feed.
+- **Proposals live on the link** (§5.7): `proposedTxId` and `rejectedTxIds`, written by the matcher,
+  decided under *Matches to check* on the Receipts screen or on the transaction itself. A pass never
+  attaches to a reviewed transaction and never re-proposes a rejected one; a receipt with a proposal
+  is still re-evaluated when better candidates arrive.
+- **Connector frames are one in-process bus** (`features/connectors/events.ts`): the sync engine
+  hands every `{ kind: "connector" }` frame to it, and a flow or a sync in flight subscribes to its
+  session or job and reads the view afresh — a frame says "something moved", never what the bundle is.
+- **A job's question waits for a human.** An unattended sync (app open, after a bank sync) that
+  meets a question stops with `asking`; *Sync now* in the hub answers it in a sheet. Nothing is
+  answered on the user's behalf.
+- **The connection sync is renamed, not versioned** (`/me/connection-sync/*`, tables
+  `ConnectionSyncDevices` / `ConnectionCiphers`, the HKDF label `munni-connection-sync-v1`): a rename
+  migration keeps the ciphertext rows; no compatibility layer keeps anything else.
+- **The copy test walks the sources** (`features/connectors/copyCoverage.test.ts`): every
+  `connect.*` literal under `server/src/connectors` and every member of the wire enums (error codes,
+  job steps, session states, user actions, challenge types) must have EN, NL and TR copy — the test
+  lives in the web suite, where the copy lives, and fails before a raw key reaches a screen.
+- **Deferred**: the household agents screen (M5); the review deck's *Receipt* row (§5.7) — the
+  transaction detail carries the proposal for now, the deck row follows with the bank slice's review
+  work; a gallery spec for the hub (the RTL suite drives the catalogue, the form, a code challenge,
+  a refusal, *Sync now* and removal against a mocked relay); a live Albert Heijn connect on dev, which
+  waits for the first environment that runs connectors.
+
+**2026-09-30 — M4 delivered** (`feat(web): banks in the Connections hub`; docs/connectors/client.md
+"Banks"). Where it departs from §10.1 and the M4 row, and why:
+
+- **The server side was already M1's.** The ingest files a bank's accounts into the IBAN's feed
+  (co-owned when someone else connected it first) or a personal `CONN:` feed, transactions behind
+  them, `source: 'connector'` and the party as `provider`, and the feed appears in `/me/spaces` on the
+  next pull — M4 added no relay route; it added the test that a bank beside a statement import of the
+  same IBAN forks its own `acct:{iban}:bank` row until the explicit merge (#311 r4), the way open
+  banking does.
+- **No `select_option` at connect time.** No bank adapter asks the app which accounts to fetch (ASN
+  confirms all of them inside its own page); the user picks accounts where they always did — at
+  attach time, on the space's accounts screen. The hub's card lists the fetched accounts with the
+  spaces each is attached to and an *Attach to {space}* door that lands on the final attach step with
+  the account picked (#310's intent), closing the gap the GoCardless callback left open.
+- **A bank connection writes no `storeConnLink`.** Inclusion is per account (`accountLink`), so
+  `adopt` writes the synced connection row (now with the party's `kind`, so the hub's sections render
+  offline) and nothing else; the receipts machinery stays a shop's.
+- **Open banking stays on its own door.** §10.1 wanted the GoCardless / Enable Banking consents in the
+  Banks section; they keep their sheet under Settings and the accounts overview — folding a consent
+  list without a connector behind it into the hub would have been the M3 pretence in another form.
+  The hub lists what the connector platform holds.
+- **Source-sniffing became a predicate.** The accounts screens asked `source === 'gocardless'` to
+  decide which rows a party keeps current; `fetchesItself()` answers that for open banking and the
+  connector alike (synced-empty fact, reconnect hint, no stale-export warning), and the source label
+  names the party.
+- **What a fetch says about itself is shown** (`fetch.*` resource notes — ASN hands over its whole
+  export); the copy test walks `fetch.*` keys as well as `connect.*`.
+- **Deferred**: `asn-persistent` (a household agent, M5) — the catalogue marks it "needs your own
+  computer" and a login without an agent is refused with the connector's own `agent_unavailable`;
+  the live ING connect on dev and the live view on a phone, which wait for an environment that runs
+  connectors and a pooled agent; the review deck's *Receipt* row still.
+
+**2026-09-30 — M5 delivered** (`feat(api): scheduled syncs for household-agent custody`, `feat(web):
+registries and your own computer in the hub`; docs/connectors/client.md "Your own computer",
+docs/connectors/relay.md "Scheduled syncs"). Where it departs from §5.5 and §10.4, and why:
+
+- **The relay keeps exactly one kind of bundle.** A household-agent bundle (`secret_custody: agent`)
+  names an agent and a profile and holds no secret, so the relay keeps it on the session row
+  (`KeptBundle`) at the single delivery — a login that settled, or the first view read after it —
+  and follows every rotation. Every other custody's bundle still passes through memory only; the
+  write-path scan now walks `KeptBundle` too and the client-custody flows prove it stays empty.
+- **`ConnectorScheduleService` is the `GcFetchService` shape**: an hourly tick, every kept and
+  active session, the provider's own `min_interval_seconds` respected on the relay's side and
+  declared as `X-Connector-Trigger: schedule` so the control plane holds it to the interval as well;
+  a fetch that became a job is followed for ten minutes and collected with the kept bundle; a job
+  that asks leaves the session `awaiting_input` for the person; a refusal the person must act on
+  (`session_expired`, `invalid_credentials`, `mfa_failed`, `consent_expired`,
+  `unsupported_resource`, `agent_revoked`) drops the kept bundle and marks `needs_reauth`; every
+  other refusal is remembered (`lastScheduleError`) and retried next tick. `GET /connectors/sessions`
+  says `scheduled`, when the scheduler last ran and what it last ended on.
+- **The card listens to the relay.** The hub reads the relay's bindings once per open; where the relay
+  knows more than the device — a question the scheduler left, a session it found dead, a sync it ran
+  itself — its word wins on the state line ("syncs by itself · last …"). Custody stays the device's.
+- **No agent picker on the relay.** The control plane routes a login by `prefer_agent`; the app asks
+  the person which of their online agents holds the sign-in for a `byo` party (offline ones are shown,
+  not offered) and doors into *Your own computer* when there is none. §10.4's "first-class in the
+  flow for those providers, a settings-level door otherwise" is exactly this: the agent step is the
+  first thing a `byo` login shows, and the hub carries the door for everyone signed in.
+- **Registries are the bank pattern.** BKR's and DUO's liability accounts land in the personal `REG`
+  feed as `account` rows (M1); the hub lists them under the registry's card with the same attach door
+  a bank's accounts have. Nothing joins a space by itself.
+- **The compose line is the enrollment.** `POST /connectors/agents/enrollment` hands back the code,
+  its expiry and the one line (`CONNECTOR_URL`, `ENROLLMENT_CODE`, `docker compose … up -d`) beside
+  `deploy/connectors/household-agent.yml`; the screen renders it with a copy button, keeps polling the
+  agent list while a code is out, and explains what the agent is and is not (nothing connects to it).
+  Revoking says what it destroys.
+- **Deferred**: a DUO fetch on the owner's account and an agent enrolled from the app against a
+  deployed control plane — both need an environment that runs connectors; the "needs you" card on the
+  home screen (the hub's card carries the question for now); the admin's view of the fleet (M6).
+
+**2026-09-30 — M6 delivered** (`feat(admin,control): the connectors screens`). Where it departs from
+§9, and why:
+
+- **The portal's Connectors screen renders what the relay answers, nothing more.** §9 asked for
+  "sessions live / awaiting input per provider" and "last error class" — the control plane's status
+  document carries the queue fleet-wide (`queued`, `running`, `awaitingInput`) and a party's state,
+  since and reason, not per-party session counts; the screen shows the document as it is rather than
+  deriving numbers the platform does not keep. Adding them is a control-plane change, not a portal one.
+- **Two confirmation idioms, the portal's own.** Pausing and resuming are one tap (reversible);
+  retiring — which expires every live session — wants the party's id typed, like retiring a catalogue
+  category; revoking an agent — which destroys the profiles that keep a user's logins alive — asks
+  through the browser's confirm with that consequence named, like deleting a foreign consent.
+- **The reason key is a copy key.** The operator types the key the member app renders (the app shows
+  its copy when it carries one); the portal has no copy of its own to offer, and inventing prose the
+  app cannot show would be the portal pretending.
+- **The relay's envelope reaches the error strip as its code.** The portal's action runner read
+  `error` as a string; a relayed refusal is the connector's envelope (`{ code, … }`), so the strip
+  shows `provider_unavailable` rather than `[object Object]`.
+- **The cockpit is read-only, as everything on it is.** `/control/connectors/status` lands as a fourth
+  screen — the designated environment's parties and fleet liveness — with the writes left to that
+  environment's own portal. §9's "every environment's provider states on one page" would need the
+  cockpit to reach every environment's API, which it does not for anything else either; it shows the
+  one it is pointed at.
+- **The diagnosis carries the sessions.** The user diagnosis prints each connector binding (party,
+  state, connection id, last seen) — never a bundle — beside the feeds and the open-banking links.
+- **Not proven on dev**: the plan's "pause / resume proven on dev" waits for the first environment that
+  runs connectors; the relay tests prove the kill switch end to end against the in-process control
+  plane, the portal tests the screen against the relay's documents.
+
+**2026-09-30 — O1 delivered** (`feat(connectors): the open-banking parties`, `feat(infra): the aggregator
+keys reach the control plane`; #414). Where it departs from §15, and why:
+
+- **One base, two wires.** The aggregators differ only in their HTTP, so `OpenBankingAdapter` carries
+  everything a person or the platform sees (the lookup, the redirect, the consent-shaped session,
+  the fetch with its identities, the revoke) and each aggregator overrides eight wire calls. A third
+  aggregator is a client, not an adapter.
+- **`ProviderHttp` moved to the Kit.** The shop pack's status-to-error mapping is exactly what an
+  aggregator needs; one place, one reading of a 429 — the retail-specific block statuses stayed in the
+  shop pack as `RetailHttp`.
+- **The quota is a fact, not a row.** What a party last said about its budget lives in memory on the
+  control plane (`ProviderQuotaService`) and rides the status document's provider entry as `quota`; a
+  restart forgets it until the next fetch says it again. Persisting it would have meant a control-plane
+  migration for a number that is stale within a day.
+- **The logos are cached, not stored.** The old api vendored institution logos into a table; the control
+  plane keeps them in memory for a month behind an immutable cache header. A restart refetches on the
+  first request — a cost of one call a month per institution shown.
+- **A consent mock joined the fleet.** `mock-bank-consent` is the aggregator shape with nothing behind it
+  (lookup, redirect, server custody, quota, inventory), so the relay (O2), the app (O3) and the local
+  stack walk the whole flow with no aggregator account; the fleet's inline set is three parties now.
+- **Details are learned once per consent.** A fetch reads an account's details only until it has them,
+  and hands them back as refreshed material — the session rotates on use for that reason alone (the
+  consent itself never rotates). An aggregator's daily budget per account is small.
+- **Deferred to O2/O3**: the relay keeping the bundle for server custody, the scheduler's preferred hour
+  and not-before, the ingest's pending mirror and prediction overlay, the relay's lookup/logo/inventory
+  routes, the return page — the platform side is complete and proven against scripted wires; nothing
+  reaches a person until the relay and the app carry it.
+
+**2026-09-30 — O2 delivered** (`feat(api): the relay carries the open-banking parties`; #414). Where it
+departs from §15, and why:
+
+- **A consent survives the deletion of one of its feeds.** §15.5 said consent-aware feed deletion
+  "keeps its behaviour"; the api's behaviour was per account — a requisition was revoked only when its
+  last account left. A connector consent reaches several accounts as one session, so the relay keeps
+  the session and marks the dropped account `Excluded` (the party still lists it; the ingest leaves it
+  alone) and ends the consent at the party when its last account leaves. Deleting the munni account ends
+  every consent.
+- **The pending mirror settles on a complete pass.** The api fetched per account and settled at once;
+  a connector page does not say which accounts it covers, so the relay settles the connection's
+  accounts against the pending rows the whole transactions resource reported — after a complete pass
+  (or a collected job without a cursor), never after a partial one.
+- **The bank's zone comes from the first IBAN the connection reaches** — the material with the
+  institution's country is sealed and the relay does not open bundles; a card-only connection reads the
+  party's home country.
+- **The overlay goes where the account is attached.** The api wrote predictions into the space the
+  consent was made from; a connector account is attached per space after the fact, so the overlay is
+  written for every attached space at ingest time, once per row and space.
+- **A logo's route token.** A party may name an option `ASN Bank|NL`, which the relay's route-parameter
+  shape refuses, so the logo route takes the value as base64url on the control plane and the relay alike.
+- **`KeywordPredictor` moved beside the accounts code** (`Accounts/`), no longer a GoCardless thing.
+- **Not touched, by design:** the api's own `/gocardless/*` path is alive until O4 — both paths write the
+  same ids, so a user who reconnects through the hub in O3 continues the same rows.
+
+**2026-09-30 — O3 delivered** (`feat(web): open banking through the Connections hub`; #414). Where it
+departs from §15, and why:
+
+- **The return page answers with the public-origin landing address**, not the document's own: inside
+  the native shell the webview's origin is localhost, which no return pattern names. The query is the
+  bank's; only the origin is normalised.
+- **No blind scheme bounce.** §15.3 said a return landing in a browser that is not the app "bounces
+  through the app scheme"; a desktop browser without the app would dead-end on that. The page offers
+  "Open the munni app" (the scheme link with the query) next to the way back, and only where the
+  document holds no pending return — the app that started the consent is the one that answers.
+- **The name is asked on the return page.** The hub's naming sheet lives in the router; a consent comes
+  back in a fresh document, so the return page carries the same ask (prefilled with the party's default
+  name) and continues to the hub.
+- **The account row learns its institution from the record.** The api's `/gocardless/institutions/{id}/logo`
+  had no connector-side twin, so the account record gained `institution` (the lookup's value, O1's
+  `AccountDraft`), the ingest stamps it as `bankId` (O2), and the row logo is the party's vendored
+  option logo through the relay's anonymous route.
+- **The Connect door leads to the hub with the catalogue open** (a one-shot intent, like the attach
+  handoff) — the chooser's "Connect a bank" row stays where people know it; the Settings consents row and
+  sheet are gone, the hub is the one list.
+- **`capabilities.gocardless` has no reader left** in the app (the chooser no longer asks the api whether
+  open banking exists — a party is in the catalogue or it is not); O4 drops the flag server-side.
+- **`AccountSource` lost `gocardless` and `BankProvider` went with it**: every predicate (self-fetching,
+  the reconnect hint, the go-offline demotion, the import's canonical-row rule, the detail screen's
+  source sniff) reads `connector`. Rows the old path wrote keep reading as they are until the new ingest
+  rewrites them (§15.8: no migration).
+
+**2026-09-30 — O4 delivered** (`refactor(api)!: the api's own open-banking path retired`; #414). Where it
+departs from §15, and why:
+
+- **`FeedOwner` lost its consent columns.** #240's hand-over of a fetch binding to a surviving co-owner's
+  consent was a GoCardless mechanism (one requisition per user, the linked-account row re-bound); a
+  connector consent fetches the feed as long as it lives, so a co-owner's own session simply keeps
+  fetching — the row keeps `FeedSpaceId`/`UserId` only, and the migration drops the rest.
+- **The cockpit reads the inventory through the relay** (`GET /control/connectors/providers/{id}/remote-consents`,
+  read-only) rather than a `/control/consents` of its own: one account serves every environment, so the
+  designated environment's control plane already sees every consent with its origin; the cockpit
+  groups them per environment as before and revokes nothing, as before.
+- **The quota moved from a captured table to the party's word**: `ProviderQuotas` and the capture handler
+  are gone; the status document's `quota` (what the adapter reported from the aggregator's headers on
+  its last call) is what both consoles show, per party, with a warning at a fifth left.
+- **`AccountDeletion` took the disconnector by injection** (§14 O2's parameter list became a class);
+  the GoCardless revocation left with the tables.
+- **The wizard's defaults changed with the rule**: a new platform starts with Connectors ticked (banks are
+  parties), the two bank tiles say they need it, and the server refuses an environment whose banking
+  list is not empty while `connectors` is off — on creation and on a settings change — naming the way
+  out.
+- **Kept on purpose:** `/gc-callback` as the return path (the banks' registrations), the wizard's
+  purge of a deleted lcl environment's consents by redirect prefix (it holds the secret), the
+  `ImportIds` helper (now `Accounts/ImportIds.cs`) and `BankZones`; the ingest still takes over a row
+  the old path wrote (`source: gocardless`) so a reconnected account continues its history.
+
+---
+
+## 15 · Open banking as parties (ruling 15)
+
+**The ruling.** The ticket's answer to §12 Q15 went further than the question: "we can move the
+GoCardless and Enable Banking to the adapter service for consistency reason", restated on
+2026-09-30 as "you can pick it up and do the migration". So GoCardless and Enable Banking become
+two bank parties of the connector platform, and Munni.Api's `Banking/` and `GoCardless/` — with
+everything that hangs off them — go. §10.1's "keeps its own connect sheet" and §14 M3's "open
+banking stays on its own door" are superseded by this section.
+
+### 15.1 What exists
+
+- **Server** (`server/src/Munni.Api`): `Banking/IBankDataApi` over two clients (`GoCardless/GoCardlessApi`,
+  `Banking/EnableBankingApi`), `BankingSetup.Register` (a provider exists iff its secret is configured),
+  the `GcRequisition` / `GcLinkedAccount` / `GcPendingTx` / `GcInstitutionLogo` tables, the `/gocardless/*`
+  routes (providers, institutions with a 24 h cache and vendored logos, requisitions, the anonymous
+  `complete`, connections), `GcFetchService` + `GcSchedule` (hourly tick, 03:00 bank-local from the IBAN's
+  country, the per-account daily budget, consent healing, idle cleanup and rebinding), `GcIngest` (feed
+  ops keyed by `ImportIds.TransactionId(iban, reference)`, a `txMeta` prediction overlay from
+  `KeywordPredictor`, pending rows mirrored and tombstoned, feed co-ownership), the admin and cockpit
+  consent and quota endpoints, `FeedDeletion` / `AccountDeletion` revoking consents.
+- **Web** (`apps/web`): `BankConnect.tsx` (provider pick, institution list, the redirect) and the `/gc-callback`
+  screen (completes the requisition; the native return bounces through the app scheme), the Settings
+  consents sheet, `AccountSource 'gocardless'` + `provider`, `fetchesItself()` and a handful of raw
+  `=== 'gocardless'` checks, `useInstitutionLogos`, `capabilities.gocardless`, the `gc.*` copy, a tour step and
+  guide tips; the native shells register `/gc-callback` as an App Link.
+- **Infra**: four operator secrets (`GOCARDLESS_SECRET_ID/KEY`, `ENABLEBANKING_APPLICATION_ID/PRIVATE_KEY_PEM`,
+  scope env), the two account tiles with their validators, `features.banking`, `render.mjs` handing the
+  four to the api container, the Enable Banking redirect registration (`{web}/gc-callback`, a manual done
+  tick), the consent purge by redirect prefix on environment deletion.
+- **Platform** (`server/src/connectors`): the `http` runtime runs inline on the control plane
+  (`InlineJobRunner`: `agent.class = inline`, no browser, full challenge support); `AuthFlow.OauthRedirect` and
+  `ChallengeType.Redirect` (`url`, `return_pattern`, `code`) are declared by no adapter yet; the answer to a
+  redirect is the landing URL, posted through the answer route; `SecretCustody.Server` is permitted by the
+  validator and implemented by nothing; there is no field whose options a party lists at connect time;
+  no `BankAdapters__*` option is rendered anywhere; `ConnectorIngest` derives the same
+  `ImportIds.TransactionId(iban, external_id)` the old ingest did, holds feed co-ownership, but writes no
+  prediction overlay and mirrors no pending rows.
+
+### 15.2 The design
+
+1. **Two parties.** `gocardless` and `enablebanking`, `kind: bank`, `runtime: http`, `agent: inline`,
+   `unattended_fetch: true`, `secret_custody: server`, `auth.flow: oauth_redirect`, one step with the
+   country (a select, NL first) and the **institution as a lookup field**, `challenges: [redirect]`, a
+   90-day session (`refreshable: true` — the consent is reused unattended for its lifetime;
+   `rotates_on_use: false`), `reauth.cheap: false` with `consent_expired` as the trigger, resources
+   `accounts` and `transactions` from `BankResources`, `max_history_days` 730 (GoCardless) / 90 (Enable
+   Banking), `preferred_fetch_hour_local: 3`. A party exists only when its operator keys are configured —
+   `BankAdapters.Real` registers it like `BankingSetup` did, never a stand-in.
+2. **The lookup field.** `FieldType.Lookup`: the party serves `GET /v1/{provider}/options/{field}?q=&…`
+   (`IProviderAdapter.LookupAsync`, the other fields of the step as context — the country), answering
+   `{ options: [{ value, label, logo? }] }` with an operator-side cache; logos are vendored by the control
+   plane (`GET /v1/{provider}/options/{field}/{value}/logo`, once, immutable) so no user's browser hits
+   an aggregator's CDN. The relay proxies both. The form renders a searchable picker with logos.
+3. **The consent is the redirect challenge.** The adapter creates the requisition (GoCardless: with an
+   end-user agreement for 730 days; Enable Banking: `POST auth`, 90 days) with the return URL the client
+   sent as `config.return_url` (its own origin + `/gc-callback`, as today) and raises `redirect` with
+   `url`, `return_pattern` (that origin + `/gc-callback*`) and `code` = the reference it will look for.
+   The client stores `code → { provider, session }` before opening the party page **in the system
+   browser** (an own-origin return pattern means "not an AuthSession": the bank returns to our page, on
+   the phone through the App Link exactly as today) and the return page answers the challenge with the
+   landing URL. Where the return lands in a browser that is not the app (a phone whose App Link is not
+   verified) the page bounces through the app scheme with the query, and the app answers. The adapter
+   completes: GoCardless reads the requisition (`LN`), Enable Banking exchanges the single-use `code` for
+   a session (`ALREADY_AUTHORIZED` falls through to the session read); `LoginResult.Account` names the
+   institution; the material is the consent id and the reachable accounts, never a credential.
+4. **Custody and schedule.** The relay keeps the bundle for `secret_custody: server` parties exactly as it
+   does for agent custody (`KeepsBundle`), so `ConnectorScheduleService` syncs them unattended. Two
+   additions any bank party may use: `limits.preferred_fetch_hour_local` (the scheduler waits for that
+   hour in the bank's zone, from the IBAN's country as `GcSchedule` did, once a day) and a
+   `rate_limited` refusal's `retry_after_seconds` becoming a not-before on the session. The first fetch
+   follows the connect, user-triggered, as for every party.
+5. **Ingest parity.** The adapters emit `external_id` = the reference the old ingest keyed on
+   (`transactionId ?? internalTransactionId`; `pending:` + it for a pending row) and the account's IBAN, so
+   `ImportIds.TransactionId(iban, external_id)` and the feed space are the ids users already hold — a
+   reconnected bank continues its history without a duplicate. The relay's ingest gains, for every bank
+   party, the pending mirror with tombstones and the keyword prediction overlay (`KeywordPredictor` moves
+   beside it); feed co-ownership, wallet hand-over and consent-aware feed deletion keep their behaviour,
+   the revocation going through the party's `logout` (`LogoutSupport.Account`).
+6. **Operators.** `IRemoteInventory` on an adapter lists what the aggregator account holds — every
+   consent with its environment of origin (the redirect's origin, as the cockpit derived it) and whether a
+   session here holds it — and revokes one; `GET/DELETE /v1/admin/providers/{id}/remote-consents`, relayed,
+   on the admin portal's party row together with **quota facts** (`limit`, `remaining`, `reset_at`, reported
+   by the adapter from the aggregator's headers into the party's status). The cockpit shows the designated
+   environment's inventory and quota read-only. Environment deletion keeps purging consents by redirect
+   prefix from the wizard (it holds the secret).
+7. **Secrets.** The four manifest names stay; `render.mjs` hands them to the control plane as
+   `BankAdapters__GoCardless__SecretId/SecretKey` and `BankAdapters__EnableBanking__ApplicationId/PrivateKeyPem`
+   — never to an agent (a manifest must not depend on them, so the catalogue digest is the same on both
+   sides). `gocardless` / `enablebanking` require `connectors`; the environment's Settings form refuses to
+   save one without the other and says why.
+8. **Removal.** `Banking/`, `GoCardless/`, `/gocardless/*`, the four `Gc*` tables (a migration drops them),
+   `/admin/gocardless/*`, `/admin/quota`, `/control/consents`, `/control/quota`, `capabilities.gocardless`,
+   `BankConnect.tsx`, the Settings consents sheet, the `gc.*` copy, the admin's Bank connections screen and
+   quota tile, the cockpit's consents and quota screens. Existing consents are **not migrated**: users
+   reconnect once through the hub; the legacy consents show in the aggregator inventory for the operator to
+   revoke. `AccountSource` loses `gocardless`; a row the new ingest has rewritten reads `connector`.
+
+### 15.3 Slices
+
+| Slice | Contents | Gate |
+| --- | --- | --- |
+| **O1** platform + infra | `FieldType.Lookup` + the options and logo routes, `preferred_fetch_hour_local`, `IRemoteInventory`, quota facts, the two adapters with their options and clients (ported from the api), `render.mjs` + the local compose handing the secrets to the control plane as well, docs (adapters, contract, deploy) | adapter and control-plane tests; infra tests |
+| **O2** relay + ingest | `KeepsBundle` for server custody, the scheduler's preferred hour and not-before, the ingest's pending mirror and prediction overlay, the lookup/logo/inventory/quota relay routes, `FeedDeletion` / `AccountDeletion` through the party, docs (relay) — the old path still alive | api tests, Sonar |
+| **O3** web | the hub's aggregator parties, the lookup picker, the own-origin return page on `/gc-callback`, `AccountSource`, the predicates, the Add-account door, onboarding, copy, tours, guide, What's New | web tests, Sonar |
+| **O4** removal + operators | the server removal + migration, the admin party row (inventory, quota) and the cockpit, the wizard's feature rule and the api's secret lines gone, architecture §5, the checklist | api / admin / control / infra tests, Sonar |
+
+Each slice is one push; its departures from this section land in §14.

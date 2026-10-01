@@ -54,9 +54,9 @@ export interface SpaceRow extends SyncEnvelope {
 }
 
 export type AccountType = 'checking' | 'savings' | 'cash' | 'brokerage' | 'credit' | 'mortgage' | 'loan' | 'funding';
-export type AccountSource = 'manual' | 'camt053' | 'gocardless';
-/** which open-banking provider fetches a 'gocardless'-sourced account (#176) */
-export type BankProvider = 'gocardless' | 'enablebanking';
+/** 'connector' = fetched through the connector platform (#367, #414 —
+ *  open banking included); the `provider` field then names the party */
+export type AccountSource = 'manual' | 'camt053' | 'connector';
 
 export interface AccountRow extends SyncEnvelope {
   id: string;
@@ -71,10 +71,11 @@ export interface AccountRow extends SyncEnvelope {
   balanceAsOf?: string;
   /** when this account last heard from its source (ISO; bank fetch or statement import) */
   lastSyncedAt?: string;
-  /** #176: the open-banking provider behind a 'gocardless' source —
-   *  stamped by the server ingest on EVERY bank-fed row; manual and
+  /** #367: the connector party behind a 'connector' source (the provider
+   *  id as the catalogue names it — `gocardless`, `enablebanking`, `asn`
+   *  …) — stamped by the server ingest on EVERY fetched row; manual and
    *  statement-import rows carry none */
-  provider?: BankProvider;
+  provider?: string;
   /** #133/#221: this account is the space's DEFAULT for a counterparty
    *  family — minted at space creation (undeletable, ledger system-
    *  managed), so "Set aside" or an ATM withdrawal without naming an
@@ -91,6 +92,9 @@ export interface AccountRow extends SyncEnvelope {
   lastFetchReceived?: number;
   lastFetchDropped?: number;
   iban?: string;
+  /** #367: the party's own masking of a card or wallet number — the
+   *  connector ingest writes it for an account that has no IBAN */
+  maskedNumber?: string;
   bankId?: string;
   color?: string;
   /** user-chosen icon override: '/brands/{slug}.svg' or a logo.dev URL —
@@ -486,13 +490,25 @@ export interface AllocationRow extends SyncEnvelope {
   assignedCents: number;
 }
 
-export type ReceiptSource = 'photo' | 'ah' | 'jumbo' | 'bol' | 'coolblue' | 'mediamarkt' | 'amazon';
-
 export interface ReceiptItem {
   name: string;
   qty?: number;
   unitCents?: number;
   totalCents: number;
+  /** a line that is not a product (the connector says which) — absent = product */
+  kind?: 'fee' | 'deposit' | 'discount' | 'adjustment' | 'unattributed';
+}
+
+/** a document the party issued for the purchase — an invoice, mostly
+ *  (the connector's `include=invoice`); carried inline as a data URL */
+export interface ReceiptDocument {
+  kind: 'invoice';
+  mime: string;
+  name?: string;
+  filename?: string;
+  sizeBytes?: number;
+  /** `data:{mime};base64,…` */
+  dataUrl: string;
 }
 
 /** how a store receipt was paid, when the provider exposes it (R5) */
@@ -514,69 +530,111 @@ export interface ReceiptRow extends SyncEnvelope {
   id: string;
   /** the owner's store feed */
   spaceId: string;
-  source: ReceiptSource;
+  /** 'photo' for the camera, else the connector provider id that fetched
+   *  it (`ah`, `jumbo`, `amazon-nl`, `mock-store-simple` …) — the
+   *  catalogue is the only list; the client never enumerates parties */
+  source: string;
   date: string;
   totalCents: number;
+  /** the party's currency (ISO); absent on photo receipts = the space's */
+  currency?: string;
   merchant?: string;
   items?: ReceiptItem[];
   /** downscaled data URL (photo path) */
   image?: string;
-  /** `{store}:{externalId}` — cross-source dedupe key */
+  /** `{provider}:{externalId}` — cross-source dedupe key */
   storeRef?: string;
-  /** the connection instance that pulled it (v3) */
+  /** the connection that pulled it — every connector receipt is keyed by it */
   instanceId?: string;
   payment?: ReceiptPayment;
+  /** invoices the party issued for the purchase (connector fetches) */
+  documents?: ReceiptDocument[];
+  /** false when the party says the line items do not add up to the total */
+  reconciled?: boolean;
 }
 
-export type StoreId = Exclude<ReceiptSource, 'photo'>;
+/** the connector's own words for a session, as the relay renders them (#367) */
+export type ConnectorSessionState =
+  | 'queued'
+  | 'running'
+  | 'awaiting_input'
+  | 'active'
+  | 'needs_reauth'
+  | 'blocked'
+  | 'disabled'
+  | 'failed'
+  | 'expired';
+
+/** the last thing the relay refused with — the state line reads it */
+export interface ConnectorLastError {
+  code: string;
+  messageKey: string;
+  userAction: string;
+  retryAfterSeconds?: number;
+}
 
 /**
- * DEVICE-ONLY store login state — never synced in plaintext, never on
- * our server (receipts privacy law; E2EE storeSync ferries ciphertext).
- * v3: keyed by INSTANCE id — multiple connections of one store coexist.
+ * DEVICE-ONLY connection state (#367): the credential bundle a party
+ * handed this device and what the relay last said about the session.
+ * Never synced in plaintext, never exported, never on our server — the
+ * E2EE connection sync ferries it as ciphertext between the owner's
+ * devices. On the web the bundle lives in sessionStorage instead
+ * (custody 'ephemeral', it dies with the tab), so the row carries none.
  */
-export interface StoreConnectionRow {
-  /** instance id (uuid) */
+export interface ConnectorConnRow {
+  /** the connection id — the client's stable id the relay keys every receipt by */
   id: string;
-  store: StoreId;
-  tokens: Record<string, string>;
+  /** the provider id as the catalogue names it */
+  provider: string;
+  /** `sb_v1.…` — native custody only */
+  bundle?: string;
+  /** a provider-kept credential store (Jumbo), replayed on re-login */
+  credentialBundle?: string;
+  /** the relay session the bundle belongs to */
+  sessionId?: string;
+  state: ConnectorSessionState;
+  /** when the bundle last changed hands (login or rotation) — the E2EE
+   *  sync adopts the fresher copy */
   refreshedAt: string;
-  status: 'ok' | 'expired';
-  /** newest store receipt already ingested (dedupe cursor) */
-  lastReceiptId?: string;
-  /** provider account identity hash — duplicate-connection detection */
-  providerAccountHash?: string;
+  lastSyncAt?: string;
+  lastError?: ConnectorLastError;
 }
 
 /**
- * SYNCED, secret-free connection-instance metadata. Lives in the
- * owner's personal STORE FEED: every one of their devices renders the
- * instance (name, icon) even before E2EE tokens arrive.
+ * SYNCED, secret-free connection metadata. Lives in the owner's personal
+ * STORE FEED: every one of their devices renders the connection (name,
+ * icon) even before the E2EE bundle arrives.
  */
 export interface StoreConnRow extends SyncEnvelope {
-  id: string; // instance id
+  id: string; // the connection id
   spaceId: string; // the owner's store feed
-  store: StoreId;
+  /** the provider id as the catalogue names it */
+  store: string;
+  /** the party's kind, frozen at connect time so the hub sections render
+   *  offline; absent on rows written before banks joined (= a shop) */
+  kind?: 'store' | 'bank' | 'registry';
   displayName: string;
   /** BrandIconPicker result ('brands/….svg' or a logo URL) */
   icon?: string;
   providerAccountHash?: string;
   connectedAt: string;
-  /** 'expired' = reconnect needed (mirrored from the device row) */
+  /** 'expired' = a sign-in is needed (mirrored from the device row) */
   status?: 'ok' | 'expired';
 }
 
 /**
- * Per-space inclusion of a connection instance (the accountLink
- * analogue): members see included connections and their receipts flow
- * into the space. Carries a name/icon snapshot — members cannot read
- * the owner's store feed.
+ * Per-space inclusion of a connection (the accountLink analogue):
+ * members see included connections and their receipts flow into the
+ * space. Carries a name/icon snapshot — members cannot read the
+ * owner's store feed.
  */
 export interface StoreConnLinkRow extends SyncEnvelope {
   id: string; // `sclink:{spaceId}:{instanceId}`
   spaceId: string;
+  /** the connection id */
   instanceId: string;
-  store: StoreId;
+  /** the provider id as the catalogue names it */
+  store: string;
   displayName: string;
   icon?: string;
   addedByName?: string;
@@ -596,7 +654,8 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   receiptId?: string;
   /** absent = the receipt is present in the space but not attached yet */
   txId?: string;
-  source: ReceiptSource;
+  /** 'photo', or the connector provider id that fetched it */
+  source: string;
   instanceId?: string;
   date: string;
   totalCents: number;
@@ -604,21 +663,16 @@ export interface ReceiptLinkRow extends SyncEnvelope {
   items?: ReceiptItem[];
   image?: string;
   payment?: ReceiptPayment;
+  /** the invoices ride the snapshot like a photo does — members open them without the owner's feed */
+  documents?: ReceiptDocument[];
   /** 1 = the matcher linked it, 0/absent = a human did */
   auto?: 0 | 1;
-}
-
-/**
- * SYNCED, secret-free connection marker (ruling #1 softener): the space
- * remembers a store was connected, so a device without a local token
- * shows "reconnect on this device" instead of silently doing nothing.
- */
-export interface StoreMarkerRow extends SyncEnvelope {
-  id: string;
-  spaceId: string;
-  store: Exclude<ReceiptSource, 'photo'>;
-  status: 'connected' | 'expired';
-  connectedAt: string;
+  /** #367: the matcher's best candidate was already reviewed, so it asks
+   *  instead of attaching — "Matches to check" lists these until a human
+   *  accepts (txId) or rejects (rejectedTxIds) */
+  proposedTxId?: string;
+  /** transactions a human said this receipt is NOT for — never proposed again */
+  rejectedTxIds?: string[];
 }
 
 export type AssetClass = 'stock' | 'etf' | 'crypto' | 'cash' | 'other';
@@ -767,7 +821,6 @@ export type EntityName =
   | 'allocation'
   | 'receipt'
   | 'receiptLink'
-  | 'storeMarker'
   | 'storeConn'
   | 'storeConnLink'
   | 'holding'
@@ -793,7 +846,6 @@ export interface EntityRowMap {
   allocation: AllocationRow;
   receipt: ReceiptRow;
   receiptLink: ReceiptLinkRow;
-  storeMarker: StoreMarkerRow;
   storeConn: StoreConnRow;
   storeConnLink: StoreConnLinkRow;
   holding: HoldingRow;

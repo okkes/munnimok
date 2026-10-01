@@ -255,7 +255,7 @@ describe('TxFormSheet (demo identity)', () => {
     ]);
     const db = new MunniDB('munni_demo');
     const repo = new Repo(new DexieBackend(db), new HlcClock('gc'), { trackOutbox: false });
-    await repo.upsert('account', 'demo_space', 'demo_main', { source: 'gocardless' });
+    await repo.upsert('account', 'demo_space', 'demo_main', { source: 'connector' });
     db.close();
 
     fireEvent.click(screen.getByTestId('tx-add'));

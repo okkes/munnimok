@@ -2102,7 +2102,7 @@ describe('detail sections customize (user request)', () => {
     const FEED = 'feed_wl_237';
     // the bank-fed wallet lives in its own FEED space, joined via the link
     await seedRepo.upsert('account', FEED, 'wlacct', {
-      name: 'PayPal feed', type: 'checking', source: 'gocardless', currency: 'EUR', balanceCents: 0,
+      name: 'PayPal feed', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 0,
     });
     await seedRepo.upsert('accountLink', DEMO_SPACE_ID, accountLinkId(DEMO_SPACE_ID, FEED), {
       feedSpaceId: FEED, accountId: 'wlacct',

@@ -25,6 +25,13 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Munni.Api\Munni.Api.csproj" />
+    <!-- the relay tests boot the REAL connector control plane in-process
+         (Connector.Kit.Hosting + the provider packs' mock adapters) behind
+         the relay's HttpClient; Munni.Api itself never references them -->
+    <ProjectReference Include="..\..\src\connectors\Connector.Kit.Hosting\Connector.Kit.Hosting.csproj" />
+    <ProjectReference Include="..\..\src\connectors\BankConnector.Adapters\BankConnector.Adapters.csproj" />
+    <ProjectReference Include="..\..\src\connectors\ShopConnector.Adapters\ShopConnector.Adapters.csproj" />
+    <ProjectReference Include="..\..\src\connectors\RegistryConnector.Adapters\RegistryConnector.Adapters.csproj" />
   </ItemGroup>
 
   <ItemGroup>

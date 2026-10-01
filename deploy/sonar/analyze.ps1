@@ -66,20 +66,29 @@ try {
 # the scanner container); the opencover report's absolute Windows paths
 # are rewritten to the container mount so Sonar can match the files
 Write-Host "==> dotnet test coverage (server, host)" -ForegroundColor Cyan
-$testResults = Join-Path $repo 'server\tests\Munni.Api.Tests\TestResults'
-if (Test-Path $testResults) { Remove-Item $testResults -Recurse -Force }
+# one results directory for the whole solution: Munni.Api's MSBuild gate
+# reads its own report out of it, and the connector assemblies (each
+# covered by several suites) are gated on the union by coverage-gate.mjs
+$coverageDir = Join-Path $repo 'server\coverage'
+if (Test-Path $coverageDir) { Remove-Item $coverageDir -Recurse -Force }
+$testResults = Join-Path $coverageDir 'results'
 Push-Location (Join-Path $repo 'server')
 try {
-    cmd /c "dotnet test Munni.slnx --nologo -v q --collect:`"XPlat Code Coverage;Format=opencover`" 2>&1"
+    cmd /c "dotnet test Munni.slnx --nologo -v q --results-directory `"$testResults`" --collect:`"XPlat Code Coverage;Format=opencover,cobertura`" 2>&1"
     if ($LASTEXITCODE -ne 0) { Write-Error 'dotnet test failed - fix tests before analyzing' }
+    cmd /c "node tests\coverage-gate.mjs `"$testResults`" 2>&1"
+    if ($LASTEXITCODE -ne 0) { Write-Error 'coverage gate failed - add behavior tests before analyzing' }
 } finally { Pop-Location }
-$report = Get-ChildItem $testResults -Recurse -Filter coverage.opencover.xml | Select-Object -First 1
-if (-not $report) { Write-Error 'no opencover report produced' }
+$reports = @(Get-ChildItem $testResults -Recurse -Filter coverage.opencover.xml)
+if ($reports.Count -eq 0) { Write-Error 'no opencover report produced' }
 $serverPrefix = [regex]::Escape((Join-Path $repo 'server') + '\')
 $evaluator = { param($m) 'fullPath="/src/' + ($m.Groups[1].Value -replace '\\', '/') + '"' }
-$rewritten = [regex]::Replace((Get-Content $report.FullName -Raw), "fullPath=`"$serverPrefix([^`"]*)`"", $evaluator)
-New-Item -ItemType Directory -Force (Join-Path $repo 'server\coverage') | Out-Null
-Set-Content -Path (Join-Path $repo 'server\coverage\opencover.xml') -Value $rewritten -Encoding utf8
+$n = 0
+foreach ($report in $reports) {
+    $rewritten = [regex]::Replace((Get-Content $report.FullName -Raw), "fullPath=`"$serverPrefix([^`"]*)`"", $evaluator)
+    Set-Content -Path (Join-Path $coverageDir "opencover-$n.xml") -Value $rewritten -Encoding utf8
+    $n++
+}
 
 Write-Host "==> dotnet-sonarscanner (munni-api, dockerized)" -ForegroundColor Cyan
 cmd /c "docker build -q -t munni-sonar-dotnet -f `"$repo\deploy\sonar\Dockerfile.dotnet`" `"$repo\deploy\sonar`" 2>&1"
@@ -87,7 +96,11 @@ if ($LASTEXITCODE -ne 0) { Write-Error 'failed to build the dotnet scanner image
 # EF migrations are generated code — excluded from analysis
 # the host test run leaves Windows-built obj/bin behind — the Linux
 # build inside the container chokes on them (MSB3491), so start clean
-$inner = "rm -rf src/Munni.Api/obj src/Munni.Api/bin tests/Munni.Api.Tests/obj tests/Munni.Api.Tests/bin && dotnet sonarscanner begin /k:munni-api /n:munni-api /d:sonar.host.url=http://host.docker.internal:9000 /d:sonar.token=$token /d:sonar.exclusions=**/Migrations/** /d:sonar.cs.opencover.reportsPaths=/src/coverage/opencover.xml && dotnet build Munni.slnx --no-incremental && dotnet sonarscanner end /d:sonar.token=$token"
+# bin/obj hold the build's copies of every fixture and Playwright's own
+# JavaScript (the .NET scanner walks each project folder for non-.NET files,
+# eight times over); the fixtures are recorded third-party pages, not code
+$exclusions = '**/Migrations/**,**/bin/**,**/obj/**,**/Fixtures/**'
+$inner = "find . -type d -name obj -prune -exec rm -rf {} + ; find . -type d -name bin -prune -exec rm -rf {} + ; dotnet sonarscanner begin /k:munni-api /n:munni-api /d:sonar.host.url=http://host.docker.internal:9000 /d:sonar.token=$token /d:sonar.exclusions=$exclusions /d:sonar.test.exclusions=$exclusions /d:sonar.cs.opencover.reportsPaths=/src/coverage/opencover-*.xml && dotnet build Munni.slnx --no-incremental && dotnet sonarscanner end /d:sonar.token=$token"
 cmd /c "docker run --rm -v `"$repo\server`:/src`" munni-sonar-dotnet sh -c `"$inner`" 2>&1"
 if ($LASTEXITCODE -ne 0) { Write-Error 'api analysis failed' }
 

@@ -5,8 +5,14 @@ describe('drainSseBuffer (SSE frame parsing)', () => {
   it('emits complete data frames and returns the unterminated rest', () => {
     const onEvent = vi.fn();
     const rest = drainSseBuffer('data: {"spaceId":"a"}\n\ndata: {"spaceId":"b"}\n\ndata: {"spa', onEvent);
-    expect(onEvent.mock.calls.map((c) => c[0])).toEqual(['a', 'b']);
+    expect(onEvent.mock.calls.map((c) => c[0])).toEqual([{ spaceId: 'a' }, { spaceId: 'b' }]);
     expect(rest).toBe('data: {"spa');
+  });
+
+  it('hands a connector frame through whole, without inventing a space', () => {
+    const onEvent = vi.fn();
+    drainSseBuffer('data: {"kind":"connector","provider":"ah","sessionId":"ses_1","state":"awaiting_input"}\n\n', onEvent);
+    expect(onEvent).toHaveBeenCalledWith({ kind: 'connector', provider: 'ah', sessionId: 'ses_1', state: 'awaiting_input' });
   });
 
   it('ignores keepalive comments and malformed payloads', () => {
@@ -21,7 +27,7 @@ describe('drainSseBuffer (SSE frame parsing)', () => {
     let buffer = drainSseBuffer('data: {"spaceId"', onEvent);
     expect(onEvent).not.toHaveBeenCalled();
     buffer = drainSseBuffer(buffer + ':"space_1"}\n\n', onEvent);
-    expect(onEvent).toHaveBeenCalledWith('space_1');
+    expect(onEvent).toHaveBeenCalledWith({ spaceId: 'space_1' });
     expect(buffer).toBe('');
   });
 });

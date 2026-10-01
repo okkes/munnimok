@@ -1,0 +1,18 @@
+<!--
+  DigiD's app-login QR block, as captured live on 2026-08-10.
+
+  Structure verbatim. Two things are redacted and nothing else:
+
+    * the QR payload's session id and timestamp, which are a live one-time
+      login handle for a real account
+    * the PNG, replaced with a 1x1 so this file stays a fixture rather than a
+      picture of somebody's session. The real one is 2958 bytes at 196x196.
+
+  Everything a reader can get wrong here has been kept on purpose. There are
+  three images in this block and only one of them is the QR: DigiD's own logo
+  is FIRST, a second copy is served remotely for people with scripting off, and
+  a hidden canvas is where the QR is drawn before being exported. An adapter
+  that takes the first image in the block relays a 44-pixel logo to somebody's
+  phone and then waits forever for a scan that cannot happen.
+-->
+<div class="qr_code_block"><div class="qr_code" id="app_verification_code" data-code="digid-app-auth://app_session_id=00000000-0000-4000-8000-000000000000&amp;lb=&amp;at=1700000000&amp;host=digid.nl" text="digid-app-auth://app_session_id=00000000-0000-4000-8000-000000000000&amp;lb=&amp;at=1700000000&amp;host=digid.nl"><img alt="" class="digid-qr-code-logo" title="" src="/assets/digid_eo_rgb-820f0a1b9037b16f4b73778ea7a4582aff3eaa9eb13ae88c7e49f9a00cef7678.svg"><noscript><img alt="QR-code" src="https://login.digid.nl/qr_code?data=digid-app-auth%3A%2F%2Fapp_session_id%3D00000000-0000-4000-8000-000000000000%26lb%3D%26at%3D1700000000%26host%3Ddigid.nl" /></noscript><canvas width="196" height="196" style="display: none;"></canvas><img style="display: block;" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="></div></div>

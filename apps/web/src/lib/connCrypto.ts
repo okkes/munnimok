@@ -65,7 +65,7 @@ async function agreeKey(privateJwk: string, publicJwk: string): Promise<CryptoKe
   const shared = await subtle.deriveBits({ name: 'ECDH', public: publicKey }, privateKey, 256);
   const hkdfKey = await subtle.importKey('raw', shared, 'HKDF', false, ['deriveKey']);
   return subtle.deriveKey(
-    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: new TextEncoder().encode('munni-store-sync-v1') },
+    { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(32), info: new TextEncoder().encode('munni-connection-sync-v1') },
     hkdfKey,
     { name: 'AES-GCM', length: 256 },
     false,

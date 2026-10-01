@@ -8,10 +8,9 @@ using Scalar.AspNetCore;
 using Munni.Api;
 using Munni.Api.Accounts;
 using Munni.Api.Auth;
-using Munni.Api.Banking;
+using Munni.Api.Connectors;
 using Munni.Api.Data;
 using Munni.Api.Admin;
-using Munni.Api.GoCardless;
 using Munni.Api.ImportWatch;
 using Munni.Api.Investments;
 using Munni.Api.Logos;
@@ -55,6 +54,8 @@ builder.Services.AddMemoryCache();
 builder.Services.AddValidatorsFromAssemblyContaining<Program>(ServiceLifetime.Singleton);
 // SSE fan-out for near-real-time sync
 builder.Services.AddSingleton<SpaceEventBroadcaster>();
+// the account's full cleanup, party-side consents first (its optional services resolve to null where absent)
+builder.Services.AddScoped<Munni.Api.Social.AccountDeletion>();
 
 // OpenAPI document + Scalar reference UI at /scalar
 builder.Services.AddOpenApi();
@@ -62,18 +63,16 @@ builder.Services.AddOpenApi();
 // push transports (VAPID browsers + FCM native shells), routed per kind
 var pushCaps = PushSetup.Register(builder.Services, builder.Configuration);
 
-// bank-data providers (admin-selectable for new consents)
-var (gcConfigured, bankingEnabled) = BankingSetup.Register(builder.Services, builder.Configuration);
+// the connector relay (#367): present only when this environment names
+// its control plane and holds a credential for it; a setting that cannot
+// be right refuses to start, a credential not written back yet is a stage
+var connectors = ConnectorSetup.Register(builder.Services, builder.Configuration);
+var connectorsEnabled = connectors == ConnectorPresence.Enabled;
 
 // watch-folder importer (user request): CAMT exports dropped into the
 // mounted folder ingest as raw feed rows for the configured owner —
 // the service exits immediately when ImportWatch:* is unconfigured
 builder.Services.AddHostedService<WatchFolderService>();
-
-// store pass-through proxy (receipts design): no secrets, always on —
-// the client brings its own token; the allowlist lives in the endpoint
-builder.Services.AddHttpClient(StoreProxyEndpoints.HttpClientName,
-    client => client.Timeout = TimeSpan.FromSeconds(15));
 
 // Logto Management API (account deletion): activates with Logto:M2m* config
 builder.Services.AddHttpClient("logto-m2m", client => client.Timeout = TimeSpan.FromSeconds(10));
@@ -233,9 +232,6 @@ app.Use(async (http, next) =>
 app.MapOpenApi();
 app.MapScalarApiReference(options => options.WithTitle("munni API"));
 
-// capabilities.gocardless stays the client's "bank connect available"
-// signal, whichever provider actually serves it
-var gcEnabled = bankingEnabled;
 app.MapGet("/health", () => Results.Ok(new
 {
     status = "ok",
@@ -247,15 +243,15 @@ app.MapGet("/health", () => Results.Ok(new
     minClientProtocol = ApiProtocol.MinClient,
     capabilities = new
     {
-        gocardless = gcEnabled,
         testAuth = app.Configuration.GetValue<bool>("Auth:TestMode"),
         push = pushCaps.WebPush,
         fcm = pushCaps.Fcm,
         vapidPublicKey = app.Configuration["Push:VapidPublicKey"] ?? "",
         logos = logosEnabled,
-        shopProxy = true,
         ocr = ocrEnabled,
         quotes = true,
+        // the Connections hub's "connect a party" door (#367)
+        connectors = connectorsEnabled,
     },
 }));
 app.MapSync();
@@ -264,15 +260,14 @@ app.MapSocial();
 app.MapSplits();
 app.MapPush();
 app.MapLogos(app.Configuration);
-app.MapStoreProxy();
 if (ocrEnabled) app.MapOcr();
 app.MapQuotes();
 app.MapRates();
 app.MapAccounts();
-app.MapAdmin(gcConfigured, bankingEnabled);
-app.MapControl(gcConfigured, bankingEnabled);
+app.MapAdmin();
+app.MapControl();
 app.MapCatalog();
-app.MapStoreSync();
-if (bankingEnabled) app.MapGoCardless();
+app.MapConnectionSync();
+ConnectorSetup.Map(app, connectors);
 
 await app.RunAsync();

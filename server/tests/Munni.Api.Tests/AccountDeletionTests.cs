@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Munni.Api.Accounts;
 using Munni.Api.Data;
-using Munni.Api.GoCardless;
 using Munni.Api.Push;
 using Munni.Api.Social;
 
@@ -13,7 +12,8 @@ namespace Munni.Api.Tests;
 /// <summary>
 /// The full account-deletion pipeline (approved decisions: shared
 /// spaces leave-and-archive, immediate, Logto optional). Uses the admin
-/// factory: test auth + FakeGoCardless + in-memory database.
+/// factory: test auth + in-memory database; a bank's consent ending at
+/// its party is ConnectorOpenBankingTests' walk.
 /// </summary>
 public class AccountDeletionTests : IClassFixture<AdminApiFactory>
 {
@@ -88,14 +88,7 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
             new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = $"{prefix}-shared", FeedSpaceId = $"{prefix}-feed-shared", AccountId = "a1", AttachedBy = leaver.Id, HistoryFrom = "2026-01-01", Type = "checking" },
             new SpaceAccountLink { Id = Guid.NewGuid(), SpaceId = $"{prefix}-solo", FeedSpaceId = $"{prefix}-feed-solo", AccountId = "a2", AttachedBy = leaver.Id, HistoryFrom = "2026-01-01", Type = "checking" });
 
-        // consent + push + friendship
-        db.GcRequisitions.Add(new GcRequisition
-        {
-            Id = Guid.NewGuid(), UserId = leaver.Id, SpaceId = $"{prefix}-solo",
-            InstitutionId = "ING", RequisitionId = $"{prefix}-req", Status = "linked",
-        });
-        _factory.Gc.Requisitions.Add(new(
-            $"{prefix}-req", "LN", "ING", DateTimeOffset.UtcNow, null, ["acc"]));
+        // push + friendship
         db.PushSubscriptions.Add(new PushSubscriptionRow
         {
             Id = Guid.NewGuid(), UserId = leaver.Id, Endpoint = $"https://push/{prefix}",
@@ -135,9 +128,7 @@ public class AccountDeletionTests : IClassFixture<AdminApiFactory>
         var sharedLink = await db.SpaceAccountLinks.SingleAsync(l => l.FeedSpaceId == "d1-feed-shared");
         Assert.True(sharedLink.Archived);
 
-        // consent revoked at the provider; push + friendship erased
-        Assert.Contains("d1-req", _factory.Gc.Deleted);
-        Assert.False(await db.GcRequisitions.AnyAsync(r => r.RequisitionId == "d1-req"));
+        // push + friendship erased
         Assert.False(await db.PushSubscriptions.AnyAsync(p => p.UserId == leaverId));
         Assert.False(await db.Friendships.AnyAsync(f => f.UserAId == leaverId || f.UserBId == leaverId));
     }

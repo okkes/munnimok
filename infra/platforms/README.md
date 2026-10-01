@@ -51,7 +51,13 @@ platform).
 platform secret `PLATFORM_DOMAIN`. `publishedPath` is where bundles land
 (File Station path); the live dir is its parent. `controlEnv` names the
 environment whose API and Logto the control cockpit signs into (default:
-the lowest slot).
+the lowest slot). `browserAgent: true` runs the connector platform's
+pooled browser agent in the shared stack (#367): one container with every
+provider pack that dials out to each environment's control plane and
+drives the parties that need a real browser; `agentEgress` says where its
+traffic leaves from (`{ "country": "NL", "kind": "residential" }` by
+default — a home line; a rack says `"datacenter"`), and the control planes
+believe it.
 
 ## envs/<env>.json
 
@@ -72,3 +78,13 @@ the lowest slot).
 (`production` | `staging`; default: production for `prod`, staging
 otherwise). `store` ids default to `app.munni.<platform>.<env>`; the
 deep-link scheme is always `munni-<env>-<platform>`.
+
+`features.connectors: true` adds the connector control plane (#367) to the
+environment: one more container beside the api (`connector-<env>`, image
+`munni-connector-api`) with its own database on the environment's
+Postgres, the environment's Logto as its issuer, and a published host
+`munni-<env>-<platform>-connector` on port 8387 + 100·slot that household
+agents dial from outside (its API answers nobody without a machine token
+or an agent's own token). The api gets the relay settings
+(`Connectors:*`); the seal key, enrollment key and subject salt are minted
+by the bootstrap, the api's machine app in Logto is written back by it.

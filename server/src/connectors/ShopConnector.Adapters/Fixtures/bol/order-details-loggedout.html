@@ -1,0 +1,17 @@
+<!--
+  What bol answers an account URL with once the session is over: the real login
+  form. j_username is the marker that means it, and it appears NOWHERE on a
+  working account page - which is exactly what makes it safe to judge by, where
+  the login HOST is not.
+-->
+<!DOCTYPE html>
+<html lang="nl">
+<head><title>bol | Inloggen</title></head>
+<body>
+  <form action="https://login.bol.com/wsp/login" method="post">
+    <input type="text" name="j_username" autocomplete="username">
+    <input type="password" name="j_password" autocomplete="current-password">
+    <button type="submit">Inloggen</button>
+  </form>
+</body>
+</html>

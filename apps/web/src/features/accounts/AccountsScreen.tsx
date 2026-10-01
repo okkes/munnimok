@@ -2,13 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useGlobalAccounts } from '@/application/accounts';
 import type { GlobalAccount, SharedVia, SpaceScopedAccounts } from '@/application/accounts';
 import { SharedSpaceBadge } from '@/features/spaces/SpaceSwitcher';
-import { getApiCapabilities } from '@/lib/api';
 import { useSession } from '@/app/session';
 import { linkAllCounterparties } from '@/application/counterLink';
 import { applyTitleMemory } from '@/application/titleMemory';
 import { linkPaypalFunding } from '@/application/paypalLink';
 import { fetchMyFeedIds } from './feedGateway';
-import { AttachSheet } from './AttachSheet';
+import { AttachSheet, fetchesItself } from './AttachSheet';
 import { EditAccountSheet } from './EditAccountSheet';
 import { ReconcileSheet } from './ReconcileSheet';
 import { StatementImportFlow } from './StatementImportFlow';
@@ -16,7 +15,6 @@ import { normalizeIban } from '@/domain/feedIds';
 import { takeAccountOpenHandoff } from './openHandoff';
 import { useQuery } from '@/db/useQuery';
 import { AddAccountChooser } from './AddAccountChooser';
-import { BankConnectSheet } from './BankConnect';
 import { institutionLogoUrl } from './useInstitutionLogos';
 import { useLang } from '@/i18n';
 import { useData } from '@/app/data';
@@ -134,7 +132,7 @@ function AccountRowButton({
   const { t } = useLang();
   const { account, feedSpaceId, sharedVia } = entry;
   // the user's own pick wins over the institution logo (user request)
-  const bankLogo = account.logo ?? institutionLogoUrl(account.bankId);
+  const bankLogo = account.logo ?? institutionLogoUrl(account);
   const active = sharedVia.filter((v) => !v.archived);
   const archivedOnly = sharedVia.length > 0 && active.length === 0;
   // #248 (user): no auto-attach nag — the unattached state is a quiet
@@ -218,14 +216,14 @@ function AccountRowButton({
         )}
         {/* export-vs-upload insight (user request): a recent import of an
             OLD export leaves a silent hole — say where the data ends */}
-        {account.source !== 'gocardless' && daysSince(account.dataThroughDate) > 14 && (
+        {!fetchesItself(account) && daysSince(account.dataThroughDate) > 14 && (
           <span className="block truncate text-[11px] text-warning" data-testid={`account-datathrough-${account.id}`}>
             {t('acct.dataThrough', { when: fmtTimeAgo(account.dataThroughDate!, lang) })}
           </span>
         )}
         {/* #240 r3: "synced fine, zero rows" must say so — an empty
             answer from the bank is a fact, not a healthy silence */}
-        {account.source === 'gocardless' && account.lastFetchReceived === 0 && (
+        {fetchesItself(account) && account.lastFetchReceived === 0 && (
           <span className="block truncate text-[11px] text-warning" data-testid={`account-syncempty-${account.id}`}>
             {t('acct.syncEmpty')}
           </span>
@@ -314,7 +312,7 @@ function SharedAccountSheet({
 }) {
   const { t } = useLang();
   const account = info?.entry.account;
-  const bankLogo = account ? (account.logo ?? institutionLogoUrl(account.bankId)) : undefined;
+  const bankLogo = account ? (account.logo ?? institutionLogoUrl(account)) : undefined;
   return (
     <Sheet open={info !== null} onOpenChange={(next) => !next && onClose()} title={account?.name} size="form">
       {info && account && (
@@ -378,7 +376,7 @@ function EchoRow({
   const { account } = echo.entry;
   // #305 (user): the owner's icon pick lives on the SYNCED account row —
   // the echo used to draw a hardcoded bank tile, so consumers never saw it
-  const bankLogo = account.logo ?? institutionLogoUrl(account.bankId);
+  const bankLogo = account.logo ?? institutionLogoUrl(account);
   // #314 (user): an archived share says WHY — its sharer stopped sharing
   // (left the space / removed the account); the link's frozen
   // attachedByName is the one name the data can truthfully speak
@@ -583,7 +581,7 @@ export function AccountsScreen() {
   const [importOpen, setImportOpen] = useState(false);
   const identity = useSession((s) => s.identity);
 
-  // GoCardless accounts arrive via sync, so there is no local "account
+  // party-fed accounts arrive via sync, so there is no local "account
   // created" moment to hook — reconcile whenever this screen opens
   // instead (idempotent; rows with links are skipped)
   useEffect(() => {
@@ -591,14 +589,11 @@ export function AccountsScreen() {
     void linkPaypalFunding(store, repo, spaceId).catch(() => undefined);
     void applyTitleMemory(store, repo, spaceId).catch(() => undefined);
   }, [store, repo, spaceId]);
-  const [gcAvailable, setGcAvailable] = useState(false);
-  const [connectOpen, setConnectOpen] = useState(false);
   const [myFeedIds, setMyFeedIds] = useState<ReadonlySet<string> | undefined>(undefined);
   const [attaching, setAttaching] = useState<GlobalAccount | null>(null);
 
   useEffect(() => {
     if (identity?.kind !== 'user') return;
-    void getApiCapabilities().then((caps) => setGcAvailable(caps.gocardless));
     // ownership source of truth for the global overview (offline: the
     // undefined set classifies every local feed as mine, which is right
     // for a single-user device until the fetch lands)
@@ -863,17 +858,10 @@ export function AccountsScreen() {
 
       {/* AE1: the ONE Add-account chooser (intent-routed). Manual is a
           DOOR here: this screen is the global overview, and manual
-          accounts live inside a space (user ruling 2026-07-28) */}
-      <AddAccountChooser
-        open={addOpen}
-        onOpenChange={setAddOpen}
-        gcAvailable={gcAvailable}
-        hideManual
-        onConnect={() => setConnectOpen(true)}
-        onImport={() => setImportOpen(true)}
-      />
+          accounts live inside a space (user ruling 2026-07-28); Connect
+          is a door too — the Connections hub's catalogue (#414) */}
+      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} hideManual onImport={() => setImportOpen(true)} />
 
-      <BankConnectSheet open={connectOpen} onOpenChange={setConnectOpen} />
       <ReconcileSheet
         open={reconcileOffer !== null}
         onOpenChange={(next) => !next && setReconcileOffer(null)}

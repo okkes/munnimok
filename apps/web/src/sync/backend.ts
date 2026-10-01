@@ -23,10 +23,14 @@ export interface SyncBackend {
   listSpaces(): Promise<string[]>;
   /**
    * Optional long-lived change stream: resolves when the stream ends,
-   * rejects on connection errors; `onEvent` fires per changed space.
+   * rejects on connection errors; `onEvent` fires per frame — a changed
+   * space (`spaceId`) or a connector run in flight (`kind: "connector"`).
    */
-  events?(signal: AbortSignal, onEvent: (spaceId: string) => void): Promise<void>;
+  events?(signal: AbortSignal, onEvent: (frame: SyncEventFrame) => void): Promise<void>;
 }
+
+/** one `data:` line of `/sync/events`: a space changed, or a connector view moved */
+export type SyncEventFrame = { spaceId: string; kind?: undefined } | ({ kind: 'connector'; spaceId?: undefined } & Record<string, unknown>);
 
 interface ApiBackendOptions {
   baseUrl: string;
@@ -80,10 +84,10 @@ export class ApiSyncBackend implements SyncBackend {
 
   /**
    * Server-sent events over fetch (EventSource cannot send auth
-   * headers). Lines look like `data: {"spaceId":"…"}`; comment lines
-   * (keepalives) are ignored.
+   * headers). Lines look like `data: {"spaceId":"…"}` or
+   * `data: {"kind":"connector",…}`; comment lines (keepalives) are ignored.
    */
-  async events(signal: AbortSignal, onEvent: (spaceId: string) => void): Promise<void> {
+  async events(signal: AbortSignal, onEvent: (frame: SyncEventFrame) => void): Promise<void> {
     const res = await fetch(`${this.options.baseUrl}/sync/events`, {
       headers: { ...(await this.headers()), Accept: 'text/event-stream' },
       signal,
@@ -102,7 +106,7 @@ export class ApiSyncBackend implements SyncBackend {
 }
 
 /** emits every complete SSE message in the buffer; returns the remainder */
-export function drainSseBuffer(buffer: string, onEvent: (spaceId: string) => void): string {
+export function drainSseBuffer(buffer: string, onEvent: (frame: SyncEventFrame) => void): string {
   let boundary = buffer.indexOf('\n\n');
   while (boundary !== -1) {
     emitSseChunk(buffer.slice(0, boundary), onEvent);
@@ -112,12 +116,13 @@ export function drainSseBuffer(buffer: string, onEvent: (spaceId: string) => voi
   return buffer;
 }
 
-function emitSseChunk(chunk: string, onEvent: (spaceId: string) => void): void {
+function emitSseChunk(chunk: string, onEvent: (frame: SyncEventFrame) => void): void {
   for (const line of chunk.split('\n')) {
     if (!line.startsWith('data:')) continue; // keepalive comments etc.
     try {
-      const payload = JSON.parse(line.slice(5).trim()) as { spaceId?: string };
-      if (payload.spaceId) onEvent(payload.spaceId);
+      const payload = JSON.parse(line.slice(5).trim()) as { spaceId?: string; kind?: string };
+      if (payload.kind === 'connector') onEvent(payload as SyncEventFrame);
+      else if (payload.spaceId) onEvent({ spaceId: payload.spaceId });
     } catch {
       // malformed event — skip, the poll is the safety net
     }

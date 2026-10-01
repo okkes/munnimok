@@ -6,9 +6,10 @@
   instrumentation, and `dotnet test - -collect:"XPlat Code Coverage"` (CI,
   deploy/sonar/analyze.ps1) enables this node while keeping its configuration.
 
-  The exclusions mirror the Sonar analysis (deploy/sonar/analyze.ps1 passes
-  sonar.exclusions=**/Migrations/**, and Sonar ignores generated code): EF
-  migrations and the source-generator output under obj/ are not product code.
+  The exclusions mirror the Sonar analysis (deploy/sonar/analyze.ps1 excludes
+  the migrations, the build outputs and the recorded fixtures, and Sonar
+  ignores generated code): EF migrations and the source-generator output
+  under obj/ are not product code.
   The floor itself lives in Directory.Build.props (MunniCoverageGate) —
   coverlet's VSTest collector cannot enforce a threshold on its own.
 -->

@@ -1,0 +1,907 @@
+{
+  "data": {
+    "getCombinedOrders": [
+      {
+        "billing": {
+          "address": {
+            "additional": null,
+            "apartmentNumber": null,
+            "city": "Amsterdam",
+            "company": null,
+            "country": "NL",
+            "district": null,
+            "firstName": "Test",
+            "houseNumber": "1",
+            "lastName": "Persoon",
+            "level": null,
+            "postCode": "1000 AA",
+            "postNumber": null,
+            "province": null,
+            "quarter": null,
+            "stationNumber": null,
+            "street": "Voorbeeldstraat",
+            "__typename": "GraphqlCombinedAddress"
+          },
+          "payments": [
+            {
+              "amount": {
+                "amount": 117.15,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "method": "IDEAL",
+              "__typename": "GraphqlCombinedPayment"
+            }
+          ],
+          "shipping": {
+            "amount": 0,
+            "currency": "EUR",
+            "__typename": "GraphqlCombinedMoney"
+          },
+          "subtotal": {
+            "amount": 117.15,
+            "currency": "EUR",
+            "__typename": "GraphqlCombinedMoney"
+          },
+          "total": {
+            "amount": 117.15,
+            "currency": "EUR",
+            "__typename": "GraphqlCombinedMoney"
+          },
+          "__typename": "GraphqlCombinedBilling"
+        },
+        "id": "90000001",
+        "items": [
+          {
+            "bundles": [],
+            "cancellation": null,
+            "deliveryAddress": {
+              "additional": null,
+              "apartmentNumber": null,
+              "city": "Amsterdam",
+              "company": null,
+              "country": "NL",
+              "district": null,
+              "firstName": "Test",
+              "houseNumber": "1",
+              "lastName": "Persoon",
+              "level": null,
+              "postCode": "1000 AA",
+              "postNumber": null,
+              "province": null,
+              "quarter": null,
+              "stationNumber": null,
+              "street": "Voorbeeldstraat",
+              "__typename": "GraphqlCombinedAddress"
+            },
+            "fulfillments": [
+              {
+                "deliveryPromise": {
+                  "displayText": null,
+                  "earliest": "2026-02-02T07:00:00.000Z",
+                  "latest": "2026-02-02T21:00:00.000Z",
+                  "__typename": "GraphqlCombinedDeliveryPromise"
+                },
+                "externalState": null,
+                "fullfilledOn": "2026-03-05T13:05:00.000Z",
+                "handlingUnits": [
+                  {
+                    "carrier": "DHL",
+                    "productCounts": {
+                      "productCount": 1,
+                      "quantityCount": 2,
+                      "relatedCount": 0,
+                      "__typename": "GraphqlCombinedProductCounts"
+                    },
+                    "productInfo": [
+                      {
+                        "id": "90000001.1",
+                        "quantity": 2,
+                        "__typename": "GraphqlCombinedHandlingUnitProductInfo"
+                      }
+                    ],
+                    "trackingId": "JV90000000000000000001",
+                    "trackingUrl": "https://example.invalid/track?pid=JV90000000000000000001",
+                    "type": "PARCEL",
+                    "__typename": "GraphqlCombinedHandlingUnit"
+                  }
+                ],
+                "id": "90000001_1",
+                "invoiceNumber": "",
+                "isReturnable": false,
+                "isShipFromStore": false,
+                "levelOfService": "SCHEDULED",
+                "method": "DELIVERY",
+                "productCounts": {
+                  "productCount": 1,
+                  "quantityCount": 2,
+                  "relatedCount": 0,
+                  "__typename": "GraphqlCombinedProductCounts"
+                },
+                "products": [
+                  {
+                    "bundleId": null,
+                    "id": "90000001.1",
+                    "kindOfProduct": "WASHING_MACHINE",
+                    "manufacturer": "VOORBEELD",
+                    "offerId": null,
+                    "prices": {
+                      "adjustments": [
+                        {
+                          "benefitType": "UNKNOWN",
+                          "code": null,
+                          "description": "Gratis verzending",
+                          "internalName": "Gratis verzending boven 100 Euro (parcel)-90000001",
+                          "type": "PROMOTION",
+                          "value": null,
+                          "__typename": "GraphqlCombinedPriceAdjustment"
+                        },
+                        {
+                          "benefitType": "UNKNOWN",
+                          "code": "9000000000000001",
+                          "description": "Jubilee coupon",
+                          "internalName": "Jubilee coupon",
+                          "type": "COUPON",
+                          "value": {
+                            "amount": 2,
+                            "currency": "EUR",
+                            "__typename": "GraphqlCombinedMoney"
+                          },
+                          "__typename": "GraphqlCombinedPriceAdjustment"
+                        }
+                      ],
+                      "net": null,
+                      "price": {
+                        "amount": 78.1,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "shipping": null,
+                      "unit": {
+                        "amount": 39.05,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "unitOriginal": {
+                        "amount": 40.05,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "vat": null,
+                      "__typename": "GraphqlCombinedProductPrices"
+                    },
+                    "productData": {
+                      "energyEfficiency": {
+                        "class": null,
+                        "color": null,
+                        "isLegacyEEL": true,
+                        "required": false,
+                        "__typename": "GraphqlProductEnergyEfficiency"
+                      },
+                      "isDigital": false,
+                      "manufacturer": "VOORBEELD",
+                      "onlineReleasedAt": null,
+                      "title": "VOORBEELD Wasmachine 8kg Wit",
+                      "titleImageAltText": null,
+                      "titleImageId": null,
+                      "__typename": "GraphqlCombinedProductData"
+                    },
+                    "productId": "90000001.1",
+                    "productTitle": "VOORBEELD Wasmachine 8kg Wit",
+                    "productType": "PRODUCT",
+                    "qualityCondition": null,
+                    "quantity": 2,
+                    "relatedProducts": [],
+                    "returnData": null,
+                    "stateQuantities": [],
+                    "type": "MMS",
+                    "userRating": null,
+                    "warranty": null,
+                    "__typename": "GraphqlCombinedProduct"
+                  }
+                ],
+                "state": "SHIPPED",
+                "store": null,
+                "storeOutletId": null,
+                "type": "MMS",
+                "__typename": "GraphqlCombinedFulfillment"
+              },
+              {
+                "deliveryPromise": {
+                  "displayText": null,
+                  "earliest": "2026-02-02T07:00:00.000Z",
+                  "latest": "2026-02-02T21:00:00.000Z",
+                  "__typename": "GraphqlCombinedDeliveryPromise"
+                },
+                "externalState": null,
+                "fullfilledOn": "2026-03-06T08:40:00.000Z",
+                "handlingUnits": [
+                  {
+                    "carrier": "DHL",
+                    "productCounts": {
+                      "productCount": 1,
+                      "quantityCount": 1,
+                      "relatedCount": 0,
+                      "__typename": "GraphqlCombinedProductCounts"
+                    },
+                    "productInfo": [
+                      {
+                        "id": "90000001.2",
+                        "quantity": 1,
+                        "__typename": "GraphqlCombinedHandlingUnitProductInfo"
+                      }
+                    ],
+                    "trackingId": "JV90000000000000000002",
+                    "trackingUrl": "https://example.invalid/track?pid=JV90000000000000000002",
+                    "type": "PARCEL",
+                    "__typename": "GraphqlCombinedHandlingUnit"
+                  }
+                ],
+                "id": "90000001_2",
+                "invoiceNumber": "",
+                "isReturnable": false,
+                "isShipFromStore": false,
+                "levelOfService": "SCHEDULED",
+                "method": "DELIVERY",
+                "productCounts": {
+                  "productCount": 1,
+                  "quantityCount": 1,
+                  "relatedCount": 0,
+                  "__typename": "GraphqlCombinedProductCounts"
+                },
+                "products": [
+                  {
+                    "bundleId": null,
+                    "id": "90000001.2",
+                    "kindOfProduct": "WASHING_MACHINE",
+                    "manufacturer": "VOORBEELD",
+                    "offerId": null,
+                    "prices": {
+                      "adjustments": [
+                        {
+                          "benefitType": "UNKNOWN",
+                          "code": null,
+                          "description": "Gratis verzending",
+                          "internalName": "Gratis verzending boven 100 Euro (parcel)-90000001",
+                          "type": "PROMOTION",
+                          "value": null,
+                          "__typename": "GraphqlCombinedPriceAdjustment"
+                        },
+                        {
+                          "benefitType": "UNKNOWN",
+                          "code": "9000000000000001",
+                          "description": "Jubilee coupon",
+                          "internalName": "Jubilee coupon",
+                          "type": "COUPON",
+                          "value": {
+                            "amount": 1,
+                            "currency": "EUR",
+                            "__typename": "GraphqlCombinedMoney"
+                          },
+                          "__typename": "GraphqlCombinedPriceAdjustment"
+                        }
+                      ],
+                      "net": null,
+                      "price": {
+                        "amount": 39.05,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "shipping": null,
+                      "unit": {
+                        "amount": 39.05,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "unitOriginal": {
+                        "amount": 40.05,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "vat": null,
+                      "__typename": "GraphqlCombinedProductPrices"
+                    },
+                    "productData": {
+                      "energyEfficiency": {
+                        "class": null,
+                        "color": null,
+                        "isLegacyEEL": true,
+                        "required": false,
+                        "__typename": "GraphqlProductEnergyEfficiency"
+                      },
+                      "isDigital": false,
+                      "manufacturer": "VOORBEELD",
+                      "onlineReleasedAt": null,
+                      "title": "VOORBEELD Wasmachine 8kg Wit",
+                      "titleImageAltText": null,
+                      "titleImageId": null,
+                      "__typename": "GraphqlCombinedProductData"
+                    },
+                    "productId": "90000001.2",
+                    "productTitle": "VOORBEELD Wasmachine 8kg Wit",
+                    "productType": "PRODUCT",
+                    "qualityCondition": null,
+                    "quantity": 1,
+                    "relatedProducts": [],
+                    "returnData": null,
+                    "stateQuantities": [],
+                    "type": "MMS",
+                    "userRating": null,
+                    "warranty": null,
+                    "__typename": "GraphqlCombinedProduct"
+                  }
+                ],
+                "state": "SHIPPED",
+                "store": null,
+                "storeOutletId": null,
+                "type": "MMS",
+                "__typename": "GraphqlCombinedFulfillment"
+              }
+            ],
+            "identifier": "90000001",
+            "isCancelable": false,
+            "isReturnable": false,
+            "prices": {
+              "adjustment": {
+                "amount": 0,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "shipping": {
+                "amount": 0,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "subtotal": {
+                "amount": 117.15,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "total": {
+                "amount": 117.15,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "__typename": "GraphqlCombinedItemPrices"
+            },
+            "productCounts": {
+              "productCount": 2,
+              "quantityCount": 3,
+              "relatedCount": 0,
+              "__typename": "GraphqlCombinedProductCounts"
+            },
+            "receipt": null,
+            "returns": [],
+            "seller": null,
+            "state": "COMPLETED",
+            "type": "MMS",
+            "__typename": "GraphqlCombinedItem"
+          }
+        ],
+        "meta": {
+          "country": "NL",
+          "created": "2026-03-04T11:20:00.000Z",
+          "isGuest": false,
+          "itemCount": 1,
+          "kind": "CUSTOMER_ORDER",
+          "number": "9000000001",
+          "outletId": "900",
+          "productCounts": {
+            "productCount": 2,
+            "quantityCount": 3,
+            "relatedCount": 0,
+            "__typename": "GraphqlCombinedProductCounts"
+          },
+          "salesLine": "MEDIA",
+          "sourceChannel": "DESKTOP",
+          "sourceSystem": "XCC",
+          "type": "MMS",
+          "updated": "2026-03-06T08:45:00.000Z",
+          "__typename": "GraphqlCombinedMeta"
+        },
+        "state": "COMPLETED",
+        "user": {
+          "company": null,
+          "email": "test.persoon@example.invalid",
+          "firstName": "Test",
+          "id": "90000000",
+          "lastName": "Persoon",
+          "loyaltyCardNumber": null,
+          "loyaltyId": "90000000",
+          "phoneNumbers": [],
+          "taxId": "",
+          "type": "PRIVATE",
+          "__typename": "GraphqlCombinedUser"
+        },
+        "__typename": "GraphqlCombinedOrder"
+      },
+      {
+        "billing": {
+          "address": {
+            "additional": null,
+            "apartmentNumber": null,
+            "city": "Amsterdam",
+            "company": null,
+            "country": "NL",
+            "district": null,
+            "firstName": "Test",
+            "houseNumber": "1",
+            "lastName": "Persoon",
+            "level": null,
+            "postCode": "1000 AA",
+            "postNumber": null,
+            "province": null,
+            "quarter": null,
+            "stationNumber": null,
+            "street": "Voorbeeldstraat",
+            "__typename": "GraphqlCombinedAddress"
+          },
+          "payments": [
+            {
+              "amount": {
+                "amount": 5,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "method": "GICA",
+              "__typename": "GraphqlCombinedPayment"
+            },
+            {
+              "amount": {
+                "amount": 15.06,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "method": "CRECA",
+              "__typename": "GraphqlCombinedPayment"
+            }
+          ],
+          "shipping": {
+            "amount": 0,
+            "currency": "EUR",
+            "__typename": "GraphqlCombinedMoney"
+          },
+          "subtotal": {
+            "amount": 20.06,
+            "currency": "EUR",
+            "__typename": "GraphqlCombinedMoney"
+          },
+          "total": {
+            "amount": 20.06,
+            "currency": "EUR",
+            "__typename": "GraphqlCombinedMoney"
+          },
+          "__typename": "GraphqlCombinedBilling"
+        },
+        "id": "90000002",
+        "items": [
+          {
+            "bundles": [],
+            "cancellation": null,
+            "deliveryAddress": {
+              "additional": null,
+              "apartmentNumber": null,
+              "city": "Amsterdam",
+              "company": null,
+              "country": "NL",
+              "district": null,
+              "firstName": "Test",
+              "houseNumber": "1",
+              "lastName": "Persoon",
+              "level": null,
+              "postCode": "1000 AA",
+              "postNumber": null,
+              "province": null,
+              "quarter": null,
+              "stationNumber": null,
+              "street": "Voorbeeldstraat",
+              "__typename": "GraphqlCombinedAddress"
+            },
+            "fulfillments": [
+              {
+                "deliveryPromise": {
+                  "displayText": null,
+                  "earliest": "2026-02-02T07:00:00.000Z",
+                  "latest": "2026-02-02T21:00:00.000Z",
+                  "__typename": "GraphqlCombinedDeliveryPromise"
+                },
+                "externalState": null,
+                "fullfilledOn": null,
+                "handlingUnits": [],
+                "id": "90000002_1",
+                "invoiceNumber": "",
+                "isReturnable": false,
+                "isShipFromStore": false,
+                "levelOfService": "SCHEDULED",
+                "method": "PICKUP",
+                "productCounts": {
+                  "productCount": 1,
+                  "quantityCount": 1,
+                  "relatedCount": 0,
+                  "__typename": "GraphqlCombinedProductCounts"
+                },
+                "products": [
+                  {
+                    "bundleId": null,
+                    "id": "90000002.1",
+                    "kindOfProduct": "HEADPHONES",
+                    "manufacturer": "VOORBEELD",
+                    "offerId": null,
+                    "prices": {
+                      "adjustments": [],
+                      "net": null,
+                      "price": {
+                        "amount": 20.06,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "shipping": null,
+                      "unit": {
+                        "amount": 20.06,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "unitOriginal": {
+                        "amount": 20.06,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "vat": null,
+                      "__typename": "GraphqlCombinedProductPrices"
+                    },
+                    "productData": {
+                      "energyEfficiency": {
+                        "class": null,
+                        "color": null,
+                        "isLegacyEEL": true,
+                        "required": false,
+                        "__typename": "GraphqlProductEnergyEfficiency"
+                      },
+                      "isDigital": false,
+                      "manufacturer": "VOORBEELD",
+                      "onlineReleasedAt": null,
+                      "title": "VOORBEELD Koptelefoon Draadloos Zwart",
+                      "titleImageAltText": null,
+                      "titleImageId": null,
+                      "__typename": "GraphqlCombinedProductData"
+                    },
+                    "productId": "90000002.1",
+                    "productTitle": "VOORBEELD Koptelefoon Draadloos Zwart",
+                    "productType": "PRODUCT",
+                    "qualityCondition": null,
+                    "quantity": 1,
+                    "relatedProducts": [],
+                    "returnData": null,
+                    "stateQuantities": [],
+                    "type": "MMS",
+                    "userRating": null,
+                    "warranty": null,
+                    "__typename": "GraphqlCombinedProduct"
+                  }
+                ],
+                "state": "READY_FOR_PICKUP",
+                "store": null,
+                "storeOutletId": null,
+                "type": "MMS",
+                "__typename": "GraphqlCombinedFulfillment"
+              }
+            ],
+            "identifier": "90000002",
+            "isCancelable": false,
+            "isReturnable": false,
+            "prices": {
+              "adjustment": {
+                "amount": 0,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "shipping": {
+                "amount": 0,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "subtotal": {
+                "amount": 20.06,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "total": {
+                "amount": 20.06,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "__typename": "GraphqlCombinedItemPrices"
+            },
+            "productCounts": {
+              "productCount": 1,
+              "quantityCount": 1,
+              "relatedCount": 0,
+              "__typename": "GraphqlCombinedProductCounts"
+            },
+            "receipt": null,
+            "returns": [],
+            "seller": null,
+            "state": "IN_PROGRESS",
+            "type": "MMS",
+            "__typename": "GraphqlCombinedItem"
+          }
+        ],
+        "meta": {
+          "country": "NL",
+          "created": "2026-02-03T09:15:00.000Z",
+          "isGuest": false,
+          "itemCount": 1,
+          "kind": "CUSTOMER_ORDER",
+          "number": "9000000002",
+          "outletId": "901",
+          "productCounts": {
+            "productCount": 1,
+            "quantityCount": 1,
+            "relatedCount": 0,
+            "__typename": "GraphqlCombinedProductCounts"
+          },
+          "salesLine": "MEDIA",
+          "sourceChannel": "DESKTOP",
+          "sourceSystem": "XCC",
+          "type": "MMS",
+          "updated": "2026-02-03T09:20:00.000Z",
+          "__typename": "GraphqlCombinedMeta"
+        },
+        "state": "IN_PROGRESS",
+        "user": {
+          "company": null,
+          "email": "test.persoon@example.invalid",
+          "firstName": "Test",
+          "id": "90000000",
+          "lastName": "Persoon",
+          "loyaltyCardNumber": null,
+          "loyaltyId": "90000000",
+          "phoneNumbers": [],
+          "taxId": "",
+          "type": "PRIVATE",
+          "__typename": "GraphqlCombinedUser"
+        },
+        "__typename": "GraphqlCombinedOrder"
+      },
+      {
+        "billing": {
+          "address": {
+            "additional": null,
+            "apartmentNumber": null,
+            "city": "Amsterdam",
+            "company": null,
+            "country": "NL",
+            "district": null,
+            "firstName": "Test",
+            "houseNumber": "1",
+            "lastName": "Persoon",
+            "level": null,
+            "postCode": "1000 AA",
+            "postNumber": null,
+            "province": null,
+            "quarter": null,
+            "stationNumber": null,
+            "street": "Voorbeeldstraat",
+            "__typename": "GraphqlCombinedAddress"
+          },
+          "payments": [
+            {
+              "amount": {
+                "amount": 12.06,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "method": "CRECA",
+              "__typename": "GraphqlCombinedPayment"
+            }
+          ],
+          "shipping": {
+            "amount": 0,
+            "currency": "EUR",
+            "__typename": "GraphqlCombinedMoney"
+          },
+          "subtotal": {
+            "amount": 12.06,
+            "currency": "EUR",
+            "__typename": "GraphqlCombinedMoney"
+          },
+          "total": {
+            "amount": 12.06,
+            "currency": "EUR",
+            "__typename": "GraphqlCombinedMoney"
+          },
+          "__typename": "GraphqlCombinedBilling"
+        },
+        "id": "90000003",
+        "items": [
+          {
+            "bundles": [],
+            "cancellation": null,
+            "deliveryAddress": {
+              "additional": null,
+              "apartmentNumber": null,
+              "city": "Amsterdam",
+              "company": null,
+              "country": "NL",
+              "district": null,
+              "firstName": "Test",
+              "houseNumber": "1",
+              "lastName": "Persoon",
+              "level": null,
+              "postCode": "1000 AA",
+              "postNumber": null,
+              "province": null,
+              "quarter": null,
+              "stationNumber": null,
+              "street": "Voorbeeldstraat",
+              "__typename": "GraphqlCombinedAddress"
+            },
+            "fulfillments": [
+              {
+                "deliveryPromise": {
+                  "displayText": null,
+                  "earliest": "2026-02-02T07:00:00.000Z",
+                  "latest": "2026-02-02T21:00:00.000Z",
+                  "__typename": "GraphqlCombinedDeliveryPromise"
+                },
+                "externalState": null,
+                "fullfilledOn": null,
+                "handlingUnits": [],
+                "id": "90000003_1",
+                "invoiceNumber": "",
+                "isReturnable": false,
+                "isShipFromStore": false,
+                "levelOfService": "SCHEDULED",
+                "method": "DELIVERY",
+                "productCounts": {
+                  "productCount": 1,
+                  "quantityCount": 3,
+                  "relatedCount": 0,
+                  "__typename": "GraphqlCombinedProductCounts"
+                },
+                "products": [
+                  {
+                    "bundleId": null,
+                    "id": "90000003.1",
+                    "kindOfProduct": "BATTERY",
+                    "manufacturer": "VOORBEELD",
+                    "offerId": null,
+                    "prices": {
+                      "adjustments": [],
+                      "net": null,
+                      "price": {
+                        "amount": 12.06,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "shipping": null,
+                      "unit": {
+                        "amount": 4.02,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "unitOriginal": {
+                        "amount": 4.02,
+                        "currency": "EUR",
+                        "__typename": "GraphqlCombinedMoney"
+                      },
+                      "vat": null,
+                      "__typename": "GraphqlCombinedProductPrices"
+                    },
+                    "productData": {
+                      "energyEfficiency": {
+                        "class": null,
+                        "color": null,
+                        "isLegacyEEL": true,
+                        "required": false,
+                        "__typename": "GraphqlProductEnergyEfficiency"
+                      },
+                      "isDigital": false,
+                      "manufacturer": "VOORBEELD",
+                      "onlineReleasedAt": null,
+                      "title": "VOORBEELD Batterijen AA 4-pack",
+                      "titleImageAltText": null,
+                      "titleImageId": null,
+                      "__typename": "GraphqlCombinedProductData"
+                    },
+                    "productId": "90000003.1",
+                    "productTitle": "VOORBEELD Batterijen AA 4-pack",
+                    "productType": "PRODUCT",
+                    "qualityCondition": null,
+                    "quantity": 3,
+                    "relatedProducts": [],
+                    "returnData": null,
+                    "stateQuantities": [],
+                    "type": "MMS",
+                    "userRating": null,
+                    "warranty": null,
+                    "__typename": "GraphqlCombinedProduct"
+                  }
+                ],
+                "state": "OPEN",
+                "store": null,
+                "storeOutletId": null,
+                "type": "MMS",
+                "__typename": "GraphqlCombinedFulfillment"
+              }
+            ],
+            "identifier": "90000003",
+            "isCancelable": false,
+            "isReturnable": false,
+            "prices": {
+              "adjustment": {
+                "amount": 0,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "shipping": {
+                "amount": 0,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "subtotal": {
+                "amount": 12.06,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "total": {
+                "amount": 12.06,
+                "currency": "EUR",
+                "__typename": "GraphqlCombinedMoney"
+              },
+              "__typename": "GraphqlCombinedItemPrices"
+            },
+            "productCounts": {
+              "productCount": 1,
+              "quantityCount": 3,
+              "relatedCount": 0,
+              "__typename": "GraphqlCombinedProductCounts"
+            },
+            "receipt": null,
+            "returns": [],
+            "seller": null,
+            "state": "CREATED",
+            "type": "MMS",
+            "__typename": "GraphqlCombinedItem"
+          }
+        ],
+        "meta": {
+          "country": "NL",
+          "created": "2026-02-10T18:02:11.000Z",
+          "isGuest": false,
+          "itemCount": 1,
+          "kind": "CUSTOMER_ORDER",
+          "number": "9000000003",
+          "outletId": "900",
+          "productCounts": {
+            "productCount": 1,
+            "quantityCount": 3,
+            "relatedCount": 0,
+            "__typename": "GraphqlCombinedProductCounts"
+          },
+          "salesLine": "MEDIA",
+          "sourceChannel": "DESKTOP",
+          "sourceSystem": "XCC",
+          "type": "MMS",
+          "updated": "2026-02-10T18:02:11.000Z",
+          "__typename": "GraphqlCombinedMeta"
+        },
+        "state": "CREATED",
+        "user": {
+          "company": null,
+          "email": "test.persoon@example.invalid",
+          "firstName": "Test",
+          "id": "90000000",
+          "lastName": "Persoon",
+          "loyaltyCardNumber": null,
+          "loyaltyId": "90000000",
+          "phoneNumbers": [],
+          "taxId": "",
+          "type": "PRIVATE",
+          "__typename": "GraphqlCombinedUser"
+        },
+        "__typename": "GraphqlCombinedOrder"
+      }
+    ]
+  }
+}

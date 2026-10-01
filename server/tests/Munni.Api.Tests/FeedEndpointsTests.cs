@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Munni.Api.Accounts;
 using Munni.Api.Data;
-using Munni.Api.GoCardless;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 using Xunit;

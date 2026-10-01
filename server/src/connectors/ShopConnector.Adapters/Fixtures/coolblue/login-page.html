@@ -1,0 +1,272 @@
+<!--
+  coolblue accounts.coolblue.nl sign-in page. REAL capture, 2026-08-07, signed
+  out, so it carries no personal data.
+
+  Kept for a trap Coolblue built deliberately and documented in its own markup:
+  the ONLY input of type password on this screen is a DECOY for browser
+  password managers. It sits inside a div marked data-hidden and aria-hidden,
+  carries tabindex minus one, and Coolblue's own comment above it says they
+  added it so password managers behave.
+
+  Every one of the adapter's original PasswordSelectors matched it - by name,
+  by autocomplete and by type alike - so a login would have typed the password
+  into a field nobody reads and submitted the e-mail address on its own.
+
+  The page also carries two hidden inputs named username beside the real e-mail
+  box, which is why the username candidates are ordered the way they are.
+-->
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+    <head>
+        <title>Inloggen - Coolblue - Alles voor een glimlach</title>
+
+        <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, minimum-scale=1.0">
+        <!-- Add "maximum-scale=1" to the meta viewport content if the page is previewed on an iPhone to ignore the auto zoom on input highlight-->
+        <script defer async>if(navigator.userAgent.indexOf('iPhone') > -1) {const metaView = document.querySelector("[name=viewport]");metaView.setAttribute('content', `${metaView.getAttribute('content')}, maximum-scale=1`)}</script>
+        <link rel="icon" type="image/png" sizes="32x32" href="https://assets.coolblue.nl/images/favicons/favicon-32x32.version1.png">
+        <link rel="icon" type="image/png" sizes="16x16" href="https://assets.coolblue.nl/images/favicons/favicon-16x16.version1.png">
+        <meta name="robots" content="noindex, nofollow, nocache">
+        <meta name="description" content="De inlogportaal voor Coolblue-klanten.">
+
+        <link rel="stylesheet" href="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/css/coolblue.css">
+        <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/fact-slogan.js"></script>
+
+        
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/cb-email-exists.js"></script>
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/cb-login.js"></script>
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/cb-login-code.js"></script>
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/cb-track-click.js"></script>
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/cb-track-immediate.js"></script>
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/cb-register.js"></script>
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/cb-passwordless-login.js"></script>
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/with-custom-errors.js"></script>
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/show-password.js"></script>
+    <script type="module" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/js/password-strength.js"></script>
+
+
+        <link rel="preload" href="https://assets.coolblue.nl/fonts/aebl____-webfont.woff2" as="font" type="font/woff2" crossorigin>
+        <link rel="preload" href="https://assets.coolblue.nl/fonts/dobraslab-book-webfont.woff2" as="font" type="font/woff2" crossorigin>
+        <link rel="preload" href="https://assets.coolblue.nl/fonts/dobraslab-medium-webfont.woff2" as="font" type="font/woff2" crossorigin>
+        <link rel="preload" href="https://assets.coolblue.nl/fonts/opensans-variablefont-400-700.woff2" as="font" type="font/woff2" crossorigin>
+
+        <script>
+    function getCookie(name) {
+        if (typeof name !== 'string' || !name) return null;
+
+        try {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) {
+                return parts.pop().split(';').shift();
+            }
+            return null;
+        } catch (e) {
+            console.error('Error reading cookie:', e);
+            return null;
+        }
+    }
+
+    var session_id= getCookie('cbvid')
+
+    var userProperties={
+        'application': 'gandalf',
+        'is_known_bot': false,
+        'gandalf_client': 'webshop',
+        'gandalf_sub_client': 'webshop',
+        'internal_visits': false,
+        'language': 'nl',
+        'customer_authorization_state': 'Unknown',
+        'cookie_preference': '20250507|functional:ca|analytical:aw;ce;dd;ga;op;tp|marketing:fb;gmp;in;js;kk;li;ma;rd;sc;st;tt',
+    }
+
+    var mimirMetadata={
+        'page_location': window.location.toString(),
+        'referrer': window.document.referrer,
+        'user_agent': window.navigator.userAgent,
+        'screen_color': window.screen.colorDepth,
+        'screen_resolution': `${window.screen.width}x${window.screen.height}`,
+    }
+</script>
+
+
+<script src="https://assets.coolblue.nl/js/mimir/v2/client.js"></script>
+<script>
+    if (typeof window?.mimir?.config === 'function' && typeof window?.mimir?.event === 'function') {
+        window.mimir.config({
+            session_id,
+            user_properties: {...userProperties},
+            version: "web/v1",
+        });
+
+        window.addEventListener('cb:tracking', ({ detail: { name, params } }) => {
+            if (['page_view', 'view_context', 'split_tests'].includes(name)) {
+                window.mimir.event(name, params);
+            }
+        });
+    }
+</script>
+
+
+
+
+<script>
+// Android
+if (typeof window?.AnalyticsWebInterface?.logGa4Event === 'function') {
+    window.addEventListener('cb:tracking', ({ detail: { name, params } }) => {
+        window.AnalyticsWebInterface.logGa4Event(name, JSON.stringify({
+            ...params,
+            is_non_interactive: false,
+            cb_platform: 'android_app'
+        }));
+    });
+}
+
+// iOS
+if (typeof window?.webkit?.messageHandlers?.appTracking?.postMessage === 'function') {
+    window.addEventListener('cb:tracking', ({ detail: { name, params } }) => {
+        window.webkit.messageHandlers.appTracking.postMessage({
+            command: 'logGa4Event',
+            name,
+            parameters: {
+                ...params,
+                is_non_interactive: false,
+                cb_platform: 'ios_app'
+            },
+        });
+    });
+}
+
+
+
+// Emit split tests
+window.dispatchEvent(new CustomEvent('cb:tracking', {
+    bubbles: true,
+    detail: {
+        name: 'split_tests',
+        params: {"split_tests_0":"b7b8a5_7bdf"}
+    }
+}));
+
+
+window.dispatchEvent(new CustomEvent('cb:tracking', {
+    bubbles: true,
+    detail: {
+        name: 'view_context',
+        params: {
+            feature: 'context',
+            context: "email_page"
+        }
+    }
+}))
+
+</script>
+
+    </head>
+    <body class="">
+        <header class="hide@minimal">
+            <a href="https://www.coolblue.nl" aria-label="Go to Coolblue homepage">
+                <img src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/images/logo.svg" class="header__logo" alt="Coolblue logo" width="80" height="50">
+            </a>
+        </header>
+        <main>
+            
+    <div class="grid gap--4">
+        <section class="col--12 hide@minimal">
+            <cb-track-click trackingName="select_content" feature="no_login" context="email_page" content="back_to_client">
+                <a href="https://www.coolblue.nl/inloggen/oidc?login_cancelled" class="link__icon link__back">
+                    Terug
+                </a>
+            </cb-track-click>
+            
+        </section>
+        <div class="hidden">
+            <form method="post" spellcheck="false" id="form__request_password_reset">
+                <input type="hidden" name="view" value="request-password-reset">
+                <input type="hidden" name="csrf" value="not-a-real-csrf-token">
+                <input type="hidden" name="username" value="">
+            </form>
+            <cb-passwordless-login>
+                <form method="post" spellcheck="false" id="form__request_passwordless_login">
+                    <input type="hidden" name="view" value="request-passwordless-login">
+                    <input type="hidden" name="csrf" value="not-a-real-csrf-token">
+                    <input type="hidden" name="username" value="">
+                    <input type="hidden" name="view_context" value="email_page">
+                </form>
+            </cb-passwordless-login>
+        </div>
+        <section class="col--12 grid gap--4" data-fact-size="">
+            
+                <fact-slogan fact="Inloggen of aanmelden" slogan="Wij checken of je al klant bent." fact_slogan_style="heading"></fact-slogan>
+                <div>
+                    <cb-email-exists>
+                        <form method="post" action="#" spellcheck="false">
+                            <input type="hidden" name="view" value="email-exists">
+                            <input type="hidden" name="csrf" value="not-a-real-csrf-token">
+                            <fieldset>
+                                <legend>Inloggen</legend>
+                                <div class="grid gap--4">
+                                    <div class="grid">
+                                        
+                                        <div>
+                                            <label>
+                                                Je e-mailadres
+                                                <with-custom-errors value-missing="Er is geen e-mailadres ingevuld." type-mismatch="Oeps, dit is geen geldig e-mailadres." pattern-mismatch="Oeps, dit is geen geldig e-mailadres.">
+                                                    <!-- Ensure RFC 3696 compliant pattern: https://datatracker.ietf.org/doc/html/rfc3696#page-5 -->
+                                                    <input
+                                                        type="email"
+                                                        pattern="[\p{L}\d!#$%&\x27*+\-\/=?^_`\{\|\}~]+(?:\.[\p{L}\d!#$%&\x27*+\-\/=?^_`\{\|\}~]+)*@(?:(?!-[a-zA-Z0-9]+\.)(?![a-zA-Z0-9]+-\.)(?![a-zA-Z0-9]+--[a-zA-Z0-9]+\.)[a-zA-Z0-9\-]+\.)+[a-zA-Z][a-zA-Z0-9]+"
+                                                        name="username"
+                                                        autocomplete="username"
+                                                        value=""
+                                                        required
+                                                        class="input__textlike with-icon"
+                                                        autofocus />
+                                                </with-custom-errors>
+                                            </label>
+                                            <!-- iOS does not understand a one-step form and will paste the password of a saved set of credentials into the username field,
+                                            unless we add a hidden password field to the html 🤷‍♂️ -->
+                                            <div data-hidden aria-hidden="true"><input tabindex="-1" type="password" name="password" autocomplete="current-password"></div>
+                                        </div>
+                                        
+                                    </div>
+                                    <div>
+                                        <button type="submit" class="button">Doorgaan</button>
+                                    </div>
+                                    
+                                    
+                                </div>
+                            </fieldset>
+                        </form>
+                    </cb-email-exists>
+                </div>
+            
+        </section>
+    </div>
+
+        </main>
+        
+        <span class="customer-rating customer-rating--mobile">
+            <img style="margin:2px 0 -2px 0" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/images/glimlach.svg" alt="Coolblue" width="16" height="16">
+            Klantbeoordeling <strong>9,2/10</strong>
+        </span>
+        
+        <footer class="gap--4 hide@minimal">
+            <span class="safe_login">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" focusable="false" width="12" height="12" alt="a lock">
+                    <path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M12 18V11.33C12 4.85883 17.5959 0 24 0C30.4041 0 36 4.85883 36 11.33V18H37C39.76 18 42 20.24 42 23V43C42 45.76 39.76 48 37 48H11C8.24 48 6 45.76 6 43V23C6 20.24 8.24 18 11 18H12ZM18 11.33C18 8.60117 20.4641 6 24 6C27.5359 6 30 8.60117 30 11.33V18H18V11.33ZM36 24V42H12V24H36Z"/>
+                    <path fill="currentColor" d="M22.8294 38.9999C22.3594 38.9999 21.9194 38.7999 21.5994 38.4499L17.4494 33.8799C16.8194 33.1899 16.8594 32.0999 17.5394 31.4599C18.2194 30.8199 19.2794 30.8599 19.9094 31.5499L22.7094 34.6399L27.9794 27.6699C28.5494 26.9199 29.5994 26.7799 30.3394 27.3599C31.0694 27.9399 31.2094 29.0199 30.6394 29.7599L24.1494 38.3299C23.8494 38.7299 23.3894 38.9699 22.8994 38.9899C22.8694 38.9899 22.8494 38.9899 22.8194 38.9899L22.8294 38.9999Z"/>
+                </svg>
+                Veilig inloggen
+            </span>
+            
+            <span class="customer-rating customer-rating--desktop">
+                <img style="margin:2px 0 -2px 0" src="https://assets.accounts.coolblue.nl/a5702183245fd5b8a72fcb17bf7e111a/images/glimlach.svg" alt="Coolblue" width="16" height="16">
+                Klantbeoordeling <strong>9,2/10</strong>
+            </span>
+            
+            <a href="https://www.coolblue.nl/privacy" aria-label="Go to Coolblue privacy page">Privacy</a>
+            <a href="https://www.coolblue.nl/cookies" aria-label="Go to Coolblue cookies page">Cookies</a>
+            
+        </footer>
+    </body>
+</html>

@@ -21,7 +21,7 @@
  */
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes, X509Certificate } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -33,6 +33,8 @@ import { ENV_NAME_RE, RESERVED_ENV_NAMES, lanHost, listPlatforms, loadAutonomy, 
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
 import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultReadFolder, vaultRegister } from '../modules/vault.mjs';
 import { zipEntry, zipNames } from '../modules/zip.mjs';
+import { pendingFrom } from '../modules/pending.mjs';
+import { normalizeEnv, normalizePlatform } from '../modules/stack.mjs';
 import { proxyRules } from '../modules/dsm.mjs';
 import { listUsers, setAdmin } from '../modules/logto.mjs';
 import { removeProjects } from '../modules/glitchtip.mjs';
@@ -112,14 +114,17 @@ async function probe(url) {
 }
 
 /** run a command, stream its output to the response */
+/** streams a process to the response; resolves with its exit code once it is over (null when it could not start) */
 function runToStream(res, cmd, args, opts = {}) {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-cache' });
   res.write(`▶ ${cmd} ${args.join(' ')}\n\n`);
   const child = spawn(cmd, args, { ...opts, shell: false });
   child.stdout.on('data', (d) => res.write(d));
   child.stderr.on('data', (d) => res.write(d));
-  child.on('error', (e) => res.end(`\n[error: ${e.message}]\n`));
-  child.on('close', (code) => res.end(`\n[exit ${code}]\n`));
+  return new Promise((resolve) => {
+    child.on('error', (e) => { res.end(`\n[error: ${e.message}]\n`); resolve({ code: null }); });
+    child.on('close', (code) => { res.end(`\n[exit ${code}]\n`); resolve({ code }); });
+  });
 }
 
 const readBody = (req) =>
@@ -174,12 +179,26 @@ function platformsView() {
     registry: p.registry,
     publishedPath: p.publishedPath ?? null,
     controlEnv: p.controlEnv ?? null,
+    browserAgent: Boolean(p.browserAgent),
+    agentEgress: p.agentEgress,
     sharedStack: stackName(p.platform),
     sharedEnvironment: `${p.platform}-shared`,
     domainStored: Boolean(wizardValues(p.platform).PLATFORM_DOMAIN),
     envs: platformEnvs(p.platform).map((e) => ({ ...e, stack: stackName(p.platform, e.env), environment: `${p.platform}-${e.env}` })),
   }));
 }
+
+/* ── the helper's own code: a pull that moved this file leaves the running process on the old version ──
+   (a stale helper silently drops features it does not know — the connectors tick of 2026-10-01 — and
+   answers 404 to routes the newer page asks for; the page shows the state and restarts it on a click) */
+const SERVE_FILE = fileURLToPath(import.meta.url);
+const STARTED_AT = new Date().toISOString();
+const CODE_STAMP = statSync(SERVE_FILE).mtimeMs;
+export const helperState = () => {
+  let codeChanged = false;
+  try { codeChanged = statSync(SERVE_FILE).mtimeMs !== CODE_STAMP; } catch { /* the file is gone: nothing to compare against */ }
+  return { startedAt: STARTED_AT, codeChanged };
+};
 
 async function statusEndpoint(res, probeImpl) {
   const docker = await new Promise((resolve) => {
@@ -200,6 +219,7 @@ async function statusEndpoint(res, probeImpl) {
   const store = loadWizardStore();
   return json(res, 200, {
     docker,
+    helper: helperState(),
     stacks,
     platforms: platformsView(),
     wizardStored: { machine: Object.keys(store.machine).filter((k) => store.machine[k]), platforms: Object.fromEntries(Object.entries(store.platforms).map(([p, v]) => [p, Object.keys(v).filter((k) => v[k])])) },
@@ -244,7 +264,7 @@ async function vaultAccountEndpoint(req, res) {
 }
 
 /* ── platform config as code (infra/platforms) ────────────────────── */
-const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin'];
+const FEATURE_KEYS = ['android', 'ios', 'push', 'logos', 'telemetry', 'pgadmin', 'connectors'];
 const BANKING = ['gocardless', 'enablebanking'];
 const SIGNIN = ['google', 'apple'];
 function normalizeFeatures(raw = {}) {
@@ -253,6 +273,14 @@ function normalizeFeatures(raw = {}) {
   if (Array.isArray(raw.banking)) f.banking = raw.banking.filter((x) => BANKING.includes(x));
   if (Array.isArray(raw.signin)) f.signin = raw.signin.filter((x) => SIGNIN.includes(x));
   return f;
+}
+/** why a feature set cannot be saved as it stands, or null — the open-banking parties are served by the control plane (#414) */
+function featureRefusal(features = {}) {
+  const banking = features.banking ?? [];
+  if (banking.length && !features.connectors) {
+    return `${banking.join(' and ')} ${banking.length === 1 ? 'is a party' : 'are parties'} of the connector platform — tick Connectors as well: the control plane serves the banks, the api no longer does`;
+  }
+  return null;
 }
 const STORE_ID_RE = /^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*){2,5}$/;
 
@@ -271,6 +299,8 @@ async function envCreateEndpoint(req, res, runImpl, spawnImpl) {
     ...(typeof body.label === 'string' && body.label.trim() ? { label: body.label.trim().slice(0, 40) } : {}),
     features: normalizeFeatures(body.features),
   };
+  const refusal = featureRefusal(cfg.features);
+  if (refusal) return json(res, 400, { error: refusal });
   const store = {};
   if (typeof body.androidPackage === 'string' && STORE_ID_RE.test(body.androidPackage)) store.androidPackage = body.androidPackage;
   if (typeof body.iosBundleId === 'string' && STORE_ID_RE.test(body.iosBundleId)) store.iosBundleId = body.iosBundleId;
@@ -299,6 +329,8 @@ async function envUpdateEndpoint(req, res, spawnImpl) {
   if (body.appChannel === 'production' || body.appChannel === 'staging') next.appChannel = body.appChannel;
   if (typeof body.label === 'string' && body.label.trim()) next.label = body.label.trim().slice(0, 40);
   if (body.features) next.features = { ...current.features, ...normalizeFeatures(body.features) };
+  const refusal = featureRefusal(next.features);
+  if (refusal) return json(res, 400, { error: refusal });
   if (typeof body.androidPackage === 'string' && STORE_ID_RE.test(body.androidPackage)) next.store = { ...next.store, androidPackage: body.androidPackage };
   if (typeof body.iosBundleId === 'string' && STORE_ID_RE.test(body.iosBundleId)) next.store = { ...next.store, iosBundleId: body.iosBundleId };
   const saved = saveEnv(platform, next);
@@ -322,8 +354,27 @@ async function platformSaveEndpoint(req, res) {
     if (body.controlEnv) p.controlEnv = body.controlEnv; else delete p.controlEnv;
   }
   if (body.sharedChannel === 'latest' || body.sharedChannel === 'dev') p.sharedChannel = body.sharedChannel;
+  // the pooled browser agent of the shared stack (#367): a tick, and where its traffic leaves from
+  if (typeof body.browserAgent === 'boolean') p.browserAgent = body.browserAgent;
+  if (body.agentEgressKind === 'residential' || body.agentEgressKind === 'datacenter') p.agentEgress = { ...p.agentEgress, kind: body.agentEgressKind };
   const saved = savePlatform(p);
   return json(res, 200, { ok: true, platform: { ...saved, file: undefined } });
+}
+
+/** the connector control plane's liveness, from the helper's side (anonymous: /v1/health carries no data) */
+async function connectorProbeEndpoint(res, url, fetchImpl) {
+  let stack;
+  // a nas stack's addresses need the platform's domain, which the wizard holds (loadAnyStack borrows it like the host probe does)
+  try { stack = loadAnyStack(String(url.searchParams.get('stack') ?? '')); } catch (e) { return json(res, 400, { error: e.message }); }
+  if (!stack.urls.connector) return json(res, 400, { error: `${stack.stack} runs no connectors` });
+  const target = `${stack.urls.connector}/v1/health`;
+  try {
+    const r = await fetchImpl(target, { signal: AbortSignal.timeout(5000) });
+    const body = r.ok ? await r.json().catch(() => ({})) : null;
+    return json(res, 200, { ok: r.ok, status: r.status, url: target, version: body?.version ?? null });
+  } catch (e) {
+    return json(res, 200, { ok: false, status: 0, url: target, error: e.message });
+  }
 }
 
 /** commit + push the platform config (the pipeline reads it from the branch) */
@@ -359,7 +410,66 @@ async function toolEndpoint(req, res, runImpl) {
   const body = await readBody(req);
   const tool = toolFor(body.tool);
   if (!tool) return json(res, 400, { error: 'unknown tool' });
-  return runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
+  const result = await runImpl(res, tool.cmd, tool.args, { cwd: tool.cwd });
+  // a stack that came up runs the config of this moment — the applied side of the pending verdict on this computer
+  if (result?.code === 0 && /:up$/.test(String(body.tool))) stampApplied(String(body.tool).replace(/:up$/, ''));
+  return result;
+}
+
+/* ── what runs vs what is configured: the strip that says "Bootstrap + Deploy applies this" ──
+   On the NAS the applied side is the commit the last successful Bootstrap / Deploy run checked
+   out (the page knows the runs and sends each stack's head sha); on this computer it is the
+   config the stack was last started with (applied.json beside its rendered files). Both sides
+   are normalized the way every reader normalizes them, so a difference is a real one. */
+const appliedFile = (stack) => join(renderedDir(stack), 'applied.json');
+const configPaths = (platform, env) => [`infra/platforms/${platform}/platform.json`, ...(env ? [`infra/platforms/${platform}/envs/${env}.json`] : [])];
+/** the config as it is now: the environment's own keys plus the platform's under `platform` (a shared stack has only the latter) */
+function currentConfig(platform, env) {
+  const { file, ...platformCfg } = loadPlatform(platform);
+  return env ? { ...loadEnv(platform, env), platform: platformCfg } : { platform: platformCfg };
+}
+function stampApplied(stack) {
+  const parsed = parseStackName(stack);
+  if (!parsed) return; // devsource has no config to apply
+  mkdirSync(renderedDir(stack), { recursive: true });
+  writeFileSync(appliedFile(stack), `${JSON.stringify({ at: new Date().toISOString(), config: currentConfig(parsed.platform, parsed.env) }, null, 2)}\n`);
+}
+function pendingLocal(stack, { platform, env }) {
+  const file = appliedFile(stack);
+  if (!existsSync(file)) return { stack, applied: null, never: true, needs: null, changes: [] };
+  const applied = JSON.parse(readFileSync(file, 'utf8'));
+  const verdict = pendingFrom(applied.config, currentConfig(platform, env));
+  return { stack, applied: { at: applied.at }, changes: verdict.changes, needs: verdict.needs ? 'setup' : null };
+}
+async function pendingDeployed(spawnImpl, stack, { platform, env }, sha) {
+  const paths = configPaths(platform, env);
+  const git = (args) => capture(spawnImpl, 'git', args, { cwd: ROOT });
+  const uncommitted = (await git(['status', '--porcelain', '--', ...paths])).out.trim().length > 0;
+  const head = (await git(['rev-parse', 'HEAD'])).out.trim() || null;
+  // nothing ran yet: the checklist's Bootstrap item covers it — only an edit that is not on the branch matters here
+  if (!sha) return { stack, head, applied: null, uncommitted, commits: [], changes: [], needs: uncommitted ? 'commit' : null, then: uncommitted ? 'bootstrap' : null };
+  const log = await git(['log', '--format=%H%x1f%cI%x1f%s', `${sha}..HEAD`, '--', ...paths]);
+  if (log.code !== 0) return { stack, head, applied: { sha }, unknown: true, uncommitted, commits: [], changes: [], needs: null };
+  const commits = log.out.split('\n').filter(Boolean).map((line) => { const [h, at, subject] = line.split('\x1f'); return { sha: h, at, subject }; });
+  const shown = await Promise.all(paths.map((p) => git(['show', `${sha}:${p}`])));
+  const rawAt = (i) => (shown[i]?.code === 0 && shown[i].out.trim() ? JSON.parse(shown[i].out) : null);
+  const platformThen = rawAt(0) ? (({ file, ...rest }) => rest)(normalizePlatform(platform, rawAt(0))) : null;
+  const envThen = env && rawAt(1) ? normalizeEnv(platform, rawAt(1), env) : null;
+  const verdict = pendingFrom(env ? { ...(envThen ?? {}), platform: platformThen } : { platform: platformThen }, currentConfig(platform, env));
+  return { stack, head, applied: { sha }, uncommitted, commits, changes: verdict.changes, needs: uncommitted ? 'commit' : verdict.needs, then: uncommitted ? (verdict.needs ?? 'bootstrap') : null };
+}
+async function pendingEndpoint(req, res, spawnImpl) {
+  const body = await readBody(req);
+  const platform = String(body.platform ?? '');
+  try { loadPlatform(platform); } catch (e) { return json(res, 400, { error: e.message }); }
+  const out = {};
+  for (const [stack, want] of Object.entries(body.stacks ?? {})) {
+    const parsed = parseStackName(stack);
+    if (!parsed || parsed.platform !== platform) continue;
+    try { out[stack] = platform === LCL ? pendingLocal(stack, parsed) : await pendingDeployed(spawnImpl, stack, parsed, want?.sha ? String(want.sha) : null); }
+    catch (e) { out[stack] = { stack, error: e.message }; }
+  }
+  return json(res, 200, { stacks: out });
 }
 
 /* ── zero-input Logto per lcl environment: seed the minted machine
@@ -926,6 +1036,28 @@ async function storeStatusEndpoint(res, url, fetchImpl) {
 /* ── app links per environment: the served /.well-known files against the config, and whether Google sees the statement ── */
 const FINGERPRINT_RE = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/;
 const normalizeFingerprints = (raw) => String(raw ?? '').split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean);
+/**
+ * The fingerprints in what the operator pasted: the SHA-256 alone (one or
+ * more, comma-separated) or the Digital Asset Links JSON snippet the App
+ * signing page offers with a copy button — its sha256_cert_fingerprints ARE
+ * the app signing key's, so the snippet cannot be confused with the upload
+ * key certificate that sits above it on the same page.
+ */
+export function fingerprintsFrom(raw) {
+  const text = String(raw ?? '').trim();
+  if (!/^[[{]/.test(text)) return { fingerprints: normalizeFingerprints(text) };
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { return { error: 'that is not valid JSON — paste the Digital Asset Links snippet exactly as the App signing page shows it, or the SHA-256 fingerprint alone' }; }
+  const found = [];
+  const walk = (v) => {
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    if (!v || typeof v !== 'object') return;
+    for (const [k, x] of Object.entries(v)) { if (k === 'sha256_cert_fingerprints' && Array.isArray(x)) found.push(...x.map(String)); else walk(x); }
+  };
+  walk(parsed);
+  if (!found.length) return { error: 'that JSON carries no sha256_cert_fingerprints — the Digital Asset Links snippet at the bottom of the App signing page does' };
+  return { fingerprints: normalizeFingerprints(found.join(',')) };
+}
 async function appLinksEndpoint(res, url, fetchImpl) {
   let stack;
   try { stack = envStackFrom(url?.searchParams.get('stack')); } catch (e) { return json(res, 400, { error: e.message }); }
@@ -970,9 +1102,11 @@ async function appLinksSaveEndpoint(req, res) {
   const env = String(body.env ?? '');
   let current;
   try { current = loadEnv(platform, env); } catch (e) { return json(res, 400, { error: e.message }); }
-  const fps = normalizeFingerprints(body.androidCertSha256);
+  const parsed = fingerprintsFrom(body.androidCertSha256);
+  if (parsed.error) return json(res, 400, { error: parsed.error });
+  const fps = parsed.fingerprints;
   const bad = fps.find((f) => !FINGERPRINT_RE.test(f));
-  if (bad) return json(res, 400, { error: `not a SHA-256 certificate fingerprint: ${bad} — expected 32 hex pairs separated by colons, as Play Console → App signing → App signing key certificate shows it` });
+  if (bad) return json(res, 400, { error: `not a SHA-256 certificate fingerprint: ${bad} — expected 32 hex pairs separated by colons, as the App signing page's App signing key certificate (or its Digital Asset Links snippet) shows it` });
   saveEnv(platform, { ...current, store: { ...current.store, androidCertSha256: fps.length ? fps.join(',') : null } });
   streamHead(res);
   res.write(fps.length ? `▶ app signing certificate fingerprint${fps.length > 1 ? 's' : ''} saved for ${env}: ${fps.join(', ')}\n` : `▶ certificate fingerprint cleared for ${env}\n`);
@@ -1886,16 +2020,20 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
   const url = (req) => new URL(req.url, 'http://localhost');
   const routes = {
     'GET /api/status': (req, res) => statusEndpoint(res, probeImpl),
+    // the page's one-click restart when the helper's code moved on disk; the new process serves the page with a fresh token
+    'POST /api/helper/restart': (req, res) => { json(res, 200, { ok: true, restarting: Boolean(restartImpl) }); if (restartImpl) setTimeout(restartImpl, 200); },
     'GET /api/wizard/values': (req, res) => wizardValuesGet(res, url(req)),
     'POST /api/wizard/values': (req, res) => wizardValuesSet(req, res),
     'POST /api/platforms/vault-account': (req, res) => vaultAccountEndpoint(req, res),
     'POST /api/platforms/save': (req, res) => platformSaveEndpoint(req, res),
+    'GET /api/connector-probe': (req, res) => connectorProbeEndpoint(res, url(req), netFetchImpl),
     'POST /api/config/commit': (req, res) => configCommitEndpoint(req, res, spawnImpl),
     'POST /api/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
     'POST /api/envs/update': (req, res) => envUpdateEndpoint(req, res, spawnImpl),
     'POST /api/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
     'POST /api/envs/store-id': (req, res) => storeIdEndpoint(req, res, spawnImpl),
     'POST /api/envs/app-links': (req, res) => appLinksSaveEndpoint(req, res),
+    'POST /api/envs/pending': (req, res) => pendingEndpoint(req, res, spawnImpl),
     'GET /api/access/users': (req, res) => accessUsersEndpoint(res, url(req), netFetchImpl),
     'POST /api/access/toggle': (req, res) => accessToggleEndpoint(req, res, netFetchImpl),
     'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),

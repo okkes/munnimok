@@ -1,0 +1,26 @@
+<!--
+  What the app path actually shows the agent's browser. Captured live on
+  2026-08-11 from login.digid.nl/inloggen_app?confirm=true, the screen
+  immediately after choosing "Op een ander mobiel apparaat".
+
+  THERE IS NO QR ON THIS SCREEN, and that is the finding. On a desktop DigiD
+  draws a QR for a phone to scan; asked the same question by a phone it does
+  the opposite - the DigiD app shows a four-letter koppelcode and the BROWSER
+  asks for it. The direction of travel is reversed, and so is who reads what.
+
+  The agent runs Pixel 5, so this - not duo/qr-screen.html - is the screen a
+  DUO app login meets there. qr-screen.html was captured on desktop Chromium
+  and remains an accurate record of the desktop path; it is simply not the
+  path the agent takes. Both are kept: DesktopBrowser is one manifest flag
+  away, and whoever flips it needs to know what changes.
+
+  Structure verbatim; surrounding chrome and the session countdown are
+  trimmed. Nothing is redacted - the screen names no account and the code it
+  asks for had not been issued yet.
+
+  Note "Stap 1 van 3": the code is the first of three steps, and the form's
+  own action says where the second lives.
+-->
+<p class="simple-step-counter">Stap <strong>1 van 3</strong></p>
+<h2 class="orange_heading">Open de DigiD app en voer uw pincode in</h2>
+<form class="app_verification" id="new_app_verification_code" action="https://login.digid.nl/inloggen_app_qr" accept-charset="UTF-8" method="get"><input name="utf8" type="hidden" value="&#x2713;" autocomplete="off" /><fieldset class="form__item code_field"><label class="form__item__label" for="app_verification_code_verification_code">Vul daarna de koppelcode in die u in de DigiD app ziet.</label><div class="form__item__text">De DigiD app laat de koppelcode zien. Deze bestaat uit 4 letters. Vul de code in de 4 invoervelden hieronder in.</div><legend class="form__item__legend__visually__hidden">Wanneer u een letter invult, dan verplaatst de cursor automatisch naar het volgende invoerveld.</legend><input hide_required_indicator="true" data-minimum-length="4" data-maximum-length="4" data-capitals="true" data-code-field-type="consonants" class="form__item__field--medium validate" maxlength="4" fieldOf="Veld van" autocomplete="off" spellcheck="false" data-pattern="^[BbCcDdFfGgHhJjKkLlMmNnPpQqRrSsTtVvWwXxZz]{4}" data-required="true" placeholder=" " size="4" type="text" name="app_verification_code[verification_code]" id="app_verification_code_verification_code" /></fieldset> <div class="actions"><button name="button" type="submit" arrow="true" class="actions__right--button primary--button arrow">Volgende</button> <a action="previous" arrow="true" css_type="button" role="button" class="actions__left--button arrow" href="https://login.digid.nl/inloggen">Vorige</a> </div></form>

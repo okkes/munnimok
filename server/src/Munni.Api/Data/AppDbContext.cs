@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Accounts;
-using Munni.Api.GoCardless;
+using Munni.Api.Connectors;
 using Munni.Api.Push;
 using Munni.Api.Social;
 
@@ -13,28 +13,39 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<SpaceMember> SpaceMembers => Set<SpaceMember>();
     public DbSet<SyncOpRow> SyncOps => Set<SyncOpRow>();
     public DbSet<EntityRow> EntityRows => Set<EntityRow>();
-    public DbSet<GcRequisition> GcRequisitions => Set<GcRequisition>();
-    public DbSet<GcLinkedAccount> GcLinkedAccounts => Set<GcLinkedAccount>();
     public DbSet<Friendship> Friendships => Set<Friendship>();
     public DbSet<SpaceInvite> SpaceInvites => Set<SpaceInvite>();
     public DbSet<PushSubscriptionRow> PushSubscriptions => Set<PushSubscriptionRow>();
     public DbSet<FeedSpace> FeedSpaces => Set<FeedSpace>();
     public DbSet<FeedOwner> FeedOwners => Set<FeedOwner>();
     public DbSet<SpaceAccountLink> SpaceAccountLinks => Set<SpaceAccountLink>();
-    public DbSet<GcPendingTx> GcPendingTxs => Set<GcPendingTx>();
-    public DbSet<GcInstitutionLogo> GcInstitutionLogos => Set<GcInstitutionLogo>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
-    public DbSet<StoreSyncDevice> StoreSyncDevices => Set<StoreSyncDevice>();
+    public DbSet<ConnectionSyncDevice> ConnectionSyncDevices => Set<ConnectionSyncDevice>();
     public DbSet<UserDevice> UserDevices => Set<UserDevice>();
-    public DbSet<StoreConnCipher> StoreConnCiphers => Set<StoreConnCipher>();
-    public DbSet<ProviderQuota> ProviderQuotas => Set<ProviderQuota>();
+    public DbSet<ConnectionCipher> ConnectionCiphers => Set<ConnectionCipher>();
     public DbSet<Split> Splits => Set<Split>();
     public DbSet<SplitMember> SplitMembers => Set<SplitMember>();
     public DbSet<SplitEntry> SplitEntries => Set<SplitEntry>();
     public DbSet<SplitInvite> SplitInvites => Set<SplitInvite>();
+    public DbSet<ConnectorSession> ConnectorSessions => Set<ConnectorSession>();
+    public DbSet<ConnectorAccountRef> ConnectorAccountRefs => Set<ConnectorAccountRef>();
+    public DbSet<ConnectorPendingTx> ConnectorPendingTxs => Set<ConnectorPendingTx>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<ConnectorSession>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.UserId);
+            // one row per connection: a re-login replaces the session
+            e.HasIndex(x => new { x.UserId, x.Provider, x.ConnectionId }).IsUnique();
+        });
+        modelBuilder.Entity<ConnectorAccountRef>(e =>
+        {
+            e.HasKey(x => x.Id);
+            e.HasIndex(x => x.UserId);
+        });
+        modelBuilder.Entity<ConnectorPendingTx>(e => e.HasKey(x => new { x.AccountRefId, x.EntityId }));
         modelBuilder.Entity<User>(e =>
         {
             e.HasKey(x => x.Id);
@@ -57,13 +68,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             // the same physical device can serve several accounts
             e.HasKey(x => new { x.UserId, x.Id });
-        });
-        modelBuilder.Entity<GcRequisition>(e => e.HasKey(x => x.Id));
-        modelBuilder.Entity<GcInstitutionLogo>(e => e.HasKey(x => x.InstitutionId));
-        modelBuilder.Entity<GcLinkedAccount>(e =>
-        {
-            e.HasKey(x => x.GcAccountId);
-            e.HasIndex(x => x.SpaceId);
         });
         modelBuilder.Entity<Friendship>(e =>
         {
@@ -97,22 +101,16 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasIndex(x => new { x.SpaceId, x.FeedSpaceId, x.AccountId }).IsUnique();
             e.HasIndex(x => x.FeedSpaceId);
         });
-        modelBuilder.Entity<GcPendingTx>(e => e.HasKey(x => new { x.GcAccountId, x.EntityId }));
         modelBuilder.Entity<AppSetting>(e => e.HasKey(x => x.Key));
-        modelBuilder.Entity<StoreSyncDevice>(e =>
+        modelBuilder.Entity<ConnectionSyncDevice>(e =>
         {
             e.HasKey(x => x.Id);
             e.HasIndex(x => new { x.UserId, x.DeviceId }).IsUnique();
         });
-        modelBuilder.Entity<StoreConnCipher>(e =>
+        modelBuilder.Entity<ConnectionCipher>(e =>
         {
             e.HasKey(x => x.Id);
-            e.HasIndex(x => new { x.UserId, x.Store }).IsUnique();
-        });
-        modelBuilder.Entity<ProviderQuota>(e =>
-        {
-            e.HasKey(x => x.Id);
-            e.HasIndex(x => new { x.Provider, x.Scope }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.ConnectionId }).IsUnique();
         });
         modelBuilder.Entity<Split>(e => e.HasKey(x => x.Id));
         modelBuilder.Entity<SplitMember>(e =>
@@ -201,23 +199,6 @@ public class SplitInvite
     public DateTimeOffset ExpiresAt { get; set; }
 }
 
-/// <summary>
-/// Latest rate-limit headers seen per provider endpoint scope
-/// (admin-redesign AD3) — captured by piggybacking on normal sync
-/// traffic, never by extra calls. One row per (provider, scope).
-/// </summary>
-public class ProviderQuota
-{
-    public Guid Id { get; set; }
-    public required string Provider { get; set; }
-    /// <summary>endpoint family, e.g. "accounts:transactions" or "requisitions"</summary>
-    public required string Scope { get; set; }
-    public int? Limit { get; set; }
-    public int? Remaining { get; set; }
-    public DateTimeOffset? ResetAtUtc { get; set; }
-    public DateTimeOffset CapturedAtUtc { get; set; } = DateTimeOffset.UtcNow;
-}
-
 /// <summary>operator-editable server-wide settings (the catalog document, …)</summary>
 public class AppSetting
 {
@@ -247,7 +228,9 @@ public class UserDevice
     public DateTimeOffset? RevokedAt { get; set; }
 }
 
-public class StoreSyncDevice
+/// <summary>A device enrolled in connection sync: its public key and the
+/// Connection Sync Key wrapped to it (null until another device approves)</summary>
+public class ConnectionSyncDevice
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
@@ -258,13 +241,14 @@ public class StoreSyncDevice
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-/// <summary>AES-GCM ciphertext of one store connection's tokens (SC1) —
+/// <summary>AES-GCM ciphertext of one connection's credential bundle —
 /// opaque to the server by design</summary>
-public class StoreConnCipher
+public class ConnectionCipher
 {
     public Guid Id { get; set; }
     public Guid UserId { get; set; }
-    public required string Store { get; set; }
+    /// <summary>the relay's stable connection id</summary>
+    public required string ConnectionId { get; set; }
     public required string Cipher { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }

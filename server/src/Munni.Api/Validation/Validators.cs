@@ -1,10 +1,26 @@
+using System.Text.RegularExpressions;
 using FluentValidation;
 using Munni.Api.Accounts;
-using Munni.Api.GoCardless;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 
 namespace Munni.Api.Validation;
+
+/// <summary>
+/// The relay's stable connection id (#367) is opaque to us, so only its
+/// shape is policed — and by ONE rule, because bodies (validators) and
+/// route segments (connection sync) both have to agree on it.
+/// </summary>
+public static partial class ConnectionIds
+{
+    public const int MaxLength = 64;
+    public const string Pattern = "^[A-Za-z0-9._:-]+$";
+
+    public static bool IsValid(string id) => id.Length is > 0 and <= MaxLength && Shape().IsMatch(id);
+
+    [GeneratedRegex(Pattern)]
+    private static partial Regex Shape();
+}
 
 public sealed class RegisterFeedRequestValidator : AbstractValidator<RegisterFeedRequest>
 {
@@ -136,27 +152,83 @@ public sealed class SubscribeRequestValidator : AbstractValidator<Munni.Api.Push
     }
 }
 
-public sealed class CreateRequisitionRequestValidator : AbstractValidator<CreateRequisitionRequest>
+/// <summary>
+/// The relay's request bodies (#367). Bundles are sealed material a browser
+/// profile can make large, so their cap is generous; everything else is a
+/// name, a key or a typed value. Input VALUES are never inspected beyond
+/// their length: what a user typed into a provider's form is the provider's
+/// business, sealed before it rests anywhere.
+/// </summary>
+public sealed class ConnectorLoginRequestValidator : AbstractValidator<Connectors.ConnectorLoginRequest>
 {
-    public CreateRequisitionRequestValidator()
+    public ConnectorLoginRequestValidator()
     {
-        RuleFor(r => r.SpaceId).NotEmpty().MaximumLength(64);
-        RuleFor(r => r.InstitutionId).NotEmpty().MaximumLength(128);
-        RuleFor(r => r.RedirectUrl)
-            .NotEmpty()
-            .Must(url => Uri.TryCreate(url, UriKind.Absolute, out var uri)
-                         && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            .WithMessage("redirectUrl must be an absolute http(s) URL");
-        // #175: the user's provider pick — always named (the connect sheet
-        // sends it); the endpoint still checks it is CONFIGURED on this install
-        RuleFor(r => r.Provider)
-            .NotEmpty()
-            .Must(p => p is Banking.GoCardlessBankApi.Id or Banking.EnableBankingApi.Id)
-            .WithMessage("provider must be gocardless or enablebanking");
+        RuleFor(r => r.ConnectionId).NotEmpty().MaximumLength(ConnectionIds.MaxLength).Matches(ConnectionIds.Pattern);
+        RuleFor(r => r.Label).MaximumLength(80);
+        RuleFor(r => r.CredentialBundle).MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
+        RuleFor(r => r.PreferAgent).MaximumLength(64);
+        RuleFor(r => r.IdempotencyKey).MaximumLength(128);
+        RuleFor(r => r.Inputs).Must(SmallMap).When(r => r.Inputs is not null).WithMessage("inputs: at most 32 keys of 64 chars, values of 4096");
+        RuleFor(r => r.Config).Must(SmallMap).When(r => r.Config is not null).WithMessage("config: at most 32 keys of 64 chars, values of 4096");
+    }
+
+    private static bool SmallMap(Dictionary<string, string>? map) =>
+        map is null || (map.Count <= 32 && map.All(p => p.Key.Length is > 0 and <= 64 && p.Value.Length <= 4096));
+}
+
+public sealed class ConnectorAnswerRequestValidator : AbstractValidator<Connectors.ConnectorAnswerRequest>
+{
+    public ConnectorAnswerRequestValidator()
+    {
+        RuleFor(r => r.ChallengeId).NotEmpty().MaximumLength(64);
+        RuleFor(r => r.Value).MaximumLength(4096);
     }
 }
 
-public sealed class RegisterDeviceRequestValidator : AbstractValidator<Shopping.RegisterDeviceRequest>
+public sealed class ConnectorSyncRequestValidator : AbstractValidator<Connectors.ConnectorSyncRequest>
+{
+    public ConnectorSyncRequestValidator()
+    {
+        RuleFor(r => r.ConnectionId).NotEmpty().MaximumLength(ConnectionIds.MaxLength).Matches(ConnectionIds.Pattern);
+        RuleFor(r => r.Bundle).NotEmpty().MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
+        RuleFor(r => r.Since).Matches(@"^\d{4}-\d{2}-\d{2}$").When(r => r.Since is not null).WithMessage("since must be yyyy-mm-dd");
+    }
+}
+
+public sealed class ConnectorCollectRequestValidator : AbstractValidator<Connectors.ConnectorCollectRequest>
+{
+    public ConnectorCollectRequestValidator()
+    {
+        RuleFor(r => r.Bundle).NotEmpty().MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
+    }
+}
+
+public sealed class ConnectorDisconnectRequestValidator : AbstractValidator<Connectors.ConnectorDisconnectRequest>
+{
+    public ConnectorDisconnectRequestValidator()
+    {
+        RuleFor(r => r.Bundle).MaximumLength(Connectors.ConnectorLoginRequest.BundleMaximumLength);
+    }
+}
+
+public sealed class ConnectorProviderStatusRequestValidator : AbstractValidator<Connectors.ConnectorProviderStatusRequest>
+{
+    public ConnectorProviderStatusRequestValidator()
+    {
+        RuleFor(r => r.State).Must(Connectors.ConnectorAdminEndpoints.IsState).WithMessage("state must be healthy, degraded, paused or retired");
+        RuleFor(r => r.ReasonKey).MaximumLength(120);
+    }
+}
+
+public sealed class ConnectorEnrollmentRequestValidator : AbstractValidator<Connectors.ConnectorEnrollmentRequest>
+{
+    public ConnectorEnrollmentRequestValidator()
+    {
+        RuleFor(r => r.Name).NotEmpty().MaximumLength(80);
+    }
+}
+
+public sealed class RegisterDeviceRequestValidator : AbstractValidator<Connectors.RegisterDeviceRequest>
 {
     public RegisterDeviceRequestValidator()
     {
@@ -166,7 +238,7 @@ public sealed class RegisterDeviceRequestValidator : AbstractValidator<Shopping.
     }
 }
 
-public sealed class WrapRequestValidator : AbstractValidator<Shopping.WrapRequest>
+public sealed class WrapRequestValidator : AbstractValidator<Connectors.WrapRequest>
 {
     public WrapRequestValidator()
     {
@@ -174,7 +246,7 @@ public sealed class WrapRequestValidator : AbstractValidator<Shopping.WrapReques
     }
 }
 
-public sealed class ConnectionCipherRequestValidator : AbstractValidator<Shopping.ConnectionCipherRequest>
+public sealed class ConnectionCipherRequestValidator : AbstractValidator<Connectors.ConnectionCipherRequest>
 {
     public ConnectionCipherRequestValidator()
     {

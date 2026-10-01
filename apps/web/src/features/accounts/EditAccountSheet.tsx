@@ -12,7 +12,7 @@ import { Button } from '@/ui/Button';
 import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
-import { sourceKeyFor } from './AttachSheet';
+import { sourceKeyFor, sourceParamsFor } from './AttachSheet';
 import { AccountTypeRow } from './AccountTypeRow';
 import { isLiability, manualBalanceDate, typeDef } from './accountTypes';
 import { isCustomCadence, LoanCadenceControl, parsedDueDay } from './LoanCadenceControl';
@@ -375,7 +375,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
               <div className="overflow-hidden rounded-card border border-line bg-surface">
                 <div className="flex items-center justify-between gap-3 border-b border-line-2 px-4 py-3 text-[13px] last:border-0" data-testid="acctedit-source">
                   <span className="text-ink-3">{t('acct.source')}</span>
-                  <span className="text-ink-2">{t(sourceKeyFor(account))}</span>
+                  <span className="text-ink-2">{t(sourceKeyFor(account), sourceParamsFor(account))}</span>
                 </div>
                 {/* #205: where the data ends and the last real movement */}
                 {account.dataThroughDate && (

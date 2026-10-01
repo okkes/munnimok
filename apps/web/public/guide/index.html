@@ -43,7 +43,8 @@
 <a href="#splits">Splits — settle up with any group</a>
 <a href="#categories">Categories &amp; budgets</a>
 <a href="#trends">Trends, forecast &amp; export</a>
-<a href="#devices">Devices &amp; offline</a></nav>
+<a href="#devices">Devices &amp; offline</a>
+<a href="#connections">Connections</a></nav>
   
   <section id="start">
     <h2>Getting started</h2>
@@ -92,7 +93,8 @@
 <li>Recurring-cost detection reads your full bank history — charges older than the space’s start date count as pattern evidence (that’s how yearly subscriptions get spotted) while your lists stay clean; accepting a suggestion opens the occurrence review: the reconciler’s own picks arrive pre-checked, you prune what does not belong, and the linked charges take the recurring’s category on the spot.</li>
 <li>Detection knows lenders too: a payment pattern to a known one (DUO, for a start) surfaces right on the Debts screen — "Track as loan" opens loan creation in place, prefilled with the pattern as the payment plan, and "Not a loan" dismisses it; the recurring inbox keeps only genuine subscriptions.</li>
 <li>An account’s TYPE is a space-level fact: each space decides what an attached account is when attaching it, names it on the space’s account list, and can change it later from the account’s info sheet — deliberately destructive: that space’s transactions return to review under the new reading, as if freshly added, while other spaces’ readings and all balances stand. Space-created accounts carry their own type; the global overview keeps accounts plain.</li>
-<li>A space can call an attached account by its OWN name — rename it in the space\u2019s accounts sheet without touching the global name (shown right there as its own fact, with a quick link that opens the account in the all-accounts overview); renaming globally asks whether the space names follow.</li></ul>
+<li>A space can call an attached account by its OWN name — rename it in the space\u2019s accounts sheet without touching the global name (shown right there as its own fact, with a quick link that opens the account in the all-accounts overview); renaming globally asks whether the space names follow.</li>
+<li>Banks without an open-banking feed connect through munni\u2019s own platform under Settings \u2192 Connections (ING with the app\u2019s approval, ASN on its own page streamed to you): the accounts the bank hands over appear under the party\u2019s card, each with an Attach button that lands here with the account already picked. They read "Fetched by munni from \u2026" on their sheet and get the same synced-empty fact and reconnect hint as an open-banking account.</li></ul>
     <div class="shots"><figure><img src="shots/16-accounts-list--en-light-mobile.png" alt="Connecting your bank" loading="lazy"></figure>
 <figure><img src="shots/19-import-preview--en-light-mobile.png" alt="Connecting your bank" loading="lazy"></figure>
 <figure><img src="shots/20-import-run--en-light-mobile.png" alt="Connecting your bank" loading="lazy"></figure></div>
@@ -100,11 +102,11 @@
 
   <section id="review">
     <h2>Reviewing transactions</h2>
-    <p>The review deck shows one transaction at a time with a suggested category and the reason behind it. Everything you change — category, counterparty, splits — stays a draft until you hit Confirm. "Also apply to similar" catches the rest of the same merchant in one go.</p>
+    <p>The review deck shows one transaction at a time with a suggested category and the reason behind it — long titles wrap in full, nothing is cut off. The Split transaction row leads the card now (first question: one story or several?), the recurring and event rows appear once a category stands, and "Also apply to similar" starts at select-all on every card and catches the rest of the same merchant in one go. Everything you change — category, counterparty, splits — stays a draft until you hit Confirm.</p>
     <ul class="tips"><li>Tap the description to read the full bank text.</li>
-<li>Splitting the transaction is the last row on the card for a reason: categories, counterparty, recurring and event answer most cases without it.</li>
+<li>Splitting the transaction is the FIRST row on the card: decide one story or several before filing anything — for a single story just keep going with the category below.</li>
 <li>Skip is honest: it leaves no trace and the card returns later.</li>
-<li>Categories carry the meaning: a plain category files the money by its sign, and the marked ◆ special categories tell the special stories — Set aside, a loan payment, a transfer, money to the shared funding pot. Picking one asks the counterparty on the spot — or go counterparty-FIRST from the card\u2019s own Counterparty row: name the account and the special category fills itself. The ask pins the space\u2019s default account on top with one tap — every family has one now, cash withdrawals included — or a real account. Walk away from the ask and Confirm settles the row onto the default by itself — except plain Transfer: a transfer munni predicts must name a REAL account, so it reads the bank text for one of yours (your PayPal, a distinctively named pot) and pre-links it; with no such clue the card opens Uncategorized instead, and the transfer’s default bank account stays a deliberate pick inside the ask. The lists agree with each other: only categories that fit the account and the money\u2019s direction are offered, and the ask lists only accounts that category can mean — Set aside points at savings accounts, plain Transfer at regular ones. With a counterparty already picked the categories narrow to what IT can mean (a credit card: transfer or a debt payment) — and "Remove counterparty" inside the ask resets the category and frees the choice again.</li>
+<li>Categories carry the meaning: a plain category files the money by its sign, and the marked ◆ special categories tell the special stories — Set aside, a loan payment, a transfer, money to the shared funding pot. Picking one asks the counterparty on the spot — or go counterparty-FIRST from the card\u2019s own Counterparty row: name the account and the special category fills itself (once you deliberately file a PLAIN category, that row bows out — it only shows where a counter account means something). The category picker can also filter BY counter account: pick the account the money went to, only categories that can point at it remain, and your pick suggests that account in the ask. The ask pins the space\u2019s default account on top with one tap — every family has one now, cash withdrawals included — or a real account. Walk away from the ask and Confirm settles the row onto the default by itself — except plain Transfer: a transfer munni predicts must name a REAL account, so it reads the bank text for one of yours (your PayPal, a distinctively named pot) and pre-links it; with no such clue the card opens Uncategorized instead, and the transfer’s default bank account stays a deliberate pick inside the ask. The lists agree with each other: only categories that fit the account and the money\u2019s direction are offered, and the ask lists only accounts that category can mean — Set aside points at savings accounts, plain Transfer at regular ones. With a counterparty already picked the categories narrow to what IT can mean (a credit card: transfer or a debt payment) — and "Remove counterparty" inside the ask resets the category and frees the choice again.</li>
 <li>On a savings, loan or investment account the story is locked: the account itself types every one of its rows, and the sign reads the direction (+ on a loan = repaid).</li>
 <li>Splitting CATEGORIES is not splitting the transaction: the category chip spreads one payment across several categories — exact euros or percentages — and the row stays ONE transaction, listed once with a thin color bar. A spread holds regular categories (and reimbursements): a ◆ special category spans the whole transaction — one special, one counterparty per transaction — so mixing €60 groceries with €40 Set aside means splitting the TRANSACTION, where each part carries its own counterparty.</li>
 <li>The Split transaction row is the other gear: the amounts partition into parts that stack like cards in a deck; tap a peeking card and it shuffles to the front to take its categories, counterparty, recurring cost and event right there.</li>
@@ -197,13 +199,26 @@
     <h2>Devices &amp; offline</h2>
     <p>Signed in, every device converges on the same data — edits made offline sync when you're back. Two people can edit the same transaction at once; the newer edit per field wins everywhere, identically. And if you ever want out of the cloud entirely, Profile → Go offline converts your account into a device-only offline profile: everything stays, bank-linked accounts become manual, your server data is erased, and other signed-in devices wipe themselves on their next sync.</p>
     <ul class="tips"><li>Push notifications tell you when new bank transactions arrive — tapping one opens that space\u2019s review directly.</li>
+<li>The row under the notifications switch sends a test notification — proof that push reaches this very device.</li>
 <li>The sync card at the top of Settings shows the last successful sync.</li>
 <li>Global settings → Devices lists every device signed in to your account — web devices name their browser and same-name twins number themselves (2), (3); rename them, and disconnect one remotely: it erases its munni data the next time it connects.</li></ul>
     <div class="shots"><figure><img src="shots/25-sync-devices--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
 <figure><img src="shots/58-sync-live--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure>
 <figure><img src="shots/38-offline--en-light-mobile.png" alt="Devices &amp; offline" loading="lazy"></figure></div>
   </section>
-  <footer>Generated 2026-08-25 from the app's own test screenshots — always the current UI.</footer>
+
+  <section id="connections">
+    <h2>Connections</h2>
+    <p>Settings → Connections is the one place for every party that holds your data: banks, shops and registries. Connect a party from the catalogue and sign in the way the party asks — a verification code, an approval in its app, a picture to read, or its own sign-in page streamed to you — then name the connection. A shop's receipts flow into the spaces you pick; a bank's or registry's accounts appear under its card, each with an Attach button that lands on the space's accounts screen with the account already picked — nothing joins a space by itself. Each card tells you where you stand: synced and when, sign in to sync on this device, reconnect needed, blocked by the party, a question waiting, or "syncs by itself" for a party that lives on your own computer. Sync now pulls the newest receipts or transactions; receipts attach to a clear match by themselves and land next to their transactions.</p>
+    <ul class="tips"><li>Your login stays yours: the party hands munni a sealed session key that only your own devices hold — munni\u2019s servers never see a password, and the app never stores one. In the browser the key lives in the tab; the app keeps it.</li>
+<li>A receipt that fits a transaction you already reviewed asks first — under Matches to check on the Receipts screen and on the transaction itself. Yes attaches it, no makes sure that transaction is never proposed again.</li>
+<li>Fetched receipts bring their invoices along — open the PDF right from the receipt.</li>
+<li>Use on my other devices ships your connections to your other devices as ciphertext; a new device waits until you approve it after comparing the 6-digit codes.</li>
+<li>A party that needs your own computer says so in the catalogue; a party without web support asks for the munni app.</li>
+<li>Your own computer: some parties only talk to a browser on your own connection (DigiD, a bank that keeps a signed-in profile). Enrol your computer once — a name, a one-time code, one line to paste in a terminal — and pick it when such a party connects; it signs in there and syncs by itself, and the card tells you when it has a question. Removing an agent destroys the sign-ins it keeps.</li></ul>
+    <div class="shots"></div>
+  </section>
+  <footer>Generated 2026-09-29 from the app's own test screenshots — always the current UI.</footer>
 </main>
 </body>
 </html>

@@ -8,7 +8,7 @@ import { attachFeedToSpace, detachFeedFromSpace } from '@/application/accountAtt
 import { newestTxDate } from '@/application/accounts';
 import { logActivity } from '@/application/activity';
 import { fetchMyFeedIds } from '@/features/accounts/feedGateway';
-import { sourceKeyFor } from '@/features/accounts/AttachSheet';
+import { fetchesItself, sourceKeyFor, sourceParamsFor } from '@/features/accounts/AttachSheet';
 import { AddAccountChooser } from '@/features/accounts/AddAccountChooser';
 import { institutionLogoUrl } from '@/features/accounts/useInstitutionLogos';
 import { EditAccountSheet } from '@/features/accounts/EditAccountSheet';
@@ -53,7 +53,7 @@ interface AttachedAccountEntry {
 const SOURCE_ICONS: Record<AccountRow['source'], string> = {
   manual: 'pencil-outline',
   camt053: 'file-document-outline',
-  gocardless: 'bank-transfer',
+  connector: 'link-variant',
 };
 
 interface AttachCandidate {
@@ -72,7 +72,8 @@ const syncLine = (t: T, lang: Lang, account?: AccountRow) =>
   account?.lastSyncedAt ? t('acct.lastSynced', { when: fmtTimeAgo(account.lastSyncedAt, lang) }) : undefined;
 
 const isStale = (account?: AccountRow) =>
-  account?.source === 'gocardless' &&
+  !!account &&
+  fetchesItself(account) &&
   !!account.lastSyncedAt &&
   Date.now() - Date.parse(account.lastSyncedAt) > STALE_SYNC_MS;
 
@@ -95,7 +96,7 @@ function linkEntry(t: T, link: AccountLinkRow, account: AccountRow | undefined):
     subtitle: [
       account ? t(typeDef(linkEffectiveType(link, account)).labelKey) : undefined,
       ibanTail(account?.iban),
-      account ? t(sourceKeyFor(account)) : undefined,
+      account ? t(sourceKeyFor(account), sourceParamsFor(account)) : undefined,
     ]
       .filter(Boolean)
       .join(' · '),
@@ -187,7 +188,7 @@ export function SpaceAccountsScreen() {
     const list: AttachedAccountEntry[] = ownAccounts.map((account) => ({
       key: account.id,
       name: account.name,
-      subtitle: [t(typeDef(account.type).labelKey), ibanTail(account.iban), t(sourceKeyFor(account))]
+      subtitle: [t(typeDef(account.type).labelKey), ibanTail(account.iban), t(sourceKeyFor(account), sourceParamsFor(account))]
         .filter(Boolean)
         .join(' · '),
       archived: !!account.archived,
@@ -296,7 +297,7 @@ export function SpaceAccountsScreen() {
           {!!entries?.length && (
             <div className="flex flex-col gap-2.5" data-testid="space-accounts-list">
               {entries.map((entry) => {
-                const logo = entry.account?.logo ?? institutionLogoUrl(entry.account?.bankId);
+                const logo = entry.account?.logo ?? institutionLogoUrl(entry.account);
                 return (
                   <button
                     key={entry.key}
@@ -391,7 +392,7 @@ export function SpaceAccountsScreen() {
       {/* the manual type grid directly — this button SAYS manual now
           (user redesign ss13/ss14); connect/import live behind Attach
           and the global overview */}
-      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} gcAvailable={syncing} initialStep="manual" />
+      <AddAccountChooser open={addOpen} onOpenChange={setAddOpen} initialStep="manual" />
 
       {/* tap-through info: the full story per account, with the actions
           (edit / detach) moved off the row (user redesign ss13) */}
@@ -400,7 +401,7 @@ export function SpaceAccountsScreen() {
           <div className="flex flex-col gap-3 pt-1" data-testid="space-account-info">
             <div className="flex items-center gap-2 text-[13px] text-ink-2">
               {info.account && <Icon name={SOURCE_ICONS[info.account.source]} size={16} color="var(--m-ink-3)" />}
-              {info.account ? t(sourceKeyFor(info.account)) : t('acct.bank')}
+              {info.account ? t(sourceKeyFor(info.account), sourceParamsFor(info.account)) : t('acct.bank')}
             </div>
             {/* #239 (user): this SPACE's own name for the account — the
                 global name stays untouched; clearing falls back to it */}

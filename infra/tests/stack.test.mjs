@@ -40,7 +40,8 @@ test('names: stack ↔ platform/env round-trip, hosts carry env and platform, po
   assert.deepEqual(hostsFor('nas', 'prod'), { web: 'munni-prod-nas', admin: 'munni-prod-nas-admin', api: 'munni-prod-nas-api', logto: 'munni-prod-nas-logto', logtoAdmin: 'munni-prod-nas-logto-admin' });
   assert.deepEqual(hostsFor('lcl'), { glitchtip: 'glitchtip-lcl', vault: 'vault-lcl', control: 'control-lcl', pgadmin: 'pgadmin-lcl' });
   assert.deepEqual(envPorts(0), PORT_SLOT);
-  assert.deepEqual(envPorts(2), { web: 8580, admin: 8581, api: 8582, logto: 3401, logtoAdmin: 3402 });
+  assert.deepEqual(envPorts(2), { web: 8580, admin: 8581, api: 8582, connector: 8587, logto: 3401, logtoAdmin: 3402 });
+  assert.deepEqual(hostsFor('nas', 'prod', { connectors: true }).connector, 'munni-prod-nas-connector', 'the control plane host exists only for an environment that runs connectors');
   assert.deepEqual(SHARED_PORTS, { glitchtip: 8383, vault: 8384, control: 8385, pgadmin: 8386 });
 });
 
@@ -109,18 +110,19 @@ test('nas stack: https hosts under the platform domain, GitHub environment per s
     logto: `https://munni-prod-nas-logto.${DOMAIN}`,
     logtoAdmin: `https://munni-prod-nas-logto-admin.${DOMAIN}`,
   });
-  assert.deepEqual(prod.ports, { web: 8380, admin: 8381, api: 8382, logto: 3201, logtoAdmin: 3202 });
+  assert.deepEqual(prod.ports, { web: 8380, admin: 8381, api: 8382, connector: 8387, logto: 3201, logtoAdmin: 3202 });
   assert.equal(prod.githubEnvironment, 'nas-prod');
   assert.equal(prod.sharedStack, 'munni-nas-shared');
   assert.equal(prod.channel, 'latest');
   assert.equal(prod.appChannel, 'production');
   assert.equal(prod.publishedPath, '/docker/munni-nas/published');
   assert.equal(prod.registry, 'ghcr.io/okkes');
-  assert.deepEqual(prod.features, { android: true, ios: true, push: true, logos: true, telemetry: true, pgadmin: true, banking: ['gocardless'], signin: ['google', 'apple'] });
+  assert.deepEqual(prod.features, { android: true, ios: true, push: true, logos: true, telemetry: true, pgadmin: true, connectors: false, banking: ['gocardless'], signin: ['google', 'apple'] });
+  assert.deepEqual(loadStack('munni-nas-shared').agent, { pooled: false, egress: { country: 'NL', kind: 'residential' } }, 'the pooled browser agent is off until ticked; a home line by default');
 
   const staging = loadStack('munni-nas-staging');
   assert.equal(staging.slot, 1);
-  assert.deepEqual(staging.ports, { web: 8480, admin: 8481, api: 8482, logto: 3301, logtoAdmin: 3302 });
+  assert.deepEqual(staging.ports, { web: 8480, admin: 8481, api: 8482, connector: 8487, logto: 3301, logtoAdmin: 3302 });
   assert.equal(staging.urls.web, `https://munni-staging-nas.${DOMAIN}`);
   assert.equal(staging.channel, 'dev');
   assert.equal(staging.appChannel, 'staging', 'a non-prod environment calls itself staging by default');
@@ -182,7 +184,7 @@ test('environments as files: nextSlot fills the lowest gap, saveEnv normalizes, 
   const qa = saveEnv('nas', { env: 'qa', slot: nextSlot('nas'), channel: 'dev' });
   assert.deepEqual(qa, {
     env: 'qa', slot: 2, channel: 'dev', appChannel: 'staging', label: 'munni qa-nas',
-    features: { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, banking: [], signin: [] },
+    features: { android: false, ios: false, push: false, logos: false, telemetry: true, pgadmin: true, connectors: false, banking: [], signin: [] },
     store: { androidPackage: 'app.munni.nas.qa', iosBundleId: 'app.munni.nas.qa', androidCertSha256: null },
   });
   assert.deepEqual(loadEnv('nas', 'qa'), qa, 'what saveEnv returns is what the file loads');

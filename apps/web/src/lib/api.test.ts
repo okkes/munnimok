@@ -54,17 +54,17 @@ describe('getApiCapabilities', () => {
   it('answers "no server features" for offline identities without touching the network', async () => {
     localStorage.setItem('munni_session', JSON.stringify({ kind: 'offline', profileId: 'p1' }));
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}));
-    expect((await getApiCapabilities()).gocardless).toBe(false);
+    expect(await getApiCapabilities()).toEqual({});
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('caches the first result for the page lifetime', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
-      .mockResolvedValue(jsonResponse({ capabilities: { gocardless: true } }));
+      .mockResolvedValue(jsonResponse({ capabilities: { logos: true } }));
     const first = await getApiCapabilities();
     const second = await getApiCapabilities();
-    expect(first.gocardless).toBe(true);
+    expect(first.logos).toBe(true);
     expect(second).toBe(first);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });

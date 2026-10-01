@@ -377,7 +377,7 @@ describe('importCamtStatements', () => {
     const feedId = feedSpaceId(iban);
     // the bank connection already owns the canonical per-IBAN row
     await repo.upsert('account', feedId, canonicalAccountId(iban), {
-      name: 'Mijn ING', type: 'checking', source: 'gocardless', currency: 'EUR', balanceCents: 500, iban,
+      name: 'Mijn ING', type: 'checking', source: 'connector', currency: 'EUR', balanceCents: 500, iban,
     });
     await repo.upsert('space', 's1', 's1', { name: 'P', kind: 'personal', currency: 'EUR', periodType: 'month' });
 
@@ -387,7 +387,7 @@ describe('importCamtStatements', () => {
     const importedAccount = await db.accounts.get(importAccountId(iban));
     expect(importedAccount).toMatchObject({ spaceId: feedId, deleted: 0 });
     // the bank row stands untouched (its balance is the bank's)
-    expect((await db.accounts.get(canonicalAccountId(iban)))!).toMatchObject({ source: 'gocardless', balanceCents: 500 });
+    expect((await db.accounts.get(canonicalAccountId(iban)))!).toMatchObject({ source: 'connector', balanceCents: 500 });
     // every imported row landed on the IMPORT account
     const rows = (await db.transactions.toArray()).filter((tx) => tx.deleted === 0);
     expect(rows.every((tx) => tx.accountId === importAccountId(iban))).toBe(true);

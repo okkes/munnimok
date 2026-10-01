@@ -1,0 +1,72 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The control plane, as a library. Both products' APIs are thin shells
+    over this: register providers, call MapConnectorApi(). Everything a
+    control plane does - catalogue, sessions, jobs, challenges, agents -
+    lives here exactly once.
+  -->
+  <PropertyGroup>
+    <RootNamespace>Connector.Kit.Hosting</RootNamespace>
+    <AssemblyName>Connector.Kit.Hosting</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+    <!--
+      Scaffolding only - `dotnet ef migrations add` needs it in the project
+      that owns the DbContext. PrivateAssets keeps it out of anything that
+      references this library, and out of the published image.
+    -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <!--
+      Production auth is JWT bearer; the shared framework does not carry the
+      handler. Development mode never touches this assembly.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
+    <!--
+      The API reference. Here rather than in each product's Api project for
+      the same reason everything else is: a behaviour that lived in one
+      product's Program.cs would be a behaviour the other silently lacks.
+      Both are mapped only outside production - see MapConnectorReference.
+    -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      EF Core's Sqlite provider pulls SQLitePCLRaw 2.1.11, which carries a
+      known high-severity advisory (GHSA-2m69-gcr7-jv3q) and therefore fails a
+      TreatWarningsAsErrors build outright. Overridden to the patched build
+      rather than suppressed: this native library parses untrusted file
+      content, so the advisory is real even in a test-only code path.
+      Belongs in Directory.Packages.props once that file can be edited.
+    -->
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" VersionOverride="2.1.12" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Connector.Kit\Connector.Kit.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      This library has no test project of its own: it is exercised through the
+      product that hosts it, and the shop connector's API suite is the one that
+      boots a real host end to end. Named here so the few pure decisions inside
+      it - which record shapes a service publishes, whether an envelope's rows
+      may be absent - can be tested directly rather than only inferred from a
+      generated document.
+    -->
+    <InternalsVisibleTo Include="Connector.Api.Tests" />
+  </ItemGroup>
+
+</Project>

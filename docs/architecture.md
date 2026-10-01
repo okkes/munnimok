@@ -35,13 +35,13 @@ flowchart LR
         PGA -.-> PG
     end
 
-    GC[GoCardless<br/>bank data]
+    GC[Parties: aggregators<br/>and banks, shops, registries]
     PUSHSVC[Web-push relays<br/>FCM / APNs]
 
     Device -- "HTTPS (reverse proxy)" --> WEB
     Device <-- "sync: push/pull/SSE<br/>REST: friends/spaces/invites" --> API
     Device <-- "OIDC redirect" --> LOGTO
-    API -- "fetch 03:00 bank-local" --> GC
+    API -- "connector control plane<br/>fetch 03:00 bank-local" --> GC
     API -- "notify" --> PUSHSVC -- "wake" --> SW
 ```
 
@@ -154,26 +154,32 @@ sequenceDiagram
 Editing presence ("Alice is reviewing — view only") rides the same SSE
 channel, so two people rarely collide in the first place.
 
-## 5. Bank data path (GoCardless)
+## 5. Bank data path (the connector platform)
 
 Raw bank transactions are **stored once, in Postgres**, as ops in the
-account's own **feed space** (`uuidv5("feed:" + IBAN)`). GoCardless is
-only ever asked for the *delta*; clients never talk to GoCardless at
-all — they sync from our copy like any other space.
+account's own **feed space** (`uuidv5("feed:" + IBAN)`). A bank is a
+**party of the connector platform** (docs/connectors/, #367/#414): an
+open-banking aggregator (GoCardless, Enable Banking — `http` parties the
+control plane runs inline, the consent kept by the relay) or a bank the
+platform reads through a browser (ING, ASN). The party is only ever asked
+for the *delta*; clients never talk to a bank or an aggregator at all —
+they sync from our copy like any other space.
 
 ```mermaid
 sequenceDiagram
-    participant CRON as GcFetchService (hourly tick)
-    participant GC as GoCardless API
+    participant CRON as ConnectorScheduleService (hourly tick)
+    participant CP as Control plane (the party's adapter)
+    participant AGG as Aggregator / bank
     participant PG as Postgres (feed space)
     participant SW as Closed phone (service worker)
     participant APP as Open laptop (SSE)
 
-    Note over CRON: due when 03:00 at the BANK's local time<br/>(country from IBAN prefix → timezone)<br/>new links fetch on the next tick instead
-    CRON->>GC: transactions since (lastFetch − 3 days)
-    Note over CRON,GC: first fetch = 90 days · details endpoint only ONCE per account<br/>429 → stand down 12h
-    GC-->>CRON: bank rows
-    CRON->>PG: ingest as ops (deterministic ids → re-imports dedupe)
+    Note over CRON: due when the party's interval passed and, where it names one,<br/>03:00 at the BANK's local time (zone from the IBAN's country)<br/>past a rate_limited refusal's retry-after
+    CRON->>CP: fetch transactions with the kept consent
+    CP->>AGG: the party's own calls (budget reported back as quota)
+    AGG-->>CP: bank rows
+    CP-->>CRON: normalised records (external_id = the bank's reference, pending: for unbooked rows)
+    CRON->>PG: ingest as ops (deterministic ids → re-fetches and reconnects dedupe; pending mirror; prediction overlay per attached space)
     CRON-->>APP: SSE → pull now
     CRON-->>SW: web push "3 new transactions"
     SW->>PG: background pull (pre-sync while awake)
@@ -181,7 +187,7 @@ sequenceDiagram
 ```
 
 The same deterministic-id trick makes a client-side **CAMT.053 file
-import** of the same account merge cleanly with GoCardless data — the
+import** of the same account merge cleanly with fetched data — the
 file never leaves the device; only the resulting ops sync.
 
 **Account tiers** (2026-07): *linked* (open banking) and *imported*
@@ -199,7 +205,8 @@ designed in docs/financial-accounts-master-plan.md.
 Rate budget math: GoCardless allows ~4 calls/endpoint/day. The nightly
 schedule spends **1** transactions + **1** balances call per account per
 day (details only on first link), leaving headroom for retries after a
-429 deferral.
+429 deferral; the party reports the allowance it last saw as its `quota`,
+which the admin portal and the cockpit show per party.
 
 ## 6. Notifications, three ways
 
@@ -228,15 +235,18 @@ whatever screen you're watching refreshes in place.
 - Errors: Sentry-protocol → GlitchTip; demo/offline identities send
   nothing, signed-in users queue crash reports offline and flush later.
 
-## 7b. Store logins on your other devices (E2EE, opt-in)
+## 7b. Connections on your other devices (E2EE, opt-in)
 
-Store connections (AH/Jumbo tokens) are device-only by default. The
-opt-in sync (store-connection-sync design, SC1–SC3) keeps the privacy
-law intact by making the server **dumb storage for ciphertext**:
+A connection's credential bundle — the sealed session key a party hands
+munni through the connector platform (#367, docs/connectors/client.md) —
+is device-only by default: the phone keeps it in its encrypted store, the
+web keeps it in the tab. The opt-in sync (the SC1–SC3 design, carrying
+bundles now) keeps the privacy law intact by making the server **dumb
+storage for ciphertext**:
 
 - **CSK** — one AES-GCM-256 *Connection Sync Key* per user, minted on
   the first device that enables the feature. It encrypts every
-  connection row before upload and never leaves a device unwrapped.
+  connection's bundle before upload and never leaves a device unwrapped.
 - **Device keys** — each device holds a P-256 ECDH keypair; only the
   public half is uploaded. The CSK travels between devices ECIES-style:
   an ephemeral keypair agrees (ECDH → HKDF-SHA256 → AES-GCM) with the
@@ -244,9 +254,10 @@ law intact by making the server **dumb storage for ciphertext**:
 - **Fingerprints** — SHA-256 of the public point, shown as a 6-digit
   code on both screens during approval. The human comparison is the
   defence against the server substituting its own key (MITM).
-- **Server surface** (`/me/store-sync/*`): device registry (public key
-  + optional wrap), one ciphertext blob per store, and DELETEs for
-  revocation. No crypto server-side; nothing stored is readable.
+- **Server surface** (`/me/connection-sync/*`): device registry (public
+  key + optional wrap), one ciphertext blob per connection id, and
+  DELETEs for revocation. No crypto server-side; nothing stored is
+  readable.
 
 ### Enrollment & approval
 
@@ -268,25 +279,25 @@ sequenceDiagram
     S-->>D: wrappedCsk (opaque to S)
     D->>D: unwrap with private key → CSK
     D->>S: fetch connection ciphertext
-    D->>D: decrypt with CSK → tokens work
+    D->>D: decrypt with CSK → the bundle syncs here too
 ```
 
 ### Day-to-day flow
 
 ```mermaid
 flowchart LR
-    A[connect / refresh a store] -->|encrypt with CSK| B[(server: ciphertext per store)]
+    A[sign in / a sync rotates the bundle] -->|encrypt with CSK| B[(server: ciphertext per connection)]
     B -->|pull at app open| C[other device]
-    C -->|newer refreshedAt wins| D[local StoreConnectionRow]
+    C -->|newer refreshedAt wins| D[local connectorConn row + custody]
     E[revoke a device] --> F[server deletes its wrap]
-    F --> G[next token refresh rotates the store tokens]
+    F --> G[the next rotation leaves the revoked device behind]
 ```
 
 Loss of *all* devices means the CSK is gone — which loses ONLY the
-synced store LOGINS (AH/Jumbo credentials): financial data, receipts
-and everything else live in normal server-side sync and come back with
-a fresh sign-in. You reconnect the stores once. That asymmetry is
-deliberate — no escrow, no server-side recovery, no honeypot.
+synced session bundles: financial data, receipts and everything else
+live in normal server-side sync and come back with a fresh sign-in. You
+sign in to the parties once more. That asymmetry is deliberate — no
+escrow, no server-side recovery, no honeypot.
 
 ## 8. Activity, admin & the rest of the household
 
@@ -313,7 +324,8 @@ deliberate — no escrow, no server-side recovery, no honeypot.
 | Service worker | `apps/web/src/sw.ts` (+ `sync/swNotifications.ts`) |
 | API endpoints | `server/src/Munni.Api/*` (vertical slices) |
 | Sync fold/merge (C# twin of the client) | `server/src/Munni.Api/Sync/*` |
-| GoCardless ingest + schedule | `server/src/Munni.Api/GoCardless/*` |
+| Connector relay, ingest + schedule (banks included) | `server/src/Munni.Api/Connectors/*` |
+| The connector platform (control plane, adapters, agent) | `server/src/connectors/*` |
 | Compose stacks + runbook | `deploy/` |
 | Active design docs | `docs/` (implemented designs are removed once shipped — recover any from git history) |
 
@@ -386,8 +398,8 @@ flowchart TB
   subgraph API[".NET 10 API"]
     AUTH["JWT bearer auth<br/>(Logto authority, audience-checked)"]
     SYNC["Sync endpoints<br/>(per-space oplog, LWW)"]
-    GCE["Bank endpoints<br/>(requisitions, complete, connections)"]
-    FETCH["GcFetchService<br/>(scheduled fetch, healer, cleanup)"]
+    GCE["Connector relay<br/>(/connectors/*: login, sync, lookups)"]
+    FETCH["ConnectorScheduleService<br/>(scheduled fetch of kept consents)"]
     SOC["Social (friends, spaces, invites)"]
     PUSHM["PushNotifier<br/>(WebPush + FCM router)"]
     ADMEP["/admin/* (grant-gated)"]
@@ -396,7 +408,8 @@ flowchart TB
   FETCH --> GCE
   SYNC --> DB[("PostgreSQL")]
   GCE --> DB
-  GCE --> AISP["GoCardless / Enable Banking"]
+  GCE --> CP["Connector control plane<br/>(the parties' adapters)"]
+  CP --> AISP["GoCardless / Enable Banking / a bank's site"]
   PUSHM --> FCMX["FCM / WebPush"]
 ```
 
@@ -405,17 +418,21 @@ flowchart TB
   attachment (`SpaceAccountLink`), with archived links frozen at a
   sequence ceiling (departed members keep exactly the history they had).
 * **AISP credentials** (GoCardless secret, Enable Banking RS256 private
-  key) live only in server configuration (Docker env from the NAS
-  `.env`), never in any client bundle.
+  key) live only in the control plane's configuration (Docker env from the
+  NAS `.env`, rendered by the wizard), never in the api's, never in any
+  client bundle; the api holds a consent's id and the accounts it reaches,
+  sealed by the control plane.
 * **Admin surface** is a separate Logto application and additionally
   gated by an explicit server-side admin grant list.
 
 ### S1.4 Admin console (`apps/admin`)
 
-Operator-only React SPA: overview/quota, user management (incl. GDPR
-deletion and per-user sync-chain diagnosis), bank-connection upkeep,
-category catalog publishing. Shares **no code** with the member app and
-holds no bank data of its own — everything goes through `/admin/*`.
+Operator-only React SPA: overview, user management (incl. GDPR deletion
+and per-user sync-chain diagnosis), the connector parties (the kill
+switch, each party's budget, an aggregator's inventory of consents with
+revocation), the household agents and canaries, category catalog
+publishing. Shares **no code** with the member app and holds no bank data
+of its own — everything goes through `/admin/*`.
 
 ## S2 · Cross-app flows
 
@@ -439,24 +456,28 @@ sequenceDiagram
 sequenceDiagram
   participant User
   participant App
-  participant API
+  participant API as API (relay)
+  participant CP as Control plane
   participant AISP as GoCardless/EB
   participant Bank
-  App->>API: create requisition (space, institution)
-  API->>AISP: create consent, redirect=munni /gc-callback
-  App->>AISP: user follows consent link
+  App->>API: login at the party (country, the bank from its lookup, return_url = munni /gc-callback)
+  API->>CP: the party's adapter creates the consent
+  CP->>AISP: create consent, redirect=munni /gc-callback
+  CP-->>App: redirect challenge (the bank's page, the reference to expect)
+  App->>AISP: user follows the consent page (same tab; the system browser on a phone)
   AISP->>Bank: SCA — credentials + strong auth AT THE BANK only
   Bank-->>AISP: consent granted (90 days, read-only scopes)
   AISP-->>App: redirect to /gc-callback (universal link)
-  App->>API: complete requisition (idempotent, quota-tolerant)
-  API->>AISP: list accounts → ingest transactions
-  API-->>App: feed space synced to every member device
-  Note over API: hourly healer finishes interrupted consents;<br/>daily cleanup revokes unused ones at the AISP
+  App->>API: answer the challenge with the landing address
+  API->>CP: the adapter completes the consent → the session's material (consent id + accounts, sealed)
+  API-->>App: the connection; the relay keeps the consent and fetches it nightly
+  Note over API: a rate_limited refusal sets a not-before;<br/>a consent's end at the party goes through the party's logout
 ```
 
-munni never sees bank credentials; it stores only the AISP's account ids,
-IBAN, and transaction data the user consented to. Consents are revocable
-in-app (deletes the requisition at the AISP) and auto-expire.
+munni never sees bank credentials; the control plane holds the AISP's
+account ids sealed in the session, the api the IBAN and the transaction
+data the user consented to. Consents are revocable in-app (the account's
+deletion ends the consent at the party) and auto-expire.
 
 ### S2.3 Sync (the only data plane)
 

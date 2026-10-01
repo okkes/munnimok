@@ -30,7 +30,8 @@ export function renderStack(stack, values) {
   }
   writeFileSync(join(dir, `docker-compose.${stack.stack}.yml`), envCompose(stack));
   writeFileSync(join(dir, `.env.${stack.stack}`), substitute(envTemplate(stack), values));
-  writeFileSync(join(dir, 'initdb', '01-create-databases.sql'), 'CREATE DATABASE logto;\n');
+  // the connector control plane keeps its own database on the environment's server (#367)
+  writeFileSync(join(dir, 'initdb', '01-create-databases.sql'), `CREATE DATABASE logto;\n${stack.features.connectors ? 'CREATE DATABASE connector;\n' : ''}`);
   return dir;
 }
 
@@ -155,7 +156,7 @@ ${local ? `
     ports:
       - "${p.control}:80"
 
-  # ONE console over every database of the platform (each environment's postgres + glitchtip-db)
+${pooledAgent(s)}  # ONE console over every database of the platform (each environment's postgres + glitchtip-db)
   pgadmin:
     image: dpage/pgadmin4:latest
     restart: unless-stopped
@@ -176,7 +177,56 @@ ${local ? `
 volumes:
   glitchtipdb:
   vaultdata:${local ? '\n  vaulttls:' : ''}
-  pgadmindata:
+  pgadmindata:${connectorEnvs(s).length && s.agent?.pooled ? '\n  agentstate:\n  agentprofiles:' : ''}
+`;
+}
+
+/** the platform's environments that run connectors — the ones a pooled agent dials */
+function connectorEnvs(shared) {
+  try { return platformEnvStacks(shared.platform).filter((env) => env.features.connectors); } catch { return []; }
+}
+
+/**
+ * The platform's pooled browser agent (#367): every provider pack, headed
+ * under Xvfb, one container for every environment's control plane over the
+ * shared network — it only ever dials out. Its egress is what the platform
+ * declares (a home line is residential); the control planes believe it.
+ * Rendered only when the operator ticked it AND an environment runs
+ * connectors: an agent with nowhere to call refuses to start.
+ */
+function pooledAgent(s) {
+  if (!s.agent?.pooled) return '';
+  const envs = connectorEnvs(s);
+  if (!envs.length) return '  # the pooled browser agent is ticked, but no environment runs connectors yet — nothing for it to dial\n\n';
+  const connections = envs.map((env, i) => `      ConnectorAgent__Connections__${i}__Name: ${env.env}
+      ConnectorAgent__Connections__${i}__ControlPlaneBaseUrl: http://connector-${env.env}:8080/
+      ConnectorAgent__Connections__${i}__EnrollmentCode: \${CONNECTOR_FLEET_CODE}`).join('\n');
+  return `  # the platform's pooled browser agent (#367): every provider pack, headed under Xvfb,
+  # dialling out to each environment's control plane over the shared network — nothing dials in
+  connector-agent:
+    image: \${REGISTRY}/munni-connector-agent:\${TAG}
+    restart: unless-stopped
+    shm_size: 1gb
+    init: true
+    stop_grace_period: 45s
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectorAgent__Class: pooled
+      ConnectorAgent__AgentName: munni ${s.platform} pooled agent
+      ConnectorAgent__Egress__Country: ${s.agent.egress.country}
+      ConnectorAgent__Egress__Kind: ${s.agent.egress.kind}
+      ConnectorAgent__BrowserLocale: nl-NL
+      ConnectorAgent__BrowserTimezoneId: Europe/Amsterdam
+      ConnectorAgent__MaxConcurrency: "2"
+      ConnectorAgent__Headless: "false"
+      ConnectorAgent__StateFilePath: /state/agent-state.json
+      ConnectorAgent__ProfileRootDirectory: /profiles
+${connections}
+    volumes:
+      - agentstate:/state
+      - agentprofiles:/profiles
+    networks: [shared]
+
 `;
 }
 
@@ -204,7 +254,10 @@ VAULT_SIGNUPS_ALLOWED=\${VAULT_SIGNUPS_ALLOWED}
 
 # the control cockpit's Logto app (registered in the control environment's Logto)
 CONTROL_LOGTO_APP_ID=\${CONTROL_LOGTO_APP_ID}
-`;
+${s.agent?.pooled ? `
+# the pooled browser agent enrolls at every environment's control plane with the platform's standing code (#367)
+CONNECTOR_FLEET_CODE=\${CONNECTOR_FLEET_CODE}
+` : ''}`;
 }
 
 /** the family Caddy (lcl): local-CA https for the vault always, and for every service as a real sslip.io hostname in LAN mode */
@@ -216,6 +269,8 @@ function familyCaddyfile(shared) {
       site(`https://${env.host('web')}`, `web-${env.env}:80`),
       site(`https://${env.host('admin')}`, `admin-${env.env}:80`),
       site(`https://${env.host('api')}`, `api-${env.env}:8080`),
+      // household agents dial the control plane from outside (#367); only an environment that runs connectors has the host
+      env.hosts.connector ? site(`https://${env.host('connector')}`, `connector-${env.env}:8080`) : '',
       site(`https://${env.host('logto')}`, `logto-${env.env}:${env.ports.logto}`),
       site(`https://${env.host('logtoAdmin')}`, `logto-${env.env}:${env.ports.logtoAdmin}`),
     ].join('')).join('');
@@ -351,10 +406,6 @@ services:
       Auth__RequireHttps: "false"` : ''}
       Auth__Audience: ${s.urls.api}
 ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
-      GoCardless__SecretId: \${GOCARDLESS_SECRET_ID:-}
-      GoCardless__SecretKey: \${GOCARDLESS_SECRET_KEY:-}
-      EnableBanking__ApplicationId: \${ENABLEBANKING_APPLICATION_ID:-}
-      EnableBanking__PrivateKeyPem: \${ENABLEBANKING_PRIVATE_KEY_PEM:-}
       Push__VapidPublicKey: \${PUSH_VAPID_PUBLIC_KEY:-}
       Push__VapidPrivateKey: \${PUSH_VAPID_PRIVATE_KEY:-}
       Push__Subject: \${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
@@ -365,7 +416,15 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       Logto__M2mAppId: \${LOGTO_M2M_APP_ID:-}
       Logto__M2mAppSecret: \${LOGTO_M2M_APP_SECRET:-}
       BUILD_NUMBER: \${TAG}
-      Ocr__BaseUrl: http://ocr:8884
+      Ocr__BaseUrl: http://ocr:8884${s.features.connectors ? `
+      # the connector relay (#367): the control plane in-network, its audience, the machine app the logto module
+      # writes back (until then the relay stays off and the api says why), the subject salt, the address household agents dial
+      Connectors__BaseUrl: http://connector:8080/
+      Connectors__Audience: ${s.urls.connector}
+      Connectors__M2mAppId: \${CONNECTOR_M2M_APP_ID:-}
+      Connectors__M2mAppSecret: \${CONNECTOR_M2M_APP_SECRET:-}
+      Connectors__SubjectSalt: \${CONNECTOR_SUBJECT_SALT}
+      Connectors__AgentPublicUrl: ${s.urls.connector}/` : ''}
     ports:
       - "${p.api}:8080"
     depends_on:
@@ -377,7 +436,7 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       default:
         aliases: [api]
       shared: {}
-
+${s.features.connectors ? connectorService(s) : ''}
   logto-${e}:
     image: svhd/logto:1.43
     restart: unless-stopped
@@ -407,6 +466,60 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
 
 volumes:
   pgdata:
+`;
+}
+
+/**
+ * The environment's connector control plane (#367): every provider pack under
+ * one catalogue, in Production mode against its own database on the
+ * environment's Postgres, the machine token of the environment's Logto as
+ * its only consumer credential. The api reaches it in-network; household
+ * agents dial its published host from outside (token-protected: nothing
+ * answers without a machine token or an agent's own token).
+ */
+function connectorService(s) {
+  const e = s.env;
+  const local = s.delivery === 'docker';
+  return `
+  connector-${e}:
+    image: \${REGISTRY}/munni-connector-api:\${TAG}
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      Connector__Mode: Production
+      Connector__Database__Provider: Postgres
+      Connector__Database__ConnectionString: Host=postgres;Database=connector;Username=munni;Password=\${POSTGRES_PASSWORD}
+      Connector__Auth__Authority: ${s.urls.logto}/oidc${local ? `
+      # the issuer stays the browser-facing url; the discovery document is fetched in-network over http
+      Connector__Auth__MetadataAddress: http://logto:${s.ports.logto}/oidc/.well-known/openid-configuration
+      Connector__Auth__RequireHttpsMetadata: "false"` : ''}
+      Connector__Auth__Audience: ${s.urls.connector}
+      Connector__Bundle__CurrentKid: k1
+      Connector__Bundle__Keys__k1: \${CONNECTOR_SEAL_KEY_K1}
+      Connector__EnrollmentHmacKey: \${CONNECTOR_ENROLLMENT_HMAC}
+      # the platform's pooled browser agent enrolls with this standing code
+      Connector__FleetEnrollmentCode: \${CONNECTOR_FLEET_CODE}
+      # the operator's aggregator accounts (#414): a party exists on the control plane when its keys do; never handed to an agent
+      BankAdapters__GoCardless__SecretId: \${GOCARDLESS_SECRET_ID:-}
+      BankAdapters__GoCardless__SecretKey: \${GOCARDLESS_SECRET_KEY:-}
+      BankAdapters__EnableBanking__ApplicationId: \${ENABLEBANKING_APPLICATION_ID:-}
+      BankAdapters__EnableBanking__PrivateKeyPem: \${ENABLEBANKING_PRIVATE_KEY_PEM:-}
+      BUILD_NUMBER: \${TAG}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/v1/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    ports:
+      - "${s.ports.connector}:8080"
+    depends_on:
+      postgres-${e}:
+        condition: service_healthy
+    networks:
+      default:
+        aliases: [connector]
+      shared:
+        aliases: [connector-${e}]
 `;
 }
 
@@ -455,5 +568,14 @@ FCM_SERVICE_ACCOUNT_JSON='\${FCM_SERVICE_ACCOUNT_JSON}'
 
 LOGODEV_SECRET_KEY=\${LOGODEV_SECRET_KEY}
 LOGODEV_PUBLIC_TOKEN=\${LOGODEV_PUBLIC_TOKEN}
-`;
+${s.features.connectors ? `
+# the connector control plane (#367): its bundle seal key and enrollment HMAC, the api's subject
+# salt and machine app (written back by the logto module), the platform's fleet enrollment code
+CONNECTOR_SEAL_KEY_K1=\${CONNECTOR_SEAL_KEY_K1}
+CONNECTOR_ENROLLMENT_HMAC=\${CONNECTOR_ENROLLMENT_HMAC}
+CONNECTOR_SUBJECT_SALT=\${CONNECTOR_SUBJECT_SALT}
+CONNECTOR_M2M_APP_ID=\${CONNECTOR_M2M_APP_ID}
+CONNECTOR_M2M_APP_SECRET=\${CONNECTOR_M2M_APP_SECRET}
+CONNECTOR_FLEET_CODE=\${CONNECTOR_FLEET_CODE}
+` : ''}`;
 }

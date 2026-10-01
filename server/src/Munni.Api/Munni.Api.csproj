@@ -28,7 +28,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="GoCardless\keyword-rules.json" />
+    <EmbeddedResource Include="Accounts\keyword-rules.json" />
   </ItemGroup>
 
   <ItemGroup>

@@ -11,6 +11,9 @@ export const MANIFEST = JSON.parse(
 
 const b64url = (buf) => buf.toString('base64url');
 
+const ENROLLMENT_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const enrollmentChars = (n) => Array.from(randomBytes(n), (b) => ENROLLMENT_ALPHABET[b % ENROLLMENT_ALPHABET.length]).join('');
+
 /** RFC 8292 VAPID pair: raw P-256 public point (65B) + private scalar, base64url */
 export function vapidPair() {
   const { privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
@@ -30,6 +33,10 @@ export function generateValue(name) {
   if (/^LOGTO_[A-Z]+_M2M_SECRET$/.test(name)) return randomBytes(24).toString('hex');
   // GlitchTip API tokens are 40 hex characters (its own generator's shape)
   if (name === 'GLITCHTIP_API_TOKEN') return randomBytes(20).toString('hex');
+  // the connector's seal key and enrollment HMAC are read with Convert.FromBase64String: standard base64, 32 bytes
+  if (name === 'CONNECTOR_SEAL_KEY_K1' || name === 'CONNECTOR_ENROLLMENT_HMAC') return randomBytes(32).toString('base64');
+  // an enrollment code in the control plane's own shape (AGNT-XXXX-XXXX, an alphabet without look-alikes)
+  if (name === 'CONNECTOR_FLEET_CODE') return `AGNT-${enrollmentChars(4)}-${enrollmentChars(4)}`;
   return b64url(randomBytes(32));
 }
 

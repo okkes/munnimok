@@ -45,7 +45,8 @@ import { DebtsScreen } from '@/features/debts/DebtsScreen';
 import { DebtDetailScreen } from '@/features/debts/DebtDetailScreen';
 import { AllocateScreen } from '@/features/allocation/AllocateScreen';
 import { HelpIndexScreen } from '@/features/help/HelpIndexScreen';
-import { ShoppingConnectionsScreen } from '@/features/shopping/ShoppingConnectionsScreen';
+import { ConnectionsScreen } from '@/features/connectors/ConnectionsScreen';
+import { AgentsScreen } from '@/features/connectors/AgentsScreen';
 import { ReceiptsScreen } from '@/features/shopping/ReceiptsScreen';
 import { PortfolioScreen } from '@/features/portfolio/PortfolioScreen';
 import { HoldingDetailScreen } from '@/features/portfolio/HoldingDetailScreen';
@@ -224,7 +225,8 @@ const debtsRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts',
 const debtDetailRoute = createRoute({ getParentRoute: () => appRoute, path: '/debts/$debtId', component: DebtDetailScreen });
 const allocateRoute = createRoute({ getParentRoute: () => appRoute, path: '/allocate', component: AllocateScreen });
 const helpRoute = createRoute({ getParentRoute: () => appRoute, path: '/help', component: HelpIndexScreen });
-const shoppingRoute = createRoute({ getParentRoute: () => appRoute, path: '/shopping', component: ShoppingConnectionsScreen });
+const connectionsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections', component: ConnectionsScreen });
+const agentsRoute = createRoute({ getParentRoute: () => appRoute, path: '/connections/agents', component: AgentsScreen });
 const receiptsRoute = createRoute({ getParentRoute: () => appRoute, path: '/receipts', component: ReceiptsScreen });
 const portfolioRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -304,7 +306,8 @@ export const routeTree = rootRoute.addChildren([
     debtDetailRoute,
     allocateRoute,
     helpRoute,
-    shoppingRoute,
+    connectionsRoute,
+    agentsRoute,
     receiptsRoute,
     portfolioRoute.addChildren([holdingDetailRoute]),
     insightsRoute,

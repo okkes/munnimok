@@ -1,12 +1,12 @@
 import { liveQuery } from 'dexie';
 import type { MunniDB } from './schema';
 import type {
+  ConnectorConnRow,
   EntityName,
   EntityRowMap,
   MetaRow,
   OutboxRow,
   QuoteCacheRow,
-  StoreConnectionRow,
 } from './types';
 
 /**
@@ -54,11 +54,11 @@ export interface StorageBackend {
   metaDelete(key: string): Promise<void>;
 
   // --- device-only stores (never synced) ---
-  storeConnAll(): Promise<StoreConnectionRow[]>;
-  /** by INSTANCE id (receipts v3) */
-  storeConnGet(id: string): Promise<StoreConnectionRow | undefined>;
-  storeConnPut(row: StoreConnectionRow): Promise<void>;
-  storeConnDelete(id: string): Promise<void>;
+  connectorConnAll(): Promise<ConnectorConnRow[]>;
+  /** by connection id (#367) */
+  connectorConnGet(id: string): Promise<ConnectorConnRow | undefined>;
+  connectorConnPut(row: ConnectorConnRow): Promise<void>;
+  connectorConnDelete(id: string): Promise<void>;
   quoteCacheAll(): Promise<QuoteCacheRow[]>;
   quoteCachePutAll(rows: QuoteCacheRow[]): Promise<void>;
 
@@ -144,20 +144,20 @@ export class DexieBackend implements StorageBackend {
     await this.db.meta.delete(key);
   }
 
-  storeConnAll() {
-    return this.db.storeInstances.toArray();
+  connectorConnAll() {
+    return this.db.connectorConns.toArray();
   }
 
-  storeConnGet(id: string) {
-    return this.db.storeInstances.get(id);
+  connectorConnGet(id: string) {
+    return this.db.connectorConns.get(id);
   }
 
-  async storeConnPut(row: StoreConnectionRow) {
-    await this.db.storeInstances.put(row);
+  async connectorConnPut(row: ConnectorConnRow) {
+    await this.db.connectorConns.put(row);
   }
 
-  async storeConnDelete(id: string) {
-    await this.db.storeInstances.delete(id);
+  async connectorConnDelete(id: string) {
+    await this.db.connectorConns.delete(id);
   }
 
   quoteCacheAll() {

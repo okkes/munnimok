@@ -45,6 +45,11 @@ describe('rich demo seed', () => {
     expect(live(await db.holdings.toArray()).length).toBeGreaterThanOrEqual(4);
     expect(live(await db.lots.toArray()).length).toBeGreaterThanOrEqual(5);
     expect(live(await db.goalContributions.toArray()).length).toBeGreaterThanOrEqual(3);
+    // #367: two shop connections in the hub — one synced on this device,
+    // one asking for a sign-in — and fetched receipts in the demo's store feed
+    expect(live(await db.storeConns.toArray()).map((c) => c.store).sort((a, b) => a.localeCompare(b))).toEqual(['ah', 'jumbo']);
+    expect((await db.connectorConns.toArray()).map((c) => c.state).sort((a, b) => a.localeCompare(b))).toEqual(['active', 'needs_reauth']);
+    expect(live(await db.receipts.toArray()).filter((r) => r.instanceId === 'demo_conn_ah').length).toBeGreaterThanOrEqual(2);
     db.close();
   });
 

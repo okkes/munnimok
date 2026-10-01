@@ -1,0 +1,64 @@
+<!--
+  coolblue order details. Built from the REAL capture of 2026-08-07.
+
+  The ONLY page that states a total, which is why a receipt costs a fetch per
+  order. The amount is written the Dutch whole-euro way and with a NON-BREAKING
+  space after the euro sign - both exactly as captured. That format returned a
+  NEGATIVE number from MoneyParser until 2026-08-07; see MoneyParserTests.
+
+  Faithful to the capture in three further ways, each of which a tidier fixture
+  got wrong:
+
+  * The date is not next to its label: the words close their own paragraph and
+    the date opens the next, with emotion's 406-character style element in
+    between on first use.
+  * THE PAGE CHARGES MORE THAN IT ITEMISES. One product at 399, a stated total
+    of 463, and nothing anywhere saying what the other 64 was. That is real,
+    and it is NOT universal - a second captured order lists 694 against a total
+    of 694 and agrees to the cent. So the gap is a per-order fact about
+    Coolblue's page, and the adapter closes it with a derived Unattributed
+    line rather than either inventing a reason or refusing to read items at
+    all. It did refuse, briefly, on the strength of this one order.
+  * THE ACCESSORY TAIL IS THE TRAP. After the payment block the page carries
+    recommendations - real products, real prices, never bought - each in the
+    same h3-and-price shape as the order's own lines. The reader is bounded by
+    the two headings a human reads, and the filter below is here so that a
+    reader which lost that bound puts something on the receipt.
+  * The total's label appears SIX times on the real page and only the first is
+    a rendered total. The other five are in the flight payload below: the
+    translation dictionary that defines the word, and React's own copy of the
+    element that displays it.
+  * Nothing in this comment may be a literal the reader looks for - see the
+    same warning in orders-overview.html, which was written after this file's
+    own commentary was parsed as content.
+-->
+<!DOCTYPE html>
+<html lang="nl">
+<head><title>Details van je bestelling | Coolblue</title></head>
+<body>
+<main>
+  <p class="css-9a8b7c">Besteld op<!-- -->:</p><style data-emotion="css i623zk">.css-i623zk{margin:0;font-size:var(--cb-font-size-md);line-height:var(--cb-line-height-500);font-family:"Open Sans","Arial","Helvetica","Verdana",sans-serif;font-style:normal;font-weight:var(--cb-font-weight-regular);color:var(--cb-color-font-base);-webkit-text-decoration:none;text-decoration:none;overflow-wrap:break-word;}</style><p class="css-i623zk">17 november 2023</p>
+  <p class="css-9a8b7c">Ordernummer<!-- -->:</p><p class="css-i623zk">80000001</p>
+  <h2 class="css-1bferfs">Je bestelling</h2>
+  <div class="css-1raffx0"><div class="css-z97dag"><div class="css-14uo757">
+    <div class="css-bc0lc1"><a href="/product/940557/testmerk-koelkast-rb100.html" class="css-bfw612"><img alt="Testmerk Koelkast RB100" loading="lazy" src="https://image.coolblue.nl/max/100xauto/products/1984531" class="css-ptvba5"/></a></div>
+    <div class="css-14fk23e"><div class="css-dt07t8"><h3 class="css-i623zk"> <a href="/product/940557/testmerk-koelkast-rb100.html" class="css-1prk0xx"> <span class="css-y6pps">Testmerk Koelkast RB100</span></a></h3><div class="css-1u8qly9">€ 399,-</div></div></div>
+    <div class="css-11gybds"><a href="/product-reviews/940557/review-schrijven" class="css-3obp80"><span class="css-1u8qly9">Schrijf een review</span></a></div>
+  </div></div></div>
+  <h2 class="css-1cuwkfs">Adres- en betaalinformatie</h2>
+  <h3 class="css-8d7ffa">Betalingsdetails</h3>
+  <div class="css-dt07t8">
+    <div class="css-1u8qly9">Totaalbedrag</div>
+    <div class="css-1u8qly9">€ 463,-</div>
+  </div>
+  <h2 class="css-1bferfs">Geschikte accessoires</h2>
+  <div class="css-14uo757"><h3 class="css-i623zk"><a href="/product/999999/testmerk-koelkastfilter.html"><span>Testmerk Koelkastfilter</span></a></h3><div class="css-1u8qly9">€ 24,95</div></div>
+  <div><a download="1300000001.pdf" href="/mijn-coolblue-account/mijn-factuur/80000001/1300000001" aria-label="Download factuur voor bestelling: 80000001" class="css-j23zfs"><span class="css-1u8qly9">Download factuur</span></a></div>
+  <a href="/mijn-coolblue-account/orderoverzicht">Terug</a>
+</main>
+<script>
+  self.__next_f.push([1, "{\"vriendenbonus\":{\"body\":\"Het minimale bestedingsbedrag is €50.\"},\"orderDetails\":{\"paymentDetails\":\"Betalingsdetails\",\"totalAmount\":\"Totaalbedrag\",\"totalAmountExcludingVat\":\"Totaalbedrag excl. btw\",\"includedVat\":\"BTW inbegrepen\",\"orderedOn\":\"Besteld op\"},\"miniShoppingCart\":{\"totalAmount\":\"Totaalbedrag\",\"subtotal\":\"Subtotaal\"}}"])
+  self.__next_f.push([1, "97:[\"$\",\"div\",null,{\"justify\":\"space-between\",\"children\":[[\"$\",\"$L19\",null,{\"children\":\"Totaalbedrag\"}],[\"$\",\"$L19\",null,{\"color\":\"$undefined\",\"children\":\"€ 463,-\"}]]}]\n"])
+</script>
+</body>
+</html>

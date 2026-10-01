@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Data;
-using Munni.Api.GoCardless;
 
 namespace Munni.Api.Social;
 
@@ -9,22 +8,22 @@ namespace Munni.Api.Social;
 /// shared spaces = leave-and-archive, immediate, Logto via M2M).
 /// Order matters: external bank access first (most sensitive), then
 /// server data, then the Logto identity, and the user row last.
-/// Bank/Logto failures are logged and never block the deletion.
+/// Party/Logto failures are logged and never block the deletion. The
+/// connector service is optional: an environment without the platform
+/// simply has no consents to end there.
 /// </summary>
-public static class AccountDeletion
+public sealed class AccountDeletion(
+    AppDbContext db,
+    IHttpClientFactory httpFactory,
+    IConfiguration config,
+    ILogger<AccountDeletion> logger,
+    Connectors.ConnectorDisconnector? connectors = null)
 {
-    public static async Task DeleteUserAsync(
-        AppDbContext db,
-        IGoCardlessApi? gc,
-        IHttpClientFactory httpFactory,
-        IConfiguration config,
-        ILogger logger,
-        User user,
-        bool deleteIdentity = true)
+    public async Task DeleteUserAsync(User user, bool deleteIdentity = true)
     {
-        // 1 · revoke bank consents at the provider (GoCardless supports
-        //     deletion; Enable Banking sessions expire on their own)
-        await RevokeBankConsentsAsync(db, gc, logger, user.Id);
+        // 1 · every consent the person made ends at its party (§15) — a
+        //     scheduled fetch can never resurrect the rows mid-delete
+        if (connectors is not null) await connectors.DisconnectAllAsync(user.Id);
 
         // 2 · push subscriptions — no notification survives its user
         db.PushSubscriptions.RemoveRange(await db.PushSubscriptions.Where(s => s.UserId == user.Id).ToListAsync());
@@ -51,25 +50,6 @@ public static class AccountDeletion
         // 7 · the user row last — a retry after any partial failure can re-enter
         db.Users.Remove(user);
         await db.SaveChangesAsync();
-    }
-
-    private static async Task RevokeBankConsentsAsync(AppDbContext db, IGoCardlessApi? gc, ILogger logger, Guid userId)
-    {
-        var requisitions = await db.GcRequisitions.Where(r => r.UserId == userId).ToListAsync();
-        foreach (var requisitionId in requisitions.Where(r => r.Provider == "gocardless").Select(r => r.RequisitionId))
-        {
-            try
-            {
-                if (gc is not null) await gc.DeleteRequisitionAsync(requisitionId);
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "account deletion: could not revoke requisition {Id}", requisitionId);
-            }
-        }
-        var requisitionIds = requisitions.Select(r => r.Id).ToList();
-        db.GcLinkedAccounts.RemoveRange(await db.GcLinkedAccounts.Where(a => requisitionIds.Contains(a.RequisitionId)).ToListAsync());
-        db.GcRequisitions.RemoveRange(requisitions);
     }
 
     /// <summary>sole-member spaces are erased; shared ones get a leave-and-

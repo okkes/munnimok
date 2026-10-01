@@ -11,6 +11,7 @@
     "logos": true,
     "telemetry": true,
     "pgadmin": true,
+    "connectors": true,
     "banking": [
       "gocardless",
       "enablebanking"
@@ -22,6 +23,7 @@
   },
   "store": {
     "androidPackage": "app.munni.nas.dev",
-    "iosBundleId": "app.munni.nas.dev"
+    "iosBundleId": "app.munni.nas.dev",
+    "androidCertSha256": "08:FF:21:1A:E2:8A:20:3C:DD:0B:3F:16:03:AB:9B:D0:BD:96:5A:9C:84:19:14:78:41:5E:65:A5:3B:A5:02:65"
   }
 }

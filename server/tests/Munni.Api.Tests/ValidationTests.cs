@@ -1,6 +1,5 @@
 using System.Text.Json;
 using Munni.Api.Accounts;
-using Munni.Api.GoCardless;
 using Munni.Api.Social;
 using Munni.Api.Sync;
 using Munni.Api.Validation;
@@ -144,29 +143,4 @@ public class ValidationTests
         Assert.False(new PushRequestValidator().Validate(new PushRequest("device-1", ops)).IsValid);
     }
 
-    [Theory]
-    [InlineData("https://munni.example/gc-callback", true)]
-    [InlineData("http://localhost:5173/gc-callback", true)]
-    [InlineData("javascript:alert(1)", false)]
-    [InlineData("not a url", false)]
-    [InlineData("", false)]
-    public void Requisition_requires_an_absolute_http_redirect(string url, bool valid)
-    {
-        var result = new CreateRequisitionRequestValidator()
-            .Validate(new CreateRequisitionRequest("space1", "ING_INGBNL2A", url, "gocardless"));
-        Assert.Equal(valid, result.IsValid);
-    }
-
-    // #175: the user's provider pick — always named, always a known one
-    [Theory]
-    [InlineData("gocardless", true)]
-    [InlineData("enablebanking", true)]
-    [InlineData("plaid", false)]
-    [InlineData("", false)]
-    public void Requisition_provider_pick_must_name_a_known_provider(string provider, bool valid)
-    {
-        var result = new CreateRequisitionRequestValidator()
-            .Validate(new CreateRequisitionRequest("space1", "ING_INGBNL2A", "https://munni.example/gc-callback", provider));
-        Assert.Equal(valid, result.IsValid);
-    }
 }

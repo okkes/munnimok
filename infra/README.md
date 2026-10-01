@@ -11,7 +11,7 @@ hands everything to GitHub Actions — which builds the images and the
 phone apps for every platform and deploys the NAS.
 
 ```
-infra/setup/index.html + serve.mjs   the wizard page + its local helper (node infra/setup/serve.mjs, or start.cmd)
+infra/setup/index.html + serve.mjs   the wizard page + its local helper (node infra/setup/serve.mjs, or start.cmd); a pull that moves serve.mjs leaves the running helper on the old code — the page says so at the top and restarts it on a click (automatic updates do it by themselves)
 infra/platforms/<p>/platform.json    the platform (delivery, registry, published path, control environment)
 infra/platforms/<p>/envs/<env>.json  one environment (slot, channel, features, store ids)
 infra/secrets.manifest.json          every secret: owner (generated | operator | module), scope (env | platform | stack | wizard), feature
@@ -124,9 +124,37 @@ environment; lcl: into the stack's store); `operator` ones are typed once
 per platform in the wizard and copied wherever the manifest says (platform scope →
 `<platform>-shared` and every `<platform>-<env>`; env scope → the
 environments whose features need it); `module` ones are written back by
-Logto/GlitchTip after they ran. `--verify` fails loudly on drift.
+Logto/GlitchTip after they ran. `--verify` fails loudly on drift. The
+connector platform's entries (#367) follow the same rules: an environment
+with `features.connectors` mints `CONNECTOR_SEAL_KEY_K1`,
+`CONNECTOR_ENROLLMENT_HMAC` and `CONNECTOR_SUBJECT_SALT` and gets
+`CONNECTOR_M2M_APP_ID/SECRET` written back by the Logto module (like
+`LOGTO_M2M_APP_ID/SECRET`, the secret is the module's own application
+secret `munni bootstrap` on the machine app, read back on every run —
+Logto's application endpoints carry none); the platform mints
+`CONNECTOR_FLEET_CODE` once, for its pooled browser agent and every
+control plane.
 Repository-level secrets and variables are not used, except the first-boot
 latch `MUNNI_INITIALIZED` the wizard sets at Connect.
+
+## Applied vs configured
+
+A card that changes a platform or environment file shows a strip whenever what is
+configured is not what runs — computed from facts, never remembered by the page.
+On the NAS the applied config is the commit the last successful Bootstrap / Deploy
+run checked out (`git log <that sha>..HEAD -- infra/platforms/…`, both files read
+back normalized the way every reader normalizes them); on this computer it is the
+config the stack was last started with (`infra/rendered/<stack>/applied.json`,
+stamped when the stack comes up). The strip names the changed keys
+(`features.connectors: off → on`) and the one action that applies them — Bootstrap +
+Deploy for anything that mints or registers something, Deploy again for the app
+signing fingerprint alone, Commit + push first for an edit that is not on the branch,
+Re-run setup on this computer — with a button that runs it and a *where is it?* that
+scrolls to and flashes the card's own button. While a run for the current commit is in
+flight the strip says so and clears when the run is through; a run for an older commit
+does not count. The checklists carry the same item, and a feature tile (a default for
+the next environment) says which existing environments do not run it yet, linking to
+their Settings.
 
 ## Day-2
 

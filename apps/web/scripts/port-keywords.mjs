@@ -149,6 +149,6 @@ const serverRules = rules.map((r) => {
   const cat = catalog.get(r.catId);
   return { ...r, direction: cat.direction, txType: cat.txTypes[0] ?? 'expense' };
 });
-const serverOut = path.resolve(here, '../../../server/src/Munni.Api/GoCardless/keyword-rules.json');
+const serverOut = path.resolve(here, '../../../server/src/Munni.Api/Accounts/keyword-rules.json');
 writeFileSync(serverOut, JSON.stringify(serverRules, null, 1));
 console.log(`written ${serverRules.length} server rules to ${serverOut}`);

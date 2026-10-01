@@ -1,0 +1,37 @@
+{
+  "transactions": [
+    {
+      "iconId": "LOA-DEBIT",
+      "executionDate": "2026-06-24",
+      "amount": {
+        "currency": "EUR",
+        "value": "-63.24"
+      },
+      "type": {
+        "id": "PL_TRM",
+        "description": "Termijn"
+      },
+      "subject": "Incasso Persoonlijke lening S14315987",
+      "subjectLines": [
+        "Incasso Persoonlijke lening S14315987 periode 23/05/2026"
+      ]
+    },
+    {
+      "iconId": "LOA-CREDIT",
+      "executionDate": "2026-05-24",
+      "amount": {
+        "currency": "EUR",
+        "value": "-63.24"
+      },
+      "type": {
+        "id": "PL_TRM",
+        "description": "Termijn"
+      },
+      "subject": "Incasso Persoonlijke lening S14315987",
+      "subjectLines": [
+        "Incasso Persoonlijke lening S14315987 periode 23/04/2026"
+      ]
+    }
+  ],
+  "_links": []
+}

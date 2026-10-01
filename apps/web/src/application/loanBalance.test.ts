@@ -24,7 +24,7 @@ describe('loans v2 balance coupling', () => {
       balanceCents: -50_000, balanceAsOf: '2026-06-01',
     });
     await repo.upsert('account', SPACE, 'bankloan', {
-      name: 'Bank loan', type: 'loan', source: 'gocardless', currency: 'EUR', balanceCents: -90_000,
+      name: 'Bank loan', type: 'loan', source: 'connector', currency: 'EUR', balanceCents: -90_000,
     });
     return { store, repo };
   }

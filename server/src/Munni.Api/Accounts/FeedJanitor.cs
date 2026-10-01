@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Munni.Api.Data;
-using Munni.Api.GoCardless;
 
 namespace Munni.Api.Accounts;
 

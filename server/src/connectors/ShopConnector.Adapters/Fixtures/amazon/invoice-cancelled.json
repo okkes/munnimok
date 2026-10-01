@@ -1,0 +1,27 @@
+{
+  "url": "https://www.amazon.nl/gp/css/summary/print.html?orderID=402-9999999-9999999",
+  "status": 200,
+  "html": [
+    "<!doctype html>",
+    "<html lang=\"nl-nl\">",
+    "<head><meta charset=\"utf-8\"><title>Besteldetails</title></head>",
+    "<body class=\"a-m-nl\">",
+    "<div id=\"a-page\">",
+    "<div class=\"a-container\">",
+    "  <div class=\"a-box a-alert a-alert-info a-spacing-base\" role=\"alert\">",
+    "    <div class=\"a-box-inner a-alert-container\">",
+    "      <i class=\"a-icon a-icon-alert\"></i>",
+    "      <div class=\"a-alert-content\">",
+    "        <h4 class=\"a-alert-heading\">Deze bestelling is geannuleerd.</h4>",
+    "      </div>",
+    "    </div>",
+    "  </div>",
+    "  <span class=\"a-button a-button-primary\"><span class=\"a-button-inner\">",
+    "    <a class=\"a-button-text\" href=\"/\">Doorgaan met winkelen</a>",
+    "  </span></span>",
+    "</div>",
+    "</div>",
+    "</body>",
+    "</html>"
+  ]
+}

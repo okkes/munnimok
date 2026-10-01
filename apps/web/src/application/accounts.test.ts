@@ -64,7 +64,7 @@ describe('#212: the destructive type change', () => {
     const spaceBase = { name: 'P', kind: 'personal' as const, currency: 'EUR', periodType: 'month' as const };
     await repo.upsert('space', 's1', 's1', spaceBase);
     await repo.upsert('space', 's2', 's2', { ...spaceBase, name: 'Q' });
-    await repo.upsert('account', 'feed1', 'bankacct', { name: 'Bank', type: 'checking', currency: 'EUR', balanceCents: 0, source: 'gocardless' });
+    await repo.upsert('account', 'feed1', 'bankacct', { name: 'Bank', type: 'checking', currency: 'EUR', balanceCents: 0, source: 'connector' });
     await repo.upsert('transaction', 'feed1', 'raw1', { accountId: 'bankacct', date: '2026-02-01', amountCents: -1_500, currency: 'EUR', merchant: 'AH', needsReview: 0 });
     const linkA = accountLinkId('s1', 'feed1');
     const linkB = accountLinkId('s2', 'feed1');

@@ -1,0 +1,355 @@
+using System.Net;
+using Connector.Kit.Errors;
+using Connector.Kit.Security;
+using ShopConnector.Adapters.LidlPlus;
+using ShopConnector.Adapters.Support;
+using ShopConnector.Adapters.Tests.Support;
+using Xunit;
+
+namespace ShopConnector.Adapters.Tests;
+
+/// <summary>
+/// The Lidl fetch path: after the one browser login, everything is plain
+/// HTTP against the ticket API, which means all of it is testable offline.
+/// </summary>
+public sealed class LidlPlusAdapterTests
+{
+    private static readonly DateTimeOffset Now = new(2026, 7, 26, 9, 0, 0, TimeSpan.Zero);
+
+    private static readonly IReadOnlyDictionary<string, string> DutchConfig =
+        new Dictionary<string, string>(StringComparer.Ordinal) { ["country"] = "NL", ["language"] = "nl" };
+
+    private static HttpResponseMessage Route(RecordedRequest request, int _)
+    {
+        if (request.Path.StartsWith("/api/v3/", StringComparison.Ordinal))
+        {
+            return Stub.Fixture("lidl/ticket-detail.json");
+        }
+
+        if (request.Path.StartsWith("/api/v2/", StringComparison.Ordinal))
+        {
+            return request.Query.Contains("pageNumber=1", StringComparison.Ordinal)
+                ? Stub.Fixture("lidl/tickets-page-1.json")
+                : Stub.Fixture("lidl/tickets-page-2.json");
+        }
+
+        return Stub.Status(HttpStatusCode.NotFound);
+    }
+
+    private static LidlPlusAdapter Adapter() => new(new LidlPlusOptions(), new FixedTimeProvider(Now));
+
+    private static FakeJobContext Context(HttpMessageHandler handler) => new(handler)
+    {
+        Config = DutchConfig,
+        Material = new SessionMaterial
+        {
+            AccessToken = "lidl-access-token-fixture",
+            RefreshToken = "lidl-refresh-token-fixture",
+        },
+    };
+
+    [Fact]
+    public async Task Fetch_walks_the_v2_list_then_the_v3_detail()
+    {
+        var handler = new StubHttpHandler(Route);
+        using var ctx = Context(handler);
+
+        var result = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(since: Requests.Day(2026, 7, 10)), CancellationToken.None);
+
+        var receipt = Assert.Single(result.Receipts);
+        Assert.Equal("lidl-2026-07-18-8801", receipt.ExternalId);
+        Assert.Equal("lidl", receipt.Merchant.Id);
+        // The branch NAME, from the store object the detail states - not its
+        // code. Reading `store` as a string gave "NL0263" and titled every
+        // receipt in the demo with it.
+        Assert.Equal("Testdorp", receipt.Merchant.StoreName);
+        // From the DETAIL's totalAmount, which is a JSON number in euros.
+        Assert.Equal(376, receipt.Total.Value);
+
+        // The detail's own wall-clock date, read in the store's country zone -
+        // not the list's, which put every receipt two hours late.
+        Assert.Equal(TimeSpan.FromHours(2), receipt.PurchasedAt.Offset);
+        Assert.Equal(new DateTime(2026, 8, 4, 12, 51, 18), receipt.PurchasedAt.DateTime);
+
+        // Three articles off the printed receipt; the markdown line is a
+        // discount on one of them rather than a fourth item.
+        Assert.Equal(3, receipt.Items.Count);
+        Assert.True(receipt.Reconciled);
+        Assert.Equal("4321", receipt.Payment?.CardLast4);
+        Assert.True(result.Complete);
+        Assert.Equal("tickets-v2", result.Via);
+
+        // Two list pages (the second is empty and terminates the walk) and
+        // exactly one detail call - one per receipt inside the window, never
+        // the whole history.
+        Assert.Equal(
+            ["/api/v2/NL/tickets", "/api/v2/NL/tickets", "/api/v3/NL/tickets/lidl-2026-07-18-8801"],
+            handler.Requests.Select(r => r.Path));
+    }
+
+    [Fact]
+    public async Task Every_ticket_call_carries_the_app_headers_the_api_routes_on()
+    {
+        var handler = new StubHttpHandler(Route);
+        using var ctx = Context(handler);
+
+        await Adapter().FetchAsync(ctx, Requests.Receipts(since: Requests.Day(2026, 7, 10)), CancellationToken.None);
+
+        // Sent because the API needs them to route, not to disguise anything.
+        // The casing of "iOs" is the provider's, and is confirmed.
+        Assert.All(handler.Requests, request =>
+        {
+            // NOT "999.99.9". Lidl's edge drops the TCP connection on that
+            // exact string - measured live on 2026-08-03, one header at a
+            // time - because it is the sentinel the well-known scraper library
+            // sends. Nothing else about the value is checked: 999.99.99 and
+            // 99.99.9 both reach authentication and answer 401.
+            //
+            // It surfaced as "request timed out" sixty seconds later, naming
+            // nothing, on a provider whose login had just succeeded.
+            Assert.NotEqual("999.99.9", request.Header("App-Version"));
+            Assert.Equal("15.20.3", request.Header("App-Version"));
+            Assert.Equal("iOs", request.Header("Operating-System"));
+            Assert.Equal("com.lidl.eci.lidl.plus", request.Header("App"));
+            Assert.Equal("NL", request.Header("Country"));
+            Assert.Equal("nl", request.Header("Accept-Language"));
+            Assert.Equal("Bearer lidl-access-token-fixture", request.Header("Authorization"));
+        });
+    }
+
+    [Fact]
+    public async Task A_ticket_outside_the_window_is_not_fetched_in_detail()
+    {
+        var handler = new StubHttpHandler(Route);
+        using var ctx = Context(handler);
+
+        var result = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(since: Requests.Day(2026, 7, 1), until: Requests.Day(2026, 7, 10)),
+            CancellationToken.None);
+
+        var receipt = Assert.Single(result.Receipts);
+        Assert.Equal("lidl-2026-07-05-8720", receipt.ExternalId);
+        Assert.Single(handler.Requests, r => r.Path.StartsWith("/api/v3/", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void The_authorize_url_carries_the_confirmed_parameters_and_the_pkce_pair()
+    {
+        // A verifier chosen here rather than generated, so the challenge in
+        // the URL is a value this test can compute independently.
+        var pkce = PkceChallenge.For("k0PBJmBFPYRe0S6dr1RxD1bcVYh7z7iHFbSC6X1IH0M");
+
+        var url = Adapter().AuthorizeUrl(pkce, new LidlSettings("NL", "nl"));
+
+        Assert.StartsWith("https://accounts.lidl.com/connect/authorize?", url, StringComparison.Ordinal);
+        Assert.Contains("client_id=LidlPlusNativeClient", url, StringComparison.Ordinal);
+        Assert.Contains("response_type=code", url, StringComparison.Ordinal);
+        Assert.Contains("redirect_uri=com.lidlplus.app%3A%2F%2Fcallback", url, StringComparison.Ordinal);
+
+        // offline_access is what yields the refresh token, and the refresh
+        // token is the whole T2 story.
+        Assert.Contains("offline_access", url, StringComparison.Ordinal);
+
+        // RFC 7636, and the reason a real login could not have worked: an
+        // authorization server that recorded a challenge refuses to exchange
+        // the code without the verifier.
+        Assert.Contains($"code_challenge={Uri.EscapeDataString(pkce.Challenge)}", url, StringComparison.Ordinal);
+        Assert.Contains("code_challenge_method=S256", url, StringComparison.Ordinal);
+
+        // OBSERVED live: without these accounts.lidl.com does not render a
+        // login page at all, it redirects to /error. Capitalised bare country,
+        // lower-case full locale - and "nl" alone for the language is another
+        // /error, so the two spellings are asserted rather than assumed.
+        Assert.Contains("Country=NL", url, StringComparison.Ordinal);
+        Assert.Contains("language=nl-NL", url, StringComparison.Ordinal);
+
+        // The verifier is the secret half and must never appear in a URL any
+        // browser, proxy or log can see.
+        Assert.DoesNotContain(pkce.Verifier, url, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("country", "ZZ")]
+    [InlineData("language", "xx")]
+    public async Task Config_outside_the_manifest_s_options_is_refused_before_any_call(string key, string value)
+    {
+        var config = new Dictionary<string, string>(DutchConfig, StringComparer.Ordinal) { [key] = value };
+        var handler = new StubHttpHandler(Route);
+
+        using var ctx = new FakeJobContext(handler)
+        {
+            Config = config,
+            Material = new SessionMaterial { AccessToken = "live" },
+        };
+
+        var error = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.InvalidRequest, error.Code);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Country_and_language_fall_back_to_the_copy_sealed_into_the_material()
+    {
+        var handler = new StubHttpHandler(Route);
+
+        // A caller that resumed a session without resending config still has
+        // to be serviceable: every ticket URL and two headers need these.
+        using var ctx = new FakeJobContext(handler)
+        {
+            Material = new SessionMaterial
+            {
+                AccessToken = "live",
+                Extra = new Dictionary<string, string>(StringComparer.Ordinal)
+                {
+                    ["country"] = "nl",
+                    ["language"] = "NL",
+                },
+            },
+        };
+
+        await Adapter().FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None);
+
+        // Country uppercase, language lowercase: both appear verbatim in URLs
+        // and headers and Lidl is case-sensitive about them.
+        Assert.All(handler.Requests, request =>
+        {
+            Assert.Contains("/NL/", request.Path, StringComparison.Ordinal);
+            Assert.Equal("nl", request.Header("Accept-Language"));
+        });
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.Forbidden)]
+    [InlineData(HttpStatusCode.BadGateway)]
+    [InlineData(HttpStatusCode.GatewayTimeout)]
+    public async Task A_refusal_from_the_ticket_api_is_reported_as_a_refusal(HttpStatusCode status)
+    {
+        var handler = new StubHttpHandler((_, _) => Stub.Status(status));
+        using var ctx = Context(handler);
+
+        var error = await Assert.ThrowsAsync<ConnectorException>(
+            () => Adapter().FetchAsync(ctx, Requests.Receipts(), CancellationToken.None));
+
+        Assert.Equal(ErrorCode.BlockedByProvider, error.Code);
+        Assert.NotEqual(ErrorCode.InvalidCredentials, error.Code);
+    }
+
+    [Fact]
+    public async Task A_list_that_keeps_answering_the_same_page_stops_instead_of_looping()
+    {
+        // The symptom of a pagination parameter that stopped advancing
+        // upstream. Without the guard this is the same request twenty times
+        // against a defended endpoint.
+        var handler = new StubHttpHandler((_, _) => Stub.Fixture("lidl/tickets-page-1.json"));
+        using var ctx = Context(handler);
+
+        var result = await Adapter().FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None);
+
+        Assert.Equal(2, result.Receipts.Count);
+        Assert.Equal(2, handler.Requests.Count);
+    }
+
+    /// <summary>
+    /// One page of tickets, distinct per page, so a walk that really advances
+    /// is told apart from one re-reading page one.
+    /// </summary>
+    private static HttpResponseMessage PageOf(RecordedRequest request)
+    {
+        var page = request.Query.Contains("pageNumber=", StringComparison.Ordinal)
+            ? request.Query[(request.Query.IndexOf("pageNumber=", StringComparison.Ordinal) + 11)..].Split('&')[0]
+            : "1";
+
+        return Stub.Json($$"""
+        {"tickets":[{"id":"lidl-page-{{page}}-0001","date":"2026-07-18T18:04:00","totalAmount":"14,27",
+          "storeName":"Lidl Testdorp","isFavorite":false,"hasReturnedItems":false}],
+         "page":{{page}},"size":1,"totalCount":99}
+        """);
+    }
+
+    /// <summary>
+    /// A HISTORY LONGER THAN THE PAGE BUDGET IS NOT A COMPLETE PASS.
+    /// </summary>
+    /// <remarks>
+    /// The walk stops at <c>MaxPages</c> whatever is left underneath it, and
+    /// completeness was judged only by the record cap - a limit this walk never
+    /// reaches. So a history longer than the budget came back truncated at the
+    /// old end and labelled complete, and nothing downstream could have worked
+    /// that out: the rows look like an ordinary result. A consumer syncing
+    /// incrementally would have kept the gap and had no way to see it.
+    /// </remarks>
+    [Fact]
+    public async Task A_history_longer_than_the_page_budget_is_not_called_complete()
+    {
+        var handler = new StubHttpHandler((request, _) => PageOf(request));
+        using var ctx = Context(handler);
+
+        var adapter = new LidlPlusAdapter(new LidlPlusOptions { MaxPages = 3 }, new FixedTimeProvider(Now));
+
+        var result = await adapter.FetchAsync(ctx, Requests.Receipts(items: false), CancellationToken.None);
+
+        // It really did spend the budget rather than stopping early, and every
+        // page it read is in the answer.
+        Assert.Equal(3, handler.Requests.Count);
+        Assert.Equal(3, result.Receipts.Count);
+
+        Assert.False(result.Complete);
+
+        // And it says which limit stopped it, because "incomplete" alone reads
+        // as a provider having a bad day.
+        Assert.Contains(ctx.Notes, n => n.Contains("3 pages", StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// <c>include=raw</c> IS ANSWERABLE ON ITS OWN, without asking for items
+    /// too.
+    /// </summary>
+    /// <remarks>
+    /// Raw is the detail document, and it was only ever captured on the way
+    /// past to the line items - so the one request that says "show me exactly
+    /// what Lidl said" was the one request that came back empty, reporting
+    /// success, on a resource whose manifest declares raw.
+    /// </remarks>
+    [Fact]
+    public async Task Raw_can_be_asked_for_without_items()
+    {
+        using var ctx = Context(new StubHttpHandler(Route));
+
+        var result = await Adapter().FetchAsync(
+            ctx, Requests.Receipts(items: false, raw: true), CancellationToken.None);
+
+        Assert.NotEmpty(result.Receipts);
+        Assert.Equal(result.Receipts.Select(r => r.ExternalId).Order(StringComparer.Ordinal),
+            result.Raw.Keys.Order(StringComparer.Ordinal));
+
+        Assert.All(result.Raw.Values, payload => Assert.Contains("ticketType", payload, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// And asking for it does not quietly change the receipt itself.
+    /// </summary>
+    /// <remarks>
+    /// The detail rewrites the total, the store name and the timestamp, so
+    /// running that for a raw-only request would give one purchase two
+    /// different content hashes depending on which include a caller happened to
+    /// pass. Raw hands back what Lidl said; it does not alter what was read.
+    /// </remarks>
+    [Fact]
+    public async Task Asking_for_raw_does_not_change_the_receipt_it_came_with()
+    {
+        using var plain = Context(new StubHttpHandler(Route));
+        using var withRaw = Context(new StubHttpHandler(Route));
+
+        var without = await Adapter().FetchAsync(
+            plain, Requests.Receipts(items: false), CancellationToken.None);
+
+        var with = await Adapter().FetchAsync(
+            withRaw, Requests.Receipts(items: false, raw: true), CancellationToken.None);
+
+        Assert.Equal(
+            without.Receipts.Select(r => r.ContentHash),
+            with.Receipts.Select(r => r.ContentHash));
+    }
+}

@@ -1,0 +1,152 @@
+{
+  "transactions": [
+    {
+      "executionDate": "2026-08-03",
+      "amount": {
+        "currency": "EUR",
+        "value": "-1225.50"
+      },
+      "type": {
+        "id": "GT",
+        "description": "Online bankieren"
+      },
+      "subject": "V Oorbeeld",
+      "id": "010305900000000050000000",
+      "executionDateTime": "2026-08-03T09:14:02+02:00",
+      "transactionInitiationDateTime": "2026-08-03T08:02:11+02:00",
+      "iconId": "PAY-GT",
+      "counterAccount": {
+        "name": "V Oorbeeld",
+        "accountNumber": {
+          "type": "IBAN",
+          "value": "NL04BANK0000000002"
+        }
+      },
+      "subjectLines": [
+        "Naam: V Oorbeeld",
+        "Omschrijving: Huur augustus",
+        "IBAN: NL04BANK0000000002",
+        "Kenmerk: 500000000001",
+        "Valutadatum: 03-08-2026"
+      ],
+      "reservation": false,
+      "invoiceLinks": [],
+      "category": {
+        "code": "NL_R_HOU",
+        "description": "Wonen"
+      },
+      "endingBalance": {
+        "currency": "EUR",
+        "value": "-451"
+      },
+      "originalMemos": [
+        "Huur augustus"
+      ],
+      "_links": [
+        {
+          "rel": "pr_from_transaction",
+          "href": "/mb/payments/api/payment-requests"
+        },
+        {
+          "rel": "dispute",
+          "href": "/banking/money-refund?EW=true&transactionId=010305900000000050000000&date=20260803&productAgreementId=11111111-2222-3333-4444-555555555555"
+        }
+      ]
+    },
+    {
+      "executionDate": "2026-07-28",
+      "amount": {
+        "currency": "EUR",
+        "value": "-125.50"
+      },
+      "type": {
+        "id": "BA",
+        "description": "Betaalautomaat"
+      },
+      "subject": "TANKSTATION 0002",
+      "id": "010305900000000060000000",
+      "executionDateTime": "2026-07-28T09:14:02+02:00",
+      "transactionInitiationDateTime": "2026-07-28T08:02:11+02:00",
+      "iconId": "PAY-BA",
+      "counterAccount": {
+        "name": "TANKSTATION 0002",
+        "accountNumber": {
+          "type": "UNKNOWN",
+          "value": ""
+        }
+      },
+      "subjectLines": [
+        "TANKSTATION 0002",
+        "Kaartnr: 5100 **** **** 0001 ",
+        "Datum: 28-07-2026 ",
+        "Valutadatum: 28-07-2026"
+      ],
+      "reservation": false,
+      "invoiceLinks": [],
+      "category": {
+        "code": "NL_R_TRA",
+        "description": "Vervoer"
+      },
+      "endingBalance": {
+        "currency": "EUR",
+        "value": "774.5"
+      },
+      "_links": [
+        {
+          "rel": "pr_from_transaction",
+          "href": "/mb/payments/api/payment-requests"
+        },
+        {
+          "rel": "dispute",
+          "href": "/banking/money-refund?EW=true&transactionId=010305900000000060000000&date=20260728&productAgreementId=11111111-2222-3333-4444-555555555555"
+        }
+      ]
+    },
+    {
+      "executionDate": "2026-07-20",
+      "amount": {
+        "currency": "EUR",
+        "value": "1500.00"
+      },
+      "type": {
+        "id": "ST",
+        "description": "Storting"
+      },
+      "subject": "STORTING",
+      "id": "010305900000000070000000",
+      "executionDateTime": "2026-07-20T09:14:02+02:00",
+      "transactionInitiationDateTime": "2026-07-20T08:02:11+02:00",
+      "iconId": "PAY-ST",
+      "subjectLines": [
+        "STORTING",
+        "Valutadatum: 20-07-2026"
+      ],
+      "reservation": false,
+      "invoiceLinks": [],
+      "category": {
+        "code": "NL_R_INC",
+        "description": "Inkomsten"
+      },
+      "endingBalance": {
+        "currency": "EUR",
+        "value": "900"
+      },
+      "_links": [
+        {
+          "rel": "pr_from_transaction",
+          "href": "/mb/payments/api/payment-requests"
+        },
+        {
+          "rel": "dispute",
+          "href": "/banking/money-refund?EW=true&transactionId=010305900000000070000000&date=20260720&productAgreementId=11111111-2222-3333-4444-555555555555"
+        }
+      ]
+    }
+  ],
+  "availableBalance": {
+    "currency": "EUR",
+    "value": "-1230.01"
+  },
+  "_links": [],
+  "_messages": []
+}

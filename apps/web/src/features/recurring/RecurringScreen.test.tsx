@@ -839,7 +839,7 @@ describe('brand picker online search (user identity)', () => {
 
   it('keeps the vendored segment first when logo.dev hits arrive below it', async () => {
     await openPickerAndSearch({
-      'GET /health': () => ({ capabilities: { gocardless: false, logos: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+      'GET /health': () => ({ capabilities: { logos: true }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
       'GET /logos/search': () => [netflixRemote],
     });
 
@@ -859,7 +859,7 @@ describe('brand picker online search (user identity)', () => {
 
   it('says so when online search is unavailable and keeps the vendored set', async () => {
     await openPickerAndSearch({
-      'GET /health': () => ({ capabilities: { gocardless: false, logos: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
+      'GET /health': () => ({ capabilities: { logos: false }, protocol: CLIENT_PROTOCOL, minClientProtocol: 1 }),
     });
 
     await screen.findByTestId('brandpicker-offline-note', {}, { timeout: 3000 });

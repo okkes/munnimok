@@ -6,17 +6,7 @@ import type { ControlConfig } from './config';
 
 const CONFIG: ControlConfig = { apiUrl: 'http://api.test', logtoEndpoint: '', logtoAppId: '', logtoResource: '' };
 
-// every consent on the SHARED GoCardless account, from two environments
-// plus one whose redirect carried no usable origin
-const CONSENTS = [
-  { requisitionId: 'req-prod-00001', status: 'LN', institutionId: 'ING_NL', created: '2026-08-01T00:00:00Z', accountCount: 2, environmentOrigin: 'https://munni.example.com', ownedHere: false },
-  { requisitionId: 'req-here-00002', status: 'LN', institutionId: 'RABO_NL', created: '2026-08-10T00:00:00Z', accountCount: 1, environmentOrigin: 'http://localhost:8480', ownedHere: true },
-  { requisitionId: 'req-lost-00003', status: 'CR', institutionId: 'ASN_NL', created: null, accountCount: 0, environmentOrigin: null, ownedHere: false },
-];
-const QUOTA = [
-  { provider: 'gocardless', scope: 'accounts:transactions', limit: 4, remaining: 1, resetAtUtc: '2026-07-17T06:00:00Z', capturedAtUtc: '2026-07-16T06:00:00Z' },
-];
-const HEALTH = { status: 'ok', build: '640', capabilities: { gocardless: true, fcm: true, push: false } };
+const HEALTH = { status: 'ok', build: '640', capabilities: { connectors: true, fcm: true, push: false } };
 
 type Handler = (init?: RequestInit) => { status?: number; body?: unknown };
 
@@ -40,8 +30,15 @@ function scriptFetch(routes: Record<string, Handler>) {
 
 const HAPPY_ROUTES = (): Record<string, Handler> => ({
   'GET /control/ping': () => ({}),
-  'GET /control/consents': () => ({ body: CONSENTS }),
-  'GET /control/quota': () => ({ body: QUOTA }),
+  'GET /control/connectors/status': () => ({
+    body: {
+      service: { kinds: ['bank'], version: '1.0.0', manifestDigest: 'sha256-abcdef1234567890' },
+      providers: [{ providerId: 'gocardless', state: 'healthy', since: '2026-09-30T03:00:00Z', reasonKey: null, acceptsWork: true, quota: null }],
+      agents: { total: 1, online: 1, revoked: 0 },
+      queue: { queued: 0, running: 0, awaitingInput: 0 },
+      relay: { openStreams: 0 },
+    },
+  }),
   'GET /health': () => ({ body: HEALTH }),
 });
 
@@ -102,80 +99,94 @@ describe('ControlApp (test-auth mode)', () => {
     expect(localStorage.getItem('munni_control_device')).toBeNull();
   });
 
-  it('shows the cockpit nav and overview: totals per environment plus env health', async () => {
+  it('shows the cockpit nav and overview: the designated environment’s parties at a glance plus its health', async () => {
     const calls = scriptFetch(HAPPY_ROUTES());
     renderControl();
-    await screen.findByTestId('nav-quota');
+    await screen.findByTestId('nav-connectors');
     expect(screen.getByTestId('nav-overview')).toBeTruthy();
-    expect(screen.getByTestId('nav-connections')).toBeTruthy();
-    // the per-environment portal's screens do not exist here
+    // the per-environment portal's screens do not exist here, nor the retired consents and quota screens
     expect(screen.queryByTestId('nav-users')).toBeNull();
     expect(screen.queryByTestId('nav-catalog')).toBeNull();
+    expect(screen.queryByTestId('nav-connections')).toBeNull();
+    expect(screen.queryByTestId('nav-quota')).toBeNull();
 
     const tiles = await screen.findByTestId('control-tiles');
-    expect(tiles.textContent).toContain('3Consents');
-    expect(tiles.textContent).toContain('3Linked accounts'); // 2+1+0
-    expect(tiles.textContent).toContain('2Environments'); // unattributed is not an environment
-    const origins = screen.getByTestId('control-origins');
-    expect(origins.textContent).toContain('https://munni.example.com');
-    expect(origins.textContent).toContain('unattributed');
+    await waitFor(() => expect(tiles.textContent).toContain('1 / 1Parties accepting work'));
+    expect(tiles.textContent).toContain('1 / 1Agents online');
     expect(screen.getByTestId('control-health').textContent).toContain('build 640');
 
     // the cockpit talks to /control/* only — never the per-env admin surface
     expect(calls.some((c) => c.includes('/admin/'))).toBe(false);
   });
-
-  it('consents group by environment origin, mark this environment, and offer no delete', async () => {
-    scriptFetch(HAPPY_ROUTES());
-    renderControl();
-    fireEvent.click(await screen.findByTestId('nav-connections'));
-    await screen.findByText('Bank connections — all environments');
-
-    const prodGroup = await screen.findByTestId('control-group-https://munni.example.com');
-    expect(prodGroup.textContent).toContain('ING_NL');
-    expect(prodGroup.textContent).not.toContain('this environment');
-
-    const hereGroup = screen.getByTestId('control-group-http://localhost:8480');
-    expect(hereGroup.textContent).toContain('RABO_NL');
-    expect(hereGroup.textContent).toContain('this environment');
-
-    // no usable redirect origin -> the unattributed bucket
-    const lostGroup = screen.getByTestId('control-group-unattributed');
-    expect(lostGroup.textContent).toContain('ASN_NL');
-
-    // read-only: no selection checkboxes, no delete anywhere
-    expect(screen.queryAllByRole('checkbox')).toHaveLength(0);
-    expect(screen.queryByText(/Delete/)).toBeNull();
-
-    // the active screen survives the page reload a Logto re-auth causes
-    expect(sessionStorage.getItem('munni_control_screen')).toBe('connections');
-    cleanup();
-    renderControl();
-    await screen.findByText('Bank connections — all environments');
-  });
-
-  it('the quota screen serves the shared-account snapshots', async () => {
-    scriptFetch(HAPPY_ROUTES());
-    renderControl();
-    fireEvent.click(await screen.findByTestId('nav-quota'));
-    const table = await screen.findByTestId('control-quota');
-    expect(table.textContent).toContain('accounts:transactions');
-    expect(table.textContent).toContain('1 / 4');
-  });
-
-  it('empty shared account: placeholder rows instead of blank screens', async () => {
-    scriptFetch({
-      ...HAPPY_ROUTES(),
-      'GET /control/consents': () => ({ body: [] }),
-      'GET /control/quota': () => ({ body: [] }),
-    });
+  it('an environment without connectors shows empty tiles and no inventory, never a blank screen', async () => {
+    scriptFetch({ ...HAPPY_ROUTES(), 'GET /control/connectors/status': () => ({ status: 404 }) });
     renderControl();
     const tiles = await screen.findByTestId('control-tiles');
-    expect(tiles.textContent).toContain('0Consents');
-    fireEvent.click(screen.getByTestId('nav-connections'));
-    await screen.findByText(/No consents on the shared account yet/);
-    fireEvent.click(screen.getByTestId('nav-quota'));
-    expect((await screen.findByTestId('control-quota')).textContent).toContain('No snapshots yet');
+    expect(tiles.textContent).toContain('—');
+    expect(screen.getByTestId('control-health').textContent).toContain('build 640');
+  });
+
+  it('connectors: the designated environment’s parties with their budget, the fleet, and an aggregator’s inventory per environment — read-only (#367 M6, #414)', async () => {
+    const calls = scriptFetch({
+      ...HAPPY_ROUTES(),
+      'GET /control/connectors/status': () => ({
+        body: {
+          service: { kinds: ['bank', 'store'], version: '1.0.0', manifestDigest: 'sha256-abcdef1234567890' },
+          providers: [
+            { providerId: 'gocardless', state: 'healthy', since: '2026-09-30T03:00:00Z', reasonKey: null, acceptsWork: true, quota: { limit: 10, remaining: 2, resetAt: '2026-10-01T00:00:00Z', seenAt: '2026-09-30T03:05:00Z' } },
+            { providerId: 'ah', state: 'paused', since: '2026-09-29T10:00:00Z', reasonKey: 'connect.paused.maintenance', acceptsWork: false },
+          ],
+          agents: { total: 2, online: 1, revoked: 0 },
+          queue: { queued: 0, running: 1, awaitingInput: 0 },
+          relay: { openStreams: 0 },
+        },
+      }),
+      'GET /control/connectors/providers/gocardless/remote-consents': () => ({
+        body: {
+          consents: [
+            { id: 'req-prod-00001', status: 'LN', createdAt: '2026-08-01T00:00:00Z', institutionId: 'ING_NL', origin: 'https://munni.example.com', accountCount: 2 },
+            { id: 'req-here-00002', status: 'LN', createdAt: '2026-08-10T00:00:00Z', institutionId: 'RABO_NL', origin: 'http://localhost:8480', accountCount: 1 },
+            { id: 'req-lost-00003', status: 'CR', createdAt: null, institutionId: 'ASN_NL', origin: null, accountCount: 0 },
+          ],
+        },
+      }),
+    });
+    renderControl();
+    fireEvent.click(await screen.findByTestId('nav-connectors'));
+    const tiles = await screen.findByTestId('control-connectors-tiles');
+    expect(tiles.textContent).toContain('1 / 2');
+    const table = screen.getByTestId('control-connectors');
+    expect(table.textContent).toContain('ah');
+    expect(table.textContent).toContain('paused');
+    expect(table.textContent).toContain('connect.paused.maintenance');
+    // the budget: two of ten calls left, nearly spent (a fifth or less)
+    const quota = screen.getByTestId('control-quota-gocardless');
+    expect(quota.textContent).toContain('2 / 10');
+    expect(quota.className).toContain('warn');
+    // read-only: no kill switch here — the one button opens the inventory
+    expect([...table.querySelectorAll('button')].every((b) => b.textContent === 'inventory')).toBe(true);
+
+    // the aggregator's consents, grouped per environment; this cockpit never revokes
+    fireEvent.click(screen.getByTestId('control-inventory-gocardless'));
+    const prodGroup = await screen.findByTestId('control-group-https://munni.example.com');
+    expect(prodGroup.textContent).toContain('ING_NL');
+    expect(prodGroup.textContent).toContain('2 accounts');
+    expect(screen.getByTestId('control-group-http://localhost:8480').textContent).toContain('RABO_NL');
+    expect(screen.getByTestId('control-group-unattributed').textContent).toContain('ASN_NL');
+    expect(screen.queryAllByRole('button', { name: /revoke/i })).toHaveLength(0);
+    expect(calls.some((c) => c.includes('/admin/'))).toBe(false);
+
+    // the active screen survives the page reload a Logto re-auth causes
+    expect(sessionStorage.getItem('munni_control_screen')).toBe('connectors');
+    cleanup();
+    renderControl();
+    await screen.findByTestId('control-connectors-tiles');
+  });
+  it('connectors: an environment without connectors says so', async () => {
+    scriptFetch({ ...HAPPY_ROUTES(), 'GET /control/connectors/status': () => ({ status: 404 }) });
+    renderControl();
+    fireEvent.click(await screen.findByTestId('nav-connectors'));
+    expect((await screen.findByTestId('control-connectors-note')).textContent).toContain('runs no connectors');
   });
 
   it('typing a sub persists it and sends it as X-User-Sub, with a stable device id', async () => {

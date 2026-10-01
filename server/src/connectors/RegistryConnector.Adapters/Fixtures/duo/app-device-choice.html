@@ -1,0 +1,42 @@
+<!--
+  DigiD's "Op welk apparaat staat uw DigiD app?" screen, captured live on
+  2026-08-11 from login.digid.nl/inloggen_app.
+
+  Structure verbatim. Nothing is redacted because there is nothing to redact:
+  the page names no account. The surrounding chrome and a session countdown
+  clock are trimmed, and that clock was the only run-specific value on it.
+
+  THIS SCREEN ONLY EXISTS ON A PHONE, which is why three earlier captures
+  missed it. DigiD does not ask a desktop whether the app is on this device -
+  a desktop obviously is not a phone, so it goes straight on. The agent runs
+  Pixel 5 (ConnectorAgentOptions.BrowserDevice, applied by JobRunner to every
+  manifest that does not set DesktopBrowser, and DUO does not), so this screen
+  is what a real DUO app login meets and the desktop captures were of a
+  browser the agent never runs.
+
+  THE TWO TILES MUST NEVER BE CONFUSED. "Op dit apparaat" hands off to
+  inloggen_app_web_to_app, which asks the operating system to open the DigiD
+  app - on the agent's browser there is no DigiD app, no operating system
+  anybody can reach, and nothing to come back. A login that takes that tile
+  stops dead with no error. The selector is anchored on the href for exactly
+  that reason: `confirm=true` names the other tile and cannot drift onto this
+  one the way a text match could.
+-->
+<h2 class='orange_heading'>Op welk apparaat staat uw DigiD app?</h2>
+<div class='app-login margin-top-8px' id='app-login'>
+  <div class='app-device-icons'>
+    <a class='login_tile highlighted smartphone open_app_on_device' href='https://login.digid.nl/inloggen_app_web_to_app'>
+      <h2>
+        <span>Op dit apparaat</span>
+      </h2>
+      <i class="icon-3941-delta-links-24px right" aria-label="3941-delta-links- icoon"></i>
+    </a>
+    <a class='login_tile smartphone' href='https://login.digid.nl/inloggen_app?confirm=true'>
+      <h2>
+        <span>Op een ander mobiel apparaat</span>
+      </h2>
+      <i class="icon-3941-delta-links-24px right" aria-label="3941-delta-links- icoon"></i>
+    </a>
+  </div>
+</div>
+<div class="actions"><a action="previous" arrow="true" css_type="button" role="button" class="actions__left--button arrow" href="https://login.digid.nl/inloggen">Vorige</a> </div>

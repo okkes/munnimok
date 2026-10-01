@@ -28,7 +28,7 @@ writeFileSync(join(PLATFORMS, 'lcl', 'envs', 'prod.json'), JSON.stringify({ env:
 
 const { createApp, OPERATOR_NAMES, toolFor, LCL_STACKS, lanCandidates, caListingHasFingerprint, staleCaddyRoots } = await import('../setup/serve.mjs');
 const { loadLocalValues, saveLocalValues, loadWizardStore } = await import('../modules/localstore.mjs');
-const { loadStack, loadEnv, platformEnvs, saveEnv } = await import('../modules/stack.mjs');
+const { loadStack, loadEnv, platformEnvs, removeEnv, saveEnv } = await import('../modules/stack.mjs');
 
 test.after(() => { if (process.env.MUNNI_KEEP_SCRATCH) console.log(`scratch kept at ${SCRATCH}`); else rmSync(SCRATCH, { recursive: true, force: true }); });
 
@@ -176,7 +176,7 @@ test('envs: an unknown platform, a bad or reserved name and a duplicate are refu
 
 test('envs: an lcl environment takes the next slot, normalized features, and is rendered right away (bootstrap --stack)', async () => {
   runs.length = 0;
-  const res = await post(app, '/api/envs', { platform: 'lcl', env: 'test', channel: 'latest', appChannel: 'staging', label: ' Test ', features: { android: true, telemetry: false, banking: ['gocardless', 'bogus'], signin: ['apple'], nope: true }, androidPackage: 'app.munni.lcl.testing' });
+  const res = await post(app, '/api/envs', { platform: 'lcl', env: 'test', channel: 'latest', appChannel: 'staging', label: ' Test ', features: { android: true, telemetry: false, connectors: true, banking: ['gocardless', 'bogus'], signin: ['apple'], nope: true }, androidPackage: 'app.munni.lcl.testing' });
   assert.equal(res.statusCode, 200);
   assert.equal(runs.length, 1, 'the render runs at once');
   assert.equal(runs[0].cmd, process.execPath);
@@ -198,7 +198,7 @@ test('envs: an lcl environment takes the next slot, normalized features, and is 
 
 test('envs: a nas environment answers with its stack + GitHub environment names — the pipeline renders it, not the helper', async () => {
   runs.length = 0;
-  const res = await post(app, '/api/envs', { platform: 'nas', env: 'prod', channel: 'latest', features: { android: true, ios: true, banking: ['gocardless'], signin: ['google'] } });
+  const res = await post(app, '/api/envs', { platform: 'nas', env: 'prod', channel: 'latest', features: { android: true, ios: true, connectors: true, banking: ['gocardless'], signin: ['google'] } });
   assert.equal(res.statusCode, 200);
   const body = res.json();
   assert.equal(body.ok, true);
@@ -398,7 +398,8 @@ test('nas-probe: refuses a bad domain and a docker platform; every host names th
   assert.equal(shared.pgadmin.state, 'no-rule', 'DSM\'s /webman/ path is its portal');
   assert.equal(shared.vault.state, 'no-dns');
   assert.equal(shared.control.state, 'up');
-  assert.equal(body.summary.hosts, 9);
+  assert.equal(prod.connector.state, 'up', 'the control plane host joins the probe when the environment runs connectors (#414: a bank party needs it)');
+  assert.equal(body.summary.hosts, 10);
   assert.equal(body.summary.dns, false);
   assert.equal(body.summary.certificate, false);
   assert.ok(body.summary.rulesMissing >= 3);
@@ -760,4 +761,153 @@ test('app links: the Play app-signing fingerprint is validated and saved into th
   const none = (await call(live, { url: '/api/local/app-links?stack=munni-nas-prod' })).json();
   assert.equal(none.android.state, 'no-fingerprint');
   await post(app, '/api/wizard/values', { values: { APPLE_TEAM_ID: '' }, platform: 'nas' });
+});
+
+test('app links: the Digital Asset Links JSON snippet is accepted whole — its fingerprints are the app signing key\'s; JSON without them or broken JSON is refused with the reason', async () => {
+  const fp = 'D4:78:00:15:57:04:9A:98:65:B2:F2:BA:68:1D:AD:C6:D0:2E:26:1E:40:E5:A7:01:53:59:68:61:0A:66:6C:00';
+  const snippet = JSON.stringify([{ relation: ['delegate_permission/common.handle_all_urls'], target: { namespace: 'android_app', package_name: 'app.munni.nas.prod', sha256_cert_fingerprints: [fp.toLowerCase()] } }], null, 2);
+  const saved = await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: snippet });
+  assert.match(saved.text(), /fingerprint saved for prod/);
+  assert.equal(loadEnv('nas', 'prod').store.androidCertSha256, fp);
+  const noFp = await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: '[{"target":{"package_name":"x"}}]' });
+  assert.equal(noFp.statusCode, 400);
+  assert.match(noFp.json().error, /sha256_cert_fingerprints/);
+  const broken = await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: '[{"target": ' });
+  assert.equal(broken.statusCode, 400);
+  assert.match(broken.json().error, /not valid JSON/);
+  await post(app, '/api/envs/app-links', { platform: 'nas', env: 'prod', androidCertSha256: '' });
+});
+
+/* ── what runs vs what is configured ── */
+test('envs/pending (nas): read back through git against the commit the last run checked out — nothing, a feature switched on (Bootstrap), the fingerprint alone (Deploy), an unsaved edit (commit first), a commit this checkout lacks', async () => {
+  const fp = 'D4:78:00:15:57:04:9A:98:65:B2:F2:BA:68:1D:AD:C6:D0:2E:26:1E:40:E5:A7:01:53:59:68:61:0A:66:6C:00';
+  const now = loadEnv('nas', 'prod');
+  const platformRaw = readFileSync(join(PLATFORMS, 'nas', 'platform.json'), 'utf8');
+  const gitApp = (script) => createApp({
+    token: 'tok',
+    spawnImpl: scriptedSpawn([], (n, args) => {
+      if (args[0] === 'status') return script.status ?? '';
+      if (args[0] === 'rev-parse') return 'headsha\n';
+      if (args[0] === 'log') return script.log ?? '';
+      if (args[0] === 'show') return args[1].endsWith('platform.json') ? platformRaw : JSON.stringify(script.envThen ?? now);
+      return '';
+    }, (n, args) => (args[0] === 'log' && script.unknown ? 128 : 0)),
+  });
+  const ask = async (a, sha = 'deployedsha') => (await post(a, '/api/envs/pending', { platform: 'nas', stacks: { 'munni-nas-prod': { sha }, 'munni-nas-shared': { sha }, 'munni-lcl-prod': { sha } } })).json().stacks;
+  const clean = await ask(gitApp({}));
+  assert.deepEqual(Object.keys(clean).sort(), ['munni-nas-prod', 'munni-nas-shared'], 'a stack of another platform is ignored');
+  assert.equal(clean['munni-nas-prod'].needs, null);
+  assert.deepEqual(clean['munni-nas-prod'].changes, []);
+  assert.equal(clean['munni-nas-prod'].head, 'headsha');
+  assert.equal(clean['munni-nas-shared'].needs, null);
+  // the run saw connectors off; the branch has it on (a settings commit after the run)
+  const log = 'abc123\x1f2026-09-30T08:00:00Z\x1fchore(platforms): nas environment prod settings\n';
+  saveEnv('nas', { ...now, features: { ...now.features, connectors: true } });
+  const on = (await ask(gitApp({ log, envThen: { ...now, features: { ...now.features, connectors: false } } })))['munni-nas-prod'];
+  assert.deepEqual(on.changes, ['features.connectors: off → on']);
+  assert.equal(on.needs, 'bootstrap');
+  assert.equal(on.then, null);
+  assert.deepEqual(on.commits, [{ sha: 'abc123', at: '2026-09-30T08:00:00Z', subject: 'chore(platforms): nas environment prod settings' }]);
+  // the fingerprint alone: Deploy republishes the rendered files
+  saveEnv('nas', { ...now, store: { ...now.store, androidCertSha256: fp } });
+  const fpOnly = (await ask(gitApp({ log, envThen: now })))['munni-nas-prod'];
+  assert.deepEqual(fpOnly.changes, ['store.androidCertSha256: none → D4:78:00:15…']);
+  assert.equal(fpOnly.needs, 'deploy');
+  // the same edit not yet on the branch: commit first, then what it needs
+  const unsaved = (await ask(gitApp({ status: ' M infra/platforms/nas/envs/prod.json\n', envThen: now })))['munni-nas-prod'];
+  assert.equal(unsaved.uncommitted, true);
+  assert.equal(unsaved.needs, 'commit');
+  assert.equal(unsaved.then, 'deploy');
+  // no run yet and nothing unsaved: nothing to say (the checklist's Bootstrap item covers it)
+  const fresh = (await ask(gitApp({ envThen: now }), null))['munni-nas-prod'];
+  assert.equal(fresh.needs, null);
+  assert.equal(fresh.applied, null);
+  // the run's commit is not in this checkout: say so rather than guess
+  const unknown = (await ask(gitApp({ unknown: true })))['munni-nas-prod'];
+  assert.equal(unknown.unknown, true);
+  assert.equal(unknown.needs, null);
+  saveEnv('nas', now);
+});
+
+test('envs/pending (lcl): the config a stack was last started with is stamped when it comes up, and only then; a later edit says Re-run setup', async () => {
+  // its own environment: the wipe test above has taken the earlier ones down
+  saveEnv('lcl', { env: 'pend', slot: 7, channel: 'dev', features: { android: true, banking: ['gocardless'], signin: ['google'] } });
+  const stack = 'munni-lcl-pend';
+  const stamped = join(RENDER, stack, 'applied.json');
+  rmSync(stamped, { force: true });
+  const ask = async (a) => (await post(a, '/api/envs/pending', { platform: 'lcl', stacks: { [stack]: {}, 'munni-lcl-shared': {} } })).json().stacks;
+  const never = await ask(app);
+  assert.equal(never[stack].never, true);
+  assert.equal(never[stack].needs, null);
+  // a failed start stamps nothing
+  const failing = createApp({ token: 'tok', runImpl: (res) => { res.writeHead(200, {}); res.end('[exit 1]\n'); return { code: 1 }; } });
+  await post(failing, '/api/local/tool', { tool: `${stack}:up` });
+  assert.equal(existsSync(stamped), false);
+  const up = createApp({ token: 'tok', runImpl: (res) => { res.writeHead(200, {}); res.end('[exit 0]\n'); return { code: 0 }; } });
+  const started = await post(up, '/api/local/tool', { tool: `${stack}:up` });
+  assert.equal(started.statusCode, 200, started.text());
+  assert.equal(existsSync(stamped), true);
+  const applied = JSON.parse(readFileSync(stamped, 'utf8'));
+  assert.equal(applied.config.env, 'pend');
+  assert.equal(applied.config.platform.platform, 'lcl');
+  assert.equal(applied.config.platform.file, undefined, 'the file path is not config');
+  const same = await ask(up);
+  assert.equal(same[stack].needs, null);
+  assert.deepEqual(same[stack].changes, []);
+  const before = loadEnv('lcl', 'pend');
+  saveEnv('lcl', { ...before, features: { ...before.features, logos: true, banking: ['gocardless', 'enablebanking'] } });
+  const edited = await ask(up);
+  assert.equal(edited[stack].needs, 'setup');
+  assert.deepEqual(edited[stack].changes, ['features.banking: gocardless → gocardless, enablebanking', 'features.logos: off → on']);
+  assert.equal(typeof edited[stack].applied.at, 'string');
+  removeEnv('lcl', 'pend');
+  rmSync(stamped, { force: true });
+});
+test('envs: a bank party without the control plane is refused — on creation and on a settings change — and the refusal says why (#414)', async () => {
+  const created = await post(app, '/api/envs', { platform: 'nas', env: 'acc', channel: 'latest', features: { banking: ['gocardless'], connectors: false } });
+  assert.equal(created.statusCode, 400);
+  assert.match(created.json().error, /gocardless is a party of the connector platform/);
+  assert.equal(platformEnvs('nas').some((e) => e.env === 'acc'), false, 'nothing written');
+  // with the control plane ticked the same environment is fine
+  const ok = await post(app, '/api/envs', { platform: 'nas', env: 'acc', channel: 'latest', features: { banking: ['gocardless', 'enablebanking'], connectors: true } });
+  assert.equal(ok.statusCode, 200);
+  // the control plane check of a nas stack borrows the platform's domain from the wizard's store (it used to refuse with "PLATFORM_DOMAIN is not set")
+  const probe = await call(app, { url: '/api/connector-probe?stack=munni-nas-acc' });
+  assert.equal(probe.statusCode, 200, probe.body);
+  assert.match(probe.json().url, /^https:\/\/munni-acc-nas-connector\.[^/]+\/v1\/health$/);
+  assert.equal(probe.json().ok, false, 'no network in tests: the probe answers honestly instead of throwing');
+  // a settings change that would untick the control plane while a bank stays is refused the same way, and changes nothing
+  const changed = await post(app, '/api/envs/update', { platform: 'nas', env: 'acc', features: { connectors: false } });
+  assert.equal(changed.statusCode, 400);
+  assert.match(changed.json().error, /gocardless and enablebanking are parties/);
+  assert.equal(loadEnv('nas', 'acc').features.connectors, true);
+  // dropping the banks first is the way out
+  const dropped = await post(app, '/api/envs/update', { platform: 'nas', env: 'acc', features: { banking: [], connectors: false } });
+  assert.equal(dropped.statusCode, 200);
+  removeEnv('nas', 'acc');
+});
+test('helper state: /api/status says when the helper’s code moved on disk; the restart route calls the restart hook (#414 follow-up, 2026-10-01)', async () => {
+  const { utimesSync, statSync: stat } = await import('node:fs');
+  const serveFile = fileURLToPath(new URL('../setup/serve.mjs', import.meta.url));
+  const before = stat(serveFile);
+  let restarted = 0;
+  const app2 = createApp({ token: 'tok', probeImpl: async () => false, restartImpl: () => { restarted += 1; } });
+  const fresh = (await call(app2, { url: '/api/status' })).json();
+  assert.equal(fresh.helper.codeChanged, false, 'the running code is the code on disk');
+  assert.ok(fresh.helper.startedAt);
+  try {
+    utimesSync(serveFile, before.atime, new Date(before.mtimeMs + 5000));
+    const moved = (await call(app2, { url: '/api/status' })).json();
+    assert.equal(moved.helper.codeChanged, true, 'a pull moved the file: the page can say so');
+  } finally {
+    utimesSync(serveFile, before.atime, before.mtime);
+  }
+  const res = await post(app2, '/api/helper/restart', {});
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json().restarting, true);
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  assert.equal(restarted, 1, 'the hook ran once, after the answer went out');
+  // without a hook (tests, embedded use) the route still answers, honestly
+  const bare = await post(createApp({ token: 'tok', probeImpl: async () => false }), '/api/helper/restart', {});
+  assert.equal(bare.json().restarting, false);
 });

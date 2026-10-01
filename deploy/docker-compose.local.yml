@@ -25,10 +25,6 @@ services:
       Auth__Audience: http://localhost:8180
       Cors__Origins__0: http://localhost:5173
       Cors__Origins__1: http://localhost:5175
-      GoCardless__SecretId: ${GOCARDLESS_SECRET_ID:-}
-      GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY:-}
-      EnableBanking__ApplicationId: ${ENABLEBANKING_APPLICATION_ID:-}
-      EnableBanking__PrivateKeyPem: ${ENABLEBANKING_PRIVATE_KEY_PEM:-}
       Push__VapidPublicKey: ${PUSH_VAPID_PUBLIC_KEY:-}
       Push__VapidPrivateKey: ${PUSH_VAPID_PRIVATE_KEY:-}
       Push__Subject: ${PUSH_VAPID_SUBJECT:-mailto:admin@localhost}
@@ -37,6 +33,11 @@ services:
       Ocr__BaseUrl: http://ocr:8884
       ImportWatch__Path: /import-watch
       ImportWatch__OwnerSub: ${IMPORT_WATCH_OWNER_SUB:-}
+      # the connector relay (#367) against the local control plane below:
+      # the development key instead of a machine token, a fixed salt
+      Connectors__BaseUrl: http://connector:8080/
+      Connectors__DevKey: localtest-connector-key
+      Connectors__SubjectSalt: localtest-subject-salt
     ports:
       - "8180:8080"
     volumes:
@@ -46,6 +47,39 @@ services:
         condition: service_healthy
       logto:
         condition: service_started
+      connector:
+        condition: service_started
+
+  # the connector control plane (#367, docs/connectors/deploy.md) in
+  # Development mode: Sqlite inside the container, the shared dev key,
+  # every pack with its mock providers — so the Connections hub has a
+  # catalogue to show and a mock store to sign in to. Real parties need
+  # a browser agent, which the local stack does not run.
+  connector:
+    restart: unless-stopped
+    build:
+      context: ../server
+      dockerfile: src/connectors/Connector.Api/Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      # the image publishes without appsettings.Development.json (it is a
+      # dotnet-run convenience), so development mode and the Sqlite file are
+      # said here: production mode refuses to start without a bundle key
+      # ring, an OIDC authority and an enrollment key, which the local loop
+      # mints in memory instead (a restart invalidates every bundle — right
+      # locally). /tmp because the image runs as the unprivileged app user.
+      Connector__Mode: Development
+      Connector__Database__Provider: Sqlite
+      Connector__Database__ConnectionString: Data Source=/tmp/connector.db
+      Connector__Auth__SharedSecret: localtest-connector-key
+      # the operator's aggregator accounts (#414): the parties exist only when these are set
+      BankAdapters__GoCardless__SecretId: ${GOCARDLESS_SECRET_ID:-}
+      BankAdapters__GoCardless__SecretKey: ${GOCARDLESS_SECRET_KEY:-}
+      BankAdapters__EnableBanking__ApplicationId: ${ENABLEBANKING_APPLICATION_ID:-}
+      BankAdapters__EnableBanking__PrivateKeyPem: ${ENABLEBANKING_PRIVATE_KEY_PEM:-}
+    ports:
+      - "8187:8080"
 
   # receipt-photo OCR sidecar (receipts design): internal-only, stateless
   ocr:

@@ -120,7 +120,6 @@ export async function apiFetch(
 }
 
 export interface ApiCapabilities {
-  gocardless: boolean;
   push?: boolean;
   vapidPublicKey?: string;
   /** logo.dev brand search proxy configured server-side */
@@ -145,7 +144,7 @@ export async function getApiCapabilities(): Promise<ApiCapabilities> {
   const identity = readSessionIdentity();
   // offline identities get the "no server features" answer without a
   // network call — and without caching it, in case a user signs in later
-  if (identity && identity.kind !== 'user') return { gocardless: false };
+  if (identity && identity.kind !== 'user') return {};
   try {
     const res = await fetch(`${config.apiUrl}/health`, { signal: AbortSignal.timeout(3000) });
     // the handshake fields are the server's contract (lib/protocol.ts)
@@ -155,11 +154,11 @@ export async function getApiCapabilities(): Promise<ApiCapabilities> {
       minClientProtocol: number;
     };
     protocolIssue = protocolIssueFor(body);
-    capabilities = body.capabilities ?? { gocardless: false };
+    capabilities = body.capabilities ?? {};
     return capabilities;
   } catch {
     // transient failure (booted offline, radio still asleep): answer "no
     // features" but do NOT cache it — the next caller gets a fresh try
-    return { gocardless: false };
+    return {};
   }
 }
