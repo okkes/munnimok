@@ -378,10 +378,10 @@ public sealed class AgentHost : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            // The ordinary cadence unless the beat fails, in which case the
-            // next one is owed much sooner than the interval - see
+            // The ordinary cadence (Absorb) unless the beat fails, in which
+            // case the next one is owed much sooner than the interval - see
             // HeartbeatRetryDelay.
-            var next = _heartbeatInterval;
+            TimeSpan next;
 
             try
             {
