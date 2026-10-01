@@ -84,6 +84,13 @@ function editedVsSeed(
 
 /** #348: manual accounts delete — the cash wallet included; the other
  *  defaults are the space's fixtures. S3776. */
+/** #413: the weight chips read light … heavy at the ends and the number between */
+const stressLabel = (t: (key: 'debtplan.stress1' | 'debtplan.stress5') => string, level: number): string => {
+  if (level === 1) return t('debtplan.stress1');
+  if (level === 5) return t('debtplan.stress5');
+  return String(level);
+};
+
 const deletableAccount = (manual: boolean, defaultFor?: string): boolean =>
   manual && (!defaultFor || defaultFor === 'cash');
 
@@ -347,7 +354,7 @@ export function EditAccountSheet({ account, onClose }: Readonly<{ account: Accou
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   {[1, 2, 3, 4, 5].map((level) => (
                     <Chip key={level} selected={stress === level} onClick={() => setStress(stress === level ? 0 : level)} testId={`acctedit-stress-${level}`} className="px-2.5">
-                      {level === 1 ? t('debtplan.stress1') : level === 5 ? t('debtplan.stress5') : String(level)}
+                      {stressLabel(t, level)}
                     </Chip>
                   ))}
                 </div>

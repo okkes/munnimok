@@ -103,6 +103,57 @@ interface Live {
   paidOffMonth: number | null;
 }
 
+const monthlyInterest = (balance: number, aprPct: number) => Math.round((balance * aprPct) / 100 / 12);
+
+/** one month's interest on the opening balances and every live debt's own minimum; returns what the minimums leave for the pool */
+function accrueAndPayMinimums(live: Live[], rollover: boolean): number {
+  let freed = 0;
+  for (const l of live) {
+    const minimum = Math.max(0, l.debt.minMonthlyCents);
+    if (l.balance <= 0) {
+      // a debt already gone: its minimum keeps flowing into the plan
+      if (rollover) freed += minimum;
+      continue;
+    }
+    const accrued = monthlyInterest(l.balance, l.debt.aprPct);
+    l.balance += accrued;
+    l.interest += accrued;
+    const pay = Math.min(l.balance, minimum);
+    l.balance -= pay;
+    l.paid += pay;
+    if (rollover) freed += minimum - pay;
+  }
+  return freed;
+}
+
+/** the pool hits the first debt of the order that still owes, then the next */
+function spendPool(live: Live[], pool: number): void {
+  let left = pool;
+  for (const l of live) {
+    if (left <= 0) break;
+    if (l.balance <= 0) continue;
+    const pay = Math.min(l.balance, left);
+    l.balance -= pay;
+    l.paid += pay;
+    left -= pay;
+  }
+}
+
+function markPaidOff(live: Live[], month: number): void {
+  for (const l of live) {
+    if (l.balance <= 0 && l.paidOffMonth === null) l.paidOffMonth = month;
+  }
+}
+
+const outcomeOf = (l: Live, index: number): DebtOutcome => ({
+  id: l.debt.id,
+  paidOffMonth: l.paidOffMonth,
+  interestCents: l.interest,
+  paidCents: l.paid,
+  order: index + 1,
+  stuck: l.paidOffMonth === null && Math.max(0, l.debt.minMonthlyCents) <= monthlyInterest(l.debt.balanceCents, l.debt.aprPct),
+});
+
 /** walk the months */
 export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): PlanResult {
   const rollover = options.rollover ?? true;
@@ -119,53 +170,21 @@ export function simulatePlan(debts: readonly PlanDebt[], options: PlanOptions): 
   while (total() > 0 && month < horizon) {
     month += 1;
     const before = total();
-    let pool = rollover ? extra + (month === 1 ? lump : 0) : month === 1 ? lump : 0;
-    for (const l of live) {
-      if (l.balance <= 0) {
-        // a debt already gone: its minimum keeps flowing into the plan
-        if (rollover) pool += Math.max(0, l.debt.minMonthlyCents);
-        continue;
-      }
-      const accrued = Math.round((l.balance * l.debt.aprPct) / 100 / 12);
-      l.balance += accrued;
-      l.interest += accrued;
-      const minimum = Math.max(0, l.debt.minMonthlyCents);
-      const pay = Math.min(l.balance, minimum);
-      l.balance -= pay;
-      l.paid += pay;
-      if (rollover) pool += minimum - pay;
-    }
-    for (const l of live) {
-      if (pool <= 0) break;
-      if (l.balance <= 0) continue;
-      const pay = Math.min(l.balance, pool);
-      l.balance -= pay;
-      l.paid += pay;
-      pool -= pay;
-    }
-    for (const l of live) {
-      if (l.balance <= 0 && l.paidOffMonth === null) l.paidOffMonth = month;
-    }
+    const pool = (month === 1 ? lump : 0) + extra + accrueAndPayMinimums(live, rollover);
+    spendPool(live, pool);
+    markPaidOff(live, month);
     const after = total();
     balances.push(after);
     // nothing shrinks for a year: the payments do not beat the interest — stop pretending
     flat = after >= before ? flat + 1 : 0;
     if (flat >= 12) break;
   }
-  const done = total() <= 0;
   return {
-    months: done ? month : null,
+    months: total() <= 0 ? month : null,
     totalInterestCents: live.reduce((sum, l) => sum + l.interest, 0),
     totalPaidCents: live.reduce((sum, l) => sum + l.paid, 0),
     balances,
-    debts: live.map((l, i) => ({
-      id: l.debt.id,
-      paidOffMonth: l.paidOffMonth,
-      interestCents: l.interest,
-      paidCents: l.paid,
-      order: i + 1,
-      stuck: l.paidOffMonth === null && Math.max(0, l.debt.minMonthlyCents) <= Math.round((l.debt.balanceCents * l.debt.aprPct) / 100 / 12),
-    })),
+    debts: live.map((l, i) => outcomeOf(l, i)),
     minimumsCents: minimums,
   };
 }
