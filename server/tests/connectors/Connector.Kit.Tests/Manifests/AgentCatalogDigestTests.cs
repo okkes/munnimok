@@ -20,6 +20,8 @@ namespace Connector.Kit.Tests;
 /// </summary>
 public sealed class AgentCatalogDigestTests
 {
+    private static readonly string[] AgentServedIds = ["bank", "shop"];
+
     private static ProviderManifest Browser(string id, params string[] includeValues) => Make.Manifest() with
     {
         Id = id,
@@ -87,7 +89,7 @@ public sealed class AgentCatalogDigestTests
 
         var served = ProviderRegistry.AgentServed([Inline("aggregator"), Browser("shop"), household]);
 
-        Assert.Equal(new[] { "bank", "shop" }, served.Select(m => m.Id).ToArray());
+        Assert.Equal(AgentServedIds, served.Select(m => m.Id).ToArray());
     }
 
     private sealed class StubAdapter(ProviderManifest manifest) : IProviderAdapter
