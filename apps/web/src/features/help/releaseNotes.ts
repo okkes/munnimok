@@ -18,8 +18,8 @@ export interface WhatsNewEntry {
 
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
-    version: '4.2.0',
-    date: '2026-09-29',
+    version: '5.0.0',
+    date: '2026-10-01',
     items: [
       {
         en: 'Open banking joins Connections: GoCardless and Enable Banking are parties in the catalogue now. Pick the country and your bank from the list (logos included), give permission on the bank’s own page and land back in munni with the connection made and named. The Connect door on the accounts screen leads there, and the old bank connections sheet in Settings is gone.',
