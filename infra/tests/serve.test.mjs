@@ -881,3 +881,28 @@ test('envs: a bank party without the control plane is refused — on creation an
   assert.equal(dropped.statusCode, 200);
   removeEnv('nas', 'acc');
 });
+test('helper state: /api/status says when the helper’s code moved on disk; the restart route calls the restart hook (#414 follow-up, 2026-10-01)', async () => {
+  const { utimesSync, statSync: stat } = await import('node:fs');
+  const serveFile = fileURLToPath(new URL('../setup/serve.mjs', import.meta.url));
+  const before = stat(serveFile);
+  let restarted = 0;
+  const app2 = createApp({ token: 'tok', probeImpl: async () => false, restartImpl: () => { restarted += 1; } });
+  const fresh = (await call(app2, { url: '/api/status' })).json();
+  assert.equal(fresh.helper.codeChanged, false, 'the running code is the code on disk');
+  assert.ok(fresh.helper.startedAt);
+  try {
+    utimesSync(serveFile, before.atime, new Date(before.mtimeMs + 5000));
+    const moved = (await call(app2, { url: '/api/status' })).json();
+    assert.equal(moved.helper.codeChanged, true, 'a pull moved the file: the page can say so');
+  } finally {
+    utimesSync(serveFile, before.atime, before.mtime);
+  }
+  const res = await post(app2, '/api/helper/restart', {});
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.json().restarting, true);
+  await new Promise((resolve) => setTimeout(resolve, 350));
+  assert.equal(restarted, 1, 'the hook ran once, after the answer went out');
+  // without a hook (tests, embedded use) the route still answers, honestly
+  const bare = await post(createApp({ token: 'tok', probeImpl: async () => false }), '/api/helper/restart', {});
+  assert.equal(bare.json().restarting, false);
+});

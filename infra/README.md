@@ -11,7 +11,7 @@ hands everything to GitHub Actions — which builds the images and the
 phone apps for every platform and deploys the NAS.
 
 ```
-infra/setup/index.html + serve.mjs   the wizard page + its local helper (node infra/setup/serve.mjs, or start.cmd)
+infra/setup/index.html + serve.mjs   the wizard page + its local helper (node infra/setup/serve.mjs, or start.cmd); a pull that moves serve.mjs leaves the running helper on the old code — the page says so at the top and restarts it on a click (automatic updates do it by themselves)
 infra/platforms/<p>/platform.json    the platform (delivery, registry, published path, control environment)
 infra/platforms/<p>/envs/<env>.json  one environment (slot, channel, features, store ids)
 infra/secrets.manifest.json          every secret: owner (generated | operator | module), scope (env | platform | stack | wizard), feature

@@ -21,7 +21,7 @@
  */
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { randomBytes, X509Certificate } from 'node:crypto';
 import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -188,6 +188,18 @@ function platformsView() {
   }));
 }
 
+/* ── the helper's own code: a pull that moved this file leaves the running process on the old version ──
+   (a stale helper silently drops features it does not know — the connectors tick of 2026-10-01 — and
+   answers 404 to routes the newer page asks for; the page shows the state and restarts it on a click) */
+const SERVE_FILE = fileURLToPath(import.meta.url);
+const STARTED_AT = new Date().toISOString();
+const CODE_STAMP = statSync(SERVE_FILE).mtimeMs;
+export const helperState = () => {
+  let codeChanged = false;
+  try { codeChanged = statSync(SERVE_FILE).mtimeMs !== CODE_STAMP; } catch { /* the file is gone: nothing to compare against */ }
+  return { startedAt: STARTED_AT, codeChanged };
+};
+
 async function statusEndpoint(res, probeImpl) {
   const docker = await new Promise((resolve) => {
     const c = spawn('docker', ['version', '--format', '{{.Server.Version}}'], { shell: false });
@@ -207,6 +219,7 @@ async function statusEndpoint(res, probeImpl) {
   const store = loadWizardStore();
   return json(res, 200, {
     docker,
+    helper: helperState(),
     stacks,
     platforms: platformsView(),
     wizardStored: { machine: Object.keys(store.machine).filter((k) => store.machine[k]), platforms: Object.fromEntries(Object.entries(store.platforms).map(([p, v]) => [p, Object.keys(v).filter((k) => v[k])])) },
@@ -2006,6 +2019,8 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
   const url = (req) => new URL(req.url, 'http://localhost');
   const routes = {
     'GET /api/status': (req, res) => statusEndpoint(res, probeImpl),
+    // the page's one-click restart when the helper's code moved on disk; the new process serves the page with a fresh token
+    'POST /api/helper/restart': (req, res) => { json(res, 200, { ok: true, restarting: Boolean(restartImpl) }); if (restartImpl) setTimeout(restartImpl, 200); },
     'GET /api/wizard/values': (req, res) => wizardValuesGet(res, url(req)),
     'POST /api/wizard/values': (req, res) => wizardValuesSet(req, res),
     'POST /api/platforms/vault-account': (req, res) => vaultAccountEndpoint(req, res),

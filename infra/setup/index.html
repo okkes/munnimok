@@ -304,6 +304,8 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
 <nav id="stepper" class="stepper" aria-label="setup steps"></nav>
 <div class="layout">
 <main>
+<!-- the helper's code moved on disk (a pull) while the old process keeps running: it drops features it does not know and 404s the routes this page asks for -->
+<div class="pending" id="helper-stale" hidden></div>
 <!-- the helper is not optional: without it the page can only say so -->
 <div class="card" id="nohelper" hidden>
   <div class="card-head">
@@ -1432,7 +1434,7 @@ const stackUrls = (stack) => (isLcl() ? (S.status?.stacks?.[stack]?.urls ?? null
 const hfetch = async (path, init = {}) => {
   if (!HELPER) throw new Error('the setup helper is not running — start infra\\setup\\start.cmd');
   const res = await fetch(path, { ...init, headers: { 'x-setup-token': HELPER.token, ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers || {}) } });
-  if (res.status === 401) throw new Error('the setup helper was restarted — this tab holds its old token. Close the tab and reopen the page from start.cmd.');
+  if (res.status === 401) { setTimeout(() => location.reload(), 1500); throw new Error('the setup helper was restarted — this tab holds its old token; reloading the page picks the new one up'); }
   return res;
 };
 const hjson = async (path, init) => {
@@ -2366,6 +2368,22 @@ function syncDrawer() {
 }
 
 /* ── the helper's view: platforms, the lcl stacks, the stores' NAMES ── */
+/** the helper runs code older than what is on disk (a pull moved it): nothing it saves can be trusted to know the newest features — say so, offer the restart */
+function renderHelperStale(helper) {
+  const box = document.getElementById('helper-stale');
+  if (!box) return;
+  if (!helper?.codeChanged) { box.hidden = true; box.innerHTML = ''; return; }
+  const since = helper.startedAt ? new Date(helper.startedAt).toLocaleString() : '—';
+  box.hidden = false;
+  box.innerHTML = `<b>The helper is out of date:</b> its code changed on disk since it started (${esc(since)}) — a newer munni was pulled. The running process still saves environments with the features it knew then and answers 404 to what this page asks for. <button class="btn" id="btn-helper-restart">Restart the helper</button> <span class="why">(this page reloads itself with the new helper's token)</span>`;
+  document.getElementById('btn-helper-restart').onclick = async (ev) => {
+    ev.target.disabled = true;
+    try { await hjson('/api/helper/restart', { method: 'POST', body: '{}' }); }
+    catch (e) { localLog(`\n✗ ${e.message}\n`); ev.target.disabled = false; return; }
+    localLog('\nthe helper restarts — this page reloads in a few seconds\n');
+    setTimeout(() => location.reload(), 4500);
+  };
+}
 async function refreshLocal() {
   if (!HELPER) return;
   const box = document.getElementById('local-status');
@@ -2374,6 +2392,7 @@ async function refreshLocal() {
     const st = await hjson('/api/status');
     if (epoch !== platformEpoch) return;
     S.status = st;
+    renderHelperStale(st.helper);
     S.platforms = st.platforms ?? [];
     S.envList = (platformCfg()?.envs ?? []).map((e) => ({ ...e }));
     const names = new Set([...(st.wizardStored?.machine ?? []), ...(st.wizardStored?.platforms?.[S.platform] ?? [])]);
