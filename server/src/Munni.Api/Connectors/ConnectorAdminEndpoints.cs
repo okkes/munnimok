@@ -36,6 +36,11 @@ public static class ConnectorAdminEndpoints
         admin.MapPost("/providers/{providerId}/status", SetProviderStatus).WithValidation<ConnectorProviderStatusRequest>();
         admin.MapGet("/agents", Fleet);
         admin.MapDelete("/agents/{agentId}", RevokeAny);
+        // hosted private agents (#420 A2): the slots and the requests, the decisions, taking a slot back
+        admin.MapGet("/private-agents", PrivateAgents);
+        admin.MapPost("/private-agents/requests/{requestId}/approve", ApprovePrivateAgent);
+        admin.MapPost("/private-agents/requests/{requestId}/deny", DenyPrivateAgent);
+        admin.MapPost("/private-agents/{agentId}/release", ReleasePrivateAgent);
         admin.MapGet("/canaries", Canaries);
         admin.MapGet("/providers/{providerId}/remote-consents", RemoteConsents);
         admin.MapDelete("/providers/{providerId}/remote-consents/{consentId}", RevokeRemote);
@@ -109,6 +114,61 @@ public static class ConnectorAdminEndpoints
         if (logger.IsEnabled(LogLevel.Information))
         {
             logger.LogInformation("operator {Operator} revoked connector agent {Agent}", OperatorOf(http), agentId);
+        }
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// The hosted private slots and the requests for them (#420 A2), with WHO
+    /// each pseudonymous subject is. The control plane knows subjects and
+    /// nothing else; an operator deciding a request needs a name. The relay
+    /// mints every user's subject the way it mints the caller's, so the map
+    /// is computed here per call and stored nowhere.
+    /// </summary>
+    private static async Task<IResult> PrivateAgents(ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.GetAsync("v1/admin/private-agents", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        var view = (JsonObject)ConnectorJson.ToCamel(reply.Object)!;
+
+        var users = await relay.Db.Users.Select(u => new { u.Id, u.Email, u.DisplayName }).ToListAsync(ct);
+        var who = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var user in users) who[relay.Minter.For(user.Id)] = user.DisplayName ?? user.Email ?? user.Id.ToString();
+
+        foreach (var node in (view["requests"] as JsonArray ?? []).Concat(view["slots"] as JsonArray ?? []))
+        {
+            if (node is not JsonObject row) continue;
+            row["who"] = row["subject"]?.GetValue<string>() is { } subject && who.TryGetValue(subject, out var name) ? name : null;
+        }
+
+        return Results.Json(view);
+    }
+
+    private static Task<IResult> ApprovePrivateAgent(string requestId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct) =>
+        DecidePrivateAgent(requestId, "approve", http, client, logger, ct);
+
+    private static Task<IResult> DenyPrivateAgent(string requestId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct) =>
+        DecidePrivateAgent(requestId, "deny", http, client, logger, ct);
+
+    private static async Task<IResult> DecidePrivateAgent(
+        string requestId, string decision, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct)
+    {
+        var reply = await client.PostAsync($"v1/admin/private-agents/requests/{requestId}/{decision}", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("operator {Operator} decided private-agent request {Request}: {Decision}", OperatorOf(http), requestId, decision);
+        }
+        return Results.Json(ConnectorJson.ToCamel(reply.Object));
+    }
+
+    private static async Task<IResult> ReleasePrivateAgent(string agentId, HttpContext http, ConnectorClient client, ILogger<ConnectorClient> logger, CancellationToken ct)
+    {
+        var reply = await client.PostAsync($"v1/admin/private-agents/{agentId}/release", new ConnectorCall(), ct);
+        if (!reply.IsSuccess) throw new ConnectorReplyException(reply);
+        if (logger.IsEnabled(LogLevel.Information))
+        {
+            logger.LogInformation("operator {Operator} took hosted agent {Agent} back", OperatorOf(http), agentId);
         }
         return Results.NoContent();
     }

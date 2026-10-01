@@ -123,6 +123,28 @@ public sealed class ConnectorOptions
     public const string FleetSubject = "fleet";
 
     /// <summary>
+    /// Hosted private agents (#420, slice A2): the standing code the
+    /// environment's private-slot containers enroll with.
+    /// </summary>
+    /// <remarks>
+    /// A private slot is munni's own container that serves ONE person at a
+    /// time. It enrolls under <see cref="PrivateSlotSubject"/>, which no
+    /// user's pseudonym can collide with and which is NOT the fleet, so a free
+    /// slot is leased nobody's work and counts for nobody's "machine of my
+    /// own". The operator binds it to the person who asked - their subject
+    /// becomes its owner, and from then on every rule that looks for a
+    /// machine of theirs finds it - and releases it again, which wipes its
+    /// browser profiles before the next person gets it. Seeded and re-armed
+    /// on every start like <see cref="FleetEnrollmentCode"/>, and refused
+    /// when it equals it: one code cannot enroll both a machine that serves
+    /// everybody and one that must serve nobody until bound.
+    /// </remarks>
+    public string? PrivateEnrollmentCode { get; set; }
+
+    /// <summary>The subject a free private slot belongs to: no user's HMAC can collide with it, and it is never the fleet.</summary>
+    public const string PrivateSlotSubject = "slot";
+
+    /// <summary>
     /// Every subject whose agents serve everybody: the configured list, plus
     /// the fleet code's subject when a code is set. The one list every rule
     /// about "the operator's fleet" reads, so a subject cannot be the fleet in

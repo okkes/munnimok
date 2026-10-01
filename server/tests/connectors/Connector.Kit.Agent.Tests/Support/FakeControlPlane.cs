@@ -176,6 +176,18 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
     /// <summary>The catalogue digest this control plane claims in every heartbeat; null says nothing.</summary>
     public string? CatalogDigest { get; set; }
 
+    /// <summary>
+    /// Set to ask for a profile wipe on every beat (#420 A2, a released
+    /// hosted slot) until a beat arrives saying it was done - which clears
+    /// it, as the real control plane frees the slot.
+    /// </summary>
+    public bool ResetsProfiles { get; set; }
+
+    private int _resetDoneBeats;
+
+    /// <summary>Beats that said the profiles were wiped.</summary>
+    public int ResetDoneBeats { get { lock (_gate) return _resetDoneBeats; } }
+
     /// <summary>The cadence the enrollment asks for; the agent clamps it to five seconds at least.</summary>
     public int HeartbeatSeconds { get; set; } = 30;
 
@@ -373,13 +385,25 @@ internal sealed class FakeControlPlane : HttpMessageHandler, IHttpClientFactory
         {
             if (Stalling(ref _stallHeartbeats)) await Task.Delay(Timeout.InfiniteTimeSpan, ct);
 
-            lock (_gate) _beatsAt.Add(Time.GetUtcNow());
+            var beat = await ReadAsync<HeartbeatRequest>(request, ct);
+            bool askWipe;
+            lock (_gate)
+            {
+                _beatsAt.Add(Time.GetUtcNow());
+                if (beat.ResetDone)
+                {
+                    _resetDoneBeats++;
+                    ResetsProfiles = false;
+                }
+
+                askWipe = ResetsProfiles;
+            }
 
             // The contract's own defaults - a two-minute lease - rather than a
             // number copied beside them, so an agent tested here is tested
             // against the lease a control plane really hands out.
             return Json(System.Text.Json.JsonSerializer.Serialize(
-                new HeartbeatResponse { Revoked = Revokes, CatalogDigest = CatalogDigest }, AgentJson.Options));
+                new HeartbeatResponse { Revoked = Revokes, CatalogDigest = CatalogDigest, ResetProfiles = askWipe }, AgentJson.Options));
         }
 
         if (path.EndsWith("agent/v1/jobs/lease", StringComparison.Ordinal))

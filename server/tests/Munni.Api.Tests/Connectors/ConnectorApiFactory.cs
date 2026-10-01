@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using BankConnector.Adapters;
 using Connector.Kit.Hosting;
 using Microsoft.AspNetCore.Builder;
@@ -37,6 +38,32 @@ public sealed class ControlPlaneHost : IAsyncDisposable
     }
 
     public TestServer Server => _app.GetTestServer();
+
+    /// <summary>
+    /// A hosted private slot (#420 A2) dialling in: a private-slot code
+    /// seeded the way the platform's start-up seeds it, redeemed over the
+    /// agent wire as a rendered slot container does. Returns the agent id.
+    /// </summary>
+    public async Task<string> EnrollPrivateSlotAsync(string name)
+    {
+        var code = $"AGNT-SLOT-{Guid.NewGuid():N}"[..24];
+        using (var scope = _app.Services.CreateScope())
+        {
+            await scope.ServiceProvider.GetRequiredService<Connector.Kit.Hosting.Auth.AgentAuth>()
+                .SeedStandingEnrollmentAsync(code, Connector.Kit.Hosting.ConnectorOptions.PrivateSlotSubject, "private slot", CancellationToken.None);
+        }
+
+        using var client = Server.CreateClient();
+        using var response = await client.PostAsJsonAsync("/agent/v1/enroll", new
+        {
+            code,
+            name,
+            capabilities = new { providers = Array.Empty<string>(), @class = "byo" },
+        });
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<System.Text.Json.Nodes.JsonObject>();
+        return body!["agent_id"]!.GetValue<string>();
+    }
 
     public static async Task<ControlPlaneHost> StartAsync()
     {

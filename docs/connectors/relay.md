@@ -83,6 +83,7 @@ An unconfigured one is simply absent — never a stand-in.
 | `POST …/jobs/{jobId}/answer` | `{ challengeId, value }` |
 | `POST …/jobs/{jobId}/collect` | `{ bundle }` once the job succeeded: ingests its page, acknowledges it, hands back the rotated bundle; 202 with the view while it runs |
 | `DELETE /connectors/{provider}/sessions/{sessionId}` | `{ bundle? }` → `{ loggedOut, jobId?, reason? }`; the binding row is removed. Reaches the control plane row or no row: a caller must always be able to remove a connection |
+| `GET /connectors/private-agents/mine`, `POST /connectors/private-agents/requests`, `DELETE …/requests/{requestId}`, `DELETE /connectors/private-agents/mine` | hosted private agents (#420 A2): the caller's standing `{ offered, free, request?, agent? }` — whether the environment hosts any slot, how many are free, their latest request (`pending`, `approved`, `denied`, `withdrawn`, `released`), the slot bound to them; a request (asking twice is one request; refused where no slot exists or one is already theirs); withdrawing a pending request; giving the slot back (it wipes its profiles before the next person). `DELETE /connectors/agents/{agentId}` on a hosted agent gives it back too — munni's container is never revoked by a user |
 | `GET /connectors/agents`, `POST /connectors/agents/enrollment`, `DELETE /connectors/agents/{agentId}`, `GET …/{agentId}/profiles` | the caller's household agents; enrollment answers `{ code, expiresAt, controlPlaneUrl, composeCommand }` — the one line beside `deploy/connectors/household-agent.yml` |
 
 ## Scheduled syncs
@@ -190,6 +191,7 @@ link and never an overlay.
 | `GET /admin/connectors/status`, `GET /control/connectors/status` | the control plane's status: providers with their health, agents online, the queue, plus `relay.openStreams` |
 | `POST /admin/connectors/providers/{id}/status` | the kill switch: `{ state: healthy\|degraded\|paused\|retired, reasonKey? }`; the operator and the reason go to the server log |
 | `GET /admin/connectors/agents`, `DELETE /admin/connectors/agents/{id}` | every household agent, whoever owns it; revoke any |
+| `GET /admin/connectors/private-agents`, `POST …/requests/{id}/approve`, `POST …/requests/{id}/deny`, `POST …/{agentId}/release` | hosted private agents (#420 A2): `{ total, free, slots: [{ agent, subject?, who? }], requests: [{ id, subject, who?, state, createdAt, decidedAt?, agentId? }] }` — every slot with who holds it (the relay maps each pseudonymous subject to the user's name or e-mail; the control plane never learns it), every open request and the last month's decisions; approving binds the oldest free slot (online, unbound, wiped) to the asker and answers `agent_unavailable` when none is; taking a slot back expires the sessions pinned to it and asks the agent to wipe |
 | `GET /admin/connectors/canaries` | the operator's own connections that prove a party still works |
 | `GET /admin/connectors/providers/{id}/remote-consents`, `DELETE …/remote-consents/{consentId}` | what the operator's account at the party holds (§15): every consent with `origin`, `status`, `reference`, `accountCount` — foreign environments' and legacy ones included — and a revoke, logged with the operator |
 | `GET /admin/connectors/users/{sub}/sessions` | one user's bindings — the same rows `GET /admin/users/{sub}/diagnosis` now carries as `connectorSessions` |
@@ -201,8 +203,9 @@ grants it to the M2M application.
 The admin portal renders these routes on its **Connectors** screen (M6): the
 status tiles, every party with the kill switch (pause and resume in one tap,
 retire behind the party's id typed — it expires every live session), every
-user's agents with revoke, the canaries; the user diagnosis lists a user's
-bindings. The control cockpit renders `GET /control/connectors/status`
+user's agents with revoke, the hosted private agents (requests to approve or
+deny, slots with who holds them and a take-back), the canaries; the user
+diagnosis lists a user's bindings. The control cockpit renders `GET /control/connectors/status`
 read-only. Where an environment runs no connectors the routes are not mapped,
 the request lands on 404, and both consoles say so.
 

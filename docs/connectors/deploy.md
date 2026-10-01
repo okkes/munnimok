@@ -140,6 +140,20 @@ per headed browser job plus 600 MB per replica — shown with its arithmetic
 and overridable. The shared stack runs no agent any more. Prod and dev
 never share browser capacity.
 
+**Hosted private slots** (#420 A2, 2026-10-01): `agents.privateSlots`
+(default 0) renders `connector-private-<env>-<n>` beside the control plane
+— the household agent's shape on munni's hardware: `Class=byo`, one job
+at a time, profiles kept, the platform's egress claim — enrolled with
+`CONNECTOR_PRIVATE_CODE`, a second per-environment generated secret the
+control plane seeds under the subject `slot` (`Connector:PrivateEnrollmentCode`;
+the control plane refuses to start when it equals the fleet code). A slot
+serves nobody until the operator binds it from the admin portal's
+Connectors screen to the person who asked for it under *Your own
+computer*; taking it back wipes its profiles before the next person. The
+wizard's sizing takes one browser per slot off the environment's share
+first; the FIRST slot of an environment needs a Bootstrap (it mints the
+code), every later change of the count a Deploy.
+
 **The Logto module** (`ensureConnectorAccess`) makes the control plane an
 API resource of the environment's Logto (indicator = its public address)
 carrying the scope `connector:admin`, a machine role granting it, and the

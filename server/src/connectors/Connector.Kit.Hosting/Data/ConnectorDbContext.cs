@@ -31,6 +31,8 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
 
     public DbSet<EnrollmentRow> Enrollments => Set<EnrollmentRow>();
 
+    public DbSet<PrivateAgentRequestRow> PrivateAgentRequests => Set<PrivateAgentRequestRow>();
+
     /// <summary>Operator-owned connections, run on a schedule. See <see cref="CanaryRow"/>.</summary>
     public DbSet<CanaryRow> Canaries => Set<CanaryRow>();
 
@@ -430,6 +432,18 @@ public sealed class ConnectorDbContext(DbContextOptions<ConnectorDbContext> opti
             e.Property(x => x.Subject).HasMaxLength(128);
             e.Property(x => x.Name).HasMaxLength(128);
             e.HasIndex(x => x.ExpiresAt);
+        });
+
+        modelBuilder.Entity<PrivateAgentRequestRow>(e =>
+        {
+            e.ToTable("private_agent_requests");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).HasMaxLength(64);
+            e.Property(x => x.Subject).HasMaxLength(128);
+            e.Property(x => x.State).HasConversion<string>().HasMaxLength(16);
+            e.Property(x => x.AgentId).HasMaxLength(64);
+            e.HasIndex(x => x.Subject);
+            e.HasIndex(x => x.State);
         });
     }
 }

@@ -81,6 +81,18 @@ public sealed class FleetEnrollmentTests(ShopApiFactory factory)
         ConnectorPlatform.Validate(options);
     }
 
+    /// <summary>A private slot (#420 A2) enrolled with the fleet's code would be the fleet; the start-up refuses the contradiction in every mode.</summary>
+    [Fact]
+    public void The_private_slot_code_may_not_be_the_fleet_code()
+    {
+        var same = new ConnectorOptions { FleetEnrollmentCode = "AGNT-SAME-0000", PrivateEnrollmentCode = "AGNT-SAME-0000" };
+        var refusal = Assert.ThrowsAny<Exception>(() => ConnectorPlatform.Validate(same));
+        Assert.Contains("PrivateEnrollmentCode", refusal.Message, StringComparison.Ordinal);
+
+        ConnectorPlatform.Validate(new ConnectorOptions { FleetEnrollmentCode = "AGNT-FLEE-0000", PrivateEnrollmentCode = "AGNT-SLOT-0000" });
+        ConnectorPlatform.Validate(new ConnectorOptions { PrivateEnrollmentCode = "AGNT-SLOT-0000" });
+    }
+
     private async Task SeedAsync(string code)
     {
         using var scope = factory.Services.CreateScope();

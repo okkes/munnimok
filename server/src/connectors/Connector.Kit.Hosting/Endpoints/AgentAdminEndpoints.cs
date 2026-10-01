@@ -64,12 +64,21 @@ internal static class AgentAdminEndpoints
             HttpContext http,
             string agentId,
             ConnectorDbContext db,
+            TimeProvider time,
             CancellationToken ct) =>
         {
             var subject = RequestContext.RequireSubject(http);
 
             var agent = await db.Agents.FirstOrDefaultAsync(a => a.Id == agentId && a.OwnerSubject == subject, ct)
                         ?? throw ConnectorException.Unsupported($"unknown agent '{agentId}'");
+
+            // A hosted slot is munni's container (#420 A2): the person gives
+            // it back and it goes to the next one clean, rather than dying.
+            if (agent.Hosted)
+            {
+                await PrivateAgentEndpoints.ReleaseAsync(db, agent, time.GetUtcNow(), ct);
+                return Results.NoContent();
+            }
 
             await RevokeAsync(db, agent, ct);
             return Results.NoContent();
@@ -155,7 +164,7 @@ internal static class AgentAdminEndpoints
         await db.SaveChangesAsync(ct);
     }
 
-    private static AgentView View(
+    internal static AgentView View(
         AgentRow agent, IReadOnlyList<ProfileRow> profiles, IProviderRegistry registry, DateTimeOffset now) => new()
     {
         Id = agent.Id,
@@ -166,9 +175,13 @@ internal static class AgentAdminEndpoints
         Online = AgentLiveness.IsOnline(agent, now),
         Stale = AgentCatalogue.IsStale(ConnectorJson.DeserializeOr(agent.CapabilitiesJson, new AgentCapabilities()), registry),
         Profiles = [.. profiles.Where(p => p.AgentId == agent.Id).Select(Profile)],
+        Hosted = agent.Hosted,
+        Bound = PrivateAgentEndpoints.IsBound(agent),
+        BoundAt = agent.BoundAt,
+        Resetting = agent.ResetRequestedAt is not null,
     };
 
-    private static ProfileView Profile(ProfileRow profile) => new()
+    internal static ProfileView Profile(ProfileRow profile) => new()
     {
         Id = profile.Id,
         Provider = profile.ProviderId,

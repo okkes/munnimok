@@ -341,6 +341,23 @@ public sealed class AgentRow
     public bool Revoked { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>
+    /// Enrolled through the private-slot code (#420 A2): munni's own
+    /// container that serves one person at a time. Decided at enrollment
+    /// from the code's subject, never from the agent's request.
+    /// </summary>
+    public bool Hosted { get; set; }
+
+    /// <summary>When the person holding this slot was given it; null while it is free.</summary>
+    public DateTimeOffset? BoundAt { get; set; }
+
+    /// <summary>
+    /// A release asked the agent to wipe its browser profiles and the agent
+    /// has not said it did. A slot in this state is free to nobody: the
+    /// previous person's sign-ins are still on its disk.
+    /// </summary>
+    public DateTimeOffset? ResetRequestedAt { get; set; }
 }
 
 /// <summary>
@@ -501,4 +518,36 @@ public sealed class EnrollmentRow
     public DateTimeOffset ExpiresAt { get; set; }
 
     public DateTimeOffset? RedeemedAt { get; set; }
+}
+
+/// <summary>
+/// One person's request for a hosted private agent (#420 A2) and what the
+/// operator decided. The subject is the pseudonym the relay mints; who that
+/// is stays the relay's to say.
+/// </summary>
+public sealed class PrivateAgentRequestRow
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Subject { get; set; } = string.Empty;
+
+    public PrivateAgentRequestState State { get; set; } = PrivateAgentRequestState.Pending;
+
+    public DateTimeOffset CreatedAt { get; set; }
+
+    public DateTimeOffset? DecidedAt { get; set; }
+
+    /// <summary>The slot an approval bound; null otherwise.</summary>
+    public string? AgentId { get; set; }
+}
+
+public enum PrivateAgentRequestState
+{
+    Pending,
+    Approved,
+    Denied,
+    /// <summary>Taken back by the person before anybody decided.</summary>
+    Withdrawn,
+    /// <summary>Approved once; the slot has since been given back or taken away.</summary>
+    Released,
 }

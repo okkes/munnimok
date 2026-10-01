@@ -230,6 +230,55 @@ function pooledAgents(s) {
 /** the volumes the environment's pooled agents keep (their enrollment and their browser profiles) */
 const agentVolumes = (s) => Array.from({ length: s.agents?.pooled ?? 0 }, (_, i) => `\n  agentstate${i + 1}:\n  agentprofiles${i + 1}:`).join('');
 
+/**
+ * The environment's hosted private slots (#420 A2): one container per
+ * slot in the household agent's shape — Class byo, one job at a time,
+ * browser profiles kept — on munni's hardware, enrolled with the
+ * ENVIRONMENT's private-slot code under a subject that is nobody's until
+ * the operator binds the slot to the person who asked for it (the admin
+ * portal). Giving it back wipes its profiles before the next person.
+ * Zero is the default: a platform offers these on purpose.
+ */
+function privateAgents(s) {
+  const n = s.agents?.privateSlots ?? 0;
+  if (!n) return '';
+  const e = s.env;
+  return Array.from({ length: n }, (_, i) => i + 1).map((i) => `  # hosted private slot ${i} of ${n} (#420 A2): one person's own browser on munni's hardware, bound by the operator
+  connector-private-${e}-${i}:
+    image: \${REGISTRY}/munni-connector-agent:\${TAG}
+    restart: unless-stopped
+    shm_size: 1gb
+    init: true
+    stop_grace_period: 45s
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectorAgent__Class: byo
+      ConnectorAgent__AgentName: munni ${e} private agent ${i}
+      ConnectorAgent__Egress__Country: ${s.agents.egress.country}
+      ConnectorAgent__Egress__Kind: ${s.agents.egress.kind}
+      ConnectorAgent__BrowserLocale: nl-NL
+      ConnectorAgent__BrowserTimezoneId: Europe/Amsterdam
+      ConnectorAgent__MaxConcurrency: "1"
+      ConnectorAgent__Headless: "false"
+      ConnectorAgent__StateFilePath: /state/agent-state.json
+      ConnectorAgent__ProfileRootDirectory: /profiles
+      ConnectorAgent__Connections__0__Name: ${e}
+      ConnectorAgent__Connections__0__ControlPlaneBaseUrl: http://connector:8080/
+      ConnectorAgent__Connections__0__EnrollmentCode: \${CONNECTOR_PRIVATE_CODE}
+    depends_on:
+      connector-${e}:
+        condition: service_healthy
+    volumes:
+      - privatestate${i}:/state
+      - privateprofiles${i}:/profiles
+    networks: [default]
+
+`).join('');
+}
+
+/** the volumes the environment's private slots keep */
+const privateVolumes = (s) => Array.from({ length: s.agents?.privateSlots ?? 0 }, (_, i) => `\n  privatestate${i + 1}:\n  privateprofiles${i + 1}:`).join('');
+
 function sharedTemplate(s) {
   return `# ${s.stack} env${s.delivery === 'docker' ? ' (real values — never commit this file)' : ' TEMPLATE — CI fills the placeholders from the GitHub environment "' + s.githubEnvironment + '"'}
 REGISTRY=${s.registry}
@@ -433,7 +482,7 @@ ${corsOrigins(s).map((o, i) => `      Cors__Origins__${i}: ${o}`).join('\n')}
       default:
         aliases: [api]
       shared: {}
-${s.features.connectors ? connectorService(s) : ''}${s.features.connectors ? pooledAgents(s) : ''}
+${s.features.connectors ? connectorService(s) : ''}${s.features.connectors ? pooledAgents(s) : ''}${s.features.connectors ? privateAgents(s) : ''}
   logto-${e}:
     image: svhd/logto:1.43
     restart: unless-stopped
@@ -462,7 +511,7 @@ ${s.features.connectors ? connectorService(s) : ''}${s.features.connectors ? poo
       shared: {}
 
 volumes:
-  pgdata:${s.features.connectors ? agentVolumes(s) : ''}
+  pgdata:${s.features.connectors ? agentVolumes(s) + privateVolumes(s) : ''}
 `;
 }
 
@@ -494,8 +543,10 @@ function connectorService(s) {
       Connector__Bundle__CurrentKid: k1
       Connector__Bundle__Keys__k1: \${CONNECTOR_SEAL_KEY_K1}
       Connector__EnrollmentHmacKey: \${CONNECTOR_ENROLLMENT_HMAC}
-      # the platform's pooled browser agent enrolls with this standing code
+      # the environment's pooled browser agents enroll with this standing code
       Connector__FleetEnrollmentCode: \${CONNECTOR_FLEET_CODE}
+      # and its hosted private slots with this one (#420 A2) — never the fleet's: a slot serves nobody until bound
+      Connector__PrivateEnrollmentCode: \${CONNECTOR_PRIVATE_CODE}
       # the operator's aggregator accounts (#414): a party exists on the control plane when its keys do; never handed to an agent
       BankAdapters__GoCardless__SecretId: \${GOCARDLESS_SECRET_ID:-}
       BankAdapters__GoCardless__SecretKey: \${GOCARDLESS_SECRET_KEY:-}
@@ -567,12 +618,14 @@ LOGODEV_SECRET_KEY=\${LOGODEV_SECRET_KEY}
 LOGODEV_PUBLIC_TOKEN=\${LOGODEV_PUBLIC_TOKEN}
 ${s.features.connectors ? `
 # the connector control plane (#367): its bundle seal key and enrollment HMAC, the api's subject
-# salt and machine app (written back by the logto module), the environment's fleet enrollment code (its pooled agents enroll with it)
+# salt and machine app (written back by the logto module), the environment's fleet enrollment code (its pooled agents enroll
+# with it) and its private-slot code (its hosted private slots do, #420 A2)
 CONNECTOR_SEAL_KEY_K1=\${CONNECTOR_SEAL_KEY_K1}
 CONNECTOR_ENROLLMENT_HMAC=\${CONNECTOR_ENROLLMENT_HMAC}
 CONNECTOR_SUBJECT_SALT=\${CONNECTOR_SUBJECT_SALT}
 CONNECTOR_M2M_APP_ID=\${CONNECTOR_M2M_APP_ID}
 CONNECTOR_M2M_APP_SECRET=\${CONNECTOR_M2M_APP_SECRET}
 CONNECTOR_FLEET_CODE=\${CONNECTOR_FLEET_CODE}
+CONNECTOR_PRIVATE_CODE=\${CONNECTOR_PRIVATE_CODE}
 ` : ''}`;
 }

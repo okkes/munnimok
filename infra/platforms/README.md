@@ -99,9 +99,14 @@ deep-link scheme is always `munni-<env>-<platform>`.
 `agents` (#420): `{ "pooled": 1, "concurrency": 2, "privateSlots": 0 }` —
 how many pooled browser agents run beside the environment's control plane
 (`connector-agent-<env>-<n>`, zero allowed), how many jobs each takes at
-once, and (slice A2) how many private slots the admin can hand to users.
-The wizard recommends the counts from the host's memory; a change applies
-with a Deploy. Every environment mints its own `CONNECTOR_FLEET_CODE`.
+once, and how many hosted private slots (`connector-private-<env>-<n>`,
+slice A2): one browser for one person each, in the household agent's
+shape on munni's hardware, handed out from the admin portal when someone
+asks. The wizard recommends the counts from the host's memory (a slot
+takes one browser off the environment's share first); a change applies
+with a Deploy, except the FIRST private slot, which mints the
+environment's `CONNECTOR_PRIVATE_CODE` with a Bootstrap. Every
+environment mints its own `CONNECTOR_FLEET_CODE`.
 
 `features.connectors: true` adds the connector control plane (#367) to the
 environment: one more container beside the api (`connector-<env>`, image

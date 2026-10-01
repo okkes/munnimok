@@ -392,6 +392,7 @@ async function agentSizingEndpoint(res, url, netFetchImpl) {
   const adding = url.searchParams.get('adding') === '1' ? 1 : 0;
   const environments = platformEnvs(platform).length + adding;
   const concurrency = Number(url.searchParams.get('concurrency') ?? 2);
+  const privateSlots = Number(url.searchParams.get('privateSlots') ?? 0);
   let totalMb = null;
   let source = null;
   if (p.delivery === 'docker') {
@@ -409,7 +410,7 @@ async function agentSizingEndpoint(res, url, netFetchImpl) {
     }
   }
   if (!totalMb) return json(res, 502, { error: 'the host did not say how much memory it has' });
-  return json(res, 200, { ...recommendAgents({ totalMb, environments, concurrency }), source });
+  return json(res, 200, { ...recommendAgents({ totalMb, environments, concurrency, privateSlots }), source });
 }
 
 /** the connector control plane's liveness, from the helper's side (anonymous: /v1/health carries no data) */

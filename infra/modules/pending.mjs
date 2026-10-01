@@ -34,8 +34,11 @@ export function configChanges(before, after) {
 /** which run applies a set of changes on a deployed platform — a key the applied side never had (absent → a value) is new to the stack and may need something minted, so it takes the Bootstrap even when its path is deploy-only (#420: an environment's first `agents` brings its fleet code); a null that becomes a value (the fingerprint) is the plain deploy-only case */
 export function needsFor(changes) {
   if (!changes.length) return null;
-  return changes.every((c) => DEPLOY_ONLY.has(c.path) && c.from !== undefined) ? 'deploy' : 'bootstrap';
+  return changes.every((c) => DEPLOY_ONLY.has(c.path) && c.from !== undefined && !firstPrivateSlot(c)) ? 'deploy' : 'bootstrap';
 }
+
+/** the first private slot of an environment mints its enrollment code (#420 A2): a Bootstrap, like the first agents block */
+const firstPrivateSlot = (c) => c.path === 'agents.privateSlots' && !(Number(c.from) > 0) && Number(c.to) > 0;
 
 const show = (path, v) => {
   if (v === null || v === undefined || v === '') return 'none';

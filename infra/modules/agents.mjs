@@ -21,6 +21,8 @@ export const AGENT_BASE_MB = 600;
 export const JOB_MB = 1024;
 export const DEFAULT_CONCURRENCY = 2;
 export const MAX_REPLICAS = 8;
+/** hosted private slots per environment (#420 A2): one person each */
+export const MAX_PRIVATE_SLOTS = 16;
 
 /** memory one replica needs for its jobs at once */
 export const replicaMb = (concurrency) => AGENT_BASE_MB + JOB_MB * Math.max(1, concurrency);
@@ -30,18 +32,21 @@ export const replicaMb = (concurrency) => AGENT_BASE_MB + JOB_MB * Math.max(1, c
  * environments can afford between them, from the host's memory. Returns
  * the arithmetic as well, so the page can show it.
  */
-export function recommendAgents({ totalMb, environments, concurrency = DEFAULT_CONCURRENCY }) {
+export function recommendAgents({ totalMb, environments, concurrency = DEFAULT_CONCURRENCY, privateSlots = 0 }) {
   const total = Math.max(0, Math.round(Number(totalMb) || 0));
   const envs = Math.max(1, Math.round(Number(environments) || 1));
   const jobs = Math.min(8, Math.max(1, Math.round(Number(concurrency) || DEFAULT_CONCURRENCY)));
+  const slots = Math.min(MAX_PRIVATE_SLOTS, Math.max(0, Math.round(Number(privateSlots) || 0)));
   const headroomMb = Math.round(total * HEADROOM);
   const reservedMb = SHARED_MB + ENV_MB * envs;
   const freeMb = Math.max(0, total - headroomMb - reservedMb);
   const perReplicaMb = replicaMb(jobs);
-  const perEnvMb = Math.floor(freeMb / envs);
+  // a private slot (#420 A2) is one browser for one person, taken off this environment's share first
+  const slotsMb = slots * replicaMb(1);
+  const perEnvMb = Math.max(0, Math.floor(freeMb / envs) - slotsMb);
   const fits = perEnvMb >= perReplicaMb;
   const pooled = Math.min(MAX_REPLICAS, Math.max(1, Math.floor(perEnvMb / perReplicaMb)));
-  return { totalMb: total, headroomMb, reservedMb, freeMb, environments: envs, perEnvMb, perReplicaMb, concurrency: jobs, pooled, fits };
+  return { totalMb: total, headroomMb, reservedMb, freeMb, environments: envs, perEnvMb, perReplicaMb, concurrency: jobs, privateSlots: slots, slotsMb, pooled, fits };
 }
 
 /** the agents block of an environment file, validated — absent or wrong → the defaults (one replica, two jobs, no private slots) */
@@ -53,6 +58,6 @@ export function normalizeAgents(raw) {
   return {
     pooled: int(raw?.pooled, 0, MAX_REPLICAS, 1),
     concurrency: int(raw?.concurrency, 1, 8, DEFAULT_CONCURRENCY),
-    privateSlots: int(raw?.privateSlots, 0, 16, 0),
+    privateSlots: int(raw?.privateSlots, 0, MAX_PRIVATE_SLOTS, 0),
   };
 }

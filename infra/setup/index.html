@@ -571,8 +571,9 @@ html{scrollbar-gutter:stable} /* the scroll lock must not reflow the page (the g
         <div class="grid2">
           <div><label class="f" for="env-add-agents-pooled">pooled browser agents</label><input type="number" id="env-add-agents-pooled" min="0" max="8" value="1"/></div>
           <div><label class="f" for="env-add-agents-concurrency">jobs at once per agent</label><input type="number" id="env-add-agents-concurrency" min="1" max="8" value="2"/></div>
+          <div><label class="f" for="env-add-agents-private">hosted private slots</label><input type="number" id="env-add-agents-private" min="0" max="16" value="0"/></div>
         </div>
-        <p class="why">Pooled agents are headed browsers beside the environment's control plane — the parties that need a real browser on this platform's line run there (#420). <a class="chiplink" href="#" data-sizing="add">Recommend from the host's memory</a> <span id="env-sizing-add"></span></p>
+        <p class="why">Pooled agents are headed browsers beside the environment's control plane — the parties that need a real browser on this platform's line run there (#420). A private slot is one such browser for ONE person, handed out by the admin portal when someone asks (the parties that only ever talk to the account holder's own machine run there); the first slot mints its code with a Bootstrap. <a class="chiplink" href="#" data-sizing="add">Recommend from the host's memory</a> <span id="env-sizing-add"></span></p>
         <details class="how"><summary>Store ids (optional — default app.munni.&lt;platform&gt;.&lt;name&gt;)</summary>
           <div class="grid2">
             <div><label class="f" for="env-add-android">Android package</label><input type="text" id="env-add-android" placeholder="app.munni.nas.prod" autocomplete="off"/></div>
@@ -2977,7 +2978,7 @@ document.getElementById('btn-env-add')?.addEventListener('click', async () => {
     appChannel: document.getElementById('env-add-appchannel').value,
     label: document.getElementById('env-add-label').value.trim(),
     features: envFeaturesFromForm(),
-    agents: { pooled: Number(document.getElementById('env-add-agents-pooled').value), concurrency: Number(document.getElementById('env-add-agents-concurrency').value) },
+    agents: { pooled: Number(document.getElementById('env-add-agents-pooled').value), concurrency: Number(document.getElementById('env-add-agents-concurrency').value), privateSlots: Number(document.getElementById('env-add-agents-private').value) },
   };
   const androidPackage = document.getElementById('env-add-android').value.trim().toLowerCase();
   const iosBundleId = document.getElementById('env-add-ios').value.trim().toLowerCase();
@@ -3034,8 +3035,9 @@ function settingsHtml(env) {
       <div class="grid2">
         <div><label class="f" for="env-agents-pooled-${s}">pooled browser agents</label><input type="number" id="env-agents-pooled-${s}" min="0" max="8" value="${env.agents?.pooled ?? 1}"/></div>
         <div><label class="f" for="env-agents-concurrency-${s}">jobs at once per agent</label><input type="number" id="env-agents-concurrency-${s}" min="1" max="8" value="${env.agents?.concurrency ?? 2}"/></div>
+        <div><label class="f" for="env-agents-private-${s}">hosted private slots</label><input type="number" id="env-agents-private-${s}" min="0" max="16" value="${env.agents?.privateSlots ?? 0}"/></div>
       </div>
-      <p class="why">Headed browsers beside this environment's control plane, dialling it over the environment's own network; their line is the platform's (#420). A changed count applies with a Deploy. <a class="chiplink" href="#" data-sizing="${s}">Recommend from the host's memory</a> <span id="env-sizing-${s}"></span></p>
+      <p class="why">Headed browsers beside this environment's control plane, dialling it over the environment's own network; their line is the platform's (#420). A private slot is one browser for one person, handed out from the admin portal's Connectors screen when someone asks. A changed count applies with a Deploy; the first private slot mints its code with a Bootstrap. <a class="chiplink" href="#" data-sizing="${s}">Recommend from the host's memory</a> <span id="env-sizing-${s}"></span></p>
       <button class="ghost" data-act="settings" data-stack="${env.stack}">Save settings</button>
       <span class="envtag">${isLcl() ? 're-renders the stack (Re-run setup applies it)' : 'publishes the config and re-runs the bootstrap'}</span>
     </details>`;
@@ -3519,7 +3521,8 @@ function sizingHtml(r, target) {
   const verdict = r.fits
     ? `<b>${r.pooled} agent${r.pooled === 1 ? '' : 's'} × ${r.concurrency} jobs</b> per environment`
     : `<b>1 agent × ${r.concurrency} jobs</b> per environment — tight: ${gb(r.perEnvMb)} left per environment, one replica wants ${gb(r.perReplicaMb)}`;
-  return `${verdict} — ${r.source}: ${gb(r.totalMb)}, a quarter kept free (${gb(r.headroomMb)}), the stacks take ${gb(r.reservedMb)} (${r.environments} environment${r.environments === 1 ? '' : 's'}), ${gb(r.freeMb)} left; a replica is ${gb(r.perReplicaMb)} at ${r.concurrency} jobs. <a class="chiplink" href="#" data-sizing-apply="${escAttr(target)}" data-pooled="${r.pooled}" data-concurrency="${r.concurrency}">Use it</a>`;
+  const slots = r.privateSlots ? `, ${r.privateSlots} private slot${r.privateSlots === 1 ? '' : 's'} take${r.privateSlots === 1 ? 's' : ''} ${gb(r.slotsMb)} of this environment's share first` : '';
+  return `${verdict} — ${r.source}: ${gb(r.totalMb)}, a quarter kept free (${gb(r.headroomMb)}), the stacks take ${gb(r.reservedMb)} (${r.environments} environment${r.environments === 1 ? '' : 's'}), ${gb(r.freeMb)} left${slots}; a replica is ${gb(r.perReplicaMb)} at ${r.concurrency} jobs. <a class="chiplink" href="#" data-sizing-apply="${escAttr(target)}" data-pooled="${r.pooled}" data-concurrency="${r.concurrency}">Use it</a>`;
 }
 document.addEventListener('click', async (e) => {
   const apply = e.target.closest('[data-sizing-apply]');
@@ -3539,9 +3542,10 @@ document.addEventListener('click', async (e) => {
   const box = document.getElementById(`env-sizing-${t}`);
   if (!box) return;
   const conc = document.getElementById(t === 'add' ? 'env-add-agents-concurrency' : `env-agents-concurrency-${t}`)?.value ?? '2';
+  const slots = document.getElementById(t === 'add' ? 'env-add-agents-private' : `env-agents-private-${t}`)?.value ?? '0';
   box.textContent = 'asking the host…';
   try {
-    const r = await hjson(`/api/agents/sizing?platform=${encodeURIComponent(S.platform)}&adding=${t === 'add' ? 1 : 0}&concurrency=${encodeURIComponent(conc)}`);
+    const r = await hjson(`/api/agents/sizing?platform=${encodeURIComponent(S.platform)}&adding=${t === 'add' ? 1 : 0}&concurrency=${encodeURIComponent(conc)}&privateSlots=${encodeURIComponent(slots)}`);
     box.innerHTML = sizingHtml(r, t);
   } catch (err) { box.textContent = `✗ ${err.message}`; }
 });
@@ -3676,7 +3680,7 @@ async function envAction(act, env, btn) {
     const features = Object.fromEntries(FEATURE_FLAGS.map((k) => [k, on(k)]));
     features.banking = ['gocardless', 'enablebanking'].filter(on);
     features.signin = ['google', 'apple'].filter(on);
-    const body = { platform: S.platform, env: s, channel: document.getElementById(`env-channel-${s}`).value, appChannel: document.getElementById(`env-appchannel-${s}`).value, label: document.getElementById(`env-label-${s}`).value.trim(), features, agents: { pooled: Number(document.getElementById(`env-agents-pooled-${s}`).value), concurrency: Number(document.getElementById(`env-agents-concurrency-${s}`).value) } };
+    const body = { platform: S.platform, env: s, channel: document.getElementById(`env-channel-${s}`).value, appChannel: document.getElementById(`env-appchannel-${s}`).value, label: document.getElementById(`env-label-${s}`).value.trim(), features, agents: { pooled: Number(document.getElementById(`env-agents-pooled-${s}`).value), concurrency: Number(document.getElementById(`env-agents-concurrency-${s}`).value), privateSlots: Number(document.getElementById(`env-agents-private-${s}`).value) } };
     btn.disabled = true;
     try {
       if (isLcl()) { await streamLocal('/api/envs/update', body, `save ${label}'s settings (re-render)`); }

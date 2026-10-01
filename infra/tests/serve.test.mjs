@@ -496,6 +496,7 @@ test('agents/sizing (#420): this computer answers from its own memory with the a
   assert.equal(r.environments, platformEnvs('lcl').length);
   assert.equal((await get(app, '/api/agents/sizing?platform=lcl&adding=1&concurrency=3')).json().environments, platformEnvs('lcl').length + 1);
   assert.equal((await get(app, '/api/agents/sizing?platform=lcl&concurrency=3')).json().concurrency, 3);
+  assert.equal((await get(app, '/api/agents/sizing?platform=lcl&privateSlots=2')).json().privateSlots, 2, 'the slots are part of the arithmetic (#420 A2)');
   assert.equal((await get(app, '/api/agents/sizing?platform=nas')).statusCode, 400, 'no DSM account stored');
   assert.equal((await get(app, '/api/agents/sizing?platform=moon')).statusCode, 400);
 });

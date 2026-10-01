@@ -73,6 +73,9 @@ internal sealed record WireDisconnect(string? Bundle);
 
 internal sealed record WireEnrollment(string Subject, string Name);
 
+/// <summary>A request for a hosted private agent (#420 A2): the subject is the relay's, never the client's.</summary>
+internal sealed record WirePrivateAgentRequest(string Subject);
+
 /// <summary>
 /// The relay (#367): the app's door to the connector control plane. Every
 /// route acts as the signed-in user — the subject is minted here, never
@@ -369,6 +372,43 @@ public static partial class ConnectorRelayEndpoints
         group.MapPost("/agents/enrollment", Enroll).WithValidation<ConnectorEnrollmentRequest>();
         group.MapDelete("/agents/{agentId}", RevokeAgent);
         group.MapGet("/agents/{agentId}/profiles", AgentProfiles);
+
+        // hosted private agents (#420 A2): the caller's standing, a request,
+        // withdrawing it, giving the slot back — the operator decides in the
+        // admin portal (ConnectorAdminEndpoints)
+        group.MapGet("/private-agents/mine", PrivateAgentMine);
+        group.MapPost("/private-agents/requests", PrivateAgentRequest);
+        group.MapDelete("/private-agents/requests/{requestId}", PrivateAgentWithdraw);
+        group.MapDelete("/private-agents/mine", PrivateAgentGiveBack);
+    }
+
+    private static async Task<IResult> PrivateAgentMine(HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.GetAsync("v1/private-agents/mine", new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);
+        return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Object)) : Relay(http, reply);
+    }
+
+    private static async Task<IResult> PrivateAgentRequest(HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var subject = relay.SubjectOf(http);
+        var reply = await relay.Client.PostAsync("v1/private-agents/requests", new ConnectorCall
+        {
+            Subject = subject,
+            Body = new WirePrivateAgentRequest(subject),
+        }, ct);
+        return reply.IsSuccess ? Results.Json(ConnectorJson.ToCamel(reply.Object)) : Relay(http, reply);
+    }
+
+    private static async Task<IResult> PrivateAgentWithdraw(string requestId, HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.DeleteAsync($"v1/private-agents/requests/{requestId}", new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);
+        return reply.IsSuccess ? Results.NoContent() : Relay(http, reply);
+    }
+
+    private static async Task<IResult> PrivateAgentGiveBack(HttpContext http, ConnectorRelay relay, CancellationToken ct)
+    {
+        var reply = await relay.Client.DeleteAsync("v1/private-agents/mine", new ConnectorCall { Subject = relay.SubjectOf(http) }, ct);
+        return reply.IsSuccess ? Results.NoContent() : Relay(http, reply);
     }
 
     private static async Task<IResult> ListAgents(HttpContext http, ConnectorRelay relay, CancellationToken ct)

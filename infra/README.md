@@ -136,7 +136,11 @@ with `features.connectors` mints `CONNECTOR_SEAL_KEY_K1`,
 secret `munni bootstrap` on the machine app, read back on every run —
 Logto's application endpoints carry none); the platform mints
 `CONNECTOR_FLEET_CODE` is the environment's own too (#420): its pooled
-browser agents enroll with it at the control plane beside them.
+browser agents enroll with it at the control plane beside them; so is
+`CONNECTOR_PRIVATE_CODE` (#420 A2), which its hosted private slots enroll
+with — a different code on purpose, because a slot must serve nobody until
+the operator binds it (the control plane refuses to start when the two are
+equal).
 Repository-level secrets and variables are not used, except the first-boot
 latch `MUNNI_INITIALIZED` the wizard sets at Connect.
 

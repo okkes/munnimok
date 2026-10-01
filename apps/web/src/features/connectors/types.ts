@@ -262,6 +262,10 @@ export interface AgentView {
   online: boolean;
   stale: boolean;
   profiles: { id: string; provider: string; healthy: boolean; lastOkAt?: string | null }[];
+  /** munni’s own container that serves one person at a time (#420 A2) — in the caller’s list only while bound to them */
+  hosted?: boolean;
+  bound?: boolean;
+  resetting?: boolean;
 }
 
 /** `POST /connectors/agents/enrollment` — the code and the line that starts the agent */
@@ -270,6 +274,26 @@ export interface EnrollmentView {
   expiresAt: string;
   controlPlaneUrl?: string | null;
   composeCommand?: string | null;
+}
+
+/** a request for a hosted private agent (#420 A2) and what the admin decided */
+export interface PrivateAgentRequest {
+  id: string;
+  state: 'pending' | 'approved' | 'denied' | 'withdrawn' | 'released';
+  createdAt: string;
+  decidedAt?: string | null;
+  agentId?: string | null;
+}
+
+/** `GET /connectors/private-agents/mine` — the caller’s standing with the hosted private agents */
+export interface PrivateAgentStatus {
+  /** whether this environment hosts any slot at all — false hides the whole offer */
+  offered: boolean;
+  /** slots free right now */
+  free: number;
+  request?: PrivateAgentRequest | null;
+  /** the slot bound to the caller, if one is */
+  agent?: AgentView | null;
 }
 
 /** a `{ kind: "connector" }` frame on `/sync/events`: the view without secrets or data */

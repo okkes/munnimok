@@ -75,6 +75,55 @@ describe('Your own computer — the household agents (§10.4)', () => {
     expect(revoked).toBe(true);
   }, 20_000);
 
+  it('a hosted private agent (#420 A2): ask for one, wait for the admin, withdraw, then the slot is listed as hosted and can be given back', async () => {
+    let stage: 'free' | 'pending' | 'bound' | 'released' = 'free';
+    const slot = agent({ id: 'agt_slot', name: 'munni dev private agent 1', hosted: true, bound: true, profiles: [] });
+    const request = (state: string) => ({ id: 'par_1', state, createdAt: new Date().toISOString() });
+    const standing = () => {
+      if (stage === 'pending') return { offered: true, free: 1, request: request('pending'), agent: null };
+      if (stage === 'bound') return { offered: true, free: 0, request: request('approved'), agent: slot };
+      if (stage === 'released') return { offered: true, free: 0, request: request('released'), agent: null };
+      return { offered: true, free: 1, request: null, agent: null };
+    };
+    renderAppAsUser('/connections/agents', {
+      api: {
+        'GET /connectors': () => info(true),
+        'GET /connectors/agents': () => ({ agents: stage === 'bound' ? [slot] : [] }),
+        'GET /connectors/private-agents/mine': () => standing(),
+        'POST /connectors/private-agents/requests': () => {
+          stage = 'pending';
+          return request('pending');
+        },
+        // the admin approved meanwhile: the reload after the withdraw finds the slot bound
+        'DELETE /connectors/private-agents/requests/par_1': () => {
+          stage = 'bound';
+          return new Response(null, { status: 204 });
+        },
+        'DELETE /connectors/private-agents/mine': () => {
+          stage = 'released';
+          return new Response(null, { status: 204 });
+        },
+      },
+    });
+    await screen.findByTestId('screen-agents');
+    const card = await screen.findByTestId('agents-private', {}, { timeout: 5000 });
+    expect(card.textContent).toContain('1 free right now');
+    fireEvent.click(screen.getByTestId('agents-private-request'));
+    await screen.findByTestId('agents-private-pending', {}, { timeout: 5000 });
+    fireEvent.click(screen.getByTestId('agents-private-withdraw'));
+    const held = await screen.findByTestId('agents-private-held', {}, { timeout: 5000 });
+    expect(held.textContent).toContain('munni dev private agent 1');
+    expect(screen.getByTestId('agent-hosted-agt_slot').textContent).toBe('Hosted by munni');
+    expect(screen.getByTestId('agent-revoke-agt_slot').textContent).toBe('Give back');
+
+    // giving it back: the warning says the next person gets it clean, then it is gone from the list
+    fireEvent.click(screen.getByTestId('agent-revoke-agt_slot'));
+    expect((await screen.findByTestId('agent-revoke-body')).textContent).toContain('clean');
+    fireEvent.click(screen.getByTestId('agent-revoke-confirm'));
+    await waitFor(() => expect(screen.queryByTestId('agent-agt_slot')).toBeNull());
+    await screen.findByTestId('agents-private-request', {}, { timeout: 5000 });
+  }, 20_000);
+
   it('says so where household agents are not offered, and asks the demo to sign in', async () => {
     renderAppAsUser('/connections/agents', {
       api: {

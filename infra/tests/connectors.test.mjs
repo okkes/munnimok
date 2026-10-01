@@ -83,7 +83,7 @@ test('an environment that runs connectors gets the control plane beside its api:
     assert.equal(api.Connectors__SubjectSalt, '${CONNECTOR_SUBJECT_SALT}');
     assert.equal(api.Connectors__AgentPublicUrl, `https://munni-staging-nas-connector.${DOMAIN}/`);
 
-    for (const name of ['CONNECTOR_SEAL_KEY_K1', 'CONNECTOR_ENROLLMENT_HMAC', 'CONNECTOR_SUBJECT_SALT', 'CONNECTOR_M2M_APP_ID', 'CONNECTOR_M2M_APP_SECRET', 'CONNECTOR_FLEET_CODE']) {
+    for (const name of ['CONNECTOR_SEAL_KEY_K1', 'CONNECTOR_ENROLLMENT_HMAC', 'CONNECTOR_SUBJECT_SALT', 'CONNECTOR_M2M_APP_ID', 'CONNECTOR_M2M_APP_SECRET', 'CONNECTOR_FLEET_CODE', 'CONNECTOR_PRIVATE_CODE']) {
       assert.match(env, new RegExp(`^${name}=\\$\\{${name}\\}$`, 'm'), `${name} is a placeholder CI fills`);
       assert.ok(templatePlaceholders(stack).includes(name));
     }
@@ -164,12 +164,32 @@ test('the pooled browser agents are rendered beside the environment\'s control p
     const { compose: none } = render('munni-nas-staging');
     assert.equal(block(none, 'connector-agent-staging-1'), null);
     assert.ok(!/agentstate/.test(none));
-    // the default: one replica, two jobs at once
+    // hosted private slots (#420 A2): the household agent's shape on munni's hardware, enrolled with the environment's private-slot code
+    withConnectors('nas', 'staging', { slot: 1, channel: 'dev', features: { android: true }, agents: { pooled: 1, concurrency: 2, privateSlots: 2 } });
+    const { compose: slotted, env: slottedEnv } = render('munni-nas-staging');
+    assert.match(slottedEnv, /^CONNECTOR_PRIVATE_CODE=\$\{CONNECTOR_PRIVATE_CODE\}$/m);
+    assert.equal(envOf(block(slotted, 'connector-staging')).Connector__PrivateEnrollmentCode, '${CONNECTOR_PRIVATE_CODE}', 'the control plane seeds the slot code');
+    const slot1 = block(slotted, 'connector-private-staging-1');
+    assert.ok(slot1 && block(slotted, 'connector-private-staging-2'), 'two slots');
+    assert.equal(block(slotted, 'connector-private-staging-3'), null);
+    const se = envOf(slot1);
+    assert.equal(se.ConnectorAgent__Class, 'byo');
+    assert.equal(se.ConnectorAgent__MaxConcurrency, '"1"', 'one person, one browser at a time');
+    assert.equal(se.ConnectorAgent__AgentName, 'munni staging private agent 1');
+    assert.equal(se.ConnectorAgent__Connections__0__EnrollmentCode, '${CONNECTOR_PRIVATE_CODE}');
+    assert.equal(se.ConnectorAgent__Connections__0__ControlPlaneBaseUrl, 'http://connector:8080/');
+    assert.equal(se.ConnectorAgent__Headless, '"false"');
+    assert.match(slot1, /privateprofiles1:\/profiles/);
+    assert.match(slotted, /^  agentstate1:\n  agentprofiles1:\n  privatestate1:\n  privateprofiles1:\n  privatestate2:\n  privateprofiles2:$/m);
+    assert.ok(block(slotted, 'connector-agent-staging-1'), 'the pooled replica stays beside them');
+    // the default: one replica, two jobs at once, no private slot
     withConnectors('nas', 'staging', { slot: 1, channel: 'dev', features: { android: true } });
     const { compose: one, stack: dflt } = render('munni-nas-staging');
     assert.deepEqual(dflt.agents, { pooled: 1, concurrency: 2, privateSlots: 0, egress: { country: 'NL', kind: 'residential' } });
     assert.ok(block(one, 'connector-agent-staging-1'));
     assert.equal(envOf(block(one, 'connector-agent-staging-1')).ConnectorAgent__MaxConcurrency, '"2"');
+    assert.equal(block(one, 'connector-private-staging-1'), null, 'no slot unless asked');
+    assert.ok(!/privatestate/.test(one));
   } finally {
     fx.writeEnv('nas', { env: 'staging', slot: 1, channel: 'dev', features: { android: true } });
   }
@@ -202,6 +222,8 @@ test('the manifest: an environment that runs connectors owns its seal key, enrol
   assert.equal(Buffer.from(generateValue('CONNECTOR_ENROLLMENT_HMAC'), 'base64').length, 32);
   assert.match(generateValue('CONNECTOR_FLEET_CODE'), /^AGNT-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/);
   assert.match(generateValue('CONNECTOR_SUBJECT_SALT'), /^[A-Za-z0-9_-]{43}$/, 'a salt is any 32-byte token');
+  assert.match(generateValue('CONNECTOR_PRIVATE_CODE'), /^AGNT-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/, 'a private-slot code in the control plane\'s own shape (#420 A2)');
+  assert.notEqual(generateValue('CONNECTOR_PRIVATE_CODE'), generateValue('CONNECTOR_FLEET_CODE'));
 });
 
 /** a Logto Management API in a box, with the machine-role routes the connector access needs */

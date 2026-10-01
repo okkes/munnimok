@@ -146,6 +146,10 @@ internal static class AgentApiEndpoints
             // agent may only ever serve the user who enrolled it, and
             // letting it name its own owner would undo that in one line.
             OwnerSubject = enrollment.Subject,
+            // A private slot (#420 A2) is told by the code it came in on - the
+            // operator's standing code under the slot subject - never by
+            // anything the agent claims about itself.
+            Hosted = string.Equals(enrollment.Subject, ConnectorOptions.PrivateSlotSubject, StringComparison.Ordinal),
             CapabilitiesJson = ConnectorJson.Serialize(request.Capabilities),
             TokenHash = AgentAuth.Hash(token),
             LastHeartbeatAt = now,
@@ -180,6 +184,12 @@ internal static class AgentApiEndpoints
         agent.CapabilitiesJson = ConnectorJson.Serialize(request.Capabilities);
         agent.Class = request.Capabilities.Class;
 
+        // A released slot's wipe, confirmed (#420 A2): the slot is free again.
+        // Before the profile bookkeeping below, which must not re-record what
+        // the agent has just deleted - and it reports none after a wipe.
+        var wiped = request.ResetDone && agent.ResetRequestedAt is not null;
+        if (wiped) agent.ResetRequestedAt = null;
+
         // LIVENESS FIRST, AND ON ITS OWN, because it used to share a
         // transaction with the profile bookkeeping below and that cost an
         // agent its existence.
@@ -195,6 +205,11 @@ internal static class AgentApiEndpoints
         // is the half worth keeping fixed: whether an agent is ALIVE is not
         // a fact that profile bookkeeping gets a vote on.
         await db.SaveChangesAsync(ct);
+
+        if (wiped)
+        {
+            await db.Profiles.Where(p => p.AgentId == agent.Id).ExecuteDeleteAsync(ct);
+        }
 
         try
         {
@@ -233,6 +248,7 @@ internal static class AgentApiEndpoints
             LeaseTtlSeconds = options.Value.Timeouts.LeaseSeconds,
             Revoked = agent.Revoked,
             CatalogDigest = registry.AgentCatalogDigest,
+            ResetProfiles = agent.ResetRequestedAt is not null,
         });
     }
 

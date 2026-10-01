@@ -46,6 +46,11 @@ test('pending: the app signing fingerprint alone needs only Deploy; together wit
   const withAgents = env({ agents: { pooled: 1, concurrency: 2, privateSlots: 0 } });
   assert.equal(needsFor(configChanges(before, withAgents)), 'bootstrap');
   assert.equal(needsFor(configChanges(withAgents, env({ agents: { pooled: 2, concurrency: 2, privateSlots: 0 } }))), 'deploy', 'a count that changes afterwards is a Deploy');
+  // #420 A2: the first private slot mints the environment's slot code (a Bootstrap); more or fewer slots afterwards is a Deploy, and so is going back to none
+  const oneSlot = env({ agents: { pooled: 1, concurrency: 2, privateSlots: 1 } });
+  assert.equal(needsFor(configChanges(withAgents, oneSlot)), 'bootstrap');
+  assert.equal(needsFor(configChanges(oneSlot, env({ agents: { pooled: 1, concurrency: 2, privateSlots: 3 } }))), 'deploy');
+  assert.equal(needsFor(configChanges(oneSlot, withAgents)), 'deploy');
 });
 
 test('pending: arrays are compared whole and read as lists; the wizard-only label never counts', () => {
