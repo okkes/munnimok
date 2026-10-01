@@ -1,8 +1,9 @@
 // The fake `gh` CLI (see fixture.mjs fakeGh): loaded through NODE_OPTIONS
 // --import into a node binary named gh, so `gh <args>` lands here with
 // the subcommand as argv[1]. Mirrors the calls the modules make — GitHub
-// environments, their secrets and variables — against a JSON state file,
-// and exits before node would look for a script named "api".
+// environments, their secrets and variables, the repository's variables —
+// against a JSON state file, and exits before node would look for a
+// script named "api".
 import { readFileSync, writeFileSync } from 'node:fs';
 import { basename } from 'node:path';
 
@@ -42,6 +43,13 @@ if (stateFile && ['api', 'secret', 'variable'].includes(basename(args[0] ?? ''))
       if (!envs[env]) fail(`Not Found (HTTP 404) — no environment ${env}`);
       envs[env][kind][args[2]] = value;
     } else state.repoVariables[args[2]] = value;
+  } else if (args[0] === 'variable' && args[1] === 'get') {
+    // `gh variable get NAME [--env ENV]`: the value, or exit 1 with "was not found" like gh does
+    const env = opt('--env');
+    const name = args[2];
+    const value = env ? envs[env]?.variables?.[name] : state.repoVariables[name];
+    if (value === undefined) fail(`variable ${name} was not found`);
+    out = `${value}\n`;
   } else fail(`fake gh: unsupported call ${args.join(' ')}`, 2);
   save();
   process.stdout.write(out);

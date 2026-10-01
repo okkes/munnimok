@@ -7,8 +7,9 @@
  * on THIS machine: the lcl platform (Docker Desktop — the shared stack
  * plus every environment, each with its own Logto) is run from here; for
  * the nas platform the helper only keeps the wizard's own store, writes
- * the committed platform config (infra/platforms) and answers what the
- * page cannot compute itself — GitHub Actions does the deploying.
+ * the platform config (infra/platforms, published to GitHub as the
+ * platform's variable — #416, never committed) and answers what the page
+ * cannot compute itself — GitHub Actions does the deploying.
  *
  * Security model (a localhost dev tool, but still):
  * - binds 127.0.0.1 only; Host header must be localhost/127.0.0.1;
@@ -33,8 +34,9 @@ import { ENV_NAME_RE, RESERVED_ENV_NAMES, lanHost, listPlatforms, loadAutonomy, 
 import { jwtES256, jwtRS256, validate } from '../modules/validate.mjs';
 import { buildAccount, buildCipher, encString, vaultImport, vaultLogin, vaultPurge, vaultReadFolder, vaultRegister } from '../modules/vault.mjs';
 import { zipEntry, zipNames } from '../modules/zip.mjs';
-import { pendingFrom } from '../modules/pending.mjs';
-import { normalizeEnv, normalizePlatform } from '../modules/stack.mjs';
+import { configChanges, pendingFrom } from '../modules/pending.mjs';
+import { BRANCH_RE, PLATFORM_IDS, branchFor } from '../modules/stack.mjs';
+import { documentStackConfig, fetchPlatformVariable, publishPlatform, pullPlatform, readApplied } from '../modules/config.mjs';
 import { proxyRules } from '../modules/dsm.mjs';
 import { listUsers, setAdmin } from '../modules/logto.mjs';
 import { removeProjects } from '../modules/glitchtip.mjs';
@@ -77,6 +79,14 @@ function withPlatformEnv(platform, fn) {
   }
 }
 const loadAnyStack = (name) => withPlatformEnv(parseStackName(name)?.platform, () => loadStack(name));
+/** the environment gh runs in for a platform's GitHub calls: that platform's own token from the wizard's store (one connection per platform) */
+function ghEnvFor(platform) {
+  const pat = wizardValues(platform).GH_PAT;
+  if (!pat) throw new Error(`no GitHub token for platform ${platform} in the wizard's store — connect GitHub on this platform first`);
+  return { ...process.env, GH_TOKEN: pat };
+}
+/** the repository the page names (owner/name), or none — gh then takes the checkout's origin */
+const repoOf = (body) => (typeof body?.repo === 'string' && /^[\w.-]+\/[\w.-]+$/.test(body.repo) ? body.repo : null);
 /** the values a stack's setup sees: lcl = the stores, nas = the wizard's own values */
 const valuesFor = (stack) => (stack.delivery === 'docker' ? stackValues(stack) : wizardValues(stack.platform));
 
@@ -181,10 +191,13 @@ function platformsView() {
     controlEnv: p.controlEnv ?? null,
     browserAgent: Boolean(p.browserAgent),
     agentEgress: p.agentEgress,
+    // the branch this platform's runs check out (#416): the platform's choice, else by each stack's image channel
+    branch: p.branch ?? null,
+    sharedBranch: branchFor(p.branch, p.sharedChannel),
     sharedStack: stackName(p.platform),
     sharedEnvironment: `${p.platform}-shared`,
     domainStored: Boolean(wizardValues(p.platform).PLATFORM_DOMAIN),
-    envs: platformEnvs(p.platform).map((e) => ({ ...e, stack: stackName(p.platform, e.env), environment: `${p.platform}-${e.env}` })),
+    envs: platformEnvs(p.platform).map((e) => ({ ...e, stack: stackName(p.platform, e.env), environment: `${p.platform}-${e.env}`, branch: branchFor(p.branch, e.channel) })),
   }));
 }
 
@@ -354,6 +367,12 @@ async function platformSaveEndpoint(req, res) {
     if (body.controlEnv) p.controlEnv = body.controlEnv; else delete p.controlEnv;
   }
   if (body.sharedChannel === 'latest' || body.sharedChannel === 'dev') p.sharedChannel = body.sharedChannel;
+  // the branch every run of this platform checks out (#416): empty = by each stack's image channel
+  if (typeof body.branch === 'string') {
+    const branch = body.branch.trim();
+    if (branch && !BRANCH_RE.test(branch)) return json(res, 400, { error: 'the branch must be a git branch name (letters, digits, . _ / -)' });
+    if (branch) p.branch = branch; else delete p.branch;
+  }
   // the pooled browser agent of the shared stack (#367): a tick, and where its traffic leaves from
   if (typeof body.browserAgent === 'boolean') p.browserAgent = body.browserAgent;
   if (body.agentEgressKind === 'residential' || body.agentEgressKind === 'datacenter') p.agentEgress = { ...p.agentEgress, kind: body.agentEgressKind };
@@ -377,20 +396,35 @@ async function connectorProbeEndpoint(res, url, fetchImpl) {
   }
 }
 
-/** commit + push the platform config (the pipeline reads it from the branch) */
-async function configCommitEndpoint(req, res, spawnImpl) {
+/** publish the platform config as its GitHub variable (#416) — the pipeline reads it from there, nothing is committed */
+async function configPublishEndpoint(req, res) {
   const body = await readBody(req);
-  const message = String(body.message ?? 'chore(platforms): update the platform config').replace(/[^\w\s():,./+-]/g, '').slice(0, 120);
+  const platform = String(body.platform ?? '');
   streamHead(res);
-  const run = stepRunner(spawnImpl);
-  const git = (label, args) => run(res, label, 'git', args, { cwd: ROOT });
-  const status = await git('what changed under infra/platforms', ['status', '--porcelain', 'infra/platforms']);
-  if (!status.out.trim()) { res.write('nothing to commit — the platform config is already on the branch\n'); return res.end('[exit 0]\n'); }
-  await git('stage the platform config', ['add', 'infra/platforms']);
-  const commit = await git('commit', ['commit', '-m', message, '--', 'infra/platforms']);
-  if (commit.code !== 0) return res.end('[exit 1]\n');
-  const push = await git('push the branch', ['push', 'origin', 'HEAD']);
-  return res.end(`\n[exit ${push.code === 0 ? 0 : 1}]\n`);
+  if (!listPlatforms().some((p) => p.platform === platform)) { res.write(`unknown platform "${platform}"\n`); return res.end('[exit 1]\n'); }
+  if (platform === LCL) { res.write('this computer keeps its config here — nothing to publish\n'); return res.end('[exit 0]\n'); }
+  try {
+    const published = publishPlatform(platform, { repo: repoOf(body), env: ghEnvFor(platform) });
+    res.write(`published ${published.name} (${published.bytes} bytes${published.envs.length ? `, environments ${published.envs.join(', ')}` : ', no environments'}) — the next Bootstrap / Deploy reads it\n`);
+    return res.end('[exit 0]\n');
+  } catch (e) {
+    res.write(`✗ ${e.message}\n`);
+    return res.end('[exit 1]\n');
+  }
+}
+
+/** fetch the platform's variable and write its files here — a second computer, or after a cleanup changed it in CI */
+async function configPullEndpoint(req, res) {
+  const body = await readBody(req);
+  const platform = String(body.platform ?? '');
+  if (platform === LCL || !PLATFORM_IDS.includes(platform)) return json(res, 400, { error: `nothing to fetch for "${platform}"` });
+  try {
+    const pulled = pullPlatform(platform, { repo: repoOf(body), env: ghEnvFor(platform) });
+    if (!pulled) return json(res, 404, { error: `${platform}: nothing published on GitHub yet — Save platform config publishes it` });
+    return json(res, 200, { ok: true, ...pulled });
+  } catch (e) {
+    return json(res, 500, { error: e.message });
+  }
 }
 
 /* ── run bootstrap / tools (lcl) ──────────────────────────────────── */
@@ -417,12 +451,12 @@ async function toolEndpoint(req, res, runImpl) {
 }
 
 /* ── what runs vs what is configured: the strip that says "Bootstrap + Deploy applies this" ──
-   On the NAS the applied side is the commit the last successful Bootstrap / Deploy run checked
-   out (the page knows the runs and sends each stack's head sha); on this computer it is the
-   config the stack was last started with (applied.json beside its rendered files). Both sides
-   are normalized the way every reader normalizes them, so a difference is a real one. */
+   On the NAS the applied side is what the last successful Bootstrap / Deploy run recorded on the
+   stack's GitHub environment (MUNNI_APPLIED, #416) and the configured side must also be on GitHub
+   (the platform's variable) before a run can read it; on this computer it is the config the
+   stack was last started with (applied.json beside its rendered files). Both sides are
+   normalized the way every reader normalizes them, so a difference is a real one. */
 const appliedFile = (stack) => join(renderedDir(stack), 'applied.json');
-const configPaths = (platform, env) => [`infra/platforms/${platform}/platform.json`, ...(env ? [`infra/platforms/${platform}/envs/${env}.json`] : [])];
 /** the config as it is now: the environment's own keys plus the platform's under `platform` (a shared stack has only the latter) */
 function currentConfig(platform, env) {
   const { file, ...platformCfg } = loadPlatform(platform);
@@ -441,32 +475,40 @@ function pendingLocal(stack, { platform, env }) {
   const verdict = pendingFrom(applied.config, currentConfig(platform, env));
   return { stack, applied: { at: applied.at }, changes: verdict.changes, needs: verdict.needs ? 'setup' : null };
 }
-async function pendingDeployed(spawnImpl, stack, { platform, env }, sha) {
-  const paths = configPaths(platform, env);
-  const git = (args) => capture(spawnImpl, 'git', args, { cwd: ROOT });
-  const uncommitted = (await git(['status', '--porcelain', '--', ...paths])).out.trim().length > 0;
-  const head = (await git(['rev-parse', 'HEAD'])).out.trim() || null;
-  // nothing ran yet: the checklist's Bootstrap item covers it — only an edit that is not on the branch matters here
-  if (!sha) return { stack, head, applied: null, uncommitted, commits: [], changes: [], needs: uncommitted ? 'commit' : null, then: uncommitted ? 'bootstrap' : null };
-  const log = await git(['log', '--format=%H%x1f%cI%x1f%s', `${sha}..HEAD`, '--', ...paths]);
-  if (log.code !== 0) return { stack, head, applied: { sha }, unknown: true, uncommitted, commits: [], changes: [], needs: null };
-  const commits = log.out.split('\n').filter(Boolean).map((line) => { const [h, at, subject] = line.split('\x1f'); return { sha: h, at, subject }; });
-  const shown = await Promise.all(paths.map((p) => git(['show', `${sha}:${p}`])));
-  const rawAt = (i) => (shown[i]?.code === 0 && shown[i].out.trim() ? JSON.parse(shown[i].out) : null);
-  const platformThen = rawAt(0) ? (({ file, ...rest }) => rest)(normalizePlatform(platform, rawAt(0))) : null;
-  const envThen = env && rawAt(1) ? normalizeEnv(platform, rawAt(1), env) : null;
-  const verdict = pendingFrom(env ? { ...(envThen ?? {}), platform: platformThen } : { platform: platformThen }, currentConfig(platform, env));
-  return { stack, head, applied: { sha }, uncommitted, commits, changes: verdict.changes, needs: uncommitted ? 'commit' : verdict.needs, then: uncommitted ? (verdict.needs ?? 'bootstrap') : null };
+/** nas: what the last run applied vs what is configured here, and whether GitHub holds the latter yet (#416) */
+function pendingDeployed(stack, { platform, env }, { repo, published }) {
+  const current = currentConfig(platform, env);
+  const slice = documentStackConfig(published, stack);
+  const unpublished = !slice || configChanges(slice, current).length > 0;
+  const applied = readApplied({ stack, githubEnvironment: `${platform}-${env ?? 'shared'}` }, { repo, env: ghEnvFor(platform) });
+  const verdict = applied?.config ? pendingFrom(applied.config, current) : { changes: [], needs: null };
+  // nothing ran yet: the checklist's Bootstrap item covers it — only a save GitHub does not hold yet matters here
+  const needs = unpublished ? 'publish' : verdict.needs;
+  const then = unpublished ? (verdict.needs ?? (applied ? null : 'bootstrap')) : null;
+  return {
+    stack,
+    applied: applied ? { at: applied.at ?? null, by: applied.by ?? null, run: applied.run ?? null } : null,
+    publishedAt: published?.publishedAt ?? null,
+    unpublished,
+    changes: verdict.changes,
+    needs,
+    then,
+  };
 }
-async function pendingEndpoint(req, res, spawnImpl) {
+async function pendingEndpoint(req, res) {
   const body = await readBody(req);
   const platform = String(body.platform ?? '');
   try { loadPlatform(platform); } catch (e) { return json(res, 400, { error: e.message }); }
+  const stacks = Object.keys(body.stacks ?? {}).filter((s) => parseStackName(s)?.platform === platform);
+  let published = null;
+  if (platform !== LCL) {
+    try { published = fetchPlatformVariable(platform, { repo: repoOf(body), env: ghEnvFor(platform) }); }
+    catch (e) { return json(res, 200, { stacks: Object.fromEntries(stacks.map((s) => [s, { stack: s, error: e.message }])) }); }
+  }
   const out = {};
-  for (const [stack, want] of Object.entries(body.stacks ?? {})) {
+  for (const stack of stacks) {
     const parsed = parseStackName(stack);
-    if (!parsed || parsed.platform !== platform) continue;
-    try { out[stack] = platform === LCL ? pendingLocal(stack, parsed) : await pendingDeployed(spawnImpl, stack, parsed, want?.sha ? String(want.sha) : null); }
+    try { out[stack] = platform === LCL ? pendingLocal(stack, parsed) : pendingDeployed(stack, parsed, { repo: repoOf(body), published }); }
     catch (e) { out[stack] = { stack, error: e.message }; }
   }
   return json(res, 200, { stacks: out });
@@ -2027,13 +2069,14 @@ export function createApp({ token, probeImpl = probe, runImpl = runToStream, val
     'POST /api/platforms/vault-account': (req, res) => vaultAccountEndpoint(req, res),
     'POST /api/platforms/save': (req, res) => platformSaveEndpoint(req, res),
     'GET /api/connector-probe': (req, res) => connectorProbeEndpoint(res, url(req), netFetchImpl),
-    'POST /api/config/commit': (req, res) => configCommitEndpoint(req, res, spawnImpl),
+    'POST /api/config/publish': (req, res) => configPublishEndpoint(req, res),
+    'POST /api/config/pull': (req, res) => configPullEndpoint(req, res),
     'POST /api/envs': (req, res) => envCreateEndpoint(req, res, runImpl, spawnImpl),
     'POST /api/envs/update': (req, res) => envUpdateEndpoint(req, res, spawnImpl),
     'POST /api/envs/delete': (req, res) => envDeleteEndpoint(req, res, spawnImpl, netFetchImpl),
     'POST /api/envs/store-id': (req, res) => storeIdEndpoint(req, res, spawnImpl),
     'POST /api/envs/app-links': (req, res) => appLinksSaveEndpoint(req, res),
-    'POST /api/envs/pending': (req, res) => pendingEndpoint(req, res, spawnImpl),
+    'POST /api/envs/pending': (req, res) => pendingEndpoint(req, res),
     'GET /api/access/users': (req, res) => accessUsersEndpoint(res, url(req), netFetchImpl),
     'POST /api/access/toggle': (req, res) => accessToggleEndpoint(req, res, netFetchImpl),
     'POST /api/local/run': (req, res) => runEndpoint(req, res, runImpl),

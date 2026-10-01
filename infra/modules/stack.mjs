@@ -20,6 +20,10 @@ export const PLATFORM_LABELS = { lcl: 'This computer', nas: 'Synology NAS', rpi:
 export const RESERVED_ENV_NAMES = new Set(['shared', 'platform', 'all']);
 /** 2-12 lowercase letters/digits, starting with a letter (hostnames, compose project names, GitHub environments) */
 export const ENV_NAME_RE = /^[a-z][a-z0-9]{1,11}$/;
+/** a git branch name as the platform's `branch` field may name it */
+export const BRANCH_RE = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
+/** the branch a stack's runs check out (#416): the platform's choice, else its image channel decides — latest = master releases, dev = the dev branch */
+export const branchFor = (platformBranch, channel) => platformBranch || (channel === 'latest' ? 'master' : channel);
 
 /** environment ports come from the SLOT — stable across deletions; the connector control plane (#367) sits past the shared stack's fixed 8383-8386 */
 export const PORT_SLOT = { web: 8380, admin: 8381, api: 8382, connector: 8387, logto: 3201, logtoAdmin: 3202 };
@@ -74,11 +78,20 @@ export function normalizePlatform(id, cfg, file = null) {
     // the pooled browser agent of the shared stack (#367): off until the operator ticks it;
     // its egress is a CLAIM the control planes believe — a home line is residential, a rack is not
     browserAgent: false,
+    // the branch every run of this platform checks out (#416); empty = by each stack's image channel
+    branch: null,
     ...cfg,
     agentEgress: { country: 'NL', kind: 'residential', ...(cfg.agentEgress ?? {}) },
     delivery: cfg.delivery ?? (id === 'lcl' ? 'docker' : id === 'nas' ? 'synology' : 'ssh'),
+    branch: validBranch(cfg.branch, file ?? `platform ${id}`),
     file,
   };
+}
+
+function validBranch(value, where) {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || !BRANCH_RE.test(value)) throw new Error(`${where}: branch "${value}" is not a branch name`);
+  return value;
 }
 
 export function savePlatform(cfg) {
@@ -212,6 +225,7 @@ export function loadStack(name, { lenient = false } = {}) {
     env: parsed.env,
     role: shared ? 'shared' : 'env',
     channel: shared ? p.sharedChannel : envCfg.channel,
+    branch: branchFor(p.branch, shared ? p.sharedChannel : envCfg.channel),
     appChannel: shared ? null : envCfg.appChannel,
     slot: shared ? null : envCfg.slot,
     ports,

@@ -5,7 +5,9 @@ run-name: ${{ github.event_name == 'workflow_dispatch' && format('Bootstrap {0}{
 # environment carries the secrets). Dispatched by the setup wizard when a
 # platform or an environment is created, re-run by Deploy once a deploy
 # has seeded Logto/GlitchTip, and by hand from the Actions UI. Pushes to
-# dev that touch infra/ VERIFY every nas stack (no writes).
+# dev or master that touch infra/ VERIFY every nas stack (no writes). The
+# platform config comes from the MUNNI_PLATFORM_* variables the wizard
+# publishes (#416), materialized into infra/platforms at the start of a job.
 on:
   workflow_dispatch:
     inputs:
@@ -30,11 +32,11 @@ on:
         type: boolean
         default: false
   push:
-    branches: [dev]
+    branches: [dev, master]
     paths: ['infra/**', '.github/workflows/iac.yml']
 
 permissions:
-  contents: write # a cleanup commits the removed platform file
+  contents: read
   actions: write # the chain step dispatches the next run
 
 jobs:
@@ -52,6 +54,11 @@ jobs:
           node-version: 24
       - name: Infra module tests
         run: node --test "infra/tests/**/*.test.mjs"
+      - name: The platform config from GitHub (#416)
+        run: node infra/ci/materialize.mjs
+        env:
+          MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
+          MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
       - name: Which stacks
         id: m
         # a stack rides in its GitHub environment; without one it was never bootstrapped — a push skips it (a dispatch names its stack: that Bootstrap creates the environment)
@@ -85,6 +92,11 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      - name: The platform config from GitHub (#416)
+        run: node infra/ci/materialize.mjs
+        env:
+          MUNNI_PLATFORM_NAS: ${{ vars.MUNNI_PLATFORM_NAS }}
+          MUNNI_PLATFORM_LCL: ${{ vars.MUNNI_PLATFORM_LCL }}
       - name: Bootstrap / verify / clean up
         id: boot
         run: |
@@ -141,17 +153,6 @@ jobs:
           LOGTO_APPLE_KEY_ID: ${{ secrets.LOGTO_APPLE_KEY_ID }}
           LOGTO_APPLE_PRIVATE_KEY: ${{ secrets.LOGTO_APPLE_PRIVATE_KEY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      - name: Commit a removed platform file (cleanup)
-        if: ${{ inputs.cleanup == true && !cancelled() }}
-        run: |
-          if [ -n "$(git status --porcelain infra/platforms)" ]; then
-            git config user.name "munni setup"
-            git config user.email "setup@munni.invalid"
-            git add infra/platforms
-            git commit -m "chore(platforms): remove ${{ matrix.stack }} (cleanup)"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-            echo "platform file removed and committed" >> "$GITHUB_STEP_SUMMARY"
-          fi
       - name: Mask the domain in the artifact (this repository is public — the domain is a secret)
         if: ${{ !cancelled() }}
         run: |

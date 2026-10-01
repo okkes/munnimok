@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * The workflows' matrices from the committed platform config
- * (infra/platforms): which stacks to bootstrap, deploy or build.
+ * The workflows' matrices from the platform config (infra/platforms —
+ * materialized from the MUNNI_PLATFORM_* variables first, #416): which
+ * stacks to bootstrap, deploy or build.
  *
  *   node infra/ci/matrix.mjs --platform nas [--channel dev|latest] [--role env|shared] [--feature ios|android] [--stack munni-nas-prod] [--env prod|shared|all] [--existing nas-shared,nas-prod]
  *
@@ -10,7 +11,7 @@
  * skip it (with a note on stderr) — a dispatch that names its --stack is the
  * Bootstrap that creates the environment, and is never filtered.
  *
- * Prints a JSON array of {stack, platform, env, role, environment, channel,
+ * Prints a JSON array of {stack, platform, env, role, environment, channel, ref,
  * appChannel, androidPackage, iosBundleId, scheme, label} — `environment` is
  * the GitHub environment the job must run in. With GITHUB_OUTPUT set the
  * array also lands in the step output `include` (fromJSON-ready) and its
@@ -52,6 +53,8 @@ for (const p of platforms) {
       role: s.role,
       environment: s.githubEnvironment,
       channel: s.channel,
+      // the branch the job checks out for its templates and tools (#416): the platform's, else by channel
+      ref: s.branch,
       appChannel: s.appChannel ?? 'production',
       androidPackage: s.native?.appId ?? '',
       iosBundleId: s.native?.iosAppId ?? '',
