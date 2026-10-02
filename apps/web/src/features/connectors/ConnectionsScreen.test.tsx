@@ -510,10 +510,20 @@ describe('Connections hub (signed-in user)', () => {
     expect((await db.storeConns.toArray()).find((c) => c.deleted === 0)?.kind).toBe('bank');
     db.close();
 
-    // Sync now speaks bank counts, not receipts
+    // Sync now speaks bank counts, not receipts. The connect's own first sync
+    // already left the same words on the row, and Sync now takes the row
+    // through "fetching" first — so both reads wait together for the result
+    // to be back, rather than one passing on the old result and the next
+    // landing mid-sync.
     fireEvent.click(await screen.findByTestId(`conn-sync-${id}`));
-    await waitFor(() => expect(screen.getByTestId(`conn-result-${id}`).textContent).toContain('5 new transactions'), { timeout: 5000 });
-    expect(screen.getByTestId(`conn-result-${id}`).textContent).toContain('1 accounts');
+    await waitFor(
+      () => {
+        const result = screen.getByTestId(`conn-result-${id}`).textContent;
+        expect(result).toContain('5 new transactions');
+        expect(result).toContain('1 accounts');
+      },
+      { timeout: 5000 },
+    );
 
     // the attach door lands on the space's accounts screen with the account already picked (#310)
     fireEvent.click(screen.getByTestId('conn-attach-acct-mock-1'));
