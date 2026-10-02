@@ -108,7 +108,14 @@ export function LookupField({
         </p>
       )}
       {options !== null && options.length > 0 && (
-        <div className="max-h-[280px] overflow-y-auto rounded-card border border-line bg-surface" data-testid={`connect-lookup-${field}-options`}>
+        // the list owns its touches (data-sheet-no-drag): a nested scroller at
+        // its top would otherwise hand the first move to the sheet's drag and
+        // never scroll on a phone
+        <div
+          className="max-h-[280px] overflow-y-auto rounded-card border border-line bg-surface"
+          data-testid={`connect-lookup-${field}-options`}
+          data-sheet-no-drag
+        >
           {options.map((option) => (
             <button
               key={option.value}

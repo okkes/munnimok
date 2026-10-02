@@ -675,7 +675,13 @@ describe('Connections hub (signed-in user)', () => {
       fireEvent.change(screen.getByTestId('connect-field-country'), { target: { value: 'NL' } });
       // the bank comes from the party's own list, searched as typed, the country riding along as context
       fireEvent.change(screen.getByTestId('connect-field-institution'), { target: { value: 'in' } });
-      fireEvent.click(await screen.findByTestId('connect-lookup-institution-ING_NL', {}, { timeout: 5000 }));
+      const option = await screen.findByTestId('connect-lookup-institution-ING_NL', {}, { timeout: 5000 });
+      // the list owns its touches, and the field is no <label>: Safari re-dispatched a tap on a
+      // row to the first labelable element — the just-picked button — and unpicked it (user ss 2026-10-02)
+      expect(screen.getByTestId('connect-lookup-institution-options').hasAttribute('data-sheet-no-drag')).toBe(true);
+      expect(screen.getByTestId('connect-fieldset-institution').tagName).toBe('DIV');
+      expect(screen.getByTestId('connect-fieldset-country').tagName).toBe('LABEL');
+      fireEvent.click(option);
       expect(lookups.at(-1)).toContain('country=NL');
       expect(lookups.at(-1)).toContain('q=in');
       expect((await screen.findByTestId('connect-lookup-institution-picked')).textContent).toContain('ING');
