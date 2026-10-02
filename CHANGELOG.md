@@ -1,5 +1,19 @@
 # Changelog
 
+## [5.5.0](https://github.com/okkes/munnimok/compare/v5.4.0...v5.5.0) (2026-10-02)
+
+
+### ✨ Features
+
+* **connectors:** global connections, the whole history with a counter, full-screen receipts, MediaMarkt invoices ([9d27868](https://github.com/okkes/munnimok/commit/9d2786843b1f1e61ee7667de81732fb78ffc95b1))
+* **planning:** the unplanned segment, the periods ahead in the pager, every weekly occurrence ([07b8703](https://github.com/okkes/munnimok/commit/07b87035548354198947f7819798fa0776cfcf4c))
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** bol's hash reader goes through JsonAccess (the JSON read rule) ([5e73072](https://github.com/okkes/munnimok/commit/5e73072c5b134a56f0bb69ee5c1460a877bd3cc6))
+* **connectors:** the streamed login lands its taps, survives a closed sheet and ends by itself ([908634b](https://github.com/okkes/munnimok/commit/908634b25c9b924cb9f0433527171c786a4b03c8))
+
 ## [5.4.0](https://github.com/okkes/munnimok/compare/v5.3.0...v5.4.0) (2026-10-01)
 
 
