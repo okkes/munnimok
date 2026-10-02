@@ -90,6 +90,10 @@ public sealed class AgentHostTests
 
         await host.StartAsync(CancellationToken.None);
         await Box.WaitUntil(() => box.Control.Enrollments.Count == 1);
+        // The "enrolled as" line is written a beat after the control plane
+        // records the enrolment; stopping on the count alone raced it on a
+        // slow runner (CI, 2026-10-02). Wait for the line itself.
+        await Box.WaitUntil(() => box.Log.Lines.Any(line => line.Contains("enrolled as agt_new", StringComparison.Ordinal)));
         await host.StopAsync(CancellationToken.None);
 
         Assert.Equal(2, attempts);
