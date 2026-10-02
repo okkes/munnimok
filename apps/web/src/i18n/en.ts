@@ -2487,6 +2487,8 @@ export const en = {
   'connect.return.lost': 'munni does not know which connection this return belongs to.',
   'connect.return.lostNote': 'Started the connection in the munni app? Continue there. Otherwise start it again from Connections.',
   'connect.return.openApp': 'Open the munni app',
+  'connect.return.handoff': 'Back to the munni app…',
+  'connect.return.handoffNote': 'The bank brought you back. The munni app finishes the connection — if it did not open by itself, tap the button.',
   'connect.return.back': 'Back to munni',
   'connect.return.continue': 'Continue',
   'connect.return.signedOut': 'Sign in to munni first, then start the connection again from Connections.',

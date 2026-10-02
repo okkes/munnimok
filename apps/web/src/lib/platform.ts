@@ -69,6 +69,19 @@ export const isIOS = (): boolean => {
   return /^iP(hone|ad|od)/i.test(platform) || (/^Mac/i.test(platform) && navigator.maxTouchPoints > 1);
 };
 
+/** a phone's or tablet's browser — not the shell, which has its own ways back in */
+export const isMobileWeb = (): boolean =>
+  !isNativeApp() && (isIOS() || /Android/i.test(globalThis.navigator?.userAgent ?? ''));
+
+/** leaves this document for the app's own scheme; where no app answers it, nothing happens and the page stays */
+export function openApp(url: string): void {
+  try {
+    globalThis.location.replace(url);
+  } catch {
+    // a browser that refuses the scheme outright: the button on the page remains
+  }
+}
+
 /**
  * Web/PWA: ask the browser not to evict IndexedDB. Native: a no-op —
  * WebView storage is app-scoped application data, never evicted.

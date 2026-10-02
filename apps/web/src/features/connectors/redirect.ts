@@ -1,5 +1,5 @@
-import { publicOrigin } from '@/app/config';
-import { nativePlatform } from '@/lib/platform';
+import { config, publicOrigin } from '@/app/config';
+import { deepLinkToPath, nativePlatform } from '@/lib/platform';
 import { callbackSchemeOf, ownReturn } from './manifestForm';
 
 /**
@@ -10,10 +10,16 @@ import { callbackSchemeOf, ownReturn } from './manifestForm';
  * tab, and both fall back to the human pasting that address.
  *
  * A party that comes back to the app's own return page (§15: an
- * open-banking consent lands on `/gc-callback`) is different: on a phone
- * the system browser opens it and the App Link re-enters the app on the
- * return page; on the web this very tab goes to the bank and comes back
- * to the return page. Nothing to paste, nothing to capture.
+ * open-banking consent lands on `/gc-callback`) is different. On iOS it
+ * runs in the auth session with the APP's own scheme: the return page,
+ * loaded inside that session, hands the bank's query to the scheme, the
+ * session ends on it and the landing address is answered right here. A
+ * Safari view never came back by itself — a redirect is not a tap, so the
+ * universal link did not open the app and the return page sat in the
+ * browser (user ss 2026-10-03). On Android a Custom Tab opens it and the
+ * return page re-enters the app through its App Link or its scheme; on
+ * the web this very tab goes to the bank and comes back to the return
+ * page. Nothing to paste.
  */
 interface AuthSessionPlugin {
   start(options: { url: string; callbackScheme: string }): Promise<{ url: string | null; cancelled?: boolean }>;
@@ -28,6 +34,12 @@ const plugins = (): { AuthSession?: AuthSessionPlugin; Browser?: BrowserPlugin }
 export async function openPartyPage(url: string, returnPattern: string | undefined): Promise<string | null> {
   const p = plugins();
   if (ownReturn(returnPattern, publicOrigin())) {
+    if (nativePlatform() === 'ios' && p?.AuthSession?.start) {
+      const result = await p.AuthSession.start({ url, callbackScheme: config.nativeScheme });
+      // the scheme form the return page bounced to, answered as the https landing the party named
+      const path = result.url ? deepLinkToPath(result.url) : null;
+      return path ? `${publicOrigin()}${path}` : null;
+    }
     if (p?.Browser?.open) {
       await p.Browser.open({ url });
       return null;
