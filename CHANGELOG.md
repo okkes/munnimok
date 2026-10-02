@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.5.1](https://github.com/okkes/munnimok/compare/v5.5.0...v5.5.1) (2026-10-02)
+
+
+### 🐞 Bug Fixes
+
+* **connectors:** a bank picked from the party list stays picked on Safari ([0723900](https://github.com/okkes/munnimok/commit/072390049fbe4e5c6e9650f242432ce851e6b5b9))
+
 ## [5.5.0](https://github.com/okkes/munnimok/compare/v5.4.0...v5.5.0) (2026-10-02)
 
 
