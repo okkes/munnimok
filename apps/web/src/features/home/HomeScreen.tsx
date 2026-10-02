@@ -6,7 +6,7 @@ import { localToday, useRecurrings } from '@/application/recurring';
 import { OVERVIEW_KINDS, overviewSummary } from '@/domain/overview';
 import type { OverviewKind, OverviewSummary } from '@/domain/overview';
 import { periodHistory } from '@/domain/periods';
-import { addDays } from '@/domain/recurring';
+import { addDays, nextDueDate } from '@/domain/recurring';
 import {
   daysUntil,
   upcomingHorizon,
@@ -392,6 +392,7 @@ export function HomeScreen() {
     budgets: renderBudgetsBlock,
     planning: renderPlanningBlock,
     upcoming: renderUpcomingBlock,
+    recurring: renderRecurringBlock,
     goals: renderGoalsBlock,
     debts: renderDebtsBlock,
     events: renderEventsBlock,
@@ -922,19 +923,11 @@ export function HomeScreen() {
     // #347: the date alone made the reader do the math — say the days too
     const today = localToday();
     const dueLabel = (iso: string) => `${fmtShort(iso)} · ${dueInWords(daysUntil(iso, today), t)}`;
-    const quiet = upcoming.length === 0 && upcomingDebts.length === 0;
+    if (upcoming.length === 0 && upcomingDebts.length === 0) return null;
     return (
       <>
         <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
-          {/* #128 (user): the recurring manager left the tab bar — its door is this caption */}
-          <button
-            data-testid="home-recurring-door"
-            onClick={() => void navigate({ to: '/recurring' })}
-            className="m-tap m-cap flex items-center gap-1 border-none bg-transparent p-0 text-left"
-          >
-            {t('screen.recurring')}
-            <Icon name="chevron-right" size={13} />
-          </button>
+          <span>{t('recurring.upcoming')}</span>
           {/* #334 (user): the block mixes recurring + loans, so see-all
               lands on the combined list — not the recurring manager.
               r2: hidden when the landing has nothing more to show */}
@@ -949,17 +942,6 @@ export function HomeScreen() {
           )}
         </div>
         <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-upcoming">
-          {quiet && (
-            <button
-              data-testid="home-recurring-quiet"
-              onClick={() => void navigate({ to: '/recurring' })}
-              className="m-tap flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] text-ink-3"
-            >
-              <Icon name="autorenew" size={16} color="var(--m-ink-4)" />
-              <span className="min-w-0 flex-1">{t('home.recurringQuiet', { n: recurrings?.length ?? 0 })}</span>
-              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
-            </button>
-          )}
           {upcoming.map(({ rec, nextDue }) => (
             <button
               key={rec.id}
@@ -999,6 +981,59 @@ export function HomeScreen() {
               <span className="m-num text-[13px] font-semibold text-ink">
                 {fmt(upcomingLoanAmountCents(loan), currency)}
               </span>
+            </button>
+          ))}
+        </div>
+      </>
+    );
+  }
+
+  /** the recurring manager's own block (user 2026-10-02: Coming up keeps its see-all; this one leads to the manager) */
+  function renderRecurringBlock() {
+    const today = localToday();
+    const rows = (recurrings ?? [])
+      .map((rec) => ({ rec, nextDue: nextDueDate(rec, today) }))
+      .sort((a, b) => (a.nextDue ?? '9999').localeCompare(b.nextDue ?? '9999') || a.rec.name.localeCompare(b.rec.name))
+      .slice(0, 3);
+    return (
+      <>
+        <div className="m-cap mt-5 mb-1 flex items-baseline justify-between px-1">
+          <span>{t('screen.recurring')}</span>
+          <button
+            data-testid="home-recurring-all"
+            onClick={() => void navigate({ to: '/recurring' })}
+            className="m-tap border-none bg-transparent text-[11px] font-semibold text-accent-deep"
+          >
+            {t('action.seeAll')}
+          </button>
+        </div>
+        <div className="overflow-hidden rounded-card border border-line bg-surface" data-testid="home-recurring">
+          {rows.length === 0 && (
+            <button
+              data-testid="home-recurring-none"
+              onClick={() => void navigate({ to: '/recurring' })}
+              className="m-tap flex w-full items-center gap-3 px-4 py-3 text-left text-[13px] text-ink-3"
+            >
+              <Icon name="autorenew" size={16} color="var(--m-ink-4)" />
+              <span className="min-w-0 flex-1">{t('home.recurringNone')}</span>
+              <Icon name="chevron-right" size={16} color="var(--m-ink-4)" />
+            </button>
+          )}
+          {rows.map(({ rec, nextDue }) => (
+            <button
+              key={rec.id}
+              data-testid={`home-recurring-${rec.id}`}
+              onClick={() => void navigate({ to: '/recurring/$recId', params: { recId: rec.id } })}
+              className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-2.5 text-left last:border-0"
+            >
+              <RecurringVisual rec={rec} size={16} active={false} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium text-ink">{rec.name}</span>
+                <span className="block truncate text-[11px] text-ink-4">
+                  {nextDue ? t('home.recurringNext', { date: fmtShort(nextDue) }) : t('recurring.inactive')}
+                </span>
+              </span>
+              <span className="m-num text-[13px] font-semibold text-ink">{fmt(upcomingRecAmountCents(rec), currency)}</span>
             </button>
           ))}
         </div>

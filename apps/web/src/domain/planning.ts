@@ -12,8 +12,9 @@ import type {
 } from '@/db/types';
 import { budgetFamily, budgetPeriodAt, cycleIndex } from './budgets';
 import type { BudgetPeriodOpts } from './budgets';
+import { LOCKED_MAIN_IDS } from './categories';
 import { isDebtTracked, nextDebtPaymentDate } from './debts';
-import { nextDueDate } from './recurring';
+import { nextDueDate, occurrencesBetween } from './recurring';
 import { nextPeriod, periodHistory } from './periods';
 import type { Period } from './periods';
 import { txSliceViews } from './txSlices';
@@ -238,6 +239,52 @@ export function expenseRealizedCents(family: ReadonlySet<string>, txs: readonly 
   return total;
 }
 
+/** one main category spent on without a subject answering for it, its subs broken out */
+export interface UnplannedMain {
+  mainId: string;
+  cents: number;
+  subs: { catId: string; cents: number }[];
+}
+
+/**
+ * What the period spent outside every subject (user request 2026-10-02):
+ * expense slices whose category no expense or budget subject answers for,
+ * grouped under their main — the "unplanned" segment, derived afresh each
+ * period. Recurring-linked and transfer slices answer to their own
+ * segments; munni's locked families are not spending.
+ */
+export function unplannedByCategory(
+  txs: readonly TxView[],
+  period: Period,
+  covered: ReadonlySet<string>,
+  catalog: CatalogLookup,
+): UnplannedMain[] {
+  const byMain = new Map<string, Map<string, number>>();
+  for (const tx of txs) {
+    if (tx.deleted !== 0 || !inPeriod(tx.date, period)) continue;
+    for (const slice of txSliceViews(tx)) {
+      if (slice.effType !== 'expense' || slice.recurringId || slice.linkedAccountId) continue;
+      const catId = slice.catId ?? '';
+      if (!catId || covered.has(catId)) continue;
+      const cat = catalog.byId(catId);
+      const mainId = cat.parentId ?? cat.id;
+      if (LOCKED_MAIN_IDS.has(mainId)) continue;
+      const cents = slice.fromParts ? Math.abs(slice.amountCents) : -slice.amountCents;
+      const subs = byMain.get(mainId) ?? new Map<string, number>();
+      subs.set(catId, (subs.get(catId) ?? 0) + cents);
+      byMain.set(mainId, subs);
+    }
+  }
+  return [...byMain]
+    .map(([mainId, subs]) => ({
+      mainId,
+      cents: [...subs.values()].reduce((sum, v) => sum + v, 0),
+      subs: [...subs].map(([catId, cents]) => ({ catId, cents })).sort((a, b) => b.cents - a.cents),
+    }))
+    .filter((main) => main.cents > 0)
+    .sort((a, b) => b.cents - a.cents);
+}
+
 /** a budget's own rule: everything its family spent, recurring-linked rows included */
 export function budgetRealizedCents(family: ReadonlySet<string>, txs: readonly TxView[], period: Period): number {
   let total = 0;
@@ -329,6 +376,10 @@ export function recurringTargetCents(
   period: Period,
   carriedCents: number,
 ): number {
+  // a cost that falls due more than once inside the period (a weekly cost
+  // in a monthly plan) wants every occurrence, not one (user ss 2026-10-02)
+  const occurrences = rec.active === 1 ? occurrencesBetween(rec, period.start, period.end).length : 0;
+  if (occurrences > 1) return Math.max(0, occurrences * Math.abs(rec.amountCents) - carriedCents);
   const due = recurringDueFrom(rec, period);
   const left = due ? periodsUntil(space, period, due) : 1;
   return spreadTargetCents(Math.abs(rec.amountCents), carriedCents, left);

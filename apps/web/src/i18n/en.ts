@@ -2668,7 +2668,6 @@ export const en = {
   'plan.home.red': '{n} in the red',
   'plan.reorder.title': 'Reorder {segment}',
   'plan.reorder.hint': 'The order is the fill order: the first subject is funded first.',
-  'home.recurringQuiet': 'Nothing due in the next 7 days · {n} active',
   'cashflow.planned': 'Set aside in the plan',
   'notif.planOverspentRow': 'In the red in your plan: {names}',
   'act.planStart': '{actor} started the plan',
@@ -2699,6 +2698,18 @@ export const en = {
   'conn.state.waitUntil': 'The party asked munni to wait — try again after {time}',
   'connect.progress.closeNote': 'You can close this: the sign-in carries on, and the Connections list shows where it stands.',
   'connect.progress.close': 'Close for now',
+  // ── planning round 19 (2026-10-02) ──────────────────────────────────
+  'plan.segment.unplanned': 'Unplanned',
+  'plan.unplannedHint': 'Spent this period on categories no subject answers for — plan them next time.',
+  'plan.unplannedPlan': 'Plan it',
+  'plan.unplannedSpent': 'spent {amount}',
+  'plan.withdrawAllTitle': 'Take all the money back?',
+  'plan.withdrawAllBody': 'Every subject of this plan goes back to zero; the money returns to the pool.',
+  'plan.aheadEmpty': 'No plan for this period yet.',
+  'plan.aheadStart': 'Set it up like the current plan',
+  'plan.aheadNeedsCurrent': 'Start this period’s plan first.',
+  'home.recurringNone': 'No recurring costs yet — add one',
+  'home.recurringNext': 'next {date}',
 } as const;
 
 export type TranslationKey = keyof typeof en;

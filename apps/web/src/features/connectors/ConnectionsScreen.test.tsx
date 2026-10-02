@@ -200,7 +200,8 @@ describe('Connections hub (signed-in user)', () => {
     fireEvent.click(screen.getByTestId('connect-next'));
     await screen.findByTestId('connect-live', {}, { timeout: 5000 });
     // the ended stream re-reads the session, which has settled: the connection is named
-    await screen.findByTestId('conn-name-input', {}, { timeout: 8000 });
+    expect(await screen.findByTestId('conn-name-input', {}, { timeout: 8000 })).toBeTruthy();
+    expect(screen.queryByTestId('connect-live')).toBeNull();
   }, 20_000);
 
   it('closing the sheet mid-sign-in keeps it going: the hub lists it, continues it, and adopts it when it settles', async () => {

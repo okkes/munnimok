@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useLang } from '@/i18n';
+import { DangerConfirmSheet } from '@/ui/DangerConfirmSheet';
 import type { PlanRow } from '@/db/types';
 import type { PlanningModel } from '@/application/planning';
 import { Button } from '@/ui/Button';
@@ -29,6 +31,7 @@ export function PlanHeader({
   onAhead: () => void;
 }>) {
   const { t } = useLang();
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const left = model.toAllocateOf(plan);
   let color = 'var(--m-warning)';
   let line = t('plan.toAllocate');
@@ -58,7 +61,7 @@ export function PlanHeader({
               </Button>
             )}
             {hasFunding && (
-              <Button size="sm" variant="outline" data-testid="plan-withdraw-all" onClick={onWithdrawAll}>
+              <Button size="sm" variant="outline" data-testid="plan-withdraw-all" onClick={() => setConfirmWithdraw(true)}>
                 {t('plan.withdrawAll')}
               </Button>
             )}
@@ -68,6 +71,20 @@ export function PlanHeader({
       {plan.kind === 'actual' && (
         <AheadCircle count={model.aheadCount} suggested={model.aheadSuggested} label={t('plan.ahead')} testId="plan-ahead" onClick={onAhead} />
       )}
+      {/* every subject back to zero is a big move: it asks first, with no countdown (user ruling 2026-10-02) */}
+      <DangerConfirmSheet
+        open={confirmWithdraw}
+        onOpenChange={setConfirmWithdraw}
+        title={t('plan.withdrawAllTitle')}
+        body={t('plan.withdrawAllBody')}
+        confirmLabel={t('plan.withdrawAll')}
+        cooldown={0}
+        testId="plan-withdraw-confirm"
+        onConfirm={() => {
+          setConfirmWithdraw(false);
+          onWithdrawAll();
+        }}
+      />
     </div>
   );
 }

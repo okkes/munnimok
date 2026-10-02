@@ -6,7 +6,7 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { connectorApi } from './api';
 import { fitFrame, isTap, keyboardInset, nearestScroller } from './liveLayout';
-import type { LiveInputEvent } from './types';
+import type { LiveFrame, LiveInputEvent } from './types';
 
 /**
  * The `live_view` challenge (§10.2): the party's own page, streamed as
@@ -43,6 +43,21 @@ export const liveViewOver = (err: unknown): boolean => {
   const e = err as { status?: number; envelope?: { code?: string } } | null;
   if (!e || typeof e !== 'object') return false;
   return e.status === 410 || e.status === 404 || e.envelope?.code === 'challenge_expired' || e.envelope?.code === 'unsupported_resource';
+};
+
+/** what one poll came back with, and therefore how long to wait before the next */
+type Poll = 'idle' | 'advanced' | 'repeat' | 'retry' | 'over';
+
+/**
+ * The pause after a poll. A picture already shown (a relay that lost the
+ * sequence header) is kept at the idle pace: re-asking at once is the
+ * storm that drained the whole API into 429s (user ss 2026-10-01).
+ */
+const pauseAfter = (outcome: Poll, elapsedMs: number): number => {
+  if (outcome === 'advanced') return Math.max(0, MIN_POLL_GAP_MS - elapsedMs);
+  if (outcome === 'retry') return FRAME_RETRY_MS;
+  if (outcome === 'over') return 0;
+  return FRAME_IDLE_MS;
 };
 
 export function LiveView({
@@ -87,61 +102,59 @@ export function LiveView({
   ended.current = onEnded;
   const framed = useRef(onFrame);
   framed.current = onFrame;
+  const shown = useRef<string | null>(null);
 
-  const finish = () => {
+  const finish = useCallback(() => {
     if (over.current) return;
     over.current = true;
     ended.current?.();
-  };
+  }, []);
+
+  /** a newer picture on screen; false when it is the one already shown */
+  const showFrame = useCallback((frame: LiveFrame): boolean => {
+    const advanced = frame.sequence > sequence.current;
+    sequence.current = Math.max(sequence.current, frame.sequence);
+    setSize({ width: frame.width, height: frame.height });
+    framed.current?.({ width: frame.width, height: frame.height });
+    setOrigin(frame.origin);
+    const url = URL.createObjectURL(frame.blob);
+    if (shown.current) URL.revokeObjectURL(shown.current);
+    shown.current = url;
+    setFrameUrl(url);
+    return advanced;
+  }, []);
 
   // frames: one long-poll after another, each asking past the last sequence
   useEffect(() => {
     let alive = true;
-    let current: string | null = null;
+    const pollOnce = async (): Promise<Poll> => {
+      try {
+        const frame = await connectorApi.liveFrame(provider, sessionId, challengeId, sequence.current);
+        if (!alive) return 'over';
+        if (!frame) return 'idle';
+        return showFrame(frame) ? 'advanced' : 'repeat';
+      } catch (err) {
+        return liveViewOver(err) ? 'over' : 'retry';
+      }
+    };
     void (async () => {
       while (alive && !over.current) {
         const startedAt = Date.now();
-        try {
-          const frame = await connectorApi.liveFrame(provider, sessionId, challengeId, sequence.current);
-          if (!alive) break;
-          if (!frame) {
-            await sleep(FRAME_IDLE_MS);
-            continue;
-          }
-          // a picture already shown (a relay that lost the sequence header)
-          // is kept at the idle pace: re-asking at once is the storm that
-          // drained the whole API into 429s (user ss 2026-10-01)
-          const advanced = frame.sequence > sequence.current;
-          sequence.current = Math.max(sequence.current, frame.sequence);
-          setSize({ width: frame.width, height: frame.height });
-          framed.current?.({ width: frame.width, height: frame.height });
-          setOrigin(frame.origin);
-          const url = URL.createObjectURL(frame.blob);
-          if (current) URL.revokeObjectURL(current);
-          current = url;
-          setFrameUrl(url);
-          if (!advanced) {
-            await sleep(FRAME_IDLE_MS);
-          } else {
-            const gap = Date.now() - startedAt;
-            if (gap < MIN_POLL_GAP_MS) await sleep(MIN_POLL_GAP_MS - gap);
-          }
-        } catch (err) {
-          if (!alive) break;
-          if (liveViewOver(err)) {
-            finish();
-            break;
-          }
-          await sleep(FRAME_RETRY_MS);
+        const outcome = await pollOnce();
+        if (!alive) break;
+        if (outcome === 'over') {
+          finish();
+          break;
         }
+        await sleep(pauseAfter(outcome, Date.now() - startedAt));
       }
-      if (current) URL.revokeObjectURL(current);
+      if (shown.current) URL.revokeObjectURL(shown.current);
+      shown.current = null;
     })();
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, sessionId, challengeId]);
+  }, [provider, sessionId, challengeId, showFrame, finish]);
 
   // input: whatever gathered since the last flush goes as one batch
   useEffect(() => {
@@ -153,8 +166,7 @@ export function LiveView({
       });
     }, FLUSH_MS);
     return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider, sessionId, challengeId]);
+  }, [provider, sessionId, challengeId, finish]);
 
   // the frame's box: the room the scroller has, minus the head, the bar,
   // the gaps and the keyboard — remeasured whenever any of those move
