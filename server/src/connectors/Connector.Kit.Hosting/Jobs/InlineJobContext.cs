@@ -24,13 +24,18 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
 {
     private readonly IServiceScopeFactory _scopes;
     private readonly ILogger _logger;
-    private readonly Channel<JobStep> _progress =
-        Channel.CreateUnbounded<JobStep>(new UnboundedChannelOptions { SingleReader = true });
+    private readonly Channel<ProgressTick> _progress =
+        Channel.CreateUnbounded<ProgressTick>(new UnboundedChannelOptions { SingleReader = true });
     private readonly List<JobStep> _stepsDone = [];
     private readonly Task _progressPump;
     private readonly Lock _stepsLock = new();
     private readonly List<string> _notes = [];
     private bool _credentialSubmitted;
+    private int _found = -1;
+    private JobStep _lastStep = JobStep.AgentAssigned;
+
+    /// <summary>One progress write: the step, and the count known when it was written.</summary>
+    private readonly record struct ProgressTick(JobStep Step, int? Found);
 
     /// <summary>
     /// The adapter's own diagnostics, logged AND kept for the caller.
@@ -128,7 +133,21 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
     // plane happens to be on. An adapter that meets an interactive widget here
     // has to fail with blocked_by_provider; there is nothing to hand over.
 
-    public void Progress(JobStep step) => _progress.Writer.TryWrite(step);
+    public void Progress(JobStep step) => _progress.Writer.TryWrite(new ProgressTick(step, Counted()));
+
+    /// <summary>The count rides the next progress write under the last step reported.</summary>
+    public void Found(int records)
+    {
+        var count = Math.Max(0, records);
+        Volatile.Write(ref _found, count);
+        _progress.Writer.TryWrite(new ProgressTick(_lastStep, count));
+    }
+
+    private int? Counted()
+    {
+        var found = Volatile.Read(ref _found);
+        return found < 0 ? null : found;
+    }
 
     /// <summary>
     /// Blocks until the latch is durable, and that is the point.
@@ -237,8 +256,10 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
     /// </summary>
     private async Task PumpProgressAsync(CancellationToken ct)
     {
-        await foreach (var step in _progress.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+        await foreach (var tick in _progress.Reader.ReadAllAsync(ct).ConfigureAwait(false))
         {
+            var step = tick.Step;
+            _lastStep = step;
             lock (_stepsLock)
             {
                 if (!_stepsDone.Contains(step)) _stepsDone.Add(step);
@@ -253,6 +274,7 @@ internal sealed class InlineJobContext : IJobContext, IAsyncDisposable
                     Step = step,
                     StepsDone = Snapshot(),
                     CredentialSubmitted = _credentialSubmitted,
+                    Found = tick.Found,
                 }, ct).ConfigureAwait(false);
             }
             catch (ConnectorException ex)

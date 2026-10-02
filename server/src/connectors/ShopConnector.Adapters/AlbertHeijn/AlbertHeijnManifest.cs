@@ -146,8 +146,11 @@ internal static class AlbertHeijnManifest
                         Multi = true,
                     },
                 ],
-                TypicalDurationSeconds = 25,
-                MaxRecordsPerFetch = 200,
+                // A first connect walks the whole history (user request
+                // 2026-10-02): two thousand receipts is forty list calls and a
+                // detail each.
+                TypicalDurationSeconds = 120,
+                MaxRecordsPerFetch = 2_000,
             },
         ],
     };

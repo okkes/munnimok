@@ -156,6 +156,9 @@ public sealed class JobRow
 
     public string StepsDoneJson { get; set; } = "[]";
 
+    /// <summary>Records the agent reported gathering so far; null until it counted anything.</summary>
+    public int? Found { get; set; }
+
     /// <summary>
     /// False when the adapter stopped short of the end of the window. A first
     /// connect on a heavy account paginates rather than running for ten

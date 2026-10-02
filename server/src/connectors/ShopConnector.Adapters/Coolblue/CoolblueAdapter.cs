@@ -317,7 +317,7 @@ public sealed class CoolblueAdapter : IProviderAdapter
                           $"{ProviderId}: the stored browser session carries no {_options.CookieDomainSuffix} " +
                           "cookies, so no fetch could carry a session");
 
-        var cap = Manifest.Resource(ReceiptsResource)!.MaxRecordsPerFetch;
+        var cap = _options.RecordCap ?? Manifest.Resource(ReceiptsResource)!.MaxRecordsPerFetch;
 
         ctx.Progress(JobStep.Downloading);
 
@@ -474,6 +474,7 @@ public sealed class CoolblueAdapter : IProviderAdapter
             }
 
             var (fresh, older) = Tally(listings, seen, request, collected);
+            ctx.Found(collected.Count);
 
             // A page that repeats the last one means Coolblue is not honouring
             // the paging parameter. Without this guard that presents as the

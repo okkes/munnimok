@@ -14,7 +14,6 @@ import { Button } from '@/ui/Button';
 import { Icon } from '@/ui/Icon';
 import { Sheet } from '@/ui/Sheet';
 import { WebcamCaptureSheet, useWebcamDoor } from '@/ui/WebcamCaptureSheet';
-import { ReceiptViewSheet } from './ReceiptViewSheet';
 
 const dayDiff = (a: string, b: string): number => Math.abs(Math.round((Date.parse(a) - Date.parse(b)) / 86_400_000));
 
@@ -43,7 +42,6 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
   const proposals = useProposedMatches();
   const receiptOps = useReceiptOps();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [viewOpen, setViewOpen] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // #160: desktop-only webcam rung under the upload button (hooks stay
@@ -128,7 +126,7 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
       ) : (
         <button
           data-testid="receipt-card"
-          onClick={() => setViewOpen(true)}
+          onClick={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: receipt.id }, search: { from: tx.id } })}
           className="m-tap w-full overflow-hidden rounded-card border border-line bg-surface p-0 text-left"
         >
           {receipt.image && <img src={receipt.image} alt={t('receipt.title')} className="max-h-40 w-full object-cover" />}
@@ -195,7 +193,6 @@ export function ReceiptSection({ tx }: Readonly<{ tx: SpaceTx }>) {
       {/* #160: snapshot rides the same attach pipeline as a picked file */}
       <WebcamCaptureSheet open={webcamOpen} onOpenChange={setWebcamOpen} onCapture={(file) => void onFile(file)} />
 
-      <ReceiptViewSheet entry={viewOpen ? entry : null} currency={tx.currency} onClose={() => setViewOpen(false)} contextTxId={tx.id} />
     </>
   );
 }

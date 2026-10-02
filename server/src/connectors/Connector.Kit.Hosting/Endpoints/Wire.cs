@@ -228,6 +228,13 @@ public sealed record ProgressView
     /// </summary>
     public int? Ahead { get; init; }
 
+    /// <summary>
+    /// How many records the fetch has gathered so far, as the agent reported
+    /// it page by page; null until it counted anything. A consumer shows it
+    /// climbing while the job runs (user request 2026-10-02).
+    /// </summary>
+    public int? Found { get; init; }
+
     public static ProgressView From(JobRow job)
     {
         ArgumentNullException.ThrowIfNull(job);
@@ -235,6 +242,7 @@ public sealed record ProgressView
         {
             Step = job.Step,
             StepsDone = ConnectorJson.DeserializeOr<IReadOnlyList<JobStep>>(job.StepsDoneJson, []),
+            Found = job.Found,
         };
     }
 }

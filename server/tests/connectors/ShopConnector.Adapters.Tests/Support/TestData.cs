@@ -39,11 +39,12 @@ internal static class Requests
     /// reconciliation invariant is checked against.
     /// </summary>
     public static ResourceRequest Receipts(
-        DateOnly? since = null, DateOnly? until = null, bool items = true, bool raw = false)
+        DateOnly? since = null, DateOnly? until = null, bool items = true, bool raw = false, bool invoice = false)
     {
         List<string> include = [];
         if (items) include.Add("items");
         if (raw) include.Add("raw");
+        if (invoice) include.Add(ResourceRequest.InvoiceInclude);
 
         return new ResourceRequest
         {

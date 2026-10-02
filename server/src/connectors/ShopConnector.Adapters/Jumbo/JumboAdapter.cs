@@ -682,6 +682,8 @@ public sealed class JumboAdapter : IProviderAdapter
                 receiptsDone = CollectReceiptsPage(root, request, zone, cap, receipts, seenReceipts);
                 receiptsPage++;
             }
+
+            ctx.Found(orders.Count + receipts.Count);
         }
 
         // Ran out of passes with one side still going: there is more upstream

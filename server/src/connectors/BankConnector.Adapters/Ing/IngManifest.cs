@@ -180,13 +180,14 @@ internal static class IngManifest
         Resources =
         [
             BankResources.AccountsSpec(),
-            // Ninety seconds is a first connect walking several cursor pages of
-            // forty; five hundred rows is about eighteen months on the captured
-            // account.
+            // Five minutes is a first connect walking the history in cursor
+            // pages of forty; two thousand rows is years on the captured
+            // account, more than the 540 days ING keeps (user request
+            // 2026-10-02: a first sync reaches as far back as the party allows).
             BankResources.TransactionsSpec(
                 maxHistoryDays: MaxHistoryDays,
-                typicalDurationSeconds: 90,
-                maxRecordsPerFetch: 500),
+                typicalDurationSeconds: 300,
+                maxRecordsPerFetch: 2_000),
         ],
         Limits = BankLimits.ForBank(maxHistoryDays: MaxHistoryDays) with
         {

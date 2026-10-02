@@ -41,7 +41,6 @@ public sealed class ConnectorSyncService(
     private static readonly string[] WantedIncludes = ["items", "invoice"];
 
     /// <summary>How many passes one sync makes over a resource the provider paginates.</summary>
-    private const int MaximumPasses = 20;
 
     private const string SessionField = "session";
     private const string ResourceField = "resource";
@@ -84,14 +83,21 @@ public sealed class ConnectorSyncService(
             ["sessionId"] = run.SessionId,
             ["state"] = "active",
             ["ingested"] = Counts(run.Landed),
+            // false when a party holds more history than one pass fetches: the
+            // app says so instead of presenting the newest rows as the lot
+            ["complete"] = !run.Partial,
         };
         if (run.Rotated) body[SessionField] = Session(run.Bundle);
         return new ConnectorOutcome(StatusCodes.Status200OK, body);
     }
 
     /// <summary>
-    /// One resource, as many passes as the provider paginates it into. Null
-    /// when every page landed; the 202 outcome when a pass became a job.
+    /// One resource, one pass. The connector runs every fetch as a job of its
+    /// own and the adapters walk newest first and cap themselves, so asking
+    /// again after a partial pass would only fetch the same newest rows a
+    /// second time (it used to, up to twenty times); a partial pass is said
+    /// so on the outcome instead. Null when the page landed; the 202 outcome
+    /// when the pass became a job.
     /// </summary>
     private async Task<ConnectorOutcome?> FetchResourceAsync(SyncRun run, JsonObject resource, CancellationToken ct)
     {
@@ -100,30 +106,28 @@ public sealed class ConnectorSyncService(
         if (resourceId is null || shape is null) return null;
 
         var query = QueryFor(resource, run.Manifest, run.Request.Since);
-        for (var pass = 1; pass <= MaximumPasses; pass++)
+        var fetch = await relay.Client.GetAsync($"v1/{run.Provider}/{resourceId}{query}", new ConnectorCall
         {
-            var fetch = await relay.Client.GetAsync($"v1/{run.Provider}/{resourceId}{query}", new ConnectorCall
-            {
-                Subject = run.Subject,
-                Ticket = run.Ticket,
-                Trigger = run.Trigger,
-                DeviceClass = run.DeviceClass,
-            }, ct);
+            Subject = run.Subject,
+            Ticket = run.Ticket,
+            Trigger = run.Trigger,
+            DeviceClass = run.DeviceClass,
+        }, ct);
 
-            if (fetch.Status == HttpStatusCode.Accepted) return Accepted(run, fetch.Object);
-            if (!fetch.IsSuccess) throw new ConnectorReplyException(fetch);
+        if (fetch.Status == HttpStatusCode.Accepted) return Accepted(run, fetch.Object);
+        if (!fetch.IsSuccess) throw new ConnectorReplyException(fetch);
 
-            var page = fetch.Object;
-            await LandPageAsync(run, resourceId, shape, page, ct);
-            if (page["complete"]?.GetValue<bool>() != false)
-            {
-                // a complete pass over the transactions settles the pending mirror (§15): what the
-                // party stopped reporting is tombstoned; an incomplete pass settles nothing
-                if (shape == "transaction") await ingest.SettlePendingAsync(run.UserId, run.Provider, run.Request.ConnectionId, run.Pending, ct);
-                break;
-            }
+        var page = fetch.Object;
+        await LandPageAsync(run, resourceId, shape, page, ct);
+        if (page["complete"]?.GetValue<bool>() == false)
+        {
+            run.Partial = true;
+            return null;
         }
 
+        // a complete pass over the transactions settles the pending mirror (§15): what the
+        // party stopped reporting is tombstoned; an incomplete pass settles nothing
+        if (shape == "transaction") await ingest.SettlePendingAsync(run.UserId, run.Provider, run.Request.ConnectionId, run.Pending, ct);
         return null;
     }
 
@@ -411,6 +415,9 @@ public sealed class ConnectorSyncService(
         public required string SessionId { get; init; }
 
         public required string Ticket { get; set; }
+
+        /// <summary>A resource's pass came back incomplete: the party holds more than one fetch brings.</summary>
+        public bool Partial { get; set; }
 
         /// <summary>What the fetches declare themselves as: a person's call, or the scheduler's.</summary>
         public string Trigger { get; init; } = "user";

@@ -272,6 +272,11 @@ public sealed class MediaMarktAdapter : IProviderAdapter
             if (order.Raw is { } payload) raw[order.Id] = payload;
         }
 
+        if (request.WantsInvoice)
+        {
+            receipts = await WithInvoicesAsync(ctx, portal, receipts, ct).ConfigureAwait(false);
+        }
+
         var unreconciled = receipts.Count(receipt => !receipt.Reconciled);
 
         if (unreconciled > 0)
@@ -290,7 +295,90 @@ public sealed class MediaMarktAdapter : IProviderAdapter
             Receipts = receipts,
             Complete = complete,
             Raw = raw,
-            Via = _options.OrdersOperation,
+            Via = request.WantsInvoice ? _options.OrdersOperation + "+invoice-pdf" : _options.OrdersOperation,
+        };
+    }
+
+    /// <summary>
+    /// The invoice for each receipt, newest first, up to the ceiling. One page
+    /// per order, so it costs what it costs; a missing one is noted and the
+    /// receipt stays - a document is an extra the caller asked for, never a
+    /// reason to lose the purchase (user request 2026-10-02: MediaMarkt was
+    /// expected to carry its invoices).
+    /// </summary>
+    private async Task<List<Receipt>> WithInvoicesAsync(
+        IJobContext ctx, IMediaMarktPortal portal, List<Receipt> receipts, CancellationToken ct)
+    {
+        var withDocuments = new List<Receipt>(receipts.Count);
+        var opened = 0;
+
+        foreach (var receipt in receipts)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (opened >= _options.MaxDocumentOrdersPerFetch)
+            {
+                withDocuments.Add(receipt);
+                continue;
+            }
+
+            opened++;
+            var document = await InvoiceAsync(ctx, portal, receipt.ExternalId, ct).ConfigureAwait(false);
+            withDocuments.Add(document is null ? receipt : receipt with { Documents = [document] });
+
+            await Task.Delay(TimeSpan.FromMilliseconds(_options.PageGapMs), _time, ct).ConfigureAwait(false);
+        }
+
+        if (receipts.Count > _options.MaxDocumentOrdersPerFetch)
+        {
+            ctx.Note(
+                $"{ProviderId}: {receipts.Count - _options.MaxDocumentOrdersPerFetch} order(s) past the " +
+                $"{_options.MaxDocumentOrdersPerFetch}-order invoice ceiling came back without one; the next " +
+                "sync asks for theirs");
+        }
+
+        return withDocuments;
+    }
+
+    /// <summary>One order's invoice as a document, or null with the reason noted.</summary>
+    private async Task<ReceiptDocument?> InvoiceAsync(
+        IJobContext ctx, IMediaMarktPortal portal, string orderId, CancellationToken ct)
+    {
+        MediaMarktDocument? fetched;
+        try
+        {
+            fetched = await portal.InvoiceAsync(orderId, ctx.Note, ct).ConfigureAwait(false);
+        }
+        catch (ConnectorException ex) when (ex.Code is not ErrorCode.SessionExpired)
+        {
+            // A dead session is the one failure worth propagating: every
+            // remaining order would fail the same way.
+            ctx.Note($"order '{orderId}': the invoice could not be fetched ({ex.Code}: {ex.Detail})");
+            return null;
+        }
+
+        if (fetched is null) return null;
+
+        // What it says it is, not what it is called: a sign-in page answered
+        // to a document link is text/html, and attaching it would hand
+        // somebody a download that opens to nothing.
+        var wanted = _options.DocumentMediaTypes.Contains(fetched.MediaType, StringComparer.OrdinalIgnoreCase);
+        if (fetched.Status is not 200 || !wanted || fetched.Bytes.Length == 0)
+        {
+            ctx.Note(
+                $"order '{orderId}': the invoice answered {fetched.Status} '{fetched.MediaType}' with " +
+                $"{fetched.Bytes.Length} byte(s); not attached");
+            return null;
+        }
+
+        return new ReceiptDocument
+        {
+            Kind = ReceiptDocumentKinds.Invoice,
+            MediaType = fetched.MediaType,
+            Name = "Factuur",
+            Filename = string.IsNullOrWhiteSpace(fetched.Filename) ? $"mediamarkt-{orderId}.pdf" : fetched.Filename,
+            SizeBytes = fetched.Bytes.Length,
+            ContentBase64 = Convert.ToBase64String(fetched.Bytes),
         };
     }
 
@@ -317,6 +405,7 @@ public sealed class MediaMarktAdapter : IProviderAdapter
             var read = MediaMarktOrders.Read(document, _options, request.WantsRaw);
 
             orders.AddRange(read);
+            ctx.Found(orders.Count);
             page++;
 
             // A SHORT PAGE IS THE END, and it is the only end MediaMarkt states.

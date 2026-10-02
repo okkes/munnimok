@@ -271,22 +271,20 @@ internal static class CoolblueManifest
                 // first connect is the number below times a paced page load,
                 // which is minutes. This states the one a consumer has to plan
                 // its UI around, and that is the first connect.
-                TypicalDurationSeconds = 180,
+                TypicalDurationSeconds = 900,
                 // SEVENTY-FIVE, where every other provider here says 200, and
                 // the difference is not caution - it is arithmetic.
                 //
                 // On Coolblue a record COSTS A PAGE LOAD. The order list states
                 // no money at all, so each total needs the order's own page,
-                // and those run 600KB. At 200 that is a hundred and twenty
-                // megabytes and 200 paced requests in one job; at 75 it is
-                // about forty-five megabytes and roughly three minutes, which
-                // is a first connect somebody will actually wait through.
-                //
-                // Seventy-five also covers this account's entire history in one
-                // pass with room to spare, and anything beyond it is not lost:
-                // the fetch returns the newest 75, reports Complete = false, and
-                // the caller comes back for the rest.
-                MaxRecordsPerFetch = 75,
+                // and those run 600KB. Four hundred is a quarter of a gigabyte
+                // of pages read one at a time and about a quarter of an hour
+                // of paced loading - the most a first connect should carry,
+                // and many times this account's entire history (user request
+                // 2026-10-02: a first sync reaches as far back as the party
+                // allows). Beyond it the fetch returns the newest four hundred
+                // and reports Complete = false, which the hub says out loud.
+                MaxRecordsPerFetch = 400,
             },
         ],
         Limits = new ProviderLimits

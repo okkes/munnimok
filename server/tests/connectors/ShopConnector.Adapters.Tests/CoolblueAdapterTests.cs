@@ -227,9 +227,11 @@ public sealed class CoolblueAdapterTests
     {
         var manifest = Adapter().Describe();
 
-        // Seventy-five, where every other provider here says two hundred. At
-        // 200 a single job would pull about a hundred and twenty megabytes.
-        Assert.Equal(75, manifest.Resource("receipts")!.MaxRecordsPerFetch);
+        // Four hundred, where the other stores allow two thousand: every receipt
+        // here is a page load of about 600KB, so this is the most a first
+        // connect should carry (user request 2026-10-02: as far back as the
+        // party allows).
+        Assert.Equal(400, manifest.Resource("receipts")!.MaxRecordsPerFetch);
 
         // And a gap between requests, which most providers here do not ask for
         // at all. Half of Amazon's three seconds: Amazon has actually
@@ -1043,8 +1045,10 @@ public sealed class CoolblueAdapterTests
     [Fact]
     public async Task A_pass_past_the_record_cap_returns_the_newest_and_admits_it_is_partial()
     {
-        var cap = Adapter().Describe().Resource("receipts")!.MaxRecordsPerFetch;
-        Assert.Equal(75, cap);
+        // The seam rather than the manifest's number: the manifest now allows
+        // four hundred, and proving the cap with four hundred invented orders
+        // would be a fixture nobody can read.
+        const int cap = 75;
 
         const int orders = 90;
         var handler = new StubHttpHandler((request, _) => request.Path switch
@@ -1057,7 +1061,7 @@ public sealed class CoolblueAdapterTests
 
         using var ctx = Fetching(handler);
 
-        var result = await Adapter().FetchAsync(ctx, Receipts(), CancellationToken.None);
+        var result = await Adapter(new CoolblueOptions { RecordCap = cap }).FetchAsync(ctx, Receipts(), CancellationToken.None);
 
         Assert.Equal(cap, result.Receipts.Count);
 

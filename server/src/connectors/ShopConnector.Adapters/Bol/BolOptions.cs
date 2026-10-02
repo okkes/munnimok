@@ -643,7 +643,7 @@ public sealed record BolOptions
 
     // ---- patience -----------------------------------------------------------
 
-    public int MaxPages { get; init; } = 20;
+    public int MaxPages { get; init; } = 400;
 
     public int SelectorTimeoutMs { get; init; } = 15_000;
 
@@ -817,7 +817,7 @@ public sealed record BolOptions
     /// still become receipts - they simply carry no documents, and the run says
     /// so rather than truncating silently.
     /// </summary>
-    public int MaxDocumentOrdersPerFetch { get; init; } = 50;
+    public int MaxDocumentOrdersPerFetch { get; init; } = 200;
 
     /// <summary>
     /// The unambiguous login-form markers, for pages that legitimately mention

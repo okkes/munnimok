@@ -27,6 +27,14 @@ internal readonly record struct MediaMarktCall(
     IReadOnlyDictionary<string, string>? Headers = null);
 
 /// <summary>
+/// A document as it came back: the status, what MediaMarkt SAID it is, the
+/// bytes and the name it suggested. The media type is carried rather than
+/// assumed from the name, because a session that expired between the list
+/// and here answers a link ending in .pdf with a sign-in page.
+/// </summary>
+internal sealed record MediaMarktDocument(int Status, string MediaType, byte[] Bytes, string? Filename);
+
+/// <summary>
 /// The seam between "which pages of orders to read" and "how to reach them".
 ///
 /// Behind an interface for the same reason DUO's is: the decisions worth
@@ -59,6 +67,15 @@ internal interface IMediaMarktPortal
     /// </para>
     /// </remarks>
     Task<MediaMarktCall?> ObserveAsync(string url, string operationName, int timeoutMs, CancellationToken ct);
+
+    /// <summary>
+    /// The invoice MediaMarkt holds for one order, fetched the way a shopper
+    /// gets it: the order's own page, "Factuur aanvragen" when it is offered,
+    /// then "Download de factuur" (the user's walk-through, 2026-10-02). Null
+    /// when the page offered no download, with the reason handed to
+    /// <paramref name="note"/> so the fetch can say so.
+    /// </summary>
+    Task<MediaMarktDocument?> InvoiceAsync(string orderId, Action<string> note, CancellationToken ct);
 
     /// <summary>
     /// The same wait, WITHOUT navigating: watches the page the browser is
@@ -270,6 +287,121 @@ internal sealed class PageMediaMarktPortal : IMediaMarktPortal
         catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
         {
             return $"at {_page.Url} (the page could not be read: {ex.Message})";
+        }
+    }
+
+    public async Task<MediaMarktDocument?> InvoiceAsync(string orderId, Action<string> note, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(note);
+        ct.ThrowIfCancellationRequested();
+
+        var url = _options.OrderDetailsUrlTemplate.Replace("{id}", Uri.EscapeDataString(orderId), StringComparison.Ordinal);
+
+        try
+        {
+            await _page.GotoAsync(url, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
+        {
+            note($"order '{orderId}': its page did not open ({ex.Message})");
+            return null;
+        }
+
+        if (_page.Url.Contains(_options.LoginPathMarker, StringComparison.OrdinalIgnoreCase))
+        {
+            throw ConnectorException.SessionExpired(
+                $"{MediaMarktAdapter.ProviderId}: the order page was answered from the sign-in page, so the " +
+                "stored session is over.");
+        }
+
+        // Asked for when MediaMarkt offers to issue one; an order that has its
+        // invoice already shows the download straight away.
+        var request = _page.Locator(string.Join(", ", _options.RequestInvoiceSelectors)).First;
+        if (await VisibleAsync(request).ConfigureAwait(false))
+        {
+            await request.ClickAsync(new LocatorClickOptions { Timeout = _options.StepProbeMs }).ConfigureAwait(false);
+        }
+
+        var link = _page.Locator(string.Join(", ", _options.DownloadInvoiceSelectors)).First;
+        try
+        {
+            await link.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Visible,
+                Timeout = _options.InvoiceProbeMs,
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
+        {
+            // The page as it stands, so a selector that drifted is one log
+            // line from its fix rather than a silent absence of invoices.
+            note($"order '{orderId}': no invoice download appeared within {_options.InvoiceProbeMs} ms; " +
+                 await DescribeAsync(ct).ConfigureAwait(false));
+            return null;
+        }
+
+        var href = await link.GetAttributeAsync("href").ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(href)
+            && !href.StartsWith('#')
+            && !href.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase))
+        {
+            return await FetchDocumentAsync(href).ConfigureAwait(false);
+        }
+
+        // A button that starts a download rather than a link that points at one.
+        try
+        {
+            var download = await _page.RunAndWaitForDownloadAsync(
+                () => link.ClickAsync(new LocatorClickOptions { Timeout = _options.StepProbeMs }),
+                new PageRunAndWaitForDownloadOptions { Timeout = _options.InvoiceProbeMs }).ConfigureAwait(false);
+
+            var path = await download.PathAsync().ConfigureAwait(false);
+            var bytes = path is null ? [] : await File.ReadAllBytesAsync(path, ct).ConfigureAwait(false);
+            var name = download.SuggestedFilename;
+            var mediaType = name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)
+                ? "application/pdf"
+                : "application/octet-stream";
+
+            return new MediaMarktDocument(bytes.Length > 0 ? 200 : 0, mediaType, bytes, name);
+        }
+        catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
+        {
+            note($"order '{orderId}': the download never started ({ex.Message})");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// A linked document over the browser's own session - its cookie jar,
+    /// so the sign-in a person just did is the one the download rides on.
+    /// </summary>
+    private async Task<MediaMarktDocument> FetchDocumentAsync(string href)
+    {
+        var absolute = Uri.TryCreate(href, UriKind.Absolute, out var already)
+            ? already
+            : new Uri(new Uri(_page.Url), href);
+
+        var response = await _page.APIRequest
+            .GetAsync(absolute.ToString(), new APIRequestContextOptions { Timeout = _options.InvoiceProbeMs })
+            .ConfigureAwait(false);
+        var body = await response.BodyAsync().ConfigureAwait(false);
+        response.Headers.TryGetValue("content-type", out var contentType);
+        var mediaType = (contentType ?? string.Empty).Split(';')[0].Trim().ToLowerInvariant();
+
+        return new MediaMarktDocument(response.Status, mediaType, body, Path.GetFileName(absolute.AbsolutePath));
+    }
+
+    private static async Task<bool> VisibleAsync(ILocator locator)
+    {
+        try
+        {
+            return await locator.CountAsync().ConfigureAwait(false) > 0
+                   && await locator.IsVisibleAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex) when (PageOps.IsSelectorMiss(ex))
+        {
+            return false;
         }
     }
 

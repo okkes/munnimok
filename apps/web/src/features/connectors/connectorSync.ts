@@ -6,6 +6,7 @@ import { includedSpaces, reevaluateSpace } from '@/application/receiptMatching';
 import { ConnectorError, connectorApi } from './api';
 import { dropBundle, keepBundle, readBundle } from './bundles';
 import { subscribeConnectorFrames } from './events';
+import { useSyncActivity } from './syncActivity';
 import type { ErrorEnvelope, IngestedCounts, JobView } from './types';
 
 /**
@@ -25,6 +26,8 @@ export interface SyncReport {
   transactions: number;
   linked: number;
   proposed: number;
+  /** the party holds more than this pass fetched (it walks newest first and caps itself) */
+  partial?: boolean;
   error?: ErrorEnvelope;
   retryAfterSeconds?: number;
   /** a job stopped for a question nobody was there to answer */
@@ -40,7 +43,8 @@ export interface SyncOptions {
 }
 
 const JOB_POLL_MS = 2_000;
-const JOB_CEILING_MS = 12 * 60 * 1_000;
+// a first fetch of a long history (Amazon opens a page per order) runs for a quarter of an hour and more
+const JOB_CEILING_MS = 45 * 60 * 1_000;
 const SIGN_IN_CODES = new Set(['session_expired', 'invalid_credentials', 'mfa_failed', 'consent_expired', 'unsupported_resource']);
 const TERMINAL_JOB = new Set(['succeeded', 'failed', 'expired']);
 
@@ -137,7 +141,7 @@ function jobFailure(job: JobView): ConnectorError {
   return new ConnectorError(expired ? 410 : 500, envelope);
 }
 
-type Landed = { ingested: IngestedCounts | undefined } | { asked: JobView };
+type Landed = { ingested: IngestedCounts | undefined; partial: boolean } | { asked: JobView };
 
 /** the accepted-job path: follow, then collect the page with the latest bundle */
 async function collectJob(storage: StorageBackend, row: ConnectorConnRow, first: JobView, bundle: string, options: SyncOptions): Promise<Landed> {
@@ -146,7 +150,7 @@ async function collectJob(storage: StorageBackend, row: ConnectorConnRow, first:
   if (followed.job.state !== 'succeeded') throw jobFailure(followed.job);
   const collected = await connectorApi.collect(row.provider, followed.job.jobId, followed.bundle);
   await keepRotated(storage, row.id, collected.job, followed.bundle);
-  return { ingested: collected.job.ingested };
+  return { ingested: collected.job.ingested, partial: collected.job.complete === false };
 }
 
 async function refused(storage: StorageBackend, connectionId: string, err: ConnectorError): Promise<SyncReport> {
@@ -173,33 +177,60 @@ async function land(storage: StorageBackend, row: ConnectorConnRow, bundle: stri
   const answer = await connectorApi.sync(row.provider, { connectionId: row.id, bundle, since: sinceFor(row) });
   if (answer.accepted) return collectJob(storage, row, answer.job, bundle, options);
   if (answer.outcome.session?.bundle) await keepBundle(storage, row.id, answer.outcome.session.bundle);
-  return { ingested: answer.outcome.ingested };
+  return { ingested: answer.outcome.ingested, partial: answer.outcome.complete === false };
 }
 
-export async function syncConnection(storage: StorageBackend, repo: Repo, connectionId: string, options: SyncOptions = {}): Promise<SyncReport> {
-  const row = await storage.connectorConnGet(connectionId);
-  if (!row) return empty();
-  const bundle = await readBundle(storage, connectionId);
-  if (!bundle) return { ...empty(), status: 'signin' };
-
+/** the pass itself: the relay's answer landed and matched, or its refusal spoken */
+async function run(storage: StorageBackend, repo: Repo, row: ConnectorConnRow, bundle: string, options: SyncOptions): Promise<SyncReport> {
   try {
     const landed = await land(storage, row, bundle, options);
     if ('asked' in landed) {
-      await patchRow(storage, connectionId, { lastError: undefined });
+      await patchRow(storage, row.id, { lastError: undefined });
       return { ...empty(), status: 'asking', jobId: landed.asked.jobId };
     }
-    await patchRow(storage, connectionId, { state: 'active', lastSyncAt: new Date().toISOString(), lastError: undefined });
-    const matched = await landAndMatch(storage, repo, options.engine, connectionId);
+    await patchRow(storage, row.id, { state: 'active', lastSyncAt: new Date().toISOString(), lastError: undefined });
+    const matched = await landAndMatch(storage, repo, options.engine, row.id);
     return {
       ...empty(),
       status: 'ok',
       added: landed.ingested?.receipts ?? 0,
       accounts: landed.ingested?.accounts ?? 0,
       transactions: landed.ingested?.transactions ?? 0,
+      partial: landed.partial,
       ...matched,
     };
   } catch (err) {
-    if (err instanceof ConnectorError) return refused(storage, connectionId, err);
+    if (err instanceof ConnectorError) return refused(storage, row.id, err);
+    throw err;
+  }
+}
+
+/**
+ * One sync, reported to the activity store from start to end whoever
+ * started it (the connect, the app-open keep-alive, Sync now), so the
+ * rows show it running — with the count the party's run has found so far
+ * — and show what it brought once done (user request 2026-10-02).
+ */
+export async function syncConnection(storage: StorageBackend, repo: Repo, connectionId: string, options: SyncOptions = {}): Promise<SyncReport> {
+  const row = await storage.connectorConnGet(connectionId);
+  if (!row) return empty();
+  const bundle = await readBundle(storage, connectionId);
+  if (!bundle) return { ...empty(), status: 'signin' };
+
+  useSyncActivity.getState().begin(connectionId);
+  const followed: SyncOptions = {
+    ...options,
+    onProgress: (job) => {
+      if (typeof job.progress?.found === 'number') useSyncActivity.getState().found(connectionId, job.progress.found);
+      options.onProgress?.(job);
+    },
+  };
+  try {
+    const report = await run(storage, repo, row, bundle, followed);
+    useSyncActivity.getState().end(connectionId, report);
+    return report;
+  } catch (err) {
+    useSyncActivity.getState().forget(connectionId);
     throw err;
   }
 }

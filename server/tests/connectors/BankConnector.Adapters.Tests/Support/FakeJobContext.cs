@@ -21,6 +21,7 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     private readonly List<JobStep> _steps = [];
+    private readonly List<int> _counted = [];
     private readonly List<Challenge> _asked = [];
     private readonly List<string> _notes = [];
     private readonly Lazy<string> _workDirectory;
@@ -100,6 +101,11 @@ internal sealed class FakeJobContext : IJobContext, IDisposable
     public string WorkDirectory => _workDirectory.Value;
 
     public void Progress(JobStep step) => _steps.Add(step);
+
+    /// <summary>Every count the adapter reported, in order.</summary>
+    public IReadOnlyList<int> Counted => _counted;
+
+    public void Found(int records) => _counted.Add(records);
 
     public void Note(string message) => _notes.Add(message);
 

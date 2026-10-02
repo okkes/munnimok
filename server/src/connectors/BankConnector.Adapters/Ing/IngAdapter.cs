@@ -454,6 +454,8 @@ public sealed class IngAdapter : IProviderAdapter
             {
                 rows.AddRange(walked.Rows);
             }
+
+            ctx.Found(rows.Count);
         }
 
         // NOTHING AT ALL IS AN ERROR, and a partial pass is not.

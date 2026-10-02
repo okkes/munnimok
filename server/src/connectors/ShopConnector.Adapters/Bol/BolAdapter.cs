@@ -311,6 +311,7 @@ public sealed class BolAdapter : IProviderAdapter
             }
 
             var (fresh, older) = Tally(orders, seen, request, collected);
+            ctx.Found(collected.Count);
 
             // A page that repeats the previous one means the pagination
             // parameter is not the one bol takes - which is entirely possible,

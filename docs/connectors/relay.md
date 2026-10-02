@@ -78,7 +78,7 @@ An unconfigured one is simply absent — never a stand-in.
 | `POST …/login/{sessionId}/cancel` | fails the run in flight |
 | `GET …/login/{sessionId}/challenges/{challengeId}/image` | the picture |
 | `GET …/challenges/{challengeId}/live/frame?after=n`, `POST …/live/input` | the live view: the newest JPEG frame past `n` (`X-Live-*` headers relayed), the human's taps and keys |
-| `POST /connectors/{provider}/sync` | `{ connectionId, bundle, since? }` → resume, fetch every resource the manifest declares, ingest, acknowledge; 200 `{ sessionId, state, ingested, session? }` — `session.bundle` only when the provider rotated it, and then the app persists it; 202 `{ jobId, … }` when a fetch outran its window or stopped for a question |
+| `POST /connectors/{provider}/sync` | `{ connectionId, bundle, since? }` → resume, fetch every resource the manifest declares, ingest, acknowledge; 200 `{ sessionId, state, ingested, complete, session? }` — `complete` is false when the party holds more history than one pass fetches (the adapters walk newest first and cap themselves; the relay runs a resource once per sync) — `session.bundle` only when the provider rotated it, and then the app persists it; 202 `{ jobId, … }` when a fetch outran its window or stopped for a question |
 | `GET …/jobs/{jobId}` | the job's view, without its page of records |
 | `POST …/jobs/{jobId}/answer` | `{ challengeId, value }` |
 | `POST …/jobs/{jobId}/collect` | `{ bundle }` once the job succeeded: ingests its page, acknowledges it, hands back the rotated bundle; 202 with the view while it runs |

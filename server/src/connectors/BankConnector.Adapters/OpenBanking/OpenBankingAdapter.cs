@@ -145,6 +145,7 @@ public abstract class OpenBankingAdapter : IProviderAdapter, ILookupProvider
                 foreach (var account in selected)
                 {
                     transactions.AddRange(await RowsAsync(ctx, account, window, ct).ConfigureAwait(false));
+                    ctx.Found(transactions.Count);
                 }
                 ctx.Progress(JobStep.Normalizing);
                 var ordered = transactions.OrderBy(t => t.BookedAt).ThenBy(t => t.ExternalId, StringComparer.Ordinal).ToList();

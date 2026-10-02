@@ -226,16 +226,18 @@ internal static class AmazonManifest
                 // items is one more. This is minutes, not seconds, and saying
                 // so lets a consumer choose to poll rather than block.
                 //
-                // Raised from 180 when the walk was paced: fifty orders at a
-                // three-second gap is two and a half minutes of deliberate
-                // waiting on top of the loading. Leaving the old number would
-                // have made every full fetch look like it had overrun.
-                TypicalDurationSeconds = 300,
-                // Deliberately lower than the other stores'. Two hundred
-                // orders with line items is two hundred and ten navigations
-                // against a site that challenges when it is bored; a partial
-                // pass that comes back for the rest is the safer shape.
-                MaxRecordsPerFetch = 50,
+                // Covers the pacing: three hundred orders at a three-second
+                // gap is fifteen minutes of deliberate waiting on top of the
+                // loading, and a stated number below that would make every
+                // full fetch look like it had overrun.
+                TypicalDurationSeconds = 1_200,
+                // Still lower than the other stores'. Every order is a
+                // navigation of its own (its invoice page) against a site that
+                // challenges when it is bored, so three hundred - years of a
+                // busy household - is where a first connect stops and says so
+                // (user request 2026-10-02: as far back as the party allows);
+                // the newest come first.
+                MaxRecordsPerFetch = 300,
             },
         ],
         Limits = new ProviderLimits

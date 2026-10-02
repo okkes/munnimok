@@ -318,9 +318,18 @@ public sealed record CoolblueOptions
     ///
     /// The walk normally stops long before this - on an empty page, on a page
     /// that repeats the last one, or on the first page entirely older than the
-    /// window. Twenty is roughly three times the deepest account seen.
+    /// window. A hundred is many times the deepest account seen; the record
+    /// cap bounds the work before this does.
     /// </summary>
-    public int MaxPages { get; init; } = 20;
+    public int MaxPages { get; init; } = 100;
+
+    /// <summary>
+    /// Overrides the manifest's <c>MaxRecordsPerFetch</c>. Null in production,
+    /// where the manifest is the single published answer; a SEAM for the
+    /// tests, so the cap's behaviour is proved without a fixture of four
+    /// hundred invented orders (the ING precedent).
+    /// </summary>
+    public int? RecordCap { get; init; }
 
     /// <summary>
     /// Ceiling on invoice documents attached to one order.

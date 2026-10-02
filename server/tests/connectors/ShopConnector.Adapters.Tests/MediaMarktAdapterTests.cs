@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Connector.Kit.Errors;
 using Connector.Kit.Jobs;
+using Connector.Kit.Normalization;
 using ShopConnector.Adapters.Fixtures;
 using ShopConnector.Adapters.MediaMarkt;
 using ShopConnector.Adapters.Tests.Support;
@@ -75,6 +76,21 @@ public sealed class MediaMarktAdapterTests
 
         public MediaMarktCall? Opening { get; init; } =
             new MediaMarktCall(200, FirstUrl, pages[0], ClientHeaders);
+
+        /// <summary>The invoice each order's page hands out; an order not listed here has none.</summary>
+        public Dictionary<string, MediaMarktDocument?> Invoices { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Every order whose page was opened for its invoice, in order.</summary>
+        public List<string> InvoicesAsked { get; } = [];
+
+        public Task<MediaMarktDocument?> InvoiceAsync(string orderId, Action<string> note, CancellationToken ct)
+        {
+            InvoicesAsked.Add(orderId);
+            if (Invoices.TryGetValue(orderId, out var document)) return Task.FromResult(document);
+
+            note($"order '{orderId}': no invoice download appeared (scripted)");
+            return Task.FromResult<MediaMarktDocument?>(null);
+        }
 
         public MediaMarktCall Later { get; set; }
 
@@ -180,6 +196,96 @@ public sealed class MediaMarktAdapterTests
 
     private static (FakeJobContext Ctx, MediaMarktAdapter Adapter) Rig() =>
         (new FakeJobContext(), new MediaMarktAdapter(Options));
+
+    // ---- the counter -------------------------------------------------------
+
+    /// <summary>
+    /// The walk says how much it has gathered after every page, so a
+    /// consumer can show the number climbing (user request 2026-10-02).
+    /// </summary>
+    [Fact]
+    public async Task The_walk_counts_what_it_found_page_by_page()
+    {
+        var (ctx, adapter) = Rig();
+        var portal = new ScriptedPortal(PageOf(10), PageOf(10, startingAt: 11), PageOf(3, startingAt: 21));
+
+        await adapter.FetchAsync(ctx, Requests.Receipts(), portal, CancellationToken.None);
+
+        Assert.Equal([10, 20, 23], ctx.Counted);
+    }
+
+    // ---- invoices ----------------------------------------------------------
+
+    /// <summary>
+    /// MediaMarkt was expected to carry its invoices (user, 2026-10-02): the
+    /// order's own page offers one, and it rides the receipt as a document.
+    /// A page that answers something other than a PDF - a sign-in page to a
+    /// link ending in .pdf - is not attached, and the receipt stays.
+    /// </summary>
+    [Fact]
+    public async Task An_invoice_is_fetched_from_the_orders_own_page_and_rides_the_receipt()
+    {
+        var (ctx, adapter) = Rig();
+        var portal = new ScriptedPortal(PageOf(3))
+        {
+            Invoices =
+            {
+                ["00000001"] = new MediaMarktDocument(200, "application/pdf", "%PDF-1.4 factuur"u8.ToArray(), "factuur-1.pdf"),
+                ["00000002"] = new MediaMarktDocument(200, "text/html", "<html>inloggen</html>"u8.ToArray(), "factuur-2.pdf"),
+            },
+        };
+
+        var result = await adapter.FetchAsync(ctx, Requests.Receipts(invoice: true), portal, CancellationToken.None);
+
+        Assert.Equal(["00000001", "00000002", "00000003"], portal.InvoicesAsked);
+        Assert.EndsWith("+invoice-pdf", result.Via, StringComparison.Ordinal);
+
+        var first = Assert.Single(result.Receipts, r => r.ExternalId == "00000001");
+        var document = Assert.Single(first.Documents);
+        Assert.Equal(ReceiptDocumentKinds.Invoice, document.Kind);
+        Assert.Equal("application/pdf", document.MediaType);
+        Assert.Equal("factuur-1.pdf", document.Filename);
+        Assert.Equal("%PDF-1.4 factuur"u8.Length, document.SizeBytes);
+
+        // the sign-in page is refused by what it SAID it was, and the purchase stays
+        var second = Assert.Single(result.Receipts, r => r.ExternalId == "00000002");
+        Assert.Empty(second.Documents);
+        Assert.Contains(ctx.Notes, note => note.Contains("'00000002'", StringComparison.Ordinal) && note.Contains("not attached", StringComparison.Ordinal));
+
+        // an order whose page offers nothing is noted, not failed
+        var third = Assert.Single(result.Receipts, r => r.ExternalId == "00000003");
+        Assert.Empty(third.Documents);
+        Assert.Contains(ctx.Notes, note => note.Contains("'00000003'", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Invoices_are_not_asked_for_unless_the_caller_wanted_them()
+    {
+        var (ctx, adapter) = Rig();
+        var portal = new ScriptedPortal(PageOf(3));
+
+        var result = await adapter.FetchAsync(ctx, Requests.Receipts(), portal, CancellationToken.None);
+
+        Assert.Empty(portal.InvoicesAsked);
+        Assert.All(result.Receipts, r => Assert.Empty(r.Documents));
+    }
+
+    /// <summary>
+    /// Each invoice is a page of its own, so a first connect asks for the
+    /// newest ones only and says which it left for the next sync.
+    /// </summary>
+    [Fact]
+    public async Task The_invoice_ceiling_leaves_the_oldest_without_one_and_says_so()
+    {
+        var ctx = new FakeJobContext();
+        var adapter = new MediaMarktAdapter(Options with { MaxDocumentOrdersPerFetch = 1 });
+        var portal = new ScriptedPortal(PageOf(3));
+
+        await adapter.FetchAsync(ctx, Requests.Receipts(invoice: true), portal, CancellationToken.None);
+
+        Assert.Single(portal.InvoicesAsked);
+        Assert.Contains(ctx.Notes, note => note.Contains("invoice ceiling", StringComparison.Ordinal));
+    }
 
     // ---- paging ------------------------------------------------------------
 

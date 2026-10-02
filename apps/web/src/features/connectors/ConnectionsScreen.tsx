@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { LOCALES, useLang } from '@/i18n';
 import type { Lang, TranslationKey } from '@/i18n';
 import type { ConnectorConnRow } from '@/db/types';
 import { useData } from '@/app/data';
 import { useQuery } from '@/db/useQuery';
-import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts } from '@/application/connections';
+import { connectorsAvailable, useConnectionOps, useConnections, useConnectorAccounts, useFetchedRanges } from '@/application/connections';
 import type { AdoptResult, ConnectionView, ConnectorAccountView } from '@/application/connections';
 import { setSpaceAttachIntent } from '@/features/accounts/openHandoff';
 import { fmtTimeAgo } from '@/lib/text';
@@ -24,6 +24,9 @@ import { connectorApi } from './api';
 import { usePendingLoginFollower, usePendingLogins } from './pendingLogins';
 import type { PendingLogin } from './pendingLogins';
 import { ConnectionSheet } from './ConnectionSheet';
+import { rangeLine } from './ConnectionReceiptsScreen';
+import { SpacePicker } from './SpacePicker';
+import { RESULT_TTL_MS, resultStillFresh, useSyncActivity } from './syncActivity';
 import { ConnectionSyncCard } from './ConnectionSyncCard';
 import type { SyncReport } from './connectorSync';
 import { kindIcon, partyLogo } from './logos';
@@ -51,6 +54,7 @@ function okLine(state: SyncReport, t: Translate): string {
   }
   if (state.linked > 0) text += ` · ${t('conn.syncLinked', { n: state.linked })}`;
   if (state.proposed > 0) text += ` · ${t('conn.syncProposed', { n: state.proposed })}`;
+  if (state.partial) text += ` · ${t('conn.syncPartial')}`;
   return text;
 }
 
@@ -62,12 +66,12 @@ const REFUSAL_KEYS: Partial<Record<SyncReport['status'], TranslationKey>> = {
 };
 
 /** a sync attempt's outcome, spoken out loud */
-function SyncResultLine({ id, state }: Readonly<{ id: string; state: 'busy' | SyncReport }>) {
+function SyncResultLine({ id, state, found }: Readonly<{ id: string; state: 'busy' | SyncReport; found?: number | null }>) {
   const { t } = useLang();
   if (state === 'busy') {
     return (
-      <span className="block text-[11px] text-ink-4" data-testid={`conn-syncing-${id}`}>
-        {t('conn.syncBusy')}
+      <span className="block text-[11px] text-accent-deep" data-testid={`conn-syncing-${id}`}>
+        {found == null ? t('conn.syncBusy') : t('conn.syncFound', { n: found })}
       </span>
     );
   }
@@ -164,8 +168,24 @@ export function ConnectionsScreen() {
   const [nameDraft, setNameDraft] = useState('');
   const [attempted, setAttempted] = useState(false);
   const [manageId, setManageId] = useState<string | null>(null);
-  const [syncStates, setSyncStates] = useState<Record<string, 'busy' | SyncReport>>({});
+  // the step after naming a shop: which spaces its receipts reach (none until picked, user ruling 2026-10-02)
+  const [spacesStep, setSpacesStep] = useState<{ connectionId: string; picked: string[] } | null>(null);
   const [ask, setAsk] = useState<JobAsk | null>(null);
+  // every sync in flight or just finished, whoever started it; the rows read it
+  const activity = useSyncActivity((s) => s.activity);
+  const ranges = useFetchedRanges();
+
+  // a finished sync's result leaves the row after a while: re-render when the soonest one expires
+  const [, tick] = useReducer((n: number) => n + 1, 0);
+  useEffect(() => {
+    const waits = Object.values(activity)
+      .filter((a) => a.phase === 'done')
+      .map((a) => (a.finishedAt ?? 0) + RESULT_TTL_MS - Date.now())
+      .filter((ms) => ms > 0);
+    if (waits.length === 0) return undefined;
+    const handle = setTimeout(tick, Math.min(...waits) + 50);
+    return () => clearTimeout(handle);
+  }, [activity]);
 
   const signedIn = connectorsAvailable();
   const managed = connections?.find((c) => c.meta.id === manageId) ?? null;
@@ -173,13 +193,12 @@ export function ConnectionsScreen() {
   const kindOf = (view: ConnectionView): ProviderKind => view.meta.kind ?? catalogue.byId.get(view.meta.store)?.kind ?? 'store';
 
   const runSync = async (view: ConnectionView) => {
-    setSyncStates((s) => ({ ...s, [view.meta.id]: 'busy' }));
-    const result = await ops.syncNow(view.meta.id, {
+    // the row follows the sync through the activity store, wherever it was started
+    await ops.syncNow(view.meta.id, {
       // a question mid-fetch is asked right here — a human is present
       onChallenge: (job) => new Promise<string | null>((resolve) => setAsk({ job, provider: view.meta.store, resolve })),
     });
     setAsk(null);
-    setSyncStates((s) => ({ ...s, [view.meta.id]: result }));
   };
 
   const afterConnect = async (result: AdoptResult, reconnect: boolean) => {
@@ -194,9 +213,23 @@ export function ConnectionsScreen() {
 
   const saveName = async () => {
     if (!naming) return;
-    await ops.rename(naming.connectionId, nameDraft);
+    const named = naming.connectionId;
+    await ops.rename(named, nameDraft);
     setNaming(null);
+    // a shop's receipts reach no space until picked (user ruling 2026-10-02): the step follows the name
+    const meta = (await store.allRows('storeConn')).find((c) => c.id === named && c.deleted === 0);
+    const kind = meta?.kind ?? (meta ? catalogue.byId.get(meta.store)?.kind : undefined) ?? 'store';
+    if (meta && kind === 'store' && (allSpaces ?? []).length > 0) setSpacesStep({ connectionId: named, picked: [] });
   };
+
+  const saveSpaces = async () => {
+    if (!spacesStep) return;
+    if (spacesStep.picked.length > 0) await ops.setIncludedSpaces(spacesStep.connectionId, spacesStep.picked);
+    setSpacesStep(null);
+  };
+
+  const togglePicked = (spaceId: string) =>
+    setSpacesStep((step) => step && { ...step, picked: step.picked.includes(spaceId) ? step.picked.filter((id) => id !== spaceId) : [...step.picked, spaceId] });
 
   const openFlow = (manifest: ProviderManifest, reconnectId: string | null) => {
     setCatalogueOpen(false);
@@ -234,8 +267,9 @@ export function ConnectionsScreen() {
   };
 
   const stateLine = (view: ConnectionView) => {
-    const syncState = syncStates[view.meta.id];
-    if (syncState) return <SyncResultLine id={view.meta.id} state={syncState} />;
+    const running = activity[view.meta.id];
+    if (running?.phase === 'fetching') return <SyncResultLine id={view.meta.id} state="busy" found={running.found} />;
+    if (resultStillFresh(running)) return <SyncResultLine id={view.meta.id} state={running.report} />;
     // a sign-in in flight for this connection outranks every other word
     const inFlight = pendingLogins[view.meta.id];
     if (inFlight) {
@@ -255,6 +289,14 @@ export function ConnectionsScreen() {
       </span>
     );
   };
+
+  /** how far the fetches reach — the dates covered and the count — under the state (user request 2026-10-02) */
+  const rangeOf = (view: ConnectionView) =>
+    kindOf(view) === 'registry' ? null : (
+      <span className="block text-[11px] text-ink-4" data-testid={`conn-range-${view.meta.id}`}>
+        {rangeLine(ranges?.[view.meta.id], t, lang)}
+      </span>
+    );
 
   /** the one action a state asks for */
   const primaryAction = (view: ConnectionView) => {
@@ -406,6 +448,7 @@ export function ConnectionsScreen() {
               )}
             </span>
             {stateLine(view)}
+            {rangeOf(view)}
           </span>
           {primaryAction(view)}
           <button
@@ -498,14 +541,17 @@ export function ConnectionsScreen() {
           </button>
         )}
 
-        {/* the browsing door: every receipt, photos included */}
+        {/* the hub's own receipts: everything the shops handed over, per connection (a space's Receipts carry the matching) */}
         <button
           data-testid="conn-view-receipts"
-          onClick={() => void navigate({ to: '/receipts' })}
+          onClick={() => void navigate({ to: '/connections/receipts' })}
           className="m-tap mt-3 flex w-full items-center gap-3 rounded-card border border-line bg-surface px-4 py-3.5 text-left"
         >
           <Icon name="receipt-text-outline" size={20} color="var(--m-ink-2)" />
-          <span className="min-w-0 flex-1 text-[15px] text-ink">{t('receipts.title')}</span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] text-ink">{t('receipts.globalTitle')}</span>
+            <span className="block text-[12px] text-ink-4">{t('receipts.globalSub')}</span>
+          </span>
           <Icon name="chevron-right" size={18} color="var(--m-ink-4)" />
         </button>
 
@@ -573,6 +619,22 @@ export function ConnectionsScreen() {
             {t('action.save')}
           </Button>
         </div>
+      </Sheet>
+
+      {/* the step after naming: which spaces a shop's receipts reach — none until picked (user ruling 2026-10-02) */}
+      <Sheet open={spacesStep !== null} onOpenChange={(open) => !open && setSpacesStep(null)} title={t('conn.spacesTitle')} size="tall">
+        {spacesStep && (
+          <div className="flex flex-col gap-3 pt-1" data-testid="conn-spaces-step">
+            <p className="text-[13px] leading-relaxed text-ink-2">{t('conn.spacesHint')}</p>
+            <SpacePicker spaces={allSpaces ?? []} selected={spacesStep.picked} onToggle={togglePicked} testId="conn-spaces-list" />
+            <Button data-testid="conn-spaces-save" onClick={() => void saveSpaces()}>
+              {t('action.save')}
+            </Button>
+            <Button variant="outline" data-testid="conn-spaces-skip" onClick={() => setSpacesStep(null)}>
+              {t('conn.spacesSkip')}
+            </Button>
+          </div>
+        )}
       </Sheet>
 
       {/* a party's question while a sync runs from here */}

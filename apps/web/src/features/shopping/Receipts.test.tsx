@@ -86,14 +86,15 @@ describe('Receipts (demo identity)', () => {
     expect(screen.getByTestId('conn-photo-note')).toBeTruthy();
   }, 15_000);
 
-  it('opened from its own transaction, the sheet hides the linked-tx block', async () => {
+  it('opened from its own transaction, the receipt screen hides the linked-tx block', async () => {
     await openFirstTx();
     const file = new File(['x'], 'bon.jpg', { type: 'image/jpeg' });
     fireEvent.change(screen.getByTestId('receipt-file'), { target: { files: [file] } });
     const card = await screen.findByTestId('receipt-card', {}, { timeout: 5000 });
 
-    // the sheet must not point back at the transaction it sits on (user bug)
+    // the screen must not point back at the transaction it was opened from (user bug)
     fireEvent.click(card);
+    await screen.findByTestId('screen-receipt');
     await screen.findByTestId('receipt-view-total');
     // once transactions resolve the sheet knows the receipt IS linked:
     // no link button — and no block pointing back at this very tx
@@ -119,6 +120,12 @@ describe('Receipts (demo identity)', () => {
       { timeout: 5000 },
     );
     expect(row.textContent).toMatch(/€[0-9]/);
+    // a tap opens the receipt full screen (user request 2026-10-02: the sheet was cramped)
+    fireEvent.click(row);
+    await screen.findByTestId('screen-receipt');
+    expect((await screen.findByTestId('receipt-view-total')).textContent).toMatch(/€[0-9]/);
+    expect(screen.getByTestId('receipt-head')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('receipt-back'));
   }, 15_000);
 
   it('settings reaches receipts; the connections door reaches the hub', async () => {

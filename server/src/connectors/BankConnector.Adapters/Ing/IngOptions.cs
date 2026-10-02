@@ -356,10 +356,10 @@ public sealed record IngOptions
 
     /// <summary>
     /// How many pages one fetch walks before stopping and reporting itself
-    /// incomplete. Twenty-five pages is a thousand transactions - about two
-    /// years on the captured account.
+    /// incomplete. A hundred pages is four thousand transactions - more than
+    /// the record cap lets one pass keep, so the cap ends a walk first.
     /// </summary>
-    public int MaxPages { get; init; } = 25;
+    public int MaxPages { get; init; } = 100;
 
     /// <summary>Between pages we ask for ourselves.</summary>
     public int PageGapMs { get; init; } = 750;

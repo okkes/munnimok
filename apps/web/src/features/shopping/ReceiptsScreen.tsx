@@ -15,7 +15,6 @@ import { Button } from '@/ui/Button';
 import { Chip } from '@/ui/primitives';
 import { Icon } from '@/ui/Icon';
 import { SearchField } from '@/ui/SearchField';
-import { ReceiptViewSheet } from './ReceiptViewSheet';
 
 const sourceIcon = (source: string): string => (source === 'photo' ? 'camera-outline' : 'storefront-outline');
 
@@ -39,7 +38,6 @@ export function ReceiptsScreen() {
   const { t, lang } = useLang();
   const navigate = useNavigate();
   const { store, spaceId } = useData();
-  const [selected, setSelected] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [unlinkedOnly, setUnlinkedOnly] = useState(false);
   const [instanceFilter, setInstanceFilter] = useState<string | null>(null);
@@ -85,8 +83,6 @@ export function ReceiptsScreen() {
     });
   }, [entries, query, unlinkedOnly, instanceFilter]);
 
-  // keep the sheet live: deletions/links flow straight into the view
-  const current = useMemo(() => entries.find((e) => e.data.id === selected) ?? null, [entries, selected]);
   const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(LOCALES[lang], { day: 'numeric', month: 'short', year: 'numeric' });
   const unlinkedCount = entries.filter((e) => !e.txId).length;
 
@@ -96,7 +92,7 @@ export function ReceiptsScreen() {
       <button
         key={receipt.id}
         data-testid={`receipt-row-${receipt.id}`}
-        onClick={() => setSelected(receipt.id)}
+        onClick={() => void navigate({ to: '/receipts/$receiptId', params: { receiptId: receipt.id } })}
         className="m-tap flex w-full items-center gap-3 border-b border-line-2 px-4 py-3 text-left last:border-0"
       >
         <Icon name={sourceIcon(receipt.source)} size={18} color="var(--m-ink-3)" />
@@ -220,7 +216,6 @@ export function ReceiptsScreen() {
           )
         )}
       </div>
-      <ReceiptViewSheet entry={current} currency={currency} onClose={() => setSelected(null)} />
     </div>
   );
 }
