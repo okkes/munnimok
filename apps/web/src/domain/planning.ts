@@ -18,6 +18,7 @@ import { nextDueDate, occurrencesBetween } from './recurring';
 import { nextPeriod, periodHistory } from './periods';
 import type { Period } from './periods';
 import { txSliceViews } from './txSlices';
+import type { TxSliceView } from './txSlices';
 
 /**
  * Planning (#128, the allocation redesign) — all pure. Money that is
@@ -228,15 +229,37 @@ const inPeriod = (date: string, period: Period): boolean => date >= period.start
  */
 export function expenseRealizedCents(family: ReadonlySet<string>, txs: readonly TxView[], period: Period): number {
   let total = 0;
+  for (const { slice, spent } of periodSpending(txs, period)) {
+    if (slice.recurringId || slice.linkedAccountId) continue;
+    if (!family.has(slice.catId ?? '')) continue;
+    total += spent;
+  }
+  return total;
+}
+
+/** every expense slice of the period's live rows, with what it took */
+function* periodSpending(txs: readonly TxView[], period: Period): Generator<{ slice: TxSliceView; spent: number }> {
   for (const tx of txs) {
     if (tx.deleted !== 0 || !inPeriod(tx.date, period)) continue;
     for (const slice of txSliceViews(tx)) {
-      if (slice.effType !== 'expense' || slice.recurringId || slice.linkedAccountId) continue;
-      if (!family.has(slice.catId ?? '')) continue;
-      total += slice.fromParts ? Math.abs(slice.amountCents) : -slice.amountCents;
+      if (slice.effType !== 'expense') continue;
+      yield { slice, spent: slice.fromParts ? Math.abs(slice.amountCents) : -slice.amountCents };
     }
   }
-  return total;
+}
+
+/** where a slice's spending lands when no subject answers for it: its main and its own category; null when a segment or a locked family has it */
+function unplannedKeyOf(
+  slice: TxSliceView,
+  covered: ReadonlySet<string>,
+  catalog: CatalogLookup,
+): { mainId: string; catId: string } | null {
+  if (slice.recurringId || slice.linkedAccountId) return null;
+  const catId = slice.catId ?? '';
+  if (!catId || covered.has(catId)) return null;
+  const cat = catalog.byId(catId);
+  const mainId = cat.parentId ?? cat.id;
+  return LOCKED_MAIN_IDS.has(mainId) ? null : { mainId, catId };
 }
 
 /** one main category spent on without a subject answering for it, its subs broken out */
@@ -260,20 +283,12 @@ export function unplannedByCategory(
   catalog: CatalogLookup,
 ): UnplannedMain[] {
   const byMain = new Map<string, Map<string, number>>();
-  for (const tx of txs) {
-    if (tx.deleted !== 0 || !inPeriod(tx.date, period)) continue;
-    for (const slice of txSliceViews(tx)) {
-      if (slice.effType !== 'expense' || slice.recurringId || slice.linkedAccountId) continue;
-      const catId = slice.catId ?? '';
-      if (!catId || covered.has(catId)) continue;
-      const cat = catalog.byId(catId);
-      const mainId = cat.parentId ?? cat.id;
-      if (LOCKED_MAIN_IDS.has(mainId)) continue;
-      const cents = slice.fromParts ? Math.abs(slice.amountCents) : -slice.amountCents;
-      const subs = byMain.get(mainId) ?? new Map<string, number>();
-      subs.set(catId, (subs.get(catId) ?? 0) + cents);
-      byMain.set(mainId, subs);
-    }
+  for (const { slice, spent } of periodSpending(txs, period)) {
+    const key = unplannedKeyOf(slice, covered, catalog);
+    if (!key) continue;
+    const subs = byMain.get(key.mainId) ?? new Map<string, number>();
+    subs.set(key.catId, (subs.get(key.catId) ?? 0) + spent);
+    byMain.set(key.mainId, subs);
   }
   return [...byMain]
     .map(([mainId, subs]) => ({
@@ -288,12 +303,8 @@ export function unplannedByCategory(
 /** a budget's own rule: everything its family spent, recurring-linked rows included */
 export function budgetRealizedCents(family: ReadonlySet<string>, txs: readonly TxView[], period: Period): number {
   let total = 0;
-  for (const tx of txs) {
-    if (tx.deleted !== 0 || !inPeriod(tx.date, period)) continue;
-    for (const slice of txSliceViews(tx)) {
-      if (slice.effType !== 'expense' || !family.has(slice.catId ?? '')) continue;
-      total += slice.fromParts ? Math.abs(slice.amountCents) : -slice.amountCents;
-    }
+  for (const { slice, spent } of periodSpending(txs, period)) {
+    if (family.has(slice.catId ?? '')) total += spent;
   }
   return total;
 }
